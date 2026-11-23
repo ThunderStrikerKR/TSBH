@@ -2829,9 +2829,12 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                             }
                         });
                 });
-            if let Some(error)=dialog.error.as_deref(){
-                ui.label(typography::status(error,theme::DANGER));
-            }
+            let error=dialog.error.as_deref();
+            let status_width=ui.available_width();
+            components::fixed_status_slot(
+                ui,status_width,typography::METADATA_LINE_HEIGHT,
+                error,error,theme::DANGER
+            );
             ui.add_space(theme::SPACE_8);
             components::modal_action_row(ui,|buttons|{
                 if theme::action(
@@ -5579,12 +5582,10 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                 // The configured folder shows a short usage sentence
                 // followed by the two standard actions. The saved path
                 // remains internal to those actions and is never displayed.
-                let folder_body_height = if inbox_path.is_some() {
-                    typography::METADATA_LINE_HEIGHT
-                        + theme::SPACE_8 + theme::ACTION_STANDARD_HEIGHT
-                } else {
-                    typography::METADATA_LINE_HEIGHT
-                };
+                // Keep the folder group's body footprint identical
+                // while the saved path loads, exists or is not configured.
+                let folder_body_height=typography::METADATA_LINE_HEIGHT
+                    +theme::SPACE_8+theme::ACTION_STANDARD_HEIGHT;
                 let folder_group_height = typography::SUBSECTION_LINE_HEIGHT
                     + folder_body_height + theme::SPACE_8
 ;
@@ -5652,34 +5653,38 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                             intake.ctx(),"reception.folder.error","reception.folder",
                             floating_notice::Tone::Error,inbox_load_error.as_deref()
                         );
+                        let folder_message=if inbox_path.is_some(){
+                            Some("발주서 이미지나 엑셀파일을 지정한 폴더에 저장하면 자동 인식합니다.")
+                        }else if inbox_load_error.is_some(){
+                            None
+                        }else if !inbox_loaded{
+                            Some("저장된 수신 폴더 설정을 확인하고 있습니다.")
+                        }else{
+                            Some("설정 · 파일 관리에서 발주 이미지 수신 폴더를 지정하세요.")
+                        };
+                        let folder_status_width=intake.available_width();
+                        components::fixed_status_slot(
+                            intake,folder_status_width,typography::METADATA_LINE_HEIGHT,
+                            folder_message,folder_message,theme::MUTED
+                        );
                         intake.add_space(theme::SPACE_8);
-                        if let Some(path) = inbox_path.as_deref() {
-                            intake.label(typography::caption(
-                                "발주서 이미지나 엑셀파일을 지정한 폴더에 저장하면 자동 인식합니다."
-                            ));
-                            intake.add_space(theme::SPACE_8);
-                            intake.horizontal(|buttons| {
-                                buttons.spacing_mut().item_spacing.x = theme::SPACE_8;
-                                if theme::action(buttons, "경로 복사",
-                                    ButtonRole::Standard, true).clicked() {
-                                    inbox_copy_request = Some(path.to_owned());
+                        let folder_actions_width=intake.available_width();
+                        let _=components::fixed_row(
+                            intake,Vec2::new(folder_actions_width,theme::ACTION_STANDARD_HEIGHT),
+                            Layout::left_to_right(Align::Center),|buttons|{
+                                if let Some(path)=inbox_path.as_deref(){
+                                    buttons.spacing_mut().item_spacing.x=theme::SPACE_8;
+                                    if theme::action(buttons,"경로 복사",
+                                        ButtonRole::Standard,true).clicked(){
+                                        inbox_copy_request=Some(path.to_owned());
+                                    }
+                                    if theme::action(buttons,"폴더 열기",
+                                        ButtonRole::Standard,true).clicked(){
+                                        inbox_open_request=Some(path.to_owned());
+                                    }
                                 }
-                                if theme::action(buttons, "폴더 열기",
-                                    ButtonRole::Standard, true).clicked() {
-                                    inbox_open_request = Some(path.to_owned());
-                                }
-                            });
-                        } else if inbox_load_error.is_some() {
-                            // Preserve failure state without extra UI message.
-                        } else if !inbox_loaded {
-                            intake.label(typography::caption(
-                                "저장된 수신 폴더 설정을 확인하고 있습니다."
-                            ));
-                        } else {
-                            intake.label(typography::caption(
-                                "설정 · 파일 관리에서 발주 이미지 수신 폴더를 지정하세요."
-                            ));
-                        }
+                            }
+                        );
                         intake.add_space(balanced_gap);
                     });
             }
