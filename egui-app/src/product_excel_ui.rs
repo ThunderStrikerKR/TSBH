@@ -52,6 +52,33 @@ fn status_label(status:&str)->&str{
         "HOLD"=>"보류","ERROR"=>"오류",_=>"—"
     }
 }
+/// Convert only the first 500 filtered audit rows into display data.
+/// The native review still validates and retains every source row.
+fn review_table_rows(review:&Value,filter:ReviewFilter)->Vec<Vec<String>>{
+    review["rows"].as_array().map(|rows|{
+        rows.iter()
+            .filter(|row|filter.accepts(row["status"].as_str().unwrap_or("")))
+            .take(500)
+            .map(|row|{
+                let message=if let Some(errors)=row["errors"].as_array(){
+                    let entries=errors.iter().filter_map(Value::as_str)
+                        .collect::<Vec<_>>();
+                    if !entries.is_empty(){entries.join(" / ")}
+                    else{row["changes"].as_array().map(|values|values.iter()
+                        .filter_map(Value::as_str).collect::<Vec<_>>()
+                        .join(" / ")).unwrap_or_else(||"변경 없음".into())}
+                }else{"변경 없음".into()};
+                vec![
+                    row["sheet"].as_str().unwrap_or("").to_owned(),
+                    row["row"].to_string(),
+                    row["name"].as_str().unwrap_or("").to_owned(),
+                    status_label(row["status"].as_str().unwrap_or("")).to_owned(),
+                    message,
+                ]
+            })
+            .collect()
+    }).unwrap_or_default()
+}
 fn saved_message(path:&PathBuf)->String{
     format!("독립 상품 및 가격 전체 목록을 저장했습니다: {}",path.display())
 }
@@ -257,57 +284,18 @@ impl ProductExcelUi {
                 // Review-only. The original React limits the visible audit
                 // table to 500 records while validating every source row.
                 let full=review["rows"].as_array().map(Vec::as_slice).unwrap_or(&[]);
-                let visible=full.iter().filter(|r|
-                    self.filter.accepts(r["status"].as_str().unwrap_or(""))
-                ).take(500).collect::<Vec<_>>();
-                let available=ui.available_width();
-                let widths=[86.0,52.0,available*0.24,70.0,
-                    (available-86.0-52.0-available*0.24-70.0-4.0*theme::SPACE_8).max(190.0)];
-                ui.horizontal(|header|{
-                    header.spacing_mut().item_spacing.x=theme::SPACE_8;
-                    for (label,width) in ["시트","행","독립 상품","판정","변경 및 사유"]
-                        .iter().zip(widths){
-                        header.add_sized(
-                            [width,theme::MANAGEMENT_TABLE_HEADER_HEIGHT],
-                            egui::Label::new(typography::table_header(label))
-                        );
+                let visible=review_table_rows(&review,self.filter);
+                let headings=["시트","행","독립 상품","판정","변경 및 사유"];
+                components::management_readonly_table(
+                    ui,"product-excel-review-rows",&headings,&visible,
+                    work_area.height()*0.40,
+                    |available|{
+                        let name=available*0.24;
+                        let message=(available-86.0-52.0-name-70.0
+                            -4.0*theme::SPACE_8).max(190.0);
+                        vec![86.0,52.0,name,70.0,message]
                     }
-                });
-                egui::ScrollArea::both()
-                    .id_salt("product-excel-review-rows")
-                    .max_height(work_area.height()*0.40)
-                    .auto_shrink([false,false])
-                    .show(ui,|table|{
-                        table.spacing_mut().item_spacing.y=0.0;
-                        for row in visible{
-                            let message=if let Some(errors)=row["errors"].as_array(){
-                                let entries=errors.iter().filter_map(Value::as_str)
-                                    .collect::<Vec<_>>();
-                                if !entries.is_empty(){entries.join(" / ")}
-                                else{row["changes"].as_array().map(|v|v.iter()
-                                    .filter_map(Value::as_str).collect::<Vec<_>>()
-                                    .join(" / ")).unwrap_or_else(||"변경 없음".into())}
-                            }else{"변경 없음".into()};
-                            let values=[
-                                row["sheet"].as_str().unwrap_or("").to_owned(),
-                                row["row"].to_string(),
-                                row["name"].as_str().unwrap_or("").to_owned(),
-                                status_label(row["status"].as_str().unwrap_or("")).to_owned(),
-                                message,
-                            ];
-                            table.horizontal(|line|{
-                                line.spacing_mut().item_spacing.x=theme::SPACE_8;
-                                for (value,width) in values.iter().zip(widths){
-                                    line.add_sized(
-                                        [width,theme::PRODUCT_TABLE_ROW_HEIGHT],
-                                        egui::Label::new(typography::table_cell(value))
-                                            .truncate()
-                                    ).on_hover_text(value);
-                                }
-                            });
-                            components::soft_divider(table);
-                        }
-                    });
+                );
                 if full.len()>500{
                     ui.label(typography::caption(
                         "표에는 최대 500행을 표시하며 모든 행을 검증합니다."
