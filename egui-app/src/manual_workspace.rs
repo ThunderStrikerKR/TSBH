@@ -1016,7 +1016,7 @@ impl ManualWorkspace {
             .constrain_to(work_area)
             .show(ctx,|ui|{
                 if components::modal_header(
-                    ui,"수동 분류","취소",
+                    ui,"수동 분류","닫기",
                     !self.busy()&&self.product_search.is_none()
                         &&self.remove_recipient_pending.is_none()
                         &&!self.reset_pending
@@ -1040,37 +1040,32 @@ impl ManualWorkspace {
                 let has_pending_quantity=pending_quantity_count>0;
                 let unassigned=blocks.iter().filter(|b|
                     assignments.get(text(b,"id")).is_none()).count();
-                // Display worksheet context together. Final actions belong
-                // to the footer, not between the status and editing panes.
+                // Keep the current BLOCKER visible, not the ambiguous
+                // "order confirmed" status while the worksheet is still open.
+                // This is guidance only; Rust still validates final apply.
+                let (guidance,blocked)=manual_apply_guidance(
+                    busy,pending_quantity_count,
+                    self.edit_text!=self.current_value()
+                );
                 ui.horizontal(|status|{
                     let count=status.label(typography::caption(
-                        &format!("미배정됨: {unassigned}개")
+                        &format!("미배정 원문: {unassigned}개")
                     ));
                     if status.available_width()>=theme::MANUAL_INPUT_WIDTH {
                         status.with_layout(
                             egui::Layout::right_to_left(egui::Align::Center),
                             |right|{
-                                if pending_quantity_count>0 {
+                                if blocked{
                                     right.label(typography::status(
-                                        &format!("수량 확인 필요: {pending_quantity_count}건"),
-                                        theme::SELECTED_ORDER
+                                        &guidance,theme::SELECTED_ORDER
                                     ));
                                 }else{
-                                    right.label(typography::caption(
-                                        "초안 적용 후 주문 확인 필요"
-                                    ));
+                                    right.label(typography::caption(&guidance));
                                 }
                             }
                         );
                     }else{
-                        // Preserve the same apply-blocking reason in a
-                        // narrow workspace where the right status cannot fit.
-                        let explanation=if pending_quantity_count>0 {
-                            format!("수량 확인 필요: {pending_quantity_count}건")
-                        }else{
-                            "초안 적용 후 주문 확인 필요".to_owned()
-                        };
-                        count.on_hover_text(explanation);
+                        count.on_hover_text(guidance);
                     }
                 });
                 ui.separator();
@@ -1114,7 +1109,7 @@ impl ManualWorkspace {
                                 panel.set_min_height(
                                     (height-2.0*theme::SPACE_8).max(0.0)
                                 );
-                                panel.label(typography::subsection_heading("붙여넣은 내용"));
+                                panel.label(typography::subsection_heading("발주원문 · 항목 클릭으로 연결/해제"));
                                 egui::ScrollArea::vertical().id_salt("manual-source-blocks")
                                     .max_height((height-theme::SECTION_HEADER_HEIGHT
                                         -2.0*theme::SPACE_8).max(0.0))
@@ -1862,6 +1857,22 @@ impl ManualWorkspace {
 /// Both the source document and destination cells resolve to the same
 /// order-scoped LinkKey. Keep the shared 50/150ms HoverState as the single
 /// owner of bidirectional highlight and source auto-scroll behavior.
+/// Non-authoritative UI guidance for why the single-click draft Apply is
+/// currently unavailable. The final native reducer owns all validation.
+fn manual_apply_guidance(
+    busy:bool,pending_quantity_count:usize,uncommitted:bool
+)->(String,bool){
+    if busy{
+        ("변경사항 반영 중".into(),true)
+    }else if pending_quantity_count>0{
+        (format!("수량 확인 필요: {pending_quantity_count}건"),true)
+    }else if uncommitted{
+        ("선택한 입력을 먼저 반영하세요".into(),true)
+    }else{
+        ("초안 적용 후 주문 확인 필요".into(),false)
+    }
+}
+
 fn manual_hover_target(
     hovered_detail:Option<source_highlight::LinkKey>,
     hovered_source:Option<source_highlight::LinkKey>,
@@ -2054,6 +2065,18 @@ mod manual_workspace_modal_routing_tests {
             EscapeAction::RequestClose);
         assert_eq!(escape_action(true,false,false,false,false,true),
             EscapeAction::Ignore);
+    }
+
+    #[test]
+    fn apply_guidance_explains_why_apply_is_disabled_without_extra_prompt(){
+        assert_eq!(manual_apply_guidance(true,0,false),
+            ("변경사항 반영 중".into(),true));
+        assert_eq!(manual_apply_guidance(false,2,false),
+            ("수량 확인 필요: 2건".into(),true));
+        assert_eq!(manual_apply_guidance(false,0,true),
+            ("선택한 입력을 먼저 반영하세요".into(),true));
+        assert_eq!(manual_apply_guidance(false,0,false),
+            ("초안 적용 후 주문 확인 필요".into(),false));
     }
 
     #[test]
