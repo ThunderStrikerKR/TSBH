@@ -23,6 +23,7 @@ mod client_manager;
 mod client_search_tags;
 mod automatic_message_manager;
 mod category_manager;
+mod category_dropdown;
 mod alias_manager;
 mod latest_job;
 mod brand_manager;
