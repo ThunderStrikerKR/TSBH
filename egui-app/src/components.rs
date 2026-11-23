@@ -6645,11 +6645,9 @@ mod modal_input_routing_tests {
             let _=ctx.run(raw,|ctx|{
                 modal_window("수동 분류","manual-parent-workspace",work_area)
                     .show(ctx,|ui|{
+                        ui.disable();
                         ui.label("parent worksheet");
                     });
-                modal_backdrop_for_window(
-                    ctx,"manual-nested-modal-backdrop","manual-discard-prompt"
-                );
                 decision_window(
                     "수동 분류 변경 취소","manual-discard-prompt",work_area
                 ).show(ctx,|ui|{
@@ -6667,6 +6665,7 @@ mod modal_input_routing_tests {
                         if response.clicked(){*action_clicked=true;}
                     });
                 });
+                modal_foreground_for_window(ctx,"manual-discard-prompt");
             });
             assert_eq!(
                 ctx.memory(|memory|memory.top_modal_layer()),
@@ -6699,32 +6698,32 @@ mod modal_input_routing_tests {
         assert!(action_rect.width()>0.0 && action_rect.height()>0.0);
         assert!(plain_rect.width()>0.0 && plain_rect.height()>0.0);
         assert!(action_enabled,"the decision footer must be enabled independently of its parent");
-        let click=|pointer:egui::Pos2,
+        let click=|pointer:egui::Pos2,time:f64,
             action_clicked:&mut bool,plain_clicked:&mut bool,
             action_hovered:&mut bool,action_enabled:&mut bool|{
             let _=draw(&ctx,egui::RawInput{
                 events:vec![egui::Event::PointerMoved(pointer)],
-                time:Some(1.0),..Default::default()
+                time:Some(time),..Default::default()
             },work_area,action_clicked,plain_clicked,action_hovered,action_enabled);
             let _=draw(&ctx,egui::RawInput{
                 events:vec![egui::Event::PointerButton{
                     pos:pointer,button:egui::PointerButton::Primary,
                     pressed:true,modifiers:egui::Modifiers::NONE
                 }],
-                time:Some(1.1),..Default::default()
+                time:Some(time+0.1),..Default::default()
             },work_area,action_clicked,plain_clicked,action_hovered,action_enabled);
             let _=draw(&ctx,egui::RawInput{
                 events:vec![egui::Event::PointerButton{
                     pos:pointer,button:egui::PointerButton::Primary,
                     pressed:false,modifiers:egui::Modifiers::NONE
                 }],
-                time:Some(1.2),..Default::default()
+                time:Some(time+0.2),..Default::default()
             },work_area,action_clicked,plain_clicked,action_hovered,action_enabled);
         };
-        click(plain_rect.center(),&mut action_clicked,&mut plain_clicked,
+        click(plain_rect.center(),1.0,&mut action_clicked,&mut plain_clicked,
             &mut action_hovered,&mut action_enabled);
         assert!(plain_clicked,"plain decision-window button must receive pointer input");
-        click(action_rect.center(),&mut action_clicked,&mut plain_clicked,
+        click(action_rect.center(),2.0,&mut action_clicked,&mut plain_clicked,
             &mut action_hovered,&mut action_enabled);
         assert!(action_clicked,
             "shared modal footer action must receive pointer input; hovered={action_hovered}, enabled={action_enabled}");
@@ -6745,13 +6744,11 @@ mod modal_input_routing_tests {
             let _=ctx.run(raw,|ctx|{
                 modal_window("수동 분류","manual-parent-workspace",work_area)
                     .show(ctx,|ui|{
+                        ui.disable();
                         let response=ui.button("parent action");
                         parent_rect=response.rect;
                         if response.clicked(){parent_clicked=true;}
                     });
-                modal_backdrop_for_window(
-                    ctx,"manual-nested-modal-backdrop","manual-discard-prompt"
-                );
                 decision_window(
                     "수동 분류 변경 취소","manual-discard-prompt",work_area
                 ).show(ctx,|ui|{
@@ -6760,6 +6757,7 @@ mod modal_input_routing_tests {
                         theme::action(actions,"변경 취소",theme::ButtonRole::Standard,true);
                     });
                 });
+                modal_foreground_for_window(ctx,"manual-discard-prompt");
             });
             parent_rect
         };
