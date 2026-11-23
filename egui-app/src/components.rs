@@ -4624,7 +4624,7 @@ pub fn management_readonly_table(
     // Embedded review tables retain their existing plain header appearance.
     // The shared list-header allocation owns the 36pt height and scrollbar
     // gutter; text uses the same table-header role as the management masters.
-    let header_clip=layout.header_rect.intersect(ui.clip_rect());
+    let header_clip=layout.header_content_rect.intersect(ui.clip_rect());
     let painter=ui.painter().with_clip_rect(header_clip);
     let mut x=layout.header_rect.left();
     for (heading,width) in headings.iter().zip(&widths){
@@ -4677,6 +4677,29 @@ fn management_readonly_table_content_width(widths:&[f32])->f32{
 
 fn management_readonly_table_row_advance()->f32{
     theme::MANAGEMENT_COMPACT_ROW_HEIGHT+theme::SOFT_DIVIDER_WIDTH
+}
+
+#[cfg(test)]
+mod management_readonly_table_contract_tests {
+    use super::*;
+
+    #[test]
+    fn read_only_table_width_includes_only_inter_column_gaps(){
+        assert_eq!(
+            management_readonly_table_content_width(&[86.0,52.0,200.0,70.0,300.0]),
+            740.0
+        );
+        assert_eq!(management_readonly_table_content_width(&[120.0]),120.0);
+        assert_eq!(management_readonly_table_content_width(&[]),0.0);
+    }
+
+    #[test]
+    fn read_only_table_row_advance_includes_one_shared_divider(){
+        assert_eq!(
+            management_readonly_table_row_advance(),
+            theme::MANAGEMENT_COMPACT_ROW_HEIGHT+theme::SOFT_DIVIDER_WIDTH
+        );
+    }
 }
 
 pub fn table_header(ui: &mut Ui, columns: &[(&str, f32)]) {
