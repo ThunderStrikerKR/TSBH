@@ -88,6 +88,11 @@ jobs:
             echo "UI-local monospace bypasses typography::data_value_font" >&2
             exit 1
           fi
+      - name: Verify audited screens use shared UI components
+        run: |
+          cargo test --manifest-path egui-app/Cargo.toml shared_ -- --nocapture
+          cargo test --manifest-path egui-app/Cargo.toml management_readonly_table_contract_tests -- --nocapture
+          cargo test --manifest-path egui-app/Cargo.toml fixed_scroll_panel_contract_tests -- --nocapture
       - name: Verify asynchronous pending, empty and loaded states preserve management geometry
         run: cargo test --manifest-path egui-app/Cargo.toml management_async_layout_contract_tests -- --nocapture
       - name: Verify React-compatible four sale states and legacy catalog labels
