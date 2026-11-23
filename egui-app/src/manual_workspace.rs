@@ -1584,7 +1584,9 @@ impl ManualWorkspace {
                     },
                     |right|{
                         if theme::action(right,"초안에 적용",
-                            ButtonRole::Primary,!busy
+                            ButtonRole::Primary,!busy &&
+                                self.edit_text==self.current_value() &&
+                                !has_pending_quantity
                         ).clicked(){apply=true;}
                     }
                 );
