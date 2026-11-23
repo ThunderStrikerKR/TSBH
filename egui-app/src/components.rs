@@ -81,17 +81,21 @@ pub fn fixed_row<R>(
 )->(Rect,R){
     let width=size.x.min(ui.available_width()).max(0.0);
     let height=size.y.max(0.0);
-    let output=ui.allocate_ui_with_layout(
-        Vec2::new(width,height),layout,|row|{
-            let rect=row.max_rect();
-            row.set_clip_rect(rect);
-            row.set_width(rect.width());
-            row.set_height(rect.height());
-            row.spacing_mut().item_spacing.y=0.0;
-            add_contents(row)
-        }
+    // Allocate the parent footprint exactly once. allocate_ui_with_layout
+    // negotiates its response rect with the child's minimum content size,
+    // so a 20pt label could silently expand an intended 18pt status slot.
+    let (rect,_response)=ui.allocate_exact_size(
+        Vec2::new(width,height),Sense::hover()
     );
-    (output.response.rect,output.inner)
+    // Render in a detached child Ui: its content can grow internally, but
+    // it cannot advance the parent's cursor or move the next sibling.
+    let mut row=ui.new_child(
+        UiBuilder::new().max_rect(rect).layout(layout)
+    );
+    row.set_clip_rect(rect);
+    row.spacing_mut().item_spacing.y=0.0;
+    let result=add_contents(&mut row);
+    (rect,result)
 }
 
 /// One-line status slot for state-dependent text. It always reserves the
