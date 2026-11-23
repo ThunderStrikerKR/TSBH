@@ -92,6 +92,13 @@ struct ManualCellTarget{
     field:String,
 }
 
+fn push_manual_history(
+    history:&mut Vec<ManualHistoryFrame>,frame:ManualHistoryFrame
+){
+    history.push(frame);
+    if history.len()>100 {history.remove(0);}
+}
+
 fn manual_cell_targets(model:&Value)->Vec<ManualCellTarget>{
     let mut cells=Vec::new();
     for (row_index,row) in list(model,"rows").iter().enumerate(){
@@ -526,12 +533,11 @@ impl ManualWorkspace {
                 model,assignment_order,remote_rows
             })))=>{
                 if let Some(previous)=self.model.as_ref(){
-                    self.history.push(ManualHistoryFrame{
+                    push_manual_history(&mut self.history,ManualHistoryFrame{
                         model:previous.clone(),
                         assignment_order:self.assignment_order.clone(),
                         remote_rows:self.remote_rows.clone(),
                     });
-                    if self.history.len()>100 {self.history.remove(0);}
                 }
                 self.remote_rows=remote_rows;
                 self.model=Some(model);
@@ -1755,6 +1761,41 @@ fn nested_modal_id(
 #[cfg(test)]
 mod manual_workspace_modal_routing_tests {
     use super::*;
+
+    #[test]
+    fn keyboard_cell_order_matches_the_manual_worksheet(){
+        let model=json!({"rows":[
+            {"id":"r1","items":[{"id":"i1"},{"id":"i2"}]},
+            {"id":"r2","items":[{"id":"i3"}]}
+        ]});
+        let cells=manual_cell_targets(&model);
+        let keys=cells.iter().map(|cell|(
+            cell.row,cell.item.as_deref(),cell.field.as_str()
+        )).collect::<Vec<_>>();
+        assert_eq!(keys[0],(0,None,"name"));
+        assert_eq!(keys[4],(0,None,"note"));
+        assert_eq!(keys[5],(0,Some("i1"),"product"));
+        assert_eq!(keys[6],(0,Some("i1"),"quantity"));
+        assert_eq!(keys[7],(0,Some("i1"),"unitPrice"));
+        assert_eq!(keys[11],(0,Some("i2"),"unitPrice"));
+        assert_eq!(keys[12],(1,None,"name"));
+    }
+
+    #[test]
+    fn manual_undo_history_is_bounded_and_keeps_the_latest_frames(){
+        let mut history=Vec::new();
+        for value in 0..101{
+            push_manual_history(&mut history,ManualHistoryFrame{
+                model:json!({"value":value}),
+                assignment_order:Vec::new(),
+                remote_rows:Vec::new(),
+            });
+        }
+        assert_eq!(history.len(),100);
+        assert_eq!(history.first().unwrap().model["value"],1);
+        assert_eq!(history.last().unwrap().model["value"],100);
+        assert_eq!(history.pop().unwrap().model["value"],100);
+    }
 
     #[test]
     fn source_block_assignment_requires_a_matching_cell_kind(){
