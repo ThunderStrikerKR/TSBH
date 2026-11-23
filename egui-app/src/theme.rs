@@ -466,6 +466,11 @@ pub const CATALOG_TREE_FOLDER_HEIGHT:f32 = 12.0;
 // Keep category search useful without stretching a single field across
 // the full management panel width.
 pub const CATALOG_SEARCH_WIDTH:f32 = 560.0;
+// The category map has no title/help row: search and the two existing
+// operations share the same 36pt toolbar. Below this width only, stack them.
+pub const CATALOG_MAP_TOOLBAR_ACTIONS_WIDTH:f32 = 260.0;
+pub const CATALOG_MAP_TOOLBAR_STACK_WIDTH:f32 =
+    CATALOG_MAP_TOOLBAR_ACTIONS_WIDTH+MANAGEMENT_SEARCH_MIN_WIDTH+SPACE_16;
 // Category breadcrumb selectors must reserve a predictable width so that
 // trailing ancestors are preserved via typography::fit_category_path.
 pub const CATEGORY_PATH_PICKER_WIDTH:f32 = 280.0;
