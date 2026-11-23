@@ -4939,7 +4939,8 @@ mod shared_ghost_action_contract_tests {
         assert!(!back.contains("egui::Button::new("));
 
         let explorer=source.split("if state.ancestors_open && state.path.len()>3")
-            .nth(1).unwrap().split("let mut selected_path").next().unwrap_or("");
+            .nth(1).unwrap().split("components::soft_divider(menu);")
+            .next().unwrap();
         assert!(explorer.contains("theme::category_ancestor_frame()"));
         assert!(!explorer.contains("egui::Frame::new()"));
     }
