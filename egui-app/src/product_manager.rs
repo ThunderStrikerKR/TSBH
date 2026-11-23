@@ -647,7 +647,10 @@ impl ProductManager {
                         }
                         Some(notice)
                     }else{None};
-                    self.notice=if price_job&&!self.price_write_queue.is_empty(){
+                    // Spreadsheet-style price edits commit silently per cell.
+                    // A global toast for every blur would interrupt rapid entry;
+                    // validation and write failures still use the error channel.
+                    self.notice=if price_job{
                         None
                     }else{
                         Some(category_notice.unwrap_or(match job.kind.as_str(){
@@ -1339,7 +1342,8 @@ impl ProductManager {
                                                 .id_salt(("product-price-edit",key.as_str()))
                                                 .max_rect(price_rect)
                                                 .layout(Layout::left_to_right(Align::Center));
-                                            if other_write_busy||cell_busy{
+                                            if other_write_busy||cell_busy
+                                                ||self.price_mode_exit_requested{
                                                 builder=builder.disabled();
                                             }
                                             row.scope_builder(builder,|inputs|{
@@ -2470,6 +2474,17 @@ mod tests {
         assert!(!editor.contains("theme::action"));
         assert!(source.contains("self.price_write_queue.push_back("));
         assert!(source.contains("self.launch_next_price_write(ctx.clone())"));
+    }
+    #[test]
+    fn spreadsheet_price_commits_do_not_show_per_cell_success_popup(){
+        let source=include_str!("product_manager.rs");
+        let poll=source.split("fn poll(").nth(1).unwrap()
+            .split("fn changed(").next().unwrap_or("");
+        assert!(poll.contains("self.notice=if price_job{"));
+        assert!(!poll.contains("가격 변경을 저장했습니다."));
+        let editor=source.split("let (enter_pressed,tab_pressed,").nth(1).unwrap()
+            .split("let action_rect").next().unwrap_or("");
+        assert!(editor.contains("||self.price_mode_exit_requested"));
     }
     #[test]
     fn price_grid_keyboard_navigation_matches_spreadsheet_direction(){
