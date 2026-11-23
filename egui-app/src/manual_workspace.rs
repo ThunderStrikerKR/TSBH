@@ -2031,7 +2031,7 @@ mod manual_workspace_modal_routing_tests {
             .split("fn manual_hover_target(").next().unwrap();
         assert!(render.contains("modal_foreground_for_window(ctx,window_id)"));
         assert!(!render.contains("modal_backdrop_for_window("));
-        assert!(render.contains(").clicked(){apply=true;}"));
+        assert!(render.contains("if apply_clicked{apply=true;}"));
         assert!(!render.contains("초안 적용 후 주문 확인 필요"),
             "the generic order-confirmation hint must not occupy a header row");
         assert!(render.contains("count.on_hover_text(reason)"),
