@@ -1396,6 +1396,87 @@ impl ManualWorkspace {
     }
 }
 
+#[derive(Clone,Copy,Debug,PartialEq,Eq)]
+enum EscapeAction {
+    Ignore,
+    CloseProductSearch,
+    CancelShipmentRemoval,
+    CancelReset,
+    CancelDiscard,
+    RevertCell,
+    RequestClose,
+}
+
+fn escape_action(
+    busy:bool,
+    product_search:bool,
+    remove_recipient:bool,
+    reset:bool,
+    discard:bool,
+    cell_dirty:bool,
+)->EscapeAction{
+    if busy {EscapeAction::Ignore}
+    else if product_search {EscapeAction::CloseProductSearch}
+    else if remove_recipient {EscapeAction::CancelShipmentRemoval}
+    else if reset {EscapeAction::CancelReset}
+    else if discard {EscapeAction::CancelDiscard}
+    else if cell_dirty {EscapeAction::RevertCell}
+    else {EscapeAction::RequestClose}
+}
+
+fn nested_modal_id(
+    product_search:bool,
+    remove_recipient:bool,
+    reset:bool,
+    discard:bool,
+)->Option<&'static str>{
+    if product_search {Some("native-manual-product-search")}
+    else if remove_recipient {Some("manual-shipment-removal")}
+    else if reset {Some("manual-reset-confirm")}
+    else if discard {Some("manual-discard-prompt")}
+    else {None}
+}
+
+#[cfg(test)]
+mod manual_workspace_modal_routing_tests {
+    use super::*;
+
+    #[test]
+    fn every_nested_manual_dialog_owns_its_backdrop_input_layer(){
+        assert_eq!(nested_modal_id(true,false,false,false),
+            Some("native-manual-product-search"));
+        assert_eq!(nested_modal_id(false,true,false,false),
+            Some("manual-shipment-removal"));
+        assert_eq!(nested_modal_id(false,false,true,false),
+            Some("manual-reset-confirm"));
+        assert_eq!(nested_modal_id(false,false,false,true),
+            Some("manual-discard-prompt"));
+        assert_eq!(nested_modal_id(false,false,false,false),None);
+    }
+
+    #[test]
+    fn escape_closes_only_the_topmost_nested_prompt(){
+        assert_eq!(escape_action(false,true,true,true,true,false),
+            EscapeAction::CloseProductSearch);
+        assert_eq!(escape_action(false,false,true,true,true,false),
+            EscapeAction::CancelShipmentRemoval);
+        assert_eq!(escape_action(false,false,false,true,true,false),
+            EscapeAction::CancelReset);
+        assert_eq!(escape_action(false,false,false,false,true,false),
+            EscapeAction::CancelDiscard);
+    }
+
+    #[test]
+    fn escape_reverts_uncommitted_cell_before_requesting_workspace_close(){
+        assert_eq!(escape_action(false,false,false,false,false,true),
+            EscapeAction::RevertCell);
+        assert_eq!(escape_action(false,false,false,false,false,false),
+            EscapeAction::RequestClose);
+        assert_eq!(escape_action(true,false,false,false,false,true),
+            EscapeAction::Ignore);
+    }
+}
+
 #[cfg(test)]
 mod manual_remote_row_tests {
     use super::*;
