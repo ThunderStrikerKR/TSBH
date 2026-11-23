@@ -5197,7 +5197,9 @@ mod management_dropdown_unification_tests {
             ("alias_manager",include_str!("alias_manager.rs"),3),
             ("client_manager",include_str!("client_manager.rs"),4),
             ("freight_manager",include_str!("freight_manager.rs"),5),
-            ("product_manager",include_str!("product_manager.rs"),6),
+            // Two product brand selectors now use this shared searchable
+            // variant; four ordinary product selectors retain the original.
+            ("product_manager",include_str!("product_manager.rs"),4),
             ("manual_product_search",include_str!("manual_product_search.rs"),2),
             ("main",include_str!("main.rs"),1),
         ];
@@ -5207,6 +5209,9 @@ mod management_dropdown_unification_tests {
         let products=include_str!("product_manager.rs");
         assert_eq!(
             products.matches("category_dropdown::category_dropdown(").count(),2
+        );
+        assert_eq!(
+            products.matches("components::management_searchable_dropdown(").count(),2
         );
         assert!(include_str!("category_manager.rs")
             .contains("category_dropdown::category_dropdown("));
