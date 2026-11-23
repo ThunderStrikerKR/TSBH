@@ -110,6 +110,14 @@ pub struct ClientManager {
     messages:Option<AutomaticMessageManager>,
 }
 
+fn client_tier_kpi_values(ready:bool,counts:[usize;4])->[String;4]{
+    if ready{
+        counts.map(|count|count.to_string())
+    }else{
+        std::array::from_fn(|_|"—".to_owned())
+    }
+}
+
 impl ClientManager {
     pub fn new(gateway:Arc<dyn BandoGateway>,ctx:Context)->Self {
         let (tx,rx)=mpsc::channel();
@@ -416,11 +424,11 @@ impl ClientManager {
                 strip.spacing_mut().item_spacing=egui::vec2(
                     theme::SPACE_8,theme::SPACE_8
                 );
-                for (label,count) in [
-                    ("도매",tier_counts[0]),("반도매",tier_counts[1]),
-                    ("소매",tier_counts[2]),("특수",tier_counts[3])
-                ]{
-                    components::management_summary_card(strip,label,count);
+                let values=client_tier_kpi_values(self.ready,tier_counts);
+                for (label,value) in [
+                    "도매","반도매","소매","특수"
+                ].into_iter().zip(values.iter()){
+                    components::management_summary_card_value(strip,label,value);
                 }
             });
         });
@@ -1007,6 +1015,27 @@ impl ClientManager {
                 }
             });
         }
+    }
+}
+
+#[cfg(test)]
+mod client_async_kpi_tests{
+    use super::*;
+
+    #[test]
+    fn loading_tiers_are_unknown_but_loaded_empty_tiers_are_zero(){
+        assert_eq!(
+            client_tier_kpi_values(false,[0,0,0,0]),
+            ["—".to_owned(),"—".to_owned(),"—".to_owned(),"—".to_owned()]
+        );
+        assert_eq!(
+            client_tier_kpi_values(true,[0,0,0,0]),
+            ["0".to_owned(),"0".to_owned(),"0".to_owned(),"0".to_owned()]
+        );
+        assert_eq!(
+            client_tier_kpi_values(true,[3,0,5,1]),
+            ["3".to_owned(),"0".to_owned(),"5".to_owned(),"1".to_owned()]
+        );
     }
 }
 
