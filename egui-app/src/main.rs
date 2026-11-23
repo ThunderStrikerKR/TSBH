@@ -5744,7 +5744,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
             let mut copy_with_greeting=None;
             Self::section_with_header(ui,"복사용 자동 메시지",height,|header|{
                 let mut include_link=false;
-                header.add_enabled(false,egui::Checkbox::new(&mut include_link,"링크 포함"));
+                components::checkbox(header,&mut include_link,"링크 포함",false);
             },|body|{
                 // All message-body spacing is explicit; default item spacing
                 // previously pushed the bottom copy buttons past the pane.
@@ -5841,7 +5841,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
         Self::section_with_header(ui, "복사용 자동 메시지", height, |ui| {
             if !awaiting_order {
                 let mut include_link = false;
-                ui.add_enabled(false, egui::Checkbox::new(&mut include_link, "링크 포함"));
+                components::checkbox(ui,&mut include_link,"링크 포함",false);
             }
         }, |ui| {
             if awaiting_order { return; }
@@ -7275,8 +7275,11 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                         );
                                     }
                                 });
-                            ui.checkbox(&mut ack,
-                                "기존 안내액 / 입금 배분 / 변경 합계를 확인했습니다.");
+                            components::checkbox(
+                                ui,&mut ack,
+                                "기존 안내액 / 입금 배분 / 변경 합계를 확인했습니다.",
+                                true
+                            );
                         }
                         ui.add_space(theme::SPACE_8);
                         egui::ScrollArea::vertical()
