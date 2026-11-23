@@ -34,6 +34,30 @@ fn display_model(name:&str)->String{
 fn product<'a>(state:&'a Value,id:&str)->Option<&'a Value>{
     rows(&state["products"]).iter().find(|p|field(p,"id")==id)
 }
+fn alias_diagnostic_slot(ui:&mut Ui,item:&Value,warnings:&Warnings)->Rect{
+    // Always reserve the third caption line. Diagnostic arrival and message
+    // length must not change this alias row's height or the next row's Y.
+    let slot_width=ui.min_rect().width().max(1.0);
+    let (slot,hit)=ui.allocate_exact_size(
+        egui::vec2(
+            slot_width,typography::FONT_METADATA+theme::SPACE_4
+        ),egui::Sense::hover()
+    );
+    if let Some(issues)=warnings.get(field(item,"id")).filter(|v|!v.is_empty()){
+        let detail=format!("충돌: {} / 영향 범위: {}",
+            issues.join(" / "),
+            if field(item,"clientId").is_empty(){
+                "모든 거래처의 이후 주문"
+            }else{"해당 거래처의 이후 주문"});
+        ui.painter().with_clip_rect(slot).text(
+            slot.left_center(),egui::Align2::LEFT_CENTER,&detail,
+            egui::FontId::proportional(typography::FONT_METADATA),
+            theme::MUTED
+        );
+        hit.on_hover_text(detail);
+    }
+    slot
+}
 fn is_client_active(v:&Value)->bool{v.get("deletedAt").is_none_or(Value::is_null)}
 fn category_levels(catalog:&Value,selected:&str)
     ->Vec<(Option<String>,String,Vec<(String,String)>)>{
@@ -353,29 +377,7 @@ impl AliasManager {
                                 info.label(typography::body(field(item,"text")));
                                 info.label(typography::caption(
                                     &format!("→ {target} / {scope}")));
-                                // Native alias diagnostics finish asynchronously.
-                                // Reserve the third caption line for EVERY row;
-                                // its height and the next alias's Y coordinate
-                                // must never change after warnings arrive.
-                                let slot_width=info.min_rect().width().max(1.0);
-                                let (slot,hit)=info.allocate_exact_size(
-                                    egui::vec2(
-                                        slot_width,typography::FONT_METADATA+theme::SPACE_4
-                                    ),egui::Sense::hover()
-                                );
-                                if let Some(issues)=warnings.get(id).filter(|v|!v.is_empty()){
-                                    let detail=format!("충돌: {} / 영향 범위: {}",
-                                        issues.join(" / "),
-                                        if field(item,"clientId").is_empty(){
-                                            "모든 거래처의 이후 주문"
-                                        }else{"해당 거래처의 이후 주문"});
-                                    info.painter().with_clip_rect(slot).text(
-                                        slot.left_center(),egui::Align2::LEFT_CENTER,&detail,
-                                        egui::FontId::proportional(typography::FONT_METADATA),
-                                        theme::MUTED
-                                    );
-                                    hit.on_hover_text(detail);
-                                }
+                                alias_diagnostic_slot(info,item,&warnings);
                             });
                             row.with_layout(Layout::right_to_left(Align::Center),|actions|{
                                 if theme::action(actions,"연결 정정",
@@ -626,6 +628,63 @@ mod tests {
         finish(&mut manager);
         assert!(manager.warnings["a1"].is_empty());
     }
+    #[test]
+    fn diagnostic_slot_keeps_next_alias_row_fixed_when_long_warnings_arrive(){
+        fn render(warnings:Warnings)->(Rect,f32){
+            let ctx=Context::default();
+            crate::typography::install(&ctx);
+            let mut measured=None;
+            let mut raw=egui::RawInput::default();
+            raw.screen_rect=Some(Rect::from_min_size(
+                egui::Pos2::ZERO,egui::vec2(720.0,360.0)
+            ));
+            let _=ctx.run(raw,|ctx|{
+                egui::CentralPanel::default().show(ctx,|ui|{
+                    ui.set_width(620.0);
+                    let mut slots=Vec::new();
+                    let mut second_row_top=0.0;
+                    for index in 0..2{
+                        if index==1{second_row_top=ui.cursor().top();}
+                        let item=json!({
+                            "id":format!("alias-{index}"),
+                            "text":format!("별칭 {index}"),
+                            "clientId":""
+                        });
+                        ui.horizontal(|row|{
+                            row.vertical(|info|{
+                                info.label(typography::body(field(&item,"text")));
+                                info.label(typography::caption("→ 709 / 회사 공통"));
+                                slots.push(alias_diagnostic_slot(info,&item,&warnings));
+                            });
+                            row.with_layout(Layout::right_to_left(Align::Center),|actions|{
+                                theme::action(
+                                    actions,"연결 정정",theme::ButtonRole::Standard,true
+                                );
+                            });
+                        });
+                        components::soft_divider(ui);
+                    }
+                    measured=Some((slots,second_row_top));
+                });
+            });
+            let (slots,second_top)=measured.expect("alias rows were rendered");
+            (slots[0],second_top)
+        }
+        let plain=render(Warnings::new());
+        let mut warnings=Warnings::new();
+        warnings.insert("alias-0".into(),vec![
+            format!("중복 후보 / {}", "매우 긴 충돌 설명 ".repeat(40))
+        ]);
+        let diagnosed=render(warnings);
+        let near=|a:f32,b:f32|(a-b).abs()<=0.5;
+        assert!(near(plain.0.top(),diagnosed.0.top()));
+        assert!(near(plain.0.width(),diagnosed.0.width()));
+        assert!(near(plain.0.height(),diagnosed.0.height()));
+        assert!(near(plain.1,diagnosed.1),
+            "diagnostic text moved the next alias row: plain={}, diagnosed={}",
+            plain.1,diagnosed.1);
+    }
+
     #[test]
     fn category_filter_virtual_roots_are_shared_and_read_only() {
         let original=json!({"categories":[]});
