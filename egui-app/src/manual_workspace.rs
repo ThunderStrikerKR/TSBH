@@ -2016,37 +2016,55 @@ mod manual_workspace_modal_routing_tests {
 
     #[test]
     fn every_nested_manual_dialog_owns_its_backdrop_input_layer(){
-        assert_eq!(nested_modal_id(true,false,false,false),
+        assert_eq!(nested_modal_id(true,false,false,false,false),
             Some("native-manual-product-search"));
-        assert_eq!(nested_modal_id(false,true,false,false),
+        assert_eq!(nested_modal_id(false,true,false,false,false),
             Some("manual-shipment-removal"));
-        assert_eq!(nested_modal_id(false,false,true,false),
+        assert_eq!(nested_modal_id(false,false,true,false,false),
             Some("manual-reset-confirm"));
-        assert_eq!(nested_modal_id(false,false,false,true),
+        assert_eq!(nested_modal_id(false,false,false,true,false),
+            Some("manual-completion-prompt"));
+        assert_eq!(nested_modal_id(false,false,false,false,true),
             Some("manual-discard-prompt"));
-        assert_eq!(nested_modal_id(false,false,false,false),None);
+        assert_eq!(nested_modal_id(false,false,false,false,false),None);
     }
 
     #[test]
     fn escape_closes_only_the_topmost_nested_prompt(){
-        assert_eq!(escape_action(false,true,true,true,true,false),
+        assert_eq!(escape_action(false,true,true,true,true,true,false),
             EscapeAction::CloseProductSearch);
-        assert_eq!(escape_action(false,false,true,true,true,false),
+        assert_eq!(escape_action(false,false,true,true,true,true,false),
             EscapeAction::CancelShipmentRemoval);
-        assert_eq!(escape_action(false,false,false,true,true,false),
+        assert_eq!(escape_action(false,false,false,true,true,true,false),
             EscapeAction::CancelReset);
-        assert_eq!(escape_action(false,false,false,false,true,false),
+        assert_eq!(escape_action(false,false,false,false,true,true,false),
+            EscapeAction::CancelCompletion);
+        assert_eq!(escape_action(false,false,false,false,false,true,false),
             EscapeAction::CancelDiscard);
     }
 
     #[test]
     fn escape_reverts_uncommitted_cell_before_requesting_workspace_close(){
-        assert_eq!(escape_action(false,false,false,false,false,true),
+        assert_eq!(escape_action(false,false,false,false,false,false,true),
             EscapeAction::RevertCell);
-        assert_eq!(escape_action(false,false,false,false,false,false),
+        assert_eq!(escape_action(false,false,false,false,false,false,false),
             EscapeAction::RequestClose);
-        assert_eq!(escape_action(true,false,false,false,false,true),
+        assert_eq!(escape_action(true,false,false,false,false,false,true),
             EscapeAction::Ignore);
+    }
+
+    #[test]
+    fn pending_quantity_status_reports_the_exact_number_of_items(){
+        let ready=json!({"rows":[{"items":[
+            {"productId":"p1","quantity":2,"quantityConfirmed":true}
+        ]}]});
+        let pending=json!({"rows":[{"items":[
+            {"productId":"p1","quantity":null,"quantityConfirmed":false},
+            {"name":"BD 709","quantity":0,"quantityConfirmed":false},
+            {"quantity":null}
+        ]}]});
+        assert_eq!(model_pending_quantity_count(&ready),0);
+        assert_eq!(model_pending_quantity_count(&pending),2);
     }
 }
 
