@@ -1684,6 +1684,9 @@ pub fn decision_window(
     title:&str,id:&'static str,work_area:egui::Rect
 ) -> egui::Window<'static> {
     nested_modal_window(title,id,work_area)
+        // Decisions are short, blocking actions: show their controls
+        // immediately rather than fading an input surface in over the parent.
+        .fade_in(false)
         // Confirmation dialogs must size to their content. Enabling an outer
         // ScrollArea here makes egui greedily occupy the available height,
         // leaving a large blank panel below the final action button.
@@ -6579,21 +6582,15 @@ mod modal_input_routing_tests {
     use super::*;
 
     #[test]
-    fn nested_decision_uses_a_higher_layer_than_the_parent_and_dim_surface(){
-        assert_eq!(
-            modal_window_layer("manual-discard-prompt").order,
-            egui::Order::Tooltip
-        );
-        assert_eq!(
+    fn nested_decision_uses_the_top_foreground_layer_above_parent_and_dim(){
+        let dialog=modal_window_layer("manual-discard-prompt");
+        assert_eq!(dialog.order,egui::Order::Foreground);
+        assert_ne!(
+            dialog,
             egui::LayerId::new(
                 egui::Order::Foreground,
                 egui::Id::new("manual-nested-modal-backdrop")
-            ).order,
-            egui::Order::Foreground
-        );
-        assert!(
-            modal_window_layer("manual-discard-prompt").order
-                > egui::Order::Foreground
+            )
         );
     }
 
@@ -6601,12 +6598,18 @@ mod modal_input_routing_tests {
     fn nested_decision_button_receives_a_real_pointer_click(){
         fn draw(
             ctx:&egui::Context,
-            raw:egui::RawInput,
+            mut raw:egui::RawInput,
             work_area:Rect,
             clicked:&mut bool,
         )->Rect{
+            raw.screen_rect=Some(work_area);
             let mut button_rect=Rect::NOTHING;
             let _=ctx.run(raw,|ctx|{
+                // The real app already has the parent editor on Foreground.
+                modal_window("수동 분류","manual-parent-workspace",work_area)
+                    .show(ctx,|ui|{
+                        ui.label("parent worksheet");
+                    });
                 modal_backdrop_for_window(
                     ctx,"manual-nested-modal-backdrop","manual-discard-prompt"
                 );
@@ -6614,39 +6617,48 @@ mod modal_input_routing_tests {
                     "수동 분류 변경 취소","manual-discard-prompt",work_area
                 ).show(ctx,|ui|{
                     ui.label("적용하지 않은 수동 분류 변경사항을 버릴까요?");
-                    let response=ui.button("변경 취소");
-                    button_rect=response.rect;
-                    if response.clicked(){*clicked=true;}
+                    modal_action_row(ui,|actions|{
+                        let response=theme::action(
+                            actions,"변경 취소",ButtonRole::Standard,true
+                        );
+                        button_rect=response.rect;
+                        if response.clicked(){*clicked=true;}
+                    });
                 });
             });
+            let modal=ctx.memory(|memory|memory.top_modal_layer());
+            assert_eq!(modal,Some(modal_window_layer("manual-discard-prompt")));
+            let top=ctx.memory(|memory|
+                memory.areas().top_layer_id(egui::Order::Foreground)
+            );
             assert_eq!(
-                ctx.memory(|memory|memory.top_modal_layer()),
-                Some(modal_window_layer("manual-discard-prompt"))
+                top,Some(modal_window_layer("manual-discard-prompt")),
+                "the full-screen dim Area must never remain above the decision window"
             );
             button_rect
         }
 
         let ctx=egui::Context::default();
-        // Match the app's production font and visual setup before rendering
-        // the common modal header/title. This test is about pointer routing.
         typography::install(&ctx);
         theme::install(&ctx);
         let work_area=Rect::from_min_size(
             egui::Pos2::ZERO,Vec2::new(800.0,600.0)
         );
-        let mut initial=egui::RawInput::default();
-        initial.screen_rect=Some(work_area);
         let mut clicked=false;
-        let button=draw(&ctx,initial,work_area,&mut clicked);
+        let button=draw(&ctx,egui::RawInput::default(),work_area,&mut clicked);
+        assert!(button.is_positive(),"the decision action must be laid out");
         let pointer=button.center();
         draw(&ctx,egui::RawInput{
-            events:vec![
-                egui::Event::PointerMoved(pointer),
-                egui::Event::PointerButton{
-                    pos:pointer,button:egui::PointerButton::Primary,
-                    pressed:true,modifiers:egui::Modifiers::NONE
-                }
-            ],
+            events:vec![egui::Event::PointerMoved(pointer)],
+            time:Some(1.0),
+            ..Default::default()
+        },work_area,&mut clicked);
+        draw(&ctx,egui::RawInput{
+            events:vec![egui::Event::PointerButton{
+                pos:pointer,button:egui::PointerButton::Primary,
+                pressed:true,modifiers:egui::Modifiers::NONE
+            }],
+            time:Some(1.1),
             ..Default::default()
         },work_area,&mut clicked);
         draw(&ctx,egui::RawInput{
@@ -6654,8 +6666,67 @@ mod modal_input_routing_tests {
                 pos:pointer,button:egui::PointerButton::Primary,
                 pressed:false,modifiers:egui::Modifiers::NONE
             }],
+            time:Some(1.2),
             ..Default::default()
         },work_area,&mut clicked);
         assert!(clicked,"the nested decision action must receive a real pointer click");
+    }
+
+    #[test]
+    fn nested_decision_modal_blocks_parent_pointer_input(){
+        let ctx=egui::Context::default();
+        typography::install(&ctx);
+        theme::install(&ctx);
+        let work_area=Rect::from_min_size(
+            egui::Pos2::ZERO,Vec2::new(800.0,600.0)
+        );
+        let mut parent_clicked=false;
+        let mut parent_rect=Rect::NOTHING;
+        let mut draw=|mut raw:egui::RawInput|{
+            raw.screen_rect=Some(work_area);
+            let _=ctx.run(raw,|ctx|{
+                modal_window("수동 분류","manual-parent-workspace",work_area)
+                    .show(ctx,|ui|{
+                        let response=ui.button("parent action");
+                        parent_rect=response.rect;
+                        if response.clicked(){parent_clicked=true;}
+                    });
+                modal_backdrop_for_window(
+                    ctx,"manual-nested-modal-backdrop","manual-discard-prompt"
+                );
+                decision_window(
+                    "수동 분류 변경 취소","manual-discard-prompt",work_area
+                ).show(ctx,|ui|{
+                    ui.label("discard?");
+                    modal_action_row(ui,|actions|{
+                        theme::action(actions,"변경 취소",ButtonRole::Standard,true);
+                    });
+                });
+            });
+        };
+        draw(egui::RawInput::default());
+        let pointer=parent_rect.center();
+        draw(egui::RawInput{
+            events:vec![egui::Event::PointerMoved(pointer)],
+            time:Some(1.0),
+            ..Default::default()
+        });
+        draw(egui::RawInput{
+            events:vec![egui::Event::PointerButton{
+                pos:pointer,button:egui::PointerButton::Primary,
+                pressed:true,modifiers:egui::Modifiers::NONE
+            }],
+            time:Some(1.1),
+            ..Default::default()
+        });
+        draw(egui::RawInput{
+            events:vec![egui::Event::PointerButton{
+                pos:pointer,button:egui::PointerButton::Primary,
+                pressed:false,modifiers:egui::Modifiers::NONE
+            }],
+            time:Some(1.2),
+            ..Default::default()
+        });
+        assert!(!parent_clicked,"parent controls must remain blocked behind a decision modal");
     }
 }
