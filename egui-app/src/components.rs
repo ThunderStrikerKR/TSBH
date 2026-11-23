@@ -4596,6 +4596,89 @@ pub fn status_dots(ui: &mut Ui, tones: &[StatusTone]) {
     });
 }
 
+/// Read-only embedded management table with the shared fixed-header
+/// geometry, scrollbar gutter and virtual fixed-row viewport. Screens provide
+/// only their column labels, width policy and already formatted cell values.
+pub fn management_readonly_table(
+    ui:&mut Ui,
+    id:&str,
+    headings:&[&str],
+    rows:&[Vec<String>],
+    max_height:f32,
+    widths_for_available:impl FnOnce(f32)->Vec<f32>,
+){
+    assert!(!headings.is_empty(),"a management table needs at least one column");
+    let original_scroll=ui.spacing().scroll.clone();
+    ui.spacing_mut().scroll=theme::management_table_scroll_style();
+    let viewport_width=ui.available_width().max(1.0);
+    let available_data_width=(viewport_width
+        -ui.spacing().scroll.allocated_width()).max(1.0);
+    let widths=widths_for_available(available_data_width);
+    assert_eq!(headings.len(),widths.len(),
+        "management table heading and width counts must match");
+    assert!(widths.iter().all(|width|width.is_finite()&&*width>0.0),
+        "management table column widths must be finite and positive");
+    let minimum_width=management_readonly_table_content_width(&widths);
+    let layout=management_list_table_header(ui,minimum_width);
+
+    // Embedded review tables retain their existing plain header appearance.
+    // The shared list-header allocation owns the 36pt height and scrollbar
+    // gutter; text uses the same table-header role as the management masters.
+    let header_clip=layout.header_rect.intersect(ui.clip_rect());
+    let painter=ui.painter().with_clip_rect(header_clip);
+    let mut x=layout.header_rect.left();
+    for (heading,width) in headings.iter().zip(&widths){
+        let galley=typography::table_header_galley(ui,heading);
+        let y=layout.header_rect.center().y-galley.size().y/2.0;
+        if header_clip.width()>0.0&&header_clip.height()>0.0{
+            painter.with_clip_rect(egui::Rect::from_min_max(
+                egui::pos2(x,layout.header_rect.top()),
+                egui::pos2((x+*width).min(layout.header_rect.right()),
+                    layout.header_rect.bottom())
+            )).galley(egui::pos2(x,y),galley,theme::SECONDARY);
+        }
+        x+=*width+theme::SPACE_8;
+    }
+
+    let row_height=theme::MANAGEMENT_COMPACT_ROW_HEIGHT;
+    let row_advance=management_readonly_table_row_advance();
+    let scroll=egui::ScrollArea::both()
+        .id_salt(id)
+        .max_height(max_height)
+        .auto_shrink([false,false]);
+    let _=virtual_fixed_rows(
+        scroll,ui,layout.table_width,row_advance,rows.len(),
+        |body,range|{
+            for index in range{
+                let values=&rows[index];
+                debug_assert_eq!(values.len(),widths.len(),
+                    "management table row must match its column count");
+                body.horizontal(|line|{
+                    line.spacing_mut().item_spacing.x=theme::SPACE_8;
+                    for (value,width) in values.iter().zip(&widths){
+                        line.add_sized(
+                            Vec2::new(*width,row_height),
+                            egui::Label::new(typography::table_cell(value))
+                                .truncate()
+                        ).on_hover_text(value);
+                    }
+                });
+                soft_divider(body);
+            }
+        }
+    );
+    ui.spacing_mut().scroll=original_scroll;
+}
+
+fn management_readonly_table_content_width(widths:&[f32])->f32{
+    widths.iter().sum::<f32>()
+        +widths.len().saturating_sub(1) as f32*theme::SPACE_8
+}
+
+fn management_readonly_table_row_advance()->f32{
+    theme::MANAGEMENT_COMPACT_ROW_HEIGHT+theme::SOFT_DIVIDER_WIDTH
+}
+
 pub fn table_header(ui: &mut Ui, columns: &[(&str, f32)]) {
     Frame::new().fill(theme::RAISED).inner_margin(egui::Margin::symmetric(theme::SPACE_8 as i8, theme::SPACE_4 as i8))
         .show(ui, |ui| {
