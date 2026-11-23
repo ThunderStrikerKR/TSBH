@@ -1384,12 +1384,14 @@ impl ManualWorkspace {
                                         ));
                                     if minus_clicked || plus_clicked || count_commit{
                                         let typed=self.row_count_text!=current_count.to_string();
-                                        let requested=if typed || count_commit{
+                                        let requested=if typed{
                                             parse_manual_row_count(&self.row_count_text)
                                         }else if minus_clicked{
                                             Ok(current_count.saturating_sub(1))
-                                        }else{
+                                        }else if plus_clicked{
                                             Ok(current_count.saturating_add(1))
+                                        }else{
+                                            parse_manual_row_count(&self.row_count_text)
                                         };
                                         match requested{
                                             Ok(count)=>self.request_resize(count,ctx),
@@ -1452,7 +1454,11 @@ impl ManualWorkspace {
                                                     grid,&summary,delivery_col,
                                                     index==self.selected_recipient
                                                 ).clicked(){
-                                                    self.select_cell(index,None,"name");
+                                                    self.queue_cell_selection(
+                                                        ManualCellTarget{
+                                                            row:index,item:None,field:"name".into()
+                                                        },&mut submit_direct
+                                                    );
                                                 }
                                                 for (field,width) in [
                                                     ("name",name_col),
@@ -1629,12 +1635,14 @@ impl ManualWorkspace {
                                                     grid.horizontal(|actions|{
                                                         if theme::action(actions,"검색",
                                                             ButtonRole::Standard,
-                                                            !busy && !pending_quantity_active).clicked(){
+                                                            !busy && !pending_quantity_active &&
+                                                            self.edit_text==self.current_value()).clicked(){
                                                             lookup=Some((rid.to_owned(),item_id.to_owned()));
                                                         }
                                                         if theme::action(actions,"상품 제거",
                                                             ButtonRole::Quiet,
-                                                            !busy && !pending_quantity_active).clicked(){
+                                                            !busy && !pending_quantity_active &&
+                                                            self.edit_text==self.current_value()).clicked(){
                                                             chosen=Some(("remove_manual_item".into(),json!({
                                                                 "recipientId":rid,"itemId":item_id
                                                             })));
@@ -1644,7 +1652,8 @@ impl ManualWorkspace {
                                                 }
                                             });
                                         if theme::action(ui,"상품 추가",ButtonRole::Standard,
-                                            !busy && !pending_quantity_active).clicked(){
+                                            !busy && !pending_quantity_active &&
+                                                self.edit_text==self.current_value()).clicked(){
                                             chosen=Some(("add_manual_item".into(),json!({
                                                 "recipientId":rid,"itemId":unique_id()
                                             })));
@@ -1687,7 +1696,9 @@ impl ManualWorkspace {
                                                     if theme::action(
                                                         options,label,
                                                         if origin==value{ButtonRole::TableSecondary}
-                                                        else{ButtonRole::Standard},!busy && !pending_quantity_active
+                                                        else{ButtonRole::Standard},!busy &&
+                                                            !pending_quantity_active &&
+                                                            self.edit_text==self.current_value()
                                                     ).clicked(){
                                                         chosen=Some((
                                                             "set_manual_delivery_option".into(),
@@ -1702,7 +1713,9 @@ impl ManualWorkspace {
                                                 ]{
                                                     if theme::action(options,label,
                                                         if code==value{ButtonRole::TableSecondary}
-                                                        else{ButtonRole::Standard},!busy && !pending_quantity_active).clicked(){
+                                                        else{ButtonRole::Standard},!busy &&
+                                                            !pending_quantity_active &&
+                                                            self.edit_text==self.current_value()).clicked(){
                                                         chosen=Some((
                                                             "set_manual_delivery_option".into(),
                                                             json!({"cell":{"recipientId":rid,
@@ -1716,7 +1729,8 @@ impl ManualWorkspace {
                                                 options.spacing_mut().item_spacing.x=theme::SPACE_8;
                                                 if theme::action(options,
                                                     if remote{"도서산간 적용"}else{"도서산간 미적용"},
-                                                    ButtonRole::Standard,!busy && !pending_quantity_active && remote_ready
+                                                    ButtonRole::Standard,!busy && !pending_quantity_active &&
+                                                        remote_ready && self.edit_text==self.current_value()
                                                 ).clicked(){
                                                     chosen=Some((
                                                         "set_manual_delivery_option".into(),
@@ -1727,7 +1741,8 @@ impl ManualWorkspace {
                                                 }
                                                 if theme::action(options,
                                                     "운임 수정",ButtonRole::Standard,
-                                                    !busy && !pending_quantity_active && code!="020"
+                                                    !busy && !pending_quantity_active && code!="020" &&
+                                                        self.edit_text==self.current_value()
                                                 ).clicked(){
                                                     self.select_cell(index,None,"shippingCharge");
                                                 }
@@ -2000,19 +2015,31 @@ impl ManualWorkspace {
                         }
                     });
                 });
-            if cancel {self.remove_recipient_pending=None;}
-            if confirm {
-                let count=self.model.as_ref().map(|m|list(m,"rows").len()).unwrap_or(0);
-                let unchanged=self.model.as_ref().and_then(|m|list(m,"rows").last())
-                    .is_some_and(|row|text(row,"id")==target);
+            if cancel {
                 self.remove_recipient_pending=None;
-                if unchanged && count>1 && !self.busy() &&
-                   self.edit_text==self.current_value() {
+                self.remove_recipient_target=None;
+                let count=self.model.as_ref().map(|model|
+                    list(model,"rows").len()).unwrap_or(0);
+                self.row_count_text=count.to_string();
+            }
+            if confirm {
+                let count=self.model.as_ref().map(|model|
+                    list(model,"rows").len()).unwrap_or(0);
+                let target_count=self.remove_recipient_target
+                    .unwrap_or_else(||count.saturating_sub(1));
+                let unchanged=self.model.as_ref().and_then(|model|
+                    list(model,"rows").last()
+                ).is_some_and(|row|text(row,"id")==target);
+                self.remove_recipient_pending=None;
+                self.remove_recipient_target=None;
+                if unchanged && target_count>=1 && target_count<count &&
+                   !self.busy() && self.edit_text==self.current_value() {
                     self.action("resize_manual_rows",json!({
-                        "count":count-1,"newRecipientIds":[]
+                        "count":target_count,"newRecipientIds":[]
                     }),ctx);
                 }else{
                     self.error=Some("삭제 대상이 변경됐습니다. 현재 배송 목록을 확인하세요.".into());
+                    self.row_count_text=count.to_string();
                 }
             }
         }
@@ -2045,7 +2072,8 @@ impl ManualWorkspace {
             // Dirty typed text is just as important as a completed Rust edit.
             // A parent close cannot destroy an active modal/async operation.
             if self.busy() || self.product_search.is_some() ||
-               self.remove_recipient_pending.is_some() || self.reset_pending {
+               self.remove_recipient_pending.is_some() || self.reset_pending ||
+               self.confirm_apply {
                 return None;
             }
             if self.dirty || self.edit_text!=self.current_value() {
@@ -2074,18 +2102,51 @@ impl ManualWorkspace {
             if discard_confirmed {return Some(Event::Closed);}
             if keep_editing {self.confirm_discard=false;}
         }
+        if apply {
+            if self.edit_text!=self.current_value() {
+                self.error=Some("아직 반영되지 않은 입력 내용이 있습니다.".into());
+            }else{
+                self.confirm_apply=true;
+            }
+        }
+        if self.confirm_apply {
+            let mut cancel=false;
+            let mut proceed=false;
+            components::decision_window(
+                "수동 분류 완료","manual-completion-prompt",work_area
+            ).constrain_to(work_area).show(ctx,|ui|{
+                components::modal_header(
+                    ui,"수동 분류 완료","닫기",false
+                );
+                ui.label("수동 분류 결과를 접수 초안에 반영할까요?");
+                components::modal_action_row_split(
+                    ui,
+                    |left|{
+                        let _=theme::action(
+                            left,"AI 자동분류 개선",ButtonRole::Standard,false
+                        );
+                    },
+                    |right|{
+                        if theme::action(
+                            right,"피드백 없이 진행",ButtonRole::Primary,true
+                        ).clicked(){proceed=true;}
+                        if theme::action(
+                            right,"취소",ButtonRole::Quiet,true
+                        ).clicked(){cancel=true;}
+                    }
+                );
+            });
+            if cancel {self.confirm_apply=false;}
+            if proceed {
+                self.confirm_apply=false;
+                self.apply(ctx);
+            }
+        }
         // Raise ONLY the actual nested dialog after it exists. The parent's
         // disabled state plus the main Middle backdrop already protect
         // background controls; avoid a pointer-blocking Foreground overlay.
         if let Some(window_id)=self.nested_modal_window_id(){
             components::modal_foreground_for_window(ctx,window_id);
-        }
-        if apply {
-            if self.edit_text!=self.current_value() {
-                self.error=Some("아직 반영되지 않은 입력 내용이 있습니다.".into());
-            }else{
-                self.apply(ctx);
-            }
         }
         let hovered=manual_hover_target(
             hovered_detail,hovered_source.clone(),&spans
@@ -2278,21 +2339,27 @@ mod manual_workspace_modal_routing_tests {
 
     #[test]
     fn every_nested_manual_dialog_uses_the_real_foreground_window(){
-        assert_eq!(nested_modal_id(true,false,false,false),
+        assert_eq!(nested_modal_id(true,false,false,false,false),
             Some("native-manual-product-search"));
-        assert_eq!(nested_modal_id(false,true,false,false),
+        assert_eq!(nested_modal_id(false,true,false,false,false),
             Some("manual-shipment-removal"));
-        assert_eq!(nested_modal_id(false,false,true,false),
+        assert_eq!(nested_modal_id(false,false,true,false,false),
             Some("manual-reset-confirm"));
-        assert_eq!(nested_modal_id(false,false,false,true),
+        assert_eq!(nested_modal_id(false,false,false,true,false),
+            Some("manual-completion-prompt"));
+        assert_eq!(nested_modal_id(false,false,false,false,true),
             Some("manual-discard-prompt"));
-        assert_eq!(nested_modal_id(false,false,false,false),None);
+        assert_eq!(nested_modal_id(false,false,false,false,false),None);
         let source=include_str!("manual_workspace.rs");
         let render=source.split("pub fn show(").nth(1).unwrap()
             .split("fn manual_hover_target(").next().unwrap();
         assert!(render.contains("modal_foreground_for_window(ctx,window_id)"));
         assert!(!render.contains("modal_backdrop_for_window("));
         assert!(render.contains("if apply_clicked{apply=true;}"));
+        assert!(render.contains("피드백 없이 진행"));
+        assert!(render.contains("AI 자동분류 개선"));
+        assert!(!render.contains("self.apply(ctx);"),
+            "applying the draft must occur only after the explicit completion choice");
         assert!(!render.contains("초안 적용 후 주문 확인 필요"),
             "the generic order-confirmation hint must not occupy a header row");
         assert!(render.contains("count.on_hover_text(reason)"),
@@ -2301,23 +2368,25 @@ mod manual_workspace_modal_routing_tests {
 
     #[test]
     fn escape_closes_only_the_topmost_nested_prompt(){
-        assert_eq!(escape_action(false,true,true,true,true,false),
+        assert_eq!(escape_action(false,true,false,false,false,false,false),
             EscapeAction::CloseProductSearch);
-        assert_eq!(escape_action(false,false,true,true,true,false),
+        assert_eq!(escape_action(false,false,true,false,false,false,false),
             EscapeAction::CancelShipmentRemoval);
-        assert_eq!(escape_action(false,false,false,true,true,false),
+        assert_eq!(escape_action(false,false,false,true,false,false,false),
             EscapeAction::CancelReset);
-        assert_eq!(escape_action(false,false,false,false,true,false),
+        assert_eq!(escape_action(false,false,false,false,true,false,false),
+            EscapeAction::CancelApply);
+        assert_eq!(escape_action(false,false,false,false,false,true,false),
             EscapeAction::CancelDiscard);
     }
 
     #[test]
     fn escape_reverts_uncommitted_cell_before_requesting_workspace_close(){
-        assert_eq!(escape_action(false,false,false,false,false,true),
+        assert_eq!(escape_action(false,false,false,false,false,false,true),
             EscapeAction::RevertCell);
-        assert_eq!(escape_action(false,false,false,false,false,false),
+        assert_eq!(escape_action(false,false,false,false,false,false,false),
             EscapeAction::RequestClose);
-        assert_eq!(escape_action(true,false,false,false,false,true),
+        assert_eq!(escape_action(true,false,false,false,false,false,true),
             EscapeAction::Ignore);
     }
 
