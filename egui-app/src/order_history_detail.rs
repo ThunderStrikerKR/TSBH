@@ -133,7 +133,7 @@ fn payment_panel(
         ui.label(typography::caption("해당 주문에 연결된 실제 입금 기록이 없습니다."));
     }
     for (i,payment) in payments.iter().enumerate(){
-        if i>0{ui.separator();}
+        if i>0{components::soft_divider(ui);}
         text_kv(ui,"입금 처리일시",&kst(field(payment,"recordedAt")));
         text_kv(ui,"실제 입금일시",&kst(field(payment,"paidAt")));
         money_kv(ui,"입금액",&money(&payment["amount"]));
