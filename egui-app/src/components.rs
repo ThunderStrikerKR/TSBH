@@ -6863,31 +6863,32 @@ mod manual_nested_prompt_regression_tests{
         for rect in [parent_rect,keep_rect,discard_rect]{
             assert!(rect.is_positive(),"action hitbox must have non-zero area");
         }
-        let mut click=|pos:egui::Pos2,offset:f64|{
+        let click=|pos:egui::Pos2,offset:f64,
+            keep:&mut bool,discard:&mut bool,parent:&mut bool|{
             paint(&ctx,egui::RawInput{
                 events:vec![egui::Event::PointerMoved(pos)],
                 time:Some(offset),..Default::default()
-            },&mut keep,&mut discard,&mut parent);
+            },keep,discard,parent);
             paint(&ctx,egui::RawInput{
                 events:vec![egui::Event::PointerButton{
                     pos,button:egui::PointerButton::Primary,
                     pressed:true,modifiers:egui::Modifiers::NONE
                 }],
                 time:Some(offset+0.1),..Default::default()
-            },&mut keep,&mut discard,&mut parent);
+            },keep,discard,parent);
             paint(&ctx,egui::RawInput{
                 events:vec![egui::Event::PointerButton{
                     pos,button:egui::PointerButton::Primary,
                     pressed:false,modifiers:egui::Modifiers::NONE
                 }],
                 time:Some(offset+0.2),..Default::default()
-            },&mut keep,&mut discard,&mut parent);
+            },keep,discard,parent);
         };
-        click(keep_rect.center(),1.0);
+        click(keep_rect.center(),1.0,&mut keep,&mut discard,&mut parent);
         assert!(keep,"continue editing button did not receive pointer input");
-        click(discard_rect.center(),2.0);
+        click(discard_rect.center(),2.0,&mut keep,&mut discard,&mut parent);
         assert!(discard,"discard button did not receive pointer input");
-        click(parent_rect.center(),3.0);
+        click(parent_rect.center(),3.0,&mut keep,&mut discard,&mut parent);
         assert!(!parent,"disabled parent must not receive pointer input");
     }
 
