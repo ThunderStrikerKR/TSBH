@@ -6,6 +6,7 @@ import { useNativeOrderIssues } from "./useNativeOrderIssues";
 import { usePendingChanges } from "../shared/pending-changes";
 import { confirmDiscardDraft } from "../shared/editor-flow";
 import {
+  focusCellElement,
   handleCellNavigationKey,
   resolveCellNavigationTarget,
   type CellNavigationCell,
