@@ -263,7 +263,19 @@ fn menu_body(
                     Vec2::new(list_width,height),Sense::click()
                 );
                 let hovered=response.hovered()||response.has_focus();
-                if hovered{
+                // The selected category is orange anywhere it is visible:
+                // breadcrumb, search result or direct child. Hover never
+                // overwrites its committed state with blue.
+                if node.id.as_str()==selected.as_str(){
+                    list.painter().rect(
+                        rect,theme::CONTROL_RADIUS,
+                        theme::CATEGORY_EXPLORER_APPLIED_BG,
+                        Stroke::new(
+                            theme::SOFT_DIVIDER_WIDTH,
+                            theme::CATEGORY_EXPLORER_APPLIED_BORDER
+                        ),egui::StrokeKind::Inside
+                    );
+                }else if hovered{
                     list.painter().rect_filled(
                         rect,theme::CONTROL_RADIUS,
                         theme::MANAGEMENT_DROPDOWN_HOVER_BG
