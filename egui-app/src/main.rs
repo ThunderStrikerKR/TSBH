@@ -3900,9 +3900,10 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                             toolbar.with_layout(
                                 Layout::right_to_left(Align::Center),
                                 |option|{
-                                    changed=option.checkbox(
+                                    changed=components::checkbox(
+                                        option,
                                         &mut review.learned_analysis_enabled,
-                                        "학습된 분석 사용 (시험 기능)"
+                                        "학습된 분석 사용 (시험 기능)",true
                                     ).on_hover_text(help).changed();
                                 },
                             );
