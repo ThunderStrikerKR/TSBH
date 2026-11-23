@@ -4870,6 +4870,16 @@ mod fixed_scroll_panel_contract_tests {
 }
 
 #[cfg(test)]
+mod shared_review_card_contract_tests {
+    #[test]
+    fn reception_review_cards_use_shared_surface_frame(){
+        let source=include_str!("review_panel.rs");
+        assert_eq!(source.matches("theme::review_issue_frame()").count(),2);
+        assert!(!source.contains("egui::Frame::new()"));
+    }
+}
+
+#[cfg(test)]
 mod shared_multiline_field_contract_tests {
     #[test]
     fn automatic_message_and_history_memo_use_shared_multiline_editor(){
@@ -4927,6 +4937,11 @@ mod shared_ghost_action_contract_tests {
         assert!(back.contains("theme::ButtonRole::Ghost"));
         assert!(back.contains("theme::action_with_min_width("));
         assert!(!back.contains("egui::Button::new("));
+
+        let explorer=source.split("if state.ancestors_open && state.path.len()>3")
+            .nth(1).unwrap().split("let mut selected_path").next().unwrap_or("");
+        assert!(explorer.contains("theme::category_ancestor_frame()"));
+        assert!(!explorer.contains("egui::Frame::new()"));
     }
 }
 
