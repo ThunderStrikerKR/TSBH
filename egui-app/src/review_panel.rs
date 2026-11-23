@@ -166,13 +166,7 @@ impl ReviewPanel {
             issue_card(ui,issue,analysis,interactive,&mut selected);
         }
         if let Some(remote)=remote{
-            egui::Frame::new()
-                .fill(theme::TABLE_ROW_ALT_BG)
-                .corner_radius(theme::CONTROL_RADIUS)
-                .inner_margin(egui::Margin::symmetric(
-                    theme::SPACE_8 as i8,theme::SPACE_8 as i8
-                ))
-                .show(ui,|content|{
+            theme::review_issue_frame().show(ui,|content|{
                     content.label(typography::body("도서·산간 지역 확인").strong());
                     content.label(typography::caption(
                         if text(remote,"status")=="auto" {
@@ -216,13 +210,7 @@ fn issue_card(
     let detail=text(issue,"detail");
     let severity=text(issue,"severity");
     let link_key=issue.get("linkKey").and_then(Value::as_str);
-    egui::Frame::new()
-        .fill(theme::TABLE_ROW_ALT_BG)
-        .corner_radius(theme::CONTROL_RADIUS)
-        .inner_margin(egui::Margin::symmetric(
-            theme::SPACE_8 as i8,theme::SPACE_8 as i8
-        ))
-        .show(ui,|cell|{
+    theme::review_issue_frame().show(ui,|cell|{
             cell.label(typography::body(
                 if kind=="QUANTITY_MISSING"
                     &&text(issue,"resolution")=="PROVISIONALLY_APPROVED"{
