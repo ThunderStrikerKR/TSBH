@@ -83,6 +83,28 @@ pub fn data_value_font(kind:DataValueKind,context:DataValueContext)->FontId {
 
 /// A fixed numeric slot right-aligns even the unknown em dash; dates and
 /// telephone identifiers are read from the left without numeric right-align.
+/// One-line mixed text: preserve the existing 14pt/22pt body label
+/// geometry while rendering only the monetary tail with Consolas.
+/// Do not split the text into separate widgets: doing so adds egui spacing
+/// and moves the following inline action button.
+pub fn inline_body_money(prefix:&str,amount:&str)->egui::text::LayoutJob {
+    let body=spec(Role::Body);
+    let regular=egui::TextFormat{
+        font_id:FontId::proportional(body.size),
+        color:body.color,
+        line_height:Some(body.line),
+        extra_letter_spacing:body.tracking,
+        ..Default::default()
+    };
+    let mut job=egui::text::LayoutJob::default();
+    job.append(prefix,0.0,regular.clone());
+    job.append(amount,0.0,egui::TextFormat{
+        font_id:data_value_font(DataValueKind::Money,DataValueContext::Form),
+        ..regular
+    });
+    job
+}
+
 pub fn data_value_align(kind:DataValueKind)->egui::Align {
     match kind {
         DataValueKind::Money|DataValueKind::Quantity=>egui::Align::RIGHT,
@@ -933,6 +955,17 @@ mod management_table_type_roles_tests {
         assert_eq!(data_value_font(
             DataValueKind::Date,DataValueContext::Form
         ),FontId::proportional(FONT_BODY));
+    }
+
+    #[test]
+    fn inline_money_uses_two_fonts_in_one_body_height(){
+        let job=inline_body_money("709 · ","2,000원");
+        assert_eq!(job.sections.len(),2);
+        assert_eq!(job.sections[0].format.font_id,FontId::proportional(FONT_BODY));
+        assert_eq!(job.sections[1].format.font_id,FontId::monospace(FONT_BODY));
+        assert_eq!(job.sections[0].format.line_height,Some(22.0));
+        assert_eq!(job.sections[1].format.line_height,Some(22.0));
+        assert_eq!(job.text,"709 · 2,000원");
     }
 
     #[test]
