@@ -1445,7 +1445,7 @@ impl ManualWorkspace {
                                                 }
                                                 if theme::action(options,
                                                     "운임 수정",ButtonRole::Standard,
-                                                    !busy && code!="020"
+                                                    !busy && !pending_quantity_active && code!="020"
                                                 ).clicked(){
                                                     self.select_cell(index,None,"shippingCharge");
                                                 }
