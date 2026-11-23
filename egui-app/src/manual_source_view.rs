@@ -2,7 +2,7 @@
 //! reception intake. This module owns only the worksheet's click-to-assign
 //! action; linked spans, hover timing, visual blocks and hit testing are shared.
 
-use eframe::egui::{self, Align, Color32, FontId, Sense, Ui};
+use eframe::egui::{self, Align, FontId, Sense, Ui};
 use crate::{source_highlight::{self,LinkKey,LinkedSpan},theme,typography};
 
 #[derive(Default)]
