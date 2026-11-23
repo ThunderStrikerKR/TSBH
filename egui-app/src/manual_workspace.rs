@@ -1571,8 +1571,10 @@ impl ManualWorkspace {
                     |left|{
                         // Reset is a destructive worksheet operation with its
                         // existing confirmation, not a toolbar filter.
-                        if theme::action(left,"초기화",ButtonRole::Danger,!busy)
-                            .clicked(){
+                        if theme::action(left,"초기화",ButtonRole::Danger,
+                            !busy && !pending_quantity_active &&
+                            self.edit_text==self.current_value()
+                        ).clicked(){
                             if self.edit_text!=self.current_value(){
                                 self.error=Some("입력 중인 내용을 먼저 반영하세요.".into());
                             }else{
