@@ -1205,6 +1205,10 @@ mod management_async_layout_tests{
             });
             measured.expect("settings title and tabs were rendered")
         }
+        let source=include_str!("settings_view.rs");
+        let page=source.split("pub fn show_page(").nth(1).unwrap()
+            .split("let selected_tab=").next().unwrap();
+        assert!(page.contains("settings_title_row("));
         let normal=measure(false);
         let conflict=measure(true);
         let near=|a:f32,b:f32|(a-b).abs()<=0.5;
