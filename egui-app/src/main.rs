@@ -287,6 +287,31 @@ fn inline_same_visible_grid(a:&InlineTarget,b:&InlineTarget)->bool{
         target.item_id.is_none()&&target.field!="shippingCharge";
     is_recipient(a)==is_recipient(b)
 }
+#[cfg(test)]
+#[test]
+fn reception_arrow_navigation_keeps_visible_grid_sections_separate(){
+    let recipient=InlineTarget{
+        recipient_id:"r1".into(),item_id:None,field:"address"
+    };
+    let other_recipient=InlineTarget{
+        recipient_id:"r1".into(),item_id:None,field:"phone"
+    };
+    let item_quantity=InlineTarget{
+        recipient_id:"r1".into(),item_id:Some("i1".into()),field:"quantity"
+    };
+    let other_item=InlineTarget{
+        recipient_id:"r1".into(),item_id:Some("i2".into()),field:"quantity"
+    };
+    let freight=InlineTarget{
+        recipient_id:"r1".into(),item_id:None,field:"shippingCharge"
+    };
+    assert!(inline_same_visible_grid(&recipient,&other_recipient));
+    assert!(inline_same_visible_grid(&item_quantity,&other_item));
+    assert!(inline_same_visible_grid(&item_quantity,&freight));
+    assert!(!inline_same_visible_grid(&recipient,&item_quantity));
+    assert!(!inline_same_visible_grid(&recipient,&freight));
+}
+
 struct InlineReceptionEditor {
     source_id:String,
     target:InlineTarget,
