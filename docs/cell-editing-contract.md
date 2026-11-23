@@ -27,6 +27,10 @@
 
 React/TypeScript와 Rust/egui는 같은 계약을 따르되 별도 네이티브 구현을 사용한다. 업무 계산·검증·저장은 기존 Rust 엔진을 유지한다. 소스 검사와 단위 테스트만으로 Windows 실행 검증을 PASS 처리하지 않는다.
 
-## React 공통 이벤트 핸들러
+## 공통 이벤트 처리
 
-React 화면의 키 이벤트 정책은 `handleCellNavigationKey`로 공통 처리한다. 화면 어댑터는 기존 저장·취소 부수효과만 전달하고, 키 분류·IME 차단·경계 처리·대상 포커스는 공통 모듈이 담당한다.
+- React 화면은 `handleCellNavigationKey`를 공통 사용한다. 화면 어댑터는 셀 좌표와 저장·취소·확정 게이트만 제공한다.
+- 이동 전 처리 콜백은 동기/비동기를 모두 지원한다. 수량 확정처럼 Rust 처리가 필요한 셀은 완료 결과가 성공일 때만 다음 셀로 포커스를 이동한다.
+- 그리드 마지막 셀의 Tab은 외부 컨트롤로 나갈 수 있다. 단, 동기 확정 게이트가 거부하면 현재 셀에 머문다.
+- egui 화면은 `cell_navigation::navigation_key_from_input`로 방향키·Enter·Tab 분류와 IME 차단을 공통 처리한다. 화면별 Enter 정책만 `Linear`, `LinearForward`, `SameColumn`으로 지정한다.
+- 공통 이동 엔진은 UI 이벤트만 처리한다. 가격·수량·운임의 업무 저장과 검증은 기존 Rust reducer를 유지한다.

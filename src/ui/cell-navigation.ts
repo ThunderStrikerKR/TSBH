@@ -89,6 +89,7 @@ export type CellNavigationKeyboardEvent = CompositionState & {
   shiftKey: boolean;
   currentTarget: HTMLElement;
   preventDefault: () => void;
+  stopPropagation?: () => void;
 };
 export type CellNavigationKeyHandlerOptions = {
   enterMode?: CellNavigationEnterMode;
@@ -101,7 +102,7 @@ export type CellNavigationKeyHandlerOptions = {
   onBeforeMove?: (
     key: CellNavigationKey, target: HTMLElement | null,
     event: CellNavigationKeyboardEvent,
-  ) => boolean | void;
+  ) => boolean | void | Promise<boolean | void>;
   onBoundary?: (key: CellNavigationKey, event: CellNavigationKeyboardEvent) => void;
 };
 /** Shared React key-event policy; screens supply only save/cancel side effects. */
@@ -119,15 +120,41 @@ export function handleCellNavigationKey(
   const key = event.key;
   const enterMode = options.enterMode ?? "linear";
   const resolveTarget = options.resolveTarget ?? findCellNavigationTarget;
-  const target = resolveTarget(event.currentTarget, key, event.shiftKey, enterMode);
-  // Let the browser leave the grid naturally when Tab has no in-grid target.
-  if (key === "Tab" && !target) return false;
-  if (target || key !== "Tab") event.preventDefault();
-  if (options.onBeforeMove?.(key, target, event) === false) return true;
-  if (target) {
-    (options.focusTarget ?? focusCellElement)(target);
-  } else if (key === "Enter") {
-    options.onBoundary?.(key, event);
+  const currentTarget = event.currentTarget;
+  const target = resolveTarget(currentTarget, key, event.shiftKey, enterMode);
+  const beforeMove = options.onBeforeMove?.(key, target, event);
+  const isPending = (value: boolean | void | Promise<boolean | void>): value is Promise<boolean | void> =>
+    !!value && typeof value === "object" && "then" in value &&
+    typeof (value as Promise<boolean | void>).then === "function";
+  const complete = (allowed: boolean | void) => {
+    if (allowed === false) return;
+    if (target) {
+      (options.focusTarget ?? focusCellElement)(target);
+    } else if (key === "Enter") {
+      options.onBoundary?.(key, event);
+    }
+  };
+  // Let Tab leave the grid naturally. Still run the screen's commit gate;
+  // if an asynchronous gate rejects, restore focus to the cell being edited.
+  if (key === "Tab" && !target) {
+    if (beforeMove === false) {
+      event.preventDefault();
+      return true;
+    }
+    if (isPending(beforeMove)) {
+      void Promise.resolve(beforeMove).then(
+        (allowed) => { if (allowed === false) focusCellElement(currentTarget); },
+        () => focusCellElement(currentTarget),
+      );
+    }
+    return false;
   }
+  if (target || key !== "Tab") event.preventDefault();
+  if (beforeMove === false) return true;
+  if (isPending(beforeMove)) {
+    void Promise.resolve(beforeMove).then(complete, () => undefined);
+    return true;
+  }
+  complete(beforeMove);
   return true;
 }

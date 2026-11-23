@@ -273,18 +273,9 @@ fn inline_target_key(target:&InlineTarget)->String{
         target.item_id.as_deref().unwrap_or(""),target.field)
 }
 fn inline_navigation_key(input:&egui::InputState)->Option<CellNavigationKey>{
-    if input.events.iter().any(|event|matches!(event,egui::Event::Ime(_))){
-        return None;
-    }
-    if input.key_pressed(egui::Key::ArrowLeft){Some(CellNavigationKey::Left)}
-    else if input.key_pressed(egui::Key::ArrowRight){Some(CellNavigationKey::Right)}
-    else if input.key_pressed(egui::Key::ArrowUp){Some(CellNavigationKey::Up)}
-    else if input.key_pressed(egui::Key::ArrowDown){Some(CellNavigationKey::Down)}
-    else if input.key_pressed(egui::Key::Tab){
-        Some(if input.modifiers.shift{CellNavigationKey::Previous}else{CellNavigationKey::Next})
-    }else if input.key_pressed(egui::Key::Enter){
-        Some(if input.modifiers.shift{CellNavigationKey::Previous}else{CellNavigationKey::Next})
-    }else{None}
+    cell_navigation::navigation_key_from_input(
+        input,cell_navigation::EnterNavigationMode::Linear
+    )
 }
 struct InlineReceptionEditor {
     source_id:String,

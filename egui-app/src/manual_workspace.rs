@@ -1464,26 +1464,11 @@ impl ManualWorkspace {
                                     self.focus_editor=false;
                                 }
                                 if editor.has_focus(){
-                                    let navigation=ctx.input(|input|{
-                                        if input.events.iter().any(|event|
-                                            matches!(event,egui::Event::Ime(_))
-                                        ){None}
-                                        else if input.key_pressed(egui::Key::Enter){
-                                            Some(CellNavigationKey::Next)
-                                        }else if input.key_pressed(egui::Key::Tab){
-                                            Some(if input.modifiers.shift{
-                                                CellNavigationKey::Previous
-                                            }else{CellNavigationKey::Next})
-                                        }else if input.key_pressed(egui::Key::ArrowLeft){
-                                            Some(CellNavigationKey::Left)
-                                        }else if input.key_pressed(egui::Key::ArrowRight){
-                                            Some(CellNavigationKey::Right)
-                                        }else if input.key_pressed(egui::Key::ArrowUp){
-                                            Some(CellNavigationKey::Up)
-                                        }else if input.key_pressed(egui::Key::ArrowDown){
-                                            Some(CellNavigationKey::Down)
-                                        }else{None}
-                                    });
+                                    let navigation=ctx.input(|input|
+                                        cell_navigation::navigation_key_from_input(
+                                            input,cell_navigation::EnterNavigationMode::LinearForward
+                                        )
+                                    );
                                     if let Some(navigation)=navigation{
                                         let needs_commit=
                                             self.edit_text!=self.current_value() ||
