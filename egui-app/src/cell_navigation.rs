@@ -1,7 +1,53 @@
 //! Shared spreadsheet-style cell navigation contract for native egui grids.
-//! Each screen supplies explicit row/column/order metadata.
+//! Each screen supplies explicit row/column/order metadata and uses one key decoder.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum CellNavigationKey { Left, Right, Up, Down, Next, Previous }
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum EnterNavigationMode { Linear, LinearForward, SameColumn }
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct NavigationKeyState {
+    pub ime_composing: bool,
+    pub left: bool,
+    pub right: bool,
+    pub up: bool,
+    pub down: bool,
+    pub tab: bool,
+    pub enter: bool,
+    pub shift: bool,
+}
+pub fn navigation_key_from_pressed(
+    keys: NavigationKeyState, enter_mode: EnterNavigationMode,
+) -> Option<CellNavigationKey> {
+    if keys.ime_composing { return None; }
+    if keys.left { Some(CellNavigationKey::Left) }
+    else if keys.right { Some(CellNavigationKey::Right) }
+    else if keys.up { Some(CellNavigationKey::Up) }
+    else if keys.down { Some(CellNavigationKey::Down) }
+    else if keys.tab {
+        Some(if keys.shift { CellNavigationKey::Previous } else { CellNavigationKey::Next })
+    } else if keys.enter {
+        Some(match enter_mode {
+            EnterNavigationMode::Linear if keys.shift => CellNavigationKey::Previous,
+            EnterNavigationMode::Linear | EnterNavigationMode::LinearForward => CellNavigationKey::Next,
+            EnterNavigationMode::SameColumn if keys.shift => CellNavigationKey::Up,
+            EnterNavigationMode::SameColumn => CellNavigationKey::Down,
+        })
+    } else { None }
+}
+pub fn navigation_key_from_input(
+    input: &egui::InputState, enter_mode: EnterNavigationMode,
+) -> Option<CellNavigationKey> {
+    navigation_key_from_pressed(NavigationKeyState {
+        ime_composing: input.events.iter().any(|event| matches!(event, egui::Event::Ime(_))),
+        left: input.key_pressed(egui::Key::ArrowLeft),
+        right: input.key_pressed(egui::Key::ArrowRight),
+        up: input.key_pressed(egui::Key::ArrowUp),
+        down: input.key_pressed(egui::Key::ArrowDown),
+        tab: input.key_pressed(egui::Key::Tab),
+        enter: input.key_pressed(egui::Key::Enter),
+        shift: input.modifiers.shift,
+    }, enter_mode)
+}
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct CellNavigationCell {
     pub id: String,
@@ -81,5 +127,55 @@ mod tests {
         let cells = grid();
         assert_eq!(resolve_cell_navigation_target(&cells, "d", CellNavigationKey::Next), None);
         assert_eq!(resolve_cell_navigation_target(&cells, "e", CellNavigationKey::Next), None);
+    }
+    #[test]
+    fn keyboard_decoder_blocks_ime_and_maps_direction_keys() {
+        assert_eq!(navigation_key_from_pressed(
+            NavigationKeyState { left: true, ..Default::default() },
+            EnterNavigationMode::Linear
+        ), Some(CellNavigationKey::Left));
+        assert_eq!(navigation_key_from_pressed(
+            NavigationKeyState { right: true, ..Default::default() },
+            EnterNavigationMode::Linear
+        ), Some(CellNavigationKey::Right));
+        assert_eq!(navigation_key_from_pressed(
+            NavigationKeyState { up: true, ..Default::default() },
+            EnterNavigationMode::Linear
+        ), Some(CellNavigationKey::Up));
+        assert_eq!(navigation_key_from_pressed(
+            NavigationKeyState { down: true, ..Default::default() },
+            EnterNavigationMode::Linear
+        ), Some(CellNavigationKey::Down));
+        assert_eq!(navigation_key_from_pressed(
+            NavigationKeyState { ime_composing: true, right: true, ..Default::default() },
+            EnterNavigationMode::Linear
+        ), None);
+    }
+    #[test]
+    fn keyboard_decoder_preserves_each_screen_enter_and_tab_contract() {
+        assert_eq!(navigation_key_from_pressed(
+            NavigationKeyState { enter: true, ..Default::default() },
+            EnterNavigationMode::Linear
+        ), Some(CellNavigationKey::Next));
+        assert_eq!(navigation_key_from_pressed(
+            NavigationKeyState { enter: true, shift: true, ..Default::default() },
+            EnterNavigationMode::Linear
+        ), Some(CellNavigationKey::Previous));
+        assert_eq!(navigation_key_from_pressed(
+            NavigationKeyState { enter: true, shift: true, ..Default::default() },
+            EnterNavigationMode::LinearForward
+        ), Some(CellNavigationKey::Next));
+        assert_eq!(navigation_key_from_pressed(
+            NavigationKeyState { enter: true, ..Default::default() },
+            EnterNavigationMode::SameColumn
+        ), Some(CellNavigationKey::Down));
+        assert_eq!(navigation_key_from_pressed(
+            NavigationKeyState { enter: true, shift: true, ..Default::default() },
+            EnterNavigationMode::SameColumn
+        ), Some(CellNavigationKey::Up));
+        assert_eq!(navigation_key_from_pressed(
+            NavigationKeyState { tab: true, shift: true, ..Default::default() },
+            EnterNavigationMode::SameColumn
+        ), Some(CellNavigationKey::Previous));
     }
 }

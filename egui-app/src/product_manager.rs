@@ -297,17 +297,6 @@ fn parse_product_price(raw:&str,field_name:&str,zero_unregistered:bool)
 fn accepts_catalog_revision(current:u64,incoming:u64)->bool{
     incoming>=current
 }
-fn price_navigation_key(
-    enter:bool,tab:bool,left:bool,right:bool,up:bool,down:bool,shift:bool
-)->Option<CellNavigationKey>{
-    if tab{Some(if shift{CellNavigationKey::Previous}else{CellNavigationKey::Next})}
-    else if enter{Some(if shift{CellNavigationKey::Up}else{CellNavigationKey::Down})}
-    else if left{Some(CellNavigationKey::Left)}
-    else if right{Some(CellNavigationKey::Right)}
-    else if up{Some(CellNavigationKey::Up)}
-    else if down{Some(CellNavigationKey::Down)}
-    else{None}
-}
 fn price_navigation_target(
     order:&[CellNavigationCell],current:&str,key:CellNavigationKey
 )->Option<String>{
@@ -1412,18 +1401,13 @@ impl ProductManager {
                                                             // The field ends 2pt before its column,
                                                             // whereas display text ends 8pt before
                                                             // it: 8 - 2 = 6pt suffix inset.
-                                                            let (enter_pressed,tab_pressed,
-                                                                left_pressed,right_pressed,
-                                                                up_pressed,down_pressed,
-                                                                escape_pressed,shift_pressed)=inputs.input(|i|{
-                                                                (i.key_pressed(egui::Key::Enter),
-                                                                 i.key_pressed(egui::Key::Tab),
-                                                                 i.key_pressed(egui::Key::ArrowLeft),
-                                                                 i.key_pressed(egui::Key::ArrowRight),
-                                                                 i.key_pressed(egui::Key::ArrowUp),
-                                                                 i.key_pressed(egui::Key::ArrowDown),
-                                                                 i.key_pressed(egui::Key::Escape),
-                                                                 i.modifiers.shift)
+                                                            let (escape_pressed,navigation_key)=inputs.input(|i|{
+                                                                (
+                                                                    i.key_pressed(egui::Key::Escape),
+                                                                    cell_navigation::navigation_key_from_input(
+                                                                        i,cell_navigation::EnterNavigationMode::SameColumn
+                                                                    )
+                                                                )
                                                             });
                                                             let response=components::money_field_with_unit(
                                                                 inputs,&mut entry.input,true,"원",
@@ -1447,20 +1431,17 @@ impl ProductManager {
                                                                 self.price_focus_target=None;
                                                             }
                                                             let escape=response.has_focus()&&escape_pressed;
-                                                            let navigation_key=price_navigation_key(
-                                                                enter_pressed,tab_pressed,left_pressed,
-                                                                right_pressed,up_pressed,down_pressed,
-                                                                shift_pressed
-                                                            );
                                                             let navigation_target=navigation_key
                                                                 .and_then(|navigation|
                                                                     price_navigation_target(
                                                                         &price_order,&key,navigation
                                                                     )
                                                                 );
-                                                            let arrow_edge=(left_pressed||right_pressed||
-                                                                up_pressed||down_pressed)
-                                                                &&navigation_target.is_none();
+                                                            let arrow_edge=matches!(
+                                                                navigation_key,
+                                                                Some(CellNavigationKey::Left|CellNavigationKey::Right|
+                                                                    CellNavigationKey::Up|CellNavigationKey::Down)
+                                                            )&&navigation_target.is_none();
                                                             let keyboard_commit=(response.has_focus()
                                                                 ||response.lost_focus())
                                                                 &&navigation_key.is_some()
@@ -2610,17 +2591,6 @@ mod tests {
         let editor=source.split("let (enter_pressed,tab_pressed,").nth(1).unwrap()
             .split("let action_rect").next().unwrap_or("");
         assert!(source.contains("||self.price_mode_exit_requested"));
-    }
-    #[test]
-    fn spreadsheet_navigation_keys_match_enter_tab_and_arrow_semantics(){
-        assert_eq!(price_navigation_key(true,false,false,false,false,false,false),Some(CellNavigationKey::Down));
-        assert_eq!(price_navigation_key(true,false,false,false,false,false,true),Some(CellNavigationKey::Up));
-        assert_eq!(price_navigation_key(false,true,false,false,false,false,false),Some(CellNavigationKey::Next));
-        assert_eq!(price_navigation_key(false,true,false,false,false,false,true),Some(CellNavigationKey::Previous));
-        assert_eq!(price_navigation_key(false,false,true,false,false,false,false),Some(CellNavigationKey::Left));
-        assert_eq!(price_navigation_key(false,false,false,true,false,false,false),Some(CellNavigationKey::Right));
-        assert_eq!(price_navigation_key(false,false,false,false,true,false,false),Some(CellNavigationKey::Up));
-        assert_eq!(price_navigation_key(false,false,false,false,false,true,false),Some(CellNavigationKey::Down));
     }
     #[test]
     fn price_grid_keyboard_navigation_uses_explicit_rows_and_columns(){

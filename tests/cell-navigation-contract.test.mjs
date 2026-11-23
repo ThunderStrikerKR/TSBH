@@ -48,7 +48,17 @@ test("React cell editors use the shared contract and retain manual quantity gati
   assert.match(product, /data-cell-nav-grid="product-prices"/);
   assert.match(read("src/OrderDesk.tsx"), /handleCellNavigationKey\(e\)/);
   assert.match(read("src/WorkflowFooter.tsx"), /handleCellNavigationKey\(e, \{/);
-  assert.match(read("src/orders/ManualClassification.tsx"), /resolveCellNavigationTarget\(/);
+  const manual = read("src/orders/ManualClassification.tsx");
+  assert.match(manual, /handleCellNavigationKey\(event, \{/);
+  assert.match(manual, /return finishQuantity\(\)/);
+  assert.doesNotMatch(manual, /isCellNavigationKey\(/);
+  assert.match(manual, /resolveCellNavigationTarget\(/);
+  for (const path of [
+    "egui-app/src/main.rs",
+    "egui-app/src/manual_workspace.rs",
+    "egui-app/src/product_manager.rs",
+  ]) assert.match(read(path), /navigation_key_from_input\(/);
+  assert.doesNotMatch(read("egui-app/src/product_manager.rs"), /fn price_navigation_key\(/);
 });
 
 test("shared React key handler saves before moving and focuses the explicit target", () => {
@@ -67,6 +77,27 @@ test("shared React key handler saves before moving and focuses the explicit targ
   assert.deepEqual(calls, ["save", "focus"]);
 });
 
+test("shared React key handler awaits asynchronous cell confirmation before focusing", async () => {
+  const calls = [];
+  let release;
+  const event = {
+    key: "ArrowDown", shiftKey: false, currentTarget: {},
+    preventDefault() { this.defaultPrevented = true; },
+  };
+  const handled = handleCellNavigationKey(event, {
+    resolveTarget: () => ({ id: "next" }),
+    onBeforeMove: () => new Promise((resolve) => { release = resolve; }),
+    focusTarget: (target) => { calls.push(target.id); return true; },
+  });
+  assert.equal(handled, true);
+  assert.equal(event.defaultPrevented, true);
+  assert.deepEqual(calls, []);
+  release(true);
+  await Promise.resolve();
+  await Promise.resolve();
+  assert.deepEqual(calls, ["next"]);
+});
+
 test("shared React key handler lets Tab exit at the grid boundary and traps arrow boundaries", () => {
   let beforeMove = 0;
   const tab = {
@@ -78,7 +109,7 @@ test("shared React key handler lets Tab exit at the grid boundary and traps arro
     onBeforeMove: () => { beforeMove += 1; },
   }), false);
   assert.equal(tab.defaultPrevented, undefined);
-  assert.equal(beforeMove, 0);
+  assert.equal(beforeMove, 1);
   const arrow = {
     key: "ArrowDown", shiftKey: false, currentTarget: {},
     preventDefault() { this.defaultPrevented = true; },

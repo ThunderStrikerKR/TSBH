@@ -6,9 +6,7 @@ import { useNativeOrderIssues } from "./useNativeOrderIssues";
 import { usePendingChanges } from "../shared/pending-changes";
 import { confirmDiscardDraft } from "../shared/editor-flow";
 import {
-  focusCellElement,
-  isCellNavigationKey,
-  isImeComposing,
+  handleCellNavigationKey,
   resolveCellNavigationTarget,
   type CellNavigationCell,
   type CellNavigationKey,
@@ -487,7 +485,9 @@ function ManualClassificationEditor({
       recipientId: cell.recipientId, itemId: cell.itemId,
     });
   };
-  const move = (cell: Cell, key: CellNavigationKey, shift = false) => {
+  const resolveTarget = (
+    cell: Cell, key: CellNavigationKey, shift = false,
+  ): HTMLElement | null => {
     const inputs = Array.from(
       root.current?.querySelectorAll<HTMLInputElement>("input[data-cell]") ?? [],
     );
@@ -523,89 +523,86 @@ function ManualClassificationEditor({
       targetId = resolveCellNavigationTarget(navigationCells, cellKey(cell), key, shift);
     }
     const target = targetId ? inputs.find((input) => input.dataset.cell === targetId) : undefined;
-    if (target && !target.disabled) focusCellElement(target);
+    return target && !target.disabled ? target : null;
   };
-  const keyDown = async (event: KeyboardEvent<HTMLInputElement>, cell: Cell) => {
-    if (isImeComposing(event)) return;
+  const keyDown = (event: KeyboardEvent<HTMLInputElement>, cell: Cell) => {
     if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "z") return;
     const key = cellKey(cell);
-    if (event.key === "Escape") {
-      event.preventDefault();
-      event.stopPropagation();
-      if (!requireNativeCellsSettled()) return;
-      if (pendingRef.current) {
-        cancelProduct();
-        return;
-      }
-      if (cell.field === "product")
-        setEntry((old) => {
-          const copy = { ...old };
-          delete copy[key];
-          return copy;
-        });
-      else if (editStart.current && cellKey(editStart.current.cell) === key) {
-        const previous = editStart.current.frame.model.rows.find(
-          (row) => row.id === cell.recipientId,
-        );
-        if (previous) {
-          checkpoint();
-          if (cell.itemId) {
-            setModel((old) => ({
-              ...old,
-              rows: old.rows.map((row) =>
-                row.id === cell.recipientId
-                  ? {
-                      ...row,
-                      items: row.items.map((item) =>
-                        item.id === cell.itemId
-                          ? structuredClone(previous.items.find((item) => item.id === cell.itemId)!)
-                          : item,
-                      ),
-                    }
-                  : row,
-              ),
-            }));
-            setQuantityText((old) => {
-              const copy = { ...old };
-              delete copy[key];
-              return copy;
-            });
-          } else
-            setModel((old) => ({
-              ...old,
-              rows: old.rows.map((row) =>
-                row.id === cell.recipientId
-                  ? { ...row, [cell.field]: previous[cell.field as "name"] }
-                  : row,
-              ),
-            }));
+    handleCellNavigationKey(event, {
+      resolveTarget: (_current, navigationKey, shift) =>
+        resolveTarget(cell, navigationKey, shift),
+      onEscape: (keyboardEvent) => {
+        keyboardEvent.stopPropagation?.();
+        if (!requireNativeCellsSettled()) return;
+        if (pendingRef.current) {
+          cancelProduct();
+          return;
         }
-      }
-      setError(undefined);
-      return;
-    }
-    const navigationKey = event.key;
-    if (!isCellNavigationKey(navigationKey)) return;
-    event.preventDefault();
-    if (
-      cell.field === "product" &&
-      entry[key] !== undefined &&
-      entry[key] !== manualValue(model, cell)
-    ) {
-      selectProduct(cell, entry[key]);
-      return;
-    }
-    if (pendingRef.current) {
-      if (cell.field === "quantity" && (event.key === "Enter" || event.key === "Tab")) {
-        if (!(await finishQuantity())) return;
-        requestAnimationFrame(() => move(cell, navigationKey, event.shiftKey));
-        return;
-      } else {
-        fail("수량을 확정하거나 상품 선택을 취소하세요.", pendingRef.current);
-        return;
-      }
-    }
-    move(cell, navigationKey, event.shiftKey);
+        if (cell.field === "product")
+          setEntry((old) => {
+            const copy = { ...old };
+            delete copy[key];
+            return copy;
+          });
+        else if (editStart.current && cellKey(editStart.current.cell) === key) {
+          const previous = editStart.current.frame.model.rows.find(
+            (row) => row.id === cell.recipientId,
+          );
+          if (previous) {
+            checkpoint();
+            if (cell.itemId) {
+              setModel((old) => ({
+                ...old,
+                rows: old.rows.map((row) =>
+                  row.id === cell.recipientId
+                    ? {
+                        ...row,
+                        items: row.items.map((item) =>
+                          item.id === cell.itemId
+                            ? structuredClone(previous.items.find((item) => item.id === cell.itemId)!)
+                            : item,
+                        ),
+                      }
+                    : row,
+                ),
+              }));
+              setQuantityText((old) => {
+                const copy = { ...old };
+                delete copy[key];
+                return copy;
+              });
+            } else
+              setModel((old) => ({
+                ...old,
+                rows: old.rows.map((row) =>
+                  row.id === cell.recipientId
+                    ? { ...row, [cell.field]: previous[cell.field as "name"] }
+                    : row,
+                ),
+              }));
+          }
+        }
+        setError(undefined);
+      },
+      onBeforeMove: (navigationKey) => {
+        if (
+          cell.field === "product" &&
+          entry[key] !== undefined &&
+          entry[key] !== manualValue(model, cell)
+        ) {
+          selectProduct(cell, entry[key]);
+          return false;
+        }
+        if (pendingRef.current) {
+          if (cell.field === "quantity" &&
+              (navigationKey === "Enter" || navigationKey === "Tab")) {
+            return finishQuantity();
+          }
+          fail("수량을 확정하거나 상품 선택을 취소하세요.", pendingRef.current);
+          return false;
+        }
+      },
+    });
   };
   const textCell = (cell: Cell, label: string) => {
     const key = cellKey(cell),
