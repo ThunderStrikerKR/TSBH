@@ -150,8 +150,9 @@ fn crumbs_row(
     let mut apply=false;
     ui.horizontal(|bar|{
         bar.spacing_mut().item_spacing.x=theme::SPACE_4;
-        let role=if selected.is_empty(){CrumbVisual::Applied}
-            else if path.is_empty(){CrumbVisual::Current}
+        let role=if selected.is_empty() && allow_empty {
+            CrumbVisual::Applied
+        }else if path.is_empty(){CrumbVisual::Current}
             else{CrumbVisual::Ordinary};
         if crumb(bar,"전체",42.0,role).clicked(){
             go_to=Some(Vec::new());
