@@ -473,7 +473,7 @@ impl ModelGroupManager {
                                 footer.label(typography::caption(if self.dirty(){"저장하지 않은 변경사항 있음"} else {"변경사항 없음"}));
                                 footer.with_layout(Layout::right_to_left(Align::Center),|buttons|{
                                     if self.dirty()&&theme::action(buttons,
-                                        if busy{"저장 중"}else{"변경사항 저장"},
+                                        "변경사항 저장",
                                         theme::ButtonRole::Primary,writable&&!busy).clicked(){
                                         save=true;
                                     }
