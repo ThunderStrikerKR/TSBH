@@ -142,9 +142,13 @@ mod management_async_layout_contract_tests {
     #[test]
     fn management_async_renderers_keep_table_slots_invariant(){
         let products=include_str!("product_manager.rs");
-        assert!(products.contains("components::management_body_state_overlay("));
-        assert!(!products.contains("let empty_reserve=if self.products.is_empty()"));
-        assert!(!products.contains("management_list_strip_frame().show(panel,|empty|"));
+        // Source-level assertions inspect the production renderer ONLY:
+        // separate test strings may intentionally mention prohibited patterns.
+        let rendered=products.split("pub fn show_page(").nth(1).unwrap()
+            .split("    fn product_price_candidate(").next().unwrap();
+        assert!(rendered.contains("components::management_body_state_overlay("));
+        assert!(!rendered.contains("let empty_reserve=if self.products.is_empty()"));
+        assert!(!rendered.contains("management_list_strip_frame().show(panel,|empty|"));
         let settlement=include_str!("daily_settlement_manager.rs");
         assert!(settlement.contains("let values=["));
         assert!(settlement.contains("for (name,value) in ["));
