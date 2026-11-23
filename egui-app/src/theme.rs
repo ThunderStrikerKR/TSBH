@@ -61,9 +61,9 @@ pub const MANAGEMENT_DROPDOWN_SELECTED_BG: Color32 = Color32::from_rgb(37, 62, 8
 pub const MANAGEMENT_DROPDOWN_HOVER_BG: Color32 = Color32::from_rgb(57, 91, 118);
 // Hierarchical category explorer reuses the management dropdown master.
 // Exploration is neutral; confirmed filtering uses the existing orange role.
-// Fixed popup width, 30% wider than the former 420pt explorer.
-// Only a genuinely narrower viewport may reduce this width.
-pub const CATEGORY_EXPLORER_POPUP_WIDTH:f32=546.0;
+// One fixed popup width independent of the category text/depth.
+// 655pt is about 20% wider than the previous 546pt.
+pub const CATEGORY_EXPLORER_POPUP_WIDTH:f32=655.0;
 // Every category list reserves exactly six 34pt rows plus five 4pt gaps.
 // A short/empty list leaves the unused rows blank; longer lists scroll locally.
 pub const CATEGORY_EXPLORER_VISIBLE_ROWS:usize=6;
@@ -71,7 +71,11 @@ pub const CATEGORY_EXPLORER_LIST_MAX_HEIGHT:f32=
     ACTION_STANDARD_HEIGHT*CATEGORY_EXPLORER_VISIBLE_ROWS as f32
     +SPACE_4*(CATEGORY_EXPLORER_VISIBLE_ROWS-1) as f32;
 pub const CATEGORY_EXPLORER_ANCESTOR_MAX_HEIGHT:f32=144.0;
-pub const CATEGORY_EXPLORER_CRUMB_HEIGHT:f32=28.0;
+// Popup footer navigation, breadcrumbs and Apply share the 36pt control baseline.
+pub const CATEGORY_EXPLORER_CRUMB_HEIGHT:f32=ACTION_PRIMARY_HEIGHT;
+pub const CATEGORY_EXPLORER_BACK_WIDTH:f32=76.0;
+pub const CATEGORY_EXPLORER_ROOT_WIDTH:f32=48.0;
+pub const CATEGORY_EXPLORER_APPLY_WIDTH:f32=70.0;
 pub const CATEGORY_EXPLORER_APPLIED_BG:Color32=Color32::from_rgb(90,61,33);
 pub const CATEGORY_EXPLORER_APPLIED_BORDER:Color32=SELECTED_ORDER;
 pub const CATEGORY_EXPLORER_CURRENT_BG:Color32=RAISED;
