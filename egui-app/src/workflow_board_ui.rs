@@ -6,6 +6,14 @@ use crate::{components, preview_store::WorkingReception, source_highlight, theme
 use std::collections::HashMap;
 use crate::workflow_board::{BoardSnapshot, GroupRow, ShipmentRow};
 
+#[cfg(test)]
+fn test_context()->egui::Context{
+    let ctx=egui::Context::default();
+    theme::install(&ctx);
+    typography::install(&ctx);
+    ctx
+}
+
 const HOVER_ENTER:Duration=Duration::from_millis(250);
 const HOVER_EXIT:Duration=Duration::from_millis(250);
 const PENDING_ORDER_HOVER_ENTER:Duration=Duration::from_millis(250);
@@ -1212,7 +1220,7 @@ mod pending_matching_tests {
 
     #[test]
     fn pending_receipt_never_emits_a_fake_dealer_confirmation_action(){
-        let ctx=egui::Context::default();
+        let ctx=test_context();
         let mut tapped=None;
         let draft=WorkingReception{
             id:"egui-pending-test".to_owned(),
