@@ -1028,6 +1028,9 @@ impl ManualWorkspace {
                 let blocks=list(model,"blocks").to_vec();
                 let assignments=model.get("assignments").cloned().unwrap_or_else(||json!({}));
                 let busy=self.busy();
+                let pending_quantity_cell=self.pending_quantity_cell();
+                let pending_quantity_active=pending_quantity_cell.is_some();
+                let has_pending_quantity=model_has_pending_quantity(model);
                 let unassigned=blocks.iter().filter(|b|
                     assignments.get(text(b,"id")).is_none()).count();
                 // Display worksheet context together. Final actions belong
