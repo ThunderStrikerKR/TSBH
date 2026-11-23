@@ -469,7 +469,8 @@ mod management_async_behavior_regression_tests {
         let aliases=include_str!("alias_manager.rs");
         assert!(aliases.contains("fn alias_diagnostic_slot("));
         assert!(aliases.contains("alias_diagnostic_slot(info,item,&warnings);"));
-        assert!(aliases.contains("hit.on_hover_text(detail);"));
+        assert!(aliases.contains("components::fixed_status_slot("));
+        assert!(aliases.contains("detail.as_deref(),detail.as_deref(),theme::MUTED"));
 
         let main=include_str!("main.rs");
         assert!(main.contains("components::reception_client_summary_card("));
