@@ -717,9 +717,6 @@ impl ManualWorkspace {
                     self.product_search.is_none() &&
                     self.remove_recipient_pending.is_none() &&
                     !self.reset_pending && !self.confirm_discard);
-                if self.busy() {
-                    ui.label(typography::caption("처리 중입니다."));
-                }
                 let Some(model)=self.model.as_ref() else {return};
                 let rows=list(model,"rows").to_vec();
                 let blocks=list(model,"blocks").to_vec();
