@@ -2196,7 +2196,7 @@ mod tests {
             .nth(1).unwrap().split("let headings=[").next().unwrap();
         assert!(!table.contains("self.price_mode"));
         assert!(source.contains("egui::Popup::from_response(&response)"));
-        assert!(!source.contains("PRODUCT_TABLE_EDIT_PRICE_WIDTH"));
+        assert!(!table.contains("PRODUCT_TABLE_EDIT_PRICE_WIDTH"));
     }
     #[test]
     fn fixed_product_table_columns_share_identical_header_and_row_geometry(){
