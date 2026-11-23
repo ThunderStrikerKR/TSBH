@@ -84,6 +84,10 @@ jobs:
         run: cargo test --manifest-path egui-app/Cargo.toml recipient_source_reverse_hover_tests -- --nocapture
       - name: Verify pending workflow card uses the production typography context
         run: cargo test --manifest-path egui-app/Cargo.toml pending_matching_tests -- --nocapture
+      - name: Verify product Excel review status filter and message fallback
+        run: cargo test --manifest-path egui-app/Cargo.toml product_excel_ui::tests -- --nocapture
+      - name: Verify category map heading contract distinguishes section and subsection headings
+        run: cargo test --manifest-path egui-app/Cargo.toml category_manager::modal_layout_contract_tests -- --nocapture
       - name: Verify Excel-style product price cell autosave and draft handling
         run: cargo test --manifest-path egui-app/Cargo.toml product_manager::tests -- --nocapture --skip product_detail_cannot_reintroduce_stacked_fields_or_static_sales_label
       - name: Forbid UI-local monospace fonts outside the central semantic policy
@@ -228,13 +232,12 @@ jobs:
       - name: Verify unified product Excel V2 import-export roundtrip and review approval
         run: |
           cargo test --manifest-path egui-app/Cargo.toml product_excel::tests -- --nocapture
-          cargo test --manifest-path egui-app/Cargo.toml product_excel_ui::tests -- --nocapture
+
       - name: Verify product Excel backup, SQLite apply, unchanged orders and stale CAS
         run: cargo test --manifest-path src-tauri/Cargo.toml --lib native_product_excel_backup_commit_reopen_and_stale_revision_guard -- --nocapture
       - name: Verify shared UI catalog roots remain read-only in alias category filter
         run: cargo test --manifest-path egui-app/Cargo.toml alias_manager::tests -- --nocapture
-      - name: Verify all category editor, add and move popup fields use approved inline rows
-        run: cargo test --manifest-path egui-app/Cargo.toml category_manager::modal_layout_contract_tests -- --nocapture
+
       - name: Verify native category rename, transfer consent and cross-catalog move guard
         run: cargo test --manifest-path src-tauri/Cargo.toml --lib category_ -- --nocapture
       - name: Verify native staff model-group validation and representative rules
