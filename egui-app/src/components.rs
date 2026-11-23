@@ -6636,6 +6636,11 @@ mod modal_input_routing_tests {
     #[test]
     fn nested_decision_button_receives_click_above_the_real_parent_modal_stack(){
         let ctx=egui::Context::default();
+        // Production installs the semantic font families before any modal
+        // renders. Mirror that setup so the test exercises pointer routing,
+        // not an intentionally unconfigured font database.
+        typography::install(&ctx);
+        theme::install(&ctx);
         let work_area=Rect::from_min_size(
             egui::Pos2::ZERO,Vec2::new(800.0,600.0)
         );
