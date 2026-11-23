@@ -141,8 +141,9 @@ mod fixed_layout_slot_contract_tests {
             let _=ctx.run(egui::RawInput::default(),|ctx|{
                 egui::CentralPanel::default().show(ctx,|ui|{
                     ui.set_width(520.0);
+                    let status_width=ui.available_width();
                     let slot=fixed_status_slot(
-                        ui,ui.available_width(),typography::METADATA_LINE_HEIGHT,
+                        ui,status_width,typography::METADATA_LINE_HEIGHT,
                         message,message,theme::DANGER
                     );
                     let (next,_)=ui.allocate_exact_size(
@@ -164,8 +165,9 @@ mod fixed_layout_slot_contract_tests {
             let _=ctx.run(egui::RawInput::default(),|ctx|{
                 egui::CentralPanel::default().show(ctx,|ui|{
                     ui.set_width(520.0);
+                    let row_width=ui.available_width();
                     let (row,_)=fixed_row(
-                        ui,Vec2::new(ui.available_width(),theme::ACTION_STANDARD_HEIGHT),
+                        ui,Vec2::new(row_width,theme::ACTION_STANDARD_HEIGHT),
                         Layout::left_to_right(Align::Center),|contents|{
                             if visible{theme::action(
                                 contents,"설정",theme::ButtonRole::Standard,true
@@ -4645,8 +4647,9 @@ pub fn summary_strip(ui: &mut Ui, label: &str, value: &str, footnote: &str) {
                 ui.label(typography::summary_value(value));
             });
         });
+        let footnote_width=ui.available_width();
         fixed_status_slot(
-            ui,ui.available_width(),typography::METADATA_LINE_HEIGHT,
+            ui,footnote_width,typography::METADATA_LINE_HEIGHT,
             (!footnote.trim().is_empty()).then_some(footnote),
             (!footnote.trim().is_empty()).then_some(footnote),theme::MUTED
         );
