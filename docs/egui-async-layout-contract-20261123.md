@@ -134,3 +134,14 @@
 
 - 소스 수정 및 테스트 추가는 main에 반영했다.
 - Windows CI 실행 결과와 실제 계좌가 표시되는 실행 화면은 확인 후 최종 판정한다.
+
+
+### Windows CI 결과
+
+- 실행: [Client tag and freight-master table layout verification](https://github.com/ThunderStrikerKR/TSBH/actions/runs/45159624779)
+- 결과: `success`
+- `cargo check --manifest-path egui-app/Cargo.toml`: 통과
+- `client_account_picker_tests`: 4 passed
+- `client_search_tags::tests`: 6 passed
+- `management_client_column_divider_tests`: 3 passed
+- 이 검증은 소스 컴파일과 단위 테스트 결과다. 사용자의 실제 실행 데이터베이스와 화면을 직접 열어 계좌가 표시되는지 확인한 결과는 아니다.
