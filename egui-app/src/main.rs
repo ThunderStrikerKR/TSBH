@@ -2760,16 +2760,16 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                 // not a separate 3-state mode. Their checked state
                 // always follows the visible recipient checkboxes.
                 let mut none=dialog.scope(&recipients)==VatScope::None;
-                if row.add_enabled(!busy,
-                    egui::Checkbox::new(&mut none,"전체 미적용")
+                if components::checkbox(
+                    row,&mut none,"전체 미적용",!busy
                 ).changed() && none {
                     // Unchecking an active global shortcut is a no-op.
                     // Partial recipient selection leaves both shortcuts off.
                     dialog.set_all_checked(&recipients,false);
                 }
                 let mut all=dialog.scope(&recipients)==VatScope::All;
-                if row.add_enabled(!busy,
-                    egui::Checkbox::new(&mut all,"전체 적용")
+                if components::checkbox(
+                    row,&mut all,"전체 적용",!busy
                 ).changed() && all {
                     dialog.set_all_checked(&recipients,true);
                 }
@@ -2781,12 +2781,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
             // The tinted bordered surface marks the exact scrollable region.
             // Reserve five rows for short orders, expand to ten recipients,
             // then scroll within the same surface for additional orders.
-            egui::Frame::new()
-                .fill(theme::INPUT)
-                .stroke(egui::Stroke::new(
-                    theme::FRAME_STROKE_WIDTH,theme::DIVIDER
-                ))
-                .corner_radius(theme::CONTROL_RADIUS)
+            theme::modal_nested_frame()
                 .inner_margin(egui::Margin::symmetric(
                     theme::SPACE_12 as i8,theme::SPACE_8 as i8
                 ))
@@ -2809,22 +2804,13 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                     "{} · {}",index+1,
                                     if name.is_empty(){"수취인 확인"}else{name}
                                 );
-                                list.allocate_ui_with_layout(
-                                    egui::vec2(
-                                        list.available_width(),
-                                        theme::RECEPTION_VAT_LIST_ROW_HEIGHT
-                                    ),
-                                    Layout::left_to_right(Align::Center),
-                                    |row|{
-                                        row.push_id(("order-vat-recipient",id),|cell|{
-                                            if cell.add_enabled(!busy,
-                                                egui::Checkbox::new(&mut checked,label)
-                                            ).changed(){
-                                                dialog.set_recipient_checked(id,checked);
-                                            }
-                                        });
-                                    }
-                                );
+                                if components::checkbox_list_row(
+                                    list,("order-vat-recipient",id),
+                                    &mut checked,&label,!busy,
+                                    theme::RECEPTION_VAT_LIST_ROW_HEIGHT
+                                ).changed(){
+                                    dialog.set_recipient_checked(id,checked);
+                                }
                             }
                         });
                 });
