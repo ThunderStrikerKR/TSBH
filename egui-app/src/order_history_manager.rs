@@ -1245,11 +1245,9 @@ impl OrderHistoryManager {
                     // enabled UI could shrink the TextEdit to a narrow slot.
                     // Twelve visible lines make this a real memo editor.
                     let editor_width=ui.available_width().max(1.0);
-                    ui.add_enabled(!busy,
-                        egui::TextEdit::multiline(&mut editor.draft)
-                            .desired_width(editor_width)
-                            .desired_rows(12)
-                            .hint_text("관리 메모를 입력하세요")
+                    components::multiline_text_field(
+                        ui,&mut editor.draft,!busy,editor_width,12,
+                        Some("관리 메모를 입력하세요")
                     );
                     ui.label(typography::caption(&format!(
                         "{} / 2,000자",editor.draft.chars().count()
