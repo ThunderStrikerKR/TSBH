@@ -202,10 +202,10 @@ fn menu_body(
     menu.set_max_width(popup_width);
     menu.spacing_mut().item_spacing.y=theme::SPACE_8;
     let available=menu.available_width().max(1.0);
-    components::management_search_field(
+    let search_response=components::management_search_field(
         menu,&mut state.search,available,"카테고리 이름 또는 경로 검색"
     );
-    let search_has_focus=menu.ctx().memory(|m|m.focused().is_some());
+    let search_has_focus=search_response.has_focus();
     // Browsing arrows must not override keyboard editing in the search field.
     if !search_has_focus && menu.input(|i|i.key_pressed(egui::Key::ArrowLeft)){
         state.path.pop();state.ancestors_open=false;
