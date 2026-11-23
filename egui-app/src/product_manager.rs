@@ -282,6 +282,12 @@ struct PriceDraft {
     input:String,
 }
 impl PriceDraft {
+    /// The write has committed. Advance the comparison baseline immediately,
+    /// before the asynchronous product-list query can repaint stale rows.
+    fn mark_saved(&mut self,value:Option<i64>){
+        self.original=value;
+        self.input=value.map(|amount|amount.to_string()).unwrap_or_default();
+    }
     fn dirty(&self)->bool{
         // Historic price rows may store literal 0. Their initial "0" must
         // stay pristine until an operator actually changes the field.
@@ -297,9 +303,47 @@ impl PriceDraft {
     }
 }
 
+#[derive(Clone,Debug,PartialEq,Eq)]
+struct PriceUpdate {
+    product_id:String,
+    variant_id:String,
+    tier:String,
+    value:Option<i64>,
+}
+impl PriceUpdate {
+    fn from_payload(data:&Value)->Option<Self>{
+        let product_id=data.get("productId")?.as_str()?.to_owned();
+        let variant_id=data.get("variantId")?.as_str()?.to_owned();
+        let tier=data.get("tier")?.as_str()?;
+        if !["wholesale","semi","retail"].contains(&tier){return None;}
+        let value=match data.get("price")?{
+            Value::Null=>None,
+            Value::Number(number)=>Some(number.as_i64()?),
+            _=>return None,
+        };
+        Some(Self{product_id,variant_id,tier:tier.to_owned(),value})
+    }
+    /// Update the currently displayed query snapshot synchronously. The
+    /// subsequent async query is still authoritative, but must not repaint
+    /// the just-saved cell with its previous value in the meantime.
+    fn apply_to_products(&self,products:&mut [Value])->bool{
+        let Some(product)=products.iter_mut().find(|product|
+            field(product,"id")==self.product_id
+        )else{return false;};
+        let Some(variant)=product["variants"].as_array_mut()
+            .and_then(|variants|variants.iter_mut().find(|variant|
+                field(variant,"id")==self.variant_id
+            ))else{return false;};
+        variant[self.tier.as_str()]=self.value.map_or(
+            Value::Null,|amount|json!(amount)
+        );
+        true
+    }
+}
 struct ProductWrite {
     kind:String,
     key:Option<String>,
+    price_update:Option<PriceUpdate>,
     receiver:Receiver<Result<Value,String>>,
 }
 
@@ -415,6 +459,13 @@ impl ProductManager {
             self.error=Some("상품 변경 저장 권한이 없습니다.".into());
             return;
         }
+        let price_update=if action=="set_price"{
+            let Some(update)=PriceUpdate::from_payload(&data)else{
+                self.error=Some("가격 저장 정보를 확인할 수 없습니다.".into());
+                return;
+            };
+            Some(update)
+        }else{None};
         if action!="set_price"{
             crate::floating_notice::dispatch_pointer(&ctx,"products.action");
         }
@@ -422,7 +473,7 @@ impl ProductManager {
         let name=action.to_owned();
         let (tx,rx)=mpsc::channel();
         self.writing=Some(ProductWrite{
-            kind:name.clone(),key,receiver:rx,
+            kind:name.clone(),key,price_update,receiver:rx,
         });
         self.error=None;
         self.notice=None;
@@ -453,8 +504,21 @@ impl ProductManager {
         match written {
             Some(Ok(Ok(catalog)))=>{
                 if let Some(job)=self.writing.take(){
-                    if let Some(key)=job.key {
-                        self.price_drafts.remove(&key);
+                    if let Some(update)=job.price_update.as_ref(){
+                        update.apply_to_products(&mut self.products);
+                        if let Some(key)=job.key.as_deref(){
+                            self.price_drafts.entry(key.to_owned())
+                                .and_modify(|draft|draft.mark_saved(update.value))
+                                .or_insert_with(||PriceDraft{
+                                    original:update.value,
+                                    input:update.value.map(|amount|
+                                        amount.to_string()
+                                    ).unwrap_or_default()
+                                });
+                        }
+                        if self.active_price_editor.as_deref()==job.key.as_deref(){
+                            self.active_price_editor=None;
+                        }
                     }
                     if job.kind=="save_alias" {
                         self.aliases.on_saved(&catalog);
@@ -495,7 +559,13 @@ impl ProductManager {
                 }
             }
             Some(Ok(Err(error)))=>{
-                self.writing=None;
+                if let Some(job)=self.writing.take(){
+                    // Match React PriceCell: failed writes keep their draft
+                    // and return the cell's explicit retry actions.
+                    if job.kind=="set_price"{
+                        self.active_price_editor=job.key;
+                    }
+                }
                 if self.tab==1 {
                     self.category_manager.report_error(error.clone());
                 }
@@ -508,9 +578,14 @@ impl ProductManager {
                 self.error=Some(error);
             }
             Some(Err(TryRecvError::Disconnected))=>{
-                let brand_write=self.writing.as_ref()
+                let disconnected=self.writing.take();
+                let brand_write=disconnected.as_ref()
                     .is_some_and(|job|job.kind=="upsert_brand");
-                self.writing=None;
+                if let Some(job)=disconnected{
+                    if job.kind=="set_price"{
+                        self.active_price_editor=job.key;
+                    }
+                }
                 let message="상품 저장 도우미 응답이 중단됐습니다. 재조회 후 확인하세요.".to_owned();
                 if brand_write{self.brands.on_failed(message.clone());}
                 self.error=Some(message);
@@ -1170,8 +1245,12 @@ impl ProductManager {
                                                                     egui::Popup::from_response(&response)
                                                                         .align(egui::RectAlign::BOTTOM_END)
                                                                         .open_bool(&mut menu_open)
+                                                                        // React PriceCell keeps its
+                                                                        // Save/Cancel actions visible
+                                                                        // after blur. A focus change
+                                                                        // is not a save or a discard.
                                                                         .close_behavior(
-                                                                            egui::PopupCloseBehavior::CloseOnClickOutside
+                                                                            egui::PopupCloseBehavior::IgnoreClicks
                                                                         )
                                                                         .show(|menu|{
                                                                             menu.horizontal(|actions|{
@@ -2153,6 +2232,55 @@ mod tests {
         assert_eq!(parse_product_price("4,500","금액",true).unwrap(),Some(4500));
         assert!(parse_product_price("-1","가격",false).is_err());
         assert!(parse_product_price("9007199254740992","가격",false).is_err());
+    }
+    #[test]
+    fn committed_price_draft_advances_before_stale_query_rows_repaint(){
+        let mut draft=PriceDraft{original:None,input:"15,000".into()};
+        assert!(draft.dirty());
+        draft.mark_saved(Some(15000));
+        assert!(!draft.dirty());
+        assert_eq!(draft.original,Some(15000));
+        assert_eq!(draft.parse().unwrap(),Some(15000));
+        // Explicitly clearing a previously registered price is a committed
+        // null, not a new unsaved blank draft.
+        draft.input.clear();
+        assert!(draft.dirty());
+        draft.mark_saved(None);
+        assert!(!draft.dirty());
+        assert_eq!(draft.parse().unwrap(),None);
+    }
+    #[test]
+    fn price_write_updates_visible_rows_before_async_catalog_refresh(){
+        let mut products=vec![json!({
+            "id":"p1","variants":[
+                {"id":"v1","wholesale":null,"semi":19000,"retail":26000}
+            ]
+        })];
+        let update=PriceUpdate::from_payload(&json!({
+            "productId":"p1","variantId":"v1","tier":"wholesale",
+            "price":15000,"expected":null
+        })).expect("price update payload");
+        assert!(update.apply_to_products(&mut products));
+        assert_eq!(products[0]["variants"][0]["wholesale"],json!(15000));
+        let clear=PriceUpdate::from_payload(&json!({
+            "productId":"p1","variantId":"v1","tier":"semi",
+            "price":null,"expected":19000
+        })).expect("explicit null price payload");
+        assert!(clear.apply_to_products(&mut products));
+        assert_eq!(products[0]["variants"][0]["semi"],Value::Null);
+        assert_eq!(products[0]["variants"][0]["retail"],json!(26000));
+    }
+    #[test]
+    fn failed_price_write_keeps_dirty_draft_available_for_retry(){
+        let source=include_str!("product_manager.rs");
+        let poll=source.split("fn poll(").nth(1).unwrap()
+            .split("fn changed(").next().unwrap_or("");
+        assert!(poll.contains("self.active_price_editor=job.key;"));
+        let mut draft=PriceDraft{original:None,input:"15,000".into()};
+        assert!(draft.dirty());
+        // No mark_saved call is made on the error path.
+        assert_eq!(draft.parse().unwrap(),Some(15000));
+        assert!(draft.dirty());
     }
     #[test]
     fn catalog_options_do_not_create_mutable_catalog_entries(){
