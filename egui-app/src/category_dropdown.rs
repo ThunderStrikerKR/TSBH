@@ -323,7 +323,7 @@ fn category_back_button(ui:&mut Ui,enabled:bool)->Response{
 fn crumbs_row(
     ui:&mut Ui,state:&mut ExplorerState,index:&HashMap<&str,&CategoryNode>,
     selected:&mut String,enabled:bool,allow_empty:bool,changed:&mut bool
-){
+)->(egui::Rect,egui::Rect,Vec<egui::Rect>){
     let path=state.path.clone();
     let len=path.len();
     let row_width=ui.available_width().max(1.0);
@@ -357,23 +357,28 @@ fn crumbs_row(
     let mut go_to:Option<Vec<String>>=None;
     let mut toggle_ancestors=false;
     let mut apply=false;
+    let mut root_rect=egui::Rect::NOTHING;
+    let mut apply_rect=egui::Rect::NOTHING;
+    let mut chevrons=Vec::new();
     ui.horizontal(|bar|{
         bar.spacing_mut().item_spacing.x=theme::SPACE_4;
         let role=if selected.is_empty() && allow_empty {
             CrumbVisual::Applied
         }else if path.is_empty(){CrumbVisual::Current}
             else{CrumbVisual::Ordinary};
-        if crumb(bar,"전체",theme::CATEGORY_EXPLORER_ROOT_WIDTH,role).clicked(){
+        let root=crumb(bar,"전체",theme::CATEGORY_EXPLORER_ROOT_WIDTH,role);
+        root_rect=root.rect;
+        if root.clicked(){
             go_to=Some(Vec::new());
         }
         if hidden>0{
-            category_path_separator(bar);
+            chevrons.push(category_path_separator(bar).rect);
             if crumb(bar,"···",31.0,CrumbVisual::Ordinary).clicked(){
                 toggle_ancestors=true;
             }
         }
         for (offset,id) in visible.iter().enumerate(){
-            category_path_separator(bar);
+            chevrons.push(category_path_separator(bar).rect);
             let name=index.get(id.as_str()).map(|n|n.name.as_str())
                 .unwrap_or("분류 없음");
             let role=if id.as_str()==selected.as_str(){CrumbVisual::Applied}
@@ -386,12 +391,14 @@ fn crumbs_row(
         }
         let spacer=(bar.available_width()-apply_width-theme::SPACE_4).max(0.0);
         if spacer>0.0 {bar.add_space(spacer);}
-        if theme::action_with_min_width(
+        let response=theme::action_with_min_width(
             bar,"적용",theme::ButtonRole::Primary,
             enabled && (allow_empty || !path.is_empty())
                 && path.last().map(String::as_str).unwrap_or("")!=selected.as_str(),
             theme::CATEGORY_EXPLORER_APPLY_WIDTH
-        ).clicked(){apply=true;}
+        );
+        apply_rect=response.rect;
+        if response.clicked(){apply=true;}
     });
     if toggle_ancestors{state.ancestors_open=!state.ancestors_open;}
     if let Some(next)=go_to{
@@ -403,6 +410,7 @@ fn crumbs_row(
         floating_notice::dropdown_option_selected(ui.ctx());
         ui.close();
     }
+    (root_rect,apply_rect,chevrons)
 }
 fn menu_body(
     menu:&mut Ui,nodes:&[CategoryNode],index:&HashMap<&str,&CategoryNode>,
@@ -686,6 +694,68 @@ mod tests{
         assert_eq!(theme::CATEGORY_EXPLORER_POPUP_WIDTH,655.0);
         let source=include_str!("category_dropdown.rs");
         assert!(source.contains("menu.set_width(popup_width);"));
+    }
+    #[test]
+    fn actual_footer_button_rects_align_at_half_point_precision(){
+        // Exercise the real breadcrumb renderer, not just source literals.
+        // The same rects are used for hit-testing and for all text/arrow paints.
+        let nodes=fixture();
+        let index=tree_index(&nodes);
+        let mut selected=String::new();
+        let ctx=egui::Context::default();
+        for depth in [0_usize,1,3,4,30]{
+            let path=if depth==0{Vec::new()}else{
+                let last=if depth==1{"root".to_owned()}
+                    else{format!("node-{}",depth-2)};
+                chain(&index,&last)
+            };
+            let mut state=ExplorerState{
+                path,search:String::new(),ancestors_open:false
+            };
+            let mut output=None;
+            let _=ctx.run(egui::RawInput::default(),|ctx|{
+                egui::CentralPanel::default().show(ctx,|ui|{
+                    ui.set_width(theme::CATEGORY_EXPLORER_POPUP_WIDTH);
+                    ui.scope(|footer|{
+                        footer.spacing_mut().item_spacing.y=theme::SPACE_4;
+                        let right=footer.available_rect_before_wrap().right();
+                        let mut back_rect=egui::Rect::NOTHING;
+                        footer.horizontal(|row|{
+                            back_rect=category_back_button(row,depth>0).rect;
+                        });
+                        let mut changed=false;
+                        let (root,apply,arrows)=crumbs_row(
+                            footer,&mut state,&index,&mut selected,
+                            true,true,&mut changed
+                        );
+                        output=Some((right,back_rect,root,apply,arrows));
+                    });
+                });
+            });
+            let (right,back,root,apply,arrows)=output.unwrap();
+            let nearly_equal=|a:f32,b:f32|(a-b).abs()<=0.5;
+            assert!(nearly_equal(back.left(),root.left()),
+                "depth {depth} left origins differ: {back:?}, {root:?}");
+            assert!(nearly_equal(root.top()-back.bottom(),theme::SPACE_4),
+                "depth {depth} footer row gap is not 4pt");
+            assert!(nearly_equal(apply.right(),right),
+                "depth {depth} Apply button is not right aligned");
+            for control in [back,root,apply]{
+                assert!(nearly_equal(
+                    control.height(),theme::CATEGORY_EXPLORER_CRUMB_HEIGHT
+                ),"depth {depth} control height drift");
+            }
+            assert!(nearly_equal(back.width(),theme::CATEGORY_EXPLORER_BACK_WIDTH));
+            assert!(nearly_equal(root.width(),theme::CATEGORY_EXPLORER_ROOT_WIDTH));
+            assert!(nearly_equal(apply.width(),theme::CATEGORY_EXPLORER_APPLY_WIDTH));
+            for arrow in arrows{
+                assert!(nearly_equal(arrow.center().y,root.center().y),
+                    "depth {depth} separator vertical center drift");
+                assert!(nearly_equal(
+                    arrow.width(),theme::CATEGORY_EXPLORER_SEPARATOR_WIDTH
+                ));
+            }
+        }
     }
     #[test]
     fn footer_back_root_and_apply_have_the_same_control_height(){
