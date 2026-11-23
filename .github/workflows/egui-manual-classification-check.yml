@@ -44,6 +44,8 @@ jobs:
         run: cargo check --manifest-path egui-app/Cargo.toml
       - name: Verify nested modal input routing
         run: cargo test --manifest-path egui-app/Cargo.toml modal_input_routing_tests -- --nocapture
+      - name: Verify focused worksheet editor releases arrow keys
+        run: cargo test --manifest-path egui-app/Cargo.toml manual_inline_sheet_arrow_regression_tests -- --nocapture
       - name: Verify manual modal routing and Escape behavior
         run: cargo test --manifest-path egui-app/Cargo.toml manual_workspace_modal_routing_tests -- --nocapture
       - name: Verify React-equivalent pending quantity guards

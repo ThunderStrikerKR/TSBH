@@ -2361,7 +2361,14 @@ pub fn manual_linked_table_editor(
     editor_ui.add_sized(
         inner.size(),
         egui::TextEdit::singleline(value)
-            .font(egui::FontId::proportional(typography::FONT_BODY))
+            // Worksheet arrows navigate cells, rather than the TextEdit caret.
+            // Search and long-form editors keep their native caret behavior.
+            .event_filter(egui::EventFilter {
+                horizontal_arrows:false,
+                vertical_arrows:false,
+                ..Default::default()
+            })
+            .font(egui::FontId::proportional(typography::FONT_RECEPTION_RECIPIENT_TEXT))
             .text_color(if linked{source_highlight::ACTIVE_TEXT}else{theme::TEXT})
             .vertical_align(Align::Center)
             .margin(egui::Margin::symmetric(2,0))
@@ -6966,6 +6973,56 @@ mod modal_input_routing_tests {
     }
 }
 
+
+#[cfg(test)]
+mod manual_inline_sheet_arrow_regression_tests {
+    use super::*;
+
+    #[test]
+    fn focused_inline_sheet_editor_leaves_arrow_up_and_down_for_cell_navigation() {
+        let ctx=egui::Context::default();
+        typography::install(&ctx);
+        theme::install(&ctx);
+        let screen=Rect::from_min_size(
+            egui::Pos2::ZERO,Vec2::new(1200.0,800.0)
+        );
+        let mut value="2026 주문".to_owned();
+        let mut saw_focus=false;
+        for frame in 0..3{
+            let arrow=frame==2;
+            let mut raw=egui::RawInput {
+                screen_rect:Some(screen),
+                time:Some(frame as f64*0.1),
+                ..Default::default()
+            };
+            if arrow {
+                raw.events.push(egui::Event::Key {
+                    key:egui::Key::ArrowDown,
+                    physical_key:None,
+                    pressed:true,
+                    repeat:false,
+                    modifiers:egui::Modifiers::NONE,
+                });
+            }
+            let _=ctx.run(raw,|ctx|{
+                egui::CentralPanel::default().show(ctx,|ui|{
+                    let response=manual_linked_table_editor(
+                        ui,&mut value,200.0,false
+                    );
+                    if frame==0 {response.request_focus();}
+                    if arrow {
+                        saw_focus=response.has_focus();
+                        assert!(ui.input(|input|
+                            input.key_pressed(egui::Key::ArrowDown)
+                        ),"the editor must not swallow the worksheet's arrow key");
+                    }
+                });
+            });
+        }
+        assert!(saw_focus,"the editor is focused when ArrowDown is pressed");
+        assert_eq!(value,"2026 주문","ArrowDown must not edit the value");
+    }
+}
 
 #[cfg(test)]
 mod manual_nested_prompt_regression_tests{

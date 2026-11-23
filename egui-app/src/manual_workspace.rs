@@ -159,6 +159,70 @@ fn manual_cell_targets(model:&Value)->Vec<ManualCellTarget>{
     cells
 }
 
+/// Recipient fields and product subrows form two independent worksheet grids.
+/// The old scheme assigned every product the SHIPMENT row, which prevented
+/// ArrowUp/Down from moving between actual product rows.
+fn manual_navigation_cells(
+    model:&Value,pending:Option<&ManualCellTarget>
+)->Vec<CellNavigationCell>{
+    let rows=list(model,"rows");
+    let mut cells=Vec::new();
+    let mut order=0usize;
+    let mut product_row=0usize;
+    for (row_index,row) in rows.iter().enumerate(){
+        for (column,field) in ["name","address","mobile","phone","note"]
+            .iter().enumerate(){
+            let target=ManualCellTarget{
+                row:row_index,item:None,field:(*field).into()
+            };
+            cells.push(CellNavigationCell{
+                id:manual_cell_key(&target),
+                row:row_index,column,order,
+                enabled:manual_cell_allowed(pending,&target),
+            });
+            order+=1;
+        }
+        for item in list(row,"items"){
+            let item_id=text(item,"id").to_owned();
+            for (column,field) in ["product","quantity","unitPrice"]
+                .iter().enumerate(){
+                let target=ManualCellTarget{
+                    row:row_index,item:Some(item_id.clone()),field:(*field).into()
+                };
+                cells.push(CellNavigationCell{
+                    id:manual_cell_key(&target),
+                    // Product columns use a distinct namespace so ArrowUp
+                    // cannot jump into an unrelated recipient-name field.
+                    row:rows.len()+product_row,column:5+column,order,
+                    enabled:manual_cell_allowed(pending,&target),
+                });
+                order+=1;
+            }
+            product_row+=1;
+        }
+    }
+    cells
+}
+
+fn manual_ime_navigation_blocked(
+    composing:&mut bool,events:&[egui::Event]
+)->bool{
+    let mut seen_ime_event=false;
+    for event in events {
+        if let egui::Event::Ime(ime)=event {
+            seen_ime_event=true;
+            match ime {
+                egui::ImeEvent::Preedit(text)=>*composing=!text.is_empty(),
+                egui::ImeEvent::Commit(_)|egui::ImeEvent::Disabled=>*composing=false,
+                egui::ImeEvent::Enabled=>{},
+            }
+        }
+    }
+    // A Commit event may share an Enter/Arrow key frame. Never navigate
+    // on a frame containing an IME event, even when composition just ended.
+    *composing || seen_ime_event
+}
+
 fn manual_row_has_data(row:&Value,assignments:&Value)->bool{
     ["name","address","mobile","phone","note"].iter()
         .any(|field|!text(row,field).trim().is_empty()) ||
@@ -522,6 +586,7 @@ pub struct ManualWorkspace {
     selected_field:String,
     edit_text:String,
     focus_editor:bool,
+    ime_composing:bool,
     row_count_text:String,
     history:Vec<ManualHistoryFrame>,
     pending_select_after_apply:Option<ManualCellTarget>,
@@ -578,7 +643,8 @@ impl ManualWorkspace {
             assignment_order:Vec::new(),remote_rows:Vec::new(),
             selected_recipient:0,
             selected_item:None,selected_field:"name".into(),
-            edit_text:String::new(),focus_editor:false,row_count_text:"1".into(),
+            edit_text:String::new(),focus_editor:false,ime_composing:false,
+            row_count_text:"1".into(),
             history:Vec::new(),pending_select_after_apply:None,
             advance_after_apply:None,last_action:None,action_pending:false,
             confirm_discard:false,confirm_apply:false,
@@ -733,6 +799,7 @@ impl ManualWorkspace {
         self.selected_item=item;
         self.selected_field=field.to_owned();
         self.edit_text=self.current_value();
+        self.ime_composing=false;
         self.focus_editor=true;
     }
 
@@ -787,18 +854,7 @@ impl ManualWorkspace {
         let cells=manual_cell_targets(model);
         if cells.is_empty(){return;}
         let pending=self.pending_quantity_cell();
-        let mut row_columns=vec![0usize;list(model,"rows").len()];
-        let navigation_cells:Vec<CellNavigationCell>=cells.iter().enumerate().map(
-            |(order,cell)|{
-                let column=row_columns.get_mut(cell.row).map(|value|{
-                    let column=*value;*value+=1;column
-                }).unwrap_or(order);
-                CellNavigationCell{
-                    id:manual_cell_key(cell),row:cell.row,column,order,
-                    enabled:manual_cell_allowed(pending.as_ref(),cell)
-                }
-            }
-        ).collect();
+        let navigation_cells=manual_navigation_cells(model,pending.as_ref());
         let current=ManualCellTarget{
             row:self.selected_recipient,item:self.selected_item.clone(),
             field:self.selected_field.clone()
@@ -809,13 +865,6 @@ impl ManualWorkspace {
         ) else{return};
         let Some(target)=cells.iter().find(|cell|manual_cell_key(cell)==target_id).cloned()
         else{return};
-        // Keep vertical movement on the immediately adjacent recipient row.
-        if matches!(navigation,CellNavigationKey::Up|CellNavigationKey::Down){
-            let expected=if navigation==CellNavigationKey::Up{
-                self.selected_recipient.checked_sub(1)
-            }else{Some(self.selected_recipient+1)};
-            if expected!=Some(target.row){return;}
-        }
         self.select_cell(target.row,target.item,&target.field);
     }
 
@@ -872,6 +921,9 @@ impl ManualWorkspace {
     fn selected_cell_editor(
         &mut self,ui:&mut egui::Ui,width:f32,linked:bool,busy:bool
     )->(egui::Response,Option<CellNavigationKey>){
+        let ime_blocked=ui.input(|input|
+            manual_ime_navigation_blocked(&mut self.ime_composing,&input.events)
+        );
         let response=components::manual_linked_table_editor(
             ui,&mut self.edit_text,width,linked
         );
@@ -883,9 +935,7 @@ impl ManualWorkspace {
         }
         let navigation=if response.has_focus(){
             ui.input(|input|{
-                if input.events.iter().any(|event|
-                    matches!(event,egui::Event::Ime(_))
-                ){None}
+                if ime_blocked {None}
                 else if input.key_pressed(egui::Key::Enter){
                     Some(CellNavigationKey::Next)
                 }else if input.key_pressed(egui::Key::Tab){
@@ -2320,6 +2370,55 @@ mod manual_workspace_modal_routing_tests {
         assert_eq!(keys[7],(0,Some("i1"),"unitPrice"));
         assert_eq!(keys[10],(0,Some("i2"),"unitPrice"));
         assert_eq!(keys[11],(1,None,"name"));
+    }
+
+    #[test]
+    fn arrows_navigate_real_product_subrows_and_the_same_recipient_column(){
+        let model=json!({"rows":[
+            {"id":"r1","items":[{"id":"i1"},{"id":"i2"}]},
+            {"id":"r2","items":[{"id":"i3"}]}
+        ]});
+        let cells=manual_navigation_cells(&model,None);
+        let key=|row:usize,item:Option<&str>,field:&str|
+            manual_cell_key(&ManualCellTarget{
+                row,item:item.map(str::to_owned),field:field.into()
+            });
+        let target=|id:String,direction:CellNavigationKey|
+            cell_navigation::resolve_cell_navigation_target(&cells,&id,direction);
+        assert_eq!(target(key(0,None,"address"),CellNavigationKey::Down),
+            Some(key(1,None,"address")));
+        assert_eq!(target(key(1,None,"address"),CellNavigationKey::Up),
+            Some(key(0,None,"address")));
+        assert_eq!(target(key(0,Some("i1"),"quantity"),CellNavigationKey::Down),
+            Some(key(0,Some("i2"),"quantity")),
+            "ArrowDown moves to the following visible product row");
+        assert_eq!(target(key(0,Some("i2"),"quantity"),CellNavigationKey::Down),
+            Some(key(1,Some("i3"),"quantity")));
+        assert_eq!(target(key(0,Some("i2"),"quantity"),CellNavigationKey::Up),
+            Some(key(0,Some("i1"),"quantity")));
+        assert_eq!(target(key(1,None,"name"),CellNavigationKey::Down),None,
+            "recipient fields must never jump into product columns");
+        assert_eq!(target(key(0,Some("i1"),"product"),CellNavigationKey::Up),None,
+            "product fields must never jump into recipient columns");
+        assert_eq!(target(key(0,None,"note"),CellNavigationKey::Right),None,
+            "horizontal arrows never wrap to a different table");
+        assert_eq!(target(key(0,Some("i1"),"unitPrice"),CellNavigationKey::Right),None);
+    }
+
+    #[test]
+    fn korean_ime_composition_stops_arrows_until_commit_is_complete(){
+        let mut composing=false;
+        assert!(manual_ime_navigation_blocked(&mut composing,&[
+            egui::Event::Ime(egui::ImeEvent::Preedit("ㅎ".into()))
+        ]));
+        assert!(composing);
+        assert!(manual_ime_navigation_blocked(&mut composing,&[]),
+            "an IME preedit continues across frames");
+        assert!(manual_ime_navigation_blocked(&mut composing,&[
+            egui::Event::Ime(egui::ImeEvent::Commit("한".into()))
+        ]),"the commit frame must not navigate on Enter");
+        assert!(!composing);
+        assert!(!manual_ime_navigation_blocked(&mut composing,&[]));
     }
 
     #[test]
