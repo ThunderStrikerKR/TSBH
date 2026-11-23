@@ -1777,8 +1777,8 @@ pub fn reception_recipient_navigator(
 }
 
 /// The READ and EDIT renderers of recipient fields must use exactly one
-/// typography/padding definition. Contact numbers retain the numeric Consolas
-/// font while the other three fields use the 16pt proportional family.
+/// typography/padding definition. Contact numbers use the same 16pt regular
+/// proportional UI family as name, address, message and source text.
 fn reception_recipient_text_edit(
     value:&mut String,width:f32,active:bool,phone_number:bool
 )->egui::TextEdit<'_>{
@@ -4516,7 +4516,10 @@ pub fn reception_total_footer(
     );
     ui.painter().with_clip_rect(first_amount).text(
         egui::pos2(right, rect.top() + 17.0), egui::Align2::RIGHT_CENTER,
-        &amount, egui::FontId::monospace(18.0), theme::TEXT,
+        &amount, typography::data_value_font(
+            typography::DataValueKind::Money,
+            typography::DataValueContext::ReceptionTotal
+        ), theme::TEXT,
     );
     // A missing shipment count is unknown, not zero.
     let count_text = count.map(|n| format!("배송 {n}건"))
@@ -4873,7 +4876,7 @@ mod management_toolbar_geometry_tests {
                 typography::DataValueKind::Phone,
                 typography::DataValueContext::Reception
             ),
-            egui::FontId::monospace(typography::FONT_RECEPTION_RECIPIENT_TEXT)
+            egui::FontId::proportional(typography::FONT_RECEPTION_RECIPIENT_TEXT)
         );
     }
 
