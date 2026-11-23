@@ -399,16 +399,17 @@ fn menu_body(
         }else{"하위 카테고리"}));
         heading.label(typography::caption(&format!("{}개",items.len())));
     });
-    let list_height=(menu.ctx().screen_rect().height()-270.0)
-        .max(100.0).min(if state.ancestors_open{120.0}
-            else{theme::CATEGORY_EXPLORER_LIST_MAX_HEIGHT});
+    // Stable six-row viewport in search, navigation and empty states.
+    // Reduce it only if the OS viewport cannot physically fit the popup.
+    let list_height=theme::CATEGORY_EXPLORER_LIST_MAX_HEIGHT
+        .min((menu.ctx().screen_rect().height()-270.0).max(100.0));
     let mut next_path=None;
     egui::ScrollArea::vertical()
         .id_salt(("category-explorer-list",state.path.clone(),state.search.clone()))
         .max_height(list_height)
-        // Zero or few children must not reserve the entire 216pt viewport.
-        // Long lists still scroll locally and leave the footer outside it.
-        .auto_shrink([false,true])
+        // Always reserve all six rows, even if the category list is empty.
+        // The seventh row and beyond scroll inside this area only.
+        .auto_shrink([false,false])
         .show(menu,|list|{
             list.spacing_mut().item_spacing.y=theme::SPACE_4;
             let list_width=list.available_width().max(1.0);
@@ -630,12 +631,18 @@ mod tests{
         assert!(source.contains("menu.set_width(popup_width);"));
     }
     #[test]
-    fn category_list_preserves_only_a_max_height_and_shrinks_to_content(){
+    fn category_list_reserves_six_rows_regardless_of_item_count(){
+        assert_eq!(theme::CATEGORY_EXPLORER_VISIBLE_ROWS,6);
+        let expected=6.0*CATEGORY_RESULT_ROW_HEIGHT+5.0*theme::SPACE_4;
+        assert_eq!(theme::CATEGORY_EXPLORER_LIST_MAX_HEIGHT,expected);
+        assert_eq!(expected,224.0);
         let source=include_str!("category_dropdown.rs");
         let list=source.split(".id_salt((\"category-explorer-list\"").nth(1).unwrap()
             .split("    if let Some(path)=next_path{").next().unwrap();
-        assert!(list.contains(".auto_shrink([false,true])"));
-        assert!(!list.contains(".auto_shrink([false,false])"));
+        assert!(list.contains(".max_height(list_height)"));
+        assert!(list.contains(".auto_shrink([false,false])"));
+        assert!(!list.contains(".auto_shrink([false,true])"));
+        assert!(!list.contains("state.ancestors_open{120.0}"));
     }
     #[test]
     fn selected_and_current_categories_are_distinct_color_roles(){
