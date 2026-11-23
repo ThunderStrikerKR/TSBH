@@ -295,3 +295,13 @@ cargo test --manifest-path egui-app/Cargo.toml fixed_layout_slot_contract_tests 
 - `product_excel_ui::tests`와 `category_manager::modal_layout_contract_tests`를 컴파일 직후 실행하도록 targeted workflow 순서를 조정했다.
 - 워크플로 커밋: `f82322d146565b6d778b0422c20bd81e5d54b358`
 - 수정 후 Windows targeted run `45274707383`은 실행 중이며, 해당 두 테스트의 최신 SHA 기준 결과는 아직 미확정이다.
+
+
+## 9. 후속 코드 수정 및 검증 갱신 (2026-11-24)
+
+- 과거 `fixed_layout_slot_contract_tests`의 `FontFamily::Name("bando-ui-emphasis")` panic은 공통 테스트 컨텍스트 `test_context()`에서 `theme::install(&ctx)`과 `typography::install(&ctx)`을 실행하도록 이미 고쳐져 있다.
+- 해당 수정 이후 Windows targeted CI run [45274782242](https://github.com/ThunderStrikerKR/TSBH/actions/runs/45274782242)는 **success**다. 따라서 이 문서의 앞선 `45256657291` 대기 기록은 최신 판정이 아니다.
+- 추가 강화: `components.rs`의 `optional_status_keeps_its_rect_and_the_next_control_fixed`에 장문 검증 안내 상태를 추가하고, 없음/일반/장문 모든 경우에 슬롯 Rect, 다음 컨트롤 Rect, 단일 할당 간격이 동일함을 검사한다.
+- 강화된 테스트 소스 커밋: `c38b4a383aa4e417bb058a49f77dc7b5410a7c87`, `b5806426cbb5ee79a0ac248a6bd4d0b1f0e25a36`.
+- 새 커밋에 대한 CI 결과는 별도로 확정해야 한다. 이전 성공 run을 신규 변경의 PASS로 대체하지 않는다.
+- 실제 Windows UI 픽셀 측정은 여전히 단위 테스트 및 headless 렌더링과 구분한다.
