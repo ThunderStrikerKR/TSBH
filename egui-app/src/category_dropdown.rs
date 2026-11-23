@@ -606,7 +606,7 @@ mod tests{
         let (parents,leaf)=fitted_category_row_text(&labels,100.0,measure);
         assert_eq!(parents,"반도스탠드 > 보면대 > ");
         assert_eq!(leaf,"책상,국악,성악용 보면대");
-        assert_eq!(format!("{parents}{leaf}").matches(&leaf).count(),1);
+        assert_eq!(format!("{parents}{leaf}").matches(leaf.as_str()).count(),1);
         let (parents,leaf)=fitted_category_row_text(&labels,25.0,measure);
         assert!(parents.starts_with('…') || parents.is_empty());
         assert_eq!(leaf,"책상,국악,성악용 보면대");
