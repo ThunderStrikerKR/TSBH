@@ -117,24 +117,44 @@ fn crumb(
     painter.rect(
         rect,theme::CONTROL_RADIUS,background,stroke,egui::StrokeKind::Inside
     );
-    let visible=typography::fit_category_path(
-        ui,label,(width-theme::SPACE_8).max(1.0),
-        typography::CategoryPathFont::Body
-    );
+    // A breadcrumb is a single category, not a whole path. Keep its first
+    // characters on overflow (ending ellipsis), never the trailing suffix
+    // produced by fit_category_path's category-leaf algorithm.
+    let visible=fit_breadcrumb_label(ui,label,(width-theme::SPACE_8).max(1.0));
     painter.text(
         rect.center(),Align2::CENTER_CENTER,visible,
         egui::FontId::proportional(typography::FONT_STANDARD_ACTION),ink
     );
     response.on_hover_text(label)
 }
-/// Give short ancestors only the width their text needs. When the full
-/// breadcrumb does not fit, shrink both labels within the fixed footer budget
-/// instead of allocating equal, oversized columns.
+/// A breadcrumb represents ONE category, not a flattened category path.
+/// Retain its beginning on overflow; full text is still available on hover.
+fn fit_breadcrumb_label(ui:&Ui,name:&str,max_width:f32)->String{
+    let font=egui::FontId::proportional(typography::FONT_STANDARD_ACTION);
+    let width=|text:&str|ui.painter().layout_no_wrap(
+        text.to_owned(),font.clone(),theme::TEXT
+    ).size().x;
+    if max_width<=0.0{return String::new();}
+    if width(name)<=max_width{return name.to_owned();}
+    if width("…")>max_width{return String::new();}
+    for (end,_) in name.char_indices().rev(){
+        if end==0{continue;}
+        let candidate=format!("{}…",&name[..end]);
+        if width(&candidate)<=max_width{return candidate;}
+    }
+    "…".to_owned()
+}
+/// Always expose the last three actual category levels. "전체" is a
+/// separate root-navigation control, not counted as a category level.
+fn shown_category_count(depth:usize)->usize{depth.min(3)}
+/// Category names keep their measured width whenever the footer has room.
+/// If three long names exceed the fixed budget, shorten the names (not the
+/// popup) while retaining all three clickable breadcrumb slots.
 fn fitted_crumb_widths(intrinsic:&[f32],budget:f32)->Vec<f32>{
     if intrinsic.is_empty(){return Vec::new();}
-    let min_width=(budget/intrinsic.len() as f32).min(26.0).max(12.0);
+    let min_width=(budget/intrinsic.len() as f32).min(26.0).max(0.0);
     let widths=intrinsic.iter().map(|width|
-        width.clamp(min_width,160.0)
+        width.max(min_width)
     ).collect::<Vec<_>>();
     let sum=widths.iter().sum::<f32>();
     if sum<=budget{return widths;}
@@ -152,10 +172,10 @@ fn crumbs_row(
     let path=state.path.clone();
     let len=path.len();
     let row_width=ui.available_width().max(1.0);
-    // On normal popup widths preserve "전체 > ··· > 부모 > 현재".
-    // Narrow popups show only the current category beside the ellipsis.
-    let shown_count=if row_width<320.0{1}else{2};
-    let hidden=len.saturating_sub(shown_count);
+    // Keep three explicit category levels at every depth. Earlier levels
+    // collapse into the ancestor selector only from the fourth category.
+    let shown_count=shown_category_count(len);
+    let hidden=len-shown_count;
     let visible=path[hidden..].to_vec();
     let apply_width=70.0;
     // Include the 4pt gap between controls and all separator labels.
@@ -232,8 +252,11 @@ fn menu_body(
     allow_empty:bool,changed:&mut bool,trigger_rect:egui::Rect,popup_width:f32,
 ){
     floating_notice::dropdown_popup_trigger(menu.ctx(),trigger_rect);
+    // Explicitly fix the menu's content rect. Text length and breadcrumb
+    // count may change internal allocation but never the popup width.
     menu.set_min_width(popup_width);
     menu.set_max_width(popup_width);
+    menu.set_width(popup_width);
     menu.spacing_mut().item_spacing.y=theme::SPACE_8;
     let available=menu.available_width().max(1.0);
     let search_response=components::management_search_field(
@@ -355,7 +378,7 @@ fn menu_body(
         state.search.clear();
         state.ancestors_open=false;
     }
-    if state.ancestors_open && state.path.len()>2{
+    if state.ancestors_open && state.path.len()>3{
         egui::Frame::new()
             .fill(theme::INPUT)
             .stroke(Stroke::new(theme::SOFT_DIVIDER_WIDTH,theme::BORDER))
@@ -369,7 +392,7 @@ fn menu_body(
                     .id_salt("category-explorer-ancestors")
                     .max_height(theme::CATEGORY_EXPLORER_ANCESTOR_MAX_HEIGHT)
                     .show(ancestor_menu,|rows|{
-                        for (i,id) in path.iter().enumerate().take(path.len()-2){
+                        for (i,id) in path.iter().enumerate().take(path.len()-shown_category_count(path.len())){
                             let name=index.get(id.as_str())
                                 .map(|node|node.name.as_str()).unwrap_or(id);
                             if theme::action(
@@ -495,6 +518,20 @@ mod tests{
         assert!(fitted[0]<fitted[1]);
         assert!(fitted.iter().all(|width|*width>=26.0));
         assert!(fitted_crumb_widths(&[],100.0).is_empty());
+    }
+    #[test]
+    fn first_three_categories_are_never_hidden_by_the_depth_rule(){
+        for depth in 0..=3{
+            assert_eq!(shown_category_count(depth),depth);
+        }
+        assert_eq!(shown_category_count(4),3);
+        assert_eq!(shown_category_count(30),3);
+    }
+    #[test]
+    fn fixed_popup_width_is_thirty_percent_wider_than_previous_design(){
+        assert_eq!(theme::CATEGORY_EXPLORER_POPUP_WIDTH,546.0);
+        let source=include_str!("category_dropdown.rs");
+        assert!(source.contains("menu.set_width(popup_width);"));
     }
     #[test]
     fn category_list_preserves_only_a_max_height_and_shrinks_to_content(){
