@@ -6898,13 +6898,16 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                             recipient_id:recipient_id.to_owned(),
                                             item_id:None,field:"shippingCharge"
                                         };
+                                        let item_count=recipient.get("items")
+                                            .and_then(serde_json::Value::as_array)
+                                            .map_or(0,|items|items.len());
                                         inline_navigation.push(InlineNavigationEntry{
                                             target:freight_target.clone(),
                                             original:line_fee.map(|n|n.to_string()).unwrap_or_default(),
                                             cell:CellNavigationCell{
                                                 id:inline_target_key(&freight_target),
-                                                row:items.len()+1,column:2,
-                                                order:5+items.len()*2,enabled:editable
+                                                row:item_count+1,column:2,
+                                                order:5+item_count*2,enabled:editable
                                             }
                                         });
                                         // Adding products belongs to the section header,
