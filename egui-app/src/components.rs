@@ -1792,6 +1792,22 @@ pub fn multiline_text_field(
     ui.add_enabled(enabled,editor)
 }
 
+/// Shared exact-viewport multiline editor for content-specific text roles.
+/// The caller may supply a dedicated font and inset without rebuilding the
+/// native TextEdit or bypassing the common input layer.
+pub fn multiline_text_field_sized(
+    ui:&mut Ui,value:&mut String,enabled:bool,size:Vec2,
+    font:egui::FontId,frame:bool,margin:egui::Margin,desired_rows:usize
+)->Response{
+    let editor=egui::TextEdit::multiline(value)
+        .font(font)
+        .frame(frame)
+        .margin(margin)
+        .desired_width(size.x)
+        .desired_rows(desired_rows);
+    ui.add_enabled_ui(enabled,|field|field.add_sized(size,editor)).inner
+}
+
 /// Search inputs are append-first: a normal pointer click to resume an
 /// existing filter places the caret after its last Unicode character, even
 /// when the click lands over the first character. This does NOT alter ordinary
