@@ -658,6 +658,9 @@ pub const MANAGEMENT_SEARCH_MIN_WIDTH: f32 = 240.0;
 pub const MANAGEMENT_FILTER_DROPDOWN_WIDTH: f32 = 148.0;
 // Common single-select menus scroll locally instead of growing beyond the viewport.
 pub const MANAGEMENT_DROPDOWN_MENU_MAX_HEIGHT: f32 = 320.0;
+// A 148pt toolbar trigger remains compact, while its searchable popup
+// provides enough width for a full search field and single-line options.
+pub const MANAGEMENT_SEARCHABLE_POPUP_MIN_WIDTH: f32 = 280.0;
 /// Selectable option hit box: 14pt Korean label needs symmetric vertical ink
 /// clearance rather than egui's small natural-height selectable row.
 pub const MANAGEMENT_DROPDOWN_OPTION_HEIGHT: f32 = 28.0;
