@@ -1830,7 +1830,35 @@ impl ManualWorkspace {
                 return Some(Event::Closed);
             }
         }
-        if self.confirm_discard {
+        if self.complete_pending {
+            let mut confirm=false;
+            let mut cancel=false;
+            components::decision_window("수동 분류 완료","manual-completion-prompt",work_area)
+                .constrain_to(work_area)
+                .show(ctx,|ui|{
+                    cancel=components::modal_header(
+                        ui,"수동 분류 완료","취소",true
+                    );
+                    ui.label("수동 분류 결과를 초안에 적용할까요?");
+                    let actions=components::modal_action_row(ui,|buttons|{
+                        let proceed=theme::action(
+                            buttons,"피드백 없이 진행",ButtonRole::Primary,true
+                        ).clicked();
+                        let dismiss=theme::action(
+                            buttons,"취소",ButtonRole::Standard,true
+                        ).clicked();
+                        (proceed,dismiss)
+                    }).inner;
+                    confirm=actions.0;
+                    cancel|=actions.1;
+                });
+            if confirm {
+                self.complete_pending=false;
+                apply=true;
+            }else if cancel{
+                self.complete_pending=false;
+            }
+        }else if self.confirm_discard {
             let mut confirm=true;
             components::decision_window("수동 분류 변경 취소","manual-discard-prompt",work_area)
                 .constrain_to(work_area)
