@@ -43,11 +43,11 @@ test("IME composition blocks navigation keys", () => {
 test("React cell editors use the shared contract and retain manual quantity gating", () => {
   const price = read("src/PriceCell.tsx");
   const product = read("src/ProductManager.tsx");
-  assert.match(price, /findCellNavigationTarget\(\s*e\.currentTarget, e\.key, e\.shiftKey, "same-column"/);
-  assert.match(price, /isImeComposing\(e\)/);
+  assert.match(price, /handleCellNavigationKey\(e, \{/);
+  assert.match(price, /enterMode: "same-column"/);
   assert.match(product, /data-cell-nav-grid="product-prices"/);
-  assert.match(read("src/OrderDesk.tsx"), /data-cell-nav-grid="order-intake"/);
-  assert.match(read("src/WorkflowFooter.tsx"), /findCellNavigationTarget\(e\.currentTarget, e\.key, e\.shiftKey\)/);
+  assert.match(read("src/OrderDesk.tsx"), /handleCellNavigationKey\(e\)/);
+  assert.match(read("src/WorkflowFooter.tsx"), /handleCellNavigationKey\(e, \{/);
   assert.match(read("src/orders/ManualClassification.tsx"), /resolveCellNavigationTarget\(/);
 });
 
