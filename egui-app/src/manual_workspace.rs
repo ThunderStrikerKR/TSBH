@@ -531,7 +531,7 @@ impl ManualWorkspace {
             selected_item:None,selected_field:"name".into(),
             edit_text:String::new(),focus_editor:false,history:Vec::new(),
             advance_after_apply:None,last_action:None,action_pending:false,
-            confirm_discard:false,
+            confirm_discard:false,complete_pending:false,
             product_search:None,remove_recipient_pending:None,
             reset_pending:false,
             receiver:Some(rx),error:None,dirty:false,applied:None,
