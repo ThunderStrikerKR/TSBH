@@ -167,6 +167,12 @@ fn manual_row_has_data(row:&Value,assignments:&Value)->bool{
         ["productId","variantId","quantity","unitPrice","manualUnitPrice"]
             .iter().any(|field|item.get(*field).is_some_and(|value|!value.is_null()))
     }) ||
+    text(row,"dispatchOrigin")=="STORE" ||
+    text(row,"freightCode")=="020" ||
+    row.get("shippingCharge").and_then(Value::as_i64).is_some_and(|amount|amount>0) ||
+    row.get("remoteDelivery").is_some_and(|decision|
+        decision.get("manual").and_then(Value::as_bool)==Some(true)
+    ) ||
     assignments.as_object().is_some_and(|map|map.values().any(|cell|
         text(cell,"recipientId")==text(row,"id")
     ))
@@ -2337,6 +2343,18 @@ mod manual_workspace_modal_routing_tests {
         ));
         assert!(manual_row_has_data(
             &json!({"id":"r3","address":"강원도 홍천군","items":[{}]}),
+            &assignments
+        ));
+        assert!(manual_row_has_data(
+            &json!({"id":"r4","dispatchOrigin":"STORE","freightCode":"010"}),
+            &assignments
+        ));
+        assert!(manual_row_has_data(
+            &json!({"id":"r5","freightCode":"020"}),
+            &assignments
+        ));
+        assert!(manual_row_has_data(
+            &json!({"id":"r6","remoteDelivery":{"manual":true,"checked":false}}),
             &assignments
         ));
     }
