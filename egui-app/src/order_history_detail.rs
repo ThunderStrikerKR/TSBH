@@ -62,47 +62,16 @@ fn section_panel(
     ui:&mut Ui,rect:Rect,title:&str,id:&'static str,order_id:&str,
     body:impl FnOnce(&mut Ui)
 ){
-    if rect.width()<2.0||rect.height()<2.0{return;}
-    ui.painter().rect(
-        rect,theme::CONTROL_RADIUS as f32,theme::INPUT,
-        Stroke::new(1.0,theme::DIVIDER),egui::StrokeKind::Inside
+    // This module supplies only order/pane identity and approved geometry.
+    // Frame paint, title clipping and independent scrolling belong to the
+    // shared component so every fixed detail pane behaves identically.
+    components::fixed_scroll_panel(
+        ui,rect,title,
+        ("history-detail-heading",order_id,id),
+        ("history-detail-pane",order_id,id),
+        Vec2::new(INSET_X,INSET_Y),
+        PANE_TITLE_HEIGHT,theme::SPACE_4,body
     );
-    let inner=rect.shrink2(Vec2::new(INSET_X,INSET_Y));
-    let parent_clip=ui.clip_rect();
-    // Separate title/body rectangles avoid implicit layout spacing and
-    // prevent a nested scroller from overlapping the pane's bottom border.
-    let title_rect=Rect::from_min_size(
-        inner.min,Vec2::new(inner.width(),PANE_TITLE_HEIGHT-theme::SPACE_4)
-    );
-    let scroll_rect=Rect::from_min_max(
-        egui::pos2(inner.left(),inner.top()+PANE_TITLE_HEIGHT),inner.max
-    );
-    ui.scope_builder(UiBuilder::new()
-        .id_salt(("history-detail-heading",order_id,id))
-        .max_rect(title_rect)
-        .layout(Layout::top_down(Align::Min)),|heading|{
-            heading.set_clip_rect(title_rect.intersect(parent_clip));
-            heading.label(typography::section_heading(title));
-        });
-    ui.scope_builder(UiBuilder::new()
-        .id_salt(("history-detail-pane",order_id,id))
-        .max_rect(scroll_rect)
-        .layout(Layout::top_down(Align::Min)),|content|{
-            content.set_clip_rect(scroll_rect.intersect(parent_clip));
-            content.set_width(scroll_rect.width());
-            content.spacing_mut().item_spacing.y=0.0;
-            egui::ScrollArea::vertical()
-                .id_salt(("history-detail-scroll",order_id,id))
-                .max_height(scroll_rect.height().max(1.0))
-                .auto_shrink([false,false])
-                .scroll_bar_visibility(
-                    egui::containers::scroll_area::ScrollBarVisibility::VisibleWhenNeeded
-                )
-                .show(content,|scroll|{
-                    scroll.spacing_mut().item_spacing.y=theme::SPACE_4;
-                    body(scroll);
-                });
-        });
 }
 fn overview(ui:&mut Ui,rect:Rect,row:&Value,shipment_count:usize){
     ui.painter().rect(
