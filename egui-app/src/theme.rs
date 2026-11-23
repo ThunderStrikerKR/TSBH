@@ -64,7 +64,12 @@ pub const MANAGEMENT_DROPDOWN_HOVER_BG: Color32 = Color32::from_rgb(57, 91, 118)
 // Fixed popup width, 30% wider than the former 420pt explorer.
 // Only a genuinely narrower viewport may reduce this width.
 pub const CATEGORY_EXPLORER_POPUP_WIDTH:f32=546.0;
-pub const CATEGORY_EXPLORER_LIST_MAX_HEIGHT:f32=216.0;
+// Every category list reserves exactly six 34pt rows plus five 4pt gaps.
+// A short/empty list leaves the unused rows blank; longer lists scroll locally.
+pub const CATEGORY_EXPLORER_VISIBLE_ROWS:usize=6;
+pub const CATEGORY_EXPLORER_LIST_MAX_HEIGHT:f32=
+    ACTION_STANDARD_HEIGHT*CATEGORY_EXPLORER_VISIBLE_ROWS as f32
+    +SPACE_4*(CATEGORY_EXPLORER_VISIBLE_ROWS-1) as f32;
 pub const CATEGORY_EXPLORER_ANCESTOR_MAX_HEIGHT:f32=144.0;
 pub const CATEGORY_EXPLORER_CRUMB_HEIGHT:f32=28.0;
 pub const CATEGORY_EXPLORER_APPLIED_BG:Color32=Color32::from_rgb(90,61,33);
