@@ -720,6 +720,8 @@ pub enum ButtonRole {
     TableSecondary,
     Emphasized,
     Quiet,
+    /// Transparent 36pt action for secondary navigation inside popups.
+    Ghost,
     Danger,
     Navigation,
     ActiveNavigation,
@@ -1017,6 +1019,7 @@ pub fn action_with_min_width(
         ),
         ButtonRole::Emphasized => (ACTION_EMPHASIZED_HEIGHT, BRIGHT, BRIGHT_TEXT, Stroke::NONE),
         ButtonRole::Quiet => (ACTION_QUIET_HEIGHT, Color32::TRANSPARENT, SECONDARY, Stroke::NONE),
+        ButtonRole::Ghost => (ACTION_PRIMARY_HEIGHT, Color32::TRANSPARENT, SECONDARY, Stroke::NONE),
         ButtonRole::Danger => (34.0, Color32::from_rgb(84, 44, 48), DANGER, Stroke::NONE),
         ButtonRole::Navigation => (NAV_HEIGHT, Color32::TRANSPARENT, SECONDARY, Stroke::NONE),
         ButtonRole::ActiveNavigation => (NAV_HEIGHT, Color32::from_rgb(41, 72, 92), TEXT, Stroke::NONE),
@@ -1029,7 +1032,9 @@ pub fn action_with_min_width(
     // egui's generic disabled tint alone was too close to the enabled state.
     // Respect disabled parent Ui scopes as well as the local enabled flag.
     let effective_enabled=enabled && ui.is_enabled();
-    let (fill,color,stroke)=if !effective_enabled
+    let (fill,color,stroke)=if !effective_enabled && role==ButtonRole::Ghost {
+        (Color32::TRANSPARENT,DISABLED_ACTION_TEXT,Stroke::NONE)
+    }else if !effective_enabled
         && matches!(role,
             ButtonRole::Standard | ButtonRole::TableSecondary | ButtonRole::Emphasized
         )
@@ -1051,6 +1056,7 @@ pub fn action_with_min_width(
     let padding_x = match role {
         ButtonRole::Primary => 14.0,
         ButtonRole::Quiet => 8.0,
+        ButtonRole::Ghost => 12.0,
         ButtonRole::Navigation | ButtonRole::ActiveNavigation => 12.0,
         ButtonRole::ManagementTab | ButtonRole::ActiveManagementTab => 12.0,
         ButtonRole::KakaoControl | ButtonRole::ActiveKakaoControl => 7.0,
