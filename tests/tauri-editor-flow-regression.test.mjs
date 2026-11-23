@@ -85,7 +85,7 @@ test("price cells autosave on blur and navigate like a spreadsheet without actio
   assert.match(s,/onBlur=\{\(\) => \{[\s\S]*?if \(pending\) \{\s*void save\(\);/);
   assert.match(s,/handleCellNavigationKey\(e, \{/);
   assert.match(s,/enterMode: "same-column"/);
-  assert.match(s,/if \(e\.key === "Escape"\) \{\s*e\.preventDefault\(\);\s*cancel\(\);/);
+  assert.match(s,/onEscape: \(\) => cancel\(\)/);
   assert.doesNotMatch(s,/price-cell-actions|price-cell-save|price-cell-cancel|<button/);
 });
 

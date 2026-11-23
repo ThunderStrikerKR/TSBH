@@ -14,7 +14,7 @@ test("price cells autosave on blur and expose no per-cell Save/Cancel controls",
   assert.match(blur, /if \(pending\) \{\s*void save\(\);/);
   assert.match(cell, /handleCellNavigationKey\(e, \{/);
   assert.match(cell, /enterMode: "same-column"/);
-  assert.match(cell, /if \(e\.key === "Escape"\)[\s\S]*?cancel\(\)/);
+  assert.match(cell, /onEscape: \(\) => cancel\(\)/);
   assert.doesNotMatch(cell, /price-cell-actions|price-cell-save|price-cell-cancel|<button/);
   assert.doesNotMatch(css, /price-cell-actions|price-cell-save|price-cell-cancel/);
   assert.match(css, /\.price-cell\.pending/);
