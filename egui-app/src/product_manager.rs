@@ -769,13 +769,12 @@ impl ProductManager {
                     let brands=self.catalog.as_ref().map(|catalog|
                         rows(&catalog["brands"]).to_vec()).unwrap_or_default();
                     let before_category=self.category.clone();
-                    // The 280pt toolbar trigger preserves the shared
-                    // management-dropdown geometry. The popup now navigates
-                    // arbitrary-depth parentId categories by ID, with a
-                    // fixed search, ancestors, footer and explicit Apply.
+                    // Product list uses a 30%-wider 364pt trigger while
+                    // retaining the shared 34pt control height. Category
+                    // hierarchy popup width and other selectors stay unchanged.
                     category_dropdown::category_dropdown(
                         filter,&category_nodes,&mut self.category,
-                        theme::CATEGORY_PATH_PICKER_WIDTH,
+                        theme::PRODUCT_CATEGORY_FILTER_TRIGGER_WIDTH,
                         "전체 카테고리",true,true
                     );
                     if self.category!=before_category{
