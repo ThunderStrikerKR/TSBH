@@ -177,6 +177,15 @@ fn product_table_column_widths(data_width:f32)->[f32;6]{
     )
 }
 
+/// A 116pt price column must hold the shared 112pt money field with a 2pt
+/// horizontal breathing room on EACH side. The painting clip belongs to the
+/// containing column, not the narrower editor rectangle: otherwise egui's
+/// focused TextEdit outline loses its right-hand stroke at the clip edge.
+fn product_price_editor_rects(cell:Rect,scroll_clip:Rect)->(Rect,Rect){
+    let inset=theme::SPACE_4/2.0;
+    (cell.shrink2(Vec2::new(inset,0.0)),cell.intersect(scroll_clip))
+}
+
 fn product_table_cells(origin:Pos2,widths:&[f32;6],height:f32)->[Rect;6]{
     let mut x=origin.x;
     std::array::from_fn(|i|{
@@ -1080,9 +1089,8 @@ impl ProductManager {
                                 );
                                 for (offset,tier) in ["wholesale","semi","retail"]
                                     .iter().enumerate(){
-                                    let price_rect=cells[offset+2].shrink2(
-                                        Vec2::new(theme::SPACE_4,0.0)
-                                    );
+                                    let (price_rect,price_paint_clip)=
+                                        product_price_editor_rects(cells[offset+2],row_clip);
                                     if let Some(variant)=selected_variant{
                                         if self.price_mode {
                                             let key=format!(
@@ -1102,9 +1110,11 @@ impl ProductManager {
                                                 .layout(Layout::left_to_right(Align::Center));
                                             if saving{builder=builder.disabled();}
                                             row.scope_builder(builder,|inputs|{
-                                                    inputs.set_clip_rect(
-                                                        price_rect.intersect(row_clip)
-                                                    );
+                                                    // Do not clip TextEdit's
+                                                    // focus stroke to its own
+                                                    // 112pt allocation. Preserve
+                                                    // the adjacent 2pt gutters.
+                                                    inputs.set_clip_rect(price_paint_clip);
                                                     inputs.push_id(
                                                         ("product-price-cell",product_id,
                                                          field(variant,"id"),tier),
@@ -2162,6 +2172,32 @@ mod tests {
         let asc_price=ProductSort::next(None,ProductSortColumn::Wholesale).unwrap();
         assert_eq!(product_sort_order(&catalog,&selected,Some(asc_price)),vec![1,0]);
         assert_eq!(catalog,original);
+    }
+    #[test]
+    fn price_editor_focus_outline_is_inside_column_paint_clip(){
+        let cell=Rect::from_min_size(
+            egui::pos2(100.0,60.0),
+            Vec2::new(theme::PRODUCT_TABLE_PRICE_WIDTH,
+                theme::PRODUCT_TABLE_ROW_HEIGHT)
+        );
+        let viewport=Rect::from_min_max(
+            egui::pos2(0.0,0.0),egui::pos2(900.0,900.0)
+        );
+        let (editor,clip)=product_price_editor_rects(cell,viewport);
+        assert_eq!(editor.width(),components::FieldKind::Money.preferred_width());
+        assert_eq!(editor.left()-cell.left(),2.0);
+        assert_eq!(cell.right()-editor.right(),2.0);
+        // Even a 1pt anti-aliased focused border outside the widget's
+        // response Rect must remain inside the COLUMN clip on both sides.
+        assert!(clip.left()<=editor.left()-1.0);
+        assert!(clip.right()>=editor.right()+1.0);
+        assert_eq!(clip,cell);
+        let partly_scrolled=Rect::from_min_max(
+            egui::pos2(105.0,0.0),egui::pos2(900.0,900.0)
+        );
+        let (_,scrolled_clip)=product_price_editor_rects(cell,partly_scrolled);
+        assert_eq!(scrolled_clip.left(),105.0);
+        assert_eq!(scrolled_clip.right(),cell.right());
     }
     #[test]
     fn price_edit_mode_uses_exact_browse_column_positions_and_minimum_width(){
