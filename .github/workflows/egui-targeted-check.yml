@@ -96,6 +96,8 @@ jobs:
           cargo test --manifest-path egui-app/Cargo.toml management_date_field_contract_tests -- --nocapture
       - name: Verify asynchronous pending, empty and loaded states preserve management geometry
         run: cargo test --manifest-path egui-app/Cargo.toml management_async_layout_contract_tests -- --nocapture
+      - name: Verify pending-state actions, errors and edit evidence survive async transitions
+        run: cargo test --manifest-path egui-app/Cargo.toml management_async_behavior_regression_tests -- --nocapture
       - name: Verify React-compatible four sale states and legacy catalog labels
         run: cargo test --manifest-path egui-app/Cargo.toml four_sales_states_restore_react_values -- --nocapture
       - name: Verify sale status edits persist without changing prices or variant identities
