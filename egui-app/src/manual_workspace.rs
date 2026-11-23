@@ -1697,9 +1697,12 @@ impl ManualWorkspace {
             if discard_confirmed {return Some(Event::Closed);}
             if !confirm {self.confirm_discard=false;}
         }
-        let hovered=hovered_detail.or_else(||hovered_source.clone());
+        let hovered=hovered_detail.or_else(||hovered_source.clone())
+            .filter(|key|spans.iter().any(|span|span.key==*key));
         link_hover.update_for(&self.order_id,hovered,ctx);
-        *source_hover=hovered_source;
+        *source_hover=hovered_source.filter(|key|
+            spans.iter().any(|span|span.key==*key)
+        );
         if source_did_scroll {link_hover.scroll_to=None;}
         None
     }
