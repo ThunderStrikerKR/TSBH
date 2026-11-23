@@ -191,7 +191,9 @@ fn manual_navigation_cells(
                 };
                 cells.push(CellNavigationCell{
                     id:manual_cell_key(&target),
-                    row:rows.len()+product_row,column,order,
+                    // Product columns use a distinct namespace so ArrowUp
+                    // cannot jump into an unrelated recipient-name field.
+                    row:rows.len()+product_row,column:5+column,order,
                     enabled:manual_cell_allowed(pending,&target),
                 });
                 order+=1;
@@ -2394,6 +2396,10 @@ mod manual_workspace_modal_routing_tests {
             Some(key(1,Some("i3"),"quantity")));
         assert_eq!(target(key(0,Some("i2"),"quantity"),CellNavigationKey::Up),
             Some(key(0,Some("i1"),"quantity")));
+        assert_eq!(target(key(1,None,"name"),CellNavigationKey::Down),None,
+            "recipient fields must never jump into product columns");
+        assert_eq!(target(key(0,Some("i1"),"product"),CellNavigationKey::Up),None,
+            "product fields must never jump into recipient columns");
         assert_eq!(target(key(0,None,"note"),CellNavigationKey::Right),None,
             "horizontal arrows never wrap to a different table");
         assert_eq!(target(key(0,Some("i1"),"unitPrice"),CellNavigationKey::Right),None);
