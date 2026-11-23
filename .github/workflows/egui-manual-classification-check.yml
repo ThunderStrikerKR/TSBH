@@ -54,5 +54,9 @@ jobs:
         run: cargo test --manifest-path egui-app/Cargo.toml manual_source_view::tests -- --nocapture
       - name: Verify existing reception source highlighting remains stable
         run: cargo test --manifest-path egui-app/Cargo.toml source_highlight::tests -- --nocapture
+      - name: Verify manual arrow navigation follows visible worksheet rows
+        run: cargo test --manifest-path egui-app/Cargo.toml arrows_move_to_visible_adjacent_cells_not_text_caret_positions -- --nocapture
+      - name: Verify arrow interception happens before TextEdit and preserves Korean IME
+        run: cargo test --manifest-path egui-app/Cargo.toml arrow_navigation_is_captured_before_text_edit_and_ime_is_respected -- --nocapture
       - name: Verify manual quantity, address and quote behavior
         run: cargo test --manifest-path egui-app/Cargo.toml manual_remote_row_tests -- --nocapture
