@@ -4849,8 +4849,8 @@ mod management_date_field_contract_tests {
     #[test]
     fn order_history_date_group_uses_shared_date_text_field(){
         let source=include_str!("order_history_manager.rs");
-        let date=source.split("fn date_group(").nth(1).unwrap()
-            .split("fn date_range_toolbar(").next().unwrap();
+        let date=source.split("fn range_date_picker_rtl(").nth(1).unwrap()
+            .split("\nfn ").next().unwrap();
         assert!(date.contains("components::management_date_text_field("));
         assert!(!date.contains("egui::TextEdit::singleline(date)"));
     }
