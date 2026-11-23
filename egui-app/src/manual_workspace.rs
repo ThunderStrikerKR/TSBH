@@ -159,6 +159,50 @@ fn manual_cell_targets(model:&Value)->Vec<ManualCellTarget>{
     cells
 }
 
+fn manual_row_has_data(row:&Value,assignments:&Value)->bool{
+    ["name","address","mobile","phone","note"].iter()
+        .any(|field|!text(row,field).trim().is_empty()) ||
+    list(row,"items").iter().any(|item|{
+        ["name","raw"].iter().any(|field|!text(item,field).trim().is_empty()) ||
+        ["productId","variantId","quantity","unitPrice","manualUnitPrice"]
+            .iter().any(|field|item.get(*field).is_some_and(|value|!value.is_null()))
+    }) ||
+    assignments.as_object().is_some_and(|map|map.values().any(|cell|
+        text(cell,"recipientId")==text(row,"id")
+    ))
+}
+
+fn parse_manual_row_count(raw:&str)->Result<usize,String>{
+    if raw.is_empty() || !raw.bytes().all(|byte|byte.is_ascii_digit()){
+        return Err("배송 건수는 1~100 사이의 정수로 입력하세요.".into());
+    }
+    let count=raw.parse::<usize>()
+        .map_err(|_|"배송 건수를 확인하세요.".to_owned())?;
+    if !(1..=100).contains(&count){
+        return Err("배송 건수는 1~100건입니다.".into());
+    }
+    Ok(count)
+}
+
+fn next_missing_recipient_cell(
+    model:&Value,current_row:usize,current_field:&str
+)->Option<ManualCellTarget>{
+    let fields=["name","address","mobile"];
+    let current_field_index=fields.iter().position(|field|*field==current_field)
+        .unwrap_or(0);
+    for (row_index,row) in list(model,"rows").iter().enumerate().skip(current_row){
+        for (field_index,field) in fields.iter().enumerate(){
+            if row_index==current_row && field_index<=current_field_index {continue;}
+            if text(row,field).trim().is_empty(){
+                return Some(ManualCellTarget{
+                    row:row_index,item:None,field:(*field).to_owned()
+                });
+            }
+        }
+    }
+    None
+}
+
 fn resolve_remote_rows(gateway:&dyn BandoGateway,model:&Value)->Vec<RemoteRow>{
     list(model,"rows").iter().map(|row|{
         let id=text(row,"id").to_owned();
@@ -472,13 +516,17 @@ pub struct ManualWorkspace {
     selected_field:String,
     edit_text:String,
     focus_editor:bool,
+    row_count_text:String,
     history:Vec<ManualHistoryFrame>,
+    pending_select_after_apply:Option<ManualCellTarget>,
     advance_after_apply:Option<CellNavigationKey>,
     last_action:Option<String>,
     action_pending:bool,
     confirm_discard:bool,
+    confirm_apply:bool,
     product_search:Option<ProductSearch>,
     remove_recipient_pending:Option<String>,
+    remove_recipient_target:Option<usize>,
     reset_pending:bool,
     receiver:Option<Receiver<Result<Outcome,String>>>,
     error:Option<String>,
@@ -524,11 +572,12 @@ impl ManualWorkspace {
             assignment_order:Vec::new(),remote_rows:Vec::new(),
             selected_recipient:0,
             selected_item:None,selected_field:"name".into(),
-            edit_text:String::new(),focus_editor:false,history:Vec::new(),
+            edit_text:String::new(),focus_editor:false,row_count_text:"1".into(),
+            history:Vec::new(),pending_select_after_apply:None,
             advance_after_apply:None,last_action:None,action_pending:false,
-            confirm_discard:false,
+            confirm_discard:false,confirm_apply:false,
             product_search:None,remove_recipient_pending:None,
-            reset_pending:false,
+            remove_recipient_target:None,reset_pending:false,
             receiver:Some(rx),error:None,dirty:false,applied:None,
         }
     }
@@ -556,6 +605,7 @@ impl ManualWorkspace {
             self.product_search.is_some(),
             self.remove_recipient_pending.is_some(),
             self.reset_pending,
+            self.confirm_apply,
             self.confirm_discard,
         )
     }
@@ -569,6 +619,7 @@ impl ManualWorkspace {
                 self.base_order=Some(order);
                 self.remote_rows=remote_rows;
                 let count=list(&model,"rows").len();
+                self.row_count_text=count.to_string();
                 self.selected_recipient=self.selected_recipient.min(count.saturating_sub(1));
                 self.model=Some(model);
                 self.assignment_order=assignment_order;
@@ -579,6 +630,8 @@ impl ManualWorkspace {
             Some(Ok(Ok(Outcome::Updated{
                 model,assignment_order,remote_rows
             })))=>{
+                let advance_to_missing=self.last_action.as_deref()==Some("assign_manual_block")
+                    && self.selected_item.is_none();
                 if let Some(previous)=self.model.as_ref(){
                     push_manual_history(&mut self.history,ManualHistoryFrame{
                         model:previous.clone(),
@@ -593,6 +646,7 @@ impl ManualWorkspace {
                 self.model=Some(model);
                 self.assignment_order=assignment_order;
                 let count=self.model.as_ref().map(|m|list(m,"rows").len()).unwrap_or(0);
+                self.row_count_text=count.to_string();
                 self.selected_recipient=self.selected_recipient.min(count.saturating_sub(1));
                 if self.selected_item.as_ref().is_some_and(|id|
                     !self.model.as_ref().is_some_and(|m|
@@ -609,8 +663,23 @@ impl ManualWorkspace {
                 self.receiver=None;
                 self.action_pending=false;
                 self.edit_text=self.current_value();
-                if let Some(navigation)=self.advance_after_apply.take(){
+                if let Some(target)=self.pending_select_after_apply.take(){
+                    let valid=self.model.as_ref().is_some_and(|model|
+                        manual_cell_targets(model).contains(&target)
+                    );
+                    if valid {
+                        self.select_cell(target.row,target.item,&target.field);
+                    }
+                }else if let Some(navigation)=self.advance_after_apply.take(){
                     self.move_selection(navigation);
+                }else if advance_to_missing {
+                    if let Some(target)=self.model.as_ref().and_then(|model|
+                        next_missing_recipient_cell(
+                            model,self.selected_recipient,&self.selected_field
+                        )
+                    ){
+                        self.select_cell(target.row,target.item,&target.field);
+                    }
                 }
             }
             Some(Ok(Ok(Outcome::Applied{
@@ -624,6 +693,7 @@ impl ManualWorkspace {
             Some(Ok(Err(error)))=>{
                 self.error=Some(error);
                 self.advance_after_apply=None;
+                self.pending_select_after_apply=None;
                 if self.action_pending {self.last_action=None;}
                 self.action_pending=false;
                 self.receiver=None;
@@ -631,6 +701,7 @@ impl ManualWorkspace {
             Some(Err(mpsc::TryRecvError::Disconnected))=>{
                 self.error=Some("Rust 수동 분류 처리가 중단되었습니다.".into());
                 self.advance_after_apply=None;
+                self.pending_select_after_apply=None;
                 if self.action_pending {self.last_action=None;}
                 self.action_pending=false;
                 self.receiver=None;
@@ -685,6 +756,7 @@ impl ManualWorkspace {
         }else{frame.selected_field};
         let count=self.model.as_ref().map(|model|list(model,"rows").len()).unwrap_or(0);
         self.selected_recipient=self.selected_recipient.min(count.saturating_sub(1));
+        self.row_count_text=count.to_string();
         if self.selected_item.as_ref().is_some_and(|id|
             !self.model.as_ref().is_some_and(|model|
                 list(model,"rows").get(self.selected_recipient).is_some_and(|row|
@@ -788,6 +860,120 @@ impl ManualWorkspace {
             return String::new();
         }
         text(row,&self.selected_field).to_owned()
+    }
+
+    fn selected_cell_editor(
+        &mut self,ui:&mut egui::Ui,width:f32,linked:bool,busy:bool
+    )->(egui::Response,Option<CellNavigationKey>){
+        let response=components::manual_linked_table_editor(
+            ui,&mut self.edit_text,width,linked
+        );
+        if self.focus_editor && !busy && !self.confirm_apply &&
+            !self.confirm_discard && self.product_search.is_none() &&
+            self.remove_recipient_pending.is_none() && !self.reset_pending {
+            response.request_focus();
+            self.focus_editor=false;
+        }
+        let navigation=if response.has_focus(){
+            ui.input(|input|{
+                if input.events.iter().any(|event|
+                    matches!(event,egui::Event::Ime(_))
+                ){None}
+                else if input.key_pressed(egui::Key::Enter){
+                    Some(CellNavigationKey::Next)
+                }else if input.key_pressed(egui::Key::Tab){
+                    Some(if input.modifiers.shift{
+                        CellNavigationKey::Previous
+                    }else{CellNavigationKey::Next})
+                }else if input.key_pressed(egui::Key::ArrowLeft){
+                    Some(CellNavigationKey::Left)
+                }else if input.key_pressed(egui::Key::ArrowRight){
+                    Some(CellNavigationKey::Right)
+                }else if input.key_pressed(egui::Key::ArrowUp){
+                    Some(CellNavigationKey::Up)
+                }else if input.key_pressed(egui::Key::ArrowDown){
+                    Some(CellNavigationKey::Down)
+                }else{None}
+            })
+        }else{None};
+        (response,navigation)
+    }
+
+    fn queue_cell_navigation(
+        &mut self,navigation:CellNavigationKey,
+        submit_direct:&mut bool,navigate_now:&mut Option<CellNavigationKey>
+    ){
+        let needs_commit=self.edit_text!=self.current_value() ||
+            self.selected_field=="quantity";
+        if needs_commit{
+            *submit_direct=true;
+            self.advance_after_apply=Some(navigation);
+        }else{
+            *navigate_now=Some(navigation);
+        }
+    }
+
+    fn queue_cell_selection(
+        &mut self,target:ManualCellTarget,submit_direct:&mut bool
+    ){
+        if self.edit_text!=self.current_value(){
+            self.pending_select_after_apply=Some(target);
+            *submit_direct=true;
+        }else{
+            self.select_cell(target.row,target.item,&target.field);
+        }
+    }
+
+    fn request_resize(&mut self,target:usize,ctx:&Context){
+        let current=self.model.as_ref()
+            .map(|model|list(model,"rows").len()).unwrap_or(0);
+        if current==0{return;}
+        if !(1..=100).contains(&target){
+            self.row_count_text=current.to_string();
+            self.error=Some("배송 건수는 1~100건입니다.".into());
+            return;
+        }
+        if self.busy(){return;}
+        if self.pending_quantity_cell().is_some(){
+            self.row_count_text=current.to_string();
+            self.error=Some("수량을 확정하거나 상품 선택을 취소하세요.".into());
+            return;
+        }
+        if self.edit_text!=self.current_value(){
+            self.row_count_text=current.to_string();
+            self.error=Some("현재 셀의 입력을 먼저 확정하세요.".into());
+            return;
+        }
+        if target==current{
+            self.row_count_text=current.to_string();
+            return;
+        }
+        if target>current{
+            let new_recipient_ids=(0..target-current).map(|_|unique_id())
+                .collect::<Vec<_>>();
+            self.action("resize_manual_rows",json!({
+                "count":target,"newRecipientIds":new_recipient_ids
+            }),ctx);
+            return;
+        }
+        let (last_id,populated)={
+            let model=self.model.as_ref().expect("manual model exists");
+            let rows=list(model,"rows");
+            let assignments=model.get("assignments").unwrap_or(&Value::Null);
+            (
+                rows.last().map(|row|text(row,"id").to_owned()),
+                rows[target..].iter().any(|row|manual_row_has_data(row,assignments))
+            )
+        };
+        self.row_count_text=current.to_string();
+        if populated{
+            self.remove_recipient_pending=last_id;
+            self.remove_recipient_target=Some(target);
+        }else{
+            self.action("resize_manual_rows",json!({
+                "count":target,"newRecipientIds":[]
+            }),ctx);
+        }
     }
 
     fn action(&mut self,action:&str,extra:Value,ctx:&Context) {
@@ -961,12 +1147,20 @@ impl ManualWorkspace {
                 self.product_search.is_some(),
                 self.remove_recipient_pending.is_some(),
                 self.reset_pending,
+                self.confirm_apply,
                 self.confirm_discard,
                 self.edit_text!=self.current_value(),
             ){
                 EscapeAction::CloseProductSearch=>self.product_search=None,
-                EscapeAction::CancelShipmentRemoval=>self.remove_recipient_pending=None,
+                EscapeAction::CancelShipmentRemoval=>{
+                    self.remove_recipient_pending=None;
+                    self.remove_recipient_target=None;
+                    let count=self.model.as_ref().map(|model|
+                        list(model,"rows").len()).unwrap_or(0);
+                    self.row_count_text=count.to_string();
+                }
                 EscapeAction::CancelReset=>self.reset_pending=false,
+                EscapeAction::CancelApply=>self.confirm_apply=false,
                 EscapeAction::CancelDiscard=>self.confirm_discard=false,
                 EscapeAction::RevertCell=>{
                     self.edit_text=self.current_value();
@@ -1011,13 +1205,14 @@ impl ManualWorkspace {
                     !self.busy()&&self.product_search.is_none()
                         &&self.remove_recipient_pending.is_none()
                         &&!self.reset_pending
+                        &&!self.confirm_apply
                         &&!self.confirm_discard
                 ){open=false;}
                 // Prompts and asynchronous native mutations own input while
                 // open. The background worksheet remains visible but inert.
                 if self.busy() || self.product_search.is_some() ||
                     self.remove_recipient_pending.is_some() ||
-                    self.reset_pending || self.confirm_discard {
+                    self.reset_pending || self.confirm_apply || self.confirm_discard {
                     ui.disable();
                 }
                 let Some(model)=self.model.as_ref() else {return};
@@ -1887,6 +2082,7 @@ enum EscapeAction {
     CloseProductSearch,
     CancelShipmentRemoval,
     CancelReset,
+    CancelApply,
     CancelDiscard,
     RevertCell,
     RequestClose,
@@ -1897,6 +2093,7 @@ fn escape_action(
     product_search:bool,
     remove_recipient:bool,
     reset:bool,
+    apply_prompt:bool,
     discard:bool,
     cell_dirty:bool,
 )->EscapeAction{
@@ -1904,6 +2101,7 @@ fn escape_action(
     else if product_search {EscapeAction::CloseProductSearch}
     else if remove_recipient {EscapeAction::CancelShipmentRemoval}
     else if reset {EscapeAction::CancelReset}
+    else if apply_prompt {EscapeAction::CancelApply}
     else if discard {EscapeAction::CancelDiscard}
     else if cell_dirty {EscapeAction::RevertCell}
     else {EscapeAction::RequestClose}
@@ -1913,11 +2111,13 @@ fn nested_modal_id(
     product_search:bool,
     remove_recipient:bool,
     reset:bool,
+    apply_prompt:bool,
     discard:bool,
 )->Option<&'static str>{
     if product_search {Some("native-manual-product-search")}
     else if remove_recipient {Some("manual-shipment-removal")}
     else if reset {Some("manual-reset-confirm")}
+    else if apply_prompt {Some("manual-completion-prompt")}
     else if discard {Some("manual-discard-prompt")}
     else {None}
 }
