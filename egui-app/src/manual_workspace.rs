@@ -856,16 +856,29 @@ impl ManualWorkspace {
                                         "id":id,"clear":true
                                     })));
                                 }else if let Some(row)=rows.get(self.selected_recipient){
-                                    let mut cell=json!({
-                                        "recipientId":row.get("id"),
-                                        "field":self.selected_field
-                                    });
-                                    if let Some(item)=self.selected_item.as_ref() {
-                                        cell["itemId"]=json!(item);
+                                    let source_field=blocks.iter()
+                                        .find(|block|text(block,"id")==id)
+                                        .map(|block|text(block,"field"))
+                                        .unwrap_or("");
+                                    if !manual_cell_matches_source(
+                                        self.selected_item.is_some(),
+                                        &self.selected_field,source_field
+                                    ){
+                                        self.error=Some(
+                                            "원문 항목과 같은 종류의 입력 셀을 먼저 선택하세요.".into()
+                                        );
+                                    }else{
+                                        let mut cell=json!({
+                                            "recipientId":row.get("id"),
+                                            "field":self.selected_field
+                                        });
+                                        if let Some(item)=self.selected_item.as_ref() {
+                                            cell["itemId"]=json!(item);
+                                        }
+                                        chosen=Some(("assign_manual_block".into(),json!({
+                                            "id":id,"cell":cell
+                                        })));
                                     }
-                                    chosen=Some(("assign_manual_block".into(),json!({
-                                        "id":id,"cell":cell
-                                    })));
                                 }
                             }
                                     });
@@ -1433,6 +1446,18 @@ impl ManualWorkspace {
     }
 }
 
+fn manual_cell_matches_source(
+    item_selected:bool,selected_field:&str,source_field:&str
+)->bool{
+    if item_selected {
+        ["product","quantity"].contains(&source_field) &&
+            selected_field==source_field
+    }else{
+        ["name","address","mobile","phone","note"].contains(&source_field) &&
+            selected_field==source_field
+    }
+}
+
 #[derive(Clone,Copy,Debug,PartialEq,Eq)]
 enum EscapeAction {
     Ignore,
@@ -1477,6 +1502,17 @@ fn nested_modal_id(
 #[cfg(test)]
 mod manual_workspace_modal_routing_tests {
     use super::*;
+
+    #[test]
+    fn source_block_assignment_requires_a_matching_cell_kind(){
+        assert!(manual_cell_matches_source(false,"name","name"));
+        assert!(manual_cell_matches_source(false,"address","address"));
+        assert!(!manual_cell_matches_source(false,"unitPrice","product"));
+        assert!(!manual_cell_matches_source(false,"name","quantity"));
+        assert!(manual_cell_matches_source(true,"product","product"));
+        assert!(manual_cell_matches_source(true,"quantity","quantity"));
+        assert!(!manual_cell_matches_source(true,"product","name"));
+    }
 
     #[test]
     fn every_nested_manual_dialog_owns_its_backdrop_input_layer(){
