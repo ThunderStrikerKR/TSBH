@@ -676,6 +676,10 @@ mod tests {
             format!("중복 후보 / {}", "매우 긴 충돌 설명 ".repeat(40))
         ]);
         let diagnosed=render(warnings);
+        let source=include_str!("alias_manager.rs");
+        let page=source.split("pub fn show_page(").nth(1).unwrap()
+            .split("pub fn show_dialogs(").next().unwrap();
+        assert!(page.contains("alias_diagnostic_slot(info,item,&warnings);"));
         let near=|a:f32,b:f32|(a-b).abs()<=0.5;
         assert!(near(plain.0.top(),diagnosed.0.top()));
         assert!(near(plain.0.width(),diagnosed.0.width()));
