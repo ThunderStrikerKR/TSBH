@@ -1881,8 +1881,9 @@ impl ManualWorkspace {
                 self.apply(ctx);
             }
         }
-        let hovered=hovered_detail.or_else(||hovered_source.clone())
-            .filter(|key|spans.iter().any(|span|span.key==*key));
+        let hovered=manual_hover_target(
+            hovered_detail,hovered_source.clone(),&spans
+        );
         link_hover.update_for(&self.order_id,hovered,ctx);
         *source_hover=hovered_source.filter(|key|
             spans.iter().any(|span|span.key==*key)
@@ -1890,6 +1891,18 @@ impl ManualWorkspace {
         if source_did_scroll {link_hover.scroll_to=None;}
         None
     }
+}
+
+/// Both the source document and destination cells resolve to the same
+/// order-scoped LinkKey. Keep the shared 50/150ms HoverState as the single
+/// owner of bidirectional highlight and source auto-scroll behavior.
+fn manual_hover_target(
+    hovered_detail:Option<source_highlight::LinkKey>,
+    hovered_source:Option<source_highlight::LinkKey>,
+    spans:&[source_highlight::LinkedSpan],
+)->Option<source_highlight::LinkKey>{
+    hovered_detail.or(hovered_source)
+        .filter(|key|spans.iter().any(|span|span.key==*key))
 }
 
 fn manual_cell_matches_source(
@@ -2006,6 +2019,28 @@ mod manual_workspace_modal_routing_tests {
         assert_eq!(history.first().unwrap().model["value"],1);
         assert_eq!(history.last().unwrap().model["value"],100);
         assert_eq!(history.pop().unwrap().model["value"],100);
+    }
+
+    #[test]
+    fn manual_source_and_destination_hover_share_the_same_link_identity(){
+        let key=source_highlight::key("recipient-1","item-1","product");
+        let span=source_highlight::LinkedSpan{
+            start:0,end:6,start_char:0,end_char:6,
+            key:key.clone(),source_id:Some("0:6".into())
+        };
+        let spans=vec![span];
+        assert_eq!(
+            manual_hover_target(Some(key.clone()),None,&spans),
+            Some(key.clone()),
+            "hovering the destination cell must highlight and scroll to its source"
+        );
+        assert_eq!(
+            manual_hover_target(None,Some(key.clone()),&spans),
+            Some(key.clone()),
+            "hovering the source block must highlight its destination cell"
+        );
+        let stale=source_highlight::key("recipient-old","item-1","product");
+        assert_eq!(manual_hover_target(None,Some(stale),&spans),None);
     }
 
     #[test]
