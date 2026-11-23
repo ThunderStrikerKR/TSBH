@@ -3,6 +3,7 @@
 //! the isolated egui preview DB or bypass Tauri's operational save boundary.
 use crate::{
     category_manager::{CategoryManager,ROOTS},
+    category_dropdown,
     alias_manager::AliasManager,
     brand_manager::BrandManager,
     model_group_manager::ModelGroupManager,
@@ -762,40 +763,20 @@ impl ProductManager {
                             self.error=Some("먼저 가격 수정값을 저장하거나 취소하세요.".into());
                         }else{self.changed(filter.ctx());}
                     }
-                    let categories=self.catalog.as_ref()
-                        .map(category_choices).unwrap_or_default();
+                    let category_nodes=self.catalog.as_ref()
+                        .map(category_dropdown::nodes_from_catalog)
+                        .unwrap_or_default();
                     let brands=self.catalog.as_ref().map(|catalog|
                         rows(&catalog["brands"]).to_vec()).unwrap_or_default();
                     let before_category=self.category.clone();
-                    let selected_category=categories.iter()
-                        .find(|(id,_)|id==&self.category)
-                        .map(|(_,name)|name.as_str()).unwrap_or("전체 카테고리");
-                    let picker_width=theme::CATEGORY_PATH_PICKER_WIDTH;
-                    let text_width=picker_width-theme::CATEGORY_PATH_PICKER_TEXT_PADDING;
-                    let visible=typography::fit_category_path(
-                        filter,selected_category,text_width,
-                        typography::CategoryPathFont::Body
-                    );
-                    // Same split-chevron selector and active/disabled
-                    // colors as the two approved masters; keep the existing
-                    // 280pt category-path role and full-name hover details.
-                    components::management_dropdown(
-                        filter,&visible,picker_width,true,selected_category,
-                        |combo|{
-                            components::management_dropdown_option(
-                                combo,&mut self.category,String::new(),
-                                "전체 카테고리"
-                            );
-                            for (id,name) in &categories{
-                                let short=typography::fit_category_path(
-                                    combo,name,text_width,
-                                    typography::CategoryPathFont::Body
-                                );
-                                components::management_dropdown_option(
-                                    combo,&mut self.category,id.clone(),&short
-                                ).on_hover_text(name);
-                            }
-                        }
+                    // The 280pt toolbar trigger preserves the shared
+                    // management-dropdown geometry. The popup now navigates
+                    // arbitrary-depth parentId categories by ID, with a
+                    // fixed search, ancestors, footer and explicit Apply.
+                    category_dropdown::category_dropdown(
+                        filter,&category_nodes,&mut self.category,
+                        theme::CATEGORY_PATH_PICKER_WIDTH,
+                        "전체 카테고리",true
                     );
                     if self.category!=before_category{
                         if self.has_pending_prices(){
@@ -1399,6 +1380,7 @@ impl ProductManager {
     fn detail_overview_column(
         ui:&mut Ui,draft:&mut Value,
         brands:&[Value],categories:&[(String,String)],
+        category_nodes:&[category_dropdown::CategoryNode],
         editable:bool,busy:bool
     ){
         Self::detail_wide_text(ui,draft,"name","상품명",editable&&!busy);
@@ -1412,33 +1394,12 @@ impl ProductManager {
                 .and_then(|ids|ids.last())
                 .and_then(Value::as_str).unwrap_or("").to_owned();
             let mut category_id=before.clone();
-            let display=categories.iter()
-                .find(|(id,_)|id==&category_id)
-                .map(|(_,name)|name.as_str())
-                .unwrap_or("카테고리 미지정");
             row.add_enabled_ui(editable&&!busy,|input|{
                 let width=input.available_width().max(1.0);
-                let visible=typography::fit_category_path(
-                    input,display,
-                    width-theme::CATEGORY_PATH_PICKER_TEXT_PADDING,
-                    typography::CategoryPathFont::Body
+                category_dropdown::category_dropdown(
+                    input,category_nodes,&mut category_id,width,
+                    "카테고리 미지정",true
                 );
-                components::management_dropdown(
-                    input,&visible,width,true,display,|choices|{
-                        components::management_dropdown_option(
-                            choices,&mut category_id,
-                            String::new(),"카테고리 미지정");
-                        for (id,label) in categories{
-                            let visible=typography::fit_category_path(
-                                choices,label,
-                                width-theme::CATEGORY_PATH_PICKER_TEXT_PADDING,
-                                typography::CategoryPathFont::Body
-                            );
-                            components::management_dropdown_option(
-                                choices,&mut category_id,id.clone(),&visible
-                            ).on_hover_text(label);
-                        }
-                    });
             });
             if category_id!=before{
                 draft["categories"]=if category_id.is_empty(){
@@ -1578,6 +1539,8 @@ impl ProductManager {
         let busy=self.writing.is_some();
         let is_new=field(&draft,"id").is_empty();
         let categories=self.catalog.as_ref().map(category_choices).unwrap_or_default();
+        let category_nodes=self.catalog.as_ref()
+            .map(category_dropdown::nodes_from_catalog).unwrap_or_default();
         let brands=self.catalog.as_ref().map(|state|
             rows(&state["brands"]).to_vec()).unwrap_or_default();
         let groups=self.catalog.as_ref().map(|state|
@@ -1643,7 +1606,7 @@ impl ProductManager {
                                             );
                                             Self::detail_overview_column(
                                                 fields,&mut draft,&brands,&categories,
-                                                editable,busy
+                                                &category_nodes,editable,busy
                                             );
                                         }
                                     );
@@ -1683,7 +1646,7 @@ impl ProductManager {
                                     stack,"상품 개요",|fields|{
                                         Self::detail_overview_column(
                                             fields,&mut draft,&brands,&categories,
-                                            editable,busy
+                                            &category_nodes,editable,busy
                                         );
                                     }
                                 );
