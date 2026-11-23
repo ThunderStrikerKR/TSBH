@@ -304,8 +304,11 @@ impl ProductExcelUi {
                 ui.label(typography::caption(
                     "홈페이지 등록 여부와 관계없이 신규 등록 및 수정할 수 있습니다. 기존 상품 ID와 가격 기록 ID, 주문 이력, 이미지 및 홈페이지 연결 정보는 보존됩니다."
                 ));
-                ui.checkbox(&mut self.approved,
-                    "Excel 변경사항과 오류를 확인했고, 누락 행은 보존한 채 변경사항만 반영하는 데 동의합니다.");
+                components::checkbox(
+                    ui,&mut self.approved,
+                    "Excel 변경사항과 오류를 확인했고, 누락 행은 보존한 채 변경사항만 반영하는 데 동의합니다.",
+                    true
+                );
                 if let Some(err)=&self.error{
                     ui.colored_label(theme::DANGER,err);
                 }
