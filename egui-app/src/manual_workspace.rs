@@ -1019,10 +1019,11 @@ impl ManualWorkspace {
                 ){open=false;}
                 // Prompts and asynchronous native mutations own input while
                 // open. The background worksheet remains visible but inert.
-                ui.set_enabled(!self.busy() &&
-                    self.product_search.is_none() &&
-                    self.remove_recipient_pending.is_none() &&
-                    !self.reset_pending && !self.confirm_discard);
+                if self.busy() || self.product_search.is_some() ||
+                    self.remove_recipient_pending.is_some() ||
+                    self.reset_pending || self.confirm_discard {
+                    ui.disable();
+                }
                 let Some(model)=self.model.as_ref() else {return};
                 let rows=list(model,"rows").to_vec();
                 let blocks=list(model,"blocks").to_vec();
