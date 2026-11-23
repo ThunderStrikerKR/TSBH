@@ -102,6 +102,36 @@ fn item_quantity_pending(item:&Value)->bool{
     has_product && !confirmed
 }
 
+fn model_has_pending_quantity(model:&Value)->bool{
+    list(model,"rows").iter().any(|row|
+        list(row,"items").iter().any(item_quantity_pending)
+    )
+}
+
+/// While a product has just been selected, React locks every other cell
+/// until its quantity is confirmed. Keep that lock tied to the exact cell.
+fn manual_cell_allowed(
+    pending:Option<&ManualCellTarget>,target:&ManualCellTarget
+)->bool{
+    pending.is_none_or(|cell|cell==target)
+}
+
+/// React's useBlock permits releasing an assignment on the same pending item,
+/// or assigning that item's quantity block. It rejects all other source moves.
+fn manual_source_assignment_allowed(
+    assigned:bool,
+    assigned_item:Option<&str>,
+    pending_item:Option<&str>,
+    source_field:&str,
+)->bool{
+    let Some(pending_item)=pending_item else{return true};
+    if assigned {
+        assigned_item==Some(pending_item)
+    }else{
+        source_field=="quantity"
+    }
+}
+
 fn push_manual_history(
     history:&mut Vec<ManualHistoryFrame>,frame:ManualHistoryFrame
 ){
