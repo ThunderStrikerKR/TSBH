@@ -454,6 +454,17 @@ pub struct ProductManager {
     error:Option<String>,
 }
 
+fn product_summary_counts(catalog:Option<&Value>)->Option<[usize;4]>{
+    let catalog=catalog?;
+    Some([
+        rows(&catalog["products"]).len(),
+        catalog["settings"]["colorGuidanceGroups"]
+            .as_object().map_or(0,|groups|groups.len()),
+        rows(&catalog["aliases"]).len(),
+        rows(&catalog["brands"]).len()
+    ])
+}
+
 impl ProductManager {
     pub fn active_tab_name(&self)->&'static str{
         ["상품 목록","카테고리 관리","모델군 관리","별칭 관리","브랜드 관리"]
@@ -954,23 +965,22 @@ impl ProductManager {
             ui.add_space(theme::SPACE_16);
         }else{
             ui.add_space(theme::SPACE_12);
-            let (products,model_groups,aliases,brands)=self.catalog.as_ref()
-                .map(|catalog|{
-                    (rows(&catalog["products"]).len(),
-                    catalog["settings"]["colorGuidanceGroups"]
-                        .as_object().map_or(0,|groups|groups.len()),
-                    rows(&catalog["aliases"]).len(),
-                    rows(&catalog["brands"]).len())
-                }).unwrap_or((0,0,0,0));
+            let counts=product_summary_counts(self.catalog.as_ref());
             components::management_top_content(ui,|top|{
                 top.horizontal_wrapped(|strip|{
                     strip.spacing_mut().item_spacing=Vec2::new(
                         theme::SPACE_8,theme::SPACE_8
                     );
-                    components::management_summary_card(strip,"등록 상품",products);
-                    components::management_summary_card(strip,"모델군",model_groups);
-                    components::management_summary_card(strip,"별칭",aliases);
-                    components::management_summary_card(strip,"브랜드",brands);
+                    if let Some([products,model_groups,aliases,brands])=counts{
+                        components::management_summary_card(strip,"등록 상품",products);
+                        components::management_summary_card(strip,"모델군",model_groups);
+                        components::management_summary_card(strip,"별칭",aliases);
+                        components::management_summary_card(strip,"브랜드",brands);
+                    }else{
+                        for label in ["등록 상품","모델군","별칭","브랜드"]{
+                            components::management_summary_card_value(strip,label,"—");
+                        }
+                    }
                 });
             });
             ui.add_space(theme::SPACE_16);
@@ -2269,6 +2279,25 @@ mod tests {
         assert!(!list.contains("let empty_reserve=if self.products.is_empty(){"));
         assert!(list.contains("components::management_body_state_overlay("));
         assert!(list.contains("let scroll_max_height=components::management_single_list_scroll_height("));
+    }
+    #[test]
+    fn product_summary_distinguishes_unloaded_catalog_from_real_zero_counts(){
+        let empty=json!({
+            "products":[],
+            "settings":{"colorGuidanceGroups":{}},
+            "aliases":[],
+            "brands":[]
+        });
+        assert_eq!(product_summary_counts(None),None);
+        assert_eq!(product_summary_counts(Some(&empty)),Some([0,0,0,0]));
+        let source=include_str!("product_manager.rs");
+        let rendered=source.split("pub fn show_page(").nth(1).unwrap()
+            .split("let can_edit=").next().unwrap();
+        assert!(rendered.contains("product_summary_counts(self.catalog.as_ref())"));
+        assert!(rendered.contains(
+            "components::management_summary_card_value(strip,label,\"—\")"
+        ));
+        assert!(!rendered.contains("unwrap_or((0,0,0,0))"));
     }
     #[test]
     fn product_detail_inline_rows_leave_blank_space_under_fixed_320_image(){
