@@ -930,6 +930,18 @@ impl ManualWorkspace {
                 EscapeAction::Ignore=>{},
             }
         }
+        let spans=self.model.as_ref().map(|model|{
+            source_highlight::collect_manual(
+                &self.raw,list(model,"rows"),list(model,"blocks"),
+                model.get("assignments").unwrap_or(&Value::Null)
+            )
+        }).unwrap_or_default();
+        let selected_recipient_id=self.model.as_ref().and_then(|model|
+            list(model,"rows").get(self.selected_recipient)
+                .map(|row|text(row,"id").to_owned())
+        );
+        let active_link=link_hover.active_for(&self.order_id).cloned();
+        let scroll_link=link_hover.scroll_to.clone();
         let mut hovered_source:Option<source_highlight::LinkKey>=None;
         let mut hovered_detail:Option<source_highlight::LinkKey>=None;
         let mut source_did_scroll=false;
@@ -964,13 +976,6 @@ impl ManualWorkspace {
                 let rows=list(model,"rows").to_vec();
                 let blocks=list(model,"blocks").to_vec();
                 let assignments=model.get("assignments").cloned().unwrap_or_else(||json!({}));
-                let spans=source_highlight::collect_manual(
-                    &self.raw,&rows,&blocks,&assignments
-                );
-                let selected_recipient_id=rows.get(self.selected_recipient)
-                    .map(|row|text(row,"id").to_owned());
-                let active_link=link_hover.active_for(&self.order_id).cloned();
-                let scroll_link=link_hover.scroll_to.clone();
                 let busy=self.busy();
                 let unassigned=blocks.iter().filter(|b|
                     assignments.get(text(b,"id")).is_none()).count();
