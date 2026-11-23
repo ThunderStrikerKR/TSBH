@@ -13,6 +13,12 @@ import { StaffChecks } from "./StaffChecks";
 import { useReadyContentFade } from "./shared/useReadyContentFade";
 import { WorkflowFooter, WorkflowFreightRows } from "./WorkflowFooter";
 import { won } from "./domain";
+import {
+  findCellNavigationTarget,
+  focusCellElement,
+  isCellNavigationKey,
+  isImeComposing,
+} from "./ui/cell-navigation";
 
 import { internalModel } from "./matching";
 import { useOrderDesk, type OrderDeskProps } from "./orders/useOrderDesk";
@@ -615,8 +621,8 @@ export function OrderDesk(props: OrderDeskProps) {
                                 <th>금액</th>
                               </tr>
                             </thead>
-                            <tbody>
-                              {r.items.map((i) => (
+                            <tbody data-cell-nav-grid="order-intake">
+                              {r.items.map((i, itemIndex) => (
                                 <tr key={i.id} data-item-id={i.id}>
                                   <td>
                                     <Linked linkKey={i.id + ":product"}>
@@ -634,6 +640,10 @@ export function OrderDesk(props: OrderDeskProps) {
                                     <Linked linkKey={i.id + ":quantity"}>
                                       <input
                                         type="number"
+                                        data-cell-nav-id={`quantity:${i.id}`}
+                                        data-cell-nav-row={itemIndex}
+                                        data-cell-nav-column={1}
+                                        data-cell-nav-order={itemIndex}
                                         aria-label={"수량 " + i.name}
                                         aria-invalid={
                                           i.quantityConfirmed === false ||
@@ -655,6 +665,19 @@ export function OrderDesk(props: OrderDeskProps) {
                                               (x) => !x.includes("수량"),
                                             );
                                           });
+                                        }}
+                                        onKeyDown={(e) => {
+                                          if (isImeComposing(e) || !isCellNavigationKey(e.key)) return;
+                                          const target = findCellNavigationTarget(
+                                            e.currentTarget, e.key, e.shiftKey,
+                                          );
+                                          if (e.key === "Tab" && !target) return;
+                                          if (target) {
+                                            e.preventDefault();
+                                            focusCellElement(target);
+                                          } else if (e.key !== "Tab") {
+                                            e.preventDefault();
+                                          }
                                         }}
                                       />
                                     </Linked>
@@ -680,6 +703,7 @@ export function OrderDesk(props: OrderDeskProps) {
                                 <WorkflowFreightRows
                                   state={freightEditor.state}
                                   shipment={freightEditor.shipment}
+                                  navigationRowOffset={r.items.length}
                                   freightCode={r.freightCode ?? freightEditor.preview.freightCode}
                                   // Native preview displays APPLIED charges. Never
                                   // overlay saved base charges, or the field

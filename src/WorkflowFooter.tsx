@@ -1,10 +1,17 @@
 import { useEffect, useRef, useState } from "react";
 import type { Origin, Price, State } from "./types";
+import {
+  findCellNavigationTarget,
+  focusCellElement,
+  isCellNavigationKey,
+  isImeComposing,
+} from "./ui/cell-navigation";
 import { shipmentContext } from "./workflow-view";
 import type { WorkflowShipment } from "./workflow-types";
 /** Keep freight typing local; native totals run on blur, Enter or unmount. */
-function FreightAmountInput({ label, value, disabled, onCommit }: {
+function FreightAmountInput({ label, value, disabled, onCommit, navigationRow, navigationOrder }: {
   label: string; value: Price | undefined; disabled: boolean;
+  navigationRow: number; navigationOrder: number;
   onCommit: (value: Price) => boolean | void | Promise<boolean | void>;
 }) {
   const format = (amount: Price | undefined) =>
@@ -42,6 +49,10 @@ function FreightAmountInput({ label, value, disabled, onCommit }: {
   return (
     <input
       aria-label={label}
+      data-cell-nav-id={`freight:${navigationRow}`}
+      data-cell-nav-row={navigationRow}
+      data-cell-nav-column={2}
+      data-cell-nav-order={navigationOrder}
       inputMode="numeric"
       disabled={disabled}
       value={text}
@@ -69,6 +80,15 @@ function FreightAmountInput({ label, value, disabled, onCommit }: {
       }}
       onBlur={flush}
       onKeyDown={(e) => {
+        if (isImeComposing(e) || !isCellNavigationKey(e.key)) return;
+        const target = findCellNavigationTarget(e.currentTarget, e.key, e.shiftKey);
+        if (e.key === "Tab" && !target) return;
+        if (target) {
+          e.preventDefault();
+          focusCellElement(target);
+          return;
+        }
+        if (e.key !== "Tab") e.preventDefault();
         if (e.key === "Enter") {
           flush();
           e.currentTarget.blur();
@@ -85,6 +105,7 @@ type FreightProps = {
   displayCharges: Partial<Record<Origin, Price>>;
   freightEditingBlocked: boolean;
   activeKey?: string;
+  navigationRowOffset: number;
   onFreight: (origin: Origin, value: Price) => boolean | void | Promise<boolean | void>;
   onCode: (v: "010" | "020") => void;
   remoteChecked: boolean;
@@ -101,6 +122,7 @@ export function WorkflowFreightRows({
   remoteChecked,
   onRemoteChecked,
   activeKey,
+  navigationRowOffset,
 }: FreightProps) {
   const { recipient } = shipmentContext(state, shipment),
     origins = [...new Set(recipient.items.map((item) => item.origin))],
@@ -135,6 +157,8 @@ export function WorkflowFreightRows({
                     label={`${recipient.name} ${origin === "FACTORY" ? "공장" : "매장"} 적용 운임`}
                     disabled={disabled || freightEditingBlocked}
                     value={value}
+                    navigationRow={navigationRowOffset + index}
+                    navigationOrder={navigationRowOffset + index}
                     onCommit={(amount) => onFreight(origin, amount)}
                   />
                     <span>원</span>

@@ -5,6 +5,14 @@ import { useNativeDeliveryRequirements, evaluateNativeDeliveryRequirements } fro
 import { useNativeOrderIssues } from "./useNativeOrderIssues";
 import { usePendingChanges } from "../shared/pending-changes";
 import { confirmDiscardDraft } from "../shared/editor-flow";
+import {
+  focusCellElement,
+  isCellNavigationKey,
+  isImeComposing,
+  resolveCellNavigationTarget,
+  type CellNavigationCell,
+  type CellNavigationKey,
+} from "../ui/cell-navigation";
 import type { NoticeSink } from "../shared/notices";
 import type { Order, Product, State } from "../types";
 import { ManualPrompt } from "./ManualPrompt";
@@ -182,8 +190,7 @@ function ManualClassificationEditor({
       const input = root.current?.querySelector<HTMLInputElement>(
         `input[data-cell="${CSS.escape(cellKey(cell))}"]`,
       );
-      input?.focus({ preventScroll: true });
-      input?.scrollIntoView({ block: "nearest", inline: "nearest" });
+      focusCellElement(input);
     });
   };
   const fail = (message: string, cell?: Cell) =>
@@ -480,35 +487,46 @@ function ManualClassificationEditor({
       recipientId: cell.recipientId, itemId: cell.itemId,
     });
   };
-  const move = (cell: Cell, key: string, shift = false) => {
+  const move = (cell: Cell, key: CellNavigationKey, shift = false) => {
     const inputs = Array.from(
       root.current?.querySelectorAll<HTMLInputElement>("input[data-cell]") ?? [],
     );
-    const index = inputs.findIndex((input) => input.dataset.cell === cellKey(cell));
-    let target: HTMLInputElement | undefined;
+    let targetId: string | null = null;
     if (key === "ArrowUp" || key === "ArrowDown") {
       const rows = model.rows,
         rowIndex = rows.findIndex((row) => row.id === cell.recipientId),
         nextRow = rows[rowIndex + (key === "ArrowUp" ? -1 : 1)];
       if (nextRow) {
         const current = rows[rowIndex].items.findIndex((item) => item.id === cell.itemId);
-        const nextCell = {
+        const nextCell: Cell = {
           ...cell,
           recipientId: nextRow.id,
           itemId: cell.itemId
             ? nextRow.items[Math.min(Math.max(current, 0), nextRow.items.length - 1)]?.id
             : undefined,
         };
-        target = inputs.find((input) => input.dataset.cell === cellKey(nextCell));
+        if (allowed(nextCell)) targetId = cellKey(nextCell);
       }
-    } else target = inputs[index + (key === "ArrowLeft" || (key === "Tab" && shift) ? -1 : 1)];
-    if (target && !target.disabled) {
-      target.focus({ preventScroll: true });
-      target.scrollIntoView({ block: "nearest", inline: "nearest" });
+    } else {
+      const sequence: Cell[] = model.rows.flatMap((row) => [
+        ...(["name", "address", "mobile", "phone", "note"] as const)
+          .map((field) => ({ recipientId: row.id, field })),
+        ...row.items.flatMap((item) => [
+          { recipientId: row.id, itemId: item.id, field: "product" as const },
+          { recipientId: row.id, itemId: item.id, field: "quantity" as const },
+        ]),
+      ]);
+      const navigationCells: CellNavigationCell[] = sequence.map((candidate, order) => ({
+        id: cellKey(candidate), row: 0, column: order, order,
+        disabled: !allowed(candidate),
+      }));
+      targetId = resolveCellNavigationTarget(navigationCells, cellKey(cell), key, shift);
     }
+    const target = targetId ? inputs.find((input) => input.dataset.cell === targetId) : undefined;
+    if (target && !target.disabled) focusCellElement(target);
   };
   const keyDown = async (event: KeyboardEvent<HTMLInputElement>, cell: Cell) => {
-    if (event.nativeEvent.isComposing || event.keyCode === 229) return;
+    if (isImeComposing(event)) return;
     if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "z") return;
     const key = cellKey(cell);
     if (event.key === "Escape") {
@@ -566,8 +584,8 @@ function ManualClassificationEditor({
       setError(undefined);
       return;
     }
-    if (!["Tab", "Enter", "ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(event.key))
-      return;
+    const navigationKey = event.key;
+    if (!isCellNavigationKey(navigationKey)) return;
     event.preventDefault();
     if (
       cell.field === "product" &&
@@ -587,7 +605,7 @@ function ManualClassificationEditor({
         return;
       }
     }
-    move(cell, event.key, event.shiftKey);
+    move(cell, navigationKey, event.shiftKey);
   };
   const textCell = (cell: Cell, label: string) => {
     const key = cellKey(cell),
