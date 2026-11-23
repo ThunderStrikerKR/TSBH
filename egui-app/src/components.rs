@@ -171,41 +171,97 @@ mod shared_screen_component_contract_tests {
 
     #[test]
     fn standard_screens_do_not_rebuild_shared_controls(){
-        let cases=[
-            ("client_manager.rs",[
-                "egui::Button::new","egui::Frame::new",
-                "egui::TextEdit::singleline","egui::TextEdit::multiline",
-                "ui.checkbox(","row.checkbox("
-            ].as_slice()),
-            ("automatic_message_manager.rs",[
-                "egui::Button::new","egui::Frame::new",
-                "egui::TextEdit::singleline","egui::TextEdit::multiline",
-                "ui.checkbox(","row.checkbox("
-            ].as_slice()),
-            ("order_history_manager.rs",[
-                "egui::Button::new","egui::Frame::new",
-                "egui::TextEdit::singleline","egui::TextEdit::multiline",
-                "ui.checkbox(","row.checkbox("
-            ].as_slice()),
-            ("order_history_detail.rs",[
-                "egui::Button::new","egui::Frame::new",
-                "egui::TextEdit::singleline","egui::TextEdit::multiline",
-                "ui.checkbox(","row.checkbox("
-            ].as_slice()),
+        let standard_controls=[
+            "Button::new(",
+            "Frame::new(",
+            "TextEdit::singleline(",
+            "TextEdit::multiline(",
+            "Checkbox::new(",
+            "ComboBox::",
+            ".checkbox("
         ];
-        for (name,forbidden) in cases {
-            let source=production_source(match name {
-                "client_manager.rs"=>include_str!("client_manager.rs"),
-                "automatic_message_manager.rs"=>include_str!("automatic_message_manager.rs"),
-                "order_history_manager.rs"=>include_str!("order_history_manager.rs"),
-                "order_history_detail.rs"=>include_str!("order_history_detail.rs"),
-                _=>unreachable!(),
-            });
-            for token in forbidden {
+        let cases=[
+            ("floating_notice.rs",include_str!("floating_notice.rs")),
+            ("reception_service.rs",include_str!("reception_service.rs")),
+            ("review_panel.rs",include_str!("review_panel.rs")),
+            ("gateway.rs",include_str!("gateway.rs")),
+            ("http_gateway.rs",include_str!("http_gateway.rs")),
+            ("preview_store.rs",include_str!("preview_store.rs")),
+            ("source_autosave.rs",include_str!("source_autosave.rs")),
+            ("clipboard_intake.rs",include_str!("clipboard_intake.rs")),
+            ("ocr_learning.rs",include_str!("ocr_learning.rs")),
+            ("client_directory.rs",include_str!("client_directory.rs")),
+            ("client_master.rs",include_str!("client_master.rs")),
+            ("client_manager.rs",include_str!("client_manager.rs")),
+            ("client_search_tags.rs",include_str!("client_search_tags.rs")),
+            ("automatic_message_manager.rs",include_str!("automatic_message_manager.rs")),
+            ("category_manager.rs",include_str!("category_manager.rs")),
+            ("category_dropdown.rs",include_str!("category_dropdown.rs")),
+            ("alias_manager.rs",include_str!("alias_manager.rs")),
+            ("latest_job.rs",include_str!("latest_job.rs")),
+            ("brand_manager.rs",include_str!("brand_manager.rs")),
+            ("model_group_manager.rs",include_str!("model_group_manager.rs")),
+            ("product_manager.rs",include_str!("product_manager.rs")),
+            ("product_excel.rs",include_str!("product_excel.rs")),
+            ("product_excel_ui.rs",include_str!("product_excel_ui.rs")),
+            ("client_chooser.rs",include_str!("client_chooser.rs")),
+            ("business_state.rs",include_str!("business_state.rs")),
+            ("native_order_change.rs",include_str!("native_order_change.rs")),
+            ("pricing_basis.rs",include_str!("pricing_basis.rs")),
+            ("reception_jobs.rs",include_str!("reception_jobs.rs")),
+            ("source_highlight.rs",include_str!("source_highlight.rs")),
+            ("workflow_board.rs",include_str!("workflow_board.rs")),
+            ("manual_workspace.rs",include_str!("manual_workspace.rs")),
+            ("catalog_query_bridge.rs",include_str!("catalog_query_bridge.rs")),
+            ("manual_product_search.rs",include_str!("manual_product_search.rs")),
+            ("item_editor.rs",include_str!("item_editor.rs")),
+            ("product_images.rs",include_str!("product_images.rs")),
+            ("manual_source_view.rs",include_str!("manual_source_view.rs")),
+            ("kakao_context.rs",include_str!("kakao_context.rs")),
+            ("kakao_dock.rs",include_str!("kakao_dock.rs")),
+            ("settings_store.rs",include_str!("settings_store.rs")),
+            ("settings_view.rs",include_str!("settings_view.rs")),
+            ("freight_manager.rs",include_str!("freight_manager.rs")),
+            ("order_history_manager.rs",include_str!("order_history_manager.rs")),
+            ("order_history_detail.rs",include_str!("order_history_detail.rs")),
+            ("order_history_memo.rs",include_str!("order_history_memo.rs")),
+            ("daily_settlement_manager.rs",include_str!("daily_settlement_manager.rs")),
+            ("excel_manager.rs",include_str!("excel_manager.rs")),
+            ("excel_service.rs",include_str!("excel_service.rs")),
+            ("management_queries.rs",include_str!("management_queries.rs")),
+            ("developer_ui_samples.rs",include_str!("developer_ui_samples.rs")),
+        ];
+        for (name,file) in cases {
+            let source=production_source(file);
+            for token in &standard_controls {
                 assert!(!source.contains(*token),
                     "{name} bypasses the shared UI layer with {token}");
             }
         }
+
+        // These two files own intentionally unique frame surfaces, but must
+        // still route ordinary controls through the shared component layer.
+        let special=[
+            ("workflow_board_ui.rs",include_str!("workflow_board_ui.rs")),
+            ("settings_help.rs",include_str!("settings_help.rs")),
+        ];
+        let ordinary_controls=[
+            "Button::new(","TextEdit::singleline(","TextEdit::multiline(",
+            "Checkbox::new(","ComboBox::",".checkbox("
+        ];
+        for (name,file) in special {
+            let source=production_source(file);
+            for token in &ordinary_controls {
+                assert!(!source.contains(*token),
+                    "{name} bypasses the shared UI layer with {token}");
+            }
+        }
+
+        // main.rs keeps custom selectable source-document rendering and
+        // native window chrome; its standard checkboxes are not exceptions.
+        let main=include_str!("main.rs");
+        assert!(!main.contains("Checkbox::new("));
+        assert!(!main.contains(".checkbox("));
     }
 
     #[test]
