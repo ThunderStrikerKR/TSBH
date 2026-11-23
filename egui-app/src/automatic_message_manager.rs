@@ -530,9 +530,7 @@ impl AutomaticMessageManager {
         });
         ui.add_space(theme::SPACE_8);
         ui.label(typography::subsection_heading("예시 미리보기"));
-        egui::Frame::new().fill(theme::INPUT)
-            .inner_margin(theme::SPACE_12 as i8)
-            .show(ui,|preview|{
+        theme::preview_surface_frame().show(ui,|preview|{
                 preview.label(typography::body(&preview_message(def,&content)));
             });
     }
@@ -570,9 +568,7 @@ impl AutomaticMessageManager {
             }
             ui.add_space(theme::SPACE_8);
             ui.label(typography::subsection_heading("계좌안내에 표시될 위치"));
-            egui::Frame::new().fill(theme::INPUT)
-                .inner_margin(theme::SPACE_12 as i8)
-                .show(ui,|preview|{
+            theme::preview_surface_frame().show(ui,|preview|{
                     for item in [
                         "상품명, 수량, 금액",
                         "운임 및 부가세",
