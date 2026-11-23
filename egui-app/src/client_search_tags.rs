@@ -129,4 +129,24 @@ mod tests{
         assert_eq!(take_delimited(&mut text),Some(" 다".into()));
         assert!(text.is_empty());
     }
+
+    #[test]
+    fn developer_sample_keeps_legacy_alias_before_internal_identifier(){
+        // This is the exact source shape used by developer_ui_samples.rs:
+        // shortNames contains current aliases, displayName is the retired
+        // invoice label, and identifiers contains the internal sample code.
+        let original=json!({
+            "name":"[TEST] 가상 거래처 01 · 표준형",
+            "displayName":"테스트 납품처 01",
+            "shortNames":"가상01, 테스트거래처01",
+            "identifiers":"UI-SAMPLE-C01"
+        });
+        let migrated=bando_data_access::client_names::normalized(&original);
+        assert_eq!(migrated["shortNames"],
+            "가상01, 테스트거래처01, 테스트 납품처 01");
+        assert_eq!(labels(&migrated),vec![
+            "가상01","테스트거래처01","테스트 납품처 01","UI-SAMPLE-C01"
+        ]);
+        assert!(migrated.get("displayName").is_none());
+    }
 }
