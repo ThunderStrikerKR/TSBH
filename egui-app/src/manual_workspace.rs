@@ -1905,6 +1905,7 @@ enum EscapeAction {
     CloseProductSearch,
     CancelShipmentRemoval,
     CancelReset,
+    CancelCompletion,
     CancelDiscard,
     RevertCell,
     RequestClose,
@@ -1915,6 +1916,7 @@ fn escape_action(
     product_search:bool,
     remove_recipient:bool,
     reset:bool,
+    complete:bool,
     discard:bool,
     cell_dirty:bool,
 )->EscapeAction{
@@ -1922,6 +1924,7 @@ fn escape_action(
     else if product_search {EscapeAction::CloseProductSearch}
     else if remove_recipient {EscapeAction::CancelShipmentRemoval}
     else if reset {EscapeAction::CancelReset}
+    else if complete {EscapeAction::CancelCompletion}
     else if discard {EscapeAction::CancelDiscard}
     else if cell_dirty {EscapeAction::RevertCell}
     else {EscapeAction::RequestClose}
@@ -1931,11 +1934,13 @@ fn nested_modal_id(
     product_search:bool,
     remove_recipient:bool,
     reset:bool,
+    complete:bool,
     discard:bool,
 )->Option<&'static str>{
     if product_search {Some("native-manual-product-search")}
     else if remove_recipient {Some("manual-shipment-removal")}
     else if reset {Some("manual-reset-confirm")}
+    else if complete {Some("manual-completion-prompt")}
     else if discard {Some("manual-discard-prompt")}
     else {None}
 }
