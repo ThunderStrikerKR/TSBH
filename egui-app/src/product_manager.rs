@@ -442,6 +442,8 @@ impl ProductManager {
         self.detail_prices.clear();
         self.photos.clear();
         self.selected_variants.clear();
+        self.price_write_queue.clear();
+        self.price_mode_exit_requested=false;
         self.confirm_archive=false;
         self.confirm_discard=false;
         self.next_query=None;
@@ -468,6 +470,7 @@ impl ProductManager {
     }
     pub fn blocks_navigation(&self)->bool{
         self.selected.is_some() || self.has_pending_prices()
+            || !self.price_write_queue.is_empty()
             || self.writing.is_some() || self.excel.blocks_navigation()
     }
     fn price_cell_busy(&self,key:&str)->bool{
@@ -527,15 +530,25 @@ impl ProductManager {
     ){
         let Some(revision)=self.catalog.as_ref()
             .and_then(|catalog|catalog["revision"].as_u64()) else{
+            if action=="set_price"{
+                self.price_write_queue.clear();
+                self.price_mode_exit_requested=false;
+            }
             self.error=Some("운영 상품 리비전을 확인할 수 없습니다.".into());
             return;
         };
         if !self.gateway.product_write_enabled(){
+            if action=="set_price"{
+                self.price_write_queue.clear();
+                self.price_mode_exit_requested=false;
+            }
             self.error=Some("상품 변경 저장 권한이 없습니다.".into());
             return;
         }
         let price_update=if action=="set_price"{
             let Some(update)=PriceUpdate::from_payload(&data)else{
+                self.price_write_queue.clear();
+                self.price_mode_exit_requested=false;
                 self.error=Some("가격 저장 정보를 확인할 수 없습니다.".into());
                 return;
             };
@@ -714,7 +727,7 @@ impl ProductManager {
             self.error=Some("상품 Excel 검토 또는 저장을 마친 뒤 이동하세요.".into());
             return false;
         }
-        if self.writing.is_some(){
+        if self.writing.is_some()||!self.price_write_queue.is_empty(){
             self.error=Some("상품 저장이 완료된 뒤 다른 화면으로 이동하세요.".into());
             return false;
         }
@@ -1255,6 +1268,9 @@ impl ProductManager {
                                                 field(variant,"id"),tier
                                             );
                                             let original=variant[*tier].as_i64();
+                                            let cell_busy=self.price_cell_busy(&key);
+                                            let other_write_busy=saving&&!self.writing.as_ref()
+                                                .is_some_and(|job|job.kind=="set_price");
                                             let entry=self.price_drafts.entry(key.clone())
                                                 .or_insert_with(||PriceDraft{
                                                     original,
@@ -1265,9 +1281,7 @@ impl ProductManager {
                                                 .id_salt(("product-price-edit",key.as_str()))
                                                 .max_rect(price_rect)
                                                 .layout(Layout::left_to_right(Align::Center));
-                                            if (saving&&!self.writing.as_ref().is_some_and(
-                                                |job|job.kind=="set_price"
-                                            ))||self.price_cell_busy(&key){
+                                            if other_write_busy||cell_busy{
                                                 builder=builder.disabled();
                                             }
                                             row.scope_builder(builder,|inputs|{
@@ -1306,7 +1320,7 @@ impl ProductManager {
                                                                 entry.input=entry.original.map(|n|
                                                                     n.to_string()).unwrap_or_default();
                                                             }else if response.lost_focus()&&entry.dirty()
-                                                                && !self.price_cell_busy(&key){
+                                                                && !cell_busy{
                                                                 match entry.parse(){
                                                                     Ok(value)=>{
                                                                         price_write=Some((
@@ -2316,13 +2330,15 @@ mod tests {
     #[test]
     fn price_cell_commit_contract_is_excel_style_without_action_popup(){
         let source=include_str!("product_manager.rs");
-        let editor=source.split("// Excel-style commit:").nth(1).unwrap()
-            .split("if entry.dirty()").next().unwrap_or("");
+        let production=source.split("#[cfg(test)]").next().unwrap();
+        let editor=production.split("// Excel-style commit:").nth(1).unwrap()
+            .split("let action_rect").next().unwrap_or("");
         assert!(editor.contains("response.lost_focus()"));
         assert!(editor.contains("egui::Key::Escape"));
-        assert!(!source.contains("Popup::from_response(&response)"));
-        assert!(!source.contains("actions,\"저장\""));
-        assert!(!source.contains("actions,\"취소\""));
+        assert!(!editor.contains("Popup::"));
+        assert!(!editor.contains("theme::action"));
+        assert!(production.contains("self.price_write_queue.push_back("));
+        assert!(production.contains("self.launch_next_price_write(ctx.clone())"));
     }
     #[test]
     fn excel_price_write_payload_commits_values_and_empty_as_null(){
