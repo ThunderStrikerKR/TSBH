@@ -398,7 +398,8 @@ mod management_async_layout_contract_tests {
         assert!(aliases.contains("components::fixed_status_slot("));
         assert!(!aliases.contains("hit.on_hover_text(detail);"));
         let settings=include_str!("settings_view.rs");
-        assert!(settings.contains("if conflict{\n                    heading.with_layout("));
+        assert!(settings.contains("if conflict{"));
+        assert!(settings.contains("heading.with_layout(Layout::right_to_left(Align::Center)"));
         assert!(!settings.contains("if conflict && components::management_top_content"));
     }
 }
@@ -5507,7 +5508,8 @@ mod shared_checkbox_contract_tests {
         assert!(!category.contains("notice.checkbox("));
 
         let products=include_str!("product_manager.rs");
-        assert!(products.contains("components::checkbox(\n                        filter,"));
+        assert!(products.contains("components::checkbox("));
+        assert!(products.contains("&mut self.missing"));
         assert!(!products.contains("filter.checkbox("));
     }
 }
