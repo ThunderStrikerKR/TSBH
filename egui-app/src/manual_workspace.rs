@@ -8,7 +8,13 @@
 use std::{sync::{Arc,mpsc::{self,Receiver}},thread,time::{SystemTime,UNIX_EPOCH},sync::atomic::{AtomicU64,Ordering}};
 use eframe::egui::{self,Context};
 use serde_json::{json,Value};
-use crate::{gateway::{BandoGateway,ReadOperation},preview_store::WorkingReception,theme::{self,ButtonRole},typography,components,manual_product_search::{ProductSearch,Event as ProductEvent}};
+use crate::{
+    gateway::{BandoGateway,ReadOperation},
+    preview_store::WorkingReception,
+    theme::{self,ButtonRole},
+    typography,components,source_highlight,
+    manual_product_search::{ProductSearch,Event as ProductEvent},
+};
 
 fn text<'a>(value:&'a Value,key:&str)->&'a str {
     value.get(key).and_then(Value::as_str).unwrap_or("")
@@ -442,6 +448,16 @@ impl ManualWorkspace {
         self.selected_field=field.to_owned();
     }
     fn busy(&self)->bool {self.receiver.is_some()}
+
+    fn nested_modal_window_id(&self)->Option<&'static str>{
+        nested_modal_id(
+            self.product_search.is_some(),
+            self.remove_recipient_pending.is_some(),
+            self.reset_pending,
+            self.confirm_discard,
+        )
+    }
+
     fn poll(&mut self) {
         let received=self.receiver.as_ref().map(|r|r.try_recv());
         match received {
@@ -675,7 +691,13 @@ impl ManualWorkspace {
             ctx.request_repaint();
         });
     }
-    pub fn show(&mut self,ctx:&Context,work_area:egui::Rect)->Option<Event> {
+    pub fn show(
+        &mut self,
+        ctx:&Context,
+        work_area:egui::Rect,
+        link_hover:&mut source_highlight::HoverState,
+        source_hover:&mut Option<source_highlight::LinkKey>,
+    )->Option<Event> {
         self.poll();
         if let Some((order,quote,quote_error))=self.applied.take() {
             if order.get("id").and_then(Value::as_str)!=Some(self.order_id.as_str()) ||
@@ -691,6 +713,30 @@ impl ManualWorkspace {
             }
         }
         let mut open=true;
+        if ctx.input(|input|input.key_pressed(egui::Key::Escape)) {
+            match escape_action(
+                self.busy(),
+                self.product_search.is_some(),
+                self.remove_recipient_pending.is_some(),
+                self.reset_pending,
+                self.confirm_discard,
+                self.edit_text!=self.current_value(),
+            ){
+                EscapeAction::CloseProductSearch=>self.product_search=None,
+                EscapeAction::CancelShipmentRemoval=>self.remove_recipient_pending=None,
+                EscapeAction::CancelReset=>self.reset_pending=false,
+                EscapeAction::CancelDiscard=>self.confirm_discard=false,
+                EscapeAction::RevertCell=>{
+                    self.edit_text=self.current_value();
+                    self.error=None;
+                }
+                EscapeAction::RequestClose=>open=false,
+                EscapeAction::Ignore=>{},
+            }
+        }
+        let mut hovered_source:Option<source_highlight::LinkKey>=None;
+        let mut hovered_detail:Option<source_highlight::LinkKey>=None;
+        let mut source_did_scroll=false;
         let mut chosen:Option<(String,Value)>=None;
         let mut apply=false;
         let mut discard=false;
@@ -721,6 +767,13 @@ impl ManualWorkspace {
                 let rows=list(model,"rows").to_vec();
                 let blocks=list(model,"blocks").to_vec();
                 let assignments=model.get("assignments").cloned().unwrap_or_else(||json!({}));
+                let spans=source_highlight::collect_manual(
+                    &self.raw,&rows,&blocks,&assignments
+                );
+                let selected_recipient_id=rows.get(self.selected_recipient)
+                    .map(|row|text(row,"id").to_owned());
+                let active_link=link_hover.active_for(&self.order_id).cloned();
+                let scroll_link=link_hover.scroll_to.clone();
                 let busy=self.busy();
                 let unassigned=blocks.iter().filter(|b|
                     assignments.get(text(b,"id")).is_none()).count();
@@ -791,9 +844,13 @@ impl ManualWorkspace {
                                     .max_height((height-theme::SECTION_HEADER_HEIGHT
                                         -2.0*theme::SPACE_8).max(0.0))
                                     .show(panel,|ui|{
-                            if let Some(id)=crate::manual_source_view::source_document(
-                                ui,&self.raw,&blocks,&assignments,!busy
-                            ){
+                            let interaction=crate::manual_source_view::source_document(
+                                ui,&self.raw,&spans,selected_recipient_id.as_deref(),
+                                active_link.as_ref(),scroll_link.as_ref(),!busy
+                            );
+                            hovered_source=interaction.hovered;
+                            source_did_scroll=interaction.did_scroll;
+                            if let Some(id)=interaction.clicked_block {
                                 if assignments.get(&id).is_some() {
                                     chosen=Some(("release_manual_block".into(),json!({
                                         "id":id,"clear":true
@@ -1141,11 +1198,9 @@ impl ManualWorkspace {
                 ));
             }
         }
-        if self.product_search.is_some() ||
-            self.remove_recipient_pending.is_some() ||
-            self.reset_pending || self.confirm_discard {
-            components::modal_backdrop(
-                ctx,"manual-nested-modal-backdrop",true
+        if let Some(window_id)=self.nested_modal_window_id(){
+            components::modal_backdrop_for_window(
+                ctx,"manual-nested-modal-backdrop",window_id
             );
         }
         let product_event=self.product_search.as_mut().and_then(|search|
@@ -1333,6 +1388,10 @@ impl ManualWorkspace {
             if discard_confirmed {return Some(Event::Closed);}
             if !confirm {self.confirm_discard=false;}
         }
+        let hovered=hovered_detail.or_else(||hovered_source.clone());
+        link_hover.update_for(&self.order_id,hovered,ctx);
+        *source_hover=hovered_source;
+        if source_did_scroll {link_hover.scroll_to=None;}
         None
     }
 }
