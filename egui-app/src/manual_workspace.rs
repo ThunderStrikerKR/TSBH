@@ -1348,7 +1348,7 @@ impl ManualWorkspace {
                                     ui,&mut self.edit_text,
                                     theme::MANUAL_INPUT_WIDTH,""
                                 );
-                                if self.focus_editor {
+                                if self.focus_editor && !busy {
                                     editor.request_focus();
                                     self.focus_editor=false;
                                 }
