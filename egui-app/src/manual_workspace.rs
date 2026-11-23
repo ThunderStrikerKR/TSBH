@@ -1040,7 +1040,8 @@ impl ManualWorkspace {
                 let busy=self.busy();
                 let pending_quantity_cell=self.pending_quantity_cell();
                 let pending_quantity_active=pending_quantity_cell.is_some();
-                let has_pending_quantity=model_has_pending_quantity(model);
+                let pending_quantity_count=model_pending_quantity_count(model);
+                let has_pending_quantity=pending_quantity_count>0;
                 let unassigned=blocks.iter().filter(|b|
                     assignments.get(text(b,"id")).is_none()).count();
                 // Display worksheet context together. Final actions belong
