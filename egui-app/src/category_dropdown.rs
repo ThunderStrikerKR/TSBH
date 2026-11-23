@@ -298,15 +298,10 @@ fn fitted_crumb_widths(intrinsic:&[f32],budget:f32)->Vec<f32>{
         min_width+(width-min_width)*remaining/flexible
     ).collect()
 }
-/// The Back control sits on its own line above the footer breadcrumb.
-/// It keeps the shared 36pt management-action geometry and colors.
+/// The Back control is an understated 36pt Ghost action on a separate footer
+/// row. Keep its hit area; show the shared blue hover emphasis only on hover.
 fn category_back_button(ui:&mut Ui,enabled:bool)->Response{
-    let (fill,ink,border)=if enabled{
-        (theme::RAISED,theme::TEXT,theme::BORDER)
-    }else{
-        (theme::DISABLED_ACTION_BG,theme::DISABLED_ACTION_TEXT,
-            theme::DISABLED_ACTION_BORDER)
-    };
+    let ink=if enabled{theme::SECONDARY}else{theme::DISABLED_ACTION_TEXT};
     let response=ui.add_enabled(
         enabled,
         egui::Button::new(typography::action_label(
@@ -316,8 +311,8 @@ fn category_back_button(ui:&mut Ui,enabled:bool)->Response{
                 theme::CATEGORY_EXPLORER_BACK_WIDTH,
                 theme::CATEGORY_EXPLORER_CRUMB_HEIGHT
             ))
-            .fill(fill)
-            .stroke(Stroke::new(theme::SOFT_DIVIDER_WIDTH,border))
+            .fill(Color32::TRANSPARENT)
+            .stroke(Stroke::NONE)
             .corner_radius(theme::CONTROL_RADIUS)
     );
     if enabled{
@@ -503,18 +498,20 @@ fn menu_body(
             });
     }
     components::soft_divider(menu);
-    // Use a left-to-right child Ui: placing this button directly in the
-    // menu's vertical justified Ui stretched it across the full 655pt width.
-    // The Back action must keep its intrinsic 88pt width and 36pt height.
-    menu.horizontal(|row|{
-        row.spacing_mut().item_spacing.x=theme::SPACE_4;
-        if category_back_button(row,!state.path.is_empty()).clicked(){
-            state.path.pop();
-            state.search.clear();
-            state.ancestors_open=false;
-        }
+    // One footer group with a shared left origin and just 4pt between rows.
+    // The surrounding menu retains its ordinary 8pt vertical rhythm.
+    menu.scope(|footer|{
+        footer.spacing_mut().item_spacing.y=theme::SPACE_4;
+        footer.horizontal(|row|{
+            row.spacing_mut().item_spacing.x=theme::SPACE_4;
+            if category_back_button(row,!state.path.is_empty()).clicked(){
+                state.path.pop();
+                state.search.clear();
+                state.ancestors_open=false;
+            }
+        });
+        crumbs_row(footer,state,index,selected,enabled,allow_empty,changed);
     });
-    crumbs_row(menu,state,index,selected,enabled,allow_empty,changed);
 }
 
 /// Same trigger, same popup owner, same hover and one-shot feedback anchor as
@@ -730,6 +727,24 @@ mod tests{
         assert!(!last_section.contains("menu.label(typography::caption("));
         assert!(!body.contains("let can_go_back="));
         assert!(!body.contains("\"{}단계\""));
+    }
+    #[test]
+    fn footer_back_action_is_ghost_and_rows_share_a_four_point_gap(){
+        let source=include_str!("category_dropdown.rs");
+        let button=source.split("fn category_back_button(").nth(1).unwrap()
+            .split("fn crumbs_row(").next().unwrap();
+        assert!(button.contains(".fill(Color32::TRANSPARENT)"));
+        assert!(button.contains(".stroke(Stroke::NONE)"));
+        assert!(button.contains("theme::paint_button_hover"));
+        let body=source.split("fn menu_body(").nth(1).unwrap()
+            .split("pub fn category_dropdown(").next().unwrap();
+        let footer=body.rsplit("components::soft_divider(menu);")
+            .next().unwrap();
+        assert!(footer.contains("menu.scope(|footer|"));
+        assert!(footer.contains("footer.spacing_mut().item_spacing.y=theme::SPACE_4;"));
+        assert!(footer.contains("footer.horizontal(|row|"));
+        assert!(footer.contains("crumbs_row(footer,state,index,selected,enabled,allow_empty,changed)"));
+        assert!(!footer.contains("menu.horizontal(|row|"));
     }
     #[test]
     fn upper_navigation_is_compact_and_ancestors_are_visibly_dimmer(){
