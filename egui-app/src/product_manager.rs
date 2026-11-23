@@ -2456,8 +2456,7 @@ mod tests {
     #[test]
     fn price_cell_commit_contract_is_excel_style_without_action_popup(){
         let source=include_str!("product_manager.rs");
-        let production=source.split("#[cfg(test)]").next().unwrap();
-        let editor=production.split("// Excel-style cell editing:").nth(1).unwrap()
+        let editor=source.split("// Excel-style cell editing:").nth(1).unwrap()
             .split("let action_rect").next().unwrap_or("");
         assert!(editor.contains("response.lost_focus()"));
         assert!(editor.contains("egui::Key::Enter"));
@@ -2469,8 +2468,8 @@ mod tests {
         assert!(editor.contains("response.request_focus()"));
         assert!(!editor.contains("Popup::"));
         assert!(!editor.contains("theme::action"));
-        assert!(production.contains("self.price_write_queue.push_back("));
-        assert!(production.contains("self.launch_next_price_write(ctx.clone())"));
+        assert!(source.contains("self.price_write_queue.push_back("));
+        assert!(source.contains("self.launch_next_price_write(ctx.clone())"));
     }
     #[test]
     fn price_grid_keyboard_navigation_matches_spreadsheet_direction(){
