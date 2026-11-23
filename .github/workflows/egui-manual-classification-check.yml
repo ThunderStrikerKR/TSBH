@@ -12,6 +12,18 @@ on:
       - egui-app/src/main.rs
       - egui-app/src/theme.rs
       - egui-app/src/typography.rs
+  pull_request:
+    branches: [main]
+    paths:
+      - .github/workflows/egui-manual-classification-check.yml
+      - egui-app/src/manual_workspace.rs
+      - egui-app/src/manual_product_search.rs
+      - egui-app/src/manual_source_view.rs
+      - egui-app/src/source_highlight.rs
+      - egui-app/src/components.rs
+      - egui-app/src/main.rs
+      - egui-app/src/theme.rs
+      - egui-app/src/typography.rs
   workflow_dispatch:
 permissions:
   contents: read

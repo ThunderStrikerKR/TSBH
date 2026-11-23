@@ -159,6 +159,56 @@ fn manual_cell_targets(model:&Value)->Vec<ManualCellTarget>{
     cells
 }
 
+fn manual_row_has_data(row:&Value,assignments:&Value)->bool{
+    ["name","address","mobile","phone","note"].iter()
+        .any(|field|!text(row,field).trim().is_empty()) ||
+    list(row,"items").iter().any(|item|{
+        ["name","raw"].iter().any(|field|!text(item,field).trim().is_empty()) ||
+        ["productId","variantId","quantity","unitPrice","manualUnitPrice"]
+            .iter().any(|field|item.get(*field).is_some_and(|value|!value.is_null()))
+    }) ||
+    text(row,"dispatchOrigin")=="STORE" ||
+    text(row,"freightCode")=="020" ||
+    row.get("shippingCharge").and_then(Value::as_i64).is_some_and(|amount|amount>0) ||
+    row.get("remoteDelivery").is_some_and(|decision|
+        decision.get("manual").and_then(Value::as_bool)==Some(true)
+    ) ||
+    assignments.as_object().is_some_and(|map|map.values().any(|cell|
+        text(cell,"recipientId")==text(row,"id")
+    ))
+}
+
+fn parse_manual_row_count(raw:&str)->Result<usize,String>{
+    if raw.is_empty() || !raw.bytes().all(|byte|byte.is_ascii_digit()){
+        return Err("배송 건수는 1~100 사이의 정수로 입력하세요.".into());
+    }
+    let count=raw.parse::<usize>()
+        .map_err(|_|"배송 건수를 확인하세요.".to_owned())?;
+    if !(1..=100).contains(&count){
+        return Err("배송 건수는 1~100건입니다.".into());
+    }
+    Ok(count)
+}
+
+fn next_missing_recipient_cell(
+    model:&Value,current_row:usize,current_field:&str
+)->Option<ManualCellTarget>{
+    let fields=["name","address","mobile"];
+    let current_field_index=fields.iter().position(|field|*field==current_field)
+        .unwrap_or(0);
+    for (row_index,row) in list(model,"rows").iter().enumerate().skip(current_row){
+        for (field_index,field) in fields.iter().enumerate(){
+            if row_index==current_row && field_index<=current_field_index {continue;}
+            if text(row,field).trim().is_empty(){
+                return Some(ManualCellTarget{
+                    row:row_index,item:None,field:(*field).to_owned()
+                });
+            }
+        }
+    }
+    None
+}
+
 fn resolve_remote_rows(gateway:&dyn BandoGateway,model:&Value)->Vec<RemoteRow>{
     list(model,"rows").iter().map(|row|{
         let id=text(row,"id").to_owned();
@@ -472,13 +522,17 @@ pub struct ManualWorkspace {
     selected_field:String,
     edit_text:String,
     focus_editor:bool,
+    row_count_text:String,
     history:Vec<ManualHistoryFrame>,
+    pending_select_after_apply:Option<ManualCellTarget>,
     advance_after_apply:Option<CellNavigationKey>,
     last_action:Option<String>,
     action_pending:bool,
     confirm_discard:bool,
+    confirm_apply:bool,
     product_search:Option<ProductSearch>,
     remove_recipient_pending:Option<String>,
+    remove_recipient_target:Option<usize>,
     reset_pending:bool,
     receiver:Option<Receiver<Result<Outcome,String>>>,
     error:Option<String>,
@@ -524,11 +578,12 @@ impl ManualWorkspace {
             assignment_order:Vec::new(),remote_rows:Vec::new(),
             selected_recipient:0,
             selected_item:None,selected_field:"name".into(),
-            edit_text:String::new(),focus_editor:false,history:Vec::new(),
+            edit_text:String::new(),focus_editor:false,row_count_text:"1".into(),
+            history:Vec::new(),pending_select_after_apply:None,
             advance_after_apply:None,last_action:None,action_pending:false,
-            confirm_discard:false,
+            confirm_discard:false,confirm_apply:false,
             product_search:None,remove_recipient_pending:None,
-            reset_pending:false,
+            remove_recipient_target:None,reset_pending:false,
             receiver:Some(rx),error:None,dirty:false,applied:None,
         }
     }
@@ -556,6 +611,7 @@ impl ManualWorkspace {
             self.product_search.is_some(),
             self.remove_recipient_pending.is_some(),
             self.reset_pending,
+            self.confirm_apply,
             self.confirm_discard,
         )
     }
@@ -569,6 +625,7 @@ impl ManualWorkspace {
                 self.base_order=Some(order);
                 self.remote_rows=remote_rows;
                 let count=list(&model,"rows").len();
+                self.row_count_text=count.to_string();
                 self.selected_recipient=self.selected_recipient.min(count.saturating_sub(1));
                 self.model=Some(model);
                 self.assignment_order=assignment_order;
@@ -579,6 +636,9 @@ impl ManualWorkspace {
             Some(Ok(Ok(Outcome::Updated{
                 model,assignment_order,remote_rows
             })))=>{
+                let advance_to_missing=self.last_action.as_deref()==Some("assign_manual_block")
+                    && self.selected_item.is_none()
+                    && ["name","address","mobile"].contains(&self.selected_field.as_str());
                 if let Some(previous)=self.model.as_ref(){
                     push_manual_history(&mut self.history,ManualHistoryFrame{
                         model:previous.clone(),
@@ -593,6 +653,7 @@ impl ManualWorkspace {
                 self.model=Some(model);
                 self.assignment_order=assignment_order;
                 let count=self.model.as_ref().map(|m|list(m,"rows").len()).unwrap_or(0);
+                self.row_count_text=count.to_string();
                 self.selected_recipient=self.selected_recipient.min(count.saturating_sub(1));
                 if self.selected_item.as_ref().is_some_and(|id|
                     !self.model.as_ref().is_some_and(|m|
@@ -609,8 +670,23 @@ impl ManualWorkspace {
                 self.receiver=None;
                 self.action_pending=false;
                 self.edit_text=self.current_value();
-                if let Some(navigation)=self.advance_after_apply.take(){
+                if let Some(target)=self.pending_select_after_apply.take(){
+                    let valid=self.model.as_ref().is_some_and(|model|
+                        manual_cell_targets(model).contains(&target)
+                    );
+                    if valid {
+                        self.select_cell(target.row,target.item,&target.field);
+                    }
+                }else if let Some(navigation)=self.advance_after_apply.take(){
                     self.move_selection(navigation);
+                }else if advance_to_missing {
+                    if let Some(target)=self.model.as_ref().and_then(|model|
+                        next_missing_recipient_cell(
+                            model,self.selected_recipient,&self.selected_field
+                        )
+                    ){
+                        self.select_cell(target.row,target.item,&target.field);
+                    }
                 }
             }
             Some(Ok(Ok(Outcome::Applied{
@@ -624,6 +700,7 @@ impl ManualWorkspace {
             Some(Ok(Err(error)))=>{
                 self.error=Some(error);
                 self.advance_after_apply=None;
+                self.pending_select_after_apply=None;
                 if self.action_pending {self.last_action=None;}
                 self.action_pending=false;
                 self.receiver=None;
@@ -631,6 +708,7 @@ impl ManualWorkspace {
             Some(Err(mpsc::TryRecvError::Disconnected))=>{
                 self.error=Some("Rust 수동 분류 처리가 중단되었습니다.".into());
                 self.advance_after_apply=None;
+                self.pending_select_after_apply=None;
                 if self.action_pending {self.last_action=None;}
                 self.action_pending=false;
                 self.receiver=None;
@@ -661,7 +739,7 @@ impl ManualWorkspace {
     fn undo(&mut self){
         if self.busy() || self.product_search.is_some() ||
             self.remove_recipient_pending.is_some() || self.reset_pending ||
-            self.confirm_discard {return;}
+            self.confirm_apply || self.confirm_discard {return;}
         if self.edit_text!=self.current_value(){
             self.edit_text=self.current_value();
             self.error=None;
@@ -685,6 +763,7 @@ impl ManualWorkspace {
         }else{frame.selected_field};
         let count=self.model.as_ref().map(|model|list(model,"rows").len()).unwrap_or(0);
         self.selected_recipient=self.selected_recipient.min(count.saturating_sub(1));
+        self.row_count_text=count.to_string();
         if self.selected_item.as_ref().is_some_and(|id|
             !self.model.as_ref().is_some_and(|model|
                 list(model,"rows").get(self.selected_recipient).is_some_and(|row|
@@ -788,6 +867,122 @@ impl ManualWorkspace {
             return String::new();
         }
         text(row,&self.selected_field).to_owned()
+    }
+
+    fn selected_cell_editor(
+        &mut self,ui:&mut egui::Ui,width:f32,linked:bool,busy:bool
+    )->(egui::Response,Option<CellNavigationKey>){
+        let response=components::manual_linked_table_editor(
+            ui,&mut self.edit_text,width,linked
+        );
+        if self.focus_editor && !busy && !self.confirm_apply &&
+            !self.confirm_discard && self.product_search.is_none() &&
+            self.remove_recipient_pending.is_none() && !self.reset_pending {
+            response.request_focus();
+            self.focus_editor=false;
+        }
+        let navigation=if response.has_focus(){
+            ui.input(|input|{
+                if input.events.iter().any(|event|
+                    matches!(event,egui::Event::Ime(_))
+                ){None}
+                else if input.key_pressed(egui::Key::Enter){
+                    Some(CellNavigationKey::Next)
+                }else if input.key_pressed(egui::Key::Tab){
+                    Some(if input.modifiers.shift{
+                        CellNavigationKey::Previous
+                    }else{CellNavigationKey::Next})
+                }else if input.key_pressed(egui::Key::ArrowLeft){
+                    Some(CellNavigationKey::Left)
+                }else if input.key_pressed(egui::Key::ArrowRight){
+                    Some(CellNavigationKey::Right)
+                }else if input.key_pressed(egui::Key::ArrowUp){
+                    Some(CellNavigationKey::Up)
+                }else if input.key_pressed(egui::Key::ArrowDown){
+                    Some(CellNavigationKey::Down)
+                }else{None}
+            })
+        }else{None};
+        (response,navigation)
+    }
+
+    fn queue_cell_navigation(
+        &mut self,navigation:CellNavigationKey,
+        submit_direct:&mut bool,navigate_now:&mut Option<CellNavigationKey>
+    ){
+        let needs_commit=self.edit_text!=self.current_value() ||
+            self.selected_field=="quantity";
+        if needs_commit{
+            *submit_direct=true;
+            self.pending_select_after_apply=None;
+            self.advance_after_apply=Some(navigation);
+        }else{
+            *navigate_now=Some(navigation);
+        }
+    }
+
+    fn queue_cell_selection(
+        &mut self,target:ManualCellTarget,submit_direct:&mut bool
+    ){
+        if self.edit_text!=self.current_value(){
+            self.advance_after_apply=None;
+            self.pending_select_after_apply=Some(target);
+            *submit_direct=true;
+        }else{
+            self.select_cell(target.row,target.item,&target.field);
+        }
+    }
+
+    fn request_resize(&mut self,target:usize,ctx:&Context){
+        let current=self.model.as_ref()
+            .map(|model|list(model,"rows").len()).unwrap_or(0);
+        if current==0{return;}
+        if !(1..=100).contains(&target){
+            self.row_count_text=current.to_string();
+            self.error=Some("배송 건수는 1~100건입니다.".into());
+            return;
+        }
+        if self.busy(){return;}
+        if self.pending_quantity_cell().is_some(){
+            self.row_count_text=current.to_string();
+            self.error=Some("수량을 확정하거나 상품 선택을 취소하세요.".into());
+            return;
+        }
+        if self.edit_text!=self.current_value(){
+            self.row_count_text=current.to_string();
+            self.error=Some("현재 셀의 입력을 먼저 확정하세요.".into());
+            return;
+        }
+        if target==current{
+            self.row_count_text=current.to_string();
+            return;
+        }
+        if target>current{
+            let new_recipient_ids=(0..target-current).map(|_|unique_id())
+                .collect::<Vec<_>>();
+            self.action("resize_manual_rows",json!({
+                "count":target,"newRecipientIds":new_recipient_ids
+            }),ctx);
+            return;
+        }
+        let (last_id,populated)={
+            let model=self.model.as_ref().expect("manual model exists");
+            let rows=list(model,"rows");
+            let assignments=model.get("assignments").unwrap_or(&Value::Null);
+            (
+                rows.last().map(|row|text(row,"id").to_owned()),
+                rows[target..].iter().any(|row|manual_row_has_data(row,assignments))
+            )
+        };
+        self.row_count_text=current.to_string();
+        if populated{
+            self.remove_recipient_pending=last_id;
+            self.remove_recipient_target=Some(target);
+        }else{
+            self.action("resize_manual_rows",json!({
+                "count":target,"newRecipientIds":[]
+            }),ctx);
+        }
     }
 
     fn action(&mut self,action:&str,extra:Value,ctx:&Context) {
@@ -961,12 +1156,23 @@ impl ManualWorkspace {
                 self.product_search.is_some(),
                 self.remove_recipient_pending.is_some(),
                 self.reset_pending,
+                self.confirm_apply,
                 self.confirm_discard,
                 self.edit_text!=self.current_value(),
             ){
                 EscapeAction::CloseProductSearch=>self.product_search=None,
-                EscapeAction::CancelShipmentRemoval=>self.remove_recipient_pending=None,
+                EscapeAction::CancelShipmentRemoval=>{
+                    self.remove_recipient_pending=None;
+                    self.remove_recipient_target=None;
+                    let count=self.model.as_ref().map(|model|
+                        list(model,"rows").len()).unwrap_or(0);
+                    self.row_count_text=count.to_string();
+                }
                 EscapeAction::CancelReset=>self.reset_pending=false,
+                EscapeAction::CancelApply=>{
+                    self.confirm_apply=false;
+                    self.focus_editor=true;
+                },
                 EscapeAction::CancelDiscard=>self.confirm_discard=false,
                 EscapeAction::RevertCell=>{
                     self.edit_text=self.current_value();
@@ -1011,13 +1217,14 @@ impl ManualWorkspace {
                     !self.busy()&&self.product_search.is_none()
                         &&self.remove_recipient_pending.is_none()
                         &&!self.reset_pending
+                        &&!self.confirm_apply
                         &&!self.confirm_discard
                 ){open=false;}
                 // Prompts and asynchronous native mutations own input while
                 // open. The background worksheet remains visible but inert.
                 if self.busy() || self.product_search.is_some() ||
                     self.remove_recipient_pending.is_some() ||
-                    self.reset_pending || self.confirm_discard {
+                    self.reset_pending || self.confirm_apply || self.confirm_discard {
                     ui.disable();
                 }
                 let Some(model)=self.model.as_ref() else {return};
@@ -1153,42 +1360,78 @@ impl ManualWorkspace {
                                     (height-2.0*theme::SPACE_8).max(0.0)
                                 );
                                 panel.label(typography::subsection_heading("배송 정보 구성표"));
+                                let mut count_resize_requested=false;
                                 panel.horizontal(|ui|{
-                                components::form_field_label(ui,"배송 건수");
-                                if theme::action(ui,"−",ButtonRole::Standard,
-                                    !busy && !pending_quantity_active && rows.len()>1).clicked(){
-                                    let last=&rows[rows.len()-1];
-                                    let rid=text(last,"id");
-                                    let populated=["name","address","mobile","phone","note"]
-                                        .iter().any(|field|!text(last,field).is_empty()) ||
-                                        list(last,"items").iter().any(|item|
-                                            !text(item,"name").is_empty() ||
-                                            !text(item,"raw").is_empty() ||
-                                            item.get("productId").is_some_and(|v|!v.is_null()) ||
-                                            item.get("variantId").is_some_and(|v|!v.is_null()) ||
-                                            item.get("quantity").is_some_and(|v|!v.is_null())
-                                        ) ||
-                                        assignments.as_object().is_some_and(|map|
-                                            map.values().any(|cell|
-                                                text(cell,"recipientId")==rid
-                                            ));
-                                    if populated{
-                                        self.remove_recipient_pending=Some(rid.to_owned());
-                                    } else {
-                                        chosen=Some(("resize_manual_rows".into(),json!({
-                                            "count":rows.len()-1,"newRecipientIds":[]
-                                        })));
+                                    components::form_field_label(ui,"배송 건수");
+                                    let current_count=rows.len();
+                                    let can_resize=!busy && !pending_quantity_active &&
+                                        self.edit_text==self.current_value();
+                                    let minus_clicked=theme::action(
+                                        ui,"−",ButtonRole::Standard,
+                                        can_resize && current_count>1
+                                    ).clicked();
+                                    let count_input=ui.add_enabled(
+                                        can_resize,
+                                        egui::TextEdit::singleline(&mut self.row_count_text)
+                                            .font(typography::numeric_editor_font())
+                                            .horizontal_align(egui::Align::Center)
+                                            .vertical_align(egui::Align::Center)
+                                            .char_limit(3)
+                                            .margin(typography::form_input_text_margin())
+                                            .desired_width(52.0)
+                                            .hint_text("1~100")
+                                    );
+                                    let filtered=self.row_count_text.chars()
+                                        .filter(|ch|ch.is_ascii_digit()).take(3)
+                                        .collect::<String>();
+                                    if filtered!=self.row_count_text{
+                                        self.row_count_text=filtered;
                                     }
-                                }
-                                ui.label(typography::quantity(&rows.len().to_string()));
-                                if theme::action(ui,"+",ButtonRole::Standard,
-                                    !busy && !pending_quantity_active && rows.len()<100).clicked(){
-                                    chosen=Some(("resize_manual_rows".into(),json!({
-                                        "count":rows.len()+1,
-                                        "newRecipientIds":[unique_id()]
-                                    })));
-                                }
-                            });
+                                    let plus_clicked=theme::action(
+                                        ui,"+",ButtonRole::Standard,
+                                        can_resize && current_count<100
+                                    ).clicked();
+                                    let count_commit=(
+                                        count_input.lost_focus() &&
+                                        self.row_count_text!=current_count.to_string()
+                                    ) || (count_input.has_focus() && ui.input(|input|
+                                        input.key_pressed(egui::Key::Enter)
+                                    ));
+                                    if minus_clicked || plus_clicked || count_commit{
+                                        let typed=self.row_count_text!=current_count.to_string();
+                                        let requested=if typed{
+                                            parse_manual_row_count(&self.row_count_text)
+                                                .and_then(|entered|{
+                                                    let adjusted=if minus_clicked{
+                                                        entered.saturating_sub(1)
+                                                    }else if plus_clicked{
+                                                        entered.saturating_add(1)
+                                                    }else{entered};
+                                                    if (1..=100).contains(&adjusted){
+                                                        Ok(adjusted)
+                                                    }else{
+                                                        Err("배송 건수는 1~100건입니다.".into())
+                                                    }
+                                                })
+                                        }else if minus_clicked{
+                                            Ok(current_count.saturating_sub(1))
+                                        }else if plus_clicked{
+                                            Ok(current_count.saturating_add(1))
+                                        }else{
+                                            parse_manual_row_count(&self.row_count_text)
+                                        };
+                                        match requested{
+                                            Ok(count)=>self.request_resize(count,ctx),
+                                            Err(error)=>{
+                                                self.row_count_text=current_count.to_string();
+                                                self.error=Some(error);
+                                            }
+                                        }
+                                        count_resize_requested=true;
+                                    }
+                                    ui.label(typography::caption("건"));
+                                });
+                                if count_resize_requested {panel.disable();}
                             egui::ScrollArea::both()
                                 .id_salt("manual-recipients-table")
                                 .auto_shrink([false,false])
@@ -1201,52 +1444,89 @@ impl ManualWorkspace {
                                     // The React source displays ALL shipments
                                     // as a spreadsheet with six stable
                                     // recipient columns and product subrows.
-                                    ui.set_min_width(theme::MANUAL_TABLE_MIN_WIDTH);
+                                    let table_width=ui.available_width()
+                                        .max(theme::MANUAL_TABLE_MIN_WIDTH);
+                                    ui.set_min_width(table_width);
+                                    let delivery_col=64.0;
+                                    let name_col=(table_width*0.14).clamp(96.0,150.0);
+                                    let mobile_col=(table_width*0.13).clamp(88.0,150.0);
+                                    let phone_col=mobile_col;
+                                    let note_col=(table_width*0.15).clamp(104.0,180.0);
+                                    let address_col=(table_width-delivery_col-name_col
+                                        -mobile_col-phone_col-note_col).max(160.0);
+                                    let quantity_col=84.0;
+                                    let price_col=100.0;
+                                    let actions_col=136.0;
+                                    let product_col=(table_width-quantity_col-price_col
+                                        -actions_col).max(260.0)
+                                        .min(theme::MANUAL_TABLE_PRODUCT_COL);
                                     for (index,row) in rows.iter().enumerate() {
                                         let rid=text(row,"id");
                                         egui::Grid::new(("manual-delivery",rid))
                                             .spacing(egui::Vec2::ZERO)
                                             .show(ui,|grid|{
                                                 for (label,width) in [
-                                                    ("배송",theme::MANUAL_TABLE_DELIVERY_COL),
-                                                    ("이름",theme::MANUAL_TABLE_NAME_COL),
-                                                    ("주소",theme::MANUAL_TABLE_ADDRESS_COL),
-                                                    ("휴대폰",theme::MANUAL_TABLE_PHONE_COL),
-                                                    ("전화",theme::MANUAL_TABLE_PHONE_COL),
-                                                    ("배송 요청",theme::MANUAL_TABLE_NOTE_COL)
+                                                    ("배송",delivery_col),
+                                                    ("이름",name_col),
+                                                    ("주소",address_col),
+                                                    ("휴대폰",mobile_col),
+                                                    ("전화",phone_col),
+                                                    ("배송 요청",note_col)
                                                 ] {
                                                     components::manual_table_heading(grid,label,width);
                                                 }
                                                 grid.end_row();
                                                 let summary=format!("배송 {}",index+1);
                                                 if components::manual_table_cell(
-                                                    grid,&summary,theme::MANUAL_TABLE_DELIVERY_COL,
+                                                    grid,&summary,delivery_col,
                                                     index==self.selected_recipient
                                                 ).clicked(){
-                                                    self.select_cell(index,None,"name");
+                                                    self.queue_cell_selection(
+                                                        ManualCellTarget{
+                                                            row:index,item:None,field:"name".into()
+                                                        },&mut submit_direct
+                                                    );
                                                 }
                                                 for (field,width) in [
-                                                    ("name",theme::MANUAL_TABLE_NAME_COL),
-                                                    ("address",theme::MANUAL_TABLE_ADDRESS_COL),
-                                                    ("mobile",theme::MANUAL_TABLE_PHONE_COL),
-                                                    ("phone",theme::MANUAL_TABLE_PHONE_COL),
-                                                    ("note",theme::MANUAL_TABLE_NOTE_COL)
+                                                    ("name",name_col),
+                                                    ("address",address_col),
+                                                    ("mobile",mobile_col),
+                                                    ("phone",phone_col),
+                                                    ("note",note_col)
                                                 ] {
                                                     let selected=index==self.selected_recipient &&
                                                         self.selected_item.is_none() &&
                                                         self.selected_field==field;
                                                     let key=source_highlight::key(rid,rid,field);
-                                                    let response=components::manual_linked_table_cell(
-                                                        grid,text(row,field),width,selected,
-                                                        source_highlight::is_active(
-                                                            active_link.as_ref(),&key
-                                                        )
+                                                    let linked=source_highlight::is_active(
+                                                        active_link.as_ref(),&key
                                                     );
+                                                    let response=if selected{
+                                                        let (response,navigation)=self.selected_cell_editor(
+                                                            grid,width,linked,busy
+                                                        );
+                                                        if let Some(navigation)=navigation{
+                                                            self.queue_cell_navigation(
+                                                                navigation,&mut submit_direct,
+                                                                &mut navigate_now
+                                                            );
+                                                        }
+                                                        response
+                                                    }else{
+                                                        components::manual_linked_table_cell(
+                                                            grid,text(row,field),width,false,linked
+                                                        )
+                                                    };
                                                     if response.hovered(){
                                                         hovered_detail=Some(key);
                                                     }
-                                                    if response.clicked(){
-                                                        self.select_cell(index,None,field);
+                                                    if response.clicked() && !selected{
+                                                        self.queue_cell_selection(
+                                                            ManualCellTarget{
+                                                                row:index,item:None,
+                                                                field:field.to_owned()
+                                                            },&mut submit_direct
+                                                        );
                                                     }
                                                 }
                                                 grid.end_row();
@@ -1256,16 +1536,16 @@ impl ManualWorkspace {
                                             .spacing(egui::Vec2::ZERO)
                                             .show(ui,|grid|{
                                                 components::manual_table_heading(
-                                                    grid,"상품",theme::MANUAL_TABLE_PRODUCT_COL
+                                                    grid,"상품",product_col
                                                 );
                                                 components::manual_table_heading(
-                                                    grid,"수량",theme::MANUAL_TABLE_QUANTITY_COL
+                                                    grid,"수량",quantity_col
                                                 );
                                                 components::manual_table_heading(
-                                                    grid,"단가",theme::MANUAL_TABLE_UNIT_PRICE_COL
+                                                    grid,"단가",price_col
                                                 );
                                                 components::manual_table_heading(
-                                                    grid,"행 동작",theme::MANUAL_TABLE_ACTION_COL*2.0
+                                                    grid,"행 동작",actions_col
                                                 );
                                                 grid.end_row();
                                                 for item in list(row,"items"){
@@ -1275,19 +1555,38 @@ impl ManualWorkspace {
                                                     let product_key=source_highlight::key(
                                                         rid,item_id,"product"
                                                     );
-                                                    let product_response=components::manual_linked_table_cell(
-                                                        grid,text(item,"name"),
-                                                        theme::MANUAL_TABLE_PRODUCT_COL,
-                                                        selected && self.selected_field=="product",
-                                                        source_highlight::is_active(
-                                                            active_link.as_ref(),&product_key
-                                                        )
+                                                    let product_linked=source_highlight::is_active(
+                                                        active_link.as_ref(),&product_key
                                                     );
+                                                    let product_selected=selected &&
+                                                        self.selected_field=="product";
+                                                    let product_response=if product_selected{
+                                                        let (response,navigation)=self.selected_cell_editor(
+                                                            grid,product_col,product_linked,busy
+                                                        );
+                                                        if let Some(navigation)=navigation{
+                                                            self.queue_cell_navigation(
+                                                                navigation,&mut submit_direct,
+                                                                &mut navigate_now
+                                                            );
+                                                        }
+                                                        response
+                                                    }else{
+                                                        components::manual_linked_table_cell(
+                                                            grid,text(item,"name"),product_col,
+                                                            false,product_linked
+                                                        )
+                                                    };
                                                     if product_response.hovered(){
                                                         hovered_detail=Some(product_key);
                                                     }
-                                                    if product_response.clicked() {
-                                                        self.select_cell(index,Some(item_id.into()),"product");
+                                                    if product_response.clicked() && !product_selected{
+                                                        self.queue_cell_selection(
+                                                            ManualCellTarget{
+                                                                row:index,item:Some(item_id.to_owned()),
+                                                                field:"product".into()
+                                                            },&mut submit_direct
+                                                        );
                                                     }
                                                     let quantity=item.get("quantity")
                                                         .and_then(Value::as_i64)
@@ -1295,45 +1594,82 @@ impl ManualWorkspace {
                                                     let quantity_key=source_highlight::key(
                                                         rid,item_id,"quantity"
                                                     );
-                                                    let quantity_response=components::manual_linked_table_cell(
-                                                        grid,&quantity,
-                                                        theme::MANUAL_TABLE_QUANTITY_COL,
-                                                        selected && self.selected_field=="quantity",
-                                                        source_highlight::is_active(
-                                                            active_link.as_ref(),&quantity_key
-                                                        )
+                                                    let quantity_linked=source_highlight::is_active(
+                                                        active_link.as_ref(),&quantity_key
                                                     );
+                                                    let quantity_selected=selected &&
+                                                        self.selected_field=="quantity";
+                                                    let quantity_response=if quantity_selected{
+                                                        let (response,navigation)=self.selected_cell_editor(
+                                                            grid,quantity_col,quantity_linked,busy
+                                                        );
+                                                        if let Some(navigation)=navigation{
+                                                            self.queue_cell_navigation(
+                                                                navigation,&mut submit_direct,
+                                                                &mut navigate_now
+                                                            );
+                                                        }
+                                                        response
+                                                    }else{
+                                                        components::manual_linked_table_cell(
+                                                            grid,&quantity,quantity_col,false,
+                                                            quantity_linked
+                                                        )
+                                                    };
                                                     if quantity_response.hovered(){
                                                         hovered_detail=Some(quantity_key);
                                                     }
-                                                    if quantity_response.clicked() {
-                                                        self.select_cell(index,Some(item_id.into()),"quantity");
+                                                    if quantity_response.clicked() && !quantity_selected{
+                                                        self.queue_cell_selection(
+                                                            ManualCellTarget{
+                                                                row:index,item:Some(item_id.to_owned()),
+                                                                field:"quantity".into()
+                                                            },&mut submit_direct
+                                                        );
                                                     }
                                                     let price=item.get("unitPrice")
                                                         .and_then(Value::as_i64)
                                                         .map(components::display_won)
                                                         .unwrap_or_else(||"—".into());
-                                                    if components::manual_table_cell(
-                                                        grid,&price,
-                                                        theme::MANUAL_TABLE_UNIT_PRICE_COL,
-                                                        selected && self.selected_field=="unitPrice"
-                                                    ).on_hover_text(if item.get("manualUnitPrice")
+                                                    let price_selected=selected &&
+                                                        self.selected_field=="unitPrice";
+                                                    let price_response=if price_selected{
+                                                        let (response,navigation)=self.selected_cell_editor(
+                                                            grid,price_col,false,busy
+                                                        );
+                                                        if let Some(navigation)=navigation{
+                                                            self.queue_cell_navigation(
+                                                                navigation,&mut submit_direct,
+                                                                &mut navigate_now
+                                                            );
+                                                        }
+                                                        response
+                                                    }else{
+                                                        components::manual_table_cell(
+                                                            grid,&price,price_col,false
+                                                        )
+                                                    }.on_hover_text(if item.get("manualUnitPrice")
                                                         .is_some(){"직접 수정된 단가"}
-                                                        else{"상품·거래처 기준 단가"})
-                                                        .clicked(){
-                                                        self.select_cell(
-                                                            index,Some(item_id.into()),"unitPrice"
+                                                        else{"상품·거래처 기준 단가"});
+                                                    if price_response.clicked() && !price_selected{
+                                                        self.queue_cell_selection(
+                                                            ManualCellTarget{
+                                                                row:index,item:Some(item_id.to_owned()),
+                                                                field:"unitPrice".into()
+                                                            },&mut submit_direct
                                                         );
                                                     }
                                                     grid.horizontal(|actions|{
                                                         if theme::action(actions,"검색",
                                                             ButtonRole::Standard,
-                                                            !busy && !pending_quantity_active).clicked(){
+                                                            !busy && !pending_quantity_active &&
+                                                            self.edit_text==self.current_value()).clicked(){
                                                             lookup=Some((rid.to_owned(),item_id.to_owned()));
                                                         }
                                                         if theme::action(actions,"상품 제거",
                                                             ButtonRole::Quiet,
-                                                            !busy && !pending_quantity_active).clicked(){
+                                                            !busy && !pending_quantity_active &&
+                                                            self.edit_text==self.current_value()).clicked(){
                                                             chosen=Some(("remove_manual_item".into(),json!({
                                                                 "recipientId":rid,"itemId":item_id
                                                             })));
@@ -1343,7 +1679,8 @@ impl ManualWorkspace {
                                                 }
                                             });
                                         if theme::action(ui,"상품 추가",ButtonRole::Standard,
-                                            !busy && !pending_quantity_active).clicked(){
+                                            !busy && !pending_quantity_active &&
+                                                self.edit_text==self.current_value()).clicked(){
                                             chosen=Some(("add_manual_item".into(),json!({
                                                 "recipientId":rid,"itemId":unique_id()
                                             })));
@@ -1386,7 +1723,9 @@ impl ManualWorkspace {
                                                     if theme::action(
                                                         options,label,
                                                         if origin==value{ButtonRole::TableSecondary}
-                                                        else{ButtonRole::Standard},!busy && !pending_quantity_active
+                                                        else{ButtonRole::Standard},!busy &&
+                                                            !pending_quantity_active &&
+                                                            self.edit_text==self.current_value()
                                                     ).clicked(){
                                                         chosen=Some((
                                                             "set_manual_delivery_option".into(),
@@ -1401,7 +1740,9 @@ impl ManualWorkspace {
                                                 ]{
                                                     if theme::action(options,label,
                                                         if code==value{ButtonRole::TableSecondary}
-                                                        else{ButtonRole::Standard},!busy && !pending_quantity_active).clicked(){
+                                                        else{ButtonRole::Standard},!busy &&
+                                                            !pending_quantity_active &&
+                                                            self.edit_text==self.current_value()).clicked(){
                                                         chosen=Some((
                                                             "set_manual_delivery_option".into(),
                                                             json!({"cell":{"recipientId":rid,
@@ -1415,7 +1756,8 @@ impl ManualWorkspace {
                                                 options.spacing_mut().item_spacing.x=theme::SPACE_8;
                                                 if theme::action(options,
                                                     if remote{"도서산간 적용"}else{"도서산간 미적용"},
-                                                    ButtonRole::Standard,!busy && !pending_quantity_active && remote_ready
+                                                    ButtonRole::Standard,!busy && !pending_quantity_active &&
+                                                        remote_ready && self.edit_text==self.current_value()
                                                 ).clicked(){
                                                     chosen=Some((
                                                         "set_manual_delivery_option".into(),
@@ -1426,7 +1768,8 @@ impl ManualWorkspace {
                                                 }
                                                 if theme::action(options,
                                                     "운임 수정",ButtonRole::Standard,
-                                                    !busy && !pending_quantity_active && code!="020"
+                                                    !busy && !pending_quantity_active && code!="020" &&
+                                                        self.edit_text==self.current_value()
                                                 ).clicked(){
                                                     self.select_cell(index,None,"shippingCharge");
                                                 }
@@ -1435,67 +1778,10 @@ impl ManualWorkspace {
                                         components::soft_divider(ui);
                                     }
                                 });
-                            // Single selected-field editor; never repeat it
-                            // under every shipment or change the panel height.
+                            // Ordinary text, product, quantity and unit-price values are edited
+                            // directly inside their own cells. Only the freight
+                            // override remains a dedicated non-table field.
                             panel.horizontal(|ui|{
-                                let label=if self.selected_item.is_some(){
-                                    match self.selected_field.as_str(){
-                                        "quantity"=>"수량","unitPrice"=>"단가",
-                                        _=>"상품명"
-                                    }
-                                } else {
-                                    match self.selected_field.as_str() {
-                                        "name"=>"이름","address"=>"주소",
-                                        "mobile"=>"휴대폰","phone"=>"전화",
-                                        "note"=>"배송 요청",
-                                        "shippingCharge"=>"적용 운임",_=>"이름"
-                                    }
-                                };
-                                components::form_field_label(ui,label);
-                                let editor=components::flexible_text_field(
-                                    ui,&mut self.edit_text,
-                                    theme::MANUAL_INPUT_WIDTH,""
-                                );
-                                if self.focus_editor && !busy &&
-                                    self.product_search.is_none() &&
-                                    self.remove_recipient_pending.is_none() &&
-                                    !self.reset_pending && !self.confirm_discard {
-                                    editor.request_focus();
-                                    self.focus_editor=false;
-                                }
-                                if editor.has_focus(){
-                                    let navigation=ctx.input(|input|{
-                                        if input.events.iter().any(|event|
-                                            matches!(event,egui::Event::Ime(_))
-                                        ){None}
-                                        else if input.key_pressed(egui::Key::Enter){
-                                            Some(CellNavigationKey::Next)
-                                        }else if input.key_pressed(egui::Key::Tab){
-                                            Some(if input.modifiers.shift{
-                                                CellNavigationKey::Previous
-                                            }else{CellNavigationKey::Next})
-                                        }else if input.key_pressed(egui::Key::ArrowLeft){
-                                            Some(CellNavigationKey::Left)
-                                        }else if input.key_pressed(egui::Key::ArrowRight){
-                                            Some(CellNavigationKey::Right)
-                                        }else if input.key_pressed(egui::Key::ArrowUp){
-                                            Some(CellNavigationKey::Up)
-                                        }else if input.key_pressed(egui::Key::ArrowDown){
-                                            Some(CellNavigationKey::Down)
-                                        }else{None}
-                                    });
-                                    if let Some(navigation)=navigation{
-                                        let needs_commit=
-                                            self.edit_text!=self.current_value() ||
-                                            self.selected_field=="quantity";
-                                        if needs_commit{
-                                            submit_direct=true;
-                                            self.advance_after_apply=Some(navigation);
-                                        }else{
-                                            navigate_now=Some(navigation);
-                                        }
-                                    }
-                                }
                                 if self.selected_item.is_some() &&
                                     self.selected_field=="quantity" {
                                     let quantity=rows.get(self.selected_recipient)
@@ -1544,9 +1830,23 @@ impl ManualWorkspace {
                                         self.undo();
                                     }
                                 }
-                                if theme::action(ui,"입력 반영",ButtonRole::Standard,
-                                    !busy && self.edit_text!=self.current_value()
-                                ).clicked(){submit_direct=true;}
+                                if self.selected_field=="shippingCharge"{
+                                    components::form_field_label(ui,"적용 운임");
+                                    let editor=components::flexible_text_field(
+                                        ui,&mut self.edit_text,
+                                        theme::MANUAL_INPUT_WIDTH,""
+                                    );
+                                    if self.focus_editor && !busy &&
+                                        !self.confirm_apply && !self.confirm_discard {
+                                        editor.request_focus();
+                                        self.focus_editor=false;
+                                    }
+                                    if editor.has_focus() && ctx.input(|input|
+                                        input.key_pressed(egui::Key::Enter)
+                                    ){
+                                        submit_direct=true;
+                                    }
+                                }
                             });
                             });
                         },
@@ -1729,32 +2029,51 @@ impl ManualWorkspace {
         if let Some(target)=self.remove_recipient_pending.clone(){
             let mut confirm=false;
             let mut cancel=false;
+            let current_count=self.model.as_ref().map(|model|
+                list(model,"rows").len()).unwrap_or(0);
+            let target_count=self.remove_recipient_target
+                .unwrap_or_else(||current_count.saturating_sub(1));
+            let removing_count=current_count.saturating_sub(target_count);
             components::decision_window("배송 건수 줄이기","manual-shipment-removal",work_area)
                 .constrain_to(work_area)
                 .show(ctx,|ui|{
                     cancel=components::modal_header(
                         ui,"배송 건수 줄이기","취소",true
                     );
-                    ui.label("마지막 배송 건의 입력값과 원문 배정을 제거할까요?");
+                    ui.label(format!(
+                        "마지막 {removing_count}개 배송 건의 입력값과 원문 배정을 제거할까요?"
+                    ));
                     components::modal_action_row(ui,|actions|{
                         if theme::action(actions,"확인",ButtonRole::Danger,true).clicked(){
                             confirm=true;
                         }
                     });
                 });
-            if cancel {self.remove_recipient_pending=None;}
-            if confirm {
-                let count=self.model.as_ref().map(|m|list(m,"rows").len()).unwrap_or(0);
-                let unchanged=self.model.as_ref().and_then(|m|list(m,"rows").last())
-                    .is_some_and(|row|text(row,"id")==target);
+            if cancel {
                 self.remove_recipient_pending=None;
-                if unchanged && count>1 && !self.busy() &&
-                   self.edit_text==self.current_value() {
+                self.remove_recipient_target=None;
+                let count=self.model.as_ref().map(|model|
+                    list(model,"rows").len()).unwrap_or(0);
+                self.row_count_text=count.to_string();
+            }
+            if confirm {
+                let count=self.model.as_ref().map(|model|
+                    list(model,"rows").len()).unwrap_or(0);
+                let target_count=self.remove_recipient_target
+                    .unwrap_or_else(||count.saturating_sub(1));
+                let unchanged=self.model.as_ref().and_then(|model|
+                    list(model,"rows").last()
+                ).is_some_and(|row|text(row,"id")==target);
+                self.remove_recipient_pending=None;
+                self.remove_recipient_target=None;
+                if unchanged && target_count>=1 && target_count<count &&
+                   !self.busy() && self.edit_text==self.current_value() {
                     self.action("resize_manual_rows",json!({
-                        "count":count-1,"newRecipientIds":[]
+                        "count":target_count,"newRecipientIds":[]
                     }),ctx);
                 }else{
                     self.error=Some("삭제 대상이 변경됐습니다. 현재 배송 목록을 확인하세요.".into());
+                    self.row_count_text=count.to_string();
                 }
             }
         }
@@ -1787,7 +2106,8 @@ impl ManualWorkspace {
             // Dirty typed text is just as important as a completed Rust edit.
             // A parent close cannot destroy an active modal/async operation.
             if self.busy() || self.product_search.is_some() ||
-               self.remove_recipient_pending.is_some() || self.reset_pending {
+               self.remove_recipient_pending.is_some() || self.reset_pending ||
+               self.confirm_apply {
                 return None;
             }
             if self.dirty || self.edit_text!=self.current_value() {
@@ -1816,18 +2136,54 @@ impl ManualWorkspace {
             if discard_confirmed {return Some(Event::Closed);}
             if keep_editing {self.confirm_discard=false;}
         }
+        if apply {
+            if self.edit_text!=self.current_value() {
+                self.error=Some("아직 반영되지 않은 입력 내용이 있습니다.".into());
+            }else{
+                self.confirm_apply=true;
+            }
+        }
+        if self.confirm_apply {
+            let mut cancel=false;
+            let mut proceed=false;
+            components::decision_window(
+                "수동 분류 완료","manual-completion-prompt",work_area
+            ).constrain_to(work_area).show(ctx,|ui|{
+                components::modal_header(
+                    ui,"수동 분류 완료","닫기",false
+                );
+                ui.label("수동 분류 결과를 접수 초안에 반영할까요?");
+                components::modal_action_row_split(
+                    ui,
+                    |left|{
+                        let _=theme::action(
+                            left,"AI 자동분류 개선",ButtonRole::Standard,false
+                        );
+                    },
+                    |right|{
+                        if theme::action(
+                            right,"피드백 없이 진행",ButtonRole::Primary,true
+                        ).clicked(){proceed=true;}
+                        if theme::action(
+                            right,"취소",ButtonRole::Quiet,true
+                        ).clicked(){cancel=true;}
+                    }
+                );
+            });
+            if cancel {
+                self.confirm_apply=false;
+                self.focus_editor=true;
+            }
+            if proceed {
+                self.confirm_apply=false;
+                self.apply(ctx);
+            }
+        }
         // Raise ONLY the actual nested dialog after it exists. The parent's
         // disabled state plus the main Middle backdrop already protect
         // background controls; avoid a pointer-blocking Foreground overlay.
         if let Some(window_id)=self.nested_modal_window_id(){
             components::modal_foreground_for_window(ctx,window_id);
-        }
-        if apply {
-            if self.edit_text!=self.current_value() {
-                self.error=Some("아직 반영되지 않은 입력 내용이 있습니다.".into());
-            }else{
-                self.apply(ctx);
-            }
         }
         let hovered=manual_hover_target(
             hovered_detail,hovered_source.clone(),&spans
@@ -1854,7 +2210,7 @@ fn manual_apply_guidance(
     }else if pending_quantity_count>0{
         Some(format!("수량 확인 필요: {pending_quantity_count}건"))
     }else if uncommitted{
-        Some("선택한 입력을 먼저 반영하세요".into())
+        Some("현재 셀의 입력을 확정하세요".into())
     }else{
         None
     }
@@ -1887,6 +2243,7 @@ enum EscapeAction {
     CloseProductSearch,
     CancelShipmentRemoval,
     CancelReset,
+    CancelApply,
     CancelDiscard,
     RevertCell,
     RequestClose,
@@ -1897,6 +2254,7 @@ fn escape_action(
     product_search:bool,
     remove_recipient:bool,
     reset:bool,
+    apply_prompt:bool,
     discard:bool,
     cell_dirty:bool,
 )->EscapeAction{
@@ -1904,6 +2262,7 @@ fn escape_action(
     else if product_search {EscapeAction::CloseProductSearch}
     else if remove_recipient {EscapeAction::CancelShipmentRemoval}
     else if reset {EscapeAction::CancelReset}
+    else if apply_prompt {EscapeAction::CancelApply}
     else if discard {EscapeAction::CancelDiscard}
     else if cell_dirty {EscapeAction::RevertCell}
     else {EscapeAction::RequestClose}
@@ -1913,11 +2272,13 @@ fn nested_modal_id(
     product_search:bool,
     remove_recipient:bool,
     reset:bool,
+    apply_prompt:bool,
     discard:bool,
 )->Option<&'static str>{
     if product_search {Some("native-manual-product-search")}
     else if remove_recipient {Some("manual-shipment-removal")}
     else if reset {Some("manual-reset-confirm")}
+    else if apply_prompt {Some("manual-completion-prompt")}
     else if discard {Some("manual-discard-prompt")}
     else {None}
 }
@@ -1959,6 +2320,57 @@ mod manual_workspace_modal_routing_tests {
         assert_eq!(keys[7],(0,Some("i1"),"unitPrice"));
         assert_eq!(keys[10],(0,Some("i2"),"unitPrice"));
         assert_eq!(keys[11],(1,None,"name"));
+    }
+
+    #[test]
+    fn shipment_count_input_accepts_only_whole_numbers_from_one_to_one_hundred(){
+        assert_eq!(parse_manual_row_count("1"),Ok(1));
+        assert_eq!(parse_manual_row_count("12"),Ok(12));
+        assert_eq!(parse_manual_row_count("100"),Ok(100));
+        assert!(parse_manual_row_count("").is_err());
+        assert!(parse_manual_row_count("0").is_err());
+        assert!(parse_manual_row_count("101").is_err());
+        assert!(parse_manual_row_count("1.5").is_err());
+        assert!(parse_manual_row_count("-2").is_err());
+    }
+
+    #[test]
+    fn shipment_removal_detects_values_and_source_assignments_in_every_removed_row(){
+        let assignments=json!({"block-1":{"recipientId":"r2"}});
+        assert!(!manual_row_has_data(
+            &json!({"id":"r1","items":[{}]}),&assignments
+        ));
+        assert!(manual_row_has_data(
+            &json!({"id":"r2","items":[{}]}),&assignments
+        ));
+        assert!(manual_row_has_data(
+            &json!({"id":"r3","address":"강원도 홍천군","items":[{}]}),
+            &assignments
+        ));
+        assert!(manual_row_has_data(
+            &json!({"id":"r4","dispatchOrigin":"STORE","freightCode":"010"}),
+            &assignments
+        ));
+        assert!(manual_row_has_data(
+            &json!({"id":"r5","freightCode":"020"}),
+            &assignments
+        ));
+        assert!(manual_row_has_data(
+            &json!({"id":"r6","remoteDelivery":{"manual":true,"checked":false}}),
+            &assignments
+        ));
+    }
+
+    #[test]
+    fn source_assignment_moves_to_the_next_missing_required_recipient_field(){
+        let model=json!({"rows":[
+            {"id":"r1","name":"홍길동","address":"","mobile":"010"},
+            {"id":"r2","name":"","address":"","mobile":""}
+        ]});
+        let next=next_missing_recipient_cell(&model,0,"name").unwrap();
+        assert_eq!(next,ManualCellTarget{
+            row:0,item:None,field:"address".into()
+        });
     }
 
     #[test]
@@ -2015,21 +2427,29 @@ mod manual_workspace_modal_routing_tests {
 
     #[test]
     fn every_nested_manual_dialog_uses_the_real_foreground_window(){
-        assert_eq!(nested_modal_id(true,false,false,false),
+        assert_eq!(nested_modal_id(true,false,false,false,false),
             Some("native-manual-product-search"));
-        assert_eq!(nested_modal_id(false,true,false,false),
+        assert_eq!(nested_modal_id(false,true,false,false,false),
             Some("manual-shipment-removal"));
-        assert_eq!(nested_modal_id(false,false,true,false),
+        assert_eq!(nested_modal_id(false,false,true,false,false),
             Some("manual-reset-confirm"));
-        assert_eq!(nested_modal_id(false,false,false,true),
+        assert_eq!(nested_modal_id(false,false,false,true,false),
+            Some("manual-completion-prompt"));
+        assert_eq!(nested_modal_id(false,false,false,false,true),
             Some("manual-discard-prompt"));
-        assert_eq!(nested_modal_id(false,false,false,false),None);
+        assert_eq!(nested_modal_id(false,false,false,false,false),None);
         let source=include_str!("manual_workspace.rs");
         let render=source.split("pub fn show(").nth(1).unwrap()
             .split("fn manual_hover_target(").next().unwrap();
         assert!(render.contains("modal_foreground_for_window(ctx,window_id)"));
         assert!(!render.contains("modal_backdrop_for_window("));
         assert!(render.contains("if apply_clicked{apply=true;}"));
+        assert!(render.contains("피드백 없이 진행"));
+        assert!(render.contains("AI 자동분류 개선"));
+        assert!(render.contains("if proceed"));
+        assert!(render.contains("self.confirm_apply=false;"));
+        assert!(render.contains("self.apply(ctx);"),
+            "the native apply action must be reached from the explicit proceed branch");
         assert!(!render.contains("초안 적용 후 주문 확인 필요"),
             "the generic order-confirmation hint must not occupy a header row");
         assert!(render.contains("count.on_hover_text(reason)"),
@@ -2038,23 +2458,25 @@ mod manual_workspace_modal_routing_tests {
 
     #[test]
     fn escape_closes_only_the_topmost_nested_prompt(){
-        assert_eq!(escape_action(false,true,true,true,true,false),
+        assert_eq!(escape_action(false,true,false,false,false,false,false),
             EscapeAction::CloseProductSearch);
-        assert_eq!(escape_action(false,false,true,true,true,false),
+        assert_eq!(escape_action(false,false,true,false,false,false,false),
             EscapeAction::CancelShipmentRemoval);
-        assert_eq!(escape_action(false,false,false,true,true,false),
+        assert_eq!(escape_action(false,false,false,true,false,false,false),
             EscapeAction::CancelReset);
-        assert_eq!(escape_action(false,false,false,false,true,false),
+        assert_eq!(escape_action(false,false,false,false,true,false,false),
+            EscapeAction::CancelApply);
+        assert_eq!(escape_action(false,false,false,false,false,true,false),
             EscapeAction::CancelDiscard);
     }
 
     #[test]
     fn escape_reverts_uncommitted_cell_before_requesting_workspace_close(){
-        assert_eq!(escape_action(false,false,false,false,false,true),
+        assert_eq!(escape_action(false,false,false,false,false,false,true),
             EscapeAction::RevertCell);
-        assert_eq!(escape_action(false,false,false,false,false,false),
+        assert_eq!(escape_action(false,false,false,false,false,false,false),
             EscapeAction::RequestClose);
-        assert_eq!(escape_action(true,false,false,false,false,true),
+        assert_eq!(escape_action(true,false,false,false,false,false,true),
             EscapeAction::Ignore);
     }
 
@@ -2065,7 +2487,7 @@ mod manual_workspace_modal_routing_tests {
         assert_eq!(manual_apply_guidance(false,2,false),
             Some("수량 확인 필요: 2건".into()));
         assert_eq!(manual_apply_guidance(false,0,true),
-            Some("선택한 입력을 먼저 반영하세요".into()));
+            Some("현재 셀의 입력을 확정하세요".into()));
         assert_eq!(manual_apply_guidance(false,0,false),None);
     }
 

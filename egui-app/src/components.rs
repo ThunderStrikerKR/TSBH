@@ -2333,6 +2333,44 @@ pub fn manual_linked_table_cell(
     response
 }
 
+/// Inline editor variant of the manual worksheet cell. The text editor stays
+/// inside the selected cell, while the same linked-evidence fill and selection
+/// border used by the read-only cell remain visible.
+pub fn manual_linked_table_editor(
+    ui:&mut Ui,value:&mut String,width:f32,linked:bool
+)->Response{
+    let (rect,_)=ui.allocate_exact_size(
+        Vec2::new(width,theme::MANUAL_TABLE_ROW_HEIGHT),egui::Sense::hover()
+    );
+    let fill=if linked{source_highlight::ACTIVE_FILL}else{theme::RAISED};
+    let stroke=if linked{
+        Stroke::new(theme::SOFT_DIVIDER_WIDTH/2.0,theme::DIVIDER)
+    }else{
+        Stroke::new(theme::DOCK_SPLITTER_HOVER_LINE,theme::SELECTED_ORDER)
+    };
+    ui.painter().rect(
+        rect,0.0,fill,stroke,egui::StrokeKind::Inside
+    );
+    let inner=rect.shrink2(Vec2::new(5.0,2.0));
+    let mut editor_ui=ui.new_child(
+        egui::UiBuilder::new()
+            .max_rect(inner)
+            .layout(egui::Layout::left_to_right(Align::Center))
+    );
+    editor_ui.set_clip_rect(inner);
+    editor_ui.add_sized(
+        inner.size(),
+        egui::TextEdit::singleline(value)
+            .font(egui::FontId::proportional(typography::FONT_BODY))
+            .text_color(if linked{source_highlight::ACTIVE_TEXT}else{theme::TEXT})
+            .vertical_align(Align::Center)
+            .margin(egui::Margin::symmetric(2,0))
+            .frame(false)
+            .desired_width(inner.width())
+            .hint_text("미입력")
+    )
+}
+
 /// Unlinked shipment/header cells retain their existing selected styling.
 pub fn manual_table_cell(ui:&mut Ui,value:&str,width:f32,selected:bool)->Response {
     manual_linked_table_cell(ui,value,width,selected,false)
