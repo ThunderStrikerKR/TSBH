@@ -6645,7 +6645,13 @@ mod modal_input_routing_tests {
             egui::Pos2::ZERO,Vec2::new(800.0,600.0)
         );
         let mut clicked=false;
-        let button=draw(&ctx,egui::RawInput::default(),work_area,&mut clicked);
+        let _=draw(&ctx,egui::RawInput::default(),work_area,&mut clicked);
+        // The first egui frame measures the centered Window. Use the stable
+        // second-frame button rect, exactly as a user does after it appears.
+        let button=draw(&ctx,egui::RawInput{
+            time:Some(0.1),
+            ..Default::default()
+        },work_area,&mut clicked);
         assert!(button.width()>0.0 && button.height()>0.0,"the decision action must be laid out");
         let pointer=button.center();
         draw(&ctx,egui::RawInput{
