@@ -82,6 +82,8 @@ jobs:
         run: cargo check --manifest-path egui-app/Cargo.toml
       - name: Verify recipient hover uses the production typography context
         run: cargo test --manifest-path egui-app/Cargo.toml recipient_source_reverse_hover_tests -- --nocapture
+      - name: Verify pending workflow card uses the production typography context
+        run: cargo test --manifest-path egui-app/Cargo.toml pending_matching_tests -- --nocapture
       - name: Verify Excel-style product price cell autosave and draft handling
         run: cargo test --manifest-path egui-app/Cargo.toml product_manager::tests -- --nocapture --skip product_detail_cannot_reintroduce_stacked_fields_or_static_sales_label
       - name: Forbid UI-local monospace fonts outside the central semantic policy
@@ -200,8 +202,7 @@ jobs:
         run: cargo test --manifest-path egui-app/Cargo.toml manual_classification::tests -- --nocapture
       - name: Verify working-order plain shipment list rows and product text
         run: cargo test --manifest-path egui-app/Cargo.toml shipment_list_tests -- --nocapture
-      - name: Verify unconfirmed receipts have no dealer-confirmation stage button
-        run: cargo test --manifest-path egui-app/Cargo.toml pending_matching_tests -- --nocapture
+
       - name: Verify floating notice placement at screen edges and caret anchors
         run: cargo test --manifest-path egui-app/Cargo.toml floating_notice::tests -- --nocapture
       - name: Verify Excel loading and empty-state text does not shift its table
