@@ -1023,7 +1023,8 @@ impl ManualWorkspace {
                     ui,"수동 분류","취소",
                     !self.busy()&&self.product_search.is_none()
                         &&self.remove_recipient_pending.is_none()
-                        &&!self.reset_pending&&!self.confirm_discard
+                        &&!self.reset_pending&&!self.complete_pending
+                        &&!self.confirm_discard
                 ){open=false;}
                 // Prompts and asynchronous native mutations own input while
                 // open. The background worksheet remains visible but inert.
