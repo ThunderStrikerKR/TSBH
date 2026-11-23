@@ -523,10 +523,13 @@ impl SettingsView{
                 self.reload_confirmation=true;
             }
         }
-        if !self.loaded{
+        if !self.loaded || self.source.is_null(){
+            if self.tab!=SettingsTab::Basic{
+                components::align_management_primary_card(ui,page_origin_y);
+            }
+            components::management_pending_primary_card(ui);
             return;
         }
-        if self.source.is_null(){return;}
         // Basic needs no KPI-alignment spacer above its compact cards.
         // Other management tabs retain their master-card alignment.
         if self.tab!=SettingsTab::Basic{
