@@ -413,12 +413,20 @@ impl ModelGroupManager {
                                         heading.label(typography::caption(
                                             &format!("{}개",items(&g["productIds"]).len())));
                                     });
-                                    if !text(&g,"representativeColor").is_empty()&&
-                                        text(&g,"representativeProductId").is_empty(){
-                                        body.label(typography::caption(&format!(
+                                    let representative_notice=if
+                                        !text(&g,"representativeColor").is_empty()
+                                        &&text(&g,"representativeProductId").is_empty(){
+                                        Some(format!(
                                             "이전 대표색상 설정({})이 있습니다. 아래 상품의 '대표 지정' 버튼으로 실제 대표모델을 선택하세요.",
-                                            text(&g,"representativeColor"))));
-                                    }
+                                            text(&g,"representativeColor")
+                                        ))
+                                    }else{None};
+                                    let notice_width=body.available_width();
+                                    components::fixed_status_slot(
+                                        body,notice_width,typography::METADATA_LINE_HEIGHT,
+                                        representative_notice.as_deref(),
+                                        representative_notice.as_deref(),theme::MUTED
+                                    );
                                     let ids=items(&g["productIds"]).iter().filter_map(Value::as_str)
                                         .map(str::to_owned).collect::<Vec<_>>();
                                     if ids.is_empty(){
