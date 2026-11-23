@@ -282,6 +282,7 @@ export function ProductManager({
               <div className="management-section-actions" aria-label="상품 목록 작업">
                 <button
                   type="button"
+                  data-ui-role="action-standard"
                   aria-expanded={excelOpen}
                   disabled={priceWrites.current > 0 || pendingPriceIdsRef.current.length > 0}
                   onClick={() => setExcelOpen((open) => !open)}
@@ -295,6 +296,7 @@ export function ProductManager({
                       </button>
                       <button
                         className="primary"
+                        data-ui-role="action-primary"
                         disabled={priceWrites.current > 0 || pendingPriceIdsRef.current.length > 0}
                         onClick={() => setAdding(!adding)}
                       >상품 추가</button>
