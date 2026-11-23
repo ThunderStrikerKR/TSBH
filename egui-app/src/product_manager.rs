@@ -2516,10 +2516,10 @@ mod tests {
     #[test]
     fn spreadsheet_price_commits_do_not_show_per_cell_success_popup(){
         let source=include_str!("product_manager.rs");
-        let poll=source.split("fn poll(").nth(1).unwrap()
-            .split("fn changed(").next().unwrap_or("");
-        assert!(poll.contains("self.notice=if price_job{"));
-        assert!(!poll.contains("가격 변경을 저장했습니다."));
+        let success=source.split("self.notice=if price_job{").nth(1).unwrap()
+            .split("self.model_groups.set_catalog").next().unwrap_or("");
+        assert!(success.trim_start().starts_with("None"));
+        assert!(!success.contains("가격 변경을 저장했습니다."));
         let editor=source.split("let (enter_pressed,tab_pressed,").nth(1).unwrap()
             .split("let action_rect").next().unwrap_or("");
         assert!(editor.contains("||self.price_mode_exit_requested"));
