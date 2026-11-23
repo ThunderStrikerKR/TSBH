@@ -631,7 +631,8 @@ impl ManualWorkspace {
                 model,assignment_order,remote_rows
             })))=>{
                 let advance_to_missing=self.last_action.as_deref()==Some("assign_manual_block")
-                    && self.selected_item.is_none();
+                    && self.selected_item.is_none()
+                    && ["name","address","mobile"].contains(&self.selected_field.as_str());
                 if let Some(previous)=self.model.as_ref(){
                     push_manual_history(&mut self.history,ManualHistoryFrame{
                         model:previous.clone(),
@@ -732,7 +733,7 @@ impl ManualWorkspace {
     fn undo(&mut self){
         if self.busy() || self.product_search.is_some() ||
             self.remove_recipient_pending.is_some() || self.reset_pending ||
-            self.confirm_discard {return;}
+            self.confirm_apply || self.confirm_discard {return;}
         if self.edit_text!=self.current_value(){
             self.edit_text=self.current_value();
             self.error=None;
@@ -1369,6 +1370,7 @@ impl ManualWorkspace {
                                             .char_limit(3)
                                             .margin(typography::form_input_text_margin())
                                             .desired_width(52.0)
+                                            .hint_text("1~100")
                                     );
                                     let filtered=self.row_count_text.chars()
                                         .filter(|ch|ch.is_ascii_digit()).take(3)
@@ -1388,6 +1390,18 @@ impl ManualWorkspace {
                                         let typed=self.row_count_text!=current_count.to_string();
                                         let requested=if typed{
                                             parse_manual_row_count(&self.row_count_text)
+                                                .and_then(|entered|{
+                                                    let adjusted=if minus_clicked{
+                                                        entered.saturating_sub(1)
+                                                    }else if plus_clicked{
+                                                        entered.saturating_add(1)
+                                                    }else{entered};
+                                                    if (1..=100).contains(&adjusted){
+                                                        Ok(adjusted)
+                                                    }else{
+                                                        Err("배송 건수는 1~100건입니다.".into())
+                                                    }
+                                                })
                                         }else if minus_clicked{
                                             Ok(current_count.saturating_sub(1))
                                         }else if plus_clicked{
@@ -2182,7 +2196,7 @@ fn manual_apply_guidance(
     }else if pending_quantity_count>0{
         Some(format!("수량 확인 필요: {pending_quantity_count}건"))
     }else if uncommitted{
-        Some("선택한 입력을 먼저 반영하세요".into())
+        Some("현재 셀의 입력을 확정하세요".into())
     }else{
         None
     }
@@ -2447,7 +2461,7 @@ mod manual_workspace_modal_routing_tests {
         assert_eq!(manual_apply_guidance(false,2,false),
             Some("수량 확인 필요: 2건".into()));
         assert_eq!(manual_apply_guidance(false,0,true),
-            Some("선택한 입력을 먼저 반영하세요".into()));
+            Some("현재 셀의 입력을 확정하세요".into()));
         assert_eq!(manual_apply_guidance(false,0,false),None);
     }
 
