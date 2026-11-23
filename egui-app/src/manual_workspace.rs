@@ -77,6 +77,41 @@ struct ManualHistoryFrame{
     remote_rows:Vec<RemoteRow>,
 }
 
+#[derive(Clone,Copy,Debug,PartialEq,Eq)]
+enum ManualNavigation{
+    Next,
+    Previous,
+    RowUp,
+    RowDown,
+}
+
+#[derive(Clone,Debug,PartialEq,Eq)]
+struct ManualCellTarget{
+    row:usize,
+    item:Option<String>,
+    field:String,
+}
+
+fn manual_cell_targets(model:&Value)->Vec<ManualCellTarget>{
+    let mut cells=Vec::new();
+    for (row_index,row) in list(model,"rows").iter().enumerate(){
+        for field in ["name","address","mobile","phone","note"]{
+            cells.push(ManualCellTarget{
+                row:row_index,item:None,field:field.into()
+            });
+        }
+        for item in list(row,"items"){
+            let id=text(item,"id").to_owned();
+            for field in ["product","quantity","unitPrice"]{
+                cells.push(ManualCellTarget{
+                    row:row_index,item:Some(id.clone()),field:field.into()
+                });
+            }
+        }
+    }
+    cells
+}
+
 fn resolve_remote_rows(gateway:&dyn BandoGateway,model:&Value)->Vec<RemoteRow>{
     list(model,"rows").iter().map(|row|{
         let id=text(row,"id").to_owned();
@@ -391,6 +426,7 @@ pub struct ManualWorkspace {
     edit_text:String,
     focus_editor:bool,
     history:Vec<ManualHistoryFrame>,
+    advance_after_apply:Option<ManualNavigation>,
     confirm_discard:bool,
     product_search:Option<ProductSearch>,
     remove_recipient_pending:Option<String>,
@@ -440,7 +476,7 @@ impl ManualWorkspace {
             selected_recipient:0,
             selected_item:None,selected_field:"name".into(),
             edit_text:String::new(),focus_editor:false,history:Vec::new(),
-            confirm_discard:false,
+            advance_after_apply:None,confirm_discard:false,
             product_search:None,remove_recipient_pending:None,
             reset_pending:false,
             receiver:Some(rx),error:None,dirty:false,applied:None,
@@ -516,6 +552,9 @@ impl ManualWorkspace {
                 self.error=None;
                 self.receiver=None;
                 self.edit_text=self.current_value();
+                if let Some(navigation)=self.advance_after_apply.take(){
+                    self.move_selection(navigation);
+                }
             }
             Some(Ok(Ok(Outcome::Applied{
                 order,model,assignment_order,quote,quote_error
@@ -527,10 +566,12 @@ impl ManualWorkspace {
             }
             Some(Ok(Err(error)))=>{
                 self.error=Some(error);
+                self.advance_after_apply=None;
                 self.receiver=None;
             }
             Some(Err(mpsc::TryRecvError::Disconnected))=>{
                 self.error=Some("Rust 수동 분류 처리가 중단되었습니다.".into());
+                self.advance_after_apply=None;
                 self.receiver=None;
             }
             _=>{}
@@ -580,6 +621,48 @@ impl ManualWorkspace {
         self.dirty=true;
         self.error=None;
         self.focus_editor=true;
+    }
+
+    fn move_selection(&mut self,navigation:ManualNavigation){
+        let Some(model)=self.model.as_ref() else{return};
+        let cells=manual_cell_targets(model);
+        if cells.is_empty(){return;}
+        let current=cells.iter().position(|cell|
+            cell.row==self.selected_recipient &&
+            cell.item==self.selected_item &&
+            cell.field==self.selected_field
+        );
+        let target=match navigation{
+            ManualNavigation::Next=>current
+                .and_then(|index|cells.get((index+1).min(cells.len()-1))),
+            ManualNavigation::Previous=>current
+                .and_then(|index|cells.get(index.saturating_sub(1))),
+            ManualNavigation::RowUp|ManualNavigation::RowDown=>{
+                let direction=if navigation==ManualNavigation::RowUp{-1isize}else{1};
+                let row_index=self.selected_recipient as isize+direction;
+                if row_index<0{return;}
+                let row=list(model,"rows").get(row_index as usize);
+                let Some(row)=row else{return};
+                let item=if let Some(item_id)=self.selected_item.as_deref(){
+                    let current_index=list(model,"rows").get(self.selected_recipient)
+                        .map(|current|list(current,"items").iter().position(|item|
+                            text(item,"id")==item_id
+                        )).flatten();
+                    current_index.and_then(|index|
+                        list(row,"items").get(index).map(|item|text(item,"id").to_owned())
+                    )
+                }else{None};
+                let Some(candidate)=cells.iter().find(|cell|
+                    cell.row==row_index as usize &&
+                    cell.item==item &&
+                    cell.field==self.selected_field
+                )else{return};
+                Some(candidate)
+            }
+        };
+        if let Some(target)=target.cloned(){
+            self.select_cell(target.row,target.item,&target.field);
+        }
     }
 
     fn current_value(&self)->String {
@@ -796,6 +879,7 @@ impl ManualWorkspace {
         let mut hovered_source:Option<source_highlight::LinkKey>=None;
         let mut hovered_detail:Option<source_highlight::LinkKey>=None;
         let mut source_did_scroll=false;
+        let mut navigate_now:Option<ManualNavigation>=None;
         let mut chosen:Option<(String,Value)>=None;
         let mut apply=false;
         let mut discard=false;
@@ -1268,9 +1352,31 @@ impl ManualWorkspace {
                                     editor.request_focus();
                                     self.focus_editor=false;
                                 }
-                                if editor.has_focus() &&
-                                    ctx.input(|input|input.key_pressed(egui::Key::Enter)){
-                                    submit_direct=true;
+                                if editor.has_focus(){
+                                    let navigation=ctx.input(|input|{
+                                        if input.key_pressed(egui::Key::Enter){
+                                            Some(ManualNavigation::Next)
+                                        }else if input.key_pressed(egui::Key::Tab){
+                                            Some(if input.modifiers.shift{
+                                                ManualNavigation::Previous
+                                            }else{ManualNavigation::Next})
+                                        }else if input.key_pressed(egui::Key::ArrowUp){
+                                            Some(ManualNavigation::RowUp)
+                                        }else if input.key_pressed(egui::Key::ArrowDown){
+                                            Some(ManualNavigation::RowDown)
+                                        }else{None}
+                                    });
+                                    if let Some(navigation)=navigation{
+                                        let needs_commit=
+                                            self.edit_text!=self.current_value() ||
+                                            self.selected_field=="quantity";
+                                        if needs_commit{
+                                            submit_direct=true;
+                                            self.advance_after_apply=Some(navigation);
+                                        }else{
+                                            navigate_now=Some(navigation);
+                                        }
+                                    }
                                 }
                                 if self.selected_item.is_some() &&
                                     self.selected_field=="quantity" {
@@ -1343,6 +1449,9 @@ impl ManualWorkspace {
                     }
                 );
             });
+        if let Some(navigation)=navigate_now{
+            self.move_selection(navigation);
+        }
         // Search opens only for the current native recipient/item identity.
         // The underlying worksheet is disabled while a chooser is open.
         if let Some((recipient_id,item_id))=lookup {
