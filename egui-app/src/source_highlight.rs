@@ -875,3 +875,94 @@ mod tests {
     }
 
 }
+
+
+#[cfg(test)]
+mod manual_span_projection_tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn manual_source_projection_follows_current_assignment_targets() {
+        let raw="김준희\nBD 709 4개";
+        let rows=json!([
+            {"id":"r1","items":[{"id":"i1"}]},
+            {"id":"r2","items":[{"id":"i2"}]}
+        ]);
+        let blocks=json!([
+            {"id":"name","start":0,"end":3,"text":"김준희",
+                "targetId":"r1","field":"name"},
+            {"id":"product","start":4,"end":10,"text":"BD 709",
+                "targetId":"i1","field":"product"},
+            {"id":"quantity","start":11,"end":13,"text":"4개",
+                "targetId":"i1","field":"quantity"}
+        ]);
+        let assignments=json!({
+            "product":{"recipientId":"r2","itemId":"i2","field":"product"}
+        });
+        let spans=collect_manual(
+            raw,rows.as_array().unwrap(),blocks.as_array().unwrap(),&assignments
+        );
+        assert_eq!(spans.len(),3);
+        assert_eq!(spans[0].source_id.as_deref(),Some("name"));
+        assert_eq!(spans[0].key, key("r1","r1","name"));
+        assert_eq!(spans[1].source_id.as_deref(),Some("product"));
+        assert_eq!(spans[1].key,key("r2","i2","product"));
+        assert_eq!(spans[2].source_id.as_deref(),Some("quantity"));
+        assert_eq!(spans[2].key,key("r1","i1","quantity"));
+    }
+
+    #[test]
+    fn manual_projection_rejects_utf16_surrogate_splits_and_stale_text() {
+        let raw="가😀나";
+        let rows=json!([{"id":"r1","items":[]}]);
+        let blocks=json!([
+            {"id":"emoji-half","start":1,"end":2,"text":"😀",
+                "targetId":"r1","field":"name"},
+            {"id":"stale","start":3,"end":4,"text":"다",
+                "targetId":"r1","field":"name"},
+            {"id":"valid","start":3,"end":4,"text":"나",
+                "targetId":"r1","field":"name"}
+        ]);
+        let spans=collect_manual(
+            raw,rows.as_array().unwrap(),blocks.as_array().unwrap(),&json!({})
+        );
+        assert_eq!(spans.len(),1);
+        assert_eq!(spans[0].source_id.as_deref(),Some("valid"));
+        assert_eq!(&raw[spans[0].start..spans[0].end],"나");
+    }
+
+    #[test]
+    fn hovered_manual_span_returns_its_exact_block_identity() {
+        let raw="가😀나";
+        let rows=json!([{"id":"r1","items":[]}]);
+        let blocks=json!([
+            {"id":"first","start":0,"end":1,"text":"가",
+                "targetId":"r1","field":"name"},
+            {"id":"last","start":3,"end":4,"text":"나",
+                "targetId":"r1","field":"name"}
+        ]);
+        let spans=collect_manual(
+            raw,rows.as_array().unwrap(),blocks.as_array().unwrap(),&json!({})
+        );
+        let ctx=egui::Context::default();
+        let mut hit=None;
+        let _=ctx.run(egui::RawInput::default(),|ctx|{
+            let job=layout(
+                raw,&spans,None,None,300.0,
+                FontId::proportional(16.0),Color32::WHITE
+            );
+            let galley=ctx.fonts_mut(|fonts|fonts.layout_job(job));
+            let glyph=galley.rows[0].row.glyphs.last().unwrap();
+            let pointer=egui::pos2(
+                glyph.pos.x+glyph.advance_width*0.75,
+                galley.rows[0].row.size.y*0.5
+            );
+            hit=hovered_span_index_at_pointer(
+                raw,&spans,&galley,egui::Pos2::ZERO,pointer
+            ).and_then(|index|spans.get(index))
+                .and_then(|span|span.source_id.clone());
+        });
+        assert_eq!(hit.as_deref(),Some("last"));
+    }
+}
