@@ -280,7 +280,12 @@ export function ProductManager({
                   />
               </div>
               <div className="management-section-actions" aria-label="상품 목록 작업">
-                <button type="button" aria-expanded={excelOpen} onClick={() => setExcelOpen((open) => !open)}>Excel 관리</button>
+                <button
+                  type="button"
+                  aria-expanded={excelOpen}
+                  disabled={priceWrites.current > 0 || pendingPriceIdsRef.current.length > 0}
+                  onClick={() => setExcelOpen((open) => !open)}
+                >Excel 관리</button>
                       <button
                         aria-pressed={priceMode}
                         className={priceMode ? "primary" : ""}
@@ -288,7 +293,11 @@ export function ProductManager({
                       >
                         {priceMode ? "가격 수정 모드 종료" : "가격 수정 모드 켜기"}
                       </button>
-                      <button className="primary" onClick={() => setAdding(!adding)}>상품 추가</button>
+                      <button
+                        className="primary"
+                        disabled={priceWrites.current > 0 || pendingPriceIdsRef.current.length > 0}
+                        onClick={() => setAdding(!adding)}
+                      >상품 추가</button>
               </div>
             </div>
             {adding && (
