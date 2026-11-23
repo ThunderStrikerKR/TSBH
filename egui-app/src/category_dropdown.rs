@@ -2,7 +2,7 @@
 //! Presentation-only: selection writes an existing category ID, never a new
 //! category, product edit, or implicit business transaction.
 use std::collections::{HashMap,HashSet};
-use eframe::egui::{self,Align,Align2,Color32,Context,Id,Response,Sense,Stroke,Ui,Vec2};
+use eframe::egui::{self,Align2,Color32,Context,Id,Response,Sense,Stroke,Ui,Vec2};
 use serde_json::Value;
 use crate::{category_manager::ROOTS,components,floating_notice,theme,typography};
 
@@ -518,10 +518,11 @@ pub fn category_dropdown(
         state.ancestors_open=false;
     }
     let mut changed=false;
-    // Constrain the expanded popup by the viewport, not by the 280pt trigger.
+    // Fixed width across the product list, detail editor, and category
+    // manager. Never grow with the trigger width or breadcrumb text.
+    // Only shrink to the actual viewport on a genuinely narrow screen.
     let popup_width=theme::CATEGORY_EXPLORER_POPUP_WIDTH
-        .min((ui.ctx().screen_rect().width()-theme::SPACE_24).max(1.0))
-        .max(width.min(ui.ctx().screen_rect().width()-theme::SPACE_24));
+        .min((ui.ctx().screen_rect().width()-theme::SPACE_24).max(1.0));
     egui::Popup::menu(&trigger)
         .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
         .show(|menu|{
@@ -655,7 +656,7 @@ mod tests{
         assert_eq!(shown_category_count(30),3);
     }
     #[test]
-    fn fixed_popup_width_is_thirty_percent_wider_than_previous_design(){
+    fn category_popup_width_is_fixed_at_655_points(){
         assert_eq!(theme::CATEGORY_EXPLORER_POPUP_WIDTH,655.0);
         let source=include_str!("category_dropdown.rs");
         assert!(source.contains("menu.set_width(popup_width);"));
