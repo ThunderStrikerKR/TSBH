@@ -2864,10 +2864,11 @@ pub fn management_dropdown_compact(
     management_dropdown_inner(ui,label,width,enabled,tooltip,true,None,options)
 }
 
-fn management_dropdown_inner(
+/// Shared 34pt management trigger; the hierarchical category popup and
+/// ordinary selectors must use the SAME paint, chevron and hover geometry.
+pub(crate) fn management_dropdown_trigger(
     ui:&mut Ui,label:&str,width:f32,enabled:bool,tooltip:&str,
-    compact:bool,indicator:Option<Color32>,
-    options:impl FnOnce(&mut Ui)
+    indicator:Option<Color32>,
 )->Response {
     // Keep exact toolbar/cell width without stretching the subsequent action
     // or exceeding a narrow selector slot.
@@ -2935,6 +2936,19 @@ fn management_dropdown_inner(
             ui,&trigger,theme::CONTROL_RADIUS as f32
         );
     }
+    trigger
+}
+
+fn management_dropdown_inner(
+    ui:&mut Ui,label:&str,width:f32,enabled:bool,tooltip:&str,
+    compact:bool,indicator:Option<Color32>,
+    options:impl FnOnce(&mut Ui)
+)->Response {
+    let width=width.min(ui.available_width()).max(1.0);
+    let trigger=management_dropdown_trigger(
+        ui,label,width,enabled,tooltip,indicator
+    );
+    let rect=trigger.rect;
     egui::Popup::menu(&trigger)
         .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
         .show(|menu|{
