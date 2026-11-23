@@ -1381,6 +1381,15 @@ pub fn compact_text_field(
 /// Uses the same height, font and focus styling for every single-line field.
 /// Disabled preview controls cannot edit business data.
 pub fn field(ui: &mut Ui, value: &mut String, kind: FieldKind, enabled: bool) -> Response {
+    field_with_margin(ui,value,kind,enabled,typography::form_input_text_margin())
+}
+
+/// Keep the shared font, focus, validation and fixed 36pt geometry while
+/// allowing unit-bearing money fields to reserve part of their inner margin.
+fn field_with_margin(
+    ui:&mut Ui,value:&mut String,kind:FieldKind,enabled:bool,
+    input_margin:egui::Margin
+)->Response{
     let width = kind.preferred_width().min(ui.available_width().max(60.0));
     let semantic=match kind {
         FieldKind::Money=>Some(typography::DataValueKind::Money),
@@ -1398,7 +1407,7 @@ pub fn field(ui: &mut Ui, value: &mut String, kind: FieldKind, enabled: bool) ->
         .font(editor_font)
         .horizontal_align(semantic.map_or(Align::LEFT,typography::data_value_align))
         .vertical_align(Align::Center)
-        .margin(typography::form_input_text_margin())
+        .margin(input_margin)
         .desired_width(width);
     ui.add_enabled_ui(enabled, |ui| {
         ui.add_sized(Vec2::new(width, theme::INPUT_HEIGHT), field)
@@ -1458,8 +1467,14 @@ fn money_cursor_after_format(raw:&str,formatted:&str,old_index:usize)->usize{
     target
 }
 pub fn money_field(ui:&mut Ui,value:&mut String,enabled:bool)->Response {
+    money_field_with_margin(ui,value,enabled,typography::form_input_text_margin())
+}
+
+fn money_field_with_margin(
+    ui:&mut Ui,value:&mut String,enabled:bool,input_margin:egui::Margin
+)->Response{
     let before=value.clone();
-    let response=field(ui,value,FieldKind::Money,enabled);
+    let response=field_with_margin(ui,value,FieldKind::Money,enabled,input_margin);
     // Normalize both keystroke and initial raw data. Never persist display
     // punctuation as an alternative numerical business representation.
     let formatted=formatted_money_input(value);
@@ -1487,6 +1502,39 @@ pub fn money_field(ui:&mut Ui,value:&mut String,enabled:bool)->Response {
         *value=next;
         ui.ctx().request_repaint();
     }
+    response
+}
+
+/// Price-table variant of the same shared money editor. The won unit is
+/// a non-editable suffix inside the 112pt field, never part of the stored
+/// number. Reserve its actual rendered width in the TextEdit's right margin:
+/// the caret and selection cannot cover the suffix. Numeric glyphs retain
+/// the same 14pt font and live comma formatting as money_field().
+///
+/// `unit_right_inset` is relative to the field's right edge (6pt in the
+/// product grid, whose field ends 2pt before the 8pt read-only money anchor).
+pub fn money_field_with_unit(
+    ui:&mut Ui,value:&mut String,enabled:bool,
+    unit:&str,unit_right_inset:f32
+)->Response{
+    let unit_font=typography::numeric_editor_font();
+    let unit_galley=ui.painter().layout_no_wrap(
+        unit.to_owned(),unit_font,theme::TEXT
+    );
+    let unit_width=unit_galley.size().x;
+    let mut margin=typography::form_input_text_margin();
+    margin.right=(unit_width+unit_right_inset).ceil().clamp(0.0,127.0) as i8;
+    // A centered table datum has no form-only -1pt ink displacement.
+    // Keep both digit glyphs and the unit optically centered in the 42pt row.
+    margin.top=2;
+    margin.bottom=2;
+    let response=money_field_with_margin(ui,value,enabled,margin);
+    let suffix_pos=egui::pos2(
+        response.rect.right()-unit_right_inset-unit_width,
+        response.rect.center().y-unit_galley.size().y/2.0
+    );
+    ui.painter().with_clip_rect(response.rect.intersect(ui.clip_rect()))
+        .galley(suffix_pos,unit_galley,theme::TEXT);
     response
 }
 
@@ -5330,6 +5378,24 @@ mod management_dropdown_unification_tests {
             assert!(source.matches("management_dropdown(").count()>=minimum,
                 "{name} lost a shared single-select call");
         }
+    }
+
+    #[test]
+    fn suffix_money_field_keeps_money_edit_size_and_does_not_write_unit(){
+        let ctx=egui::Context::default();
+        let mut response_rect=Rect::NOTHING;
+        let mut amount="26000".to_owned();
+        let _=ctx.run(egui::RawInput::default(),|ctx|{
+            egui::CentralPanel::default().show(ctx,|ui|{
+                response_rect=money_field_with_unit(ui,&mut amount,true,"원",6.0).rect;
+            });
+        });
+        assert_eq!(response_rect.height(),theme::INPUT_HEIGHT);
+        assert_eq!(response_rect.width(),FieldKind::Money.preferred_width());
+        assert_eq!(amount,"26,000");
+        assert!(!amount.contains('원'));
+        assert_eq!(typography::numeric_editor_font(),
+            typography::management_table_money_font());
     }
 
     #[test]
