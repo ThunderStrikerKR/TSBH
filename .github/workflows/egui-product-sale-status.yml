@@ -1,0 +1,33 @@
+name: Product sale status four-state regression
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/egui-product-sale-status.yml
+      - egui-app/src/product_manager.rs
+      - egui-app/src/components.rs
+      - egui-app/src/theme.rs
+      - src-tauri/src/business_core/catalog_clients.rs
+      - src-tauri/src/business_core/catalog_clients/editor.rs
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: sale-status-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  four-state:
+    runs-on: windows-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: egui-app -> target
+      - name: Verify React-compatible statuses including legacy sold-out data
+        run: cargo test --manifest-path egui-app/Cargo.toml four_sales_states_restore_react_values -- --nocapture
+      - name: Verify edit stores status while keeping price and variant data
+        run: cargo test --manifest-path egui-app/Cargo.toml product_status_edit_persists_without_price_or_variant_loss -- --nocapture
+      - name: Verify native Rust editor persists four sale states
+        run: cargo test --manifest-path src-tauri/Cargo.toml --lib editor_persists_all_four_sales_states -- --nocapture
