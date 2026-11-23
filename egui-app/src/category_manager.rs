@@ -1,7 +1,7 @@
 //! Native CategoryManager. React CategoryManager.tsx / applied
 //! tauri-stage2-products.css own the interaction and overlay layout.
 //! All add/rename/move/delete decisions are delegated to catalog_clients.
-use crate::{components,theme,typography};
+use crate::{category_dropdown,components,theme,typography};
 use eframe::egui::{self,Align,Context,Layout,Rect,Response,Sense,Ui,Vec2};
 use serde_json::{json,Value};
 use std::collections::{HashMap,HashSet};
@@ -813,31 +813,25 @@ impl CategoryManager {
                                     && !under(&cats,&row.id,&current.id)
                                     && path(&cats,&row.id).iter().all(|c|c.active)
                                 }).collect::<Vec<_>>();
-                                let current_path=path_text(&cats,&self.target);
+                                // A move can only target active categories
+                                // outside the current subtree. Reuse the
+                                // same hierarchical popup without inventing
+                                // an alternative category hierarchy.
+                                let allowed=choices.iter()
+                                    .map(|row|row.id.as_str())
+                                    .collect::<HashSet<_>>();
+                                let picker_nodes=
+                                    category_dropdown::nodes_from_catalog(catalog)
+                                    .into_iter()
+                                    .filter(|node|allowed.contains(node.id.as_str()))
+                                    .collect::<Vec<_>>();
                                 components::modal_labeled_row(
                                     modal,"상위 분류",|line|{
                                         let picker_width=line.available_width()
                                             .min(theme::CATEGORY_PATH_PICKER_WIDTH).max(1.0);
-                                        let path_width=(picker_width-
-                                            theme::CATEGORY_PATH_PICKER_TEXT_PADDING).max(1.0);
-                                        let selected_text=typography::fit_category_path(
-                                            line,&current_path,path_width,
-                                            typography::CategoryPathFont::Body
-                                        );
-                                        components::management_dropdown(
-                                            line,&selected_text,picker_width,
-                                            true,&current_path,|ui|{
-                                                for option in &choices{
-                                                    let full=path_text(&cats,&option.id);
-                                                    let visible=typography::fit_category_path(
-                                                        ui,&full,path_width,
-                                                        typography::CategoryPathFont::Body
-                                                    );
-                                                    components::management_dropdown_option(
-                                                        ui,&mut self.target,option.id.clone(),&visible
-                                                    ).on_hover_text(full);
-                                                }
-                                            }
+                                        category_dropdown::category_dropdown(
+                                            line,&picker_nodes,&mut self.target,
+                                            picker_width,"상위 분류 선택",true,false
                                         );
                                     }
                                 );
@@ -937,7 +931,7 @@ mod modal_layout_contract_tests{
         assert_eq!(count,5,"category modal has a nonstandard field stack");
         assert!(!dialogs.contains("body.label(typography::field_label("));
         assert!(!dialogs.contains("modal.label(typography::field_label("));
-        assert!(dialogs.contains("components::management_dropdown("));
+        assert!(dialogs.contains("category_dropdown::category_dropdown("));
         assert!(dialogs.contains("components::modal_action_row_split("));
         assert!(dialogs.contains("components::modal_action_row("));
     }
