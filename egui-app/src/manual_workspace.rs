@@ -1348,42 +1348,61 @@ impl ManualWorkspace {
                                     (height-2.0*theme::SPACE_8).max(0.0)
                                 );
                                 panel.label(typography::subsection_heading("배송 정보 구성표"));
+                                let mut count_resize_requested=false;
                                 panel.horizontal(|ui|{
-                                components::form_field_label(ui,"배송 건수");
-                                if theme::action(ui,"−",ButtonRole::Standard,
-                                    !busy && !pending_quantity_active && rows.len()>1).clicked(){
-                                    let last=&rows[rows.len()-1];
-                                    let rid=text(last,"id");
-                                    let populated=["name","address","mobile","phone","note"]
-                                        .iter().any(|field|!text(last,field).is_empty()) ||
-                                        list(last,"items").iter().any(|item|
-                                            !text(item,"name").is_empty() ||
-                                            !text(item,"raw").is_empty() ||
-                                            item.get("productId").is_some_and(|v|!v.is_null()) ||
-                                            item.get("variantId").is_some_and(|v|!v.is_null()) ||
-                                            item.get("quantity").is_some_and(|v|!v.is_null())
-                                        ) ||
-                                        assignments.as_object().is_some_and(|map|
-                                            map.values().any(|cell|
-                                                text(cell,"recipientId")==rid
-                                            ));
-                                    if populated{
-                                        self.remove_recipient_pending=Some(rid.to_owned());
-                                    } else {
-                                        chosen=Some(("resize_manual_rows".into(),json!({
-                                            "count":rows.len()-1,"newRecipientIds":[]
-                                        })));
+                                    components::form_field_label(ui,"배송 건수");
+                                    let current_count=rows.len();
+                                    let can_resize=!busy && !pending_quantity_active &&
+                                        self.edit_text==self.current_value();
+                                    let minus_clicked=theme::action(
+                                        ui,"−",ButtonRole::Standard,
+                                        can_resize && current_count>1
+                                    ).clicked();
+                                    let count_input=ui.add_enabled(
+                                        can_resize,
+                                        egui::TextEdit::singleline(&mut self.row_count_text)
+                                            .font(typography::numeric_editor_font())
+                                            .horizontal_align(egui::Align::Center)
+                                            .vertical_align(egui::Align::Center)
+                                            .char_limit(3)
+                                            .margin(typography::form_input_text_margin())
+                                            .desired_width(52.0)
+                                    );
+                                    let filtered=self.row_count_text.chars()
+                                        .filter(|ch|ch.is_ascii_digit()).take(3)
+                                        .collect::<String>();
+                                    if filtered!=self.row_count_text{
+                                        self.row_count_text=filtered;
                                     }
-                                }
-                                ui.label(typography::quantity(&rows.len().to_string()));
-                                if theme::action(ui,"+",ButtonRole::Standard,
-                                    !busy && !pending_quantity_active && rows.len()<100).clicked(){
-                                    chosen=Some(("resize_manual_rows".into(),json!({
-                                        "count":rows.len()+1,
-                                        "newRecipientIds":[unique_id()]
-                                    })));
-                                }
-                            });
+                                    let plus_clicked=theme::action(
+                                        ui,"+",ButtonRole::Standard,
+                                        can_resize && current_count<100
+                                    ).clicked();
+                                    let count_commit=count_input.lost_focus() ||
+                                        (count_input.has_focus() && ui.input(|input|
+                                            input.key_pressed(egui::Key::Enter)
+                                        ));
+                                    if minus_clicked || plus_clicked || count_commit{
+                                        let typed=self.row_count_text!=current_count.to_string();
+                                        let requested=if typed || count_commit{
+                                            parse_manual_row_count(&self.row_count_text)
+                                        }else if minus_clicked{
+                                            Ok(current_count.saturating_sub(1))
+                                        }else{
+                                            Ok(current_count.saturating_add(1))
+                                        };
+                                        match requested{
+                                            Ok(count)=>self.request_resize(count,ctx),
+                                            Err(error)=>{
+                                                self.row_count_text=current_count.to_string();
+                                                self.error=Some(error);
+                                            }
+                                        }
+                                        count_resize_requested=true;
+                                    }
+                                    ui.label(typography::caption("건"));
+                                });
+                                if count_resize_requested {panel.disable();}
                             egui::ScrollArea::both()
                                 .id_salt("manual-recipients-table")
                                 .auto_shrink([false,false])
@@ -1396,52 +1415,85 @@ impl ManualWorkspace {
                                     // The React source displays ALL shipments
                                     // as a spreadsheet with six stable
                                     // recipient columns and product subrows.
-                                    ui.set_min_width(theme::MANUAL_TABLE_MIN_WIDTH);
+                                    let table_width=ui.available_width()
+                                        .max(theme::MANUAL_TABLE_MIN_WIDTH);
+                                    ui.set_min_width(table_width);
+                                    let delivery_col=64.0;
+                                    let name_col=(table_width*0.14).clamp(96.0,150.0);
+                                    let mobile_col=(table_width*0.13).clamp(88.0,150.0);
+                                    let phone_col=mobile_col;
+                                    let note_col=(table_width*0.15).clamp(104.0,180.0);
+                                    let address_col=(table_width-delivery_col-name_col
+                                        -mobile_col-phone_col-note_col).max(160.0);
+                                    let quantity_col=84.0;
+                                    let price_col=100.0;
+                                    let actions_col=136.0;
+                                    let product_col=(table_width-quantity_col-price_col
+                                        -actions_col).max(260.0)
+                                        .min(theme::MANUAL_TABLE_PRODUCT_COL);
                                     for (index,row) in rows.iter().enumerate() {
                                         let rid=text(row,"id");
                                         egui::Grid::new(("manual-delivery",rid))
                                             .spacing(egui::Vec2::ZERO)
                                             .show(ui,|grid|{
                                                 for (label,width) in [
-                                                    ("배송",theme::MANUAL_TABLE_DELIVERY_COL),
-                                                    ("이름",theme::MANUAL_TABLE_NAME_COL),
-                                                    ("주소",theme::MANUAL_TABLE_ADDRESS_COL),
-                                                    ("휴대폰",theme::MANUAL_TABLE_PHONE_COL),
-                                                    ("전화",theme::MANUAL_TABLE_PHONE_COL),
-                                                    ("배송 요청",theme::MANUAL_TABLE_NOTE_COL)
+                                                    ("배송",delivery_col),
+                                                    ("이름",name_col),
+                                                    ("주소",address_col),
+                                                    ("휴대폰",mobile_col),
+                                                    ("전화",phone_col),
+                                                    ("배송 요청",note_col)
                                                 ] {
                                                     components::manual_table_heading(grid,label,width);
                                                 }
                                                 grid.end_row();
                                                 let summary=format!("배송 {}",index+1);
                                                 if components::manual_table_cell(
-                                                    grid,&summary,theme::MANUAL_TABLE_DELIVERY_COL,
+                                                    grid,&summary,delivery_col,
                                                     index==self.selected_recipient
                                                 ).clicked(){
                                                     self.select_cell(index,None,"name");
                                                 }
                                                 for (field,width) in [
-                                                    ("name",theme::MANUAL_TABLE_NAME_COL),
-                                                    ("address",theme::MANUAL_TABLE_ADDRESS_COL),
-                                                    ("mobile",theme::MANUAL_TABLE_PHONE_COL),
-                                                    ("phone",theme::MANUAL_TABLE_PHONE_COL),
-                                                    ("note",theme::MANUAL_TABLE_NOTE_COL)
+                                                    ("name",name_col),
+                                                    ("address",address_col),
+                                                    ("mobile",mobile_col),
+                                                    ("phone",phone_col),
+                                                    ("note",note_col)
                                                 ] {
                                                     let selected=index==self.selected_recipient &&
                                                         self.selected_item.is_none() &&
                                                         self.selected_field==field;
                                                     let key=source_highlight::key(rid,rid,field);
-                                                    let response=components::manual_linked_table_cell(
-                                                        grid,text(row,field),width,selected,
-                                                        source_highlight::is_active(
-                                                            active_link.as_ref(),&key
-                                                        )
+                                                    let linked=source_highlight::is_active(
+                                                        active_link.as_ref(),&key
                                                     );
+                                                    let response=if selected{
+                                                        let (response,navigation)=self.selected_cell_editor(
+                                                            grid,width,linked,busy
+                                                        );
+                                                        if let Some(navigation)=navigation{
+                                                            self.queue_cell_navigation(
+                                                                navigation,&mut submit_direct,
+                                                                &mut navigate_now
+                                                            );
+                                                        }
+                                                        response
+                                                    }else{
+                                                        components::manual_linked_table_cell(
+                                                            grid,text(row,field),width,false,linked
+                                                        )
+                                                    };
                                                     if response.hovered(){
                                                         hovered_detail=Some(key);
                                                     }
-                                                    if response.clicked(){
-                                                        self.select_cell(index,None,field);
+                                                    if response.clicked() && !selected{
+                                                        self.queue_cell_selection(
+                                                            ManualCellTarget{
+                                                                row:index,item:None,
+                                                                field:field.to_owned()
+                                                            },&mut submit_direct
+                                                        );
                                                     }
                                                 }
                                                 grid.end_row();
@@ -1451,16 +1503,16 @@ impl ManualWorkspace {
                                             .spacing(egui::Vec2::ZERO)
                                             .show(ui,|grid|{
                                                 components::manual_table_heading(
-                                                    grid,"상품",theme::MANUAL_TABLE_PRODUCT_COL
+                                                    grid,"상품",product_col
                                                 );
                                                 components::manual_table_heading(
-                                                    grid,"수량",theme::MANUAL_TABLE_QUANTITY_COL
+                                                    grid,"수량",quantity_col
                                                 );
                                                 components::manual_table_heading(
-                                                    grid,"단가",theme::MANUAL_TABLE_UNIT_PRICE_COL
+                                                    grid,"단가",price_col
                                                 );
                                                 components::manual_table_heading(
-                                                    grid,"행 동작",theme::MANUAL_TABLE_ACTION_COL*2.0
+                                                    grid,"행 동작",actions_col
                                                 );
                                                 grid.end_row();
                                                 for item in list(row,"items"){
@@ -1470,19 +1522,38 @@ impl ManualWorkspace {
                                                     let product_key=source_highlight::key(
                                                         rid,item_id,"product"
                                                     );
-                                                    let product_response=components::manual_linked_table_cell(
-                                                        grid,text(item,"name"),
-                                                        theme::MANUAL_TABLE_PRODUCT_COL,
-                                                        selected && self.selected_field=="product",
-                                                        source_highlight::is_active(
-                                                            active_link.as_ref(),&product_key
-                                                        )
+                                                    let product_linked=source_highlight::is_active(
+                                                        active_link.as_ref(),&product_key
                                                     );
+                                                    let product_selected=selected &&
+                                                        self.selected_field=="product";
+                                                    let product_response=if product_selected{
+                                                        let (response,navigation)=self.selected_cell_editor(
+                                                            grid,product_col,product_linked,busy
+                                                        );
+                                                        if let Some(navigation)=navigation{
+                                                            self.queue_cell_navigation(
+                                                                navigation,&mut submit_direct,
+                                                                &mut navigate_now
+                                                            );
+                                                        }
+                                                        response
+                                                    }else{
+                                                        components::manual_linked_table_cell(
+                                                            grid,text(item,"name"),product_col,
+                                                            false,product_linked
+                                                        )
+                                                    };
                                                     if product_response.hovered(){
                                                         hovered_detail=Some(product_key);
                                                     }
-                                                    if product_response.clicked() {
-                                                        self.select_cell(index,Some(item_id.into()),"product");
+                                                    if product_response.clicked() && !product_selected{
+                                                        self.queue_cell_selection(
+                                                            ManualCellTarget{
+                                                                row:index,item:Some(item_id.to_owned()),
+                                                                field:"product".into()
+                                                            },&mut submit_direct
+                                                        );
                                                     }
                                                     let quantity=item.get("quantity")
                                                         .and_then(Value::as_i64)
@@ -1490,34 +1561,69 @@ impl ManualWorkspace {
                                                     let quantity_key=source_highlight::key(
                                                         rid,item_id,"quantity"
                                                     );
-                                                    let quantity_response=components::manual_linked_table_cell(
-                                                        grid,&quantity,
-                                                        theme::MANUAL_TABLE_QUANTITY_COL,
-                                                        selected && self.selected_field=="quantity",
-                                                        source_highlight::is_active(
-                                                            active_link.as_ref(),&quantity_key
-                                                        )
+                                                    let quantity_linked=source_highlight::is_active(
+                                                        active_link.as_ref(),&quantity_key
                                                     );
+                                                    let quantity_selected=selected &&
+                                                        self.selected_field=="quantity";
+                                                    let quantity_response=if quantity_selected{
+                                                        let (response,navigation)=self.selected_cell_editor(
+                                                            grid,quantity_col,quantity_linked,busy
+                                                        );
+                                                        if let Some(navigation)=navigation{
+                                                            self.queue_cell_navigation(
+                                                                navigation,&mut submit_direct,
+                                                                &mut navigate_now
+                                                            );
+                                                        }
+                                                        response
+                                                    }else{
+                                                        components::manual_linked_table_cell(
+                                                            grid,&quantity,quantity_col,false,
+                                                            quantity_linked
+                                                        )
+                                                    };
                                                     if quantity_response.hovered(){
                                                         hovered_detail=Some(quantity_key);
                                                     }
-                                                    if quantity_response.clicked() {
-                                                        self.select_cell(index,Some(item_id.into()),"quantity");
+                                                    if quantity_response.clicked() && !quantity_selected{
+                                                        self.queue_cell_selection(
+                                                            ManualCellTarget{
+                                                                row:index,item:Some(item_id.to_owned()),
+                                                                field:"quantity".into()
+                                                            },&mut submit_direct
+                                                        );
                                                     }
                                                     let price=item.get("unitPrice")
                                                         .and_then(Value::as_i64)
                                                         .map(components::display_won)
                                                         .unwrap_or_else(||"—".into());
-                                                    if components::manual_table_cell(
-                                                        grid,&price,
-                                                        theme::MANUAL_TABLE_UNIT_PRICE_COL,
-                                                        selected && self.selected_field=="unitPrice"
-                                                    ).on_hover_text(if item.get("manualUnitPrice")
+                                                    let price_selected=selected &&
+                                                        self.selected_field=="unitPrice";
+                                                    let price_response=if price_selected{
+                                                        let (response,navigation)=self.selected_cell_editor(
+                                                            grid,price_col,false,busy
+                                                        );
+                                                        if let Some(navigation)=navigation{
+                                                            self.queue_cell_navigation(
+                                                                navigation,&mut submit_direct,
+                                                                &mut navigate_now
+                                                            );
+                                                        }
+                                                        response
+                                                    }else{
+                                                        components::manual_table_cell(
+                                                            grid,&price,price_col,false
+                                                        )
+                                                    }.on_hover_text(if item.get("manualUnitPrice")
                                                         .is_some(){"직접 수정된 단가"}
-                                                        else{"상품·거래처 기준 단가"})
-                                                        .clicked(){
-                                                        self.select_cell(
-                                                            index,Some(item_id.into()),"unitPrice"
+                                                        else{"상품·거래처 기준 단가"});
+                                                    if price_response.clicked() && !price_selected{
+                                                        self.queue_cell_selection(
+                                                            ManualCellTarget{
+                                                                row:index,item:Some(item_id.to_owned()),
+                                                                field:"unitPrice".into()
+                                                            },&mut submit_direct
                                                         );
                                                     }
                                                     grid.horizontal(|actions|{
@@ -1630,67 +1736,10 @@ impl ManualWorkspace {
                                         components::soft_divider(ui);
                                     }
                                 });
-                            // Single selected-field editor; never repeat it
-                            // under every shipment or change the panel height.
+                            // Ordinary text, product, quantity and unit-price values are edited
+                            // directly inside their own cells. Only the freight
+                            // override remains a dedicated non-table field.
                             panel.horizontal(|ui|{
-                                let label=if self.selected_item.is_some(){
-                                    match self.selected_field.as_str(){
-                                        "quantity"=>"수량","unitPrice"=>"단가",
-                                        _=>"상품명"
-                                    }
-                                } else {
-                                    match self.selected_field.as_str() {
-                                        "name"=>"이름","address"=>"주소",
-                                        "mobile"=>"휴대폰","phone"=>"전화",
-                                        "note"=>"배송 요청",
-                                        "shippingCharge"=>"적용 운임",_=>"이름"
-                                    }
-                                };
-                                components::form_field_label(ui,label);
-                                let editor=components::flexible_text_field(
-                                    ui,&mut self.edit_text,
-                                    theme::MANUAL_INPUT_WIDTH,""
-                                );
-                                if self.focus_editor && !busy &&
-                                    self.product_search.is_none() &&
-                                    self.remove_recipient_pending.is_none() &&
-                                    !self.reset_pending && !self.confirm_discard {
-                                    editor.request_focus();
-                                    self.focus_editor=false;
-                                }
-                                if editor.has_focus(){
-                                    let navigation=ctx.input(|input|{
-                                        if input.events.iter().any(|event|
-                                            matches!(event,egui::Event::Ime(_))
-                                        ){None}
-                                        else if input.key_pressed(egui::Key::Enter){
-                                            Some(CellNavigationKey::Next)
-                                        }else if input.key_pressed(egui::Key::Tab){
-                                            Some(if input.modifiers.shift{
-                                                CellNavigationKey::Previous
-                                            }else{CellNavigationKey::Next})
-                                        }else if input.key_pressed(egui::Key::ArrowLeft){
-                                            Some(CellNavigationKey::Left)
-                                        }else if input.key_pressed(egui::Key::ArrowRight){
-                                            Some(CellNavigationKey::Right)
-                                        }else if input.key_pressed(egui::Key::ArrowUp){
-                                            Some(CellNavigationKey::Up)
-                                        }else if input.key_pressed(egui::Key::ArrowDown){
-                                            Some(CellNavigationKey::Down)
-                                        }else{None}
-                                    });
-                                    if let Some(navigation)=navigation{
-                                        let needs_commit=
-                                            self.edit_text!=self.current_value() ||
-                                            self.selected_field=="quantity";
-                                        if needs_commit{
-                                            submit_direct=true;
-                                            self.advance_after_apply=Some(navigation);
-                                        }else{
-                                            navigate_now=Some(navigation);
-                                        }
-                                    }
-                                }
                                 if self.selected_item.is_some() &&
                                     self.selected_field=="quantity" {
                                     let quantity=rows.get(self.selected_recipient)
@@ -1739,9 +1788,23 @@ impl ManualWorkspace {
                                         self.undo();
                                     }
                                 }
-                                if theme::action(ui,"입력 반영",ButtonRole::Standard,
-                                    !busy && self.edit_text!=self.current_value()
-                                ).clicked(){submit_direct=true;}
+                                if self.selected_field=="shippingCharge"{
+                                    components::form_field_label(ui,"적용 운임");
+                                    let editor=components::flexible_text_field(
+                                        ui,&mut self.edit_text,
+                                        theme::MANUAL_INPUT_WIDTH,""
+                                    );
+                                    if self.focus_editor && !busy &&
+                                        !self.confirm_apply && !self.confirm_discard {
+                                        editor.request_focus();
+                                        self.focus_editor=false;
+                                    }
+                                    if editor.has_focus() && ctx.input(|input|
+                                        input.key_pressed(egui::Key::Enter)
+                                    ){
+                                        submit_direct=true;
+                                    }
+                                }
                             });
                             });
                         },
