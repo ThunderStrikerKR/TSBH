@@ -159,9 +159,10 @@ fn manual_cell_targets(model:&Value)->Vec<ManualCellTarget>{
     cells
 }
 
-/// Resolve movement by *visible worksheet geometry*. Recipient details
-/// form one five-column grid per shipment; products form a separate three-
-/// column grid with a real row for each item. Tab alone crosses sections.
+/// Resolve movement by *visible worksheet geometry*. Recipient fields are
+/// vertically stacked; Up/Down move to their neighboring labeled field,
+/// crossing to the next/previous shipment at the boundary. Product cells
+/// remain a three-column worksheet with vertical item-row navigation.
 fn manual_navigation_target(
     model:&Value,current:&ManualCellTarget,key:CellNavigationKey,
     pending:Option<&ManualCellTarget>
@@ -170,16 +171,15 @@ fn manual_navigation_target(
     let row=rows.get(current.row)?;
     let next=match key{
         CellNavigationKey::Left|CellNavigationKey::Right=>{
-            let fields:&[&str]=if current.item.is_some(){
-                &["product","quantity","unitPrice"]
-            }else{&["name","address","mobile","phone","note"]};
+            if current.item.is_none(){return None;}
+            let fields=&["product","quantity","unitPrice"];
             let index=fields.iter().position(|field|*field==current.field)?;
             let adjacent=if key==CellNavigationKey::Left{
                 index.checked_sub(1)?
             }else{index+1};
-            let field=*fields.get(adjacent)?;
             ManualCellTarget{
-                row:current.row,item:current.item.clone(),field:field.into()
+                row:current.row,item:current.item.clone(),
+                field:fields.get(adjacent)?.to_string()
             }
         }
         CellNavigationKey::Up|CellNavigationKey::Down=>{
@@ -195,12 +195,22 @@ fn manual_navigation_target(
                     field:current.field.clone()
                 }
             }else{
-                let adjacent=if key==CellNavigationKey::Up{
-                    current.row.checked_sub(1)?
-                }else{current.row+1};
-                rows.get(adjacent)?;
+                let fields=["name","address","mobile","phone","note"];
+                let index=fields.iter().position(|field|*field==current.field)?;
+                let (target_row,target_field)=if key==CellNavigationKey::Up{
+                    if let Some(previous)=index.checked_sub(1){
+                        (current.row,fields[previous])
+                    }else{
+                        (current.row.checked_sub(1)?,fields[fields.len()-1])
+                    }
+                }else if index+1<fields.len(){
+                    (current.row,fields[index+1])
+                }else{
+                    (current.row+1,fields[0])
+                };
+                rows.get(target_row)?;
                 ManualCellTarget{
-                    row:adjacent,item:None,field:current.field.clone()
+                    row:target_row,item:None,field:target_field.into()
                 }
             }
         }
@@ -1535,90 +1545,96 @@ impl ManualWorkspace {
                                     let table_width=ui.available_width()
                                         .max(theme::MANUAL_TABLE_MIN_WIDTH);
                                     ui.set_min_width(table_width);
-                                    let delivery_col=64.0;
-                                    let name_col=(table_width*0.14).clamp(96.0,150.0);
-                                    let mobile_col=(table_width*0.13).clamp(88.0,150.0);
-                                    let phone_col=mobile_col;
-                                    let note_col=(table_width*0.15).clamp(104.0,180.0);
-                                    let address_col=(table_width-delivery_col-name_col
-                                        -mobile_col-phone_col-note_col).max(160.0);
-                                    let quantity_col=84.0;
+                                    // Manual recipient editing is an inline, vertically ordered
+                                    // worksheet, not six narrow columns. The old layout
+                                    // truncated addresses and obscured field identities.
+                                    // Reuse the shared linked-cell/editor components and
+                                    // native manual reducer; only presentation changes.
+                                    let quantity_col=72.0;
                                     let price_col=100.0;
-                                    let actions_col=136.0;
+                                    let actions_col=118.0;
                                     let product_col=(table_width-quantity_col-price_col
                                         -actions_col).max(260.0)
                                         .min(theme::MANUAL_TABLE_PRODUCT_COL);
                                     for (index,row) in rows.iter().enumerate() {
                                         let rid=text(row,"id");
-                                        egui::Grid::new(("manual-delivery",rid))
-                                            .spacing(egui::Vec2::ZERO)
-                                            .show(ui,|grid|{
-                                                for (label,width) in [
-                                                    ("배송",delivery_col),
-                                                    ("이름",name_col),
-                                                    ("주소",address_col),
-                                                    ("휴대폰",mobile_col),
-                                                    ("전화",phone_col),
-                                                    ("배송 요청",note_col)
-                                                ] {
-                                                    components::manual_table_heading(grid,label,width);
+                                        ui.horizontal(|header|{
+                                            if theme::action(
+                                                header,&format!("배송 {} / {}",index+1,rows.len()),
+                                                if index==self.selected_recipient{
+                                                    ButtonRole::TableSecondary
+                                                }else{ButtonRole::Standard},
+                                                !busy && !pending_quantity_active &&
+                                                    self.edit_text==self.current_value()
+                                            ).clicked(){
+                                                self.queue_cell_selection(
+                                                    ManualCellTarget{
+                                                        row:index,item:None,field:"name".into()
+                                                    },&mut submit_direct
+                                                );
+                                            }
+                                            header.label(typography::body(text(row,"name")));
+                                        });
+                                        ui.add_space(theme::SPACE_8);
+                                        let label_width=92.0;
+                                        let field_width=(table_width-label_width
+                                            -theme::SPACE_8).max(160.0);
+                                        for (field,label) in [
+                                            ("name","수취인"),
+                                            ("address","주소"),
+                                            ("mobile","휴대폰"),
+                                            ("phone","전화"),
+                                            ("note","배송 요청")
+                                        ] {
+                                            ui.horizontal(|entry|{
+                                                entry.spacing_mut().item_spacing.x=theme::SPACE_8;
+                                                components::form_field_label_sized(
+                                                    entry,label,label_width
+                                                );
+                                                let selected=index==self.selected_recipient &&
+                                                    self.selected_item.is_none() &&
+                                                    self.selected_field==field;
+                                                let key=source_highlight::key(rid,rid,field);
+                                                let linked=source_highlight::is_active(
+                                                    active_link.as_ref(),&key
+                                                );
+                                                let response=if selected{
+                                                    let (response,navigation)=
+                                                        self.selected_cell_editor(
+                                                            entry,field_width,linked,busy
+                                                        );
+                                                    if let Some(navigation)=navigation{
+                                                        self.queue_cell_navigation(
+                                                            navigation,&mut submit_direct,
+                                                            &mut navigate_now
+                                                        );
+                                                    }
+                                                    response
+                                                }else{
+                                                    components::manual_linked_table_cell(
+                                                        entry,text(row,field),
+                                                        field_width,false,linked
+                                                    )
+                                                };
+                                                // A long address remains accessible in full
+                                                // even if the window is temporarily narrow.
+                                                let response=if field=="address" || field=="note"{
+                                                    response.on_hover_text(text(row,field))
+                                                }else{response};
+                                                if response.hovered(){
+                                                    hovered_detail=Some(key);
                                                 }
-                                                grid.end_row();
-                                                let summary=format!("배송 {}",index+1);
-                                                if components::manual_table_cell(
-                                                    grid,&summary,delivery_col,
-                                                    index==self.selected_recipient
-                                                ).clicked(){
+                                                if response.clicked() && !selected{
                                                     self.queue_cell_selection(
                                                         ManualCellTarget{
-                                                            row:index,item:None,field:"name".into()
+                                                            row:index,item:None,
+                                                            field:field.to_owned()
                                                         },&mut submit_direct
                                                     );
                                                 }
-                                                for (field,width) in [
-                                                    ("name",name_col),
-                                                    ("address",address_col),
-                                                    ("mobile",mobile_col),
-                                                    ("phone",phone_col),
-                                                    ("note",note_col)
-                                                ] {
-                                                    let selected=index==self.selected_recipient &&
-                                                        self.selected_item.is_none() &&
-                                                        self.selected_field==field;
-                                                    let key=source_highlight::key(rid,rid,field);
-                                                    let linked=source_highlight::is_active(
-                                                        active_link.as_ref(),&key
-                                                    );
-                                                    let response=if selected{
-                                                        let (response,navigation)=self.selected_cell_editor(
-                                                            grid,width,linked,busy
-                                                        );
-                                                        if let Some(navigation)=navigation{
-                                                            self.queue_cell_navigation(
-                                                                navigation,&mut submit_direct,
-                                                                &mut navigate_now
-                                                            );
-                                                        }
-                                                        response
-                                                    }else{
-                                                        components::manual_linked_table_cell(
-                                                            grid,text(row,field),width,false,linked
-                                                        )
-                                                    };
-                                                    if response.hovered(){
-                                                        hovered_detail=Some(key);
-                                                    }
-                                                    if response.clicked() && !selected{
-                                                        self.queue_cell_selection(
-                                                            ManualCellTarget{
-                                                                row:index,item:None,
-                                                                field:field.to_owned()
-                                                            },&mut submit_direct
-                                                        );
-                                                    }
-                                                }
-                                                grid.end_row();
                                             });
+                                        }
+                                        ui.add_space(theme::SPACE_12);
                                         ui.label(typography::field_label("상품"));
                                         egui::Grid::new(("manual-products",rid))
                                             .spacing(egui::Vec2::ZERO)
@@ -2425,7 +2441,15 @@ mod manual_workspace_modal_routing_tests {
         let move_to=|from:&ManualCellTarget,key|
             manual_navigation_target(&model,from,key,None);
         assert_eq!(move_to(&recipient,CellNavigationKey::Down),
-            Some(ManualCellTarget{row:1,..recipient.clone()}));
+            Some(ManualCellTarget{field:"mobile".into(),..recipient.clone()}));
+        assert_eq!(move_to(&recipient,CellNavigationKey::Up),
+            Some(ManualCellTarget{field:"name".into(),..recipient.clone()}));
+        let last_recipient_field=ManualCellTarget{
+            row:0,item:None,field:"note".into()
+        };
+        assert_eq!(move_to(&last_recipient_field,CellNavigationKey::Down),
+            Some(ManualCellTarget{row:1,field:"name".into(),
+                ..last_recipient_field.clone()}));
         assert_eq!(move_to(&product,CellNavigationKey::Up),
             Some(ManualCellTarget{item:Some("i1".into()),..product.clone()}));
         assert_eq!(move_to(&product,CellNavigationKey::Down),
@@ -2434,8 +2458,7 @@ mod manual_workspace_modal_routing_tests {
             Some(ManualCellTarget{field:"product".into(),..product.clone()}));
         assert_eq!(move_to(&product,CellNavigationKey::Right),
             Some(ManualCellTarget{field:"unitPrice".into(),..product.clone()}));
-        assert_eq!(move_to(&recipient,CellNavigationKey::Left),
-            Some(ManualCellTarget{field:"name".into(),..recipient.clone()}));
+        assert_eq!(move_to(&recipient,CellNavigationKey::Left),None);
         assert_eq!(move_to(&product,CellNavigationKey::Next),
             Some(ManualCellTarget{field:"unitPrice".into(),..product.clone()}));
         let first=ManualCellTarget{
