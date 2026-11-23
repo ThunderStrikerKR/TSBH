@@ -2898,8 +2898,10 @@ fn management_dropdown_inner(
     let caption=typography::management_control_text_galley(
         ui,label,ink
     );
+    // Sales status selectors sit in a narrow price column. Reserve the
+    // indicator without clipping the longest label ("판매준비중").
     let caption_x=rect.left()+if indicator.is_some(){
-        2.0*theme::SPACE_16
+        theme::SPACE_24
     }else{theme::SPACE_12};
     let text_clip=Rect::from_min_max(
         egui::pos2(caption_x,rect.top()),
@@ -2907,8 +2909,8 @@ fn management_dropdown_inner(
     );
     if let Some(color)=indicator{
         painter.circle_filled(
-            egui::pos2(rect.left()+theme::SPACE_16,rect.center().y),
-            4.0,color
+            egui::pos2(rect.left()+theme::SPACE_12,rect.center().y),
+            3.5,color
         );
     }
     painter.with_clip_rect(text_clip).galley(
