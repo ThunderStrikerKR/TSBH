@@ -4991,6 +4991,19 @@ mod shared_checkbox_contract_tests {
             .split("\n    fn ").next().unwrap();
         assert!(workflow.contains("components::checkbox("));
         assert!(!workflow.contains("ui.checkbox("));
+
+        // OCR learning, category transfer consent and product filtering are
+        // standard checkboxes too; none may construct a local egui checkbox.
+        assert!(main.contains("components::checkbox(option,"));
+        assert!(!main.contains("option.checkbox("));
+
+        let category=include_str!("category_manager.rs");
+        assert!(category.contains("components::checkbox("));
+        assert!(!category.contains("notice.checkbox("));
+
+        let products=include_str!("product_manager.rs");
+        assert!(products.contains("components::checkbox(filter,"));
+        assert!(!products.contains("filter.checkbox("));
     }
 }
 
