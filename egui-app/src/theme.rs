@@ -784,6 +784,17 @@ pub fn modal_frame() -> Frame {
         })
 }
 
+/// Compact ancestor-path surface in the category explorer. Its stronger
+/// BORDER outline is intentional; do not replace it with the softer modal
+/// nested-frame stroke.
+pub fn category_ancestor_frame()->Frame{
+    Frame::new()
+        .fill(INPUT)
+        .stroke(Stroke::new(SOFT_DIVIDER_WIDTH,BORDER))
+        .corner_radius(CornerRadius::same(CONTROL_RADIUS))
+        .inner_margin(SPACE_8)
+}
+
 pub fn modal_nested_frame() -> Frame {
     Frame::new()
         .fill(INPUT)
