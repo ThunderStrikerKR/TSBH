@@ -822,12 +822,11 @@ fn range_date_picker_rtl(
                     .frame(false)
                     .horizontal_align(Align::Center)
                     .vertical_align(Align::Center)
-                    // Match the *visible* digit center, not only the
-                    // TextEdit's glyph line box; keep caret and hint aligned.
-                    // The shared +2pt Consolas font correction already
-                    // adjusts numeric glyphs; do not stack the former
-                    // date-only body-font margin correction on top.
-                    .margin(egui::Margin::symmetric(2,2))
+                    // Dates use the regular proportional UI font, not the
+                    // money/quantity Consolas family. Apply the existing
+                    // shared date-field optical margin without resizing the
+                    // date picker, keyboard caret or grouped controls.
+                    .margin(typography::management_date_text_margin())
                     .hint_text(if all_dates{"전체"}else{"YYYY-MM-DD"})
                     .desired_width(HISTORY_DATE_FIELD_WIDTH)
             ).on_hover_text(&format!("{label} 직접 입력"));
