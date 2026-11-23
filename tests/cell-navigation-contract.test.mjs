@@ -118,6 +118,30 @@ test("shared React key handler lets Tab exit at the grid boundary and traps arro
   assert.equal(arrow.defaultPrevented, true);
 });
 
+test("async Tab boundary validation restores focus when the commit is rejected", async () => {
+  const calls = [];
+  let release;
+  const currentTarget = {
+    isConnected: true,
+    focus() { calls.push("focus"); },
+    scrollIntoView() { calls.push("scroll"); },
+  };
+  const tab = {
+    key: "Tab", shiftKey: false, currentTarget,
+    preventDefault() { this.defaultPrevented = true; },
+  };
+  const handled = handleCellNavigationKey(tab, {
+    resolveTarget: () => null,
+    onBeforeMove: () => new Promise((resolve) => { release = resolve; }),
+  });
+  assert.equal(handled, false);
+  assert.equal(tab.defaultPrevented, undefined);
+  release(false);
+  await Promise.resolve();
+  await Promise.resolve();
+  assert.deepEqual(calls, ["focus", "scroll"]);
+});
+
 test("shared React key handler protects IME composition and delegates Escape cancellation", () => {
   const composing = {
     key: "ArrowRight", shiftKey: false, isComposing: true, currentTarget: {},
