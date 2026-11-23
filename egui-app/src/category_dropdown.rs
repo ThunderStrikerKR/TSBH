@@ -360,7 +360,13 @@ fn crumbs_row(
     let mut root_rect=egui::Rect::NOTHING;
     let mut apply_rect=egui::Rect::NOTHING;
     let mut chevrons=Vec::new();
-    ui.horizontal(|bar|{
+    // Explicitly allocate the approved footer width and height. A nested
+    // shrinking horizontal UI can otherwise place Apply short of the right
+    // edge when the breadcrumb path has few or no entries.
+    ui.allocate_ui_with_layout(
+        Vec2::new(row_width,theme::CATEGORY_EXPLORER_CRUMB_HEIGHT),
+        egui::Layout::left_to_right(egui::Align::Center),
+        |bar|{
         bar.spacing_mut().item_spacing.x=theme::SPACE_4;
         let role=if selected.is_empty() && allow_empty {
             CrumbVisual::Applied
@@ -389,16 +395,18 @@ fn crumbs_row(
                 go_to=Some(path[..hidden+offset+1].to_vec());
             }
         }
-        let spacer=(bar.available_width()-apply_width-theme::SPACE_4).max(0.0);
-        if spacer>0.0 {bar.add_space(spacer);}
-        let response=theme::action_with_min_width(
-            bar,"적용",theme::ButtonRole::Primary,
-            enabled && (allow_empty || !path.is_empty())
-                && path.last().map(String::as_str).unwrap_or("")!=selected.as_str(),
-            theme::CATEGORY_EXPLORER_APPLY_WIDTH
+        bar.with_layout(
+            egui::Layout::right_to_left(egui::Align::Center),|right|{
+                let response=theme::action_with_min_width(
+                    right,"적용",theme::ButtonRole::Primary,
+                    enabled && (allow_empty || !path.is_empty())
+                        && path.last().map(String::as_str).unwrap_or("")!=selected.as_str(),
+                    theme::CATEGORY_EXPLORER_APPLY_WIDTH
+                );
+                apply_rect=response.rect;
+                if response.clicked(){apply=true;}
+            }
         );
-        apply_rect=response.rect;
-        if response.clicked(){apply=true;}
     });
     if toggle_ancestors{state.ancestors_open=!state.ancestors_open;}
     if let Some(next)=go_to{
