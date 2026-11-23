@@ -490,7 +490,7 @@ pub fn show(ctx:&egui::Context,work_area:Rect,row:&Value,state:&Value)->bool{
                 }
                 let attachments=rows(&order["photos"]).len();
                 if attachments>0{
-                    panel.separator();
+                    components::soft_divider(panel);
                     panel.label(typography::caption(&format!(
                         "첨부 이미지 {}건 · 이미지 미리보기는 아직 연결되지 않았습니다.",
                         attachments
