@@ -1040,11 +1040,8 @@ impl ManualWorkspace {
                 let has_pending_quantity=pending_quantity_count>0;
                 let unassigned=blocks.iter().filter(|b|
                     assignments.get(text(b,"id")).is_none()).count();
-                // Keep the current BLOCKER visible, not the ambiguous
-                // "order confirmed" status while the worksheet is still open.
-                // This is guidance only; Rust still validates final apply.
-                // Keep the header geometry fixed. Apply blockers remain
-                // available as a tooltip on the count and Apply action.
+                // Apply blockers remain available as tooltips; the
+                // header never allocates a state-dependent guidance row.
                 let guidance=manual_apply_guidance(
                     busy,pending_quantity_count,
                     self.edit_text!=self.current_value()
@@ -1381,8 +1378,9 @@ impl ManualWorkspace {
                                                 .or_else(||remote_result.as_ref()
                                                     .and_then(|result|result.as_ref().err())
                                                     .map(|error|format!("도서/산간 판정 실패 · {error}")));
+                                            let remote_status_width=ui.available_width();
                                             components::fixed_status_slot(
-                                                ui,ui.available_width(),
+                                                ui,remote_status_width,
                                                 typography::METADATA_LINE_HEIGHT,
                                                 remote_message.as_deref(),
                                                 remote_message.as_deref(),
