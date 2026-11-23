@@ -1191,7 +1191,7 @@ impl ManualWorkspace {
                                 }
                                 ui.label(typography::quantity(&rows.len().to_string()));
                                 if theme::action(ui,"+",ButtonRole::Standard,
-                                    !busy && rows.len()<100).clicked(){
+                                    !busy && !pending_quantity_active && rows.len()<100).clicked(){
                                     chosen=Some(("resize_manual_rows".into(),json!({
                                         "count":rows.len()+1,
                                         "newRecipientIds":[unique_id()]
