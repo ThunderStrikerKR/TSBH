@@ -5,6 +5,14 @@ use eframe::egui::{self, Align, Color32, Frame, Layout, Rect, Response, Sense, S
 use chrono::{Datelike, Duration as Days, Months, NaiveDate};
 use crate::{source_highlight, theme, typography};
 
+#[cfg(test)]
+fn test_context()->egui::Context {
+    let ctx=egui::Context::default();
+    theme::install(&ctx);
+    typography::install(&ctx);
+    ctx
+}
+
 pub const LABEL_WIDTH: f32 = theme::FIELD_LABEL_WIDTH;
 pub const TABLE_ROW_HEIGHT: f32 = theme::MANAGEMENT_COMPACT_ROW_HEIGHT;
 /// Render only the rows intersecting a scroll viewport, while reserving the
@@ -135,15 +143,6 @@ pub fn management_pending_primary_card(ui:&mut Ui)->Rect{
 #[cfg(test)]
 mod fixed_layout_slot_contract_tests {
     use super::*;
-
-    /// Mirror the application's native Context bootstrap so shared text
-    /// roles never reference an unregistered named font family in tests.
-    fn test_context()->egui::Context {
-        let ctx=egui::Context::default();
-        theme::install(&ctx);
-        typography::install(&ctx);
-        ctx
-    }
 
     #[test]
     fn optional_status_keeps_its_rect_and_the_next_control_fixed(){
@@ -6539,7 +6538,7 @@ mod recipient_source_reverse_hover_tests {
 
     #[test]
     fn all_five_read_only_recipient_cells_own_hover_and_ibeam_cursor() {
-        let ctx=egui::Context::default();
+        let ctx=test_context();
         let mut cells=[Rect::NOTHING;5];
         let _=ctx.run(egui::RawInput::default(),|ctx|{
             egui::CentralPanel::default().show(ctx,|ui|{
