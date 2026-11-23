@@ -2356,7 +2356,9 @@ impl FreightManager {
                     input,&editor.max_bundle
                         .map(|v|format!("{v}개")).unwrap_or_else(||"미확정".into()),
                     theme::MANAGEMENT_FILTER_DROPDOWN_WIDTH,true,
-                    "최대 묶음포장 수량 선택",|choice|{
+                    if editor.max_bundle.is_none(){
+                        "최대 묶음 수량을 먼저 선택하세요."
+                    }else{"최대 묶음포장 수량 선택"},|choice|{
                         components::management_dropdown_option(
                             choice,&mut editor.max_bundle,None,"미확정");
                         for n in 1..=6 {
@@ -2366,9 +2368,6 @@ impl FreightManager {
                     });
             });
         });
-        if editor.max_bundle.is_none(){
-            ui.label(typography::caption("최대 묶음 수량을 먼저 선택하세요."));
-        }
         ui.add_space(theme::SPACE_12);
         ui.label(typography::subsection_heading("수량별 운임"));
         ui.label(typography::caption("확인한 묶음 수량의 운임만 추가하세요."));
