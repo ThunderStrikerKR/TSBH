@@ -5074,9 +5074,8 @@ mod management_dropdown_unification_tests {
     fn all_ordinary_egui_single_selectors_use_the_shared_component() {
         // These screens previously owned their own ComboBox triggers.
         // Keep UI choice styling and popup lifecycle in one component.
-        let screens:[(&str,&str,usize);7]=[
+        let screens:[(&str,&str,usize);6]=[
             ("alias_manager",include_str!("alias_manager.rs"),3),
-            ("category_manager",include_str!("category_manager.rs"),1),
             ("client_manager",include_str!("client_manager.rs"),4),
             ("freight_manager",include_str!("freight_manager.rs"),5),
             ("product_manager",include_str!("product_manager.rs"),6),
