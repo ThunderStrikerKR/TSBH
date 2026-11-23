@@ -4898,6 +4898,21 @@ mod shared_checkbox_contract_tests {
         assert!(dialog.contains("theme::modal_nested_frame()"));
         assert!(!dialog.contains("egui::Checkbox::new("));
         assert!(!dialog.contains("egui::Frame::new()"));
+
+        let client=include_str!("client_manager.rs");
+        let boolean=client.split("fn bool_edit(").nth(1).unwrap()
+            .split("fn new_id(").next().unwrap();
+        assert!(boolean.contains("components::checkbox("));
+        assert!(!boolean.contains("ui.checkbox("));
+
+        let main=include_str!("main.rs");
+        let message=main.split("fn message_section(").nth(1).unwrap()
+            .split("fn ").next().unwrap();
+        assert!(message.contains("components::checkbox("));
+        assert!(!message.contains("Checkbox::new("));
+        let regroup=main.split("fn show_regroup_confirmation(").nth(1)
+            .unwrap_or("");
+        assert!(regroup.contains("components::checkbox("));
     }
 }
 
