@@ -75,7 +75,7 @@ function FreightAmountInput({ label, value, disabled, onCommit, navigationRow, n
       }}
       onBlur={flush}
       onKeyDown={(e) => handleCellNavigationKey(e, {
-        onBeforeMove: (key, target) => {
+        onBeforeMove: (_key, target) => {
           if (target) flush();
         },
         onBoundary: (key, event) => {
