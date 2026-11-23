@@ -73,13 +73,15 @@ pub const CATEGORY_EXPLORER_LIST_MAX_HEIGHT:f32=
 pub const CATEGORY_EXPLORER_ANCESTOR_MAX_HEIGHT:f32=144.0;
 // Popup footer navigation, breadcrumbs and Apply share the 36pt control baseline.
 pub const CATEGORY_EXPLORER_CRUMB_HEIGHT:f32=ACTION_PRIMARY_HEIGHT;
+pub const CATEGORY_EXPLORER_SEPARATOR_WIDTH:f32=12.0;
 pub const CATEGORY_EXPLORER_BACK_WIDTH:f32=76.0;
 pub const CATEGORY_EXPLORER_ROOT_WIDTH:f32=48.0;
 pub const CATEGORY_EXPLORER_APPLY_WIDTH:f32=70.0;
 pub const CATEGORY_EXPLORER_APPLIED_BG:Color32=Color32::from_rgb(90,61,33);
 pub const CATEGORY_EXPLORER_APPLIED_BORDER:Color32=SELECTED_ORDER;
-pub const CATEGORY_EXPLORER_CURRENT_BG:Color32=RAISED;
-pub const CATEGORY_EXPLORER_CURRENT_BORDER:Color32=Color32::from_rgb(136,136,136);
+// The current exploration point is plain bright text, never a filled badge.
+pub const CATEGORY_EXPLORER_CURRENT_BG:Color32=Color32::TRANSPARENT;
+pub const CATEGORY_EXPLORER_CURRENT_BORDER:Color32=Color32::TRANSPARENT;
 pub const SELECTED_ORDER: Color32 = Color32::from_rgb(242, 186, 100);
 // Compact working-order cards derive every slot from the actual right pane.
 // The horizontal outer inset, inter-control gaps and vertical insets use
