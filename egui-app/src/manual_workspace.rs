@@ -1261,10 +1261,56 @@ impl ManualWorkspace {
                                     }
                                 };
                                 components::form_field_label(ui,label);
-                                components::flexible_text_field(
+                                let editor=components::flexible_text_field(
                                     ui,&mut self.edit_text,
                                     theme::MANUAL_INPUT_WIDTH,""
                                 );
+                                if self.focus_editor {
+                                    editor.request_focus();
+                                    self.focus_editor=false;
+                                }
+                                if editor.has_focus() &&
+                                    ctx.input(|input|input.key_pressed(egui::Key::Enter)){
+                                    submit_direct=true;
+                                }
+                                if self.selected_item.is_some() &&
+                                    self.selected_field=="quantity" {
+                                    let quantity=rows.get(self.selected_recipient)
+                                        .and_then(|row|list(row,"items").iter().find(|item|
+                                            self.selected_item.as_deref()==Some(text(item,"id"))
+                                        ))
+                                        .and_then(|item|item.get("quantity"))
+                                        .and_then(Value::as_i64).unwrap_or(0);
+                                    let settled=self.edit_text==self.current_value();
+                                    if theme::action(ui,"−",ButtonRole::Standard,
+                                        !busy && settled && quantity>1
+                                    ).clicked(){
+                                        if let (Some(row),Some(item))=(
+                                            rows.get(self.selected_recipient),
+                                            self.selected_item.as_ref()
+                                        ){
+                                            chosen=Some(("step_manual_quantity".into(),json!({
+                                                "cell":{"recipientId":text(row,"id"),
+                                                    "itemId":item},
+                                                "delta":-1
+                                            })));
+                                        }
+                                    }
+                                    if theme::action(ui,"+",ButtonRole::Standard,
+                                        !busy && settled
+                                    ).clicked(){
+                                        if let (Some(row),Some(item))=(
+                                            rows.get(self.selected_recipient),
+                                            self.selected_item.as_ref()
+                                        ){
+                                            chosen=Some(("step_manual_quantity".into(),json!({
+                                                "cell":{"recipientId":text(row,"id"),
+                                                    "itemId":item},
+                                                "delta":1
+                                            })));
+                                        }
+                                    }
+                                }
                                 if theme::action(ui,"입력 반영",ButtonRole::Standard,
                                     !busy && self.edit_text!=self.current_value()
                                 ).clicked(){submit_direct=true;}
@@ -1302,10 +1348,23 @@ impl ManualWorkspace {
             if self.edit_text!=self.current_value(){
                 self.error=Some("입력 중인 내용을 먼저 반영하세요.".into());
             }else if self.product_search.is_none(){
-                self.product_search=Some(ProductSearch::new(
-                    recipient_id,item_id,self.client_id.clone().unwrap_or_default(),
-                    Arc::clone(&self.gateway),ctx.clone()
-                ));
+                let target=self.model.as_ref().and_then(|model|
+                    list(model,"rows").iter().position(|row|
+                        text(row,"id")==recipient_id &&
+                        list(row,"items").iter().any(|item|text(item,"id")==item_id)
+                    )
+                );
+                if let Some(index)=target {
+                    // Search belongs to the clicked product row, not whatever
+                    // recipient/item happened to be selected previously.
+                    self.select_cell(index,Some(item_id.clone()),"product");
+                    self.product_search=Some(ProductSearch::new(
+                        recipient_id,item_id,self.client_id.clone().unwrap_or_default(),
+                        Arc::clone(&self.gateway),ctx.clone()
+                    ));
+                }else{
+                    self.error=Some("상품 검색 대상이 현재 배송 목록에 없습니다.".into());
+                }
             }
         }
         if let Some(window_id)=self.nested_modal_window_id(){
@@ -1330,6 +1389,17 @@ impl ManualWorkspace {
                     )
                 );
                 if exists && !self.busy(){
+                    let target=self.model.as_ref().and_then(|model|
+                        list(model,"rows").iter().position(|row|
+                            text(row,"id")==search.recipient_id
+                        )
+                    );
+                    if let Some(index)=target {
+                        // React's product chooser hands focus to quantity next.
+                        self.select_cell(
+                            index,Some(search.item_id.clone()),"quantity"
+                        );
+                    }
                     let title=if text(&product,"name").is_empty(){
                         text(&product,"code").to_owned()
                     }else{text(&product,"name").to_owned()};
