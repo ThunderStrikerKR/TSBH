@@ -757,26 +757,27 @@ impl ClientManager {
         ui.label(typography::field_label("주 사용 입금계좌"));
         let accounts=self.state.pointer("/settings/accounts")
             .and_then(Value::as_array).cloned().unwrap_or_default();
-        if accounts.is_empty() {
-            ui.label(typography::caption("미지정 (상품군 추천 계좌 사용)"));
-        } else {
-            let mut selected=field(draft,"preferredAccountId").to_owned();
-            let selected_label=accounts.iter()
-                .find(|a|field(a,"id")==selected)
-                .map(|a|field(a,"name")).unwrap_or("미지정");
-            let width=ui.available_width();
-            components::management_dropdown(
-                ui,selected_label,width,true,"주 사용 입금계좌 선택",|ui|{
+        let choices=client_account_choices(&accounts);
+        let selected=field(draft,"preferredAccountId").to_owned();
+        let selected_label=choices.iter()
+            .find(|(id,_)|id==&selected)
+            .map(|(_,label)|label.as_str())
+            .unwrap_or(CLIENT_ACCOUNT_EMPTY_LABEL);
+        let mut next_selected=selected.clone();
+        let width=ui.available_width();
+        components::management_dropdown(
+            ui,selected_label,width,true,"주 사용 입금계좌 선택",|menu|{
+                for (id,label) in &choices {
                     components::management_dropdown_option(
-                        ui,&mut selected,String::new(),"미지정");
-                    for account in &accounts {
-                        let id=field(account,"id").to_owned();
-                        let label=field(account,"name");
-                        components::management_dropdown_option(ui,&mut selected,id,label);
-                    }
-                });
-            draft["preferredAccountId"]=if selected.is_empty(){Value::Null}
-                else{json!(selected)};
+                        menu,&mut next_selected,id.clone(),label
+                    );
+                }
+            });
+        // Persist only an explicit selection. A stale legacy reference stays
+        // visible as unassigned until the user deliberately chooses an option.
+        if next_selected!=selected {
+            draft["preferredAccountId"]=if next_selected.is_empty(){Value::Null}
+                else{json!(next_selected)};
         }
         ui.horizontal_wrapped(|flags|{
             bool_edit(flags,draft,"shippingFeeExcluded","배송비 청구 제외");
