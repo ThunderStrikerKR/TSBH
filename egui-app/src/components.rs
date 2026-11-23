@@ -2841,7 +2841,18 @@ pub fn management_dropdown(
     ui:&mut Ui,label:&str,width:f32,enabled:bool,tooltip:&str,
     options:impl FnOnce(&mut Ui)
 )->Response {
-    management_dropdown_inner(ui,label,width,enabled,tooltip,false,options)
+    management_dropdown_inner(ui,label,width,enabled,tooltip,false,None,options)
+}
+/// Same management dropdown master, with an optional colored status mark.
+/// This only changes the glyph painting; popup placement, hover and row
+/// selection remain owned by the shared management dropdown.
+pub fn management_status_dropdown(
+    ui:&mut Ui,label:&str,width:f32,enabled:bool,tooltip:&str,
+    status_color:Color32,options:impl FnOnce(&mut Ui)
+)->Response {
+    management_dropdown_inner(
+        ui,label,width,enabled,tooltip,false,Some(status_color),options
+    )
 }
 
 /// Compact, two-option menus such as 선불 / 착불 never grow wider than their
@@ -2850,12 +2861,13 @@ pub fn management_dropdown_compact(
     ui:&mut Ui,label:&str,width:f32,enabled:bool,tooltip:&str,
     options:impl FnOnce(&mut Ui)
 )->Response {
-    management_dropdown_inner(ui,label,width,enabled,tooltip,true,options)
+    management_dropdown_inner(ui,label,width,enabled,tooltip,true,None,options)
 }
 
 fn management_dropdown_inner(
     ui:&mut Ui,label:&str,width:f32,enabled:bool,tooltip:&str,
-    compact:bool,options:impl FnOnce(&mut Ui)
+    compact:bool,indicator:Option<Color32>,
+    options:impl FnOnce(&mut Ui)
 )->Response {
     // Keep exact toolbar/cell width without stretching the subsequent action
     // or exceeding a narrow selector slot.
@@ -2886,13 +2898,21 @@ fn management_dropdown_inner(
     let caption=typography::management_control_text_galley(
         ui,label,ink
     );
+    let caption_x=rect.left()+if indicator.is_some(){
+        theme::SPACE_32
+    }else{theme::SPACE_12};
     let text_clip=Rect::from_min_max(
-        rect.min+Vec2::new(theme::SPACE_12,0.0),
-        egui::pos2((arrow_left-theme::SPACE_4).max(rect.left()+theme::SPACE_12),
-            rect.bottom())
+        egui::pos2(caption_x,rect.top()),
+        egui::pos2((arrow_left-theme::SPACE_4).max(caption_x),rect.bottom())
     );
+    if let Some(color)=indicator{
+        painter.circle_filled(
+            egui::pos2(rect.left()+theme::SPACE_16,rect.center().y),
+            4.0,color
+        );
+    }
     painter.with_clip_rect(text_clip).galley(
-        egui::pos2(rect.left()+theme::SPACE_12,
+        egui::pos2(caption_x,
             rect.center().y-caption.size().y/2.0
                 +typography::MANAGEMENT_DROPDOWN_TEXT_OPTICAL_Y),
         caption,ink
@@ -2979,6 +2999,40 @@ pub fn management_dropdown_option<T:PartialEq>(
         current,value,egui::RichText::new(label).color(Color32::TRANSPARENT)
     );
     management_dropdown_option_glyph(ui,&response,label,false);
+    if response.clicked(){
+        crate::floating_notice::dropdown_option_selected(ui.ctx());
+        ui.close();
+    }
+    response
+}
+
+/// A colored state row inside the SAME standard management menu.
+pub fn management_status_dropdown_option<T:PartialEq>(
+    ui:&mut Ui,current:&mut T,value:T,label:&str,color:Color32
+)->Response {
+    let response=ui.selectable_value(
+        current,value,egui::RichText::new(label).color(Color32::TRANSPARENT)
+    );
+    let row=response.rect;
+    let painter=ui.painter().with_clip_rect(row.shrink(2.0));
+    painter.circle_filled(
+        egui::pos2(row.left()+theme::SPACE_12,row.center().y),
+        4.0,color
+    );
+    let galley=ui.painter().layout_no_wrap(
+        label.to_owned(),
+        egui::FontId::proportional(typography::FONT_STANDARD_ACTION),
+        theme::TEXT
+    );
+    painter.galley(
+        egui::pos2(
+            row.left()+theme::SPACE_24,
+            row.top()+typography::management_dropdown_option_text_y(
+                row.height(),galley.size().y
+            )
+        ),
+        galley,theme::TEXT
+    );
     if response.clicked(){
         crate::floating_notice::dropdown_option_selected(ui.ctx());
         ui.close();
