@@ -4910,9 +4910,10 @@ mod shared_checkbox_contract_tests {
             .split("fn ").next().unwrap();
         assert!(message.contains("components::checkbox("));
         assert!(!message.contains("Checkbox::new("));
-        let regroup=main.split("fn show_regroup_confirmation(").nth(1)
-            .unwrap_or("");
-        assert!(regroup.contains("components::checkbox("));
+        let workflow=main.split("fn show_workflow_dialog(").nth(1).unwrap()
+            .split("\n    fn ").next().unwrap();
+        assert!(workflow.contains("components::checkbox("));
+        assert!(!workflow.contains("ui.checkbox("));
     }
 }
 
