@@ -15,6 +15,39 @@ fn displayed_phone(client:&Value)->&str {
     let phone=field(client,"phone");
     if phone.trim().is_empty(){field(client,"mobile")}else{phone}
 }
+
+const CLIENT_ACCOUNT_EMPTY_LABEL:&str="미지정 (상품군 추천 계좌 사용)";
+
+/// Settings accounts are stored as {id, bank, number, holder}; they do not
+/// have a "name" field. Keep only complete, identifiable accounts selectable.
+fn client_account_is_complete(account:&Value)->bool{
+    !field(account,"id").trim().is_empty()
+        && ["bank","number","holder"].iter()
+            .all(|key|!field(account,key).trim().is_empty())
+}
+
+fn client_account_display(account:&Value)->String{
+    format!("{} {} {}",
+        field(account,"bank").trim(),
+        field(account,"number").trim(),
+        field(account,"holder").trim()
+    )
+}
+
+/// Match React AccountPicker: the unassigned choice is always available,
+/// followed by complete accounts labelled with bank, number and holder.
+fn client_account_choices(accounts:&[Value])->Vec<(String,String)>{
+    let mut choices=vec![(
+        String::new(),CLIENT_ACCOUNT_EMPTY_LABEL.to_owned()
+    )];
+    choices.extend(accounts.iter()
+        .filter(|account|client_account_is_complete(account))
+        .map(|account|(
+            field(account,"id").to_owned(),
+            client_account_display(account)
+        )));
+    choices
+}
 fn label_edit(ui:&mut Ui,draft:&mut Value,key:&str,label:&str) {
     ui.vertical(|ui|{
         // React client-editor fields use a compact label/control gap;
