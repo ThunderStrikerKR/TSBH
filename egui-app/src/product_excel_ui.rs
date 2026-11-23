@@ -1,7 +1,7 @@
 //! Excel 관리 UI for ProductManager. File I/O stays on native worker threads;
 //! authoritative price/catalog changes belong to the existing Rust reducer.
-use crate::{components,gateway::BandoGateway,product_excel,settings_help,theme,typography};
-use eframe::egui::{self,Align,Context,Layout,Ui};
+use crate::{components,gateway::BandoGateway,product_excel,theme,typography};
+use eframe::egui::{self,Context};
 use serde_json::Value;
 use std::{path::PathBuf,sync::{Arc,mpsc::{self,Receiver,TryRecvError}}};
 
@@ -27,7 +27,6 @@ enum JobResult{
     Applied(Value),
 }
 pub struct ProductExcelUi {
-    open:bool,
     review:Option<Arc<Value>>,
     filename:String,
     filter:ReviewFilter,
@@ -39,7 +38,7 @@ pub struct ProductExcelUi {
 }
 impl Default for ProductExcelUi {
     fn default()->Self{
-        Self{open:false,review:None,filename:String::new(),filter:ReviewFilter::All,
+        Self{review:None,filename:String::new(),filter:ReviewFilter::All,
             approved:false,confirming:false,job:None,notice:None,error:None}
     }
 }
@@ -82,17 +81,9 @@ fn preview_file(_gateway:&dyn BandoGateway)->Result<JobResult,String>{
 }
 impl ProductExcelUi {
     pub fn busy(&self)->bool{self.job.is_some()}
-    pub fn open(&self)->bool{self.open}
     pub fn has_modal(&self)->bool{self.review.is_some()}
     pub fn blocks_navigation(&self)->bool{
         self.busy()||self.review.is_some()
-    }
-    pub fn toggle(&mut self){
-        if !self.busy()&&!self.has_modal(){
-            self.open=!self.open;
-            self.error=None;
-            self.notice=None;
-        }
     }
     fn start<F>(&mut self,ctx:&Context,job:F)
         where F:FnOnce()->Result<JobResult,String>+Send+'static {
@@ -148,45 +139,58 @@ impl ProductExcelUi {
         }
         None
     }
-    pub fn show_panel(
-        &mut self,ui:&mut Ui,gateway:Arc<dyn BandoGateway>,allowed:bool
+    /// Anchored menu overlays the product table without taking layout space.
+    /// Popup owns outside-click/Escape dismissal and closes after either action.
+    pub fn show_menu(
+        &mut self,trigger:&egui::Response,gateway:Arc<dyn BandoGateway>,
+        allowed:bool
     ){
-        if !self.open{return;}
+        // Result messages must remain visible after the popup closes.
         crate::floating_notice::sync(
-            ui.ctx(),"products.excel.result","products.excel",
+            trigger.ctx(),"products.excel.result","products.excel",
             crate::floating_notice::Tone::Success,self.notice.as_deref()
         );
         crate::floating_notice::sync(
-            ui.ctx(),"products.excel.error","products.excel",
+            trigger.ctx(),"products.excel.error","products.excel",
             crate::floating_notice::Tone::Error,
             if self.review.is_none(){self.error.as_deref()}else{None}
         );
-        theme::section_frame().show(ui,|panel|{
-            panel.horizontal(|heading|{
-                heading.label(typography::section_heading("상품 Excel 관리"));
-                settings_help::icon(heading,"상품 Excel 관리");
-            });
-            panel.horizontal_wrapped(|actions|{
+        egui::Popup::menu(trigger)
+            .align(egui::RectAlign::BOTTOM_END)
+            .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
+            .show(|menu|{
+                crate::floating_notice::dropdown_popup_trigger(
+                    menu.ctx(),trigger.rect
+                );
+                let width=300.0_f32.min(
+                    (menu.ctx().screen_rect().width()-theme::SPACE_24).max(1.0)
+                );
+                menu.set_min_width(width);
+                menu.set_max_width(width);
+                menu.spacing_mut().item_spacing.y=theme::SPACE_4;
                 let enabled=!self.busy()&&allowed;
-                if theme::action(actions,
-                    "현재 상품 전체 Excel 다운로드",theme::ButtonRole::Standard,enabled
+                if theme::action(
+                    menu,"현재 상품 전체 Excel 다운로드",
+                    theme::ButtonRole::Standard,enabled
                 ).clicked(){
                     let native=Arc::clone(&gateway);
-                    self.start(actions.ctx(),move||export_file(native.as_ref()));
+                    crate::floating_notice::dropdown_option_selected(menu.ctx());
+                    self.start(menu.ctx(),move||export_file(native.as_ref()));
+                    menu.close();
                 }
-                if theme::action(actions,
-                    "Excel 업로드 / 전체 변경 검토",theme::ButtonRole::Standard,enabled
+                if theme::action(
+                    menu,"Excel 업로드 / 전체 변경 검토",
+                    theme::ButtonRole::Standard,enabled
                 ).clicked(){
                     let native=Arc::clone(&gateway);
-                    self.start(actions.ctx(),move||preview_file(native.as_ref()));
+                    crate::floating_notice::dropdown_option_selected(menu.ctx());
+                    self.start(menu.ctx(),move||preview_file(native.as_ref()));
+                    menu.close();
+                }
+                if self.busy(){
+                    menu.label(typography::caption("상품 Excel 작업 중…"));
                 }
             });
-            if self.busy(){
-                panel.label(typography::caption("상품 Excel 작업 중…"));
-            }
-            // One-off completion/error feedback is a shared floating
-            // overlay; validation within the review dialog stays inline.
-        });
     }
     fn can_apply(&self)->bool{
         let Some(review)=self.review.as_ref() else{return false};
