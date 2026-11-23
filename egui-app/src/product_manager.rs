@@ -28,6 +28,21 @@ fn field<'a>(row: &'a Value, key: &str) -> &'a str {
     row.get(key).and_then(Value::as_str).unwrap_or("")
 }
 
+/// React PriceCell selects the existing amount when a cell first receives
+/// focus. Match that behavior so typing replaces the cell value instead of
+/// unexpectedly inserting digits in the middle of the old amount.
+fn select_all_price_text(ui:&Ui,response:&egui::Response,text:&str){
+    if let Some(mut state)=egui::TextEdit::load_state(ui.ctx(),response.id){
+        if let Some(mut range)=state.cursor.char_range(){
+            range.primary=egui::text::CCursor::new(text.chars().count());
+            range.secondary=egui::text::CCursor::new(0);
+            state.cursor.set_char_range(Some(range));
+            state.store(ui.ctx(),response.id);
+            ui.ctx().request_repaint();
+        }
+    }
+}
+
 /// Match the current React sale-status contract. The catalog 'active' bit
 /// denotes legacy activation, while 'saleStatus' holds the four user-facing
 /// sales states; do not derive sold-out status from 'active'.
@@ -654,7 +669,6 @@ impl ProductManager {
                         None
                     }else{
                         Some(category_notice.unwrap_or(match job.kind.as_str(){
-                            "set_price"=>"가격 변경을 저장했습니다.",
                             "upsert_product"=>"상품 상세 정보를 저장했습니다.",
                             "archive_product"=>"상품을 삭제하고 과거 기록을 보존했습니다.",
                             "change_category"=>"카테고리 변경사항을 저장했습니다.",
@@ -1376,6 +1390,11 @@ impl ProductManager {
                                                                 inputs,&mut entry.input,true,"원",
                                                                 theme::SPACE_8-theme::SPACE_4/2.0
                                                             );
+                                                            if response.gained_focus(){
+                                                                select_all_price_text(
+                                                                    inputs,&response,&entry.input
+                                                                );
+                                                            }
                                                             crate::floating_notice::sized_text_caret(
                                                                 inputs,"products.price",&response,
                                                                 &entry.input,typography::numeric_editor_font(),
@@ -2474,6 +2493,23 @@ mod tests {
         assert!(!editor.contains("theme::action"));
         assert!(source.contains("self.price_write_queue.push_back("));
         assert!(source.contains("self.launch_next_price_write(ctx.clone())"));
+    }
+    #[test]
+    fn focused_price_cell_selects_existing_amount_for_direct_replacement(){
+        let ctx=Context::default();
+        let mut value="15,000".to_owned();
+        let mut id=None;
+        let _=ctx.run(egui::RawInput::default(),|ctx|{
+            egui::CentralPanel::default().show(ctx,|ui|{
+                let response=ui.add(egui::TextEdit::singleline(&mut value));
+                id=Some(response.id);
+                select_all_price_text(ui,&response,&value);
+            });
+        });
+        let state=egui::TextEdit::load_state(&ctx,id.unwrap()).unwrap();
+        let range=state.cursor.char_range().unwrap();
+        assert_eq!(range.primary.index,value.chars().count());
+        assert_eq!(range.secondary.index,0);
     }
     #[test]
     fn spreadsheet_price_commits_do_not_show_per_cell_success_popup(){
