@@ -938,6 +938,12 @@ pub fn kakao_slot_frame() -> Frame {
         .inner_margin(0)
 }
 
+/// Unbordered preview surface for generated or copy-ready text. Keep the
+/// INPUT fill and 12pt inset shared instead of rebuilding a local Frame.
+pub fn preview_surface_frame()->Frame{
+    Frame::new().fill(INPUT).inner_margin(SPACE_12 as i8)
+}
+
 /// Border and rounding belong to the reusable source-document surface.
 /// The editor's own frame is disabled so its square corners cannot cover
 /// the approved rounded rect below the dealer card.
