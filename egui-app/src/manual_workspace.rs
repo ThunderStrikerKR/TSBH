@@ -1777,8 +1777,8 @@ mod manual_workspace_modal_routing_tests {
         assert_eq!(keys[5],(0,Some("i1"),"product"));
         assert_eq!(keys[6],(0,Some("i1"),"quantity"));
         assert_eq!(keys[7],(0,Some("i1"),"unitPrice"));
-        assert_eq!(keys[11],(0,Some("i2"),"unitPrice"));
-        assert_eq!(keys[12],(1,None,"name"));
+        assert_eq!(keys[10],(0,Some("i2"),"unitPrice"));
+        assert_eq!(keys[11],(1,None,"name"));
     }
 
     #[test]
