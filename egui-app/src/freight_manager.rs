@@ -834,9 +834,6 @@ impl FreightManager {
         ui.add_space(theme::SPACE_12);
         let (Some(state), Some(projection)) = (self.state.as_ref(), self.projection.as_ref())
         else {
-            if self.receiver.is_some() {
-                ui.label(typography::caption("운임 기준을 불러오는 중입니다."));
-            }
             return;
         };
         let shipping = &state["shipping"];
