@@ -221,7 +221,6 @@ impl ItemEditor{
                 if let Some(error)=&self.error{
                     ui.label(typography::status(error,theme::DANGER));
                 }
-                if busy{ui.label(typography::caption("상품 변경 중"));}
                 ui.add_space(theme::SPACE_16);
                 components::modal_action_row_split(
                     ui,
