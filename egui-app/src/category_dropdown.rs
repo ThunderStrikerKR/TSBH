@@ -270,6 +270,33 @@ fn fitted_crumb_widths(intrinsic:&[f32],budget:f32)->Vec<f32>{
         min_width+(width-min_width)*remaining/flexible
     ).collect()
 }
+/// The Back control uses the shared management-action typography and colors,
+/// with the same 36pt hit height as breadcrumbs and the Primary Apply action.
+fn category_back_button(ui:&mut Ui,enabled:bool)->Response{
+    let (fill,ink,border)=if enabled{
+        (theme::RAISED,theme::TEXT,theme::BORDER)
+    }else{
+        (theme::DISABLED_ACTION_BG,theme::DISABLED_ACTION_TEXT,
+            theme::DISABLED_ACTION_BORDER)
+    };
+    let response=ui.add_enabled(
+        enabled,
+        egui::Button::new(typography::action_label(
+            "← 상위",typography::FONT_STANDARD_ACTION,false,ink
+        ))
+            .min_size(Vec2::new(
+                theme::CATEGORY_EXPLORER_BACK_WIDTH,
+                theme::CATEGORY_EXPLORER_CRUMB_HEIGHT
+            ))
+            .fill(fill)
+            .stroke(Stroke::new(theme::SOFT_DIVIDER_WIDTH,border))
+            .corner_radius(theme::CONTROL_RADIUS)
+    );
+    if enabled{
+        theme::paint_button_hover(ui,&response,theme::CONTROL_RADIUS as f32);
+    }
+    response
+}
 fn crumbs_row(
     ui:&mut Ui,state:&mut ExplorerState,index:&HashMap<&str,&CategoryNode>,
     selected:&mut String,enabled:bool,allow_empty:bool,changed:&mut bool
@@ -282,12 +309,14 @@ fn crumbs_row(
     let shown_count=shown_category_count(len);
     let hidden=len-shown_count;
     let visible=path[hidden..].to_vec();
-    let apply_width=70.0;
-    // Include the 4pt gap between controls and all separator labels.
-    // The Primary action's reserved slot never gets displaced by a name.
+    let apply_width=theme::CATEGORY_EXPLORER_APPLY_WIDTH;
+    // Reserve all fixed-width controls, separators and their 4pt gaps BEFORE
+    // fitting category names. Back stays at far left; Apply stays at far right.
     let separators=visible.len()+usize::from(hidden>0);
-    let widget_count=2+visible.len()+2*separators+usize::from(hidden>0);
-    let fixed=42.0+if hidden>0{31.0}else{0.0}
+    let widget_count=3+visible.len()+separators+usize::from(hidden>0);
+    let fixed=theme::CATEGORY_EXPLORER_BACK_WIDTH
+        +theme::CATEGORY_EXPLORER_ROOT_WIDTH
+        +if hidden>0{31.0}else{0.0}
         +separators as f32*10.0+apply_width+theme::SPACE_8
         +widget_count.saturating_sub(1) as f32*theme::SPACE_4;
     let budget=(row_width-fixed).max(0.0);
@@ -307,11 +336,14 @@ fn crumbs_row(
     let mut apply=false;
     ui.horizontal(|bar|{
         bar.spacing_mut().item_spacing.x=theme::SPACE_4;
+        if category_back_button(bar,!path.is_empty()).clicked(){
+            go_to=Some(path[..path.len()-1].to_vec());
+        }
         let role=if selected.is_empty() && allow_empty {
             CrumbVisual::Applied
         }else if path.is_empty(){CrumbVisual::Current}
             else{CrumbVisual::Ordinary};
-        if crumb(bar,"전체",42.0,role).clicked(){
+        if crumb(bar,"전체",theme::CATEGORY_EXPLORER_ROOT_WIDTH,role).clicked(){
             go_to=Some(Vec::new());
         }
         if hidden>0{
@@ -334,10 +366,11 @@ fn crumbs_row(
         }
         let spacer=(bar.available_width()-apply_width-theme::SPACE_4).max(0.0);
         if spacer>0.0 {bar.add_space(spacer);}
-        if theme::action(
+        if theme::action_with_min_width(
             bar,"적용",theme::ButtonRole::Primary,
             enabled && (allow_empty || !path.is_empty())
-                && path.last().map(String::as_str).unwrap_or("")!=selected.as_str()
+                && path.last().map(String::as_str).unwrap_or("")!=selected.as_str(),
+            theme::CATEGORY_EXPLORER_APPLY_WIDTH
         ).clicked(){apply=true;}
     });
     if toggle_ancestors{state.ancestors_open=!state.ancestors_open;}
@@ -372,18 +405,8 @@ fn menu_body(
     if !search_has_focus && menu.input(|i|i.key_pressed(egui::Key::ArrowLeft)){
         state.path.pop();state.ancestors_open=false;
     }
-    menu.horizontal(|nav|{
-        let can_go_back=!state.path.is_empty();
-        if theme::action(nav,"← 상위",theme::ButtonRole::Standard,can_go_back)
-            .clicked(){
-            state.path.pop();state.search.clear();state.ancestors_open=false;
-        }
-        nav.with_layout(egui::Layout::right_to_left(Align::Center),|right|{
-            right.label(typography::caption(&format!(
-                "{}단계",state.path.len()
-            )));
-        });
-    });
+    // Navigation lives beside "전체" in the fixed footer. No top Back row
+    // or depth label: the search field is followed directly by the list.
     components::soft_divider(menu);
     let searching=!state.search.trim().is_empty();
     let items=if searching{
@@ -602,7 +625,10 @@ mod tests{
             .split("fn crumb(").next().unwrap();
         assert!(!renderer.contains("52.0"));
         assert!(!renderer.contains("rect.top()+37.0"));
-        assert!(source.contains("category_option_row(\n                    list,node,index,&path,list_width,selected,searching"));
+        let list=source.split("            for node in items{").nth(1).unwrap()
+            .split("    if let Some(path)=next_path{").next().unwrap();
+        assert!(list.contains("category_option_row("));
+        assert!(list.contains("list,node,index,&path,list_width,selected,searching"));
     }
     #[test]
     fn path_search_row_shows_leaf_once_with_muted_ancestors(){
@@ -630,9 +656,43 @@ mod tests{
     }
     #[test]
     fn fixed_popup_width_is_thirty_percent_wider_than_previous_design(){
-        assert_eq!(theme::CATEGORY_EXPLORER_POPUP_WIDTH,546.0);
+        assert_eq!(theme::CATEGORY_EXPLORER_POPUP_WIDTH,655.0);
         let source=include_str!("category_dropdown.rs");
         assert!(source.contains("menu.set_width(popup_width);"));
+    }
+    #[test]
+    fn footer_back_root_and_apply_have_the_same_control_height(){
+        assert_eq!(theme::CATEGORY_EXPLORER_CRUMB_HEIGHT,
+            theme::ACTION_PRIMARY_HEIGHT);
+        let ctx=egui::Context::default();
+        let mut heights=Vec::new();
+        let _=ctx.run(egui::RawInput::default(),|ctx|{
+            egui::CentralPanel::default().show(ctx,|ui|{
+                heights.push(category_back_button(ui,true).rect.height());
+                heights.push(crumb(
+                    ui,"전체",theme::CATEGORY_EXPLORER_ROOT_WIDTH,
+                    CrumbVisual::Ordinary
+                ).rect.height());
+                heights.push(theme::action_with_min_width(
+                    ui,"적용",theme::ButtonRole::Primary,true,
+                    theme::CATEGORY_EXPLORER_APPLY_WIDTH
+                ).rect.height());
+            });
+        });
+        assert_eq!(heights,[36.0,36.0,36.0]);
+    }
+    #[test]
+    fn navigation_only_appears_before_all_category_in_the_footer(){
+        let source=include_str!("category_dropdown.rs");
+        let footer=source.split("fn crumbs_row(").nth(1).unwrap()
+            .split("fn menu_body(").next().unwrap();
+        let back=footer.find("category_back_button(bar").unwrap();
+        let all=footer.find("crumb(bar,\"전체\"").unwrap();
+        assert!(back<all);
+        let body=source.split("fn menu_body(").nth(1).unwrap()
+            .split("pub fn category_dropdown(").next().unwrap();
+        assert!(!body.contains("let can_go_back="));
+        assert!(!body.contains("\"{}단계\""));
     }
     #[test]
     fn category_list_reserves_six_rows_regardless_of_item_count(){
