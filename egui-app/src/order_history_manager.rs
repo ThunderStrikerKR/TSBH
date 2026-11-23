@@ -1238,19 +1238,25 @@ impl OrderHistoryManager {
                     ui.label(typography::caption(&format!(
                         "{} / 2,000자",editor.draft.chars().count()
                     )));
-                    let permission_message=(!writable).then_some(
-                        "현재 연결은 운영 메모 저장 권한이 없습니다."
-                    );
-                    let permission_width=ui.available_width();
-                    components::fixed_status_slot(
-                        ui,permission_width,typography::METADATA_LINE_HEIGHT,
-                        permission_message,permission_message,theme::MUTED
-                    );
-                    let error_width=ui.available_width();
-                    components::fixed_status_slot(
-                        ui,error_width,typography::METADATA_LINE_HEIGHT,
-                        self.memo_error.as_deref(),self.memo_error.as_deref(),
+                    let mut status_messages=Vec::new();
+                    if !writable{
+                        status_messages.push(
+                            "현재 연결은 운영 메모 저장 권한이 없습니다.".to_owned()
+                        );
+                    }
+                    if let Some(error)=self.memo_error.as_ref(){
+                        status_messages.push(error.clone());
+                    }
+                    let status_text=status_messages.join(" · ");
+                    let status_color=if self.memo_error.is_some(){
                         theme::DANGER
+                    }else{theme::MUTED};
+                    let status_width=ui.available_width();
+                    components::fixed_status_slot(
+                        ui,status_width,typography::METADATA_LINE_HEIGHT,
+                        (!status_text.is_empty()).then_some(status_text.as_str()),
+                        (!status_text.is_empty()).then_some(status_text.as_str()),
+                        status_color
                     );
                     ui.add_space(theme::SPACE_12);
                     components::modal_action_row(ui,|bar|{
