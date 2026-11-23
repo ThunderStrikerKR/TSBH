@@ -3,7 +3,7 @@
 **기준 저장소:** `ThunderStrikerKR/TSBH`  
 **기준 브랜치:** `main`  
 **조사 범위:** React/TypeScript 운영 화면과 Rust/egui 화면의 직접 편집형 셀  
-**판정:** 공통 이동 계약과 1차 화면 어댑터 적용 완료. Windows 실화면 검증 및 일부 편집 취소·undo 통합은 미완료.
+**판정:** 공통 이동 계약·React 공통 키보드 핸들러·화면별 어댑터 적용 완료. Windows 실화면 검증 및 일부 편집 취소·undo 통합은 미완료.
 
 ## 1. 적용 대상으로 판정한 셀
 
@@ -19,7 +19,7 @@
 
 ## 2. 공통 구현
 
-- React 공통 모듈: `src/ui/cell-navigation.ts`
+- React 공통 모듈: `src/ui/cell-navigation.ts` (`handleCellNavigationKey`가 IME·키 분류·경계·저장 콜백·포커스 이동을 공통 처리)
 - Rust 공통 모듈: `egui-app/src/cell_navigation.rs`
 - 계약 문서: `docs/cell-editing-contract.md`
 
@@ -51,8 +51,8 @@
 
 | 검증 | 결과 | 증거 |
 | --- | --- | --- |
-| TypeScript `tsc --noEmit` | PASS | [Cell navigation contract run](https://github.com/ThunderStrikerKR/TSBH/actions/runs/45257741678) |
-| React 공통 계약 테스트 | PASS, 5 tests | [Cell navigation contract run](https://github.com/ThunderStrikerKR/TSBH/actions/runs/45257741678) |
+| TypeScript `tsc --noEmit` | PASS | [Cell navigation contract run](https://github.com/ThunderStrikerKR/TSBH/actions/runs/45259377134) |
+| React 공통 계약 테스트 | PASS, 8 tests | [Cell navigation contract run](https://github.com/ThunderStrikerKR/TSBH/actions/runs/45257741678) |
 | 가격 셀 기존 회귀 시나리오 | PASS | [Cell navigation contract run](https://github.com/ThunderStrikerKR/TSBH/actions/runs/45257741678) |
 | React 가격 저장·비동기 회귀 | PASS | [Cell navigation contract run](https://github.com/ThunderStrikerKR/TSBH/actions/runs/45257741678) |
 | egui 전체 `cargo check` | PASS | [egui contract run](https://github.com/ThunderStrikerKR/TSBH/actions/runs/45257427206) |
