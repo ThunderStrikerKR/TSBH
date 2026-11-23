@@ -1,5 +1,6 @@
 //! Shared spreadsheet-style cell navigation contract for native egui grids.
 //! Each screen supplies explicit row/column/order metadata and uses one key decoder.
+use eframe::egui;
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum CellNavigationKey { Left, Right, Up, Down, Next, Previous }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
