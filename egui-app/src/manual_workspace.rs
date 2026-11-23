@@ -979,6 +979,7 @@ impl ManualWorkspace {
                 EscapeAction::CloseProductSearch=>self.product_search=None,
                 EscapeAction::CancelShipmentRemoval=>self.remove_recipient_pending=None,
                 EscapeAction::CancelReset=>self.reset_pending=false,
+                EscapeAction::CancelCompletion=>self.complete_pending=false,
                 EscapeAction::CancelDiscard=>self.confirm_discard=false,
                 EscapeAction::RevertCell=>{
                     self.edit_text=self.current_value();
