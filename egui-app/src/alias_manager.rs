@@ -357,10 +357,10 @@ impl AliasManager {
                                 // Reserve the third caption line for EVERY row;
                                 // its height and the next alias's Y coordinate
                                 // must never change after warnings arrive.
+                                let slot_width=info.min_rect().width().max(1.0);
                                 let (slot,hit)=info.allocate_exact_size(
                                     egui::vec2(
-                                        info.min_rect().width().max(1.0),
-                                        typography::FONT_METADATA+theme::SPACE_4
+                                        slot_width,typography::FONT_METADATA+theme::SPACE_4
                                     ),egui::Sense::hover()
                                 );
                                 if let Some(issues)=warnings.get(id).filter(|v|!v.is_empty()){
