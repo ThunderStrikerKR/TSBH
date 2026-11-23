@@ -11,12 +11,11 @@ test("price cells autosave on blur and expose no per-cell Save/Cancel controls",
   const blur = cell.slice(cell.indexOf("onBlur={() => {"), cell.indexOf("onKeyDown={(e) => {"));
   assert.ok(blur.length > 0 && blur.length < 1200);
   assert.match(blur, /if \(pending\) \{\s*void save\(\);/);
-  assert.match(cell, /if \(e\.key === "Enter"\) offset = e\.shiftKey \? -3 : 3;/);
-  assert.match(cell, /else if \(e\.key === "Tab"\) offset = e\.shiftKey \? -1 : 1;/);
-  assert.match(cell, /else if \(e\.key === "ArrowDown"\) offset = 3;/);
-  assert.match(cell, /else if \(e\.key === "ArrowUp"\) offset = -3;/);
+  assert.match(blur, /if \(pending\) \{\s*void save\(\);/);
+  assert.match(cell, /findCellNavigationTarget\(\s*e\.currentTarget, e\.key, e\.shiftKey, "same-column"/);
+  assert.match(cell, /isImeComposing\(e\)/);
+  assert.match(cell, /focusCellElement\(target\)/);
   assert.match(cell, /if \(e\.key === "Escape"\)[\s\S]*?cancel\(\)/);
-  assert.match(cell, /const findPriceCell = \(offset: number\)/);
   assert.doesNotMatch(cell, /price-cell-actions|price-cell-save|price-cell-cancel|<button/);
   assert.doesNotMatch(css, /price-cell-actions|price-cell-save|price-cell-cancel/);
   assert.match(css, /\.price-cell\.pending/);

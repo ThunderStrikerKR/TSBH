@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { readableError } from "./errors";
+import { findCellNavigationTarget, focusCellElement, isCellNavigationKey, isImeComposing } from "./ui/cell-navigation";
 import type { Price } from "./types";
 
 type ParsedPrice =
@@ -12,10 +13,16 @@ export function PriceCell({
   enabled,
   onSave,
   onPendingChange,
+  navigationRow,
+  navigationColumn,
+  navigationOrder,
 }: {
   value: Price;
   label: string;
   enabled: boolean;
+  navigationRow: number;
+  navigationColumn: number;
+  navigationOrder: number;
   onSave: (value: Price, expected: Price) => Promise<void>;
   onPendingChange?: (pending: boolean) => void;
 }) {
@@ -155,17 +162,6 @@ export function PriceCell({
     ? optimisticCommit.current.next
     : value;
 
-  const findPriceCell = (offset: number) => {
-    const current = input.current;
-    const body = current?.closest("tbody");
-    if (!current || !body) return null;
-    const cells = Array.from(
-      body.querySelectorAll<HTMLInputElement>("input[data-price-cell]"),
-    ).filter((cell) => !cell.disabled && !cell.readOnly);
-    const index = cells.indexOf(current);
-    return index < 0 ? null : cells[index + offset] ?? null;
-  };
-
   return (
     <div
       className={
@@ -182,6 +178,10 @@ export function PriceCell({
         ref={input}
         aria-label={label}
         data-price-cell
+        data-cell-nav-id={`price:${navigationRow}:${navigationColumn}`}
+        data-cell-nav-row={navigationRow}
+        data-cell-nav-column={navigationColumn}
+        data-cell-nav-order={navigationOrder}
         inputMode="numeric"
         readOnly={!enabled || busy}
         title={
@@ -236,37 +236,36 @@ export function PriceCell({
           }
         }}
         onKeyDown={(e) => {
-          if (!enabled || busy) return;
+          if (!enabled || busy || isImeComposing(e)) return;
           if (e.key === "Escape") {
             e.preventDefault();
             cancel();
             return;
           }
-
-          let offset: number | undefined;
-          if (e.key === "Enter") offset = e.shiftKey ? -3 : 3;
-          else if (e.key === "Tab") offset = e.shiftKey ? -1 : 1;
-          else if (e.key === "ArrowDown") offset = 3;
-          else if (e.key === "ArrowUp") offset = -3;
-          if (offset === undefined) return;
-
-          const target = findPriceCell(offset);
+          if (!isCellNavigationKey(e.key)) return;
+          const target = findCellNavigationTarget(
+            e.currentTarget, e.key, e.shiftKey, "same-column",
+          );
           if (e.key === "Tab" && !target) return;
-          if (
-            (e.key === "ArrowDown" || e.key === "ArrowUp") &&
-            !target
-          ) {
+          if (target) {
+            e.preventDefault();
+            if (!parseDraft().ok) {
+              showValidationError();
+              return;
+            }
+            void save();
+            focusCellElement(target);
             return;
           }
-
-          e.preventDefault();
-          if (!parseDraft().ok) {
-            showValidationError();
-            return;
+          if (e.key !== "Tab") e.preventDefault();
+          if (e.key === "Enter") {
+            if (!parseDraft().ok) {
+              showValidationError();
+              return;
+            }
+            void save();
+            input.current?.blur();
           }
-          void save();
-          if (target) target.focus();
-          else input.current?.blur();
         }}
       />
       <small

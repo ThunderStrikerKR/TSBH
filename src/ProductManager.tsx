@@ -358,9 +358,10 @@ export function ProductManager({
                       <th>상세</th>
                     </tr>
                   </thead>
-                  <tbody>
+                  <tbody data-cell-nav-grid="product-prices">
                     {products.flatMap((p) =>
-                      p.variants.map((v, index) => (
+                      p.variants.map((v) => ({ product: p, variant: v })),
+                    ).map(({ product: p, variant: v }, rowIndex) => (
                         <tr key={v.id}>
                           <td>
                             <div className="product-title-line" title={[p.name, p.subtitle].filter(Boolean).join(" / ")}>
@@ -374,11 +375,14 @@ export function ProductManager({
                                 )}
                             </div>
                           </td>
-                          {(["wholesale", "semi", "retail"] as const).map((tier) => (
+                          {(["wholesale", "semi", "retail"] as const).map((tier, columnIndex) => (
                             <td key={tier}>
                               <PriceCell
                                 key={v.id + ":" + tier + ":" + priceResetEpoch}
                                 enabled={priceMode}
+                                navigationRow={rowIndex}
+                                navigationColumn={columnIndex}
+                                navigationOrder={rowIndex * 3 + columnIndex}
                                 onPendingChange={(pending) => markPricePending(v.id + ":" + tier, pending)}
                                 value={v[tier]}
                                 label={`${p.name} ${variantLabel(v)} ${{ wholesale: "도매가", semi: "반도매가", retail: "소매가" }[tier]}`}
@@ -404,8 +408,7 @@ export function ProductManager({
                             <button onClick={() => openDetail(p)}>상세 관리</button>
                           </td>
                         </tr>
-                      )),
-                    )}
+                    ))}
                   </tbody>
                 </ManagementTable>
                 {!products.length && <EmptyState compact title={search || missing || category || brand ? "조건에 맞는 상품이 없습니다." : "등록된 상품이 없습니다."} />}
