@@ -320,11 +320,12 @@ impl PriceDraft {
     /// When the edited text is numerically identical to the committed value,
     /// restore the canonical representation on blur (e.g. 0 on an empty cell
     /// means "unregistered", not a visible literal zero).
+    fn reset_to_original(&mut self){
+        self.input=self.original.map(|amount|amount.to_string())
+            .unwrap_or_default();
+    }
     fn normalize_if_unchanged(&mut self){
-        if !self.dirty(){
-            self.input=self.original.map(|amount|amount.to_string())
-                .unwrap_or_default();
-        }
+        if !self.dirty(){self.reset_to_original();}
     }
     fn dirty(&self)->bool{
         // Historic price rows may store literal 0. Their initial "0" must
@@ -1422,7 +1423,7 @@ impl ProductManager {
                                                                 &&(enter_pressed||tab_pressed
                                                                     ||up_pressed||down_pressed);
                                                             if escape{
-                                                                entry.normalize_if_unchanged();
+                                                                entry.reset_to_original();
                                                                 self.error=None;
                                                             }else if keyboard_commit{
                                                                 let offset=if tab_pressed{
@@ -2446,6 +2447,9 @@ mod tests {
         let mut historical_zero=PriceDraft{original:Some(0),input:"0".into()};
         historical_zero.normalize_if_unchanged();
         assert_eq!(historical_zero.input,"0");
+        let mut cancelled=PriceDraft{original:Some(15000),input:"19000".into()};
+        cancelled.reset_to_original();
+        assert_eq!(cancelled.input,"15000");
     }
     #[test]
     fn committed_price_draft_advances_before_stale_query_rows_repaint(){
@@ -2517,6 +2521,7 @@ mod tests {
         assert!(editor.contains("egui::Key::ArrowUp"));
         assert!(editor.contains("egui::Key::ArrowDown"));
         assert!(editor.contains("egui::Key::Escape"));
+        assert!(editor.contains("entry.reset_to_original()"));
         assert!(editor.contains("response.surrender_focus()"));
         assert!(editor.contains("response.request_focus()"));
         assert!(!editor.contains("Popup::"));
