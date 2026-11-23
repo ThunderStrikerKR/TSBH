@@ -1087,7 +1087,9 @@ impl ProductManager {
                         }else{self.changed(filter.ctx());}
                     }
                     let before_missing=self.missing;
-                    if filter.checkbox(&mut self.missing,"가격 미등록만").changed(){
+                    if components::checkbox(
+                        filter,&mut self.missing,"가격 미등록만",true
+                    ).changed(){
                         if self.has_pending_prices(){
                             self.missing=before_missing;
                             self.error=Some("가격 입력 저장이 완료된 뒤 검색 조건을 변경할 수 있습니다.".into());
