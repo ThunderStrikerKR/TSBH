@@ -481,6 +481,7 @@ pub struct ManualWorkspace {
     last_action:Option<String>,
     action_pending:bool,
     confirm_discard:bool,
+    complete_pending:bool,
     product_search:Option<ProductSearch>,
     remove_recipient_pending:Option<String>,
     reset_pending:bool,
