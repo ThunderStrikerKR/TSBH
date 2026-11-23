@@ -9,6 +9,7 @@ use std::{sync::{Arc,mpsc::{self,Receiver}},thread,time::{SystemTime,UNIX_EPOCH}
 use eframe::egui::{self,Context};
 use serde_json::{json,Value};
 use crate::{
+    cell_navigation::{self,CellNavigationCell,CellNavigationKey},
     gateway::{BandoGateway,ReadOperation},
     preview_store::WorkingReception,
     theme::{self,ButtonRole},
@@ -80,14 +81,6 @@ struct ManualHistoryFrame{
     selected_field:String,
 }
 
-#[derive(Clone,Copy,Debug,PartialEq,Eq)]
-enum ManualNavigation{
-    Next,
-    Previous,
-    RowUp,
-    RowDown,
-}
-
 #[derive(Clone,Debug,PartialEq,Eq)]
 struct ManualCellTarget{
     row:usize,
@@ -143,6 +136,9 @@ fn push_manual_history(
     if history.len()>100 {history.remove(0);}
 }
 
+fn manual_cell_key(cell:&ManualCellTarget)->String{
+    format!("{}:{}:{}",cell.row,cell.item.as_deref().unwrap_or(""),cell.field)
+}
 fn manual_cell_targets(model:&Value)->Vec<ManualCellTarget>{
     let mut cells=Vec::new();
     for (row_index,row) in list(model,"rows").iter().enumerate(){
@@ -477,7 +473,7 @@ pub struct ManualWorkspace {
     edit_text:String,
     focus_editor:bool,
     history:Vec<ManualHistoryFrame>,
-    advance_after_apply:Option<ManualNavigation>,
+    advance_after_apply:Option<CellNavigationKey>,
     last_action:Option<String>,
     action_pending:bool,
     confirm_discard:bool,
@@ -707,46 +703,41 @@ impl ManualWorkspace {
         self.action_pending=false;
     }
 
-    fn move_selection(&mut self,navigation:ManualNavigation){
+    fn move_selection(&mut self,navigation:CellNavigationKey){
         let Some(model)=self.model.as_ref() else{return};
         let cells=manual_cell_targets(model);
         if cells.is_empty(){return;}
-        let current=cells.iter().position(|cell|
-            cell.row==self.selected_recipient &&
-            cell.item==self.selected_item &&
-            cell.field==self.selected_field
-        );
-        let target=match navigation{
-            ManualNavigation::Next=>current
-                .and_then(|index|cells.get((index+1).min(cells.len()-1))),
-            ManualNavigation::Previous=>current
-                .and_then(|index|cells.get(index.saturating_sub(1))),
-            ManualNavigation::RowUp|ManualNavigation::RowDown=>{
-                let direction=if navigation==ManualNavigation::RowUp{-1isize}else{1};
-                let row_index=self.selected_recipient as isize+direction;
-                if row_index<0{return;}
-                let row=list(model,"rows").get(row_index as usize);
-                let Some(row)=row else{return};
-                let item=if let Some(item_id)=self.selected_item.as_deref(){
-                    let current_index=list(model,"rows").get(self.selected_recipient)
-                        .map(|current|list(current,"items").iter().position(|item|
-                            text(item,"id")==item_id
-                        )).flatten();
-                    current_index.and_then(|index|
-                        list(row,"items").get(index).map(|item|text(item,"id").to_owned())
-                    )
-                }else{None};
-                let Some(candidate)=cells.iter().find(|cell|
-                    cell.row==row_index as usize &&
-                    cell.item==item &&
-                    cell.field==self.selected_field
-                )else{return};
-                Some(candidate)
+        let pending=self.pending_quantity_cell();
+        let mut row_columns=vec![0usize;list(model,"rows").len()];
+        let navigation_cells:Vec<CellNavigationCell>=cells.iter().enumerate().map(
+            |(order,cell)|{
+                let column=row_columns.get_mut(cell.row).map(|value|{
+                    let column=*value;*value+=1;column
+                }).unwrap_or(order);
+                CellNavigationCell{
+                    id:manual_cell_key(cell),row:cell.row,column,order,
+                    enabled:manual_cell_allowed(pending.as_ref(),cell)
+                }
             }
+        ).collect();
+        let current=ManualCellTarget{
+            row:self.selected_recipient,item:self.selected_item.clone(),
+            field:self.selected_field.clone()
         };
-        if let Some(target)=target.cloned(){
-            self.select_cell(target.row,target.item,&target.field);
+        let current_id=manual_cell_key(&current);
+        let Some(target_id)=cell_navigation::resolve_cell_navigation_target(
+            &navigation_cells,&current_id,navigation
+        ) else{return};
+        let Some(target)=cells.iter().find(|cell|manual_cell_key(cell)==target_id).cloned()
+        else{return};
+        // Keep vertical movement on the immediately adjacent recipient row.
+        if matches!(navigation,CellNavigationKey::Up|CellNavigationKey::Down){
+            let expected=if navigation==CellNavigationKey::Up{
+                self.selected_recipient.checked_sub(1)
+            }else{Some(self.selected_recipient+1)};
+            if expected!=Some(target.row){return;}
         }
+        self.select_cell(target.row,target.item,&target.field);
     }
 
     fn selected_quantity_pending(&self)->bool{
@@ -1000,7 +991,7 @@ impl ManualWorkspace {
         let mut hovered_source:Option<source_highlight::LinkKey>=None;
         let mut hovered_detail:Option<source_highlight::LinkKey>=None;
         let mut source_did_scroll=false;
-        let mut navigate_now:Option<ManualNavigation>=None;
+        let mut navigate_now:Option<CellNavigationKey>=None;
         let mut chosen:Option<(String,Value)>=None;
         let mut apply=false;
         let mut discard=false;
@@ -1478,19 +1469,19 @@ impl ManualWorkspace {
                                             matches!(event,egui::Event::Ime(_))
                                         ){None}
                                         else if input.key_pressed(egui::Key::Enter){
-                                            Some(ManualNavigation::Next)
+                                            Some(CellNavigationKey::Next)
                                         }else if input.key_pressed(egui::Key::Tab){
                                             Some(if input.modifiers.shift{
-                                                ManualNavigation::Previous
-                                            }else{ManualNavigation::Next})
+                                                CellNavigationKey::Previous
+                                            }else{CellNavigationKey::Next})
                                         }else if input.key_pressed(egui::Key::ArrowLeft){
-                                            Some(ManualNavigation::Previous)
+                                            Some(CellNavigationKey::Left)
                                         }else if input.key_pressed(egui::Key::ArrowRight){
-                                            Some(ManualNavigation::Next)
+                                            Some(CellNavigationKey::Right)
                                         }else if input.key_pressed(egui::Key::ArrowUp){
-                                            Some(ManualNavigation::RowUp)
+                                            Some(CellNavigationKey::Up)
                                         }else if input.key_pressed(egui::Key::ArrowDown){
-                                            Some(ManualNavigation::RowDown)
+                                            Some(CellNavigationKey::Down)
                                         }else{None}
                                     });
                                     if let Some(navigation)=navigation{
