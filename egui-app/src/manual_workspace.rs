@@ -481,7 +481,6 @@ pub struct ManualWorkspace {
     last_action:Option<String>,
     action_pending:bool,
     confirm_discard:bool,
-    complete_pending:bool,
     product_search:Option<ProductSearch>,
     remove_recipient_pending:Option<String>,
     reset_pending:bool,
@@ -531,7 +530,7 @@ impl ManualWorkspace {
             selected_item:None,selected_field:"name".into(),
             edit_text:String::new(),focus_editor:false,history:Vec::new(),
             advance_after_apply:None,last_action:None,action_pending:false,
-            confirm_discard:false,complete_pending:false,
+            confirm_discard:false,
             product_search:None,remove_recipient_pending:None,
             reset_pending:false,
             receiver:Some(rx),error:None,dirty:false,applied:None,
@@ -561,7 +560,6 @@ impl ManualWorkspace {
             self.product_search.is_some(),
             self.remove_recipient_pending.is_some(),
             self.reset_pending,
-            self.complete_pending,
             self.confirm_discard,
         )
     }
@@ -972,14 +970,12 @@ impl ManualWorkspace {
                 self.product_search.is_some(),
                 self.remove_recipient_pending.is_some(),
                 self.reset_pending,
-                self.complete_pending,
                 self.confirm_discard,
                 self.edit_text!=self.current_value(),
             ){
                 EscapeAction::CloseProductSearch=>self.product_search=None,
                 EscapeAction::CancelShipmentRemoval=>self.remove_recipient_pending=None,
                 EscapeAction::CancelReset=>self.reset_pending=false,
-                EscapeAction::CancelCompletion=>self.complete_pending=false,
                 EscapeAction::CancelDiscard=>self.confirm_discard=false,
                 EscapeAction::RevertCell=>{
                     self.edit_text=self.current_value();
@@ -1023,14 +1019,14 @@ impl ManualWorkspace {
                     ui,"수동 분류","취소",
                     !self.busy()&&self.product_search.is_none()
                         &&self.remove_recipient_pending.is_none()
-                        &&!self.reset_pending&&!self.complete_pending
+                        &&!self.reset_pending
                         &&!self.confirm_discard
                 ){open=false;}
                 // Prompts and asynchronous native mutations own input while
                 // open. The background worksheet remains visible but inert.
                 if self.busy() || self.product_search.is_some() ||
                     self.remove_recipient_pending.is_some() ||
-                    self.reset_pending || self.complete_pending || self.confirm_discard {
+                    self.reset_pending || self.confirm_discard {
                     ui.disable();
                 }
                 let Some(model)=self.model.as_ref() else {return};
@@ -1061,7 +1057,7 @@ impl ManualWorkspace {
                                     ));
                                 }else{
                                     right.label(typography::caption(
-                                        "정식 접수는 주문 확인 완료"
+                                        "초안 적용 후 주문 확인 필요"
                                     ));
                                 }
                             }
@@ -1072,7 +1068,7 @@ impl ManualWorkspace {
                         let explanation=if pending_quantity_count>0 {
                             format!("수량 확인 필요: {pending_quantity_count}건")
                         }else{
-                            "정식 접수는 주문 확인 완료".to_owned()
+                            "초안 적용 후 주문 확인 필요".to_owned()
                         };
                         count.on_hover_text(explanation);
                     }
@@ -1598,7 +1594,7 @@ impl ManualWorkspace {
                         if theme::action(right,"초안에 적용",
                             ButtonRole::Primary,!busy && input_settled &&
                                 !has_pending_quantity
-                        ).clicked(){self.complete_pending=true;}
+                        ).clicked(){apply=true;}
                     }
                 );
             });
@@ -1809,8 +1805,7 @@ impl ManualWorkspace {
             // Dirty typed text is just as important as a completed Rust edit.
             // A parent close cannot destroy an active modal/async operation.
             if self.busy() || self.product_search.is_some() ||
-               self.remove_recipient_pending.is_some() || self.reset_pending ||
-               self.complete_pending {
+               self.remove_recipient_pending.is_some() || self.reset_pending {
                 return None;
             }
             if self.dirty || self.edit_text!=self.current_value() {
@@ -1819,35 +1814,7 @@ impl ManualWorkspace {
                 return Some(Event::Closed);
             }
         }
-        if self.complete_pending {
-            let mut confirm=false;
-            let mut cancel=false;
-            components::decision_window("수동 분류 완료","manual-completion-prompt",work_area)
-                .constrain_to(work_area)
-                .show(ctx,|ui|{
-                    cancel=components::modal_header(
-                        ui,"수동 분류 완료","취소",true
-                    );
-                    ui.label("수동 분류 결과를 초안에 적용할까요?");
-                    let actions=components::modal_action_row(ui,|buttons|{
-                        let proceed=theme::action(
-                            buttons,"피드백 없이 진행",ButtonRole::Primary,true
-                        ).clicked();
-                        let dismiss=theme::action(
-                            buttons,"취소",ButtonRole::Standard,true
-                        ).clicked();
-                        (proceed,dismiss)
-                    }).inner;
-                    confirm=actions.0;
-                    cancel|=actions.1;
-                });
-            if confirm {
-                self.complete_pending=false;
-                apply=true;
-            }else if cancel{
-                self.complete_pending=false;
-            }
-        }else if self.confirm_discard {
+        if self.confirm_discard {
             let mut keep_editing=false;
             components::decision_window("수동 분류 나가기","manual-discard-prompt",work_area)
                 .constrain_to(work_area)
@@ -1922,7 +1889,6 @@ enum EscapeAction {
     CloseProductSearch,
     CancelShipmentRemoval,
     CancelReset,
-    CancelCompletion,
     CancelDiscard,
     RevertCell,
     RequestClose,
@@ -1933,7 +1899,6 @@ fn escape_action(
     product_search:bool,
     remove_recipient:bool,
     reset:bool,
-    complete:bool,
     discard:bool,
     cell_dirty:bool,
 )->EscapeAction{
@@ -1941,7 +1906,6 @@ fn escape_action(
     else if product_search {EscapeAction::CloseProductSearch}
     else if remove_recipient {EscapeAction::CancelShipmentRemoval}
     else if reset {EscapeAction::CancelReset}
-    else if complete {EscapeAction::CancelCompletion}
     else if discard {EscapeAction::CancelDiscard}
     else if cell_dirty {EscapeAction::RevertCell}
     else {EscapeAction::RequestClose}
@@ -1951,13 +1915,11 @@ fn nested_modal_id(
     product_search:bool,
     remove_recipient:bool,
     reset:bool,
-    complete:bool,
     discard:bool,
 )->Option<&'static str>{
     if product_search {Some("native-manual-product-search")}
     else if remove_recipient {Some("manual-shipment-removal")}
     else if reset {Some("manual-reset-confirm")}
-    else if complete {Some("manual-completion-prompt")}
     else if discard {Some("manual-discard-prompt")}
     else {None}
 }
@@ -2054,41 +2016,43 @@ mod manual_workspace_modal_routing_tests {
     }
 
     #[test]
-    fn every_nested_manual_dialog_owns_its_backdrop_input_layer(){
-        assert_eq!(nested_modal_id(true,false,false,false,false),
+    fn every_nested_manual_dialog_uses_the_real_foreground_window(){
+        assert_eq!(nested_modal_id(true,false,false,false),
             Some("native-manual-product-search"));
-        assert_eq!(nested_modal_id(false,true,false,false,false),
+        assert_eq!(nested_modal_id(false,true,false,false),
             Some("manual-shipment-removal"));
-        assert_eq!(nested_modal_id(false,false,true,false,false),
+        assert_eq!(nested_modal_id(false,false,true,false),
             Some("manual-reset-confirm"));
-        assert_eq!(nested_modal_id(false,false,false,true,false),
-            Some("manual-completion-prompt"));
-        assert_eq!(nested_modal_id(false,false,false,false,true),
+        assert_eq!(nested_modal_id(false,false,false,true),
             Some("manual-discard-prompt"));
-        assert_eq!(nested_modal_id(false,false,false,false,false),None);
+        assert_eq!(nested_modal_id(false,false,false,false),None);
+        let source=include_str!("manual_workspace.rs");
+        let render=source.split("pub fn show(").nth(1).unwrap()
+            .split("fn manual_hover_target(").next().unwrap();
+        assert!(render.contains("modal_foreground_for_window(ctx,window_id)"));
+        assert!(!render.contains("modal_backdrop_for_window("));
+        assert!(render.contains(").clicked(){apply=true;}"));
     }
 
     #[test]
     fn escape_closes_only_the_topmost_nested_prompt(){
-        assert_eq!(escape_action(false,true,true,true,true,true,false),
+        assert_eq!(escape_action(false,true,true,true,true,false),
             EscapeAction::CloseProductSearch);
-        assert_eq!(escape_action(false,false,true,true,true,true,false),
+        assert_eq!(escape_action(false,false,true,true,true,false),
             EscapeAction::CancelShipmentRemoval);
-        assert_eq!(escape_action(false,false,false,true,true,true,false),
+        assert_eq!(escape_action(false,false,false,true,true,false),
             EscapeAction::CancelReset);
-        assert_eq!(escape_action(false,false,false,false,true,true,false),
-            EscapeAction::CancelCompletion);
-        assert_eq!(escape_action(false,false,false,false,false,true,false),
+        assert_eq!(escape_action(false,false,false,false,true,false),
             EscapeAction::CancelDiscard);
     }
 
     #[test]
     fn escape_reverts_uncommitted_cell_before_requesting_workspace_close(){
-        assert_eq!(escape_action(false,false,false,false,false,false,true),
+        assert_eq!(escape_action(false,false,false,false,false,true),
             EscapeAction::RevertCell);
-        assert_eq!(escape_action(false,false,false,false,false,false,false),
+        assert_eq!(escape_action(false,false,false,false,false,false),
             EscapeAction::RequestClose);
-        assert_eq!(escape_action(true,false,false,false,false,false,true),
+        assert_eq!(escape_action(true,false,false,false,false,true),
             EscapeAction::Ignore);
     }
 
