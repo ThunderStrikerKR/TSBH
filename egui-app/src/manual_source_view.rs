@@ -45,19 +45,18 @@ pub fn source_document(
     ui.painter().add(egui::Shape::Vec(outlines));
 
     let mut result=SourceInteraction::default();
-    #[cfg(test)]
-    if raw=="가나다" {
-        eprintln!("source probe: rect={rect:?} clip={:?} hovered={} clicked={} pos={:?} latest={:?} row_pos={:?}",
-            ui.clip_rect(),response.hovered(),response.clicked(),
-            response.interact_pointer_pos(),ui.input(|i|i.pointer.hover_pos()),
-            galley.rows.first().map(|row|row.pos));
-    }
+    // egui::Response::interact_pointer_pos() is None for a pure hover:
+    // use PointerState::hover_pos when the source text is hovered without a
+    // mouse button. Respect the widget's native hovered/clicked gate so a
+    // disabled or obscured parent cannot gain input through this fallback.
     let hovered_index=if response.hovered() || response.clicked() {
-        response.interact_pointer_pos().and_then(|pointer|
-            source_highlight::hovered_span_index_at_pointer(
-                raw,spans,&galley,rect.min,pointer
+        response.interact_pointer_pos()
+            .or_else(||ui.input(|input|input.pointer.hover_pos()))
+            .and_then(|pointer|
+                source_highlight::hovered_span_index_at_pointer(
+                    raw,spans,&galley,rect.min,pointer
+                )
             )
-        )
     }else{None};
     if enabled {
         if let Some(index)=hovered_index.and_then(|index|spans.get(index)){
@@ -142,7 +141,6 @@ mod tests {
             events:vec![egui::Event::PointerMoved(pointer)],
             time:Some(0.1),..Default::default()
         },raw,&spans,&mut origin,true);
-        eprintln!("source test pointer={pointer:?} origin={origin:?} glyph={:?}",glyph.pos);
         let hovered=draw(&ctx,egui::RawInput{
             events:vec![egui::Event::PointerMoved(pointer)],
             time:Some(0.2),..Default::default()
