@@ -4953,6 +4953,16 @@ mod fixed_scroll_panel_contract_tests {
 }
 
 #[cfg(test)]
+mod shared_detail_divider_contract_tests {
+    #[test]
+    fn order_history_detail_uses_shared_soft_dividers(){
+        let source=include_str!("order_history_detail.rs");
+        assert_eq!(source.matches("components::soft_divider(").count(),3);
+        assert!(!source.contains(".separator("));
+    }
+}
+
+#[cfg(test)]
 mod shared_review_card_contract_tests {
     #[test]
     fn reception_review_cards_use_shared_surface_frame(){
