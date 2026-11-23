@@ -77,7 +77,7 @@ export function findCellNavigationTarget(
   const targetId = resolveCellNavigationTarget(cells, currentId, key, shift, enterMode);
   return targetId ? nodes.find((node) => node.dataset.cellNavId === targetId) ?? null : null;
 }
-export function focusCellElement(target: HTMLElement | null): boolean {
+export function focusCellElement(target: HTMLElement | null | undefined): boolean {
   if (!target || !target.isConnected) return false;
   target.focus({ preventScroll: true });
   target.scrollIntoView({ block: "nearest", inline: "nearest" });
