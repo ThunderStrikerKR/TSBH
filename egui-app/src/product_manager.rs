@@ -61,6 +61,29 @@ fn set_sale_status(product:&mut Value,status:&str){
 fn rows(value: &Value) -> &[Value] {
     value.as_array().map(Vec::as_slice).unwrap_or(&[])
 }
+
+/// Search by the displayed brand name AND its catalog Korean name/aliases.
+/// Selection continues to use the unchanged catalog ID.
+fn brand_search_choices(
+    brands:&[Value],empty_label:&str
+)->Vec<components::ManagementSearchChoice>{
+    let mut choices=vec![components::ManagementSearchChoice::new(
+        String::new(),empty_label.to_owned(),empty_label.to_owned()
+    )];
+    for brand in brands{
+        let id=field(brand,"id");
+        if id.is_empty(){continue;}
+        let name=field(brand,"name");
+        let korean=field(brand,"korean");
+        let aliases=rows(&brand["aliases"]).iter()
+            .filter_map(Value::as_str).collect::<Vec<_>>().join(" ");
+        choices.push(components::ManagementSearchChoice::new(
+            id.to_owned(),name.to_owned(),
+            format!("{name} {korean} {aliases}")
+        ));
+    }
+    choices
+}
 fn price(value: &Value) -> String {
     value.as_i64().map(components::display_won)
         .unwrap_or_else(|| "—".to_owned())
@@ -786,19 +809,10 @@ impl ProductManager {
                     let before_brand=self.brand.clone();
                     let brand_text=brands.iter().find(|b|field(b,"id")==self.brand)
                         .map(|b|field(b,"name")).unwrap_or("전체 브랜드");
-                    components::management_dropdown(
+                    let brand_choices=brand_search_choices(&brands,"전체 브랜드");
+                    components::management_searchable_dropdown(
                         filter,brand_text,theme::MANAGEMENT_FILTER_DROPDOWN_WIDTH,
-                        true,brand_text,|combo|{
-                            components::management_dropdown_option(
-                                combo,&mut self.brand,String::new(),"전체 브랜드"
-                            );
-                            for brand in &brands{
-                                components::management_dropdown_option(
-                                    combo,&mut self.brand,field(brand,"id").to_owned(),
-                                    field(brand,"name")
-                                );
-                            }
-                        }
+                        true,brand_text,&mut self.brand,&brand_choices,"브랜드 검색"
                     );
                     if self.brand!=before_brand{
                         if self.has_pending_prices(){
@@ -1417,16 +1431,11 @@ impl ProductManager {
                 .map(|b|field(b,"name")).unwrap_or("브랜드 미지정");
             row.add_enabled_ui(editable&&!busy,|input|{
                 let width=input.available_width().max(1.0);
-                components::management_dropdown(
-                    input,label,width,true,"브랜드 선택",|choices|{
-                        components::management_dropdown_option(
-                            choices,&mut brand_id,String::new(),"브랜드 미지정");
-                        for item in brands{
-                            components::management_dropdown_option(
-                                choices,&mut brand_id,
-                                field(item,"id").to_owned(),field(item,"name"));
-                        }
-                    });
+                let brand_choices=brand_search_choices(brands,"브랜드 미지정");
+                components::management_searchable_dropdown(
+                    input,label,width,true,"브랜드 선택",
+                    &mut brand_id,&brand_choices,"브랜드 검색"
+                );
             });
             if brand_id!=before{
                 draft["brandId"]=if brand_id.is_empty(){
@@ -1934,6 +1943,29 @@ mod tests {
         }
         assert_eq!(theme::PRODUCT_DETAIL_IMAGE_SIZE,320.0);
         assert!(horizontal.contains("theme::MODAL_MASTER_WORKSPACE_GAP"));
+    }
+    #[test]
+    fn brand_selector_supports_korean_names_and_registered_aliases(){
+        let brands=vec![json!({
+            "id":"brand-1","name":"K&M","korean":"케이앤엠",
+            "aliases":["독일브랜드","K and M"]
+        })];
+        let options=brand_search_choices(&brands,"전체 브랜드");
+        assert_eq!(options.len(),2);
+        assert_eq!(options[0].value,"");
+        assert_eq!(options[0].label,"전체 브랜드");
+        assert_eq!(options[1].value,"brand-1");
+        assert_eq!(options[1].label,"K&M");
+        for fragment in ["K&M","케이앤엠","독일브랜드","K and M"]{
+            assert!(options[1].search_text.contains(fragment));
+        }
+        let source=include_str!("product_manager.rs");
+        let filter=source.split("let brand_choices=brand_search_choices(&brands").nth(1).unwrap()
+            .split("let before_missing=").next().unwrap();
+        assert!(filter.contains("management_searchable_dropdown("));
+        let detail=source.split("let brand_choices=brand_search_choices(brands").nth(1).unwrap()
+            .split("if brand_id!=before{").next().unwrap();
+        assert!(detail.contains("management_searchable_dropdown("));
     }
     #[test]
     fn product_detail_cannot_reintroduce_stacked_fields_or_static_sales_label(){
