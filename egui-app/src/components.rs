@@ -4976,8 +4976,38 @@ mod shared_multiline_field_contract_tests {
             .split("pub fn ").next().unwrap();
         assert!(memo.contains("components::multiline_text_field("));
         assert!(!memo.contains("TextEdit::multiline("));
+
+        let main=include_str!("main.rs");
+        let ocr=main.split("fn show_ocr_review(").nth(1).unwrap()
+            .split("\n    fn ").next().unwrap();
+        assert!(ocr.contains("components::multiline_text_field_sized("));
+        assert!(!ocr.contains("TextEdit::multiline("));
     }
 }
+
+#[cfg(test)]
+mod sized_multiline_field_geometry_tests {
+    use super::*;
+
+    #[test]
+    fn sized_multiline_field_keeps_the_requested_viewport(){
+        let ctx=egui::Context::default();
+        let mut value=String::from("OCR 검토 텍스트");
+        let mut actual=Rect::NOTHING;
+        let _=ctx.run(egui::RawInput::default(),|ctx|{
+            egui::CentralPanel::default().show(ctx,|ui|{
+                actual=multiline_text_field_sized(
+                    ui,&mut value,true,Vec2::new(280.0,96.0),
+                    egui::FontId::proportional(typography::FONT_OCR_REVIEW_TEXT),
+                    false,egui::Margin::same(theme::SPACE_12 as i8),1
+                ).rect;
+            });
+        });
+        assert_eq!(actual.size(),Vec2::new(280.0,96.0));
+    }
+}
+
+
 
 #[cfg(test)]
 mod shared_checkbox_contract_tests {
