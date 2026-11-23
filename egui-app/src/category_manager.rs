@@ -1123,7 +1123,7 @@ mod modal_layout_contract_tests{
         // must not trigger these negative assertions.
         let page=source.split("    pub fn show_page(").nth(1).unwrap()
             .split("    pub fn show_overlays(").next().unwrap();
-        assert!(!page.contains("section_heading(\"카테고리 맵\")"));
+        assert!(!page.contains("typography::section_heading(\"카테고리 맵\")"));
         assert!(!page.contains("분류 행을 클릭하면 하위 구성이 접히거나 펼쳐집니다."));
     }
     #[test]
@@ -1131,7 +1131,7 @@ mod modal_layout_contract_tests{
         let source=include_str!("category_manager.rs");
         let page=source.split("    pub fn show_page(").nth(1).unwrap()
             .split("    pub fn show_overlays(").next().unwrap();
-        assert!(!page.contains("section_heading("));
+        assert!(!page.contains("typography::section_heading("));
         assert!(!page.contains("분류 행을 클릭하면"));
         assert!(!page.contains("panel.horizontal(|header|"));
         assert!(!page.contains("panel.horizontal_wrapped(|search|"));
