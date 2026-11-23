@@ -187,9 +187,10 @@ impl ProductExcelUi {
                     self.start(menu.ctx(),move||preview_file(native.as_ref()));
                     menu.close();
                 }
-                if self.busy(){
-                    menu.label(typography::caption("상품 Excel 작업 중…"));
-                }
+                // Keep popup height identical before, during and after
+                // a native Excel job. Both actions already reflect busy
+                // state through their enabled flag; no conditional row.
+
             });
     }
     fn can_apply(&self)->bool{
