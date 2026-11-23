@@ -5,6 +5,14 @@ use eframe::egui::{self, Align, Color32, Frame, Layout, Rect, Response, Sense, S
 use chrono::{Datelike, Duration as Days, Months, NaiveDate};
 use crate::{source_highlight, theme, typography};
 
+#[cfg(test)]
+pub(crate) fn test_context()->egui::Context {
+    let ctx=egui::Context::default();
+    theme::install(&ctx);
+    typography::install(&ctx);
+    ctx
+}
+
 pub const LABEL_WIDTH: f32 = theme::FIELD_LABEL_WIDTH;
 pub const TABLE_ROW_HEIGHT: f32 = theme::MANAGEMENT_COMPACT_ROW_HEIGHT;
 /// Render only the rows intersecting a scroll viewport, while reserving the
@@ -136,19 +144,14 @@ pub fn management_pending_primary_card(ui:&mut Ui)->Rect{
 mod fixed_layout_slot_contract_tests {
     use super::*;
 
-    /// Mirror the application's native Context bootstrap so shared text
-    /// roles never reference an unregistered named font family in tests.
-    fn test_context()->egui::Context {
-        let ctx=egui::Context::default();
-        theme::install(&ctx);
-        typography::install(&ctx);
-        ctx
-    }
-
     #[test]
     fn optional_status_keeps_its_rect_and_the_next_control_fixed(){
         let mut measured=Vec::new();
-        for message in [None,Some("상태 안내문이 표시됩니다.") ]{
+        for message in [
+            None,
+            Some("상태 안내문이 표시됩니다."),
+            Some("수량 확인 필요: 123건 / 저장 중인 변경사항과 검증 오류가 있어 적용할 수 없습니다."),
+        ]{
             let ctx=test_context();
             let _=ctx.run(egui::RawInput::default(),|ctx|{
                 egui::CentralPanel::default().show(ctx,|ui|{
@@ -166,8 +169,14 @@ mod fixed_layout_slot_contract_tests {
                 });
             });
         }
-        assert_eq!(measured[0].0,measured[1].0);
-        assert_eq!(measured[0].1,measured[1].1);
+        for current in measured.iter().skip(1){
+            assert_eq!(measured[0].0,current.0,
+                "status text must not alter the allocated status Rect");
+            assert_eq!(measured[0].1,current.1,
+                "status text must not move the following control");
+            assert!((current.2-current.3).abs()<0.5,
+                "status row must consume exactly one allocation");
+        }
         assert!((measured[0].0.height()-typography::METADATA_LINE_HEIGHT).abs()<0.5);
         assert!((measured[0].2-measured[0].3).abs()<0.5,
             "the fixed status row must consume exactly one parent allocation");
@@ -6577,7 +6586,7 @@ mod recipient_source_reverse_hover_tests {
 
     #[test]
     fn all_five_read_only_recipient_cells_own_hover_and_ibeam_cursor() {
-        let ctx=egui::Context::default();
+        let ctx=test_context();
         let mut cells=[Rect::NOTHING;5];
         let _=ctx.run(egui::RawInput::default(),|ctx|{
             egui::CentralPanel::default().show(ctx,|ui|{
