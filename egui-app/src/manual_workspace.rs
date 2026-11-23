@@ -1434,7 +1434,7 @@ impl ManualWorkspace {
                                                 options.spacing_mut().item_spacing.x=theme::SPACE_8;
                                                 if theme::action(options,
                                                     if remote{"도서산간 적용"}else{"도서산간 미적용"},
-                                                    ButtonRole::Standard,!busy && remote_ready
+                                                    ButtonRole::Standard,!busy && !pending_quantity_active && remote_ready
                                                 ).clicked(){
                                                     chosen=Some((
                                                         "set_manual_delivery_option".into(),
