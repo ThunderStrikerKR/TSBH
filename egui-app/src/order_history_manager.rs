@@ -812,23 +812,9 @@ fn range_date_picker_rtl(
                 *date=move_date(date,-1);
                 changed=true;
             }
-            let edit=row.add_sized(
-                Vec2::new(HISTORY_DATE_FIELD_WIDTH,INNER_HEIGHT),
-                egui::TextEdit::singleline(date)
-                    .font(typography::data_value_font(
-                        typography::DataValueKind::Date,
-                        typography::DataValueContext::Form
-                    ))
-                    .frame(false)
-                    .horizontal_align(Align::Center)
-                    .vertical_align(Align::Center)
-                    // Dates use the regular proportional UI font, not the
-                    // money/quantity Consolas family. Apply the existing
-                    // shared date-field optical margin without resizing the
-                    // date picker, keyboard caret or grouped controls.
-                    .margin(typography::management_date_text_margin())
-                    .hint_text(if all_dates{"전체"}else{"YYYY-MM-DD"})
-                    .desired_width(HISTORY_DATE_FIELD_WIDTH)
+            let edit=components::management_date_text_field(
+                row,date,HISTORY_DATE_FIELD_WIDTH,INNER_HEIGHT,
+                if all_dates{"전체"}else{"YYYY-MM-DD"}
             ).on_hover_text(&format!("{label} 직접 입력"));
             crate::floating_notice::sized_text_caret(
                 row,"history.date",&edit,date,
