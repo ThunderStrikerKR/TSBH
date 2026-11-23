@@ -75,11 +75,11 @@ pub fn management_body_state_overlay(
 /// Reserve a management page's approved primary-card footprint before its
 /// asynchronous data source is ready. Its real content can replace this
 /// placeholder without moving the top edge of the card or lower page slots.
-pub fn management_pending_primary_card(ui:&mut Ui){
+pub fn management_pending_primary_card(ui:&mut Ui)->Rect{
     let min_height=management_master_table_card_min_inner_height(ui);
     theme::management_master_table_frame().show(ui,|panel|{
         fill_management_primary_card(panel,min_height);
-    });
+    }).response.rect
 }
 
 #[cfg(test)]
@@ -137,6 +137,133 @@ mod management_async_layout_contract_tests {
         }
         assert_eq!(measured[0],measured[1],
             "placeholder KPI must use exact production card geometry");
+    }
+
+    #[test]
+    fn pending_and_loaded_kpi_rows_keep_geometry_at_reference_and_narrow_sizes(){
+        fn measure(screen:Vec2,pending:bool)->f32{
+            let ctx=egui::Context::default();
+            crate::typography::install(&ctx);
+            let mut consumed=None;
+            let mut raw=egui::RawInput::default();
+            raw.screen_rect=Some(Rect::from_min_size(egui::Pos2::ZERO,screen));
+            let _=ctx.run(raw,|ctx|{
+                egui::CentralPanel::default().show(ctx,|ui|{
+                    ui.set_width((screen.x-32.0).max(1.0));
+                    let start=ui.cursor().top();
+                    ui.horizontal_wrapped(|strip|{
+                        strip.spacing_mut().item_spacing=Vec2::new(
+                            theme::SPACE_8,theme::SPACE_8
+                        );
+                        for label in ["등록 상품","모델군","별칭","브랜드"]{
+                            if pending{
+                                management_summary_card_value(strip,label,"—");
+                            }else{
+                                management_summary_card(strip,label,27);
+                            }
+                        }
+                    });
+                    consumed=Some(ui.cursor().top()-start);
+                });
+            });
+            consumed.expect("KPI row was laid out")
+        }
+        for screen in [
+            Vec2::new(1920.0,1080.0),
+            Vec2::new(1366.0,768.0),
+            Vec2::new(900.0,650.0)
+        ]{
+            let pending=measure(screen,true);
+            let loaded=measure(screen,false);
+            assert!((pending-loaded).abs()<=0.5,
+                "KPI row height changed at {screen:?}: pending={pending}, loaded={loaded}");
+        }
+    }
+
+    #[test]
+    fn pending_and_loaded_primary_card_rects_match_at_reference_and_narrow_sizes(){
+        fn measure(screen:Vec2,pending:bool)->(f32,f32,f32,Rect,f32){
+            let ctx=egui::Context::default();
+            crate::typography::install(&ctx);
+            let mut measured=None;
+            let mut raw=egui::RawInput::default();
+            raw.screen_rect=Some(Rect::from_min_size(egui::Pos2::ZERO,screen));
+            let _=ctx.run(raw,|ctx|{
+                egui::CentralPanel::default().show(ctx,|ui|{
+                    ui.set_width((screen.x-32.0).max(1.0));
+                    let page_origin_y=ui.cursor().top();
+                    management_page_title_top_gap(ui);
+                    management_top_content(ui,|top|{
+                        top.label(crate::typography::page_heading("상품 관리"));
+                    });
+                    let title_bottom=ui.cursor().top();
+                    ui.add_space(theme::SPACE_8);
+                    management_top_content(ui,|top|{
+                        management_tabs(top,&[
+                            ("상품 목록",true,true),
+                            ("카테고리 관리",false,true),
+                            ("모델군 관리",false,true),
+                            ("별칭 관리",false,true),
+                            ("브랜드 관리",false,true)
+                        ]);
+                    });
+                    let tabs_bottom=ui.cursor().top();
+                    ui.add_space(theme::SPACE_12);
+                    management_top_content(ui,|top|{
+                        top.horizontal_wrapped(|strip|{
+                            strip.spacing_mut().item_spacing=Vec2::new(
+                                theme::SPACE_8,theme::SPACE_8
+                            );
+                            for label in ["등록 상품","모델군","별칭","브랜드"]{
+                                if pending{
+                                    management_summary_card_value(strip,label,"—");
+                                }else{
+                                    management_summary_card(strip,label,27);
+                                }
+                            }
+                        });
+                    });
+                    let kpi_bottom=ui.cursor().top();
+                    ui.add_space(theme::SPACE_16);
+                    align_management_primary_card(ui,page_origin_y);
+                    let card=if pending{
+                        management_pending_primary_card(ui)
+                    }else{
+                        let min_height=management_master_table_card_min_inner_height(ui);
+                        theme::management_master_table_frame().show(ui,|panel|{
+                            fill_management_primary_card(panel,min_height);
+                        }).response.rect
+                    };
+                    measured=Some((
+                        title_bottom,tabs_bottom,kpi_bottom,card,ui.cursor().top()
+                    ));
+                });
+            });
+            measured.expect("primary card was laid out")
+        }
+        let near=|a:f32,b:f32|(a-b).abs()<=0.5;
+        for screen in [
+            Vec2::new(1920.0,1080.0),
+            Vec2::new(1366.0,768.0),
+            Vec2::new(900.0,650.0)
+        ]{
+            let pending=measure(screen,true);
+            let loaded=measure(screen,false);
+            assert!(near(pending.0,loaded.0),"title slot moved at {screen:?}");
+            assert!(near(pending.1,loaded.1),"tab slot moved at {screen:?}");
+            assert!(near(pending.2,loaded.2),"KPI slot moved at {screen:?}");
+            for (pending_edge,loaded_edge) in [
+                (pending.3.left(),loaded.3.left()),
+                (pending.3.top(),loaded.3.top()),
+                (pending.3.right(),loaded.3.right()),
+                (pending.3.bottom(),loaded.3.bottom()),
+                (pending.4,loaded.4)
+            ]{
+                assert!(near(pending_edge,loaded_edge),
+                    "primary card Rect changed at {screen:?}: pending={:?}, loaded={:?}",
+                    pending.3,loaded.3);
+            }
+        }
     }
 
     #[test]
