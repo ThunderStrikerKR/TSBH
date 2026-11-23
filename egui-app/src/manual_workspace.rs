@@ -1163,7 +1163,10 @@ impl ManualWorkspace {
                     self.row_count_text=count.to_string();
                 }
                 EscapeAction::CancelReset=>self.reset_pending=false,
-                EscapeAction::CancelApply=>self.confirm_apply=false,
+                EscapeAction::CancelApply=>{
+                    self.confirm_apply=false;
+                    self.focus_editor=true;
+                },
                 EscapeAction::CancelDiscard=>self.confirm_discard=false,
                 EscapeAction::RevertCell=>{
                     self.edit_text=self.current_value();
@@ -2159,7 +2162,10 @@ impl ManualWorkspace {
                     }
                 );
             });
-            if cancel {self.confirm_apply=false;}
+            if cancel {
+                self.confirm_apply=false;
+                self.focus_editor=true;
+            }
             if proceed {
                 self.confirm_apply=false;
                 self.apply(ctx);
