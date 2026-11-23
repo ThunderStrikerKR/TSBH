@@ -717,8 +717,9 @@ impl ClientManager {
                 let entered=std::mem::take(&mut self.tag_input);
                 self.accept_tag_text(draft,&entered);
             }
+            let status_width=panel.available_width();
             components::fixed_status_slot(
-                panel,panel.available_width(),typography::METADATA_LINE_HEIGHT,
+                panel,status_width,typography::METADATA_LINE_HEIGHT,
                 self.tag_notice.as_deref(),self.tag_notice.as_deref(),theme::MUTED
             );
         });
