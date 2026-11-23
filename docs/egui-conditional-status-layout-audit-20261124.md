@@ -240,3 +240,47 @@ cargo test --manifest-path egui-app/Cargo.toml fixed_layout_slot_contract_tests 
 6. 새 공통 UI 슬롯을 만들면 최소한 상태 없음/있음, 버튼 없음/있음의 실제 egui Rect 회귀 테스트를 함께 추가한다.
 
 **최종 판정:** 소스 전수조사와 코드 조치는 main에 반영했다. 최종 PASS 여부는 최신 구현/테스트 커밋 `d9e7b862da301c47fceed9ca6a39ccaa114f52e5`의 Windows CI run `45256657291` 완료 결과로 확정하며, 실제 운영 창의 픽셀 검증은 별도 경계로 남긴다.
+
+
+## 9. CI 테스트 컨텍스트 후속 수정
+
+### 실패 원인 정정
+
+- 이전 보고 대화에서 고정 상태 슬롯 테스트가 실패했다고 설명한 내용은 실제 실패 로그와 일치하지 않았다.
+- 실제 Windows targeted run `45268727880`에서 확인된 첫 실패는 `components::recipient_source_reverse_hover_tests::all_five_read_only_recipient_cells_own_hover_and_ibeam_cursor`였다.
+- 원인: 테스트가 기본 `egui::Context::default()`를 사용해 `bando-ui-emphasis` named font family를 등록하지 않은 상태에서 실제 수취인 UI를 렌더링했다.
+- `fixed_layout_slot_contract_tests`의 실패로 잘못 지목하지 않는다.
+
+### 소스 수정
+
+- `egui-app/src/components.rs`
+  - 테스트 전용 `test_context()`를 모듈 공통 helper로 이동하고 `pub(crate)`로 노출했다.
+  - helper는 앱 시작 경로와 동일하게 `theme::install(&ctx)`와 `typography::install(&ctx)`를 호출한다.
+  - 수취인 역방향 호버 테스트가 이 helper를 사용하도록 수정했다.
+- `egui-app/src/workflow_board_ui.rs`
+  - 미확정 주문 카드 렌더링 테스트도 `components::test_context()`를 사용하도록 변경했다.
+  - 별도 폰트 초기화 구현을 중복하지 않는다.
+- 관련 커밋:
+  - `d1fa9ec8183ade4ed112a17b08e3bfcf5d0f9202`
+  - `7aee24096f229013c96e63123f8d6eefdbdcb95c`
+  - `560217cb54f5c7f3dd7f94ff2e0bc028872cb821`
+  - `aa81658115fada0b09bf483cc6481af09b26cbf0`
+
+### 검증 워크플로 변경
+
+- `.github/workflows/egui-targeted-check.yml`에서 다음 두 테스트를 컴파일 직후 실행하도록 이동했다.
+  - `recipient_source_reverse_hover_tests`
+  - `pending_matching_tests`
+- 워크플로 변경 커밋:
+  - `81d5dd3896aa54093512fa15bc93a3c195ec2a37`
+  - `11a3a7d7825465f4293d00050f761d12fa0b4051`
+
+### 추가 회귀 수정 및 현재 상태
+
+- 전체 targeted run `45271624837`에서 위 두 폰트 컨텍스트 테스트는 모두 성공했다.
+- 같은 run의 후반부 `product_excel_ui::tests::review_table_rows_keep_existing_status_filter_and_message_fallback`가 별도 테스트 데이터 불일치로 실패했다.
+  - 테스트 fixture는 `status=ADD`와 오류 배열을 동시에 지정했지만, 실제 `ReviewFilter::Error` 계약은 `ERROR`와 `HOLD` 상태를 필터링한다.
+  - 필터 구현을 변경하지 않고 fixture의 상태를 `ERROR`로 바로잡았다.
+  - 수정 커밋: `c9592355596deb4ae2c8fdefc977ab76c81510e4`
+- 최신 Windows targeted run `45273676221`은 이 fixture 수정 이후 재실행 중이다. 해당 run의 최종 결과 전까지 전체 targeted CI를 PASS로 기록하지 않는다.
+- 실제 Windows 앱 창의 픽셀 검증은 이번 테스트 Context 수정과 별개의 미완료 항목이다.
