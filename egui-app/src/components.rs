@@ -164,6 +164,68 @@ mod management_async_layout_contract_tests {
 }
 
 #[cfg(test)]
+mod management_async_behavior_regression_tests {
+    #[test]
+    fn pending_states_preserve_actions_and_error_channels(){
+        let freight=include_str!("freight_manager.rs");
+        assert!(freight.contains("components::management_pending_primary_card(ui);"));
+        assert!(freight.contains("floating_notice::sync("));
+        assert!(freight.contains("gateway.mutate_shipping("));
+
+        let products=include_str!("product_manager.rs");
+        assert!(products.contains("components::management_body_state_overlay("));
+        assert!(products.contains("self.start_write(\"set_price\""));
+        assert!(products.contains("self.start_write(\"upsert_brand\""));
+        assert!(products.contains("self.start_write(\"save_alias\""));
+        assert!(products.contains("components::management_pending_primary_card(ui);"));
+
+        let settings=include_str!("settings_view.rs");
+        assert!(settings.contains("if !self.loaded || self.source.is_null(){"));
+        assert!(settings.contains("components::management_pending_primary_card(ui);"));
+        assert!(settings.contains("self.save_bar(ui,gateway);"));
+
+        let messages=include_str!("automatic_message_manager.rs");
+        assert!(messages.contains("if !self.loaded{"));
+        assert!(messages.contains("components::management_pending_primary_card(ui);"));
+        assert!(messages.contains("self.start_save("));
+        assert!(messages.contains("pub fn show_confirmation("));
+
+        let excel=include_str!("product_excel_ui.rs");
+        let menu=excel.split("pub fn show_menu(").nth(1).unwrap()
+            .split("pub fn show_review(").next().unwrap();
+        assert!(menu.contains("let enabled=!self.busy()&&allowed;"));
+        assert!(menu.contains("export_file(native.as_ref())"));
+        assert!(menu.contains("preview_file(native.as_ref())"));
+    }
+
+    #[test]
+    fn async_placeholders_keep_slots_and_manual_edit_evidence(){
+        let settlement=include_str!("daily_settlement_manager.rs");
+        let values=settlement.split("let values=[").nth(1).unwrap()
+            .split("];").next().unwrap();
+        assert_eq!(values.matches("unwrap_or_else(||\"—\"").count(),4);
+        assert!(settlement.contains(".auto_shrink([false,false])"));
+        assert!(!settlement.contains("변경한 결산 날짜를 조회하고 있습니다."));
+        assert!(!settlement.contains("결산 자료 확인 중"));
+
+        let model_groups=include_str!("model_group_manager.rs");
+        assert!(model_groups.contains("writable&&!busy&&self.dirty()"));
+        assert!(model_groups.contains("theme::action(footer,\"닫기\""));
+
+        let aliases=include_str!("alias_manager.rs");
+        assert!(aliases.contains("let slot_width=info.min_rect().width().max(1.0);"));
+        assert!(aliases.contains("hit.on_hover_text(detail);"));
+
+        let main=include_str!("main.rs");
+        assert!(main.contains("components::reception_client_summary_card("));
+        assert!(main.contains("let client_card_height = if has_source"));
+        assert!(main.contains("fn apply_manual_event("));
+        assert!(main.contains("row.edit_history.push("));
+        assert!(main.contains("row.manual_model=Some("));
+    }
+}
+
+#[cfg(test)]
 mod shared_screen_component_contract_tests {
     fn production_source(file:&str)->String {
         file.split("#[cfg(test)]").next().unwrap_or(file).to_owned()
