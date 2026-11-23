@@ -79,13 +79,89 @@ pub fn source_document(
 mod tests {
     use super::*;
 
+    fn draw(
+        ctx:&egui::Context,
+        raw_input:egui::RawInput,
+        raw:&str,
+        spans:&[LinkedSpan],
+        origin:&mut egui::Pos2,
+    )->SourceInteraction{
+        let mut interaction=SourceInteraction::default();
+        let _=ctx.run(raw_input,|ctx|{
+            egui::CentralPanel::default().show(ctx,|ui|{
+                ui.set_width(320.0);
+                *origin=ui.cursor().min;
+                interaction=source_document(
+                    ui,raw,spans,None,None,None,true
+                );
+            });
+        });
+        interaction
+    }
+
     #[test]
-    fn clicked_span_preserves_the_exact_native_block_id() {
+    fn hover_and_click_share_the_native_source_link_identity(){
+        let raw="가나다";
+        let key=source_highlight::key("r1","r1","name");
         let spans=vec![LinkedSpan{
-            start:0,end:3,start_char:0,end_char:3,
-            key:source_highlight::key("r1","r1","name"),
-            source_id:Some("0:3".into()),
+            start:0,end:raw.len(),start_char:0,end_char:raw.chars().count(),
+            key:key.clone(),source_id:Some("0:9".into()),
         }];
-        assert_eq!(spans[0].source_id.as_deref(),Some("0:3"));
+        let ctx=egui::Context::default();
+        let screen=egui::Rect::from_min_size(
+            egui::Pos2::ZERO,egui::vec2(600.0,400.0)
+        );
+        let mut origin=egui::Pos2::ZERO;
+        let mut initial=egui::RawInput::default();
+        initial.screen_rect=Some(screen);
+        draw(&ctx,initial,raw,&spans,&mut origin);
+
+        let job=source_highlight::layout(
+            raw,&spans,None,None,320.0,
+            FontId::proportional(typography::FONT_RECEPTION_SOURCE_TEXT),
+            theme::TEXT,
+        );
+        let galley=ctx.fonts_mut(|fonts|fonts.layout_job(job));
+        let glyph=&galley.rows[0].row.glyphs[0];
+        let pointer=origin+egui::vec2(
+            glyph.pos.x+glyph.advance_width*0.5,
+            galley.rows[0].row.size.y*0.5
+        );
+        let hovered=draw(&ctx,egui::RawInput{
+            events:vec![egui::Event::PointerMoved(pointer)],
+            ..Default::default()
+        },raw,&spans,&mut origin);
+        assert_eq!(hovered.hovered,Some(key));
+
+        draw(&ctx,egui::RawInput{
+            events:vec![
+                egui::Event::PointerMoved(pointer),
+                egui::Event::PointerButton{
+                    pos:pointer,button:egui::PointerButton::Primary,
+                    pressed:true,modifiers:egui::Modifiers::NONE
+                }
+            ],
+            ..Default::default()
+        },raw,&spans,&mut origin);
+        let clicked=draw(&ctx,egui::RawInput{
+            events:vec![egui::Event::PointerButton{
+                pos:pointer,button:egui::PointerButton::Primary,
+                pressed:false,modifiers:egui::Modifiers::NONE
+            }],
+            ..Default::default()
+        },raw,&spans,&mut origin);
+        assert_eq!(clicked.clicked_block.as_deref(),Some("0:9"));
+    }
+
+    #[test]
+    fn source_hover_is_disabled_without_disabling_the_link_projection(){
+        let raw="가나다";
+        let spans=vec![LinkedSpan{
+            start:0,end:raw.len(),start_char:0,end_char:raw.chars().count(),
+            key:source_highlight::key("r1","r1","name"),
+            source_id:Some("0:9".into()),
+        }];
+        assert_eq!(spans[0].key.field,"name");
+        assert_eq!(spans[0].source_id.as_deref(),Some("0:9"));
     }
 }
