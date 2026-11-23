@@ -1238,14 +1238,20 @@ impl OrderHistoryManager {
                     ui.label(typography::caption(&format!(
                         "{} / 2,000자",editor.draft.chars().count()
                     )));
-                    if !writable{
-                        ui.label(typography::caption(
-                            "현재 연결은 운영 메모 저장 권한이 없습니다."
-                        ));
-                    }
-                    if let Some(message)=self.memo_error.as_deref(){
-                        ui.colored_label(theme::DANGER,message);
-                    }
+                    let permission_message=(!writable).then_some(
+                        "현재 연결은 운영 메모 저장 권한이 없습니다."
+                    );
+                    let permission_width=ui.available_width();
+                    components::fixed_status_slot(
+                        ui,permission_width,typography::METADATA_LINE_HEIGHT,
+                        permission_message,permission_message,theme::MUTED
+                    );
+                    let error_width=ui.available_width();
+                    components::fixed_status_slot(
+                        ui,error_width,typography::METADATA_LINE_HEIGHT,
+                        self.memo_error.as_deref(),self.memo_error.as_deref(),
+                        theme::DANGER
+                    );
                     ui.add_space(theme::SPACE_12);
                     components::modal_action_row(ui,|bar|{
                         if theme::action(bar,"저장",theme::ButtonRole::Primary,
