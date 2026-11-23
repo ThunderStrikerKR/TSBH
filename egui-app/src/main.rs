@@ -1931,6 +1931,10 @@ impl BandoEgui {
         // A dealer choice is NOT required for assigning recipient/source
         // evidence. Pricing and business-state reconciliation remain native
         // Rust responsibilities when a dealer is subsequently selected.
+        // Do not carry a previous reception-pane hover into the manual
+        // worksheet; both views share the same order-scoped state from here.
+        self.link_hover.clear();
+        self.source_hover=None;
         let mut editor=manual_workspace::ManualWorkspace::new(
             row,Arc::clone(&self.gateway),ctx.clone()
         );
@@ -2156,18 +2160,29 @@ impl BandoEgui {
         ) {
             // A manual editor may never cross between two reception IDs.
             self.manual_workspace=None;
+            self.link_hover.clear();
+            self.source_hover=None;
             return;
         }
-        // Work-area coordinates are shared with every other modal.
-        let result=self.manual_workspace.as_mut().and_then(|editor|
-            editor.show(ctx,work_area)
-        );
+        // The manual worksheet and reception intake share one order-scoped
+        // source hover state. Borrow disjoint fields so the overlay can update
+        // the same 50ms/150ms highlight contract while it is open.
+        let result={
+            let editor=self.manual_workspace.as_mut();
+            let hover=&mut self.link_hover;
+            let source=&mut self.source_hover;
+            editor.and_then(|editor|editor.show(ctx,work_area,hover,source))
+        };
         match result {
             Some(manual_workspace::Event::Closed)=>{
                 self.manual_workspace=None;
+                self.link_hover.clear();
+                self.source_hover=None;
             }
             Some(event)=>{
                 self.manual_workspace=None;
+                self.link_hover.clear();
+                self.source_hover=None;
                 self.apply_manual_event(event,ctx);
             }
             None=>{}
