@@ -1113,8 +1113,15 @@ impl ProductManager {
                                                         ("product-price-cell",product_id,
                                                          field(variant,"id"),tier),
                                                         |inputs|{
-                                                            let response=components::money_field(
-                                                                inputs,&mut entry.input,true
+                                                            // Keep the numeric ending and the won
+                                                            // suffix on the same right-hand anchor
+                                                            // as the read-only "26,000원" cell.
+                                                            // The field ends 2pt before its column,
+                                                            // whereas display text ends 8pt before
+                                                            // it: 8 - 2 = 6pt suffix inset.
+                                                            let response=components::money_field_with_unit(
+                                                                inputs,&mut entry.input,true,"원",
+                                                                theme::SPACE_8-theme::SPACE_4/2.0
                                                             );
                                                             crate::floating_notice::sized_text_caret(
                                                                 inputs,"products.price",&response,
@@ -2203,6 +2210,34 @@ mod tests {
         assert_eq!(scrolled_clip.left(),105.0);
         assert_eq!(scrolled_clip.right(),cell.right());
     }
+    #[test]
+    fn price_editor_won_suffix_shares_read_only_right_alignment(){
+        let cell=Rect::from_min_size(
+            egui::pos2(10.0,10.0),
+            Vec2::new(theme::PRODUCT_TABLE_PRICE_WIDTH,
+                theme::PRODUCT_TABLE_ROW_HEIGHT)
+        );
+        let (editor,_) =product_price_editor_rects(
+            cell,Rect::from_min_size(egui::Pos2::ZERO,Vec2::splat(600.0))
+        );
+        let display_right=cell.right()-theme::SPACE_8;
+        let suffix_inset=theme::SPACE_8-theme::SPACE_4/2.0;
+        let edit_suffix_right=editor.right()-suffix_inset;
+        assert!((display_right-edit_suffix_right).abs()<0.01,
+            "normal and edit mode won units must share the exact x coordinate");
+        assert_eq!(editor.center().y,cell.center().y,
+            "editable numbers and read-only amounts must share vertical center");
+        assert_eq!(typography::numeric_editor_font(),
+            typography::management_table_money_font());
+        let source=include_str!("product_manager.rs");
+        let table=source.split("let selected_variant=variants.iter().find(")
+            .nth(1).unwrap().split("let action_rect=Rect::from_center_size(")
+            .next().unwrap();
+        assert!(table.contains("components::money_field_with_unit("));
+        assert!(table.contains("true,\"원\","));
+        assert!(!table.contains("components::money_field(\n"));
+    }
+
     #[test]
     fn price_edit_mode_uses_exact_browse_column_positions_and_minimum_width(){
         // Price edit must never add 148pt per price column, as the former
