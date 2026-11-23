@@ -17,6 +17,14 @@ on:
       - egui-app/src/main.rs
       - egui-app/src/product_manager.rs
       - egui-app/src/manual_workspace.rs
+  pull_request:
+    branches: [main]
+    paths:
+      - .github/workflows/cell-navigation-contract.yml
+      - egui-app/src/cell_navigation.rs
+      - egui-app/src/main.rs
+      - egui-app/src/product_manager.rs
+      - egui-app/src/manual_workspace.rs
 permissions:
   contents: read
 concurrency:
@@ -50,3 +58,6 @@ jobs:
         run: |
           cargo check --manifest-path egui-app/Cargo.toml
           cargo test --manifest-path egui-app/Cargo.toml cell_navigation::tests -- --nocapture
+          cargo test --manifest-path egui-app/Cargo.toml reception_arrow_navigation_keeps_visible_grid_sections_separate -- --nocapture
+          cargo test --manifest-path egui-app/Cargo.toml price_navigation -- --nocapture
+          cargo test --manifest-path egui-app/Cargo.toml arrow_navigation_is_captured_before_text_edit_and_ime_is_respected -- --nocapture

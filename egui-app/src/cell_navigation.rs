@@ -44,6 +44,86 @@ pub fn resolve_cell_navigation_target(
     }
     candidates.first().map(|cell| cell.id.clone())
 }
+
+/// Shared, focus-scoped spreadsheet input contract for egui TextEdit.
+/// Call BEFORE the TextEdit is rendered, then register the Response.id once
+/// rendered. Other fields (search, dates, memos, forms) are never intercepted.
+pub fn remember_worksheet_editor(
+    ctx:&eframe::egui::Context,slot:eframe::egui::Id,editor_id:eframe::egui::Id
+){
+    ctx.data_mut(|data|data.insert_temp(slot,editor_id));
+}
+
+/// Extract only worksheet keys; callers choose the Enter mapping. IME
+/// preedit ownership persists across frames, unlike a one-frame Ime check.
+fn worksheet_key_from_events(
+    events:&[eframe::egui::Event],ime_active:&mut bool,
+    enter:CellNavigationKey,shift_enter:CellNavigationKey
+)->Option<(eframe::egui::Key,eframe::egui::Modifiers,CellNavigationKey)>{
+    use eframe::egui::{Event,ImeEvent,Key};
+    let mut ime_event=false;
+    for event in events{
+        match event{
+            Event::Ime(ImeEvent::Preedit(text))=>{
+                *ime_active=!text.is_empty();
+                ime_event=true;
+            },
+            Event::Ime(ImeEvent::Commit(_))
+            |Event::Ime(ImeEvent::Disabled)=>{
+                *ime_active=false;
+                ime_event=true;
+            },
+            Event::Ime(_)=>{ime_event=true;},
+            _=>{}
+        }
+    }
+    if *ime_active || ime_event{return None;}
+    events.iter().find_map(|event|{
+        let Event::Key{key,pressed:true,modifiers,..}=event else{return None};
+        // Keep standard shortcuts out of the spreadsheet navigation path.
+        if modifiers.command||modifiers.ctrl||modifiers.alt{return None;}
+        let direction=match key{
+            Key::ArrowLeft=>CellNavigationKey::Left,
+            Key::ArrowRight=>CellNavigationKey::Right,
+            Key::ArrowUp=>CellNavigationKey::Up,
+            Key::ArrowDown=>CellNavigationKey::Down,
+            Key::Tab=>if modifiers.shift{
+                CellNavigationKey::Previous
+            }else{CellNavigationKey::Next},
+            Key::Enter=>if modifiers.shift{shift_enter}else{enter},
+            _=>return None
+        };
+        Some((*key,*modifiers,direction))
+    })
+}
+
+/// Return a worksheet navigation command only when the CURRENT editor
+/// owns egui keyboard focus. Consume it before TextEdit changes the caret.
+/// Do not call for normal search, document, date or standalone form fields.
+pub fn consume_worksheet_navigation_before_editor(
+    ctx:&eframe::egui::Context,slot:eframe::egui::Id,
+    enter:CellNavigationKey,shift_enter:CellNavigationKey
+)->Option<CellNavigationKey>{
+    let focused=ctx.data(|data|data.get_temp::<eframe::egui::Id>(slot))
+        .is_some_and(|id|ctx.memory(|memory|memory.has_focus(id)));
+    if !focused{return None;}
+    let mut ime_active=ctx.data(|data|data.get_temp::<bool>(slot.with("ime")))
+        .unwrap_or(false);
+    let events=ctx.input(|input|input.events.clone());
+    let navigation=worksheet_key_from_events(
+        &events,&mut ime_active,enter,shift_enter
+    );
+    ctx.data_mut(|data|data.insert_temp(slot.with("ime"),ime_active));
+    navigation.and_then(|(key,modifiers,direction)|{
+        let consumed=ctx.input_mut(|input|{
+            let mut any=false;
+            while input.consume_key(modifiers,key){any=true;}
+            any
+        });
+        consumed.then_some(direction)
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -56,6 +136,69 @@ mod tests {
             CellNavigationCell { id: "e".into(), row: 2, column: 1, order: 4, enabled: true },
         ]
     }
+    #[test]
+    fn keyboard_extractor_honors_ime_across_frames_and_preserves_shortcuts(){
+        use eframe::egui::{Event,ImeEvent,Key,Modifiers};
+        let arrow=|key,modifiers|Event::Key{
+            key,physical_key:None,pressed:true,repeat:false,modifiers
+        };
+        let mut ime=false;
+        let read=|events:&[Event],ime:&mut bool|
+            worksheet_key_from_events(
+                events,ime,CellNavigationKey::Next,CellNavigationKey::Previous
+            ).map(|(_,_,key)|key);
+        assert_eq!(read(&[arrow(Key::ArrowUp,Modifiers::NONE)],&mut ime),
+            Some(CellNavigationKey::Up));
+        assert_eq!(read(&[arrow(Key::ArrowDown,Modifiers::NONE)],&mut ime),
+            Some(CellNavigationKey::Down));
+        assert_eq!(read(&[arrow(Key::ArrowLeft,Modifiers::NONE)],&mut ime),
+            Some(CellNavigationKey::Left));
+        assert_eq!(read(&[arrow(Key::ArrowRight,Modifiers::NONE)],&mut ime),
+            Some(CellNavigationKey::Right));
+        assert_eq!(read(&[arrow(Key::Enter,Modifiers::NONE)],&mut ime),
+            Some(CellNavigationKey::Next));
+        assert_eq!(read(&[arrow(Key::Enter,Modifiers::SHIFT)],&mut ime),
+            Some(CellNavigationKey::Previous));
+        assert_eq!(read(&[arrow(Key::Tab,Modifiers::SHIFT)],&mut ime),
+            Some(CellNavigationKey::Previous));
+        assert_eq!(read(&[arrow(Key::ArrowUp,Modifiers::CTRL)],&mut ime),None);
+        assert_eq!(read(&[Event::Ime(ImeEvent::Preedit("한".into()))],&mut ime),None);
+        assert!(ime);
+        assert_eq!(read(&[arrow(Key::ArrowDown,Modifiers::NONE)],&mut ime),
+            None,"preedit state persists even when this frame has no Ime event");
+        assert_eq!(read(&[Event::Ime(ImeEvent::Commit("한".into()))],&mut ime),None);
+        assert!(!ime);
+        assert_eq!(read(&[arrow(Key::ArrowDown,Modifiers::NONE)],&mut ime),
+            Some(CellNavigationKey::Down));
+    }
+
+    #[test]
+    fn focused_worksheet_consumes_arrow_before_editor_other_fields_do_not(){
+        use eframe::egui::{Context,Event,Key,Modifiers,RawInput};
+        let ctx=Context::default();
+        let slot=eframe::egui::Id::new("selected-sheet-cell");
+        let editor_id=eframe::egui::Id::new("selected-sheet-editor");
+        let arrow=Event::Key{
+            key:Key::ArrowUp,physical_key:None,pressed:true,
+            repeat:false,modifiers:Modifiers::NONE
+        };
+        ctx.run(RawInput{events:vec![arrow.clone()],..Default::default()},|ctx|{
+            assert_eq!(consume_worksheet_navigation_before_editor(
+                ctx,slot,CellNavigationKey::Down,CellNavigationKey::Up
+            ),None,"unfocused inputs are not intercepted");
+            assert!(ctx.input(|input|input.key_pressed(Key::ArrowUp)));
+        });
+        remember_worksheet_editor(&ctx,slot,editor_id);
+        ctx.memory_mut(|memory|memory.request_focus(editor_id));
+        ctx.run(RawInput{events:vec![arrow],..Default::default()},|ctx|{
+            assert_eq!(consume_worksheet_navigation_before_editor(
+                ctx,slot,CellNavigationKey::Down,CellNavigationKey::Up
+            ),Some(CellNavigationKey::Up));
+            assert!(!ctx.input(|input|input.key_pressed(Key::ArrowUp)),
+                "TextEdit must not be able to consume a worksheet arrow");
+        });
+    }
+
     #[test]
     fn horizontal_navigation_stays_on_the_same_row() {
         let cells = grid();
