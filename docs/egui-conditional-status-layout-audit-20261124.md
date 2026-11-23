@@ -201,7 +201,8 @@ cargo test --manifest-path egui-app/Cargo.toml fixed_layout_slot_contract_tests 
 - 수동 분류의 기존 source-contract 테스트가 이전 클릭 코드 문자열을 검사해 실패한 건은 `if apply_clicked{apply=true;}` 기준으로 갱신했다. 수정 커밋은 `0fc427aa2cbcc75083e8531457ed2db44e5fa0df`이며, 해당 커밋의 수동 분류 Windows 테스트 run `45254568332`는 `success`였다.
 - 넓은 targeted run `45253872313`에서는 기존 소스 계약 테스트 세 건이 오래된 구현 문자열/개수 가정을 검사해 실패했다. 별칭 진단 슬롯의 직접 툴팁 호출, 카테고리 검색의 좁은/넓은 분기 2개, OCR 체크박스의 들여쓰기 문자열이 각각 원인이었다. 공통 슬롯 사용, 논리 검색 필드의 반응형 분기, 의미 기반 체크박스 검증으로 갱신했다. 수정 커밋은 `6de56471710ab78b8fbdec4580f73191a4237022`이다.
 - `fixed_row`는 부모에 한 번만 정확한 크기를 할당하도록 `allocate_ui_with_layout` 기반으로 정리했다. 추가 Rect 테스트로 중복 할당이 없는지 검사한다. 구현 커밋은 `ef3d8a8be2e45b42f20e1ddee31ee5810b5df11a`, 강화된 테스트 커밋은 `992adb057acda670d0fcc050e2adbacaf6ee36ff`이다.
-- 최종 구현/테스트 커밋 `992adb057acda670d0fcc050e2adbacaf6ee36ff`를 기준으로 Windows targeted workflow run `45256318610`은 문서 갱신 시점에 `pending` 상태였다. 수동 분류, 수동 모달, 거래처/운임, 상품 모달의 전문 workflow도 같은 커밋에서 실행 중이다. 이전 커밋의 실행은 새 커밋 검증을 위해 취소된 상태로 성공 판정에 포함하지 않는다.
+- `992adb057acda670d0fcc050e2adbacaf6ee36ff`에서는 슬롯의 높이뿐 아니라 부모가 정확히 한 번만 Rect를 소비하는지까지 테스트하도록 강화했다. 그 후 CI가 기존 상품 체크박스와 설정 충돌 헤더의 공백/개수 문자열을 검사하던 두 테스트도 오래된 계약으로 판정했다. 실제 구현은 공통 컴포넌트를 사용하고 있어 의미 기반 검사로 갱신했으며, 수정 커밋은 `d9e7b862da301c47fceed9ca6a39ccaa114f52e5`이다.
+- 최신 구현/테스트 커밋 `d9e7b862da301c47fceed9ca6a39ccaa114f52e5`의 Windows targeted workflow run `45256657291`은 문서 갱신 시점에 `pending` 상태였다. 수동 분류, 수동 모달, 거래처/운임, 상품 모달의 전문 workflow도 같은 커밋에서 실행 중이다. 이전 커밋의 실행은 새 커밋 검증을 위해 취소된 상태로 성공 판정에 포함하지 않는다.
 - 이전 SHA에서 실패/취소된 실행은 최종 성공으로 간주하지 않는다. 최종 Windows 컴파일과 새 Rect 회귀 테스트가 완료되기 전까지 전체 PASS로 판정하지 않는다.
 - 실제 창의 픽셀/사용자 운영 DB 검증은 CI와 별도 경계로 남긴다.
 
@@ -238,4 +239,4 @@ cargo test --manifest-path egui-app/Cargo.toml fixed_layout_slot_contract_tests 
 5. 실제 데이터 목록과 검토 이슈는 고정 스크롤 뷰포트 안에서 유지하되, 부모 패널의 크기를 바꾸지 않는다.
 6. 새 공통 UI 슬롯을 만들면 최소한 상태 없음/있음, 버튼 없음/있음의 실제 egui Rect 회귀 테스트를 함께 추가한다.
 
-**최종 판정:** 소스 전수조사와 코드 조치는 main에 반영했다. 최종 PASS 여부는 최신 구현/테스트 커밋 `992adb057acda670d0fcc050e2adbacaf6ee36ff`의 Windows CI run `45256318610` 완료 결과로 확정하며, 실제 운영 창의 픽셀 검증은 별도 경계로 남긴다.
+**최종 판정:** 소스 전수조사와 코드 조치는 main에 반영했다. 최종 PASS 여부는 최신 구현/테스트 커밋 `d9e7b862da301c47fceed9ca6a39ccaa114f52e5`의 Windows CI run `45256657291` 완료 결과로 확정하며, 실제 운영 창의 픽셀 검증은 별도 경계로 남긴다.
