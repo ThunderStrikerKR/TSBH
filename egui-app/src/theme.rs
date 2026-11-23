@@ -59,6 +59,16 @@ pub const SELECTION: Color32 = Color32::from_rgb(112, 180, 255);
 // the hovered option is brighter blue; no conflicting highlight roles.
 pub const MANAGEMENT_DROPDOWN_SELECTED_BG: Color32 = Color32::from_rgb(37, 62, 82);
 pub const MANAGEMENT_DROPDOWN_HOVER_BG: Color32 = Color32::from_rgb(57, 91, 118);
+// Hierarchical category explorer reuses the management dropdown master.
+// Exploration is neutral; confirmed filtering uses the existing orange role.
+pub const CATEGORY_EXPLORER_POPUP_WIDTH:f32=420.0;
+pub const CATEGORY_EXPLORER_LIST_MAX_HEIGHT:f32=216.0;
+pub const CATEGORY_EXPLORER_ANCESTOR_MAX_HEIGHT:f32=144.0;
+pub const CATEGORY_EXPLORER_CRUMB_HEIGHT:f32=28.0;
+pub const CATEGORY_EXPLORER_APPLIED_BG:Color32=Color32::from_rgb(90,61,33);
+pub const CATEGORY_EXPLORER_APPLIED_BORDER:Color32=SELECTED_ORDER;
+pub const CATEGORY_EXPLORER_CURRENT_BG:Color32=RAISED;
+pub const CATEGORY_EXPLORER_CURRENT_BORDER:Color32=Color32::from_rgb(136,136,136);
 pub const SELECTED_ORDER: Color32 = Color32::from_rgb(242, 186, 100);
 // Compact working-order cards derive every slot from the actual right pane.
 // The horizontal outer inset, inter-control gaps and vertical insets use
