@@ -1350,7 +1350,8 @@ impl ManualWorkspace {
                                                             lookup=Some((rid.to_owned(),item_id.to_owned()));
                                                         }
                                                         if theme::action(actions,"상품 제거",
-                                                            ButtonRole::Quiet,!busy).clicked(){
+                                                            ButtonRole::Quiet,
+                                                            !busy && !pending_quantity_active).clicked(){
                                                             chosen=Some(("remove_manual_item".into(),json!({
                                                                 "recipientId":rid,"itemId":item_id
                                                             })));
