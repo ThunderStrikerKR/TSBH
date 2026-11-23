@@ -287,6 +287,24 @@ fn inline_same_visible_grid(a:&InlineTarget,b:&InlineTarget)->bool{
         target.item_id.is_none()&&target.field!="shippingCharge";
     is_recipient(a)==is_recipient(b)
 }
+/// Recipient inputs are stacked, except mobile/phone which share a row.
+fn inline_recipient_visual_position(field:&str)->(usize,usize){
+    match field{
+        "name"=>(0,0),"address"=>(1,0),
+        "mobile"=>(2,0),"phone"=>(2,1),
+        "note"=>(3,0),_=>(usize::MAX,usize::MAX)
+    }
+}
+fn inline_phone_vertical_destination(
+    field:&str,key:CellNavigationKey
+)->Option<&'static str>{
+    if field!="phone"{return None;}
+    match key{
+        CellNavigationKey::Up=>Some("address"),
+        CellNavigationKey::Down=>Some("note"),
+        _=>None
+    }
+}
 #[cfg(test)]
 #[test]
 fn reception_arrow_navigation_keeps_visible_grid_sections_separate(){
@@ -310,6 +328,20 @@ fn reception_arrow_navigation_keeps_visible_grid_sections_separate(){
     assert!(inline_same_visible_grid(&item_quantity,&freight));
     assert!(!inline_same_visible_grid(&recipient,&item_quantity));
     assert!(!inline_same_visible_grid(&recipient,&freight));
+    assert_eq!(inline_recipient_visual_position("name"),(0,0));
+    assert_eq!(inline_recipient_visual_position("address"),(1,0));
+    assert_eq!(inline_recipient_visual_position("mobile"),(2,0));
+    assert_eq!(inline_recipient_visual_position("phone"),(2,1));
+    assert_eq!(inline_recipient_visual_position("note"),(3,0));
+    assert_eq!(inline_phone_vertical_destination(
+        "phone",CellNavigationKey::Up
+    ),Some("address"));
+    assert_eq!(inline_phone_vertical_destination(
+        "phone",CellNavigationKey::Down
+    ),Some("note"));
+    assert_eq!(inline_phone_vertical_destination(
+        "mobile",CellNavigationKey::Up
+    ),None);
 }
 
 struct InlineReceptionEditor {
@@ -6631,10 +6663,13 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                             recipient_id:recipient_id.to_owned(),
                                             item_id:None,field
                                         };
+                                        let (visual_row,visual_column)=
+                                            inline_recipient_visual_position(field);
                                         inline_navigation.push(InlineNavigationEntry{
                                             target:target.clone(),original:initial.to_owned(),
                                             cell:CellNavigationCell{
-                                                id:inline_target_key(&target),row:0,column,
+                                                id:inline_target_key(&target),
+                                                row:visual_row,column:visual_column,
                                                 order:column,enabled:editable
                                             }
                                         });
@@ -7152,9 +7187,19 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                 })
                 .map(|entry|entry.cell.clone()).collect();
             let current_id=inline_target_key(&current);
-            if let Some(next_id)=crate::cell_navigation::resolve_cell_navigation_target(
-                &cells,&current_id,key
-            ){
+            let phone_target=if current.item_id.is_none(){
+                inline_phone_vertical_destination(current.field,key)
+                    .and_then(|field|inline_navigation.iter().find(|entry|
+                        entry.cell.enabled && entry.target.item_id.is_none()
+                        && entry.target.field==field
+                    )).map(|entry|inline_target_key(&entry.target))
+            }else{None};
+            let next_id=phone_target.or_else(||
+                crate::cell_navigation::resolve_cell_navigation_target(
+                    &cells,&current_id,key
+                )
+            );
+            if let Some(next_id)=next_id{
                 if let Some(next)=inline_navigation.iter().find(|entry|entry.cell.id==next_id){
                     self.switch_inline_edit(next.target.clone(),next.original.clone(),None,ui.ctx());
                 }
