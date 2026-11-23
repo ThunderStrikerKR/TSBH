@@ -597,7 +597,7 @@ impl AutomaticMessageManager {
         crate::floating_notice::sync(
             ui.ctx(),"clients.auto.error","clients.automatic.message",
             crate::floating_notice::Tone::Error,
-            if self.loaded{self.error.as_deref()}else{None}
+            self.error.as_deref()
         );
         // The nested message tabs follow the same guide as the client
         // page's main heading and tabs, without moving either editor card.
@@ -609,9 +609,8 @@ impl AutomaticMessageManager {
         );
         ui.add_space(theme::SPACE_16);
         if !self.loaded{
-            if let Some(error)=&self.error{
-                ui.label(typography::status(error,theme::DANGER));
-            }
+            components::align_management_primary_card(ui,page_origin_y);
+            components::management_pending_primary_card(ui);
             return;
         }
         let mut target=tab.map(|index|Destination::Subtab(
