@@ -1107,15 +1107,27 @@ impl ManualWorkspace {
                             hovered_source=interaction.hovered;
                             source_did_scroll=interaction.did_scroll;
                             if let Some(id)=interaction.clicked_block {
-                                if assignments.get(&id).is_some() {
+                                let assigned=assignments.get(&id);
+                                let source_field=blocks.iter()
+                                    .find(|block|text(block,"id")==id)
+                                    .map(|block|text(block,"field"))
+                                    .unwrap_or("");
+                                let pending_item=pending_quantity_cell.as_ref()
+                                    .and_then(|cell|cell.item.as_deref());
+                                let assigned_item=assigned
+                                    .and_then(|cell|cell.get("itemId"))
+                                    .and_then(Value::as_str);
+                                if !manual_source_assignment_allowed(
+                                    assigned.is_some(),assigned_item,pending_item,source_field
+                                ){
+                                    self.error=Some(
+                                        "선택한 상품의 수량을 먼저 확정하세요.".into()
+                                    );
+                                }else if assigned.is_some(){
                                     chosen=Some(("release_manual_block".into(),json!({
                                         "id":id,"clear":true
                                     })));
                                 }else if let Some(row)=rows.get(self.selected_recipient){
-                                    let source_field=blocks.iter()
-                                        .find(|block|text(block,"id")==id)
-                                        .map(|block|text(block,"field"))
-                                        .unwrap_or("");
                                     if !manual_cell_matches_source(
                                         self.selected_item.is_some(),
                                         &self.selected_field,source_field
