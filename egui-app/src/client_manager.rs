@@ -717,9 +717,10 @@ impl ClientManager {
                 let entered=std::mem::take(&mut self.tag_input);
                 self.accept_tag_text(draft,&entered);
             }
-            if let Some(notice)=self.tag_notice.as_deref(){
-                panel.label(typography::caption(notice));
-            }
+            components::fixed_status_slot(
+                panel,panel.available_width(),typography::METADATA_LINE_HEIGHT,
+                self.tag_notice.as_deref(),self.tag_notice.as_deref(),theme::MUTED
+            );
         });
     }
     fn editor_fields(&mut self,ui:&mut Ui,draft:&mut Value) {
