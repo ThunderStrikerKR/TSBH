@@ -1457,7 +1457,7 @@ impl ManualWorkspace {
                                 panel.set_min_height(
                                     (height-2.0*theme::SPACE_8).max(0.0)
                                 );
-                                panel.label(typography::subsection_heading("배송 정보 구성표"));
+                                panel.label(typography::subsection_heading("배송 정보"));
                                 let mut count_resize_requested=false;
                                 panel.horizontal(|ui|{
                                     components::form_field_label(ui,"배송 건수");
@@ -1552,7 +1552,7 @@ impl ManualWorkspace {
                                     // native manual reducer; only presentation changes.
                                     let quantity_col=72.0;
                                     let price_col=100.0;
-                                    let actions_col=118.0;
+                                    let actions_col=78.0;
                                     let product_col=(table_width-quantity_col-price_col
                                         -actions_col).max(260.0)
                                         .min(theme::MANUAL_TABLE_PRODUCT_COL);
@@ -1764,16 +1764,18 @@ impl ManualWorkspace {
                                                         );
                                                     }
                                                     grid.horizontal(|actions|{
-                                                        if theme::action(actions,"검색",
-                                                            ButtonRole::Standard,
+                                                        if components::icon_action_button(
+                                                            actions,"⌕","상품 검색",
                                                             !busy && !pending_quantity_active &&
-                                                            self.edit_text==self.current_value()).clicked(){
+                                                            self.edit_text==self.current_value()
+                                                        ).clicked(){
                                                             lookup=Some((rid.to_owned(),item_id.to_owned()));
                                                         }
-                                                        if theme::action(actions,"상품 제거",
-                                                            ButtonRole::Quiet,
+                                                        if components::icon_action_button(
+                                                            actions,"×","상품 제거",
                                                             !busy && !pending_quantity_active &&
-                                                            self.edit_text==self.current_value()).clicked(){
+                                                            self.edit_text==self.current_value()
+                                                        ).clicked(){
                                                             chosen=Some(("remove_manual_item".into(),json!({
                                                                 "recipientId":rid,"itemId":item_id
                                                             })));
@@ -1790,6 +1792,8 @@ impl ManualWorkspace {
                                             })));
                                         }
                                         if index==self.selected_recipient {
+                                            ui.add_space(theme::SPACE_12);
+                                            ui.label(typography::field_label("발송 · 운임"));
                                             let origin=text(row,"dispatchOrigin");
                                             let origin=if origin=="STORE"{"STORE"}else{"FACTORY"};
                                             let code=text(row,"freightCode");
@@ -1858,16 +1862,18 @@ impl ManualWorkspace {
                                             });
                                             ui.horizontal_wrapped(|options|{
                                                 options.spacing_mut().item_spacing.x=theme::SPACE_8;
-                                                if theme::action(options,
-                                                    if remote{"도서산간 적용"}else{"도서산간 미적용"},
-                                                    ButtonRole::Standard,!busy && !pending_quantity_active &&
-                                                        remote_ready && self.edit_text==self.current_value()
-                                                ).clicked(){
+                                                let mut remote_checked=remote;
+                                                if components::checkbox(
+                                                    options,&mut remote_checked,"도서/산간",
+                                                    !busy && !pending_quantity_active &&
+                                                        remote_ready &&
+                                                        self.edit_text==self.current_value()
+                                                ).changed(){
                                                     chosen=Some((
                                                         "set_manual_delivery_option".into(),
                                                         json!({"cell":{"recipientId":rid,
                                                             "field":"remoteDelivery"},
-                                                            "value":!remote})
+                                                            "value":remote_checked})
                                                     ));
                                                 }
                                                 if theme::action(options,
