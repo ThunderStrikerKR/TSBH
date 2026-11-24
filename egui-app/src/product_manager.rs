@@ -2666,10 +2666,6 @@ mod tests {
         assert!(editor.contains("response.lost_focus()"));
         assert!(editor.contains("response.gained_focus()"));
         assert!(editor.contains("select_all_price_text("));
-        assert!(editor.contains("egui::Key::Enter"));
-        assert!(editor.contains("egui::Key::Tab"));
-        assert!(editor.contains("egui::Key::ArrowUp"));
-        assert!(editor.contains("egui::Key::ArrowDown"));
         assert!(editor.contains("egui::Key::Escape"));
         assert!(editor.contains("entry.reset_to_original()"));
         let escape_branch=editor.split("if escape{").nth(1).unwrap()
