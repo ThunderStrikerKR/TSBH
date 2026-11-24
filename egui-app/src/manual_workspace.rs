@@ -1488,11 +1488,15 @@ impl ManualWorkspace {
                         egui::vec2(ui.available_width(),height),
                         egui::Layout::top_down(egui::Align::Min),
                         |sheet_ui|{
-                            theme::modal_nested_frame().show(sheet_ui,|panel|{
-                                panel.set_min_height(
-                                    (height-2.0*theme::SPACE_8).max(0.0)
-                                );
-                                panel.label(typography::subsection_heading("배송 정보"));
+                            // Share Reception's actual card renderer, field
+                            // geometry and product/freight controls. Do not
+                            // imitate their layout with a manual Grid.
+                            sheet_ui.vertical(|panel|{
+                                panel.set_min_width(ui.available_width().max(
+                                    theme::MANUAL_SHEET_MIN_WIDTH
+                                ));
+                                panel.set_min_height(height.max(0.0));
+                                panel.spacing_mut().item_spacing.y=theme::SPACE_8;
                                 let mut count_resize_requested=false;
                                 panel.horizontal(|ui|{
                                     components::form_field_label(ui,"배송 건수");
@@ -1565,474 +1569,364 @@ impl ManualWorkspace {
                                     ui.label(typography::caption("건"));
                                 });
                                 if count_resize_requested {panel.disable();}
-                                // The shipment switcher remains visible when the
-                                // recipient/product worksheet scrolls. Switching
-                                // is a selection only: other deliveries and their
-                                // manual source assignments stay intact.
-                                if let Some(index)=visible_shipment {
-                                    let can_switch=!busy && !pending_quantity_active
-                                        && !count_resize_requested;
-                                    panel.horizontal(|header|{
-                                        let recipient=text(&rows[index],"name");
-                                        if rows.len()>1 {
-                                            // Reuse reception's approved segmented
-                                            // recipient navigator: shared chevrons,
-                                            // disabled endpoints and name overflow.
-                                            let target=header.add_enabled_ui(
-                                                can_switch,|nav|{
-                                                    components::reception_recipient_navigator(
-                                                        nav,recipient,index,rows.len()
-                                                    )
+                                let can_switch=!busy && !pending_quantity_active
+                                    && !count_resize_requested;
+                                let can_mutate=can_switch &&
+                                    self.edit_text==self.current_value();
+                                // Keep count controls above the scrollable
+                                // cards; header and footer never disappear.
+                                let body_height=panel.available_height().max(1.0);
+                                egui::ScrollArea::vertical()
+                                    .id_salt("manual-reception-style-cards")
+                                    .scroll_bar_visibility(
+                                        egui::containers::scroll_area::ScrollBarVisibility::VisibleWhenNeeded
+                                    )
+                                    .auto_shrink([false,false])
+                                    .max_height(body_height)
+                                    .show(panel,|sheet|{
+                                        if let Some(index)=visible_shipment {
+                                            let row=&rows[index];
+                                            let rid=text(row,"id");
+                                            let mut next_recipient=None;
+                                            components::reception_section_with_header(
+                                                sheet,"수취인별 주문 정보",0.0,
+                                                |header|{
+                                                    let name=text(row,"name");
+                                                    next_recipient=header.add_enabled_ui(
+                                                        can_switch,|nav|{
+                                                            components::reception_recipient_navigator(
+                                                                nav,name,index,rows.len()
+                                                            )
+                                                        }
+                                                    ).inner;
+                                                },|fields|{
+                                                    // The five master inputs are
+                                                    // one shared renderer. Only
+                                                    // the selected field gets an
+                                                    // overlaid native editor.
+                                                    let mut name=text(row,"name").to_owned();
+                                                    let mut address=text(row,"address").to_owned();
+                                                    let mut mobile=text(row,"mobile").to_owned();
+                                                    let mut phone=text(row,"phone").to_owned();
+                                                    let mut note=text(row,"note").to_owned();
+                                                    let recipient_keys=[
+                                                        "name","address","mobile","phone","note"
+                                                    ];
+                                                    let active_fields=recipient_keys.map(|field|
+                                                        source_highlight::is_active(
+                                                            active_link.as_ref(),
+                                                            &source_highlight::key(rid,rid,field)
+                                                        )
+                                                    );
+                                                    let responses=components::reception_recipient_fields(
+                                                        fields,&mut name,&mut address,
+                                                        &mut mobile,&mut phone,&mut note,
+                                                        active_fields
+                                                    );
+                                                    for (field,response) in recipient_keys
+                                                        .into_iter().zip(responses.into_iter()){
+                                                        let key=source_highlight::key(rid,rid,field);
+                                                        let selected=index==self.selected_recipient &&
+                                                            self.selected_item.is_none() &&
+                                                            self.selected_field==field;
+                                                        if selected {
+                                                            let (editing,navigation)=
+                                                                self.selected_cell_editor_on_rect(
+                                                                    fields,response.rect,
+                                                                    source_highlight::is_active(
+                                                                        active_link.as_ref(),&key
+                                                                    ),busy
+                                                                );
+                                                            if let Some(navigation)=navigation{
+                                                                self.queue_cell_navigation(
+                                                                    navigation,&mut submit_direct,
+                                                                    &mut navigate_now
+                                                                );
+                                                            }
+                                                            if editing.hovered(){hovered_detail=Some(key);}
+                                                        }else{
+                                                            if response.hovered(){
+                                                                hovered_detail=Some(key.clone());
+                                                            }
+                                                            if response.clicked(){
+                                                                self.queue_cell_selection(
+                                                                    ManualCellTarget{
+                                                                        row:index,item:None,
+                                                                        field:field.to_owned()
+                                                                    },&mut submit_direct
+                                                                );
+                                                            }
+                                                        }
+                                                    }
                                                 }
-                                            ).inner;
-                                            if let Some(next)=target {
+                                            );
+                                            if let Some(next)=next_recipient {
                                                 self.queue_cell_selection(
                                                     ManualCellTarget{
                                                         row:next,item:None,field:"name".into()
                                                     },&mut submit_direct
                                                 );
                                             }
-                                        }else{
-                                            header.label(typography::field_label("배송 1 / 1"));
-                                            if !recipient.is_empty(){
-                                                header.label(typography::body(recipient))
-                                                    .on_hover_text(recipient);
+                                            sheet.add_space(theme::SPACE_8);
+                                            let mut header_add_item=false;
+                                            components::reception_section_with_header(
+                                                sheet,"품목 및 운임",340.0,
+                                                |header|{
+                                                    header_add_item=
+                                                        components::reception_item_add_action_editable(
+                                                            header,can_mutate
+                                                        );
+                                                },|items_ui|{
+                                                    items_ui.spacing_mut().item_spacing.y=0.0;
+                                                    let row_width=items_ui.available_width().max(
+                                                        theme::RECEPTION_ITEMS_MIN_TABLE_WIDTH
+                                                    );
+                                                    items_ui.set_min_width(row_width);
+                                                    components::reception_items_header(items_ui);
+                                                    for item in list(row,"items"){
+                                                        let item_id=text(item,"id");
+                                                        let quantity=item.get("quantity")
+                                                            .and_then(Value::as_i64)
+                                                            .map(|n|format!("{n}개"))
+                                                            .unwrap_or_else(||"—".to_owned());
+                                                        // Display only native unit-price fields
+                                                        // before a quote exists; no UI-side
+                                                        // price multiplication or VAT logic.
+                                                        let price=item.get("manualUnitPrice")
+                                                            .or_else(||item.get("unitPrice"))
+                                                            .and_then(Value::as_i64)
+                                                            .map(components::display_won)
+                                                            .unwrap_or_else(||"—".into());
+                                                        let product_key=source_highlight::key(
+                                                            rid,item_id,"product"
+                                                        );
+                                                        let quantity_key=source_highlight::key(
+                                                            rid,item_id,"quantity"
+                                                        );
+                                                        let price_key=source_highlight::key(
+                                                            rid,item_id,"unitPrice"
+                                                        );
+                                                        let keys=[
+                                                            product_key,quantity_key,price_key
+                                                        ];
+                                                        let active_fields=keys.clone().map(|key|
+                                                            source_highlight::is_active(
+                                                                active_link.as_ref(),&key
+                                                            )
+                                                        );
+                                                        let cells=components::reception_item_row_editable(
+                                                            items_ui,text(item,"name"),
+                                                            &quantity,&price,active_fields
+                                                        );
+                                                        for (field,response,key) in [
+                                                            ("product",cells.product,&keys[0]),
+                                                            ("quantity",cells.quantity,&keys[1]),
+                                                            ("unitPrice",cells.amount,&keys[2])
+                                                        ]{
+                                                            let selected=index==self.selected_recipient &&
+                                                                self.selected_item.as_deref()==Some(item_id) &&
+                                                                self.selected_field==field;
+                                                            if selected{
+                                                                let (editing,navigation)=
+                                                                    self.selected_cell_editor_on_rect(
+                                                                        items_ui,response.rect,
+                                                                        source_highlight::is_active(
+                                                                            active_link.as_ref(),key
+                                                                        ),busy
+                                                                    );
+                                                                if let Some(navigation)=navigation{
+                                                                    self.queue_cell_navigation(
+                                                                        navigation,&mut submit_direct,
+                                                                        &mut navigate_now
+                                                                    );
+                                                                }
+                                                                if editing.hovered(){
+                                                                    hovered_detail=Some(key.clone());
+                                                                }
+                                                            }else{
+                                                                if response.hovered(){
+                                                                    hovered_detail=Some(key.clone());
+                                                                }
+                                                                if response.clicked(){
+                                                                    self.queue_cell_selection(
+                                                                        ManualCellTarget{
+                                                                            row:index,
+                                                                            item:Some(item_id.to_owned()),
+                                                                            field:field.to_owned()
+                                                                        },&mut submit_direct
+                                                                    );
+                                                                }
+                                                            }
+                                                        }
+                                                    }
+                                                    // Product search/removal remain manual-only
+                                                    // actions; do not add a fourth column to
+                                                    // Reception's approved three-column grid.
+                                                    if let Some(item_id)=self.selected_item.as_deref()
+                                                        .filter(|id|list(row,"items").iter()
+                                                            .any(|item|text(item,"id")==*id)){
+                                                        items_ui.add_space(theme::SPACE_8);
+                                                        items_ui.horizontal(|actions|{
+                                                            actions.label(typography::caption(
+                                                                "선택한 상품"
+                                                            ));
+                                                            if components::icon_action_button(
+                                                                actions,"⌕","상품 검색",can_mutate
+                                                            ).clicked(){
+                                                                lookup=Some((
+                                                                    rid.to_owned(),item_id.to_owned()
+                                                                ));
+                                                            }
+                                                            if components::icon_action_button(
+                                                                actions,"×","상품 제거",can_mutate
+                                                            ).clicked(){
+                                                                chosen=Some((
+                                                                    "remove_manual_item".into(),
+                                                                    json!({"recipientId":rid,
+                                                                        "itemId":item_id})
+                                                                ));
+                                                            }
+                                                        });
+                                                    }
+                                                    if self.selected_item.is_some() &&
+                                                        self.selected_field=="quantity" {
+                                                        let quantity=list(row,"items").iter()
+                                                            .find(|item|self.selected_item.as_deref()
+                                                                ==Some(text(item,"id")))
+                                                            .and_then(|item|item["quantity"].as_i64())
+                                                            .unwrap_or(0);
+                                                        let settled=self.edit_text==self.current_value();
+                                                        items_ui.horizontal(|buttons|{
+                                                            if theme::action(
+                                                                buttons,"−",ButtonRole::Standard,
+                                                                !busy && settled && quantity>1
+                                                            ).clicked(){
+                                                                if let Some(item)=self.selected_item.as_ref(){
+                                                                    self.focus_editor=true;
+                                                                    chosen=Some(("step_manual_quantity".into(),
+                                                                        json!({"cell":{
+                                                                            "recipientId":rid,"itemId":item},
+                                                                            "delta":-1})
+                                                                    ));
+                                                                }
+                                                            }
+                                                            if theme::action(
+                                                                buttons,"+",ButtonRole::Standard,
+                                                                !busy && settled
+                                                            ).clicked(){
+                                                                if let Some(item)=self.selected_item.as_ref(){
+                                                                    self.focus_editor=true;
+                                                                    chosen=Some(("step_manual_quantity".into(),
+                                                                        json!({"cell":{
+                                                                            "recipientId":rid,"itemId":item},
+                                                                            "delta":1})
+                                                                    ));
+                                                                }
+                                                            }
+                                                            if self.selected_quantity_pending() &&
+                                                                matches!(self.last_action.as_deref(),
+                                                                    Some("set_manual_product"|"assign_manual_block")) &&
+                                                                theme::action(
+                                                                    buttons,"상품 선택 취소",
+                                                                    ButtonRole::Quiet,!busy && settled
+                                                                ).clicked(){
+                                                                self.undo();
+                                                            }
+                                                        });
+                                                    }
+                                                    items_ui.add_space(theme::SPACE_8);
+                                                    let code=if text(row,"freightCode")=="020"{
+                                                        "020"
+                                                    }else{"010"};
+                                                    let remote_result=remote_for(&self.remote_rows,row)
+                                                        .cloned();
+                                                    let remote_value=remote_result.as_ref()
+                                                        .and_then(|result|result.as_ref().ok())
+                                                        .filter(|value|value.is_object());
+                                                    let remote=remote_value
+                                                        .and_then(|value|value["checked"].as_bool())
+                                                        .unwrap_or(false);
+                                                    let remote_ready=remote_value.is_some();
+                                                    let freight=components::reception_freight_row_editable(
+                                                        items_ui,"운임",
+                                                        row["shippingCharge"].as_i64(),
+                                                        Some(code=="020"),
+                                                        remote_ready.then_some(remote),
+                                                        true,can_mutate
+                                                    );
+                                                    if freight.amount_clicked {
+                                                        self.queue_cell_selection(
+                                                            ManualCellTarget{
+                                                                row:index,item:None,
+                                                                field:"shippingCharge".into()
+                                                            },&mut submit_direct
+                                                        );
+                                                    }
+                                                    if self.selected_item.is_none() &&
+                                                        self.selected_field=="shippingCharge" {
+                                                        if let Some(rect)=freight.amount_rect {
+                                                            let (_,navigation)=
+                                                                self.selected_cell_editor_on_rect(
+                                                                    items_ui,rect,false,busy
+                                                                );
+                                                            if let Some(navigation)=navigation{
+                                                                self.queue_cell_navigation(
+                                                                    navigation,&mut submit_direct,
+                                                                    &mut navigate_now
+                                                                );
+                                                            }
+                                                        }
+                                                    }
+                                                    if freight.collect_clicked {
+                                                        chosen=Some(("set_manual_delivery_option".into(),
+                                                            json!({"cell":{
+                                                                "recipientId":rid,"field":"freightCode"
+                                                            },"value":if code=="020"{"010"}else{"020"}})
+                                                        ));
+                                                    }
+                                                    if freight.remote_clicked {
+                                                        chosen=Some(("set_manual_delivery_option".into(),
+                                                            json!({"cell":{
+                                                                "recipientId":rid,"field":"remoteDelivery"
+                                                            },"value":!remote})
+                                                        ));
+                                                    }
+                                                    let remote_message=remote_value
+                                                        .and_then(crate::reception_service::remote_delivery_notice)
+                                                        .or_else(||remote_result.as_ref()
+                                                            .and_then(|result|result.as_ref().err())
+                                                            .map(|error|format!(
+                                                                "도서/산간 판정 실패 · {error}"
+                                                            )));
+                                                    components::fixed_status_slot(
+                                                        items_ui,items_ui.available_width(),
+                                                        typography::METADATA_LINE_HEIGHT,
+                                                        remote_message.as_deref(),
+                                                        remote_message.as_deref(),
+                                                        theme::SELECTED_ORDER
+                                                    );
+                                                    let origin=if text(row,"dispatchOrigin")=="STORE"{
+                                                        "STORE"
+                                                    }else{"FACTORY"};
+                                                    if let Some(next_origin)=
+                                                        components::reception_item_origin_action_editable(
+                                                            items_ui,Some(origin),can_mutate
+                                                        ){
+                                                        chosen=Some(("set_manual_delivery_option".into(),
+                                                            json!({"cell":{
+                                                                "recipientId":rid,"field":"dispatchOrigin"
+                                                            },"value":next_origin})
+                                                        ));
+                                                    }
+                                                }
+                                            );
+                                            if header_add_item {
+                                                chosen=Some(("add_manual_item".into(),json!({
+                                                    "recipientId":rid,"itemId":unique_id()
+                                                })));
                                             }
                                         }
                                     });
-                                }
-                                // The previous estimate counted only the table.
-                                // Quantity steppers and the direct freight editor
-                                // lived BELOW the viewport and got clipped by
-                                // this panel. The whole sheet belongs to ONE
-                                // scroll surface sized from the remaining panel
-                                // space after header/count/recipient navigation.
-                                let worksheet_height=(panel.available_height()
-                                    -theme::SPACE_8).max(1.0);
-                                egui::ScrollArea::both()
-                                    .id_salt("manual-recipients-table")
-                                    .auto_shrink([false,false])
-                                    // The rail is visible whenever the actual
-                                    // worksheet exceeds the panel viewport.
-                                    .scroll_bar_visibility(
-                                        egui::containers::scroll_area::ScrollBarVisibility::VisibleWhenNeeded
-                                    )
-                                    .max_height(worksheet_height)
-                                    .show(panel,|ui|{
-                                    // Keep other shipments in the native model,
-                                    // but render only the selected shipment's
-                                    // editable cells to avoid an endless worksheet.
-                                    let table_width=ui.available_width()
-                                        .max(theme::MANUAL_TABLE_MIN_WIDTH);
-                                    ui.set_min_width(table_width);
-                                    // Manual recipient editing is an inline, vertically ordered
-                                    // worksheet, not six narrow columns. The old layout
-                                    // truncated addresses and obscured field identities.
-                                    // Reuse the shared linked-cell/editor components and
-                                    // native manual reducer; only presentation changes.
-                                    let quantity_col=72.0;
-                                    let price_col=100.0;
-                                    let actions_col=78.0;
-                                    let product_col=(table_width-quantity_col-price_col
-                                        -actions_col).max(260.0)
-                                        .min(theme::MANUAL_TABLE_PRODUCT_COL);
-                                    for (index,row) in rows.iter().enumerate()
-                                        .filter(|(index,_)|Some(*index)==visible_shipment) {
-                                        let rid=text(row,"id");
-                                        ui.add_space(theme::SPACE_8);
-                                        let label_width=92.0;
-                                        let field_width=(table_width-label_width
-                                            -theme::SPACE_8).max(160.0);
-                                        for (field,label) in [
-                                            ("name","수취인"),
-                                            ("address","주소"),
-                                            ("mobile","휴대폰"),
-                                            ("phone","전화"),
-                                            ("note","배송 요청")
-                                        ] {
-                                            ui.horizontal(|entry|{
-                                                entry.spacing_mut().item_spacing.x=theme::SPACE_8;
-                                                components::form_field_label_sized(
-                                                    entry,label,label_width
-                                                );
-                                                let selected=index==self.selected_recipient &&
-                                                    self.selected_item.is_none() &&
-                                                    self.selected_field==field;
-                                                let key=source_highlight::key(rid,rid,field);
-                                                let linked=source_highlight::is_active(
-                                                    active_link.as_ref(),&key
-                                                );
-                                                let response=if selected{
-                                                    let (response,navigation)=
-                                                        self.selected_cell_editor(
-                                                            entry,field_width,linked,busy
-                                                        );
-                                                    if let Some(navigation)=navigation{
-                                                        self.queue_cell_navigation(
-                                                            navigation,&mut submit_direct,
-                                                            &mut navigate_now
-                                                        );
-                                                    }
-                                                    response
-                                                }else{
-                                                    components::manual_linked_table_cell(
-                                                        entry,text(row,field),
-                                                        field_width,false,linked
-                                                    )
-                                                };
-                                                // A long address remains accessible in full
-                                                // even if the window is temporarily narrow.
-                                                let response=if field=="address" || field=="note"{
-                                                    response.on_hover_text(text(row,field))
-                                                }else{response};
-                                                if response.hovered(){
-                                                    hovered_detail=Some(key);
-                                                }
-                                                if response.clicked() && !selected{
-                                                    self.queue_cell_selection(
-                                                        ManualCellTarget{
-                                                            row:index,item:None,
-                                                            field:field.to_owned()
-                                                        },&mut submit_direct
-                                                    );
-                                                }
-                                            });
-                                        }
-                                        ui.add_space(theme::SPACE_12);
-                                        ui.label(typography::field_label("상품"));
-                                        egui::Grid::new(("manual-products",rid))
-                                            .spacing(egui::Vec2::ZERO)
-                                            .show(ui,|grid|{
-                                                components::manual_table_heading(
-                                                    grid,"상품",product_col
-                                                );
-                                                components::manual_table_heading(
-                                                    grid,"수량",quantity_col
-                                                );
-                                                components::manual_table_heading(
-                                                    grid,"단가",price_col
-                                                );
-                                                components::manual_table_heading(
-                                                    grid,"행 동작",actions_col
-                                                );
-                                                grid.end_row();
-                                                for item in list(row,"items"){
-                                                    let item_id=text(item,"id");
-                                                    let selected=index==self.selected_recipient &&
-                                                        self.selected_item.as_deref()==Some(item_id);
-                                                    let product_key=source_highlight::key(
-                                                        rid,item_id,"product"
-                                                    );
-                                                    let product_linked=source_highlight::is_active(
-                                                        active_link.as_ref(),&product_key
-                                                    );
-                                                    let product_selected=selected &&
-                                                        self.selected_field=="product";
-                                                    let product_response=if product_selected{
-                                                        let (response,navigation)=self.selected_cell_editor(
-                                                            grid,product_col,product_linked,busy
-                                                        );
-                                                        if let Some(navigation)=navigation{
-                                                            self.queue_cell_navigation(
-                                                                navigation,&mut submit_direct,
-                                                                &mut navigate_now
-                                                            );
-                                                        }
-                                                        response
-                                                    }else{
-                                                        components::manual_linked_table_cell(
-                                                            grid,text(item,"name"),product_col,
-                                                            false,product_linked
-                                                        )
-                                                    }.on_hover_text(text(item,"name"));
-                                                    if product_response.hovered(){
-                                                        hovered_detail=Some(product_key);
-                                                    }
-                                                    if product_response.clicked() && !product_selected{
-                                                        self.queue_cell_selection(
-                                                            ManualCellTarget{
-                                                                row:index,item:Some(item_id.to_owned()),
-                                                                field:"product".into()
-                                                            },&mut submit_direct
-                                                        );
-                                                    }
-                                                    let quantity=item.get("quantity")
-                                                        .and_then(Value::as_i64)
-                                                        .map(|n|n.to_string()).unwrap_or_default();
-                                                    let quantity_key=source_highlight::key(
-                                                        rid,item_id,"quantity"
-                                                    );
-                                                    let quantity_linked=source_highlight::is_active(
-                                                        active_link.as_ref(),&quantity_key
-                                                    );
-                                                    let quantity_selected=selected &&
-                                                        self.selected_field=="quantity";
-                                                    let quantity_response=if quantity_selected{
-                                                        let (response,navigation)=self.selected_cell_editor(
-                                                            grid,quantity_col,quantity_linked,busy
-                                                        );
-                                                        if let Some(navigation)=navigation{
-                                                            self.queue_cell_navigation(
-                                                                navigation,&mut submit_direct,
-                                                                &mut navigate_now
-                                                            );
-                                                        }
-                                                        response
-                                                    }else{
-                                                        components::manual_linked_table_cell(
-                                                            grid,&quantity,quantity_col,false,
-                                                            quantity_linked
-                                                        )
-                                                    };
-                                                    if quantity_response.hovered(){
-                                                        hovered_detail=Some(quantity_key);
-                                                    }
-                                                    if quantity_response.clicked() && !quantity_selected{
-                                                        self.queue_cell_selection(
-                                                            ManualCellTarget{
-                                                                row:index,item:Some(item_id.to_owned()),
-                                                                field:"quantity".into()
-                                                            },&mut submit_direct
-                                                        );
-                                                    }
-                                                    let price=item.get("unitPrice")
-                                                        .and_then(Value::as_i64)
-                                                        .map(components::display_won)
-                                                        .unwrap_or_else(||"—".into());
-                                                    let price_selected=selected &&
-                                                        self.selected_field=="unitPrice";
-                                                    let price_response=if price_selected{
-                                                        let (response,navigation)=self.selected_cell_editor(
-                                                            grid,price_col,false,busy
-                                                        );
-                                                        if let Some(navigation)=navigation{
-                                                            self.queue_cell_navigation(
-                                                                navigation,&mut submit_direct,
-                                                                &mut navigate_now
-                                                            );
-                                                        }
-                                                        response
-                                                    }else{
-                                                        components::manual_table_cell(
-                                                            grid,&price,price_col,false
-                                                        )
-                                                    }.on_hover_text(if item.get("manualUnitPrice")
-                                                        .is_some(){"직접 수정된 단가"}
-                                                        else{"상품·거래처 기준 단가"});
-                                                    if price_response.clicked() && !price_selected{
-                                                        self.queue_cell_selection(
-                                                            ManualCellTarget{
-                                                                row:index,item:Some(item_id.to_owned()),
-                                                                field:"unitPrice".into()
-                                                            },&mut submit_direct
-                                                        );
-                                                    }
-                                                    grid.horizontal(|actions|{
-                                                        if components::icon_action_button(
-                                                            actions,"⌕","상품 검색",
-                                                            !busy && !pending_quantity_active &&
-                                                            self.edit_text==self.current_value()
-                                                        ).clicked(){
-                                                            lookup=Some((rid.to_owned(),item_id.to_owned()));
-                                                        }
-                                                        if components::icon_action_button(
-                                                            actions,"×","상품 제거",
-                                                            !busy && !pending_quantity_active &&
-                                                            self.edit_text==self.current_value()
-                                                        ).clicked(){
-                                                            chosen=Some(("remove_manual_item".into(),json!({
-                                                                "recipientId":rid,"itemId":item_id
-                                                            })));
-                                                        }
-                                                    });
-                                                    grid.end_row();
-                                                }
-                                            });
-                                        if theme::action(ui,"상품 추가",ButtonRole::Standard,
-                                            !busy && !pending_quantity_active &&
-                                                self.edit_text==self.current_value()).clicked(){
-                                            chosen=Some(("add_manual_item".into(),json!({
-                                                "recipientId":rid,"itemId":unique_id()
-                                            })));
-                                        }
-                                        if index==self.selected_recipient {
-                                            ui.add_space(theme::SPACE_12);
-                                            ui.label(typography::field_label("발송 · 운임"));
-                                            let origin=text(row,"dispatchOrigin");
-                                            let origin=if origin=="STORE"{"STORE"}else{"FACTORY"};
-                                            let code=text(row,"freightCode");
-                                            let code=if code=="020"{"020"}else{"010"};
-                                            // A missing staff override does not mean
-                                            // an automatically detected area is unchecked.
-                                            let remote_result=remote_for(&self.remote_rows,row)
-                                                .cloned();
-                                            let remote_value=remote_result.as_ref()
-                                                .and_then(|result|result.as_ref().ok())
-                                                .filter(|value|value.is_object());
-                                            let remote=remote_value.and_then(|decision|
-                                                decision["checked"].as_bool()
-                                            ).unwrap_or(false);
-                                            let remote_ready=remote_value.is_some();
-                                            let remote_message=remote_value
-                                                .and_then(crate::reception_service::remote_delivery_notice)
-                                                .or_else(||remote_result.as_ref()
-                                                    .and_then(|result|result.as_ref().err())
-                                                    .map(|error|format!("도서/산간 판정 실패 · {error}")));
-                                            let remote_status_width=ui.available_width();
-                                            components::fixed_status_slot(
-                                                ui,remote_status_width,
-                                                typography::METADATA_LINE_HEIGHT,
-                                                remote_message.as_deref(),
-                                                remote_message.as_deref(),
-                                                theme::SELECTED_ORDER
-                                            );
-                                            ui.horizontal_wrapped(|options|{
-                                                options.spacing_mut().item_spacing.x=theme::SPACE_8;
-                                                components::form_field_label(options,"발송지");
-                                                for (label,value) in [
-                                                    ("공장","FACTORY"),("매장","STORE")
-                                                ]{
-                                                    if theme::action(
-                                                        options,label,
-                                                        if origin==value{ButtonRole::TableSecondary}
-                                                        else{ButtonRole::Standard},!busy &&
-                                                            !pending_quantity_active &&
-                                                            self.edit_text==self.current_value()
-                                                    ).clicked(){
-                                                        chosen=Some((
-                                                            "set_manual_delivery_option".into(),
-                                                            json!({"cell":{"recipientId":rid,
-                                                                "field":"dispatchOrigin"},
-                                                                "value":value})
-                                                        ));
-                                                    }
-                                                }
-                                                options.add_space(theme::SPACE_12);
-                                                components::form_field_label(options,"운임 방식");
-                                                for (label,value) in [
-                                                    ("선불","010"),("착불","020")
-                                                ]{
-                                                    if theme::action(options,label,
-                                                        if code==value{ButtonRole::TableSecondary}
-                                                        else{ButtonRole::Standard},!busy &&
-                                                            !pending_quantity_active &&
-                                                            self.edit_text==self.current_value()).clicked(){
-                                                        chosen=Some((
-                                                            "set_manual_delivery_option".into(),
-                                                            json!({"cell":{"recipientId":rid,
-                                                                "field":"freightCode"},
-                                                                "value":value})
-                                                        ));
-                                                    }
-                                                }
-                                            });
-                                            ui.horizontal_wrapped(|options|{
-                                                options.spacing_mut().item_spacing.x=theme::SPACE_8;
-                                                let mut remote_checked=remote;
-                                                if components::checkbox(
-                                                    options,&mut remote_checked,"도서/산간",
-                                                    !busy && !pending_quantity_active &&
-                                                        remote_ready &&
-                                                        self.edit_text==self.current_value()
-                                                ).changed(){
-                                                    chosen=Some((
-                                                        "set_manual_delivery_option".into(),
-                                                        json!({"cell":{"recipientId":rid,
-                                                            "field":"remoteDelivery"},
-                                                            "value":remote_checked})
-                                                    ));
-                                                }
-                                                if theme::action(options,
-                                                    "운임 수정",ButtonRole::Standard,
-                                                    !busy && !pending_quantity_active && code!="020" &&
-                                                        self.edit_text==self.current_value()
-                                                ).clicked(){
-                                                    self.select_cell(index,None,"shippingCharge");
-                                                }
-                                            });
-                                        }
-                                        components::soft_divider(ui);
-                                    }
-                                    // Quantity stepper and freight input MUST
-                                    // remain inside the worksheet scroll area.
-                                    // No visible control may be rendered below
-                                    // its viewport on short Windows desktops.
-                                    // Other text, product, quantity and price
-                                    // values are edited directly in their cells.
-                                    ui.horizontal(|ui|{
-                                if self.selected_item.is_some() &&
-                                    self.selected_field=="quantity" {
-                                    let quantity=rows.get(self.selected_recipient)
-                                        .and_then(|row|list(row,"items").iter().find(|item|
-                                            self.selected_item.as_deref()==Some(text(item,"id"))
-                                        ))
-                                        .and_then(|item|item.get("quantity"))
-                                        .and_then(Value::as_i64).unwrap_or(0);
-                                    let settled=self.edit_text==self.current_value();
-                                    if theme::action(ui,"−",ButtonRole::Standard,
-                                        !busy && settled && quantity>1
-                                    ).clicked(){
-                                        if let (Some(row),Some(item))=(
-                                            rows.get(self.selected_recipient),
-                                            self.selected_item.as_ref()
-                                        ){
-                                            self.focus_editor=true;
-                                            chosen=Some(("step_manual_quantity".into(),json!({
-                                                "cell":{"recipientId":text(row,"id"),
-                                                    "itemId":item},
-                                                "delta":-1
-                                            })));
-                                        }
-                                    }
-                                    if theme::action(ui,"+",ButtonRole::Standard,
-                                        !busy && settled
-                                    ).clicked(){
-                                        if let (Some(row),Some(item))=(
-                                            rows.get(self.selected_recipient),
-                                            self.selected_item.as_ref()
-                                        ){
-                                            self.focus_editor=true;
-                                            chosen=Some(("step_manual_quantity".into(),json!({
-                                                "cell":{"recipientId":text(row,"id"),
-                                                    "itemId":item},
-                                                "delta":1
-                                            })));
-                                        }
-                                    }
-                                    if self.selected_quantity_pending() &&
-                                        matches!(self.last_action.as_deref(),
-                                            Some("set_manual_product"|"assign_manual_block")) &&
-                                        theme::action(ui,"상품 선택 취소",ButtonRole::Quiet,
-                                            !busy && settled
-                                        ).clicked(){
-                                        self.undo();
-                                    }
-                                }
-                                if self.selected_field=="shippingCharge"{
-                                    components::form_field_label(ui,"적용 운임");
-                                    let editor=components::flexible_text_field(
-                                        ui,&mut self.edit_text,
-                                        theme::MANUAL_INPUT_WIDTH,""
-                                    );
-                                    if self.focus_editor && !busy &&
-                                        !self.confirm_apply && !self.confirm_discard {
-                                        editor.request_focus();
-                                        // The freight editor lives at the end
-                                        // of the scrollable worksheet; bring
-                                        // it into view when opened by button.
-                                        ui.scroll_to_rect(
-                                            editor.rect,Some(egui::Align::Center)
-                                        );
-                                        self.focus_editor=false;
-                                    }
-                                    if editor.has_focus() && ctx.input(|input|
-                                        input.key_pressed(egui::Key::Enter)
-                                    ){
-                                        submit_direct=true;
-                                    }
-                                }
-                                    });
-                                });
                             });
                         },
                     );
