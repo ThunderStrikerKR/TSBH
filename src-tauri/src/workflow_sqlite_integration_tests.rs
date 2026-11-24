@@ -169,7 +169,6 @@ fn native_unconfirmed_draft_first_stage_confirmation_commits_as_one_order() {
     let client=json!({
         "id":"client:unconfirmed-draft",
         "name":"합성 미확정 거래처",
-        "displayName":"합성 미확정 거래처",
         "tier":"wholesale",
         "payment":"POSTPAID",
         "shippingFeeExcluded":true,
