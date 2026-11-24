@@ -1587,6 +1587,8 @@ impl OrderHistoryManager {
                     .with_clip_rect(notice_rect.intersect(section.clip_rect()))
                     .galley(origin,galley,color);
             }
+            #[cfg(test)]
+            components::general_screen_geometry_tests::record("row viewport",output.inner_rect);
             let left=header_origin.unwrap_or(head_rect.left()-output.state.offset.x);
             let scrolled_header=history_scrolled_header_row(
                 head_rect,left,table_width

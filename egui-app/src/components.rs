@@ -4137,6 +4137,8 @@ fn management_sticky_table_header_with_top_gap(
             Vec2::new(viewport_width,theme::SOFT_DIVIDER_WIDTH)
         ),0.0,theme::DIVIDER
     );
+    #[cfg(test)]
+    general_screen_geometry_tests::record("toolbar transition",transition);
     let (header_rect,_)=ui.allocate_exact_size(
         Vec2::new(viewport_width,theme::MANAGEMENT_TABLE_HEADER_HEIGHT),
         Sense::hover()
@@ -8574,7 +8576,7 @@ mod shared_general_screen_audit_tests {
 }
 
 #[cfg(test)]
-mod general_screen_geometry_tests {
+pub(crate) mod general_screen_geometry_tests {
     use super::*;
     use std::{cell::RefCell,sync::Arc};
     use crate::gateway::{BandoGateway,ReadOperation};
@@ -8584,7 +8586,7 @@ mod general_screen_geometry_tests {
     thread_local!{
         static TRACE:RefCell<Option<Vec<Sample>>>=RefCell::new(None);
     }
-    pub(super) fn record(name:&'static str,rect:Rect){
+    pub(crate) fn record(name:&'static str,rect:Rect){
         TRACE.with(|trace|{if let Some(samples)=trace.borrow_mut().as_mut(){samples.push((name,rect));}});
     }
     // No files, network or database are accessed by fixture read workers.
@@ -8669,6 +8671,58 @@ mod general_screen_geometry_tests {
             }
         }
     }
+    #[test]
+    fn actual_dual_master_table_header_and_rail_share_geometry(){
+        let screen=Vec2::new(1920.0,1080.0);
+        let work=Rect::from_min_max(egui::pos2(380.0,80.0),egui::pos2(1902.0,1062.0));
+        for name in ["freight","history"]{
+            let trace=screen_trace(name,0,true,screen,work);
+            let card=first(&trace,"master card");
+            let transition=first(&trace,"toolbar transition");
+            let header=first(&trace,"table header");
+            let rail=first(&trace,"scroll rail");
+            let rows=first(&trace,"row viewport");
+            for (a,b) in [(transition.bottom(),header.top()),(header.bottom(),rail.top()),
+                (header.bottom(),rows.top()),(card.left()+theme::SECTION_PADDING+theme::FRAME_STROKE_WIDTH,header.left()),
+                (card.right()-theme::SECTION_PADDING-theme::FRAME_STROKE_WIDTH,header.right())]{
+                assert!((a-b).abs()<=0.5,"{name}: master boundary drift {a} -> {b}");
+            }
+            assert!((transition.height()-(theme::MANAGEMENT_TOOLBAR_DIVIDER_TOP_GAP
+                +theme::SOFT_DIVIDER_WIDTH+theme::MANAGEMENT_TOOLBAR_DIVIDER_BOTTOM_GAP)).abs()<=0.5);
+        }
+    }
+
+    #[test]
+    fn actual_reception_four_panes_keep_their_rects_during_pending_analysis(){
+        let names=["kakao pane","source pane","details pane","orders pane"];
+        for screen in [Vec2::new(1920.0,1080.0),Vec2::new(1366.0,768.0),Vec2::new(1280.0,720.0)]{
+            let draw=|pending:bool|{
+                let ctx=test_context();
+                let mut app=crate::BandoEgui::with_layout(crate::layout::LayoutState::default());
+                app.gateway=Arc::new(GeometryGateway);
+                app.analysis_pending=pending;
+                let mut last=Vec::new();
+                for _ in 0..3{
+                    TRACE.with(|trace|*trace.borrow_mut()=Some(Vec::new()));
+                    let _=ctx.run(egui::RawInput{
+                        screen_rect:Some(Rect::from_min_size(egui::Pos2::ZERO,screen)),
+                        ..Default::default()
+                    },|ctx|app.reception(ctx));
+                    last=TRACE.with(|trace|trace.borrow_mut().take().unwrap());
+                }
+                names.iter().map(|name|(*name,first(&last,name))).collect::<Vec<_>>()
+            };
+            let base=draw(false);
+            let pending=draw(true);
+            assert_layout_rects_invariant(&base,&pending);
+            for pair in base.windows(2){
+                assert!(pair[0].1.is_positive() && pair[1].1.is_positive());
+                assert!((pair[1].1.left()-pair[0].1.right()-crate::layout::SPLITTER).abs()<=0.5,
+                    "reception pane spacing drift at {screen:?}: {pair:?}");
+            }
+        }
+    }
+
     #[test]
     fn actual_master_card_boundary_survives_loading_to_empty_transition(){
         let screen=Vec2::new(1920.0,1080.0);

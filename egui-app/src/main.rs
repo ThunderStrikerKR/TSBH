@@ -745,11 +745,17 @@ struct BandoEgui {
 
 impl Default for BandoEgui {
     fn default() -> Self {
+        Self::with_layout(layout::LayoutState::load())
+    }
+}
+
+impl BandoEgui {
+    fn with_layout(layout:layout::LayoutState)->Self{
         Self {
             brand_texture: None,
             gateway: Arc::new(gateway::LocalGateway),
             page: Page::Reception,
-            layout: layout::LayoutState::load(),
+            layout,
             dragging_split: None,
             dragging_vertical: None,
             dragging_detail: None,
@@ -4845,7 +4851,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                 Vec2::new(widths[index], all.height()),
                             );
                             // Each pane has a stable independent rectangle.
-                            ui.scope_builder(
+                            let _pane_output=ui.scope_builder(
                                 UiBuilder::new()
                                     .id_salt(("reception-pane", index))
                                     .max_rect(rect)
@@ -4861,6 +4867,11 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                         _ => self.orders_pane(pane),
                                     }
                                 },
+                            );
+                            #[cfg(test)]
+                            components::general_screen_geometry_tests::record(
+                                ["kakao pane","source pane","details pane","orders pane"][index],
+                                _pane_output.response.rect
                             );
                             x += widths[index];
 
