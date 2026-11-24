@@ -2101,6 +2101,41 @@ impl BandoEgui {
         self.manual_workspace=Some(editor);
     }
 
+    fn open_direct_workspace(&mut self,ctx:&egui::Context){
+        match self.reception_job_admission(
+            ReceptionJob::ManualWorkspace,self.manual_workspace.is_some()
+        ){
+            JobAdmission::Start=>{},
+            JobAdmission::Duplicate=>return,
+            JobAdmission::Conflict(blocker)=>{
+                self.reception_job_conflict(ReceptionJob::ManualWorkspace,blocker);
+                return;
+            }
+        }
+        if self.client_change.is_some() || self.working_sync.is_some() ||
+            self.inline_change.is_some() || self.inline_editor.as_ref()
+                .is_some_and(|edit|edit.text!=edit.original){
+            self.source_save_error=Some("현재 셀 입력을 확정한 다음 직접 입력을 시작하세요.".into());
+            return;
+        }
+        let Some(row)=self.active_id.as_deref()
+            .and_then(|id|self.drafts.iter().find(|row|row.id==id)).cloned()
+            else{return};
+        if !row.raw.trim().is_empty(){
+            self.source_save_error=Some("발주 원문이 있는 주문은 수동 분류를 사용하세요.".into());
+            return;
+        }
+        self.link_hover.clear();
+        self.source_hover=None;
+        self.source_editing=false;
+        self.direct_source_entry=false;
+        let mut editor=manual_workspace::ManualWorkspace::new_direct(
+            row,Arc::clone(&self.gateway),ctx.clone()
+        );
+        editor.focus_recipient(self.selected_recipient);
+        self.manual_workspace=Some(editor);
+    }
+
     /// Staff issue edits use the existing serialized native edit pipeline.
     fn start_review_inline_action(
         &mut self,target:InlineTarget,value:serde_json::Value,ctx:&egui::Context
@@ -2365,7 +2400,7 @@ impl BandoEgui {
         &mut self,event:manual_workspace::Event,ctx:&egui::Context
     ){
         let manual_workspace::Event::Applied{
-            order_id,raw,order_type,client_id,model,assignment_order,
+            order_id,raw,order_type,client_id,direct_input,model,assignment_order,
             order,quote,quote_error
         }=event else{return;};
                 if self.active_id.as_deref()!=Some(order_id.as_str()) ||
@@ -2377,6 +2412,58 @@ impl BandoEgui {
                     self.source_save_error=Some(
                         "수동 분류 중 원문·접수 유형·거래처가 변경되어 적용하지 않았습니다.".into()
                     );
+                    return;
+                }
+                if direct_input {
+                    if !raw.is_empty() || order.get("raw").and_then(serde_json::Value::as_str)!=Some("") {
+                        self.source_save_error=Some("직접 입력 결과에 발주 원문이 포함되어 적용을 중단했습니다.".into());
+                        return;
+                    }
+                    let Some(recips)=order.get("recipients").filter(|v|v.is_array()) else {
+                        self.source_save_error=Some("Rust 직접 입력 결과에 배송 정보가 없습니다.".into());
+                        return;
+                    };
+                    if let Some(row)=self.drafts.iter_mut().find(|row|row.id==order_id){
+                        row.source_input_method=None;
+                        row.last_input_method=None;
+                        row.analysis_raw=None;
+                        row.analysis_evidence=None;
+                        row.analysis_view=None;
+                        row.client_match=None;
+                        row.manual_model=Some(serde_json::json!({
+                            "mode":"DIRECT","sourceRaw":"","orderType":order_type,
+                            "clientId":client_id,"model":model,
+                            "assignmentOrder":assignment_order
+                        }));
+                        row.pricing_preview=quote.as_ref().and_then(|calculation|{
+                            let revision=calculation["authorityRevision"].as_u64()?;
+                            let totals=calculation.get("totals")?;
+                            let native_order=calculation.get("order")?;
+                            Some(serde_json::json!({
+                                "sourceRaw":"","orderId":order_id,
+                                "orderType":order_type,"clientId":client_id,
+                                "authorityRevision":revision,"status":"REVIEW",
+                                "shippingFee":native_order.get("shippingFee"),
+                                "shippingVersion":native_order.get("shippingVersion"),
+                                "vatAmount":totals.get("vat"),
+                                "subtotal":totals.get("subtotal"),
+                                "total":totals.get("total"),
+                                "pendingRecipients":totals.get("pendingRecipients"),
+                                "notified":false,"paid":false,
+                                "linePrices":calculation.get("linePrices"),
+                                "freightLines":calculation.get("freightLines"),
+                                "pricingBasis":calculation.get("pricingBasis")
+                            }))
+                        });
+                        row.working_synced=false;
+                    }
+                    self.source_editing=false;
+                    self.direct_source_entry=false;
+                    self.clear_source_analysis();
+                    self.working_sync_error=quote_error;
+                    self.source_save_error=None;
+                    self.queue_source_save();
+                    let _=recips;
                     return;
                 }
                 if let Some(recips)=order.get("recipients").filter(|v|v.is_array()) {
@@ -3169,7 +3256,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
         // empty records when the user clicks "+ 새 주문" repeatedly.
         if self.active_id.as_deref().and_then(|id|
             self.drafts.iter().find(|item| item.id == id)
-        ).is_some_and(|item| item.raw.trim().is_empty()) {
+        ).is_some_and(|item| item.raw.trim().is_empty() && item.manual_model.is_none()) {
             // Clicking '+ 새 주문' on an empty direct-entry draft simply
             // returns to intake mode; it must not strand SourceEntry forever.
             self.direct_source_entry=false;
@@ -5871,18 +5958,9 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
             self.open_manual_workspace(ui.ctx());
         }
         if begin_input {
-            match self.reception_job_admission(ReceptionJob::SourceEntry,false){
-                JobAdmission::Start=>{
-                    if self.active_id.is_none(){self.new_reception(ui.ctx());}
-                    if self.active_id.is_some(){
-                        self.source_editing=true;
-                        self.direct_source_entry=true;
-                    }
-                }
-                JobAdmission::Conflict(blocker)=>{
-                    self.reception_job_conflict(ReceptionJob::SourceEntry,blocker);
-                }
-                JobAdmission::Duplicate=>{}
+            if self.active_id.is_none(){self.new_reception(ui.ctx());}
+            if self.active_id.is_some(){
+                self.open_direct_workspace(ui.ctx());
             }
         }
         if let Some(kind) = start_clipboard {
