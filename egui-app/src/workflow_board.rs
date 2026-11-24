@@ -17,6 +17,11 @@ pub struct ShipmentRow {
     pub recipient: Value,
     /// Exact Rust workflow preview decision (auto/review/staff/legacy), not a raw manual flag.
     pub remote: Option<Value>,
+    /// Per-origin amounts after Rust locality multiplication, exactly as
+    /// shown by the React workflow freight editor.
+    pub display_charges: HashMap<String,Option<i64>>,
+    pub freight_editing_blocked: bool,
+    pub freight_code: String,
     pub freight: Option<i64>,
     pub collect: bool,
     pub vat_included: Option<bool>,
@@ -109,6 +114,17 @@ fn projected_remote(ship:&Value)->Option<Value>{
     ship.get("remoteDelivery").filter(|value|value.is_object()).cloned()
 }
 
+/// Native workflow issues use detail/title; message is retained only as a
+/// compatibility fallback for older projections. Never silently drop a
+/// valid structured issue because the UI expected the wrong field name.
+fn workflow_issue_label(issue:&Value)->Option<String>{
+    ["detail","title","message"].iter().find_map(|key|
+        issue.get(*key).and_then(Value::as_str)
+            .filter(|value|!value.trim().is_empty())
+            .map(str::to_owned)
+    ).or_else(||issue.as_str().map(str::to_owned))
+}
+
 /// React's workflow-view::groupShipments is a read-only join.
 /// Business prices, freight code, VAT and stage are ALWAYS Rust projections.
 pub fn load(gateway:&dyn BandoGateway)->Result<BoardSnapshot,String>{
@@ -174,6 +190,13 @@ pub fn load(gateway:&dyn BandoGateway)->Result<BoardSnapshot,String>{
                 source_raw:text(order,"raw").to_owned(),
                 recipient:recipient.clone(),
                 remote:projected_remote(native_ship),
+                display_charges:field(native_ship,"displayCharges").as_object()
+                    .map(|values|values.iter().map(|(origin,value)|
+                        (origin.clone(),value.as_i64())).collect())
+                    .unwrap_or_default(),
+                freight_editing_blocked:field(native_ship,"freightEditingBlocked")
+                    .as_bool().unwrap_or(false),
+                freight_code:text(native_ship,"freightCode").to_owned(),
                 freight:field(field(native_ship,"totals"),"shipping").as_i64(),
                 collect:text(native_ship,"freightCode")=="020",
                 vat_included: field(native_ship, "vatIncluded").as_bool(),
@@ -210,8 +233,7 @@ pub fn load(gateway:&dyn BandoGateway)->Result<BoardSnapshot,String>{
                 Err(error)=>(None,Some(error),None,Vec::new()),
             };
         let issues=rows(field(native,"issues")).iter()
-            .filter_map(|issue|issue.get("message").and_then(Value::as_str)
-                .or_else(||issue.as_str())).map(str::to_owned)
+            .filter_map(workflow_issue_label)
             .collect();
         groups.push(GroupRow{
             id:group_id.to_owned(),
@@ -278,7 +300,9 @@ mod linked_recipient_selection_tests{
             id:id.into(),order_id:order.into(),recipient_id:recipient.into(),
             recipient_name:"동명이인".into(),products:vec![],
             source_raw:"공통 발주원문".into(),recipient:json!({"id":recipient}),
-            remote:None,freight:None,collect:false,vat_included:None,
+            remote:None,display_charges:HashMap::new(),
+            freight_editing_blocked:false,freight_code:"010".into(),
+            freight:None,collect:false,vat_included:None,
             shipment_count:1,order_total:None,
         }
     }
@@ -291,6 +315,20 @@ mod linked_recipient_selection_tests{
             automatic_phase:None,automatic_payment_issues:vec![],issues:vec![],
         }
     }
+    #[test]
+    fn structured_workflow_issues_render_their_detail_and_title(){
+        assert_eq!(workflow_issue_label(&json!({
+            "kind":"FREIGHT","title":"배송 운임을 확인하세요",
+            "detail":"김하영 / 배송 운임을 확인하세요"
+        })).as_deref(),Some("김하영 / 배송 운임을 확인하세요"));
+        assert_eq!(workflow_issue_label(&json!({
+            "kind":"FREIGHT","title":"배송 운임을 확인하세요"
+        })).as_deref(),Some("배송 운임을 확인하세요"));
+        assert_eq!(workflow_issue_label(&json!({
+            "message":"이전 형식 오류"
+        })).as_deref(),Some("이전 형식 오류"));
+    }
+
     #[test]
     fn finds_recipient_in_another_group_without_matching_duplicate_names(){
         let board=BoardSnapshot{
