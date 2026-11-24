@@ -8723,6 +8723,148 @@ pub(crate) mod general_screen_geometry_tests {
         }
     }
 
+
+    // The five production single-table screens must retain their actual
+    // fixed allocations while the same page receives new read results.
+    // A native scrollbar may occupy horizontal space when records overflow;
+    // only the row viewport's right edge is allowed to change for that reason.
+    fn compare_data_state_geometry(name:&str,phase:&str,base:&[Sample],next:&[Sample],table_required:bool){
+        let fixed=|samples:&[Sample]|samples.iter().copied()
+            .filter(|(kind,_)|matches!(*kind,"top content"|"master card")).collect::<Vec<_>>();
+        let a=fixed(base);let b=fixed(next);
+        assert!(a.iter().any(|(kind,_)|*kind=="master card"),"{name}/{phase}: no master card");
+        assert_eq!(a.len(),b.len(),"{name}/{phase}: fixed allocation count changed");
+        for ((kind,old),(_,new)) in a.iter().zip(&b){
+            for (edge,x,y) in [("left",old.left(),new.left()),("right",old.right(),new.right()),
+                ("top",old.top(),new.top()),("bottom",old.bottom(),new.bottom())]{
+                assert!((x-y).abs()<=0.5,"{name}/{phase}/{kind}/{edge}: {x} -> {y}");
+            }
+        }
+        if !table_required && !next.iter().any(|(kind,_)|*kind=="table header"){return;}
+        for kind in ["toolbar transition","table header","scroll rail"]{
+            let old=first(base,kind);let new=first(next,kind);
+            for (edge,x,y) in [("left",old.left(),new.left()),("right",old.right(),new.right()),
+                ("top",old.top(),new.top()),("bottom",old.bottom(),new.bottom())]{
+                assert!((x-y).abs()<=0.5,"{name}/{phase}/{kind}/{edge}: {x} -> {y}");
+            }
+        }
+        let old=first(base,"row viewport");let new=first(next,"row viewport");
+        for (edge,x,y) in [("left",old.left(),new.left()),("top",old.top(),new.top()),
+            ("bottom",old.bottom(),new.bottom())]{
+            assert!((x-y).abs()<=0.5,"{name}/{phase}/row viewport/{edge}: {x} -> {y}");
+        }
+    }
+    fn assert_visible_data_rows(name:&str,trace:&[Sample],expected:usize){
+        let rows=trace.iter().filter(|(kind,_)|*kind=="data row")
+            .map(|(_,rect)|*rect).collect::<Vec<_>>();
+        if expected<=1{
+            assert_eq!(rows.len(),expected,"{name}: actual rendered data row count");
+        }else{
+            assert!(rows.len()>=2 && rows.len()<expected,
+                "{name}: expected virtualized populated rows, rendered {} of {expected}",rows.len());
+        }
+        for row in &rows{
+            assert!(row.is_positive(),"{name}: invalid actual row {row:?}");
+        }
+        for pair in rows.windows(2){
+            assert!(pair[1].top()>=pair[0].bottom()-0.5,
+                "{name}: actual data rows overlap {pair:?}");
+        }
+    }
+    fn exercise_data_transitions<P>(
+        name:&str,ctx:&egui::Context,screen:Vec2,work:Rect,page:&mut P,
+        mut show:impl FnMut(&mut P,&mut Ui),
+        begin:impl Fn(&mut P)->Box<dyn FnOnce(Result<usize,String>)>,
+        failed:impl Fn(&P)->bool,
+    )->Vec<Sample>{
+        let mut draw=|page:&mut P|render(ctx,screen,work,|ui|show(page,ui));
+        // Keep the sender alive across real render frames: this is an
+        // actually pending receiver, not just a false loaded boolean.
+        let finish=begin(page);
+        let pending=draw(page);
+        assert_visible_data_rows(name,&pending,0);
+        finish(Err("합성 조회 실패: 길이가 긴 오류 메시지의 UI 밀림 검증".into()));
+        let initial_error=draw(page);
+        assert!(failed(page),"{name}: initial failure was not consumed");
+        let finish=begin(page);
+        let _retry_pending=draw(page);
+        finish(Ok(0));
+        let empty=draw(page);
+        assert!(!failed(page),"{name}: successful empty response did not clear failure");
+        assert_visible_data_rows(name,&empty,0);
+        for (phase,trace) in [("initial pending",&pending),("initial error",&initial_error)]{
+            compare_data_state_geometry(name,phase,&empty,trace,name!="freight");
+        }
+        let finish=begin(page);
+        finish(Ok(1));
+        let single=draw(page);
+        assert_visible_data_rows(name,&single,1);
+        compare_data_state_geometry(name,"one row",&empty,&single,true);
+        let finish=begin(page);
+        let refreshing=draw(page);
+        compare_data_state_geometry(name,"refresh pending",&empty,&refreshing,true);
+        finish(Ok(64));
+        let populated=draw(page);
+        assert_visible_data_rows(name,&populated,64);
+        compare_data_state_geometry(name,"64 rows",&empty,&populated,true);
+        let finish=begin(page);
+        finish(Err("합성 재조회 실패: 데이터 로딩 이후 오류".into()));
+        let error=draw(page);
+        assert!(failed(page),"{name}: refresh failure was not consumed");
+        compare_data_state_geometry(name,"refresh error",&empty,&error,true);
+        let finish=begin(page);
+        finish(Ok(64));
+        let recovered=draw(page);
+        assert!(!failed(page),"{name}: retry did not clear failure");
+        assert_visible_data_rows(name,&recovered,64);
+        compare_data_state_geometry(name,"recovered",&empty,&recovered,true);
+        println!("GEOMETRY_DATA_TRANSITIONS {name} {screen:?}: pending/error/empty/one/many/recovered");
+        recovered
+    }
+    #[test]
+    fn actual_five_management_tables_keep_fixed_slots_through_populated_read_transitions(){
+        for (screen,left) in [(Vec2::new(1920.0,1080.0),380.0),
+            (Vec2::new(1366.0,768.0),320.0),(Vec2::new(1280.0,720.0),380.0)]{
+            let work=Rect::from_min_max(egui::pos2(left,80.0),
+                egui::pos2(screen.x-18.0,screen.y-18.0));
+            let gateway:Arc<dyn BandoGateway>=Arc::new(GeometryGateway);
+            {
+                let ctx=test_context();
+                let mut page=crate::freight_manager::FreightManager::geometry_fixture(Arc::clone(&gateway),ctx.clone(),0,false);
+                exercise_data_transitions("freight",&ctx,screen,work,&mut page,
+                    |p,ui|p.show_page(ui),|p|p.geometry_begin_read(),|p|p.geometry_read_failed());
+            }
+            {
+                let ctx=test_context();
+                let mut page=crate::order_history_manager::OrderHistoryManager::geometry_fixture(Arc::clone(&gateway),ctx.clone(),0,false);
+                let recovered=exercise_data_transitions("history",&ctx,screen,work,&mut page,
+                    |p,ui|p.show_page(ui),|p|p.geometry_begin_read(),|p|p.geometry_read_failed());
+                page.geometry_expand_first();
+                let expanded=render(&ctx,screen,work,|ui|page.show_page(ui));
+                compare_data_state_geometry("history","expanded order",&recovered,&expanded,true);
+                assert_visible_data_rows("history",&expanded,65);
+            }
+            {
+                let ctx=test_context();
+                let mut page=crate::product_manager::ProductManager::geometry_fixture(Arc::clone(&gateway),ctx.clone(),0,false);
+                exercise_data_transitions("products",&ctx,screen,work,&mut page,
+                    |p,ui|p.show_page(ui),|p|p.geometry_begin_read(),|p|p.geometry_read_failed());
+            }
+            {
+                let ctx=test_context();
+                let mut page=crate::client_manager::ClientManager::geometry_fixture(Arc::clone(&gateway),ctx.clone(),0,false);
+                exercise_data_transitions("clients",&ctx,screen,work,&mut page,
+                    |p,ui|p.show_page(ui,Arc::clone(&gateway)),|p|p.geometry_begin_read(),|p|p.geometry_read_failed());
+            }
+            {
+                let ctx=test_context();
+                let mut page=crate::excel_manager::ExcelManager::geometry_fixture(Arc::clone(&gateway),ctx.clone(),0,false);
+                exercise_data_transitions("excel",&ctx,screen,work,&mut page,
+                    |p,ui|p.show_page(ui),|p|p.geometry_begin_read(),|p|p.geometry_read_failed());
+            }
+        }
+    }
+
     #[test]
     fn actual_master_card_boundary_survives_loading_to_empty_transition(){
         let screen=Vec2::new(1920.0,1080.0);
