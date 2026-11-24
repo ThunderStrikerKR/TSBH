@@ -1025,7 +1025,7 @@ mod tests {
 
         let ctx=egui::Context::default();
         let _=ctx.run(egui::RawInput::default(),|ctx|{
-            let galley=ctx.fonts_mut(|fonts|fonts.layout_job(manual_layout));
+            let galley=ctx.fonts_mut(|fonts|fonts.layout_job(manual_layout.clone()));
             let area=egui::Rect::from_min_size(
                 egui::Pos2::ZERO,egui::vec2(400.0,200.0)
             );
