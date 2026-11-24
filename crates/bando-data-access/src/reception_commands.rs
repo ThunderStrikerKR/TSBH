@@ -154,9 +154,10 @@ pub fn commit_reception_v2(conn: &mut Connection, request: &Value) -> Result<Val
     // Only the existing Rust reception transition is allowed to reset and
     // replace a changed raw source; never patch the Order fields by hand.
     let previous=if manual.is_some(){
-        // The employee's approved source-bound manual model is replayed
-        // against fresh native recognition from an empty reception. The
-        // persisted receipt is still used above for CAS and tamper checks.
+        // The employee's approved manual model is replayed against a fresh
+        // native order shell. Source-backed orders attach fresh recognition;
+        // direct-entry orders intentionally keep source evidence absent.
+        // The persisted receipt is still used above for CAS and tamper checks.
         order_from(rule("apply_reception_action",json!({
             "action":"new_reception","id":order_id,
             "orderType":kind,"clientId":"","now":at
