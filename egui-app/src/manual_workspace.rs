@@ -1052,10 +1052,12 @@ fn manual_recipient_card_height()->f32{
         +3.0*theme::RECIPIENT_ROW_GAP
 }
 
+fn manual_workspace_status_row_height()->f32{
+    theme::INPUT_HEIGHT.max(typography::METADATA_LINE_HEIGHT)
+}
+
 fn manual_workspace_columns_height()->f32{
-    theme::INPUT_HEIGHT
-        +theme::SPACE_8
-        +manual_recipient_card_height()
+    manual_recipient_card_height()
         +2.0*theme::SPACE_8
         +theme::MANUAL_ITEMS_CARD_MIN_HEIGHT
 }
@@ -1064,7 +1066,7 @@ fn manual_workspace_dialog_size(work_area:egui::Rect)->egui::Vec2{
     let width=(work_area.width()-theme::MANUAL_DIALOG_SIDE_GAP)
         .min(theme::MANUAL_DIALOG_MAX_WIDTH).max(0.0);
     // The status row and divider use explicit 8pt gaps on either side.
-    let status_and_divider=typography::METADATA_LINE_HEIGHT
+    let status_and_divider=manual_workspace_status_row_height()
         +2.0*theme::SPACE_8+theme::SOFT_DIVIDER_WIDTH;
     let body=status_and_divider+manual_workspace_columns_height();
     let frame_chrome=2.0*(theme::MODAL_PANEL_PADDING_Y+theme::FRAME_STROKE_WIDTH);
@@ -1987,7 +1989,9 @@ impl ManualWorkspace {
                         // content-first window height is independent of egui's
                         // implicit separator and parent item-spacing behavior.
                         ui.spacing_mut().item_spacing.y=0.0;
+                        let mut count_resize_requested=false;
                         ui.horizontal(|status|{
+                            status.set_min_height(manual_workspace_status_row_height());
                             let status_label=if self.direct_input{
                                 status.label(typography::caption("직접 입력 · 발주 원문 없음"))
                             }else{
@@ -2002,6 +2006,68 @@ impl ManualWorkspace {
                                 self.error.as_deref()
                             ].into_iter().flatten().collect::<Vec<_>>().join("\n");
                             if !notice.is_empty(){status_label.on_hover_text(&notice);}
+                            status.with_layout(
+                                egui::Layout::right_to_left(egui::Align::Center),|right|{
+                                    components::form_field_label(right,"건");
+                                    let current_count=rows.len();
+                                    let can_resize=!busy && !pending_quantity_active &&
+                                        self.edit_text==self.current_value();
+                                    let count_control_id=
+                                        right.make_persistent_id("manual-shipment-count");
+                                    let count_control=components::date_navigation_count_control(
+                                        right,count_control_id,&mut self.row_count_text,
+                                        current_count,can_resize,1,100
+                                    );
+                                    let minus_clicked=count_control.decrement_clicked;
+                                    let plus_clicked=count_control.increment_clicked;
+                                    let count_input=count_control.input;
+                                    let filtered=self.row_count_text.chars()
+                                        .filter(|ch|ch.is_ascii_digit()).take(3)
+                                        .collect::<String>();
+                                    if filtered!=self.row_count_text{
+                                        self.row_count_text=filtered;
+                                    }
+                                    let count_commit=can_resize && ((
+                                        count_input.lost_focus() &&
+                                        self.row_count_text!=current_count.to_string()
+                                    ) || (count_input.has_focus() && right.input(|input|
+                                        input.key_pressed(egui::Key::Enter)
+                                    )));
+                                    if minus_clicked || plus_clicked || count_commit{
+                                        let typed=self.row_count_text!=current_count.to_string();
+                                        let requested=if typed{
+                                            parse_manual_row_count(&self.row_count_text)
+                                                .and_then(|entered|{
+                                                    let adjusted=if minus_clicked{
+                                                        entered.saturating_sub(1)
+                                                    }else if plus_clicked{
+                                                        entered.saturating_add(1)
+                                                    }else{entered};
+                                                    if (1..=100).contains(&adjusted){
+                                                        Ok(adjusted)
+                                                    }else{
+                                                        Err("배송 건수는 1~100건입니다.".into())
+                                                    }
+                                                })
+                                        }else if minus_clicked{
+                                            Ok(current_count.saturating_sub(1))
+                                        }else if plus_clicked{
+                                            Ok(current_count.saturating_add(1))
+                                        }else{
+                                            parse_manual_row_count(&self.row_count_text)
+                                        };
+                                        match requested{
+                                            Ok(count)=>self.request_resize(count,ctx),
+                                            Err(error)=>{
+                                                self.row_count_text=current_count.to_string();
+                                                self.error=Some(error);
+                                            }
+                                        }
+                                        count_resize_requested=true;
+                                    }
+                                    components::form_field_label(right,"배송 건수");
+                                }
+                            );
                         });
                         ui.add_space(theme::SPACE_8);
                         components::reception_section_divider(ui);
@@ -2103,75 +2169,13 @@ impl ManualWorkspace {
                                         panel.set_min_width(panel_width);
                                         panel.set_min_height(height.max(0.0));
                                         panel.spacing_mut().item_spacing.y=theme::SPACE_8;
-                                        let mut count_resize_requested=false;
-                                        panel.horizontal(|ui|{
-                                            components::form_field_label(ui,"배송 건수");
-                                            let current_count=rows.len();
-                                            let can_resize=!busy && !pending_quantity_active &&
-                                                self.edit_text==self.current_value();
-                                            let count_control_id=
-                                                ui.make_persistent_id("manual-shipment-count");
-                                            let count_control=
-                                                components::date_navigation_count_control(
-                                                    ui,count_control_id,&mut self.row_count_text,
-                                                    current_count,can_resize,1,100
-                                                );
-                                            let minus_clicked=count_control.decrement_clicked;
-                                            let plus_clicked=count_control.increment_clicked;
-                                            let count_input=count_control.input;
-                                            let filtered=self.row_count_text.chars()
-                                                .filter(|ch|ch.is_ascii_digit()).take(3)
-                                                .collect::<String>();
-                                            if filtered!=self.row_count_text{
-                                                self.row_count_text=filtered;
-                                            }
-                                            let count_commit=can_resize && ((
-                                                count_input.lost_focus() &&
-                                                self.row_count_text!=current_count.to_string()
-                                            ) || (count_input.has_focus() && ui.input(|input|
-                                                input.key_pressed(egui::Key::Enter)
-                                            )));
-                                            if minus_clicked || plus_clicked || count_commit{
-                                                let typed=self.row_count_text!=current_count.to_string();
-                                                let requested=if typed{
-                                                    parse_manual_row_count(&self.row_count_text)
-                                                        .and_then(|entered|{
-                                                            let adjusted=if minus_clicked{
-                                                                entered.saturating_sub(1)
-                                                            }else if plus_clicked{
-                                                                entered.saturating_add(1)
-                                                            }else{entered};
-                                                            if (1..=100).contains(&adjusted){
-                                                                Ok(adjusted)
-                                                            }else{
-                                                                Err("배송 건수는 1~100건입니다.".into())
-                                                            }
-                                                        })
-                                                }else if minus_clicked{
-                                                    Ok(current_count.saturating_sub(1))
-                                                }else if plus_clicked{
-                                                    Ok(current_count.saturating_add(1))
-                                                }else{
-                                                    parse_manual_row_count(&self.row_count_text)
-                                                };
-                                                match requested{
-                                                    Ok(count)=>self.request_resize(count,ctx),
-                                                    Err(error)=>{
-                                                        self.row_count_text=current_count.to_string();
-                                                        self.error=Some(error);
-                                                    }
-                                                }
-                                                count_resize_requested=true;
-                                            }
-                                            components::form_field_label(ui,"건");
-                                        });
                                         if count_resize_requested {panel.disable();}
                                         let can_switch=!busy && !pending_quantity_active
                                             && !count_resize_requested;
                                         let can_mutate=can_switch &&
                                             self.edit_text==self.current_value();
-                                        // Keep count controls above the scrollable
-                                        // cards; header and footer never disappear.
+                                        // The count control now lives in the fixed
+                                        // toolbar; only the recipient/item cards scroll.
                                         let body_height=panel.available_height().max(1.0);
                                         egui::ScrollArea::vertical()
                                             .id_salt("manual-reception-style-cards")
@@ -4010,14 +4014,15 @@ mod manual_workspace_layout_tests{
     #[test]
     fn popup_height_tracks_the_visible_card_stack_and_fixed_modal_chrome(){
         assert_eq!(theme::RECEPTION_PANE_PADDING_Y,16.0);
+        assert_eq!(manual_workspace_status_row_height(),36.0);
         assert_eq!(manual_recipient_card_height(),247.0);
-        assert_eq!(manual_workspace_columns_height(),647.0);
+        assert_eq!(manual_workspace_columns_height(),603.0);
         let work_area=egui::Rect::from_min_size(
             egui::Pos2::ZERO,egui::vec2(1400.0,1000.0)
         );
         let size=manual_workspace_dialog_size(work_area);
         assert_eq!(size.x,1364.0);
-        assert_eq!(size.y,862.0);
+        assert_eq!(size.y,836.0);
         let short_area=egui::Rect::from_min_size(
             egui::Pos2::ZERO,egui::vec2(1400.0,700.0)
         );
@@ -4060,6 +4065,17 @@ mod manual_workspace_layout_tests{
             .next().expect("production source boundary");
         let render=production.split("pub fn show(").nth(1).unwrap();
         assert!(render.contains("components::reception_section_with_header_tooltip("));
+        let toolbar_start=render.find("let mut count_resize_requested=false;")
+            .expect("toolbar owns shipment-count state");
+        let columns_start=render.find("let mut draw_columns=")
+            .expect("card columns follow the toolbar");
+        assert!(toolbar_start<columns_start);
+        assert!(render[toolbar_start..columns_start]
+            .contains("components::date_navigation_count_control("));
+        assert!(!render[columns_start..]
+            .contains("components::date_navigation_count_control("));
+        assert!(render[..columns_start]
+            .contains("status.set_min_height(manual_workspace_status_row_height())"));
         assert!(render.contains("theme::source_document_frame().show(body"));
         assert!(!render.contains("theme::modal_nested_frame().show(source_ui"));
         assert!(render.contains("components::docked_section_body_height(height)"));
