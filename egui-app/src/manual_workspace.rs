@@ -1565,33 +1565,21 @@ impl ManualWorkspace {
                                     let current_count=rows.len();
                                     let can_resize=!busy && !pending_quantity_active &&
                                         self.edit_text==self.current_value();
-                                    let minus_clicked=
-                                        components::date_navigation_step_button(
-                                            ui,"−","배송 건수 1건 줄이기",
-                                            can_resize && current_count>1
-                                        ).clicked();
-                                    let count_input=ui.add_enabled(
-                                        can_resize,
-                                        egui::TextEdit::singleline(&mut self.row_count_text)
-                                            .font(typography::numeric_editor_font())
-                                            .horizontal_align(egui::Align::Center)
-                                            .vertical_align(egui::Align::Center)
-                                            .char_limit(3)
-                                            .margin(typography::form_input_text_margin())
-                                            .desired_width(52.0)
-                                            .hint_text("1~100")
-                                    );
+                                    let count_control=
+                                        components::date_navigation_count_control(
+                                            ui,ui.make_persistent_id("manual-shipment-count"),
+                                            &mut self.row_count_text,current_count,
+                                            can_resize,1,100
+                                        );
+                                    let minus_clicked=count_control.decrement_clicked;
+                                    let plus_clicked=count_control.increment_clicked;
+                                    let count_input=count_control.input;
                                     let filtered=self.row_count_text.chars()
                                         .filter(|ch|ch.is_ascii_digit()).take(3)
                                         .collect::<String>();
                                     if filtered!=self.row_count_text{
                                         self.row_count_text=filtered;
                                     }
-                                    let plus_clicked=
-                                        components::date_navigation_step_button(
-                                            ui,"+","배송 건수 1건 늘리기",
-                                            can_resize && current_count<100
-                                        ).clicked();
                                     let count_commit=(
                                         count_input.lost_focus() &&
                                         self.row_count_text!=current_count.to_string()
@@ -1656,13 +1644,13 @@ impl ManualWorkspace {
                                                 sheet,"수취인별 주문 정보",0.0,
                                                 |header|{
                                                     let name=text(row,"name");
-                                                    next_recipient=header.add_enabled_ui(
-                                                        can_switch,|nav|{
-                                                            components::reception_recipient_navigator(
-                                                                nav,name,index,rows.len()
-                                                            )
-                                                        }
-                                                    ).inner;
+                                                    // Keep name and 1/N visible even
+                                                    // while navigation is locked; only
+                                                    // the arrow segments become disabled.
+                                                    next_recipient=
+                                                        components::reception_recipient_navigator(
+                                                            header,name,index,rows.len(),can_switch
+                                                        );
                                                 },|fields|{
                                                     // The five master inputs are
                                                     // one shared renderer. Only
@@ -2651,34 +2639,40 @@ mod manual_workspace_modal_routing_tests {
     }
 
     #[test]
-    fn shipment_count_steppers_share_the_date_picker_navigation_surface(){
+    fn shipment_count_is_one_date_selector_segmented_control(){
         let manual=include_str!("manual_workspace.rs");
         let components=include_str!("components.rs");
         let count_row=manual.split("let current_count=rows.len()").nth(1).unwrap()
             .split("let count_commit=").next().unwrap();
         assert_eq!(
-            count_row.matches("components::date_navigation_step_button(").count(),2
+            count_row.matches("components::date_navigation_count_control(").count(),1
         );
-        assert!(!count_row.contains("theme::action("),
-            "shipment count must not use the larger generic action button");
+        assert!(!count_row.contains("date_navigation_step_button("));
+        assert!(!count_row.contains("TextEdit::singleline("),
+            "the count editor must live inside the shared segmented control");
+        assert!(count_row.contains("count_control.decrement_clicked"));
+        assert!(count_row.contains("count_control.increment_clicked"));
+        assert!(count_row.contains("count_control.input"));
+        assert!(count_row.contains("self.request_resize(count,ctx)"),
+            "the native asynchronous resize flow must remain in place");
 
-        let calendar=components.split("fn calendar_nav_button(").nth(1).unwrap()
-            .split("pub fn date_navigation_step_button(").next().unwrap();
-        let stepper=components.split("pub fn date_navigation_step_button(").nth(1).unwrap()
-            .split("pub fn date_calendar(").next().unwrap();
-        assert!(calendar.contains("date_navigation_button_surface("),
-            "date picker arrows must use the shared surface");
-        assert!(stepper.contains("date_navigation_button_surface("),
-            "minus/plus controls must use the same date-picker surface");
+        let segmented=components.split("fn date_navigation_segmented_surface(").nth(1).unwrap()
+            .split("fn date_navigation_button_surface(").next().unwrap();
+        assert!(segmented.contains("rect_filled("));
+        assert!(segmented.contains("rect_stroke("));
+        assert!(segmented.contains("StrokeKind::Inside"));
 
-        let surface=components.split("fn date_navigation_button_surface(").nth(1).unwrap()
-            .split("fn calendar_nav_button(").next().unwrap();
+        let control=components.split("pub fn date_navigation_count_control(").nth(1).unwrap()
+            .split("fn date_navigation_button_surface(").next().unwrap();
         for token in [
-            "CALENDAR_NAV_SIZE","theme::INPUT","theme::BORDER",
-            "theme::CONTROL_RADIUS","theme::paint_button_hover",
-            "DISABLED_ACTION_BG","DISABLED_ACTION_BORDER","DISABLED_ACTION_TEXT"
+            "date_navigation_segmented_surface(",
+            "date_navigation_segment_button(",
+            "TextEdit::singleline(value)",
+            "FRAME_STROKE_WIDTH",
+            "CALENDAR_NAV_SIZE",
+            "management_date_text_margin()"
         ]{
-            assert!(surface.contains(token),"missing date-navigation style token: {token}");
+            assert!(control.contains(token),"missing segmented control detail: {token}");
         }
     }
 
