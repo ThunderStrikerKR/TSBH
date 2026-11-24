@@ -1220,6 +1220,7 @@ pub struct ModalEditorBodyGeometry {
 #[derive(Clone,Debug,Default)]
 pub struct ModalEditorGeometry {
     pub header:Option<Rect>,
+    pub header_toolbar:Option<Rect>,
     pub body:Option<Rect>,
     pub viewport:Option<Rect>,
     pub scroll_offset_y:f32,
@@ -1256,6 +1257,10 @@ impl ModalEditorGeometry {
                     +theme::SOFT_DIVIDER_WIDTH)));
             }
         }
+        if let (Some(toolbar),Some(body))=(self.header_toolbar,self.body){
+            out.push(("toolbar_to_body",body.top()
+                -toolbar.bottom()-theme::SOFT_DIVIDER_WIDTH));
+        }
         if let (Some(body),Some(footer))=(self.body,self.footer){
             out.push(("body_to_footer",footer.top()-body.bottom()));
         }
@@ -1285,6 +1290,30 @@ impl ModalEditorWorkspace<'_> {
         );
         self.geometry.header=Some(header);
         modal_master_header_in_rect(self.ui,header,title,"",close_label,enabled)
+    }
+
+    /// Header variant for workspaces with a persistent status/action toolbar.
+    /// The toolbar becomes part of the header surface, so the body starts
+    /// exactly one master gap below its single bottom divider.
+    pub fn header_with_toolbar<R>(
+        &mut self,title:&str,close_label:&str,enabled:bool,
+        toolbar:impl FnOnce(&mut Ui)->R,
+    )->(bool,R){
+        let header_height=theme::MODAL_HEADER_HEIGHT
+            +theme::MODAL_MASTER_WORKSPACE_TOOLBAR_HEIGHT
+            +theme::SOFT_DIVIDER_WIDTH;
+        let (header,_)=self.ui.allocate_exact_size(
+            Vec2::new(self.ui.available_width(),header_height),
+            Sense::hover()
+        );
+        self.geometry.header=Some(header);
+        let toolbar_rect=modal_master_header_toolbar_rect(
+            header,self.ui.ctx().pixels_per_point().max(1.0)
+        );
+        self.geometry.header_toolbar=Some(toolbar_rect);
+        modal_master_header_with_toolbar_in_rect(
+            self.ui,header,title,close_label,enabled,toolbar
+        )
     }
 
     pub fn disable(&mut self){self.ui.disable();}
@@ -1594,26 +1623,12 @@ pub fn modal_master_workspace_surface(
     geometry
 }
 
-/// Canonical OCR-approved popup header, used for descriptive dialogs:
-/// title and top-right Cancel/Close in the first row, optional explanation
-/// in the second, ONE bottom divider. Height belongs to modal_master_layout.
-/// Use an empty description for dialogs with no explanatory subtitle.
-pub fn modal_master_header_in_rect(
+/// Draw the shared title/close controls inside an already allocated title row.
+/// Background and divider ownership stays with the enclosing header component.
+fn modal_master_header_content_in_rect(
     ui:&mut Ui,rect:Rect,title:&str,description:&str,
     close_label:&str,enabled:bool
-)->bool {
-    let ppp=ui.ctx().pixels_per_point().max(1.0);
-    let rect=modal_master_pixel_aligned_rect(rect,ppp);
-    ui.painter().rect_filled(rect,0.0,theme::PANEL);
-    // A centered line at rect.bottom() is half clipped and can appear
-    // darker at one end. Fill exactly one pixel-aligned INNER rule instead.
-    let rule_height=(theme::SOFT_DIVIDER_WIDTH*ppp).round().max(1.0)/ppp;
-    ui.painter().rect_filled(
-        Rect::from_min_max(
-            egui::pos2(rect.left(),rect.bottom()-rule_height),
-            rect.right_bottom()
-        ),0.0,theme::DIVIDER
-    );
+)->bool{
     let has_description=!description.trim().is_empty();
     let heading_top=if has_description {
         rect.top()+theme::SPACE_8
@@ -1652,7 +1667,7 @@ pub fn modal_master_header_in_rect(
         title_ui.add(egui::Label::new(typography::modal_title(title)).truncate())
             .on_hover_text(title);
     }
-    if has_description {
+    if has_description{
         let subtitle_clip=subtitle.intersect(ui.clip_rect());
         ui.scope_builder(
             egui::UiBuilder::new().id_salt("modal-master-description")
@@ -1666,6 +1681,83 @@ pub fn modal_master_header_in_rect(
         );
     }
     close
+}
+
+/// Canonical OCR-approved popup header, used for descriptive dialogs:
+/// title and top-right Cancel/Close in the first row, optional explanation
+/// in the second, ONE bottom divider. Height belongs to modal_master_layout.
+/// Use an empty description for dialogs with no explanatory subtitle.
+pub fn modal_master_header_in_rect(
+    ui:&mut Ui,rect:Rect,title:&str,description:&str,
+    close_label:&str,enabled:bool
+)->bool {
+    let ppp=ui.ctx().pixels_per_point().max(1.0);
+    let rect=modal_master_pixel_aligned_rect(rect,ppp);
+    ui.painter().rect_filled(rect,0.0,theme::PANEL);
+    // A centered line at rect.bottom() is half clipped and can appear
+    // darker at one end. Fill exactly one pixel-aligned INNER rule instead.
+    let rule_height=(theme::SOFT_DIVIDER_WIDTH*ppp).round().max(1.0)/ppp;
+    ui.painter().rect_filled(
+        Rect::from_min_max(
+            egui::pos2(rect.left(),rect.bottom()-rule_height),
+            rect.right_bottom()
+        ),0.0,theme::DIVIDER
+    );
+    modal_master_header_content_in_rect(
+        ui,rect,title,description,close_label,enabled
+    )
+}
+
+/// Toolbar bounds are inset to the same 16pt horizontal master as the body.
+/// Its bottom divider is excluded from this rect and painted by the header.
+fn modal_master_header_toolbar_rect(rect:Rect,ppp:f32)->Rect{
+    let ppp=ppp.max(1.0);
+    let rect=modal_master_pixel_aligned_rect(rect,ppp);
+    let rule_height=(theme::SOFT_DIVIDER_WIDTH*ppp).round().max(1.0)/ppp;
+    Rect::from_min_max(
+        egui::pos2(
+            rect.left()+theme::MODAL_MASTER_CONTENT_INSET,
+            rect.top()+theme::MODAL_HEADER_HEIGHT
+        ),
+        egui::pos2(
+            rect.right()-theme::MODAL_MASTER_CONTENT_INSET,
+            rect.bottom()-rule_height
+        )
+    )
+}
+
+/// Common two-row modal header: title/close first, optional workspace toolbar
+/// second, and exactly one divider below both rows. The body owns the standard
+/// 16pt clearance after that divider.
+pub fn modal_master_header_with_toolbar_in_rect<R>(
+    ui:&mut Ui,rect:Rect,title:&str,close_label:&str,enabled:bool,
+    toolbar:impl FnOnce(&mut Ui)->R,
+)->(bool,R){
+    let ppp=ui.ctx().pixels_per_point().max(1.0);
+    let rect=modal_master_pixel_aligned_rect(rect,ppp);
+    ui.painter().rect_filled(rect,0.0,theme::PANEL);
+    let rule_height=(theme::SOFT_DIVIDER_WIDTH*ppp).round().max(1.0)/ppp;
+    ui.painter().rect_filled(
+        Rect::from_min_max(
+            egui::pos2(rect.left(),rect.bottom()-rule_height),
+            rect.right_bottom()
+        ),0.0,theme::DIVIDER
+    );
+    let title_rect=Rect::from_min_size(
+        rect.min,Vec2::new(rect.width(),theme::MODAL_HEADER_HEIGHT)
+    );
+    let close=modal_master_header_content_in_rect(
+        ui,title_rect,title,"",close_label,enabled
+    );
+    let toolbar_rect=modal_master_header_toolbar_rect(rect,ppp);
+    let mut toolbar_ui=ui.new_child(
+        egui::UiBuilder::new().id_salt("modal-master-header-toolbar")
+            .max_rect(toolbar_rect)
+            .layout(Layout::left_to_right(Align::Center))
+    );
+    toolbar_ui.set_clip_rect(toolbar_rect.intersect(ui.clip_rect()));
+    let result=toolbar(&mut toolbar_ui);
+    (close,result)
 }
 
 
