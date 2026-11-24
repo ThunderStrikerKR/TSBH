@@ -1928,6 +1928,14 @@ impl BandoEgui {
         ctx.request_repaint();
     }
 
+    fn open_item_remove_confirmation(&mut self,recipient_id:&str,item_id:&str,ctx:&egui::Context){
+        if self.item_editor.is_some(){return;}
+        self.open_item_editor(recipient_id,item_id,ctx);
+        if let Some(dialog)=self.item_editor.as_mut(){
+            dialog.open_delete_only();
+        }
+    }
+
     fn open_product_picker(&mut self,recipient_id:String,ctx:&egui::Context){
         if self.product_picker.is_some() || self.item_editor.is_some()
             || self.inline_editor.is_some()
@@ -2725,14 +2733,18 @@ impl BandoEgui {
                                     .get(self.selected_recipient))
                             .and_then(|row|row["id"].as_str());
                         if displayed_recipient==Some(target.recipient_id.as_str()){
-                            if target.field=="product" {
+                            if matches!(target.field,"product"|"removeItem") {
                                 if let Some(item_id)=target.item_id.as_deref(){
                                     // One click on the product while quantity
                                     // is being edited commits quantity first,
                                     // then opens React's product modal.
                                     let recipient_id=target.recipient_id.clone();
                                     let item_id=item_id.to_owned();
-                                    self.open_item_editor(&recipient_id,&item_id,ctx);
+                                    if target.field=="removeItem"{
+                                        self.open_item_remove_confirmation(&recipient_id,&item_id,ctx);
+                                    }else{
+                                        self.open_item_editor(&recipient_id,&item_id,ctx);
+                                    }
                                 }
                                 return;
                             }
@@ -6605,6 +6617,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
         let mut inline_navigation:Vec<InlineNavigationEntry>=Vec::new();
         let mut inline_navigation_request:Option<(InlineTarget,CellNavigationKey)>=None;
         let mut item_popup:Option<(String,String)>=None;
+        let mut item_remove_popup:Option<(String,String)>=None;
         let mut inline_commit=false;
         let mut inline_cancel=false;
         let mut inline_command:Option<(InlineTarget,String)>=None;
@@ -6809,7 +6822,8 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                         |list_area|{
                             list_area.set_min_height(list_height);
                             let table_width=
-                                components::reception_items_scroll_content_width(list_area);
+                                components::reception_items_scroll_content_width(list_area)
+                                .max(theme::RECEPTION_ITEMS_MIN_TABLE_WIDTH+theme::RECEPTION_ITEM_REMOVE_WIDTH);
                             egui::ScrollArea::both()
                                 .scroll_bar_visibility(
                                     egui::containers::scroll_area::ScrollBarVisibility::VisibleWhenNeeded
@@ -6820,7 +6834,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                 .show(list_area,|items_ui|{
                                     items_ui.set_width(table_width);
                                     items_ui.spacing_mut().item_spacing.y=0.0;
-                                    components::reception_items_header(items_ui);
+                                    components::reception_items_header_with_actions(items_ui,"금액",true);
                                     if let Some(recipient)=selected {
                                         let recipient_id=reception_service::text(recipient,"id");
                                         if let Some(items)=recipient.get("items")
@@ -6853,17 +6867,13 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                                         linked_active.as_ref(),
                                                         &source_highlight::key(recipient_id,item_id,field)
                                                     ));
-                                                let cells=if editable{
-                                                    components::reception_item_row_editable(
-                                                        items_ui,&reception_service::item_title(item),
-                                                        &quantity,&amount,active_fields
-                                                    )
-                                                }else{
-                                                    components::reception_item_row(
-                                                        items_ui,&reception_service::item_title(item),
-                                                        &quantity,&amount,active_fields
-                                                    )
-                                                };
+                                                let cells=components::reception_item_row_with_remove(
+                                                    items_ui,&reception_service::item_title(item),
+                                                    &quantity,&amount,active_fields,editable
+                                                );
+                                                if cells.remove_clicked{
+                                                    item_remove_popup=Some((recipient_id.to_owned(),item_id.to_owned()));
+                                                }
                                                 for (response,field) in [
                                                     (&cells.product,"product"),
                                                     (&cells.quantity,"quantity"),
@@ -7195,7 +7205,18 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
         if self.source_hover.is_some() && self.link_hover.active.is_some(){
             self.link_hover.scroll_to=None;
         }
-        if let Some((recipient_id,item_id))=item_popup{
+        if let Some((recipient_id,item_id))=item_remove_popup{
+            if self.inline_editor.as_ref().is_some_and(|edit|edit.text!=edit.original){
+                self.submit_inline_edit(ui.ctx());
+                if let Some(pending)=self.inline_change.as_mut(){
+                    pending.next=Some((InlineTarget{
+                        recipient_id,item_id:Some(item_id),field:"removeItem"
+                    },None));
+                }
+            }else{
+                self.open_item_remove_confirmation(&recipient_id,&item_id,ui.ctx());
+            }
+        }else if let Some((recipient_id,item_id))=item_popup{
             if self.inline_editor.as_ref().is_some_and(|edit|
                 edit.text!=edit.original){
                 // Respect the first-click handoff used by the other inline

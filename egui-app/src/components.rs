@@ -5102,20 +5102,20 @@ pub fn reception_quantity_editor(
     let increase=reception_quantity_step(value,1);
     let (_, (input,step_interaction))=date_navigation_segmented_surface(
         &mut placed,"quantity-stepper",rect.size(),|segments,inner|{
-            // A compact vertical arrow pair keeps the existing 76pt column
-            // and its neighbours fixed instead of growing a second layout row.
+            // Left arrow pair; right-aligned value and permanent unit.
             let arrow_width=16.0;
             let unit_width=segments.painter().layout_no_wrap(
                 "개".to_owned(),font.clone(),theme::TEXT
             ).size().x;
             let arrow_rect=Rect::from_min_max(
-                egui::pos2(inner.right()-arrow_width,inner.top()),inner.right_bottom()
+                inner.min,egui::pos2(inner.left()+arrow_width,inner.bottom())
             );
             let unit_rect=Rect::from_min_max(
-                egui::pos2(arrow_rect.left()-unit_width-2.0,inner.top()),
-                egui::pos2(arrow_rect.left()-2.0,inner.bottom())
+                egui::pos2(inner.right()-unit_width-2.0,inner.top()),
+                egui::pos2(inner.right()-2.0,inner.bottom())
             );
-            let input_rect=Rect::from_min_max(inner.min,
+            let input_rect=Rect::from_min_max(
+                egui::pos2(arrow_rect.right()+2.0,inner.top()),
                 egui::pos2(unit_rect.left(),inner.bottom()));
             let input=reception_text_editor_at_click(
                 segments,input_rect,
@@ -5158,7 +5158,7 @@ pub fn reception_quantity_editor(
             }
             let stroke=Stroke::new(theme::SOFT_DIVIDER_WIDTH,theme::DIVIDER);
             segments.painter().line_segment(
-                [arrow_rect.left_top(),arrow_rect.left_bottom()],stroke
+                [arrow_rect.right_top(),arrow_rect.right_bottom()],stroke
             );
             segments.painter().line_segment(
                 [egui::pos2(arrow_rect.left(),arrow_rect.center().y),
@@ -5198,6 +5198,7 @@ pub struct ReceptionItemCells {
     pub product: Response,
     pub quantity: Response,
     pub amount: Response,
+    pub remove_clicked: bool,
 }
 
 /// Product text needs equal breathing room on both sides of the blue
@@ -5218,7 +5219,12 @@ pub fn reception_items_header(ui:&mut Ui){
 pub fn reception_items_header_with_amount_label(
     ui:&mut Ui,amount_heading:&str
 ){
-    let width = reception_item_table_width(ui.available_width());
+    reception_items_header_with_actions(ui,amount_heading,false);
+}
+
+pub fn reception_items_header_with_actions(ui:&mut Ui,amount_heading:&str,remove_slot:bool){
+    let action_width=if remove_slot{theme::RECEPTION_ITEM_REMOVE_WIDTH}else{0.0};
+    let width=ui.available_width().max(theme::RECEPTION_ITEMS_MIN_TABLE_WIDTH+action_width);
     let (rect, _) = ui.allocate_exact_size(
         Vec2::new(width, theme::RECEPTION_ITEMS_HEADER_HEIGHT), Sense::hover()
     );
@@ -5226,7 +5232,9 @@ pub fn reception_items_header_with_amount_label(
     // follows the master's raised header surface and INSIDE bottom band.
     // No extra layout height or clipped 1pt edge is introduced.
     ui.painter().rect_filled(rect,0.0,theme::RAISED);
-    let columns = reception_item_columns(rect);
+    let columns = reception_item_columns(Rect::from_min_max(
+        rect.min,egui::pos2(rect.right()-action_width,rect.bottom())
+    ));
     for (index, label) in ["품목", "수량", amount_heading].iter().enumerate() {
         // Header and value cells use identical text start coordinates.
         let cell = reception_item_text_clip(
@@ -5273,7 +5281,7 @@ pub fn reception_item_row(
     ui: &mut Ui, name: &str, quantity: &str, amount: &str,
     active: [bool; 3],
 ) -> ReceptionItemCells {
-    reception_item_row_with_mode(ui,name,quantity,amount,active,false)
+    reception_item_row_with_mode(ui,name,quantity,amount,active,false,false)
 }
 /// The underlying view is still the native Rust snapshot. Clicking a field
 /// opens the manual reducer with the exact recipient/item identity.
@@ -5281,17 +5289,26 @@ pub fn reception_item_row_editable(
     ui: &mut Ui, name: &str, quantity: &str, amount: &str,
     active: [bool; 3],
 ) -> ReceptionItemCells {
-    reception_item_row_with_mode(ui,name,quantity,amount,active,true)
+    reception_item_row_with_mode(ui,name,quantity,amount,active,true,false)
 }
+pub fn reception_item_row_with_remove(
+    ui:&mut Ui,name:&str,quantity:&str,amount:&str,active:[bool;3],editable:bool,
+)->ReceptionItemCells{
+    reception_item_row_with_mode(ui,name,quantity,amount,active,editable,true)
+}
+
 fn reception_item_row_with_mode(
     ui: &mut Ui, name: &str, quantity: &str, amount: &str,
-    active: [bool; 3],editable:bool,
+    active: [bool; 3],editable:bool,remove_slot:bool,
 ) -> ReceptionItemCells {
-    let width = reception_item_table_width(ui.available_width());
+    let action_width=if remove_slot{theme::RECEPTION_ITEM_REMOVE_WIDTH}else{0.0};
+    let width=ui.available_width().max(theme::RECEPTION_ITEMS_MIN_TABLE_WIDTH+action_width);
     let (rect, _) = ui.allocate_exact_size(
         Vec2::new(width, theme::RECEPTION_ITEMS_ROW_HEIGHT), Sense::hover()
     );
-    let columns = reception_item_columns(rect);
+    let columns = reception_item_columns(Rect::from_min_max(
+        rect.min,egui::pos2(rect.right()-action_width,rect.bottom())
+    ));
     // A 42pt row previously lost 8pt top and bottom, leaving a 26pt
     // highlight rectangle. Give 16pt glyphs a 34pt value surface instead;
     // the 4pt inset keeps both rounded corners and the border inside the row.
@@ -5381,7 +5398,28 @@ fn reception_item_row_with_mode(
         (&amount,active[2])]{
         source_highlight::paint_active_if(ui,response,on);
     }
-    ReceptionItemCells { product, quantity, amount }
+    let mut remove_clicked=false;
+    if remove_slot {
+        let hit=Rect::from_center_size(
+            egui::pos2(rect.right()-action_width/2.0,rect.center().y),
+            egui::vec2(action_width,28.0)
+        );
+        let enabled=editable && ui.is_enabled();
+        let action=ui.interact(hit,ui.make_persistent_id(("item-remove",row_id)),
+            if enabled{Sense::click()}else{Sense::hover()});
+        let ink=if enabled{theme::SECONDARY}else{theme::DISABLED_ACTION_TEXT};
+        if enabled{theme::paint_button_hover(ui,&action,theme::CONTROL_RADIUS as f32);}
+        let center=hit.center();
+        let stroke=Stroke::new(1.5,ink);
+        for sign in [-1.0_f32,1.0]{
+            ui.painter().line_segment([
+                center+egui::vec2(-4.0,-4.0*sign),
+                center+egui::vec2(4.0,4.0*sign)
+            ],stroke);
+        }
+        remove_clicked=enabled && action.on_hover_text("품목 삭제").clicked();
+    }
+    ReceptionItemCells { product, quantity, amount, remove_clicked }
 }
 
 /// Presentation-only freight amount supplied by native Rust. The region

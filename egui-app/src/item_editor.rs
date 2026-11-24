@@ -51,6 +51,7 @@ pub struct ItemEditor{
     photo_requested:bool,
     photos:ProductImageCache,
     confirm_delete:bool,
+    delete_only:bool,
     confirm_discard:bool,
     error:Option<String>,
 }
@@ -66,7 +67,7 @@ impl ItemEditor{
             search:None,original_catalog_product:None,
             photo_receiver:None,photo_requested:false,
             photos:ProductImageCache::default(),
-            confirm_delete:false,confirm_discard:false,
+            confirm_delete:false,delete_only:false,confirm_discard:false,
             error:None,
         }
     }
@@ -74,6 +75,7 @@ impl ItemEditor{
         self.order_id==order_id && self.source_raw==raw &&
             self.recipient_id==rid && self.item_id==iid
     }
+    pub fn open_delete_only(&mut self){self.delete_only=true;self.confirm_delete=true;}
     pub fn report_error(&mut self,error:String){self.error=Some(error);}
     pub fn clear_error(&mut self){self.error=None;}
     fn selected(&self)->&Value{
@@ -192,6 +194,33 @@ impl ItemEditor{
         &mut self,ctx:&Context,gateway:Arc<dyn BandoGateway>,
         work_area:egui::Rect,busy:bool
     )->Option<Event>{
+        if self.delete_only {
+            let mut cancel=false;
+            let mut remove=false;
+            components::decision_window(
+                "품목 삭제 확인","reception-item-delete-confirm",work_area
+            ).constrain_to(work_area).show(ctx,|ui|{
+                if components::modal_header(ui,"품목 삭제 확인","닫기",!busy){
+                    cancel=true;
+                }
+                let name=field(&self.initial,"name");
+                let name=if name.is_empty(){field(&self.initial,"code")}else{name};
+                ui.label(format!("{} 품목을 발주서에서 삭제할까요?",name));
+                if let Some(error)=self.error.as_deref(){
+                    ui.label(typography::status(error,theme::DANGER));
+                }
+                components::modal_action_row_split(ui,|left|{
+                    if theme::action(left,"취소",ButtonRole::Standard,!busy).clicked(){
+                        cancel=true;
+                    }
+                },|right|{
+                    if theme::action(right,"삭제",ButtonRole::Danger,!busy).clicked(){
+                        remove=true;
+                    }
+                });
+            });
+            return if cancel{Some(Event::Closed)}else if remove{Some(Event::Remove)}else{None};
+        }
         self.poll_catalog_photo(Arc::clone(&gateway),ctx);
         let mut result=None;
         let selected=self.selected().clone();

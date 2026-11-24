@@ -354,7 +354,8 @@ pub const RECEPTION_ITEMS_ROW_HEIGHT: f32 = 42.0;
 // columns never expand or contract with their values or the pane width.
 // On very narrow panes the fixed minimum table scrolls horizontally.
 pub const RECEPTION_ITEMS_PRODUCT_MIN_WIDTH: f32 = 180.0;
-pub const RECEPTION_ITEMS_QTY_WIDTH: f32 = 76.0; // up to 999개
+pub const RECEPTION_ITEMS_QTY_WIDTH: f32 = 84.0; // left stepper + 999개
+pub const RECEPTION_ITEM_REMOVE_WIDTH: f32 = 28.0;
 pub const RECEPTION_ITEMS_AMOUNT_MAX_WIDTH: f32 = 136.0; // up to 99,999,999원
 pub const RECEPTION_ITEMS_MIN_TABLE_WIDTH: f32 =
     RECEPTION_ITEMS_PRODUCT_MIN_WIDTH + RECEPTION_ITEMS_QTY_WIDTH
