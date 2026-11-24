@@ -1506,10 +1506,11 @@ impl ManualWorkspace {
                             // Share Reception's actual card renderer, field
                             // geometry and product/freight controls. Do not
                             // imitate their layout with a manual Grid.
+                            let panel_width=sheet_ui.available_width().max(
+                                theme::MANUAL_SHEET_MIN_WIDTH
+                            );
                             sheet_ui.vertical(|panel|{
-                                panel.set_min_width(sheet_ui.available_width().max(
-                                    theme::MANUAL_SHEET_MIN_WIDTH
-                                ));
+                                panel.set_min_width(panel_width);
                                 panel.set_min_height(height.max(0.0));
                                 panel.spacing_mut().item_spacing.y=theme::SPACE_8;
                                 let mut count_resize_requested=false;
@@ -2602,27 +2603,46 @@ mod manual_workspace_modal_routing_tests {
     #[test]
     fn manual_scroll_surface_owns_quantity_and_freight_controls(){
         let source=include_str!("manual_workspace.rs");
-        let layout=source.split("let worksheet_height=").nth(1)
-            .expect("worksheet viewport allocation is required")
-            .split("let input_settled=").next()
-            .expect("the footer must follow the scrollable worksheet");
-        assert!(layout.contains("panel.available_height()"),
-            "worksheet size must come from remaining panel height");
-        assert!(layout.contains("ScrollBarVisibility::VisibleWhenNeeded"),
-            "overflowed worksheet must offer an explicit scrollbar");
-        assert!(layout.contains("ui.scroll_to_rect("),
-            "freight editor must scroll into view when opened");
-        assert!(layout.contains("ui.horizontal(|ui|{"),
-            "quantity and freight controls need a scrollable row");
-        assert!(!layout.contains("panel.horizontal(|ui|{"),
-            "a control placed after the sheet scroll can be clipped");
+        let layout=source.split("let body_height=panel.available_height()")
+            .nth(1).expect("right card scroll height comes from the panel")
+            .split("let input_settled=").next().unwrap();
+        assert!(layout.contains("manual-reception-style-cards"),
+            "all cards must be in the right independent scroll area");
+        assert!(layout.contains("ScrollBarVisibility::VisibleWhenNeeded"));
+        assert!(layout.contains("reception_freight_row_editable("),
+            "freight controls must use the Reception component in the scroll");
+        assert!(layout.contains("reception_item_origin_action_editable("),
+            "dispatch origin must stay inside the product/freight card");
         assert!(layout.contains("self.selected_field==\"shippingCharge\""),
-            "freight editor must be reachable in the same scroll area");
-        let scroll_end=layout.rfind("                                });\n                            });")
-            .expect("scroll surface should close after quantity controls");
-        let freight=layout.find("self.selected_field==\"shippingCharge\"").unwrap();
-        assert!(freight<scroll_end,
-            "freight editor must be inside the sheet scroll surface");
+            "freight direct editing must remain accessible");
+        let editor=source.split("fn selected_cell_editor_on_rect(").nth(1)
+            .unwrap().split("fn queue_cell_navigation(").next().unwrap();
+        assert!(editor.contains("ui.scroll_to_rect(rect,"),
+            "focused cells must scroll into view");
+    }
+
+    #[test]
+    fn manual_cards_reuse_the_real_reception_renderers(){
+        let source=include_str!("manual_workspace.rs");
+        let render=source.split("pub fn show(").nth(1).unwrap()
+            .split("fn manual_hover_target(").next().unwrap();
+        assert_eq!(render.matches("reception_section_with_header(").count(),2);
+        for common in [
+            "reception_recipient_fields(",
+            "reception_items_header(",
+            "reception_item_row_editable(",
+            "reception_item_add_action_editable(",
+            "reception_freight_row_editable(",
+            "reception_item_origin_action_editable(",
+            "reception_recipient_navigator("
+        ] {
+            assert!(render.contains(common),"{common} is not reused");
+        }
+        assert!(!render.contains("manual_linked_table_cell("));
+        assert!(!render.contains("manual_table_heading("));
+        assert!(!render.contains("egui::Grid::new((\"manual-products\""));
+        assert!(render.contains("selected_cell_editor_on_rect("),
+            "direct edits must overlay the shared input cell");
     }
 
     #[test]
