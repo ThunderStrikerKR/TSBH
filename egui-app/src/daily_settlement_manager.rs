@@ -540,8 +540,15 @@ impl DailySettlementManager{
         let mut date_changed=false;
         let unavailable=self.error.as_deref().unwrap_or("해당 날짜의 결산 자료를 불러올 수 없습니다.");
         let loading=self.receiver.is_some();
+        // The report tables scroll horizontally inside their own row
+        // viewports. Keep the OUTER vertical section stack bounded by the
+        // visible work area so a wide report cannot expand the card/header
+        // beyond the window before its nested horizontal scroller is reached.
+        let section_viewport_width=ui.available_rect_before_wrap()
+            .intersect(ui.clip_rect()).width().max(1.0);
         egui::ScrollArea::vertical()
             .id_salt("daily-settlement-sections")
+            .max_width(section_viewport_width)
             .auto_shrink([false,false])
             .show(ui,|body|{
                 components::measured_management_section_card(body,|section|{

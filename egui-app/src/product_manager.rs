@@ -2650,8 +2650,19 @@ mod tests {
     #[test]
     fn price_cell_commit_contract_is_excel_style_without_action_popup(){
         let source=include_str!("product_manager.rs");
-        let editor=source.split("let (enter_pressed,tab_pressed,").nth(1).unwrap()
-            .split("let action_rect").next().unwrap_or("");
+        // The live editor delegates Enter/Tab/arrows to the shared
+        // focus-scoped worksheet navigator; inspect the current production
+        // path rather than the retired local key-extraction implementation.
+        let production=source.split("mod tests {").next().unwrap_or(source);
+        let editor=production.split("let navigation_key=cell_navigation::").nth(1).unwrap()
+            .split("let action_rect=Rect::from_center_size(").next().unwrap_or("");
+        assert!(editor.contains("consume_worksheet_navigation_before_editor("));
+        assert!(editor.contains("remember_worksheet_editor("));
+        let shared_navigation=include_str!("cell_navigation.rs");
+        for key in ["Key::ArrowLeft","Key::ArrowRight","Key::ArrowUp",
+            "Key::ArrowDown","Key::Tab","Key::Enter"] {
+            assert!(shared_navigation.contains(key),"shared navigation missing {key}");
+        }
         assert!(editor.contains("response.lost_focus()"));
         assert!(editor.contains("response.gained_focus()"));
         assert!(editor.contains("select_all_price_text("));
@@ -2695,8 +2706,6 @@ mod tests {
             .split("self.model_groups.set_catalog").next().unwrap_or("");
         assert!(success.trim_start().starts_with("None"));
         assert!(!success.contains("가격 변경을 저장했습니다."));
-        let editor=source.split("let (enter_pressed,tab_pressed,").nth(1).unwrap()
-            .split("let action_rect").next().unwrap_or("");
         assert!(source.contains("||self.price_mode_exit_requested"));
     }
     #[test]
