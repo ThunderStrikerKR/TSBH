@@ -2919,7 +2919,11 @@ impl ProductManager {
         let finish=self.result.geometry_begin_read();
         Box::new(move |answer|finish(answer.map(|count|{
             let products=(0..count).map(|i|json!({"id":format!("geometry-p-{i}"),"name":format!("검증 상품 {i:03}"),"subtitle":"긴 이름과 옵션 검증","active":true,"variants":[{"id":format!("geometry-v-{i}"),"color":"Black","prices":{"wholesale":10000,"semi":12000,"retail":15000}}]})).collect::<Vec<_>>();
-            ManagementProductRows{catalog:json!({"revision":1,"products":products.clone(),"categories":[],"brands":[],"aliases":[],"settings":{}}),products}
+            let categories=(0..count).map(|i|json!({"id":format!("geometry-cat-{i}"),"name":format!("검증 분류 {i}"),"parentId":"catalog-root:BANDOSTAND"})).collect::<Vec<_>>();
+            let brands=(0..count).map(|i|json!({"id":format!("geometry-brand-{i}"),"name":format!("검증 브랜드 {i}"),"korean":"합성","aliases":["검증 검색어"]})).collect::<Vec<_>>();
+            let aliases=(0..count).map(|i|json!({"id":format!("geometry-alias-{i}"),"text":format!("검증 별칭 {i}"),"productId":format!("geometry-p-{i}")})).collect::<Vec<_>>();
+            let groups=(0..count).map(|i|(format!("geometry-model-{i}"),json!({"name":format!("검증 모델군 {i}"),"productIds":[format!("geometry-p-{i}")],"representativeProductId":format!("geometry-p-{i}")}))).collect::<serde_json::Map<String,Value>>();
+            ManagementProductRows{catalog:json!({"revision":1,"products":products.clone(),"categories":categories,"brands":brands,"aliases":aliases,"settings":{"colorGuidanceGroups":groups}}),products}
         })))
     }
     pub(crate) fn geometry_read_failed(&self)->bool{self.error.is_some()}
