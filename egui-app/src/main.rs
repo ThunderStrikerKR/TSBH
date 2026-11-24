@@ -1673,7 +1673,16 @@ impl BandoEgui {
                     let chosen_name=self.client_names.get(&new_client).cloned()
                         .or_else(||self.client_summaries.get(&new_client)
                             .map(|client|client.name.clone()));
-                    let display_cache=if let Some(analysis)=self.analysis.as_mut(){
+                    let direct_input=pending.source_raw.trim().is_empty() &&
+                        pending.manual_model.as_ref().is_some_and(|saved|
+                            saved.get("mode").and_then(serde_json::Value::as_str)==Some("DIRECT")
+                        );
+                    let display_cache=if direct_input{
+                        if let Some(analysis)=self.analysis.as_mut(){
+                            analysis.chosen_client_name=chosen_name.clone();
+                        }
+                        None
+                    }else if let Some(analysis)=self.analysis.as_mut(){
                         if let Some(recognition)=result.recognition.as_ref(){
                             if let Some(rows)=recognition.get("recipients")
                                 .filter(|rows|rows.is_array()){
@@ -1703,9 +1712,17 @@ impl BandoEgui {
                         // Preserve the initial analysisEvidence and advisory
                         // clientMatch independently for audit. The newer
                         // dealer-specific view lives in analysisView.
-                        row.analysis_view=display_cache.clone();
+                        row.analysis_view=if direct_input{None}else{display_cache.clone()};
                     }
-                    if display_cache.is_some(){
+                    if direct_input{
+                        self.restore_direct_manual_view();
+                        self.analysis_pending=false;
+                        self.analysis_due_at=None;
+                        self.analysis_error=None;
+                        self.selected_recipient=0;
+                        self.source_hover=None;
+                        self.link_hover.clear();
+                    }else if display_cache.is_some(){
                         self.analysis_pending=false;
                         self.analysis_due_at=None;
                         self.analysis_error=None;
