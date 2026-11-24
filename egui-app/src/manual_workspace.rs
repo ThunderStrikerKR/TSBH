@@ -1052,8 +1052,10 @@ fn manual_recipient_card_height()->f32{
         +3.0*theme::RECIPIENT_ROW_GAP
 }
 
-fn manual_workspace_status_row_height()->f32{
-    theme::INPUT_HEIGHT.max(typography::METADATA_LINE_HEIGHT)
+fn manual_workspace_header_height()->f32{
+    theme::MODAL_HEADER_HEIGHT
+        +theme::MODAL_MASTER_WORKSPACE_TOOLBAR_HEIGHT
+        +theme::SOFT_DIVIDER_WIDTH
 }
 
 fn manual_workspace_columns_height()->f32{
@@ -1065,12 +1067,11 @@ fn manual_workspace_columns_height()->f32{
 fn manual_workspace_dialog_size(work_area:egui::Rect)->egui::Vec2{
     let width=(work_area.width()-theme::MANUAL_DIALOG_SIDE_GAP)
         .min(theme::MANUAL_DIALOG_MAX_WIDTH).max(0.0);
-    // The status row and divider use explicit 8pt gaps on either side.
-    let status_and_divider=manual_workspace_status_row_height()
-        +2.0*theme::SPACE_8+theme::SOFT_DIVIDER_WIDTH;
-    let body=status_and_divider+manual_workspace_columns_height();
+    // Status and shipment count are now owned by the shared two-row header.
+    // The card body begins one 16pt master gap below its single bottom rule.
+    let body=manual_workspace_columns_height();
     let frame_chrome=2.0*(theme::MODAL_PANEL_PADDING_Y+theme::FRAME_STROKE_WIDTH);
-    let fixed_chrome=frame_chrome+theme::MODAL_HEADER_HEIGHT
+    let fixed_chrome=frame_chrome+manual_workspace_header_height()
         +2.0*theme::MODAL_MASTER_WORKSPACE_GAP+theme::MODAL_FOOTER_HEIGHT;
     let height=(body+fixed_chrome).min(work_area.height()).max(1.0);
     egui::vec2(width,height)
@@ -1927,91 +1928,69 @@ impl ManualWorkspace {
             .show(ctx,|ui|{
 
                 components::modal_flow_workspace(ui,|workspace|{
-                    if workspace.header(workspace_title,"닫기",
-                        !self.busy()&&!self.product_dialog_open()
-                            &&self.remove_recipient_pending.is_none()
-                            &&!self.reset_pending
-                            &&!self.confirm_apply
-                            &&!self.confirm_discard
-                    ){open=false;}
-                    // Prompts and asynchronous native mutations own input while
-                    // open. The background worksheet remains visible but inert.
-                    if self.busy() || self.product_dialog_open() ||
-                        self.remove_recipient_pending.is_some() ||
-                        self.reset_pending || self.confirm_apply || self.confirm_discard {
-                        workspace.disable();
-                    }
-                    let Some((busy,pending_quantity_active,has_pending_quantity,guidance))=workspace.body_region(|ui|{
-                        let Some(model)=self.model.as_ref() else {return None};
-                        // Own the recommendation snapshot so drag-start handling
-                        // inside the nested UI closure does not retain a borrow of self.
-                        let recommendation_model=model.clone();
-                        let rows=list(model,"rows").to_vec();
-                        let visible_shipment=visible_manual_shipment(
-                            self.selected_recipient,rows.len()
-                        );
-                        let blocks=list(model,"blocks").to_vec();
-                        let assignments=model.get("assignments").cloned().unwrap_or_else(||json!({}));
-                        // Exact native block assignment IDs drive the manual palette.
-                        // Recognition/Reception use the unchanged shared default.
-                        let assigned_source_ids=assignments.as_object().map(|map|
-                            map.iter().filter(|(_,cell)|cell.is_object())
-                                .map(|(id,_)|id.to_owned())
-                                .collect::<std::collections::HashSet<String>>()
-                        ).unwrap_or_default();
-                        let busy=self.busy();
-                        let pending_quantity_cell=self.pending_quantity_cell();
-                        let mut drag_recommendations=self.assignment_gesture.dragging.as_deref()
-                            .map(|source|manual_assignment_recommendations(
-                                model,source,pending_quantity_cell.as_ref()
-                            )).unwrap_or_default();
-                        let pending_quantity_active=pending_quantity_cell.is_some();
-                        let pending_quantity_count=model_pending_quantity_count(model);
-                        let has_pending_quantity=pending_quantity_count>0;
-                        let unassigned=blocks.iter().filter(|b|
-                            assignments.get(text(b,"id")).is_none()).count();
-                        // Apply blockers remain available as tooltips; the
-                        // header never allocates a state-dependent guidance row.
-                        let guidance=manual_apply_guidance(
-                            busy,pending_quantity_count,
-                            self.edit_text!=self.current_value()
-                        );
-                        // Preserve the header's single fixed-height status line.
-                        // Manual-only notices live in this existing tooltip, not
-                        // between the shared freight and dispatch-origin controls.
-                        let remote_notice=visible_shipment.and_then(|index|rows.get(index))
+                    // The status and shipment controls belong to the shared
+                    // modal header, not to a separate row above the card body.
+                    let header_busy=self.busy();
+                    let header_has_model=self.model.is_some();
+                    let (header_row_count,header_unassigned,header_pending_quantity_count)=
+                        self.model.as_ref().map(|model|{
+                            let rows=list(model,"rows");
+                            let assignments=model.get("assignments").unwrap_or(&Value::Null);
+                            let unassigned=list(model,"blocks").iter()
+                                .filter(|block|assignments.get(text(block,"id")).is_none())
+                                .count();
+                            (rows.len(),unassigned,model_pending_quantity_count(model))
+                        }).unwrap_or((0,0,0));
+                    let header_pending_quantity_active=
+                        self.pending_quantity_cell().is_some();
+                    let header_guidance=manual_apply_guidance(
+                        header_busy,header_pending_quantity_count,
+                        self.edit_text!=self.current_value()
+                    );
+                    let header_remote_notice=self.model.as_ref().and_then(|model|{
+                        let rows=list(model,"rows");
+                        visible_manual_shipment(self.selected_recipient,rows.len())
+                            .and_then(|index|rows.get(index))
                             .and_then(|row|remote_for(&self.remote_rows,row))
                             .and_then(|decision|match decision{
                                 Ok(value)=>crate::reception_service::remote_delivery_notice(value),
                                 Err(error)=>Some(format!("도서/산간 판정 실패 · {error}"))
-                            });
-                        // The body uses explicit structural spacing so its fixed
-                        // content-first window height is independent of egui's
-                        // implicit separator and parent item-spacing behavior.
-                        ui.spacing_mut().item_spacing.y=0.0;
-                        let mut count_resize_requested=false;
-                        ui.horizontal(|status|{
-                            status.set_min_height(manual_workspace_status_row_height());
+                            })
+                    });
+                    let header_client_notice=(
+                        self.client_id.is_some() && self.view_quote.is_none() && !header_busy
+                    ).then_some("금액·운임의 Rust 견적을 확인할 수 없습니다.");
+                    let header_error=self.error.clone();
+                    let mut count_resize_requested=false;
+                    let (close_clicked,())=workspace.header_with_toolbar(
+                        workspace_title,"닫기",
+                        !header_busy&&!self.product_dialog_open()
+                            &&self.remove_recipient_pending.is_none()
+                            &&!self.reset_pending
+                            &&!self.confirm_apply
+                            &&!self.confirm_discard,
+                        |status|{
+                            status.set_min_height(theme::MODAL_MASTER_WORKSPACE_TOOLBAR_HEIGHT);
+                            status.spacing_mut().item_spacing.x=theme::SPACE_8;
                             let status_label=if self.direct_input{
                                 status.label(typography::caption("직접 입력 · 발주 원문 없음"))
                             }else{
                                 status.label(typography::caption(
-                                    &format!("미배정 원문: {unassigned}개")
+                                    &format!("미배정 원문: {header_unassigned}개")
                                 ))
                             };
                             let notice=[
-                                guidance.as_deref(),remote_notice.as_deref(),
-                                (self.client_id.is_some() && self.view_quote.is_none() && !busy)
-                                    .then_some("금액·운임의 Rust 견적을 확인할 수 없습니다."),
-                                self.error.as_deref()
+                                header_guidance.as_deref(),header_remote_notice.as_deref(),
+                                header_client_notice,header_error.as_deref()
                             ].into_iter().flatten().collect::<Vec<_>>().join("\n");
                             if !notice.is_empty(){status_label.on_hover_text(&notice);}
                             status.with_layout(
                                 egui::Layout::right_to_left(egui::Align::Center),|right|{
                                     components::form_field_label(right,"건");
-                                    let current_count=rows.len();
-                                    let can_resize=!busy && !pending_quantity_active &&
-                                        self.edit_text==self.current_value();
+                                    let current_count=header_row_count;
+                                    let can_resize=header_has_model && !header_busy
+                                        && !header_pending_quantity_active
+                                        && self.edit_text==self.current_value();
                                     let count_control_id=
                                         right.make_persistent_id("manual-shipment-count");
                                     let count_control=components::date_navigation_count_control(
@@ -2068,10 +2047,50 @@ impl ManualWorkspace {
                                     components::form_field_label(right,"배송 건수");
                                 }
                             );
-                        });
-                        ui.add_space(theme::SPACE_8);
-                        components::reception_section_divider(ui);
-                        ui.add_space(theme::SPACE_8);
+                        }
+                    );
+                    if close_clicked{open=false;}
+                    // Prompts and asynchronous native mutations own input while
+                    // open. The background worksheet remains visible but inert.
+                    if self.busy() || self.product_dialog_open() ||
+                        self.remove_recipient_pending.is_some() ||
+                        self.reset_pending || self.confirm_apply || self.confirm_discard {
+                        workspace.disable();
+                    }
+                    let Some((busy,pending_quantity_active,has_pending_quantity,guidance))=workspace.body_region(|ui|{
+                        let Some(model)=self.model.as_ref() else {return None};
+                        // Own the recommendation snapshot so drag-start handling
+                        // inside the nested UI closure does not retain a borrow of self.
+                        let recommendation_model=model.clone();
+                        let rows=list(model,"rows").to_vec();
+                        let visible_shipment=visible_manual_shipment(
+                            self.selected_recipient,rows.len()
+                        );
+                        let blocks=list(model,"blocks").to_vec();
+                        let assignments=model.get("assignments").cloned().unwrap_or_else(||json!({}));
+                        // Exact native block assignment IDs drive the manual palette.
+                        // Recognition/Reception use the unchanged shared default.
+                        let assigned_source_ids=assignments.as_object().map(|map|
+                            map.iter().filter(|(_,cell)|cell.is_object())
+                                .map(|(id,_)|id.to_owned())
+                                .collect::<std::collections::HashSet<String>>()
+                        ).unwrap_or_default();
+                        let busy=self.busy();
+                        let pending_quantity_cell=self.pending_quantity_cell();
+                        let mut drag_recommendations=self.assignment_gesture.dragging.as_deref()
+                            .map(|source|manual_assignment_recommendations(
+                                model,source,pending_quantity_cell.as_ref()
+                            )).unwrap_or_default();
+                        let pending_quantity_active=pending_quantity_cell.is_some();
+                        let pending_quantity_count=model_pending_quantity_count(model);
+                        let has_pending_quantity=pending_quantity_count>0;
+                        // The status/count toolbar is part of the shared modal
+                        // header. The body begins directly at the card workspace.
+                        let guidance=manual_apply_guidance(
+                            busy,pending_quantity_count,
+                            self.edit_text!=self.current_value()
+                        );
+                        ui.spacing_mut().item_spacing.y=0.0;
                         // The source column matches Reception's live pane width.
                         // The right worksheet takes the remaining width; on narrow windows keep
                         // both minimum widths and scroll the workspace horizontally
@@ -4014,7 +4033,7 @@ mod manual_workspace_layout_tests{
     #[test]
     fn popup_height_tracks_the_visible_card_stack_and_fixed_modal_chrome(){
         assert_eq!(theme::RECEPTION_PANE_PADDING_Y,16.0);
-        assert_eq!(manual_workspace_status_row_height(),36.0);
+        assert_eq!(manual_workspace_header_height(),97.0);
         assert_eq!(manual_recipient_card_height(),247.0);
         assert_eq!(manual_workspace_columns_height(),603.0);
         let work_area=egui::Rect::from_min_size(
@@ -4022,7 +4041,7 @@ mod manual_workspace_layout_tests{
         );
         let size=manual_workspace_dialog_size(work_area);
         assert_eq!(size.x,1364.0);
-        assert_eq!(size.y,836.0);
+        assert_eq!(size.y,824.0);
         let short_area=egui::Rect::from_min_size(
             egui::Pos2::ZERO,egui::vec2(1400.0,700.0)
         );
@@ -4065,17 +4084,24 @@ mod manual_workspace_layout_tests{
             .next().expect("production source boundary");
         let render=production.split("pub fn show(").nth(1).unwrap();
         assert!(render.contains("components::reception_section_with_header_tooltip("));
+        let header_start=render.find("workspace.header_with_toolbar(")
+            .expect("status/count controls belong to the shared modal header");
         let toolbar_start=render.find("let mut count_resize_requested=false;")
-            .expect("toolbar owns shipment-count state");
+            .expect("header toolbar owns shipment-count state");
+        let body_start=render.find("workspace.body_region(")
+            .expect("card workspace follows the shared header");
         let columns_start=render.find("let mut draw_columns=")
-            .expect("card columns follow the toolbar");
-        assert!(toolbar_start<columns_start);
-        assert!(render[toolbar_start..columns_start]
+            .expect("card columns are drawn inside the body");
+        assert!(header_start<toolbar_start && toolbar_start<body_start
+            && body_start<columns_start);
+        assert!(render[toolbar_start..body_start]
             .contains("components::date_navigation_count_control("));
-        assert!(!render[columns_start..]
+        assert!(!render[body_start..]
             .contains("components::date_navigation_count_control("));
-        assert!(render[..columns_start]
-            .contains("status.set_min_height(manual_workspace_status_row_height())"));
+        assert!(!render[body_start..columns_start]
+            .contains("components::reception_section_divider("));
+        assert!(render[toolbar_start..body_start]
+            .contains("status.set_min_height(theme::MODAL_MASTER_WORKSPACE_TOOLBAR_HEIGHT)"));
         assert!(render.contains("theme::source_document_frame().show(body"));
         assert!(!render.contains("theme::modal_nested_frame().show(source_ui"));
         assert!(render.contains("components::docked_section_body_height(height)"));
