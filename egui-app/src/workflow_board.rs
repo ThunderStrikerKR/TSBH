@@ -4,7 +4,7 @@
 //! No SQLite writes, confirmation, stage transition, or invented work groups.
 use crate::gateway::{BandoGateway, ReadOperation};
 use serde_json::{json, Value};
-use std::collections::HashMap;
+use std::collections::{HashMap,HashSet};
 
 #[derive(Clone, Debug)]
 pub struct ShipmentRow {
@@ -164,9 +164,78 @@ pub fn load(gateway:&dyn BandoGateway)->Result<BoardSnapshot,String>{
 /// Project the exact snapshot returned by an authoritative, verified write.
 /// Periodic reads still go through load() to detect external changes.
 pub fn from_state(gateway:&dyn BandoGateway,state:Value)->Result<BoardSnapshot,String>{
+    project_state(gateway,&state,None)
+}
+
+/// Native freight edits reconcile exactly one source order. Only reuse a
+/// board at the immediately preceding committed revision, with a provable
+/// source/order join. Otherwise use the unchanged full projection.
+fn freight_refresh_scope(previous:&BoardSnapshot,state:&Value,group_id:&str)
+    ->Option<HashSet<String>>{
+    if previous.revision?.checked_add(1)!=state["revision"].as_u64(){return None;}
+    let old=previous.groups.iter().find(|group|group.id==group_id)?;
+    let order_id=old.shipments.first()?.order_id.as_str();
+    if order_id.is_empty() || old.source_id.is_empty() ||
+        old.shipments.iter().any(|ship|ship.order_id!=order_id){return None;}
+    let workflow=field(state,"workflow");
+    let source=id_row(field(workflow,"sources"),&old.source_id)?;
+    if text(source,"orderId")!=order_id{return None;}
+    let groups=rows(field(workflow,"groups"));
+    let ships=rows(field(workflow,"shipments"));
+    let mut scope=HashSet::new();
+    for group in groups{
+        let id=text(group,"id");
+        let same_source=text(group,"sourceId")==old.source_id;
+        let same_order=ships.iter().any(|ship|text(ship,"groupId")==id &&
+            text(ship,"orderId")==order_id);
+        if same_order && !same_source{return None;}
+        if same_source{
+            if id.is_empty() || ships.iter().any(|ship|text(ship,"groupId")==id &&
+                text(ship,"orderId")!=order_id){return None;}
+            scope.insert(id.to_owned());
+        }
+    }
+    for group in &previous.groups{
+        if group.source_id==old.source_id ||
+            group.shipments.iter().any(|ship|ship.order_id==order_id){
+            scope.insert(group.id.clone());
+        }
+    }
+    if !scope.contains(group_id){return None;}
+    Some(scope)
+}
+
+pub fn after_freight_edit(gateway:&dyn BandoGateway,state:Value,
+    previous:Option<BoardSnapshot>,group_id:&str)->Result<BoardSnapshot,String>{
+    if gateway.supports_scoped_freight_refresh(){
+        if let Some(mut board)=previous{
+            if let Some(scope)=freight_refresh_scope(&board,&state,group_id){
+                let updated=project_state(gateway,&state,Some(&scope))?;
+                board.groups.retain(|group|!scope.contains(&group.id));
+                board.groups.extend(updated.groups);
+                // Match the full projection's stable tie order even when
+                // a group has been removed or created by reconciliation.
+                let positions:HashMap<&str,usize>=rows(field(field(&state,"workflow"),"groups"))
+                    .iter().enumerate().map(|(i,g)|(text(g,"id"),i)).collect();
+                board.groups.sort_by(|a,b|b.created_at.cmp(&a.created_at)
+                    .then_with(||positions.get(a.id.as_str()).cmp(&positions.get(b.id.as_str()))));
+                board.revision=updated.revision;
+                return Ok(board);
+            }
+        }
+    }
+    from_state(gateway,state)
+}
+
+fn project_state(gateway:&dyn BandoGateway,state:&Value,scope:Option<&HashSet<String>>)
+    ->Result<BoardSnapshot,String>{
     let started=std::time::Instant::now();
-    let projected=gateway.execute(ReadOperation::PreviewWorkflow,json!({"state":&state}))?;
-    let shipment_read=gateway.execute(ReadOperation::ReadShipments,json!({"state":&state}))?;
+    let mut request=json!({"state":state});
+    if let Some(scope)=scope{
+        request["groupIds"]=json!(scope.iter().collect::<Vec<_>>());
+    }
+    let projected=gateway.execute(ReadOperation::PreviewWorkflow,request.clone())?;
+    let shipment_read=gateway.execute(ReadOperation::ReadShipments,request)?;
     let workflow=field(&state,"workflow");
     let orders=field(&state,"orders");
     let all_shipments=field(workflow,"shipments");
@@ -174,7 +243,7 @@ pub fn from_state(gateway:&dyn BandoGateway,state:Value)->Result<BoardSnapshot,S
     let mut order_previews:HashMap<String,Value>=HashMap::new();
     for group in rows(field(workflow,"groups")).iter().filter(|g|active(g)){
         let group_id=text(group,"id");
-        if group_id.is_empty(){continue;}
+        if group_id.is_empty() || scope.is_some_and(|ids|!ids.contains(group_id)){continue;}
         let ships=rows(all_shipments).iter().filter(|ship|
             text(ship,"groupId")==group_id &&
             field(ship,"legacyArchived")!=&Value::Bool(true)
@@ -302,8 +371,8 @@ pub fn from_state(gateway:&dyn BandoGateway,state:Value)->Result<BoardSnapshot,S
     }
     groups.sort_by(|a,b|b.created_at.cmp(&a.created_at));
     if std::env::var_os("BANDO_EGUI_PROFILE_WORKFLOW").is_some(){
-        eprintln!("[workflow-perf] phase=board_projection ms={:.3} groups={}",
-            started.elapsed().as_secs_f64()*1000.0,groups.len());
+        eprintln!("[workflow-perf] phase=board_projection ms={:.3} groups={} scoped={}",
+            started.elapsed().as_secs_f64()*1000.0,groups.len(),scope.is_some());
     }
     Ok(BoardSnapshot{
         revision:state["revision"].as_u64(),groups
@@ -366,6 +435,31 @@ mod linked_recipient_selection_tests{
             automatic_phase:None,automatic_signature:None,payment_copied:false,
             automatic_payment_issues:vec![],issues:vec![],
         }
+    }
+    #[test]
+    fn freight_refresh_includes_split_groups_and_rejects_stale_or_cross_order_scope(){
+        let mut first=group("a",vec![shipment("s1","o1","r1")]);
+        first.source_id="src1".into();
+        let mut second=group("b",vec![shipment("s2","o1","r2")]);
+        second.source_id="src1".into();
+        let mut other=group("c",vec![shipment("s3","o2","r3")]);
+        other.source_id="src2".into();
+        let previous=BoardSnapshot{revision:Some(7),groups:vec![first,second,other]};
+        let mut state=json!({"revision":8,"workflow":{
+            "sources":[{"id":"src1","orderId":"o1"},{"id":"src2","orderId":"o2"}],
+            "groups":[{"id":"a","sourceId":"src1"},{"id":"b","sourceId":"src1"},
+                {"id":"c","sourceId":"src2"},{"id":"new","sourceId":"src1"}],
+            "shipments":[{"id":"s1","groupId":"a","orderId":"o1"},
+                {"id":"s2","groupId":"b","orderId":"o1"},
+                {"id":"s3","groupId":"c","orderId":"o2"}]
+        }});
+        let scope=freight_refresh_scope(&previous,&state,"a").unwrap();
+        assert_eq!(scope,["a","b","new"].into_iter().map(str::to_owned).collect::<HashSet<_>>());
+        state["revision"]=json!(9);
+        assert!(freight_refresh_scope(&previous,&state,"a").is_none());
+        state["revision"]=json!(8);
+        state["workflow"]["shipments"][2]["groupId"]=json!("a");
+        assert!(freight_refresh_scope(&previous,&state,"a").is_none());
     }
     #[test]
     fn workflow_review_keeps_next_stage_blockers_and_native_line_amounts(){

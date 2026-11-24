@@ -8153,8 +8153,14 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                     self.workflow_receiver=Some(receiver);
                     self.workflow_last_fetch=Some(Instant::now());
                     let context=ctx.clone();
+                    let freight_group=(action=="set_shipment_freight").then(||group_id.clone());
+                    let previous=freight_group.as_ref().and_then(|_|self.workflow_snapshot.clone());
                     std::thread::spawn(move||{
-                        let result=workflow_board::from_state(gateway.as_ref(),saved);
+                        let result=if let Some(id)=freight_group{
+                            workflow_board::after_freight_edit(gateway.as_ref(),saved,previous,&id)
+                        }else{
+                            workflow_board::from_state(gateway.as_ref(),saved)
+                        };
                         let _=sender.send(result);
                         context.request_repaint();
                     });

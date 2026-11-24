@@ -68,7 +68,11 @@ pub(super) fn party<'a>(state: &'a Value, order: &'a Value) -> Option<&'a Value>
 /// No TypeScript dealer selection or freight fallback is required.
 pub(super) fn read_shipments(payload: &Value) -> Result<Value,String> {
     let state=req(payload,"state")?;
+    let scope=payload.get("groupIds").map(|ids|ids.as_array()
+        .ok_or("배송 조회 묶음 목록 오류")).transpose()?;
     let result=rows(field(field(state,"workflow"),"shipments")).iter().filter_map(|ship| {
+        if scope.is_some_and(|ids|!ids.iter().any(|id|
+            id.as_str()==Some(str_field(ship,"groupId")))){return None;}
         let order=find_by_id(field(state,"orders"),str_field(ship,"orderId"))?;
         let recipient=find_by_id(field(order,"recipients"),str_field(ship,"recipientId"))?;
         let mut freight=serde_json::Map::new();

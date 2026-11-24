@@ -197,6 +197,8 @@ jobs:
         run: cargo test --manifest-path egui-app/Cargo.toml source_highlight::tests -- --nocapture
       - name: Verify 72nd-pass reversible hover and committed pending-order selection
         run: cargo test --manifest-path egui-app/Cargo.toml pending_hover_navigation_tests -- --nocapture
+      - name: Verify freight projection scope and stale revision fallback
+        run: cargo test --manifest-path egui-app/Cargo.toml freight_refresh_includes_split_groups_and_rejects_stale_or_cross_order_scope -- --nocapture
       - name: Verify cross-group evidence selection and preferred shipment identity
         run: cargo test --manifest-path egui-app/Cargo.toml linked_recipient_selection_tests -- --nocapture
       - name: Verify clicked recipient remains selected when linked hover ends

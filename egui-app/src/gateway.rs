@@ -221,6 +221,8 @@ pub trait BandoGateway: Send + Sync {
     /// use the original native Rust rule reducers and the v2 revision CAS.
     /// Never mutate the read-only egui preview store or an HTTP fallback.
     fn workflow_write_enabled(&self)->bool{false}
+    /// Only the native scoped freight writer guarantees the dependency scope.
+    fn supports_scoped_freight_refresh(&self)->bool{false}
     fn mutate_workflow(
         &self,_expected_revision:u64,_action:&str,_args:Value
     )->Result<Value,String>{
@@ -552,6 +554,7 @@ impl BandoGateway for LocalGateway {
         let projection=crate::management_queries::project_freight(self,&state)?;
         Ok(serde_json::json!({"state":state,"projection":projection}))
     }
+    fn supports_scoped_freight_refresh(&self)->bool{true}
     fn workflow_write_enabled(&self)->bool{
         // A named, pre-existing v2 database is the user's explicit binding.
         // The writer guard restricts debug Windows to the developer TEST DB.

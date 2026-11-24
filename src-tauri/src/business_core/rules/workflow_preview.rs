@@ -44,9 +44,14 @@ pub(super) fn project(payload: &Value) -> Result<Value, String> {
     let all_shipments = rows(field(workflow_state, "shipments"));
     let mut projected = Vec::new();
 
+    let scope=payload.get("groupIds").map(|ids|ids.as_array()
+        .ok_or("업무 미리보기 묶음 목록 오류")).transpose()?;
     for group in rows(field(workflow_state, "groups")) {
         if has_value(field(group, "deletedAt")) { continue; }
         let group_id = str_field(group, "id");
+        if scope.is_some_and(|ids|!ids.iter().any(|id|id.as_str()==Some(group_id))){
+            continue;
+        }
         let ships = all_shipments.iter()
             .filter(|ship| str_field(ship, "groupId") == group_id)
             .filter(|ship| !flag(ship, "legacyArchived"))
