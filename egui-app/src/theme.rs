@@ -716,11 +716,11 @@ pub const SOURCE_RECOGNIZED_BORDER: Color32 = Color32::from_rgb(242, 242, 242);
 pub const SOURCE_RECOGNIZED_BORDER_WIDTH: f32 = 1.0;
 pub const MANUAL_SOURCE_PENDING_BG: Color32 = Color32::from_rgb(63, 63, 63);
 pub const MANUAL_SOURCE_ASSIGNED_BG: Color32 = Color32::from_rgb(42, 60, 74);
- // Manual classification has its own evidence states; the ordinary Reception
- // source renderer deliberately does NOT consume these tokens.
-pub const MANUAL_SOURCE_UNASSIGNED_FILL: Color32 = Color32::from_rgb(27, 27, 27);
-pub const MANUAL_SOURCE_UNASSIGNED_TEXT: Color32 = Color32::from_rgb(255, 255, 255);
-pub const MANUAL_SOURCE_UNASSIGNED_BORDER: Color32 = SOURCE_RECOGNIZED_BORDER;
+// Manual classification uses amber for unassigned tokens and muted gray
+// for classified tokens. The ordinary Reception renderer uses its own palette.
+pub const MANUAL_SOURCE_UNASSIGNED_FILL: Color32 = Color32::from_rgb(73, 55, 22); // #493716 amber
+pub const MANUAL_SOURCE_UNASSIGNED_TEXT: Color32 = Color32::from_rgb(255, 244, 218); // #FFF4DA
+pub const MANUAL_SOURCE_UNASSIGNED_BORDER: Color32 = Color32::from_rgb(240, 180, 76); // #F0B44C
 pub const MANUAL_SOURCE_CLASSIFIED_FILL: Color32 = Color32::from_rgb(66, 66, 66);
 pub const MANUAL_SOURCE_CLASSIFIED_TEXT: Color32 = Color32::from_rgb(190, 190, 190);
 pub const MANUAL_SOURCE_CLASSIFIED_BORDER: Color32 = Color32::from_rgb(99, 99, 99);
