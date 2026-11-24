@@ -33,6 +33,7 @@ on:
       - egui-app/src/product_images.rs
       - egui-app/src/manual_product_search.rs
       - src-tauri/src/business_core/rules/manual_draft.rs
+      - src-tauri/src/workflow_sqlite_integration_tests.rs
       - src-tauri/src/business_core/rules/pricing.rs
       - egui-app/src/floating_notice.rs
       - egui-app/src/settings_view.rs
