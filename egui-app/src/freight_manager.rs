@@ -2105,6 +2105,8 @@ impl FreightManager {
                                 table_width,theme::FREIGHT_ASSIGNMENT_ROW_HEIGHT
                             )
                         );
+                        #[cfg(test)]
+                        components::general_screen_geometry_tests::record("data row",row_rect);
                         first_row_left.get_or_insert(row_rect.left());
                         table.scope_builder(
                             egui::UiBuilder::new()
@@ -2511,7 +2513,7 @@ impl FreightManager {
         let frame=if single_list{
             theme::management_master_table_frame()
         }else{theme::section_frame()};
-        frame.show(ui, |section| {
+        let _history_card=frame.show(ui, |section| {
             if single_list{
                 components::fill_management_primary_card(section,card_min_height);
             }
@@ -2649,6 +2651,8 @@ impl FreightManager {
             );
             section.spacing_mut().item_spacing.y=prior_gap;
         });
+        #[cfg(test)]
+        components::general_screen_geometry_tests::record(if single_list{"master card"}else{"section card"},_history_card.response.rect);
         // Hidden by user request; do not move the feature to group management
         // or disable Rust history persistence. The 12pt gap is also conditional
         // so no empty block remains below the combination table.
@@ -2840,6 +2844,8 @@ fn freight_history_table<const N:usize>(
                     ),
                     egui::vec2(width,theme::FREIGHT_ASSIGNMENT_ROW_HEIGHT)
                 );
+                #[cfg(test)]
+                components::general_screen_geometry_tests::record("data row",row_rect);
                 first_row_left.get_or_insert(row_rect.left());
                 table.scope_builder(
                     egui::UiBuilder::new()
@@ -3278,7 +3284,9 @@ impl FreightManager {
         Box::new(move |answer|{
             let result=answer.map(|count|{
                 let products=(0..count).map(|i|serde_json::json!({"id":format!("geometry-p-{i}"),"name":format!("검증 상품 {i:03}"),"subtitle":"긴 상품명과 옵션 검증","active":true,"variants":[{"id":format!("v-{i}"),"color":"Black"}],"shippingGroupId":if i%2==0{"geometry-group"}else{""}})).collect::<Vec<_>>();
-                (serde_json::json!({"revision":1,"products":products,"categories":[],"shipping":{"groups":[{"id":"geometry-group","name":"검증 그룹","active":true}],"epoch":1}}),serde_json::json!({"productViews":[]}))
+                let groups=(0..count).map(|i|serde_json::json!({"id":if i==0{"geometry-group".to_owned()}else{format!("geometry-g-{i}")},"name":format!("검증 그룹 {i}"),"active":true,"maxBundle":3})).collect::<Vec<_>>();
+                let combinations=(0..count).map(|i|serde_json::json!({"id":format!("geometry-combo-{i}"),"description":format!("검증 배송 조합 {i}"),"charge":3000,"actual":2500,"active":true})).collect::<Vec<_>>();
+                (serde_json::json!({"revision":1,"products":products,"categories":[],"shipping":{"groups":groups,"combinations":combinations,"epoch":1}}),serde_json::json!({"productViews":[],"editableRules":{},"currentCombinations":{}}))
             });
             assert!(tx.send(result).is_ok());
         })
