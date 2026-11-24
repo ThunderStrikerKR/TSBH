@@ -1678,6 +1678,9 @@ impl ManualWorkspace {
                     }
                     let Some((busy,pending_quantity_active,has_pending_quantity,guidance))=workspace.body_region(|ui|{
                         let Some(model)=self.model.as_ref() else {return None};
+                        // Own the recommendation snapshot so drag-start handling
+                        // inside the nested UI closure does not retain a borrow of self.
+                        let recommendation_model=model.clone();
                         let rows=list(model,"rows").to_vec();
                         let visible_shipment=visible_manual_shipment(
                             self.selected_recipient,rows.len()
@@ -1788,7 +1791,7 @@ impl ManualWorkspace {
                                             // drag threshold is crossed; do not wait for the
                                             // next pointer-move event.
                                             drag_recommendations=manual_assignment_recommendations(
-                                                model,&id,pending_quantity_cell.as_ref()
+                                                &recommendation_model,&id,pending_quantity_cell.as_ref()
                                             );
                                         }
                                     }
