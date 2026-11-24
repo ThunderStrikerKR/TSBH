@@ -6181,7 +6181,7 @@ pub fn reception_freight_row_editable(
 )->ReceptionFreightEdit{
     reception_freight_row_controls(
         ui,label,amount,collect,remote,inquiry_visible,
-        editable,editable,editable
+        editable,editable,editable,true
     )
 }
 
@@ -6191,7 +6191,8 @@ pub fn reception_freight_row_editable(
 pub fn reception_freight_row_controls(
     ui:&mut Ui,label:&str,amount:Option<i64>,collect:Option<bool>,
     remote:Option<bool>,inquiry_visible:bool,
-    amount_editable:bool,collect_editable:bool,remote_editable:bool
+    amount_editable:bool,collect_editable:bool,remote_editable:bool,
+    remote_visible:bool
 )->ReceptionFreightEdit{
     let mut clicked=false;
     let mut amount_click_pos=None;
@@ -6262,9 +6263,9 @@ pub fn reception_freight_row_controls(
             if inquiry_visible{
                 theme::action(right,"공장에 운임 문의",theme::ButtonRole::Standard,false);
             }
-            if let Some(value)=remote{
-                let mut checked=value;
-                if right.add_enabled(remote_editable,
+            if remote_visible{
+                let mut checked=remote.unwrap_or(false);
+                if right.add_enabled(remote_editable && remote.is_some(),
                     egui::Checkbox::new(&mut checked,"도서/산간")
                 ).changed(){
                     remote_clicked=true;
