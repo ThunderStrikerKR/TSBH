@@ -2654,7 +2654,9 @@ mod manual_workspace_modal_routing_tests {
         assert!(count_row.contains("count_control.decrement_clicked"));
         assert!(count_row.contains("count_control.increment_clicked"));
         assert!(count_row.contains("count_control.input"));
-        assert!(count_row.contains("self.request_resize(count,ctx)"),
+        let count_flow=manual.split("let current_count=rows.len()").nth(1).unwrap()
+            .split("if count_resize_requested").next().unwrap();
+        assert!(count_flow.contains("self.request_resize(count,ctx)"),
             "the native asynchronous resize flow must remain in place");
 
         let segmented=components.split("fn date_navigation_segmented_surface(").nth(1).unwrap()
