@@ -373,7 +373,7 @@ pub fn key(recipient:&str,target:&str,field:&str)->LinkKey {
 pub const ACTIVE_FILL:Color32=Color32::from_rgb(23,67,109);       // #17436d
 pub const ACTIVE_TEXT:Color32=Color32::from_rgb(234,244,255);   // #eaf4ff
 pub const ACTIVE_BORDER:Color32=Color32::from_rgb(117,181,255); // #75b5ff
-pub const ACTIVE_RADIUS:f32=4.0;
+pub const ACTIVE_RADIUS:f32=theme::SOURCE_BLOCK_RADIUS;
 pub const ACTIVE_BORDER_WIDTH:f32=2.0;
 
 pub fn is_active(active:Option<&LinkKey>, key:&LinkKey)->bool {
@@ -711,9 +711,7 @@ fn block_shapes_with_states(
                     if rect.width()<=0.0 {continue;}
                 }
                 if !rect.intersects(clip) {continue;}
-                let radius=if block.focused {ACTIVE_RADIUS}
-                    else if block.manual_state.is_some(){theme::MANUAL_SOURCE_BLOCK_RADIUS}
-                    else {2.0};
+                let radius=theme::SOURCE_BLOCK_RADIUS;
                 let background=egui::Shape::rect_filled(rect,radius,block.fill);
                 if block.focused {
                     focused.push(background);
@@ -961,10 +959,14 @@ mod tests {
 
     #[test]
     fn manual_assignment_state_changes_only_manual_palette_and_ink() {
-        assert_eq!(theme::MANUAL_SOURCE_UNASSIGNED_FILL,theme::PRIMARY_ACTION_FILL);
+        assert_eq!(theme::PRIMARY_ACTION_FILL,Color32::from_rgb(238,238,238));
+        let gray=((u16::from(theme::PRIMARY_ACTION_FILL.r())*9+5)/10) as u8;
+        assert_eq!(theme::MANUAL_SOURCE_UNASSIGNED_FILL,Color32::from_rgb(gray,gray,gray));
+        assert_eq!(theme::MANUAL_SOURCE_UNASSIGNED_FILL,Color32::from_rgb(214,214,214));
         assert_eq!(theme::MANUAL_SOURCE_UNASSIGNED_TEXT,theme::BRIGHT_TEXT);
-        assert_eq!(theme::MANUAL_SOURCE_UNASSIGNED_BORDER,theme::PRIMARY_ACTION_FILL);
-        assert_eq!(theme::MANUAL_SOURCE_BLOCK_RADIUS,4.0);
+        assert_eq!(theme::MANUAL_SOURCE_UNASSIGNED_BORDER,theme::MANUAL_SOURCE_UNASSIGNED_FILL);
+        assert_eq!(theme::SOURCE_BLOCK_RADIUS,4.0);
+        assert_eq!(ACTIVE_RADIUS,theme::SOURCE_BLOCK_RADIUS);
         assert_eq!(theme::MANUAL_SOURCE_CLASSIFIED_BORDER,theme::SOURCE_RECOGNIZED_BORDER);
         assert_ne!(theme::MANUAL_SOURCE_UNASSIGNED_BORDER,theme::SOURCE_RECOGNIZED_BORDER);
         assert_ne!(theme::MANUAL_SOURCE_UNASSIGNED_FILL,ACTIVE_FILL);
@@ -1050,19 +1052,25 @@ mod tests {
                 "each classified/unclassified source block needs its own stroke");
             assert_eq!(manual_fills.len(),2);
             assert!(manual_fills.iter().any(|shape|matches!(shape,
-                egui::Shape::Rect(rect) if rect.fill==theme::PRIMARY_ACTION_FILL)));
+                egui::Shape::Rect(rect) if rect.fill==theme::MANUAL_SOURCE_UNASSIGNED_FILL)));
             assert!(manual_strokes.iter().any(|shape|matches!(shape,
-                egui::Shape::Rect(rect) if rect.stroke.color==theme::PRIMARY_ACTION_FILL)));
+                egui::Shape::Rect(rect) if rect.stroke.color==theme::MANUAL_SOURCE_UNASSIGNED_BORDER)));
             for shape in manual_fills.iter().chain(manual_strokes.iter()){
                 assert!(matches!(shape,egui::Shape::Rect(rect)
                     if rect.corner_radius==egui::CornerRadius::same(4)),
                     "manual fill and outline must share the same rounded corners");
             }
-            let (_normal,receipt_strokes)=block_shapes(
+            let (receipt_fills,receipt_strokes)=block_shapes(
                 raw,&galley,egui::Pos2::ZERO,&spans,None,None,area
             );
             assert_eq!(receipt_strokes.len(),2,
-                "Reception recognized tokens need their own white outlines");
+                "Reception recognized tokens need their own outlines");
+            assert_eq!(receipt_fills.len(),2);
+            for shape in receipt_fills.iter().chain(receipt_strokes.iter()) {
+                assert!(matches!(shape,egui::Shape::Rect(rect)
+                    if rect.corner_radius==egui::CornerRadius::same(4)),
+                    "Reception source blocks must match the manual master radius");
+            }
             assert!(receipt_strokes.iter().all(|shape|matches!(
                 shape,egui::Shape::Rect(rect)
                     if rect.stroke.color==theme::SOURCE_RECOGNIZED_BORDER
@@ -1103,7 +1111,8 @@ mod tests {
                 Some(egui::Shape::Rect(rect))
                     if rect.stroke.color==ACTIVE_BORDER
                     && rect.stroke.width==ACTIVE_BORDER_WIDTH
-            ),"focused blue border must be drawn after the regular white stroke");
+                    && rect.corner_radius==egui::CornerRadius::same(4)
+            ),"focused blue border must retain the common radius and draw last");
         });
     }
 
