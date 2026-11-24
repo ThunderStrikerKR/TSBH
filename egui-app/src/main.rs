@@ -8525,20 +8525,36 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                 self.request_draft_confirmation(&id,ui.ctx());
             }
             Some(workflow_board_ui::Event::SelectPending(id))=>{
-                self.workflow_ui.selection=None;
-                self.workflow_ui.folded=None;
-                self.workflow_ui.stop_preview();
-                self.link_hover.clear();
-                self.source_hover=None;
-                self.select_reception(&id,ui.ctx());
+                if self.workflow_freight_editor.as_ref().is_some_and(|editor|
+                    editor.text.trim()!=editor.original.trim()
+                ){
+                    self.submit_workflow_freight_edit(ui.ctx());
+                }else{
+                    self.workflow_freight_editor=None;
+                    self.workflow_freight_next_selection=None;
+                    self.workflow_ui.selection=None;
+                    self.workflow_ui.folded=None;
+                    self.workflow_ui.stop_preview();
+                    self.link_hover.clear();
+                    self.source_hover=None;
+                    self.select_reception(&id,ui.ctx());
+                }
             }
             Some(workflow_board_ui::Event::SelectPendingRecipient(target))=>{
-                self.workflow_ui.selection=None;
-                self.workflow_ui.folded=None;
-                self.workflow_ui.stop_preview();
-                self.link_hover.clear();
-                self.source_hover=None;
-                self.focus_pending_recipient(&target,ui.ctx());
+                if self.workflow_freight_editor.as_ref().is_some_and(|editor|
+                    editor.text.trim()!=editor.original.trim()
+                ){
+                    self.submit_workflow_freight_edit(ui.ctx());
+                }else{
+                    self.workflow_freight_editor=None;
+                    self.workflow_freight_next_selection=None;
+                    self.workflow_ui.selection=None;
+                    self.workflow_ui.folded=None;
+                    self.workflow_ui.stop_preview();
+                    self.link_hover.clear();
+                    self.source_hover=None;
+                    self.focus_pending_recipient(&target,ui.ctx());
+                }
             }
             Some(workflow_board_ui::Event::SelectShipment(selection))=>{
                 if self.workflow_freight_editor.as_ref().is_some_and(|editor|
