@@ -177,6 +177,12 @@ pub fn management_date_text_margin() -> egui::Margin {
     }
 }
 
+/// Compact segmented counters use a neutral vertical text box so the
+/// numeric ink and caret stay aligned with the geometric +/- center.
+pub fn segmented_count_text_margin()->egui::Margin{
+    egui::Margin::symmetric(2,2)
+}
+
 // Shared line boxes used for balanced reception guidance geometry.
 pub const SUBSECTION_LINE_HEIGHT: f32 = 21.0;
 pub const METADATA_LINE_HEIGHT: f32 = 18.0;

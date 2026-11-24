@@ -3350,6 +3350,21 @@ fn date_navigation_segmented_surface<R>(
     (outer,content)
 }
 
+/// Count symbols are geometric strokes, not unrelated font glyphs.
+/// Both horizontal bars have the same length and the same center line.
+fn paint_count_step_symbol(painter:&egui::Painter,center:egui::Pos2,increase:bool,ink:Color32){
+    let half=4.0;
+    let stroke=Stroke::new(1.25,ink);
+    painter.line_segment(
+        [center-egui::vec2(half,0.0),center+egui::vec2(half,0.0)],stroke
+    );
+    if increase{
+        painter.line_segment(
+            [center-egui::vec2(0.0,half),center+egui::vec2(0.0,half)],stroke
+        );
+    }
+}
+
 /// A borderless segment button; its parent owns the only outer border.
 /// Enabled/disabled colors and hover feedback follow the date-selector roles.
 fn date_navigation_segment_button(
@@ -3399,8 +3414,7 @@ fn date_navigation_segment_button(
         }
         let ink=if !enabled{theme::DISABLED_ACTION_TEXT}
             else if response.hovered(){theme::TEXT}else{theme::SECONDARY};
-        painter.text(rect.center(),egui::Align2::CENTER_CENTER,text,
-            egui::FontId::proportional(typography::FONT_STANDARD_ACTION+2.0),ink);
+        paint_count_step_symbol(&painter,rect.center(),!left,ink);
         return response.on_hover_text(tooltip);
     }
     let height=ui.available_height();
@@ -3519,7 +3533,7 @@ pub fn date_navigation_count_control(
                             .horizontal_align(Align::Center)
                             .vertical_align(Align::Center)
                             .char_limit(3)
-                            .margin(typography::management_date_text_margin())
+                            .margin(typography::segmented_count_text_margin())
                             .frame(false)
                             .desired_width((input_width-4.0).max(1.0))
                             .hint_text(hint.as_str())
@@ -7943,6 +7957,41 @@ mod date_navigation_segmented_control_tests{
             assert!(unit.left()>=control.rect.right()-0.5,
                 "parent cursor must advance exactly once past the control");
         }
+    }
+
+    #[test]
+    fn count_step_symbols_are_centered_vector_strokes_in_the_rendered_control(){
+        let ctx=test_context();
+        let mut value="2".to_owned();
+        let mut rendered=None;
+        let output=ctx.run(egui::RawInput::default(),|ctx|{
+            egui::CentralPanel::default().show(ctx,|ui|{
+                ui.horizontal(|row|{
+                    form_field_label(row,"배송 건수");
+                    rendered=Some(date_navigation_count_control(
+                        row,"count-symbols",&mut value,2,true,1,100
+                    ));
+                    row.label("건");
+                });
+            });
+        });
+        let control=rendered.unwrap();
+        let minus=control.decrement_rect.center();
+        let plus=control.increment_rect.center();
+        let expected=[
+            [minus-egui::vec2(4.0,0.0),minus+egui::vec2(4.0,0.0)],
+            [plus-egui::vec2(4.0,0.0),plus+egui::vec2(4.0,0.0)],
+            [plus-egui::vec2(0.0,4.0),plus+egui::vec2(0.0,4.0)],
+        ];
+        for endpoints in expected{
+            assert!(output.shapes.iter().any(|paint|
+                matches!(&paint.shape,egui::Shape::LineSegment{points,stroke}
+                    if *points==endpoints && (stroke.width-1.25).abs()<0.01)
+            ),"missing centered count symbol stroke: {endpoints:?}");
+        }
+        let margin=typography::segmented_count_text_margin();
+        assert_eq!(margin.top,margin.bottom,
+            "count input must not inherit the date-only upward baseline shift");
     }
 
     #[test]

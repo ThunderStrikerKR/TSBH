@@ -2782,7 +2782,7 @@ mod manual_workspace_modal_routing_tests {
             "TextEdit::singleline(value)",
             "FRAME_STROKE_WIDTH",
             "CALENDAR_NAV_SIZE",
-            "management_date_text_margin()"
+            "segmented_count_text_margin()"
         ]{
             assert!(control.contains(token),"missing segmented control detail: {token}");
         }
