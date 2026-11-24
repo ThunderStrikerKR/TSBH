@@ -1049,9 +1049,7 @@ fn manual_recipient_card_height()->f32{
 }
 
 fn manual_workspace_header_height()->f32{
-    theme::MODAL_HEADER_HEIGHT
-        +theme::MODAL_MASTER_WORKSPACE_TOOLBAR_HEIGHT
-        +theme::SOFT_DIVIDER_WIDTH
+    components::modal_master_header_with_toolbar_height()
 }
 
 fn manual_workspace_columns_height()->f32{
@@ -1063,8 +1061,8 @@ fn manual_workspace_columns_height()->f32{
 fn manual_workspace_dialog_size(work_area:egui::Rect)->egui::Vec2{
     let width=(work_area.width()-theme::MANUAL_DIALOG_SIDE_GAP)
         .min(theme::MANUAL_DIALOG_MAX_WIDTH).max(0.0);
-    // Status and shipment count are now owned by the shared two-row header.
-    // The card body begins one 16pt master gap below its single bottom rule.
+    // Status and shipment count sit below the shared title divider.
+    // The card body begins one 16pt master gap below the toolbar.
     let body=manual_workspace_columns_height();
     let frame_chrome=2.0*(theme::MODAL_PANEL_PADDING_Y+theme::FRAME_STROKE_WIDTH);
     let fixed_chrome=frame_chrome+manual_workspace_header_height()
@@ -4029,7 +4027,7 @@ mod manual_workspace_layout_tests{
     #[test]
     fn popup_height_tracks_the_visible_card_stack_and_fixed_modal_chrome(){
         assert_eq!(theme::RECEPTION_PANE_PADDING_Y,16.0);
-        assert_eq!(manual_workspace_header_height(),97.0);
+        assert_eq!(manual_workspace_header_height(),105.0);
         assert_eq!(manual_recipient_card_height(),259.0);
         assert_eq!(manual_workspace_columns_height(),615.0);
         assert_eq!(
@@ -4041,7 +4039,7 @@ mod manual_workspace_layout_tests{
         );
         let size=manual_workspace_dialog_size(work_area);
         assert_eq!(size.x,1364.0);
-        assert_eq!(size.y,836.0);
+        assert_eq!(size.y,844.0);
         let short_area=egui::Rect::from_min_size(
             egui::Pos2::ZERO,egui::vec2(1400.0,700.0)
         );

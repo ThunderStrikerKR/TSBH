@@ -435,6 +435,8 @@ pub const MODAL_SECTION_HEADER_BG: Color32 = INPUT;
 // These are visual-role tokens; pane counts and OCR document gutters remain
 // content-specific. Changing one master token updates all adopted dialogs.
 pub const MODAL_MASTER_WORKSPACE_TOOLBAR_HEIGHT: f32 = 40.0;
+// Clearance from the title divider to the status/action row.
+pub const MODAL_MASTER_TOOLBAR_RULE_GAP: f32 = SPACE_8;
 pub const MODAL_MASTER_DESCRIPTIVE_HEADER_HEIGHT: f32 = 84.0;
 pub const MODAL_MASTER_WORKSPACE_GAP: f32 = SPACE_16;
 pub const MODAL_MASTER_CONTENT_INSET: f32 = SPACE_16;

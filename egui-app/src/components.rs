@@ -1259,8 +1259,7 @@ impl ModalEditorGeometry {
             }
         }
         if let (Some(toolbar),Some(body))=(self.header_toolbar,self.body){
-            out.push(("toolbar_to_body",body.top()
-                -toolbar.bottom()-theme::SOFT_DIVIDER_WIDTH));
+            out.push(("toolbar_to_body",body.top()-toolbar.bottom()));
         }
         if let (Some(body),Some(footer))=(self.body,self.footer){
             out.push(("body_to_footer",footer.top()-body.bottom()));
@@ -1294,15 +1293,13 @@ impl ModalEditorWorkspace<'_> {
     }
 
     /// Header variant for workspaces with a persistent status/action toolbar.
-    /// The toolbar becomes part of the header surface, so the body starts
-    /// exactly one master gap below its single bottom divider.
+    /// The toolbar sits below the title divider; the body starts one
+    /// master gap below the toolbar.
     pub fn header_with_toolbar<R>(
         &mut self,title:&str,close_label:&str,enabled:bool,
         toolbar:impl FnOnce(&mut Ui)->R,
     )->(bool,R){
-        let header_height=theme::MODAL_HEADER_HEIGHT
-            +theme::MODAL_MASTER_WORKSPACE_TOOLBAR_HEIGHT
-            +theme::SOFT_DIVIDER_WIDTH;
+        let header_height=modal_master_header_with_toolbar_height();
         let (header,_)=self.ui.allocate_exact_size(
             Vec2::new(self.ui.available_width(),header_height),
             Sense::hover()
@@ -1740,22 +1737,39 @@ pub fn modal_master_header_in_rect(
     )
 }
 
-/// Toolbar bounds are inset to the same 16pt horizontal master as the body.
-/// Its bottom divider is excluded from this rect and painted by the header.
+/// Shared height budget for the title, divider and below-rule toolbar.
+pub fn modal_master_header_with_toolbar_height()->f32{
+    theme::MODAL_HEADER_HEIGHT
+        +theme::SOFT_DIVIDER_WIDTH
+        +theme::MODAL_MASTER_TOOLBAR_RULE_GAP
+        +theme::MODAL_MASTER_WORKSPACE_TOOLBAR_HEIGHT
+}
+
+/// The single divider occupies the slot directly after the title row.
+fn modal_master_toolbar_rule_rect(rect:Rect,ppp:f32)->Rect{
+    let rect=modal_master_pixel_aligned_rect(rect,ppp);
+    let top=(rect.top()+theme::MODAL_HEADER_HEIGHT).min(rect.bottom());
+    let slot=Rect::from_min_max(
+        egui::pos2(rect.left(),top),
+        egui::pos2(rect.right(),(top+theme::SOFT_DIVIDER_WIDTH).min(rect.bottom()))
+    );
+    modal_master_rule_rect(slot,ppp,false)
+}
+
+/// Toolbar uses the same horizontal inset as the body, below the rule.
 fn modal_master_header_toolbar_rect(rect:Rect,ppp:f32)->Rect{
-    let ppp=ppp.max(1.0);
     let rect=modal_master_pixel_aligned_rect(rect,ppp);
     let content=modal_master_content_rect(rect);
-    let rule=modal_master_rule_rect(rect,ppp,true);
+    let top=(rect.top()+theme::MODAL_HEADER_HEIGHT
+        +theme::SOFT_DIVIDER_WIDTH+theme::MODAL_MASTER_TOOLBAR_RULE_GAP)
+        .min(rect.bottom());
     Rect::from_min_max(
-        egui::pos2(content.left(),rect.top()+theme::MODAL_HEADER_HEIGHT),
-        egui::pos2(content.right(),rule.top())
+        egui::pos2(content.left(),top),
+        egui::pos2(content.right(),rect.bottom())
     )
 }
 
-/// Common two-row modal header: title/close first, optional workspace toolbar
-/// second, and exactly one divider below both rows. The body owns the standard
-/// 16pt clearance after that divider.
+/// Common header: title/close, single divider, then the status/action row.
 pub fn modal_master_header_with_toolbar_in_rect<R>(
     ui:&mut Ui,rect:Rect,title:&str,close_label:&str,enabled:bool,
     toolbar:impl FnOnce(&mut Ui)->R,
@@ -1764,7 +1778,7 @@ pub fn modal_master_header_with_toolbar_in_rect<R>(
     let rect=modal_master_pixel_aligned_rect(rect,ppp);
     ui.painter().rect_filled(rect,0.0,theme::PANEL);
     ui.painter().rect_filled(
-        modal_master_rule_rect(rect,ppp,true),0.0,theme::DIVIDER
+        modal_master_toolbar_rule_rect(rect,ppp),0.0,theme::DIVIDER
     );
     let title_rect=Rect::from_min_size(
         rect.min,Vec2::new(rect.width(),theme::MODAL_HEADER_HEIGHT)
@@ -8068,7 +8082,7 @@ mod modal_editor_workspace_geometry_tests {
             .any(|(label,_)|*label=="header_to_card"));
     }
     #[test]
-    fn shared_header_toolbar_keeps_the_rule_and_body_clearance_at_the_16pt_master(){
+    fn shared_header_toolbar_sits_below_title_rule_and_keeps_body_clearance(){
         let ctx=egui::Context::default();
         crate::typography::install(&ctx);
         let mut measured=None;
@@ -8116,11 +8130,17 @@ mod modal_editor_workspace_geometry_tests {
             theme::MODAL_HEADER_HEIGHT
                 +theme::MODAL_MASTER_WORKSPACE_TOOLBAR_HEIGHT
                 +theme::SOFT_DIVIDER_WIDTH
+                +theme::MODAL_MASTER_TOOLBAR_RULE_GAP
         )).abs()<=0.5,"unexpected two-row header height: {header:?}");
         assert!((toolbar.height()-theme::MODAL_MASTER_WORKSPACE_TOOLBAR_HEIGHT)
             .abs()<=0.5,"toolbar does not fill its reserved header row: {toolbar:?}");
-        assert!((header.bottom()-toolbar.bottom()-theme::SOFT_DIVIDER_WIDTH)
-            .abs()<=0.5,"header rule must immediately follow the toolbar: {header:?} {toolbar:?}");
+        let rule=modal_master_toolbar_rule_rect(header,ctx.pixels_per_point());
+        assert!((rule.top()-header.top()-theme::MODAL_HEADER_HEIGHT).abs()<=0.5,
+            "rule must immediately follow title row: {rule:?}");
+        assert!((toolbar.top()-rule.bottom()-theme::MODAL_MASTER_TOOLBAR_RULE_GAP)
+            .abs()<=0.5,"toolbar must sit below rule: {rule:?} {toolbar:?}");
+        assert!((header.bottom()-toolbar.bottom()).abs()<=0.5,
+            "no divider slot below toolbar: {header:?} {toolbar:?}");
         assert!((body.top()-header.bottom()-theme::MODAL_MASTER_WORKSPACE_GAP)
             .abs()<=0.5,"body must begin 16pt below the shared header: {header:?} {body:?}");
         assert!((footer.top()-body.bottom()-theme::MODAL_MASTER_WORKSPACE_GAP)
@@ -8139,7 +8159,8 @@ mod modal_editor_workspace_geometry_tests {
         let top_rule=modal_master_rule_rect(bounds,1.0,false);
         let bottom_rule=modal_master_rule_rect(bounds,1.0,true);
         let actions=modal_master_action_area(bounds,theme::ACTION_PRIMARY_HEIGHT);
-        for rect in [toolbar,top_rule,bottom_rule,actions] {
+        let toolbar_rule=modal_master_toolbar_rule_rect(bounds,1.0);
+        for rect in [toolbar,top_rule,bottom_rule,toolbar_rule,actions] {
             assert_eq!(rect.left(),content.left());
             assert_eq!(rect.right(),content.right());
         }
