@@ -106,3 +106,15 @@
 | WINDOWS | NOT_VERIFIED | 변경한 SHA의 Windows 화면 캡처·조작·DPI 검증 전 |
 
 **중요:** 코드가 공통 함수를 호출한다는 사실만으로 두 화면이 시각적으로 완전히 동일하다고 판정하지 않는다. Windows에서 1920×1080 및 작은 작업공간 검수 후, 기존 OPEN 결함을 닫는다. 불합격 기록은 유지한다.
+
+## 84차 후속 — 배송 건수 증감 버튼 날짜 선택기 스타일 통합 (2026-11-24)
+
+- 사용자가 마지막에 지정한 대상은 수동 분류 상단의 배송 건수 `− / +` 버튼이다.
+- 수취인별 주문 정보의 이전/다음 화살표는 이미 구현되어 있으므로 이번 변경 대상에서 제외했다.
+- 기존 `theme::action(..., ButtonRole::Standard)`로 렌더링하던 증감 버튼을 `components::date_navigation_step_button`으로 교체했다.
+- 날짜 선택기 `calendar_nav_button`과 배송 건수 스테퍼는 이제 동일한 `date_navigation_button_surface`를 호출한다. 따라서 28×28pt 클릭 영역, `theme::INPUT` 배경, 1pt `theme::BORDER`, `CONTROL_RADIUS`, 호버 강조가 같은 규격을 사용한다.
+- 비활성 버튼은 `DISABLED_ACTION_BG / BORDER / TEXT`를 명시해 1건에서 감소, 100건에서 증가가 비활성화됐음을 구분한다.
+- 숫자 직접 입력, 1~100건 제한, 기존 resize 요청 흐름은 유지한다.
+- 회귀 테스트 `shipment_count_steppers_share_the_date_picker_navigation_surface`를 추가했다.
+
+검증: 소스 연결 정적 확인 PASS. 해당 커밋의 GitHub status는 빈 배열이고 Rust 빌드 및 Windows 실화면 검증은 미실행이다. 따라서 84차 전체 UI 판정은 기존 FAIL을 유지한다.
