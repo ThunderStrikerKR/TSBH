@@ -663,6 +663,129 @@ pub fn block_shapes_manual(
     )
 }
 
+/// Exact visual style and row segments for one native manual source block.
+/// The geometry is shared with the normal source-block painter so a drag ghost
+/// can be a true visual copy rather than a newly approximated text chip.
+#[derive(Clone, Copy, Debug)]
+pub struct ManualSourceBlockStyle {
+    pub fill:Color32,
+    pub text:Color32,
+    pub border:Color32,
+    pub border_width:f32,
+    pub radius:f32,
+}
+
+#[derive(Clone, Debug)]
+pub struct ManualSourceBlockVisual {
+    pub rects:Vec<egui::Rect>,
+    pub style:ManualSourceBlockStyle,
+}
+
+pub fn manual_source_block_style(
+    span:&LinkedSpan,
+    active:Option<&LinkKey>,
+    assigned_ids:&HashSet<String>,
+)->ManualSourceBlockStyle {
+    let focused=active.is_some_and(|key|same_target(&span.key,key));
+    if focused {
+        ManualSourceBlockStyle {
+            fill:SOURCE_ACTIVE,
+            text:SOURCE_ACTIVE_TEXT,
+            border:SOURCE_ACTIVE_BORDER,
+            border_width:ACTIVE_BORDER_WIDTH,
+            radius:theme::SOURCE_BLOCK_RADIUS,
+        }
+    } else if span.source_id.as_ref().is_some_and(|id|assigned_ids.contains(id)) {
+        ManualSourceBlockStyle {
+            fill:theme::MANUAL_SOURCE_CLASSIFIED_FILL,
+            text:theme::MANUAL_SOURCE_CLASSIFIED_TEXT,
+            border:theme::MANUAL_SOURCE_CLASSIFIED_BORDER,
+            border_width:theme::MANUAL_SOURCE_BLOCK_BORDER_WIDTH,
+            radius:theme::SOURCE_BLOCK_RADIUS,
+        }
+    } else {
+        ManualSourceBlockStyle {
+            fill:theme::MANUAL_SOURCE_UNASSIGNED_FILL,
+            text:theme::MANUAL_SOURCE_UNASSIGNED_TEXT,
+            border:theme::MANUAL_SOURCE_UNASSIGNED_BORDER,
+            border_width:theme::MANUAL_SOURCE_BLOCK_BORDER_WIDTH,
+            radius:theme::SOURCE_BLOCK_RADIUS,
+        }
+    }
+}
+
+/// Return the exact rounded row rectangles for a source ID, including the
+/// same adjacent-token spacing used by block_shapes_manual().
+pub fn manual_source_block_visual(
+    raw:&str,
+    galley:&egui::Galley,
+    galley_pos:egui::Pos2,
+    spans:&[LinkedSpan],
+    source_id:&str,
+    selected_recipient:Option<&str>,
+    active:Option<&LinkKey>,
+    assigned_ids:&HashSet<String>,
+)->Option<ManualSourceBlockVisual> {
+    let target=spans.iter().find(|span|
+        span.source_id.as_deref()==Some(source_id)
+    )?;
+    let blocks=visual_blocks_with_manual_states(
+        raw,spans,selected_recipient,active,Some(assigned_ids)
+    );
+    let target_blocks:Vec<&VisualBlock>=blocks.iter().filter(|block|
+        block.key==target.key &&
+        block.start_char>=target.start_char &&
+        block.end_char<=target.end_char
+    ).collect();
+    let _first=*target_blocks.first()?;
+    let style=manual_source_block_style(target,active,assigned_ids);
+    let characters:Vec<char>=raw.chars().collect();
+    let mut rects=Vec::new();
+    let mut row_start=0usize;
+    for (row_index,placed) in galley.rows.iter().enumerate() {
+        let glyphs=&placed.row.glyphs;
+        let row_end=row_start+glyphs.len();
+        let y=galley_pos.y+placed.pos.y;
+        let height=placed.row.size.y;
+        for block in &target_blocks {
+            let start=block.start_char.max(row_start);
+            let end=block.end_char.min(row_end);
+            if start>=end {continue;}
+            let first_glyph=start-row_start;
+            let last_glyph=end-row_start-1;
+            if first_glyph>=glyphs.len() || last_glyph>=glyphs.len() {continue;}
+            let end_x=if glyphs[last_glyph].chr=='\\n' && last_glyph>first_glyph {
+                glyphs[last_glyph-1].pos.x+glyphs[last_glyph-1].advance_width
+            } else {
+                glyphs[last_glyph].pos.x+glyphs[last_glyph].advance_width
+            };
+            let text_left=galley_pos.x+placed.pos.x+glyphs[first_glyph].pos.x;
+            let text_right=galley_pos.x+placed.pos.x+end_x;
+            let Some(mut rect)=compact_block_rect(
+                text_left,text_right,y,height,block.focused
+            ) else {continue};
+            if !block.focused {
+                let left=blocks.iter().any(|other|
+                    other.key!=block.key && other.end_char==start
+                );
+                let right=blocks.iter().any(|other|
+                    other.key!=block.key && other.start_char==end
+                );
+                rect=separate_touching_blocks(rect,left,right);
+                if rect.width()<=0.0 {continue;}
+            }
+            rects.push(rect);
+        }
+        row_start=row_end;
+        if row_index+1<galley.rows.len() &&
+            characters.get(row_start)==Some(&'\\n') {
+            row_start+=1;
+        }
+    }
+    if rects.is_empty(){return None;}
+    Some(ManualSourceBlockVisual{rects,style})
+}
+
 fn block_shapes_with_states(
     raw:&str,galley:&egui::Galley,galley_pos:egui::Pos2,
     spans:&[LinkedSpan],selected_recipient:Option<&str>,
