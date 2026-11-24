@@ -2,10 +2,14 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
+import { resolve } from "node:path";
 import { tsImport } from "tsx/esm/api";
-const legacyShippingPath = fileURLToPath(new URL("../oracles/legacy-shipping.ts", import.meta.url));
-const { combinationVersions } = await tsImport(legacyShippingPath, import.meta.url);
+const shippingTestUrl = pathToFileURL(resolve(
+  process.cwd(), "tests/rust-migration/rules/shipping-rate-parity.test.mjs"
+)).href;
+const legacyShippingUrl = new URL("../oracles/legacy-shipping.ts", shippingTestUrl).href;
+const { combinationVersions } = await tsImport(legacyShippingUrl, shippingTestUrl);
 const root=fileURLToPath(new URL("../../../",import.meta.url));
 const cargo=fileURLToPath(new URL("../integration/Cargo.toml",import.meta.url));
 const old={

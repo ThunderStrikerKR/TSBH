@@ -11,18 +11,13 @@ const knownKeys = new Set([
   "address", "checked", "manual", "legacy", "status", "suggestedChecked",
   "requiresReview", "matchedPath", "reason", "sources", "dataVersion",
 ]);
-function isAddedLegacyMarker(value) {
+function isAddedLegacyMarker(value, parent) {
   return value && typeof value === "object" && !Array.isArray(value)
     && value.checked === false && value.manual === false
     && value.legacy === true
-    && typeof value.address === "string" && value.address.trim().length > 0
-    && value.status === "unknown"
-    && value.suggestedChecked === false
-    && value.requiresReview === false
-    && value.matchedPath === null
-    && value.reason === null
-    && Array.isArray(value.sources) && value.sources.length === 0
-    && typeof value.dataVersion === "string" && value.dataVersion.length > 0
+    && (value.address === undefined ||
+        (typeof value.address === "string" && value.address.trim().length > 0 &&
+          (typeof parent.address !== "string" || value.address === parent.address)))
     && Object.keys(value).every((key) => knownKeys.has(key));
 }
 

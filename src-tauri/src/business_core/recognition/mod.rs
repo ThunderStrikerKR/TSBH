@@ -689,7 +689,7 @@ fn analyze(raw: &str, state: &Value, client: Option<&Value>) -> Result<Value, St
     let mut product_hits: Vec<ProductHit> = Vec::new();
     let phone = phone_regex();
     let person_label = Regex::new(
-        r"(?:수취인(?:명)?|수하인(?:명)?|수령자|받는\s*(?:분|사람)|성함|이름)\s*[:：]?\s*([가-힣]{2,5})",
+        r"(?:수취인(?:명)?|수하인(?:명)?|수령자|받는\s*(?:분|사람)|성함|이름)\s*[:：]?\s*([가-힣A-Za-z0-9 ()]{2,30}?)(?=\s*(?:연락처|전화|휴대|주소|배송지|$))",
     ).expect("name label");
     let inline_person = Regex::new(r"(?:^|[\s|/])([가-힣]{2,5})(?:님)?\s+(?:0(?:50\d|1[016789]|2|[3-6]\d|70|80))")
         .expect("inline name");
@@ -791,9 +791,9 @@ fn analyze(raw: &str, state: &Value, client: Option<&Value>) -> Result<Value, St
         } else {
         if let Some(c) = person_label.captures(line.text) {
             if let Some(name) = c.get(1) {
-                if is_person(name.as_str()) {
+                if is_person(name.as_str()) || is_institution(name.as_str()) {
                     add_match(&mut events, line, name.start(), name.end(), "name",
-                        name.as_str().to_owned(), "명시적 수취인 이름");
+                        name.as_str().trim().to_owned(), "명시적 수취인 이름");
                 }
             }
         }
