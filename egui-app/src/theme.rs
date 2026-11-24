@@ -710,17 +710,21 @@ pub const MANUAL_TABLE_PRODUCT_COL: f32 = 660.0;
 pub const MANUAL_TABLE_QUANTITY_COL: f32 = 96.0;
 pub const MANUAL_TABLE_UNIT_PRICE_COL: f32 = 120.0;
 pub const MANUAL_TABLE_ACTION_COL: f32 = 120.0;
+// Recognized source tokens in Reception and unassigned manual blocks share
+// the same white 1pt outline. Focused blue evidence keeps its own 2pt stroke.
+pub const SOURCE_RECOGNIZED_BORDER: Color32 = Color32::from_rgb(242, 242, 242);
+pub const SOURCE_RECOGNIZED_BORDER_WIDTH: f32 = 1.0;
 pub const MANUAL_SOURCE_PENDING_BG: Color32 = Color32::from_rgb(63, 63, 63);
 pub const MANUAL_SOURCE_ASSIGNED_BG: Color32 = Color32::from_rgb(42, 60, 74);
  // Manual classification has its own evidence states; the ordinary Reception
  // source renderer deliberately does NOT consume these tokens.
 pub const MANUAL_SOURCE_UNASSIGNED_FILL: Color32 = Color32::from_rgb(27, 27, 27);
 pub const MANUAL_SOURCE_UNASSIGNED_TEXT: Color32 = Color32::from_rgb(255, 255, 255);
-pub const MANUAL_SOURCE_UNASSIGNED_BORDER: Color32 = Color32::from_rgb(242, 242, 242);
+pub const MANUAL_SOURCE_UNASSIGNED_BORDER: Color32 = SOURCE_RECOGNIZED_BORDER;
 pub const MANUAL_SOURCE_CLASSIFIED_FILL: Color32 = Color32::from_rgb(66, 66, 66);
 pub const MANUAL_SOURCE_CLASSIFIED_TEXT: Color32 = Color32::from_rgb(190, 190, 190);
 pub const MANUAL_SOURCE_CLASSIFIED_BORDER: Color32 = Color32::from_rgb(99, 99, 99);
-pub const MANUAL_SOURCE_BLOCK_BORDER_WIDTH: f32 = 1.0;
+pub const MANUAL_SOURCE_BLOCK_BORDER_WIDTH: f32 = SOURCE_RECOGNIZED_BORDER_WIDTH;
 
 
 #[derive(Clone, Copy)]
