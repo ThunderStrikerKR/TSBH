@@ -603,7 +603,9 @@ impl BandoGateway for LocalGateway {
             let client_exists=before["clients"].as_array().is_some_and(|clients|
                 clients.iter().any(|client|
                     client["id"].as_str()==Some(client_id) &&
-                    client.get("deletedAt").is_none_or(Value::is_null) &&
+                    client.get("deletedAt").is_none_or(|value|
+                        value.is_null() || value.as_str()==Some("")
+                    ) &&
                     client["active"]!=Value::Bool(false)
                 )
             );
