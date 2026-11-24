@@ -6632,7 +6632,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                                 }
                                             }
                                         }
-                                        let remote_origin=if origins.iter().any(|origin|origin=="FACTORY"){
+                                        let remote_origin=if origins.iter().any(|origin|origin.as_str()=="FACTORY"){
                                             Some("FACTORY".to_owned())
                                         }else{origins.first().cloned()};
                                         let remote_checked=ship.remote.as_ref()
@@ -6646,11 +6646,11 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                             && self.workflow_freight_editor.is_none();
                                         for origin in &origins{
                                             let label=if origins.len()==1{"운임"}
-                                                else if origin=="FACTORY"{"공장 운임"}
+                                                else if origin.as_str()=="FACTORY"{"공장 운임"}
                                                 else{"매장 운임"};
                                             let amount=ship.display_charges.get(origin)
                                                 .copied().flatten();
-                                            let remote=if remote_origin.as_ref()==Some(origin){
+                                            let remote=if remote_origin.as_deref()==Some(origin.as_str()){
                                                 Some(remote_checked)
                                             }else{None};
                                             let amount_editable=controls_editable
@@ -6658,7 +6658,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                                 && !ship.collect;
                                             let freight_actions=components::reception_freight_row_controls(
                                                 contents,label,amount,Some(ship.collect),remote,
-                                                origin=="FACTORY",amount_editable,
+                                                origin.as_str()=="FACTORY",amount_editable,
                                                 controls_editable,controls_editable
                                             );
                                             if freight_actions.amount_clicked{
@@ -6688,9 +6688,9 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                                 self.workflow_receiver.is_none(){
                                                 if let (Some(editor),Some(rect))=(
                                                     self.workflow_freight_editor.as_mut().filter(|editor|
-                                                        editor.group_id==group.id &&
-                                                        editor.shipment_id==ship.id &&
-                                                        editor.origin==*origin
+                                                        editor.group_id.as_str()==group.id.as_str() &&
+                                                        editor.shipment_id.as_str()==ship.id.as_str() &&
+                                                        editor.origin.as_str()==origin.as_str()
                                                     ),
                                                     freight_actions.amount_rect
                                                 ){
