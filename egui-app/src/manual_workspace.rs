@@ -1588,6 +1588,11 @@ impl ManualWorkspace {
                                 egui::ScrollArea::both()
                                     .id_salt("manual-recipients-table")
                                     .auto_shrink([false,false])
+                                    // The rail is visible whenever the actual
+                                    // worksheet exceeds the panel viewport.
+                                    .scroll_bar_visibility(
+                                        egui::containers::scroll_area::ScrollBarVisibility::VisibleWhenNeeded
+                                    )
                                     .max_height(worksheet_height)
                                     .show(panel,|ui|{
                                     // Keep other shipments in the native model,
@@ -1988,6 +1993,12 @@ impl ManualWorkspace {
                                     if self.focus_editor && !busy &&
                                         !self.confirm_apply && !self.confirm_discard {
                                         editor.request_focus();
+                                        // The freight editor lives at the end
+                                        // of the scrollable worksheet; bring
+                                        // it into view when opened by button.
+                                        ui.scroll_to_rect(
+                                            editor.rect,Some(egui::Align::Center)
+                                        );
                                         self.focus_editor=false;
                                     }
                                     if editor.has_focus() && ctx.input(|input|
@@ -2648,6 +2659,10 @@ mod manual_workspace_modal_routing_tests {
             .expect("the footer must follow the scrollable worksheet");
         assert!(layout.contains("panel.available_height()"),
             "worksheet size must come from remaining panel height");
+        assert!(layout.contains("ScrollBarVisibility::VisibleWhenNeeded"),
+            "overflowed worksheet must offer an explicit scrollbar");
+        assert!(layout.contains("ui.scroll_to_rect("),
+            "freight editor must scroll into view when opened");
         assert!(layout.contains("ui.horizontal(|ui|{"),
             "quantity and freight controls need a scrollable row");
         assert!(!layout.contains("panel.horizontal(|ui|{"),
