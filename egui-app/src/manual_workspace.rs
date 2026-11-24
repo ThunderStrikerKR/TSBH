@@ -1693,7 +1693,7 @@ impl ManualWorkspace {
                         ).unwrap_or_default();
                         let busy=self.busy();
                         let pending_quantity_cell=self.pending_quantity_cell();
-                        let drag_recommendations=self.assignment_gesture.dragging.as_deref()
+                        let mut drag_recommendations=self.assignment_gesture.dragging.as_deref()
                             .map(|source|manual_assignment_recommendations(
                                 model,source,pending_quantity_cell.as_ref()
                             )).unwrap_or_default();
@@ -1783,7 +1783,13 @@ impl ManualWorkspace {
                                     source_did_scroll=interaction.did_scroll;
                                     if let Some(id)=interaction.drag_started_block {
                                         if assignments.get(&id).is_none(){
-                                            self.assignment_gesture.start_drag(id);
+                                            self.assignment_gesture.start_drag(id.clone());
+                                            // Populate recommendations in the same frame the
+                                            // drag threshold is crossed; do not wait for the
+                                            // next pointer-move event.
+                                            drag_recommendations=manual_assignment_recommendations(
+                                                model,&id,pending_quantity_cell.as_ref()
+                                            );
                                         }
                                     }
                                     source_clicked=interaction.clicked_block;
