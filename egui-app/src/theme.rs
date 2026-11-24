@@ -175,6 +175,8 @@ pub const SALE_STATUS_PREPARING: Color32 = Color32::from_rgb(228, 195, 104);
 pub const SALE_STATUS_STOPPED: Color32 = Color32::from_rgb(145, 145, 145);
 pub const BRIGHT: Color32 = Color32::WHITE;
 pub const BRIGHT_TEXT: Color32 = Color32::from_rgb(23, 23, 23);
+/// Shared resting white fill for primary actions and unassigned manual source tokens.
+pub const PRIMARY_ACTION_FILL: Color32 = Color32::from_rgb(238, 238, 238);
 // Compact inline-cell edit inset; shared with the 4pt and 8pt layout tokens.
 pub const SPACE_2: f32 = 2.0;
 pub const SPACE_4: f32 = 4.0;
@@ -725,13 +727,12 @@ pub const SOURCE_RECOGNIZED_BORDER: Color32 = Color32::from_rgb(96, 96, 96);
 pub const SOURCE_RECOGNIZED_BORDER_WIDTH: f32 = 1.0;
 pub const MANUAL_SOURCE_PENDING_BG: Color32 = Color32::from_rgb(63, 63, 63);
 pub const MANUAL_SOURCE_ASSIGNED_BG: Color32 = Color32::from_rgb(42, 60, 74);
-// Manual source evidence is a reading surface. Assigned blocks retain
-// normal bright text on a quiet neutral background. Pending assignment
-// uses a restrained warm accent, distinct from the blue linked-hover state.
-pub const MANUAL_SOURCE_UNASSIGNED_FILL: Color32 = Color32::from_rgb(81, 67, 45);
+// Unassigned manual source tokens share the primary white action palette.
+// Assigned tokens remain neutral gray; linked hover retains its own blue palette.
+pub const MANUAL_SOURCE_UNASSIGNED_FILL: Color32 = PRIMARY_ACTION_FILL;
 pub const MANUAL_SOURCE_BLOCK_RADIUS: f32 = 4.0;
-pub const MANUAL_SOURCE_UNASSIGNED_TEXT: Color32 = Color32::from_rgb(243, 212, 154);
-pub const MANUAL_SOURCE_UNASSIGNED_BORDER: Color32 = Color32::from_rgb(150, 115, 67);
+pub const MANUAL_SOURCE_UNASSIGNED_TEXT: Color32 = BRIGHT_TEXT;
+pub const MANUAL_SOURCE_UNASSIGNED_BORDER: Color32 = PRIMARY_ACTION_FILL;
 pub const MANUAL_SOURCE_CLASSIFIED_FILL: Color32 = Color32::from_rgb(48, 48, 48);
 pub const MANUAL_SOURCE_CLASSIFIED_TEXT: Color32 = Color32::from_rgb(232, 232, 232);
 pub const MANUAL_SOURCE_CLASSIFIED_BORDER: Color32 = SOURCE_RECOGNIZED_BORDER;
@@ -1155,7 +1156,7 @@ fn action_with_palette(
     review_white: bool,
 ) -> Response {
     let (height, fill, color, stroke): (f32, Color32, Color32, Stroke) = match role {
-        ButtonRole::Primary => (ACTION_PRIMARY_HEIGHT, Color32::from_rgb(238, 238, 238), BRIGHT_TEXT, Stroke::NONE),
+        ButtonRole::Primary => (ACTION_PRIMARY_HEIGHT, PRIMARY_ACTION_FILL, BRIGHT_TEXT, Stroke::NONE),
         ButtonRole::Standard => (ACTION_STANDARD_HEIGHT, RAISED, TEXT, Stroke::new(1.0_f32, BORDER)),
         ButtonRole::TableSecondary => (
             ACTION_STANDARD_HEIGHT,

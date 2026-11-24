@@ -961,7 +961,9 @@ mod tests {
 
     #[test]
     fn manual_assignment_state_changes_only_manual_palette_and_ink() {
-        assert_ne!(theme::MANUAL_SOURCE_UNASSIGNED_FILL,theme::BRIGHT);
+        assert_eq!(theme::MANUAL_SOURCE_UNASSIGNED_FILL,theme::PRIMARY_ACTION_FILL);
+        assert_eq!(theme::MANUAL_SOURCE_UNASSIGNED_TEXT,theme::BRIGHT_TEXT);
+        assert_eq!(theme::MANUAL_SOURCE_UNASSIGNED_BORDER,theme::PRIMARY_ACTION_FILL);
         assert_eq!(theme::MANUAL_SOURCE_BLOCK_RADIUS,4.0);
         assert_eq!(theme::MANUAL_SOURCE_CLASSIFIED_BORDER,theme::SOURCE_RECOGNIZED_BORDER);
         assert_ne!(theme::MANUAL_SOURCE_UNASSIGNED_BORDER,theme::SOURCE_RECOGNIZED_BORDER);
@@ -978,7 +980,10 @@ mod tests {
             (theme::MANUAL_SOURCE_UNASSIGNED_TEXT,theme::MANUAL_SOURCE_UNASSIGNED_FILL),
             (theme::MANUAL_SOURCE_CLASSIFIED_TEXT,theme::MANUAL_SOURCE_CLASSIFIED_FILL)
         ]{
-            assert!((luminance(ink)+0.05)/(luminance(fill)+0.05)>=4.5);
+            let ink_luminance=luminance(ink);
+            let fill_luminance=luminance(fill);
+            assert!((ink_luminance.max(fill_luminance)+0.05)
+                /(ink_luminance.min(fill_luminance)+0.05)>=4.5);
         }
         assert_eq!(theme::MANUAL_SOURCE_BLOCK_BORDER_WIDTH,1.0);
         let raw="팔렬고등학교 30개";
@@ -1044,6 +1049,10 @@ mod tests {
             assert_eq!(manual_strokes.len(),2,
                 "each classified/unclassified source block needs its own stroke");
             assert_eq!(manual_fills.len(),2);
+            assert!(manual_fills.iter().any(|shape|matches!(shape,
+                egui::Shape::Rect(rect) if rect.fill==theme::PRIMARY_ACTION_FILL)));
+            assert!(manual_strokes.iter().any(|shape|matches!(shape,
+                egui::Shape::Rect(rect) if rect.stroke.color==theme::PRIMARY_ACTION_FILL)));
             for shape in manual_fills.iter().chain(manual_strokes.iter()){
                 assert!(matches!(shape,egui::Shape::Rect(rect)
                     if rect.corner_radius==egui::CornerRadius::same(4)),
