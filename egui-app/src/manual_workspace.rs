@@ -148,6 +148,8 @@ struct ManualAssignmentGesture{
     /// egui confirms a drag only after its native movement threshold.
     /// Until then the pointer press is a pending drag preview, not a drop.
     drag_moved:bool,
+    drag_anchor_offset:Option<egui::Vec2>,
+    drag_layout_width:f32,
 }
 
 impl ManualAssignmentGesture{
@@ -171,9 +173,13 @@ impl ManualAssignmentGesture{
             None
         }
     }
-    fn start_drag(&mut self,id:String){
+    fn start_drag(
+        &mut self,id:String,anchor_offset:Option<egui::Vec2>,layout_width:f32
+    ){
         self.clear();
         self.dragging=Some(id);
+        self.drag_anchor_offset=anchor_offset;
+        self.drag_layout_width=layout_width;
     }
     fn mark_drag_moved(&mut self){
         if self.dragging.is_some(){self.drag_moved=true;}
@@ -181,10 +187,14 @@ impl ManualAssignmentGesture{
     fn cancel_pending_drag(&mut self){
         self.dragging=None;
         self.drag_moved=false;
+        self.drag_anchor_offset=None;
+        self.drag_layout_width=0.0;
     }
     fn finish_drag(&mut self,target:Option<ManualCellTarget>)->Option<(String,ManualCellTarget)>{
         let id=self.dragging.take()?;
         self.drag_moved=false;
+        self.drag_anchor_offset=None;
+        self.drag_layout_width=0.0;
         target.map(|cell|(id,cell))
     }
 }
@@ -253,41 +263,75 @@ fn paint_manual_assignment_recommendation(
     );
 }
 
-/// Paint the selected source block above both panes while it follows the pointer.
+/// Paint only the selected source evidence while preserving the original
+/// document's glyph positions, wrapping, rounded block geometry and colors.
+/// The pointer remains attached to the exact point grabbed by the user.
 fn paint_manual_source_drag_preview(
     ctx:&Context,
     raw:&str,
     spans:&[source_highlight::LinkedSpan],
     source_id:&str,
     pointer:egui::Pos2,
+    anchor_offset:egui::Vec2,
+    layout_width:f32,
+    selected_recipient:Option<&str>,
+    active:Option<&source_highlight::LinkKey>,
 ){
     let Some(span)=spans.iter().find(|span|span.source_id.as_deref()==Some(source_id))
         else{return};
-    let Some(value)=raw.get(span.start..span.end).map(str::trim)
+    let Some(value)=raw.get(span.start..span.end)
         else{return};
     if value.is_empty(){return;}
 
+    // The source is unassigned when a drag can begin. Keep all surrounding
+    // glyphs transparent but retain their advances so wrapping and the grabbed
+    // block's position match the original source document exactly.
+    let assigned_ids=std::collections::HashSet::new();
+    let style=source_highlight::manual_source_block_style(span,active,&assigned_ids);
+    let font=egui::FontId::proportional(typography::FONT_RECEPTION_SOURCE_TEXT);
     let mut job=egui::text::LayoutJob::default();
-    job.wrap.max_width=320.0;
+    job.wrap.max_width=layout_width.max(1.0);
+    if span.start>0 {
+        job.append(&raw[..span.start],0.0,egui::TextFormat{
+            font_id:font.clone(),color:egui::Color32::TRANSPARENT,
+            ..Default::default()
+        });
+    }
     job.append(value,0.0,egui::TextFormat{
-        font_id:egui::FontId::proportional(typography::FONT_RECEPTION_SOURCE_TEXT),
-        color:theme::MANUAL_SOURCE_UNASSIGNED_TEXT,
-        ..Default::default()
+        font_id:font.clone(),color:style.text,..Default::default()
     });
+    if span.end<raw.len() {
+        job.append(&raw[span.end..],0.0,egui::TextFormat{
+            font_id:font,color:egui::Color32::TRANSPARENT,
+            ..Default::default()
+        });
+    }
     let galley=ctx.fonts_mut(|fonts|fonts.layout_job(job));
-    let padding=egui::vec2(8.0,6.0);
-    let rect=egui::Rect::from_min_size(
-        pointer+egui::vec2(16.0,18.0),galley.size()+padding*2.0
-    );
+    let Some(original_geometry)=source_highlight::manual_source_block_visual(
+        raw,&galley,egui::Pos2::ZERO,spans,source_id,
+        selected_recipient,active,&assigned_ids
+    ) else{return};
+    let Some(original_bounds)=original_geometry.rects.iter().copied()
+        .reduce(|left,right|left.union(right)) else{return};
+
+    let desired_block_min=pointer-anchor_offset;
+    let translation=desired_block_min-original_bounds.min;
+    let galley_pos=egui::Pos2::ZERO+translation;
     let painter=ctx.layer_painter(egui::LayerId::new(
         egui::Order::Tooltip,egui::Id::new("manual-source-drag-preview")
     ));
-    let fill=theme::MANUAL_SOURCE_UNASSIGNED_FILL;
-    painter.rect_filled(rect,theme::CONTROL_RADIUS,
-        egui::Color32::from_rgba_unmultiplied(fill.r(),fill.g(),fill.b(),228));
-    painter.rect_stroke(rect,theme::CONTROL_RADIUS,
-        egui::Stroke::new(1.5,theme::SELECTION),egui::StrokeKind::Inside);
-    painter.galley(rect.min+padding,galley,theme::MANUAL_SOURCE_UNASSIGNED_TEXT);
+    for rect in original_geometry.rects {
+        let rect=rect.translate(translation);
+        painter.rect_filled(rect,original_geometry.style.radius,original_geometry.style.fill);
+        painter.rect_stroke(
+            rect,original_geometry.style.radius,
+            egui::Stroke::new(
+                original_geometry.style.border_width,original_geometry.style.border
+            ),
+            egui::StrokeKind::Inside
+        );
+    }
+    painter.galley(galley_pos,galley,theme::TEXT);
 }
 
 fn item_quantity_pending(item:&Value)->bool{
@@ -2003,7 +2047,10 @@ impl ManualWorkspace {
                                                         source_did_scroll=interaction.did_scroll;
                                                         if let Some(id)=interaction.drag_started_block {
                                                             if assignments.get(&id).is_none(){
-                                                                self.assignment_gesture.start_drag(id.clone());
+                                                                self.assignment_gesture.start_drag(
+                                                                    id.clone(),interaction.drag_anchor_offset,
+                                                                    interaction.drag_layout_width
+                                                                );
                                                                 // Recommend valid cells on the initial press frame,
                                                                 // even while the pointer remains completely still.
                                                                 drag_recommendations=manual_assignment_recommendations(
@@ -2551,11 +2598,14 @@ impl ManualWorkspace {
                 ctx.set_cursor_icon(if self.assignment_gesture.drag_moved && !drop_allowed{
                     egui::CursorIcon::NotAllowed
                 }else{egui::CursorIcon::Grabbing});
-                if let (Some(source_id),Some(pointer))=(
-                    self.assignment_gesture.dragging.as_deref(),drag_pointer
+                if let (Some(source_id),Some(pointer),Some(anchor_offset))=(
+                    self.assignment_gesture.dragging.as_deref(),drag_pointer,
+                    self.assignment_gesture.drag_anchor_offset
                 ){
                     paint_manual_source_drag_preview(
-                        ctx,&self.raw,&spans,source_id,pointer
+                        ctx,&self.raw,&spans,source_id,pointer,anchor_offset,
+                        self.assignment_gesture.drag_layout_width,
+                        selected_recipient_id.as_deref(),active_link.as_ref()
                     );
                 }
             }
@@ -2951,21 +3001,25 @@ mod manual_assignment_gesture_tests{
         assert_eq!(gesture.cell_click(target()),Some(("block".into(),target())));
         assert!(gesture.cell_click(target()).is_none());
         assert_eq!(gesture.source_click("block".into()),Some(("block".into(),target())));
-        gesture.start_drag("block".into());
+        gesture.start_drag("block".into(),Some(egui::vec2(13.0,7.0)),320.0);
+        assert_eq!(gesture.drag_anchor_offset,Some(egui::vec2(13.0,7.0)));
+        assert_eq!(gesture.drag_layout_width,320.0);
         assert!(!gesture.drag_moved);
         gesture.mark_drag_moved();
         assert!(gesture.drag_moved);
         assert_eq!(gesture.finish_drag(Some(target())),Some(("block".into(),target())));
-        gesture.start_drag("block".into());
+        gesture.start_drag("block".into(),None,0.0);
         assert!(!gesture.drag_moved);
         gesture.cancel_pending_drag();
         assert!(gesture.dragging.is_none());
         assert!(!gesture.drag_moved);
+        assert!(gesture.drag_anchor_offset.is_none());
+        assert_eq!(gesture.drag_layout_width,0.0);
     }
     #[test]
     fn holding_a_source_shows_a_pending_drag_but_release_without_movement_remains_a_click(){
         let mut gesture=ManualAssignmentGesture::default();
-        gesture.start_drag("block".into());
+        gesture.start_drag("block".into(),None,0.0);
         assert_eq!(gesture.dragging.as_deref(),Some("block"));
         assert!(!gesture.drag_moved,
             "holding still must keep the gesture pending rather than dropping");
@@ -3447,6 +3501,8 @@ mod manual_workspace_modal_routing_tests {
         assert!(source_view.contains("response.dragged_by(egui::PointerButton::Primary)"),
             "actual drag classification must retain egui's native threshold");
         assert!(workspace.contains("interaction.drag_moved"));
+        assert!(workspace.contains("drag_anchor_offset"));
+        assert!(workspace.contains("pointer-anchor_offset"));
         assert!(workspace.contains("paint_manual_source_drag_preview("));
     }
 
