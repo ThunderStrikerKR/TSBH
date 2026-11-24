@@ -6429,6 +6429,10 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
         if let Some((group,ship))=self.visible_workflow_group(){
             let linked_active=self.link_hover.active_for(&ship.order_id).cloned();
             let mut hovered_detail:Option<source_highlight::LinkKey>=None;
+            let mut workflow_freight_open:Option<(String,String,Option<egui::Pos2>)>=None;
+            let mut workflow_freight_commit=false;
+            let mut workflow_freight_cancel=false;
+            let mut workflow_freight_option:Option<(String,serde_json::Value)>=None;
             // The same preallocated review/recipient/items rectangles are
             // used for real workflow rows. No source replacement, false
             // editing actions or section boundary changes on hover.
@@ -6500,11 +6504,23 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                     );
                     if let Some(next_index)=next_ship{
                         if let Some(target)=group.shipments.get(next_index){
-                            self.workflow_ui.select(workflow_board_ui::Selection{
+                            let selection=workflow_board_ui::Selection{
                                 group_id:group.id.clone(),
                                 order_id:target.order_id.clone(),
                                 shipment_id:target.id.clone(),
-                            });
+                            };
+                            if self.workflow_freight_editor.as_ref().is_some_and(|editor|
+                                editor.text.trim()!=editor.original.trim()
+                            ){
+                                self.workflow_freight_next_selection=Some(selection);
+                                if !self.submit_workflow_freight_edit(pane.ctx()){
+                                    self.workflow_freight_next_selection=None;
+                                }
+                            }else{
+                                self.workflow_freight_editor=None;
+                                self.workflow_freight_next_selection=None;
+                                self.workflow_ui.select(selection);
+                            }
                             // Click is authoritative even if the old source
                             // hover is still inside its 150ms release grace.
                             self.link_hover.clear();
@@ -6601,22 +6617,105 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                             }
                                         }
                                         contents.add_space(theme::SPACE_8);
-                                        // The workflow Rust preview resolves automatic
-                                        // locality, staff overrides and legacy protection.
-                                        // Reading only recipient.remoteDelivery would
-                                        // falsely display unchecked for auto-detected zones.
-                                        let remote=ship.remote.as_ref()
-                                            .and_then(|decision|decision["checked"].as_bool());
+                                        // Match React WorkflowFreightRows: one editable
+                                        // amount per actual dispatch origin. The displayed
+                                        // amount is the Rust-applied value (including the
+                                        // locality multiplier), never the saved base charge.
+                                        let mut origins=Vec::<String>::new();
+                                        if let Some(items)=ship.recipient.get("items")
+                                            .and_then(serde_json::Value::as_array){
+                                            for item in items{
+                                                let origin=reception_service::text(item,"origin");
+                                                if ["FACTORY","STORE"].contains(&origin) &&
+                                                    !origins.iter().any(|saved|saved==origin){
+                                                    origins.push(origin.to_owned());
+                                                }
+                                            }
+                                        }
+                                        let remote_origin=if origins.iter().any(|origin|origin=="FACTORY"){
+                                            Some("FACTORY".to_owned())
+                                        }else{origins.first().cloned()};
+                                        let remote_checked=ship.remote.as_ref()
+                                            .and_then(|decision|decision["checked"].as_bool())
+                                            .unwrap_or(false);
+                                        let controls_editable=self.gateway.workflow_write_enabled()
+                                            && self.workflow_action.is_none()
+                                            && self.workflow_receiver.is_none()
+                                            && self.workflow_error.is_none()
+                                            && !ship.transferred
+                                            && self.workflow_freight_editor.is_none();
+                                        for origin in &origins{
+                                            let label=if origins.len()==1{"운임"}
+                                                else if origin=="FACTORY"{"공장 운임"}
+                                                else{"매장 운임"};
+                                            let amount=ship.display_charges.get(origin)
+                                                .copied().flatten();
+                                            let remote=if remote_origin.as_ref()==Some(origin){
+                                                Some(remote_checked)
+                                            }else{None};
+                                            let amount_editable=controls_editable
+                                                && !ship.freight_editing_blocked
+                                                && !ship.collect;
+                                            let freight_actions=components::reception_freight_row_controls(
+                                                contents,label,amount,Some(ship.collect),remote,
+                                                origin=="FACTORY",amount_editable,
+                                                controls_editable,controls_editable
+                                            );
+                                            if freight_actions.amount_clicked{
+                                                workflow_freight_open=Some((
+                                                    origin.clone(),
+                                                    amount.map(|value|value.to_string()).unwrap_or_default(),
+                                                    freight_actions.amount_click_pos
+                                                ));
+                                            }
+                                            if freight_actions.collect_clicked{
+                                                workflow_freight_option=Some((
+                                                    origin.clone(),
+                                                    serde_json::json!({
+                                                        "freightCode":if ship.collect{"010"}else{"020"}
+                                                    })
+                                                ));
+                                            }
+                                            if freight_actions.remote_clicked{
+                                                workflow_freight_option=Some((
+                                                    origin.clone(),
+                                                    serde_json::json!({
+                                                        "remoteChecked":!remote_checked
+                                                    })
+                                                ));
+                                            }
+                                            if self.workflow_action.is_none() &&
+                                                self.workflow_receiver.is_none(){
+                                                if let (Some(editor),Some(rect))=(
+                                                    self.workflow_freight_editor.as_mut().filter(|editor|
+                                                        editor.group_id==group.id &&
+                                                        editor.shipment_id==ship.id &&
+                                                        editor.origin==*origin
+                                                    ),
+                                                    freight_actions.amount_rect
+                                                ){
+                                                    let response=components::reception_freight_inline_cell_editor(
+                                                        contents,rect,&mut editor.text,
+                                                        editor.focus_next,editor.click_at.take()
+                                                    );
+                                                    editor.focus_next=false;
+                                                    if response.has_focus() && contents.input(|input|
+                                                        input.key_pressed(egui::Key::Escape)
+                                                    ){
+                                                        workflow_freight_cancel=true;
+                                                    }else if response.has_focus() && contents.input(|input|
+                                                        input.key_pressed(egui::Key::Enter)
+                                                    ){
+                                                        workflow_freight_commit=true;
+                                                    }else if response.lost_focus(){
+                                                        workflow_freight_commit=true;
+                                                    }
+                                                }
+                                            }
+                                            contents.add_space(theme::SPACE_8);
+                                        }
                                         let origin=ship.recipient.get("dispatchOrigin")
                                             .and_then(serde_json::Value::as_str);
-                                        contents.add_space(theme::SPACE_8);
-                                        components::reception_freight_row(
-                                            contents,"운임",
-                                            if ship.collect {Some(0)} else {ship.freight},
-                                            Some(ship.collect),remote,
-                                            origin==Some("FACTORY"),
-                                        );
-                                        contents.add_space(theme::SPACE_8);
                                         components::reception_item_origin_action_editable(
                                             contents,origin,false
                                         );
@@ -6656,6 +6755,32 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                 &ship.order_id,
                 hovered_detail.or_else(||self.source_hover.clone()),ui.ctx()
             );
+            if workflow_freight_cancel{
+                self.workflow_freight_editor=None;
+                self.workflow_freight_next_selection=None;
+            }else if let Some((origin,original,click_at))=workflow_freight_open{
+                self.workflow_freight_editor=Some(WorkflowFreightEditor{
+                    group_id:group.id.clone(),shipment_id:ship.id.clone(),
+                    origin,original:original.clone(),text:original,
+                    focus_next:true,click_at
+                });
+            }else if workflow_freight_commit{
+                self.submit_workflow_freight_edit(ui.ctx());
+            }else if let Some((origin,extra))=workflow_freight_option{
+                self.start_workflow_action_with_args(
+                    "set_shipment_freight",&group.id,Some(&ship.id),
+                    None,false,serde_json::json!({
+                        "origin":origin
+                    }).as_object().map(|base|{
+                        let mut values=base.clone();
+                        if let Some(extra_values)=extra.as_object(){
+                            values.extend(extra_values.clone());
+                        }
+                        serde_json::Value::Object(values)
+                    }).unwrap_or(serde_json::Value::Null),
+                    ui.ctx()
+                );
+            }
             return;
         }
 
