@@ -1099,6 +1099,19 @@ pub fn action_full_width(
 pub fn action_with_min_width(
     ui: &mut Ui, label: &str, role: ButtonRole, enabled: bool, min_width: f32,
 ) -> Response {
+    action_with_palette(ui, label, role, enabled, min_width, false)
+}
+
+/// Actions embedded in colored review cards retain their original role geometry
+/// and hover behavior, but use the shared white action palette when enabled.
+pub fn review_action(ui: &mut Ui, label: &str, role: ButtonRole, enabled: bool) -> Response {
+    action_with_palette(ui, label, role, enabled, 0.0, true)
+}
+
+fn action_with_palette(
+    ui: &mut Ui, label: &str, role: ButtonRole, enabled: bool, min_width: f32,
+    review_white: bool,
+) -> Response {
     let (height, fill, color, stroke): (f32, Color32, Color32, Stroke) = match role {
         ButtonRole::Primary => (ACTION_PRIMARY_HEIGHT, Color32::from_rgb(238, 238, 238), BRIGHT_TEXT, Stroke::NONE),
         ButtonRole::Standard => (ACTION_STANDARD_HEIGHT, RAISED, TEXT, Stroke::new(1.0_f32, BORDER)),
@@ -1123,7 +1136,13 @@ pub fn action_with_min_width(
     // egui's generic disabled tint alone was too close to the enabled state.
     // Respect disabled parent Ui scopes as well as the local enabled flag.
     let effective_enabled=enabled && ui.is_enabled();
-    let (fill,color,stroke)=if !effective_enabled && matches!(role,ButtonRole::Ghost) {
+    let (fill,color,stroke)=if review_white {
+        if effective_enabled {
+            (BRIGHT, BRIGHT_TEXT, stroke)
+        } else {
+            (DISABLED_ACTION_BG, DISABLED_ACTION_TEXT, stroke)
+        }
+    }else if !effective_enabled && matches!(role,ButtonRole::Ghost) {
         (Color32::TRANSPARENT,DISABLED_ACTION_TEXT,Stroke::NONE)
     }else if !effective_enabled
         && matches!(role,

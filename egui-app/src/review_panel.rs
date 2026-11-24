@@ -268,7 +268,7 @@ fn issue_card(
                         let id=text(candidate,"clientId");
                         let name=text(candidate,"name");
                         if !id.is_empty() && !name.is_empty()
-                            &&theme::action(buttons,name,ButtonRole::Quiet,enabled).clicked(){
+                            &&theme::review_action(buttons,name,ButtonRole::Quiet,enabled).clicked(){
                             *selected=Some(Action::ChooseClient(id.to_owned()));
                         }
                     }
@@ -282,7 +282,7 @@ fn issue_card(
                         {
                             let label=text(candidate,"label");
                             let value=text(candidate,"value");
-                            if !value.is_empty() &&theme::action(
+                            if !value.is_empty() &&theme::review_action(
                                 buttons,&format!("{} → 적용",
                                     if label.is_empty(){value}else{label}),
                                 ButtonRole::Quiet,enabled
@@ -297,7 +297,7 @@ fn issue_card(
                 }
                 if kind=="QUANTITY_MISSING"{
                     if let Some(item_id)=iid {
-                        if theme::action(
+                        if theme::review_action(
                             buttons,"1개로 잠정 처리",ButtonRole::Standard,
                             enabled && issue["canApproveOne"]==true
                         ).clicked(){
@@ -310,7 +310,7 @@ fn issue_card(
                 if kind=="QUANTITY_MISSING"
                     &&text(issue,"resolution")=="PROVISIONALLY_APPROVED" {
                     if let Some(item_id)=iid {
-                        if theme::action(
+                        if theme::review_action(
                             buttons,"잠정 승인 취소",ButtonRole::Standard,enabled
                         ).clicked(){
                             *selected=Some(Action::CancelApproval{
@@ -328,7 +328,7 @@ fn issue_card(
                         "CATEGORY_CONFLICT","QUANTITY_LINK","OPTION"].contains(&kind){
                         "해결 절차 보기"
                     }else{"입력 위치로 이동"};
-                if theme::action(buttons,caption,ButtonRole::Standard,enabled).clicked(){
+                if theme::review_action(buttons,caption,ButtonRole::Standard,enabled).clicked(){
                     *selected=Some(Action::Navigate{
                         kind:kind.to_owned(),recipient_id:rid.to_owned(),
                         item_id:iid.map(str::to_owned),
