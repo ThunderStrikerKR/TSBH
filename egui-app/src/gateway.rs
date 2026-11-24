@@ -553,7 +553,7 @@ impl BandoGateway for LocalGateway {
         if !group_delete && !matches!(
             action,
             "advance_group"|"undo_group"|"confirm_group_payment"|"process_group"
-            |"detach_shipment"|"regroup_shipment"
+            |"detach_shipment"|"regroup_shipment"|"set_shipment_freight"
         ){
             return Err("지원하지 않는 주문 묶음 작업입니다.".into());
         }
@@ -676,7 +676,8 @@ impl BandoGateway for LocalGateway {
             let object=request.as_object_mut().ok_or("업무 요청 형식 오류")?;
             for (key,value) in extras{
                 if matches!(key.as_str(),
-                    "groupId"|"shipmentId"|"targetGroupId"|"ack"
+                    "groupId"|"shipmentId"|"targetGroupId"|"ack"|
+                    "origin"|"value"|"appliedCharge"|"freightCode"|"remoteChecked"
                 ){
                     object.insert(key.clone(),value.clone());
                 }
