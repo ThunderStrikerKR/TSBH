@@ -520,13 +520,30 @@ fn money(amount:Option<i64>)->String{
 /// every stage label including "계좌 재안내 완료" without shrinking text.
 /// This uses the shared Emphasized/disabled palette and 13pt action type,
 /// but not egui's minimum text padding (which could enlarge the rectangle).
+/// egui can replace a pending card's base widget with its foreground
+/// hover-preview clone between pointer-down and pointer-up. The widget ID then
+/// changes during one physical click, so Response::clicked() can lose it.
+/// Recover that release only when it lands inside this exact control AND the
+/// control's layer is the topmost layer at the pointer (never click through a
+/// modal or another foreground window).
+fn primary_release_inside(ui:&Ui,rect:Rect)->bool{
+    let release_pos=ui.ctx().input(|input|{
+        if input.pointer.button_clicked(egui::PointerButton::Primary){
+            input.pointer.interact_pos()
+        }else{None}
+    });
+    release_pos.is_some_and(|pos|
+        rect.contains(pos) && ui.ctx().layer_id_at(pos)==Some(ui.layer_id())
+    )
+}
 fn workflow_primary_at(
     ui:&mut Ui,id:&str,rect:Rect,text:&str,enabled:bool,in_preview:bool
-)->egui::Response{
+)->(egui::Response,bool){
     let response=ui.interact(
         rect,workflow_widget_id("workflow-stage-button",id,in_preview),
         if enabled{egui::Sense::click()}else{egui::Sense::hover()}
     ).on_hover_text(text);
+    let clicked=enabled && (response.clicked() || primary_release_inside(ui,rect));
     let fill=if enabled{theme::BRIGHT}else{theme::DISABLED_ACTION_BG};
     let ink=if enabled{theme::BRIGHT_TEXT}else{theme::DISABLED_ACTION_TEXT};
     ui.painter().rect_filled(rect,5.0,fill);
@@ -549,7 +566,7 @@ fn workflow_primary_at(
     // A completed workflow's stage can be disabled for click yet remains an
     // interactive hover-preview trigger; show the preview affordance.
     theme::paint_button_hover(ui,&response,5.0);
-    response
+    (response,clicked)
 }
 /// The lower band is a true full-bleed #292929 surface. Shipping and money
 /// share the bottom glyph edge, VAT appears above the amount only when used.
@@ -632,7 +649,7 @@ fn workflow_action_line(
     // dealer happens asynchronously through native Rust automatically;
     // no "confirm dealer" stage/button or undo slot is rendered for them.
     if let Some(text)=button_text {
-        let response=workflow_primary_at(
+        let (response,clicked)=workflow_primary_at(
             ui,id,workflow_control_rect(action),text,enabled,in_preview
         );
         let undo_clicked=workflow_auxiliary_at(
@@ -640,7 +657,7 @@ fn workflow_action_line(
             components::WorkflowAuxiliaryAction::PreviousStage,
             undo_enabled,in_preview
         ).clicked();
-        (response.clicked(),response.hovered(),undo_clicked)
+        (clicked,response.hovered(),undo_clicked)
     }else{
         (false,false,false)
     }
@@ -1288,6 +1305,44 @@ mod pending_matching_tests {
             });
         });
         assert!(tapped.is_none());
+    }
+
+    #[test]
+    fn primary_release_fallback_recovers_a_click_on_the_topmost_button_layer(){
+        let ctx=egui::Context::default();
+        let pos=Pos2::new(120.0,100.0);
+        let rect=Rect::from_center_size(pos,Vec2::new(80.0,30.0));
+        let screen=Rect::from_min_size(Pos2::ZERO,Vec2::new(400.0,300.0));
+        let mut press=egui::RawInput::default();
+        press.screen_rect=Some(screen);
+        press.events=vec![
+            egui::Event::PointerMoved(pos),
+            egui::Event::PointerButton{
+                pos,button:egui::PointerButton::Primary,pressed:true,
+                modifiers:egui::Modifiers::default()
+            }
+        ];
+        let _=ctx.run(press,|ctx|{
+            egui::CentralPanel::default().show(ctx,|ui|{
+                let _=primary_release_inside(ui,rect);
+            });
+        });
+        let mut release=egui::RawInput::default();
+        release.screen_rect=Some(screen);
+        release.events=vec![
+            egui::Event::PointerMoved(pos),
+            egui::Event::PointerButton{
+                pos,button:egui::PointerButton::Primary,pressed:false,
+                modifiers:egui::Modifiers::default()
+            }
+        ];
+        let mut detected=false;
+        let _=ctx.run(release,|ctx|{
+            egui::CentralPanel::default().show(ctx,|ui|{
+                detected=primary_release_inside(ui,rect);
+            });
+        });
+        assert!(detected,"a primary-button release inside the active control layer must be recovered");
     }
 
     #[test]
