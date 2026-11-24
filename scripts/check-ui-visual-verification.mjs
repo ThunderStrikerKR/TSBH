@@ -17,8 +17,16 @@ export const REQUIRED_CHECKS = [
 
 export function isUiSource(filename) {
   const f = filename.replaceAll("\\", "/");
-  if (/^src\/.*\.(tsx|css)$/.test(f)) return true;
-  return /^egui-app\/src\/(?:main|components|theme|typography|[a-z0-9_]*(?:workspace|manager|view|panel|dialog|modal|ui|search|highlight))\.rs$/.test(f);
+  if (/^src\/.*\.(tsx|jsx|css|scss)$/.test(f)) return true;
+  // Prefer conservative coverage: a newly named egui control must not evade
+  // the gate just because it lacks a known "_manager" or "_view" suffix.
+  // Exclude only explicitly reviewed pure data/transport modules.
+  if (!/^egui-app\/src\/(?:[^/]+\/)*[^/]+\.rs$/.test(f)) return false;
+  const transportOnly = new Set([
+    "gateway.rs", "pricing_basis.rs", "preview_store.rs",
+    "reception_service.rs",
+  ]);
+  return !transportOnly.has(f.split("/").at(-1));
 }
 export function isAuditFile(filename) {
   return /^docs\/ui-visual-verification\/audits\/[a-z0-9][a-z0-9-]*\.json$/.test(filename.replaceAll("\\", "/"));
