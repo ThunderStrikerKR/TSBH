@@ -97,7 +97,7 @@ test("Rust-only test module edits do not require visual screenshot review",()=>{
     "}",
   ].join("\n");
   const after=before.replace("assert!(true)","assert!(false)");
-  const diff="@@ -6 +6 @@\\n-        assert!(true);\\n+        assert!(false);";
+  const diff="@@ -6 +6 @@\n-        assert!(true);\n+        assert!(false);";
   assert.equal(isRustTestOnlyDiff(before,after,diff),true);
 });
 test("mixed production and test changes remain subject to visual review",()=>{
@@ -113,12 +113,12 @@ test("mixed production and test changes remain subject to visual review",()=>{
   ].join("\n");
   const after=before.replace("render() {}","render() { /* layout changed */ }")
     .replace("assert!(true)","assert!(false)");
-  const diff="@@ -1 +1 @@\\n-pub fn render() {}\\n+pub fn render() { /* layout changed */ }\\n@@ -6 +6 @@\\n-        assert!(true);\\n+        assert!(false);";
+  const diff="@@ -1 +1 @@\n-pub fn render() {}\n+pub fn render() { /* layout changed */ }\n@@ -6 +6 @@\n-        assert!(true);\n+        assert!(false);";
   assert.equal(isRustTestOnlyDiff(before,after,diff),false);
 });
 test("a newly added cfg(test) module is recognized as test-only",()=>{
   const before="pub fn render() {}";
-  const after=before+"\\n#[cfg(test)]\\nmod tests {\\n    #[test]\\n    fn contract() {}\\n}";
-  const diff="@@ -1,0 +2,5 @@\\n+#[cfg(test)]\\n+mod tests {\\n+    #[test]\\n+    fn contract() {}\\n+}";
+  const after=before+"\n#[cfg(test)]\nmod tests {\n    #[test]\n    fn contract() {}\n}";
+  const diff="@@ -1,0 +2,5 @@\n+#[cfg(test)]\n+mod tests {\n+    #[test]\n+    fn contract() {}\n+}";
   assert.equal(isRustTestOnlyDiff(before,after,diff),true);
 });

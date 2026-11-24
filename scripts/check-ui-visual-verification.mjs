@@ -59,7 +59,7 @@ function changedSpanIsTestOnly(ranges, start, count) {
   );
 }
 export function isRustTestOnlyDiff(before, after, diff) {
-  const hunks = [...diff.matchAll(/^@@ -(\\d+)(?:,(\\d+))? \\+(\\d+)(?:,(\\d+))? @@/gm)];
+  const hunks = [...diff.matchAll(/^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@/gm)];
   if (!hunks.length) return false;
   const oldRanges = rustTestModuleRanges(before);
   const newRanges = rustTestModuleRanges(after);
