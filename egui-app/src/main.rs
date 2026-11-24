@@ -494,6 +494,33 @@ fn complete_reception_quote(quote:&serde_json::Value)->bool{
     && quote.get("pendingRecipients").is_some_and(serde_json::Value::is_array)
 }
 
+/// First-stage approval requires the exact quote for the current draft, not
+/// a settled freight total. Native workflow validation owns stage blockers.
+fn confirmable_reception_quote(
+    source:&WorkingReception,quote:&serde_json::Value
+)->bool{
+    let Some(client_id)=source.client_id.as_deref()
+        .filter(|id|!id.trim().is_empty()) else{return false;};
+    let source_ready=if source.raw.trim().is_empty(){
+        source.manual_model.as_ref().is_some_and(|model|
+            model.get("mode").and_then(serde_json::Value::as_str)==Some("DIRECT") &&
+            model.get("sourceRaw").and_then(serde_json::Value::as_str)==Some("")
+        )
+    }else{
+        source.analysis_raw.as_deref()==Some(source.raw.as_str()) &&
+            source.analysis_evidence.is_some()
+    };
+    source_ready && source.order_type!="RETAIL" &&
+        quote.get("orderId").and_then(serde_json::Value::as_str)==Some(source.id.as_str()) &&
+        quote.get("sourceRaw").and_then(serde_json::Value::as_str)==Some(source.raw.as_str()) &&
+        quote.get("orderType").and_then(serde_json::Value::as_str)==Some(source.order_type.as_str()) &&
+        quote.get("clientId").and_then(serde_json::Value::as_str)==Some(client_id) &&
+        quote.get("authorityRevision").and_then(serde_json::Value::as_u64).is_some() &&
+        quote.get("linePrices").and_then(serde_json::Value::as_array).is_some() &&
+        quote.get("freightLines").and_then(serde_json::Value::as_array).is_some() &&
+        quote.get("pendingRecipients").and_then(serde_json::Value::as_array).is_some()
+}
+
 fn quote_id_matches(
     quote:&serde_json::Value,quoted_id:Option<&str>,source_id:&str,kind:&str
 )->bool{
@@ -7509,6 +7536,119 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
         }
     }
 
+    /// Convert an exact, freshly repriced egui draft into a real order only
+    /// when the employee clicks the first workflow stage. Native reconciliation
+    /// overlays the full Rust Order and commits confirmation + workflow in one
+    /// revision-checked SQLite transaction.
+    fn start_draft_confirmation(&mut self,order_id:&str,ctx:&egui::Context){
+        if let JobAdmission::Conflict(blocker)=self.reception_job_admission(
+            ReceptionJob::WorkflowAction,false
+        ){
+            floating_notice::publish(
+                ctx,"reception.workflow",floating_notice::Tone::Error,
+                format!("{} 중에는 주문을 확정할 수 없습니다.",blocker.label())
+            );
+            return;
+        }
+        if !self.gateway.workflow_write_enabled(){
+            floating_notice::publish(
+                ctx,"reception.workflow",floating_notice::Tone::Error,
+                "주문 확정을 허용한 기존 Tauri 업무 DB가 필요합니다."
+            );
+            return;
+        }
+        let Some(source)=self.drafts.iter().find(|draft|draft.id==order_id).cloned()
+        else{
+            floating_notice::publish(
+                ctx,"reception.workflow",floating_notice::Tone::Error,
+                "확정할 미확정 발주서를 찾을 수 없습니다."
+            );
+            return;
+        };
+        let Some(client_id)=source.client_id.clone()
+            .filter(|id|!id.trim().is_empty()) else{
+            floating_notice::publish(
+                ctx,"reception.workflow",floating_notice::Tone::Error,
+                "거래처를 먼저 선택하세요."
+            );
+            return;
+        };
+        let Some(quote)=source.pricing_preview.as_ref() else{
+            floating_notice::publish(
+                ctx,"reception.workflow",floating_notice::Tone::Error,
+                "거래처의 품목·운임 계산이 완료된 뒤 주문을 확정할 수 있습니다."
+            );
+            return;
+        };
+        if !confirmable_reception_quote(&source,quote){
+            floating_notice::publish(
+                ctx,"reception.workflow",floating_notice::Tone::Error,
+                "현재 발주서와 일치하는 거래처별 Rust 계산 결과가 없습니다. 거래처를 다시 선택해 재계산하세요."
+            );
+            return;
+        }
+        let Some(expected_revision)=quote.get("authorityRevision")
+            .and_then(serde_json::Value::as_u64) else{return;};
+        let group_id=format!("group:{}",source.id);
+        if self.workflow_stage_deadlines.get(&group_id)
+            .is_some_and(|deadline|Instant::now()<*deadline){
+            floating_notice::publish(
+                ctx,"reception.workflow",floating_notice::Tone::Error,
+                "주문 확인 직후입니다. 잠시 후 다시 진행하세요."
+            );
+            return;
+        }
+        let expected_quote=quote.clone();
+        let gateway=Arc::clone(&self.gateway);
+        let target_id=client_id.clone();
+        let worker_group_id=group_id.clone();
+        let (sender,receiver)=mpsc::channel();
+        let context=ctx.clone();
+        self.workflow_action=Some(PendingWorkflowAction{
+            group_id:group_id.clone(),
+            action:"confirm_reception".into(),
+            receiver
+        });
+        std::thread::spawn(move||{
+            let result=(||->Result<serde_json::Value,String>{
+                // Re-run the same native dealer recognition and shipment-aware
+                // quote at approval time. A changed master revision or changed
+                // line/freight result must never confirm the stale screen.
+                let prepared=native_order_change::prepare(
+                    gateway.as_ref(),&source,&target_id
+                )?;
+                let fresh_quote=prepared.pricing_preview.as_ref()
+                    .ok_or("운영 거래처 기준의 가격 계산 결과가 없습니다.")?;
+                if !confirmable_reception_quote(&source,fresh_quote) ||
+                    fresh_quote!=&expected_quote ||
+                    prepared.client_id!=target_id{
+                    return Err("거래처·상품·운임 기준 또는 계산 결과가 변경되었습니다. 거래처를 다시 선택해 최신 금액을 확인하세요.".into());
+                }
+                let order=prepared.order
+                    .ok_or("정식 주문으로 변환할 Rust 주문 데이터가 없습니다.")?;
+                if order.get("id").and_then(serde_json::Value::as_str)
+                        !=Some(source.id.as_str()) ||
+                   order.get("raw").and_then(serde_json::Value::as_str)
+                        !=Some(source.raw.as_str()) ||
+                   order.get("clientId").and_then(serde_json::Value::as_str)
+                        !=Some(target_id.as_str()) ||
+                   order.get("orderType").and_then(serde_json::Value::as_str)
+                        !=Some(source.order_type.as_str()){
+                    return Err("최종 주문 데이터가 현재 미확정 발주서와 일치하지 않습니다.".into());
+                }
+                let args=serde_json::json!({
+                    "groupId":worker_group_id,
+                    "draft":order
+                });
+                gateway.mutate_workflow(
+                    expected_revision,"advance_group",args
+                )
+            })();
+            let _=sender.send(result);
+            context.request_repaint();
+        });
+    }
+
     /// Run an approved group mutation off the egui frame. The gateway calls
     /// native Rust rules, writes v2 SQLite under revision CAS and rereads it.
     /// No preview receipt or copied UI state is ever used as a write source.
@@ -7580,7 +7720,8 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
             Ok(Ok(_saved))=>{
                 self.workflow_action=None;
                 if matches!(action.as_str(),
-                    "advance_group"|"confirm_group_payment"|"process_group"
+                    "advance_group"|"confirm_group_payment"|"process_group"|
+                    "confirm_reception"
                 ){
                     self.workflow_stage_deadlines.insert(
                         group_id.clone(),Instant::now()+Duration::from_secs(2)
@@ -7596,6 +7737,28 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                         self.workflow_ui.folded=None;
                     }
                 }
+                if action=="confirm_reception"{
+                    let order_id=group_id.strip_prefix("group:").unwrap_or("").to_owned();
+                    if !order_id.is_empty(){
+                        let was_active=self.active_id.as_deref()==Some(order_id.as_str());
+                        self.drafts.retain(|draft|draft.id!=order_id);
+                        if was_active{
+                            self.active_id=None;
+                            self.raw_source.clear();
+                            self.source_editing=false;
+                            self.direct_source_entry=false;
+                            self.requested_recipient_focus=None;
+                            self.clear_source_analysis();
+                            if let Some(next)=self.drafts.last().map(|draft|draft.id.clone()){
+                                self.select_reception(&next,ctx);
+                            }else{
+                                self.queue_source_save();
+                            }
+                        }else{
+                            self.queue_source_save();
+                        }
+                    }
+                }
                 self.workflow_ui.stop_preview();
                 self.workflow_snapshot=None;
                 self.workflow_receiver=None;
@@ -7605,6 +7768,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                     ctx,"reception.workflow",floating_notice::Tone::Success,
                     match action.as_str(){
                         "advance_group"=>"업무 단계를 진행했습니다.",
+                        "confirm_reception"=>"주문 확인을 완료하고 정식 주문으로 확정했습니다.",
                         "confirm_group_payment"=>"입금 확인 단계를 완료했습니다.",
                         "undo_group"=>"이전 단계로 변경했습니다.",
                         "process_group"=>"Excel 관리 대기열로 이관했습니다.",
@@ -8022,6 +8186,10 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
             }
             Some(workflow_board_ui::Event::DeletePending(id))=>{
                 self.workflow_dialog=Some(WorkflowDialog::DeletePending(id));
+            }
+            Some(workflow_board_ui::Event::ConfirmDraft(id))=>{
+                self.workflow_ui.stop_preview();
+                self.start_draft_confirmation(&id,ui.ctx());
             }
             Some(workflow_board_ui::Event::SelectPending(id))=>{
                 self.workflow_ui.selection=None;

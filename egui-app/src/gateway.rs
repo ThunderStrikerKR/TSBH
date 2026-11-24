@@ -569,6 +569,48 @@ impl BandoGateway for LocalGateway {
         if before["revision"].as_u64()!=Some(expected_revision){
             return Err("다른 작업에서 주문이 변경되었습니다. 새로고침 후 다시 진행하세요.".into());
         }
+        // An unconfirmed egui draft may enter the operational ledger ONLY
+        // through the explicit first-stage approval. The full Order is a
+        // fresh native quote result, not the isolated WorkingReception row.
+        if let Some(draft)=args.get("draft"){
+            if !draft.is_object() || group_delete || action!="advance_group"{
+                return Err("미확정 발주서는 첫 번째 주문 확인 단계에서만 확정할 수 있습니다.".into());
+            }
+            let draft_id=draft.get("id").and_then(Value::as_str)
+                .filter(|id|!id.trim().is_empty())
+                .ok_or("미확정 발주서 ID가 없습니다.")?;
+            let expected_group=format!("group:{draft_id}");
+            if args["groupId"].as_str()!=Some(expected_group.as_str()){
+                return Err("미확정 발주서와 업무 묶음 ID가 일치하지 않습니다.".into());
+            }
+            if before["orders"].as_array().is_some_and(|orders|orders.iter().any(|order|
+                order.get("id").and_then(Value::as_str)==Some(draft_id)
+            )){
+                return Err("이미 운영 주문으로 등록된 발주서입니다.".into());
+            }
+            if draft["receptionVersion"].as_i64()!=Some(1) ||
+                draft.get("confirmedAt").is_some_and(|value|!value.is_null()) ||
+                draft["pricesLocked"]==Value::Bool(true) ||
+                !["AGENCY","DEALER"].contains(&draft["orderType"].as_str().unwrap_or("")){
+                return Err("정식 확정 대상이 아닌 미확정 발주서입니다.".into());
+            }
+            if draft["recipients"].as_array().is_none_or(|rows|rows.is_empty()){
+                return Err("수취인별 배송 건이 없어 주문을 확정할 수 없습니다.".into());
+            }
+            let client_id=draft["clientId"].as_str()
+                .filter(|id|!id.trim().is_empty())
+                .ok_or("거래처를 먼저 선택하세요.")?;
+            let client_exists=before["clients"].as_array().is_some_and(|clients|
+                clients.iter().any(|client|
+                    client["id"].as_str()==Some(client_id) &&
+                    client.get("deletedAt").is_none_or(Value::is_null) &&
+                    client["active"]!=Value::Bool(false)
+                )
+            );
+            if !client_exists{
+                return Err("선택한 거래처가 현재 운영 명단에 없습니다. 다시 선택하세요.".into());
+            }
+        }
         let now=chrono::Utc::now().to_rfc3339();
         let event_id=uuid::Uuid::new_v4().to_string();
         let actor=before["settings"]["operatorName"].as_str()
@@ -592,9 +634,16 @@ impl BandoGateway for LocalGateway {
             }
             let event_ids=(0..count).map(|_|
                 uuid::Uuid::new_v4().to_string()).collect::<Vec<_>>();
-            let reconciled=rules::execute("reconcile_workflow",serde_json::json!({
+            let mut reconcile_payload=serde_json::json!({
                 "state":&before,"now":now,"eventIds":event_ids
-            }))?;
+            });
+            // The reconciliation reducer overlays this one employee-approved
+            // draft in memory, creates its source/group/shipments, then the
+            // existing first-stage reducer confirms it in the SAME SQLite CAS.
+            if let Some(draft)=args.get("draft"){
+                reconcile_payload["draft"]=draft.clone();
+            }
+            let reconciled=rules::execute("reconcile_workflow",reconcile_payload)?;
             let prepared=reconciled.get("state")
                 .ok_or("업무 재검증 결과에 상태가 없습니다.")?;
             let next_step=if action=="advance_group"{

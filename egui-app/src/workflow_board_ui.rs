@@ -61,6 +61,7 @@ pub struct BoardUi {
 }
 pub enum Event {
     SelectPending(String),
+    ConfirmDraft(String),
     SelectPendingRecipient(PendingTarget),
     SelectShipment(Selection),
     ToggleGroup(String),
@@ -857,6 +858,33 @@ fn pending_dealer_title(
         .to_owned()
 }
 
+/// A selected dealer is not enough to approve an order. The quote must belong
+/// to this exact source/client and include the native quote structures. The
+/// first stage does not require freight settlement; that is a later step.
+fn pending_quote_ready(draft:&WorkingReception)->bool{
+    let Some(client_id)=draft.client_id.as_deref()
+        .filter(|id|!id.trim().is_empty()) else{return false;};
+    let source_ready=if draft.raw.trim().is_empty(){
+        draft.manual_model.as_ref().is_some_and(|model|
+            model.get("mode").and_then(serde_json::Value::as_str)==Some("DIRECT") &&
+            model.get("sourceRaw").and_then(serde_json::Value::as_str)==Some("")
+        )
+    }else{
+        draft.analysis_raw.as_deref()==Some(draft.raw.as_str()) &&
+            draft.analysis_evidence.is_some()
+    };
+    let Some(quote)=draft.pricing_preview.as_ref() else{return false;};
+    source_ready &&
+        quote.get("orderId").and_then(serde_json::Value::as_str)==Some(draft.id.as_str()) &&
+        quote.get("sourceRaw").and_then(serde_json::Value::as_str)==Some(draft.raw.as_str()) &&
+        quote.get("orderType").and_then(serde_json::Value::as_str)==Some(draft.order_type.as_str()) &&
+        quote.get("clientId").and_then(serde_json::Value::as_str)==Some(client_id) &&
+        quote.get("authorityRevision").and_then(serde_json::Value::as_u64).is_some() &&
+        quote.get("linePrices").and_then(serde_json::Value::as_array).is_some() &&
+        quote.get("freightLines").and_then(serde_json::Value::as_array).is_some() &&
+        quote.get("pendingRecipients").and_then(serde_json::Value::as_array).is_some()
+}
+
 /// Both pending read-only panes and workflow rows resolve recipient hover
 /// from the same order-scoped link, never from matching display names.
 pub fn visible_pending_recipient<'a>(
@@ -871,7 +899,7 @@ pub fn visible_pending_recipient<'a>(
 
 fn pending_frame(
     ui:&mut Ui,draft:&WorkingReception,selected:bool,open:bool,in_preview:bool,
-    dealer_name:&str,committed_recipient:Option<&str>,
+    writable:bool,dealer_name:&str,committed_recipient:Option<&str>,
     preview:Option<&PendingTarget>,linked_selection:Option<(&str,&str)>,
     hovered_pending:&mut Option<PendingTarget>
 )->Option<Event>{
@@ -893,7 +921,15 @@ fn pending_frame(
         // A corrected/manual working receipt is the active view. The first
         // OCR recognition remains immutable audit evidence, not the display
         // source for recipient IDs or product quantities.
-        let recipients=if draft.analysis_raw.as_deref()==Some(draft.raw.as_str()){
+        let recipients=if draft.raw.trim().is_empty() &&
+            draft.manual_model.as_ref().is_some_and(|model|
+                model.get("mode").and_then(serde_json::Value::as_str)==Some("DIRECT")
+            ){
+            draft.manual_model.as_ref()
+                .and_then(|model|model.pointer("/model/rows"))
+                .and_then(|value|value.as_array())
+                .map(Vec::as_slice).unwrap_or(&[])
+        }else if draft.analysis_raw.as_deref()==Some(draft.raw.as_str()){
             draft.manual_model.as_ref()
                 .and_then(|model|model.pointer("/model/rows"))
                 .and_then(|value|value.as_array())
@@ -905,12 +941,34 @@ fn pending_frame(
                     .and_then(|value|value.as_array()))
                 .map(Vec::as_slice).unwrap_or(&[])
         }else{&[]};
-        // Keep the familiar workflow action slot, but dealer matching is
-        // fully automatic and never a manually executable stage.
-        let _=workflow_action_line(
-            ui,bottom,&draft.id,recipients.len(),None,None,
-            Some("거래처 확인"),false,false,in_preview
+        let has_client=draft.client_id.as_deref()
+            .is_some_and(|id|!id.trim().is_empty());
+        let quote_ready=pending_quote_ready(draft);
+        let quote=draft.pricing_preview.as_ref();
+        let total=if quote_ready{
+            quote.and_then(|value|value.get("total"))
+                .and_then(serde_json::Value::as_i64)
+        }else{None};
+        let button_text=if !has_client{
+            Some("거래처 확인")
+        }else if draft.order_type=="RETAIL"{
+            None
+        }else if quote_ready{
+            Some("주문 확인 완료")
+        }else{
+            Some("금액 미확정")
+        };
+        // A valid selected-client quote exposes the explicit first stage even
+        // when freight/total is pending. Rust blocks only the issues assigned
+        // to this stage; freight and payment remain later workflow steps.
+        let (confirm_clicked,_,_)=workflow_action_line(
+            ui,bottom,&draft.id,recipients.len(),total,None,
+            button_text,quote_ready && writable && draft.order_type!="RETAIL",
+            false,in_preview
         );
+        if confirm_clicked{
+            event=Some(Event::ConfirmDraft(draft.id.clone()));
+        }
         if open{
             workflow_details(ui,|ui|{
                 components::soft_divider(ui);
@@ -1042,7 +1100,7 @@ pub fn show(
                 ui.available_width()));
         }
         if let Some(value)=pending_frame(
-            ui,draft,selected,open,false,&name,
+            ui,draft,selected,open,false,writable,&name,
             if selected{active_recipient_id}else{None},
             state.pending_visible.as_ref(),
             linked_selection,
@@ -1072,7 +1130,7 @@ pub fn show(
             overlay_ui.set_min_width(width);
             overlay_ui.set_max_width(width);
             overlay_event=pending_frame(
-                overlay_ui,&draft,false,true,true,&name,None,
+                overlay_ui,&draft,false,true,true,writable,&name,None,
                 state.pending_visible.as_ref(),linked_selection,&mut overlay_hover
             );
         });
@@ -1224,12 +1282,65 @@ mod pending_matching_tests {
             egui::CentralPanel::default().show(ctx,|ui|{
                 let mut hovered=None;
                 tapped=pending_frame(
-                    ui,&draft,false,false,false,"확인된 거래처",None,None,
+                    ui,&draft,false,false,false,false,"확인된 거래처",None,None,
                     None,&mut hovered
                 );
             });
         });
         assert!(tapped.is_none());
+    }
+
+    #[test]
+    fn selected_dealer_exposes_first_stage_without_waiting_for_freight_total(){
+        let raw="테스트 주문";
+        let mut draft=WorkingReception{
+            id:"egui-pending-test".to_owned(),
+            raw:raw.to_owned(),
+            order_type:"AGENCY".to_owned(),
+            source_input_method:None,
+            last_input_method:None,
+            analysis_raw:Some(raw.to_owned()),
+            analysis_evidence:Some(serde_json::json!({"recipients":[{}]})),
+            analysis_view:None,
+            client_match:None,
+            chat_handle:None,
+            chat_title:None,
+            client_id:Some("verified-client".to_owned()),
+            client_selection:Some("MANUAL".to_owned()),
+            pricing_preview:Some(serde_json::json!({
+                "orderId":"egui-pending-test",
+                "sourceRaw":raw,
+                "orderType":"AGENCY",
+                "clientId":"verified-client",
+                "authorityRevision":7,
+                "total":33000,
+                "linePrices":[{"amount":30000}],
+                "freightLines":[{"billableCharge":3000}],
+                "pendingRecipients":[]
+            })),
+            working_version:None,
+            working_synced:false,
+            manual_model:None,
+            edit_history:Vec::new()
+        };
+        assert!(pending_quote_ready(&draft));
+        draft.pricing_preview.as_mut().unwrap()["total"]=serde_json::Value::Null;
+        draft.pricing_preview.as_mut().unwrap()["pendingRecipients"]=
+            serde_json::json!([{"recipientId":"r1","freight":true}]);
+        assert!(pending_quote_ready(&draft),
+            "freight settlement is not a prerequisite for first-stage confirmation");
+
+        draft.pricing_preview.as_mut().unwrap()["sourceRaw"]=
+            serde_json::json!("다른 원문");
+        assert!(!pending_quote_ready(&draft));
+        draft.pricing_preview.as_mut().unwrap()["sourceRaw"]=serde_json::json!(raw);
+        draft.pricing_preview.as_mut().unwrap()["clientId"]=
+            serde_json::json!("another-client");
+        assert!(!pending_quote_ready(&draft));
+        draft.pricing_preview.as_mut().unwrap()["clientId"]=
+            serde_json::json!("verified-client");
+        draft.pricing_preview.as_mut().unwrap()["freightLines"]=serde_json::Value::Null;
+        assert!(!pending_quote_ready(&draft));
     }
 }
 

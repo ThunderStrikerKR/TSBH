@@ -158,6 +158,137 @@ fn native_draft_preview_and_reconcile_are_read_only_against_relational_sqlite() 
 }
 
 #[test]
+fn native_unconfirmed_draft_first_stage_confirmation_commits_as_one_order() {
+    let (isolated,mut conn)=IsolatedDatabase::open();
+    let mut initial=get_snapshot(&conn).expect("initial relational SQLite snapshot");
+    let product_id=initial["products"][0]["id"].as_str().unwrap().to_owned();
+    let variant_id=initial["products"][0]["variants"][0]["id"].as_str().unwrap().to_owned();
+    // The seed is intentionally catalog-only. Give this isolated fixture one
+    // valid priced variant and one existing operational client.
+    initial["products"][0]["variants"][0]["wholesale"]=json!(30000);
+    let client=json!({
+        "id":"client:unconfirmed-draft",
+        "name":"합성 미확정 거래처",
+        "displayName":"합성 미확정 거래처",
+        "tier":"wholesale",
+        "payment":"POSTPAID",
+        "shippingFeeExcluded":true,
+        "defaultApplyVat":false,
+        "address":"서울특별시 강남구 테헤란로 123",
+        "phone":"02-1234-5678",
+        "mobile":"",
+        "preferredAccountId":"",
+        "overrides":{},
+        "active":true
+    });
+    initial["clients"].as_array_mut().unwrap().push(client.clone());
+    let saved=write_snapshot(&mut conn,initial,0,true)
+        .expect("synthetic client and price fixture must persist");
+
+    let at="2026-11-25T10:00:00+09:00";
+    let raw="합성 상품 1개 수취인 김테스트";
+    let draft=json!({
+        "id":"order:unconfirmed-draft",
+        "receptionVersion":1,
+        "clientId":client["id"],
+        "orderType":"AGENCY",
+        "raw":raw,
+        "createdAt":at,
+        "updatedAt":at,
+        "confirmedAt":null,
+        "status":"REVIEW",
+        "recipients":[{
+            "id":"recipient:unconfirmed-draft",
+            "name":"김테스트",
+            "address":"서울특별시 강남구 테헤란로 123, 4층",
+            "addressStatus":"COMPLETE",
+            "phone":"010-1234-5678",
+            "mobile":"",
+            "note":"",
+            "freightCode":"010",
+            "dispatchOrigin":"FACTORY",
+            "vatDefault":false,
+            "vatOverride":false,
+            "items":[{
+                "id":"item:unconfirmed-draft",
+                "productId":product_id,
+                "variantId":variant_id,
+                "name":"합성 상품",
+                "color":"색상 미표기",
+                "quantity":1,
+                "quantityConfirmed":true,
+                "unitPrice":30000,
+                "manualUnitPrice":30000,
+                "origin":"FACTORY"
+            }]
+        }],
+        "applyVat":false,
+        "freightCode":"010",
+        "shippingFee":0,
+        "shippingVersion":null,
+        "vatAmount":null,
+        "pricesLocked":false,
+        "clientSnapshot":null,
+        "senderSnapshot":null,
+        "receipt":null,
+        "confirmationSnapshot":null,
+        "rawCorrections":[]
+    });
+    let reconcile_ids=(0..256).map(|i|format!("draft-reconcile-{i}"))
+        .collect::<Vec<_>>();
+    let preview=rust("reconcile_workflow",json!({
+        "state":saved,"draft":draft,"now":at,"eventIds":reconcile_ids
+    })).expect("native reconciliation must project the selected dealer draft");
+    let prepared=preview["state"].clone();
+    assert_eq!(prepared["orders"].as_array().unwrap().len(),1);
+    assert!(prepared["orders"][0]["confirmedAt"].is_null(),
+        "dealer selection and pricing alone must not confirm the order");
+    assert_eq!(prepared["workflow"]["groups"][0]["id"],"group:order:unconfirmed-draft");
+    assert_eq!(prepared["workflow"]["shipments"][0]["step"],0);
+
+    let audit_ids=(0..2048).map(|i|format!("draft-confirm-audit-{i}"))
+        .collect::<Vec<_>>();
+    let decision=rust("apply_workflow_action",json!({
+        "state":prepared,
+        "action":"advance_group",
+        "groupId":"group:order:unconfirmed-draft",
+        "eventId":"event:unconfirmed-draft-confirmation",
+        "now":at,
+        "actor":"검증 담당자",
+        "auditEventIds":audit_ids,
+        "newGroupId":"group:unused-new",
+        "confirmationId":"confirmation:unconfirmed-draft",
+        "noticeId":"notice:unconfirmed-draft"
+    })).expect("only the explicit first-stage action confirms the draft");
+    let confirmed=decision["state"].clone();
+    assert_eq!(decision["step"],1);
+    assert_eq!(confirmed["orders"][0]["confirmedAt"],at);
+    assert_eq!(confirmed["orders"][0]["pricesLocked"],true);
+    assert_eq!(confirmed["orders"][0]["clientSnapshot"]["id"],client["id"]);
+    assert_eq!(confirmed["orders"][0]["receipt"]["original"],raw);
+    assert_eq!(confirmed["workflow"]["shipments"][0]["step"],1);
+    rust("validate_workflow",json!({
+        "state":confirmed,"before":saved
+    })).expect("first-stage confirmation and audit must validate");
+
+    let committed=write_snapshot(
+        &mut conn,confirmed,saved["revision"].as_u64().unwrap(),true
+    ).expect("confirmed order and first workflow stage must commit atomically");
+    assert_eq!(committed["revision"],saved["revision"].as_u64().unwrap()+1);
+    assert_eq!(get_snapshot(&conn).unwrap(),committed);
+    let count:i64=conn.query_row(
+        "SELECT COUNT(*) FROM core_orders WHERE id='order:unconfirmed-draft'",
+        [],|row|row.get(0)
+    ).unwrap();
+    assert_eq!(count,1);
+    drop(conn);
+    let reopened=initialize_database(&isolated.root.join("state.sqlite")).unwrap();
+    assert_eq!(get_snapshot(&reopened).unwrap(),committed);
+    assert_eq!(committed["workflow"]["shipments"][0]["step"],1);
+    drop(reopened);
+}
+
+#[test]
 fn native_postpaid_stage_approval_audit_and_revision_survive_sqlite_reopen() {
     let (isolated, mut conn) = IsolatedDatabase::open();
     let source = stage_three(&get_snapshot(&conn).unwrap(), "POSTPAID");

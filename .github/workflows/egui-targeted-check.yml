@@ -133,6 +133,8 @@ jobs:
         run: cargo test --manifest-path src-tauri/Cargo.toml --lib backup_manager::tests -- --nocapture
       - name: Verify relational SQLite migration, preserved before-images and ID scoping
         run: cargo test --manifest-path src-tauri/Cargo.toml --lib relational_store::tests -- --nocapture
+      - name: Verify unconfirmed draft becomes a locked order only after first-stage approval
+        run: cargo test --manifest-path src-tauri/Cargo.toml --lib workflow_sqlite_integration_tests::native_unconfirmed_draft_first_stage_confirmation_commits_as_one_order -- --nocapture
       - name: Verify recipient hover uses the production typography context
         run: cargo test --manifest-path egui-app/Cargo.toml recipient_source_reverse_hover_tests -- --nocapture
       - name: Verify pending workflow card uses the production typography context

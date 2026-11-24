@@ -17,6 +17,9 @@ pub struct ChangeResult {
     // None means a deliberately isolated manual identity link. Never
     // present it as a priced native order or invent customer-level costs.
     pub pricing_preview: Option<Value>,
+    /// Ephemeral full native Order, returned only to the explicit confirmation
+    /// worker. It is never copied into the isolated preview SQLite draft.
+    pub order: Option<Value>,
     // The existing employee-corrected model rebased to the selected dealer.
     // This is persisted only into the isolated draft, never the business DB.
     pub manual_model: Option<Value>,
@@ -119,6 +122,7 @@ pub fn prepare_cancellable(
         return Ok(ChangeResult {
             client_id:target_id.to_owned(),
             pricing_preview:None,
+            order:None,
             manual_model,
             recognition:None,
         });
@@ -169,6 +173,7 @@ pub fn prepare_cancellable(
             }
             return Ok(ChangeResult{
                 client_id:target_id.to_owned(),pricing_preview:None,
+                order:None,
                 manual_model:Some(rebind_manual_model(saved,target_id,&model["rows"])?),
                 recognition:None,
             });
@@ -240,6 +245,7 @@ pub fn prepare_cancellable(
         });
         Ok(ChangeResult{
             client_id:target_id.to_owned(),pricing_preview:Some(preview),
+            order:Some(order.clone()),
             manual_model:Some(manual_model),recognition:None
         })
     }
@@ -357,6 +363,7 @@ pub fn prepare_cancellable(
         return Ok(ChangeResult {
             client_id:target_id.to_owned(),
             pricing_preview:Some(preview),
+            order:Some(order.clone()),
             manual_model:Some(manual_model),
             recognition:Some(selected_recognition),
         });
@@ -405,6 +412,7 @@ pub fn prepare_cancellable(
     Ok(ChangeResult {
         client_id:target_id.to_owned(),
         pricing_preview:Some(price_summary),
+        order:Some(order.clone()),
         manual_model:None,
         recognition:Some(evidence),
     })
@@ -452,6 +460,8 @@ mod manual_rebind_tests {
             edit_history:vec![]
         };
         let result=prepare(&PreviewGateway,&source,"new").unwrap();
+        assert_eq!(result.order.as_ref().and_then(|order|order["id"].as_str()),
+            Some("order-1"),"the explicit confirmation path needs the exact native Order");
         assert_eq!(result.recognition,Some(json!({
             "recipients":[],"candidates":[]
         })),"the selected-client recognition must accompany the price quote");
@@ -491,6 +501,8 @@ mod manual_rebind_tests {
             edit_history:vec![]
         };
         let result=prepare(&PreviewGateway,&source,"new").unwrap();
+        assert_eq!(result.order.as_ref().and_then(|order|order["id"].as_str()),
+            Some("egui-direct-order"));
         assert!(result.recognition.is_none());
         assert_eq!(result.manual_model.as_ref().unwrap()["mode"],"DIRECT");
         assert_eq!(result.manual_model.as_ref().unwrap()["clientId"],"new");
