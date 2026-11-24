@@ -6116,7 +6116,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                         pane,"수취인별 주문 정보",recipient_height,
                         |header|{
                             next_ship=components::reception_recipient_navigator(
-                                header,name,index,count
+                                header,name,index,count,true
                             );
                         },|ui|{
                         egui::ScrollArea::vertical()
@@ -6358,11 +6358,11 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                     Self::section_with_header(
                         pane,"수취인별 주문 정보",recipient_height,
                         |header|{
-                            if recipients.len()>1{
+                            if !recipients.is_empty(){
                                 let name=recipient.map(|row|
                                     reception_service::text(row,"name")).unwrap_or("");
                                 if let Some(next)=components::reception_recipient_navigator(
-                                    header,name,index,recipients.len()){
+                                    header,name,index,recipients.len(),true){
                                     next_target=recipients.get(next)
                                         .and_then(|row|row["id"].as_str())
                                         .map(|id|workflow_board_ui::PendingTarget{
@@ -6622,7 +6622,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
             && self.vat_dialog.is_none();
         let recipient_nav=self.analysis.as_ref()
             .map(|analysis|reception_service::recipients(analysis))
-            .filter(|recipients|recipients.len()>1)
+            .filter(|recipients|!recipients.is_empty())
             .map(|recipients|{
                 let index=visible_index.min(recipients.len()-1);
                 let name=reception_service::text(&recipients[index],"name")
@@ -6643,7 +6643,12 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                         // separate Edit/History header controls are redundant.
                         if let Some((name,index,total))=recipient_nav.as_ref(){
                             next_recipient=components::reception_recipient_navigator(
-                                header,name,*index,*total
+                                header,name,*index,*total,
+                                self.inline_change.is_none()
+                                    && self.working_sync.is_none()
+                                    && self.manual_workspace.is_none()
+                                    && self.product_picker.is_none()
+                                    && self.item_editor.is_none()
                             );
                         }
                     },|ui|{
