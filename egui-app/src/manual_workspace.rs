@@ -2660,7 +2660,6 @@ impl ManualWorkspace {
                         decision.body(|ui|{
                             ui.label(&removal_message);
                         });
-                        });
                         decision.actions(|actions|{
                             if theme::action(actions,"확인",ButtonRole::Danger,true).clicked(){
                                 confirm=true;
