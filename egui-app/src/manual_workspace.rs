@@ -10,7 +10,8 @@ use eframe::egui::{self,Context};
 use serde_json::{json,Value};
 use crate::{
     cell_navigation::CellNavigationKey,
-    gateway::{BandoGateway,ReadOperation},
+    gateway::{BandoGateway,ReadOperation,
+        rules::{scope_manual_model_ids,scope_recognition_rows_for_order}},
     preview_store::WorkingReception,
     theme::{self,ButtonRole},
     typography,components,source_highlight,
@@ -52,18 +53,24 @@ pub fn native_order(
         .ok_or("Rust 발주 초기화 결과가 올바르지 않습니다.")?.clone();
     order["raw"]=json!(row.raw);
     order["analysisRaw"]=json!(row.raw);
-    order["analysisEvidence"]=recognition.get("evidence")
+    let mut candidates=recognition.get("candidates")
         .cloned().unwrap_or_else(||json!([]));
-    order["recipients"]=recognition.get("recipients")
+    let mut recipients=recognition.get("recipients")
         .cloned().unwrap_or_else(||json!([]));
     if let Some(saved)=row.manual_model.as_ref() {
-        let model=saved.get("model").filter(|v|v.is_object())
-            .ok_or("저장된 수동 분류 작업본이 올바르지 않습니다.")?;
-        order["recipients"]=model.get("rows").cloned().unwrap_or_else(||json!([]));
+        let mut model=saved.get("model").filter(|v|v.is_object())
+            .cloned().ok_or("저장된 수동 분류 작업본이 올바르지 않습니다.")?;
+        scope_manual_model_ids(&row.id,&mut model)?;
+        recipients=model.get("rows").cloned().unwrap_or_else(||json!([]));
         order["manualClassification"]=json!({
             "blocks":model.get("blocks"),"assignments":model.get("assignments")
         });
     }
+    let recipient_rows=recipients.as_array_mut()
+        .ok_or("Rust 인식 수취인 목록이 올바르지 않습니다.")?;
+    scope_recognition_rows_for_order(&row.id,recipient_rows,&mut candidates)?;
+    order["analysisEvidence"]=candidates;
+    order["recipients"]=recipients;
     Ok(order)
 }
 
@@ -810,6 +817,9 @@ pub fn apply_inline(
     let mut model=previous.and_then(|v|v.get("model")).filter(|v|v.is_object())
         .cloned().or_else(||initialized.get("model").cloned())
         .ok_or("수취인 편집 작업본이 없습니다.")?;
+    // Old saved drafts may still contain provisional IDs. Normalize the rows
+    // and their assignment targets before the reducer can write them back.
+    scope_manual_model_ids(&source.id,&mut model)?;
     let keys=previous.and_then(|v|v.get("assignmentOrder"))
         .or_else(||initialized.get("assignmentOrder"))
         .and_then(Value::as_array).cloned().unwrap_or_default();
@@ -3832,6 +3842,59 @@ mod quote_reuse_tests {
     }
 }
 
+
+#[cfg(test)]
+mod inline_recognition_identity_tests{
+    use super::*;
+
+    #[test]
+    fn inline_edit_persists_order_scoped_recipient_and_item_ids(){
+        let gateway=crate::gateway::LocalGateway;
+        let raw="김가상".to_owned();
+        let recognition=json!({
+            "recipients":[{"id":"recognition:recipient:0","name":"김가상",
+                "address":"서울특별시 강남구 테헤란로 1","phone":"",
+                "mobile":"010-1111-2222","note":"","sources":[],
+                "items":[{"id":"recognition:item:0:0","raw":"709 1개",
+                    "name":"709","quantity":1,"quantityConfirmed":true,
+                    "productId":"p709","variantId":"v709","issues":[],
+                    "sources":[]}]}],
+            "candidates":[{"id":"candidate-1",
+                "recipientId":"recognition:recipient:0",
+                "itemId":"recognition:item:0:0"}],
+            "unassigned":[]
+        });
+        let source=WorkingReception{
+            id:"draft-identity".into(),raw:raw.clone(),order_type:"AGENCY".into(),
+            source_input_method:None,last_input_method:None,
+            analysis_raw:Some(raw),analysis_evidence:Some(recognition),
+            analysis_view:None,client_match:None,chat_handle:None,chat_title:None,
+            client_id:None,client_selection:None,pricing_preview:None,
+            working_version:None,working_synced:false,manual_model:None,
+            edit_history:Vec::new(),
+        };
+        let event=apply_inline(&gateway,&source,&InlineRequest{
+            recipient_id:"draft-identity:recognition:recipient:0".into(),
+            item_id:None,field:"note".into(),value:json!("직원 메모")
+        }).expect("inline cell edit");
+        let Event::Applied{order,model,..}=event else{
+            panic!("inline edit must return an applied model");
+        };
+        assert_eq!(order["recipients"][0]["id"],
+            "draft-identity:recognition:recipient:0");
+        assert_eq!(order["recipients"][0]["items"][0]["id"],
+            "draft-identity:recognition:item:0:0");
+        assert_eq!(model["rows"][0]["id"],
+            "draft-identity:recognition:recipient:0");
+        assert_eq!(model["rows"][0]["items"][0]["id"],
+            "draft-identity:recognition:item:0:0");
+        assert_eq!(order["analysisEvidence"][0]["recipientId"],
+            "draft-identity:recognition:recipient:0");
+        assert_eq!(order["analysisEvidence"][0]["itemId"],
+            "draft-identity:recognition:item:0:0");
+        assert_eq!(order["recipients"][0]["note"],"직원 메모");
+    }
+}
 
 #[cfg(test)]
 mod direct_input_workspace_tests{
