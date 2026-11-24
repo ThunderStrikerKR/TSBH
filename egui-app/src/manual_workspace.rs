@@ -1818,6 +1818,10 @@ impl ManualWorkspace {
                                 egui::Layout::top_down(egui::Align::Min),
                                 |source_ui|{
                                     theme::modal_nested_frame().show(source_ui,|panel|{
+                                        // The outer status/divider stack owns explicit
+                                        // spacing; restore the source card's own 8pt
+                                        // heading-to-document rhythm locally.
+                                        panel.spacing_mut().item_spacing.y=theme::SPACE_8;
                                         let source_frame_chrome=2.0*(
                                             theme::SPACE_8+theme::FRAME_STROKE_WIDTH
                                         );
@@ -3577,6 +3581,7 @@ mod manual_workspace_layout_tests{
             .next().expect("production source boundary");
         let render=production.split("pub fn show(").nth(1).unwrap();
         assert!(render.contains("components::reception_section_divider(ui);"));
+        assert!(render.contains("panel.spacing_mut().item_spacing.y=theme::SPACE_8;"));
         assert!(render.contains("ui.spacing_mut().item_spacing.x=theme::MANUAL_COLUMN_GAP;"));
         assert!(render.contains("manual_workspace_columns_height()"));
         assert!(render.contains(".fixed_size(manual_workspace_dialog_size(work_area))"));
