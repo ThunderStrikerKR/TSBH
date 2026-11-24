@@ -200,7 +200,7 @@ impl ItemEditor{
             components::decision_window(
                 "품목 삭제 확인","reception-item-delete-confirm",work_area
             ).constrain_to(work_area).show(ctx,|ui|{
-                if components::modal_header(ui,"품목 삭제 확인","닫기",!busy){
+                if components::modal_header(ui,"품목 삭제 확인","취소",!busy){
                     cancel=true;
                 }
                 let name=field(&self.initial,"name");
@@ -209,12 +209,8 @@ impl ItemEditor{
                 if let Some(error)=self.error.as_deref(){
                     ui.label(typography::status(error,theme::DANGER));
                 }
-                components::modal_action_row_split(ui,|left|{
-                    if theme::action(left,"취소",ButtonRole::Standard,!busy).clicked(){
-                        cancel=true;
-                    }
-                },|right|{
-                    if theme::action(right,"삭제",ButtonRole::Danger,!busy).clicked(){
+                components::modal_action_row(ui,|actions|{
+                    if theme::action(actions,"삭제",ButtonRole::Danger,!busy).clicked(){
                         remove=true;
                     }
                 });
