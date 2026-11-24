@@ -89,6 +89,77 @@ struct ManualCellTarget{
     field:String,
 }
 
+#[derive(Default)]
+struct ManualAssignmentGesture{
+    source:Option<String>,
+    cell:Option<ManualCellTarget>,
+    dragging:Option<String>,
+}
+
+impl ManualAssignmentGesture{
+    fn clear(&mut self){*self=Self::default();}
+    fn source_click(&mut self,id:String)->Option<(String,ManualCellTarget)>{
+        if let Some(cell)=self.cell.take(){
+            self.source=None;
+            Some((id,cell))
+        }else{
+            if self.source.as_deref()==Some(id.as_str()){self.source=None;}
+            else{self.source=Some(id);}
+            None
+        }
+    }
+    fn cell_click(&mut self,cell:ManualCellTarget)->Option<(String,ManualCellTarget)>{
+        if let Some(source)=self.source.take(){
+            self.cell=None;
+            Some((source,cell))
+        }else{
+            self.cell=Some(cell);
+            None
+        }
+    }
+    fn start_drag(&mut self,id:String){
+        self.clear();
+        self.dragging=Some(id);
+    }
+    fn finish_drag(&mut self,target:Option<ManualCellTarget>)->Option<(String,ManualCellTarget)>{
+        let id=self.dragging.take()?;
+        target.map(|cell|(id,cell))
+    }
+}
+
+fn manual_assignment_payload(
+    model:&Value,id:&str,target:&ManualCellTarget,pending:Option<&ManualCellTarget>
+)->Result<Value,&'static str>{
+    if model["assignments"].get(id).is_some(){
+        return Err("이미 배정된 원문입니다. 먼저 연결을 해제하세요.");
+    }
+    let block=list(model,"blocks").iter().find(|b|text(b,"id")==id)
+        .ok_or("원문 블록을 확인하세요.")?;
+    let field=text(block,"field");
+    if !manual_cell_allowed(pending,target) ||
+        !manual_source_assignment_allowed(false,None,pending.and_then(|c|c.item.as_deref()),field){
+        return Err("선택한 상품의 수량을 먼저 확정하세요.");
+    }
+    if !manual_cell_matches_source(target.item.is_some(),&target.field,field){
+        return Err("원문 항목과 같은 종류의 입력 셀을 선택하세요.");
+    }
+    let row=list(model,"rows").get(target.row).ok_or("배송 건을 확인하세요.")?;
+    let mut cell=json!({"recipientId":row.get("id"),"field":target.field});
+    if let Some(item)=target.item.as_ref(){
+        if !list(row,"items").iter().any(|v|text(v,"id")==item){
+            return Err("상품 셀을 확인하세요.");
+        }
+        cell["itemId"]=json!(item);
+    }
+    Ok(json!({"id":id,"cell":cell}))
+}
+
+/// Hit test uses the real shared cell Rect and viewport clip. The pointer may
+/// be captured by the source during a drag, so Response::hovered is not used.
+fn manual_assignment_drop_hit(ui:&egui::Ui,rect:egui::Rect,pointer:Option<egui::Pos2>)->bool{
+    ui.is_enabled() && pointer.is_some_and(|pos|rect.intersect(ui.clip_rect()).contains(pos))
+}
+
 fn item_quantity_pending(item:&Value)->bool{
     let has_product=item.get("productId").is_some_and(|value|!value.is_null()) ||
         !text(item,"name").trim().is_empty();
@@ -742,6 +813,7 @@ pub struct ManualWorkspace {
     selected_recipient:usize,
     selected_item:Option<String>,
     selected_field:String,
+    assignment_gesture:ManualAssignmentGesture,
     edit_text:String,
     focus_editor:bool,
     active_editor_id:Option<egui::Id>,
@@ -805,6 +877,7 @@ impl ManualWorkspace {
             assignment_order:Vec::new(),remote_rows:Vec::new(),view_quote:None,
             selected_recipient:0,
             selected_item:None,selected_field:"name".into(),
+            assignment_gesture:ManualAssignmentGesture::default(),
             edit_text:String::new(),focus_editor:false,
             active_editor_id:None,ime_preedit_active:false,
             row_count_text:"1".into(),
@@ -1252,6 +1325,7 @@ impl ManualWorkspace {
 
     fn action(&mut self,action:&str,extra:Value,ctx:&Context) {
         if self.busy(){return;}
+        self.assignment_gesture.clear();
         let Some(model)=self.model.clone() else{return};
         let order=self.base_order.clone().unwrap_or(Value::Null);
         let keys=self.assignment_order.clone();
@@ -1407,7 +1481,9 @@ impl ManualWorkspace {
         source_hover:&mut Option<source_highlight::LinkKey>,
     )->Option<Event> {
         self.poll();
+        if self.busy() || self.nested_modal_window_id().is_some(){self.assignment_gesture.clear();}
         if ctx.input(|input|input.modifiers.command && input.key_pressed(egui::Key::Z)){
+            self.assignment_gesture.clear();
             self.undo();
         }
         if let Some((order,quote,quote_error))=self.applied.take() {
@@ -1424,7 +1500,10 @@ impl ManualWorkspace {
             }
         }
         let mut open=true;
-        if ctx.input(|input|input.key_pressed(egui::Key::Escape)) {
+        if ctx.input(|input|input.key_pressed(egui::Key::Escape)) &&
+            (self.assignment_gesture.source.is_some() || self.assignment_gesture.dragging.is_some()){
+            self.assignment_gesture.clear();
+        }else if ctx.input(|input|input.key_pressed(egui::Key::Escape)) {
             match escape_action(
                 self.busy(),
                 self.product_dialog_open(),
@@ -1477,6 +1556,11 @@ impl ManualWorkspace {
         let mut source_did_scroll=false;
         let mut navigate_now:Option<CellNavigationKey>=None;
         let mut chosen:Option<(String,Value)>=None;
+        let mut source_clicked=None;
+        let mut clicked_target:Option<ManualCellTarget>=None;
+        let mut drop_target:Option<ManualCellTarget>=None;
+        let drag_pointer=ctx.input(|i|i.pointer.interact_pos());
+        let drag_released=ctx.input(|i|i.pointer.button_released(egui::PointerButton::Primary));
         let mut apply=false;
         let mut discard=false;
         let mut discard_confirmed=false;
@@ -1597,7 +1681,7 @@ impl ManualWorkspace {
                                             (height-2.0*theme::SPACE_8).max(0.0)
                                         );
                                         panel.label(typography::subsection_heading("발주 원문"))
-                                            .on_hover_text("원문 항목을 클릭해 선택한 배송 정보 셀과 연결하거나 해제합니다.");
+                                            .on_hover_text("원문과 셀을 어느 순서로든 클릭하거나 원문 블록을 셀로 드래그하세요. 배정된 원문은 클릭하면 해제됩니다.");
                                         egui::ScrollArea::vertical().id_salt("manual-source-blocks")
                                             .max_height((height-theme::SECTION_HEADER_HEIGHT
                                                 -2.0*theme::SPACE_8).max(0.0))
@@ -1605,53 +1689,17 @@ impl ManualWorkspace {
                                     let interaction=crate::manual_source_view::source_document(
                                         ui,&self.raw,&spans,&assigned_source_ids,
                                         selected_recipient_id.as_deref(),active_link.as_ref(),
-                                        scroll_link.as_ref(),!busy
+                                        scroll_link.as_ref(),!busy,
+                                        self.assignment_gesture.dragging.as_deref().or(self.assignment_gesture.source.as_deref())
                                     );
                                     hovered_source=interaction.hovered;
                                     source_did_scroll=interaction.did_scroll;
-                                    if let Some(id)=interaction.clicked_block {
-                                        let assigned=assignments.get(&id);
-                                        let source_field=blocks.iter()
-                                            .find(|block|text(block,"id")==id)
-                                            .map(|block|text(block,"field"))
-                                            .unwrap_or("");
-                                        let pending_item=pending_quantity_cell.as_ref()
-                                            .and_then(|cell|cell.item.as_deref());
-                                        let assigned_item=assigned
-                                            .and_then(|cell|cell.get("itemId"))
-                                            .and_then(Value::as_str);
-                                        if !manual_source_assignment_allowed(
-                                            assigned.is_some(),assigned_item,pending_item,source_field
-                                        ){
-                                            self.error=Some(
-                                                "선택한 상품의 수량을 먼저 확정하세요.".into()
-                                            );
-                                        }else if assigned.is_some(){
-                                            chosen=Some(("release_manual_block".into(),json!({
-                                                "id":id,"clear":true
-                                            })));
-                                        }else if let Some(row)=rows.get(self.selected_recipient){
-                                            if !manual_cell_matches_source(
-                                                self.selected_item.is_some(),
-                                                &self.selected_field,source_field
-                                            ){
-                                                self.error=Some(
-                                                    "원문 항목과 같은 종류의 입력 셀을 먼저 선택하세요.".into()
-                                                );
-                                            }else{
-                                                let mut cell=json!({
-                                                    "recipientId":row.get("id"),
-                                                    "field":self.selected_field
-                                                });
-                                                if let Some(item)=self.selected_item.as_ref() {
-                                                    cell["itemId"]=json!(item);
-                                                }
-                                                chosen=Some(("assign_manual_block".into(),json!({
-                                                    "id":id,"cell":cell
-                                                })));
-                                            }
+                                    if let Some(id)=interaction.drag_started_block {
+                                        if assignments.get(&id).is_none(){
+                                            self.assignment_gesture.start_drag(id);
                                         }
                                     }
+                                    source_clicked=interaction.clicked_block;
                                             });
                                     });
                                 },
@@ -1789,6 +1837,11 @@ impl ManualWorkspace {
                                                             );
                                                             for (field,response) in recipient_keys
                                                                 .into_iter().zip(responses.into_iter()){
+                                                                let target=ManualCellTarget{row:index,item:None,field:field.to_owned()};
+                                                                if self.assignment_gesture.dragging.is_some() &&
+                                                                    manual_assignment_drop_hit(fields,response.rect,drag_pointer){
+                                                                    drop_target=Some(target.clone());
+                                                                }
                                                                 let key=source_highlight::key(rid,rid,field);
                                                                 let selected=index==self.selected_recipient &&
                                                                     self.selected_item.is_none() &&
@@ -1807,18 +1860,15 @@ impl ManualWorkspace {
                                                                             &mut navigate_now
                                                                         );
                                                                     }
+                                                                    if editing.clicked(){clicked_target=Some(target.clone());}
                                                                     if editing.hovered(){hovered_detail=Some(key);}
                                                                 }else{
                                                                     if response.hovered(){
                                                                         hovered_detail=Some(key.clone());
                                                                     }
                                                                     if response.clicked(){
-                                                                        self.queue_cell_selection(
-                                                                            ManualCellTarget{
-                                                                                row:index,item:None,
-                                                                                field:field.to_owned()
-                                                                            },&mut submit_direct
-                                                                        );
+                                                                        clicked_target=Some(target.clone());
+                                                                        self.queue_cell_selection(target,&mut submit_direct);
                                                                     }
                                                                 }
                                                             }
@@ -1899,6 +1949,11 @@ impl ManualWorkspace {
                                                                     ("quantity",cells.quantity,&keys[1]),
                                                                     ("unitPrice",cells.amount,&keys[2])
                                                                 ]{
+                                                                    let target=ManualCellTarget{row:index,item:Some(item_id.to_owned()),field:field.to_owned()};
+                                                                    if self.assignment_gesture.dragging.is_some() &&
+                                                                        manual_assignment_drop_hit(items_ui,response.rect,drag_pointer){
+                                                                        drop_target=Some(target.clone());
+                                                                    }
                                                                     let selected=index==self.selected_recipient &&
                                                                         self.selected_item.as_deref()==Some(item_id) &&
                                                                         self.selected_field==field;
@@ -1939,6 +1994,7 @@ impl ManualWorkspace {
                                                                         }
                                                                         response
                                                                     };
+                                                                    if interaction.clicked(){clicked_target=Some(target);}
                                                                     // Keep the shared three-column table. Product replacement
                                                                     // and removal target the actual clicked native item, not
                                                                     // a separate selection-dependent toolbar.
@@ -2085,7 +2141,53 @@ impl ManualWorkspace {
                 });
             });
         if let Some(navigation)=navigate_now{
+            self.assignment_gesture.clear();
             self.move_selection(navigation);
+        }
+        // Resolve all gestures after both panes have been drawn. Never bypass
+        // the native assignment action or overwrite an uncommitted editor.
+        let gesture_allowed=!self.busy() && self.nested_modal_window_id().is_none()
+            && !submit_direct && self.edit_text==self.current_value()
+            && chosen.is_none() && lookup.is_none() && add_product.is_none() && remove_item.is_none();
+        if gesture_allowed{
+            let mut assignment=None;
+            if drag_released && self.assignment_gesture.dragging.is_some(){
+                assignment=self.assignment_gesture.finish_drag(drop_target);
+            }else if let Some(id)=source_clicked{
+                let assigned=self.model.as_ref().and_then(|m|m["assignments"].get(&id));
+                if let Some(cell)=assigned{
+                    let pending=self.pending_quantity_cell();
+                    if manual_source_assignment_allowed(true,cell.get("itemId").and_then(Value::as_str),
+                        pending.as_ref().and_then(|c|c.item.as_deref()),text(cell,"field")){
+                        chosen=Some(("release_manual_block".into(),json!({"id":id,"clear":true})));
+                    }else{self.error=Some("선택한 상품의 수량을 먼저 확정하세요.".into());}
+                    self.assignment_gesture.clear();
+                }else{
+                    assignment=self.assignment_gesture.source_click(id);
+                }
+            }else if let Some(target)=clicked_target{
+                assignment=self.assignment_gesture.cell_click(target);
+            }
+            if let Some((id,target))=assignment{
+                let pending=self.pending_quantity_cell();
+                let payload=self.model.as_ref().ok_or("수동 분류 모델이 없습니다.")
+                    .and_then(|m|manual_assignment_payload(m,&id,&target,pending.as_ref()));
+                match payload{
+                    Ok(payload)=>{
+                        self.select_cell(target.row,target.item,&target.field);
+                        chosen=Some(("assign_manual_block".into(),payload));
+                    }
+                    Err(error)=>{
+                        self.error=Some(error.into());
+                        self.assignment_gesture.source=Some(id);
+                    }
+                }
+            }
+        }else if drag_released{
+            self.assignment_gesture.clear();
+        }
+        if self.assignment_gesture.dragging.is_some(){
+            ctx.set_cursor_icon(egui::CursorIcon::Grabbing);
         }
         if let Some(rid)=add_product{
             if !self.busy() && !self.product_dialog_open() && self.edit_text==self.current_value(){
@@ -2463,6 +2565,39 @@ fn manual_hover_target(
 )->Option<source_highlight::LinkKey>{
     hovered_detail.or(hovered_source)
         .filter(|key|spans.iter().any(|span|span.key==*key))
+}
+
+#[cfg(test)]
+mod manual_assignment_gesture_tests{
+    use super::*;
+    fn target()->ManualCellTarget{ManualCellTarget{row:0,item:None,field:"name".into()}}
+    #[test]
+    fn both_click_orders_and_drag_resolve_same_native_target(){
+        let mut gesture=ManualAssignmentGesture::default();
+        assert!(gesture.source_click("block".into()).is_none());
+        assert_eq!(gesture.cell_click(target()),Some(("block".into(),target())));
+        assert!(gesture.cell_click(target()).is_none());
+        assert_eq!(gesture.source_click("block".into()),Some(("block".into(),target())));
+        gesture.start_drag("block".into());
+        assert_eq!(gesture.finish_drag(Some(target())),Some(("block".into(),target())));
+        gesture.start_drag("block".into());
+        assert!(gesture.finish_drag(None).is_none());
+        assert!(gesture.dragging.is_none());
+    }
+    #[test]
+    fn all_gestures_share_type_and_pending_quantity_guards(){
+        let model=json!({"rows":[{"id":"r","items":[{"id":"i"}]}],
+            "blocks":[{"id":"block","field":"name"}],"assignments":{}});
+        assert_eq!(manual_assignment_payload(&model,"block",&target(),None).unwrap(),
+            json!({"id":"block","cell":{"recipientId":"r","field":"name"}}));
+        let wrong=ManualCellTarget{row:0,item:None,field:"address".into()};
+        assert!(manual_assignment_payload(&model,"block",&wrong,None).is_err());
+        let pending=ManualCellTarget{row:0,item:Some("i".into()),field:"quantity".into()};
+        assert!(manual_assignment_payload(&model,"block",&target(),Some(&pending)).is_err());
+        let mut assigned=model.clone();
+        assigned["assignments"]["block"]=json!({"recipientId":"r","field":"name"});
+        assert!(manual_assignment_payload(&assigned,"block",&target(),None).is_err());
+    }
 }
 
 fn manual_cell_matches_source(

@@ -10,6 +10,7 @@ use crate::{source_highlight::{self,LinkKey,LinkedSpan},theme,typography};
 pub struct SourceInteraction {
     pub hovered:Option<LinkKey>,
     pub clicked_block:Option<String>,
+    pub drag_started_block:Option<String>,
     pub did_scroll:bool,
 }
 
@@ -26,6 +27,7 @@ pub fn source_document(
     active:Option<&LinkKey>,
     scroll_to:Option<&LinkKey>,
     enabled:bool,
+    selected_source:Option<&str>,
 )->SourceInteraction {
     let width=ui.available_width().max(1.0);
     let job=source_highlight::layout_manual(
@@ -36,7 +38,7 @@ pub fn source_document(
     let galley=ui.fonts_mut(|fonts|fonts.layout_job(job));
     let (rect,response)=ui.allocate_exact_size(
         egui::vec2(width,galley.size().y.max(theme::INPUT_HEIGHT)),
-        if enabled{Sense::click()}else{Sense::hover()},
+        if enabled{Sense::click_and_drag()}else{Sense::hover()},
     );
     let (fills,outlines)=source_highlight::block_shapes_manual(
         raw,&galley,rect.min,spans,selected_recipient,active,assigned_ids,
@@ -45,6 +47,16 @@ pub fn source_document(
     ui.painter().add(egui::Shape::Vec(fills));
     ui.painter().galley(rect.min,galley.clone(),theme::TEXT);
     ui.painter().add(egui::Shape::Vec(outlines));
+    // Selection is exact by native source ID, even if another span shares its LinkKey.
+    if let Some(span)=selected_source.and_then(|id|spans.iter().find(|s|s.source_id.as_deref()==Some(id))){
+        let (fill,outline)=source_highlight::block_shapes_manual(
+            raw,&galley,rect.min,std::slice::from_ref(span),selected_recipient,
+            Some(&span.key),assigned_ids,rect.intersect(ui.clip_rect())
+        );
+        ui.painter().add(egui::Shape::Vec(fill));
+        ui.painter().galley(rect.min,galley.clone(),theme::TEXT);
+        ui.painter().add(egui::Shape::Vec(outline));
+    }
 
     let mut result=SourceInteraction::default();
     // egui::Response::interact_pointer_pos() is None for a pure hover:
@@ -60,6 +72,14 @@ pub fn source_document(
                 )
             )
     }else{None};
+    if enabled && response.drag_started_by(egui::PointerButton::Primary){
+        // Resolve the block at press origin, not the current drag pointer.
+        result.drag_started_block=ui.input(|input|input.pointer.press_origin())
+            .and_then(|pointer|source_highlight::hovered_span_index_at_pointer(
+                raw,spans,&galley,rect.min,pointer
+            )).and_then(|index|spans.get(index))
+            .and_then(|span|span.source_id.clone());
+    }
     if enabled {
         if let Some(index)=hovered_index.and_then(|index|spans.get(index)){
             result.hovered=Some(index.key.clone());
@@ -101,7 +121,7 @@ mod tests {
                 ui.set_width(320.0);
                 *origin=ui.cursor().min;
                 interaction=source_document(
-                    ui,raw,spans,&HashSet::new(),None,None,None,enabled
+                    ui,raw,spans,&HashSet::new(),None,None,None,enabled,None
                 );
             });
         });
