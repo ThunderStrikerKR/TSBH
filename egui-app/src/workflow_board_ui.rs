@@ -527,13 +527,16 @@ fn money(amount:Option<i64>)->String{
 /// control's layer is the topmost layer at the pointer (never click through a
 /// modal or another foreground window).
 fn primary_release_inside(ui:&Ui,rect:Rect)->bool{
-    let release_pos=ui.ctx().input(|input|{
-        if input.pointer.button_clicked(egui::PointerButton::Primary){
-            input.pointer.interact_pos()
-        }else{None}
+    let click=ui.ctx().input(|input|{
+        if !input.pointer.button_clicked(egui::PointerButton::Primary){
+            return None;
+        }
+        let start=input.pointer.press_origin()?;
+        let end=input.pointer.interact_pos()?;
+        (rect.contains(start) && rect.contains(end)).then_some(end)
     });
-    release_pos.is_some_and(|pos|
-        rect.contains(pos) && ui.ctx().layer_id_at(pos)==Some(ui.layer_id())
+    click.is_some_and(|pos|
+        ui.ctx().layer_id_at(pos)==Some(ui.layer_id())
     )
 }
 fn workflow_primary_at(
