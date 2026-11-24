@@ -5858,7 +5858,7 @@ fn reception_item_row_with_mode(
         cells[0], ui.make_persistent_id(("item-cell", row_id, 0)),
         if editable{Sense::click()}else{Sense::hover()},
     ).on_hover_text(name);
-    let product = if editable { product.on_hover_cursor(egui::CursorIcon::Text) } else { product };
+    let product = if editable { product.on_hover_cursor(egui::CursorIcon::PointingHand) } else { product };
     let quantity = ui.interact(
         cells[1], ui.make_persistent_id(("item-cell", row_id, 1)),
         if editable{Sense::click()}else{Sense::hover()},

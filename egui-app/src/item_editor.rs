@@ -31,6 +31,18 @@ fn item_detail_photo_side(available_width:f32,work_height:f32)->f32{
         .max(ITEM_DETAIL_PHOTO_MIN)
 }
 
+/// Single product-click policy shared by both reception worksheets.
+#[derive(Clone,Copy,Debug,PartialEq,Eq)]
+pub enum ProductClickIntent{None,OpenDetail,SelectAssignmentTarget}
+
+pub fn product_click_intent(
+    clicked:bool,editable:bool,assignment_requested:bool
+)->ProductClickIntent{
+    if !clicked || !editable{ProductClickIntent::None}
+    else if assignment_requested{ProductClickIntent::SelectAssignmentTarget}
+    else{ProductClickIntent::OpenDetail}
+}
+
 pub enum Event{
     Closed,
     Apply(Value),
@@ -44,6 +56,7 @@ pub struct ItemEditor{
     pub client_id:String,
     initial:Value,
     initial_price:Option<i64>,
+    manual_draft:bool,
     replacement:Option<Value>,
     search:Option<ProductSearch>,
     original_catalog_product:Option<Value>,
@@ -63,13 +76,29 @@ impl ItemEditor{
         let item_id=field(&item,"id").to_owned();
         Self{
             order_id,source_raw,recipient_id,item_id,client_id,
-            initial:item,initial_price:price,replacement:None,
+            initial:item,initial_price:price,manual_draft:false,replacement:None,
             search:None,original_catalog_product:None,
             photo_receiver:None,photo_requested:false,
             photos:ProductImageCache::default(),
             confirm_delete:false,delete_only:false,confirm_discard:false,
             error:None,
         }
+    }
+    /// The draft may choose a product before quantity confirmation. It still
+    /// uses the same independent-variant validation as ordinary reception.
+    pub fn for_manual_draft(mut self)->Self{self.manual_draft=true;self}
+    pub fn top_window_id(&self)->&'static str{
+        if self.search.is_some(){"native-manual-product-search"}
+        else if self.confirm_delete || self.delete_only{"reception-item-delete-confirm"}
+        else if self.confirm_discard{"reception-item-discard-confirm"}
+        else{"reception-item-detail"}
+    }
+    pub fn escape(&mut self,busy:bool)->Option<Event>{
+        if busy{return None;}
+        if self.search.take().is_some(){return None;}
+        if self.confirm_delete{self.confirm_delete=false;return self.delete_only.then_some(Event::Closed);}
+        if self.confirm_discard{self.confirm_discard=false;return None;}
+        self.close()
     }
     pub fn is_same_target(&self,order_id:&str,raw:&str,rid:&str,iid:&str)->bool{
         self.order_id==order_id && self.source_raw==raw &&
@@ -93,7 +122,7 @@ impl ItemEditor{
             || variants.and_then(|v|v.first())
                 .map(|v|field(v,"id"))
                 !=Some(field(&self.initial,"variantId"));
-        valid_variant && quantity && product_changed
+        valid_variant && (quantity || self.manual_draft) && product_changed
     }
     fn close(&mut self)->Option<Event>{
         if self.replacement.is_some(){
@@ -321,7 +350,11 @@ impl ItemEditor{
                         }
                         if invalid_selection{
                             status_messages.push(
-                                "수량이 확정되고 판매 구성이 하나인 독립 상품만 적용할 수 있습니다.".to_owned()
+                                if self.manual_draft{
+                                    "판매 구성이 하나인 독립 상품만 적용할 수 있습니다."
+                                }else{
+                                    "수량이 확정되고 판매 구성이 하나인 독립 상품만 적용할 수 있습니다."
+                                }.to_owned()
                             );
                         }
                         if needs_customer{
@@ -460,6 +493,25 @@ mod tests{
         assert!(!editor.can_apply());
         editor.replacement=Some(json!({"id":"p2","name":"BD 709",
             "requiresOption":false,"variants":[{"id":"v2"},{"id":"v3"}]}));
+        assert!(!editor.can_apply());
+    }
+    #[test]
+    fn shared_click_intent_prioritizes_explicit_assignment_and_disabled_state(){
+        assert_eq!(product_click_intent(true,true,false),ProductClickIntent::OpenDetail);
+        assert_eq!(product_click_intent(true,true,true),ProductClickIntent::SelectAssignmentTarget);
+        assert_eq!(product_click_intent(true,false,true),ProductClickIntent::None);
+        assert_eq!(product_click_intent(false,true,false),ProductClickIntent::None);
+    }
+    #[test]
+    fn manual_draft_can_choose_independent_product_before_quantity_confirmation(){
+        let mut editor=dialog();
+        editor.initial["quantity"]=Value::Null;
+        editor.initial["quantityConfirmed"]=json!(false);
+        editor.replacement=Some(json!({"id":"p2","variants":[{"id":"v2"}]}));
+        assert!(!editor.can_apply());
+        editor=editor.for_manual_draft();
+        assert!(editor.can_apply());
+        editor.replacement=Some(json!({"id":"p2","requiresOption":true,"variants":[{"id":"v2"}]}));
         assert!(!editor.can_apply());
     }
     #[test]

@@ -74,6 +74,10 @@ jobs:
         run: cargo test --manifest-path egui-app/Cargo.toml manual_source_view::tests -- --nocapture
       - name: Verify both click orders and drag share native assignment validation
         run: cargo test --manifest-path egui-app/Cargo.toml manual_assignment_gesture_tests -- --nocapture
+      - name: Verify shared product click routing and manual draft detail policy
+        run: |
+          cargo test --manifest-path egui-app/Cargo.toml item_editor::tests -- --nocapture
+          cargo test --manifest-path egui-app/Cargo.toml reception_item_editor_integration_tests -- --nocapture
       - name: Verify existing reception source highlighting remains stable
         run: cargo test --manifest-path egui-app/Cargo.toml source_highlight::tests -- --nocapture
       - name: Verify manual arrow navigation follows visible worksheet rows

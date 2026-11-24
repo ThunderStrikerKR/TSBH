@@ -14,7 +14,7 @@ use crate::{
     preview_store::WorkingReception,
     theme::{self,ButtonRole},
     typography,components,source_highlight,
-    manual_product_search::{ProductSearch,Event as ProductEvent},
+    item_editor::{self,ItemEditor,ProductClickIntent},
 };
 
 fn text<'a>(value:&'a Value,key:&str)->&'a str {
@@ -826,7 +826,9 @@ pub struct ManualWorkspace {
     action_pending:bool,
     confirm_discard:bool,
     confirm_apply:bool,
-    product_search:Option<ProductSearch>,
+    item_detail:Option<ItemEditor>,
+    pending_item_detail:Option<(String,String)>,
+    detail_write_pending:bool,
     add_product_picker:Option<(String,crate::product_manager::ProductManager)>,
     item_remove_confirmation:Option<(String,String)>,
     remove_recipient_pending:Option<String>,
@@ -884,7 +886,8 @@ impl ManualWorkspace {
             history:Vec::new(),pending_select_after_apply:None,
             advance_after_apply:None,last_action:None,action_pending:false,
             confirm_discard:false,confirm_apply:false,
-            product_search:None,add_product_picker:None,item_remove_confirmation:None,
+            item_detail:None,pending_item_detail:None,detail_write_pending:false,
+            add_product_picker:None,item_remove_confirmation:None,
             remove_recipient_pending:None,
             remove_recipient_target:None,reset_pending:false,
             receiver:Some(rx),error:None,dirty:false,applied:None,
@@ -909,12 +912,34 @@ impl ManualWorkspace {
     }
     fn busy(&self)->bool {self.receiver.is_some()}
 
+    fn open_item_detail(&mut self,rid:&str,iid:&str,ctx:&Context){
+        if self.busy() || self.nested_modal_window_id().is_some() ||
+            self.pending_quantity_cell().is_some() || self.edit_text!=self.current_value(){return;}
+        let Some(item)=self.model.as_ref().and_then(|model|
+            list(model,"rows").iter().find(|row|text(row,"id")==rid)
+        ).and_then(|row|list(row,"items").iter().find(|item|text(item,"id")==iid)).cloned()
+        else{return;};
+        let price=item.get("manualUnitPrice").and_then(Value::as_i64)
+            .or_else(||self.view_quote.as_ref().and_then(|quote|crate::quoted_item_line(quote,iid))
+                .and_then(|line|line["unitPrice"].as_i64()))
+            .or_else(||item.get("unitPrice").and_then(Value::as_i64));
+        self.assignment_gesture.clear();
+        self.focus_editor=false;
+        if let Some(id)=self.active_editor_id.take(){ctx.memory_mut(|m|m.surrender_focus(id));}
+        self.item_detail=Some(ItemEditor::new(
+            self.order_id.clone(),self.raw.clone(),rid.to_owned(),item,
+            self.client_id.clone().unwrap_or_default(),price
+        ).for_manual_draft());
+        ctx.request_repaint();
+    }
+
     fn product_dialog_open(&self)->bool{
-        self.product_search.is_some() || self.add_product_picker.is_some()
+        self.item_detail.is_some() || self.add_product_picker.is_some()
             || self.item_remove_confirmation.is_some()
     }
 
     fn nested_modal_window_id(&self)->Option<&'static str>{
+        if let Some(detail)=self.item_detail.as_ref(){return Some(detail.top_window_id());}
         if self.add_product_picker.is_some(){return Some("manual-add-product-picker");}
         if self.item_remove_confirmation.is_some(){return Some("reception-item-delete-confirm");}
         nested_modal_id(
@@ -983,6 +1008,10 @@ impl ManualWorkspace {
                 self.receiver=None;
                 self.action_pending=false;
                 self.edit_text=self.current_value();
+                if self.detail_write_pending{
+                    self.detail_write_pending=false;
+                    self.item_detail=None;
+                }
                 if let Some(target)=self.pending_select_after_apply.take(){
                     let valid=self.model.as_ref().is_some_and(|model|
                         manual_cell_targets(model).contains(&target)
@@ -1011,6 +1040,11 @@ impl ManualWorkspace {
                 self.receiver=None;
             }
             Some(Ok(Err(error)))=>{
+                if self.detail_write_pending{
+                    if let Some(detail)=self.item_detail.as_mut(){detail.report_error(error.clone());}
+                    self.detail_write_pending=false;
+                }
+                self.pending_item_detail=None;
                 self.error=Some(error);
                 if self.edit_text!=self.current_value(){self.focus_editor=true;}
                 self.advance_after_apply=None;
@@ -1021,6 +1055,13 @@ impl ManualWorkspace {
             }
             Some(Err(mpsc::TryRecvError::Disconnected))=>{
                 self.error=Some("Rust 수동 분류 처리가 중단되었습니다.".into());
+                if self.detail_write_pending{
+                    if let Some(detail)=self.item_detail.as_mut(){
+                        detail.report_error("Rust 수동 분류 처리가 중단되었습니다.".into());
+                    }
+                    self.detail_write_pending=false;
+                }
+                self.pending_item_detail=None;
                 self.advance_after_apply=None;
                 self.pending_select_after_apply=None;
                 if self.action_pending {self.last_action=None;}
@@ -1481,6 +1522,11 @@ impl ManualWorkspace {
         source_hover:&mut Option<source_highlight::LinkKey>,
     )->Option<Event> {
         self.poll();
+        if !self.busy(){
+            if let Some((rid,iid))=self.pending_item_detail.take(){
+                self.open_item_detail(&rid,&iid,ctx);
+            }
+        }
         if self.busy() || self.nested_modal_window_id().is_some(){self.assignment_gesture.clear();}
         if ctx.input(|input|input.modifiers.command && input.key_pressed(egui::Key::Z)){
             self.assignment_gesture.clear();
@@ -1500,7 +1546,12 @@ impl ManualWorkspace {
             }
         }
         let mut open=true;
-        if ctx.input(|input|input.key_pressed(egui::Key::Escape)) &&
+        if ctx.input(|input|input.key_pressed(egui::Key::Escape)) && self.item_detail.is_some(){
+            let busy=self.busy();
+            if matches!(self.item_detail.as_mut().and_then(|detail|detail.escape(busy)),Some(item_editor::Event::Closed)){
+                self.item_detail=None;
+            }
+        }else if ctx.input(|input|input.key_pressed(egui::Key::Escape)) &&
             (self.assignment_gesture.source.is_some() || self.assignment_gesture.dragging.is_some()){
             self.assignment_gesture.clear();
         }else if ctx.input(|input|input.key_pressed(egui::Key::Escape)) {
@@ -1514,7 +1565,7 @@ impl ManualWorkspace {
                 self.edit_text!=self.current_value(),
             ){
                 EscapeAction::CloseProductSearch=>{
-                    self.product_search=None;
+                    self.item_detail=None;
                     self.add_product_picker=None;
                     self.item_remove_confirmation=None;
                 },
@@ -1975,7 +2026,7 @@ impl ManualWorkspace {
                                                                     let selected=index==self.selected_recipient &&
                                                                         self.selected_item.as_deref()==Some(item_id) &&
                                                                         self.selected_field==field;
-                                                                    let interaction=if selected && (field=="product" || self.cell_editor_open()){
+                                                                    let interaction=if selected && field!="product" && self.cell_editor_open(){
                                                                         let (editing,navigation,finished)=
                                                                             self.selected_cell_editor_on_rect(
                                                                                 items_ui,response.rect,
@@ -2001,18 +2052,25 @@ impl ManualWorkspace {
                                                                         if response.hovered(){
                                                                             hovered_detail=Some(key.clone());
                                                                         }
-                                                                        if response.clicked(){
-                                                                            self.queue_cell_selection(
-                                                                                ManualCellTarget{
-                                                                                    row:index,
-                                                                                    item:Some(item_id.to_owned()),
-                                                                                    field:field.to_owned()
-                                                                                },&mut submit_direct
-                                                                            );
+                                                                        if field=="product"{
+                                                                            let assignment_requested=self.assignment_gesture.source.is_some()
+                                                                                || items_ui.input(|input|input.modifiers.shift);
+                                                                            match item_editor::product_click_intent(response.clicked(),can_switch,assignment_requested){
+                                                                                ProductClickIntent::OpenDetail=>{
+                                                                                    lookup=Some((rid.to_owned(),item_id.to_owned()));
+                                                                                }
+                                                                                ProductClickIntent::SelectAssignmentTarget=>{
+                                                                                    self.queue_cell_selection(target.clone(),&mut submit_direct);
+                                                                                    clicked_target=Some(target.clone());
+                                                                                }
+                                                                                ProductClickIntent::None=>{}
+                                                                            }
+                                                                        }else if response.clicked(){
+                                                                            self.queue_cell_selection(target.clone(),&mut submit_direct);
                                                                         }
                                                                         response
                                                                     };
-                                                                    if interaction.clicked(){clicked_target=Some(target);}
+                                                                    if field!="product" && interaction.clicked(){clicked_target=Some(target.clone());}
                                                                     // Keep the shared three-column table. Product replacement
                                                                     // and removal target the actual clicked native item, not
                                                                     // a separate selection-dependent toolbar.
@@ -2020,14 +2078,18 @@ impl ManualWorkspace {
                                                                         && self.edit_text==self.current_value()
                                                                         && !submit_direct;
                                                                     if actions_enabled {
-                                                                        if field=="product" && interaction.double_clicked(){
-                                                                            lookup=Some((rid.to_owned(),item_id.to_owned()));
-                                                                        }
                                                                         interaction.context_menu(|menu|{
                                                                             if theme::action(
-                                                                                menu,"상품 검색",ButtonRole::Standard,true
+                                                                                menu,"상품 상세 수정",ButtonRole::Standard,true
                                                                             ).clicked(){
                                                                                 lookup=Some((rid.to_owned(),item_id.to_owned()));
+                                                                                menu.close();
+                                                                            }
+                                                                            if field=="product" && theme::action(
+                                                                                menu,"원문 배정 대상 선택",ButtonRole::Standard,true
+                                                                            ).clicked(){
+                                                                                self.queue_cell_selection(target.clone(),&mut submit_direct);
+                                                                                clicked_target=Some(target.clone());
                                                                                 menu.close();
                                                                             }
                                                                             if theme::action(
@@ -2249,73 +2311,57 @@ impl ManualWorkspace {
                 }
             }else{self.item_remove_confirmation=None;}
         }
-        // Search opens only for the current native recipient/item identity.
-        // The underlying worksheet is disabled while a chooser is open.
-        if let Some((recipient_id,item_id))=lookup {
-            if self.edit_text!=self.current_value(){
-                self.error=Some("입력 중인 내용을 먼저 반영하세요.".into());
-            }else if !self.product_dialog_open(){
-                let target=self.model.as_ref().and_then(|model|
-                    list(model,"rows").iter().position(|row|
-                        text(row,"id")==recipient_id &&
-                        list(row,"items").iter().any(|item|text(item,"id")==item_id)
-                    )
-                );
-                if let Some(index)=target {
-                    // Search belongs to the clicked product row, not whatever
-                    // recipient/item happened to be selected previously.
-                    self.select_cell(index,Some(item_id.clone()),"product");
-                    self.product_search=Some(ProductSearch::new(
-                        recipient_id,item_id,self.client_id.clone().unwrap_or_default(),
-                        Arc::clone(&self.gateway),ctx.clone()
-                    ));
+        // Ordinary product clicks use the shared ItemEditor. Dirty numeric
+        // input is committed first; only a successful native result opens it.
+        if let Some((rid,iid))=lookup{
+            if !self.busy() && self.nested_modal_window_id().is_none(){
+                if self.edit_text!=self.current_value(){
+                    self.pending_item_detail=Some((rid,iid));
+                    submit_direct=true;
                 }else{
-                    self.error=Some("상품 검색 대상이 현재 배송 목록에 없습니다.".into());
+                    self.open_item_detail(&rid,&iid,ctx);
                 }
             }
         }
-        // The parent worksheet is already disabled during a nested prompt.
-        // Do not paint a second full-viewport Foreground backdrop: that
-        // surface can steal pointer input from every decision-window button.
-        // Restore the actual decision layer after rendering it below.
-        let product_event=self.product_search.as_mut().and_then(|search|
-            search.show(ctx,Arc::clone(&self.gateway),work_area)
+        let detail_busy=self.busy();
+        let detail_event=self.item_detail.as_mut().and_then(|detail|
+            detail.show(ctx,Arc::clone(&self.gateway),work_area,detail_busy)
         );
-        if let Some(event)=product_event {
-            let search=self.product_search.take();
-            if let (Some(search),ProductEvent::Chosen(product))=(search,event){
-                // Never apply a delayed search result to a removed product
-                // row or another shipment; Rust still owns product selection.
-                let exists=self.model.as_ref().is_some_and(|model|
-                    list(model,"rows").iter().any(|row|
-                        text(row,"id")==search.recipient_id &&
-                        list(row,"items").iter().any(|item|
-                            text(item,"id")==search.item_id
+        match detail_event{
+            Some(item_editor::Event::Closed)=>self.item_detail=None,
+            Some(event) if !detail_busy=>{
+                let target=self.item_detail.as_ref().and_then(|detail|
+                    self.model.as_ref().and_then(|model|
+                        list(model,"rows").iter().enumerate().find_map(|(index,row)|
+                            if text(row,"id")==detail.recipient_id{
+                                list(row,"items").iter().find(|item|text(item,"id")==detail.item_id)
+                                    .map(|item|(index,detail.recipient_id.clone(),detail.item_id.clone(),item.clone()))
+                            }else{None}
                         )
                     )
                 );
-                if exists && !self.busy(){
-                    let target=self.model.as_ref().and_then(|model|
-                        list(model,"rows").iter().position(|row|
-                            text(row,"id")==search.recipient_id
-                        )
-                    );
-                    if let Some(index)=target {
-                        // React's product chooser hands focus to quantity next.
-                        self.select_cell(
-                            index,Some(search.item_id.clone()),"quantity"
-                        );
+                if let Some((index,rid,iid,item))=target{
+                    match event{
+                        item_editor::Event::Apply(product)=>{
+                            let preserve=item.get("quantityConfirmed").and_then(Value::as_bool)==Some(true)
+                                && item.get("quantity").and_then(Value::as_i64).is_some_and(|q|q>0);
+                            let title=text(&product,"name").to_owned();
+                            self.select_cell(index,Some(iid.clone()),"quantity");
+                            self.detail_write_pending=true;
+                            self.action("set_manual_product",json!({
+                                "cell":{"recipientId":rid,"itemId":iid,"field":"product"},
+                                "value":title,"product":product,"preserveExistingQuantity":preserve
+                            }),ctx);
+                        }
+                        item_editor::Event::Remove=>{
+                            self.detail_write_pending=true;
+                            self.action("remove_manual_item",json!({"recipientId":rid,"itemId":iid}),ctx);
+                        }
+                        item_editor::Event::Closed=>{}
                     }
-                    let title=if text(&product,"name").is_empty(){
-                        text(&product,"code").to_owned()
-                    }else{text(&product,"name").to_owned()};
-                    self.action("set_manual_product",json!({
-                        "cell":{"recipientId":search.recipient_id,
-                            "itemId":search.item_id,"field":"product"},
-                        "value":title,"product":product
-                    }),ctx);
-                }
+                }else{self.item_detail=None;}
             }
+            _=>{}
         }
 
         if submit_direct {
@@ -2995,7 +3041,12 @@ mod manual_workspace_modal_routing_tests {
         assert!(!render.contains("\"step_manual_quantity\""));
         assert!(render.contains("crate::quoted_item_line("));
         assert!(render.contains("crate::quoted_billable_freight("));
-        assert!(render.contains("field==\"product\" || self.cell_editor_open()"));
+        assert!(render.contains("field!=\"product\" && self.cell_editor_open()"));
+        assert!(render.contains("item_editor::product_click_intent("));
+        assert!(intake.contains("item_editor::product_click_intent("));
+        assert!(source.contains("ItemEditor::new("));
+        assert!(!render.contains("interaction.double_clicked()"));
+        assert!(!source.contains("ProductSearch::new("));
         assert!(source.contains("components::reception_numeric_edit_finished("));
         assert!(render.contains("self.focus_editor=!blur_commit"));
         assert!(render.contains("reception_item_delete_confirmation("));

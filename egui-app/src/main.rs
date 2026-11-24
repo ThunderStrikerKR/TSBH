@@ -6920,12 +6920,11 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                                         .is_some_and(|editor|editor.target==target);
                                                     if editable && !is_editing && response.clicked(){
                                                         if field=="product"{
-                                                            // React used the product-detail dialog,
-                                                            // not a text-edit suggestion list.
-                                                            item_popup=Some((
-                                                                recipient_id.to_owned(),
-                                                                item_id.to_owned()
-                                                            ));
+                                                            if item_editor::product_click_intent(
+                                                                response.clicked(),editable&&!is_editing,false
+                                                            )==item_editor::ProductClickIntent::OpenDetail{
+                                                                item_popup=Some((recipient_id.to_owned(),item_id.to_owned()));
+                                                            }
                                                         }else{
                                                             inline_open=Some((
                                                                 target.clone(),original,
