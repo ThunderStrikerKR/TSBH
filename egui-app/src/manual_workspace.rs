@@ -871,6 +871,49 @@ pub struct ManualWorkspace {
     applied:Option<(Value,Option<Value>,Option<String>)>,
 }
 
+
+/// Exact content-first geometry for the manual worksheet. The recipient card
+/// uses four 36pt rows; the freight card keeps its established 340pt minimum.
+/// Keeping this arithmetic beside the renderer prevents the modal from
+/// reserving a full-screen body after the visible cards have ended.
+fn manual_recipient_card_height()->f32{
+    2.0*theme::RECEPTION_PANE_PADDING_Y
+        +theme::SECTION_HEADER_HEIGHT
+        +theme::SECTION_CONTENT_GAP
+        +theme::SOFT_DIVIDER_WIDTH
+        +theme::SPACE_4
+        +4.0*theme::INPUT_HEIGHT
+        +3.0*theme::RECIPIENT_ROW_GAP
+}
+
+fn manual_workspace_columns_height()->f32{
+    theme::INPUT_HEIGHT
+        +theme::SPACE_8
+        +manual_recipient_card_height()
+        +theme::SPACE_8
+        +theme::MANUAL_ITEMS_CARD_MIN_HEIGHT
+}
+
+fn manual_workspace_dialog_size(work_area:egui::Rect)->egui::Vec2{
+    let width=(work_area.width()-theme::MANUAL_DIALOG_SIDE_GAP)
+        .min(theme::MANUAL_DIALOG_MAX_WIDTH).max(0.0);
+    // The status row and divider use explicit 8pt gaps on either side.
+    let status_and_divider=typography::METADATA_LINE_HEIGHT
+        +2.0*theme::SPACE_8+theme::SOFT_DIVIDER_WIDTH;
+    let body=status_and_divider+manual_workspace_columns_height();
+    let frame_chrome=2.0*(theme::MODAL_PANEL_PADDING_Y+theme::FRAME_STROKE_WIDTH);
+    let fixed_chrome=frame_chrome+theme::MODAL_HEADER_HEIGHT
+        +2.0*theme::MODAL_MASTER_WORKSPACE_GAP+theme::MODAL_FOOTER_HEIGHT;
+    let height=(body+fixed_chrome).min(work_area.height()).max(1.0);
+    egui::vec2(width,height)
+}
+
+fn manual_source_panel_width(reception_source_width:f32,content_width:f32)->f32{
+    let maximum=(content_width-theme::MANUAL_SHEET_MIN_WIDTH
+        -theme::MANUAL_COLUMN_GAP).max(theme::MANUAL_SOURCE_MIN_WIDTH);
+    reception_source_width.max(theme::MANUAL_SOURCE_MIN_WIDTH).min(maximum)
+}
+
 impl ManualWorkspace {
     pub fn new(source:WorkingReception,gateway:Arc<dyn BandoGateway>,ctx:Context)->Self {
         let (tx,rx)=mpsc::channel();
@@ -1549,6 +1592,7 @@ impl ManualWorkspace {
         &mut self,
         ctx:&Context,
         work_area:egui::Rect,
+        reception_source_width:f32,
         link_hover:&mut source_highlight::HoverState,
         source_hover:&mut Option<source_highlight::LinkKey>,
     )->Option<Event> {
@@ -1653,12 +1697,7 @@ impl ManualWorkspace {
         let mut add_product:Option<String>=None;
         let mut remove_item:Option<(String,String)>=None;
         components::modal_window("수동 분류","bando-native-manual-classification",work_area)
-            
-            .default_width((work_area.width()-theme::MANUAL_DIALOG_SIDE_GAP)
-                .min(theme::MANUAL_DIALOG_MAX_WIDTH).max(0.0))
-            .default_height((work_area.height()-theme::MANUAL_DIALOG_VERTICAL_GAP)
-                .max(0.0))
-            .constrain_to(work_area)
+            .fixed_size(manual_workspace_dialog_size(work_area))
             .show(ctx,|ui|{
 
                 components::modal_flow_workspace(ui,|workspace|{
@@ -1720,6 +1759,10 @@ impl ManualWorkspace {
                                 Ok(value)=>crate::reception_service::remote_delivery_notice(value),
                                 Err(error)=>Some(format!("도서/산간 판정 실패 · {error}"))
                             });
+                        // The body uses explicit structural spacing so its fixed
+                        // content-first window height is independent of egui's
+                        // implicit separator and parent item-spacing behavior.
+                        ui.spacing_mut().item_spacing.y=0.0;
                         ui.horizontal(|status|{
                             let count=status.label(typography::caption(
                                 &format!("미배정 원문: {unassigned}개")
@@ -1732,8 +1775,11 @@ impl ManualWorkspace {
                             ].into_iter().flatten().collect::<Vec<_>>().join("\n");
                             if !notice.is_empty(){count.on_hover_text(&notice);}
                         });
-                        ui.separator();
-                        // Match React's 34:66 columns. On narrow windows keep
+                        ui.add_space(theme::SPACE_8);
+                        components::reception_section_divider(ui);
+                        ui.add_space(theme::SPACE_8);
+                        // The source column matches Reception's live pane width.
+                        // The right worksheet takes the remaining width; on narrow windows keep
                         // both minimum widths and scroll the workspace horizontally
                         // instead of letting one panel clip or move the footer.
                         let content_width=ui.available_width().max(
@@ -1741,10 +1787,14 @@ impl ManualWorkspace {
                             theme::MANUAL_SHEET_MIN_WIDTH+
                             theme::MANUAL_COLUMN_GAP
                         );
-                        // Reserve the shared footer and structural gap before sizing the panes.
+                        // Keep the worksheet at its natural one-recipient / one-item
+                        // height. More items remain reachable through the existing
+                        // nested vertical scroll area; the footer stays in the modal.
                         let footer_clearance=components::modal_workspace_footer_reserve();
-                        let content_height=(ui.available_height().min(work_area.height())
+                        let available_content_height=(ui.available_height().min(work_area.height())
                             -footer_clearance).max(1.0);
+                        let content_height=available_content_height
+                            .min(manual_workspace_columns_height()).max(1.0);
                         egui::ScrollArea::horizontal()
                             .id_salt("manual-columns-horizontal-scroll")
                             .max_height(content_height)
@@ -1752,29 +1802,31 @@ impl ManualWorkspace {
                             .show(ui,|outer|{
                                 outer.set_min_width(content_width);
                                 outer.horizontal(|ui|{
+                            ui.spacing_mut().item_spacing.x=theme::MANUAL_COLUMN_GAP;
                             let width=content_width;
                             let height=content_height;
-                            let source_width=(width*theme::MANUAL_SOURCE_SHARE)
-                                .max(theme::MANUAL_SOURCE_MIN_WIDTH)
-                                .min((width-theme::MANUAL_SHEET_MIN_WIDTH
-                                    -theme::MANUAL_COLUMN_GAP)
-                                    .max(theme::MANUAL_SOURCE_MIN_WIDTH));
+                            let source_width=manual_source_panel_width(
+                                reception_source_width,width
+                            );
                             ui.allocate_ui_with_layout(
                                 egui::vec2(source_width,height),
                                 egui::Layout::top_down(egui::Align::Min),
                                 |source_ui|{
                                     theme::modal_nested_frame().show(source_ui,|panel|{
+                                        let source_frame_chrome=2.0*(
+                                            theme::SPACE_8+theme::FRAME_STROKE_WIDTH
+                                        );
                                         panel.set_min_width(
-                                            (source_width-2.0*theme::SPACE_8).max(0.0)
+                                            (source_width-source_frame_chrome).max(0.0)
                                         );
                                         panel.set_min_height(
-                                            (height-2.0*theme::SPACE_8).max(0.0)
+                                            (height-source_frame_chrome).max(0.0)
                                         );
                                         panel.label(typography::subsection_heading("발주 원문"))
                                             .on_hover_text("원문과 셀을 어느 순서로든 클릭하거나 원문 블록을 셀로 드래그하세요. 배정된 원문은 클릭하면 해제됩니다.");
                                         egui::ScrollArea::vertical().id_salt("manual-source-blocks")
                                             .max_height((height-theme::SECTION_HEADER_HEIGHT
-                                                -2.0*theme::SPACE_8).max(0.0))
+                                                -source_frame_chrome).max(0.0))
                                             .show(panel,|ui|{
                                     let interaction=crate::manual_source_view::source_document(
                                         ui,&self.raw,&spans,&assigned_source_ids,
@@ -1992,7 +2044,7 @@ impl ManualWorkspace {
                                                             Some("set_manual_product"|"assign_manual_block"));
                                                     let rollback_enabled=!busy && self.edit_text==self.current_value();
                                                     components::reception_section_with_header(
-                                                        sheet,"품목 및 운임",340.0,
+                                                        sheet,"품목 및 운임",theme::MANUAL_ITEMS_CARD_MIN_HEIGHT,
                                                         |header|{
                                                             if rollback_pending{
                                                                 header_rollback=components::reception_item_header_action(
@@ -3478,5 +3530,51 @@ mod quote_reuse_tests {
         });
         assert!(reuse_native_quote(Some(&stale),&order).is_none());
         assert!(reuse_native_quote(None,&order).is_none());
+    }
+}
+
+
+#[cfg(test)]
+mod manual_workspace_layout_tests{
+    use super::*;
+
+    #[test]
+    fn popup_height_tracks_the_visible_card_stack_and_fixed_modal_chrome(){
+        assert_eq!(manual_recipient_card_height(),231.0);
+        assert_eq!(manual_workspace_columns_height(),623.0);
+        let work_area=egui::Rect::from_min_size(
+            egui::Pos2::ZERO,egui::vec2(1400.0,1000.0)
+        );
+        let size=manual_workspace_dialog_size(work_area);
+        assert_eq!(size.x,1364.0);
+        assert_eq!(size.y,838.0);
+        let short_area=egui::Rect::from_min_size(
+            egui::Pos2::ZERO,egui::vec2(1400.0,700.0)
+        );
+        assert_eq!(manual_workspace_dialog_size(short_area).y,700.0);
+    }
+
+    #[test]
+    fn source_panel_uses_reception_width_and_preserves_a_minimum_right_sheet(){
+        let reception=crate::layout::LayoutState::default().widths(1600.0)[1];
+        assert_eq!(manual_source_panel_width(reception,1200.0),reception);
+        assert_eq!(manual_source_panel_width(reception,702.0),
+            theme::MANUAL_SOURCE_MIN_WIDTH);
+        assert_eq!(theme::MANUAL_SOURCE_MIN_WIDTH,crate::layout::MIN_WIDTHS[1]);
+    }
+
+    #[test]
+    fn popup_columns_and_outer_chrome_have_one_explicit_geometry_owner(){
+        let source=include_str!("manual_workspace.rs");
+        let production=source.split("mod manual_assignment_gesture_tests{")
+            .next().expect("production source boundary");
+        let render=production.split("pub fn show(").nth(1).unwrap();
+        assert!(render.contains("components::reception_section_divider(ui);"));
+        assert!(render.contains("ui.spacing_mut().item_spacing.x=theme::MANUAL_COLUMN_GAP;"));
+        assert!(render.contains("manual_workspace_columns_height()"));
+        assert!(render.contains(".fixed_size(manual_workspace_dialog_size(work_area))"));
+        let main=include_str!("main.rs");
+        assert!(main.contains("self.layout.widths(content_width)[1]"));
+        assert!(main.contains("editor.show(\n                ctx,work_area,reception_source_width,hover,source"));
     }
 }

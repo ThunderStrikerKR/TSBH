@@ -406,16 +406,15 @@ pub fn management_primary_card_top_offset(available_width: f32) -> f32 {
         + summary_height + SPACE_16 + SPACING * 3.0
 }
 
-// Manual classification keeps the modal master geometry but gives the
-// source its own readable width now that recipient fields are stacked.
-// The React 34:66 historical sheet ratio caused truncated text here.
+// Manual classification uses the live Reception source-pane width rather
+// than a separate percentage. The right worksheet receives the remaining
+// width and scrolls only when the viewport cannot fit both minimums.
 pub const MANUAL_DIALOG_MAX_WIDTH: f32 = 1760.0;
 pub const MANUAL_DIALOG_SIDE_GAP: f32 = 36.0;
-pub const MANUAL_DIALOG_VERTICAL_GAP: f32 = 44.0;
-pub const MANUAL_SOURCE_SHARE: f32 = 0.40;
-pub const MANUAL_SOURCE_MIN_WIDTH: f32 = 300.0;
+pub const MANUAL_SOURCE_MIN_WIDTH: f32 = 250.0; // Reception source-pane minimum
 pub const MANUAL_SHEET_MIN_WIDTH: f32 = 440.0;
 pub const MANUAL_COLUMN_GAP: f32 = SPACE_12;
+pub const MANUAL_ITEMS_CARD_MIN_HEIGHT: f32 = 340.0;
 pub const MANUAL_SEARCH_DIALOG_WIDTH: f32 = MODAL_DEFAULT_MAX_WIDTH;
 pub const MANUAL_SEARCH_RESULTS_HEIGHT: f32 = 420.0;
 pub const MANUAL_INPUT_WIDTH: f32 = 250.0;

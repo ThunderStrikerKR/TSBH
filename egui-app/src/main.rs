@@ -2323,6 +2323,13 @@ impl BandoEgui {
             self.source_hover=None;
             return;
         }
+        // Use the same live source-column calculation as Reception, including
+        // any user-resized pane ratio. The manual worksheet must not invent a
+        // second source width or percentage-based layout policy.
+        let viewport=ctx.screen_rect();
+        let content_width=(viewport.width()-2.0*theme::PANEL_GAP)
+            .max(layout::LayoutState::minimum_width());
+        let reception_source_width=self.layout.widths(content_width)[1];
         // The manual worksheet and reception intake share one order-scoped
         // source hover state. Borrow disjoint fields so the overlay can update
         // the same 50ms/150ms highlight contract while it is open.
@@ -2330,7 +2337,9 @@ impl BandoEgui {
             let editor=self.manual_workspace.as_mut();
             let hover=&mut self.link_hover;
             let source=&mut self.source_hover;
-            editor.and_then(|editor|editor.show(ctx,work_area,hover,source))
+            editor.and_then(|editor|editor.show(
+                ctx,work_area,reception_source_width,hover,source
+            ))
         };
         match result {
             Some(manual_workspace::Event::Closed)=>{
