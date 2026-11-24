@@ -461,6 +461,39 @@ mod manual_rebind_tests {
     }
 
     #[test]
+    fn direct_entry_client_change_uses_native_quote_without_source_recognition(){
+        let model=json!({"rows":[{
+            "id":"egui-manual-direct-r1","name":"직접 수정한 이름",
+            "address":"서울특별시 강남구 테헤란로 10",
+            "phone":"","mobile":"","note":"",
+            "items":[{"id":"egui-manual-direct-i1","productId":"p","variantId":"v",
+                "name":"BD 709","quantity":2,"quantityConfirmed":true,
+                "manualUnitPrice":9900,"unitPrice":9900}]
+        }],"blocks":[],"assignments":{}});
+        let source=WorkingReception{
+            id:"egui-direct-order".into(),raw:String::new(),order_type:"AGENCY".into(),
+            source_input_method:None,last_input_method:None,
+            analysis_raw:None,analysis_evidence:None,analysis_view:None,
+            client_match:None,chat_handle:None,chat_title:None,
+            client_id:None,client_selection:None,pricing_preview:None,
+            working_version:None,working_synced:false,
+            manual_model:Some(json!({
+                "mode":"DIRECT","sourceRaw":"","orderType":"AGENCY",
+                "clientId":"","model":model,"assignmentOrder":[]
+            })),
+            edit_history:vec![]
+        };
+        let result=prepare(&PreviewGateway,&source,"new").unwrap();
+        assert!(result.recognition.is_none());
+        assert_eq!(result.manual_model.as_ref().unwrap()["mode"],"DIRECT");
+        assert_eq!(result.manual_model.as_ref().unwrap()["clientId"],"new");
+        assert_eq!(result.manual_model.as_ref().unwrap()["model"]["rows"][0]["name"],
+            "직접 수정한 이름");
+        assert_eq!(result.pricing_preview.as_ref().unwrap()["total"],27300);
+        assert_eq!(result.pricing_preview.as_ref().unwrap()["sourceRaw"],"");
+    }
+
+    #[test]
     fn malformed_model_does_not_replace_a_valid_client_selection(){
         let saved=json!({"model":{"rows":[]}});
         assert!(rebind_manual_model(&saved,"new",&json!({})).is_err());
@@ -491,11 +524,12 @@ mod manual_rebind_tests {
                     "recipients":[],"candidates":[]
                 })),
                 ReadOperation::NewReception=>Ok(json!({"order":{
-                    "id":payload["id"],"clientId":payload["clientId"],
+                    "id":payload["id"],"raw":"","clientId":payload["clientId"],
                     "orderType":payload["orderType"],"recipients":[]
                 }})),
                 ReadOperation::ChangeOrderClient=>Ok(json!({"order":{
-                    "id":payload["order"]["id"],"clientId":payload["dealerId"],
+                    "id":payload["order"]["id"],"raw":payload["order"]["raw"],
+                    "clientId":payload["dealerId"],
                     "orderType":payload["order"]["orderType"],
                     "recipients":[]
                 }})),
