@@ -7796,6 +7796,17 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
         &mut self,action:&str,group_id:&str,shipment_id:Option<&str>,
         target_group_id:Option<&str>,ack:bool,ctx:&egui::Context
     ){
+        self.start_workflow_action_with_args(
+            action,group_id,shipment_id,target_group_id,ack,
+            serde_json::Value::Null,ctx
+        );
+    }
+
+    fn start_workflow_action_with_args(
+        &mut self,action:&str,group_id:&str,shipment_id:Option<&str>,
+        target_group_id:Option<&str>,ack:bool,extra:serde_json::Value,
+        ctx:&egui::Context
+    ){
         if let JobAdmission::Conflict(blocker)=self.reception_job_admission(
             ReceptionJob::WorkflowAction,false
         ){
@@ -7837,6 +7848,11 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
             args["targetGroupId"]=serde_json::json!(target_group_id);
         }
         if ack{args["ack"]=serde_json::json!(true);}
+        if let Some(values)=extra.as_object(){
+            for (key,value) in values{
+                args[key]=value.clone();
+            }
+        }
         let gateway=Arc::clone(&self.gateway);
         let (sender,receiver)=mpsc::channel();
         let context=ctx.clone();
@@ -7851,6 +7867,42 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
         });
     }
 
+    fn submit_workflow_freight_edit(&mut self,ctx:&egui::Context)->bool{
+        let Some(editor)=self.workflow_freight_editor.take() else{return true;};
+        if editor.text.trim()==editor.original.trim(){return true;}
+        let digits=editor.text.trim().replace(',','');
+        let amount=if digits.is_empty(){
+            serde_json::Value::Null
+        }else{
+            let parsed=digits.parse::<i64>();
+            let Some(value)=parsed.ok().filter(|value|(0..=99_999).contains(value)) else{
+                floating_notice::publish(
+                    ctx,"reception.workflow",floating_notice::Tone::Error,
+                    "운임은 0~99,999원 사이의 정수로 입력하세요."
+                );
+                self.workflow_freight_editor=Some(editor);
+                self.workflow_freight_next_selection=None;
+                return false;
+            };
+            serde_json::json!(value)
+        };
+        let was_idle=self.workflow_action.is_none();
+        self.start_workflow_action_with_args(
+            "set_shipment_freight",&editor.group_id,Some(&editor.shipment_id),
+            None,false,serde_json::json!({
+                "origin":editor.origin,"appliedCharge":amount
+            }),ctx
+        );
+        let started=was_idle && self.workflow_action.as_ref().is_some_and(|pending|
+            pending.action=="set_shipment_freight"
+        );
+        if !started{
+            self.workflow_freight_editor=Some(editor);
+            self.workflow_freight_next_selection=None;
+        }
+        started
+    }
+
     fn poll_workflow_action(&mut self,ctx:&egui::Context){
         let outcome=self.workflow_action.as_ref().map(|task|(
             task.group_id.clone(),task.action.clone(),task.receiver.try_recv()
@@ -7859,6 +7911,12 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
         match result{
             Ok(Ok(_saved))=>{
                 self.workflow_action=None;
+                if action=="set_shipment_freight"{
+                    self.workflow_freight_editor=None;
+                    if let Some(selection)=self.workflow_freight_next_selection.take(){
+                        self.workflow_ui.select(selection);
+                    }
+                }
                 if matches!(action.as_str(),
                     "advance_group"|"confirm_group_payment"|"process_group"|
                     "confirm_reception"
@@ -7924,6 +7982,9 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
             }
             Ok(Err(error))=>{
                 self.workflow_action=None;
+                if action=="set_shipment_freight"{
+                    self.workflow_freight_next_selection=None;
+                }
                 self.workflow_last_fetch=None;
                 self.workflow_error=Some(error.clone());
                 floating_notice::publish(
@@ -7932,6 +7993,9 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
             }
             Err(mpsc::TryRecvError::Disconnected)=>{
                 self.workflow_action=None;
+                if action=="set_shipment_freight"{
+                    self.workflow_freight_next_selection=None;
+                }
                 self.workflow_error=Some("주문 변경 처리 도중 작업이 중단되었습니다.".into());
                 floating_notice::publish(
                     ctx,"reception.workflow",floating_notice::Tone::Error,
