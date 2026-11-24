@@ -55,12 +55,13 @@ test("saved color notice stays declarative and is never a question",async()=>{
 
 test("editing templates does not modify sale prices or historical orders",()=>{
   const ui=source("src/AutomaticMessageTemplateManager.tsx");
-  const native=source("src-tauri/src/lib.rs");
+  const native=source("crates/bando-data-access/src/settings_commands.rs");
+  const validation=source("crates/bando-data-access/src/validation.rs");
   assert.match(ui,/\{automaticMessageTemplates:draft\}/);
   assert.match(ui,/const expected=Object\.keys\(baseline\)\.length \? baseline : null/);
   assert.doesNotMatch(ui,/state_save|setPrice|write_snapshot/);
   assert.match(native,/"automaticMessageTemplates"/);
-  assert.match(native,/validate_message_templates\(&state\)/);
+  assert.match(validation,/validate_message_templates\(&state\)/);
   assert.match(native,/before != &expected\[field\] && before != updated/);
 });
 

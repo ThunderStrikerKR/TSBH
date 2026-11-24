@@ -41,12 +41,14 @@ test("Brands are validated for cross-brand aliases and evidence URLs before UI s
 });
 
 test("Rust validates changed brands within the same SQLite save transaction", () => {
-  const rust = read("src-tauri/src/lib.rs");
+  const rust = read("crates/bando-data-access/src/validation.rs");
+  const storage = read("crates/bando-data-access/src/storage.rs");
+  const brands = read("src-tauri/src/business_core/catalog_clients/brands.rs");
   assert.match(rust, /fn validate_brands\(before: &Value, next: &Value\)/);
-  assert.match(rust, /validate_brands\(&current, &state\)\?/);
-  assert.match(rust, /fn brand_terms/);
-  assert.match(rust, /link\.scheme\(\) == "https"/);
-  assert.match(rust, /old\["id"\]\.as_str\(\) == Some\(id\) && old == brand/);
+  assert.match(storage, /validate_brands\(&current, &state\)\?/);
+  assert.match(brands, /fn brand_terms/);
+  assert.match(brands, /link\.scheme\(\)\s*==\s*"https"/);
+  assert.match(brands, /old\["id"\]\.as_str\(\) == Some\(id\) && old == brand/);
 });
 
 test("Image and brand fixes keep existing SQLite schema and product references", () => {
