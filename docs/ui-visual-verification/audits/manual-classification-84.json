@@ -90,5 +90,32 @@
     "githubCI": "NOT_VERIFIED",
     "windowsVisual": "NOT_VERIFIED",
     "notes": "기존 실제 Windows 캡처의 하단 잘림은 확인됐으나 변경된 SHA를 Windows에서 다시 실행한 캡처가 없으므로 visualStatus FAIL 및 결함 OPEN 유지."
+  },
+  "manualSourceStateCandidate": {
+    "status": "PATCH_COMMITTED_WINDOWS_UNVERIFIED",
+    "request": "미분류는 흰 글씨/어두운 배경/1pt 흰 테두리, 분류완료는 낮은 대비, 현재 연결은 파란색 우선",
+    "patchCommits": [
+      "4d55d7d1095cda8cf1e22ee72607d708e4af5eeb",
+      "3033e661f457b68d4a6e85a276b4ed42d2becd76",
+      "05882e3168fb56b68dde84f26d3e9200ba77609d",
+      "a84e06d0f94db6c49936a52c6f3375f5ec378ce6",
+      "060905dca76824d53fe5bf988f9463daed8655aa"
+    ],
+    "sourceFiles": [
+      "egui-app/src/theme.rs",
+      "egui-app/src/source_highlight.rs",
+      "egui-app/src/manual_source_view.rs",
+      "egui-app/src/manual_workspace.rs"
+    ],
+    "scope": "manual classification source token styles only; reception source calls retain original layout()/block_shapes() adapters",
+    "sourceOfTruthCorrection": "2026-11-24 사용자가 직전 참고 이미지를 정정했으며, 가장 최근 첨부 이미지를 현재 접수(주문) 탭 기본 화면으로 지정했다. 원문 블록 상태 시각차이는 텍스트 요구사항과 assignments 업무 상태 기준으로 구현; 잘못 제공된 이미지로 접수 화면 디자인을 추정하지 않는다.",
+    "tests": [
+      "manual_assignment_state_changes_only_manual_palette_and_ink",
+      "manual_source_palette_reads_exact_native_assignment_ids"
+    ],
+    "staticVerification": "PASS_SCOPED: shared legacy source renderer still called by Reception, manual-specific renderer only by manual_source_view",
+    "cargoTest": "NOT_EXECUTED",
+    "windowsVisual": "NOT_VERIFIED",
+    "receptionRegression": "STATIC_ONLY_RUNTIME_NOT_VERIFIED"
   }
 }
