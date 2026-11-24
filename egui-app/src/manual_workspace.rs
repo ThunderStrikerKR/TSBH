@@ -1091,6 +1091,13 @@ fn manual_workspace_content_width_for_mode(
     }
 }
 
+/// Match Reception: an ancestor horizontal ScrollArea exists only when the
+/// minimum workspace columns cannot fit. A full-width ScrollArea can leave a
+/// long hover-only scrollbar even when the panels already fit the viewport.
+fn manual_workspace_needs_horizontal_scroll(viewport_width:f32,content_width:f32)->bool{
+    content_width>viewport_width+0.5
+}
+
 fn manual_source_panel_width(reception_source_width:f32,content_width:f32)->f32{
     let maximum=(content_width-theme::MANUAL_SHEET_MIN_WIDTH
         -theme::MANUAL_COLUMN_GAP).max(theme::MANUAL_SOURCE_MIN_WIDTH);
@@ -2003,8 +2010,9 @@ impl ManualWorkspace {
                         // The right worksheet takes the remaining width; on narrow windows keep
                         // both minimum widths and scroll the workspace horizontally
                         // instead of letting one panel clip or move the footer.
+                        let viewport_width=ui.available_width();
                         let content_width=manual_workspace_content_width_for_mode(
-                            ui.available_width(),reception_source_width,self.direct_input
+                            viewport_width,reception_source_width,self.direct_input
                         );
                         // Keep the worksheet at its natural one-recipient / one-item
                         // height. More items remain reachable through the existing
@@ -2014,13 +2022,9 @@ impl ManualWorkspace {
                             -footer_clearance).max(1.0);
                         let content_height=available_content_height
                             .min(manual_workspace_columns_height()).max(1.0);
-                        egui::ScrollArea::horizontal()
-                            .id_salt("manual-columns-horizontal-scroll")
-                            .max_height(content_height)
-                            .auto_shrink([false,false])
-                            .show(ui,|outer|{
-                                outer.set_min_width(content_width);
-                                outer.horizontal(|ui|{
+                        let mut draw_columns=|outer:&mut egui::Ui|{
+                            outer.set_min_width(content_width);
+                            outer.horizontal(|ui|{
                             ui.spacing_mut().item_spacing.x=if self.direct_input{
                                 0.0
                             }else{theme::MANUAL_COLUMN_GAP};
@@ -2525,7 +2529,24 @@ impl ManualWorkspace {
                                 },
                             );
                                 });
-                            });
+                        };
+                        if manual_workspace_needs_horizontal_scroll(viewport_width,content_width){
+                            egui::ScrollArea::horizontal()
+                                .drag_to_scroll(false)
+                                .id_salt("manual-columns-horizontal-scroll")
+                                .max_height(content_height)
+                                .auto_shrink([false,false])
+                                .show(ui,&mut draw_columns);
+                        }else{
+                            // No ancestor ScrollArea at full width: preserve the
+                            // fixed modal body height without creating a hover-only
+                            // horizontal scrollbar over already-fitted columns.
+                            ui.allocate_ui_with_layout(
+                                egui::vec2(viewport_width,content_height),
+                                egui::Layout::top_down(egui::Align::Min),
+                                |outer|draw_columns(outer)
+                            );
+                        }
                         Some((busy,pending_quantity_active,has_pending_quantity,guidance))
                     }) else{return;};
                     let input_settled=self.edit_text==self.current_value();
@@ -4004,6 +4025,24 @@ mod manual_workspace_layout_tests{
     }
 
     #[test]
+    fn horizontal_scroll_is_created_only_when_minimum_columns_exceed_the_viewport(){
+        let narrow=manual_workspace_content_width(700.0,theme::MANUAL_SOURCE_MIN_WIDTH);
+        assert_eq!(narrow,702.0);
+        assert!(manual_workspace_needs_horizontal_scroll(700.0,narrow));
+
+        // A half-point rounding tolerance matches the main Reception layout.
+        assert!(!manual_workspace_needs_horizontal_scroll(900.0,900.5));
+        assert!(manual_workspace_needs_horizontal_scroll(900.0,900.51));
+
+        let fitted_manual=manual_workspace_content_width_for_mode(900.0,360.0,false);
+        let fitted_direct=manual_workspace_content_width_for_mode(900.0,360.0,true);
+        assert_eq!(fitted_manual,900.0);
+        assert_eq!(fitted_direct,900.0);
+        assert!(!manual_workspace_needs_horizontal_scroll(900.0,fitted_manual));
+        assert!(!manual_workspace_needs_horizontal_scroll(900.0,fitted_direct));
+    }
+
+    #[test]
     fn source_panel_uses_reception_width_and_preserves_a_minimum_right_sheet(){
         let reception=crate::layout::LayoutState::default().widths(1600.0)[1];
         assert_eq!(manual_source_panel_width(reception,1200.0),reception);
@@ -4029,6 +4068,10 @@ mod manual_workspace_layout_tests{
         assert!(render.contains("else{theme::MANUAL_COLUMN_GAP}"));
         assert!(render.contains("if !self.direct_input{"));
         assert!(render.contains("manual_workspace_content_width_for_mode("));
+        assert!(render.contains("manual_workspace_needs_horizontal_scroll(viewport_width,content_width)"));
+        assert!(render.contains(".drag_to_scroll(false)"));
+        assert!(render.contains(".show(ui,&mut draw_columns)"));
+        assert!(render.contains("|outer|draw_columns(outer)"));
         assert!(render.contains("manual_workspace_columns_height()"));
         assert!(render.contains(".fixed_size(manual_workspace_dialog_size(work_area))"));
         let main=include_str!("main.rs");
