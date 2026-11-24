@@ -61,6 +61,12 @@ on:
       - src-tauri/src/main.rs
       - src-tauri/src/lib.rs
       - src-tauri/src/workflow_sqlite_integration_tests.rs
+  pull_request:
+    paths:
+      - egui-app/**
+      - src-tauri/src/business_core/**
+      - crates/bando-data-access/**
+      - .github/workflows/egui-targeted-check.yml
   workflow_dispatch:
 permissions:
   contents: read
@@ -86,7 +92,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           $tests | Write-Output
           $count = @($tests | Where-Object { $_ -match 'general_screen_geometry_tests::.*: test$' }).Count
-          if ($count -lt 4) { throw "Expected at least 4 general-screen geometry tests; found $count" }
+          if ($count -lt 9) { throw "Expected at least 9 general-screen geometry tests; found $count" }
           cargo test --manifest-path egui-app/Cargo.toml general_screen_geometry_tests -- --nocapture
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Verify actual egui modal boundary rects and 16pt workspace spacing
@@ -101,6 +107,7 @@ jobs:
           cargo test --manifest-path egui-app/Cargo.toml modal_editor_workspace_geometry_tests -- --nocapture
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
   native-data-access-windows-check:
+    if: github.event_name != 'pull_request'
     runs-on: windows-latest
     timeout-minutes: 30
     steps:
