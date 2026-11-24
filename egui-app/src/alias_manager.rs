@@ -476,9 +476,12 @@ impl AliasManager {
                             self.request_picker(ctx);
                             let found=self.picker_result.clone();
                             components::soft_divider(modal);
+                            let results_height=components::modal_list_max_height(
+                                modal,work_area.height(),theme::MANAGEMENT_MODAL_BODY_MAX_HEIGHT,false
+                            );
                             egui::ScrollArea::vertical()
                                 .id_salt("alias-product-results")
-                                .max_height(theme::MANAGEMENT_MODAL_BODY_MAX_HEIGHT)
+                                .max_height(results_height)
                                 .show(modal,|results|{
                                     match &found{
                                         Some(result)=>{

@@ -1291,14 +1291,13 @@ impl ModalEditorWorkspace<'_> {
         let target=self.geometry.body.map(|r|r.bottom()).unwrap_or(top)
             +theme::MODAL_MASTER_WORKSPACE_GAP;
         self.ui.add_space((target-top).max(0.0));
-        self.geometry.footer=Some(Rect::from_min_size(
-            self.ui.cursor().min,Vec2::new(self.ui.available_width(),theme::MODAL_FOOTER_HEIGHT)
-        ));
     }
 
     pub fn footer_single<R>(&mut self,actions:impl FnOnce(&mut Ui)->R)->egui::InnerResponse<R>{
         self.before_footer();
-        modal_action_row(self.ui,actions)
+        let (response,rect)=modal_action_row_measured(self.ui,actions);
+        self.geometry.footer=Some(rect);
+        response
     }
 
     pub fn body<R>(
@@ -1343,7 +1342,7 @@ impl ModalEditorWorkspace<'_> {
         trailing:impl FnOnce(&mut Ui),
     ){
         self.before_footer();
-        modal_action_row_split(self.ui,leading,trailing);
+        self.geometry.footer=Some(modal_action_row_split_measured(self.ui,leading,trailing));
     }
 }
 
@@ -1689,6 +1688,12 @@ pub fn modal_review_footer_in_rect(
 pub fn modal_action_row<R>(
     ui:&mut Ui,actions:impl FnOnce(&mut Ui)->R
 )->egui::InnerResponse<R> {
+    modal_action_row_measured(ui,actions).0
+}
+
+fn modal_action_row_measured<R>(
+    ui:&mut Ui,actions:impl FnOnce(&mut Ui)->R
+)->(egui::InnerResponse<R>,Rect) {
     let (rect,_)=ui.allocate_exact_size(
         Vec2::new(ui.available_width(),theme::MODAL_FOOTER_HEIGHT),
         Sense::hover()
@@ -1703,7 +1708,7 @@ pub fn modal_action_row<R>(
             action_height)
     );
     let clip=area.intersect(ui.clip_rect());
-    ui.scope_builder(
+    let response=ui.scope_builder(
         egui::UiBuilder::new().id_salt("modal-master-flow-actions")
             .max_rect(area)
             .layout(Layout::right_to_left(Align::Center)),
@@ -1712,7 +1717,8 @@ pub fn modal_action_row<R>(
             buttons.set_width(area.width());
             actions(buttons)
         }
-    )
+    );
+    (response,rect)
 }
 
 /// Maximum scrollable editor body height after reserving the OCR-master
@@ -1720,14 +1726,30 @@ pub fn modal_action_row<R>(
 /// must not independently subtract arbitrary offsets from the full work area:
 /// doing so can push the final 58pt action row outside a short window.
 pub fn modal_editor_body_max_height(work_area_height:f32)->f32 {
+    modal_body_height_budget(work_area_height,true)
+}
+
+/// The same structural budget for every flowing modal. Viewers without
+/// a footer do not reserve a phantom action row.
+pub fn modal_body_height_budget(work_area_height:f32,has_footer:bool)->f32 {
     let fixed=2.0*theme::MODAL_PANEL_PADDING_Y
         +2.0*theme::FRAME_STROKE_WIDTH
         +theme::MODAL_HEADER_HEIGHT
-        +theme::MODAL_FOOTER_HEIGHT
-        +theme::SPACE_12
-        +3.0*theme::SPACING;
+        +theme::MODAL_MASTER_WORKSPACE_GAP
+        +if has_footer {modal_workspace_footer_reserve()} else {0.0};
     (work_area_height-fixed).max(1.0)
         .min(theme::MANAGEMENT_MODAL_BODY_MAX_HEIGHT)
+}
+
+/// Bound a list after its search toolbar and filters have actually been
+/// laid out. The parent owns the outer header and optional footer budget;
+/// the caller can choose a preferred list height, never exceed the budget.
+pub fn modal_list_max_height(
+    body:&Ui,work_area_height:f32,preferred:f32,has_footer:bool
+)->f32{
+    let consumed=(body.cursor().top()-body.min_rect().top()).max(0.0);
+    (modal_body_height_budget(work_area_height,has_footer)-consumed)
+        .max(1.0).min(preferred.max(1.0))
 }
 
 /// Two-ended footer for an editor with both a contextual/danger action
@@ -1741,7 +1763,15 @@ pub fn modal_action_row_split(
     leading:impl FnOnce(&mut Ui),
     trailing:impl FnOnce(&mut Ui),
 ) {
-    modal_action_row(ui,|footer|{
+    modal_action_row_split_measured(ui,leading,trailing);
+}
+
+fn modal_action_row_split_measured(
+    ui:&mut Ui,
+    leading:impl FnOnce(&mut Ui),
+    trailing:impl FnOnce(&mut Ui),
+)->Rect {
+    modal_action_row_measured(ui,|footer|{
         footer.columns(2,|columns|{
             columns[0].with_layout(
                 Layout::left_to_right(Align::Center),|left|leading(left)
@@ -1750,7 +1780,7 @@ pub fn modal_action_row_split(
                 Layout::right_to_left(Align::Center),|right|trailing(right)
             );
         });
-    });
+    }).1
 }
 
 pub fn modal_footer_chrome(ui:&mut Ui,actions:impl FnOnce(&mut Ui)) {
@@ -1933,6 +1963,17 @@ impl DecisionWorkspace<'_>{
             });
         self.body_bottom=Some(body.response.rect.bottom());
         body.inner
+    }
+
+    /// A framed decision owns one surface, instead of adding a framed
+    /// master inside the already inset plain decision body.
+    pub fn framed_body<R>(&mut self,contents:impl FnOnce(&mut Ui)->R)->R{
+        let top=self.ui.cursor().top();
+        let target=self.header_bottom.unwrap_or(top)+theme::MODAL_MASTER_WORKSPACE_GAP;
+        self.ui.add_space((target-top).max(0.0));
+        let region=self.ui.scope(|host|modal_master_body(host,contents));
+        self.body_bottom=Some(region.response.rect.bottom());
+        region.inner
     }
 
     fn before_actions(&mut self){
@@ -8077,5 +8118,51 @@ mod round87_modal_flow_contract_tests {
                     "width={width} region={kind} body={body:?} footer={footer:?}");
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod round87_modal_internal_layout_tests {
+    use super::*;
+
+    #[test]
+    fn body_budget_reserves_actual_master_geometry_not_extra_spacing(){
+        let height=440.0;
+        let viewer=modal_body_height_budget(height,false);
+        let editor=modal_body_height_budget(height,true);
+        assert_eq!(viewer-editor,modal_workspace_footer_reserve());
+        let expected=height-2.0*theme::MODAL_PANEL_PADDING_Y
+            -2.0*theme::FRAME_STROKE_WIDTH-theme::MODAL_HEADER_HEIGHT
+            -2.0*theme::MODAL_MASTER_WORKSPACE_GAP-theme::MODAL_FOOTER_HEIGHT;
+        assert_eq!(editor,expected);
+        assert_eq!(modal_body_height_budget(0.0,true),1.0);
+    }
+
+    #[test]
+    fn search_list_budget_shrinks_after_toolbar_and_respects_preferred_height(){
+        let ctx=egui::Context::default();
+        let _=ctx.run(egui::RawInput::default(),|ctx|{
+            egui::CentralPanel::default().show(ctx,|ui|{
+                let before=modal_list_max_height(ui,440.0,670.0,false);
+                ui.allocate_exact_size(Vec2::new(80.0,60.0),Sense::hover());
+                let after=modal_list_max_height(ui,440.0,670.0,false);
+                assert!(before-after>=60.0);
+                assert_eq!(modal_list_max_height(ui,440.0,20.0,false),20.0);
+            });
+        });
+    }
+
+    #[test]
+    fn migrated_search_lists_use_shared_remaining_height_budget(){
+        for (name,source) in [
+            ("alias",include_str!("alias_manager.rs")),
+            ("manual",include_str!("manual_product_search.rs")),
+            ("audit",include_str!("settings_view.rs")),
+        ] {
+            assert!(source.contains("components::modal_list_max_height("),"{name}");
+        }
+        let freight=include_str!("freight_manager.rs");
+        assert!(freight.contains("decision.framed_body("));
+        assert!(!freight.contains("components::modal_master_body("));
     }
 }

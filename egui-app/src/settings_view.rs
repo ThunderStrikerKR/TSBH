@@ -1076,8 +1076,11 @@ impl SettingsView{
                                     &self.archive_query.trim().to_lowercase()
                                 )).collect::<Vec<_>>();
                         ui.label(typography::caption(&format!("{}건 조회",matches.len())));
+                        let results_height=components::modal_list_max_height(
+                            ui,area.height(),area.height()*0.62,false
+                        );
                         egui::ScrollArea::vertical().id_salt("settings-audit-records-scroll")
-                            .max_height(area.height()*0.62)
+                            .max_height(results_height)
                             .show(ui,|entries|{
                                 for row in matches{
                                     let id=field(row,"id");

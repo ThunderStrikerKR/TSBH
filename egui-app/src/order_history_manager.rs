@@ -1229,7 +1229,6 @@ impl OrderHistoryManager {
                                 "마지막 갱신: {}",
                                 memo_last_updated_label(&editor.updated_at)
                             )));
-                            ui.add_space(theme::SPACE_8);
                             // Use the full modal content width. The former nested
                             // enabled UI could shrink the TextEdit to a narrow slot.
                             // Twelve visible lines make this a real memo editor.

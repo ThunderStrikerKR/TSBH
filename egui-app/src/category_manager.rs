@@ -833,7 +833,6 @@ impl CategoryManager {
                                         body,notice_width,typography::METADATA_LINE_HEIGHT,
                                         legacy_notice,legacy_notice,theme::MUTED
                                     );
-                                    body.add_space(theme::SPACE_8);
                                 }
                             });
                         });

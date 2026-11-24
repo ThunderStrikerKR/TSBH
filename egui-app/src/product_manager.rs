@@ -514,7 +514,7 @@ impl ProductManager {
     )->(bool,Option<Value>){
         let mut cancelled=false;
         let width=(work_area.width()-theme::SPACE_16*2.0).clamp(1.0,1120.0);
-        let height=(work_area.height()-theme::SPACE_16*4.0).clamp(1.0,650.0);
+        let height=components::modal_body_height_budget(work_area.height(),false).min(650.0);
         components::modal_window("상품 선택",window_id,work_area)
             .default_width(width).show(ctx,|ui|{
 

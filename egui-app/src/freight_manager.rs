@@ -1008,8 +1008,7 @@ impl FreightManager {
                         components::decision_workspace(modal,|decision|{
                             if decision.header("배송 그룹 삭제","취소",enabled
                             ){close_delete=true;}
-                            decision.body(|modal|{
-                                components::modal_master_body(modal,|workspace|{
+                            decision.framed_body(|workspace|{
                                 components::modal_master_body_section(
                                     workspace,"삭제 대상",|details|{
                                     details.label(typography::section_heading(name));
@@ -1040,7 +1039,6 @@ impl FreightManager {
                                             "연결된 현재 상품이 없습니다. 과거 운임과 주문 기록은 보존합니다."
                                         ));
                                     }
-                                });
                                 });
                             });
                             decision.actions(|controls|{

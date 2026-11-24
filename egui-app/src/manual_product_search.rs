@@ -195,13 +195,16 @@ impl ProductSearch{
                         }
                         // Always allocate one result viewport. The search state
                         // changes inside it, never shrinking or jumping the modal.
+                        let results_height=components::modal_list_max_height(
+                            ui,work_area.height(),theme::MANUAL_SEARCH_RESULTS_HEIGHT,false
+                        );
                         ui.allocate_ui_with_layout(
-                            egui::vec2(ui.available_width(),theme::MANUAL_SEARCH_RESULTS_HEIGHT),
+                            egui::vec2(ui.available_width(),results_height),
                             egui::Layout::top_down(egui::Align::Min),
                             |pane|{
                                 egui::ScrollArea::vertical()
                                     .id_salt("manual-product-search-results")
-                                    .max_height(theme::MANUAL_SEARCH_RESULTS_HEIGHT)
+                                    .max_height(results_height)
                                     .show(pane,|ui|{
                                         if let Some(error)=&self.error {
                                             ui.label(typography::status(error,theme::DANGER));

@@ -3045,7 +3045,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                 components::modal_flow_workspace(ui,|workspace|{
                     close=workspace.header("최초 분석 및 수정 이력","닫기",true
                     );
-                    workspace.scroll_region("reception-correction-history-body",(work_area.height()*0.6).min(components::modal_editor_body_max_height(work_area.height())),|body|{
+                    workspace.scroll_region("reception-correction-history-body",(work_area.height()*0.6).min(components::modal_body_height_budget(work_area.height(),false)),|body|{
                                 body.label(typography::section_heading("최초 분석"));
                                 body.add(egui::Label::new(
                                     typography::body(&serde_json::to_string_pretty(&original)
