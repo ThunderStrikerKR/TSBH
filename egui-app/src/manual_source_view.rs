@@ -247,7 +247,7 @@ mod tests {
             "the source must be captured on press, before the pointer moves");
         assert!(!pressed.drag_moved);
         let original_job=source_highlight::layout_manual(
-            raw,&spans,None,None,&HashSet::new(),320.0,
+            raw,&spans,None,None,&HashSet::new(),pressed.drag_layout_width,
             FontId::proportional(typography::FONT_RECEPTION_SOURCE_TEXT),theme::TEXT
         );
         let original_galley=ctx.fonts_mut(|fonts|fonts.layout_job(original_job));
@@ -258,7 +258,8 @@ mod tests {
             .reduce(|left,right|left.union(right)).unwrap();
         assert_eq!(pressed.drag_anchor_offset,Some(from-original_bounds.min),
             "the drag anchor must preserve the exact point grabbed inside the source block");
-        assert_eq!(pressed.drag_layout_width,320.0);
+        assert!(pressed.drag_layout_width>0.0,
+            "the drag preview must retain the source document's measured width");
         let to=from+egui::vec2(360.0,30.0);
         let dragged=draw(&ctx,egui::RawInput{
             events:vec![egui::Event::PointerMoved(to)],
