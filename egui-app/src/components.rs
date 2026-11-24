@@ -2516,6 +2516,16 @@ pub fn multiline_text_field_sized(
     ui.add_sized(size,editor)
 }
 
+/// Source-document text styling is shared while the caller supplies its
+/// custom layout job and immutable or editable buffer.
+pub fn reception_source_text_edit<'a>(
+    buffer:&'a mut dyn egui::TextBuffer,width:f32
+)->egui::TextEdit<'a>{
+    egui::TextEdit::multiline(buffer).frame(false)
+        .font(egui::FontId::proportional(typography::FONT_RECEPTION_SOURCE_TEXT))
+        .desired_width(width)
+}
+
 /// Search inputs are append-first: a normal pointer click to resume an
 /// existing filter places the caret after its last Unicode character, even
 /// when the click lands over the first character. This does NOT alter ordinary
@@ -8419,5 +8429,77 @@ mod round87_phase5_modal_contract_tests {
         assert_eq!(theme::MODAL_PANEL_PADDING_X,18.0);
         assert_eq!(theme::MODAL_HEADER_HEIGHT,56.0);
         assert_eq!(theme::MODAL_FOOTER_HEIGHT,58.0);
+    }
+}
+
+#[cfg(test)]
+mod shared_general_screen_audit_tests {
+    use super::*;
+
+    fn scan(path:&std::path::Path,violations:&mut Vec<String>){
+        for entry in std::fs::read_dir(path).expect("read egui source directory"){
+            let p=entry.expect("source entry").path();
+            if p.is_dir(){scan(&p,violations);continue;}
+            if p.extension().and_then(|v|v.to_str())!=Some("rs"){continue;}
+            let name=p.file_name().and_then(|v|v.to_str()).unwrap_or("");
+            if matches!(name,"components.rs"|"theme.rs"){continue;}
+            let source=std::fs::read_to_string(&p).expect("read source");
+            for (index,line) in source.lines().enumerate(){
+                let code=line.trim_start();
+                if code.starts_with("//") || code.starts_with("/*") || code.starts_with('*'){continue;}
+                // One existing native caret fixture intentionally tests egui
+                // selection state, not an operating screen.
+                if name=="product_manager.rs"
+                    && code=="let response=ui.add(egui::TextEdit::singleline(&mut value));"
+                    && source.lines().skip(index.saturating_sub(12)).take(12.min(index)).any(|l|
+                        l.contains("fn focused_price_cell_selects_existing_amount_for_direct_replacement(")){
+                    continue;
+                }
+                for token in [
+                    "Button::new(","Frame::new(","TextEdit::singleline(",
+                    "TextEdit::multiline(","Checkbox::new(","ComboBox::",
+                    ".button(",".checkbox(",".text_edit_singleline(",
+                    ".text_edit_multiline(","ScrollStyle::solid(","ScrollStyle::floating(",
+                ] {
+                    if let Some(pos)=code.find(token){
+                        if !code[..pos].contains('"'){
+                            violations.push(format!("{}:{}: {}",p.display(),index+1,token));
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn new_and_existing_screen_modules_use_shared_controls_and_surfaces(){
+        let mut violations=Vec::new();
+        scan(&std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src"),&mut violations);
+        assert!(violations.is_empty(),"general screen UI bypass:\n{}",violations.join("\n"));
+    }
+
+    #[test]
+    fn general_screen_master_geometry_and_scroll_tokens_stay_approved(){
+        assert_eq!(theme::SECTION_PADDING,16.0);
+        assert_eq!(theme::MANAGEMENT_MASTER_TABLE_BOTTOM_PADDING,16.0);
+        assert_eq!(theme::MANAGEMENT_TABLE_HEADER_HEIGHT,36.0);
+        assert_eq!(theme::MANAGEMENT_TABLE_HEADER_OUTLINE_HEIGHT,2.0);
+        assert_eq!(theme::MANAGEMENT_TOOLBAR_DIVIDER_TOP_GAP,16.0);
+        assert_eq!(theme::MANAGEMENT_TOOLBAR_DIVIDER_BOTTOM_GAP,4.0);
+        assert_eq!(theme::MANAGEMENT_TABLE_SCROLL_RAIL_EXTENSION,7.0);
+        let standard=theme::management_scroll_style();
+        let table=theme::management_table_scroll_style();
+        assert_eq!(standard.bar_width,10.0);
+        assert_eq!(table.bar_width,standard.bar_width);
+        assert_eq!(table.handle_min_length,standard.handle_min_length);
+        assert_eq!(table.bar_inner_margin,0.0);
+        assert_eq!(table.bar_outer_margin,0.0);
+    }
+
+    #[test]
+    fn all_reception_source_entry_points_share_the_native_editor_configuration(){
+        let source=include_str!("main.rs");
+        assert_eq!(source.matches("components::reception_source_text_edit(").count(),3);
+        assert!(!source.contains("TextEdit::multiline("));
     }
 }

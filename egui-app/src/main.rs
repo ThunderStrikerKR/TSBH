@@ -61,7 +61,7 @@ mod excel_service;
 mod management_queries;
 mod developer_ui_samples;
 
-use eframe::egui::{self, Align, Frame, Layout, Rect, Sense, Ui, UiBuilder, Vec2};
+use eframe::egui::{self, Align, Layout, Rect, Sense, Ui, UiBuilder, Vec2};
 use theme::{ButtonRole, WindowControl};
 use cell_navigation::{CellNavigationCell, CellNavigationKey};
 use clipboard_intake::{ClipboardImage, ClipboardMonitor, ClipboardPayload, OrderType};
@@ -4444,8 +4444,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
         egui::TopBottomPanel::top("global_navigation")
             .exact_height(theme::HEADER_HEIGHT)
             .frame(
-                Frame::new().fill(theme::HEADER_BG)
-                    .inner_margin(egui::Margin::symmetric(theme::HEADER_PADDING_X, 0))
+                theme::navigation_header_frame()
             )
             .show(ctx, |ui| {
                 // The former top strip was a normal layout item, so its 8pt
@@ -5122,11 +5121,8 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                         layout_ui.fonts_mut(|fonts|fonts.layout_job(job))
                                     };
                                     let paint_slot=text_ui.painter().add(egui::Shape::Noop);
-                                    let display=egui::TextEdit::multiline(&mut immutable)
-                                        .frame(false)
-                                        .font(egui::FontId::proportional(
-                                            typography::FONT_RECEPTION_SOURCE_TEXT))
-                                        .desired_width(text_ui.available_width())
+                                    let display=components::reception_source_text_edit(
+                                        &mut immutable,text_ui.available_width())
                                         .layouter(&mut layouter)
                                         .show(text_ui);
                                     let (normal,focused)=source_highlight::block_shapes(
@@ -5233,11 +5229,8 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                         layout_ui.fonts_mut(|fonts|fonts.layout_job(job))
                                     };
                                     let under=content.painter().add(egui::Shape::Noop);
-                                    let output=egui::TextEdit::multiline(&mut immutable)
-                                        .frame(false)
-                                        .font(egui::FontId::proportional(
-                                            typography::FONT_RECEPTION_SOURCE_TEXT))
-                                        .desired_width(content.available_width())
+                                    let output=components::reception_source_text_edit(
+                                        &mut immutable,content.available_width())
                                         .layouter(&mut layouter).show(content);
                                     let (normal,focused)=source_highlight::block_shapes(
                                         raw,&output.galley,output.galley_pos,&spans,
@@ -5555,13 +5548,9 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                 // Only the explicit direct-entry route gets a
                                 // mutable String buffer.
                                 let mut show_source=|buffer:&mut dyn egui::TextBuffer|{
-                                    egui::TextEdit::multiline(buffer)
-                                        .frame(false)
-                                        .font(egui::FontId::proportional(
-                                            typography::FONT_RECEPTION_SOURCE_TEXT
-                                        ))
+                                    components::reception_source_text_edit(
+                                        buffer,scroll_ui.available_width())
                                         .desired_rows(lines)
-                                        .desired_width(scroll_ui.available_width())
                                         .layouter(&mut layouter)
                                         .show(scroll_ui)
                                 };
@@ -8048,7 +8037,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                 // cards should end on the same gutter line as
                                 // the reception panes. Individual section
                                 // frames retain their own content padding.
-                                Frame::new().inner_margin(0).show(main,|page|{
+                                theme::management_page_host_frame().show(main,|page|{
                                     match self.page{
                                         Page::Excel=>{
                                             if let Some(excel)=self.excel_manager.as_mut(){

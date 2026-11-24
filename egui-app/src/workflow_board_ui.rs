@@ -252,13 +252,7 @@ fn workflow_card<R>(
     ui:&mut Ui,selected:bool,preview:bool,body:impl FnOnce(&mut Ui)->R
 )->R{
     let outer=ui.available_width();
-    let frame=Frame::new()
-        .fill(if selected || preview{theme::WORKFLOW_SELECTED_BG}
-            else{theme::WORKFLOW_CARD_BG})
-        .stroke(egui::Stroke::new(theme::SOFT_DIVIDER_WIDTH,
-            theme::WORKFLOW_CARD_BORDER))
-        .corner_radius(egui::CornerRadius::same(theme::WORKFLOW_CARD_RADIUS))
-        .inner_margin(0);
+    let frame=theme::workflow_group_card_frame(selected||preview);
     let response=frame.show(ui,|card|{
         // The 42pt upper/lower bands and 1pt divider own all vertical
         // spacing. No additional automatic gap between the compact rows.
@@ -701,16 +695,7 @@ fn shipment_line(
     let preview_ink=if previewed && !chosen{
         source_highlight::ACTIVE_TEXT
     }else{theme::TEXT};
-    let response=Frame::new()
-        .fill(fill)
-        .stroke(egui::Stroke::new(
-            theme::SOFT_DIVIDER_WIDTH,theme::WORKFLOW_DETAIL_ROW_BORDER
-        ))
-        .corner_radius(theme::CONTROL_RADIUS)
-        .inner_margin(egui::Margin::symmetric(
-            theme::WORKFLOW_DETAIL_ROW_PADDING_X as i8,
-            theme::SPACE_4 as i8
-        ))
+    let response=theme::workflow_shipment_row_frame(fill)
         .show(ui,|row|{
             // Inner margins do not include the 1pt frame stroke on either
             // edge. Reserve both strokes so neighboring rows have exactly

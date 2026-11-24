@@ -797,6 +797,37 @@ pub fn install(ctx: &egui::Context) {
     ctx.set_style(style);
 }
 
+/// Screen-specific roles retain their approved appearance, but frame
+/// construction and padding belong to the shared theme.
+pub fn navigation_header_frame()->Frame{
+    Frame::new().fill(HEADER_BG)
+        .inner_margin(egui::Margin::symmetric(HEADER_PADDING_X,0))
+}
+pub fn management_page_host_frame()->Frame{
+    Frame::new().inner_margin(0)
+}
+pub fn workflow_group_card_frame(highlighted:bool)->Frame{
+    Frame::new()
+        .fill(if highlighted{WORKFLOW_SELECTED_BG}else{WORKFLOW_CARD_BG})
+        .stroke(Stroke::new(SOFT_DIVIDER_WIDTH,WORKFLOW_CARD_BORDER))
+        .corner_radius(CornerRadius::same(WORKFLOW_CARD_RADIUS))
+        .inner_margin(0)
+}
+pub fn workflow_shipment_row_frame(fill:Color32)->Frame{
+    Frame::new().fill(fill)
+        .stroke(Stroke::new(SOFT_DIVIDER_WIDTH,WORKFLOW_DETAIL_ROW_BORDER))
+        .corner_radius(CONTROL_RADIUS)
+        .inner_margin(egui::Margin::symmetric(
+            WORKFLOW_DETAIL_ROW_PADDING_X as i8,SPACE_4 as i8
+        ))
+}
+pub fn settings_help_surface_frame()->Frame{
+    Frame::new().fill(INPUT)
+        .stroke(Stroke::new(SOFT_DIVIDER_WIDTH,BORDER))
+        .corner_radius(CornerRadius::same(CONTROL_RADIUS))
+        .inner_margin(egui::Margin::symmetric(SPACE_16 as i8,SPACE_12 as i8))
+}
+
 pub fn modal_frame() -> Frame {
     Frame::new()
         .fill(PANEL)
