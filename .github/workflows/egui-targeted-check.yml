@@ -61,10 +61,19 @@ on:
       - src-tauri/src/main.rs
       - src-tauri/src/lib.rs
       - src-tauri/src/workflow_sqlite_integration_tests.rs
+      - src-tauri/src/backup_manager.rs
+      - src-tauri/src/relational_store.rs
+      - src-tauri/src/sale_unit_migration.rs
+      - src-tauri/src/business_core/rules/reception_merge.rs
+      - src-tauri/resources/legacy-state-seed-303.json
   pull_request:
     paths:
       - egui-app/**
       - src-tauri/src/business_core/**
+      - src-tauri/src/backup_manager.rs
+      - src-tauri/src/relational_store.rs
+      - src-tauri/src/sale_unit_migration.rs
+      - src-tauri/resources/legacy-state-seed-303.json
       - crates/bando-data-access/**
       - .github/workflows/egui-targeted-check.yml
   workflow_dispatch:
@@ -120,6 +129,10 @@ jobs:
         run: cargo check --manifest-path src-tauri/Cargo.toml --bin bando_hub_tauri
       - name: Compile standalone egui client-management entrypoint
         run: cargo check --manifest-path egui-app/Cargo.toml
+      - name: Verify legacy SQLite backup restore, rollback and revision safety
+        run: cargo test --manifest-path src-tauri/Cargo.toml --lib backup_manager::tests -- --nocapture
+      - name: Verify relational SQLite migration, preserved before-images and ID scoping
+        run: cargo test --manifest-path src-tauri/Cargo.toml --lib relational_store::tests -- --nocapture
       - name: Verify recipient hover uses the production typography context
         run: cargo test --manifest-path egui-app/Cargo.toml recipient_source_reverse_hover_tests -- --nocapture
       - name: Verify pending workflow card uses the production typography context
