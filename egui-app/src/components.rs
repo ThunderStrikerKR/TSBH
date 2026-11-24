@@ -2808,31 +2808,13 @@ pub fn reception_section_divider(ui:&mut Ui){
     ui.painter().rect_filled(rect,0.0,theme::DIVIDER);
 }
 
-/// Readability for actionable recognition/workflow issues. Full-width
-/// variable-height rows wrap long content without clipping or creating
-/// another bordered card inside the Reception docked pane.
+/// Untyped recognition/workflow notices retain informational coloring.
 pub fn reception_review_status(ui:&mut Ui,message:&str){
-    let width=ui.available_width();
-    let output=Frame::new()
-        .fill(theme::TABLE_ROW_ALT_BG)
-        .corner_radius(theme::CONTROL_RADIUS)
-        .inner_margin(egui::Margin::symmetric(
-            theme::SPACE_8 as i8,theme::SPACE_4 as i8
-        ))
-        .show(ui,|content|{
-            content.set_min_width((width-2.0*theme::SPACE_8).max(1.0));
-            content.add(
-                egui::Label::new(typography::status(message,theme::SELECTED_ORDER))
-                    .wrap()
-            );
-        });
-    let rect=output.response.rect;
-    ui.painter().rect_filled(
-        Rect::from_min_max(
-            rect.left_top(),
-            egui::pos2(rect.left()+theme::WORKFLOW_SELECTED_STRIPE,rect.bottom())
-        ),0.0,theme::SELECTED_ORDER
-    );
+    let tone=theme::ReviewTone::Info;
+    theme::review_issue_card(ui,tone,|content|{
+        content.add(egui::Label::new(typography::body(message)
+            .color(tone.text_color())).wrap());
+    });
 }
 
 /// The message editor/footer uses a 12pt spacer with a 1pt centered divider.
@@ -5481,8 +5463,11 @@ mod shared_review_card_contract_tests {
     #[test]
     fn reception_review_cards_use_shared_surface_frame(){
         let source=include_str!("review_panel.rs");
-        assert_eq!(source.matches("theme::review_issue_frame()").count(),2);
+        assert_eq!(source.matches("theme::review_issue_card(").count(),3);
         assert!(!source.contains("egui::Frame::new()"));
+        let fallback=include_str!("components.rs").split("pub fn reception_review_status(")
+            .nth(1).unwrap().split("\n///").next().unwrap();
+        assert!(fallback.contains("theme::review_issue_card("));
     }
 }
 

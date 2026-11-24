@@ -964,15 +964,61 @@ pub fn kakao_slot_frame() -> Frame {
         .inner_margin(0)
 }
 
-/// Reception review issue/notice surface. The alternate table fill and
-/// compact inset distinguish review cards without creating a new local frame.
-pub fn review_issue_frame()->Frame{
+/// Shared status notice palette. Color belongs to the entire card; no
+/// shadow, glow, animation or hover-induced geometry is applied.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ReviewTone {
+    Action,
+    Info,
+    Error,
+    Complete,
+}
+
+impl ReviewTone {
+    pub fn palette(self) -> (Color32, Color32, Color32, Color32) {
+        // Background, border, primary text, secondary text.
+        match self {
+            Self::Action => (
+                Color32::from_rgb(59, 48, 26), Color32::from_rgb(201, 154, 64),
+                Color32::from_rgb(241, 208, 140), Color32::from_rgb(197, 179, 143),
+            ),
+            Self::Info => (
+                Color32::from_rgb(25, 45, 64), Color32::from_rgb(88, 152, 218),
+                Color32::from_rgb(160, 205, 255), Color32::from_rgb(144, 172, 199),
+            ),
+            Self::Error => (
+                Color32::from_rgb(61, 32, 32), Color32::from_rgb(207, 96, 96),
+                Color32::from_rgb(255, 160, 160), Color32::from_rgb(223, 165, 165),
+            ),
+            Self::Complete => (
+                Color32::from_rgb(29, 53, 38), Color32::from_rgb(89, 167, 117),
+                Color32::from_rgb(155, 221, 176), Color32::from_rgb(153, 197, 167),
+            ),
+        }
+    }
+
+    pub fn text_color(self) -> Color32 { self.palette().2 }
+    pub fn detail_color(self) -> Color32 { self.palette().3 }
+}
+
+pub fn review_issue_frame(tone: ReviewTone) -> Frame {
+    let (background, border, _, _) = tone.palette();
     Frame::new()
-        .fill(TABLE_ROW_ALT_BG)
+        .fill(background)
+        .stroke(Stroke::new(FRAME_STROKE_WIDTH, border))
         .corner_radius(CornerRadius::same(CONTROL_RADIUS))
         .inner_margin(egui::Margin::symmetric(
-            SPACE_8 as i8,SPACE_8 as i8
+            SPACE_8 as i8, SPACE_8 as i8
         ))
+}
+
+/// Fill the available row width rather than sizing the notice to its text.
+/// The frame owns its insets; the parent owns scrolling and clipping.
+pub fn review_issue_card(ui: &mut Ui, tone: ReviewTone, add_contents: impl FnOnce(&mut Ui)) {
+    review_issue_frame(tone).show(ui, |content| {
+        content.set_min_width(content.available_width().max(0.0));
+        add_contents(content);
+    });
 }
 
 /// Unbordered preview surface for generated or copy-ready text. Keep the

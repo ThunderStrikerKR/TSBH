@@ -9,7 +9,7 @@ use crate::{
     manual_workspace,
     preview_store::WorkingReception,
     reception_service::ReceptionAnalysis,
-    theme::{self,ButtonRole},typography,
+    theme::{self,ButtonRole,ReviewTone},typography,
 };
 
 fn text<'a>(row:&'a Value,key:&str)->&'a str {
@@ -140,9 +140,11 @@ impl ReviewPanel {
         let mut selected=None;
         let interactive=self.ready() && enabled;
         if let Some(error)=self.error.as_deref(){
-            ui.label(typography::status(
-                &format!("Rust 확인 항목 조회 실패: {error}"),theme::DANGER
-            ));
+            theme::review_issue_card(ui,ReviewTone::Error,|cell|{
+                cell.add(egui::Label::new(typography::body(
+                    &format!("Rust 확인 항목 조회 실패: {error}")
+                ).color(ReviewTone::Error.text_color())).wrap());
+            });
             return None;
         }
         if self.pending.is_some() && self.issues.is_empty(){
@@ -166,15 +168,17 @@ impl ReviewPanel {
             issue_card(ui,issue,analysis,interactive,&mut selected);
         }
         if let Some(remote)=remote{
-            theme::review_issue_frame().show(ui,|content|{
-                    content.label(typography::body("도서·산간 지역 확인").strong());
-                    content.label(typography::caption(
+            let tone=ReviewTone::Info;
+            theme::review_issue_card(ui,tone,|content|{
+                    content.add(egui::Label::new(typography::body("도서·산간 지역 확인")
+                        .strong().color(tone.text_color())).wrap());
+                    content.add(egui::Label::new(typography::caption(
                         if text(remote,"status")=="auto" {
                             "도서·산간 지역으로 판단했습니다. 확인 후 체크 여부를 결정하세요."
                         }else{
                             "도서·산간 지역일 수 있습니다. 주소를 확인 후 체크 여부를 결정하세요."
                         }
-                    ));
+                    ).color(tone.detail_color())).wrap());
                 });
         }
         let inherited=facts.iter().copied().filter(|issue|
@@ -199,6 +203,16 @@ impl ReviewPanel {
         selected
     }
 }
+/// Visual mapping only. The native severity and action routing remain authoritative.
+fn issue_tone(issue:&Value)->ReviewTone {
+    match (text(issue,"severity"),text(issue,"kind"),text(issue,"resolution")) {
+        ("ERROR",_,_) | (_,"CLIENT_MATCH_ERROR",_) => ReviewTone::Error,
+        ("INFO",_,"RESOLVED") => ReviewTone::Complete,
+        ("INFO",_,_) => ReviewTone::Info,
+        _ => ReviewTone::Action,
+    }
+}
+
 fn issue_card(
     ui:&mut Ui,issue:&Value,analysis:&ReceptionAnalysis,
     enabled:bool,selected:&mut Option<Action>,
@@ -210,31 +224,33 @@ fn issue_card(
     let detail=text(issue,"detail");
     let severity=text(issue,"severity");
     let link_key=issue.get("linkKey").and_then(Value::as_str);
-    theme::review_issue_frame().show(ui,|cell|{
-            cell.label(typography::body(
+    let tone=issue_tone(issue);
+    theme::review_issue_card(ui,tone,|cell|{
+            cell.add(egui::Label::new(typography::body(
                 if kind=="QUANTITY_MISSING"
                     &&text(issue,"resolution")=="PROVISIONALLY_APPROVED"{
                     "수량 1개 잠정 처리됨"
                 }else{title}
-            ).strong());
+            ).strong().color(tone.text_color())).wrap());
             if !detail.is_empty() && detail!=title {
-                cell.add(egui::Label::new(typography::caption(detail)).wrap());
+                cell.add(egui::Label::new(typography::caption(detail)
+                    .color(tone.detail_color())).wrap());
             }
             if kind=="UNASSIGNED_EVIDENCE" {
-                cell.label(typography::caption(
+                cell.add(egui::Label::new(typography::caption(
                     "상품 또는 수량으로 인식된 문구입니다. 수동 분류에서 실제 주문 내용과 연결할지 확인하세요."
-                ));
+                ).color(tone.detail_color())).wrap());
             }
             if text(issue,"resolution")=="PENDING_CUSTOMER" {
-                cell.label(typography::caption(
+                cell.add(egui::Label::new(typography::caption(
                     "거래처 확인 대기 / 문의 복사만으로 해결되지 않습니다."
-                ));
+                ).color(tone.detail_color())).wrap());
             }
             if kind=="QUANTITY_MISSING"
                 &&text(issue,"resolution")=="PROVISIONALLY_APPROVED"{
-                cell.label(typography::caption(
+                cell.add(egui::Label::new(typography::caption(
                     "1개 발송 예정 안내가 복사용 메시지에 포함됩니다. 실제 수량이 확인되면 수량을 수정하세요."
-                ));
+                ).color(tone.detail_color())).wrap());
             }
             let is_client=kind=="CLIENT" || kind.starts_with("CLIENT_MATCH_");
             let is_candidate=kind.starts_with("CANDIDATE_");
@@ -325,6 +341,14 @@ fn issue_card(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn review_tones_follow_native_severity_without_changing_actions(){
+        assert_eq!(issue_tone(&json!({"severity":"ACTION"})),ReviewTone::Action);
+        assert_eq!(issue_tone(&json!({"severity":"INFO","resolution":"AUTO_APPLIED"})),ReviewTone::Info);
+        assert_eq!(issue_tone(&json!({"severity":"INFO","resolution":"PROVISIONALLY_APPROVED"})),ReviewTone::Info);
+        assert_eq!(issue_tone(&json!({"severity":"INFO","resolution":"RESOLVED"})),ReviewTone::Complete);
+        assert_eq!(issue_tone(&json!({"severity":"ACTION","kind":"CLIENT_MATCH_ERROR"})),ReviewTone::Error);
+    }
     #[test]
     fn same_source_receipt_key_changes_after_user_edit(){
         let first=ReviewKey{
