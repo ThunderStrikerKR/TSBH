@@ -5,7 +5,8 @@
 
 use eframe::egui::{self, Color32, FontId};
 use serde_json::Value;
-use std::time::{Duration, Instant};
+use std::{collections::HashSet,time::{Duration, Instant}};
+use crate::theme;
 
 // Source-document linkage: 50ms enter / 150ms release.
 // This is distinct from the 250ms working-order foreground preview.
@@ -467,13 +468,26 @@ struct VisualBlock {
     key:LinkKey,
     fill:Color32,
     focused:bool,
+    manual_state:Option<ManualBlockState>,
 }
+
+#[derive(Clone,Copy,Debug,PartialEq,Eq)]
+enum ManualBlockState { Unassigned, Classified }
 
 // Resolve overlapping evidence once per character interval, so two
 // classifiers cannot paint competing fills over the same source text.
 fn visual_blocks(
     raw:&str,spans:&[LinkedSpan],selected_recipient:Option<&str>,
     active:Option<&LinkKey>
+)->Vec<VisualBlock> {
+    visual_blocks_with_manual_states(raw,spans,selected_recipient,active,None)
+}
+
+/// Shared geometry with a manual-only classification palette. When states
+/// are omitted (Reception), preserve the original evidence rendering.
+fn visual_blocks_with_manual_states(
+    raw:&str,spans:&[LinkedSpan],selected_recipient:Option<&str>,
+    active:Option<&LinkKey>,assigned_ids:Option<&HashSet<String>>
 )->Vec<VisualBlock> {
     let mut positions=Vec::with_capacity(spans.len()*2+2);
     positions.extend([0,raw.len()]);
@@ -503,12 +517,22 @@ fn visual_blocks(
         let is_focused=focused.is_some();
         let is_context=selected_recipient==Some(chosen.key.recipient_id.as_str()) ||
             active.is_some_and(|key|key.recipient_id==chosen.key.recipient_id);
+        let manual_state=assigned_ids.map(|ids| {
+            if chosen.source_id.as_ref().is_some_and(|id|ids.contains(id)) {
+                ManualBlockState::Classified
+            }else{ManualBlockState::Unassigned}
+        });
         let fill=if is_focused {SOURCE_ACTIVE}
-            else if is_context {SOURCE_CONTEXT}
-            else {SOURCE_BLOCK};
+            else {match manual_state {
+                Some(ManualBlockState::Unassigned)=>theme::MANUAL_SOURCE_UNASSIGNED_FILL,
+                Some(ManualBlockState::Classified)=>theme::MANUAL_SOURCE_CLASSIFIED_FILL,
+                None if is_context=>SOURCE_CONTEXT,
+                None=>SOURCE_BLOCK,
+            }};
         if let Some(previous)=result.last_mut() {
             if previous.end==start && previous.key==chosen.key &&
-               previous.fill==fill && previous.focused==is_focused {
+               previous.fill==fill && previous.focused==is_focused &&
+               previous.manual_state==manual_state {
                 previous.end=end;
                 previous.end_char=char_cursor;
                 continue;
@@ -516,7 +540,7 @@ fn visual_blocks(
         }
         result.push(VisualBlock {
             start,end,start_char,end_char:char_cursor,
-            key:chosen.key.clone(),fill,focused:is_focused,
+            key:chosen.key.clone(),fill,focused:is_focused,manual_state,
         });
     }
     result
@@ -533,10 +557,31 @@ pub fn layout(
     font:FontId,
     color:Color32,
 )->egui::text::LayoutJob {
+    layout_with_states(raw,spans,selected_recipient,active,None,width,font,color)
+}
+
+/// Used only by the manual source viewer, not by normal Reception.
+pub fn layout_manual(
+    raw:&str,spans:&[LinkedSpan],
+    selected_recipient:Option<&str>,active:Option<&LinkKey>,
+    assigned_ids:&HashSet<String>,width:f32,font:FontId,color:Color32
+)->egui::text::LayoutJob{
+    layout_with_states(
+        raw,spans,selected_recipient,active,Some(assigned_ids),width,font,color
+    )
+}
+
+fn layout_with_states(
+    raw:&str,spans:&[LinkedSpan],selected_recipient:Option<&str>,
+    active:Option<&LinkKey>,assigned_ids:Option<&HashSet<String>>,
+    width:f32,font:FontId,color:Color32
+)->egui::text::LayoutJob {
     let mut job=egui::text::LayoutJob::default();
     job.wrap.max_width=width;
     let mut cursor=0;
-    for block in visual_blocks(raw,spans,selected_recipient,active) {
+    for block in visual_blocks_with_manual_states(
+        raw,spans,selected_recipient,active,assigned_ids
+    ) {
         if cursor<block.start {
             job.append(&raw[cursor..block.start],0.0,egui::TextFormat {
                 font_id:font.clone(),color,..Default::default()
@@ -544,7 +589,13 @@ pub fn layout(
         }
         job.append(&raw[block.start..block.end],0.0,egui::TextFormat {
             font_id:font.clone(),
-            color:if block.focused {SOURCE_ACTIVE_TEXT} else {color},
+            color:if block.focused {SOURCE_ACTIVE_TEXT} else {
+                match block.manual_state {
+                    Some(ManualBlockState::Unassigned)=>theme::MANUAL_SOURCE_UNASSIGNED_TEXT,
+                    Some(ManualBlockState::Classified)=>theme::MANUAL_SOURCE_CLASSIFIED_TEXT,
+                    None=>color,
+                }
+            },
             ..Default::default()
         });
         cursor=block.end;
@@ -595,11 +646,36 @@ pub fn block_shapes(
     spans:&[LinkedSpan],selected_recipient:Option<&str>,
     active:Option<&LinkKey>,clip:egui::Rect,
 )->(Vec<egui::Shape>,Vec<egui::Shape>) {
-    let blocks=visual_blocks(raw,spans,selected_recipient,active);
+    block_shapes_with_states(
+        raw,galley,galley_pos,spans,selected_recipient,active,None,clip
+    )
+}
+
+/// Evidence fill + 1pt outlined state for the manual classification popup.
+/// Reception still calls block_shapes() without a manual-state override.
+pub fn block_shapes_manual(
+    raw:&str,galley:&egui::Galley,galley_pos:egui::Pos2,
+    spans:&[LinkedSpan],selected_recipient:Option<&str>,
+    active:Option<&LinkKey>,assigned_ids:&HashSet<String>,clip:egui::Rect,
+)->(Vec<egui::Shape>,Vec<egui::Shape>) {
+    block_shapes_with_states(
+        raw,galley,galley_pos,spans,selected_recipient,active,Some(assigned_ids),clip
+    )
+}
+
+fn block_shapes_with_states(
+    raw:&str,galley:&egui::Galley,galley_pos:egui::Pos2,
+    spans:&[LinkedSpan],selected_recipient:Option<&str>,
+    active:Option<&LinkKey>,assigned_ids:Option<&HashSet<String>>,clip:egui::Rect,
+)->(Vec<egui::Shape>,Vec<egui::Shape>) {
+    let blocks=visual_blocks_with_manual_states(
+        raw,spans,selected_recipient,active,assigned_ids
+    );
     let characters:Vec<char>=raw.chars().collect();
     let mut normal=Vec::new();
     let mut focused=Vec::new();
     let mut outlines=Vec::new();
+    let mut focused_outlines=Vec::new();
     let mut row_start=0usize;
     for (row_index,placed) in galley.rows.iter().enumerate() {
         let glyphs=&placed.row.glyphs;
@@ -639,7 +715,7 @@ pub fn block_shapes(
                 let background=egui::Shape::rect_filled(rect,radius,block.fill);
                 if block.focused {
                     focused.push(background);
-                    outlines.push(egui::Shape::rect_stroke(
+                    focused_outlines.push(egui::Shape::rect_stroke(
                         rect,radius,egui::Stroke::new(
                             ACTIVE_BORDER_WIDTH,ACTIVE_BORDER
                         ),
@@ -647,6 +723,19 @@ pub fn block_shapes(
                     ));
                 } else {
                     normal.push(background);
+                    if let Some(state)=block.manual_state {
+                        let border=match state {
+                            ManualBlockState::Unassigned=>
+                                theme::MANUAL_SOURCE_UNASSIGNED_BORDER,
+                            ManualBlockState::Classified=>
+                                theme::MANUAL_SOURCE_CLASSIFIED_BORDER,
+                        };
+                        outlines.push(egui::Shape::rect_stroke(
+                            rect,radius,egui::Stroke::new(
+                                theme::MANUAL_SOURCE_BLOCK_BORDER_WIDTH,border
+                            ),egui::StrokeKind::Inside
+                        ));
+                    }
                 }
             }
         }
@@ -658,6 +747,7 @@ pub fn block_shapes(
     }
     // The focus fill MUST paint after gray fills, regardless of token order.
     normal.extend(focused);
+    outlines.extend(focused_outlines);
     (normal,outlines)
 }
 
@@ -857,6 +947,40 @@ mod tests {
         assert_eq!(SOURCE_ACTIVE_BORDER,ACTIVE_BORDER);
         assert_eq!(ACTIVE_RADIUS,4.0);
         assert_eq!(ACTIVE_BORDER_WIDTH,2.0);
+    }
+
+    #[test]
+    fn manual_assignment_state_changes_only_manual_palette_and_ink() {
+        let raw="팔렬고등학교 30개";
+        let rows=json!([{"id":"r1","items":[{"id":"i1"}]}]);
+        let blocks=json!([
+            {"id":"school","start":0,"end":6,"text":"팔렬고등학교",
+                "targetId":"r1","field":"name"},
+            {"id":"qty","start":7,"end":10,"text":"30개",
+                "targetId":"i1","field":"quantity"}
+        ]);
+        let assignments=json!({
+            "school":{"recipientId":"r1","field":"name"}
+        });
+        let spans=collect_manual(raw,rows.as_array().unwrap(),
+            blocks.as_array().unwrap(),&assignments);
+        assert_eq!(spans.len(),2);
+        let assigned=HashSet::from([String::from("school")]);
+        let manual=visual_blocks_with_manual_states(raw,&spans,None,None,Some(&assigned));
+        assert_eq!(manual.len(),2);
+        assert_eq!(manual[0].manual_state,Some(ManualBlockState::Classified));
+        assert_eq!(manual[0].fill,theme::MANUAL_SOURCE_CLASSIFIED_FILL);
+        assert_eq!(manual[1].manual_state,Some(ManualBlockState::Unassigned));
+        assert_eq!(manual[1].fill,theme::MANUAL_SOURCE_UNASSIGNED_FILL);
+        let reception=visual_blocks(raw,&spans,None,None);
+        assert!(reception.iter().all(|b|b.manual_state.is_none()));
+        assert!(reception.iter().all(|b|b.fill==SOURCE_BLOCK));
+        let active=spans[1].key.clone();
+        let highlighted=visual_blocks_with_manual_states(
+            raw,&spans,None,Some(&active),Some(&assigned)
+        );
+        assert_eq!(highlighted[1].fill,ACTIVE_FILL);
+        assert!(highlighted[1].focused);
     }
 
     #[test]
