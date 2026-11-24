@@ -720,8 +720,8 @@ pub const MANUAL_TABLE_QUANTITY_COL: f32 = 96.0;
 pub const MANUAL_TABLE_UNIT_PRICE_COL: f32 = 120.0;
 pub const MANUAL_TABLE_ACTION_COL: f32 = 120.0;
 // Recognized source tokens in Reception and unassigned manual blocks share
-// the same white 1pt outline. Focused blue evidence keeps its own 2pt stroke.
-pub const SOURCE_RECOGNIZED_BORDER: Color32 = Color32::from_rgb(242, 242, 242);
+// the same subdued gray 1pt outline. Focused blue evidence keeps its own 2pt stroke.
+pub const SOURCE_RECOGNIZED_BORDER: Color32 = Color32::from_rgb(166, 166, 166);
 pub const SOURCE_RECOGNIZED_BORDER_WIDTH: f32 = 1.0;
 pub const MANUAL_SOURCE_PENDING_BG: Color32 = Color32::from_rgb(63, 63, 63);
 pub const MANUAL_SOURCE_ASSIGNED_BG: Color32 = Color32::from_rgb(42, 60, 74);
