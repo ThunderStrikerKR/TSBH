@@ -767,3 +767,37 @@ fn native_brand_sqlite_save_correction_collision_and_reopen() {
     let after_restart=initialize_database(&isolated.root.join("state.sqlite")).unwrap();
     assert_eq!(get_snapshot(&after_restart).unwrap(),corrected);
 }
+
+#[test]
+fn native_workflow_freight_edit_normalizes_remote_and_reopens_sqlite(){
+    let (isolated,mut conn)=IsolatedDatabase::open();
+    let before=get_snapshot(&conn).unwrap();
+    let source=stage_three(&before,"POSTPAID");
+    let saved=write_snapshot(&mut conn,source,0,true)
+        .expect("stage-three workflow fixture must persist");
+    let decision=rust("apply_workflow_action",json!({
+        "state":saved,"action":"set_shipment_freight",
+        "groupId":"group:synthetic","shipmentId":"shipment:synthetic",
+        "origin":"FACTORY","appliedCharge":6000,"remoteChecked":true,
+        "eventId":"event:workflow-freight-edit",
+        "now":"2026-11-13T12:45:00+09:00","actor":"검증 담당자"
+    })).expect("native workflow freight edit must be accepted");
+    let changed=decision["state"].clone();
+    assert_eq!(changed["workflow"]["shipments"][0]["charges"]["FACTORY"],3000);
+    assert_eq!(changed["orders"][0]["recipients"][0]["shippingCharges"]["FACTORY"],3000);
+    assert_eq!(changed["orders"][0]["recipients"][0]["remoteDelivery"]["checked"],true);
+    assert_eq!(changed["workflow"]["shipments"][0]["step"],1);
+    assert_eq!(changed["workflow"]["groups"][0]["needsNotice"],true);
+    rust("validate_workflow",json!({
+        "state":changed,"before":saved
+    })).expect("freight edit, stage rollback and audit must validate");
+    let committed=write_snapshot(
+        &mut conn,changed,saved["revision"].as_u64().unwrap(),true
+    ).expect("freight edit must persist through the authoritative SQLite transaction");
+    assert_eq!(get_snapshot(&conn).unwrap(),committed);
+    drop(conn);
+    let reopened=initialize_database(&isolated.root.join("state.sqlite")).unwrap();
+    assert_eq!(get_snapshot(&reopened).unwrap(),committed);
+    assert_eq!(committed["workflow"]["shipments"][0]["charges"]["FACTORY"],3000);
+    drop(reopened);
+}
