@@ -319,6 +319,10 @@ pub(crate) struct ReceptionEditQuoteCache{
     master:Option<Value>,
     order_header:Option<Value>,
     entries:std::collections::HashMap<String,RecipientQuoteEntry>,
+    #[cfg(test)]
+    recalculations:usize,
+    #[cfg(test)]
+    repricings:usize,
 }
 struct RecipientQuoteEntry{
     input:Value,
@@ -372,9 +376,26 @@ impl ReceptionEditQuoteCache{
             if !self.entries.get(id).is_some_and(|entry|entry.input==*recipient){
                 let mut single=original.clone();
                 set(&mut single,"recipients",json!([recipient]))?;
-                let quote=reception_quote(&json!({
-                    "order":single,"state":state,"client":client
-                }))?;
+                #[cfg(test)]
+                {self.recalculations+=1;}
+                // A freight/VAT/address-only edit cannot change the line
+                // unit prices: the exact items and price master are unchanged.
+                // Keep the new recipient metadata and the native priced items.
+                let reusable_items=self.entries.get(id)
+                    .filter(|entry|field(&entry.input,"items")==field(recipient,"items"))
+                    .and_then(|entry|rows(field(field(&entry.quote,"order"),"recipients")).first())
+                    .and_then(|row|row.get("items"))
+                    .filter(|items|items.is_array()).cloned();
+                let quote=if let Some(items)=reusable_items{
+                    set(&mut single["recipients"][0],"items",items)?;
+                    finish_reception_quote(single,state,client)?
+                }else{
+                    #[cfg(test)]
+                    {self.repricings+=1;}
+                    reception_quote(&json!({
+                        "order":single,"state":state,"client":client
+                    }))?
+                };
                 self.entries.insert(id.to_owned(),RecipientQuoteEntry{
                     input:recipient.clone(),quote
                 });
@@ -435,9 +456,11 @@ mod reception_edit_cache_tests{
         let mut cache=ReceptionEditQuoteCache::default();
         assert_eq!(cache.quote(&payload).unwrap(),reception_quote(&payload).unwrap());
         let unchanged=cache.entries["b"].quote.clone();
+        assert_eq!((cache.recalculations,cache.repricings),(2,2));
         payload["order"]["recipients"][0]["shippingCharges"]["FACTORY"]=json!(4000);
         assert_eq!(cache.quote(&payload).unwrap(),reception_quote(&payload).unwrap());
         assert_eq!(cache.entries["b"].quote,unchanged);
+        assert_eq!((cache.recalculations,cache.repricings),(3,2));
         payload["order"]["recipients"][0]["freightCode"]=json!("020");
         payload["order"]["recipients"][0]["vatOverride"]=json!(false);
         assert_eq!(cache.quote(&payload).unwrap(),reception_quote(&payload).unwrap());
