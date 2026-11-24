@@ -1090,7 +1090,7 @@ impl ProductManager {
         // Actions and optional Excel/registration editors stay INSIDE the card.
         components::align_management_primary_card(ui,page_origin_y);
         let card_min_height=components::management_master_table_card_min_inner_height(ui);
-        theme::management_master_table_frame().show(ui,|panel|{
+        components::measured_management_master_card(ui,|panel|{
             components::fill_management_primary_card(panel,card_min_height);
             panel.spacing_mut().item_spacing.y=0.0;
             // Freight-style dual-slot toolbar at wide widths. Only when
@@ -1342,6 +1342,8 @@ impl ProductManager {
                             ),
                             Vec2::new(table_width,theme::PRODUCT_TABLE_ROW_HEIGHT)
                         );
+                        #[cfg(test)]
+                        components::general_screen_geometry_tests::record("data row",row_rect);
                         row_left.get_or_insert(row_rect.left());
                         table.scope_builder(
                             UiBuilder::new()
@@ -2911,4 +2913,18 @@ impl ProductManager {
         page.result=LatestJob::default(); page.next_query=None; page.tab=tab; if loaded{page.catalog=Some(serde_json::json!({"revision":1,"products":[],"categories":[],"brands":[],"aliases":[],"settings":{}}));}
         page
     }
+
+    pub(crate) fn geometry_begin_read(&mut self)->Box<dyn FnOnce(Result<usize,String>)>{
+        self.error=None;
+        let finish=self.result.geometry_begin_read();
+        Box::new(move |answer|finish(answer.map(|count|{
+            let products=(0..count).map(|i|json!({"id":format!("geometry-p-{i}"),"name":format!("검증 상품 {i:03}"),"subtitle":"긴 이름과 옵션 검증","active":true,"variants":[{"id":format!("geometry-v-{i}"),"color":"Black","prices":{"wholesale":10000,"semi":12000,"retail":15000}}]})).collect::<Vec<_>>();
+            let categories=(0..count).map(|i|json!({"id":format!("geometry-cat-{i}"),"name":format!("검증 분류 {i}"),"parentId":"catalog-root:BANDOSTAND"})).collect::<Vec<_>>();
+            let brands=(0..count).map(|i|json!({"id":format!("geometry-brand-{i}"),"name":format!("검증 브랜드 {i}"),"korean":"합성","aliases":["검증 검색어"]})).collect::<Vec<_>>();
+            let aliases=(0..count).map(|i|json!({"id":format!("geometry-alias-{i}"),"text":format!("검증 별칭 {i}"),"productId":format!("geometry-p-{i}")})).collect::<Vec<_>>();
+            let groups=(0..count).map(|i|(format!("geometry-model-{i}"),json!({"name":format!("검증 모델군 {i}"),"productIds":[format!("geometry-p-{i}")],"representativeProductId":format!("geometry-p-{i}")}))).collect::<serde_json::Map<String,Value>>();
+            ManagementProductRows{catalog:json!({"revision":1,"products":products.clone(),"categories":categories,"brands":brands,"aliases":aliases,"settings":{"colorGuidanceGroups":groups}}),products}
+        })))
+    }
+    pub(crate) fn geometry_read_failed(&self)->bool{self.error.is_some()}
 }

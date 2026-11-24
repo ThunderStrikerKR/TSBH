@@ -374,6 +374,8 @@ fn table<const N:usize>(
             for index in range{
                 let r=Rect::from_min_size(egui::pos2(origin.x,
                     origin.y+(index-first) as f32*HEIGHT),Vec2::new(width,HEIGHT));
+                #[cfg(test)]
+                components::general_screen_geometry_tests::record("data row",r);
                 left.get_or_insert(r.left());
                 body.scope_builder(UiBuilder::new().id_salt((id,index)).max_rect(r)
                     .layout(egui::Layout::top_down(Align::Min)),|row|{
@@ -1436,4 +1438,23 @@ impl ExcelManager {
         page.receiver=None;page.tab=Tab::ALL[tab];if loaded{page.result=Some(Snapshot{state:serde_json::json!({}),shipments:serde_json::json!([])});}
         page
     }
+
+    pub(crate) fn geometry_begin_read(&mut self)->Box<dyn FnOnce(Result<usize,String>)>{
+        let (tx,rx)=std::sync::mpsc::channel();
+        self.receiver=Some(rx);
+        self.error=None;
+        let origin=if self.tab==Tab::Store{"STORE"}else{"FACTORY"};
+        if self.tab==Tab::History{self.export_from.clear();self.export_to.clear();self.export_from_input.clear();self.export_to_input.clear();}
+        Box::new(move |answer|{
+            let result=answer.map(|count|{
+                let orders=(0..count).map(|i|json!({"id":format!("geometry-o-{i}"),"clientSnapshot":{"name":"검증 거래처"},"recipients":[{"id":format!("r-{i}"),"name":"합성 수취인","items":[{"name":"검증 상품","quantity":2}]}]})).collect::<Vec<_>>();
+                let shipments=(0..count).map(|i|json!({"id":format!("geometry-s-{i}"),"orderId":format!("geometry-o-{i}"),"recipientId":format!("r-{i}")})).collect::<Vec<_>>();
+                let queue=(0..count).map(|i|json!({"id":format!("geometry-q-{i}"),"shipmentId":format!("geometry-s-{i}"),"origin":origin,"status":"QUEUED"})).collect::<Vec<_>>();
+                let exports=(0..count).map(|i|json!({"id":format!("geometry-export-{i}"),"at":"2026-11-24T09:00:00+09:00","filename":format!("검증-{i}.xlsx"),"orderIds":[format!("geometry-o-{i}")],"snapshots":[{"snapshot":{"recipient":{"items":[{"name":"검증 상품","quantity":2}]}}}]})).collect::<Vec<_>>();
+                Snapshot{state:json!({"orders":orders,"exports":exports,"workflow":{"shipments":shipments,"queue":queue}}),shipments:json!({"shipments":[]})}
+            });
+            assert!(tx.send(result).is_ok());
+        })
+    }
+    pub(crate) fn geometry_read_failed(&self)->bool{self.error.is_some()}
 }

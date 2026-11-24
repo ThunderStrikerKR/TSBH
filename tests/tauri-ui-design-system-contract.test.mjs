@@ -78,7 +78,7 @@ test("app developer contract points to the persistent design system", () => {
   assert.match(read("AGENTS.md"), /docs\/ui-design-system\.md/);
   assert.match(read("AGENTS.md"), /src\/ui\/design-system\.json/);
   assert.match(read("AGENTS.md"), /check-ui-design\.mjs/);
-  assert.match(read("AGENTS.md"), /기존 화면 스타일 일괄 변경은 따로 명령받기 전 금지/);
+  assert.match(read("AGENTS.md"), /React\/CSS 전체 스타일 일괄 변경도 별도 승인 전까지 금지/);
   const pkg = JSON.parse(read("package.json"));
   assert.equal(pkg.scripts["check:ui-design"], "node scripts/check-ui-design.mjs");
 });

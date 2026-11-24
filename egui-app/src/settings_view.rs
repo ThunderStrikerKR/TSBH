@@ -744,13 +744,15 @@ impl SettingsView{
                         theme::SETTINGS_ACCOUNT_LIST_MAX_HEIGHT
                     );
                     form.spacing_mut().scroll=theme::management_scroll_style();
-                    egui::ScrollArea::vertical()
+                    let _account_viewport=egui::ScrollArea::vertical()
                         .id_salt("settings-bank-account-list")
                         .max_height(list_height)
                         .auto_shrink([false,true])
                         .show(form,|rows|{
                             self.show_account_rows(rows);
                         });
+                    #[cfg(test)]
+                    components::general_screen_geometry_tests::record("account viewport",_account_viewport.inner_rect);
                     form.add_space(theme::SPACE_8);
                     if theme::action(
                         form,"＋ 계좌 추가",ButtonRole::Standard,true
@@ -1244,4 +1246,22 @@ impl SettingsView {
         page.loading=None;page.tab=SettingsTab::ALL[tab];page.loaded=loaded;if loaded{page.source=serde_json::json!({"settings":{},"readOnly":true,"dataAvailable":false});page.draft=serde_json::json!({});}
         page
     }
+
+    pub(crate) fn geometry_begin_read(&mut self)->Box<dyn FnOnce(Result<usize,String>)>{
+        let (tx,rx)=std::sync::mpsc::channel();
+        self.loading=Some(rx);
+        self.error=None;
+        Box::new(move |answer|{
+            let result=answer.map(|count|{
+                let accounts=(0..count).map(|i|json!({"id":format!("geometry-account-{i}"),
+                    "bank":"합성 은행","number":format!("TEST-{i:04}"),"holder":"검증 전용"})).collect::<Vec<_>>();
+                let folder=if count==0{String::new()}else{"C:/geometry-only/long-synthetic-path/not-a-real-directory".repeat(3)};
+                json!({"settings":{"accounts":accounts,"brandAccounts":{},
+                    "excelDirectory":folder.clone(),"factoryReplyDirectory":folder.clone(),
+                    "orderImageInboxDirectory":folder},"readOnly":true,"dataAvailable":false})
+            });
+            assert!(tx.send(result).is_ok());
+        })
+    }
+    pub(crate) fn geometry_read_failed(&self)->bool{self.error.is_some()}
 }

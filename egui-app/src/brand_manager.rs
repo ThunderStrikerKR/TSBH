@@ -2,7 +2,7 @@
 //! Only the four explicit brand edit fields live here; normalize/validate
 //! and mutate catalog brands with original Rust catalog_clients::upsert_brand.
 use crate::{components,theme,typography};
-use eframe::egui::{self,Align,Context,Layout,Rect,Ui};
+use eframe::egui::{Vec2,self,Align,Context,Layout,Rect,Ui};
 use serde_json::{json,Value};
 
 fn field<'a>(row:&'a Value,key:&str)->&'a str{
@@ -128,48 +128,46 @@ impl BrandManager {
             card.add_space(theme::SPACE_12);
             // React registry-edit-form uses auto-fit columns >=240px,
             // with a right-aligned primary action at the field baseline.
-            card.horizontal_wrapped(|form|{
-                form.vertical(|column|{
-                    column.label(typography::field_label("공식 브랜드명"));
-                    column.add_enabled_ui(editable&&!busy,|input|{
-                        components::flexible_text_field(input,&mut self.form.name,
-                            theme::MANAGEMENT_SEARCH_MIN_WIDTH,"공식 브랜드명");
-                    });
+            // Reserve actual bounded field columns BEFORE allocating their
+            // contents. A horizontal_wrapped vertical child can claim its
+            // intrinsic minimum before wrapping, growing the parent card.
+            // Calculate rows from the available card width instead.
+            let available=card.available_width().max(1.0);
+            let gap=theme::SPACE_8;
+            let field_width=theme::MANAGEMENT_SEARCH_MIN_WIDTH.min(available);
+            let columns=(((available+gap)/(field_width+gap)).floor() as usize).clamp(1,5);
+            let row_height=theme::SPACE_24+theme::INPUT_HEIGHT;
+            for first in (0..5).step_by(columns){
+                card.horizontal(|form|{
+                    form.spacing_mut().item_spacing.x=gap;
+                    for index in first..(first+columns).min(5){
+                        form.allocate_ui_with_layout(Vec2::new(field_width,row_height),
+                            Layout::top_down(Align::Min),|column|{
+                                column.set_width(field_width);
+                                if index==4{
+                                    column.add_space(theme::SPACE_24);
+                                    column.with_layout(Layout::right_to_left(Align::Center),|actions|{
+                                        if theme::action(actions,"브랜드 저장",
+                                            theme::ButtonRole::Primary,editable&&!busy).clicked(){
+                                            save=true;
+                                        }
+                                    });
+                                }else{
+                                    let (label,value,hint)=match index{
+                                        0=>("공식 브랜드명",&mut self.form.name,"공식 브랜드명"),
+                                        1=>("한글 표기",&mut self.form.korean,"확인된 한글 표기"),
+                                        2=>("검색 별칭",&mut self.form.aliases,"별칭 (쉼표 구분)"),
+                                        _=>("확인 근거 URL",&mut self.form.evidence,"확인 근거 URL"),
+                                    };
+                                    column.label(typography::field_label(label));
+                                    column.add_enabled_ui(editable&&!busy,|input|{
+                                        components::flexible_text_field(input,value,field_width,hint);
+                                    });
+                                }
+                            });
+                    }
                 });
-                form.vertical(|column|{
-                    column.label(typography::field_label("한글 표기"));
-                    column.add_enabled_ui(editable&&!busy,|input|{
-                        components::flexible_text_field(input,&mut self.form.korean,
-                            theme::MANAGEMENT_SEARCH_MIN_WIDTH,"확인된 한글 표기");
-                    });
-                });
-                form.vertical(|column|{
-                    column.label(typography::field_label("검색 별칭"));
-                    column.add_enabled_ui(editable&&!busy,|input|{
-                        components::flexible_text_field(input,&mut self.form.aliases,
-                            theme::MANAGEMENT_SEARCH_MIN_WIDTH,"별칭 (쉼표 구분)");
-                    });
-                });
-                form.vertical(|column|{
-                    column.label(typography::field_label("확인 근거 URL"));
-                    column.add_enabled_ui(editable&&!busy,|input|{
-                        components::flexible_text_field(input,&mut self.form.evidence,
-                            theme::MANAGEMENT_SEARCH_MIN_WIDTH,"확인 근거 URL");
-                    });
-                });
-                form.vertical(|column|{
-                    // React .registry-edit-actions: right-aligned inside its
-                    // auto-fit field column, not left-anchored like a label.
-                    column.set_min_width(theme::MANAGEMENT_SEARCH_MIN_WIDTH);
-                    column.add_space(theme::SPACE_24);
-                    column.with_layout(Layout::right_to_left(Align::Center),|actions|{
-                        if theme::action(actions,"브랜드 저장",
-                            theme::ButtonRole::Primary,editable&&!busy).clicked(){
-                            save=true;
-                        }
-                    });
-                });
-            });
+            }
             // Shared Freight master: toolbar-to-header transition,
             // fixed 36pt register header and 10pt solid scroll rail.
             card.spacing_mut().item_spacing.y=0.0;
@@ -195,7 +193,7 @@ impl BrandManager {
                     list.set_min_width(header.table_width);
                     for brand in rows(&catalog["brands"]){
                         let id=field(brand,"id");
-                        list.horizontal(|line|{
+                        let _row=list.horizontal(|line|{
                             line.vertical(|description|{
                                 description.label(typography::body(field(brand,"name")));
                                 description.label(typography::caption(&format!(
@@ -217,6 +215,8 @@ impl BrandManager {
                                 }
                             });
                         });
+                        #[cfg(test)]
+                        components::general_screen_geometry_tests::record("catalog data row",_row.response.rect);
                         components::soft_divider(list);
                     }
                 });

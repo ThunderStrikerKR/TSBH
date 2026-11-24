@@ -2878,14 +2878,14 @@ pub fn reception_section_with_header(
     header_right:impl FnOnce(&mut Ui),content:impl FnOnce(&mut Ui),
 ){
     let width=ui.available_width();
-    theme::docked_pane_frame().show(ui,|ui|{
+    let _card=theme::docked_pane_frame().show(ui,|ui|{
         let width_inset=2.0*theme::SECTION_PADDING;
         let height_inset=2.0*theme::RECEPTION_PANE_PADDING_Y;
         ui.set_min_width((width-width_inset).max(60.0));
         ui.set_min_height((minimum_height-height_inset).max(48.0));
         let body_item_spacing=theme::SPACING;
         ui.spacing_mut().item_spacing.y=0.0;
-        ui.allocate_ui_with_layout(
+        let _header=ui.allocate_ui_with_layout(
             Vec2::new(ui.available_width(),theme::SECTION_HEADER_HEIGHT),
             Layout::left_to_right(Align::Center),|header|{
                 header.set_min_height(theme::SECTION_HEADER_HEIGHT);
@@ -2893,6 +2893,8 @@ pub fn reception_section_with_header(
                 header.with_layout(Layout::right_to_left(Align::Center),header_right);
             }
         );
+        #[cfg(test)]
+        general_screen_geometry_tests::record(reception_geometry_role(title,true),_header.response.rect);
         ui.add_space(theme::SECTION_CONTENT_GAP);
         reception_section_divider(ui);
         ui.add_space(theme::SPACE_4);
@@ -2901,6 +2903,22 @@ pub fn reception_section_with_header(
             content(body);
         });
     });
+    #[cfg(test)]
+    general_screen_geometry_tests::record(reception_geometry_role(title,false),_card.response.rect);
+}
+
+#[cfg(test)]
+fn reception_geometry_role(title:&str,header:bool)->&'static str{
+    match (title,header){
+        ("발주 원문",false)=>"source card",("발주 원문",true)=>"source header",
+        ("복사용 자동 메시지",false)=>"message card",("복사용 자동 메시지",true)=>"message header",
+        ("확인할 내용",false)=>"review card",("확인할 내용",true)=>"review header",
+        ("수취인별 주문 정보",false)=>"recipient card",("수취인별 주문 정보",true)=>"recipient header",
+        ("품목 및 운임",false)=>"items card",("품목 및 운임",true)=>"items header",
+        ("발주서 합계",false)=>"total card",("발주서 합계",true)=>"total header",
+        ("처리 중인 주문",false)=>"orders card",("처리 중인 주문",true)=>"orders header",
+        (_,false)=>"other reception card",(_,true)=>"other reception header",
+    }
 }
 
 /// The READ and EDIT renderers of recipient fields must use exactly one
@@ -3008,7 +3026,7 @@ pub fn reception_recipient_fields(
         }).inner
     }
 
-    ui.scope(|fields| {
+    let responses=ui.scope(|fields| {
         fields.spacing_mut().item_spacing.y = theme::RECIPIENT_ROW_GAP;
         let name_response = row(fields, "이름", name, active[0]);
         let address_response = row(fields, "주소", address, active[1]);
@@ -3071,7 +3089,12 @@ pub fn reception_recipient_fields(
             name_response, address_response,
             mobile_response, phone_response, note_response,
         ]
-    }).inner
+    }).inner;
+    #[cfg(test)]
+    for (name,response) in ["recipient name","recipient address","recipient mobile","recipient phone","recipient note"].into_iter().zip(responses.iter()){
+        general_screen_geometry_tests::record(name,response.rect);
+    }
+    responses
 }
 
 /// Place an inline editor in the same exact frame as Ui::place, while
@@ -5902,6 +5925,10 @@ fn reception_item_row_with_mode(
         }
         remove_clicked=enabled && action.on_hover_text("품목 삭제").clicked();
     }
+    #[cfg(test)]
+    for (name,response) in [("item product",&product),("item quantity",&quantity),("item amount",&amount)]{
+        general_screen_geometry_tests::record(name,response.rect);
+    }
     ReceptionItemCells { product, quantity, amount, remove_clicked }
 }
 
@@ -6067,6 +6094,8 @@ pub fn reception_freight_row_editable(
             draw_remote_and_inquiry(line);
         });
     }
+    #[cfg(test)]
+    if let Some(rect)=amount_rect{general_screen_geometry_tests::record("freight amount",rect);}
     ReceptionFreightEdit {
         amount_rect,amount_clicked:clicked,amount_click_pos,
         remote_clicked,collect_clicked
@@ -8600,10 +8629,19 @@ pub(crate) mod general_screen_geometry_tests {
     }
     fn render(ctx:&egui::Context,screen:Vec2,work:Rect,mut page:impl FnMut(&mut Ui))->Vec<Sample>{
         let mut measured=Vec::new();
-        for _ in 0..3{
+        // egui solid scrollbars interpolate their reserved space. Three
+        // frames at 60 Hz captured different fractions (e.g. 8.75/10pt)
+        // depending on whether an existing scrollbar was already visible.
+        // Advance actual input time, keep the normal production animation,
+        // and require the last two measured frames to agree. This is a
+        // settled-state check, NOT a relaxation of the 0.5pt tolerance.
+        let mut time=ctx.input(|input|input.time);
+        for frame in 0..12{
+            time+=0.05;
             TRACE.with(|trace|*trace.borrow_mut()=Some(Vec::new()));
             let _=ctx.run(egui::RawInput{
                 screen_rect:Some(Rect::from_min_size(egui::Pos2::ZERO,screen)),
+                time:Some(time),predicted_dt:0.05,
                 ..Default::default()
             },|ctx|{
                 egui::CentralPanel::default().show(ctx,|root|{
@@ -8616,7 +8654,13 @@ pub(crate) mod general_screen_geometry_tests {
                     record("page content",host.min_rect());
                 });
             });
-            measured=TRACE.with(|trace|trace.borrow_mut().take().unwrap());
+            let next=TRACE.with(|trace|trace.borrow_mut().take().unwrap());
+            if frame==11{
+                let slots=|trace:&[Sample]|trace.iter().copied().filter(|(role,_)|
+                    matches!(*role,"top content"|"master card"|"section card"|"table header"|"toolbar transition"|"scroll rail"|"row viewport"|"account viewport")).collect::<Vec<_>>();
+                assert_layout_rects_invariant(&slots(&measured),&slots(&next));
+            }
+            measured=next;
         }
         measured
     }
@@ -8720,6 +8764,401 @@ pub(crate) mod general_screen_geometry_tests {
                 assert!((pair[1].1.left()-pair[0].1.right()-crate::layout::SPLITTER).abs()<=0.5,
                     "reception pane spacing drift at {screen:?}: {pair:?}");
             }
+        }
+    }
+
+
+    // The five production single-table screens must retain their actual
+    // fixed allocations while the same page receives new read results.
+    // A native scrollbar may occupy horizontal space when records overflow;
+    // only the row viewport's right edge is allowed to change for that reason.
+    fn compare_data_state_geometry(name:&str,phase:&str,base:&[Sample],next:&[Sample],table_required:bool){
+        let fixed=|samples:&[Sample]|samples.iter().copied()
+            .filter(|(kind,_)|matches!(*kind,"top content"|"master card")).collect::<Vec<_>>();
+        let a=fixed(base);let b=fixed(next);
+        assert!(a.iter().any(|(kind,_)|*kind=="master card"),"{name}/{phase}: no master card");
+        assert_eq!(a.len(),b.len(),"{name}/{phase}: fixed allocation count changed");
+        for ((kind,old),(_,new)) in a.iter().zip(&b){
+            for (edge,x,y) in [("left",old.left(),new.left()),("right",old.right(),new.right()),
+                ("top",old.top(),new.top()),("bottom",old.bottom(),new.bottom())]{
+                assert!((x-y).abs()<=0.5,"{name}/{phase}/{kind}/{edge}: {x} -> {y}");
+            }
+        }
+        if !table_required && !next.iter().any(|(kind,_)|*kind=="table header"){return;}
+        for kind in ["toolbar transition","table header","scroll rail"]{
+            let old=first(base,kind);let new=first(next,kind);
+            for (edge,x,y) in [("left",old.left(),new.left()),("right",old.right(),new.right()),
+                ("top",old.top(),new.top()),("bottom",old.bottom(),new.bottom())]{
+                assert!((x-y).abs()<=0.5,"{name}/{phase}/{kind}/{edge}: {x} -> {y}");
+            }
+        }
+        let old=first(base,"row viewport");let new=first(next,"row viewport");
+        for (edge,x,y) in [("left",old.left(),new.left()),("top",old.top(),new.top()),
+            ("bottom",old.bottom(),new.bottom())]{
+            assert!((x-y).abs()<=0.5,"{name}/{phase}/row viewport/{edge}: {x} -> {y}");
+        }
+    }
+    fn assert_visible_data_rows(name:&str,trace:&[Sample],expected:usize){
+        let rows=trace.iter().filter(|(kind,_)|*kind=="data row")
+            .map(|(_,rect)|*rect).collect::<Vec<_>>();
+        if expected<=1{
+            assert_eq!(rows.len(),expected,"{name}: actual rendered data row count");
+        }else{
+            assert!(rows.len()>=2 && rows.len()<expected,
+                "{name}: expected virtualized populated rows, rendered {} of {expected}",rows.len());
+        }
+        for row in &rows{
+            assert!(row.is_positive(),"{name}: invalid actual row {row:?}");
+        }
+        for pair in rows.windows(2){
+            assert!(pair[1].top()>=pair[0].bottom()-0.5,
+                "{name}: actual data rows overlap {pair:?}");
+        }
+    }
+    fn exercise_data_transitions<P>(
+        name:&str,ctx:&egui::Context,screen:Vec2,work:Rect,page:&mut P,
+        mut show:impl FnMut(&mut P,&mut Ui),
+        begin:impl Fn(&mut P)->Box<dyn FnOnce(Result<usize,String>)>,
+        failed:impl Fn(&P)->bool,
+    )->Vec<Sample>{
+        let mut draw=|page:&mut P|render(ctx,screen,work,|ui|show(page,ui));
+        // Keep the sender alive across real render frames: this is an
+        // actually pending receiver, not just a false loaded boolean.
+        let finish=begin(page);
+        let pending=draw(page);
+        assert_visible_data_rows(name,&pending,0);
+        finish(Err("합성 조회 실패: 길이가 긴 오류 메시지의 UI 밀림 검증".into()));
+        let initial_error=draw(page);
+        assert!(failed(page),"{name}: initial failure was not consumed");
+        let finish=begin(page);
+        let _retry_pending=draw(page);
+        finish(Ok(0));
+        let empty=draw(page);
+        assert!(!failed(page),"{name}: successful empty response did not clear failure");
+        assert_visible_data_rows(name,&empty,0);
+        for (phase,trace) in [("initial pending",&pending),("initial error",&initial_error)]{
+            compare_data_state_geometry(name,phase,&empty,trace,name!="freight");
+        }
+        let finish=begin(page);
+        finish(Ok(1));
+        let single=draw(page);
+        assert_visible_data_rows(name,&single,1);
+        compare_data_state_geometry(name,"one row",&empty,&single,true);
+        let finish=begin(page);
+        let refreshing=draw(page);
+        compare_data_state_geometry(name,"refresh pending",&empty,&refreshing,true);
+        finish(Ok(64));
+        let populated=draw(page);
+        assert_visible_data_rows(name,&populated,64);
+        compare_data_state_geometry(name,"64 rows",&empty,&populated,true);
+        let finish=begin(page);
+        finish(Err("합성 재조회 실패: 데이터 로딩 이후 오류".into()));
+        let error=draw(page);
+        assert!(failed(page),"{name}: refresh failure was not consumed");
+        compare_data_state_geometry(name,"refresh error",&empty,&error,true);
+        let finish=begin(page);
+        finish(Ok(64));
+        let recovered=draw(page);
+        assert!(!failed(page),"{name}: retry did not clear failure");
+        assert_visible_data_rows(name,&recovered,64);
+        compare_data_state_geometry(name,"recovered",&empty,&recovered,true);
+        println!("GEOMETRY_DATA_TRANSITIONS {name} {screen:?}: pending/error/empty/one/many/recovered");
+        recovered
+    }
+    fn data_geometry_dimensions()->[(Vec2,f32);3]{
+        [(Vec2::new(1920.0,1080.0),380.0),
+         (Vec2::new(1366.0,768.0),320.0),(Vec2::new(1280.0,720.0),380.0)]
+    }
+    #[test]
+    fn actual_freight_table_keeps_fixed_slots_through_populated_read_transitions(){
+        for (screen,left) in data_geometry_dimensions(){
+            let work=Rect::from_min_max(egui::pos2(left,80.0),
+                egui::pos2(screen.x-18.0,screen.y-18.0));
+            let ctx=test_context();
+            let gateway:Arc<dyn BandoGateway>=Arc::new(GeometryGateway);
+            let mut page=crate::freight_manager::FreightManager::geometry_fixture(Arc::clone(&gateway),ctx.clone(),0,false);
+            exercise_data_transitions("freight",&ctx,screen,work,&mut page,
+                |p,ui|p.show_page(ui),|p|p.geometry_begin_read(),|p|p.geometry_read_failed());
+        }
+    }
+
+    #[test]
+    fn actual_history_table_keeps_fixed_slots_through_populated_read_transitions(){
+        for (screen,left) in data_geometry_dimensions(){
+            let work=Rect::from_min_max(egui::pos2(left,80.0),
+                egui::pos2(screen.x-18.0,screen.y-18.0));
+            let ctx=test_context();
+            let gateway:Arc<dyn BandoGateway>=Arc::new(GeometryGateway);
+            let mut page=crate::order_history_manager::OrderHistoryManager::geometry_fixture(Arc::clone(&gateway),ctx.clone(),0,false);
+            let recovered=exercise_data_transitions("history",&ctx,screen,work,&mut page,
+                |p,ui|p.show_page(ui),|p|p.geometry_begin_read(),|p|p.geometry_read_failed());
+            page.geometry_expand_first();
+            let expanded=render(&ctx,screen,work,|ui|page.show_page(ui));
+            compare_data_state_geometry("history","expanded order",&recovered,&expanded,true);
+            assert_visible_data_rows("history",&expanded,65);
+            assert_eq!(expanded.iter().filter(|(kind,_)|*kind=="history detail row").count(),1,
+                "expanded recipient detail must actually render");
+        }
+    }
+
+    #[test]
+    fn actual_products_table_keeps_fixed_slots_through_populated_read_transitions(){
+        for (screen,left) in data_geometry_dimensions(){
+            let work=Rect::from_min_max(egui::pos2(left,80.0),
+                egui::pos2(screen.x-18.0,screen.y-18.0));
+            let ctx=test_context();
+            let gateway:Arc<dyn BandoGateway>=Arc::new(GeometryGateway);
+            let mut page=crate::product_manager::ProductManager::geometry_fixture(Arc::clone(&gateway),ctx.clone(),0,false);
+            exercise_data_transitions("products",&ctx,screen,work,&mut page,
+                |p,ui|p.show_page(ui),|p|p.geometry_begin_read(),|p|p.geometry_read_failed());
+        }
+    }
+
+    #[test]
+    fn actual_clients_table_keeps_fixed_slots_through_populated_read_transitions(){
+        for (screen,left) in data_geometry_dimensions(){
+            let work=Rect::from_min_max(egui::pos2(left,80.0),
+                egui::pos2(screen.x-18.0,screen.y-18.0));
+            let ctx=test_context();
+            let gateway:Arc<dyn BandoGateway>=Arc::new(GeometryGateway);
+            let mut page=crate::client_manager::ClientManager::geometry_fixture(Arc::clone(&gateway),ctx.clone(),0,false);
+            exercise_data_transitions("clients",&ctx,screen,work,&mut page,
+                |p,ui|p.show_page(ui,Arc::clone(&gateway)),|p|p.geometry_begin_read(),|p|p.geometry_read_failed());
+        }
+    }
+
+    #[test]
+    fn actual_excel_table_keeps_fixed_slots_through_populated_read_transitions(){
+        for (screen,left) in data_geometry_dimensions(){
+            let work=Rect::from_min_max(egui::pos2(left,80.0),
+                egui::pos2(screen.x-18.0,screen.y-18.0));
+            let ctx=test_context();
+            let gateway:Arc<dyn BandoGateway>=Arc::new(GeometryGateway);
+            let mut page=crate::excel_manager::ExcelManager::geometry_fixture(Arc::clone(&gateway),ctx.clone(),0,false);
+            exercise_data_transitions("excel",&ctx,screen,work,&mut page,
+                |p,ui|p.show_page(ui),|p|p.geometry_begin_read(),|p|p.geometry_read_failed());
+        }
+    }
+
+
+    // Multi-card editors deliberately expand their internal data regions.
+    // Compare protected top allocations and actual card origins rather than
+    // requiring the number of rows or an intentionally elastic list to stay fixed.
+    fn compare_top_slots(name:&str,phase:&str,before:&[Sample],after:&[Sample]){
+        let fixed=|trace:&[Sample]|trace.iter().copied().filter(|(kind,_)|*kind=="top content").collect::<Vec<_>>();
+        let a=fixed(before);let b=fixed(after);
+        assert!(!a.is_empty(),"{name}: missing measured top content");
+        assert_eq!(a.len(),b.len(),"{name}/{phase}: title/tab slot count");
+        assert_layout_rects_invariant(&a,&b);
+    }
+    fn primary_card(trace:&[Sample])->Rect{
+        trace.iter().find(|(kind,_)|matches!(*kind,"master card"|"section card"))
+            .expect("missing measured primary card").1
+    }
+    fn compare_primary_origin(name:&str,phase:&str,before:&[Sample],after:&[Sample]){
+        let a=primary_card(before);let b=primary_card(after);
+        assert!((a.left()-b.left()).abs()<=0.5 && (a.top()-b.top()).abs()<=0.5,
+            "{name}/{phase}: primary card origin drift {a:?} -> {b:?}");
+    }
+    fn assert_data_kind(name:&str,trace:&[Sample],kind:&str,count:usize){
+        let measured=trace.iter().filter(|(role,_)|*role==kind).map(|(_,rect)|*rect).collect::<Vec<_>>();
+        assert!(!measured.is_empty(),"{name}: {kind} fixture never reached actual renderer");
+        if count==1{assert_eq!(measured.len(),1,"{name}: unexpected one-record row count");}
+        for rect in &measured{assert!(rect.is_positive(),"{name}: invalid {kind} {rect:?}");}
+        for pair in measured.windows(2){
+            assert!(pair[1].top()>=pair[0].bottom()-0.5,"{name}: {kind} overlap {pair:?}");
+        }
+    }
+    fn exercise_editor_transitions<P>(
+        name:&str,ctx:&egui::Context,screen:Vec2,work:Rect,page:&mut P,
+        mut show:impl FnMut(&mut P,&mut Ui),
+        begin:impl Fn(&mut P)->Box<dyn FnOnce(Result<usize,String>)>,
+        failed:impl Fn(&P)->bool, data_roles:&[&str],
+    )->Vec<Sample>{
+        let mut draw=|p:&mut P|render(ctx,screen,work,|ui|show(p,ui));
+        let finish=begin(page);
+        let pending=draw(page);
+        finish(Err("합성 최초 조회 오류 — 긴 문구에도 제목과 탭이 이동하지 않아야 함".into()));
+        let error=draw(page);
+        assert!(failed(page),"{name}: initial error not consumed");
+        begin(page)(Ok(0));
+        let empty=draw(page);
+        assert!(!failed(page),"{name}: empty recovery failed");
+        for (phase,trace) in [("pending",&pending),("error",&error)]{
+            compare_top_slots(name,phase,&empty,trace);
+        }
+        begin(page)(Ok(1));
+        let single=draw(page);
+        begin(page)(Ok(64));
+        let many=draw(page);
+        for kind in data_roles{
+            assert_data_kind(name,&single,kind,1);
+            assert_data_kind(name,&many,kind,64);
+        }
+        for (phase,trace) in [("single",&single),("many",&many)]{
+            compare_top_slots(name,phase,&empty,trace);
+            compare_primary_origin(name,phase,&empty,trace);
+        }
+        let finish=begin(page);
+        let refresh=draw(page);
+        compare_top_slots(name,"refresh",&many,&refresh);
+        compare_primary_origin(name,"refresh",&many,&refresh);
+        finish(Err("합성 재조회 오류".into()));
+        let failed_trace=draw(page);
+        assert!(failed(page),"{name}: refresh error not consumed");
+        compare_top_slots(name,"refresh error",&many,&failed_trace);
+        compare_primary_origin(name,"refresh error",&many,&failed_trace);
+        begin(page)(Ok(64));
+        let recovered=draw(page);
+        assert!(!failed(page),"{name}: recovery failed");
+        compare_top_slots(name,"recovery",&many,&recovered);
+        compare_primary_origin(name,"recovery",&many,&recovered);
+        let fixed=|trace:&[Sample]|trace.iter().copied().filter(|(kind,_)|
+            matches!(*kind,"master card"|"section card"|"table header"|"toolbar transition"|"scroll rail"|"account viewport")).collect::<Vec<_>>();
+        let a=fixed(&many);let b=fixed(&recovered);
+        assert!(!a.is_empty(),"{name}: no fixed editor allocations");
+        assert_layout_rects_invariant(&a,&b);
+        println!("GEOMETRY_EDITOR_TRANSITIONS {name} {screen:?}");
+        recovered
+    }
+    #[test]
+    fn actual_freight_subtabs_keep_fixed_slots_through_populated_reads(){
+        for (screen,left) in data_geometry_dimensions(){
+            let work=Rect::from_min_max(egui::pos2(left,80.0),egui::pos2(screen.x-18.0,screen.y-18.0));
+            for tab in 1..4{
+                let ctx=test_context();
+                let gateway:Arc<dyn BandoGateway>=Arc::new(GeometryGateway);
+                let mut page=crate::freight_manager::FreightManager::geometry_fixture(gateway,ctx.clone(),tab,false);
+                if tab==3{
+                    exercise_editor_transitions("freight basis",&ctx,screen,work,&mut page,|p,ui|p.show_page(ui),
+                        |p|p.geometry_begin_read(),|p|p.geometry_read_failed(),&[]);
+                }else{
+                    // Initial loading is the approved placeholder for both lists.
+                    exercise_data_transitions("freight",&ctx,screen,work,&mut page,|p,ui|p.show_page(ui),
+                        |p|p.geometry_begin_read(),|p|p.geometry_read_failed());
+                }
+            }
+        }
+    }
+    #[test]
+    fn actual_catalog_subtabs_render_populated_records_and_recover_from_errors(){
+        for (screen,left) in data_geometry_dimensions(){
+            let work=Rect::from_min_max(egui::pos2(left,80.0),egui::pos2(screen.x-18.0,screen.y-18.0));
+            for (tab,name) in [(1,"categories"),(2,"model groups"),(3,"aliases"),(4,"brands")]{
+                let ctx=test_context();
+                let gateway:Arc<dyn BandoGateway>=Arc::new(GeometryGateway);
+                let mut page=crate::product_manager::ProductManager::geometry_fixture(gateway,ctx.clone(),tab,false);
+                exercise_editor_transitions(name,&ctx,screen,work,&mut page,|p,ui|p.show_page(ui),
+                    |p|p.geometry_begin_read(),|p|p.geometry_read_failed(),&["catalog data row"]);
+            }
+        }
+    }
+    #[test]
+    fn actual_excel_store_and_archive_tabs_render_populated_records(){
+        for (screen,left) in data_geometry_dimensions(){
+            let work=Rect::from_min_max(egui::pos2(left,80.0),egui::pos2(screen.x-18.0,screen.y-18.0));
+            for tab in 1..3{
+                let ctx=test_context();
+                let gateway:Arc<dyn BandoGateway>=Arc::new(GeometryGateway);
+                let mut page=crate::excel_manager::ExcelManager::geometry_fixture(gateway,ctx.clone(),tab,false);
+                exercise_data_transitions(if tab==1{"excel store"}else{"excel archive"},&ctx,screen,work,&mut page,
+                    |p,ui|p.show_page(ui),|p|p.geometry_begin_read(),|p|p.geometry_read_failed());
+            }
+        }
+    }
+    #[test]
+    fn actual_automatic_message_tabs_preserve_workspace_during_reads(){
+        for (screen,left) in data_geometry_dimensions(){
+            let work=Rect::from_min_max(egui::pos2(left,80.0),egui::pos2(screen.x-18.0,screen.y-18.0));
+            for tab in 1..3{
+                let ctx=test_context();
+                let gateway:Arc<dyn BandoGateway>=Arc::new(GeometryGateway);
+                let mut page=crate::client_manager::ClientManager::geometry_fixture(Arc::clone(&gateway),ctx.clone(),tab,false);
+                let roles:&[&str]=if tab==2{&["notice product row"]}else{&[]};
+                let recovered=exercise_editor_transitions("automatic messages",&ctx,screen,work,&mut page,
+                    |p,ui|p.show_page(ui,Arc::clone(&gateway)),|p|p.geometry_begin_message_read(),
+                    |p|p.geometry_message_failed(),roles);
+                if tab==2{
+                    page.geometry_select_notice();
+                    let selected=render(&ctx,screen,work,|ui|page.show_page(ui,Arc::clone(&gateway)));
+                    compare_top_slots("notice","selected",&recovered,&selected);
+                    compare_primary_origin("notice","selected",&recovered,&selected);
+                }
+            }
+        }
+    }
+    #[test]
+    fn actual_settings_tabs_keep_top_slots_during_account_and_path_reads(){
+        for (screen,left) in data_geometry_dimensions(){
+            let work=Rect::from_min_max(egui::pos2(left,80.0),egui::pos2(screen.x-18.0,screen.y-18.0));
+            for tab in 0..4{
+                let ctx=test_context();
+                let gateway:Arc<dyn BandoGateway>=Arc::new(GeometryGateway);
+                let mut page=crate::settings_view::SettingsView::geometry_fixture(Arc::clone(&gateway),ctx.clone(),tab,false);
+                let recovered=exercise_editor_transitions("settings",&ctx,screen,work,&mut page,
+                    |p,ui|p.show_page(ui,Arc::clone(&gateway)),|p|p.geometry_begin_read(),|p|p.geometry_read_failed(),&[]);
+                if tab==0{
+                    let account=first(&recovered,"account viewport");
+                    assert!(account.is_positive(),"settings accounts: missing actual scroll viewport");
+                }
+            }
+        }
+    }
+    #[test]
+    fn actual_settlement_renders_orders_payments_and_error_recovery(){
+        for (screen,left) in data_geometry_dimensions(){
+            let work=Rect::from_min_max(egui::pos2(left,80.0),egui::pos2(screen.x-18.0,screen.y-18.0));
+            let ctx=test_context();
+            let gateway:Arc<dyn BandoGateway>=Arc::new(GeometryGateway);
+            let mut page=crate::daily_settlement_manager::DailySettlementManager::geometry_fixture(gateway,ctx.clone(),0,false);
+            exercise_editor_transitions("settlement",&ctx,screen,work,&mut page,
+                |p,ui|p.show_page(ui),|p|p.geometry_begin_read(),|p|p.geometry_read_failed(),
+                &["settlement order row","settlement payment row"]);
+        }
+    }
+    #[test]
+    fn actual_reception_sections_and_value_cells_keep_geometry_during_recipient_changes(){
+        let card_roles=["source card","source header","message card","message header",
+            "review card","review header","recipient card","recipient header",
+            "items card","items header","total card","total header","orders card","orders header"];
+        let field_roles=["recipient name","recipient address","recipient mobile","recipient phone","recipient note",
+            "item product","item quantity","item amount","freight amount"];
+        for (screen,_) in data_geometry_dimensions(){
+            let ctx=test_context();
+            let mut app=crate::BandoEgui::with_layout(crate::layout::LayoutState::default());
+            app.gateway=Arc::new(GeometryGateway);
+            let draw=|app:&mut crate::BandoEgui|{
+                let mut measured=Vec::new();
+                for _ in 0..3{
+                    TRACE.with(|trace|*trace.borrow_mut()=Some(Vec::new()));
+                    let _=ctx.run(egui::RawInput{screen_rect:Some(Rect::from_min_size(egui::Pos2::ZERO,screen)),
+                        ..Default::default()},|ctx|app.reception(ctx));
+                    measured=TRACE.with(|trace|trace.borrow_mut().take().unwrap());
+                }
+                measured
+            };
+            let standby=draw(&mut app);
+            app.raw_source="합성 발주원문\n검증 수취인 및 상품".into();
+            app.analysis=Some(crate::reception_service::ReceptionAnalysis{
+                recognition:serde_json::json!({"recipients":[
+                    {"id":"geometry-r1","name":"짧은 이름","address":"합성 주소","mobile":"010-0000-0000","phone":"","note":"","freightCode":"010","items":[{"id":"geometry-i1","name":"검증 상품","quantity":1}]},
+                    {"id":"geometry-r2","name":"긴 합성 수취인 이름과 추가 정보","address":"긴 합성 주소 — 실제 주소 아님","mobile":"010-0000-0000","phone":"02-0000-0000","note":"긴 합성 배송 메시지","freightCode":"020","items":[{"id":"geometry-i2","name":"아주 긴 합성 상품명과 옵션 색상","quantity":64}]}
+                ]}),
+                reference:vec![],client_match:Value::Null,client_candidates:vec![],
+                matched_client_name:None,chosen_client_name:None,directory_count:0,linked_spans:vec![]
+            });
+            let first_recipient=draw(&mut app);
+            app.selected_recipient=1;
+            let second_recipient=draw(&mut app);
+            app.analysis_pending=true;
+            let pending=draw(&mut app);
+            let cards=|trace:&[Sample]|card_roles.iter().map(|role|(*role,first(trace,role))).collect::<Vec<_>>();
+            let fields=|trace:&[Sample]|field_roles.iter().map(|role|(*role,first(trace,role))).collect::<Vec<_>>();
+            assert_layout_rects_invariant(&cards(&standby),&cards(&first_recipient));
+            assert_layout_rects_invariant(&cards(&first_recipient),&cards(&second_recipient));
+            assert_layout_rects_invariant(&cards(&second_recipient),&cards(&pending));
+            assert_layout_rects_invariant(&fields(&first_recipient),&fields(&second_recipient));
+            assert_layout_rects_invariant(&fields(&second_recipient),&fields(&pending));
         }
     }
 

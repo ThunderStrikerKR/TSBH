@@ -23,7 +23,6 @@ function moduleFor(path) {
   evaluate(out, (name) => {
     if (name === "exceljs") return ExcelJS;
     if (name === "../../../src/app/seoul-date") return moduleFor("seoul-date");
-    if (name.startsWith("./")) return moduleFor(name.slice(2).replace(/\.js$/, ""));
     if (name === "../../../src/domain") return {
       orderClient: (o, state) => state.clients.find((c) => c.id === o.clientId) ?? o.clientSnapshot,
       totals: (o) => o.fixtureTotals,
@@ -37,6 +36,7 @@ function moduleFor(path) {
         recipient: state.orders.find((o) => o.id === ship.orderId)?.recipients.find((r) => r.id === ship.recipientId),
       }),
     };
+    if (name.startsWith("./")) return moduleFor(name.slice(2).replace(/\.js$/, ""));
     if (name === "../../../src/workspace-selection") return { onlyDeletedGroups: () => false };
     throw Error("Unknown dependency in report test: " + name);
   }, structuredClone);
@@ -358,12 +358,12 @@ test("report screens keep live read-only views while Excel export buttons are de
   assert.match(history, /from "\.\/history-format"/);
   assert.match(daily, /from "\.\/history-format"/);
   assert.match(model, /from "\.\/seoul-date"/);
-  assert.match(reportWorkbook, /from "\.\/seoul-date"/);
+  assert.match(reportWorkbook, /from "\.\.\/\.\.\/\.\.\/src\/app\/seoul-date"/);
   assert.doesNotMatch(model, /from "\.\/settlement-report"/);
   // A type-only import disappears from JavaScript output. Prohibit runtime
   // imports of the old TS business module without rejecting TypeScript types.
-  assert.doesNotMatch(reportWorkbook, /^import\s+(?!type\b)[^\n]*from\s+["']\.\/settlement-report["']/m);
-  assert.match(reportWorkbook, /^import type \{[^\n]+\} from "\.\/report-types";/m);
+  assert.doesNotMatch(reportWorkbook, /^import\s+(?!type\b)[^\n]*from\s+["'][^"']*\/settlement-report["']/m);
+  assert.match(reportWorkbook, /^import type \{[^\n]+\} from "\.\.\/\.\.\/\.\.\/src\/app\/report-types";/m);
 
   assert.doesNotMatch(historyFormat, /^import /m);
   assert.doesNotMatch(dateFormat, /^import /m);

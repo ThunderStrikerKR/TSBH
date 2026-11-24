@@ -1516,6 +1516,12 @@ impl OrderHistoryManager {
                                     egui::pos2(origin.x,origin.y+offsets[line_index]),
                                     Vec2::new(table_width,line_heights[line_index])
                                 );
+                                #[cfg(test)]
+                                components::general_screen_geometry_tests::record("data row",row_rect);
+                                #[cfg(test)]
+                                if matches!(line,HistoryLine::Recipient(_,_,_)){
+                                    components::general_screen_geometry_tests::record("history detail row",row_rect);
+                                }
                                 header_origin.get_or_insert(row_rect.left());
                                 visible.scope_builder(UiBuilder::new()
                                     .id_salt(("history-variable-row",line_index))
@@ -1988,4 +1994,18 @@ impl OrderHistoryManager {
         page.receiver=None; if loaded{page.snapshot=Some(HistorySnapshot{state:serde_json::json!({}),rows:Vec::new()});}
         page
     }
+
+    pub(crate) fn geometry_begin_read(&mut self)->Box<dyn FnOnce(Result<usize,String>)>{
+        let (tx,rx)=std::sync::mpsc::channel();
+        self.receiver=Some(rx);
+        self.error=None;
+        Box::new(move |answer|{
+            let result=answer.map(|count|{
+                HistorySnapshot{state:json!({"workflow":{"shipments":[]}}),rows:(0..count).map(|i|json!({"order":{"id":format!("geometry-o-{i}"),"createdAt":"2026-11-24T08:00:00+09:00"},"client":{"name":format!("검증 거래처 {i:03}")},"recipients":[{"id":format!("r-{i}"),"name":"합성 수취인","items":[{"id":format!("i-{i}"),"name":"BD 709 긴 품목명 검증","quantity":2},{"id":format!("j-{i}"),"name":"Desk TS 옵션 검증","quantity":1}]}],"total":123456,"status":"처리 중"})).collect()}
+            });
+            assert!(tx.send(result).is_ok());
+        })
+    }
+    pub(crate) fn geometry_read_failed(&self)->bool{self.error.is_some()}
+    pub(crate) fn geometry_expand_first(&mut self){self.expanded.insert("geometry-o-0".into());}
 }

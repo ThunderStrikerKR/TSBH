@@ -483,10 +483,12 @@ impl AutomaticMessageManager {
                     let caption=if self.draft_notices.contains_key(id){
                         "안내문 등록됨"
                     }else{"안내문 미등록"};
-                    if components::management_chooser_row(
-                        list,id,product_name(product),caption,
-                        self.selected_product==id
-                    ).clicked(){
+                    let choice=components::management_chooser_row(
+                        list,id,product_name(product),caption,self.selected_product==id
+                    );
+                    #[cfg(test)]
+                    components::general_screen_geometry_tests::record("notice product row",choice.rect);
+                    if choice.clicked(){
                         *target=Some(Destination::Product(id.to_owned()));
                     }
                 }
@@ -730,4 +732,22 @@ impl AutomaticMessageManager {
         page.loading=None;page.section=if tab==0{Section::General}else{Section::Provisional};if loaded{page.set_saved(serde_json::json!({"settings":{}}));page.loaded=true;}
         page
     }
+
+    pub(crate) fn geometry_begin_read(&mut self)->Box<dyn FnOnce(Result<usize,String>)>{
+        let (tx,rx)=std::sync::mpsc::channel();
+        self.loading=Some(rx);
+        self.error=None;
+        Box::new(move |answer|{
+            let result=answer.map(|count|{
+                let products=(0..count).map(|i|serde_json::json!({"id":format!("geometry-p-{i}"),"name":format!("검증 상품 {i}"),"active":true})).collect::<Vec<_>>();
+                let notices=(0..count).map(|i|(format!("geometry-p-{i}"),Value::String("검증 안내문: 줄바꿈과 긴 문장을 포함합니다.".repeat(5))))
+                    .collect::<serde_json::Map<String,Value>>();
+                (serde_json::json!({"settings":{"provisionalProductNotices":notices}}),
+                 serde_json::json!({"products":products}))
+            });
+            assert!(tx.send(result).is_ok());
+        })
+    }
+    pub(crate) fn geometry_read_failed(&self)->bool{self.error.is_some()}
+    pub(crate) fn geometry_select_first(&mut self){self.selected_product="geometry-p-0".into();}
 }

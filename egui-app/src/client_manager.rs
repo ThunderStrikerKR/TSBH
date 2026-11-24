@@ -603,6 +603,8 @@ impl ClientManager {
                             |row|{
                                 row.set_clip_rect(rows_clip);
                                 if let Some(client)=rows.get(index){
+                                    #[cfg(test)]
+                                    components::general_screen_geometry_tests::record("data row",row_rect);
                                     let display=components::ClientDisplaySummary::from_client(client);
                                     let name=display.name.as_str();
                                     let description="";
@@ -1139,5 +1141,28 @@ impl ClientManager {
         let mut page=Self::new(Arc::clone(&gateway),ctx.clone());
         page.loading=None; page.ready=loaded; if loaded{page.state=serde_json::json!({"revision":1,"clients":[],"readOnly":true});} if tab>0{page.show_messages=true;page.messages=Some(AutomaticMessageManager::geometry_fixture(gateway,ctx,tab-1,loaded));}
         page
+    }
+
+    pub(crate) fn geometry_begin_read(&mut self)->Box<dyn FnOnce(Result<usize,String>)>{
+        let (tx,rx)=std::sync::mpsc::channel();
+        self.loading=Some(rx);
+        self.error=None;
+        Box::new(move |answer|{
+            let result=answer.map(|count|{
+                let clients=(0..count).map(|i|serde_json::json!({"id":format!("geometry-c-{i}"),"name":format!("검증 거래처 {i:03}"),"tier":(["WHOLESALE","SEMI","RETAIL","SPECIAL"][i%4]),"address":"합성 주소 — 실제 고객 정보 아님","active":true})).collect::<Vec<_>>();
+                serde_json::json!({"revision":1,"clients":clients,"readOnly":true})
+            });
+            assert!(tx.send(result).is_ok());
+        })
+    }
+    pub(crate) fn geometry_read_failed(&self)->bool{self.error.is_some()}
+    pub(crate) fn geometry_begin_message_read(&mut self)->Box<dyn FnOnce(Result<usize,String>)>{
+        self.messages.as_mut().expect("message fixture").geometry_begin_read()
+    }
+    pub(crate) fn geometry_message_failed(&self)->bool{
+        self.messages.as_ref().expect("message fixture").geometry_read_failed()
+    }
+    pub(crate) fn geometry_select_notice(&mut self){
+        self.messages.as_mut().expect("message fixture").geometry_select_first();
     }
 }

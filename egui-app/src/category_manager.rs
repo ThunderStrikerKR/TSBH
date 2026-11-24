@@ -427,6 +427,8 @@ impl CategoryManager {
             theme::CATALOG_ROOT_ROW_HEIGHT
         }else{theme::CATALOG_TREE_ROW_HEIGHT};
         let (rect,response)=ui.allocate_exact_size(Vec2::new(width,height),Sense::click());
+        #[cfg(test)]
+        if item.id.starts_with("geometry-cat-"){components::general_screen_geometry_tests::record("catalog data row",rect);}
         if self.selected==item.id || response.hovered(){
             ui.painter().rect_filled(
                 rect,theme::CONTROL_RADIUS as f32,

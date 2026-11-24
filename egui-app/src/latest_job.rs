@@ -80,6 +80,19 @@ impl<T: Send + 'static> LatestJob<T> {
         // A full wake channel already guarantees the latest pending job runs.
         let _ = worker.wake.try_send(());
     }
+    // Deterministic test transport: stage an answer for the current
+    // generation. The real poll() path still consumes it.
+    #[cfg(test)]
+    pub(crate) fn geometry_begin_read(&mut self)->Box<dyn FnOnce(Result<T,String>)>{
+        self.invalidate();
+        let answer:Arc<Mutex<Option<Answer<T>>>>=Arc::new(Mutex::new(None));
+        let (wake,_signals)=mpsc::sync_channel(1);
+        self.worker=Some(Worker{next:Arc::new(Mutex::new(None)),
+            answer:Arc::clone(&answer),wake});
+        self.pending=true;
+        let generation=self.generation;
+        Box::new(move |result|*answer.lock().unwrap()=Some((generation,result)))
+    }
     pub fn poll(&mut self) -> Option<Result<T, String>> {
         let answer = self.worker.as_ref()?.answer.lock().unwrap().take()?;
         if answer.0 != self.generation {
