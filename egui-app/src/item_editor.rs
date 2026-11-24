@@ -194,27 +194,11 @@ impl ItemEditor{
     fn show_delete_confirmation(
         &self,ctx:&Context,work_area:egui::Rect,busy:bool
     )->(bool,bool){
-        let mut cancel=false;
-        let mut remove=false;
-        components::decision_window(
-            "품목 삭제 확인","reception-item-delete-confirm",work_area
-        ).constrain_to(work_area).show(ctx,|ui|{
-            let name=field(&self.initial,"name");
-            let name=if name.is_empty(){field(&self.initial,"code")}else{name};
-            (cancel,remove)=components::decision_content(
-                ui,"품목 삭제 확인","취소",!busy,
-                |body|{
-                    body.add(egui::Label::new(typography::body(
-                        &format!("{} 품목을 발주서에서 삭제할까요?",name)
-                    )).wrap());
-                    if let Some(error)=self.error.as_deref(){
-                        body.add(egui::Label::new(typography::status(error,theme::DANGER)).wrap());
-                    }
-                },
-                |actions|theme::action(actions,"삭제",ButtonRole::Danger,!busy).clicked()
-            );
-        });
-        (cancel,remove)
+        let name=field(&self.initial,"name");
+        let name=if name.is_empty(){field(&self.initial,"code")}else{name};
+        components::reception_item_delete_confirmation(
+            ctx,work_area,name,self.error.as_deref(),busy
+        )
     }
 
     pub fn show(

@@ -76,6 +76,7 @@ struct ManualHistoryFrame{
     model:Value,
     assignment_order:Vec<String>,
     remote_rows:Vec<RemoteRow>,
+    view_quote:Option<Value>,
     selected_recipient:usize,
     selected_item:Option<String>,
     selected_field:String,
@@ -366,11 +367,30 @@ fn remote_for<'a>(rows:&'a [RemoteRow],recipient:&Value)
         .map(|(_,_,decision)|decision)
 }
 
+// Read-only preview from the SAME native quote as the intake pane.
+// No arithmetic or default tariff is calculated in the worksheet renderer.
+fn manual_view_quote(
+    gateway:&dyn BandoGateway,order:&Value,model:&Value,keys:&[String],
+    client_id:Option<&str>
+)->Option<Value>{
+    let id=client_id?;
+    let preview=rule(gateway,json!({
+        "action":"preview_manual","order":order,"model":model,"assignmentOrder":keys
+    })).ok()?;
+    let updated=preview.get("order")?;
+    let state=gateway.load_business_state().ok()?;
+    let client=list(&state,"clients").iter().find(|client|text(client,"id")==id)?;
+    let mut quote=gateway.execute(ReadOperation::CalculateReceptionQuote,
+        json!({"order":updated,"state":&state,"client":client})).ok()?;
+    quote["orderId"]=order["id"].clone();
+    Some(quote)
+}
+
 enum Outcome {
     Initial { order:Value, model:Value, assignment_order:Vec<String>,
-        remote_rows:Vec<RemoteRow> },
+        remote_rows:Vec<RemoteRow>,view_quote:Option<Value> },
     Updated { model:Value, assignment_order:Vec<String>,
-        remote_rows:Vec<RemoteRow> },
+        remote_rows:Vec<RemoteRow>,view_quote:Option<Value> },
     Applied { order:Value, model:Value, assignment_order:Vec<String>,
         quote:Option<Value>,quote_error:Option<String> },
 }
@@ -458,6 +478,57 @@ fn reuse_native_quote(saved:Option<&Value>,updated:&Value)->Option<Value>{
     }))
 }
 
+fn add_selected_manual_product(
+    gateway:&dyn BandoGateway,order:&Value,payload:&Value,selection:&Value,
+    recipient_id:&str,keys:&Value
+)->Result<Value,String>{
+        // Build the row only in the temporary native model. A failed catalog
+        // lookup or confirmation never returns an empty row to the order.
+        let pid=selection["productId"].as_str()
+            .filter(|id|!id.is_empty()).ok_or("추가할 상품을 선택하세요.")?;
+        let vid=selection["variantId"].as_str()
+            .filter(|id|!id.is_empty()).ok_or("추가할 상품 옵션을 선택하세요.")?;
+        let state=if std::env::var_os("BANDO_EGUI_BUSINESS_DB")
+            .is_some_and(|value|!value.is_empty()){
+            gateway.load_business_state()?
+        }else{gateway.load_catalog()?};
+        let product=state["products"].as_array().into_iter().flatten()
+            .find(|product|text(product,"id")==pid)
+            .ok_or("선택한 상품이 최신 상품 목록에 없습니다.")?;
+        let variants=product["variants"].as_array()
+            .ok_or("등록된 판매 구성이 없습니다.")?;
+        if product["requiresOption"]==true || product["active"]==false
+            || variants.len()!=1 || text(&variants[0],"id")!=vid{
+            return Err("등록된 독립 판매 상품을 다시 선택하세요.".into());
+        }
+        let iid=payload["itemId"].clone();
+        let added=rule(gateway,payload.clone())?;
+        let cell=json!({"recipientId":recipient_id,"itemId":iid,"field":"product"});
+        let selected=rule(gateway,json!({
+            "action":"set_manual_product","order":order,"model":added["model"],
+            "assignmentOrder":keys,"cell":cell,"value":text(product,"name"),
+            "product":product,"state":state,"preserveExistingQuantity":true
+        }))?;
+        let item=selected["model"]["rows"].as_array().into_iter().flatten()
+            .find(|row|text(row,"id")==recipient_id)
+            .and_then(|row|row["items"].as_array()).into_iter().flatten()
+            .find(|item|item["id"]==iid)
+            .ok_or("추가된 상품 행을 확인할 수 없습니다.")?;
+        if text(item,"productId")!=pid || text(item,"variantId")!=vid{
+            return Err("선택한 상품을 주문 품목으로 확정하지 못했습니다.".into());
+        }
+        let quantity_cell=json!({"recipientId":recipient_id,
+            "itemId":iid,"field":"quantity"});
+        let draft=rule(gateway,json!({
+            "action":"set_manual_quantity_draft","model":selected["model"],
+            "cell":quantity_cell,"value":"1"
+        }))?;
+        rule(gateway,json!({
+            "action":"confirm_manual_quantity","model":draft["model"],
+            "cell":quantity_cell,"assignmentOrder":keys
+        }))
+}
+
 pub fn apply_inline(
     gateway:&dyn BandoGateway,source:&WorkingReception,change:&InlineRequest
 )->Result<Event,String>{
@@ -533,51 +604,8 @@ pub fn apply_inline(
         payload["candidateIds"]=json!((0..20).map(|_|unique_id()).collect::<Vec<_>>());
     }
     let response=if action=="add_manual_item"{
-        // Build the row only in the temporary native model. A failed catalog
-        // lookup or confirmation never returns an empty row to the order.
-        let pid=change.value["productId"].as_str()
-            .filter(|id|!id.is_empty()).ok_or("추가할 상품을 선택하세요.")?;
-        let vid=change.value["variantId"].as_str()
-            .filter(|id|!id.is_empty()).ok_or("추가할 상품 옵션을 선택하세요.")?;
-        let state=if std::env::var_os("BANDO_EGUI_BUSINESS_DB")
-            .is_some_and(|value|!value.is_empty()){
-            gateway.load_business_state()?
-        }else{gateway.load_catalog()?};
-        let product=state["products"].as_array().into_iter().flatten()
-            .find(|product|text(product,"id")==pid)
-            .ok_or("선택한 상품이 최신 상품 목록에 없습니다.")?;
-        let variants=product["variants"].as_array()
-            .ok_or("등록된 판매 구성이 없습니다.")?;
-        if product["requiresOption"]==true || product["active"]==false
-            || variants.len()!=1 || text(&variants[0],"id")!=vid{
-            return Err("등록된 독립 판매 상품을 다시 선택하세요.".into());
-        }
-        let iid=payload["itemId"].clone();
-        let added=rule(gateway,payload)?;
-        let cell=json!({"recipientId":change.recipient_id,"itemId":iid,"field":"product"});
-        let selected=rule(gateway,json!({
-            "action":"set_manual_product","order":&order,"model":added["model"],
-            "assignmentOrder":&keys,"cell":cell,"value":text(product,"name"),
-            "product":product,"state":state,"preserveExistingQuantity":true
-        }))?;
-        let item=selected["model"]["rows"].as_array().into_iter().flatten()
-            .find(|row|text(row,"id")==change.recipient_id)
-            .and_then(|row|row["items"].as_array()).into_iter().flatten()
-            .find(|item|item["id"]==iid)
-            .ok_or("추가된 상품 행을 확인할 수 없습니다.")?;
-        if text(item,"productId")!=pid || text(item,"variantId")!=vid{
-            return Err("선택한 상품을 주문 품목으로 확정하지 못했습니다.".into());
-        }
-        let quantity_cell=json!({"recipientId":change.recipient_id,
-            "itemId":iid,"field":"quantity"});
-        let draft=rule(gateway,json!({
-            "action":"set_manual_quantity_draft","model":selected["model"],
-            "cell":quantity_cell,"value":"1"
-        }))?;
-        rule(gateway,json!({
-            "action":"confirm_manual_quantity","model":draft["model"],
-            "cell":quantity_cell,"assignmentOrder":&keys
-        }))?
+        add_selected_manual_product(gateway,&order,&payload,&change.value,
+            &change.recipient_id,&json!(keys))?
     }else if action=="native_approve_one" || action=="native_cancel_approval"{
         let rid=change.recipient_id.as_str();
         let iid=change.item_id.as_deref()
@@ -700,6 +728,7 @@ pub struct ManualWorkspace {
     model:Option<Value>,
     assignment_order:Vec<String>,
     remote_rows:Vec<RemoteRow>,
+    view_quote:Option<Value>,
     selected_recipient:usize,
     selected_item:Option<String>,
     selected_field:String,
@@ -716,6 +745,8 @@ pub struct ManualWorkspace {
     confirm_discard:bool,
     confirm_apply:bool,
     product_search:Option<ProductSearch>,
+    add_product_picker:Option<(String,crate::product_manager::ProductManager)>,
+    item_remove_confirmation:Option<(String,String)>,
     remove_recipient_pending:Option<String>,
     remove_recipient_target:Option<usize>,
     reset_pending:bool,
@@ -749,8 +780,9 @@ impl ManualWorkspace {
                     .map(|v|v.as_str().map(str::to_owned).ok_or("Rust 배정 ID 오류".to_owned()))
                     .collect::<Result<Vec<_>,_>>()?;
                 let remote_rows=resolve_remote_rows(service.as_ref(),&model);
+                let view_quote=manual_view_quote(service.as_ref(),&order,&model,&keys,row.client_id.as_deref());
                 Ok(Outcome::Initial{
-                    order,model,assignment_order:keys,remote_rows
+                    order,model,assignment_order:keys,remote_rows,view_quote
                 })
             })();
             let _=tx.send(result);
@@ -760,7 +792,7 @@ impl ManualWorkspace {
             order_id:source.id,raw:source.raw,order_type:source.order_type,
             client_id:source.client_id,gateway,base_order:None,
             cached_quote:source.pricing_preview,model:None,
-            assignment_order:Vec::new(),remote_rows:Vec::new(),
+            assignment_order:Vec::new(),remote_rows:Vec::new(),view_quote:None,
             selected_recipient:0,
             selected_item:None,selected_field:"name".into(),
             edit_text:String::new(),focus_editor:false,
@@ -769,7 +801,8 @@ impl ManualWorkspace {
             history:Vec::new(),pending_select_after_apply:None,
             advance_after_apply:None,last_action:None,action_pending:false,
             confirm_discard:false,confirm_apply:false,
-            product_search:None,remove_recipient_pending:None,
+            product_search:None,add_product_picker:None,item_remove_confirmation:None,
+            remove_recipient_pending:None,
             remove_recipient_target:None,reset_pending:false,
             receiver:Some(rx),error:None,dirty:false,applied:None,
         }
@@ -793,9 +826,16 @@ impl ManualWorkspace {
     }
     fn busy(&self)->bool {self.receiver.is_some()}
 
+    fn product_dialog_open(&self)->bool{
+        self.product_search.is_some() || self.add_product_picker.is_some()
+            || self.item_remove_confirmation.is_some()
+    }
+
     fn nested_modal_window_id(&self)->Option<&'static str>{
+        if self.add_product_picker.is_some(){return Some("manual-add-product-picker");}
+        if self.item_remove_confirmation.is_some(){return Some("reception-item-delete-confirm");}
         nested_modal_id(
-            self.product_search.is_some(),
+            self.product_dialog_open(),
             self.remove_recipient_pending.is_some(),
             self.reset_pending,
             self.confirm_apply,
@@ -807,8 +847,9 @@ impl ManualWorkspace {
         let received=self.receiver.as_ref().map(|r|r.try_recv());
         match received {
             Some(Ok(Ok(Outcome::Initial{
-                order,model,assignment_order,remote_rows
+                order,model,assignment_order,remote_rows,view_quote
             })))=>{
+                self.view_quote=view_quote;
                 self.base_order=Some(order);
                 self.remote_rows=remote_rows;
                 let count=list(&model,"rows").len();
@@ -821,7 +862,7 @@ impl ManualWorkspace {
                 self.focus_editor=true;
             }
             Some(Ok(Ok(Outcome::Updated{
-                model,assignment_order,remote_rows
+                model,assignment_order,remote_rows,view_quote
             })))=>{
                 let advance_to_missing=self.last_action.as_deref()==Some("assign_manual_block")
                     && self.selected_item.is_none()
@@ -831,12 +872,14 @@ impl ManualWorkspace {
                         model:previous.clone(),
                         assignment_order:self.assignment_order.clone(),
                         remote_rows:self.remote_rows.clone(),
+                        view_quote:self.view_quote.clone(),
                         selected_recipient:self.selected_recipient,
                         selected_item:self.selected_item.clone(),
                         selected_field:self.selected_field.clone(),
                     });
                 }
                 self.remote_rows=remote_rows;
+                self.view_quote=view_quote;
                 self.model=Some(model);
                 self.assignment_order=assignment_order;
                 let count=self.model.as_ref().map(|m|list(m,"rows").len()).unwrap_or(0);
@@ -924,7 +967,7 @@ impl ManualWorkspace {
     }
 
     fn undo(&mut self){
-        if self.busy() || self.product_search.is_some() ||
+        if self.busy() || self.product_dialog_open() ||
             self.remove_recipient_pending.is_some() || self.reset_pending ||
             self.confirm_apply || self.confirm_discard {return;}
         if self.edit_text!=self.current_value(){
@@ -943,6 +986,7 @@ impl ManualWorkspace {
         self.model=Some(frame.model);
         self.assignment_order=frame.assignment_order;
         self.remote_rows=frame.remote_rows;
+        self.view_quote=frame.view_quote;
         self.selected_recipient=frame.selected_recipient;
         self.selected_item=frame.selected_item;
         self.selected_field=if cancel_product{
@@ -1019,15 +1063,18 @@ impl ManualWorkspace {
                 "unitPrice"=>item.get("manualUnitPrice")
                     .or_else(||item.get("unitPrice"))
                     .and_then(Value::as_i64)
+                    .or_else(||self.view_quote.as_ref()
+                        .and_then(|quote|crate::quoted_item_line(quote,id))
+                        .and_then(|line|line["unitPrice"].as_i64()))
                     .map(components::money_edit_text).unwrap_or_default(),
                 _=>text(item,"name").to_owned()
             };
         }
         if self.selected_field=="shippingCharge"{
-            // The input is a NEW applied charge, validated/normalized only
-            // by the native remote-delivery rule on confirmation. Avoid
-            // calculating a shown 2x charge in the egui presentation layer.
-            return String::new();
+            return self.view_quote.as_ref().and_then(|quote|
+                crate::quoted_freight_line(quote,text(row,"id"),row["dispatchOrigin"].as_str())
+            ).and_then(|line|line["appliedCharge"].as_i64())
+                .map(components::money_edit_text).unwrap_or_default();
         }
         text(row,&self.selected_field).to_owned()
     }
@@ -1047,7 +1094,7 @@ impl ManualWorkspace {
         );
         let navigation=if had_focus && !busy &&
             !self.confirm_apply && !self.confirm_discard &&
-            self.product_search.is_none() && self.remove_recipient_pending.is_none()
+            !self.product_dialog_open() && self.remove_recipient_pending.is_none()
             && !self.reset_pending {
             key_event.and_then(|(key,modifiers,navigation)|{
                 let consumed=ui.input_mut(|input|{
@@ -1060,7 +1107,7 @@ impl ManualWorkspace {
         }else{None};
         let focus=self.focus_editor && !busy &&
             !self.confirm_apply && !self.confirm_discard &&
-            self.product_search.is_none() &&
+            !self.product_dialog_open() &&
             self.remove_recipient_pending.is_none() && !self.reset_pending;
         let response=if self.selected_item.is_none() {
             if self.selected_field=="shippingCharge" {
@@ -1074,14 +1121,15 @@ impl ManualWorkspace {
                     linked
                 )
             }
-        }else if self.selected_field=="unitPrice"{
-            components::reception_money_inline_cell_editor(
-                ui,rect,&mut self.edit_text,focus,None
-            )
+        }else if matches!(self.selected_field.as_str(),"quantity"|"unitPrice"){
+            components::reception_item_numeric_editor(
+                ui,rect,&mut self.edit_text,focus,None,
+                if self.selected_field=="quantity"{components::ReceptionNumericCell::Quantity}
+                else{components::ReceptionNumericCell::Money}
+            ).0
         }else{
             components::reception_inline_cell_editor(
-                ui,rect,&mut self.edit_text,focus,None,
-                self.selected_field=="quantity"
+                ui,rect,&mut self.edit_text,focus,None,false
             )
         };
         self.active_editor_id=Some(response.id);
@@ -1178,6 +1226,7 @@ impl ManualWorkspace {
         let keys=self.assignment_order.clone();
         let service=Arc::clone(&self.gateway);
         let action=action.to_owned();
+        let selected_client=self.client_id.clone();
         let (tx,rx)=mpsc::channel();
         self.receiver=Some(rx);
         self.error=None;
@@ -1211,7 +1260,12 @@ impl ManualWorkspace {
                     payload["state"]=state;
                     payload["candidateIds"]=json!((0..20).map(|_|unique_id()).collect::<Vec<_>>());
                 }
-                let result=if action=="native_confirm_quantity" {
+                let result=if action=="add_selected_manual_product"{
+                    payload["action"]=json!("add_manual_item");
+                    let recipient_id=text(&extra,"recipientId");
+                    add_selected_manual_product(service.as_ref(),&order,&payload,
+                        &extra["selection"],recipient_id,&json!(keys))?
+                }else if action=="native_confirm_quantity" {
                     let first=rule(service.as_ref(),json!({
                         "action":"set_manual_quantity_draft",
                         "model":&model,"cell":extra.get("cell"),
@@ -1231,8 +1285,10 @@ impl ManualWorkspace {
                     .and_then(Value::as_array).map(|v|v.iter().filter_map(|s|s.as_str()
                         .map(str::to_owned)).collect()).unwrap_or_else(||keys.clone());
                 let remote_rows=resolve_remote_rows(service.as_ref(),&next);
+                let view_quote=manual_view_quote(service.as_ref(),&order,&next,
+                    &assignment_order,selected_client.as_deref());
                 Ok(Outcome::Updated{
-                    model:next,assignment_order,remote_rows
+                    model:next,assignment_order,remote_rows,view_quote
                 })
             })();
             let _=tx.send(result);
@@ -1339,14 +1395,18 @@ impl ManualWorkspace {
         if ctx.input(|input|input.key_pressed(egui::Key::Escape)) {
             match escape_action(
                 self.busy(),
-                self.product_search.is_some(),
+                self.product_dialog_open(),
                 self.remove_recipient_pending.is_some(),
                 self.reset_pending,
                 self.confirm_apply,
                 self.confirm_discard,
                 self.edit_text!=self.current_value(),
             ){
-                EscapeAction::CloseProductSearch=>self.product_search=None,
+                EscapeAction::CloseProductSearch=>{
+                    self.product_search=None;
+                    self.add_product_picker=None;
+                    self.item_remove_confirmation=None;
+                },
                 EscapeAction::CancelShipmentRemoval=>{
                     self.remove_recipient_pending=None;
                     self.remove_recipient_target=None;
@@ -1390,6 +1450,8 @@ impl ManualWorkspace {
         let mut discard_confirmed=false;
         let mut submit_direct=false;
         let mut lookup:Option<(String,String)>=None;
+        let mut add_product:Option<String>=None;
+        let mut remove_item:Option<(String,String)>=None;
         components::modal_window("수동 분류","bando-native-manual-classification",work_area)
             
             .default_width((work_area.width()-theme::MANUAL_DIALOG_SIDE_GAP)
@@ -1400,7 +1462,7 @@ impl ManualWorkspace {
             .show(ctx,|ui|{
                 if components::modal_header(
                     ui,"수동 분류","닫기",
-                    !self.busy()&&self.product_search.is_none()
+                    !self.busy()&&!self.product_dialog_open()
                         &&self.remove_recipient_pending.is_none()
                         &&!self.reset_pending
                         &&!self.confirm_apply
@@ -1408,7 +1470,7 @@ impl ManualWorkspace {
                 ){open=false;}
                 // Prompts and asynchronous native mutations own input while
                 // open. The background worksheet remains visible but inert.
-                if self.busy() || self.product_search.is_some() ||
+                if self.busy() || self.product_dialog_open() ||
                     self.remove_recipient_pending.is_some() ||
                     self.reset_pending || self.confirm_apply || self.confirm_discard {
                     ui.disable();
@@ -1736,24 +1798,20 @@ impl ManualWorkspace {
                                                 },|items_ui|{
                                                     items_ui.spacing_mut().item_spacing.y=0.0;
                                                     let row_width=items_ui.available_width().max(
-                                                        theme::RECEPTION_ITEMS_MIN_TABLE_WIDTH
+                                                        theme::RECEPTION_ITEMS_MIN_TABLE_WIDTH+theme::RECEPTION_ITEM_REMOVE_WIDTH
                                                     );
                                                     items_ui.set_min_width(row_width);
-                                                    components::reception_items_header_with_amount_label(
-                                                        items_ui,"단가"
-                                                    );
+                                                    components::reception_editable_items_header(items_ui);
                                                     for item in list(row,"items"){
                                                         let item_id=text(item,"id");
                                                         let quantity=item.get("quantity")
                                                             .and_then(Value::as_i64)
                                                             .map(|n|format!("{n}개"))
                                                             .unwrap_or_else(||"—".to_owned());
-                                                        // Display only native unit-price fields
-                                                        // before a quote exists; no UI-side
-                                                        // price multiplication or VAT logic.
-                                                        let price=item.get("manualUnitPrice")
-                                                            .or_else(||item.get("unitPrice"))
-                                                            .and_then(Value::as_i64)
+                                                        // Exactly the same native line amount as reception.
+                                                        let price=self.view_quote.as_ref()
+                                                            .and_then(|quote|crate::quoted_item_line(quote,item_id))
+                                                            .and_then(|line|line["amount"].as_i64())
                                                             .map(components::display_won)
                                                             .unwrap_or_else(||"—".into());
                                                         let product_key=source_highlight::key(
@@ -1773,10 +1831,13 @@ impl ManualWorkspace {
                                                                 active_link.as_ref(),&key
                                                             )
                                                         );
-                                                        let cells=components::reception_item_row_editable(
-                                                            items_ui,text(item,"name"),
-                                                            &quantity,&price,active_fields
+                                                        let cells=components::reception_item_row_with_remove(
+                                                            items_ui,&crate::reception_service::item_title(item),
+                                                            &quantity,&price,active_fields,can_switch
                                                         );
+                                                        if cells.remove_clicked && can_mutate{
+                                                            remove_item=Some((rid.to_owned(),item_id.to_owned()));
+                                                        }
                                                         for (field,response,key) in [
                                                             ("product",cells.product,&keys[0]),
                                                             ("quantity",cells.quantity,&keys[1]),
@@ -1838,61 +1899,21 @@ impl ManualWorkspace {
                                                                     if theme::action(
                                                                         menu,"상품 제거",ButtonRole::Danger,true
                                                                     ).clicked(){
-                                                                        chosen=Some((
-                                                                            "remove_manual_item".into(),
-                                                                            json!({"recipientId":rid,"itemId":item_id})
-                                                                        ));
+                                                                        remove_item=Some((rid.to_owned(),item_id.to_owned()));
                                                                         menu.close();
                                                                     }
                                                                 });
                                                             }
                                                         }
                                                     }
-                                                    if self.selected_item.is_some() &&
-                                                        self.selected_field=="quantity" {
-                                                        let quantity=list(row,"items").iter()
-                                                            .find(|item|self.selected_item.as_deref()
-                                                                ==Some(text(item,"id")))
-                                                            .and_then(|item|item["quantity"].as_i64())
-                                                            .unwrap_or(0);
-                                                        let settled=self.edit_text==self.current_value();
-                                                        items_ui.horizontal(|buttons|{
-                                                            if theme::action(
-                                                                buttons,"−",ButtonRole::Standard,
-                                                                !busy && settled && quantity>1
-                                                            ).clicked(){
-                                                                if let Some(item)=self.selected_item.as_ref(){
-                                                                    self.focus_editor=true;
-                                                                    chosen=Some(("step_manual_quantity".into(),
-                                                                        json!({"cell":{
-                                                                            "recipientId":rid,"itemId":item},
-                                                                            "delta":-1})
-                                                                    ));
-                                                                }
-                                                            }
-                                                            if theme::action(
-                                                                buttons,"+",ButtonRole::Standard,
-                                                                !busy && settled
-                                                            ).clicked(){
-                                                                if let Some(item)=self.selected_item.as_ref(){
-                                                                    self.focus_editor=true;
-                                                                    chosen=Some(("step_manual_quantity".into(),
-                                                                        json!({"cell":{
-                                                                            "recipientId":rid,"itemId":item},
-                                                                            "delta":1})
-                                                                    ));
-                                                                }
-                                                            }
-                                                            if self.selected_quantity_pending() &&
-                                                                matches!(self.last_action.as_deref(),
-                                                                    Some("set_manual_product"|"assign_manual_block")) &&
-                                                                theme::action(
-                                                                    buttons,"상품 선택 취소",
-                                                                    ButtonRole::Quiet,!busy && settled
-                                                                ).clicked(){
-                                                                self.undo();
-                                                            }
-                                                        });
+                                                    // Integrated quantity arrows live inside the common editor.
+                                                    // Preserve the explicit rollback of an unconfirmed assignment.
+                                                    if self.selected_quantity_pending() &&
+                                                        matches!(self.last_action.as_deref(),
+                                                            Some("set_manual_product"|"assign_manual_block")) &&
+                                                        theme::action(items_ui,"상품 선택 취소",ButtonRole::Quiet,
+                                                            !busy && self.edit_text==self.current_value()).clicked(){
+                                                        self.undo();
                                                     }
                                                     items_ui.add_space(theme::SPACE_8);
                                                     let code=if text(row,"freightCode")=="020"{
@@ -1909,7 +1930,9 @@ impl ManualWorkspace {
                                                     let remote_ready=remote_value.is_some();
                                                     let freight=components::reception_freight_row_editable(
                                                         items_ui,"운임",
-                                                        row["shippingCharge"].as_i64(),
+                                                        self.view_quote.as_ref().and_then(|quote|
+                                                            crate::quoted_freight_line(quote,rid,row["dispatchOrigin"].as_str())
+                                                        ).and_then(|line|line["appliedCharge"].as_i64()),
                                                         Some(code=="020"),
                                                         remote_ready.then_some(remote),
                                                         true,can_mutate
@@ -1982,9 +2005,7 @@ impl ManualWorkspace {
                                                 }
                                             );
                                             if header_add_item {
-                                                chosen=Some(("add_manual_item".into(),json!({
-                                                    "recipientId":rid,"itemId":unique_id()
-                                                })));
+                                                add_product=Some(rid.to_owned());
                                             }
                                         }
                                     });
@@ -2023,12 +2044,49 @@ impl ManualWorkspace {
         if let Some(navigation)=navigate_now{
             self.move_selection(navigation);
         }
+        if let Some(rid)=add_product{
+            if !self.busy() && !self.product_dialog_open() && self.edit_text==self.current_value(){
+                self.add_product_picker=Some((rid,crate::product_manager::ProductManager::new_selection(
+                    Arc::clone(&self.gateway),ctx.clone(),self.client_id.clone().unwrap_or_default()
+                )));
+            }
+        }
+        if let Some(target)=remove_item{
+            if !self.busy() && !self.product_dialog_open() && self.edit_text==self.current_value(){
+                self.item_remove_confirmation=Some(target);
+            }
+        }
+        if let Some((rid,manager))=self.add_product_picker.as_mut(){
+            let (cancelled,product)=manager.show_selection_modal(ctx,work_area,"manual-add-product-picker");
+            let rid=rid.clone();
+            if cancelled{self.add_product_picker=None;}
+            else if let Some(product)=product{
+                self.add_product_picker=None;
+                chosen=Some(("add_selected_manual_product".into(),json!({
+                    "recipientId":rid,"itemId":unique_id(),"selection":product
+                })));
+            }
+        }
+        if let Some((rid,iid))=self.item_remove_confirmation.clone(){
+            let item=self.model.as_ref().and_then(|model|list(model,"rows").iter()
+                .find(|row|text(row,"id")==rid))
+                .and_then(|row|list(row,"items").iter().find(|item|text(item,"id")==iid));
+            if let Some(item)=item{
+                let (cancel,remove)=components::reception_item_delete_confirmation(
+                    ctx,work_area,&crate::reception_service::item_title(item),None,self.busy()
+                );
+                if cancel || remove{self.item_remove_confirmation=None;}
+                if remove && !cancel{
+                    chosen=Some(("remove_manual_item".into(),json!({"recipientId":rid,"itemId":iid})));
+                }
+            }else{self.item_remove_confirmation=None;}
+        }
         // Search opens only for the current native recipient/item identity.
         // The underlying worksheet is disabled while a chooser is open.
         if let Some((recipient_id,item_id))=lookup {
             if self.edit_text!=self.current_value(){
                 self.error=Some("입력 중인 내용을 먼저 반영하세요.".into());
-            }else if self.product_search.is_none(){
+            }else if !self.product_dialog_open(){
                 let target=self.model.as_ref().and_then(|model|
                     list(model,"rows").iter().position(|row|
                         text(row,"id")==recipient_id &&
@@ -2245,7 +2303,7 @@ impl ManualWorkspace {
         if discard || !open {
             // Dirty typed text is just as important as a completed Rust edit.
             // A parent close cannot destroy an active modal/async operation.
-            if self.busy() || self.product_search.is_some() ||
+            if self.busy() || self.product_dialog_open() ||
                self.remove_recipient_pending.is_some() || self.reset_pending ||
                self.confirm_apply {
                 return None;
@@ -2633,6 +2691,7 @@ mod manual_workspace_modal_routing_tests {
                 model:json!({"value":value}),
                 assignment_order:Vec::new(),
                 remote_rows:Vec::new(),
+                view_quote:None,
                 selected_recipient:0,
                 selected_item:None,
                 selected_field:"name".into(),
@@ -2713,8 +2772,8 @@ mod manual_workspace_modal_routing_tests {
         assert_eq!(render.matches("reception_section_with_header(").count(),2);
         for common in [
             "reception_recipient_fields(",
-            "reception_items_header_with_amount_label(",
-            "reception_item_row_editable(",
+            "reception_editable_items_header(",
+            "reception_item_row_with_remove(",
             "reception_item_add_action_editable(",
             "reception_freight_row_editable(",
             "reception_item_origin_action_editable(",
@@ -2722,6 +2781,23 @@ mod manual_workspace_modal_routing_tests {
         ] {
             assert!(render.contains(common),"{common} is not reused");
         }
+        // Compare the CURRENT intake master, not merely the presence of a
+        // legacy helper that happens to share a lower-level painter.
+        let intake=include_str!("main.rs");
+        for shared in ["reception_editable_items_header(","reception_item_row_with_remove(",
+            "reception_item_numeric_editor(","reception_freight_row_editable(",
+            "show_selection_modal("]{
+            assert!(intake.contains(shared)&&source.contains(shared),
+                "intake/manual editable contract drift: {shared}");
+        }
+        assert!(!render.contains("reception_items_header_with_amount_label("));
+        assert!(!render.contains("reception_item_row_editable("));
+        assert!(!render.contains("\"step_manual_quantity\""));
+        assert!(render.contains("crate::quoted_item_line("));
+        assert!(render.contains("crate::quoted_freight_line("));
+        assert!(render.contains("reception_item_delete_confirmation("));
+        assert!(source.contains("add_selected_manual_product(service.as_ref()"));
+        assert!(source.contains("ReadOperation::CalculateReceptionQuote"));
         assert!(!render.contains("manual_linked_table_cell("));
         assert!(!render.contains("manual_table_heading("));
         assert!(!render.contains("egui::Grid::new((\"manual-products\""));

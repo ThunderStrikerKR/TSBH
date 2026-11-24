@@ -5329,6 +5329,47 @@ fn reception_quantity_step_keeps_unit_out_of_native_draft_and_respects_bounds(){
     assert_eq!(reception_quantity_step(&RECEPTION_QUANTITY_MAX.to_string(),1),None);
 }
 
+#[derive(Clone,Copy)]
+pub enum ReceptionNumericCell{Quantity,Money}
+
+pub fn reception_item_numeric_editor(
+    ui:&mut Ui,rect:Rect,value:&mut String,focus:bool,
+    click_at:Option<egui::Pos2>,kind:ReceptionNumericCell
+)->(Response,bool){
+    match kind{
+        ReceptionNumericCell::Quantity=>{
+            let editor=reception_quantity_editor(ui,rect,value,focus,click_at);
+            (editor.input,editor.step_interaction)
+        }
+        ReceptionNumericCell::Money=>(
+            reception_money_inline_cell_editor(ui,rect,value,focus,click_at),false
+        )
+    }
+}
+
+pub fn reception_item_delete_confirmation(
+    ctx:&egui::Context,work_area:Rect,name:&str,error:Option<&str>,busy:bool
+)->(bool,bool){
+    let mut cancel=false;
+    let mut remove=false;
+    decision_window("품목 삭제 확인","reception-item-delete-confirm",work_area)
+        .constrain_to(work_area).show(ctx,|ui|{
+            (cancel,remove)=decision_content(
+                ui,"품목 삭제 확인","취소",!busy,
+                |body|{
+                    body.add(egui::Label::new(typography::body(
+                        &format!("{} 품목을 발주서에서 삭제할까요?",name)
+                    )).wrap());
+                    if let Some(error)=error{
+                        body.add(egui::Label::new(typography::status(error,theme::DANGER)).wrap());
+                    }
+                },
+                |actions|theme::action(actions,"삭제",theme::ButtonRole::Danger,!busy).clicked()
+            );
+        });
+    (cancel,remove)
+}
+
 pub struct ReceptionItemCells {
     pub product: Response,
     pub quantity: Response,
@@ -5343,6 +5384,10 @@ fn reception_item_text_clip(rect:Rect,index:usize)->Rect {
     if index==0 {
         rect.shrink2(egui::vec2(theme::SPACE_4,0.0))
     }else{rect}
+}
+
+pub fn reception_editable_items_header(ui:&mut Ui){
+    reception_items_header_with_actions(ui,"금액",true);
 }
 
 pub fn reception_items_header(ui:&mut Ui){

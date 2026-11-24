@@ -1960,22 +1960,9 @@ impl BandoEgui {
             self.product_picker=None;
             return;
         }
-        let mut cancelled=false;
-        let width=(work_area.width()-theme::SPACE_16*2.0).clamp(1.0,1120.0);
-        let height=(work_area.height()-theme::SPACE_16*4.0).clamp(1.0,650.0);
-        components::modal_window("상품 선택","reception-add-product-picker",work_area)
-            .default_width(width).show(ctx,|ui|{
-                ui.set_width(width);
-                cancelled=components::modal_header(ui,"상품 선택","취소",true);
-                ui.allocate_ui_with_layout(
-                    egui::vec2(width,height),
-                    egui::Layout::top_down(egui::Align::Min),
-                    |body|manager.show_page(body)
-                );
-            });
-        let chosen=manager.take_selection();
+        let (cancelled,chosen)=manager.show_selection_modal(ctx,work_area,"reception-add-product-picker");
         let recipient_id=recipient_id.clone();
-        if cancelled || ctx.input(|input|input.key_pressed(egui::Key::Escape)){
+        if cancelled{
             self.product_picker=None;
         }else if let Some(product)=chosen{
             // Close immediately; the existing native worker commits the
@@ -6840,7 +6827,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                 .show(list_area,|items_ui|{
                                     items_ui.set_width(table_width);
                                     items_ui.spacing_mut().item_spacing.y=0.0;
-                                    components::reception_items_header_with_actions(items_ui,"금액",true);
+                                    components::reception_editable_items_header(items_ui);
                                     if let Some(recipient)=selected {
                                         let recipient_id=reception_service::text(recipient,"id");
                                         if let Some(items)=recipient.get("items")
@@ -6948,24 +6935,12 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                                         let navigation=inline_navigation_key(
                                                             items_ui.ctx(),&target
                                                         );
-                                                        let (result,step_interaction)=if field=="quantity"{
-                                                            let control=components::reception_quantity_editor(
-                                                                items_ui,response.rect,&mut editor.text,
-                                                                editor.focus_next,editor.click_at.take()
-                                                            );
-                                                            (control.input,control.step_interaction)
-                                                        }else if field=="price"{
-                                                            (components::reception_money_inline_cell_editor(
-                                                                items_ui,response.rect,&mut editor.text,
-                                                                editor.focus_next,editor.click_at.take()
-                                                            ),false)
-                                                        }else{
-                                                            (components::reception_inline_cell_editor(
-                                                                items_ui,response.rect,&mut editor.text,
-                                                                editor.focus_next,editor.click_at.take(),
-                                                                field!="product"
-                                                            ),false)
-                                                        };
+                                                        let (result,step_interaction)=components::reception_item_numeric_editor(
+                                                            items_ui,response.rect,&mut editor.text,
+                                                            editor.focus_next,editor.click_at.take(),
+                                                            if field=="quantity"{components::ReceptionNumericCell::Quantity}
+                                                            else{components::ReceptionNumericCell::Money}
+                                                        );
                                                         cell_navigation::remember_worksheet_editor(
                                                             items_ui.ctx(),inline_editor_slot(&target),
                                                             result.id

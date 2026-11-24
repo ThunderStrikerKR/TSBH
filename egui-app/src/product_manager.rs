@@ -509,6 +509,24 @@ impl ProductManager {
         page.reload(ctx);
         page
     }
+    pub fn show_selection_modal(
+        &mut self,ctx:&Context,work_area:Rect,window_id:&'static str
+    )->(bool,Option<Value>){
+        let mut cancelled=false;
+        let width=(work_area.width()-theme::SPACE_16*2.0).clamp(1.0,1120.0);
+        let height=(work_area.height()-theme::SPACE_16*4.0).clamp(1.0,650.0);
+        components::modal_window("상품 선택",window_id,work_area)
+            .default_width(width).show(ctx,|ui|{
+                ui.set_width(width);
+                cancelled=components::modal_header(ui,"상품 선택","취소",true);
+                ui.allocate_ui_with_layout(
+                    egui::vec2(width,height),Layout::top_down(Align::Min),
+                    |body|self.show_page(body)
+                );
+            });
+        (cancelled || ctx.input(|input|input.key_pressed(egui::Key::Escape)),
+            self.take_selection())
+    }
     pub fn take_selection(&mut self)->Option<Value>{
         self.selection_result.take()
     }
