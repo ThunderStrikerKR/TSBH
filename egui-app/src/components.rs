@@ -3171,6 +3171,7 @@ fn date_navigation_segment_button(
     ui:&mut Ui,width:f32,tooltip:&str,enabled:bool,
     glyph:DateNavigationSegmentGlyph<'_>
 )->Response{
+    let enabled=enabled && ui.is_enabled();
     let height=ui.available_height();
     let fill=if enabled{theme::INPUT}else{theme::DISABLED_ACTION_BG};
     let response=ui.add_enabled_ui(enabled,|button_ui|{
@@ -3223,6 +3224,7 @@ pub fn date_navigation_count_control(
     ui:&mut Ui,id_salt:impl std::hash::Hash,value:&mut String,
     current:usize,enabled:bool,minimum:usize,maximum:usize
 )->DateNavigationCountControlResponse{
+    let enabled=enabled && ui.is_enabled();
     let arrow_width=theme::CALENDAR_NAV_SIZE;
     let input_width=64.0;
     let height=theme::CALENDAR_NAV_SIZE;
