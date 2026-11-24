@@ -1547,6 +1547,41 @@ pub fn modal_master_pixel_aligned_rect(rect:Rect,pixels_per_point:f32)->Rect {
     )
 }
 
+/// One horizontal content grid for the modal title, toolbar, body, rules and footer.
+/// The outer frame owns its own 16pt inset; this second inset is shared by every
+/// visible child so the popup never has competing left/right alignment columns.
+fn modal_master_content_rect(rect:Rect)->Rect {
+    let inset=theme::MODAL_MASTER_CONTENT_INSET.min(rect.width().max(0.0)*0.5);
+    Rect::from_min_max(
+        egui::pos2(rect.left()+inset,rect.top()),
+        egui::pos2(rect.right()-inset,rect.bottom())
+    )
+}
+
+/// Pixel-aligned rule using the same left/right edges as modal content.
+fn modal_master_rule_rect(rect:Rect,ppp:f32,at_bottom:bool)->Rect {
+    let scale=ppp.max(1.0);
+    let height=(theme::SOFT_DIVIDER_WIDTH*scale).round().max(1.0)/scale;
+    let content=modal_master_content_rect(rect);
+    let top=if at_bottom {rect.bottom()-height}else{rect.top()};
+    Rect::from_min_max(
+        egui::pos2(content.left(),top),
+        egui::pos2(content.right(),(top+height).min(rect.bottom()))
+    )
+}
+
+/// Center the action hit area vertically while keeping its horizontal edges
+/// identical to the title, toolbar, body and both modal divider rules.
+fn modal_master_action_area(rect:Rect,action_height:f32)->Rect {
+    let content=modal_master_content_rect(rect);
+    let height=action_height.max(0.0).min(rect.height().max(0.0));
+    let top=rect.top()+((rect.height()-height)*0.5).max(0.0);
+    Rect::from_min_size(
+        egui::pos2(content.left(),top),
+        Vec2::new(content.width(),height)
+    )
+}
+
 /// Paint only the single shared work-surface background. OCR paints its
 /// two content panes after this step, then uses `finish` for crisp borders.
 /// This order prevents rectangular pane fills from erasing rounded corners.
@@ -1634,10 +1669,10 @@ fn modal_master_header_content_in_rect(
     }else{
         rect.top()+((rect.height()-theme::ACTION_STANDARD_HEIGHT)/2.0).max(0.0)
     };
+    let content=modal_master_content_rect(rect);
     let heading=Rect::from_min_size(
-        egui::pos2(rect.left()+theme::SPACE_8,heading_top),
-        Vec2::new((rect.width()-2.0*theme::SPACE_8).max(1.0),
-            theme::ACTION_STANDARD_HEIGHT)
+        egui::pos2(content.left(),heading_top),
+        Vec2::new(content.width().max(1.0),theme::ACTION_STANDARD_HEIGHT)
     );
     let subtitle=Rect::from_min_size(
         egui::pos2(rect.left()+theme::SPACE_8,heading.bottom()+theme::SPACE_4),
@@ -1695,12 +1730,8 @@ pub fn modal_master_header_in_rect(
     ui.painter().rect_filled(rect,0.0,theme::PANEL);
     // A centered line at rect.bottom() is half clipped and can appear
     // darker at one end. Fill exactly one pixel-aligned INNER rule instead.
-    let rule_height=(theme::SOFT_DIVIDER_WIDTH*ppp).round().max(1.0)/ppp;
     ui.painter().rect_filled(
-        Rect::from_min_max(
-            egui::pos2(rect.left(),rect.bottom()-rule_height),
-            rect.right_bottom()
-        ),0.0,theme::DIVIDER
+        modal_master_rule_rect(rect,ppp,true),0.0,theme::DIVIDER
     );
     modal_master_header_content_in_rect(
         ui,rect,title,description,close_label,enabled
@@ -1712,16 +1743,11 @@ pub fn modal_master_header_in_rect(
 fn modal_master_header_toolbar_rect(rect:Rect,ppp:f32)->Rect{
     let ppp=ppp.max(1.0);
     let rect=modal_master_pixel_aligned_rect(rect,ppp);
-    let rule_height=(theme::SOFT_DIVIDER_WIDTH*ppp).round().max(1.0)/ppp;
+    let content=modal_master_content_rect(rect);
+    let rule=modal_master_rule_rect(rect,ppp,true);
     Rect::from_min_max(
-        egui::pos2(
-            rect.left()+theme::MODAL_MASTER_CONTENT_INSET,
-            rect.top()+theme::MODAL_HEADER_HEIGHT
-        ),
-        egui::pos2(
-            rect.right()-theme::MODAL_MASTER_CONTENT_INSET,
-            rect.bottom()-rule_height
-        )
+        egui::pos2(content.left(),rect.top()+theme::MODAL_HEADER_HEIGHT),
+        egui::pos2(content.right(),rule.top())
     )
 }
 
@@ -1735,12 +1761,8 @@ pub fn modal_master_header_with_toolbar_in_rect<R>(
     let ppp=ui.ctx().pixels_per_point().max(1.0);
     let rect=modal_master_pixel_aligned_rect(rect,ppp);
     ui.painter().rect_filled(rect,0.0,theme::PANEL);
-    let rule_height=(theme::SOFT_DIVIDER_WIDTH*ppp).round().max(1.0)/ppp;
     ui.painter().rect_filled(
-        Rect::from_min_max(
-            egui::pos2(rect.left(),rect.bottom()-rule_height),
-            rect.right_bottom()
-        ),0.0,theme::DIVIDER
+        modal_master_rule_rect(rect,ppp,true),0.0,theme::DIVIDER
     );
     let title_rect=Rect::from_min_size(
         rect.min,Vec2::new(rect.width(),theme::MODAL_HEADER_HEIGHT)
@@ -1767,12 +1789,8 @@ fn paint_modal_master_footer_surface(ui:&Ui,rect:Rect) {
     let ppp=ui.ctx().pixels_per_point().max(1.0);
     let rect=modal_master_pixel_aligned_rect(rect,ppp);
     ui.painter().rect_filled(rect,0.0,theme::PANEL);
-    let width=(theme::SOFT_DIVIDER_WIDTH*ppp).round().max(1.0)/ppp;
-    let rule_bottom=(rect.top()+width).min(rect.bottom());
     ui.painter().rect_filled(
-        Rect::from_min_max(
-            rect.left_top(),egui::pos2(rect.right(),rule_bottom)
-        ),0.0,theme::DIVIDER
+        modal_master_rule_rect(rect,ppp,false),0.0,theme::DIVIDER
     );
 }
 
@@ -1787,12 +1805,7 @@ pub fn modal_master_footer_in_rect(
     // height; a 34pt clip sliced 2pt off the bottom of "적용".
     let action_height=theme::ACTION_PRIMARY_HEIGHT
         .max(theme::ACTION_STANDARD_HEIGHT);
-    let content=Rect::from_min_size(
-        egui::pos2(rect.left()+theme::SPACE_8,
-            rect.top()+((rect.height()-action_height)/2.0).max(0.0)),
-        Vec2::new((rect.width()-2.0*theme::SPACE_8).max(1.0),
-            action_height)
-    );
+    let content=modal_master_action_area(rect,action_height);
     let clip=content.intersect(ui.clip_rect());
     ui.scope_builder(
         egui::UiBuilder::new().id_salt("modal-master-actions")
@@ -1844,12 +1857,7 @@ fn modal_action_row_measured<R>(
     paint_modal_master_footer_surface(ui,rect);
     let action_height=theme::ACTION_PRIMARY_HEIGHT
         .max(theme::ACTION_STANDARD_HEIGHT);
-    let area=Rect::from_min_size(
-        egui::pos2(rect.left()+theme::SPACE_8,
-            rect.top()+((rect.height()-action_height)/2.0).max(0.0)),
-        Vec2::new((rect.width()-2.0*theme::SPACE_8).max(1.0),
-            action_height)
-    );
+    let area=modal_master_action_area(rect,action_height);
     let clip=area.intersect(ui.clip_rect());
     let response=ui.scope_builder(
         egui::UiBuilder::new().id_salt("modal-master-flow-actions")
@@ -3059,7 +3067,7 @@ fn reception_recipient_text_edit(
         .font(font)
         .horizontal_align(Align::LEFT)
         .vertical_align(Align::Center)
-        .margin(egui::Margin::symmetric(8,2))
+        .margin(typography::form_input_text_margin())
         .desired_width(width);
     if active {
         // TextEdit's native background uses a different square/filled
@@ -5613,7 +5621,7 @@ pub fn reception_inline_cell_editor(
             .font(font)
             .vertical_align(Align::Center)
             .horizontal_align(if numeric{Align::RIGHT}else{Align::LEFT})
-            .margin(egui::Margin::symmetric(8,2))
+            .margin(typography::form_input_text_margin())
             .desired_width(rect.width()),
         request_focus,click_at
     )
@@ -5648,7 +5656,7 @@ fn reception_money_editor_at_rect(
     let inset=theme::SPACE_8;
     let (edit,unit_galley)=money_text_edit_with_unit(
         ui,value,reception_money_font(),rect.width(),"원",inset,
-        RECEPTION_MONEY_UNIT_GAP,egui::Margin::symmetric(8,2)
+        RECEPTION_MONEY_UNIT_GAP,typography::form_input_text_margin()
     );
     let response=reception_text_editor_at_click(
         ui,rect,edit,request_focus,click_at
@@ -6081,7 +6089,7 @@ fn reception_freight_money_readonly(ui:&mut Ui,value:&mut String)->Response{
     let inset=theme::SPACE_8;
     let (edit,unit_galley)=money_text_edit_with_unit(
         ui,value,reception_money_font(),RECEPTION_FREIGHT_MONEY_WIDTH,
-        "원",inset,RECEPTION_MONEY_UNIT_GAP,egui::Margin::symmetric(8,2)
+        "원",inset,RECEPTION_MONEY_UNIT_GAP,typography::form_input_text_margin()
     );
     let response=ui.add_sized(
         Vec2::new(RECEPTION_FREIGHT_MONEY_WIDTH,theme::INPUT_HEIGHT),
@@ -7863,7 +7871,7 @@ mod money_live_format_tests{
             egui::CentralPanel::default().show(ctx,|ui|{
                 let (margin,unit)=money_unit_margin(
                     ui,"원",reception_money_font(),theme::SPACE_8,
-                    RECEPTION_MONEY_UNIT_GAP,egui::Margin::symmetric(8,2)
+                    RECEPTION_MONEY_UNIT_GAP,typography::form_input_text_margin()
                 );
                 let unit_left=money_unit_left(104.0,theme::SPACE_8,unit.size().x);
                 assert!(unit_left-(104.0-f32::from(margin.right))
@@ -9464,3 +9472,35 @@ pub(crate) mod general_screen_geometry_tests {
     }
 }
 
+
+
+#[cfg(test)]
+mod modal_master_content_alignment_tests {
+    use super::*;
+
+    #[test]
+    fn title_toolbar_rules_and_footer_actions_share_one_horizontal_grid(){
+        let bounds=Rect::from_min_size(
+            egui::pos2(40.0,20.0),Vec2::new(900.0,180.0)
+        );
+        let content=modal_master_content_rect(bounds);
+        let toolbar=modal_master_header_toolbar_rect(bounds,1.0);
+        let top_rule=modal_master_rule_rect(bounds,1.0,false);
+        let bottom_rule=modal_master_rule_rect(bounds,1.0,true);
+        let actions=modal_master_action_area(bounds,theme::ACTION_PRIMARY_HEIGHT);
+        for rect in [toolbar,top_rule,bottom_rule,actions] {
+            assert_eq!(rect.left(),content.left());
+            assert_eq!(rect.right(),content.right());
+        }
+        assert_eq!(content.left()-bounds.left(),theme::MODAL_MASTER_CONTENT_INSET);
+        assert_eq!(bounds.right()-content.right(),theme::MODAL_MASTER_CONTENT_INSET);
+    }
+
+    #[test]
+    fn popup_radius_hierarchy_separates_shell_sections_controls_and_source_chips(){
+        assert!(theme::PANEL_RADIUS>theme::SECTION_RADIUS);
+        assert!(theme::SECTION_RADIUS>theme::CONTROL_RADIUS);
+        assert!(theme::CONTROL_RADIUS>theme::SOURCE_BLOCK_RADIUS as u8);
+        assert_eq!(theme::MODAL_SECTION_RADIUS,theme::SECTION_RADIUS);
+    }
+}
