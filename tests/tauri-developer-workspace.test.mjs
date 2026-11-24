@@ -109,8 +109,8 @@ test("structured native diagnostic report fixtures remain isolated from persiste
 
 test("archived developer diagnostic fixture calls Rust and never TS fallback",()=>{
   const scenarios=read("tests/rust-migration/oracles/developer-scenarios.ts");
-  assert.doesNotMatch(scenarios,/from ["']\\.\\.\\/parser(?:\\.js)?["']/);
-  assert.doesNotMatch(scenarios,/from ["']\\.\\.\\/validation(?:\\.js)?["']/);
+  assert.doesNotMatch(scenarios,/from ["']\.\.\/parser(?:\.js)?["']/);
+  assert.doesNotMatch(scenarios,/from ["']\.\.\/validation(?:\.js)?["']/);
   assert.match(scenarios,/"recognition", "analyze_order"/);
   assert.match(scenarios,/"rules", "order_issues"/);
   assert.match(scenarios,/assertRustReceptionAnalysis/);
