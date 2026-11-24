@@ -400,7 +400,9 @@ mod tests {
 
         let safety=restore_backup(&mut live,&base,&backup_file.to_string_lossy()).unwrap();
         let restored=get_snapshot(&live).unwrap();
-        assert_eq!(restored["revision"],8);
+        // The restored revision-7 snapshot advances to 8; the verified
+        // one-time legacy color normalization is a second committed write.
+        assert_eq!(restored["revision"],9);
         assert_eq!(restored["clients"],legacy["clients"]);
         assert_eq!(restored["orders"][1],frozen);
         let clear=restored["products"].as_array().unwrap().iter()

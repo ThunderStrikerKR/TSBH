@@ -415,7 +415,8 @@ mod tests {
                     "createdAt":"2026-11-16","raw":"새 발주",
                     "orderType":"AGENCY","recipients":[]},
                 "evidence":evidence,"raw":"새 발주","clientId":"dealer",
-                "at":"2026-11-16"
+                "at":"2026-11-16","state":first.clone(),
+                "client":{"id":"dealer","tier":"wholesale"}
             })
         ).unwrap()["order"].clone();
         let mut after=first;
@@ -476,14 +477,27 @@ mod tests {
         // The original on-disk business snapshot must be retrievable *unchanged*.
         let backups=std::fs::read_dir(folder.join("backups")).unwrap()
             .map(|entry|entry.unwrap().path()).collect::<Vec<_>>();
-        assert_eq!(backups.len(),1);
-        let backup=Connection::open_with_flags(&backups[0],
+        // Startup performs the relational migration and a separate,
+        // verified color normalization. Both before-images are retained.
+        for path in &backups{
+            let backup=Connection::open_with_flags(path,
+                rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY).unwrap();
+            assert_eq!(backup.query_row("PRAGMA integrity_check",[],
+                |r|r.get::<_,String>(0)).unwrap(),"ok");
+        }
+        let original_backups=backups.iter().filter(|path|{
+            let Ok(backup)=Connection::open_with_flags(path,
+                rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY) else{return false;};
+            backup.query_row("SELECT payload FROM app_state WHERE id=1",[],
+                |r|r.get::<_,String>(0)).is_ok_and(|payload|payload==original)
+        }).collect::<Vec<_>>();
+        assert_eq!(original_backups.len(),1,
+            "the exact original snapshot must remain in one pre-migration backup");
+        let backup=Connection::open_with_flags(original_backups[0],
             rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY).unwrap();
         let backed_up:String=backup.query_row("SELECT payload FROM app_state WHERE id=1",[],
             |r|r.get(0)).unwrap();
         assert_eq!(backed_up,original);
-        assert_eq!(backup.query_row("PRAGMA integrity_check",[],
-            |r|r.get::<_,String>(0)).unwrap(),"ok");
         drop(backup);
         drop(conn);
         std::fs::remove_dir_all(folder).unwrap();
@@ -558,8 +572,28 @@ mod tests {
 
         let backups=std::fs::read_dir(folder.join("backups")).unwrap()
             .map(|entry|entry.unwrap().path()).collect::<Vec<_>>();
-        assert_eq!(backups.len(),1);
-        let backup=Connection::open_with_flags(&backups[0],
+        for path in &backups{
+            let backup=Connection::open_with_flags(path,
+                rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY).unwrap();
+            assert_eq!(backup.query_row("PRAGMA integrity_check",[],
+                |r|r.get::<_,String>(0)).unwrap(),"ok");
+        }
+        // Keep the original v1 relational before-image distinct from the
+        // later v2 color-normalization backup.
+        let v1_backups=backups.iter().filter(|path|{
+            let Ok(backup)=Connection::open_with_flags(path,
+                rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY) else{return false;};
+            let version=backup.query_row("SELECT version FROM core_schema WHERE key='business-core'",[],
+                |r|r.get::<_,i64>(0)).ok();
+            let products=backup.query_row("SELECT COUNT(*) FROM core_products",[],
+                |r|r.get::<_,i64>(0)).ok();
+            let variants=backup.query_row("SELECT COUNT(*) FROM core_variants",[],
+                |r|r.get::<_,i64>(0)).ok();
+            version==Some(1)&&products==Some(303)&&variants==Some(360)
+        }).collect::<Vec<_>>();
+        assert_eq!(v1_backups.len(),1,
+            "the original v1 schema and all 360 price rows must be preserved");
+        let backup=Connection::open_with_flags(v1_backups[0],
             rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY).unwrap();
         assert_eq!(backup.query_row("SELECT version FROM core_schema WHERE key='business-core'",[],
             |r|r.get::<_,i64>(0)).unwrap(),1);
@@ -682,7 +716,9 @@ mod tests {
 
         let conn=super::super::initialize_database(&path).unwrap();
         let state=super::super::get_snapshot(&conn).unwrap();
-        assert_eq!(state["revision"],before_revision);
+        // The 267 legacy color placeholders are normalized in one
+        // additional CAS write after the relational migration.
+        assert_eq!(state["revision"],json!(before_revision.as_u64().unwrap()+1));
         assert_eq!(state["products"].as_array().unwrap().len(),360);
         assert_eq!(state["clients"],before_clients);
         assert_eq!(state["orders"][1],confirmed_before);
