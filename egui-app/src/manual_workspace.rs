@@ -371,7 +371,7 @@ fn remote_for<'a>(rows:&'a [RemoteRow],recipient:&Value)
 // No arithmetic or default tariff is calculated in the worksheet renderer.
 fn manual_view_quote(
     gateway:&dyn BandoGateway,order:&Value,model:&Value,keys:&[String],
-    client_id:Option<&str>
+    client_id:Option<&str>,previous:Option<&Value>
 )->Option<Value>{
     let id=client_id?;
     let preview=rule(gateway,json!({
@@ -380,9 +380,19 @@ fn manual_view_quote(
     let updated=preview.get("order")?;
     let state=gateway.load_business_state().ok()?;
     let client=list(&state,"clients").iter().find(|client|text(client,"id")==id)?;
+    let inputs=price_input_snapshot(updated);
+    let basis=crate::pricing_basis::snapshot(&state,client,updated);
+    if let Some(previous)=previous.filter(|quote|
+        quote.get("manualViewInput")==Some(&inputs) &&
+        quote.get("manualViewBasis")==Some(&basis)
+    ){
+        return Some(previous.clone());
+    }
     let mut quote=gateway.execute(ReadOperation::CalculateReceptionQuote,
         json!({"order":updated,"state":&state,"client":client})).ok()?;
     quote["orderId"]=order["id"].clone();
+    quote["manualViewInput"]=inputs;
+    quote["manualViewBasis"]=basis;
     Some(quote)
 }
 
@@ -780,7 +790,7 @@ impl ManualWorkspace {
                     .map(|v|v.as_str().map(str::to_owned).ok_or("Rust 배정 ID 오류".to_owned()))
                     .collect::<Result<Vec<_>,_>>()?;
                 let remote_rows=resolve_remote_rows(service.as_ref(),&model);
-                let view_quote=manual_view_quote(service.as_ref(),&order,&model,&keys,row.client_id.as_deref());
+                let view_quote=manual_view_quote(service.as_ref(),&order,&model,&keys,row.client_id.as_deref(),None);
                 Ok(Outcome::Initial{
                     order,model,assignment_order:keys,remote_rows,view_quote
                 })
@@ -1227,6 +1237,7 @@ impl ManualWorkspace {
         let service=Arc::clone(&self.gateway);
         let action=action.to_owned();
         let selected_client=self.client_id.clone();
+        let previous_view_quote=self.view_quote.clone();
         let (tx,rx)=mpsc::channel();
         self.receiver=Some(rx);
         self.error=None;
@@ -1286,7 +1297,7 @@ impl ManualWorkspace {
                         .map(str::to_owned)).collect()).unwrap_or_else(||keys.clone());
                 let remote_rows=resolve_remote_rows(service.as_ref(),&next);
                 let view_quote=manual_view_quote(service.as_ref(),&order,&next,
-                    &assignment_order,selected_client.as_deref());
+                    &assignment_order,selected_client.as_deref(),previous_view_quote.as_ref());
                 Ok(Outcome::Updated{
                     model:next,assignment_order,remote_rows,view_quote
                 })
@@ -1502,13 +1513,26 @@ impl ManualWorkspace {
                     busy,pending_quantity_count,
                     self.edit_text!=self.current_value()
                 );
+                // Preserve the header's single fixed-height status line.
+                // Manual-only notices live in this existing tooltip, not
+                // between the shared freight and dispatch-origin controls.
+                let remote_notice=visible_shipment.and_then(|index|rows.get(index))
+                    .and_then(|row|remote_for(&self.remote_rows,row))
+                    .and_then(|decision|match decision{
+                        Ok(value)=>crate::reception_service::remote_delivery_notice(value),
+                        Err(error)=>Some(format!("도서/산간 판정 실패 · {error}"))
+                    });
                 ui.horizontal(|status|{
                     let count=status.label(typography::caption(
                         &format!("미배정 원문: {unassigned}개")
                     ));
-                    if let Some(reason)=guidance.as_deref(){
-                        count.on_hover_text(reason);
-                    }
+                    let notice=[
+                        guidance.as_deref(),remote_notice.as_deref(),
+                        (self.client_id.is_some() && self.view_quote.is_none() && !busy)
+                            .then_some("금액·운임의 Rust 견적을 확인할 수 없습니다."),
+                        self.error.as_deref()
+                    ].into_iter().flatten().collect::<Vec<_>>().join("\n");
+                    if !notice.is_empty(){count.on_hover_text(&notice);}
                 });
                 ui.separator();
                 // Match React's 34:66 columns. On narrow windows keep
@@ -1974,21 +1998,7 @@ impl ManualWorkspace {
                                                             },"value":!remote})
                                                         ));
                                                     }
-                                                    let remote_message=remote_value
-                                                        .and_then(crate::reception_service::remote_delivery_notice)
-                                                        .or_else(||remote_result.as_ref()
-                                                            .and_then(|result|result.as_ref().err())
-                                                            .map(|error|format!(
-                                                                "도서/산간 판정 실패 · {error}"
-                                                            )));
-                                                    let remote_status_width=items_ui.available_width();
-                                                    components::fixed_status_slot(
-                                                        items_ui,remote_status_width,
-                                                        typography::METADATA_LINE_HEIGHT,
-                                                        remote_message.as_deref(),
-                                                        remote_message.as_deref(),
-                                                        theme::SELECTED_ORDER
-                                                    );
+                                                    items_ui.add_space(theme::SPACE_8);
                                                     let origin=if text(row,"dispatchOrigin")=="STORE"{
                                                         "STORE"
                                                     }else{"FACTORY"};
@@ -2892,7 +2902,7 @@ mod manual_workspace_modal_routing_tests {
             "the native apply action must be reached from the explicit proceed branch");
         assert!(!render.contains("초안 적용 후 주문 확인 필요"),
             "the generic order-confirmation hint must not occupy a header row");
-        assert!(render.contains("count.on_hover_text(reason)"),
+        assert!(render.contains("count.on_hover_text(&notice)"),
             "apply blockers remain discoverable without allocating layout space");
     }
 

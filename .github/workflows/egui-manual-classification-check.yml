@@ -6,6 +6,10 @@ on:
       - .github/workflows/egui-manual-classification-check.yml
       - egui-app/src/manual_workspace.rs
       - egui-app/src/manual_product_search.rs
+      - egui-app/src/product_manager.rs
+      - egui-app/src/item_editor.rs
+      - egui-app/src/pricing_basis.rs
+      - src-tauri/src/business_core/rules/**
       - egui-app/src/manual_source_view.rs
       - egui-app/src/source_highlight.rs
       - egui-app/src/components.rs
@@ -18,6 +22,10 @@ on:
       - .github/workflows/egui-manual-classification-check.yml
       - egui-app/src/manual_workspace.rs
       - egui-app/src/manual_product_search.rs
+      - egui-app/src/product_manager.rs
+      - egui-app/src/item_editor.rs
+      - egui-app/src/pricing_basis.rs
+      - src-tauri/src/business_core/rules/**
       - egui-app/src/manual_source_view.rs
       - egui-app/src/source_highlight.rs
       - egui-app/src/components.rs
@@ -48,6 +56,12 @@ jobs:
         run: cargo test --manifest-path egui-app/Cargo.toml reception_recipient_navigation_state_tests -- --nocapture
       - name: Verify manual shipment count uses one segmented control and preserves resize flow
         run: cargo test --manifest-path egui-app/Cargo.toml shipment_count_is_one_date_selector_segmented_control -- --nocapture
+      - name: Verify intake and manual share the current editable worksheet master
+        run: cargo test --manifest-path egui-app/Cargo.toml manual_cards_reuse_the_real_reception_renderers -- --nocapture
+      - name: Verify live money cell and quantity stepper contracts
+        run: |
+          cargo test --manifest-path egui-app/Cargo.toml money_live_format_tests -- --nocapture
+          cargo test --manifest-path egui-app/Cargo.toml reception_quantity_step_keeps_unit_out_of_native_draft_and_respects_bounds -- --nocapture
       - name: Verify nested modal input routing
         run: cargo test --manifest-path egui-app/Cargo.toml modal_input_routing_tests -- --nocapture
       - name: Verify manual modal routing and Escape behavior

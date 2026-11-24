@@ -5155,7 +5155,7 @@ pub fn reception_inline_cell_editor(
 
 /// Money variant of the exact-rect editor: preserve the native caret,
 /// table footprint and shared live separator/suffix behavior.
-pub fn reception_money_inline_cell_editor(
+fn reception_money_inline_cell_editor(
     ui:&mut Ui,cell:Rect,value:&mut String,request_focus:bool,
     click_at:Option<egui::Pos2>
 )->Response{
@@ -5212,7 +5212,7 @@ pub struct ReceptionQuantityEditorResponse{
     pub step_interaction:bool,
 }
 
-pub fn reception_quantity_editor(
+fn reception_quantity_editor(
     ui:&mut Ui,cell:Rect,value:&mut String,request_focus:bool,
     click_at:Option<egui::Pos2>
 )->ReceptionQuantityEditorResponse{
@@ -5391,18 +5391,11 @@ pub fn reception_editable_items_header(ui:&mut Ui){
 }
 
 pub fn reception_items_header(ui:&mut Ui){
-    reception_items_header_with_amount_label(ui,"금액");
+    reception_items_header_with_actions(ui,"금액",false);
 }
 
-/// Same approved three-column header geometry; manual editing labels its
-/// final cell as unit price until Rust supplies a priced line amount.
-pub fn reception_items_header_with_amount_label(
-    ui:&mut Ui,amount_heading:&str
-){
-    reception_items_header_with_actions(ui,amount_heading,false);
-}
-
-pub fn reception_items_header_with_actions(ui:&mut Ui,amount_heading:&str,remove_slot:bool){
+// Only these two fixed public headers may be used: read-only or editable.
+fn reception_items_header_with_actions(ui:&mut Ui,amount_heading:&str,remove_slot:bool){
     let action_width=if remove_slot{theme::RECEPTION_ITEM_REMOVE_WIDTH}else{0.0};
     let width=ui.available_width().max(theme::RECEPTION_ITEMS_MIN_TABLE_WIDTH+action_width);
     let (rect, _) = ui.allocate_exact_size(
@@ -5462,14 +5455,6 @@ pub fn reception_item_row(
     active: [bool; 3],
 ) -> ReceptionItemCells {
     reception_item_row_with_mode(ui,name,quantity,amount,active,false,false)
-}
-/// The underlying view is still the native Rust snapshot. Clicking a field
-/// opens the manual reducer with the exact recipient/item identity.
-pub fn reception_item_row_editable(
-    ui: &mut Ui, name: &str, quantity: &str, amount: &str,
-    active: [bool; 3],
-) -> ReceptionItemCells {
-    reception_item_row_with_mode(ui,name,quantity,amount,active,true,false)
 }
 pub fn reception_item_row_with_remove(
     ui:&mut Ui,name:&str,quantity:&str,amount:&str,active:[bool;3],editable:bool,
