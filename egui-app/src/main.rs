@@ -6428,14 +6428,14 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
         );
         let summary_height=theme::RECEPTION_ORDER_TOTAL_SECTION_HEIGHT
             .min(bottom_area.height().max(0.0));
-        let items_height=(bottom_area.height()-summary_height
-            -theme::RECEPTION_ORDER_TOTAL_SECTION_GAP).max(0.0);
+        let summary_gap=theme::RECEPTION_ORDER_TOTAL_SECTION_GAP
+            .min((bottom_area.height()-summary_height).max(0.0));
+        let items_height=(bottom_area.height()-summary_height-summary_gap).max(0.0);
         let bottom_rect=Rect::from_min_size(
             bottom_area.min,Vec2::new(full_width,items_height)
         );
         let summary_rect=Rect::from_min_size(
-            egui::pos2(bounds.left(),bottom_rect.bottom()
-                +theme::RECEPTION_ORDER_TOTAL_SECTION_GAP),
+            egui::pos2(bounds.left(),bottom_rect.bottom()+summary_gap),
             Vec2::new(full_width,summary_height)
         );
 
@@ -6533,6 +6533,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                         },|ui|{
                         egui::ScrollArea::vertical()
                             .max_height(components::docked_section_body_height(recipient_height))
+                            .auto_shrink([false,false])
                             .id_salt(("native-workflow-recipient-readonly",ship.id.as_str()))
                             .show(ui,|contents|{
                                 let mut name = reception_service::text(&ship.recipient,"name").to_owned();
@@ -6901,6 +6902,8 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                             if let Some(row)=recipient{
                                 egui::ScrollArea::vertical()
                                     .max_height(components::docked_section_body_height(recipient_height))
+                                    .id_salt(("pending-hover-recipient",draft.id.as_str()))
+                                    .auto_shrink([false,false])
                                     .show(ui,|contents|{
                                         let mut name=reception_service::text(row,"name").to_owned();
                                         let mut address=reception_service::text(row,"address").to_owned();

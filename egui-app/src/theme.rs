@@ -370,7 +370,15 @@ pub const RECEPTION_ITEMS_MIN_TABLE_WIDTH: f32 =
     RECEPTION_ITEMS_PRODUCT_MIN_WIDTH + RECEPTION_ITEMS_QTY_WIDTH
     + RECEPTION_ITEMS_AMOUNT_MAX_WIDTH;
 // A shipment's items/freight and the order-wide VAT/total are separate cards.
-pub const RECEPTION_ORDER_TOTAL_SECTION_HEIGHT: f32 = 120.0;
+// Single source of truth for section height budgeting (including the rule).
+pub const RECEPTION_SECTION_CHROME_HEIGHT: f32 =
+    RECEPTION_SECTION_HEADER_TOP + RECEPTION_PANE_PADDING_Y
+    + SECTION_HEADER_HEIGHT + SECTION_CONTENT_GAP + SECTION_DIVIDER_BOTTOM_GAP
+    + SOFT_DIVIDER_WIDTH;
+pub const RECEPTION_RECIPIENT_BODY_HEIGHT: f32 =
+    4.0 * INPUT_HEIGHT + 3.0 * RECIPIENT_ROW_GAP;
+pub const RECEPTION_ORDER_TOTAL_SECTION_HEIGHT: f32 =
+    RECEPTION_SECTION_CHROME_HEIGHT + RECEPTION_TOTAL_HEIGHT;
 pub const RECEPTION_ORDER_TOTAL_SECTION_GAP: f32 = SPACE_8;
 // VAT modal recipient list is a distinct bounded scroll region with a
 // visible surface; always reserve five 42pt rows, grow up to ten before scroll.

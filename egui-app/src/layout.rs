@@ -24,7 +24,32 @@ const LEGACY_DEFAULT_RATIOS: [f32; PANEL_COUNT] = [20.0, 29.0, 29.0, 22.0];
 pub const DETAIL_REVIEW_RATIO: f32 = 0.264;
 pub const DETAIL_SECOND_RATIO: f32 = 0.5;
 // Reserve a usable product viewport above the independent order-total card.
-pub const DETAIL_MIN_HEIGHTS: [f32; 3] = [130.0, 145.0, 240.0];
+pub const DETAIL_MIN_HEIGHTS: [f32; 3] = [
+    crate::theme::RECEPTION_SECTION_CHROME_HEIGHT + 39.0,
+    crate::theme::RECEPTION_SECTION_CHROME_HEIGHT + crate::theme::RECEPTION_RECIPIENT_BODY_HEIGHT,
+    crate::theme::RECEPTION_ORDER_TOTAL_SECTION_HEIGHT
+        + crate::theme::RECEPTION_ORDER_TOTAL_SECTION_GAP
+        + crate::theme::RECEPTION_SECTION_CHROME_HEIGHT + crate::theme::INPUT_HEIGHT,
+];
+
+// Compact windows retain the full summary and card chrome; only scrollable
+// body viewports give up space. No invented height beyond the actual viewport.
+fn detail_min_heights(space: f32) -> [f32; 3] {
+    let chrome = crate::theme::RECEPTION_SECTION_CHROME_HEIGHT;
+    let floor = [chrome, chrome,
+        crate::theme::RECEPTION_ORDER_TOTAL_SECTION_HEIGHT
+            + crate::theme::RECEPTION_ORDER_TOTAL_SECTION_GAP + chrome];
+    let floor_total: f32 = floor.iter().sum();
+    let full_total: f32 = DETAIL_MIN_HEIGHTS.iter().sum();
+    if space >= full_total { return DETAIL_MIN_HEIGHTS; }
+    if space >= floor_total {
+        let fraction = (space - floor_total) / (full_total - floor_total);
+        return std::array::from_fn(|i| floor[i] + fraction * (DETAIL_MIN_HEIGHTS[i] - floor[i]));
+    }
+    // Below the app's supported minimum window size, still never overflow
+    // the allocated geometry. Full chrome cannot physically fit here.
+    floor.map(|height| height * space / floor_total)
+}
 pub const SOURCE_MIN: f32 = 275.0;
 pub const MESSAGE_MIN: f32 = 160.0;
 pub const VERTICAL_DEFAULT: f32 = 0.5;
@@ -201,17 +226,10 @@ impl LayoutState {
     /// Three independently resizable middle-column sections. The two dividers
     /// are no longer implicitly tied to the source/message divider next door.
     pub fn detail_heights(&self, available: f32) -> [f32; 3] {
-        let space = (available - 2.0 * SPLITTER)
-            .max(DETAIL_MIN_HEIGHTS.iter().sum());
-        let first = (space * self.detail_review_ratio).clamp(
-            DETAIL_MIN_HEIGHTS[0],
-            space - DETAIL_MIN_HEIGHTS[1] - DETAIL_MIN_HEIGHTS[2],
-        );
-        // The source column has ONE horizontal gutter; this column has
-        // TWO. Align their DEFAULT divider centerlines by geometry alone.
-        // Never inspect self.source_ratio here: even a 1pt drag of the
-        // source/message divider must not move the independent recipient/
-        // items boundary. Preserve custom saved middle-column positions.
+        let space = (available - 2.0 * SPLITTER).max(0.0);
+        let minimum = detail_min_heights(space);
+        // Resolve the shared default axis first. Then the review pane yields
+        // space to the recipient rather than moving that axis unnecessarily.
         let default_second_axis =
             (self.detail_second_ratio - DETAIL_SECOND_RATIO).abs() < 0.00001;
         let requested_second_end = if default_second_axis {
@@ -219,24 +237,29 @@ impl LayoutState {
         } else {
             space * self.detail_second_ratio
         };
-        let second_end = requested_second_end.clamp(
-            first + DETAIL_MIN_HEIGHTS[1],
-            space - DETAIL_MIN_HEIGHTS[2],
+        let lower = minimum[0] + minimum[1];
+        let upper = (space - minimum[2]).max(lower);
+        let second_end = requested_second_end.clamp(lower, upper).min(space);
+        let first = (space * self.detail_review_ratio).clamp(
+            minimum[0].min(second_end),
+            (second_end - minimum[1]).max(minimum[0].min(second_end)),
         );
-        [first, second_end - first, space - second_end]
+        [first, (second_end - first).max(0.0), (space - second_end).max(0.0)]
     }
 
     /// Resize only the pair sharing this boundary, preserving the third pane.
     /// 'original' is captured when the pointer first starts dragging.
     pub fn resize_detail_pair(&mut self, original: [f32; 3], index: usize, delta: f32) {
         if index >= 2 || !delta.is_finite() { return; }
+        let total: f32 = original.iter().sum();
+        let minimum = detail_min_heights(total);
         let pair = original[index] + original[index + 1];
-        if pair < DETAIL_MIN_HEIGHTS[index] + DETAIL_MIN_HEIGHTS[index + 1] {
+        if total <= 0.0 || pair + 0.001 < minimum[index] + minimum[index + 1] {
             return;
         }
         let target = (original[index] + delta).clamp(
-            DETAIL_MIN_HEIGHTS[index],
-            pair - DETAIL_MIN_HEIGHTS[index + 1],
+            minimum[index].min(pair),
+            (pair - minimum[index + 1]).max(minimum[index].min(pair)),
         );
         let mut heights = original;
         heights[index] = target;
@@ -320,10 +343,15 @@ mod geometry_contract {
             let source_axis = layout.vertical_heights(height).0 + SPLITTER / 2.0;
             let [review, recipient, _] = layout.detail_heights(height);
             let items_axis = review + SPLITTER + recipient + SPLITTER / 2.0;
-            assert!(
-                (source_axis - items_axis).abs() < 0.01,
-                "height={height}: source axis={source_axis}, items axis={items_axis}",
-            );
+            let minimum = detail_min_heights(height - 2.0 * SPLITTER);
+            let wanted = source_axis - 1.5 * SPLITTER;
+            let feasible = wanted >= minimum[0] + minimum[1]
+                && wanted <= height - 2.0 * SPLITTER - minimum[2];
+            if feasible {
+                assert!((source_axis - items_axis).abs() < 0.01,
+                    "height={height}: source axis={source_axis}, items axis={items_axis}");
+            }
+            assert!(recipient + 0.01 >= minimum[1]);
         }
     }
 
@@ -375,6 +403,31 @@ mod geometry_contract {
             let initial = layout.detail_heights(height);
             layout.resize_detail_pair(initial, 1, 12.0);
             assert_eq!(layout.vertical_heights(height), expected);
+        }
+    }
+
+    #[test]
+    fn middle_column_budget_protects_summary_and_recipient() {
+        use crate::theme;
+        assert_eq!(theme::RECEPTION_ORDER_TOTAL_SECTION_HEIGHT,
+            theme::RECEPTION_SECTION_CHROME_HEIGHT + theme::RECEPTION_TOTAL_HEIGHT);
+        for height in [500.0, 600.0, 720.0, 900.0, 1000.0, 1200.0] {
+            let mut state = LayoutState::default();
+            for delta in [0.0, 10000.0, -10000.0] {
+                for index in 0..2 {
+                    let original = state.detail_heights(height);
+                    state.resize_detail_pair(original, index, delta);
+                    let [review, recipient, bottom] = state.detail_heights(height);
+                    assert!((review + recipient + bottom + 2.0 * SPLITTER - height).abs() < 0.02);
+                    assert!(bottom + 0.02 >= theme::RECEPTION_ORDER_TOTAL_SECTION_HEIGHT
+                        + theme::RECEPTION_ORDER_TOTAL_SECTION_GAP
+                        + theme::RECEPTION_SECTION_CHROME_HEIGHT);
+                    if height >= 720.0 {
+                        assert!(recipient + 0.02 >= theme::RECEPTION_SECTION_CHROME_HEIGHT
+                            + theme::RECEPTION_RECIPIENT_BODY_HEIGHT);
+                    }
+                }
+            }
         }
     }
 

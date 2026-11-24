@@ -1058,11 +1058,7 @@ pub fn docked_section_body_height(section_height: f32) -> f32 {
 
 /// Shared forward/inverse height budget for every Reception section.
 pub fn docked_section_chrome_height() -> f32 {
-    theme::RECEPTION_SECTION_HEADER_TOP + theme::RECEPTION_PANE_PADDING_Y
-        + theme::SECTION_HEADER_HEIGHT
-        + theme::SECTION_CONTENT_GAP
-        + theme::SECTION_DIVIDER_BOTTOM_GAP
-        + theme::SOFT_DIVIDER_WIDTH
+    theme::RECEPTION_SECTION_CHROME_HEIGHT
 }
 
 
@@ -6493,6 +6489,8 @@ pub fn reception_total_footer(
         Vec2::new(ui.available_width(), theme::RECEPTION_TOTAL_HEIGHT),
         Sense::hover(),
     );
+    #[cfg(test)]
+    general_screen_geometry_tests::record("order total footer",rect);
     // Both summary lines occupy fixed vertical centers. The containing
     // order-total card already has the separating header line.
     let left = rect.left() + theme::SPACE_8;
@@ -9560,6 +9558,18 @@ pub(crate) mod general_screen_geometry_tests {
                 matched_client_name:None,chosen_client_name:None,directory_count:0,linked_spans:vec![]
             });
             let first_recipient=draw(&mut app);
+            let total_card=first(&first_recipient,"total card");
+            let footer=first(&first_recipient,"order total footer");
+            assert!(total_card.bottom() <= screen.y + 0.5,
+                "order total leaves the screen: {total_card:?}");
+            assert!(footer.bottom() + theme::RECEPTION_PANE_PADDING_Y <= total_card.bottom() + 0.5,
+                "order total footer is clipped: {footer:?} in {total_card:?}");
+            if screen.x >= 1500.0 && screen.y >= 900.0 {
+                let recipient_card=first(&first_recipient,"recipient card");
+                let note=first(&first_recipient,"recipient note");
+                assert!(note.bottom() + theme::RECEPTION_PANE_PADDING_Y <= recipient_card.bottom() + 0.5,
+                    "recipient note is clipped: {note:?} in {recipient_card:?}");
+            }
             app.selected_recipient=1;
             let second_recipient=draw(&mut app);
             app.analysis_pending=true;
