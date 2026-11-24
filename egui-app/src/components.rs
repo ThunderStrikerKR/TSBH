@@ -3173,7 +3173,16 @@ fn date_navigation_segment_button(
 )->Response{
     let enabled=enabled && ui.is_enabled();
     let height=ui.available_height();
-    let fill=if enabled{theme::INPUT}else{theme::DISABLED_ACTION_BG};
+    let (disabled_fill,disabled_ink)=match glyph{
+        DateNavigationSegmentGlyph::Chevron(_)=>(
+            theme::RECEPTION_RECIPIENT_NAV_DISABLED_BG,
+            theme::RECEPTION_RECIPIENT_NAV_DISABLED_ICON
+        ),
+        DateNavigationSegmentGlyph::Text(_)=>(
+            theme::DISABLED_ACTION_BG,theme::DISABLED_ACTION_TEXT
+        )
+    };
+    let fill=if enabled{theme::INPUT}else{disabled_fill};
     let response=ui.add_enabled_ui(enabled,|button_ui|{
         button_ui.add_sized(
             Vec2::new(width,height),
@@ -3188,7 +3197,7 @@ fn date_navigation_segment_button(
     }else if enabled{
         theme::SECONDARY
     }else{
-        theme::DISABLED_ACTION_TEXT
+        disabled_ink
     };
     // Paint the translucent hover surface before the glyph so the icon/text
     // remains crisp and uses the same z-order as the date-picker arrows.
