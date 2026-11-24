@@ -1507,7 +1507,7 @@ impl ManualWorkspace {
                             // geometry and product/freight controls. Do not
                             // imitate their layout with a manual Grid.
                             sheet_ui.vertical(|panel|{
-                                panel.set_min_width(ui.available_width().max(
+                                panel.set_min_width(sheet_ui.available_width().max(
                                     theme::MANUAL_SHEET_MIN_WIDTH
                                 ));
                                 panel.set_min_height(height.max(0.0));
@@ -1913,8 +1913,9 @@ impl ManualWorkspace {
                                                             .map(|error|format!(
                                                                 "도서/산간 판정 실패 · {error}"
                                                             )));
+                                                    let remote_status_width=items_ui.available_width();
                                                     components::fixed_status_slot(
-                                                        items_ui,items_ui.available_width(),
+                                                        items_ui,remote_status_width,
                                                         typography::METADATA_LINE_HEIGHT,
                                                         remote_message.as_deref(),
                                                         remote_message.as_deref(),
