@@ -6660,7 +6660,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                             let freight_actions=components::reception_freight_row_controls(
                                                 contents,label,amount,Some(ship.collect),remote,
                                                 origin.as_str()=="FACTORY",amount_editable,
-                                                controls_editable,controls_editable
+                                                controls_editable,controls_editable,remote.is_some()
                                             );
                                             if freight_actions.amount_clicked{
                                                 workflow_freight_open=Some((
