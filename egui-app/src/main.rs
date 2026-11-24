@@ -9316,6 +9316,52 @@ mod reception_workflow_admission_integration_tests {
     }
 
     #[test]
+    fn direct_manual_model_restores_reception_view_without_source_analysis(){
+        let mut app=app();
+        app.raw_source.clear();
+        let row=&mut app.drafts[0];
+        row.raw.clear();
+        row.analysis_raw=None;
+        row.analysis_evidence=None;
+        row.analysis_view=None;
+        row.manual_model=Some(serde_json::json!({
+            "mode":"DIRECT","sourceRaw":"","orderType":"AGENCY","clientId":"",
+            "assignmentOrder":[],"model":{
+                "rows":[{"id":"egui-manual-r1","name":"직접 입력 수취인",
+                    "address":"서울특별시 강남구 테헤란로 10",
+                    "phone":"","mobile":"","note":"","items":[]}],
+                "blocks":[],"assignments":{}
+            }
+        }));
+        assert!(app.restore_cached_analysis());
+        let analysis=app.analysis.as_ref().expect("direct worksheet projection");
+        let recipients=reception_service::recipients(analysis);
+        assert_eq!(recipients.len(),1);
+        assert_eq!(recipients[0]["name"],"직접 입력 수취인");
+        assert!(analysis.linked_spans.is_empty());
+        assert!(app.drafts[0].analysis_evidence.is_none());
+        assert!(app.drafts[0].analysis_view.is_none());
+    }
+
+    #[test]
+    fn saved_direct_entry_is_not_reused_as_the_next_new_reception(){
+        let ctx=egui::Context::default();
+        let mut app=app();
+        app.raw_source.clear();
+        app.drafts[0].raw.clear();
+        app.drafts[0].manual_model=Some(serde_json::json!({
+            "mode":"DIRECT","sourceRaw":"","orderType":"AGENCY",
+            "model":{"rows":[{"id":"egui-manual-r1","name":"saved","items":[]}],
+                "blocks":[],"assignments":{}},
+            "assignmentOrder":[]
+        }));
+        app.new_reception(&ctx);
+        assert_eq!(app.drafts.len(),3);
+        assert_ne!(app.active_id.as_deref(),Some("draft-1"));
+        assert_eq!(app.drafts[0].manual_model.as_ref().unwrap()["mode"],"DIRECT");
+    }
+
+    #[test]
     fn approved_deletion_cancels_pending_advisory_analysis_without_waiting(){
         let ctx=egui::Context::default();
         let mut app=app();
