@@ -190,31 +190,39 @@ impl ItemEditor{
             _=>{}
         }
     }
+    // Both entry points use the same common modal header, footer and action.
+    fn show_delete_confirmation(
+        &self,ctx:&Context,work_area:egui::Rect,busy:bool
+    )->(bool,bool){
+        let mut cancel=false;
+        let mut remove=false;
+        components::decision_window(
+            "품목 삭제 확인","reception-item-delete-confirm",work_area
+        ).constrain_to(work_area).show(ctx,|ui|{
+            if components::modal_header(ui,"품목 삭제 확인","취소",!busy){
+                cancel=true;
+            }
+            let name=field(&self.initial,"name");
+            let name=if name.is_empty(){field(&self.initial,"code")}else{name};
+            ui.label(format!("{} 품목을 발주서에서 삭제할까요?",name));
+            if let Some(error)=self.error.as_deref(){
+                ui.label(typography::status(error,theme::DANGER));
+            }
+            components::modal_action_row(ui,|actions|{
+                if theme::action(actions,"삭제",ButtonRole::Danger,!busy).clicked(){
+                    remove=true;
+                }
+            });
+        });
+        (cancel,remove)
+    }
+
     pub fn show(
         &mut self,ctx:&Context,gateway:Arc<dyn BandoGateway>,
         work_area:egui::Rect,busy:bool
     )->Option<Event>{
         if self.delete_only {
-            let mut cancel=false;
-            let mut remove=false;
-            components::decision_window(
-                "품목 삭제 확인","reception-item-delete-confirm",work_area
-            ).constrain_to(work_area).show(ctx,|ui|{
-                if components::modal_header(ui,"품목 삭제 확인","취소",!busy){
-                    cancel=true;
-                }
-                let name=field(&self.initial,"name");
-                let name=if name.is_empty(){field(&self.initial,"code")}else{name};
-                ui.label(format!("{} 품목을 발주서에서 삭제할까요?",name));
-                if let Some(error)=self.error.as_deref(){
-                    ui.label(typography::status(error,theme::DANGER));
-                }
-                components::modal_action_row(ui,|actions|{
-                    if theme::action(actions,"삭제",ButtonRole::Danger,!busy).clicked(){
-                        remove=true;
-                    }
-                });
-            });
+            let (cancel,remove)=self.show_delete_confirmation(ctx,work_area,busy);
             return if cancel{Some(Event::Closed)}else if remove{Some(Event::Remove)}else{None};
         }
         self.poll_catalog_photo(Arc::clone(&gateway),ctx);
@@ -378,21 +386,9 @@ impl ItemEditor{
             self.search=None;
         }
         if self.confirm_delete{
-            components::decision_window(
-                "품목 삭제 확인","reception-item-delete-confirm",work_area
-            ).show(ctx,|ui|{
-                if components::modal_header(ui,"품목 삭제 확인","돌아가기",!busy){
-                    self.confirm_delete=false;
-                }
-                ui.label("선택한 품목을 발주서에서 삭제할까요?");
-                components::modal_action_row(ui,|actions|{
-                    if theme::action(actions,"삭제",ButtonRole::Danger,!busy)
-                        .clicked(){
-                        self.confirm_delete=false;
-                        result=Some(Event::Remove);
-                    }
-                });
-            });
+            let (cancel,remove)=self.show_delete_confirmation(ctx,work_area,busy);
+            if cancel || remove{self.confirm_delete=false;}
+            if remove && !cancel{result=Some(Event::Remove);}
         }
         if self.confirm_discard{
             components::decision_window(
