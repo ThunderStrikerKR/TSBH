@@ -9368,3 +9368,71 @@ pub(crate) mod general_screen_geometry_tests {
         }
     }
 }
+
+
+#[cfg(test)]
+mod modal_header_toolbar_geometry_tests{
+    use super::*;
+
+    #[test]
+    fn shared_header_toolbar_keeps_the_rule_and_body_clearance_at_the_16pt_master(){
+        let ctx=egui::Context::default();
+        crate::typography::install(&ctx);
+        let mut measured=None;
+        for _ in 0..3{
+            let _=ctx.run(egui::RawInput{
+                screen_rect:Some(Rect::from_min_size(
+                    egui::Pos2::ZERO,Vec2::new(1200.0,900.0)
+                )),
+                ..Default::default()
+            },|ctx|{
+                egui::CentralPanel::default().show(ctx,|ui|{
+                    ui.set_width(900.0);
+                    let (_,geometry)=modal_flow_workspace_measured(ui,|workspace|{
+                        let (closed,())=workspace.header_with_toolbar(
+                            "수동 분류","닫기",true,|toolbar|{
+                                toolbar.set_min_height(
+                                    theme::MODAL_MASTER_WORKSPACE_TOOLBAR_HEIGHT
+                                );
+                                toolbar.label("미배정 원문: 0개");
+                                toolbar.with_layout(
+                                    Layout::right_to_left(Align::Center),|right|{
+                                        right.label("배송 건수");
+                                    }
+                                );
+                            }
+                        );
+                        assert!(!closed);
+                        workspace.body_region(|body|{
+                            body.allocate_exact_size(
+                                Vec2::new(360.0,180.0),Sense::hover()
+                            );
+                        });
+                        workspace.footer(|_|{},|_|{});
+                    });
+                    measured=Some(geometry);
+                });
+            });
+        }
+        let geometry=measured.expect("shared modal geometry");
+        let header=geometry.header.expect("header rect");
+        let toolbar=geometry.header_toolbar.expect("header toolbar rect");
+        let body=geometry.body.expect("body rect");
+        let footer=geometry.footer.expect("footer rect");
+        assert!((header.height()-(
+            theme::MODAL_HEADER_HEIGHT
+                +theme::MODAL_MASTER_WORKSPACE_TOOLBAR_HEIGHT
+                +theme::SOFT_DIVIDER_WIDTH
+        )).abs()<=0.5,"unexpected two-row header height: {header:?}");
+        assert!((toolbar.height()-theme::MODAL_MASTER_WORKSPACE_TOOLBAR_HEIGHT)
+            .abs()<=0.5,"toolbar does not fill its reserved header row: {toolbar:?}");
+        assert!((header.bottom()-toolbar.bottom()-theme::SOFT_DIVIDER_WIDTH)
+            .abs()<=0.5,"header rule must immediately follow the toolbar: {header:?} {toolbar:?}");
+        assert!((body.top()-header.bottom()-theme::MODAL_MASTER_WORKSPACE_GAP)
+            .abs()<=0.5,"body must begin 16pt below the shared header: {header:?} {body:?}");
+        assert!((footer.top()-body.bottom()-theme::MODAL_MASTER_WORKSPACE_GAP)
+            .abs()<=0.5,"footer must remain 16pt below the body: {body:?} {footer:?}");
+        assert!(geometry.invalid_gaps(0.5).is_empty(),
+            "shared header/body/footer spacing drifted: {:?}",geometry.gaps());
+    }
+}
