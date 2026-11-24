@@ -3410,8 +3410,8 @@ mod manual_workspace_modal_routing_tests {
             "the native apply action must be reached from the explicit proceed branch");
         assert!(!render.contains("초안 적용 후 주문 확인 필요"),
             "the generic order-confirmation hint must not occupy a header row");
-        assert!(render.contains("count.on_hover_text(&notice)"),
-            "apply blockers remain discoverable without allocating layout space");
+        assert!(render.contains("status_label.on_hover_text(&notice)"),
+            "apply blockers remain discoverable without allocating layout space in both modes");
     }
 
     #[test]
