@@ -1565,11 +1565,12 @@ impl ManualWorkspace {
                                     let current_count=rows.len();
                                     let can_resize=!busy && !pending_quantity_active &&
                                         self.edit_text==self.current_value();
+                                    let count_control_id=
+                                        ui.make_persistent_id("manual-shipment-count");
                                     let count_control=
                                         components::date_navigation_count_control(
-                                            ui,ui.make_persistent_id("manual-shipment-count"),
-                                            &mut self.row_count_text,current_count,
-                                            can_resize,1,100
+                                            ui,count_control_id,&mut self.row_count_text,
+                                            current_count,can_resize,1,100
                                         );
                                     let minus_clicked=count_control.decrement_clicked;
                                     let plus_clicked=count_control.increment_clicked;
