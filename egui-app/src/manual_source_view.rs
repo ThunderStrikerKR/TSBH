@@ -10,7 +10,12 @@ use crate::{source_highlight::{self,LinkKey,LinkedSpan},theme,typography};
 pub struct SourceInteraction {
     pub hovered:Option<LinkKey>,
     pub clicked_block:Option<String>,
+    /// Source block under the pointer when the primary button is first pressed.
+    /// The workspace shows drag feedback immediately, before pointer movement.
     pub drag_started_block:Option<String>,
+    /// True only after egui's native drag threshold has been crossed.
+    /// A press/release without movement therefore remains an ordinary click.
+    pub drag_moved:bool,
     pub did_scroll:bool,
 }
 
@@ -72,14 +77,19 @@ pub fn source_document(
                 )
             )
     }else{None};
-    if enabled && response.drag_started_by(egui::PointerButton::Primary){
-        // Resolve the block at press origin, not the current drag pointer.
+    if enabled && response.hovered()
+        && ui.input(|input|input.pointer.button_pressed(egui::PointerButton::Primary)){
+        // Resolve the block on the initial press. Do not wait for egui's drag
+        // threshold: the workspace must show recommended cells immediately.
         result.drag_started_block=ui.input(|input|input.pointer.press_origin())
+            .filter(|pointer|rect.contains(*pointer))
             .and_then(|pointer|source_highlight::hovered_span_index_at_pointer(
                 raw,spans,&galley,rect.min,pointer
             )).and_then(|index|spans.get(index))
             .and_then(|span|span.source_id.clone());
     }
+    // Keep click-vs-drag semantics aligned with egui's own movement threshold.
+    result.drag_moved=enabled && response.dragged_by(egui::PointerButton::Primary);
     if enabled {
         if let Some(index)=hovered_index.and_then(|index|spans.get(index)){
             result.hovered=Some(index.key.clone());
@@ -210,16 +220,21 @@ mod tests {
             galley.rows[0].row.size.y*0.5);
         draw(&ctx,egui::RawInput{events:vec![egui::Event::PointerMoved(from)],
             time:Some(0.1),..Default::default()},raw,&spans,&mut origin,true);
-        draw(&ctx,egui::RawInput{events:vec![egui::Event::PointerButton{
+        let pressed=draw(&ctx,egui::RawInput{events:vec![egui::Event::PointerButton{
             pos:from,button:egui::PointerButton::Primary,pressed:true,
             modifiers:egui::Modifiers::NONE
         }],time:Some(0.2),..Default::default()},raw,&spans,&mut origin,true);
+        assert_eq!(pressed.drag_started_block.as_deref(),Some("block"),
+            "the source must be captured on press, before the pointer moves");
+        assert!(!pressed.drag_moved);
         let to=from+egui::vec2(360.0,30.0);
         let dragged=draw(&ctx,egui::RawInput{
             events:vec![egui::Event::PointerMoved(to)],
             time:Some(0.3),..Default::default()
         },raw,&spans,&mut origin,true);
-        assert_eq!(dragged.drag_started_block.as_deref(),Some("block"));
+        assert!(dragged.drag_started_block.is_none(),
+            "the press event must not be deferred until movement");
+        assert!(dragged.drag_moved);
         assert!(dragged.clicked_block.is_none());
         let released=draw(&ctx,egui::RawInput{events:vec![egui::Event::PointerButton{
             pos:to,button:egui::PointerButton::Primary,pressed:false,
