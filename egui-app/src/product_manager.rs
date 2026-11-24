@@ -1342,6 +1342,8 @@ impl ProductManager {
                             ),
                             Vec2::new(table_width,theme::PRODUCT_TABLE_ROW_HEIGHT)
                         );
+                        #[cfg(test)]
+                        components::general_screen_geometry_tests::record("data row",row_rect);
                         row_left.get_or_insert(row_rect.left());
                         table.scope_builder(
                             UiBuilder::new()
@@ -2911,4 +2913,14 @@ impl ProductManager {
         page.result=LatestJob::default(); page.next_query=None; page.tab=tab; if loaded{page.catalog=Some(serde_json::json!({"revision":1,"products":[],"categories":[],"brands":[],"aliases":[],"settings":{}}));}
         page
     }
+
+    pub(crate) fn geometry_begin_read(&mut self)->Box<dyn FnOnce(Result<usize,String>)>{
+        self.error=None;
+        let finish=self.result.geometry_begin_read();
+        Box::new(move |answer|finish(answer.map(|count|{
+            let products=(0..count).map(|i|json!({"id":format!("geometry-p-{i}"),"name":format!("검증 상품 {i:03}"),"subtitle":"긴 이름과 옵션 검증","active":true,"variants":[{"id":format!("geometry-v-{i}"),"color":"Black","prices":{"wholesale":10000,"semi":12000,"retail":15000}}]})).collect::<Vec<_>>();
+            ManagementProductRows{catalog:json!({"revision":1,"products":products.clone(),"categories":[],"brands":[],"aliases":[],"settings":{}}),products}
+        })))
+    }
+    pub(crate) fn geometry_read_failed(&self)->bool{self.error.is_some()}
 }
