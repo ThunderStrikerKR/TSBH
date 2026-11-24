@@ -93,6 +93,13 @@ pub fn native_direct_order(
     ){
         let model=saved.get("model").filter(|v|v.is_object())
             .ok_or("저장된 직접 입력 작업본이 올바르지 않습니다.")?;
+        if !list(model,"blocks").is_empty() ||
+            model.get("assignments").and_then(Value::as_object)
+                .is_none_or(|assignments|!assignments.is_empty()) ||
+            saved.get("assignmentOrder").and_then(Value::as_array)
+                .is_none_or(|keys|!keys.is_empty()){
+            return Err("직접 입력 작업본에는 발주원문 블록이나 원문 배정이 존재할 수 없습니다.".into());
+        }
         order["recipients"]=model.get("rows").cloned().unwrap_or_else(||json!([]));
         order["manualClassification"]=json!({
             "blocks":model.get("blocks").cloned().unwrap_or_else(||json!([])),
@@ -3697,6 +3704,25 @@ mod direct_input_workspace_tests{
         assert_eq!(list(&resized["model"],"rows").len(),1);
         assert_eq!(list(&resized["model"],"blocks").len(),0);
         assert_eq!(text(&resized["model"]["rows"][0],"id"),"direct-recipient");
+    }
+
+    #[test]
+    fn direct_input_rejects_saved_source_blocks(){
+        let gateway=crate::gateway::LocalGateway;
+        let model=json!({"rows":[{"id":"r1","name":"x","items":[]}],
+            "blocks":[{"id":"b1"}],"assignments":{}});
+        let row=WorkingReception{
+            id:"direct-invalid".into(),raw:String::new(),order_type:"AGENCY".into(),
+            source_input_method:None,last_input_method:None,
+            analysis_raw:None,analysis_evidence:None,analysis_view:None,
+            client_match:None,chat_handle:None,chat_title:None,
+            client_id:None,client_selection:None,pricing_preview:None,
+            working_version:None,working_synced:false,
+            manual_model:Some(json!({"mode":"DIRECT","sourceRaw":"","orderType":"AGENCY",
+                "model":model,"assignmentOrder":[]})),
+            edit_history:Vec::new(),
+        };
+        assert!(native_direct_order(&gateway,&row).is_err());
     }
 
     #[test]

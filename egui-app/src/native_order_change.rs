@@ -145,6 +145,12 @@ pub fn prepare_cancellable(
             .ok_or("저장된 직접 입력 작업본이 올바르지 않습니다.")?;
         let keys=saved.get("assignmentOrder").filter(|value|value.is_array())
             .ok_or("직접 입력 배정 순서가 없습니다.")?;
+        if !model.get("blocks").and_then(Value::as_array).is_some_and(|blocks|blocks.is_empty()) ||
+            !model.get("assignments").and_then(Value::as_object)
+                .is_some_and(|assignments|assignments.is_empty()) ||
+            !keys.as_array().is_some_and(|keys|keys.is_empty()){
+            return Err("직접 입력에는 발주원문 블록이나 원문 배정이 존재할 수 없습니다.".into());
+        }
 
         // An isolated catalog supports identity only. Never invent prices.
         if gateway.isolated_client_identity_link(){
