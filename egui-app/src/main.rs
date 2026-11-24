@@ -7555,13 +7555,37 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
     /// stale quote: submit the cell, wait for its native reducer result, then
     /// continue through start_draft_confirmation().
     fn request_draft_confirmation(&mut self,order_id:&str,ctx:&egui::Context){
-        if self.pending_draft_confirmation.as_deref()==Some(order_id){return;}
-        if self.pending_draft_confirmation.is_some(){return;}
+        // This flag is only valid while the same order's inline reducer is
+        // actually running. Recover a stale flag instead of silently eating
+        // every subsequent click.
+        if self.pending_draft_confirmation.as_deref()==Some(order_id){
+            if self.inline_change.as_ref().is_some_and(|pending|
+                pending.order_id==order_id
+            ){
+                floating_notice::publish(
+                    ctx,"reception.workflow",floating_notice::Tone::Info,
+                    "현재 셀 수정 저장 후 주문 확정을 진행합니다."
+                );
+                return;
+            }
+            self.pending_draft_confirmation=None;
+        }
+        if self.pending_draft_confirmation.is_some(){
+            floating_notice::publish(
+                ctx,"reception.workflow",floating_notice::Tone::Validation,
+                "다른 발주서의 주문 확인 작업이 진행 중입니다."
+            );
+            return;
+        }
 
         if let Some(pending)=self.inline_change.as_mut(){
             if pending.order_id==order_id{
                 pending.next=None;
                 self.pending_draft_confirmation=Some(order_id.to_owned());
+                floating_notice::publish(
+                    ctx,"reception.workflow",floating_notice::Tone::Info,
+                    "현재 셀 수정 저장 후 주문 확정을 진행합니다."
+                );
                 return;
             }
         }
@@ -7572,6 +7596,10 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
             self.pending_draft_confirmation=Some(order_id.to_owned());
             self.submit_inline_edit(ctx);
             if self.inline_change.is_some(){
+                floating_notice::publish(
+                    ctx,"reception.workflow",floating_notice::Tone::Info,
+                    "수정 중인 셀을 저장한 뒤 주문을 확정합니다."
+                );
                 return;
             }
             // Validation or admission failure restores the editor. Never
@@ -7641,7 +7669,13 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
             return;
         }
         let Some(expected_revision)=quote.get("authorityRevision")
-            .and_then(serde_json::Value::as_u64) else{return;};
+            .and_then(serde_json::Value::as_u64) else{
+            floating_notice::publish(
+                ctx,"reception.workflow",floating_notice::Tone::Error,
+                "가격 계산 결과의 운영 DB 리비전을 확인하지 못했습니다. 다시 계산하세요."
+            );
+            return;
+        };
         let group_id=format!("group:{}",source.id);
         if self.workflow_stage_deadlines.get(&group_id)
             .is_some_and(|deadline|Instant::now()<*deadline){
@@ -8181,7 +8215,8 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                         &self.client_names,active_selected,
                         &mut self.workflow_ui,
                         self.gateway.workflow_write_enabled() &&
-                            self.workflow_action.is_none(),
+                            self.workflow_action.is_none() &&
+                            self.pending_draft_confirmation.is_none(),
                         // Hover navigation must never switch the active receipt
                         // while a staff edit, dialog or pending write is open.
                         self.inline_editor.is_none() && self.inline_change.is_none() &&
@@ -8242,6 +8277,10 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
             }
             Some(workflow_board_ui::Event::ConfirmDraft(id))=>{
                 self.workflow_ui.stop_preview();
+                floating_notice::publish(
+                    ui.ctx(),"reception.workflow",floating_notice::Tone::Info,
+                    "주문 확인 요청을 접수했습니다."
+                );
                 self.request_draft_confirmation(&id,ui.ctx());
             }
             Some(workflow_board_ui::Event::SelectPending(id))=>{
