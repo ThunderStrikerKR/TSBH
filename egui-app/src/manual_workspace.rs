@@ -890,7 +890,7 @@ fn manual_workspace_columns_height()->f32{
     theme::INPUT_HEIGHT
         +theme::SPACE_8
         +manual_recipient_card_height()
-        +theme::SPACE_8
+        +2.0*theme::SPACE_8
         +theme::MANUAL_ITEMS_CARD_MIN_HEIGHT
 }
 
@@ -2048,7 +2048,9 @@ impl ManualWorkspace {
                                                             },&mut submit_direct
                                                         );
                                                     }
-                                                    sheet.add_space(theme::SPACE_8);
+                                                    // Preserve the existing 16pt card gap explicitly:
+                                                    // 8pt layout spacing plus the 8pt authored inset.
+                                                    sheet.add_space(2.0*theme::SPACE_8);
                                                     let mut header_add_item=false;
                                                     let mut header_rollback=false;
                                                     let rollback_pending=self.selected_quantity_pending()
@@ -3553,13 +3555,13 @@ mod manual_workspace_layout_tests{
     #[test]
     fn popup_height_tracks_the_visible_card_stack_and_fixed_modal_chrome(){
         assert_eq!(manual_recipient_card_height(),231.0);
-        assert_eq!(manual_workspace_columns_height(),623.0);
+        assert_eq!(manual_workspace_columns_height(),631.0);
         let work_area=egui::Rect::from_min_size(
             egui::Pos2::ZERO,egui::vec2(1400.0,1000.0)
         );
         let size=manual_workspace_dialog_size(work_area);
         assert_eq!(size.x,1364.0);
-        assert_eq!(size.y,838.0);
+        assert_eq!(size.y,846.0);
         let short_area=egui::Rect::from_min_size(
             egui::Pos2::ZERO,egui::vec2(1400.0,700.0)
         );
