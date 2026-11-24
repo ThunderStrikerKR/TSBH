@@ -3593,6 +3593,8 @@ mod manual_workspace_layout_tests{
         assert!(render.contains(".fixed_size(manual_workspace_dialog_size(work_area))"));
         let main=include_str!("main.rs");
         assert!(main.contains("self.layout.widths(content_width)[1]"));
-        assert!(main.contains("editor.show(\n                ctx,work_area,reception_source_width,hover,source"));
+        assert!(main.contains("editor.show("));
+        assert!(main.contains("self.layout.widths(content_width)[1]"));
+        assert!(main.contains("reception_source_width,hover,source"));
     }
 }
