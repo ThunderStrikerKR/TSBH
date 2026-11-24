@@ -1519,10 +1519,11 @@ impl ManualWorkspace {
                                     let current_count=rows.len();
                                     let can_resize=!busy && !pending_quantity_active &&
                                         self.edit_text==self.current_value();
-                                    let minus_clicked=theme::action(
-                                        ui,"−",ButtonRole::Standard,
-                                        can_resize && current_count>1
-                                    ).clicked();
+                                    let minus_clicked=
+                                        components::date_navigation_step_button(
+                                            ui,"−","배송 건수 1건 줄이기",
+                                            can_resize && current_count>1
+                                        ).clicked();
                                     let count_input=ui.add_enabled(
                                         can_resize,
                                         egui::TextEdit::singleline(&mut self.row_count_text)
@@ -1540,10 +1541,11 @@ impl ManualWorkspace {
                                     if filtered!=self.row_count_text{
                                         self.row_count_text=filtered;
                                     }
-                                    let plus_clicked=theme::action(
-                                        ui,"+",ButtonRole::Standard,
-                                        can_resize && current_count<100
-                                    ).clicked();
+                                    let plus_clicked=
+                                        components::date_navigation_step_button(
+                                            ui,"+","배송 건수 1건 늘리기",
+                                            can_resize && current_count<100
+                                        ).clicked();
                                     let count_commit=(
                                         count_input.lost_focus() &&
                                         self.row_count_text!=current_count.to_string()
@@ -2600,6 +2602,38 @@ mod manual_workspace_modal_routing_tests {
         assert_eq!(history.first().unwrap().model["value"],1);
         assert_eq!(history.last().unwrap().model["value"],100);
         assert_eq!(history.pop().unwrap().model["value"],100);
+    }
+
+    #[test]
+    fn shipment_count_steppers_share_the_date_picker_navigation_surface(){
+        let manual=include_str!("manual_workspace.rs");
+        let components=include_str!("components.rs");
+        let count_row=manual.split("let current_count=rows.len()").nth(1).unwrap()
+            .split("let count_commit=").next().unwrap();
+        assert_eq!(
+            count_row.matches("components::date_navigation_step_button(").count(),2
+        );
+        assert!(!count_row.contains("theme::action("),
+            "shipment count must not use the larger generic action button");
+
+        let calendar=components.split("fn calendar_nav_button(").nth(1).unwrap()
+            .split("pub fn date_navigation_step_button(").next().unwrap();
+        let stepper=components.split("pub fn date_navigation_step_button(").nth(1).unwrap()
+            .split("pub fn date_calendar(").next().unwrap();
+        assert!(calendar.contains("date_navigation_button_surface("),
+            "date picker arrows must use the shared surface");
+        assert!(stepper.contains("date_navigation_button_surface("),
+            "minus/plus controls must use the same date-picker surface");
+
+        let surface=components.split("fn date_navigation_button_surface(").nth(1).unwrap()
+            .split("fn calendar_nav_button(").next().unwrap();
+        for token in [
+            "CALENDAR_NAV_SIZE","theme::INPUT","theme::BORDER",
+            "theme::CONTROL_RADIUS","theme::paint_button_hover",
+            "DISABLED_ACTION_BG","DISABLED_ACTION_BORDER","DISABLED_ACTION_TEXT"
+        ]{
+            assert!(surface.contains(token),"missing date-navigation style token: {token}");
+        }
     }
 
     #[test]
