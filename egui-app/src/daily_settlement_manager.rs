@@ -338,6 +338,8 @@ fn report_table<const N:usize>(
                     egui::pos2(origin.x,origin.y+(index-first) as f32*ROW_HEIGHT),
                     Vec2::new(width,ROW_HEIGHT)
                 );
+                #[cfg(test)]
+                components::general_screen_geometry_tests::record(if id=="settlement-orders"{"settlement order row"}else{"settlement payment row"},rect);
                 first_x.get_or_insert(rect.left());
                 list.scope_builder(
                     UiBuilder::new().id_salt((id,index))
@@ -720,4 +722,29 @@ impl DailySettlementManager {
         page.receiver=None;if loaded{page.report=Some(serde_json::json!({"date":page.date.clone(),"orderRows":[],"paymentRows":[]}));}
         page
     }
+
+    pub(crate) fn geometry_begin_read(&mut self)->Box<dyn FnOnce(Result<usize,String>)>{
+        let (tx,rx)=std::sync::mpsc::channel();
+        self.receiver=Some(rx);
+        self.error=None;
+        let date=self.date.clone();
+        Box::new(move |answer|{
+            let result=answer.map(|count|{
+                let orders=(0..count).map(|i|json!({"clientName":format!("검증 거래처 {i}"),
+                    "status":"처리 중","paymentTerms":"선불","subtotal":100000,
+                    "shippingCharge":3000,"vat":10300,"total":113300,"paidAllocated":100000,"outstanding":13300})).collect::<Vec<_>>();
+                let payments=(0..count).map(|i|json!({"dealer":format!("검증 거래처 {i}"),
+                    "paidAt":"2026-11-24T09:00:00+09:00","account":"합성 계좌","amount":100000,
+                    "allocated":95000,"unallocated":5000,"memo":"검증 메모"})).collect::<Vec<_>>();
+                let total=count as i64*113300;
+                json!({"date":date,"orderRows":orders,"paymentRows":payments,"warnings":(0..count).map(|i|format!("합성 확인 사항 {i}")).collect::<Vec<_>>(),
+                    "billedKnown":total,"paidCash":count as i64*100000,"billedUnknown":0,"productKnown":count as i64*100000,
+                    "shippingKnown":count as i64*3000,"vatKnown":count as i64*10300,"postpaidKnown":0,
+                    "outstandingKnown":count as i64*13300,"actualFreightKnown":count as i64*3000,
+                    "outstandingUnknown":0,"freightUnknown":0,"allocatedCash":count as i64*95000,"unallocatedCash":count as i64*5000})
+            });
+            assert!(tx.send(result).is_ok());
+        })
+    }
+    pub(crate) fn geometry_read_failed(&self)->bool{self.error.is_some()}
 }
