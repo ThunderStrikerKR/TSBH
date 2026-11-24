@@ -1327,14 +1327,7 @@ impl ModalEditorWorkspace<'_> {
     /// regions. Only the master owns the outer inset and structural gaps.
     pub fn body_region<R>(&mut self,contents:impl FnOnce(&mut Ui)->R)->R{
         self.before_body();
-        let inset=theme::MODAL_MASTER_CONTENT_INSET;
-        let width=(self.ui.available_width()-2.0*inset).max(1.0);
-        let body=Frame::NONE.inner_margin(egui::Margin::symmetric(inset as i8,0))
-            .show(self.ui,|content|{
-                content.set_width(width);
-                content.spacing_mut().item_spacing.y=theme::SPACING;
-                contents(content)
-            });
+        let body=modal_plain_body_region(self.ui,contents);
         self.geometry.body=Some(body.response.rect);
         body.inner
     }
@@ -1961,6 +1954,21 @@ pub fn modal_footer_chrome(ui:&mut Ui,actions:impl FnOnce(&mut Ui)) {
     modal_footer_in_rect(ui,rect,actions);
 }
 
+/// Single plain-body inset for both decision and editor workspaces.
+/// Keep the actual content edges equal to the title/footer content grid.
+fn modal_plain_body_region<R>(
+    ui:&mut Ui,contents:impl FnOnce(&mut Ui)->R
+)->egui::InnerResponse<R>{
+    let inset=theme::MODAL_MASTER_CONTENT_INSET;
+    let width=(ui.available_width()-2.0*inset).max(1.0);
+    Frame::NONE.inner_margin(egui::Margin::symmetric(inset as i8,0))
+        .show(ui,|content|{
+            content.set_width(width);
+            content.spacing_mut().item_spacing.y=theme::SPACING;
+            contents(content)
+        })
+}
+
 /// One framed content work surface for flow-based popup bodies. Use one
 /// per dialog rather than wrapping every subsection in another card.
 pub fn modal_master_body<R>(
@@ -2123,14 +2131,7 @@ impl DecisionWorkspace<'_>{
         let top=self.ui.cursor().top();
         let target=self.header_bottom.unwrap_or(top)+theme::MODAL_MASTER_WORKSPACE_GAP;
         self.ui.add_space((target-top).max(0.0));
-        let inset=theme::SPACE_8;
-        let width=(self.ui.available_width()-2.0*inset).max(1.0);
-        let body=Frame::NONE.inner_margin(egui::Margin::symmetric(inset as i8,0))
-            .show(self.ui,|content|{
-                content.set_min_width(width);
-                content.spacing_mut().item_spacing.y=theme::SPACING;
-                contents(content)
-            });
+        let body=modal_plain_body_region(self.ui,contents);
         self.body_bottom=Some(body.response.rect.bottom());
         body.inner
     }
@@ -3333,11 +3334,7 @@ pub fn paint_reception_client_summary_surface(ui:&Ui,rect:Rect){
 /// exclusively to the management/list column headers.
 /// Preserve the existing one-point slot and all dock splitter coordinates.
 pub fn reception_section_divider(ui:&mut Ui)->Rect{
-    let (rect,_)=ui.allocate_exact_size(
-        Vec2::new(ui.available_width(),theme::SOFT_DIVIDER_WIDTH),Sense::hover()
-    );
-    ui.painter().rect_filled(rect,0.0,theme::DIVIDER);
-    rect
+    theme::soft_rule(ui)
 }
 
 /// Untyped recognition/workflow notices retain informational coloring.
@@ -3390,12 +3387,7 @@ pub fn reception_message_copy_actions(ui:&mut Ui,enabled:bool)->Option<bool>{
 /// A subtle separation between data belonging to the same record.
 /// Sections themselves are framed by the caller.
 pub fn soft_divider(ui: &mut Ui) {
-    let width = ui.available_width();
-    let (rect, _) = ui.allocate_exact_size(Vec2::new(width, theme::SOFT_DIVIDER_WIDTH), egui::Sense::hover());
-    ui.painter().line_segment(
-        [rect.left_top(), rect.right_top()],
-        Stroke::new(theme::SOFT_DIVIDER_WIDTH, theme::DIVIDER),
-    );
+    theme::soft_rule(ui);
 }
 
 /// The 6pt split interaction region is always the workspace (CANVAS)
@@ -8204,6 +8196,42 @@ mod modal_editor_workspace_geometry_tests {
         for text in ["0","3,000","-1,000"]{assert!(!reception_pending_money_marker(text));}
         assert_eq!(typography::DATA_NUMERIC_GLYPH_OFFSET_Y,2.5);
         assert_eq!(theme::RECEPTION_ITEMS_TO_FREIGHT_GAP,16.0);
+    }
+
+    #[test]
+    fn plain_modal_body_edges_match_the_master_header_and_footer(){
+        let ctx=egui::Context::default();
+        let _=ctx.run(egui::RawInput{
+            screen_rect:Some(Rect::from_min_size(egui::Pos2::ZERO,Vec2::new(900.0,700.0))),
+            ..Default::default()
+        },|ctx|{
+            egui::CentralPanel::default().show(ctx,|ui|{
+                ui.set_width(500.0);
+                let left=ui.cursor().left();
+                let width=ui.available_width();
+                let measured=modal_plain_body_region(ui,|body|{
+                    (body.cursor().left(),body.available_width())
+                }).inner;
+                assert!((measured.0-left-theme::MODAL_MASTER_CONTENT_INSET).abs()<=0.5);
+                assert!((measured.1-(width-2.0*theme::MODAL_MASTER_CONTENT_INSET)).abs()<=0.5);
+            });
+        });
+    }
+
+    #[test]
+    fn shared_soft_rule_occupies_its_own_one_point_slot(){
+        let ctx=egui::Context::default();
+        let _=ctx.run(egui::RawInput::default(),|ctx|{
+            egui::CentralPanel::default().show(ctx,|ui|{
+                ui.spacing_mut().item_spacing.y=0.0;
+                let first=theme::soft_rule(ui);
+                let second=reception_section_divider(ui);
+                assert_eq!(first.height(),theme::SOFT_DIVIDER_WIDTH);
+                assert_eq!(second.height(),first.height());
+                assert_eq!(second.top(),first.bottom());
+                assert_eq!(first.x_range(),second.x_range());
+            });
+        });
     }
 
     #[test]

@@ -870,12 +870,16 @@ pub fn category_ancestor_frame()->Frame{
         .inner_margin(SPACE_8)
 }
 
-pub fn modal_nested_frame() -> Frame {
+/// Shared inset input/notice surface. Individual roles only choose padding.
+fn nested_input_surface_frame()->Frame{
     Frame::new()
         .fill(INPUT)
         .stroke(Stroke::new(FRAME_STROKE_WIDTH,DIVIDER))
         .corner_radius(CornerRadius::same(CONTROL_RADIUS))
-        .inner_margin(SPACE_8)
+}
+
+pub fn modal_nested_frame() -> Frame {
+    nested_input_surface_frame().inner_margin(SPACE_8)
 }
 
 pub fn section_frame() -> Frame {
@@ -1000,10 +1004,7 @@ pub fn reception_workspace_frame() -> Frame {
 /// Compensate the 1pt outline in inner margins; the shared header owns
 /// its separate optical top clearance.
 pub fn docked_pane_frame() -> Frame {
-    Frame::new()
-        .fill(PANEL)
-        .stroke(Stroke::new(FRAME_STROKE_WIDTH, BORDER))
-        .corner_radius(CornerRadius::same(SECTION_RADIUS))
+    section_frame()
         .inner_margin(egui::Margin {
             left: (SECTION_PADDING - FRAME_STROKE_WIDTH) as i8,
             right: (SECTION_PADDING - FRAME_STROKE_WIDTH) as i8,
@@ -1101,11 +1102,7 @@ pub fn source_document_frame() -> Frame {
 }
 
 pub fn nested_frame() -> Frame {
-    Frame::new()
-        .fill(INPUT)
-        .stroke(Stroke::new(1.0_f32, DIVIDER))
-        .corner_radius(CornerRadius::same(CONTROL_RADIUS))
-        .inner_margin(NESTED_PADDING)
+    nested_input_surface_frame().inner_margin(NESTED_PADDING)
 }
 
 /// Paint-only hover emphasis for every actionable rectangular control,
@@ -1329,17 +1326,20 @@ pub fn window_control(ui: &mut Ui, control: WindowControl) -> Response {
     response
 }
 
+/// One soft horizontal rule. The reserved rectangle and painted surface
+/// coincide: no centered stroke protrudes into the preceding row.
+pub fn soft_rule(ui:&mut Ui)->egui::Rect{
+    let (rect,_)=ui.allocate_exact_size(
+        Vec2::new(ui.available_width(),SOFT_DIVIDER_WIDTH),egui::Sense::hover()
+    );
+    ui.painter().rect_filled(rect,0.0,DIVIDER);
+    rect
+}
+
 pub fn divider(ui: &mut Ui) {
-    ui.add_space(4.0);
-    let (rect, _) = ui.allocate_exact_size(
-        Vec2::new(ui.available_width(), SOFT_DIVIDER_WIDTH),
-        egui::Sense::hover(),
-    );
-    ui.painter().line_segment(
-        [rect.left_top(), rect.right_top()],
-        Stroke::new(SOFT_DIVIDER_WIDTH, DIVIDER),
-    );
-    ui.add_space(4.0);
+    ui.add_space(SPACE_4);
+    soft_rule(ui);
+    ui.add_space(SPACE_4);
 }
 
 pub fn label_value(ui: &mut Ui, label: &str, value: &str) {
