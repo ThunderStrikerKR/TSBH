@@ -784,6 +784,8 @@ struct BandoEgui {
     workflow_action: Option<PendingWorkflowAction>,
     workflow_freight_editor:Option<WorkflowFreightEditor>,
     workflow_freight_next_selection:Option<workflow_board_ui::Selection>,
+    submitted_workflow_freight:Option<WorkflowFreightEditor>,
+    workflow_stage_after_freight:Option<(String,usize,bool)>,
     /// Workflow approval requested while this same draft's inline cell is
     /// committing. Resume only after the native edit succeeds.
     pending_draft_confirmation:Option<String>,
@@ -900,6 +902,8 @@ impl BandoEgui {
             workflow_action: None,
             workflow_freight_editor:None,
             workflow_freight_next_selection:None,
+            submitted_workflow_freight:None,
+            workflow_stage_after_freight:None,
             pending_draft_confirmation:None,
             workflow_stage_deadlines: HashMap::new(),
             workflow_dialog: None,
@@ -1416,11 +1420,24 @@ impl BandoEgui {
                     }
                     self.workflow_snapshot=Some(snapshot);
                     self.workflow_error=None;
+                    if let Some((id,step,notice))=self.workflow_stage_after_freight.take(){
+                        if self.workflow_snapshot.as_ref().is_some_and(|board|
+                            board.groups.iter().any(|group|
+                                group.id==id && group.step==step &&
+                                group.needs_notice==notice && !group.transferred)){
+                            self.advance_workflow_group(&id,ctx);
+                        }else{
+                            floating_notice::publish(ctx,"reception.workflow",
+                                floating_notice::Tone::Validation,
+                                "운임 저장 후 업무 단계가 변경됐습니다. 현재 단계를 다시 확인하세요.");
+                        }
+                    }
                     ctx.request_repaint();
                 }
                 Ok(Err(error))=>{
                     self.workflow_receiver=None;
                     self.workflow_error=Some(error);
+                    self.workflow_stage_after_freight=None;
                     ctx.request_repaint();
                 }
                 Err(mpsc::TryRecvError::Disconnected)=>{
@@ -1428,12 +1445,14 @@ impl BandoEgui {
                     self.workflow_error=Some(
                         "발주묶음 Rust 조회 작업이 중단되었습니다.".to_owned()
                     );
+                    self.workflow_stage_after_freight=None;
                 }
                 Err(mpsc::TryRecvError::Empty)=>{}
             }
         }
         if self.page!=Page::Reception || self.workflow_receiver.is_some() ||
-            self.workflow_action.is_some() || self.workflow_freight_editor.is_some() ||
+            self.workflow_action.is_some() ||
+            (self.workflow_freight_editor.is_some() && self.workflow_error.is_none()) ||
             !std::env::var_os("BANDO_EGUI_BUSINESS_DB")
                 .is_some_and(|p|!p.is_empty()) {return;}
         if self.workflow_last_fetch.is_some_and(|at|
@@ -6452,6 +6471,12 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                 for issue in &group.issues{
                                     components::reception_review_status(issues,issue);
                                 }
+                                if let Some(error)=self.workflow_error.as_deref(){
+                                    components::reception_review_status(issues,error);
+                                }
+                                if let Some(error)=group.automatic_error.as_deref(){
+                                    components::reception_review_status(issues,error);
+                                }
                             });
                     });
                 }
@@ -8016,7 +8041,9 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
         let started=was_idle && self.workflow_action.as_ref().is_some_and(|pending|
             pending.action=="set_shipment_freight"
         );
-        if !started{
+        if started{
+            self.submitted_workflow_freight=Some(editor);
+        }else{
             self.workflow_freight_editor=Some(editor);
             self.workflow_freight_next_selection=None;
         }
@@ -8032,6 +8059,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
             Ok(Ok(_saved))=>{
                 self.workflow_action=None;
                 if action=="set_shipment_freight"{
+                    self.submitted_workflow_freight=None;
                     self.workflow_freight_editor=None;
                     if let Some(selection)=self.workflow_freight_next_selection.take(){
                         self.workflow_ui.select(selection);
@@ -8084,6 +8112,11 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                 self.workflow_receiver=None;
                 self.workflow_last_fetch=None;
                 self.workflow_error=None;
+                if action=="process_group"{
+                    if let Some(excel)=self.excel_manager.as_mut(){
+                        excel.refresh(ctx.clone());
+                    }
+                }
                 floating_notice::publish(
                     ctx,"reception.workflow",floating_notice::Tone::Success,
                     match action.as_str(){
@@ -8104,6 +8137,11 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                 self.workflow_action=None;
                 if action=="set_shipment_freight"{
                     self.workflow_freight_next_selection=None;
+                    self.workflow_stage_after_freight=None;
+                    if let Some(mut editor)=self.submitted_workflow_freight.take(){
+                        editor.focus_next=true;
+                        self.workflow_freight_editor=Some(editor);
+                    }
                 }
                 self.workflow_last_fetch=None;
                 self.workflow_error=Some(error.clone());
@@ -8115,7 +8153,13 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                 self.workflow_action=None;
                 if action=="set_shipment_freight"{
                     self.workflow_freight_next_selection=None;
+                    self.workflow_stage_after_freight=None;
+                    if let Some(mut editor)=self.submitted_workflow_freight.take(){
+                        editor.focus_next=true;
+                        self.workflow_freight_editor=Some(editor);
+                    }
                 }
+                self.workflow_last_fetch=None;
                 self.workflow_error=Some("주문 변경 처리 도중 작업이 중단되었습니다.".into());
                 floating_notice::publish(
                     ctx,"reception.workflow",floating_notice::Tone::Error,
@@ -8425,6 +8469,22 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
         if close{self.workflow_dialog=None;}
     }
 
+    fn advance_workflow_group(&mut self,id:&str,ctx:&egui::Context){
+        if self.workflow_action.is_some() || self.workflow_receiver.is_some(){return;}
+        let Some(group)=self.workflow_snapshot.as_ref()
+            .and_then(|board|board.groups.iter().find(|group|group.id==id))
+        else{return;};
+        if group.transferred{return;}
+        if group.step==2 || (group.needs_notice && group.step>=2){
+            self.workflow_dialog=Some(WorkflowDialog::PaymentNotice(id.to_owned()));
+        }else{
+            let action=if group.step>=4 && !group.needs_notice{"process_group"}
+                else if group.step==3 && !group.needs_notice{"confirm_group_payment"}
+                else{"advance_group"};
+            self.start_workflow_action(action,id,None,None,false,ctx);
+        }
+    }
+
     fn orders_pane(&mut self, ui: &mut Ui) {
         let height=ui.available_height();
         let mut event=None;
@@ -8448,6 +8508,13 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                         .and_then(|analysis|reception_service::recipients(analysis)
                             .get(self.selected_recipient))
                         .and_then(|row|row["id"].as_str());
+                    let freight_stage_group=if self.gateway.workflow_write_enabled() &&
+                        self.workflow_receiver.is_none() && self.workflow_error.is_none() &&
+                        self.workflow_stage_after_freight.is_none(){
+                        self.workflow_freight_editor.as_ref()
+                            .or(self.submitted_workflow_freight.as_ref())
+                            .map(|editor|editor.group_id.as_str())
+                    }else{None};
                     event=workflow_board_ui::show(
                         ui,self.workflow_snapshot.as_ref(),&self.drafts,
                         self.active_id.as_deref(),
@@ -8459,6 +8526,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                             self.pending_draft_confirmation.is_none() &&
                             self.workflow_receiver.is_none() &&
                             self.workflow_error.is_none(),
+                        freight_stage_group,
                         // Hover navigation must never switch the active receipt
                         // while a staff edit, dialog or pending write is open.
                         self.inline_editor.is_none() && self.inline_change.is_none() &&
@@ -8486,26 +8554,25 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
             }
             Some(workflow_board_ui::Event::AdvanceGroup(id))=>{
                 self.workflow_ui.stop_preview();
-                if self.workflow_action.is_none(){
-                    if self.workflow_snapshot.as_ref().and_then(|board|
-                        board.groups.iter().find(|group|group.id==id)
-                    ).is_some_and(|group|
-                        group.step==2 || (group.needs_notice && group.step>=2)
-                    ){
-                        self.workflow_dialog=Some(WorkflowDialog::PaymentNotice(id));
-                    }else{
-                        let action=self.workflow_snapshot.as_ref().and_then(|board|
-                            board.groups.iter().find(|group|group.id==id)
-                        ).map(|group|
-                            if group.step>=4 && !group.needs_notice{"process_group"}
-                            else if group.step==3 && !group.needs_notice{
-                                "confirm_group_payment"
-                            }else{"advance_group"}
+                let editing=self.workflow_freight_editor.as_ref()
+                    .or(self.submitted_workflow_freight.as_ref())
+                    .is_some_and(|editor|editor.group_id==id);
+                if editing{
+                    if let Some(group)=self.workflow_snapshot.as_ref()
+                        .and_then(|board|board.groups.iter().find(|group|group.id==id)){
+                        self.workflow_stage_after_freight=Some(
+                            (id.clone(),group.step,group.needs_notice)
                         );
-                        if let Some(action)=action{
-                            self.start_workflow_action(action,&id,None,None,false,ui.ctx());
+                        if self.workflow_freight_editor.is_some() &&
+                            !self.submit_workflow_freight_edit(ui.ctx()){
+                            self.workflow_stage_after_freight=None;
+                        }else if self.workflow_action.is_none(){
+                            self.workflow_stage_after_freight=None;
+                            self.advance_workflow_group(&id,ui.ctx());
                         }
                     }
+                }else{
+                    self.advance_workflow_group(&id,ui.ctx());
                 }
             }
             Some(workflow_board_ui::Event::UndoGroup(id))=>{
@@ -8923,6 +8990,10 @@ impl eframe::App for BandoEgui {
             self.workflow_ui.stop_preview();
             self.workflow_action=None;
             self.workflow_stage_deadlines.clear();
+            self.workflow_freight_editor=None;
+            self.submitted_workflow_freight=None;
+            self.workflow_stage_after_freight=None;
+            self.workflow_freight_next_selection=None;
             self.workflow_dialog=None;
             self.client_manager=None;
             self.freight_manager=None;

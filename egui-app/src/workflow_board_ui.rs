@@ -790,7 +790,7 @@ fn row(
 fn group_frame(
     ui:&mut Ui,group:&GroupRow,selected:Option<&Selection>,
     open:bool,in_preview:bool,previewed_id:Option<&str>,writable:bool,
-    linked_selection:Option<(&str,&str)>,
+    freight_stage_group:Option<&str>,linked_selection:Option<(&str,&str)>,
     trigger:&mut Option<String>,hovered_row:&mut Option<String>
 )->Option<Event>{
     let mut event=None;
@@ -823,7 +823,7 @@ fn group_frame(
             ui,bottom,&group.id,group.shipments.len(),group.total,
             if group.vat_included>0{Some(vat.as_str())}else{None},
             Some(stage_name(group.step,group.needs_notice)),
-            writable && !group.transferred,
+            (writable || freight_stage_group==Some(group.id.as_str())) && !group.transferred,
             writable && group.step>0 && !group.transferred,in_preview
         );
         if advance_clicked{event=Some(Event::AdvanceGroup(group.id.clone()));}
@@ -1078,7 +1078,8 @@ pub fn show(
     drafts:&[WorkingReception],active_id:Option<&str>,
     client_names:&HashMap<String,String>,
     active_selected_client:Option<(&str,&str)>,
-    state:&mut BoardUi,writable:bool,allow_pending_hover_switch:bool,
+    state:&mut BoardUi,writable:bool,freight_stage_group:Option<&str>,
+    allow_pending_hover_switch:bool,
     active_recipient_id:Option<&str>,linked_selection:Option<(&str,&str)>
 )->Option<Event>{
     // Prevent implicit vertical item spacing from doubling the explicit
@@ -1105,7 +1106,7 @@ pub fn show(
             let pos=ui.cursor().min;
             let mut ignored_row=None;
             if let Some(value)=group_frame(ui,group,current,open,false,None,
-                writable,linked_selection,&mut trigger,&mut ignored_row){
+                writable,freight_stage_group,linked_selection,&mut trigger,&mut ignored_row){
                 match value{
                     Event::ToggleGroup(id)=>{
                         state.folded=if open{Some(id)}else{None};
@@ -1214,7 +1215,7 @@ pub fn show(
             let mut ignored_hover=None;
             overlay_event=group_frame(
                 ui,&group,current,true,true,state.preview_shipment.as_deref(),
-                writable,linked_selection,&mut ignored_hover,&mut hovered_row
+                writable,freight_stage_group,linked_selection,&mut ignored_hover,&mut hovered_row
             );
         });
         state.preview_rect=Some(response.response.rect);
