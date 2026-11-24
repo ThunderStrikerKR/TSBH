@@ -12,6 +12,10 @@ on:
       - egui-app/src/business_state.rs
       - src-tauri/src/main.rs
       - src-tauri/src/business_core/rules/shipping.rs
+      - src-tauri/src/business_core/rules/pricing.rs
+      - src-tauri/src/business_core/rules/workflow.rs
+      - src-tauri/src/business_core/rules/workflow_preview.rs
+      - src-tauri/src/business_core/rules/reconciliation.rs
       - src-tauri/src/relational_store.rs
       - src-tauri/src/lib.rs
   workflow_dispatch:

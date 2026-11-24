@@ -411,7 +411,7 @@ impl ReceptionEditQuoteCache{
             let version=str_field(field(quote,"order"),"shippingVersion");
             let Some(inner)=version.strip_prefix(&prefix).and_then(|v|v.strip_suffix("]}"))
                 else{return reception_quote(payload);};
-            if !inner.is_empty(){versions.push(inner);}
+            if !inner.is_empty(){versions.push(inner.to_owned());}
         }
         let sum=|key:&str|amounts.iter().map(|amount|safe(field(amount,key)))
             .collect::<Option<Vec<_>>>().and_then(checked_sum);

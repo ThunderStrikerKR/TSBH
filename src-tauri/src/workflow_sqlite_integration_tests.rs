@@ -896,6 +896,24 @@ fn scoped_freight_reconciliation_matches_full_for_target_and_preserves_other_ord
         "state":&input,"shipmentId":"shipment:synthetic",
         "groupId":"group:order:other","eventSeed":"bad","now":at
     })).is_err());
+    // Compare the scoped native output against the corresponding entries
+    // of a full board projection. Both receive the same unfiltered state.
+    let full_board=rust("preview_workflow",json!({"state":next})).unwrap();
+    let scoped_board=rust("preview_workflow",json!({
+        "state":next,"groupIds":["group:synthetic"]
+    })).unwrap();
+    let expected=full_board["groups"].as_array().unwrap().iter()
+        .filter(|row|row["groupId"]=="group:synthetic").cloned().collect::<Vec<_>>();
+    assert_eq!(scoped_board["groups"],json!(expected));
+    assert_eq!(expected.len(),1);
+    let full_shipments=rust("read_shipments",json!({"state":next})).unwrap();
+    let scoped_shipments=rust("read_shipments",json!({
+        "state":next,"groupIds":["group:synthetic"]
+    })).unwrap();
+    let expected=full_shipments["shipments"].as_array().unwrap().iter()
+        .filter(|row|row["shipmentId"]=="shipment:synthetic").cloned().collect::<Vec<_>>();
+    assert_eq!(scoped_shipments["shipments"],json!(expected));
+    assert_eq!(expected.len(),1);
     assert_eq!(get_snapshot(&conn).unwrap(),before);
 }
 

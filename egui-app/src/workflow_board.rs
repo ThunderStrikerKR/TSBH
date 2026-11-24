@@ -210,7 +210,10 @@ pub fn after_freight_edit(gateway:&dyn BandoGateway,state:Value,
     if gateway.supports_scoped_freight_refresh(){
         if let Some(mut board)=previous{
             if let Some(scope)=freight_refresh_scope(&board,&state,group_id){
-                let updated=project_state(gateway,&state,Some(&scope))?;
+                let updated=match project_state(gateway,&state,Some(&scope)){
+                    Ok(updated)=>updated,
+                    Err(_)=>return from_state(gateway,state),
+                };
                 board.groups.retain(|group|!scope.contains(&group.id));
                 board.groups.extend(updated.groups);
                 // Match the full projection's stable tie order even when
