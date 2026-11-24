@@ -2542,6 +2542,39 @@ pub fn reception_recipient_navigator(
     selected
 }
 
+/// The approved Reception card chrome is shared with the manual worksheet.
+/// The same 16pt card heading, 16pt inset, divider and header-action alignment
+/// now render in both screens; business actions stay in their callers.
+pub fn reception_section_with_header(
+    ui:&mut Ui,title:&str,minimum_height:f32,
+    header_right:impl FnOnce(&mut Ui),content:impl FnOnce(&mut Ui),
+){
+    let width=ui.available_width();
+    theme::docked_pane_frame().show(ui,|ui|{
+        let width_inset=2.0*theme::SECTION_PADDING;
+        let height_inset=2.0*theme::RECEPTION_PANE_PADDING_Y;
+        ui.set_min_width((width-width_inset).max(60.0));
+        ui.set_min_height((minimum_height-height_inset).max(48.0));
+        let body_item_spacing=theme::SPACING;
+        ui.spacing_mut().item_spacing.y=0.0;
+        ui.allocate_ui_with_layout(
+            Vec2::new(ui.available_width(),theme::SECTION_HEADER_HEIGHT),
+            Layout::left_to_right(Align::Center),|header|{
+                header.set_min_height(theme::SECTION_HEADER_HEIGHT);
+                header.label(typography::section_heading(title));
+                header.with_layout(Layout::right_to_left(Align::Center),header_right);
+            }
+        );
+        ui.add_space(theme::SECTION_CONTENT_GAP);
+        reception_section_divider(ui);
+        ui.add_space(theme::SPACE_4);
+        ui.scope(|body|{
+            body.spacing_mut().item_spacing.y=body_item_spacing;
+            content(body);
+        });
+    });
+}
+
 /// The READ and EDIT renderers of recipient fields must use exactly one
 /// typography/padding definition. Contact numbers use the same 16pt regular
 /// proportional UI family as name, address, message and source text.
