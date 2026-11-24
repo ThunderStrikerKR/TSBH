@@ -8109,6 +8109,44 @@ mod modal_editor_workspace_geometry_tests {
         assert!(geometry.invalid_gaps(0.5).is_empty(),
             "shared header/body/footer spacing drifted: {:?}",geometry.gaps());
     }
+
+    #[test]
+    fn title_toolbar_rules_and_footer_actions_share_one_horizontal_grid(){
+        let bounds=Rect::from_min_size(
+            egui::pos2(40.0,20.0),Vec2::new(900.0,180.0)
+        );
+        let content=modal_master_content_rect(bounds);
+        let toolbar=modal_master_header_toolbar_rect(bounds,1.0);
+        let top_rule=modal_master_rule_rect(bounds,1.0,false);
+        let bottom_rule=modal_master_rule_rect(bounds,1.0,true);
+        let actions=modal_master_action_area(bounds,theme::ACTION_PRIMARY_HEIGHT);
+        for rect in [toolbar,top_rule,bottom_rule,actions] {
+            assert_eq!(rect.left(),content.left());
+            assert_eq!(rect.right(),content.right());
+        }
+        assert_eq!(content.left()-bounds.left(),theme::MODAL_MASTER_CONTENT_INSET);
+        assert_eq!(bounds.right()-content.right(),theme::MODAL_MASTER_CONTENT_INSET);
+    }
+
+    #[test]
+    fn popup_radius_hierarchy_separates_shell_sections_controls_and_source_chips(){
+        assert!(theme::PANEL_RADIUS>theme::SECTION_RADIUS);
+        assert!(theme::SECTION_RADIUS>theme::CONTROL_RADIUS);
+        assert!(theme::CONTROL_RADIUS>theme::SOURCE_BLOCK_RADIUS as u8);
+        assert_eq!(theme::MODAL_SECTION_RADIUS,theme::SECTION_RADIUS);
+    }
+
+    #[test]
+    fn recipient_text_editor_uses_the_shared_form_input_margin(){
+        let source=include_str!("components.rs");
+        let start=source.find("fn reception_recipient_text_edit(")
+            .expect("recipient text editor");
+        let tail=&source[start..];
+        let end=tail.find("\n}\n").expect("recipient text editor end");
+        assert!(tail[..end].contains(
+            ".margin(typography::form_input_text_margin())"
+        ));
+    }
 }
 
 
@@ -9473,46 +9511,3 @@ pub(crate) mod general_screen_geometry_tests {
 }
 
 
-
-#[cfg(test)]
-mod modal_master_content_alignment_tests {
-    use super::*;
-
-    #[test]
-    fn title_toolbar_rules_and_footer_actions_share_one_horizontal_grid(){
-        let bounds=Rect::from_min_size(
-            egui::pos2(40.0,20.0),Vec2::new(900.0,180.0)
-        );
-        let content=modal_master_content_rect(bounds);
-        let toolbar=modal_master_header_toolbar_rect(bounds,1.0);
-        let top_rule=modal_master_rule_rect(bounds,1.0,false);
-        let bottom_rule=modal_master_rule_rect(bounds,1.0,true);
-        let actions=modal_master_action_area(bounds,theme::ACTION_PRIMARY_HEIGHT);
-        for rect in [toolbar,top_rule,bottom_rule,actions] {
-            assert_eq!(rect.left(),content.left());
-            assert_eq!(rect.right(),content.right());
-        }
-        assert_eq!(content.left()-bounds.left(),theme::MODAL_MASTER_CONTENT_INSET);
-        assert_eq!(bounds.right()-content.right(),theme::MODAL_MASTER_CONTENT_INSET);
-    }
-
-    #[test]
-    fn popup_radius_hierarchy_separates_shell_sections_controls_and_source_chips(){
-        assert!(theme::PANEL_RADIUS>theme::SECTION_RADIUS);
-        assert!(theme::SECTION_RADIUS>theme::CONTROL_RADIUS);
-        assert!(theme::CONTROL_RADIUS>theme::SOURCE_BLOCK_RADIUS as u8);
-        assert_eq!(theme::MODAL_SECTION_RADIUS,theme::SECTION_RADIUS);
-    }
-
-    #[test]
-    fn recipient_text_editor_uses_the_shared_form_input_margin(){
-        let source=include_str!("components.rs");
-        let start=source.find("fn reception_recipient_text_edit(")
-            .expect("recipient text editor");
-        let tail=&source[start..];
-        let end=tail.find("\n}\n").expect("recipient text editor end");
-        assert!(tail[..end].contains(
-            ".margin(typography::form_input_text_margin())"
-        ));
-    }
-}
