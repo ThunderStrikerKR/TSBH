@@ -9545,6 +9545,13 @@ mod reception_workflow_admission_integration_tests {
     fn successful_inline_commit_applies_the_cell_before_resuming_confirmation(){
         let ctx=egui::Context::default();
         let mut app=app();
+        let initial_source=WorkingSource{
+            raw:app.raw_source.clone(),order_type:app.order_type.as_str().into(),
+            revision:0,active_id:app.active_id.clone(),drafts:app.drafts.clone()
+        };
+        app.source_autosave=Some(source_autosave::SourceAutosave::new(
+            Arc::clone(&app.gateway),initial_source,ctx.clone()
+        ));
         let target=InlineTarget{recipient_id:"r1".into(),item_id:None,field:"note"};
         let (tx,receiver)=mpsc::channel();
         app.inline_change=Some(PendingInlineChange{
