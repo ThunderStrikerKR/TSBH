@@ -3766,7 +3766,10 @@ mod manual_workspace_layout_tests{
         assert!(render.contains("components::reception_section_divider(ui);"));
         assert!(render.contains("panel.spacing_mut().item_spacing.y=theme::SPACE_8;"));
         assert!(render.contains("sheet.spacing_mut().item_spacing.y=0.0;"));
-        assert!(render.contains("ui.spacing_mut().item_spacing.x=theme::MANUAL_COLUMN_GAP;"));
+        assert!(render.contains("ui.spacing_mut().item_spacing.x=if self.direct_input{"));
+        assert!(render.contains("else{theme::MANUAL_COLUMN_GAP}"));
+        assert!(render.contains("if !self.direct_input{"));
+        assert!(render.contains("manual_workspace_content_width_for_mode("));
         assert!(render.contains("manual_workspace_columns_height()"));
         assert!(render.contains(".fixed_size(manual_workspace_dialog_size(work_area))"));
         let main=include_str!("main.rs");
