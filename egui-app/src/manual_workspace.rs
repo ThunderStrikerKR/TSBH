@@ -1581,12 +1581,12 @@ impl ManualWorkspace {
                                     if filtered!=self.row_count_text{
                                         self.row_count_text=filtered;
                                     }
-                                    let count_commit=(
+                                    let count_commit=can_resize && ((
                                         count_input.lost_focus() &&
                                         self.row_count_text!=current_count.to_string()
                                     ) || (count_input.has_focus() && ui.input(|input|
                                         input.key_pressed(egui::Key::Enter)
-                                    ));
+                                    )));
                                     if minus_clicked || plus_clicked || count_commit{
                                         let typed=self.row_count_text!=current_count.to_string();
                                         let requested=if typed{
