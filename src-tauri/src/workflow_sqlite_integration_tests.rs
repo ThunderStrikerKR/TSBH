@@ -843,3 +843,58 @@ fn native_workflow_freight_edit_normalizes_remote_and_reopens_sqlite(){
     assert_eq!(committed["workflow"]["shipments"][0]["charges"]["FACTORY"],3000);
     drop(reopened);
 }
+
+#[test]
+fn scoped_freight_reconciliation_matches_full_for_target_and_preserves_other_order(){
+    let (_isolated,conn)=IsolatedDatabase::open();
+    let before=get_snapshot(&conn).unwrap();
+    let mut input=stage_three(&before,"POSTPAID");
+    // A distinct, stale but structurally linked order must not get repaired
+    // as a side effect of editing the first order's freight.
+    let mut other=input["orders"][0].clone();
+    other["id"]=json!("order:other");
+    other["recipients"][0]["id"]=json!("recipient:other");
+    other["recipients"][0]["items"][0]["id"]=json!("item:other");
+    input["orders"].as_array_mut().unwrap().push(other);
+    input["workflow"]["sources"].as_array_mut().unwrap().push(json!({
+        "id":"source:other","orderId":"order:other","number":2,
+        "dealerId":"synthetic-workflow-client"
+    }));
+    input["workflow"]["groups"].as_array_mut().unwrap().push(json!({
+        "id":"group:order:other","sourceId":"source:other",
+        "dealerId":"synthetic-workflow-client","notices":[],"needsNotice":false
+    }));
+    let mut ship=input["workflow"]["shipments"][0].clone();
+    ship["id"]=json!("shipment:other");
+    ship["orderId"]=json!("order:other");
+    ship["recipientId"]=json!("recipient:other");
+    ship["sourceId"]=json!("source:other");
+    ship["groupId"]=json!("group:order:other");
+    input["workflow"]["shipments"].as_array_mut().unwrap().push(ship);
+
+    let at="2026-11-25T08:45:00+09:00";
+    let scoped=rust("reconcile_shipment_workflow",json!({
+        "state":&input,"shipmentId":"shipment:synthetic",
+        "groupId":"group:synthetic","eventSeed":"scoped-test","now":at
+    })).expect("scoped reconciliation");
+    let full=rust("reconcile_workflow",json!({
+        "state":&input,"now":at,
+        "eventIds":(0..256).map(|i|format!("scoped-test:reconcile:{i}")).collect::<Vec<_>>()
+    })).expect("full reconciliation");
+    let next=&scoped["state"];
+    assert_eq!(next["orders"][0],full["state"]["orders"][0]);
+    assert_eq!(next["workflow"]["shipments"][0],full["state"]["workflow"]["shipments"][0]);
+    assert_eq!(next["orders"][1],input["orders"][1]);
+    assert_eq!(next["workflow"]["shipments"][1],input["workflow"]["shipments"][1]);
+    assert_eq!(next["workflow"]["groups"][1],input["workflow"]["groups"][1]);
+    assert_ne!(full["state"]["workflow"]["shipments"][1],input["workflow"]["shipments"][1]);
+    let events=next["workflow"]["events"].as_array().unwrap();
+    assert!(events.iter().skip(1).all(|event|
+        event["id"].as_str().unwrap().starts_with("scoped-test:reconcile:") &&
+        event["shipmentIds"].as_array().unwrap().iter().all(|id|id=="shipment:synthetic")));
+    assert!(rust("reconcile_shipment_workflow",json!({
+        "state":&input,"shipmentId":"shipment:synthetic",
+        "groupId":"group:order:other","eventSeed":"bad","now":at
+    })).is_err());
+    assert_eq!(get_snapshot(&conn).unwrap(),before);
+}

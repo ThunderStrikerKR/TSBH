@@ -121,6 +121,7 @@ pub fn execute(operation: &str, payload: Value) -> Result<Value, String> {
         ),
         "normalize_remote_freight_input" => remote_delivery::normalize_applied_input(&payload),
         "reconcile_workflow" => reconciliation::reconcile(&payload),
+        "reconcile_shipment_workflow" => reconciliation::reconcile_shipment(&payload),
         "calculate_shipping" => shipping::recommend(
             req(&payload, "order")?, req(&payload, "state")?,
         ),

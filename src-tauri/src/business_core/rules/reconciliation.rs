@@ -11,14 +11,24 @@ fn workflow_empty() -> Value {
 struct Audit<'a> {
     payload:&'a Value,
     position:usize,
+    scoped_seed:Option<&'a str>,
 }
 impl Audit<'_> {
     fn emit(&mut self,state:&mut Value,action:&str,shipment_ids:&[String],
         group_id:&str,before:Option<Value>,after:Option<Value>,reason:Option<&str>,
         actor:&str) -> Result<(),String> {
-        let id=rows(field(self.payload,"eventIds")).get(self.position)
-            .and_then(Value::as_str).filter(|v|!v.trim().is_empty())
-            .ok_or_else(||format!("재조정 이벤트 ID 누락 (index {})",self.position))?;
+        // The legacy full-reconcile wire contract still requires explicit
+        // eventIds. Scoped employee edits allocate only the IDs they emit,
+        // using a caller-provided unique seed, as other native audits do.
+        let generated;
+        let id=if let Some(seed)=self.scoped_seed{
+            generated=format!("{seed}:reconcile:{}",self.position);
+            generated.as_str()
+        }else{
+            rows(field(self.payload,"eventIds")).get(self.position)
+                .and_then(Value::as_str).filter(|v|!v.trim().is_empty())
+                .ok_or_else(||format!("재조정 이벤트 ID 누락 (index {})",self.position))?
+        };
         self.position+=1;
         if find_by_id(field(field(state,"workflow"),"events"),id).is_some() {
             return Err("업무 이벤트 ID가 중복됩니다.".into());
@@ -210,9 +220,47 @@ pub(super) fn billing(state:&Value,index:usize)->Result<String,String> {
         field(ship,"infoSignature"),field(ship,"charges"),vat,str_json(&account_key)))
 }
 pub(super) fn reconcile(payload:&Value)->Result<Value,String> {
+    reconcile_inner(payload,None,None)
+}
+
+/// Scope an existing employee shipment edit to its source order, including
+/// all split groups and recipients. Group/source ownership remains checked
+/// by the unchanged global workflow and SQLite validations at commit time.
+/// Do not use this route for draft insertion or workflow progression.
+pub(super) fn reconcile_shipment(payload:&Value)->Result<Value,String>{
+    if payload.get("draft").is_some(){
+        return Err("배송 건 재검증에서는 새 발주서를 확정할 수 없습니다.".into());
+    }
+    let state=req(payload,"state")?;
+    let shipment_id=required_str(payload,"shipmentId")?;
+    let group_id=required_str(payload,"groupId")?;
+    let seed=required_str(payload,"eventSeed")?;
+    if shipment_id.trim().is_empty() || group_id.trim().is_empty() ||
+        seed.trim().is_empty(){
+        return Err("배송 건 재검증 ID가 누락되었습니다.".into());
+    }
+    let ship=find_by_id(field(field(state,"workflow"),"shipments"),shipment_id)
+        .ok_or("수정할 배송 건을 확인하세요.")?;
+    if flag(ship,"transferred") || flag(ship,"legacyArchived") ||
+        str_field(ship,"groupId")!=group_id{
+        return Err("현재 묶음의 수정 가능한 배송 건을 확인하세요.".into());
+    }
+    let order_id=str_field(ship,"orderId");
+    let order=find_by_id(field(state,"orders"),order_id)
+        .ok_or("배송 건의 발주서를 찾을 수 없습니다.")?;
+    if order_id.is_empty() || has_value(field(order,"deletedAt")) ||
+        !rows(field(order,"recipients")).iter().any(|row|
+            str_field(row,"id")==str_field(ship,"recipientId")){
+        return Err("배송 건의 발주서 / 수취인 연결을 확인하세요.".into());
+    }
+    reconcile_inner(payload,Some(order_id),Some(seed))
+}
+
+fn reconcile_inner(payload:&Value,order_scope:Option<&str>,scoped_seed:Option<&str>)
+    ->Result<Value,String>{
     let input=req(payload,"state")?;
     let mut state=input.clone();
-    let mut audit=Audit{payload,position:0};
+    let mut audit=Audit{payload,position:0,scoped_seed};
     if let Some(draft)=payload.get("draft").filter(|d|d.is_object() &&
         !has_value(field(d,"deletedAt")) &&
         (!str_field(d,"clientId").is_empty() || str_field(d,"orderType")=="RETAIL") &&
@@ -236,6 +284,7 @@ pub(super) fn reconcile(payload:&Value)->Result<Value,String> {
     for oi in 0..order_count {
         let mut order=state["orders"][oi].clone();
         let order_id=str_field(&order,"id").to_string();
+        if order_scope.is_some_and(|id|id!=order_id.as_str()){continue;}
         let dealer_id=str_field(&order,"clientId").to_string();
         if has_value(field(&order,"deletedAt")) ||
             (dealer_id.is_empty() && str_field(&order,"orderType")!="RETAIL") ||
@@ -462,6 +511,7 @@ pub(super) fn reconcile(payload:&Value)->Result<Value,String> {
     let count=rows(field(&state["workflow"],"shipments")).len();
     for si in 0..count {
         let ship=state["workflow"]["shipments"][si].clone();
+        if order_scope.is_some_and(|id|id!=str_field(&ship,"orderId")){continue;}
         let order=find_by_id(field(&state,"orders"),str_field(&ship,"orderId"));
         let exists=order.is_some_and(|o|rows(field(o,"recipients")).iter().any(|r|
             str_field(r,"id")==str_field(&ship,"recipientId")));
@@ -480,6 +530,7 @@ pub(super) fn reconcile(payload:&Value)->Result<Value,String> {
     }
     for si in 0..count {
         let ship=state["workflow"]["shipments"][si].clone();
+        if order_scope.is_some_and(|id|id!=str_field(&ship,"orderId")){continue;}
         if field(&ship,"step").as_i64().unwrap_or(0)<3 ||
             flag(&ship,"transferred") || flag(&ship,"legacyArchived") ||
             !has_value(field(&ship,"billingSignature")) {continue;}

@@ -682,25 +682,35 @@ impl BandoGateway for LocalGateway {
             // Reconcile changes to prices, tariff signatures and late
             // corrections before attempting the transition. The native
             // reducer produces all immutable audit entries and validations.
-            let count=(12*before["workflow"]["shipments"]
-                .as_array().map(Vec::len).unwrap_or(0)
-                +8*before["orders"].as_array().map(Vec::len).unwrap_or(0)+64)
-                .max(256);
-            if count>15000{
-                return Err("재검증 이벤트 수가 허용 범위를 초과했습니다.".into());
-            }
-            let event_ids=(0..count).map(|_|
-                uuid::Uuid::new_v4().to_string()).collect::<Vec<_>>();
-            let mut reconcile_payload=serde_json::json!({
-                "state":&before,"now":now,"eventIds":event_ids
-            });
-            // The reconciliation reducer overlays this one employee-approved
-            // draft in memory, creates its source/group/shipments, then the
-            // existing first-stage reducer confirms it in the SAME SQLite CAS.
-            if let Some(draft)=args.get("draft"){
-                reconcile_payload["draft"]=draft.clone();
-            }
-            let reconciled=rules::execute("reconcile_workflow",reconcile_payload)?;
+            let reconciled=if action=="set_shipment_freight"{
+                // The native engine resolves the order from the shipment,
+                // not from a UI-provided order ID. Reconcile only that order
+                // and its split groups; global validation and CAS remain.
+                rules::execute("reconcile_shipment_workflow",serde_json::json!({
+                    "state":&before,"now":now,
+                    "shipmentId":args["shipmentId"],"groupId":args["groupId"],
+                    "eventSeed":event_id
+                }))?
+            }else{
+                let count=(12*before["workflow"]["shipments"]
+                    .as_array().map(Vec::len).unwrap_or(0)
+                    +8*before["orders"].as_array().map(Vec::len).unwrap_or(0)+64)
+                    .max(256);
+                if count>15000{
+                    return Err("재검증 이벤트 수가 허용 범위를 초과했습니다.".into());
+                }
+                let event_ids=(0..count).map(|_|
+                    uuid::Uuid::new_v4().to_string()).collect::<Vec<_>>();
+                let mut reconcile_payload=serde_json::json!({
+                    "state":&before,"now":now,"eventIds":event_ids
+                });
+                // Draft confirmation and other transitions retain the full
+                // reconciliation and their existing audit wire contract.
+                if let Some(draft)=args.get("draft"){
+                    reconcile_payload["draft"]=draft.clone();
+                }
+                rules::execute("reconcile_workflow",reconcile_payload)?
+            };
             checkpoint("reconcile");
             let prepared=reconciled.get("state")
                 .ok_or("업무 재검증 결과에 상태가 없습니다.")?;
