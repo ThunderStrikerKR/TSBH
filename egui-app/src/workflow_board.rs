@@ -126,6 +126,32 @@ fn workflow_issue_label(issue:&Value)->Option<String>{
     ).or_else(||issue.as_str().map(str::to_owned))
 }
 
+fn recipient_with_line_amounts(recipient:&Value,preview:&Value)->Value{
+    let mut display=recipient.clone();
+    let recipient_id=text(recipient,"id");
+    if let Some(items)=display.get_mut("items").and_then(Value::as_array_mut){
+        for item in items{
+            let amount=rows(field(preview,"lineAmounts")).iter().find(|line|
+                text(line,"recipientId")==recipient_id &&
+                text(line,"itemId")==text(item,"id")
+            ).map(|line|field(line,"amount").clone()).unwrap_or(Value::Null);
+            if let Some(object)=item.as_object_mut(){
+                object.insert("lineAmount".into(),amount);
+            }
+        }
+    }
+    display
+}
+fn workflow_review_labels(native:&Value)->Vec<String>{
+    let mut issues=Vec::new();
+    for label in rows(field(native,"issues")).iter()
+        .chain(rows(field(native,"nextStageBlockers")).iter())
+        .filter_map(workflow_issue_label){
+        if !issues.contains(&label){issues.push(label);}
+    }
+    issues
+}
+
 /// React's workflow-view::groupShipments is a read-only join.
 /// Business prices, freight code, VAT and stage are ALWAYS Rust projections.
 pub fn load(gateway:&dyn BandoGateway)->Result<BoardSnapshot,String>{
@@ -136,7 +162,7 @@ pub fn load(gateway:&dyn BandoGateway)->Result<BoardSnapshot,String>{
     let orders=field(&state,"orders");
     let all_shipments=field(workflow,"shipments");
     let mut groups=Vec::new();
-    let mut order_totals:HashMap<String,Option<i64>>=HashMap::new();
+    let mut order_previews:HashMap<String,Value>=HashMap::new();
     for group in rows(field(workflow,"groups")).iter().filter(|g|active(g)){
         let group_id=text(group,"id");
         if group_id.is_empty(){continue;}
@@ -172,16 +198,17 @@ pub fn load(gateway:&dyn BandoGateway)->Result<BoardSnapshot,String>{
             let products=rows(field(recipient,"items")).iter()
                 .map(product_label).collect();
             let order_id=text(order,"id").to_owned();
-            let order_total=if let Some(cached)=order_totals.get(&order_id){
-                *cached
-            }else{
+            if !order_previews.contains_key(&order_id){
                 let preview=gateway.execute(ReadOperation::PreviewOrder,json!({
                     "state":&state,"orderId":order_id,
                 }))?;
-                let total=field(&preview,"total").as_i64();
-                order_totals.insert(order_id.clone(),total);
-                total
-            };
+                order_previews.insert(order_id.clone(),preview);
+            }
+            let preview=&order_previews[&order_id];
+            let order_total=field(preview,"total").as_i64();
+            // Line amounts belong to the Rust preview, not persisted item fields.
+            // Attach them only to the read-only presentation copy.
+            let display_recipient=recipient_with_line_amounts(recipient,preview);
             display_shipments.push(ShipmentRow{
                 id:text(ship,"id").to_owned(),
                 order_id:text(ship,"orderId").to_owned(),
@@ -190,7 +217,7 @@ pub fn load(gateway:&dyn BandoGateway)->Result<BoardSnapshot,String>{
                 recipient_name:text(recipient,"name").to_owned(),
                 products,
                 source_raw:text(order,"raw").to_owned(),
-                recipient:recipient.clone(),
+                recipient:display_recipient,
                 remote:projected_remote(native_ship),
                 display_charges:field(native_ship,"displayCharges").as_object()
                     .map(|values|values.iter().map(|(origin,value)|
@@ -234,9 +261,7 @@ pub fn load(gateway:&dyn BandoGateway)->Result<BoardSnapshot,String>{
                 ),
                 Err(error)=>(None,Some(error),None,Vec::new()),
             };
-        let issues=rows(field(native,"issues")).iter()
-            .filter_map(workflow_issue_label)
-            .collect();
+        let issues=workflow_review_labels(native);
         groups.push(GroupRow{
             id:group_id.to_owned(),
             created_at:text(group,"createdAt").to_owned(),
@@ -316,6 +341,19 @@ mod linked_recipient_selection_tests{
             shipments,automatic_text:None,automatic_error:None,
             automatic_phase:None,automatic_payment_issues:vec![],issues:vec![],
         }
+    }
+    #[test]
+    fn workflow_review_keeps_next_stage_blockers_and_native_line_amounts(){
+        let native=json!({"issues":[],"nextStageBlockers":["수취인: 청구액 미확정"]});
+        assert_eq!(workflow_review_labels(&native),vec!["수취인: 청구액 미확정"]);
+        let recipient=json!({"id":"r","items":[{"id":"i","quantity":3}]});
+        let preview=json!({"lineAmounts":[
+            {"recipientId":"other","itemId":"i","amount":999},
+            {"recipientId":"r","itemId":"i","amount":9000}
+        ]});
+        let projected=recipient_with_line_amounts(&recipient,&preview);
+        assert_eq!(projected["items"][0]["lineAmount"],9000);
+        assert!(recipient["items"][0].get("lineAmount").is_none());
     }
     #[test]
     fn structured_workflow_issues_render_their_detail_and_title(){
