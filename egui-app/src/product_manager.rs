@@ -2297,9 +2297,7 @@ impl ProductManager {
             let mut cancel=false;
             let mut archive=false;
             components::modal_backdrop(ctx,"egui-product-archive-nested",true);
-            components::decision_window(
-                "상품 삭제","egui-product-archive-confirm",work_area
-            ).show(ctx,|dialog|{
+            components::show_decision_window(ctx,"상품 삭제","egui-product-archive-confirm",work_area,|dialog|{
                 components::decision_workspace(dialog,|decision|{
                     cancel=decision.header("상품 삭제","취소",!busy
                     );
@@ -2326,9 +2324,7 @@ impl ProductManager {
             let mut keep=false;
             let mut discard=false;
             components::modal_backdrop(ctx,"egui-product-discard-nested",true);
-            components::decision_window(
-                "저장하지 않은 상품","egui-product-discard-confirm",work_area
-            ).show(ctx,|dialog|{
+            components::show_decision_window(ctx,"저장하지 않은 상품","egui-product-discard-confirm",work_area,|dialog|{
                 components::decision_workspace(dialog,|decision|{
                     keep=decision.header("저장하지 않은 상품","취소",!busy
                     );

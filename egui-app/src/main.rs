@@ -4361,9 +4361,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
             components::modal_backdrop(
                 ctx,"ocr-discard-nested-backdrop",true
             );
-            components::decision_window(
-                "변경사항 확인","ocr-review-discard-confirm",work_area
-            ).show(ctx,|ui|{
+            components::show_decision_window(ctx,"변경사항 확인","ocr-review-discard-confirm",work_area,|ui|{
                 components::decision_workspace(ui,|decision|{
                     if decision.header("변경사항 확인","돌아가기",true
                     ) {

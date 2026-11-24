@@ -1585,22 +1585,28 @@ pub fn modal_master_header_in_rect(
         Vec2::new(heading.width(),20.0)
     );
     let heading_clip=heading.intersect(ui.clip_rect());
-    let mut close=false;
-    ui.scope_builder(
-        egui::UiBuilder::new().id_salt("modal-master-heading")
+    // Reserve the real close-button hitbox first; a long heading may
+    // truncate, but must never push the only exit outside the modal.
+    let mut close_ui=ui.new_child(
+        egui::UiBuilder::new().id_salt("modal-master-heading-close")
             .max_rect(heading)
-            .layout(Layout::left_to_right(Align::Center)),
-        |header|{
-            header.set_clip_rect(heading_clip);
-            header.set_width(heading.width());
-            header.label(typography::modal_title(title));
-            header.with_layout(Layout::right_to_left(Align::Center),|right|{
-                close=theme::action(
-                    right,close_label,theme::ButtonRole::Standard,enabled
-                ).clicked();
-            });
-        },
+            .layout(Layout::right_to_left(Align::Center))
     );
+    close_ui.set_clip_rect(heading_clip);
+    let response=theme::action(&mut close_ui,close_label,theme::ButtonRole::Standard,enabled);
+    let close=response.clicked();
+    let title_right=(response.rect.left()-theme::SPACE_8).max(heading.left());
+    if title_right>heading.left(){
+        let title_rect=Rect::from_min_max(heading.min,egui::pos2(title_right,heading.bottom()));
+        let mut title_ui=ui.new_child(
+            egui::UiBuilder::new().id_salt("modal-master-heading-title")
+                .max_rect(title_rect)
+                .layout(Layout::left_to_right(Align::Center))
+        );
+        title_ui.set_clip_rect(title_rect.intersect(heading_clip));
+        title_ui.add(egui::Label::new(typography::modal_title(title)).truncate())
+            .on_hover_text(title);
+    }
     if has_description {
         let subtitle_clip=subtitle.intersect(ui.clip_rect());
         ui.scope_builder(
@@ -1609,7 +1615,8 @@ pub fn modal_master_header_in_rect(
             |details|{
                 details.set_clip_rect(subtitle_clip);
                 details.set_width(subtitle.width());
-                details.label(typography::caption(description));
+                details.add(egui::Label::new(typography::caption(description)).truncate())
+                    .on_hover_text(description);
             },
         );
     }
@@ -2030,6 +2037,18 @@ pub fn decision_window(
         // Large editors keep their own explicitly bounded body scroll areas.
         .resizable(false)
         .default_width(theme::MODAL_DECISION_MAX_WIDTH.min(work_area.width()))
+}
+
+/// Show a decision and establish the real window as the input boundary
+/// only after egui has created its layer. This applies to nested and root
+/// decisions alike, avoiding a full-screen dim swallowing button input.
+pub fn show_decision_window<R>(
+    ctx:&egui::Context,title:&str,id:&'static str,work_area:Rect,
+    contents:impl FnOnce(&mut Ui)->R,
+){
+    if decision_window(title,id,work_area).show(ctx,contents).is_some(){
+        modal_foreground_for_window(ctx,id);
+    }
 }
 
 /// Draw the dim over the ENTIRE application viewport, including its header
@@ -5564,8 +5583,7 @@ pub fn reception_item_delete_confirmation(
 )->(bool,bool){
     let mut cancel=false;
     let mut remove=false;
-    decision_window("품목 삭제 확인","reception-item-delete-confirm",work_area)
-        .constrain_to(work_area).show(ctx,|ui|{
+    show_decision_window(ctx,"품목 삭제 확인","reception-item-delete-confirm",work_area,|ui|{
             (cancel,remove)=decision_content(
                 ui,"품목 삭제 확인","취소",!busy,
                 |body|{
@@ -7646,18 +7664,23 @@ mod modal_input_routing_tests {
                 decision_window(
                     "수동 분류 변경 취소","manual-discard-prompt",work_area
                 ).show(ctx,|ui|{
-                    ui.label("적용하지 않은 수동 분류 변경사항을 버릴까요?");
-                    let plain=ui.button("plain pointer probe");
-                    plain_rect=plain.rect;
-                    if plain.clicked(){*plain_clicked=true;}
-                    modal_action_row(ui,|actions|{
-                        *action_enabled=actions.is_enabled();
-                        let response=theme::action(
-                            actions,"변경 취소",theme::ButtonRole::Standard,true
-                        );
-                        action_rect=response.rect;
-                        *action_hovered=response.hovered();
-                        if response.clicked(){*action_clicked=true;}
+                    decision_workspace(ui,|decision|{
+                        decision.header("수동 분류 변경 취소","돌아가기",true);
+                        decision.body(|body|{
+                            body.label("적용하지 않은 수동 분류 변경사항을 버릴까요?");
+                            let plain=body.button("plain pointer probe");
+                            plain_rect=plain.rect;
+                            if plain.clicked(){*plain_clicked=true;}
+                        });
+                        decision.actions(|actions|{
+                            *action_enabled=actions.is_enabled();
+                            let response=theme::action(
+                                actions,"변경 취소",theme::ButtonRole::Standard,true
+                            );
+                            action_rect=response.rect;
+                            *action_hovered=response.hovered();
+                            if response.clicked(){*action_clicked=true;}
+                        });
                     });
                 });
                 modal_foreground_for_window(ctx,"manual-discard-prompt");
@@ -8164,5 +8187,47 @@ mod round87_modal_internal_layout_tests {
         let freight=include_str!("freight_manager.rs");
         assert!(freight.contains("decision.framed_body("));
         assert!(!freight.contains("components::modal_master_body("));
+    }
+}
+
+#[cfg(test)]
+mod round87_phase4_modal_safety_tests {
+    use super::*;
+
+    #[test]
+    fn compact_editor_footer_and_scroll_body_fit_safe_height(){
+        for height in [440.0,600.0,900.0] {
+            let ctx=egui::Context::default();
+            typography::install(&ctx);
+            theme::install(&ctx);
+            let safe=Rect::from_min_size(egui::pos2(380.0,80.0),Vec2::new(440.0,height));
+            let mut measured=None;
+            for _ in 0..3 {
+                let _=ctx.run(egui::RawInput{
+                    screen_rect:Some(Rect::from_min_size(egui::Pos2::ZERO,Vec2::new(1280.0,1080.0))),
+                    ..Default::default()
+                },|ctx|{
+                    modal_window("좁은 작업 영역","phase4-compact-editor",safe)
+                        .default_width(380.0).show(ctx,|ui|{
+                            let (_,geometry)=modal_flow_workspace_measured(ui,|workspace|{
+                                workspace.header("아주 긴 제목을 갖는 상품 상세 편집 화면","취소",true);
+                                workspace.scroll_region("phase4-scroll",modal_editor_body_max_height(height),|body|{
+                                    for _ in 0..80 {body.label("스크롤 검증 항목");}
+                                });
+                                workspace.footer_single(|actions|{
+                                    theme::action(actions,"저장",theme::ButtonRole::Primary,true);
+                                });
+                            });
+                            measured=Some(geometry);
+                        });
+                });
+            }
+            let g=measured.expect("modal geometry");
+            let header=g.header.unwrap();
+            let footer=g.footer.unwrap();
+            assert!(header.top()>=safe.top()-1.0,"header outside {safe:?}: {header:?}");
+            assert!(footer.bottom()<=safe.bottom()+1.0,"footer outside {safe:?}: {footer:?}");
+            assert!(footer.left()>=safe.left()-1.0 && footer.right()<=safe.right()+1.0);
+        }
     }
 }

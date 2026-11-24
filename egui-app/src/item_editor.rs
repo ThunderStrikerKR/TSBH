@@ -246,6 +246,9 @@ impl ItemEditor{
                     ){
                         result=self.close();
                     }
+                    if self.search.is_some() || self.confirm_delete || self.confirm_discard{
+                        workspace.disable();
+                    }
                     workspace.scroll_region("reception-item-detail-body",components::modal_editor_body_max_height(work_area.height()),|ui|{
                         let outer_width=ui.available_width().max(1.0);
                         // The approved nested frame has an 8pt internal inset on
@@ -375,9 +378,7 @@ impl ItemEditor{
             if remove && !cancel{result=Some(Event::Remove);}
         }
         if self.confirm_discard{
-            components::decision_window(
-                "변경사항 확인","reception-item-discard-confirm",work_area
-            ).show(ctx,|ui|{
+            components::show_decision_window(ctx,"변경사항 확인","reception-item-discard-confirm",work_area,|ui|{
                 components::decision_workspace(ui,|decision|{
                     if decision.header("변경사항 확인","돌아가기",true){
                         self.confirm_discard=false;

@@ -881,8 +881,7 @@ impl CategoryManager {
                 Operation::Move=>"상위 카테고리 변경",
                 Operation::Delete=>"분류 삭제 확인",
             };
-            components::decision_window(title,"category-operation-modal",work_area)
-                .show(ctx,|modal|{
+            components::show_decision_window(ctx,title,"category-operation-modal",work_area,|modal|{
                     components::decision_workspace(modal,|decision|{
                         cancel=decision.header(title,"취소",!busy);
                         decision.body(|modal|{
@@ -1010,9 +1009,7 @@ impl CategoryManager {
             let mut discard=false;
             let mut save=false;
             components::modal_backdrop(ctx,"category-pending-dim",true);
-            components::decision_window(
-                "저장하지 않은 카테고리","category-unsaved-confirm",work_area
-            ).show(ctx,|modal|{
+            components::show_decision_window(ctx,"저장하지 않은 카테고리","category-unsaved-confirm",work_area,|modal|{
                 components::decision_workspace(modal,|decision|{
                     cancel=decision.header("저장하지 않은 카테고리","취소",!busy
                     );

@@ -254,11 +254,15 @@ impl ProductExcelUi {
             .default_width(work_area.width().min(1070.0))
             .show(ctx,|ui|{
 
-                ui.set_min_width(work_area.width().min(900.0));
+                let inner_width=(work_area.width()-2.0*(theme::MODAL_PANEL_PADDING_X
+                    +theme::FRAME_STROKE_WIDTH)).max(1.0);
+                ui.set_min_width(inner_width.min(900.0));
                 components::modal_flow_workspace(ui,|workspace|{
-                    close=workspace.header("상품 전체 Excel 변경 검토","취소",!self.busy()
+                    close=workspace.header("상품 전체 Excel 변경 검토","취소",!self.busy()&&!self.confirming
                     );
-                    workspace.body_region(|ui|{
+                    if self.confirming{workspace.disable();}
+                    workspace.scroll_region("product-excel-review-body",
+                        components::modal_editor_body_max_height(work_area.height()),|ui|{
                         ui.label(typography::table_cell(&self.filename));
                         ui.horizontal_wrapped(|counts|{
                             for (title,value) in [
@@ -278,7 +282,7 @@ impl ProductExcelUi {
                             ui,missing_width,typography::METADATA_LINE_HEIGHT,
                             missing_note.as_deref(),missing_note.as_deref(),theme::SECONDARY
                         );
-                        ui.horizontal(|filters|{
+                        ui.horizontal_wrapped(|filters|{
                             for (value,label) in ReviewFilter::options(){
                                 if theme::action(filters,label,
                                     if self.filter==value{theme::ButtonRole::Primary}
@@ -338,8 +342,7 @@ impl ProductExcelUi {
             components::modal_backdrop(ctx,"egui-product-excel-confirm-backdrop",true);
             let mut cancel=false;
             let mut approve=false;
-            components::decision_window("상품 변경사항 반영",
-                "egui-product-excel-confirm",work_area).show(ctx,|modal|{
+            components::show_decision_window(ctx,"상품 변경사항 반영","egui-product-excel-confirm",work_area,|modal|{
                 components::decision_workspace(modal,|decision|{
                     cancel=decision.header("상품 변경사항 반영","취소",!self.busy()
                     );

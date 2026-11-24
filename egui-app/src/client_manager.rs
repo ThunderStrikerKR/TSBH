@@ -973,9 +973,7 @@ impl ClientManager {
         if close {self.request_close();}
         if self.confirm_delete {
             components::modal_backdrop(ctx,"client-manager-delete-backdrop",true);
-            components::decision_window(
-                "거래처 삭제","client-manager-delete-confirm",work_area
-            ).show(ctx,|ui|{
+            components::show_decision_window(ctx,"거래처 삭제","client-manager-delete-confirm",work_area,|ui|{
                 components::decision_workspace(ui,|decision|{
                     let cancel=decision.header("거래처 삭제","취소",true);
                     decision.body(|ui|{
@@ -997,9 +995,7 @@ impl ClientManager {
         }
         if self.confirm_discard {
             components::modal_backdrop(ctx,"client-manager-discard-backdrop",true);
-            components::decision_window(
-                "변경사항 확인","client-manager-discard-confirm",work_area
-            ).show(ctx,|ui|{
+            components::show_decision_window(ctx,"변경사항 확인","client-manager-discard-confirm",work_area,|ui|{
                 components::decision_workspace(ui,|decision|{
                     let cancel=decision.header("변경사항 확인","취소",true);
                     decision.body(|ui|{

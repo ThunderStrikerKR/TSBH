@@ -1124,9 +1124,7 @@ impl FreightManager {
                     });
                 if editor.ask_discard {
                     components::modal_backdrop(ctx,"freight-discard-backdrop",true);
-                    components::decision_window(
-                        "저장하지 않은 운임","freight-discard-confirm",area
-                    ).show(ctx,|dialog|{
+                    components::show_decision_window(ctx,"저장하지 않은 운임","freight-discard-confirm",area,|dialog|{
                         components::decision_workspace(dialog,|decision|{
                             if decision.header("저장하지 않은 운임","취소",enabled
                             ){editor.ask_discard=false;}
@@ -1238,9 +1236,7 @@ impl FreightManager {
             let ctx=ui.ctx();
             components::modal_backdrop(ctx,"freight-tab-leave-backdrop",
                 self.rate_editor.is_some());
-            components::decision_window(
-                "저장하지 않은 변경사항","freight-tab-leave",ui.max_rect()
-            ).show(ctx,|dialog|{
+            components::show_decision_window(ctx,"저장하지 않은 변경사항","freight-tab-leave",ui.max_rect(),|dialog|{
                 components::decision_workspace(dialog,|decision|{
                     cancel=decision.header("저장하지 않은 변경사항","취소",enabled
                     );

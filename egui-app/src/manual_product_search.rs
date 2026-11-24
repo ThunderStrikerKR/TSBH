@@ -261,6 +261,7 @@ impl ProductSearch{
                     });
                 });
             });
+        components::modal_foreground_for_window(ctx,"native-manual-product-search");
         if changed{self.reload(gateway,ctx.clone());}
         if let Some(row)=chosen{return Some(Event::Chosen(row));}
         if !open{return Some(Event::Cancelled);}
