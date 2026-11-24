@@ -50,6 +50,8 @@ jobs:
           workspaces: egui-app -> target
       - name: Compile the native egui workspace
         run: cargo check --manifest-path egui-app/Cargo.toml
+      - name: Verify content-fitted manual popup and Reception source-pane geometry
+        run: cargo test --manifest-path egui-app/Cargo.toml manual_workspace_layout_tests -- --nocapture
       - name: Verify the unified date-selector count control geometry and single-recipient 1/1 header
         run: cargo test --manifest-path egui-app/Cargo.toml date_navigation_segmented_control_tests -- --nocapture
       - name: Verify recipient arrows alone disable while the 1/N label remains visible
