@@ -3225,6 +3225,7 @@ pub fn date_navigation_count_control(
     current:usize,enabled:bool,minimum:usize,maximum:usize
 )->DateNavigationCountControlResponse{
     let enabled=enabled && ui.is_enabled();
+    let step_count=value.parse::<usize>().unwrap_or(current);
     let arrow_width=theme::CALENDAR_NAV_SIZE;
     let input_width=64.0;
     let height=theme::CALENDAR_NAV_SIZE;
@@ -3234,7 +3235,7 @@ pub fn date_navigation_count_control(
             ui,id_salt,Vec2::new(width,height),|segments,inner|{
                 let decrement=date_navigation_segment_button(
                     segments,arrow_width,"배송 건수 1건 줄이기",
-                    enabled && current>minimum,
+                    enabled && step_count>minimum,
                     DateNavigationSegmentGlyph::Text("−")
                 );
                 let hint=format!("{minimum}~{maximum}");
@@ -3254,7 +3255,7 @@ pub fn date_navigation_count_control(
                 }).inner;
                 let increment=date_navigation_segment_button(
                     segments,arrow_width,"배송 건수 1건 늘리기",
-                    enabled && current<maximum,
+                    enabled && step_count<maximum,
                     DateNavigationSegmentGlyph::Text("+")
                 );
                 for x in [
