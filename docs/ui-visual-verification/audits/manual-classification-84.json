@@ -11,9 +11,11 @@
     "9026c7ca26ba3b43fc81da39f06b4e94d3f38b70",
     "1ac422ce73f615d507c5940dd0c491a60408aa34",
     "0994cb8cd83b9df526f93d825c895f970641af9e",
-    "34a7773566d5db588201c34980c1369e918e0ecb"
+    "34a7773566d5db588201c34980c1369e918e0ecb",
+    "d43e0624a8c7d85b842cea0de1e4b6b9045a9d12",
+    "097d5ebb64c17a6f183a5c76d13170bcf5ae4610"
   ],
-  "reason": "2026-11-24 사용자가 Windows 실행 화면을 제시하여 UI 클리핑 및 레이아웃 품질 불합격을 확인했다. 자료에 배송지/연락처가 포함되어 공개 GitHub 저장소에 원본 스크린샷은 올리지 않는다.",
+  "reason": "2026-11-24 사용자가 Windows 실행 화면을 제시하여 UI 클리핑 및 레이아웃 품질 불합격을 확인했다. 자료에 배송지/연락처가 포함되어 공개 GitHub 저장소에 원본 스크린샷은 올리지 않는다. 배송 건수 증감 버튼의 날짜 선택기 스타일 통합 패치는 main에 반영됐으나 Windows 실화면 재검증 전이므로 기존 FAIL을 유지한다.",
   "defects": [
     {
       "id": "UI-84-CLIP-001",
@@ -223,5 +225,35 @@
     ],
     "semanticNote": "접수 마지막 열은 금액, 수동 분류 마지막 열은 단가. 열의 렌더러·폭·정렬은 동일하며, 미계산 총액을 UI에서 산출하지 않는다.",
     "githubCI": "NOT_VERIFIED"
+  },
+  "shipmentCountNavigation": {
+    "status": "PATCH_COMMITTED_STATIC_CHECKS_ONLY",
+    "target": "수동 분류 상단 배송 건수 − / + 버튼만",
+    "excluded": "수취인별 주문 정보 이전/다음 화살표는 기존 구현을 유지하고 수정하지 않음",
+    "sharedSource": "components.rs::date_navigation_button_surface",
+    "datePicker": "calendar_nav_button",
+    "manualStepper": "date_navigation_step_button",
+    "style": {
+      "hitTarget": "28×28pt",
+      "fill": "theme::INPUT",
+      "border": "theme::BORDER, 1pt",
+      "radius": "theme::CONTROL_RADIUS",
+      "hover": "theme::paint_button_hover",
+      "enabledInk": "theme::SECONDARY → theme::TEXT on hover",
+      "disabled": "DISABLED_ACTION_BG / DISABLED_ACTION_BORDER / DISABLED_ACTION_TEXT"
+    },
+    "preserved": [
+      "1~100건 범위",
+      "직접 숫자 입력",
+      "증감 버튼 동작",
+      "비동기 배송 건수 변경 요청"
+    ],
+    "regressionTest": "shipment_count_steppers_share_the_date_picker_navigation_surface",
+    "verification": {
+      "static": "PASS: date picker and count stepper share the same surface function; count row uses exactly two stepper calls",
+      "ci": "NO_STATUS_REPORTED",
+      "rustBuild": "NOT_RUN",
+      "windowsVisual": "NOT_VERIFIED"
+    }
   }
 }
