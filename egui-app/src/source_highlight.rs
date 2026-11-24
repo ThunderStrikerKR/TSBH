@@ -450,9 +450,9 @@ pub fn hovered_key_at_pointer(
         .map(|span|span.key.clone())
 }
 
-// The React source token palette is intentionally quiet in this dark theme.
-// 16pt SUIT stays unchanged; only the recognized text receives 4pt rounded
-// blocks (3pt horizontal / 1pt vertical visual padding).
+// The source token palette is intentionally quiet in this dark theme.
+// 16pt SUIT stays unchanged. Blocks wrap the actual glyph ink with the
+// approved 1.5pt horizontal and 0.5pt vertical padding.
 const SOURCE_BLOCK:Color32=Color32::from_rgb(66,66,66);        // #424242
 const SOURCE_CONTEXT:Color32=Color32::from_rgb(73,73,73);      // #494949
 const SOURCE_ACTIVE:Color32=ACTIVE_FILL;
@@ -608,21 +608,21 @@ fn layout_with_states(
     job
 }
 
-//// The source is 16pt, but egui's row height includes line leading.
-/// A gray evidence mark should hug the letter ink rather than fill the row.
-/// Deflate normal tokens horizontally to keep a visible gap between neighbors.
-/// Gray tokens use a 1.0pt row inset and 2.0pt horizontal expansion per side.
+/// Build a source chip around the actual glyph ink bounds. The TextEdit row
+/// contains font leading; using its full height made vertical spacing depend
+/// on line-height rather than the visible letters.
 fn compact_block_rect(
-    text_left:f32,text_right:f32,row_top:f32,row_height:f32,focused:bool
+    text_left:f32,text_right:f32,ink_top:f32,ink_bottom:f32
 )->Option<egui::Rect> {
-    if row_height<=0.0 {return None;}
-    let horizontal=2.0;
-    let vertical=if focused {0.5_f32.min(row_height*0.12)}
-        else {1.0_f32.min(row_height*0.20)};
-    let left=text_left-horizontal;
-    let right=text_right+horizontal;
-    let top=row_top+vertical;
-    let bottom=row_top+row_height-vertical;
+    if !text_left.is_finite() || !text_right.is_finite()
+        || !ink_top.is_finite() || !ink_bottom.is_finite()
+        || text_right<=text_left || ink_bottom<=ink_top {
+        return None;
+    }
+    let left=text_left-theme::SOURCE_BLOCK_HORIZONTAL_PADDING;
+    let right=text_right+theme::SOURCE_BLOCK_HORIZONTAL_PADDING;
+    let top=ink_top-theme::SOURCE_BLOCK_VERTICAL_PADDING;
+    let bottom=ink_bottom+theme::SOURCE_BLOCK_VERTICAL_PADDING;
     (right>left && bottom>top).then(||egui::Rect::from_min_max(
         egui::pos2(left,top),egui::pos2(right,bottom)
     ))
@@ -631,8 +631,10 @@ fn compact_block_rect(
 /// At boundaries between adjacent classified ranges, trim only their shared
 /// edges to leave a 0.5pt gap, preserving full padding on open edges.
 fn separate_touching_blocks(mut rect:egui::Rect,left:bool,right:bool)->egui::Rect {
-    if left {rect.min.x+=2.25;}
-    if right {rect.max.x-=2.25;}
+    let trim=theme::SOURCE_BLOCK_HORIZONTAL_PADDING
+        +theme::SOURCE_BLOCK_ADJACENT_GAP*0.5;
+    if left {rect.min.x+=trim;}
+    if right {rect.max.x-=trim;}
     rect
 }
 
@@ -746,7 +748,6 @@ pub fn manual_source_block_visual(
         let glyphs=&placed.row.glyphs;
         let row_end=row_start+glyphs.len();
         let y=galley_pos.y+placed.pos.y;
-        let height=placed.row.size.y;
         for block in &target_blocks {
             let start=block.start_char.max(row_start);
             let end=block.end_char.min(row_end);
@@ -761,8 +762,17 @@ pub fn manual_source_block_visual(
             };
             let text_left=galley_pos.x+placed.pos.x+glyphs[first_glyph].pos.x;
             let text_right=galley_pos.x+placed.pos.x+end_x;
+            let mut ink_top=f32::INFINITY;
+            let mut ink_bottom=f32::NEG_INFINITY;
+            for glyph in &glyphs[first_glyph..=last_glyph] {
+                if glyph.uv_rect.is_nothing(){continue;}
+                let glyph_top=y+glyph.pos.y+glyph.uv_rect.offset.y;
+                let glyph_bottom=glyph_top+glyph.uv_rect.size.y;
+                ink_top=ink_top.min(glyph_top);
+                ink_bottom=ink_bottom.max(glyph_bottom);
+            }
             let Some(mut rect)=compact_block_rect(
-                text_left,text_right,y,height,block.focused
+                text_left,text_right,ink_top,ink_bottom
             ) else {continue};
             if !block.focused {
                 let left=blocks.iter().any(|other|
@@ -820,8 +830,17 @@ fn block_shapes_with_states(
                 };
                 let text_left=galley_pos.x+placed.pos.x+glyphs[first].pos.x;
                 let text_right=galley_pos.x+placed.pos.x+end_x;
+                let mut ink_top=f32::INFINITY;
+                let mut ink_bottom=f32::NEG_INFINITY;
+                for glyph in &glyphs[first..=last] {
+                    if glyph.uv_rect.is_nothing(){continue;}
+                    let glyph_top=y+glyph.pos.y+glyph.uv_rect.offset.y;
+                    let glyph_bottom=glyph_top+glyph.uv_rect.size.y;
+                    ink_top=ink_top.min(glyph_top);
+                    ink_bottom=ink_bottom.max(glyph_bottom);
+                }
                 let Some(mut rect)=compact_block_rect(
-                    text_left,text_right,y,height,block.focused
+                    text_left,text_right,ink_top,ink_bottom
                 ) else {continue};
                 if !block.focused {
                     let left=blocks.iter().any(|other|
@@ -1042,23 +1061,25 @@ mod tests {
     fn gray_source_blocks_keep_a_gap_between_adjacent_fields_and_lines() {
         // Adjacent recognized fields share glyph boundaries. Even then their
         // quiet gray rectangles must never touch or intrude into the next row.
-        let a=compact_block_rect(5.0,15.0,10.0,20.0,false).unwrap();
-        let b=compact_block_rect(15.0,25.0,10.0,20.0,false).unwrap();
-        let next=compact_block_rect(5.0,15.0,30.0,20.0,false).unwrap();
-        assert_eq!(a.right(),17.0);
-        assert_eq!(b.left(),13.0);
+        let a=compact_block_rect(5.0,15.0,10.0,20.0).unwrap();
+        let b=compact_block_rect(15.0,25.0,10.0,20.0).unwrap();
+        let next=compact_block_rect(5.0,15.0,30.0,40.0).unwrap();
+        // Horizontal and vertical padding are explicit and symmetrical.
+        assert_eq!(a.left(),3.5);
+        assert_eq!(a.right(),16.5);
+        assert_eq!(a.top(),9.5);
+        assert_eq!(a.bottom(),20.5);
         let first=separate_touching_blocks(a,false,true);
         let second=separate_touching_blocks(b,true,false);
         assert_eq!(first.right(),14.75);
         assert_eq!(second.left(),15.25);
-        assert!(first.right()<second.left());
-        assert_eq!(a.top(),11.0);
-        assert_eq!(a.bottom(),29.0);
+        assert!((second.left()-first.right()-theme::SOURCE_BLOCK_ADJACENT_GAP).abs()<0.001);
         assert!(a.bottom()<next.top());
-        // A focused blue block is deliberately larger than its quiet peers.
-        let active=compact_block_rect(5.0,15.0,10.0,20.0,true).unwrap();
-        assert_eq!(active.width(),a.width());
-        assert!(active.height()>a.height());
+        // Focus changes emphasis, never the source chip's geometry.
+        let active=compact_block_rect(5.0,15.0,10.0,20.0).unwrap();
+        assert_eq!(active,a);
+        assert_eq!(theme::SOURCE_BLOCK_HORIZONTAL_PADDING,1.5);
+        assert_eq!(theme::SOURCE_BLOCK_VERTICAL_PADDING,0.5);
     }
 
     #[test]

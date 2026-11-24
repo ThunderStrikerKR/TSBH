@@ -225,10 +225,12 @@ pub const SECTION_PADDING: f32 = SPACE_16;
 // Keep the 4pt space after the 1pt divider separate from this balance.
 pub const MANAGEMENT_TOOLBAR_DIVIDER_TOP_GAP: f32 = SECTION_PADDING;
 pub const MANAGEMENT_TOOLBAR_DIVIDER_BOTTOM_GAP: f32 = SPACE_4;
-// Reception's title row is deliberately compact. Left/right inset stays
-// 16pt, but the top/bottom inset is 8pt; these tokens do not affect the
-// Settings card or its typography.
-pub const RECEPTION_PANE_PADDING_Y: f32 = SPACE_8;
+// Reception cards use the same 16pt inset on all four sides. Keep the
+// vertical alias so fixed-height calculators consume the exact frame inset.
+pub const RECEPTION_PANE_PADDING_Y: f32 = SECTION_PADDING;
+// The outer source frame owns the 4pt document inset. Both native TextEdit
+// and the manual Galley renderer use this same additional text margin.
+pub const SOURCE_DOCUMENT_TEXT_MARGIN: i8 = 0;
 // Source's current-client summary is supporting information beside a
 // primary INPUT editor. Use master row/subsection roles, not a second editor.
 pub const RECEPTION_CLIENT_SUMMARY_BG: Color32 = TABLE_ROW_ALT_BG;
@@ -728,8 +730,11 @@ pub const SOURCE_RECOGNIZED_BORDER_WIDTH: f32 = 1.0;
 pub const MANUAL_SOURCE_PENDING_BG: Color32 = Color32::from_rgb(63, 63, 63);
 pub const MANUAL_SOURCE_ASSIGNED_BG: Color32 = Color32::from_rgb(42, 60, 74);
 // All source blocks (Reception, manual classification, and linked focus)
-// use the manual classification master geometry, regardless of state.
+// use one geometry regardless of state. Padding wraps actual glyph ink.
 pub const SOURCE_BLOCK_RADIUS: f32 = 4.0;
+pub const SOURCE_BLOCK_HORIZONTAL_PADDING: f32 = 1.5;
+pub const SOURCE_BLOCK_VERTICAL_PADDING: f32 = 0.5;
+pub const SOURCE_BLOCK_ADJACENT_GAP: f32 = 0.5;
 // Unassigned source tokens are 10% dimmer than the primary white button.
 // Scale the neutral sRGB channel with rounding; never change the button itself.
 const MANUAL_SOURCE_UNASSIGNED_GRAY: u8 = ((PRIMARY_ACTION_GRAY as u16 * 9 + 5) / 10) as u8;
@@ -983,8 +988,8 @@ pub fn reception_workspace_frame() -> Frame {
 
 /// Return reception panes to the Settings-inspired PANEL card tier.
 /// No outer margin: the 6pt splitter hit area is the only reserved gutter.
-/// Compensate the 1pt outline in inner margins so 16pt horizontal and 8pt
-/// vertical content insets (and the recently compacted title row) survive.
+/// Compensate the 1pt outline in inner margins so the 16pt content inset
+/// remains identical on all four sides.
 pub fn docked_pane_frame() -> Frame {
     Frame::new()
         .fill(PANEL)

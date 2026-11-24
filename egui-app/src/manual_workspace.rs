@@ -2029,8 +2029,8 @@ impl ManualWorkspace {
                                         Some("원문과 셀을 어느 순서로든 클릭하거나 원문 블록을 셀로 드래그하세요. 배정된 원문은 클릭하면 해제됩니다."),
                                         height,|_|{},|body|{
                                             // Use the same outer Reception card, title row,
-                                            // divider, and 16pt horizontal / 8pt vertical
-                                            // insets as the intake source pane.
+                                            // divider, and 16pt inset on all four sides
+                                            // as the intake source pane.
                                             body.spacing_mut().item_spacing.y=0.0;
                                             theme::source_document_frame().show(body,|document|{
                                                 egui::ScrollArea::vertical()

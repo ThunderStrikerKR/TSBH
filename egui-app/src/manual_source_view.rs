@@ -40,36 +40,40 @@ pub fn source_document(
     selected_source:Option<&str>,
 )->SourceInteraction {
     let width=ui.available_width().max(1.0);
+    let text_inset=theme::SOURCE_DOCUMENT_TEXT_MARGIN as f32;
+    let content_width=(width-2.0*text_inset).max(1.0);
     let job=source_highlight::layout_manual(
-        raw,spans,selected_recipient,active,assigned_ids,width,
+        raw,spans,selected_recipient,active,assigned_ids,content_width,
         FontId::proportional(typography::FONT_RECEPTION_SOURCE_TEXT),
         theme::TEXT,
     );
     let galley=ui.fonts_mut(|fonts|fonts.layout_job(job));
+    let content_height=galley.size().y+2.0*text_inset;
     let (rect,response)=ui.allocate_exact_size(
-        egui::vec2(width,galley.size().y.max(theme::INPUT_HEIGHT)),
+        egui::vec2(width,content_height.max(theme::INPUT_HEIGHT)),
         if enabled{Sense::click_and_drag()}else{Sense::hover()},
     );
+    let galley_pos=galley_pos+egui::vec2(text_inset,text_inset);
     let (fills,outlines)=source_highlight::block_shapes_manual(
-        raw,&galley,rect.min,spans,selected_recipient,active,assigned_ids,
+        raw,&galley,galley_pos,spans,selected_recipient,active,assigned_ids,
         rect.intersect(ui.clip_rect()),
     );
     ui.painter().add(egui::Shape::Vec(fills));
-    ui.painter().galley(rect.min,galley.clone(),theme::TEXT);
+    ui.painter().galley(galley_pos,galley.clone(),theme::TEXT);
     ui.painter().add(egui::Shape::Vec(outlines));
     // Selection is exact by native source ID, even if another span shares its LinkKey.
     if let Some(span)=selected_source.and_then(|id|spans.iter().find(|s|s.source_id.as_deref()==Some(id))){
         let (fill,outline)=source_highlight::block_shapes_manual(
-            raw,&galley,rect.min,std::slice::from_ref(span),selected_recipient,
+            raw,&galley,galley_pos,std::slice::from_ref(span),selected_recipient,
             Some(&span.key),assigned_ids,rect.intersect(ui.clip_rect())
         );
         ui.painter().add(egui::Shape::Vec(fill));
-        ui.painter().galley(rect.min,galley.clone(),theme::TEXT);
+        ui.painter().galley(galley_pos,galley.clone(),theme::TEXT);
         ui.painter().add(egui::Shape::Vec(outline));
     }
 
     let mut result=SourceInteraction::default();
-    result.drag_layout_width=width;
+    result.drag_layout_width=content_width;
     // egui::Response::interact_pointer_pos() is None for a pure hover:
     // use PointerState::hover_pos when the source text is hovered without a
     // mouse button. Respect the widget's native hovered/clicked gate so a
@@ -79,7 +83,7 @@ pub fn source_document(
             .or_else(||ui.input(|input|input.pointer.hover_pos()))
             .and_then(|pointer|
                 source_highlight::hovered_span_index_at_pointer(
-                    raw,spans,&galley,rect.min,pointer
+                    raw,spans,&galley,galley_pos,pointer
                 )
             )
     }else{None};
@@ -91,14 +95,14 @@ pub fn source_document(
         result.drag_started_block=press_origin
             .filter(|pointer|rect.contains(*pointer))
             .and_then(|pointer|source_highlight::hovered_span_index_at_pointer(
-                raw,spans,&galley,rect.min,pointer
+                raw,spans,&galley,galley_pos,pointer
             )).and_then(|index|spans.get(index))
             .and_then(|span|span.source_id.clone());
         if let (Some(source_id),Some(pointer))=(
             result.drag_started_block.as_deref(),press_origin
         ){
             if let Some(visual)=source_highlight::manual_source_block_visual(
-                raw,&galley,rect.min,spans,source_id,selected_recipient,active,assigned_ids
+                raw,&galley,galley_pos,spans,source_id,selected_recipient,active,assigned_ids
             ){
                 if let Some(bounds)=visual.rects.iter().copied()
                     .reduce(|left,right|left.union(right)){
@@ -124,7 +128,7 @@ pub fn source_document(
                 egui::text::CCursor::new(span.start_char)
             );
             ui.scroll_to_rect(
-                cursor.translate(rect.min.to_vec2()),Some(Align::Center)
+                cursor.translate(galley_pos.to_vec2()),Some(Align::Center)
             );
             result.did_scroll=true;
         }

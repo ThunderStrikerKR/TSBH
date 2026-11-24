@@ -2576,6 +2576,7 @@ pub fn reception_source_text_edit<'a>(
     buffer:&'a mut dyn egui::TextBuffer,width:f32
 )->egui::TextEdit<'a>{
     egui::TextEdit::multiline(buffer).frame(false)
+        .margin(egui::Margin::same(theme::SOURCE_DOCUMENT_TEXT_MARGIN))
         .font(egui::FontId::proportional(typography::FONT_RECEPTION_SOURCE_TEXT))
         .desired_width(width)
 }
@@ -8691,8 +8692,16 @@ mod shared_general_screen_audit_tests {
     #[test]
     fn all_reception_source_entry_points_share_the_native_editor_configuration(){
         let source=include_str!("main.rs");
+        let manual=include_str!("manual_source_view.rs");
+        let components=include_str!("components.rs");
         assert_eq!(source.matches("components::reception_source_text_edit(").count(),3);
         assert!(!source.contains("TextEdit::multiline("));
+        assert!(components.contains(
+            ".margin(egui::Margin::same(theme::SOURCE_DOCUMENT_TEXT_MARGIN))"
+        ));
+        assert!(manual.contains("theme::SOURCE_DOCUMENT_TEXT_MARGIN"));
+        assert_eq!(theme::RECEPTION_PANE_PADDING_Y,theme::SECTION_PADDING);
+        assert_eq!(theme::SOURCE_DOCUMENT_TEXT_MARGIN,0);
     }
 }
 
