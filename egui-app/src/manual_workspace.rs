@@ -3426,7 +3426,7 @@ mod manual_workspace_modal_routing_tests {
     fn shipment_count_is_one_date_selector_segmented_control(){
         let manual=include_str!("manual_workspace.rs");
         let components=include_str!("components.rs");
-        let count_row=manual.split("let current_count=rows.len()").nth(1).unwrap()
+        let count_row=manual.split("let current_count=header_row_count").nth(1).unwrap()
             .split("let count_commit=").next().unwrap();
         assert_eq!(
             count_row.matches("components::date_navigation_count_control(").count(),1
@@ -3437,7 +3437,7 @@ mod manual_workspace_modal_routing_tests {
         assert!(count_row.contains("count_control.decrement_clicked"));
         assert!(count_row.contains("count_control.increment_clicked"));
         assert!(count_row.contains("count_control.input"));
-        let count_flow=manual.split("let current_count=rows.len()").nth(1).unwrap()
+        let count_flow=manual.split("let current_count=header_row_count").nth(1).unwrap()
             .split("if count_resize_requested").next().unwrap();
         assert!(count_flow.contains("self.request_resize(count,ctx)"),
             "the native asynchronous resize flow must remain in place");
