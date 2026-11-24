@@ -959,6 +959,19 @@ mod tests {
 
     #[test]
     fn manual_assignment_state_changes_only_manual_palette_and_ink() {
+        assert_eq!(
+            theme::MANUAL_SOURCE_UNASSIGNED_FILL,
+            Color32::from_rgb(73,55,22)
+        );
+        assert_eq!(
+            theme::MANUAL_SOURCE_UNASSIGNED_BORDER,
+            Color32::from_rgb(240,180,76)
+        );
+        assert_eq!(
+            theme::MANUAL_SOURCE_UNASSIGNED_TEXT,
+            Color32::from_rgb(255,244,218)
+        );
+        assert_eq!(theme::MANUAL_SOURCE_BLOCK_BORDER_WIDTH,1.0);
         let raw="팔렬고등학교 30개";
         let rows=json!([{"id":"r1","items":[{"id":"i1"}]}]);
         let blocks=json!([
