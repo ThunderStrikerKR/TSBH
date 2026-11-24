@@ -1433,7 +1433,7 @@ impl BandoEgui {
             }
         }
         if self.page!=Page::Reception || self.workflow_receiver.is_some() ||
-            self.workflow_freight_editor.is_some() ||
+            self.workflow_action.is_some() || self.workflow_freight_editor.is_some() ||
             !std::env::var_os("BANDO_EGUI_BUSINESS_DB")
                 .is_some_and(|p|!p.is_empty()) {return;}
         if self.workflow_last_fetch.is_some_and(|at|
