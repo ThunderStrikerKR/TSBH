@@ -2431,18 +2431,27 @@ pub fn money_edit_text(amount:i64)->String{
     formatted_money_input(&amount.to_string()).unwrap_or_else(||amount.to_string())
 }
 
+// Reception money uses a fixed gap, independent of the numeric glyphs.
+const RECEPTION_MONEY_UNIT_GAP:f32=theme::SPACE_4;
+const RECEPTION_MONEY_PENDING:&str="—";
+
+fn money_unit_left(right:f32,right_inset:f32,unit_width:f32)->f32{
+    right-right_inset-unit_width
+}
+
 fn money_unit_margin(
-    ui:&Ui,unit:&str,font:egui::FontId,right_inset:f32,mut margin:egui::Margin
+    ui:&Ui,unit:&str,font:egui::FontId,right_inset:f32,unit_gap:f32,
+    mut margin:egui::Margin
 )->(egui::Margin,std::sync::Arc<egui::Galley>){
     let galley=ui.painter().layout_no_wrap(unit.to_owned(),font,theme::TEXT);
-    margin.right=(galley.size().x+right_inset).ceil().clamp(0.0,127.0) as i8;
+    margin.right=(galley.size().x+right_inset+unit_gap).ceil().clamp(0.0,127.0) as i8;
     margin.top=2;
     margin.bottom=2;
     (margin,galley)
 }
 
 fn paint_money_unit(ui:&Ui,rect:Rect,galley:std::sync::Arc<egui::Galley>,right_inset:f32){
-    let pos=egui::pos2(rect.right()-right_inset-galley.size().x,
+    let pos=egui::pos2(money_unit_left(rect.right(),right_inset,galley.size().x),
         rect.center().y-galley.size().y/2.0);
     ui.painter().with_clip_rect(rect.intersect(ui.clip_rect()))
         .galley(pos,galley,theme::TEXT);
@@ -2452,9 +2461,9 @@ fn paint_money_unit(ui:&Ui,rect:Rect,galley:std::sync::Arc<egui::Galley>,right_i
 /// exact-rectangle worksheet overlays use the same text and suffix geometry.
 fn money_text_edit_with_unit<'a>(
     ui:&Ui,value:&'a mut String,font:egui::FontId,width:f32,
-    unit:&str,right_inset:f32,margin:egui::Margin
+    unit:&str,right_inset:f32,unit_gap:f32,margin:egui::Margin
 )->(egui::TextEdit<'a>,std::sync::Arc<egui::Galley>){
-    let (margin,galley)=money_unit_margin(ui,unit,font.clone(),right_inset,margin);
+    let (margin,galley)=money_unit_margin(ui,unit,font.clone(),right_inset,unit_gap,margin);
     let edit=egui::TextEdit::singleline(value).font(font)
         .horizontal_align(Align::RIGHT).vertical_align(Align::Center)
         .margin(margin).desired_width(width);
@@ -2477,7 +2486,7 @@ pub fn money_field_with_unit(
     let width=FieldKind::Money.preferred_width().min(ui.available_width().max(60.0));
     let (edit,unit_galley)=money_text_edit_with_unit(
         ui,value,typography::numeric_editor_font(),width,unit,unit_right_inset,
-        typography::form_input_text_margin()
+        0.0,typography::form_input_text_margin()
     );
     let response=ui.add_enabled_ui(enabled,|ui|{
         ui.add_sized(Vec2::new(width,theme::INPUT_HEIGHT),edit)
@@ -5384,6 +5393,10 @@ mod client_display_summary_tests{
 /// Display-only won formatting. No business price or rounding decisions live
 /// in the UI layer; amounts are supplied by the Rust business engine.
 pub fn display_won(amount: i64) -> String {
+    format!("{}원",display_money_number(amount))
+}
+
+fn display_money_number(amount:i64)->String{
     let digits = amount.to_string();
     let (sign, positive) = if let Some(text) = digits.strip_prefix('-') {
         ("-", text)
@@ -5395,7 +5408,7 @@ pub fn display_won(amount: i64) -> String {
         }
         groups.push(character);
     }
-    format!("{sign}{groups}원")
+    format!("{sign}{groups}")
 }
 
 pub fn summary_strip(ui: &mut Ui, label: &str, value: &str, footnote: &str) {
@@ -5538,7 +5551,7 @@ fn reception_money_editor_at_rect(
     let inset=theme::SPACE_8;
     let (edit,unit_galley)=money_text_edit_with_unit(
         ui,value,reception_money_font(),rect.width(),"원",inset,
-        egui::Margin::symmetric(8,2)
+        RECEPTION_MONEY_UNIT_GAP,egui::Margin::symmetric(8,2)
     );
     let response=reception_text_editor_at_click(
         ui,rect,edit,request_focus,click_at
@@ -5971,7 +5984,7 @@ fn reception_freight_money_readonly(ui:&mut Ui,value:&mut String)->Response{
     let inset=theme::SPACE_8;
     let (edit,unit_galley)=money_text_edit_with_unit(
         ui,value,reception_money_font(),RECEPTION_FREIGHT_MONEY_WIDTH,
-        "원",inset,egui::Margin::symmetric(8,2)
+        "원",inset,RECEPTION_MONEY_UNIT_GAP,egui::Margin::symmetric(8,2)
     );
     let response=ui.add_sized(
         Vec2::new(RECEPTION_FREIGHT_MONEY_WIDTH,theme::INPUT_HEIGHT),
@@ -6034,7 +6047,7 @@ pub fn reception_freight_row_editable(
     let mut amount_rect=None;
     let mut amount_text=amount
         .map(money_edit_text)
-        .unwrap_or_else(||"—".to_owned());
+        .unwrap_or_else(||RECEPTION_MONEY_PENDING.to_owned());
     // The item grid has a 392pt minimum horizontal scroll extent, but
     // freight has a larger combined intrinsic control width. Never put the
     // left-to-right price/COD group and the right-to-left actions in the
@@ -6336,17 +6349,26 @@ pub fn reception_total_footer(
     let left = rect.left() + theme::SPACE_8;
     let right = rect.right() - theme::SPACE_8;
     let right_start = (right - 148.0).max(left + 50.0);
-    let amount = total.map(display_won).unwrap_or_else(|| "—".to_owned());
+    let amount = total.map(display_money_number)
+        .unwrap_or_else(||RECEPTION_MONEY_PENDING.to_owned());
     let first_amount = Rect::from_min_max(
         egui::pos2(right_start, rect.top()), egui::pos2(right, rect.top() + 30.0),
     );
-    ui.painter().with_clip_rect(first_amount).text(
-        egui::pos2(right, rect.top() + 17.0), egui::Align2::RIGHT_CENTER,
-        &amount, typography::data_value_font(
-            typography::DataValueKind::Money,
-            typography::DataValueContext::ReceptionTotal
-        ), theme::TEXT,
+    let font=typography::data_value_font(
+        typography::DataValueKind::Money,
+        typography::DataValueContext::ReceptionTotal
     );
+    // The currency unit is always present and has a fixed right anchor.
+    // Pending, zero and calculated amounts only change the numeric galley.
+    let painter=ui.painter().with_clip_rect(first_amount.intersect(ui.clip_rect()));
+    let unit=painter.layout_no_wrap("원".to_owned(),font.clone(),theme::TEXT);
+    let unit_left=money_unit_left(right,0.0,unit.size().x);
+    let center_y=rect.top()+17.0;
+    painter.text(
+        egui::pos2(unit_left-RECEPTION_MONEY_UNIT_GAP,center_y),
+        egui::Align2::RIGHT_CENTER,&amount,font,theme::TEXT
+    );
+    painter.galley(egui::pos2(unit_left,center_y-unit.size().y/2.0),unit,theme::TEXT);
     // A missing shipment count is unknown, not zero.
     let count_text = count.map(|n| format!("배송 {n}건"))
         .unwrap_or_else(|| "배송 건수 미확정".to_owned());
@@ -7737,6 +7759,56 @@ mod money_live_format_tests{
         assert_eq!(parse_money_input(&amount),Some(59000));
         assert!(!amount.contains('원'));
     }
+    #[test]
+    fn reception_money_margin_reserves_gap_without_moving_unit(){
+        let ctx=test_context();
+        let _=ctx.run(egui::RawInput::default(),|ctx|{
+            egui::CentralPanel::default().show(ctx,|ui|{
+                let (margin,unit)=money_unit_margin(
+                    ui,"원",reception_money_font(),theme::SPACE_8,
+                    RECEPTION_MONEY_UNIT_GAP,egui::Margin::symmetric(8,2)
+                );
+                let unit_left=money_unit_left(104.0,theme::SPACE_8,unit.size().x);
+                assert!(unit_left-(104.0-f32::from(margin.right))
+                    >=RECEPTION_MONEY_UNIT_GAP);
+                assert_eq!(margin.top,2);
+                assert_eq!(margin.bottom,2);
+            });
+        });
+    }
+
+    #[test]
+    fn reception_total_keeps_won_anchor_and_gap_for_pending_zero_and_amount(){
+        fn render(total:Option<i64>,expected:&str)->(egui::Pos2,Rect){
+            let ctx=test_context();
+            let output=ctx.run(egui::RawInput::default(),|ctx|{
+                egui::CentralPanel::default().show(ctx,|ui|{
+                    ui.set_width(400.0);
+                    reception_total_footer(ui,total,Some(1),"부가세 별도","");
+                });
+            });
+            let mut unit=None;
+            let mut amount=None;
+            for clipped in &output.shapes{
+                if let egui::Shape::Text(shape)=&clipped.shape{
+                    if shape.galley.text()=="원"{unit=Some(shape.pos);}
+                    if shape.galley.text()==expected{
+                        amount=Some(Rect::from_min_size(shape.pos,shape.galley.size()));
+                    }
+                }
+            }
+            (unit.expect("won unit must always be painted"),amount.expect("amount must be painted"))
+        }
+        let (anchor,pending)=render(None,RECEPTION_MONEY_PENDING);
+        assert!((anchor.x-pending.right()-RECEPTION_MONEY_UNIT_GAP).abs()<=1.0);
+        for (total,expected) in [(0,"0"),(3000,"3,000"),(1234567,"1,234,567")]{
+            let (unit,amount)=render(Some(total),expected);
+            assert_eq!(unit,anchor);
+            assert!((unit.x-amount.right()-RECEPTION_MONEY_UNIT_GAP).abs()<=1.0);
+        }
+        assert_eq!(display_won(-1234),"-1,234원");
+    }
+
     #[test]
     fn grouped_display_roundtrips_through_original_native_price_parser(){
         for raw in ["1000","1234567","0","9007199254740991"]{
