@@ -314,7 +314,9 @@ pub const DOCK_SPLITTER_LINE: f32 = 1.0;
 pub const DOCK_SPLITTER_HOVER_LINE: f32 = 2.0;
 pub const SOFT_DIVIDER_WIDTH: f32 = 1.0;
 pub const FRAME_STROKE_WIDTH: f32 = 1.0;
+// Radius hierarchy: modal shell 9pt, section cards 8pt, controls 6pt, source chips 4pt.
 pub const CONTROL_RADIUS: u8 = 6;
+pub const SECTION_RADIUS: u8 = 8;
 pub const PANEL_RADIUS: u8 = 9;
 pub const INPUT_HEIGHT: f32 = 36.0;
 // Shared order-history date toolbar geometry. Keep all controls centered in
@@ -447,12 +449,12 @@ pub const MODAL_SECTION_PADDING: f32 = SPACE_16;
 // Equal clearance above and below the divider in every modal section.
 // Kept separate from frame padding so the layout role is explicit.
 pub const MODAL_SECTION_HEADER_RULE_GAP: f32 = SPACE_16;
-pub const MODAL_SECTION_RADIUS: u8 = CONTROL_RADIUS;
+pub const MODAL_SECTION_RADIUS: u8 = SECTION_RADIUS;
 // Approved compact modal form row: label and editable value share one 36pt
 // line. No product-management-specific vertical label/input layout.
 pub const MODAL_FORM_LABEL_WIDTH: f32 = 80.0;
-pub const MODAL_PANEL_PADDING_X: f32 = 18.0;
-pub const MODAL_PANEL_PADDING_Y: f32 = 16.0;
+pub const MODAL_PANEL_PADDING_X: f32 = SPACE_16;
+pub const MODAL_PANEL_PADDING_Y: f32 = SPACE_16;
 pub const MODAL_DECISION_MAX_WIDTH: f32 = 560.0;
 pub const MODAL_DEFAULT_MAX_WIDTH: f32 = 880.0;
 // Product detail uses its own fixed three-column editor while sharing
@@ -873,7 +875,7 @@ pub fn section_frame() -> Frame {
     Frame::new()
         .fill(PANEL)
         .stroke(Stroke::new(FRAME_STROKE_WIDTH, BORDER))
-        .corner_radius(CornerRadius::same(PANEL_RADIUS))
+        .corner_radius(CornerRadius::same(SECTION_RADIUS))
         .inner_margin(SECTION_PADDING)
 }
 
@@ -994,7 +996,7 @@ pub fn docked_pane_frame() -> Frame {
     Frame::new()
         .fill(PANEL)
         .stroke(Stroke::new(FRAME_STROKE_WIDTH, BORDER))
-        .corner_radius(CornerRadius::same(PANEL_RADIUS))
+        .corner_radius(CornerRadius::same(SECTION_RADIUS))
         .inner_margin(egui::Margin {
             left: (SECTION_PADDING - FRAME_STROKE_WIDTH) as i8,
             right: (SECTION_PADDING - FRAME_STROKE_WIDTH) as i8,
