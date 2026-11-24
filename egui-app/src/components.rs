@@ -5053,6 +5053,136 @@ pub fn reception_inline_cell_editor(
     )
 }
 
+/// Quantity uses the shared date-selector frame and segment buttons.
+/// Only the numeric draft is editable; the fixed suffix never enters the
+/// native quantity parser or changes when the cell gains focus.
+const RECEPTION_QUANTITY_MAX:i64=9_007_199_254_740_991;
+
+fn reception_quantity_step(value:&str,delta:i64)->Option<String>{
+    let count=value.trim().replace(',',"").parse::<i64>().ok();
+    match (count,delta){
+        (Some(n),-1) if n>1 && n<=RECEPTION_QUANTITY_MAX=>Some((n-1).to_string()),
+        (Some(n),1) if n>=0 && n<RECEPTION_QUANTITY_MAX=>Some((n+1).to_string()),
+        (None,1) if value.trim().is_empty()=>Some("1".into()),
+        _=>None,
+    }
+}
+
+pub struct ReceptionQuantityEditorResponse{
+    pub input:Response,
+    pub step_interaction:bool,
+}
+
+pub fn reception_quantity_editor(
+    ui:&mut Ui,cell:Rect,value:&mut String,request_focus:bool,
+    click_at:Option<egui::Pos2>
+)->ReceptionQuantityEditorResponse{
+    let rect=cell.shrink2(egui::vec2(theme::SPACE_2,theme::SPACE_2));
+    let mut placed=ui.new_child(
+        UiBuilder::new().id_salt("reception-quantity-editor")
+            .max_rect(rect).layout(Layout::top_down(Align::Min))
+    );
+    placed.set_clip_rect(rect.intersect(ui.clip_rect()));
+    let font=typography::data_value_font(
+        typography::DataValueKind::Quantity,
+        typography::DataValueContext::Reception
+    );
+    let decrease=reception_quantity_step(value,-1);
+    let increase=reception_quantity_step(value,1);
+    let (_, (input,step_interaction))=date_navigation_segmented_surface(
+        &mut placed,"quantity-stepper",rect.size(),|segments,inner|{
+            // A compact vertical arrow pair keeps the existing 76pt column
+            // and its neighbours fixed instead of growing a second layout row.
+            let arrow_width=16.0;
+            let unit_width=segments.painter().layout_no_wrap(
+                "개".to_owned(),font.clone(),theme::TEXT
+            ).size().x;
+            let arrow_rect=Rect::from_min_max(
+                egui::pos2(inner.right()-arrow_width,inner.top()),inner.right_bottom()
+            );
+            let unit_rect=Rect::from_min_max(
+                egui::pos2(arrow_rect.left()-unit_width-2.0,inner.top()),
+                egui::pos2(arrow_rect.left()-2.0,inner.bottom())
+            );
+            let input_rect=Rect::from_min_max(inner.min,
+                egui::pos2(unit_rect.left(),inner.bottom()));
+            let input=reception_text_editor_at_click(
+                segments,input_rect,
+                egui::TextEdit::singleline(value).font(font.clone())
+                    .horizontal_align(Align::RIGHT).vertical_align(Align::Center)
+                    .margin(egui::Margin::ZERO).frame(false)
+                    .desired_width(input_rect.width()),
+                request_focus,click_at
+            );
+            segments.painter().with_clip_rect(unit_rect).text(
+                unit_rect.center(),egui::Align2::CENTER_CENTER,"개",font.clone(),theme::TEXT
+            );
+            let mut clicked=false;
+            let half=arrow_rect.height()/2.0;
+            for (index,caption,next,glyph) in [
+                (0,"수량 1개 늘리기",increase, "▴"),
+                (1,"수량 1개 줄이기",decrease, "▾"),
+            ]{
+                let part=Rect::from_min_size(
+                    egui::pos2(arrow_rect.left(),arrow_rect.top()+index as f32*half),
+                    egui::vec2(arrow_width,half)
+                );
+                let mut button=segments.new_child(
+                    UiBuilder::new().id_salt(("quantity-arrow",index))
+                        .max_rect(part).layout(Layout::left_to_right(Align::Center))
+                );
+                button.set_clip_rect(part.intersect(segments.clip_rect()));
+                button.spacing_mut().item_spacing=Vec2::ZERO;
+                // Do not let the standard button's minimum padding enlarge
+                // the half-height arrow slots.
+                button.spacing_mut().interact_size=Vec2::ZERO;
+                button.spacing_mut().button_padding=Vec2::ZERO;
+                let response=date_navigation_segment_button(
+                    &mut button,arrow_width,caption,next.is_some(),
+                    DateNavigationSegmentGlyph::Text(glyph)
+                );
+                if response.clicked(){
+                    if let Some(next)=next{*value=next;clicked=true;}
+                }
+            }
+            let stroke=Stroke::new(theme::SOFT_DIVIDER_WIDTH,theme::DIVIDER);
+            segments.painter().line_segment(
+                [arrow_rect.left_top(),arrow_rect.left_bottom()],stroke
+            );
+            segments.painter().line_segment(
+                [egui::pos2(arrow_rect.left(),arrow_rect.center().y),
+                 egui::pos2(arrow_rect.right(),arrow_rect.center().y)],stroke
+            );
+            // Pointer-down can remove TextEdit focus before the click is
+            // released. Keep that draft alive until the arrow action resolves.
+            let pressing=segments.input(|input|
+                (input.pointer.any_down() || input.pointer.any_released())
+                    && input.pointer.interact_pos().is_some_and(|p|arrow_rect.contains(p))
+            );
+            if clicked || pressing{input.request_focus();}
+            (input,clicked||pressing)
+        }
+    );
+    if input.has_focus() || step_interaction{
+        placed.painter().rect_stroke(
+            rect.shrink(0.5),theme::CONTROL_RADIUS as f32,
+            Stroke::new(2.0,theme::SELECTION),egui::StrokeKind::Inside
+        );
+    }
+    ReceptionQuantityEditorResponse{input,step_interaction}
+}
+
+#[cfg(test)]
+#[test]
+fn reception_quantity_step_keeps_unit_out_of_native_draft_and_respects_bounds(){
+    assert_eq!(reception_quantity_step("5",1).as_deref(),Some("6"));
+    assert_eq!(reception_quantity_step("5",-1).as_deref(),Some("4"));
+    assert_eq!(reception_quantity_step("",1).as_deref(),Some("1"));
+    assert_eq!(reception_quantity_step("1",-1),None);
+    assert_eq!(reception_quantity_step("5개",1),None);
+    assert_eq!(reception_quantity_step(&RECEPTION_QUANTITY_MAX.to_string(),1),None);
+}
+
 pub struct ReceptionItemCells {
     pub product: Response,
     pub quantity: Response,

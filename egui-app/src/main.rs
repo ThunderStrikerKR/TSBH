@@ -6932,12 +6932,19 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                                         let navigation=inline_navigation_key(
                                                             items_ui.ctx(),&target
                                                         );
-                                                        let result=components::reception_inline_cell_editor(
-                                                            items_ui,response.rect,&mut editor.text,
-                                                            editor.focus_next,
-                                                            editor.click_at.take(),
-                                                            field!="product"
-                                                        );
+                                                        let (result,step_interaction)=if field=="quantity"{
+                                                            let control=components::reception_quantity_editor(
+                                                                items_ui,response.rect,&mut editor.text,
+                                                                editor.focus_next,editor.click_at.take()
+                                                            );
+                                                            (control.input,control.step_interaction)
+                                                        }else{
+                                                            (components::reception_inline_cell_editor(
+                                                                items_ui,response.rect,&mut editor.text,
+                                                                editor.focus_next,editor.click_at.take(),
+                                                                field!="product"
+                                                            ),false)
+                                                        };
                                                         cell_navigation::remember_worksheet_editor(
                                                             items_ui.ctx(),inline_editor_slot(&target),
                                                             result.id
@@ -6949,7 +6956,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                                             inline_cancel=true;
                                                         }else if let Some(key)=navigation{
                                                             inline_navigation_request=Some((target.clone(),key));
-                                                        }else if result.lost_focus(){
+                                                        }else if result.lost_focus() && !step_interaction{
                                                             inline_commit=true;
                                                         }
                                                     }
