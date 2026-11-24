@@ -2407,11 +2407,15 @@ pub fn labeled_field(
 /// from header visibility. A single recipient still has a visible 1/1 header;
 /// only its previous/next controls are disabled.
 fn reception_recipient_navigation_state(
-    index:usize,total:usize
+    index:usize,total:usize,navigation_enabled:bool
 )->Option<(usize,bool,bool)>{
     if total==0{return None;}
     let current=index.min(total-1);
-    Some((current,current>0,current+1<total))
+    Some((
+        current,
+        navigation_enabled && current>0,
+        navigation_enabled && current+1<total
+    ))
 }
 
 #[cfg(test)]
@@ -2419,9 +2423,9 @@ mod reception_recipient_navigation_state_tests{
     use super::*;
 
     #[test]
-    fn one_recipient_keeps_the_header_with_both_arrows_disabled(){
+    fn one_recipient_keeps_name_and_progress_with_both_arrows_disabled(){
         assert_eq!(
-            reception_recipient_navigation_state(0,1),
+            reception_recipient_navigation_state(0,1,true),
             Some((0,false,false))
         );
     }
@@ -2429,45 +2433,45 @@ mod reception_recipient_navigation_state_tests{
     #[test]
     fn multiple_recipients_enable_only_the_available_direction(){
         assert_eq!(
-            reception_recipient_navigation_state(0,2),
+            reception_recipient_navigation_state(0,2,true),
             Some((0,false,true))
         );
         assert_eq!(
-            reception_recipient_navigation_state(1,2),
+            reception_recipient_navigation_state(1,2,true),
             Some((1,true,false))
         );
+    }
+
+    #[test]
+    fn busy_or_pending_work_disables_only_the_arrows(){
         assert_eq!(
-            reception_recipient_navigation_state(1,3),
-            Some((1,true,true))
+            reception_recipient_navigation_state(0,1,false),
+            Some((0,false,false))
+        );
+        assert_eq!(
+            reception_recipient_navigation_state(0,3,false),
+            Some((0,false,false))
+        );
+        assert_eq!(
+            reception_recipient_navigation_state(1,3,false),
+            Some((1,false,false))
         );
     }
 
     #[test]
     fn empty_recipient_list_has_no_navigator(){
-        assert_eq!(reception_recipient_navigation_state(0,0),None);
-    }
-
-    #[test]
-    fn stale_selection_is_clamped_before_navigation(){
-        assert_eq!(
-            reception_recipient_navigation_state(9,2),
-            Some((1,true,false))
-        );
+        assert_eq!(reception_recipient_navigation_state(0,0,true),None);
     }
 }
 
-/// Navigate one recipient from the 34pt section HEADER, never from a
-/// separate row over the recipient fields. Geometry and arrow glyphs follow
-/// Order History's segmented date selector: INPUT fill, 28pt arrow hits,
-/// zero internal spacing, 1pt outline and subtle vertical separators.
-/// The name is a read-only truncated label with the full value on hover.
-/// The navigator remains visible for a single recipient; both arrows are
-/// recessed/disabled while the name and 1/N progress remain in place.
+/// Navigate one recipient from the 34pt section HEADER. The name and 1/N
+/// progress remain visible for one shipment and while work is pending; only
+/// the two directional segments become disabled.
 pub fn reception_recipient_navigator(
-    ui:&mut Ui,name:&str,index:usize,total:usize
+    ui:&mut Ui,name:&str,index:usize,total:usize,navigation_enabled:bool
 )->Option<usize>{
     let (current,previous_enabled,next_enabled)=
-        reception_recipient_navigation_state(index,total)?;
+        reception_recipient_navigation_state(index,total,navigation_enabled)?;
     let wanted=theme::RECEPTION_RECIPIENT_NAV_WIDTH;
     let width=ui.available_width().min(wanted).max(0.0);
     if width<2.0*theme::RECEPTION_RECIPIENT_NAV_ARROW_WIDTH
@@ -2475,61 +2479,25 @@ pub fn reception_recipient_navigator(
         +2.0*theme::FRAME_STROKE_WIDTH
     {return None;}
     let height=theme::SECTION_HEADER_HEIGHT;
-    let (outer,_)=ui.allocate_exact_size(
-        Vec2::new(width,height),Sense::hover()
-    );
-    let inner=outer.shrink(theme::FRAME_STROKE_WIDTH);
     let arrow_width=theme::RECEPTION_RECIPIENT_NAV_ARROW_WIDTH;
     let count_width=theme::RECEPTION_RECIPIENT_NAV_COUNT_WIDTH;
-    let name_width=(inner.width()-2.0*arrow_width-count_width).max(0.0);
-    let current=index.min(total-1);
-    let mut selected=None;
-    ui.painter().rect_filled(
-        outer,theme::CONTROL_RADIUS as f32,theme::INPUT
-    );
-    ui.scope_builder(
-        egui::UiBuilder::new()
-            .id_salt("reception-recipient-nav-header")
-            .max_rect(inner)
-            .layout(Layout::left_to_right(Align::Center)),
-        |segments|{
+    let name_width=(width-2.0*theme::FRAME_STROKE_WIDTH
+        -2.0*arrow_width-count_width).max(0.0);
+    let (_,selected)=date_navigation_segmented_surface(
+        ui,"reception-recipient-nav-header",Vec2::new(width,height),
+        |segments,inner|{
+            let mut selected=None;
             segments.set_width(inner.width());
             segments.set_height(inner.height());
             segments.spacing_mut().item_spacing=Vec2::ZERO;
-            let arrow=|row:&mut Ui,direction:ManagementChevronDirection,
-                       enabled:bool,hint:&str|{
-                let response=row.add_enabled(
-                    enabled,
-                    egui::Button::new("")
-                        .fill(if enabled{theme::INPUT}
-                            else{theme::RECEPTION_RECIPIENT_NAV_DISABLED_BG})
-                        .stroke(Stroke::NONE)
-                        .corner_radius(0)
-                        .min_size(Vec2::new(arrow_width,inner.height()))
-                );
-                // Clearly recessed endpoints, not merely egui's subtle
-                // disabled tint. Use the same direction glyph as date nav.
-                let painter=row.painter().with_clip_rect(response.rect);
-                if !enabled {
-                    painter.rect_filled(
-                        response.rect,0.0,
-                        theme::RECEPTION_RECIPIENT_NAV_DISABLED_BG
-                    );
-                }
-                paint_management_chevron_with_color(
-                    &painter,response.rect.center(),direction,
-                    if enabled{theme::RECEPTION_RECIPIENT_NAV_ACTIVE_ICON}
-                    else{theme::RECEPTION_RECIPIENT_NAV_DISABLED_ICON}
-                );
-                if enabled{theme::paint_button_hover(row,&response,0.0);}
-                if enabled{response.on_hover_text(hint)}else{response}
-            };
 
-            let prev=arrow(
-                segments,ManagementChevronDirection::Left,
-                previous_enabled,"이전 수취인"
+            let previous=date_navigation_segment_button(
+                segments,arrow_width,"이전 수취인",previous_enabled,
+                DateNavigationSegmentGlyph::Chevron(
+                    ManagementChevronDirection::Left
+                )
             );
-            if prev.clicked(){selected=Some(current-1);}
+            if previous.clicked(){selected=Some(current-1);}
 
             let fallback=format!("수취인 {}",current+1);
             let display=if name.trim().is_empty(){fallback.as_str()}else{name};
@@ -2546,29 +2514,23 @@ pub fn reception_recipient_navigator(
                     .truncate().halign(Align::Center)
                     .sense(if clipped{Sense::click()}else{Sense::hover()})
             ).on_hover_text(display);
-            if clipped {
-                // Long names stay within the header slot; click the name
-                // to inspect its entire value in a wrapping anchored popup.
+            if clipped{
                 egui::Popup::menu(&label)
-                    .close_behavior(
-                        egui::PopupCloseBehavior::CloseOnClickOutside
-                    )
+                    .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
                     .show(|popup|{
                         popup.set_max_width(320.0);
-                        popup.add(
-                            egui::Label::new(typography::body(display)).wrap()
-                        );
+                        popup.add(egui::Label::new(typography::body(display)).wrap());
                     });
             }
 
-            let next=arrow(
-                segments,ManagementChevronDirection::Right,
-                next_enabled,"다음 수취인"
+            let next=date_navigation_segment_button(
+                segments,arrow_width,"다음 수취인",next_enabled,
+                DateNavigationSegmentGlyph::Chevron(
+                    ManagementChevronDirection::Right
+                )
             );
             if next.clicked(){selected=Some(current+1);}
 
-            // Progress is informational metadata OUTSIDE the arrow pair:
-            // ‹  김준희  ›  |  1/2
             segments.add_sized(
                 Vec2::new(count_width,inner.height()),
                 egui::Label::new(typography::field_label(
@@ -2588,15 +2550,12 @@ pub fn reception_recipient_navigator(
                     Stroke::new(theme::SOFT_DIVIDER_WIDTH,theme::DIVIDER)
                 );
             }
+            selected
         }
-    );
-    ui.painter().rect_stroke(
-        outer.shrink(0.5),theme::CONTROL_RADIUS as f32,
-        Stroke::new(theme::SOFT_DIVIDER_WIDTH,theme::BORDER),
-        egui::StrokeKind::Inside
     );
     selected
 }
+
 
 /// The approved Reception card chrome is shared with the manual worksheet.
 /// The same 16pt card heading, 16pt inset, divider and header-action alignment
