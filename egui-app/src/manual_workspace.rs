@@ -1786,12 +1786,13 @@ impl ManualWorkspace {
         let mut lookup:Option<(String,String)>=None;
         let mut add_product:Option<String>=None;
         let mut remove_item:Option<(String,String)>=None;
-        components::modal_window("수동 분류","bando-native-manual-classification",work_area)
+        let workspace_title=if self.direct_input{"직접 입력"}else{"수동 분류"};
+        components::modal_window(workspace_title,"bando-native-manual-classification",work_area)
             .fixed_size(manual_workspace_dialog_size(work_area))
             .show(ctx,|ui|{
 
                 components::modal_flow_workspace(ui,|workspace|{
-                    if workspace.header("수동 분류","닫기",
+                    if workspace.header(workspace_title,"닫기",
                         !self.busy()&&!self.product_dialog_open()
                             &&self.remove_recipient_pending.is_none()
                             &&!self.reset_pending
@@ -1854,16 +1855,20 @@ impl ManualWorkspace {
                         // implicit separator and parent item-spacing behavior.
                         ui.spacing_mut().item_spacing.y=0.0;
                         ui.horizontal(|status|{
-                            let count=status.label(typography::caption(
-                                &format!("미배정 원문: {unassigned}개")
-                            ));
+                            let status_label=if self.direct_input{
+                                status.label(typography::caption("직접 입력 · 발주 원문 없음"))
+                            }else{
+                                status.label(typography::caption(
+                                    &format!("미배정 원문: {unassigned}개")
+                                ))
+                            };
                             let notice=[
                                 guidance.as_deref(),remote_notice.as_deref(),
                                 (self.client_id.is_some() && self.view_quote.is_none() && !busy)
                                     .then_some("금액·운임의 Rust 견적을 확인할 수 없습니다."),
                                 self.error.as_deref()
                             ].into_iter().flatten().collect::<Vec<_>>().join("\n");
-                            if !notice.is_empty(){count.on_hover_text(&notice);}
+                            if !notice.is_empty(){status_label.on_hover_text(&notice);}
                         });
                         ui.add_space(theme::SPACE_8);
                         components::reception_section_divider(ui);
@@ -1872,8 +1877,8 @@ impl ManualWorkspace {
                         // The right worksheet takes the remaining width; on narrow windows keep
                         // both minimum widths and scroll the workspace horizontally
                         // instead of letting one panel clip or move the footer.
-                        let content_width=manual_workspace_content_width(
-                            ui.available_width(),reception_source_width
+                        let content_width=manual_workspace_content_width_for_mode(
+                            ui.available_width(),reception_source_width,self.direct_input
                         );
                         // Keep the worksheet at its natural one-recipient / one-item
                         // height. More items remain reachable through the existing
@@ -1890,13 +1895,16 @@ impl ManualWorkspace {
                             .show(ui,|outer|{
                                 outer.set_min_width(content_width);
                                 outer.horizontal(|ui|{
-                            ui.spacing_mut().item_spacing.x=theme::MANUAL_COLUMN_GAP;
+                            ui.spacing_mut().item_spacing.x=if self.direct_input{
+                                0.0
+                            }else{theme::MANUAL_COLUMN_GAP};
                             let width=content_width;
                             let height=content_height;
-                            let source_width=manual_source_panel_width(
-                                reception_source_width,width
-                            );
-                            ui.allocate_ui_with_layout(
+                            if !self.direct_input{
+                                let source_width=manual_source_panel_width(
+                                    reception_source_width,width
+                                );
+                                ui.allocate_ui_with_layout(
                                 egui::vec2(source_width,height),
                                 egui::Layout::top_down(egui::Align::Min),
                                 |source_ui|{
@@ -1944,6 +1952,8 @@ impl ManualWorkspace {
                                     });
                                 },
                             );
+                            }
+
                             ui.allocate_ui_with_layout(
                                 egui::vec2(ui.available_width(),height),
                                 egui::Layout::top_down(egui::Align::Min),
@@ -2638,14 +2648,18 @@ impl ManualWorkspace {
             let target_count=self.remove_recipient_target
                 .unwrap_or_else(||current_count.saturating_sub(1));
             let removing_count=current_count.saturating_sub(target_count);
+            let removal_message=if self.direct_input{
+                format!("마지막 {removing_count}개 배송 건의 입력값을 제거할까요?")
+            }else{
+                format!("마지막 {removing_count}개 배송 건의 입력값과 원문 배정을 제거할까요?")
+            };
             components::show_decision_window(ctx,"배송 건수 줄이기","manual-shipment-removal",work_area,|ui|{
                     components::decision_workspace(ui,|decision|{
                         cancel=decision.header("배송 건수 줄이기","취소",true
                         );
                         decision.body(|ui|{
-                            ui.label(format!(
-                                "마지막 {removing_count}개 배송 건의 입력값과 원문 배정을 제거할까요?"
-                            ));
+                            ui.label(&removal_message);
+                        });
                         });
                         decision.actions(|actions|{
                             if theme::action(actions,"확인",ButtonRole::Danger,true).clicked(){
@@ -2685,12 +2699,18 @@ impl ManualWorkspace {
         if self.reset_pending {
             let mut confirm=false;
             let mut cancel=false;
-            components::show_decision_window(ctx,"전체 초기화","manual-reset-confirm",work_area,|ui|{
+            let reset_title=if self.direct_input{"직접 입력 초기화"}else{"전체 초기화"};
+            let reset_message=if self.direct_input{
+                "입력한 배송 정보와 품목을 초기화할까요?"
+            }else{
+                "구성표와 배정을 초기화할까요? 최초 원문과 마스터는 보존됩니다."
+            };
+            components::show_decision_window(ctx,reset_title,"manual-reset-confirm",work_area,|ui|{
                     components::decision_workspace(ui,|decision|{
-                        cancel=decision.header("전체 초기화","취소",true
+                        cancel=decision.header(reset_title,"취소",true
                         );
                         decision.body(|ui|{
-                            ui.label("구성표와 배정을 초기화할까요? 최초 원문과 마스터는 보존됩니다.");
+                            ui.label(reset_message);
                         });
                         confirm=decision.actions(|actions|{
                                 theme::action(
@@ -2724,9 +2744,10 @@ impl ManualWorkspace {
         }
         if self.confirm_discard {
             let mut keep_editing=false;
-            components::show_decision_window(ctx,"수동 분류 나가기","manual-discard-prompt",work_area,|ui|{
+            let discard_title=if self.direct_input{"직접 입력 나가기"}else{"수동 분류 나가기"};
+            components::show_decision_window(ctx,discard_title,"manual-discard-prompt",work_area,|ui|{
                     components::decision_workspace(ui,|decision|{
-                        keep_editing=decision.header("수동 분류 나가기","계속 편집",true
+                        keep_editing=decision.header(discard_title,"계속 편집",true
                         );
                         decision.body(|ui|{
                             ui.label("초안에 반영하지 않은 변경사항이 있습니다. 변경사항을 버리고 닫을까요?");
@@ -2753,17 +2774,25 @@ impl ManualWorkspace {
         if self.confirm_apply {
             let mut cancel=false;
             let mut proceed=false;
-            components::show_decision_window(ctx,"수동 분류 완료","manual-completion-prompt",work_area,|ui|{
+            let apply_title=if self.direct_input{"직접 입력 완료"}else{"수동 분류 완료"};
+            let apply_message=if self.direct_input{
+                "직접 입력한 배송 정보와 품목을 접수 초안에 반영할까요?"
+            }else{
+                "수동 분류 결과를 접수 초안에 반영할까요?"
+            };
+            components::show_decision_window(ctx,apply_title,"manual-completion-prompt",work_area,|ui|{
                 components::decision_workspace(ui,|decision|{
-                    cancel=decision.header("수동 분류 완료","취소",true
+                    cancel=decision.header(apply_title,"취소",true
                     );
                     decision.body(|ui|{
-                        ui.label("수동 분류 결과를 접수 초안에 반영할까요?");
+                        ui.label(apply_message);
                     });
                     decision.actions_split(|left|{
-                            let _=theme::action(
-                                left,"AI 자동분류 개선",ButtonRole::Standard,false
-                            );
+                            if !self.direct_input{
+                                let _=theme::action(
+                                    left,"AI 자동분류 개선",ButtonRole::Standard,false
+                                );
+                            }
                         },
                         |right|{
                             if theme::action(
@@ -3630,6 +3659,72 @@ mod quote_reuse_tests {
     }
 }
 
+
+#[cfg(test)]
+mod direct_input_workspace_tests{
+    use super::*;
+
+    #[test]
+    fn direct_input_has_one_initial_shipment_and_no_source_evidence(){
+        let gateway=crate::gateway::LocalGateway;
+        let row=WorkingReception{
+            id:"direct-test".into(),raw:String::new(),order_type:"AGENCY".into(),
+            source_input_method:None,last_input_method:None,
+            analysis_raw:None,analysis_evidence:None,analysis_view:None,
+            client_match:None,chat_handle:None,chat_title:None,
+            client_id:None,client_selection:None,pricing_preview:None,
+            working_version:None,working_synced:false,manual_model:None,
+            edit_history:Vec::new(),
+        };
+        let order=native_direct_order(&gateway,&row).expect("direct order");
+        assert_eq!(order["raw"],"");
+        assert!(order.get("analysisEvidence").is_none());
+        assert!(order.get("analysisRaw").is_none());
+        let initial=rule(&gateway,json!({
+            "action":"initial_manual","order":order,"assignmentOrder":[]
+        })).expect("initial direct model");
+        let resized=rule(&gateway,json!({
+            "action":"resize_manual_rows","model":initial["model"],
+            "count":1,"newRecipientIds":["direct-recipient"],
+            "assignmentOrder":initial["assignmentOrder"]
+        })).expect("one editable recipient");
+        assert_eq!(list(&resized["model"],"rows").len(),1);
+        assert_eq!(list(&resized["model"],"blocks").len(),0);
+        assert_eq!(text(&resized["model"]["rows"][0],"id"),"direct-recipient");
+    }
+
+    #[test]
+    fn direct_input_reopens_the_saved_manual_model_without_recreating_evidence(){
+        let gateway=crate::gateway::LocalGateway;
+        let model=json!({
+            "rows":[{"id":"r1","name":"직접 입력 고객","address":"","phone":"",
+                "mobile":"","note":"","items":[]}],
+            "blocks":[],"assignments":{}
+        });
+        let row=WorkingReception{
+            id:"direct-resume".into(),raw:String::new(),order_type:"AGENCY".into(),
+            source_input_method:None,last_input_method:None,
+            analysis_raw:None,analysis_evidence:None,analysis_view:None,
+            client_match:None,chat_handle:None,chat_title:None,
+            client_id:None,client_selection:None,pricing_preview:None,
+            working_version:None,working_synced:false,
+            manual_model:Some(json!({"mode":"DIRECT","model":model,
+                "assignmentOrder":[]})),
+            edit_history:Vec::new(),
+        };
+        let order=native_direct_order(&gateway,&row).expect("restored direct order");
+        assert_eq!(order["recipients"][0]["name"],"직접 입력 고객");
+        assert_eq!(order["manualClassification"]["blocks"],json!([]));
+        assert!(order.get("analysisEvidence").is_none());
+    }
+
+    #[test]
+    fn direct_layout_uses_the_same_sheet_without_allocating_a_source_column(){
+        assert_eq!(manual_workspace_content_width_for_mode(900.0,360.0,true),900.0);
+        assert_eq!(manual_workspace_content_width_for_mode(900.0,360.0,false),
+            manual_workspace_content_width(900.0,360.0));
+    }
+}
 
 #[cfg(test)]
 mod manual_workspace_layout_tests{
