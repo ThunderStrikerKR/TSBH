@@ -685,7 +685,7 @@ fn shipment_product_summary(products:&[String])->String{
 fn shipment_row_fill(chosen:bool,previewed:bool)->egui::Color32{
     if chosen {
         // A confirmed choice must never be overwritten by a hover preview.
-        theme::WORKFLOW_SELECTED_BORDER.linear_multiply(0.20)
+        theme::workflow_selected_row_fill()
     }else if previewed {
         source_highlight::ACTIVE_FILL
     }else {
@@ -1540,6 +1540,23 @@ mod linked_highlight_palette_tests {
         assert_ne!(shipment_row_fill(true,true),source_highlight::ACTIVE_FILL);
         assert_eq!(shipment_row_fill(false,false),theme::WORKFLOW_DETAIL_ROW_BG);
         assert_eq!(source_highlight::ACTIVE_BORDER_WIDTH,2.0);
+    }
+
+    #[test]
+    fn react_amber_palette_preserves_selection_geometry_and_white_buttons() {
+        use egui::Color32;
+        assert_eq!(theme::SELECTED_ORDER,Color32::from_rgb(245,158,11));
+        assert_eq!(theme::WORKFLOW_SELECTED_BORDER,theme::SELECTED_ORDER);
+        assert_eq!(theme::WORKFLOW_SELECTED_STRIPE,2.0);
+        assert_eq!(theme::WORKFLOW_SELECTED_BG,Color32::from_rgb(36,36,36));
+        assert_eq!(shipment_row_fill(true,false),Color32::from_rgba_unmultiplied(245,158,11,51));
+        assert_eq!(shipment_row_fill(true,true),shipment_row_fill(true,false));
+        assert_eq!(theme::ReviewTone::Action.palette(),(
+            Color32::from_rgb(46,36,25),Color32::from_rgb(245,158,11),
+            Color32::from_rgb(251,191,36),Color32::from_rgb(217,188,152)
+        ));
+        assert_eq!(theme::MANUAL_SOURCE_UNASSIGNED_FILL,Color32::WHITE);
+        assert_eq!(theme::BRIGHT,Color32::WHITE);
     }
 }
 

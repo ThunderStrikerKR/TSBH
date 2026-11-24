@@ -78,7 +78,7 @@ pub const CATEGORY_EXPLORER_SEPARATOR_WIDTH:f32=12.0;
 pub const CATEGORY_EXPLORER_BACK_WIDTH:f32=88.0;
 pub const CATEGORY_EXPLORER_ROOT_WIDTH:f32=48.0;
 pub const CATEGORY_EXPLORER_APPLY_WIDTH:f32=70.0;
-pub const CATEGORY_EXPLORER_APPLIED_BG:Color32=Color32::from_rgb(105,65,25);
+pub const CATEGORY_EXPLORER_APPLIED_BG:Color32=ORANGE_EMPHASIS_BG;
 pub const CATEGORY_EXPLORER_APPLIED_BORDER:Color32=SELECTED_ORDER;
 // The current exploration point is plain bright text, never a filled badge.
 pub const CATEGORY_EXPLORER_CURRENT_BG:Color32=Color32::TRANSPARENT;
@@ -86,8 +86,15 @@ pub const CATEGORY_EXPLORER_CURRENT_BORDER:Color32=Color32::TRANSPARENT;
 // Darker than the generic 185/153 grey text, without obscuring navigation.
 // Applied categories remain orange; current exploration stays bright.
 pub const CATEGORY_EXPLORER_ANCESTOR_TEXT:Color32=Color32::from_rgb(112,112,112);
-// Confirmed orange selections share one chromatic accent; preserve each control's geometry.
-pub const SELECTED_ORDER: Color32 = Color32::from_rgb(255, 150, 46); // #FF962E
+// React workflow.css and receipt-layout.css amber palette; paint only.
+pub const SELECTED_ORDER: Color32 = Color32::from_rgb(245, 158, 11); // #F59E0B
+pub const ORANGE_EMPHASIS_BG: Color32 = Color32::from_rgb(59, 43, 27); // #3B2B1B
+// React .workflow-shipment.chosen::before uses #f59e0b33 (20% alpha).
+pub fn workflow_selected_row_fill() -> Color32 {
+    Color32::from_rgba_unmultiplied(
+        SELECTED_ORDER.r(), SELECTED_ORDER.g(), SELECTED_ORDER.b(), 51
+    )
+}
 // Compact working-order cards derive every slot from the actual right pane.
 // The horizontal outer inset, inter-control gaps and vertical insets use
 // the same 6pt rhythm. Long dealer text cannot move any control.
@@ -980,9 +987,10 @@ impl ReviewTone {
         // Background, border, primary text, secondary text.
         match self {
             Self::Action => (
-                // Action notice orange is independent of workflow selection.
-                Color32::from_rgb(96, 55, 25), Color32::from_rgb(255, 150, 46),
-                Color32::from_rgb(255, 229, 199), Color32::from_rgb(227, 190, 153),
+                // React receipt-layout.css .staff-block: separate notice role,
+                // with the original amber edge, dark surface and two ink colors.
+                Color32::from_rgb(46, 36, 25), Color32::from_rgb(245, 158, 11),
+                Color32::from_rgb(251, 191, 36), Color32::from_rgb(217, 188, 152),
             ),
             Self::Info => (
                 Color32::from_rgb(25, 45, 64), Color32::from_rgb(88, 152, 218),
