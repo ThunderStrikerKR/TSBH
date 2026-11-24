@@ -36,6 +36,8 @@ const proof={
 test("UI source recognition does not misclassify backend-only files",()=>{
   assert.equal(isUiSource(source),true);
   assert.equal(isUiSource("egui-app/src/theme.rs"),true);
+  assert.equal(isUiSource("egui-app/src/settings_help.rs"),true);
+  assert.equal(isUiSource("egui-app/src/cell_navigation.rs"),true);
   assert.equal(isUiSource("src/orders/ManualClassification.tsx"),true);
   assert.equal(isUiSource("src/styles/ui.css"),true);
   assert.equal(isUiSource("egui-app/src/gateway.rs"),false);
