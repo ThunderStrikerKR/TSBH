@@ -239,9 +239,37 @@ pub(super) fn recommend(order: &Value, state: &Value) -> Result<Value, String> {
                             }
                             reason = format!("{group_name} 1개 운임 확인 필요"); break;
                         }
-                        if flag(rule,"maxConfirmed") &&
-                            field(rule,"maxBundle").as_i64().is_some_and(|m| q > m) {
-                            reason = format!("{group_name} 합포장 제한 초과 / 운임 확인 필요"); break;
+                        // REQ-059: the confirmed maximum limits each parcel,
+                        // not the total order. Use full parcels and the exact
+                        // remainder; never invent an unregistered tariff.
+                        if flag(rule,"maxConfirmed") {
+                            if let Some(max)=field(rule,"maxBundle").as_i64()
+                                .filter(|m| *m>1 && *m<=super::MAX_SAFE && q>*m)
+                            {
+                                let full_count=q/max;
+                                let remainder=q%max;
+                                let fees=field(rule,"fees");
+                                let Some(full_fee)=safe(field(fees,&max.to_string())) else{
+                                    reason=format!("{group_name} {max}개 운임 확인 필요");
+                                    break;
+                                };
+                                let remainder_fee=if remainder==0{0}else{
+                                    let Some(fee)=safe(field(fees,&remainder.to_string())) else{
+                                        reason=format!("{group_name} {remainder}개 운임 확인 필요");
+                                        break;
+                                    };
+                                    fee
+                                };
+                                let charge=full_fee.checked_mul(full_count)
+                                    .and_then(|v|v.checked_add(remainder_fee))
+                                    .filter(|v| (0..=super::MAX_SAFE).contains(v));
+                                if let Some(charge)=charge{
+                                    charges.push(charge);
+                                    continue;
+                                }
+                                reason="운임 금액 오류".into();
+                                break;
+                            }
                         }
                         if let Some(fee) = safe(field(field(rule,"fees"),&q.to_string())) {
                             charges.push(fee);
@@ -896,6 +924,59 @@ mod p1_product_freight_tests {
         assert_eq!(quote["total"],json!(4000));
         assert_eq!(quote["bundles"][0]["recommendation"],json!(4000));
         assert_eq!(quote["bundles"][0]["source"],json!("GROUP"));
+    }
+
+    #[test]
+    fn confirmed_bundle_limit_splits_full_parcels_and_remainder(){
+        let mut state=json!({
+            "products":[{"id":"p","origin":"FACTORY","shippingGroupId":"g"},
+                {"id":"p2","origin":"FACTORY","shippingGroupId":"g"}],
+            "shipping":{"epoch":1,"groups":[{"id":"g","name":"보면대",
+                "current":{"version":"v1","maxBundle":5,"maxConfirmed":true,
+                    "fees":{"1":3000,"2":4000,"3":5000,"4":6000,"5":7000}}}],
+                "combinations":[]}
+        });
+        let mut order=json!({"recipients":[{"id":"r","name":"가상 수취인",
+            "dispatchOrigin":"FACTORY","address":"서울시 중구",
+            "items":[{"id":"i","productId":"p","variantId":"v","origin":"FACTORY",
+                "quantity":5}]}]});
+        for (q,expected) in [(1,3000),(5,7000),(6,10000),(7,11000),
+            (9,13000),(10,14000),(11,17000),(15,21000)]{
+            order["recipients"][0]["items"][0]["quantity"]=json!(q);
+            let quote=recommend(&order,&state).unwrap();
+            assert_eq!(quote["total"],json!(expected),"quantity {q}");
+            assert_eq!(quote["bundles"][0]["source"],"GROUP");
+            assert_eq!(quote["bundles"].as_array().unwrap().len(),1);
+        }
+        // Same recipient, origin and shipping group can combine distinct models.
+        order["recipients"][0]["items"][0]["quantity"]=json!(3);
+        order["recipients"][0]["items"].as_array_mut().unwrap().push(json!({
+            "id":"i2","productId":"p2","variantId":"v2","origin":"FACTORY","quantity":3
+        }));
+        assert_eq!(recommend(&order,&state).unwrap()["total"],10000);
+        order["recipients"][0]["items"].as_array_mut().unwrap().pop();
+        order["recipients"][0]["items"][0]["quantity"]=json!(6);
+        state["shipping"]["groups"][0]["current"]["fees"]["1"]=Value::Null;
+        let missing=recommend(&order,&state).unwrap();
+        assert!(missing["total"].is_null());
+        assert_eq!(missing["bundles"][0]["source"],"MANUAL");
+        assert!(missing["bundles"][0]["reason"].as_str().unwrap().contains("1개 운임"));
+        // A zero remainder never requires a one-item rate.
+        order["recipients"][0]["items"][0]["quantity"]=json!(10);
+        assert_eq!(recommend(&order,&state).unwrap()["total"],14000);
+        state["shipping"]["groups"][0]["current"]["fees"]["5"]=Value::Null;
+        assert!(recommend(&order,&state).unwrap()["total"].is_null());
+        state["shipping"]["groups"][0]["current"]["fees"]["5"]=json!(super::super::MAX_SAFE);
+        assert!(recommend(&order,&state).unwrap()["total"].is_null());
+        state["shipping"]["groups"][0]["current"]["fees"]["5"]=json!(7000);
+        state["shipping"]["groups"][0]["current"]["maxConfirmed"]=json!(false);
+        assert!(recommend(&order,&state).unwrap()["total"].is_null());
+        // The same rule also applies to independent products.
+        state["products"][0]["shippingGroupId"]=Value::Null;
+        state["shipping"]["productRules"]["p"]=json!({"version":"p1",
+            "maxBundle":5,"maxConfirmed":true,"fees":{"5":7000,"1":3000}});
+        order["recipients"][0]["items"][0]["quantity"]=json!(6);
+        assert_eq!(recommend(&order,&state).unwrap()["total"],10000);
     }
 
     #[test]

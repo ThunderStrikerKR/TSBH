@@ -114,7 +114,18 @@ function checkShipping(name,mutate=()=>{}){
 checkShipping("normal");
 checkShipping("single",o=>{o.recipients[0].items[0].quantity=1;});
 checkShipping("three",o=>{o.recipients[0].items[0].quantity=3;});
-checkShipping("group over max",o=>{o.recipients[0].items[0].quantity=5;});
+// REQ-059 corrects a known legacy TS defect. Keep the frozen oracle
+// unchanged and explicitly assert the intentional freight-only deviation.
+{
+  const o=order(5),state=shippingState();
+  add("shipping group over max (REQ-059)","calculate_shipping",{order:o,state},()=>{
+    const legacy=recommendShipping(o,state);
+    assert.equal(legacy.total,null);
+    return {...legacy,total:9000,bundles:legacy.bundles.map(bundle=>({
+      ...bundle,recommendation:9000,reason:"현재 상품별/동급 그룹 기본 운임표",source:"GROUP"
+    }))};
+  });
+}
 checkShipping("no shipping group",(o,s)=>{s.shipping.groups=[];});
 checkShipping("product not found",(o,s)=>{s.products=[];});
 checkShipping("quantity missing",o=>{o.recipients[0].items[0].quantity=null;});

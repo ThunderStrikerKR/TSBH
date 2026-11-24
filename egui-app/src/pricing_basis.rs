@@ -146,7 +146,9 @@ pub fn snapshot(state:&Value,client:&Value,order:&Value)->Value{
             "at":value(row,"at")
         })).collect::<Vec<_>>();
     json!({
-        "schema":2,
+        // Invalidate pre-fix draft quotes: the tariff inputs can be identical
+        // while the corrected parcel-splitting rule changes the result.
+        "schema":3,
         "orderInputs":order_inputs(order),
         "client":{
             "id":value(client,"id"),"tier":value(client,"tier"),
