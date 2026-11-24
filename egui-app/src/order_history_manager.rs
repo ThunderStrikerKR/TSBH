@@ -1518,6 +1518,10 @@ impl OrderHistoryManager {
                                 );
                                 #[cfg(test)]
                                 components::general_screen_geometry_tests::record("data row",row_rect);
+                                #[cfg(test)]
+                                if matches!(line,HistoryLine::Recipient(_,_,_)){
+                                    components::general_screen_geometry_tests::record("history detail row",row_rect);
+                                }
                                 header_origin.get_or_insert(row_rect.left());
                                 visible.scope_builder(UiBuilder::new()
                                     .id_salt(("history-variable-row",line_index))
