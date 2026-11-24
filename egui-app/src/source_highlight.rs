@@ -723,19 +723,27 @@ fn block_shapes_with_states(
                     ));
                 } else {
                     normal.push(background);
-                    if let Some(state)=block.manual_state {
-                        let border=match state {
-                            ManualBlockState::Unassigned=>
-                                theme::MANUAL_SOURCE_UNASSIGNED_BORDER,
-                            ManualBlockState::Classified=>
-                                theme::MANUAL_SOURCE_CLASSIFIED_BORDER,
-                        };
-                        outlines.push(egui::Shape::rect_stroke(
-                            rect,radius,egui::Stroke::new(
-                                theme::MANUAL_SOURCE_BLOCK_BORDER_WIDTH,border
-                            ),egui::StrokeKind::Inside
-                        ));
-                    }
+                    // Keep the existing gray Reception fill, but restore
+                    // crisp 1pt white borders around recognized data.
+                    // Manual pending blocks use amber, completed blocks gray.
+                    let (border,width)=match block.manual_state {
+                        Some(ManualBlockState::Unassigned)=>(
+                            theme::MANUAL_SOURCE_UNASSIGNED_BORDER,
+                            theme::MANUAL_SOURCE_BLOCK_BORDER_WIDTH
+                        ),
+                        Some(ManualBlockState::Classified)=>(
+                            theme::MANUAL_SOURCE_CLASSIFIED_BORDER,
+                            theme::MANUAL_SOURCE_BLOCK_BORDER_WIDTH
+                        ),
+                        None=>(
+                            theme::SOURCE_RECOGNIZED_BORDER,
+                            theme::SOURCE_RECOGNIZED_BORDER_WIDTH
+                        ),
+                    };
+                    outlines.push(egui::Shape::rect_stroke(
+                        rect,radius,egui::Stroke::new(width,border),
+                        egui::StrokeKind::Inside
+                    ));
                 }
             }
         }
@@ -982,8 +990,8 @@ mod tests {
         assert_eq!(highlighted[1].fill,ACTIVE_FILL);
         assert!(highlighted[1].focused);
 
-        // The same tokens must produce white/black vs muted ink only
-        // inside the manual viewer; ordinary Reception is unchanged.
+        // The manual status palette stays scoped to the manual viewer;
+        // Reception now receives an ordinary 1pt white token border.
         let regular_layout=layout(
             raw,&spans,None,None,360.0,
             FontId::proportional(16.0),Color32::WHITE
@@ -1016,8 +1024,49 @@ mod tests {
             let (_normal,receipt_strokes)=block_shapes(
                 raw,&galley,egui::Pos2::ZERO,&spans,None,None,area
             );
-            assert!(receipt_strokes.is_empty(),
-                "Reception must not inherit manual white outlines");
+            assert_eq!(receipt_strokes.len(),2,
+                "Reception recognized tokens need their own white outlines");
+            assert!(receipt_strokes.iter().all(|shape|matches!(
+                shape,egui::Shape::Rect(rect)
+                    if rect.stroke.color==theme::SOURCE_RECOGNIZED_BORDER
+                    && rect.stroke.width==theme::SOURCE_RECOGNIZED_BORDER_WIDTH
+            )));
+        });
+    }
+
+    #[test]
+    fn normal_reception_source_tokens_use_white_borders_and_blue_focus_precedes(){
+        let raw="270 2개";
+        let recognition=json!({"recipients":[{
+            "id":"r1","sources":[source(raw,"270","product","r1"),
+                source(raw,"2개","quantity","r1")]
+        }]});
+        let spans=collect(raw,&recognition);
+        let ctx=egui::Context::default();
+        let _=ctx.run(egui::RawInput::default(),|ctx|{
+            let job=layout(raw,&spans,None,None,360.0,
+                FontId::proportional(16.0),Color32::WHITE);
+            let galley=ctx.fonts_mut(|fonts|fonts.layout_job(job));
+            let clip=egui::Rect::from_min_size(
+                egui::Pos2::ZERO,egui::vec2(400.0,100.0)
+            );
+            let (_,white)=block_shapes(raw,&galley,egui::Pos2::ZERO,
+                &spans,None,None,clip);
+            assert_eq!(white.len(),2);
+            assert!(white.iter().all(|shape|matches!(
+                shape,egui::Shape::Rect(rect)
+                    if rect.stroke.color==theme::SOURCE_RECOGNIZED_BORDER
+                    && rect.stroke.width==theme::SOURCE_RECOGNIZED_BORDER_WIDTH
+            )));
+            let active=spans[0].key.clone();
+            let (_,focused)=block_shapes(raw,&galley,egui::Pos2::ZERO,
+                &spans,None,Some(&active),clip);
+            assert_eq!(focused.len(),2);
+            assert!(matches!(focused.last(),
+                Some(egui::Shape::Rect(rect))
+                    if rect.stroke.color==ACTIVE_BORDER
+                    && rect.stroke.width==ACTIVE_BORDER_WIDTH
+            ),"focused blue border must be drawn after the regular white stroke");
         });
     }
 
