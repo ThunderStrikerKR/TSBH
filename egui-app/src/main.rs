@@ -7565,9 +7565,10 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                 return;
             }
         }
-        if self.inline_editor.as_ref().is_some_and(|editor|
-            editor.source_id==order_id
-        ){
+        if self.active_id.as_deref()==Some(order_id) &&
+            self.inline_editor.as_ref().is_some_and(|editor|
+                editor.source_id==order_id
+            ){
             self.pending_draft_confirmation=Some(order_id.to_owned());
             self.submit_inline_edit(ctx);
             if self.inline_change.is_some(){
@@ -9538,6 +9539,39 @@ mod reception_workflow_admission_integration_tests {
         assert_eq!(app.pending_draft_confirmation.as_deref(),Some("draft-1"));
         assert!(app.inline_change.as_ref().unwrap().next.is_none(),
             "confirmation must not reopen a next-cell editor after commit");
+    }
+
+    #[test]
+    fn successful_inline_commit_applies_the_cell_before_resuming_confirmation(){
+        let ctx=egui::Context::default();
+        let mut app=app();
+        let target=InlineTarget{recipient_id:"r1".into(),item_id:None,field:"note"};
+        let (tx,receiver)=mpsc::channel();
+        app.inline_change=Some(PendingInlineChange{
+            order_id:"draft-1".into(),raw:"원문".into(),target:target.clone(),
+            editor:InlineReceptionEditor{
+                source_id:"draft-1".into(),target,original:String::new(),
+                text:"저장할 메모".into(),focus_next:false,click_at:None
+            },
+            next:None,receiver
+        });
+        app.pending_draft_confirmation=Some("draft-1".into());
+        tx.send(Ok(manual_workspace::Event::Applied{
+            order_id:"draft-1".into(),raw:"원문".into(),order_type:"AGENCY".into(),
+            client_id:None,direct_input:false,
+            model:serde_json::json!({"rows":[{"id":"r1","note":"저장할 메모","items":[]}],
+                "blocks":[],"assignments":{}}),
+            assignment_order:Vec::new(),
+            order:serde_json::json!({"recipients":[{"id":"r1","note":"저장할 메모","items":[]}]}),
+            quote:None,quote_error:None
+        })).unwrap();
+        app.poll_inline_change(&ctx);
+        assert!(app.inline_change.is_none());
+        assert!(app.pending_draft_confirmation.is_none());
+        assert_eq!(app.drafts[0].manual_model.as_ref().unwrap()
+            .pointer("/model/rows/0/note").and_then(serde_json::Value::as_str),
+            Some("저장할 메모"));
+        assert!(app.source_save_error.is_none());
     }
 
     #[test]
