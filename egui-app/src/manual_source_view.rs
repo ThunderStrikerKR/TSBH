@@ -16,6 +16,11 @@ pub struct SourceInteraction {
     /// True only after egui's native drag threshold has been crossed.
     /// A press/release without movement therefore remains an ordinary click.
     pub drag_moved:bool,
+    /// Pointer offset from the selected source block's visual top-left.
+    /// This keeps the exact grabbed point attached to the cursor.
+    pub drag_anchor_offset:Option<egui::Vec2>,
+    /// Original source document width, retained for identical drag layout.
+    pub drag_layout_width:f32,
     pub did_scroll:bool,
 }
 
@@ -64,6 +69,7 @@ pub fn source_document(
     }
 
     let mut result=SourceInteraction::default();
+    result.drag_layout_width=width;
     // egui::Response::interact_pointer_pos() is None for a pure hover:
     // use PointerState::hover_pos when the source text is hovered without a
     // mouse button. Respect the widget's native hovered/clicked gate so a
@@ -81,12 +87,25 @@ pub fn source_document(
         && ui.input(|input|input.pointer.button_pressed(egui::PointerButton::Primary)){
         // Resolve the block on the initial press. Do not wait for egui's drag
         // threshold: the workspace must show recommended cells immediately.
-        result.drag_started_block=ui.input(|input|input.pointer.press_origin())
+        let press_origin=ui.input(|input|input.pointer.press_origin());
+        result.drag_started_block=press_origin
             .filter(|pointer|rect.contains(*pointer))
             .and_then(|pointer|source_highlight::hovered_span_index_at_pointer(
                 raw,spans,&galley,rect.min,pointer
             )).and_then(|index|spans.get(index))
             .and_then(|span|span.source_id.clone());
+        if let (Some(source_id),Some(pointer))=(
+            result.drag_started_block.as_deref(),press_origin
+        ){
+            if let Some(visual)=source_highlight::manual_source_block_visual(
+                raw,&galley,rect.min,spans,source_id,selected_recipient,active,assigned_ids
+            ){
+                if let Some(bounds)=visual.rects.iter().copied()
+                    .reduce(|left,right|left.union(right)){
+                    result.drag_anchor_offset=Some(pointer-bounds.min);
+                }
+            }
+        }
     }
     // Keep click-vs-drag semantics aligned with egui's own movement threshold.
     result.drag_moved=enabled && response.dragged_by(egui::PointerButton::Primary);
@@ -227,6 +246,19 @@ mod tests {
         assert_eq!(pressed.drag_started_block.as_deref(),Some("block"),
             "the source must be captured on press, before the pointer moves");
         assert!(!pressed.drag_moved);
+        let original_job=source_highlight::layout_manual(
+            raw,&spans,None,None,&HashSet::new(),320.0,
+            FontId::proportional(typography::FONT_RECEPTION_SOURCE_TEXT),theme::TEXT
+        );
+        let original_galley=ctx.fonts_mut(|fonts|fonts.layout_job(original_job));
+        let original_visual=source_highlight::manual_source_block_visual(
+            raw,&original_galley,origin,&spans,"block",None,None,&HashSet::new()
+        ).unwrap();
+        let original_bounds=original_visual.rects.iter().copied()
+            .reduce(|left,right|left.union(right)).unwrap();
+        assert_eq!(pressed.drag_anchor_offset,Some(from-original_bounds.min),
+            "the drag anchor must preserve the exact point grabbed inside the source block");
+        assert_eq!(pressed.drag_layout_width,320.0);
         let to=from+egui::vec2(360.0,30.0);
         let dragged=draw(&ctx,egui::RawInput{
             events:vec![egui::Event::PointerMoved(to)],
