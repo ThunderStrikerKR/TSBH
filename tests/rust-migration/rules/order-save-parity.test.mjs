@@ -12,7 +12,9 @@ const root=fileURLToPath(new URL("../../../",import.meta.url));
 const cargo=fileURLToPath(new URL("../integration/Cargo.toml",import.meta.url));
 const seed=JSON.parse(readFileSync(new URL(
   "../../../src-tauri/resources/state-seed.json",import.meta.url),"utf8"));
-const { totals, canQueue }=await tsImport("../../../src/domain.ts",import.meta.url);
+const { totals }=await tsImport("../../../src/domain.ts",import.meta.url);
+const { canQueue }=await tsImport("../oracles/can-queue.ts",import.meta.url);
+assert.equal(typeof canQueue,"function","historical queue oracle must be callable");
 const { reviewIssues }=await tsImport("../oracles/legacy-hub-messages.ts",import.meta.url);
 const { blankOrder }=await tsImport("../../../src/seed.ts",import.meta.url);
 const { billingSnapshot }=await tsImport("../oracles/replies.ts",import.meta.url);

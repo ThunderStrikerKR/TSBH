@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 const source=(name)=>readFileSync(new URL("../"+name,import.meta.url),"utf8");
 const row=source("src/WorkflowFooter.tsx"), board=source("src/WorkflowBoard.tsx"),
-  messages=source("src/hub-messages.ts"), styles=source("src/styles/patch-v0808.css");
+  messages=source("tests/rust-migration/oracles/legacy-hub-messages.ts"), styles=source("src/styles/patch-v0808.css");
 test("freight label, amount and parenthesized freight terms appear in that order",()=>{
   const start=row.indexOf('<div className="freight-line">');
   const end=row.indexOf('className="freight-inquiry"',start);

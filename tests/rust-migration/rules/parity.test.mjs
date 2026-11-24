@@ -5,7 +5,9 @@ import assert from "node:assert/strict";
 import {spawnSync} from "node:child_process";
 import {fileURLToPath} from "node:url";
 import {tsImport} from "tsx/esm/api";
-const {resolvePrice,totals,repriceOrder}=await tsImport("../../../src/domain.ts",import.meta.url);
+const {resolvePrice,totals}=await tsImport("../../../src/domain.ts",import.meta.url);
+const {repriceOrder}=await tsImport("../oracles/reprice-order.ts",import.meta.url);
+assert.equal(typeof repriceOrder,"function","historical repricing oracle must be callable");
 const {shouldRefreshUncommittedOrderPricing}=await tsImport("../oracles/passive-pricing.ts",import.meta.url);
 const {recommendShipping}=await tsImport("../oracles/legacy-shipping.ts",import.meta.url);
 const {shipmentTotals,stageIssues,groupStep,groupShipments,orderGrandTotal,shipmentVat,groupTotals,workflowIssues,shipmentFreightCode,paymentBalance,shipmentContext,reconcileWorkflow}=
