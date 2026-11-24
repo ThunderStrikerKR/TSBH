@@ -132,7 +132,7 @@ test("template and notice record changes ask before switching away from a dirty 
 });
 
 test("Escape cancels only the current native price draft before blur can commit", () => {
-  const manager = src("egui-app/src/product_manager.rs");
+  const manager = src("../egui-app/src/product_manager.rs");
   const escape = manager.indexOf("if escape{");
   const keyboardCommit = manager.indexOf("else if keyboard_commit{", escape);
   const blurCommit = manager.indexOf("else if response.lost_focus(){", keyboardCommit);
@@ -169,7 +169,7 @@ test("the product confirmation wizard and retail settings navigation guard draft
 });
 
 test("native egui Escape cancels the topmost draft before closing the workspace", () => {
-  const workspace = src("egui-app/src/manual_workspace.rs");
+  const workspace = src("../egui-app/src/manual_workspace.rs");
   const editor = src("egui-app/src/item_editor.rs");
   assert.match(workspace, /enum EscapeAction/);
   assert.match(workspace, /EscapeAction::CancelApply/);
