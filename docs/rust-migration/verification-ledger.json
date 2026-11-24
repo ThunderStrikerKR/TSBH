@@ -1341,7 +1341,12 @@
         "inputOutputEvidence": null,
         "responseOrders": []
       },
-      "discrepancies": [],
+      "discrepancies": [
+        {
+          "status": "OPEN",
+          "description": "Native egui UI for working raw correction preview/apply has not yet been ported; keep F12 OPEN."
+        }
+      ],
       "legacyLedgerStatus": "PARTIAL",
       "gate": {
         "patch": {
@@ -1564,9 +1569,22 @@
         "date": "2026-11-20",
         "scope": "React WorkflowQueue 엑셀 관리 3탭의 Rust+egui 단계별 이전",
         "baseline": {
-          "react": ["src/WorkflowQueue.tsx","src/FactoryReplyImport.tsx","src/FactoryReplyHistory.tsx","src/ActualFreightField.tsx","src/styles/management-layout.css"],
-          "rust": ["src-tauri/src/business_core/output/export.rs","src-tauri/src/business_core/output/export_history.rs","src-tauri/src/export_file.rs"],
-          "reference": ["docs/egui-management-ui-reference.md","docs/management-layout-rules.md"]
+          "react": [
+            "src/WorkflowQueue.tsx",
+            "src/FactoryReplyImport.tsx",
+            "src/FactoryReplyHistory.tsx",
+            "src/ActualFreightField.tsx",
+            "src/styles/management-layout.css"
+          ],
+          "rust": [
+            "src-tauri/src/business_core/output/export.rs",
+            "src-tauri/src/business_core/output/export_history.rs",
+            "src-tauri/src/export_file.rs"
+          ],
+          "reference": [
+            "docs/egui-management-ui-reference.md",
+            "docs/management-layout-rules.md"
+          ]
         },
         "patch": {
           "status": "CODE_COMMITTED",
@@ -1595,10 +1613,14 @@
             "50e6c3685cc7ef31952b0e43db6acf1cad0d0742"
           ],
           "files": [
-            "egui-app/src/excel_manager.rs","egui-app/src/excel_service.rs",
-            "egui-app/src/main.rs","egui-app/src/gateway.rs",
-            "egui-app/src/order_history_manager.rs","egui-app/src/settings_help.rs",
-            "egui-app/Cargo.toml","DEV_WINDOWS_EGUI.cmd",
+            "egui-app/src/excel_manager.rs",
+            "egui-app/src/excel_service.rs",
+            "egui-app/src/main.rs",
+            "egui-app/src/gateway.rs",
+            "egui-app/src/order_history_manager.rs",
+            "egui-app/src/settings_help.rs",
+            "egui-app/Cargo.toml",
+            "DEV_WINDOWS_EGUI.cmd",
             ".github/workflows/egui-targeted-check.yml"
           ]
         },
@@ -1613,7 +1635,6 @@
         "windowsGui": "SKIPPED user-requested policy; not an automatic failure",
         "overall": "PARTIAL_MIGRATION; DO NOT CLAIM COMPLETE"
       },
-
       "name": "공장/매장 Excel 출력",
       "baseline": {
         "historicalSha": "30a19cd2da7533dd2ed36b807593309bde70a7eb",
@@ -3479,7 +3500,7 @@
       "globalNavigationGuard": "b7b16bb087b783899d0c13c5f6c563f361e0e834",
       "twoLineList": "8665e98a044a99979e09a5377ecfe7e0a8daa562",
       "latestUiDocument": "e2411651ed3aeb90f83f35aefcccb963adc52108",
-    "provisionalNaturalSort": "8808a846b9c70de524b2f5e8b87742ab1e8330a1"
+      "provisionalNaturalSort": "8808a846b9c70de524b2f5e8b87742ab1e8330a1"
     },
     "gates": {
       "patch": "COMMITTED: main; new native 20-template and per-product editors, settings whitelist, Rust validation, CAS and backup paths",

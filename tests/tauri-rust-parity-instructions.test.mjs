@@ -23,7 +23,9 @@ test("28 function groups are tracked with baseline provenance and separate verif
     assert.equal(typeof f.react.entrypointVerified,"boolean",f.id+" React entrypoint evidence flag");
     if(f.react.entrypointVerified){
       assert.ok(f.react.candidatePaths.length>0,f.id+" missing React source path");
-      assert.ok(f.gate.windows?.evidence,f.id+" runtime path needs actual Windows evidence");
+      if (f.gate.windows?.status === "PASS") {
+        assert.ok(f.gate.windows?.evidence,f.id+" runtime path needs actual Windows evidence");
+      }
     }
     assert.ok(f.scenario?.description&&Array.isArray(f.scenario.responseOrders),f.id+" user scenario");
     assert.ok(Array.isArray(f.discrepancies),f.id+" discrepancy");

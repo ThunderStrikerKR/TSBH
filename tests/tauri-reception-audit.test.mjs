@@ -23,10 +23,10 @@ test("new draft and its temporary workflow rows are not persisted", async () => 
 });
 
 test("Rust archive uses transactional collision detection rather than ignore", () => {
-  const source = read("src-tauri/src/lib.rs");
+  const source = read("crates/bando-data-access/src/storage.rs");
   assert.match(source, /SELECT order_id,record FROM receipt_archive WHERE id=/);
   assert.match(source, /stored_owner != order_id \|\| stored_record != record/);
-  const transaction = source.slice(source.indexOf("fn write_snapshot("), source.indexOf("// Only modified/new brands"));
+  const transaction = source;
   assert.doesNotMatch(transaction, /INSERT OR IGNORE INTO receipt_archive/);
   assert.match(source, /tx\.commit\(\)/);
 });

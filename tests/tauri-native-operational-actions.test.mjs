@@ -73,20 +73,18 @@ test("customer-approved product resolution uses native Rust, not TS fallback", (
   assert.match(nativeProduct, /"confirm_proposed_product"=>confirm\(payload\)/);
 });
 
-test("working raw correction previews using Rust recognition and the Rust audit reducer", () => {
-  const modal = source("src/WorkingRawDialog.tsx");
+test("working raw correction remains explicitly blocked until its native egui editor is ported", () => {
   const nativeRaw = source("src-tauri/src/business_core/rules/raw_corrections.rs");
-  assert.match(modal, /setPreview\(await nativeCorrectWorkingRaw\(state, order, text, reason\)\)/);
-  assert.doesNotMatch(modal, /correctWorkingRaw\(state, order, text, reason\)/);
-  assert.match(adapter, /"recognition", "analyze_order"/);
-  assert.match(adapter, /assertRustReceptionAnalysis\(analyzed, text\)/);
-  assert.match(adapter, /"rules", "apply_raw_correction"/);
-  assert.match(adapter, /parsedRecipients: analyzed\.recipients/);
-  assert.match(nativeRaw, /"correct_working_raw"=>/);
-  assert.match(modal, /setPreview\(undefined\);\s*try \{/);
-  assert.match(modal, /disabled=\{!preview \|\| busy\}/);
+  const ledger = JSON.parse(source("docs/rust-migration/verification-ledger.json"));
+  const feature = ledger.features.find((item) => item.id === "F12");
+  assert.match(nativeRaw, /correct_working_raw/);
+  assert.equal(feature?.overall, "OPEN");
+  assert.equal(feature?.react?.entrypointVerified, false);
+  assert.equal(feature?.gate?.windows?.status, "NOT_VERIFIED");
+  assert.ok(feature?.discrepancies?.some((item) =>
+    item.status === "OPEN" && /egui.*not yet been ported/.test(item.description)
+  ));
 });
-
 
 test("unconfirmed reception removal uses compiled Rust before atomic SQLite save", () => {
   const app = source("src/app/useAppModel.ts");

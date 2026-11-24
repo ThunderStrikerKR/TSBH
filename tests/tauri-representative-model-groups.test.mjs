@@ -36,7 +36,7 @@ test("all cable-holder sizes form one group even with no registered color", asyn
   const { validateModelGroups } = await tsImport("../src/model-groups.ts", import.meta.url);
   const sizes = seed.products.filter(p => p.name.startsWith("케이블홀더 / "));
   assert.equal(sizes.length, 4);
-  assert.ok(sizes.every(p => p.variants[0].color === "색상 미표기"));
+  assert.ok(sizes.every(p => p.variants[0].color === "단일"));
   const state = fixture("케이블홀더 크기", sizes, sizes[0]);
   assert.doesNotThrow(() => validateModelGroups(state));
 });
@@ -49,7 +49,7 @@ test("red, black and glow-in-the-dark microphone wall holders are valid despite 
   const glow = wall.find(p => p.name.includes("야광"));
   const black = wall.find(p => p.name.includes("블랙"));
   assert.ok(glow && black);
-  assert.equal(glow.variants[0].color, "색상 미표기");
+  assert.equal(glow.variants[0].color, "단일");
   assert.equal(glow.variants[0].retail, 7000);
   assert.equal(black.variants[0].retail, 6000);
   const state = fixture("마이크 벽걸이 홀더", wall, black);
@@ -103,7 +103,8 @@ test("representative-model notices are generated only from employee selection ev
 test("model-group UI, employee resolver, Rust persistence and messages use product IDs", () => {
   const ui = source("src/ColorGuidanceManager.tsx");
   const resolver = source("src/IssueResolver.tsx");
-  const native = source("src-tauri/src/lib.rs");
+  const native = source("crates/bando-data-access/src/validation.rs");
+   const messages = source("egui-app/src/automatic_message_manager.rs");
   assert.match(ui, /active\.representativeProductId===id/);
   assert.match(ui, /g\[activeId\]\.representativeProductId=id/);
   assert.match(ui, /대표 지정/);
@@ -115,7 +116,7 @@ test("model-group UI, employee resolver, Rust persistence and messages use produ
   assert.doesNotMatch(resolver, /suggestGroupRepresentative\(state,/);
   assert.match(resolver, /대표모델.*선택/);
   assert.match(native, /group\.get\("representativeProductId"\)/);
-  assert.match(native, /modelRepresentative/);
+  assert.match(messages, /modelRepresentative/);
   assert.match(source("tests/rust-migration/oracles/issue-actions.ts"), /appliedRepresentativeModel/);
   assert.match(source("tests/rust-migration/oracles/legacy-hub-messages.ts"), /appliedRepresentativeModelNotice/);
   assert.match(source("tests/rust-migration/oracles/automatic-message.ts"), /appliedRepresentativeModelNotice/);

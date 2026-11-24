@@ -86,10 +86,11 @@ test("copy message orders all finance lines, then provisional note, then links",
 
 test("native settings-only patch saves notice map without touching sale products",()=>{
   const s=read("src/ProvisionalProductNoticeManager.tsx");
-  const native=read("src-tauri/src/lib.rs");
+  const native=read("crates/bando-data-access/src/settings_commands.rs");
+   const validation=read("crates/bando-data-access/src/validation.rs");
   assert.match(s,/await window\.bando\.backup\(\)/);
   assert.match(s,/await window\.bando\.patchSettings\(/);
   assert.match(s,/provisionalProductNotices:baseline/);
   assert.match(native,/"provisionalProductNotices"/);
-  assert.match(native,/validate_provisional_product_notices\(&state\)/);
+  assert.match(validation,/validate_provisional_product_notices\(&state\)/);
 });
