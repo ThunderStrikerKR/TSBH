@@ -330,3 +330,49 @@ pub(super) fn stage_issues(state:&Value,group_id:&str,next:i64)->Result<Vec<Stri
     let mut seen=HashSet::new();
     Ok(messages.into_iter().filter(|m|seen.insert(m.clone())).collect())
 }
+
+#[cfg(test)]
+mod freight_issue_tests {
+    use super::*;
+
+    #[test]
+    fn missing_prepaid_freight_is_a_structured_stage_two_issue(){
+        let state=json!({
+            "clients":[{
+                "id":"c","name":"가상 거래처","address":"서울 주소",
+                "phone":"02-1234-5678","payment":"PREPAID",
+                "tier":"agency","shippingFeeExcluded":false,
+                "overrides":{}
+            }],
+            "orders":[{
+                "id":"o","clientId":"c","orderType":"AGENCY",
+                "confirmedAt":"2026-11-25T08:00:00+09:00",
+                "updatedAt":"2026-11-25T08:00:00+09:00",
+                "freightCode":"010","recipients":[{
+                    "id":"r","name":"가상 수취인",
+                    "address":"서울특별시 중구 세종대로 1",
+                    "items":[{"id":"i","name":"가상 상품","origin":"FACTORY","quantity":1,
+                        "productId":"","variantId":""}]
+                }]
+            }],
+            "products":[],
+            "settings":{"accounts":[],"senderName":"반도스탠드",
+                "senderAddress":"서울 주소","senderPhone":"02-1234-5678"},
+            "workflow":{
+                "groups":[{"id":"g","needsNotice":false,"notices":[]}],
+                "shipments":[{
+                    "id":"s","orderId":"o","recipientId":"r","groupId":"g",
+                    "step":1,"charges":{"FACTORY":null},"transferred":false
+                }],
+                "payments":[],"confirmations":[],"events":[],"queue":[]
+            }
+        });
+        let issues=workflow_issues(&state,"g").expect("workflow issues");
+        let freight=issues.iter().find(|issue|str_field(issue,"kind")=="FREIGHT")
+            .expect("missing prepaid freight must be visible");
+        assert_eq!(str_field(freight,"title"),"배송 운임을 확인하세요");
+        assert_eq!(str_field(freight,"detail"),"가상 수취인 / 배송 운임을 확인하세요");
+        assert_eq!(field(freight,"blockingStage").as_i64(),Some(2));
+        assert_eq!(str_field(freight,"severity"),"ACTION");
+    }
+}
