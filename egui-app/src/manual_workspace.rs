@@ -1781,7 +1781,7 @@ impl ManualWorkspace {
                                                             let selected=index==self.selected_recipient &&
                                                                 self.selected_item.as_deref()==Some(item_id) &&
                                                                 self.selected_field==field;
-                                                            if selected{
+                                                            let interaction=if selected{
                                                                 let (editing,navigation)=
                                                                     self.selected_cell_editor_on_rect(
                                                                         items_ui,response.rect,
@@ -1798,6 +1798,7 @@ impl ManualWorkspace {
                                                                 if editing.hovered(){
                                                                     hovered_detail=Some(key.clone());
                                                                 }
+                                                                editing
                                                             }else{
                                                                 if response.hovered(){
                                                                     hovered_detail=Some(key.clone());
@@ -1811,37 +1812,37 @@ impl ManualWorkspace {
                                                                         },&mut submit_direct
                                                                     );
                                                                 }
+                                                                response
+                                                            };
+                                                            // Keep the shared three-column table. Product replacement
+                                                            // and removal target the actual clicked native item, not
+                                                            // a separate selection-dependent toolbar.
+                                                            let actions_enabled=can_mutate
+                                                                && self.edit_text==self.current_value()
+                                                                && !submit_direct;
+                                                            if actions_enabled {
+                                                                if field=="product" && interaction.double_clicked(){
+                                                                    lookup=Some((rid.to_owned(),item_id.to_owned()));
+                                                                }
+                                                                interaction.context_menu(|menu|{
+                                                                    if theme::action(
+                                                                        menu,"상품 검색",ButtonRole::Standard,true
+                                                                    ).clicked(){
+                                                                        lookup=Some((rid.to_owned(),item_id.to_owned()));
+                                                                        menu.close();
+                                                                    }
+                                                                    if theme::action(
+                                                                        menu,"상품 제거",ButtonRole::Danger,true
+                                                                    ).clicked(){
+                                                                        chosen=Some((
+                                                                            "remove_manual_item".into(),
+                                                                            json!({"recipientId":rid,"itemId":item_id})
+                                                                        ));
+                                                                        menu.close();
+                                                                    }
+                                                                });
                                                             }
                                                         }
-                                                    }
-                                                    // Product search/removal remain manual-only
-                                                    // actions; do not add a fourth column to
-                                                    // Reception's approved three-column grid.
-                                                    if let Some(item_id)=self.selected_item.as_deref()
-                                                        .filter(|id|list(row,"items").iter()
-                                                            .any(|item|text(item,"id")==*id)){
-                                                        items_ui.add_space(theme::SPACE_8);
-                                                        items_ui.horizontal(|actions|{
-                                                            actions.label(typography::caption(
-                                                                "선택한 상품"
-                                                            ));
-                                                            if components::icon_action_button(
-                                                                actions,"⌕","상품 검색",can_mutate
-                                                            ).clicked(){
-                                                                lookup=Some((
-                                                                    rid.to_owned(),item_id.to_owned()
-                                                                ));
-                                                            }
-                                                            if components::icon_action_button(
-                                                                actions,"×","상품 제거",can_mutate
-                                                            ).clicked(){
-                                                                chosen=Some((
-                                                                    "remove_manual_item".into(),
-                                                                    json!({"recipientId":rid,
-                                                                        "itemId":item_id})
-                                                                ));
-                                                            }
-                                                        });
                                                     }
                                                     if self.selected_item.is_some() &&
                                                         self.selected_field=="quantity" {
