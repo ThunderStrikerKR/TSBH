@@ -5478,6 +5478,12 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
         let inbox_load_error = self.inbox_folder_error.clone();
         let mut inbox_open_request: Option<String> = None;
         let mut inbox_copy_request: Option<String> = None;
+        let has_direct_input=self.active_id.as_deref()
+            .and_then(|id|self.drafts.iter().find(|row|row.id==id))
+            .is_some_and(|row|row.raw.trim().is_empty() &&
+                row.manual_model.as_ref().is_some_and(|saved|
+                    saved.get("mode").and_then(serde_json::Value::as_str)==Some("DIRECT")
+                ));
         Self::section_with_header(ui, "발주 원문", height, |ui| {
             if theme::action(ui, "+ 새 주문", ButtonRole::Emphasized, !ocr_processing).clicked() {
                 begin_new_order = true;
@@ -5569,6 +5575,57 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                             cancel_ocr.store(true,Ordering::Release);
                         }
                     },
+                );
+            } else if has_direct_input {
+                self.source_hover=None;
+                let available_body=components::docked_section_body_height(height)
+                    .min(ui.available_height().max(0.0));
+                let (body_rect,_)=ui.allocate_exact_size(
+                    Vec2::new(ui.available_width(),available_body),Sense::hover()
+                );
+                let gap=theme::SPACE_8;
+                let card_height=(available_body-3.0*gap-theme::ACTION_STANDARD_HEIGHT)
+                    .max(0.0)
+                    .min(theme::ACTION_STANDARD_HEIGHT+2.0*theme::SPACE_8);
+                let card_rect=Rect::from_min_size(
+                    egui::pos2(body_rect.left(),body_rect.top()+gap),
+                    Vec2::new(body_rect.width(),card_height)
+                );
+                let active=self.active_id.as_deref()
+                    .and_then(|id|self.drafts.iter().find(|row|row.id==id));
+                let linked_id=active.and_then(|row|row.client_id.as_deref());
+                let display=linked_id.and_then(|id|self.client_summaries.get(id));
+                let name=linked_id
+                    .and_then(|id|self.client_names.get(id).map(String::as_str))
+                    .unwrap_or(if linked_id.is_some(){"거래처 확인 중"}else{"거래처 확인 필요"});
+                floating_notice::section(
+                    ui.ctx(),"reception.client_change",card_rect
+                );
+                if components::reception_client_summary_card(
+                    ui,card_rect,linked_id.is_some(),display,name
+                ){
+                    open_client_chooser=true;
+                }
+                let actions_rect=Rect::from_min_size(
+                    egui::pos2(
+                        body_rect.left(),
+                        body_rect.bottom()-gap-theme::ACTION_STANDARD_HEIGHT
+                    ),
+                    Vec2::new(body_rect.width(),theme::ACTION_STANDARD_HEIGHT)
+                );
+                ui.scope_builder(
+                    UiBuilder::new().id_salt("direct-input-resume-action")
+                        .max_rect(actions_rect)
+                        .layout(Layout::right_to_left(Align::Center)),
+                    |actions|{
+                        actions.set_clip_rect(actions_rect);
+                        if theme::action(actions,"직접 입력 수정",ButtonRole::Emphasized,
+                            self.manual_workspace.is_none() && self.client_change.is_none()
+                                && self.working_sync.is_none()
+                        ).clicked(){
+                            begin_input=true;
+                        }
+                    }
                 );
             } else if self.source_editing || !self.raw_source.is_empty() {
                 // One allocated body rectangle owns the client card, source
