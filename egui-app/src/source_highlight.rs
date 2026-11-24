@@ -725,7 +725,7 @@ fn block_shapes_with_states(
                     normal.push(background);
                     // Keep the existing gray Reception fill, but restore
                     // crisp 1pt white borders around recognized data.
-                    // Manual pending blocks use amber, completed blocks gray.
+                    // Manual pending blocks use white, completed blocks gray.
                     let (border,width)=match block.manual_state {
                         Some(ManualBlockState::Unassigned)=>(
                             theme::MANUAL_SOURCE_UNASSIGNED_BORDER,
@@ -961,15 +961,15 @@ mod tests {
     fn manual_assignment_state_changes_only_manual_palette_and_ink() {
         assert_eq!(
             theme::MANUAL_SOURCE_UNASSIGNED_FILL,
-            Color32::from_rgb(73,55,22)
+            Color32::WHITE
         );
         assert_eq!(
             theme::MANUAL_SOURCE_UNASSIGNED_BORDER,
-            Color32::from_rgb(240,180,76)
+            theme::SOURCE_RECOGNIZED_BORDER
         );
         assert_eq!(
             theme::MANUAL_SOURCE_UNASSIGNED_TEXT,
-            Color32::from_rgb(255,244,218)
+            Color32::from_rgb(23,23,23)
         );
         assert_eq!(theme::MANUAL_SOURCE_BLOCK_BORDER_WIDTH,1.0);
         let raw="팔렬고등학교 30개";
