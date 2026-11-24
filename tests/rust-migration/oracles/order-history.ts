@@ -1,7 +1,7 @@
 /** Historical TS order-history calculation, only for Rust parity. */
 import { orderClient, totals } from "../../../src/domain";
 import type { State } from "../../../src/types";
-import { shipmentContext, shipmentTotals } from "../../../src/workflow";
+import { shipmentContext, shipmentTotals } from "./legacy-workflow";
 import { seoulDate } from "./settlement-report";
 import { onlyDeletedGroups } from "../../../src/workspace-selection";
 
