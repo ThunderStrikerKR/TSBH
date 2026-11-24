@@ -2403,15 +2403,71 @@ pub fn labeled_field(
     }).inner
 }
 
+/// Clamp the selected recipient and expose navigation availability separately
+/// from header visibility. A single recipient still has a visible 1/1 header;
+/// only its previous/next controls are disabled.
+fn reception_recipient_navigation_state(
+    index:usize,total:usize
+)->Option<(usize,bool,bool)>{
+    if total==0{return None;}
+    let current=index.min(total-1);
+    Some((current,current>0,current+1<total))
+}
+
+#[cfg(test)]
+mod reception_recipient_navigation_state_tests{
+    use super::*;
+
+    #[test]
+    fn one_recipient_keeps_the_header_with_both_arrows_disabled(){
+        assert_eq!(
+            reception_recipient_navigation_state(0,1),
+            Some((0,false,false))
+        );
+    }
+
+    #[test]
+    fn multiple_recipients_enable_only_the_available_direction(){
+        assert_eq!(
+            reception_recipient_navigation_state(0,2),
+            Some((0,false,true))
+        );
+        assert_eq!(
+            reception_recipient_navigation_state(1,2),
+            Some((1,true,false))
+        );
+        assert_eq!(
+            reception_recipient_navigation_state(1,3),
+            Some((1,true,true))
+        );
+    }
+
+    #[test]
+    fn empty_recipient_list_has_no_navigator(){
+        assert_eq!(reception_recipient_navigation_state(0,0),None);
+    }
+
+    #[test]
+    fn stale_selection_is_clamped_before_navigation(){
+        assert_eq!(
+            reception_recipient_navigation_state(9,2),
+            Some((1,true,false))
+        );
+    }
+}
+
 /// Navigate one recipient from the 34pt section HEADER, never from a
 /// separate row over the recipient fields. Geometry and arrow glyphs follow
 /// Order History's segmented date selector: INPUT fill, 28pt arrow hits,
 /// zero internal spacing, 1pt outline and subtle vertical separators.
 /// The name is a read-only truncated label with the full value on hover.
+/// The navigator remains visible for a single recipient; both arrows are
+/// recessed/disabled while the name and 1/N progress remain in place.
 pub fn reception_recipient_navigator(
     ui:&mut Ui,name:&str,index:usize,total:usize
 )->Option<usize>{
-    if total<=1{return None;}
+    let (current,previous_enabled,next_enabled)=
+        reception_recipient_navigation_state(index,total)?;
     let wanted=theme::RECEPTION_RECIPIENT_NAV_WIDTH;
     let width=ui.available_width().min(wanted).max(0.0);
     if width<2.0*theme::RECEPTION_RECIPIENT_NAV_ARROW_WIDTH
@@ -2471,7 +2527,7 @@ pub fn reception_recipient_navigator(
 
             let prev=arrow(
                 segments,ManagementChevronDirection::Left,
-                current>0,"이전 수취인"
+                previous_enabled,"이전 수취인"
             );
             if prev.clicked(){selected=Some(current-1);}
 
@@ -2507,7 +2563,7 @@ pub fn reception_recipient_navigator(
 
             let next=arrow(
                 segments,ManagementChevronDirection::Right,
-                current+1<total,"다음 수취인"
+                next_enabled,"다음 수취인"
             );
             if next.clicked(){selected=Some(current+1);}
 
