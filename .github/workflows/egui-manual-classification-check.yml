@@ -42,6 +42,12 @@ jobs:
           workspaces: egui-app -> target
       - name: Compile the native egui workspace
         run: cargo check --manifest-path egui-app/Cargo.toml
+      - name: Verify the unified date-selector count control geometry and single-recipient 1/1 header
+        run: cargo test --manifest-path egui-app/Cargo.toml date_navigation_segmented_control_tests -- --nocapture
+      - name: Verify recipient arrows alone disable while the 1/N label remains visible
+        run: cargo test --manifest-path egui-app/Cargo.toml reception_recipient_navigation_state_tests -- --nocapture
+      - name: Verify manual shipment count uses one segmented control and preserves resize flow
+        run: cargo test --manifest-path egui-app/Cargo.toml shipment_count_is_one_date_selector_segmented_control -- --nocapture
       - name: Verify nested modal input routing
         run: cargo test --manifest-path egui-app/Cargo.toml modal_input_routing_tests -- --nocapture
       - name: Verify manual modal routing and Escape behavior
@@ -60,9 +66,3 @@ jobs:
         run: cargo test --manifest-path egui-app/Cargo.toml arrow_navigation_is_captured_before_text_edit_and_ime_is_respected -- --nocapture
       - name: Verify manual quantity, address and quote behavior
         run: cargo test --manifest-path egui-app/Cargo.toml manual_remote_row_tests -- --nocapture
-      - name: Verify the unified date-selector count control geometry and single-recipient 1/1 header
-        run: cargo test --manifest-path egui-app/Cargo.toml date_navigation_segmented_control_tests -- --nocapture
-      - name: Verify recipient arrows alone disable while the 1/N label remains visible
-        run: cargo test --manifest-path egui-app/Cargo.toml reception_recipient_navigation_state_tests -- --nocapture
-      - name: Verify manual shipment count uses one segmented control and preserves resize flow
-        run: cargo test --manifest-path egui-app/Cargo.toml shipment_count_is_one_date_selector_segmented_control -- --nocapture
