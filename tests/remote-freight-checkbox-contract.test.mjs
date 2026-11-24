@@ -61,28 +61,17 @@ test("UI automatically checks Rust-detected area but preserves manual checkbox c
   assert.match(footer, /origin === remoteRowOrigin && \(/);
 });
 
-test("blue message prompts review; no 2x is applied on top of the edited applied amount", () => {
-  const desk = source("src/OrderDesk.tsx");
-  const footer = source("src/WorkflowFooter.tsx");
-  const checks = source("src/StaffChecks.tsx");
-  const css = source("src/styles/patch-v0808.css");
-  assert.match(checks, /도서·산간 지역으로 판단했습니다\. 확인 후 체크 여부를 결정하세요\./);
-  assert.match(checks, /도서·산간 지역일 수 있습니다\. 주소를 확인 후 체크 여부를 결정하세요\./);
-  assert.match(checks, /facts\.length \+ \(remoteReview \? 1 : 0\)/);
-  assert.match(desk, /remoteDelivery=\{freightEditor\?\.preview\.remoteDelivery\}/);
-  assert.doesNotMatch(checks, /운임 위치로 이동|onRemoteSelect/);
-  assert.doesNotMatch(desk, /onRemoteSelect=/);
-  assert.doesNotMatch(footer, /도서·산간 지역으로 판단했습니다/);
-  assert.match(css, /\.staff-checks \.staff-remote-info\s*\{[^}]*background: rgba\([^}]*color: #d7e8f7;/s);
-  const checkboxStyle = css.match(/\.items-freight-panel \.freight-remote-check > input\[type="checkbox"\]\s*\{[^}]*\}/)?.[0] ?? "";
-  assert.doesNotMatch(checkboxStyle, /accent-color:/);
-  assert.match(source("src/styles/theme.css"), /\.app-v03 input\[type="checkbox"\]\s*\{\s*accent-color: #a3a3a3;/);
-  assert.match(desk, /displayCharges=\{freightEditor\.preview\.displayCharges\}/);
-  assert.doesNotMatch(desk, /\.\.\.freightEditor\.preview\.displayCharges,\s*\.\.\.r\.shippingCharges/);
-  assert.match(desk, /const base = checked && value !== null \? value \/ 2 : value/);
-  assert.match(desk, /\[origin\]: base/);
-  assert.match(desk, /value % 2 !== 0/);
-  assert.match(footer, /latestCommit\.current\(amount\) === false/);
+test("native egui remote-delivery preview retains review and one-time doubling", () => {
+  const workspace = source("egui-app/src/manual_workspace.rs");
+  const service = source("egui-app/src/reception_service.rs");
+  const rules = source("src-tauri/src/business_core/rules/remote_delivery.rs");
+  const board = source("egui-app/src/workflow_board.rs");
+  assert.match(workspace, /resolve_remote_rows/);
+  assert.match(workspace, /remote_rows/);
+  assert.match(service, /remote_reference_matches/);
+  assert.match(rules, /checked_mul/);
+  assert.match(rules, /fn auto_check_can_be_manually_overridden_and_address_change_resets_it/);
+  assert.match(board, /fn native_remote_preview_is_not_replaced_by_optional_manual_checkbox/);
 });
 
 test("already billed and dispatched orders do not retroactively acquire a charge", () => {

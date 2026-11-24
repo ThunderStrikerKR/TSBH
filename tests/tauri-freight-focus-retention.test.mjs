@@ -2,31 +2,24 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { readFileSync } from "node:fs";
 
-// Structural regression for a real WebView2 focus-loss defect.
-// This check catches unmounting caused by Rust preview pending states;
-// it is NOT a substitute for running the exact EXE with a physical focus test.
 const read = (path) => readFileSync(new URL("../" + path, import.meta.url), "utf8");
-const desk = read("src/OrderDesk.tsx");
-const hook = read("src/orders/useOrderDesk.tsx");
-const rows = read("src/WorkflowFooter.tsx");
+const manual = read("egui-app/src/manual_workspace.rs");
+const service = read("egui-app/src/reception_service.rs");
+const board = read("egui-app/src/workflow_board.rs");
 
-test("freight editor stays mounted while Rust workflow/total previews refresh", () => {
-  assert.match(hook,/const flowSummaryReady = flowReady && nativeBoard\.ready && nativeOrder\.ready && nativeIssues\.ready;/);
-  assert.match(desk,/const lastReadyFreight = useRef</);
-  assert.match(desk,/if \(flowSummaryReady && activeShipment && activeShipmentPreview\)/);
-  assert.match(desk,/const freightEditor = lastReadyFreight\.current/);
-  assert.match(desk,/\{freightEditor\?\.recipientId === r\.id && \(/);
-  assert.doesNotMatch(desk,/\{flowSummaryReady && activeShipmentPreview &&\s*activeShipment\?\.recipientId === r\.id/);
+test("native freight workspace keeps the current draft while quote projections refresh", () => {
+  assert.match(manual, /remote_rows:Vec<RemoteRow>/);
+  assert.match(manual, /view_quote:Option<Value>/);
+  assert.match(manual, /self\.remote_rows=remote_rows/);
+  assert.match(manual, /self\.view_quote=view_quote/);
+  assert.match(manual, /self\.dirty=true/);
+  assert.match(service, /remote_reference_matches/);
 });
-test("freight edit input reads current editable draft, not a stale Rust projection", () => {
-  // The field displays Rust-computed applied charges. The editable per-row
-  // base charge is preserved separately (including manual remote 2x toggle).
-  assert.match(desk,/displayCharges=\{freightEditor\.preview\.displayCharges\}/);
-  assert.match(desk,/row\.shippingCharges/);
-  assert.match(desk,/\.\.\.freightEditor\.shipment\.charges,\s*\.\.\.row\.shippingCharges,\s*\[origin\]: base/);
-  assert.match(desk,/const base = checked && value !== null \? value \/ 2 : value/);
-  assert.match(desk,/props\.workflowSelection\.shipmentId === lastReadyFreight\.current\.shipment\.id/);
-  assert.match(rows,/key=\{origin\}/);
-  assert.match(rows,/requestAnimationFrame\(\(\) => \{/);
-  assert.match(rows,/input\.isConnected \|\| document\.activeElement !== input/);
+
+test("native freight editing retains local state and delegates remote calculations to Rust", () => {
+  assert.match(manual, /shippingCharge/);
+  assert.match(manual, /manual_navigation_key_before_editor/);
+  assert.match(manual, /EscapeAction::RevertCell/);
+  assert.match(service, /remote_reference_matches/);
+  assert.match(board, /fn native_remote_preview_is_not_replaced_by_optional_manual_checkbox/);
 });

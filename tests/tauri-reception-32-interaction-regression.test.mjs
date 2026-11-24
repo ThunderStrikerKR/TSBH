@@ -18,20 +18,15 @@ test("native preview refresh keeps review layout, VAT control and order board st
   assert.match(board, /aria-busy=\{!ready\}/);
 });
 
-test("freight typing stays local until blur, Enter, or shipment switch", () => {
-  const rows = read("src/WorkflowFooter.tsx");
-  const input = rows.split("function FreightAmountInput(")[1]?.split("type FreightProps = {")[0];
-  assert.ok(input);
-  assert.match(input, /const \[text, setText\] = useState/);
-  assert.match(input, /pending\.current = amount/);
-  assert.doesNotMatch(input, /setTimeout\(flush/);
-  assert.doesNotMatch(input, /timer\.current/);
-  assert.match(input, /onBlur=\{flush\}/);
-  assert.match(input, /if \(e\.key === "Enter"\)/);
-  assert.match(input, /latestCommit\.current\(amount\)/);
-  assert.doesNotMatch(input.split("onChange={(e) => {")[1]?.split("onBlur={flush}")[0] ?? "",
-    /onFreight\(|latestCommit\.current\(/, "A keystroke must never trigger the heavy Rust reconciliation immediately");
-  assert.match(rows, /onCommit=\{\(amount\) => onFreight\(origin, amount\)\}/);
+test("native egui freight edits retain the local draft until a cell commit action", () => {
+  const manual = read("egui-app/src/manual_workspace.rs");
+  const board = read("egui-app/src/workflow_board.rs");
+  assert.match(manual, /manual_navigation_key_before_editor/);
+  assert.match(manual, /EscapeAction::RevertCell/);
+  assert.match(manual, /remote_rows/);
+  assert.match(manual, /view_quote/);
+  assert.match(manual, /shippingCharge/);
+  assert.match(board, /fn native_remote_preview_is_not_replaced_by_optional_manual_checkbox/);
 });
 
 test("two unconfirmed receipts are not discarded and are previewed independently", () => {

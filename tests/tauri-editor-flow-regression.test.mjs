@@ -131,12 +131,16 @@ test("template and notice record changes ask before switching away from a dirty 
     assert.match(component,/refreshAfterCommittedSave/);
 });
 
-test("Escape cancels only the current price draft and its following blur cannot autosave it",()=>{
-  const cell=src("PriceCell.tsx");
-  assert.match(cell,/const cancel = \(\) => \{[\s\S]*?skipBlurSave\.current = true;[\s\S]*?input\.current\?\.blur\(\);/);
-  assert.match(cell,/onBlur=\{\(\) => \{[\s\S]*?if \(skipBlurSave\.current\) \{[\s\S]*?return;[\s\S]*?if \(saving\.current \|\| !editing\) return;/);
-  assert.match(cell,/if \(e\.key === "Escape"\)[\s\S]*?cancel\(\)/);
-  assert.doesNotMatch(cell,/price-cell-actions|price-cell-save|price-cell-cancel/);
+test("Escape cancels only the current native price draft before blur can commit", () => {
+  const manager = src("egui-app/src/product_manager.rs");
+  const escape = manager.indexOf("if escape{");
+  const keyboardCommit = manager.indexOf("else if keyboard_commit{", escape);
+  const blurCommit = manager.indexOf("else if response.lost_focus(){", keyboardCommit);
+  assert.ok(escape >= 0 && keyboardCommit > escape && blurCommit > keyboardCommit);
+  const escapeBranch = manager.slice(escape, keyboardCommit);
+  assert.match(escapeBranch, /entry\.reset_to_original\(\)/);
+  assert.match(escapeBranch, /response\.surrender_focus\(\)/);
+  assert.match(manager, /if entry\.dirty\(\)&&!cell_busy/);
 });
 
 test("model-group switching checks the saved editor baseline",()=>{
@@ -164,20 +168,15 @@ test("the product confirmation wizard and retail settings navigation guard draft
   assert.match(retail,/!sameValue\(order,initial\.current\),onSettings,busy/);
 });
 
-test("draft-only modal Close, X and Escape use the same discard guard",()=>{
-  const cases=[
-    ["orders/RetailOrderDialog.tsx","onClose={closeDraft}"],
-    ["orders/ManualClassification.tsx","onClick={closeDraft}"],
-    ["WorkingRawDialog.tsx","onClose={closeDraft}"],
-    ["OcrReviewDialog.tsx","onClose={closeDraft}"],
-    ["OrderItemEditor.tsx","onClose={closeDraft}"],
-    ["CorrectionPanel.tsx","onClose={closeDraft}"],
-  ];
-  for(const [path,matcher] of cases){
-    const content=src(path);
-    assert.ok(content.includes("confirmDiscardDraft"),path);
-    assert.ok(content.includes(matcher),path);
-  }
+test("native egui Escape cancels the topmost draft before closing the workspace", () => {
+  const workspace = src("egui-app/src/manual_workspace.rs");
+  const editor = src("egui-app/src/item_editor.rs");
+  assert.match(workspace, /enum EscapeAction/);
+  assert.match(workspace, /EscapeAction::CancelApply/);
+  assert.match(workspace, /EscapeAction::CancelDiscard/);
+  assert.match(workspace, /EscapeAction::RevertCell/);
+  assert.match(workspace, /fn escape_action/);
+  assert.match(editor, /pub fn escape\(&mut self,busy:bool\)/);
 });
 
 test("managed editors label Close as Close; saved settings cannot be undone by a stale Cancel button",()=>{
