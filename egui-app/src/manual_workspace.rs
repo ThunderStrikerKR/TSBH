@@ -1577,15 +1577,19 @@ impl ManualWorkspace {
                                         }
                                     });
                                 }
-                            egui::ScrollArea::both()
-                                .id_salt("manual-recipients-table")
-                                .auto_shrink([false,false])
-                                .max_height((height-theme::SECTION_HEADER_HEIGHT
-                                    -theme::INPUT_HEIGHT
-                                    -2.0*theme::ACTION_STANDARD_HEIGHT
-                                    -theme::SPACE_24)
-                                    .max(3.0*theme::MANUAL_TABLE_ROW_HEIGHT))
-                                .show(panel,|ui|{
+                                // The previous estimate counted only the table.
+                                // Quantity steppers and the direct freight editor
+                                // lived BELOW the viewport and got clipped by
+                                // this panel. The whole sheet belongs to ONE
+                                // scroll surface sized from the remaining panel
+                                // space after header/count/recipient navigation.
+                                let worksheet_height=(panel.available_height()
+                                    -theme::SPACE_8).max(1.0);
+                                egui::ScrollArea::both()
+                                    .id_salt("manual-recipients-table")
+                                    .auto_shrink([false,false])
+                                    .max_height(worksheet_height)
+                                    .show(panel,|ui|{
                                     // Keep other shipments in the native model,
                                     // but render only the selected shipment's
                                     // editable cells to avoid an endless worksheet.
@@ -1920,11 +1924,13 @@ impl ManualWorkspace {
                                         }
                                         components::soft_divider(ui);
                                     }
-                                });
-                            // Ordinary text, product, quantity and unit-price values are edited
-                            // directly inside their own cells. Only the freight
-                            // override remains a dedicated non-table field.
-                            panel.horizontal(|ui|{
+                                    // Quantity stepper and freight input MUST
+                                    // remain inside the worksheet scroll area.
+                                    // No visible control may be rendered below
+                                    // its viewport on short Windows desktops.
+                                    // Other text, product, quantity and price
+                                    // values are edited directly in their cells.
+                                    ui.horizontal(|ui|{
                                 if self.selected_item.is_some() &&
                                     self.selected_field=="quantity" {
                                     let quantity=rows.get(self.selected_recipient)
@@ -1990,7 +1996,8 @@ impl ManualWorkspace {
                                         submit_direct=true;
                                     }
                                 }
-                            });
+                                    });
+                                });
                             });
                         },
                     );
@@ -2630,6 +2637,28 @@ mod manual_workspace_modal_routing_tests {
         assert_eq!(history.first().unwrap().model["value"],1);
         assert_eq!(history.last().unwrap().model["value"],100);
         assert_eq!(history.pop().unwrap().model["value"],100);
+    }
+
+    #[test]
+    fn manual_scroll_surface_owns_quantity_and_freight_controls(){
+        let source=include_str!("manual_workspace.rs");
+        let layout=source.split("let worksheet_height=").nth(1)
+            .expect("worksheet viewport allocation is required")
+            .split("let input_settled=").next()
+            .expect("the footer must follow the scrollable worksheet");
+        assert!(layout.contains("panel.available_height()"),
+            "worksheet size must come from remaining panel height");
+        assert!(layout.contains("ui.horizontal(|ui|{"),
+            "quantity and freight controls need a scrollable row");
+        assert!(!layout.contains("panel.horizontal(|ui|{"),
+            "a control placed after the sheet scroll can be clipped");
+        assert!(layout.contains("self.selected_field==\"shippingCharge\""),
+            "freight editor must be reachable in the same scroll area");
+        let scroll_end=layout.rfind("                                });\n                            });")
+            .expect("scroll surface should close after quantity controls");
+        let freight=layout.find("self.selected_field==\"shippingCharge\"").unwrap();
+        assert!(freight<scroll_end,
+            "freight editor must be inside the sheet scroll surface");
     }
 
     #[test]
