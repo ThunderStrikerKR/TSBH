@@ -2060,6 +2060,7 @@ impl ManualWorkspace {
                                                                     let selected=index==self.selected_recipient &&
                                                                         self.selected_item.as_deref()==Some(item_id) &&
                                                                         self.selected_field==field;
+                                                                    let cell_rect=response.rect;
                                                                     let interaction=if selected && field!="product" && self.cell_editor_open(){
                                                                         let (editing,navigation,finished)=
                                                                             self.selected_cell_editor_on_rect(
@@ -2136,7 +2137,7 @@ impl ManualWorkspace {
                                                                     }
                                                                     if recommended{
                                                                         paint_manual_assignment_recommendation(
-                                                                            items_ui,response.rect,hovered
+                                                                            items_ui,cell_rect,hovered
                                                                         );
                                                                     }
                                                                 }
