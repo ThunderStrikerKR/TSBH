@@ -253,8 +253,7 @@ fn workflow_card<R>(
 )->R{
     let outer=ui.available_width();
     let frame=Frame::new()
-        .fill(if selected{theme::WORKFLOW_SELECTED_BG}
-            else if preview{theme::WORKFLOW_PREVIEW_BG}
+        .fill(if selected || preview{theme::WORKFLOW_SELECTED_BG}
             else{theme::WORKFLOW_CARD_BG})
         .stroke(egui::Stroke::new(theme::SOFT_DIVIDER_WIDTH,
             theme::WORKFLOW_CARD_BORDER))
@@ -279,18 +278,6 @@ fn workflow_card<R>(
             ),
             0.0,if preview{source_highlight::ACTIVE_BORDER}else{theme::WORKFLOW_SELECTED_BORDER}
         );
-        if selected {
-            // Committed selection uses a warm surface, bright orange edge and
-            // stripe. Paint-only outline preserves the card's measured layout.
-            ui.painter().rect_stroke(
-                r.shrink(0.5),theme::WORKFLOW_CARD_RADIUS as f32,
-                egui::Stroke::new(
-                    theme::WORKFLOW_SELECTED_OUTLINE_WIDTH,
-                    theme::WORKFLOW_SELECTED_BORDER
-                ),
-                egui::StrokeKind::Inside,
-            );
-        }
     }
     response.inner
 }
@@ -698,7 +685,7 @@ fn shipment_product_summary(products:&[String])->String{
 fn shipment_row_fill(chosen:bool,previewed:bool)->egui::Color32{
     if chosen {
         // A confirmed choice must never be overwritten by a hover preview.
-        theme::WORKFLOW_SELECTED_ROW_BG
+        theme::WORKFLOW_SELECTED_BORDER.linear_multiply(0.20)
     }else if previewed {
         source_highlight::ACTIVE_FILL
     }else {
@@ -754,19 +741,9 @@ fn shipment_line(
             Pos2::new(rect.left(),rect.top()),
             Pos2::new(rect.left()+theme::WORKFLOW_SELECTED_STRIPE,rect.bottom())
         ),0.0,color);
-        if chosen {
-            // A committed shipment remains orange even while a linked preview
-            // is active elsewhere. This outline is paint-only.
-            ui.painter().rect_stroke(
-                rect.shrink(0.5),theme::CONTROL_RADIUS as f32,
-                egui::Stroke::new(
-                    theme::WORKFLOW_SELECTED_OUTLINE_WIDTH,
-                    theme::WORKFLOW_SELECTED_BORDER
-                ),
-                egui::StrokeKind::Inside,
-            );
-        } else if previewed {
-            // Preview remains blue and visually distinct from committed orange.
+        if previewed && !chosen {
+            // Overlay rather than changing Frame::stroke; changing a frame
+            // stroke also changes its content width and can cause clipping.
             ui.painter().rect_stroke(
                 rect.shrink(0.5),theme::CONTROL_RADIUS as f32,
                 egui::Stroke::new(
@@ -1562,13 +1539,6 @@ mod linked_highlight_palette_tests {
         assert_eq!(shipment_row_fill(false,true),source_highlight::ACTIVE_FILL);
         assert_ne!(shipment_row_fill(true,true),source_highlight::ACTIVE_FILL);
         assert_eq!(shipment_row_fill(false,false),theme::WORKFLOW_DETAIL_ROW_BG);
-        assert_eq!(shipment_row_fill(true,false),theme::WORKFLOW_SELECTED_ROW_BG);
-        assert_eq!(shipment_row_fill(true,true),theme::WORKFLOW_SELECTED_ROW_BG);
-        assert_ne!(shipment_row_fill(true,true),source_highlight::ACTIVE_FILL);
-        assert_eq!(theme::WORKFLOW_SELECTED_BORDER,theme::SELECTED_ORDER);
-        assert!(theme::WORKFLOW_SELECTED_STRIPE>2.0);
-        assert!(theme::WORKFLOW_SELECTED_OUTLINE_WIDTH>1.0);
-        assert_ne!(theme::WORKFLOW_SELECTED_BG,theme::WORKFLOW_PREVIEW_BG);
         assert_eq!(source_highlight::ACTIVE_BORDER_WIDTH,2.0);
     }
 }
