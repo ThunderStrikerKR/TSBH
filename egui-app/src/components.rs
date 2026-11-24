@@ -2877,6 +2877,18 @@ pub fn reception_section_with_header(
     ui:&mut Ui,title:&str,minimum_height:f32,
     header_right:impl FnOnce(&mut Ui),content:impl FnOnce(&mut Ui),
 ){
+    reception_section_with_header_tooltip(
+        ui,title,None,minimum_height,header_right,content
+    );
+}
+
+/// Identical Reception section chrome with an optional title explanation.
+/// The tooltip variant lets specialised panes retain their existing guidance
+/// without rebuilding the approved card, divider or content insets.
+pub fn reception_section_with_header_tooltip(
+    ui:&mut Ui,title:&str,title_tooltip:Option<&str>,minimum_height:f32,
+    header_right:impl FnOnce(&mut Ui),content:impl FnOnce(&mut Ui),
+){
     let width=ui.available_width();
     let _card=theme::docked_pane_frame().show(ui,|ui|{
         let width_inset=2.0*theme::SECTION_PADDING;
@@ -2889,7 +2901,10 @@ pub fn reception_section_with_header(
             Vec2::new(ui.available_width(),theme::SECTION_HEADER_HEIGHT),
             Layout::left_to_right(Align::Center),|header|{
                 header.set_min_height(theme::SECTION_HEADER_HEIGHT);
-                header.label(typography::section_heading(title));
+                let heading=header.label(typography::section_heading(title));
+                if let Some(tooltip)=title_tooltip{
+                    heading.on_hover_text(tooltip);
+                }
                 header.with_layout(Layout::right_to_left(Align::Center),header_right);
             }
         );

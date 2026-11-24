@@ -1927,48 +1927,48 @@ impl ManualWorkspace {
                                 egui::vec2(source_width,height),
                                 egui::Layout::top_down(egui::Align::Min),
                                 |source_ui|{
-                                    theme::modal_nested_frame().show(source_ui,|panel|{
-                                        // The outer status/divider stack owns explicit
-                                        // spacing; restore the source card's own 8pt
-                                        // heading-to-document rhythm locally.
-                                        panel.spacing_mut().item_spacing.y=theme::SPACE_8;
-                                        let source_frame_chrome=2.0*(
-                                            theme::SPACE_8+theme::FRAME_STROKE_WIDTH
-                                        );
-                                        panel.set_min_width(
-                                            (source_width-source_frame_chrome).max(0.0)
-                                        );
-                                        panel.set_min_height(
-                                            (height-source_frame_chrome).max(0.0)
-                                        );
-                                        panel.label(typography::subsection_heading("발주 원문"))
-                                            .on_hover_text("원문과 셀을 어느 순서로든 클릭하거나 원문 블록을 셀로 드래그하세요. 배정된 원문은 클릭하면 해제됩니다.");
-                                        egui::ScrollArea::vertical().id_salt("manual-source-blocks")
-                                            .max_height((height-theme::SECTION_HEADER_HEIGHT
-                                                -source_frame_chrome).max(0.0))
-                                            .show(panel,|ui|{
-                                    let interaction=crate::manual_source_view::source_document(
-                                        ui,&self.raw,&spans,&assigned_source_ids,
-                                        selected_recipient_id.as_deref(),active_link.as_ref(),
-                                        scroll_link.as_ref(),!busy,
-                                        self.assignment_gesture.dragging.as_deref().or(self.assignment_gesture.source.as_deref())
-                                    );
-                                    hovered_source=interaction.hovered;
-                                    source_did_scroll=interaction.did_scroll;
-                                    if let Some(id)=interaction.drag_started_block {
-                                        if assignments.get(&id).is_none(){
-                                            self.assignment_gesture.start_drag(id.clone());
-                                            // Populate recommendations in the same frame the
-                                            // drag threshold is crossed; do not wait for the
-                                            // next pointer-move event.
-                                            drag_recommendations=manual_assignment_recommendations(
-                                                &recommendation_model,&id,pending_quantity_cell.as_ref()
-                                            );
-                                        }
-                                    }
-                                    source_clicked=interaction.clicked_block;
+                                    components::reception_section_with_header_tooltip(
+                                        source_ui,"발주 원문",
+                                        Some("원문과 셀을 어느 순서로든 클릭하거나 원문 블록을 셀로 드래그하세요. 배정된 원문은 클릭하면 해제됩니다."),
+                                        height,|_|{},|body|{
+                                            // Use the same outer Reception card, title row,
+                                            // divider, and 16pt horizontal / 8pt vertical
+                                            // insets as the intake source pane.
+                                            body.spacing_mut().item_spacing.y=0.0;
+                                            theme::source_document_frame().show(body,|document|{
+                                                egui::ScrollArea::vertical()
+                                                    .id_salt("manual-source-blocks")
+                                                    .max_height((
+                                                        components::docked_section_body_height(height)
+                                                        -theme::SPACE_8
+                                                        -2.0*theme::FRAME_STROKE_WIDTH
+                                                    ).max(0.0))
+                                                    .auto_shrink([false,false])
+                                                    .show(document,|ui|{
+                                                        let interaction=crate::manual_source_view::source_document(
+                                                            ui,&self.raw,&spans,&assigned_source_ids,
+                                                            selected_recipient_id.as_deref(),active_link.as_ref(),
+                                                            scroll_link.as_ref(),!busy,
+                                                            self.assignment_gesture.dragging.as_deref().or(self.assignment_gesture.source.as_deref())
+                                                        );
+                                                        hovered_source=interaction.hovered;
+                                                        source_did_scroll=interaction.did_scroll;
+                                                        if let Some(id)=interaction.drag_started_block {
+                                                            if assignments.get(&id).is_none(){
+                                                                self.assignment_gesture.start_drag(id.clone());
+                                                                // Populate recommendations in the same frame the
+                                                                // drag threshold is crossed; do not wait for the
+                                                                // next pointer-move event.
+                                                                drag_recommendations=manual_assignment_recommendations(
+                                                                    &recommendation_model,&id,pending_quantity_cell.as_ref()
+                                                                );
+                                                            }
+                                                        }
+                                                        source_clicked=interaction.clicked_block;
+                                                    });
                                             });
-                                    });
+                                        },
+                                    );
                                 },
                             );
                             }
@@ -3801,8 +3801,10 @@ mod manual_workspace_layout_tests{
         let production=source.split("mod manual_assignment_gesture_tests{")
             .next().expect("production source boundary");
         let render=production.split("pub fn show(").nth(1).unwrap();
-        assert!(render.contains("components::reception_section_divider(ui);"));
-        assert!(render.contains("panel.spacing_mut().item_spacing.y=theme::SPACE_8;"));
+        assert!(render.contains("components::reception_section_with_header_tooltip("));
+        assert!(render.contains("theme::source_document_frame().show(body"));
+        assert!(!render.contains("theme::modal_nested_frame().show(source_ui"));
+        assert!(render.contains("components::docked_section_body_height(height)"));
         assert!(render.contains("sheet.spacing_mut().item_spacing.y=0.0;"));
         assert!(render.contains("ui.spacing_mut().item_spacing.x=if self.direct_input{"));
         assert!(render.contains("else{theme::MANUAL_COLUMN_GAP}"));
