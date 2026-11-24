@@ -203,7 +203,7 @@ pub fn prepare_cancellable(
         check_cancelled(cancel)?;
         let selected=required(&changed,"order")?;
         let applied=gateway.execute(ReadOperation::ManualClassification,json!({
-            "action":"preview_manual","order":selected,
+            "action":"apply_manual","order":selected,
             "model":model,"assignmentOrder":keys
         }))?;
         check_cancelled(cancel)?;
