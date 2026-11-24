@@ -8460,6 +8460,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                         &mut self.workflow_ui,
                         self.gateway.workflow_write_enabled() &&
                             self.workflow_action.is_none() &&
+                            self.workflow_freight_editor.is_none() &&
                             self.pending_draft_confirmation.is_none() &&
                             self.workflow_receiver.is_none() &&
                             self.workflow_error.is_none(),
@@ -8469,7 +8470,8 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                             self.manual_workspace.is_none() && self.vat_dialog.is_none() &&
                             self.vat_change.is_none() && self.client_chooser.is_none() &&
                             self.client_change.is_none() && self.working_sync.is_none() &&
-                            self.workflow_dialog.is_none() && !self.ocr_processing,
+                            self.workflow_dialog.is_none() &&
+                            self.workflow_freight_editor.is_none() && !self.ocr_processing,
                         active_recipient,
                         self.link_hover.scoped_active().map(|(order,key)|
                             (order,key.recipient_id.as_str()))
@@ -8546,7 +8548,18 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                 self.focus_pending_recipient(&target,ui.ctx());
             }
             Some(workflow_board_ui::Event::SelectShipment(selection))=>{
-                self.workflow_ui.select(selection);
+                if self.workflow_freight_editor.as_ref().is_some_and(|editor|
+                    editor.text.trim()!=editor.original.trim()
+                ){
+                    self.workflow_freight_next_selection=Some(selection);
+                    if !self.submit_workflow_freight_edit(ui.ctx()){
+                        self.workflow_freight_next_selection=None;
+                    }
+                }else{
+                    self.workflow_freight_editor=None;
+                    self.workflow_freight_next_selection=None;
+                    self.workflow_ui.select(selection);
+                }
                 self.link_hover.clear();
                 self.source_hover=None;
             }
