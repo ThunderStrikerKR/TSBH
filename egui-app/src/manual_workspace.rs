@@ -2457,7 +2457,7 @@ impl ManualWorkspace {
                                                                 }
                                                             }
                                                             // Pending assignment rollback lives in the fixed header action.
-                                                            items_ui.add_space(theme::SPACE_8);
+                                                            components::reception_items_to_freight_gap(items_ui);
                                                             let code=if text(row,"freightCode")=="020"{
                                                                 "020"
                                                             }else{"010"};
@@ -4027,9 +4027,9 @@ mod manual_workspace_layout_tests{
     #[test]
     fn popup_height_tracks_the_visible_card_stack_and_fixed_modal_chrome(){
         assert_eq!(theme::RECEPTION_PANE_PADDING_Y,16.0);
-        assert_eq!(manual_workspace_header_height(),105.0);
+        assert_eq!(manual_workspace_header_height(),113.0);
         assert_eq!(manual_recipient_card_height(),259.0);
-        assert_eq!(manual_workspace_columns_height(),615.0);
+        assert_eq!(manual_workspace_columns_height(),623.0);
         assert_eq!(
             components::docked_section_body_height(manual_recipient_card_height()),
             4.0*theme::INPUT_HEIGHT+3.0*theme::RECIPIENT_ROW_GAP
@@ -4039,7 +4039,7 @@ mod manual_workspace_layout_tests{
         );
         let size=manual_workspace_dialog_size(work_area);
         assert_eq!(size.x,1364.0);
-        assert_eq!(size.y,844.0);
+        assert_eq!(size.y,860.0);
         let short_area=egui::Rect::from_min_size(
             egui::Pos2::ZERO,egui::vec2(1400.0,700.0)
         );

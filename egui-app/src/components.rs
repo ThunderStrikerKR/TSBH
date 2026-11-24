@@ -1058,7 +1058,7 @@ pub fn docked_section_body_height(section_height: f32) -> f32 {
 
 /// Shared forward/inverse height budget for every Reception section.
 pub fn docked_section_chrome_height() -> f32 {
-    theme::RECEPTION_PANE_PADDING_Y * 2.0
+    theme::RECEPTION_SECTION_HEADER_TOP + theme::RECEPTION_PANE_PADDING_Y
         + theme::SECTION_HEADER_HEIGHT
         + theme::SECTION_CONTENT_GAP
         + theme::SECTION_DIVIDER_BOTTOM_GAP
@@ -1569,12 +1569,13 @@ fn modal_master_rule_rect(rect:Rect,ppp:f32,at_bottom:bool)->Rect {
     )
 }
 
-/// Center the action hit area vertically while keeping its horizontal edges
-/// identical to the title, toolbar, body and both modal divider rules.
+/// Balance footer actions against the outer frame padding and top rule
+/// while keeping the same horizontal content edges.
 fn modal_master_action_area(rect:Rect,action_height:f32)->Rect {
     let content=modal_master_content_rect(rect);
     let height=action_height.max(0.0).min(rect.height().max(0.0));
-    let top=rect.top()+((rect.height()-height)*0.5).max(0.0);
+    let free=(rect.height()-height).max(0.0);
+    let top=rect.top()+(free*0.5+theme::MODAL_EDGE_ACTION_SHIFT).min(free);
     Rect::from_min_size(
         egui::pos2(content.left(),top),
         Vec2::new(content.width(),height)
@@ -1666,7 +1667,8 @@ fn modal_master_header_content_in_rect(
     let heading_top=if has_description {
         rect.top()+theme::SPACE_8
     }else{
-        rect.top()+((rect.height()-theme::ACTION_STANDARD_HEIGHT)/2.0).max(0.0)
+        rect.top()+((rect.height()-theme::ACTION_STANDARD_HEIGHT)/2.0
+            -theme::MODAL_EDGE_ACTION_SHIFT).max(0.0)
     };
     let content=modal_master_content_rect(rect);
     let heading=Rect::from_min_size(
@@ -3017,7 +3019,7 @@ pub fn reception_section_with_header_tooltip(
     let width=ui.available_width();
     let _card=theme::docked_pane_frame().show(ui,|ui|{
         let width_inset=2.0*theme::SECTION_PADDING;
-        let height_inset=2.0*theme::RECEPTION_PANE_PADDING_Y;
+        let height_inset=theme::RECEPTION_SECTION_HEADER_TOP+theme::RECEPTION_PANE_PADDING_Y;
         ui.set_min_width((width-width_inset).max(60.0));
         ui.set_min_height((minimum_height-height_inset).max(48.0));
         let body_item_spacing=theme::SPACING;
@@ -5945,6 +5947,16 @@ fn reception_item_value_origin(cell:Rect,glyphs:Vec2,right:bool)->egui::Pos2 {
     )
 }
 
+fn reception_pending_money_marker(value:&str)->bool{
+    matches!(value.trim(), "-" | "–" | "—")
+}
+
+/// Shared item-table to freight-group transition; call once per group,
+/// not for every dispatch origin.
+pub fn reception_items_to_freight_gap(ui:&mut Ui){
+    ui.add_space(theme::RECEPTION_ITEMS_TO_FREIGHT_GAP);
+}
+
 pub fn reception_item_row(
     ui: &mut Ui, name: &str, quantity: &str, amount: &str,
     active: [bool; 3],
@@ -6023,7 +6035,12 @@ fn reception_item_row_with_mode(
         let ink=if active[index] {source_highlight::ACTIVE_TEXT} else {color};
         let label=visible_product.as_deref().unwrap_or(row_text);
         let galley=ui.painter().layout_no_wrap(label.to_owned(),font,ink);
-        let origin=reception_item_value_origin(value_clip,galley.size(),right);
+        let mut origin=reception_item_value_origin(value_clip,galley.size(),right);
+        // Pending monetary markers are not digits; do not inherit the
+        // approved 2.5pt downward numeric glyph correction.
+        if index==2 && reception_pending_money_marker(label){
+            origin.y-=typography::DATA_NUMERIC_GLYPH_OFFSET_Y;
+        }
         ui.painter().with_clip_rect(value_clip).galley(origin,galley,ink);
     }
     // Preserve the five-source-field highlighting contract: these three
@@ -8169,6 +8186,25 @@ mod modal_editor_workspace_geometry_tests {
     }
 
     #[test]
+    fn footer_actions_balance_outer_margin_and_rule(){
+        let bounds=Rect::from_min_size(egui::Pos2::ZERO,
+            Vec2::new(900.0,theme::MODAL_FOOTER_HEIGHT));
+        let actions=modal_master_action_area(bounds,theme::ACTION_PRIMARY_HEIGHT);
+        let upper=actions.top()-bounds.top()-theme::SOFT_DIVIDER_WIDTH;
+        let lower=bounds.bottom()-actions.bottom()
+            +theme::MODAL_PANEL_PADDING_Y+theme::FRAME_STROKE_WIDTH;
+        assert!((upper-lower).abs()<=1.0,"footer gap: {upper} vs {lower}");
+    }
+
+    #[test]
+    fn pending_money_marker_does_not_change_numeric_baseline(){
+        for text in ["-","–","—"]{assert!(reception_pending_money_marker(text));}
+        for text in ["0","3,000","-1,000"]{assert!(!reception_pending_money_marker(text));}
+        assert_eq!(typography::DATA_NUMERIC_GLYPH_OFFSET_Y,2.5);
+        assert_eq!(theme::RECEPTION_ITEMS_TO_FREIGHT_GAP,16.0);
+    }
+
+    #[test]
     fn popup_radius_hierarchy_separates_shell_sections_controls_and_source_chips(){
         assert!(theme::PANEL_RADIUS>theme::SECTION_RADIUS);
         assert!(theme::SECTION_RADIUS>theme::CONTROL_RADIUS);
@@ -9527,13 +9563,14 @@ pub(crate) mod general_screen_geometry_tests {
         let document=first(&trace,"visible document frame");
         let top_gap=divider.top()-header.bottom();
         let bottom_gap=document.top()-divider.bottom();
-        assert!((top_gap-8.0).abs()<=0.5,
+        assert!((top_gap-12.0).abs()<=0.5,
             "header-row-to-divider clearance drifted: {top_gap:.2}pt");
         assert!((bottom_gap-16.0).abs()<=0.5,
             "divider-to-visible-document-frame clearance drifted: {bottom_gap:.2}pt");
-        let expected_chrome=2.0*theme::RECEPTION_PANE_PADDING_Y
+        let expected_chrome=theme::RECEPTION_SECTION_HEADER_TOP
+            +theme::RECEPTION_PANE_PADDING_Y
             +theme::SECTION_HEADER_HEIGHT
-            +8.0+16.0
+            +12.0+16.0
             +theme::SOFT_DIVIDER_WIDTH;
         assert!((docked_section_body_height(320.0)-(320.0-expected_chrome)).abs()<=0.5,
             "fixed-height body calculator does not reserve both divider gaps");

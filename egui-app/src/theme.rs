@@ -225,8 +225,8 @@ pub const SECTION_PADDING: f32 = SPACE_16;
 // Keep the 4pt space after the 1pt divider separate from this balance.
 pub const MANAGEMENT_TOOLBAR_DIVIDER_TOP_GAP: f32 = SECTION_PADDING;
 pub const MANAGEMENT_TOOLBAR_DIVIDER_BOTTOM_GAP: f32 = SPACE_4;
-// Reception cards use the same 16pt inset on all four sides. Keep the
-// vertical alias so fixed-height calculators consume the exact frame inset.
+// Reception card side/bottom inset. The title row has its own top inset
+// so optical header balance does not change the body bottom clearance.
 pub const RECEPTION_PANE_PADDING_Y: f32 = SECTION_PADDING;
 // The outer source frame owns the 4pt document inset. Both native TextEdit
 // and the manual Galley renderer use this same additional text margin.
@@ -257,10 +257,10 @@ pub const RECEPTION_RECIPIENT_NAV_WIDTH:f32 =
     +RECEPTION_RECIPIENT_NAV_NAME_WIDTH
     +RECEPTION_RECIPIENT_NAV_COUNT_WIDTH
     +2.0*FRAME_STROKE_WIDTH;
-// Keep 8pt below the 34pt title/control row, but 16pt below the divider.
-// The title glyph is vertically centered inside its row; equal layout gaps
-// would leave visibly less whitespace between the divider and the body.
-pub const SECTION_CONTENT_GAP: f32 = SPACE_8;
+// Redistribute the previous 16pt/8pt header clearances without moving
+// the divider or body: 12pt above and below the 34pt title/control row.
+pub const RECEPTION_SECTION_HEADER_TOP: f32 = SPACE_12;
+pub const SECTION_CONTENT_GAP: f32 = SPACE_12;
 pub const SECTION_DIVIDER_BOTTOM_GAP: f32 = SPACE_16;
 // Canvas/footer clearance must be counted in the message editor's height.
 pub const RECEPTION_MESSAGE_ACTION_GAP: f32 = SPACE_12;
@@ -420,7 +420,8 @@ pub const MANUAL_DIALOG_SIDE_GAP: f32 = 36.0;
 pub const MANUAL_SOURCE_MIN_WIDTH: f32 = 250.0; // Reception source-pane minimum
 pub const MANUAL_SHEET_MIN_WIDTH: f32 = 440.0;
 pub const MANUAL_COLUMN_GAP: f32 = SPACE_12;
-pub const MANUAL_ITEMS_CARD_MIN_HEIGHT: f32 = 340.0;
+pub const RECEPTION_ITEMS_TO_FREIGHT_GAP: f32 = SPACE_16;
+pub const MANUAL_ITEMS_CARD_MIN_HEIGHT: f32 = 340.0 + (RECEPTION_ITEMS_TO_FREIGHT_GAP - SPACE_8);
 pub const MANUAL_SEARCH_DIALOG_WIDTH: f32 = MODAL_DEFAULT_MAX_WIDTH;
 pub const MANUAL_SEARCH_RESULTS_HEIGHT: f32 = 420.0;
 pub const MANUAL_INPUT_WIDTH: f32 = 250.0;
@@ -436,7 +437,9 @@ pub const MODAL_SECTION_HEADER_BG: Color32 = INPUT;
 // content-specific. Changing one master token updates all adopted dialogs.
 pub const MODAL_MASTER_WORKSPACE_TOOLBAR_HEIGHT: f32 = 40.0;
 // Clearance from the title divider to the status/action row.
-pub const MODAL_MASTER_TOOLBAR_RULE_GAP: f32 = SPACE_8;
+pub const MODAL_MASTER_TOOLBAR_RULE_GAP: f32 = SPACE_16;
+// Rebalance the visible outer-frame-to-control and control-to-rule gaps.
+pub const MODAL_EDGE_ACTION_SHIFT: f32 = SPACE_8;
 pub const MODAL_MASTER_DESCRIPTIVE_HEADER_HEIGHT: f32 = 84.0;
 pub const MODAL_MASTER_WORKSPACE_GAP: f32 = SPACE_16;
 pub const MODAL_MASTER_CONTENT_INSET: f32 = SPACE_16;
@@ -994,8 +997,8 @@ pub fn reception_workspace_frame() -> Frame {
 
 /// Return reception panes to the Settings-inspired PANEL card tier.
 /// No outer margin: the 6pt splitter hit area is the only reserved gutter.
-/// Compensate the 1pt outline in inner margins so the 16pt content inset
-/// remains identical on all four sides.
+/// Compensate the 1pt outline in inner margins; the shared header owns
+/// its separate optical top clearance.
 pub fn docked_pane_frame() -> Frame {
     Frame::new()
         .fill(PANEL)
@@ -1004,7 +1007,7 @@ pub fn docked_pane_frame() -> Frame {
         .inner_margin(egui::Margin {
             left: (SECTION_PADDING - FRAME_STROKE_WIDTH) as i8,
             right: (SECTION_PADDING - FRAME_STROKE_WIDTH) as i8,
-            top: (RECEPTION_PANE_PADDING_Y - FRAME_STROKE_WIDTH) as i8,
+            top: (RECEPTION_SECTION_HEADER_TOP - FRAME_STROKE_WIDTH) as i8,
             bottom: (RECEPTION_PANE_PADDING_Y - FRAME_STROKE_WIDTH) as i8,
         })
 }

@@ -6616,7 +6616,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                                 }
                                             }
                                         }
-                                        contents.add_space(theme::SPACE_8);
+                                        components::reception_items_to_freight_gap(contents);
                                         // Match React WorkflowFreightRows: one editable
                                         // amount per actual dispatch origin. The displayed
                                         // amount is the Rust-applied value (including the
@@ -6940,7 +6940,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                                         }
                                                     }
                                                 }
-                                                contents.add_space(theme::SPACE_8);
+                                                components::reception_items_to_freight_gap(contents);
                                                 let origin=row["dispatchOrigin"].as_str();
                                                 let recipient_id=reception_service::text(row,"id");
                                                 let fee=quoted_billable_freight(preview,row);
@@ -7411,7 +7411,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                                 }
                                             }
                                         }
-                                        items_ui.add_space(theme::SPACE_8);
+                                        components::reception_items_to_freight_gap(items_ui);
                                         // The ORDER total is not a recipient fee.
                                         // Show only the native per-recipient amount.
                                         // Engine result (auto suggestion +
