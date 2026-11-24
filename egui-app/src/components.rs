@@ -3398,7 +3398,7 @@ fn date_navigation_segmented_surface<R>(
 /// Both horizontal bars have the same length and the same center line.
 fn paint_count_step_symbol(painter:&egui::Painter,center:egui::Pos2,increase:bool,ink:Color32){
     let half=4.0;
-    let stroke=Stroke::new(1.25,ink);
+    let stroke=Stroke::new(1.8,ink);
     painter.line_segment(
         [center-egui::vec2(half,0.0),center+egui::vec2(half,0.0)],stroke
     );
@@ -3407,6 +3407,12 @@ fn paint_count_step_symbol(painter:&egui::Painter,center:egui::Pos2,increase:boo
             [center-egui::vec2(0.0,half),center+egui::vec2(0.0,half)],stroke
         );
     }
+}
+
+/// Count buttons use the existing action/field contrast, not a local color.
+fn count_step_palette(enabled:bool)->(Color32,Color32){
+    if enabled{(theme::RAISED,theme::TEXT)}
+    else{(theme::DISABLED_ACTION_BG,theme::DISABLED_ACTION_TEXT)}
 }
 
 /// A borderless segment button; its parent owns the only outer border.
@@ -3451,13 +3457,14 @@ fn date_navigation_segment_button(
             ne:if left{0}else{radius},se:if left{0}else{radius},
         };
         let painter=ui.painter().with_clip_rect(rect);
-        if !enabled{
-            painter.rect_filled(rect,corners,theme::DISABLED_ACTION_BG);
-        }else{
+        // Keep the editor on INPUT and give its action segments the shared
+        // RAISED button face. The existing disabled and blue hover roles
+        // remain distinct; neither changes the segment's allocated geometry.
+        let (fill,ink)=count_step_palette(enabled);
+        painter.rect_filled(rect,corners,fill);
+        if enabled{
             theme::paint_button_hover_corners(ui,&response,corners);
         }
-        let ink=if !enabled{theme::DISABLED_ACTION_TEXT}
-            else if response.hovered(){theme::TEXT}else{theme::SECONDARY};
         paint_count_step_symbol(&painter,rect.center(),!left,ink);
         return response.on_hover_text(tooltip);
     }
@@ -3592,7 +3599,7 @@ pub fn date_navigation_count_control(
                             egui::pos2(x,inner.top()+4.0),
                             egui::pos2(x,inner.bottom()-4.0)
                         ],
-                        Stroke::new(theme::SOFT_DIVIDER_WIDTH,theme::DIVIDER)
+                        Stroke::new(theme::SOFT_DIVIDER_WIDTH,theme::BORDER)
                     );
                 }
                 (decrement,input,increment)
@@ -8033,7 +8040,8 @@ mod date_navigation_segmented_control_tests{
         for endpoints in expected{
             assert!(output.shapes.iter().any(|paint|
                 matches!(&paint.shape,egui::Shape::LineSegment{points,stroke}
-                    if *points==endpoints && (stroke.width-1.25).abs()<0.01)
+                    if *points==endpoints && (stroke.width-1.8).abs()<0.01
+                        && stroke.color==theme::TEXT)
             ),"missing centered count symbol stroke: {endpoints:?}");
         }
         let source=include_str!("components.rs");
@@ -8042,6 +8050,15 @@ mod date_navigation_segmented_control_tests{
         assert!(count.contains("management_date_text_field_impl("));
         assert!(!count.contains("numeric_editor_font("));
         assert_eq!(control.rect.height(),theme::INPUT_HEIGHT);
+    }
+
+    #[test]
+    fn count_stepper_palette_distinguishes_actions_from_editor_and_disabled_end_stops(){
+        assert_eq!(count_step_palette(true),(theme::RAISED,theme::TEXT));
+        assert_eq!(count_step_palette(false),(theme::DISABLED_ACTION_BG,theme::DISABLED_ACTION_TEXT));
+        assert!(theme::RAISED.r()>theme::INPUT.r());
+        assert!(theme::INPUT.r()>theme::DISABLED_ACTION_BG.r());
+        assert!(theme::TEXT.r()>theme::DISABLED_ACTION_TEXT.r());
     }
 
     #[test]
