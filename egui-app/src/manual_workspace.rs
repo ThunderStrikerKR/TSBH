@@ -160,8 +160,9 @@ fn manual_cell_targets(model:&Value)->Vec<ManualCellTarget>{
 }
 
 /// Resolve movement by *visible worksheet geometry*. Recipient fields are
-/// vertically stacked; Up/Down move to their neighboring labeled field,
-/// crossing to the next/previous shipment at the boundary. Product cells
+/// the same four rows as Reception; Up/Down follow those rows,
+/// Left/Right switch mobile/phone, and Tab still follows all five fields.
+/// Crossing shipment boundaries and the product worksheet remain intact.
 /// remain a three-column worksheet with vertical item-row navigation.
 fn manual_navigation_target(
     model:&Value,current:&ManualCellTarget,key:CellNavigationKey,
@@ -171,7 +172,20 @@ fn manual_navigation_target(
     let row=rows.get(current.row)?;
     let next=match key{
         CellNavigationKey::Left|CellNavigationKey::Right=>{
-            if current.item.is_none(){return None;}
+            // The approved Reception contact row is two adjacent cells.
+            // Other recipient fields span one entire row.
+            if current.item.is_none(){
+                let next=match (current.field.as_str(),key){
+                    ("mobile",CellNavigationKey::Right)=>"phone",
+                    ("phone",CellNavigationKey::Left)=>"mobile",
+                    _=>return None,
+                };
+                return manual_cell_allowed(pending,&ManualCellTarget{
+                    row:current.row,item:None,field:next.into()
+                }).then(||ManualCellTarget{
+                    row:current.row,item:None,field:next.into()
+                });
+            }
             let fields=&["product","quantity","unitPrice"];
             let index=fields.iter().position(|field|*field==current.field)?;
             let adjacent=if key==CellNavigationKey::Left{
@@ -195,18 +209,19 @@ fn manual_navigation_target(
                     field:current.field.clone()
                 }
             }else{
-                let fields=["name","address","mobile","phone","note"];
-                let index=fields.iter().position(|field|*field==current.field)?;
-                let (target_row,target_field)=if key==CellNavigationKey::Up{
-                    if let Some(previous)=index.checked_sub(1){
-                        (current.row,fields[previous])
-                    }else{
-                        (current.row.checked_sub(1)?,fields[fields.len()-1])
-                    }
-                }else if index+1<fields.len(){
-                    (current.row,fields[index+1])
-                }else{
-                    (current.row+1,fields[0])
+                // Match the actual four Reception rows:
+                // name / address / [mobile | phone] / note.
+                let up=key==CellNavigationKey::Up;
+                let (target_row,target_field)=match (current.field.as_str(),up){
+                    ("name",true)=>(current.row.checked_sub(1)?,"note"),
+                    ("name",false)=>(current.row,"address"),
+                    ("address",true)=>(current.row,"name"),
+                    ("address",false)=>(current.row,"mobile"),
+                    ("mobile"|"phone",true)=>(current.row,"address"),
+                    ("mobile"|"phone",false)=>(current.row,"note"),
+                    ("note",true)=>(current.row,"mobile"),
+                    ("note",false)=>(current.row+1,"name"),
+                    _=>return None,
                 };
                 rows.get(target_row)?;
                 ManualCellTarget{
@@ -2434,6 +2449,21 @@ mod manual_workspace_modal_routing_tests {
         assert_eq!(move_to(&product,CellNavigationKey::Right),
             Some(ManualCellTarget{field:"unitPrice".into(),..product.clone()}));
         assert_eq!(move_to(&recipient,CellNavigationKey::Left),None);
+        let mobile=ManualCellTarget{
+            row:0,item:None,field:"mobile".into()
+        };
+        let phone=ManualCellTarget{
+            row:0,item:None,field:"phone".into()
+        };
+        assert_eq!(move_to(&mobile,CellNavigationKey::Right),Some(phone.clone()));
+        assert_eq!(move_to(&phone,CellNavigationKey::Left),Some(mobile.clone()));
+        assert_eq!(move_to(&phone,CellNavigationKey::Up),
+            Some(ManualCellTarget{field:"address".into(),..phone.clone()}));
+        assert_eq!(move_to(&mobile,CellNavigationKey::Down),
+            Some(ManualCellTarget{field:"note".into(),..mobile.clone()}));
+        assert_eq!(move_to(&last_recipient_field,CellNavigationKey::Up),
+            Some(mobile));
+
         assert_eq!(move_to(&product,CellNavigationKey::Next),
             Some(ManualCellTarget{field:"unitPrice".into(),..product.clone()}));
         let first=ManualCellTarget{
