@@ -651,11 +651,12 @@ pub(super) fn apply(payload:&Value)->Result<Value,String> {
                 set(&mut recipient,"freightCode",code.clone())?;
             }
             if let Some(checked)=requested_remote {
-                set(&mut recipient,"remoteDelivery",json!({
+                let remote_delivery=json!({
                     "address":field(&recipient,"address"),
                     "checked":checked,
                     "manual":true
-                }))?;
+                });
+                set(&mut recipient,"remoteDelivery",remote_delivery)?;
             }
             let mut shipment=state["workflow"]["shipments"][si].clone();
             if has_amount {
