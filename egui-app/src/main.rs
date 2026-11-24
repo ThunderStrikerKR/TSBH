@@ -769,6 +769,9 @@ struct BandoEgui {
     workflow_last_fetch: Option<Instant>,
     workflow_ui: workflow_board_ui::BoardUi,
     workflow_action: Option<PendingWorkflowAction>,
+    /// Workflow approval requested while this same draft's inline cell is
+    /// committing. Resume only after the native edit succeeds.
+    pending_draft_confirmation:Option<String>,
     // React's original stage safety rule: repeated stage taps within 2s
     // must not silently advance the same group twice.
     workflow_stage_deadlines: HashMap<String, Instant>,
@@ -880,6 +883,7 @@ impl BandoEgui {
             workflow_last_fetch: None,
             workflow_ui: workflow_board_ui::BoardUi::default(),
             workflow_action: None,
+            pending_draft_confirmation:None,
             workflow_stage_deadlines: HashMap::new(),
             workflow_dialog: None,
             workflow_manage_target: String::new(),
@@ -2940,8 +2944,11 @@ impl BandoEgui {
             return;
         };
         let Some(pending)=self.inline_change.take() else{return};
+        let confirm_order_id=(self.pending_draft_confirmation.as_deref()==
+            Some(pending.order_id.as_str())).then(||pending.order_id.clone());
         if self.active_id.as_deref()!=Some(pending.order_id.as_str()) ||
             self.raw_source!=pending.raw{
+            if confirm_order_id.is_some(){self.pending_draft_confirmation=None;}
             self.source_save_error=Some(
                 "편집 중 다른 발주서로 이동하여 이전 셀 수정 결과를 적용하지 않았습니다.".into()
             );
@@ -2968,7 +2975,7 @@ impl BandoEgui {
                 // opening the destination. Use the new Rust projection so a
                 // quantity edit cannot leave a stale price in the next input.
                 if self.source_save_error.is_none() &&
-                    self.page==Page::Reception
+                    self.page==Page::Reception && confirm_order_id.is_none()
                 {
                     if let Some((target,click_at))=pending.next {
                         let displayed_recipient=self.analysis.as_ref()
@@ -3025,6 +3032,13 @@ impl BandoEgui {
                     "approveOne"|"cancelApproval"|"addItem"){
                     self.inline_editor=Some(pending.editor);
                 }
+            }
+        }
+        if let Some(order_id)=confirm_order_id{
+            let committed=self.source_save_error.is_none();
+            self.pending_draft_confirmation=None;
+            if committed{
+                self.start_draft_confirmation(&order_id,ctx);
             }
         }
         ctx.request_repaint();
@@ -7536,6 +7550,42 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
         }
     }
 
+    /// A first-stage approval is also an explicit request to commit the
+    /// currently edited cell. Do not reject the user's action or confirm a
+    /// stale quote: submit the cell, wait for its native reducer result, then
+    /// continue through start_draft_confirmation().
+    fn request_draft_confirmation(&mut self,order_id:&str,ctx:&egui::Context){
+        if self.pending_draft_confirmation.as_deref()==Some(order_id){return;}
+        if self.pending_draft_confirmation.is_some(){return;}
+
+        if let Some(pending)=self.inline_change.as_mut(){
+            if pending.order_id==order_id{
+                pending.next=None;
+                self.pending_draft_confirmation=Some(order_id.to_owned());
+                return;
+            }
+        }
+        if self.inline_editor.as_ref().is_some_and(|editor|
+            editor.source_id==order_id
+        ){
+            self.pending_draft_confirmation=Some(order_id.to_owned());
+            self.submit_inline_edit(ctx);
+            if self.inline_change.is_some(){
+                return;
+            }
+            // Validation or admission failure restores the editor. Never
+            // advance with an uncommitted value.
+            if self.inline_editor.is_some(){
+                self.pending_draft_confirmation=None;
+                return;
+            }
+            self.pending_draft_confirmation=None;
+            self.start_draft_confirmation(order_id,ctx);
+            return;
+        }
+        self.start_draft_confirmation(order_id,ctx);
+    }
+
     /// Convert an exact, freshly repriced egui draft into a real order only
     /// when the employee clicks the first workflow stage. Native reconciliation
     /// overlays the full Rust Order and commits confirmation + workflow in one
@@ -8191,7 +8241,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
             }
             Some(workflow_board_ui::Event::ConfirmDraft(id))=>{
                 self.workflow_ui.stop_preview();
-                self.start_draft_confirmation(&id,ui.ctx());
+                self.request_draft_confirmation(&id,ui.ctx());
             }
             Some(workflow_board_ui::Event::SelectPending(id))=>{
                 self.workflow_ui.selection=None;
@@ -9451,6 +9501,43 @@ mod reception_workflow_admission_integration_tests {
         assert_eq!(app.drafts.len(),1);
         assert_eq!(app.active_id.as_deref(),Some("draft-2"));
         assert!(app.workflow_dialog.is_none());
+    }
+
+    #[test]
+    fn confirm_request_commits_a_dirty_same_order_cell_before_advancing(){
+        let ctx=egui::Context::default();
+        let mut app=app();
+        let raw="원문".to_owned();
+        app.drafts[0].analysis_raw=Some(raw.clone());
+        app.drafts[0].analysis_evidence=Some(serde_json::json!({
+            "recipients":[{"id":"r1","name":"가상 수취인","address":"서울",
+                "phone":"","mobile":"","note":"","items":[],"sources":[]}],
+            "candidates":[],"unassigned":[]
+        }));
+        app.inline_editor=Some(InlineReceptionEditor{
+            source_id:"draft-1".into(),
+            target:InlineTarget{recipient_id:"r1".into(),item_id:None,field:"note"},
+            original:String::new(),text:"직원 메모".into(),
+            focus_next:false,click_at:None
+        });
+        app.request_draft_confirmation("draft-1",&ctx);
+        assert!(app.inline_editor.is_none(),"dirty editor must be submitted");
+        assert!(app.inline_change.is_some(),"native cell save must be in flight");
+        assert_eq!(app.pending_draft_confirmation.as_deref(),Some("draft-1"));
+    }
+
+    #[test]
+    fn confirm_request_waits_for_an_inflight_same_order_edit_and_discards_next_focus(){
+        let ctx=egui::Context::default();
+        let mut app=app();
+        inline_worker(&mut app);
+        app.inline_change.as_mut().unwrap().next=Some((
+            InlineTarget{recipient_id:"r1".into(),item_id:None,field:"address"},None
+        ));
+        app.request_draft_confirmation("draft-1",&ctx);
+        assert_eq!(app.pending_draft_confirmation.as_deref(),Some("draft-1"));
+        assert!(app.inline_change.as_ref().unwrap().next.is_none(),
+            "confirmation must not reopen a next-cell editor after commit");
     }
 
     #[test]
