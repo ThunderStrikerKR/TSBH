@@ -24,9 +24,12 @@
     "6d376785b340ee2a74cb6b5e63dc35d67265c00c",
     "67731a8d8f0964ce020d149c7366ab3e88420ac2",
     "36f1ae5841bfb73e7b6916ea772fa52f64227af5",
-    "2cb748ec73266903edc5063eb6673b6260a1213e"
+    "2cb748ec73266903edc5063eb6673b6260a1213e",
+    "43c975bf12fcb3c5e473e64579cec94b553dd6db",
+    "45d8f43d83689d2ac8702c1054a7b3700f73c750",
+    "ebfadd2e35ee7dc853a40430f4ecc2d393d72b9f"
   ],
-  "reason": "2026-11-24 사용자가 Windows 실행 화면을 제시하여 UI 클리핑 및 레이아웃 품질 불합격을 확인했다. 자료에 배송지/연락처가 포함되어 공개 GitHub 저장소에 원본 스크린샷은 올리지 않는다. 배송 건수 증감 버튼의 날짜 선택기 스타일 통합 패치는 main에 반영됐으나 Windows 실화면 재검증 전이므로 기존 FAIL을 유지한다. 2026-11-24 후속: 배송 건수 컨트롤을 단일 segmented UI로 교체하고 1/1 네비게이터의 이름/진행도를 유지하도록 수정했다. Windows 실화면 확인 전까지 FAIL 유지.",
+  "reason": "2026-11-24 사용자가 Windows 실행 화면을 제시하여 UI 클리핑 및 레이아웃 품질 불합격을 확인했다. 자료에 배송지/연락처가 포함되어 공개 GitHub 저장소에 원본 스크린샷은 올리지 않는다. 배송 건수 증감 버튼의 날짜 선택기 스타일 통합 패치는 main에 반영됐으나 Windows 실화면 재검증 전이므로 기존 FAIL을 유지한다. 2026-11-24 후속: 배송 건수 컨트롤을 단일 segmented UI로 교체하고 1/1 네비게이터의 이름/진행도를 유지하도록 수정했다. Windows 실화면 확인 전까지 FAIL 유지. 2026-11-24 후속: 배송 건수 입력부를 단일 segmented UI로 통합하고 1/1 네비게이터의 이름/진행도를 유지하도록 수정했다. 최신 Windows CI 및 실화면 검증이 끝날 때까지 FAIL 유지.",
   "defects": [
     {
       "id": "UI-84-CLIP-001",
@@ -238,7 +241,7 @@
     "githubCI": "NOT_VERIFIED"
   },
   "shipmentCountNavigation": {
-    "status": "PATCH_COMMITTED_CI_PENDING_WINDOWS_UNVERIFIED",
+    "status": "PATCH_COMMITTED_LATEST_CI_IN_PROGRESS_WINDOWS_UNVERIFIED",
     "date": "2026-11-24",
     "target": "수동 분류 상단 배송 건수 조작부 전체",
     "layout": {
@@ -253,35 +256,41 @@
     },
     "sharedSurface": "components.rs::date_navigation_segmented_surface",
     "sharedSegments": "components.rs::date_navigation_segment_button",
-    "recipientNavigator": "같은 segmented surface 사용; 이름과 1/N 진행도는 항상 표시",
+    "recipientNavigator": "동일한 segmented surface 사용; 이름과 1/N 진행도는 항상 표시",
     "recipientOneOfOne": "1/1 표시, 양쪽 화살표만 비활성",
     "busyState": "계산/대기 중에도 네비게이터 이름과 진행도 유지; 화살표만 비활성",
-    "countBounds": "1~100, 감소/증가 버튼 비활성 경계는 현재 입력 초안 값 반영",
+    "countBounds": "1~100, 증감 버튼 비활성 경계는 현재 입력 초안 값 반영",
     "preserved": [
       "숫자 직접 입력",
       "3자리 숫자 필터",
       "1~100 범위 검증",
       "비동기 request_resize 흐름",
-      "수취인 이전/다음 이동"
+      "다건 수취인 이전/다음 이동"
     ],
     "regressionTests": [
       "date_navigation_segmented_control_tests",
       "reception_recipient_navigation_state_tests",
       "shipment_count_is_one_date_selector_segmented_control"
     ],
-    "workflow": ".github/workflows/egui-manual-classification-check.yml에 세 테스트 실행 단계 추가",
+    "workflow": ".github/workflows/egui-manual-classification-check.yml: 신규 회귀 테스트를 컴파일 후 기존 modal input routing 테스트보다 먼저 실행",
     "verification": {
-      "static": "PASS: shared frame/segment renderer, count input encapsulation, 1/1 state, parent-disabled arrow-only behavior, stable ID and resize guard confirmed",
-      "githubActions": "PENDING_OR_NOT_YET_READ",
-      "rustBuild": "DELEGATED_TO_WINDOWS_GITHUB_ACTIONS",
+      "static": "PASS: one count control call, input encapsulated in component, one outer frame, two separators, persistent 1/1 header, arrow-only disabled state, stable widget ID, resize guard",
+      "githubActions": {
+        "runId": 45338398170,
+        "url": "https://github.com/ThunderStrikerKR/TSBH/actions/runs/45338398170",
+        "status": "IN_PROGRESS",
+        "note": "이전 실행은 Compile PASS 후 기존 modal_input_routing_tests에서 실패해 신규 회귀 테스트가 skip됨. 최신 실행에서는 신규 테스트를 먼저 실행하도록 순서를 변경함."
+      },
+      "rustBuild": "LATEST_RUN_IN_PROGRESS; prior cargo check passed before final small hint/hover adjustments",
       "windowsVisual": "NOT_VERIFIED"
     }
   },
   "latestFileBlobs": {
-    "egui-app/src/components.rs": "9b96db171bdddb0e0b9cf7a5f6d89f27352db07c",
+    "egui-app/src/components.rs": "47cf9c9e3b405cf34c073478810735f335db8ec6",
     "egui-app/src/manual_workspace.rs": "79d03332253c6f342cbf909159f7167f6e945a52",
-    "egui-app/src/main.rs": "9d61a8f345d079f47e2e044fc2da36f5b9ade58a",
-    ".github/workflows/egui-manual-classification-check.yml": "673bbbf55d9c9dc88b0a8ec6a867f9e9943bb770"
+    "egui-app/src/main.rs": "603bf36975cec616ee705b7c86ac8b474e7b63f6",
+    ".github/workflows/egui-manual-classification-check.yml": "dd7a5863f1561ed6576355668a882fd70fa9f8b3",
+    "docs/manual-classification-ui-84.md": "a83f7e540b941b050fe312d32bc71654f5d8f209"
   },
   "latestDocs": {
     "docs/manual-classification-ui-84.md": "bf9edc5e6e93365a168f7964d8b496de746eab0f"
