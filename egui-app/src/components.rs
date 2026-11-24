@@ -7328,3 +7328,56 @@ mod manual_nested_prompt_regression_tests{
         ),"shared blue source border is absent from linked table cells");
     }
 }
+#[cfg(test)]
+mod date_navigation_segmented_control_tests{
+    use super::*;
+
+    #[test]
+    fn shipment_count_is_one_outer_frame_with_three_adjacent_segments(){
+        let ctx=test_context();
+        let mut value="2".to_owned();
+        let mut rendered=None;
+        let _=ctx.run(egui::RawInput::default(),|ctx|{
+            egui::CentralPanel::default().show(ctx,|ui|{
+                rendered=Some(date_navigation_count_control(
+                    ui,"test-shipment-count",&mut value,2,true,1,100
+                ));
+            });
+        });
+        let control=rendered.expect("count control must render");
+        assert_eq!(control.rect.height(),theme::CALENDAR_NAV_SIZE);
+        assert_eq!(control.input.rect.width(),64.0);
+        let expected_input_left=control.rect.left()
+            +theme::FRAME_STROKE_WIDTH+theme::CALENDAR_NAV_SIZE;
+        assert!(
+            (control.input.rect.left()-expected_input_left).abs()<0.5,
+            "numeric editor must sit directly between the two 28pt arrow segments"
+        );
+        let expected_input_right=control.rect.right()
+            -theme::FRAME_STROKE_WIDTH-theme::CALENDAR_NAV_SIZE;
+        assert!(
+            (control.input.rect.right()-expected_input_right).abs()<0.5,
+            "the plus segment must directly follow the numeric editor"
+        );
+    }
+
+    #[test]
+    fn single_recipient_still_allocates_name_and_one_of_one_navigator(){
+        let ctx=test_context();
+        let mut consumed_height=0.0;
+        let _=ctx.run(egui::RawInput::default(),|ctx|{
+            egui::CentralPanel::default().show(ctx,|ui|{
+                let before=ui.cursor().min.y;
+                let selected=reception_recipient_navigator(
+                    ui,"권기엽",0,1,false
+                );
+                assert_eq!(selected,None);
+                consumed_height=ui.cursor().min.y-before;
+            });
+        });
+        assert!(
+            consumed_height>=theme::SECTION_HEADER_HEIGHT-0.5,
+            "the 1/1 recipient navigator must remain allocated even with both arrows disabled"
+        );
+    }
+}
