@@ -243,6 +243,15 @@ pub trait BandoGateway: Send + Sync {
     fn execute(&self, operation: ReadOperation, payload: Value) -> Result<Value, String>;
 }
 
+fn message_account_wire(state:&Value)->Result<Vec<Value>,String>{
+    state["settings"]["accounts"].as_array().into_iter().flatten().map(|account|
+        Ok(serde_json::json!({
+            "id":account["id"],
+            "json":serde_json::to_string(account).map_err(|error|error.to_string())?
+        }))
+    ).collect()
+}
+
 #[derive(Default)]
 pub struct LocalGateway;
 
@@ -553,7 +562,7 @@ impl BandoGateway for LocalGateway {
         if !group_delete && !matches!(
             action,
             "advance_group"|"undo_group"|"confirm_group_payment"|"process_group"
-            |"detach_shipment"|"regroup_shipment"|"set_shipment_freight"
+            |"detach_shipment"|"regroup_shipment"|"set_shipment_freight"|"record_message_copy"
         ){
             return Err("지원하지 않는 주문 묶음 작업입니다.".into());
         }
@@ -618,7 +627,40 @@ impl BandoGateway for LocalGateway {
         let actor=before["settings"]["operatorName"].as_str()
             .filter(|name|!name.trim().is_empty())
             .unwrap_or("사용자(이름 미설정)").to_owned();
-        let request=if group_delete {
+        let request=if action=="record_message_copy"{
+            // Copy evidence must describe the same current native message.
+            // Never reconcile or mutate prices as a side effect of copying.
+            let group_id=args["groupId"].as_str().ok_or("주문 묶음 ID 누락")?;
+            let group_active=before["workflow"]["groups"].as_array().is_some_and(|groups|
+                groups.iter().any(|group|group["id"].as_str()==Some(group_id)
+                    && group["deletedAt"].is_null()));
+            let shipment_active=before["workflow"]["shipments"].as_array().is_some_and(|ships|
+                ships.iter().any(|ship|ship["groupId"].as_str()==Some(group_id)
+                    && ship["transferred"]!=true && ship["legacyArchived"]!=true));
+            if !group_active || !shipment_active{
+                return Err("처리 중인 주문 묶음을 다시 선택하세요.".into());
+            }
+            let wire=message_account_wire(&before)?;
+            let current=output::execute("render_automatic_message",serde_json::json!({
+                "state":&before,"groupId":group_id,"includeLinks":false,"accountWire":wire
+            }))?;
+            let copy_type=match current["phase"].as_str(){
+                Some("request")=>"REQUEST",
+                Some("payment") if current["paymentIssues"].as_array().is_some_and(|v|v.is_empty())=>"PAYMENT",
+                _=>return Err("복사 가능한 계좌 안내 메시지가 아닙니다.".into())
+            };
+            if args["copyType"].as_str()!=Some(copy_type) ||
+                current["text"]!=args["messageText"] ||
+                (copy_type=="PAYMENT" && (current["signature"].as_str().is_none_or(str::is_empty)
+                    || current["signature"]!=args["signature"])){
+                return Err("복사 후 안내 내용이 변경되었습니다. 최신 메시지를 다시 복사하세요.".into());
+            }
+            serde_json::json!({
+                "state":&before,"groupId":group_id,"copyType":copy_type,
+                "signature":current["signature"],"token":args["token"],
+                "now":now,"eventId":event_id
+            })
+        }else if group_delete {
             serde_json::json!({
                 "state":&before,"action":action,
                 "groupId":args["groupId"],"now":now,"eventId":event_id
@@ -655,6 +697,18 @@ impl BandoGateway for LocalGateway {
                     .ok_or("다음 진행 단계를 확인하지 못했습니다.")?)
             }else{None};
             let payment_message=if next_step==Some(3){
+                // A prior copy is only evidence for this exact financial
+                // signature. The alternative delivery path needs explicit staff approval.
+                if args["ack"]!=true{
+                    let wire=message_account_wire(prepared)?;
+                    let status=output::execute("payment_copy_status",serde_json::json!({
+                        "state":prepared,"groupId":args["groupId"],
+                        "accountWire":wire,"mode":"payment_copy_status"
+                    }))?;
+                    if status["copied"]!=true{
+                        return Err("현재 계좌 안내 메시지의 복사 기록이 없습니다. 다시 복사하거나 다른 방법으로 전달했는지 확인하세요.".into());
+                    }
+                }
                 Some(output::execute("render_payment_notice",
                     serde_json::json!({
                         "state":prepared,"groupId":args["groupId"]
@@ -688,7 +742,8 @@ impl BandoGateway for LocalGateway {
             }
             request
         };
-        let op=if group_delete{"apply_group_action"}
+        let op=if action=="record_message_copy"{"record_message_copy"}
+            else if group_delete{"apply_group_action"}
             else{"apply_workflow_action"};
         let result=rules::execute(op,request)?;
         let changed=result.get("state")

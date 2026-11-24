@@ -6234,12 +6234,19 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
         if let Some((group,_shipment))=self.visible_workflow_group(){
             // React also blocks payment copies with actionable Rust issues.
             // Do not enable controls just because the preview has text.
-            let can_copy=group.automatic_text.as_deref()
+            let can_copy=self.gateway.workflow_write_enabled()
+                && self.workflow_action.is_none()
+                && self.workflow_receiver.is_none()
+                && self.workflow_error.is_none()
+                && self.workflow_freight_editor.is_none()
+                && !group.transferred
+                && group.automatic_text.as_deref()
                 .is_some_and(|text|!text.trim().is_empty())
                 && matches!(group.automatic_phase.as_deref(),
                     Some("request") | Some("payment"))
                 && (group.automatic_phase.as_deref()!=Some("payment")
-                    ||group.automatic_payment_issues.is_empty());
+                    ||(group.automatic_payment_issues.is_empty()
+                        && group.automatic_signature.as_deref().is_some_and(|value|!value.is_empty())));
             let mut copy_with_greeting=None;
             Self::section_with_header(ui,"복사용 자동 메시지",height,|header|{
                 let mut include_link=false;
@@ -6294,9 +6301,8 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                 floating_notice::dispatch_pointer(
                     ui.ctx(),"reception.automatic.copy"
                 );
-                // The native Rust output engine owns the optional greeting.
-                // Copying is clipboard-only until an authorized workflow
-                // audit CAS transaction is exposed to this egui frontend.
+                // Only a successful native clipboard write can create a copy audit.
+                // The gateway revalidates the displayed message against the DB revision.
                 let result=self.gateway.execute(
                     gateway::ReadOperation::DecorateAutomaticCopy,
                     serde_json::json!({
@@ -6309,12 +6315,37 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                         if let Some(text)=rendered.get("text")
                             .and_then(serde_json::Value::as_str)
                             .filter(|text|!text.trim().is_empty()){
-                            ui.ctx().copy_text(text.to_owned());
-                            floating_notice::publish(
-                                ui.ctx(),"reception.automatic.copy",
-                                floating_notice::Tone::Success,
-                                "클립보드 복사 완료 · 업무 이력은 기록되지 않았습니다."
-                            );
+                            let copied=arboard::Clipboard::new()
+                                .and_then(|mut clipboard|clipboard.set_text(text.to_owned()));
+                            match copied{
+                                Ok(())=>{
+                                    let copy_type=if group.automatic_phase.as_deref()==Some("payment"){
+                                        "PAYMENT"
+                                    }else{"REQUEST"};
+                                    self.start_workflow_action_with_args(
+                                        "record_message_copy",&group.id,None,None,false,
+                                        serde_json::json!({
+                                            "copyType":copy_type,
+                                            "token":uuid::Uuid::new_v4().to_string(),
+                                            "signature":group.automatic_signature,
+                                            "messageText":group.automatic_text
+                                        }),ui.ctx()
+                                    );
+                                    if self.workflow_action.as_ref().is_none_or(|task|
+                                        task.action!="record_message_copy"){
+                                        floating_notice::publish(
+                                            ui.ctx(),"reception.automatic.copy",
+                                            floating_notice::Tone::Error,
+                                            "복사는 완료됐지만 업무 이력 저장을 시작하지 못했습니다. 다시 복사하세요."
+                                        );
+                                    }
+                                }
+                                Err(error)=>floating_notice::publish(
+                                    ui.ctx(),"reception.automatic.copy",
+                                    floating_notice::Tone::Error,
+                                    format!("클립보드 복사 실패: {error}")
+                                )
+                            }
                         }else{
                             floating_notice::publish(
                                 ui.ctx(),"reception.automatic.copy",
@@ -8120,6 +8151,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                 floating_notice::publish(
                     ctx,"reception.workflow",floating_notice::Tone::Success,
                     match action.as_str(){
+                        "record_message_copy"=>"클립보드 복사 및 업무 이력 저장 완료.",
                         "advance_group"=>"업무 단계를 진행했습니다.",
                         "confirm_reception"=>"주문 확인을 완료하고 정식 주문으로 확정했습니다.",
                         "confirm_group_payment"=>"입금 확인 단계를 완료했습니다.",
@@ -8445,7 +8477,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                             ).clicked(){
                                 command=Some((
                                     "advance_group".into(),id.clone(),
-                                    None,None,false
+                                    None,None,true
                                 ));
                             }
                         });
@@ -8475,7 +8507,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
             .and_then(|board|board.groups.iter().find(|group|group.id==id))
         else{return;};
         if group.transferred{return;}
-        if group.step==2 || (group.needs_notice && group.step>=2){
+        if (group.step==2 || (group.needs_notice && group.step>=2)) && !group.payment_copied{
             self.workflow_dialog=Some(WorkflowDialog::PaymentNotice(id.to_owned()));
         }else{
             let action=if group.step>=4 && !group.needs_notice{"process_group"}

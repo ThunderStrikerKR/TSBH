@@ -48,6 +48,8 @@ pub struct GroupRow {
     // Copy enablement follows the same Rust phase/payment issue response
     // as React; a rendered monetary string alone is not proof it is safe.
     pub automatic_phase: Option<String>,
+    pub automatic_signature: Option<String>,
+    pub payment_copied: bool,
     pub automatic_payment_issues: Vec<String>,
     pub issues: Vec<String>,
 }
@@ -248,18 +250,23 @@ pub fn load(gateway:&dyn BandoGateway)->Result<BoardSnapshot,String>{
             .collect::<Result<Vec<Value>,String>>()?;
         let automatic=gateway.execute(ReadOperation::RenderAutomaticMessage,json!({
             "state":&state,"groupId":group_id,"includeLinks":false,
-            "accountWire":wire,
+            "accountWire":&wire,
         }));
-        let (automatic_text,automatic_error,automatic_phase,automatic_payment_issues)=
+        let payment_copied=gateway.execute(ReadOperation::RenderAutomaticMessage,json!({
+            "state":&state,"groupId":group_id,"accountWire":&wire,
+            "mode":"payment_copy_status"
+        })).ok().is_some_and(|result|result["copied"]==true);
+        let (automatic_text,automatic_error,automatic_phase,automatic_payment_issues,automatic_signature)=
             match automatic{
                 Ok(result)=>(
                     result.get("text").and_then(Value::as_str).map(str::to_owned),
                     None,
                     result.get("phase").and_then(Value::as_str).map(str::to_owned),
                     rows(field(&result,"paymentIssues")).iter()
-                        .filter_map(Value::as_str).map(str::to_owned).collect()
+                        .filter_map(Value::as_str).map(str::to_owned).collect(),
+                    result.get("signature").and_then(Value::as_str).map(str::to_owned)
                 ),
-                Err(error)=>(None,Some(error),None,Vec::new()),
+                Err(error)=>(None,Some(error),None,Vec::new(),None),
             };
         let issues=workflow_review_labels(native);
         groups.push(GroupRow{
@@ -277,7 +284,7 @@ pub fn load(gateway:&dyn BandoGateway)->Result<BoardSnapshot,String>{
             vat_included,vat_excluded,
             shipments:display_shipments,
             automatic_text,automatic_error,automatic_phase,
-            automatic_payment_issues,issues,
+            automatic_payment_issues,automatic_signature,payment_copied,issues,
         });
     }
     groups.sort_by(|a,b|b.created_at.cmp(&a.created_at));
@@ -339,7 +346,8 @@ mod linked_recipient_selection_tests{
             source_id:String::new(),dealer_id:String::new(),transferred:false,
             step:0,needs_notice:false,total:None,vat_included:0,vat_excluded:0,
             shipments,automatic_text:None,automatic_error:None,
-            automatic_phase:None,automatic_payment_issues:vec![],issues:vec![],
+            automatic_phase:None,automatic_signature:None,payment_copied:false,
+            automatic_payment_issues:vec![],issues:vec![],
         }
     }
     #[test]
