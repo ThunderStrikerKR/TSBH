@@ -4,16 +4,20 @@
 
 pub const PANEL_COUNT: usize = 4;
 pub const SPLITTER: f32 = 6.0;
-// Measured from the original 1920x1080 React reception screenshot:
-// column interiors are 390/531/529/418 physical pixels. Use these
-// proportions for the initial egui layout, not a visually guessed split.
+// Original 1920x1080 React reference: 390/531/529/418 physical pixels.
+// The current default below deliberately transfers width from the source
+// pane to the details pane; the reference remains useful for minimums.
 // The previous last-pane 420pt minimum forced it to ~25.4% on this screen
 // despite a reference width of only 22.4%. 350pt clears that clamp while
 // retaining a readable minimum on smaller windows.
 // React HubShell's Kakao minimum is 392 CSS px at 100% UI scale.
 // Do not reserve only 200pt then ask the employee to resize Kakao manually.
 pub const MIN_WIDTHS: [f32; PANEL_COUNT] = [392.0, 250.0, 250.0, 350.0];
-pub const DEFAULT_RATIOS: [f32; PANEL_COUNT] = [20.9, 28.4, 28.3, 22.4];
+// Reception's three work panes follow Kakao: source, details, orders.
+// Widen details by 15% relative to its previous 28.3 share, funded solely
+// from source (4.245 percentage points). Kakao and orders stay unchanged.
+pub const DEFAULT_RATIOS: [f32; PANEL_COUNT] = [20.9, 24.155, 32.545, 22.4];
+const PREVIOUS_DEFAULT_RATIOS: [f32; PANEL_COUNT] = [20.9, 28.4, 28.3, 22.4];
 const LEGACY_DEFAULT_RATIOS: [f32; PANEL_COUNT] = [20.0, 29.0, 29.0, 22.0];
 // Original review section: ~262 / 994 screen-content pixels.
 // The lower horizontal divider is shared with the source/message column.
@@ -96,12 +100,12 @@ impl LayoutState {
         if ratio_total <= 0.0 {
             return Self::default();
         }
-        // Some installations saved the old default ratios with layout.txt.
-        // Update only that exact uncustomized preset. Preserved, manually
-        // dragged layouts are not normalized or overwritten.
-        let unmodified_legacy_preset = ratios.iter()
-            .zip(LEGACY_DEFAULT_RATIOS.iter())
-            .all(|(value, legacy)| (*value - *legacy).abs() < 0.00001);
+        // Migrate saved unmodified defaults, including the preceding preset.
+        // Keep manually resized layouts and independent vertical splitters.
+        let unmodified_legacy_preset = [LEGACY_DEFAULT_RATIOS, PREVIOUS_DEFAULT_RATIOS]
+            .iter()
+            .any(|preset| ratios.iter().zip(preset.iter())
+                .all(|(value, legacy)| (*value - *legacy).abs() < 0.00001));
         Self {
             ratios: if unmodified_legacy_preset { DEFAULT_RATIOS } else { ratios },
             source_ratio: parts[PANEL_COUNT].clamp(0.05, 0.95),
