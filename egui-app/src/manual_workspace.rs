@@ -3012,7 +3012,11 @@ mod manual_workspace_modal_routing_tests {
 
     #[test]
     fn manual_cards_reuse_the_real_reception_renderers(){
-        let source=include_str!("manual_workspace.rs");
+        // Source assertions must not match their own assertion strings.
+        // Keep the entire production implementation, excluding all test modules.
+        let (source,_)=include_str!("manual_workspace.rs")
+            .split_once("\n#[cfg(test)]\nmod manual_assignment_gesture_tests{")
+            .expect("production/test source boundary");
         let render=source.split("pub fn show(").nth(1).unwrap()
             .split("fn manual_hover_target(").next().unwrap();
         assert_eq!(render.matches("reception_section_with_header(").count(),2);
