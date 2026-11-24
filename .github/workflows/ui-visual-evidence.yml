@@ -1,0 +1,48 @@
+name: UI visual evidence gate
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "egui-app/src/**/*.rs"
+      - "src/**/*.tsx"
+      - "src/**/*.css"
+      - "docs/ui-visual-verification/audits/**"
+      - "scripts/check-ui-visual-verification.mjs"
+      - "tests/ui-visual-verification.test.mjs"
+      - ".github/workflows/ui-visual-evidence.yml"
+  pull_request:
+    paths:
+      - "egui-app/src/**/*.rs"
+      - "src/**/*.tsx"
+      - "src/**/*.css"
+      - "docs/ui-visual-verification/audits/**"
+      - "scripts/check-ui-visual-verification.mjs"
+      - "tests/ui-visual-verification.test.mjs"
+      - ".github/workflows/ui-visual-evidence.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  visual-evidence:
+    name: Visual evidence / not a screenshot runner
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Verify visual gate rules
+        run: node --test tests/ui-visual-verification.test.mjs
+      - name: Require version-bound human visual review for changed UI
+        env:
+          UI_DIFF_BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: |
+          if [ -z "$UI_DIFF_BASE" ]; then
+            echo "Missing diff base: fail closed" >&2
+            exit 1
+          fi
+          node scripts/check-ui-visual-verification.mjs --base "$UI_DIFF_BASE"
