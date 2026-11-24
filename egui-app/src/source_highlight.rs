@@ -711,7 +711,9 @@ fn block_shapes_with_states(
                     if rect.width()<=0.0 {continue;}
                 }
                 if !rect.intersects(clip) {continue;}
-                let radius=if block.focused {ACTIVE_RADIUS} else {2.0};
+                let radius=if block.focused {ACTIVE_RADIUS}
+                    else if block.manual_state.is_some(){theme::MANUAL_SOURCE_BLOCK_RADIUS}
+                    else {2.0};
                 let background=egui::Shape::rect_filled(rect,radius,block.fill);
                 if block.focused {
                     focused.push(background);
@@ -723,9 +725,9 @@ fn block_shapes_with_states(
                     ));
                 } else {
                     normal.push(background);
-                    // Keep the existing gray Reception fill, but restore
-                    // crisp 1pt white borders around recognized data.
-                    // Manual pending blocks use white, completed blocks gray.
+                    // Reception retains its subdued gray border.
+                    // Manual pending and completed blocks share rounded
+                    // geometry but use independent state-specific colors.
                     let (border,width)=match block.manual_state {
                         Some(ManualBlockState::Unassigned)=>(
                             theme::MANUAL_SOURCE_UNASSIGNED_BORDER,
@@ -961,8 +963,10 @@ mod tests {
     fn manual_assignment_state_changes_only_manual_palette_and_ink() {
         assert_eq!(
             theme::MANUAL_SOURCE_UNASSIGNED_FILL,
-            Color32::WHITE
+            Color32::from_rgb(184,184,184)
         );
+        assert_ne!(theme::MANUAL_SOURCE_UNASSIGNED_FILL,theme::BRIGHT);
+        assert_eq!(theme::MANUAL_SOURCE_BLOCK_RADIUS,4.0);
         assert_eq!(
             theme::MANUAL_SOURCE_UNASSIGNED_BORDER,
             theme::SOURCE_RECOGNIZED_BORDER
@@ -1029,11 +1033,17 @@ mod tests {
             let area=egui::Rect::from_min_size(
                 egui::Pos2::ZERO,egui::vec2(400.0,200.0)
             );
-            let (_fills,manual_strokes)=block_shapes_manual(
+            let (manual_fills,manual_strokes)=block_shapes_manual(
                 raw,&galley,egui::Pos2::ZERO,&spans,None,None,&assigned,area
             );
             assert_eq!(manual_strokes.len(),2,
                 "each classified/unclassified source block needs its own stroke");
+            assert_eq!(manual_fills.len(),2);
+            for shape in manual_fills.iter().chain(manual_strokes.iter()){
+                assert!(matches!(shape,egui::Shape::Rect(rect)
+                    if rect.corner_radius==egui::CornerRadius::same(4)),
+                    "manual fill and outline must share the same rounded corners");
+            }
             let (_normal,receipt_strokes)=block_shapes(
                 raw,&galley,egui::Pos2::ZERO,&spans,None,None,area
             );

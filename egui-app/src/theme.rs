@@ -725,9 +725,11 @@ pub const SOURCE_RECOGNIZED_BORDER: Color32 = Color32::from_rgb(96, 96, 96);
 pub const SOURCE_RECOGNIZED_BORDER_WIDTH: f32 = 1.0;
 pub const MANUAL_SOURCE_PENDING_BG: Color32 = Color32::from_rgb(63, 63, 63);
 pub const MANUAL_SOURCE_ASSIGNED_BG: Color32 = Color32::from_rgb(42, 60, 74);
-// Manual classification uses white with dark ink for unassigned tokens
-// and muted gray for classified tokens. Reception retains its own palette.
-pub const MANUAL_SOURCE_UNASSIGNED_FILL: Color32 = BRIGHT;
+// Unassigned source evidence is a sustained reading surface, not a
+// primary action. Keep its subdued gray independent of BRIGHT buttons.
+// Classified tokens remain darker; Reception retains its own palette.
+pub const MANUAL_SOURCE_UNASSIGNED_FILL: Color32 = Color32::from_rgb(184, 184, 184);
+pub const MANUAL_SOURCE_BLOCK_RADIUS: f32 = 4.0;
 pub const MANUAL_SOURCE_UNASSIGNED_TEXT: Color32 = BRIGHT_TEXT;
 pub const MANUAL_SOURCE_UNASSIGNED_BORDER: Color32 = SOURCE_RECOGNIZED_BORDER;
 pub const MANUAL_SOURCE_CLASSIFIED_FILL: Color32 = Color32::from_rgb(66, 66, 66);
