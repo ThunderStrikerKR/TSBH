@@ -1575,7 +1575,8 @@ fn modal_master_action_area(rect:Rect,action_height:f32)->Rect {
     let content=modal_master_content_rect(rect);
     let height=action_height.max(0.0).min(rect.height().max(0.0));
     let free=(rect.height()-height).max(0.0);
-    let top=rect.top()+(free*0.5+theme::MODAL_EDGE_ACTION_SHIFT).min(free);
+    let outer=theme::MODAL_PANEL_PADDING_Y+theme::FRAME_STROKE_WIDTH;
+    let top=rect.top()+((free+outer+theme::SOFT_DIVIDER_WIDTH)*0.5).min(free);
     Rect::from_min_size(
         egui::pos2(content.left(),top),
         Vec2::new(content.width(),height)
