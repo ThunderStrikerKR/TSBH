@@ -610,7 +610,7 @@ impl CategoryManager {
         let card_min_height=components::management_primary_card_min_inner_height(
             ui,theme::SECTION_PADDING
         );
-        theme::section_frame().show(ui,|panel|{
+        components::measured_management_section_card(ui,|panel|{
             components::fill_management_primary_card(panel,card_min_height);
             // No vacated heading or help-text rows. Reserve one 36pt
             // search-and-actions toolbar, exactly as the management master.
@@ -1129,7 +1129,7 @@ mod modal_layout_contract_tests{
         assert!(!page.contains("분류 행을 클릭하면"));
         assert!(!page.contains("panel.horizontal(|header|"));
         assert!(!page.contains("panel.horizontal_wrapped(|search|"));
-        assert!(page.contains("section_frame().show(ui"));
+        assert!(page.contains("measured_management_section_card(ui"));
         assert!(page.contains("fill_management_primary_card(panel,card_min_height)"));
         assert!(page.contains("panel.spacing_mut().item_spacing.y=0.0;"));
         assert!(page.contains("management_toolbar_trailing_rect("));

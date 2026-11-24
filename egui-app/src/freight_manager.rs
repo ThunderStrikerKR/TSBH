@@ -1282,7 +1282,7 @@ impl FreightManager {
         // The data viewport AND the scrollbar rail stop above the same
         // bottom inset. Neither may reach the card's outer border.
         let card_min_height=components::management_master_table_card_min_inner_height(ui);
-        theme::management_master_table_frame().show(ui, |section| {
+        components::measured_management_master_card(ui,|section| {
             components::fill_management_primary_card(section,card_min_height);
             // Assignment is one continuous zebra table. The standard solid
             // scrollbar reserves 4pt of margin on EACH side of its rail,
@@ -2023,7 +2023,7 @@ impl FreightManager {
         // A single group table replaces the duplicate group cards + audit grid.
         // Its actions still use the original Rust write paths and modal editors.
         let card_min_height=components::management_master_table_card_min_inner_height(ui);
-        theme::management_master_table_frame().show(ui, |section| {
+        components::measured_management_master_card(ui,|section| {
             components::fill_management_primary_card(section,card_min_height);
             section.spacing_mut().scroll=theme::management_table_scroll_style();
             // Search and group creation share one fixed 36pt toolbar.
@@ -2465,7 +2465,7 @@ impl FreightManager {
         let card_min_height=components::management_primary_card_min_inner_height(
             ui,theme::SECTION_PADDING
         );
-        theme::section_frame().show(ui,|section|{
+        components::measured_management_section_card(ui,|section|{
             components::fill_management_primary_card(section,card_min_height);
             section.label(typography::section_heading("전체 운임 기준"));
             section.add_space(theme::SPACE_12);
@@ -2652,7 +2652,7 @@ impl FreightManager {
         // so no empty block remains below the combination table.
         if SHOW_PREVIOUS_GROUP_FREIGHT_HISTORY {
             ui.add_space(theme::SPACE_12);
-            theme::section_frame().show(ui, |section| {
+            components::measured_management_section_card(ui,|section| {
                 section.label(typography::section_heading("이전 그룹 운임 기준"));
             components::soft_divider(section);
             // Preserve the existing group-by-group expand/collapse behavior.
@@ -3258,5 +3258,14 @@ mod rate_toolbar_tests{
         assert_eq!(find("  group "),1);
         assert_eq!(find("이동형"),1);
         assert_eq!(find("존재하지 않는 이름"),0);
+    }
+}
+
+#[cfg(test)]
+impl FreightManager {
+    pub(crate) fn geometry_fixture(gateway:Arc<dyn BandoGateway>,ctx:egui::Context,tab:usize,loaded:bool)->Self{
+        let mut page=Self::new(gateway,ctx);
+        page.receiver=None; page.tab=FreightTab::ALL[tab]; if loaded{page.state=Some(serde_json::json!({"revision":1,"products":[],"categories":[],"shipping":{"groups":[],"epoch":1}})); page.projection=Some(serde_json::json!({"productViews":[]}));}
+        page
     }
 }

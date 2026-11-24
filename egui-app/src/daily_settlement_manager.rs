@@ -542,7 +542,7 @@ impl DailySettlementManager{
             .id_salt("daily-settlement-sections")
             .auto_shrink([false,false])
             .show(ui,|body|{
-                theme::section_frame().show(body,|section|{
+                components::measured_management_section_card(body,|section|{
                     // The date selector is the first element of the
                     // settlement card. No redundant title/help row above it.
                     // Like Order History, the date picker is inside the
@@ -624,7 +624,7 @@ impl DailySettlementManager{
                 let report=visible_report.unwrap_or(&missing);
                 let payments=rows(&report["paymentRows"]);
                 body.add_space(theme::SPACE_12);
-                theme::section_frame().show(body,|section|{
+                components::measured_management_section_card(body,|section|{
                     section.label(typography::section_heading(
                         "실제 입금 내역 / 입금 일시 기준"
                     ));
@@ -674,7 +674,7 @@ impl DailySettlementManager{
                     );
                 });
                 body.add_space(theme::SPACE_12);
-                theme::section_frame().show(body,|review|{
+                components::measured_management_section_card(body,|review|{
                     review.label(typography::section_heading("결산 검토 사항"));
                     components::soft_divider(review);
                     components::fixed_result_viewport(review,"settlement-warnings",100.0,|list|{
@@ -710,5 +710,14 @@ mod tests{
         assert_eq!(Sort::next(
             Some(Sort{column:2,direction:Direction::Descending}),2
         ),None);
+    }
+}
+
+#[cfg(test)]
+impl DailySettlementManager {
+    pub(crate) fn geometry_fixture(gateway:Arc<dyn BandoGateway>,ctx:egui::Context,_tab:usize,loaded:bool)->Self{
+        let mut page=Self::new(gateway,ctx);
+        page.receiver=None;if loaded{page.report=Some(serde_json::json!({"date":page.date.clone(),"orderRows":[],"paymentRows":[]}));}
+        page
     }
 }

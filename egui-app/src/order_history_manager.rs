@@ -1320,7 +1320,7 @@ impl OrderHistoryManager {
         // preserve 16pt clearance on all four sides and keep both the
         // scrolling rows and the native rail within the inner card.
         let card_min_height=components::management_master_table_card_min_inner_height(ui);
-        theme::management_master_table_frame().show(ui,|section|{
+        components::measured_management_master_card(ui,|section|{
             components::fill_management_primary_card(section,card_min_height);
             section.spacing_mut().scroll=theme::management_table_scroll_style();
             // Use the identical zero-implicit-gap toolbar-to-header
@@ -1976,5 +1976,14 @@ mod tests{
         assert_eq!(display_lines(&snapshot,&expanded,None).len(),1);
         expanded.insert("o1".into());
         assert_eq!(display_lines(&snapshot,&expanded,None).len(),2);
+    }
+}
+
+#[cfg(test)]
+impl OrderHistoryManager {
+    pub(crate) fn geometry_fixture(gateway:Arc<dyn BandoGateway>,ctx:egui::Context,_tab:usize,loaded:bool)->Self{
+        let mut page=Self::new(gateway,ctx);
+        page.receiver=None; if loaded{page.snapshot=Some(HistorySnapshot{state:serde_json::json!({}),rows:Vec::new()});}
+        page
     }
 }

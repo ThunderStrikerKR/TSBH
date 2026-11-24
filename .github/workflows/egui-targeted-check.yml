@@ -123,6 +123,8 @@ jobs:
         run: cargo test --manifest-path egui-app/Cargo.toml product_status_edit_persists_without_price_or_variant_loss -- --nocapture
       - name: Verify native Rust catalog editor retains all four sale statuses
         run: cargo test --manifest-path src-tauri/Cargo.toml --lib editor_persists_all_four_sales_states -- --nocapture
+      - name: Verify actual general-screen geometry with isolated synthetic state
+        run: cargo test --manifest-path egui-app/Cargo.toml general_screen_geometry_tests -- --nocapture
       - name: Verify actual egui modal boundary rects and 16pt workspace spacing
         run: cargo test --manifest-path egui-app/Cargo.toml modal_editor_workspace_geometry_tests -- --nocapture
       - name: Verify management search re-entry places caret after last query character

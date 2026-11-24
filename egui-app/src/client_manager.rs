@@ -470,7 +470,7 @@ impl ClientManager {
         components::align_management_primary_card(ui,page_origin_y);
         let card_min_height=
             components::management_master_table_card_min_inner_height(ui);
-        theme::management_master_table_frame().show(ui,|section|{
+        components::measured_management_master_card(ui,|section|{
             components::fill_management_primary_card(section,card_min_height);
             section.spacing_mut().scroll=theme::management_table_scroll_style();
             section.spacing_mut().item_spacing.y=0.0;
@@ -1130,5 +1130,14 @@ mod client_account_picker_tests{
             .unwrap_or(CLIENT_ACCOUNT_EMPTY_LABEL);
         assert_eq!(label,CLIENT_ACCOUNT_EMPTY_LABEL);
         assert_eq!(selected,"removed-account");
+    }
+}
+
+#[cfg(test)]
+impl ClientManager {
+    pub(crate) fn geometry_fixture(gateway:Arc<dyn BandoGateway>,ctx:egui::Context,tab:usize,loaded:bool)->Self{
+        let mut page=Self::new(Arc::clone(&gateway),ctx.clone());
+        page.loading=None; page.ready=loaded; if loaded{page.state=serde_json::json!({"revision":1,"clients":[],"readOnly":true});} if tab>0{page.show_messages=true;page.messages=Some(AutomaticMessageManager::geometry_fixture(gateway,ctx,tab-1,loaded));}
+        page
     }
 }

@@ -735,7 +735,7 @@ impl ExcelManager{
         components::align_management_primary_card(ui,page_origin_y);
         // Exact same 16pt interior inset and frame as the approved master.
         let card_min_height=components::management_master_table_card_min_inner_height(ui);
-        theme::management_master_table_frame().show(ui,|section|{
+        components::measured_management_master_card(ui,|section|{
             components::fill_management_primary_card(section,card_min_height);
             section.spacing_mut().scroll=theme::management_table_scroll_style();
             // Allocate a true 36pt master toolbar. Search and trailing
@@ -1426,5 +1426,14 @@ mod table_state_tests {
             egui::pos2(0.0,0.0),egui::pos2(10.0,10.0)
         );
         assert!(table_state_body_rect(track,600.0,10.0,400.0,outside).is_none());
+    }
+}
+
+#[cfg(test)]
+impl ExcelManager {
+    pub(crate) fn geometry_fixture(gateway:Arc<dyn BandoGateway>,ctx:egui::Context,tab:usize,loaded:bool)->Self{
+        let mut page=Self::new(gateway,ctx);
+        page.receiver=None;page.tab=Tab::ALL[tab];if loaded{page.result=Some(Snapshot{state:serde_json::json!({}),shipments:serde_json::json!([])});}
+        page
     }
 }

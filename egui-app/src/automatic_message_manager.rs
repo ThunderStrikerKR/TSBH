@@ -634,7 +634,7 @@ impl AutomaticMessageManager {
                 Vec2::new(left_width,height),Layout::top_down(Align::Min),
                 |list|{
                     list.set_width(left_width);
-                    theme::section_frame().show(list,|body|{
+                    components::measured_management_section_card(list,|body|{
                         components::fill_management_primary_card(body,card_min_height);
                         if self.section==Section::General{
                             self.general_list(body,&mut target);
@@ -646,7 +646,7 @@ impl AutomaticMessageManager {
                 Vec2::new(right_width,height),Layout::top_down(Align::Min),
                 |editor|{
                     editor.set_width(right_width);
-                    theme::section_frame().show(editor,|body|{
+                    components::measured_management_section_card(editor,|body|{
                         components::fill_management_primary_card(body,card_min_height);
                         egui::ScrollArea::vertical()
                             .id_salt("automatic-message-editor-fields")
@@ -720,5 +720,14 @@ impl AutomaticMessageManager {
             self.after_save=Some(destination);
             self.start_save(gateway,ctx.clone());
         }
+    }
+}
+
+#[cfg(test)]
+impl AutomaticMessageManager {
+    pub(crate) fn geometry_fixture(gateway:Arc<dyn BandoGateway>,ctx:egui::Context,tab:usize,loaded:bool)->Self{
+        let mut page=Self::new(gateway,ctx);
+        page.loading=None;page.section=if tab==0{Section::General}else{Section::Provisional};if loaded{page.set_saved(serde_json::json!({"settings":{}}));page.loaded=true;}
+        page
     }
 }

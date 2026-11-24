@@ -31,7 +31,7 @@ pub fn virtual_fixed_rows<R>(
     add_visible:impl FnOnce(&mut Ui,std::ops::Range<usize>)->R,
 ) -> egui::containers::scroll_area::ScrollAreaOutput<R> {
     debug_assert!(row_height>0.0 && row_height.is_finite());
-    scroll.show_viewport(ui,move |body,viewport|{
+    let output=scroll.show_viewport(ui,move |body,viewport|{
         body.spacing_mut().item_spacing.y=0.0;
         body.set_min_width(content_width);
         body.set_min_height(row_height*total_rows as f32);
@@ -56,7 +56,10 @@ pub fn virtual_fixed_rows<R>(
                 add_visible(visible,first..last)
             }
         ).inner
-    })
+    });
+    #[cfg(test)]
+    general_screen_geometry_tests::record("row viewport",output.inner_rect);
+    output
 }
 
 pub const TABLE_HEADER_HEIGHT: f32 = theme::MANAGEMENT_TABLE_HEADER_HEIGHT;
@@ -177,7 +180,7 @@ pub fn fixed_status_slot(
 /// placeholder without moving the top edge of the card or lower page slots.
 pub fn management_pending_primary_card(ui:&mut Ui)->Rect{
     let min_height=management_master_table_card_min_inner_height(ui);
-    theme::management_master_table_frame().show(ui,|panel|{
+    measured_management_master_card(ui,|panel|{
         fill_management_primary_card(panel,min_height);
     }).response.rect
 }
@@ -3884,6 +3887,20 @@ pub fn management_summary_card_value(ui:&mut Ui,label:&str,value:&str){
     );
 }
 
+/// Capture the actual frame allocation without changing the layout.
+pub fn measured_management_master_card<R>(ui:&mut Ui,body:impl FnOnce(&mut Ui)->R)->egui::InnerResponse<R>{
+    let output=theme::management_master_table_frame().show(ui,body);
+    #[cfg(test)]
+    general_screen_geometry_tests::record("master card",output.response.rect);
+    output
+}
+pub fn measured_management_section_card<R>(ui:&mut Ui,body:impl FnOnce(&mut Ui)->R)->egui::InnerResponse<R>{
+    let output=theme::section_frame().show(ui,body);
+    #[cfg(test)]
+    general_screen_geometry_tests::record("section card",output.response.rect);
+    output
+}
+
 /// Approved 59th-round Freight page heading: 16pt from the top of the
 /// workspace. The workspace shell already supplies a 6pt outer gutter, so
 /// only the difference is added. Reception must not call this helper.
@@ -3897,12 +3914,15 @@ pub fn management_page_title_top_gap(ui:&mut Ui) {
 pub fn management_top_content<R>(
     ui:&mut Ui, add:impl FnOnce(&mut Ui)->R
 )->R{
-    Frame::new()
+    let output=Frame::new()
         .inner_margin(egui::Margin::symmetric(theme::SECTION_PADDING as i8,0))
         .show(ui,|inset|{
             inset.set_min_width(inset.available_width());
             add(inset)
-        }).inner
+        });
+    #[cfg(test)]
+    general_screen_geometry_tests::record("top content",output.response.rect);
+    output.inner
 }
 
 /// Align the OUTER top border of a management page's principal card with
@@ -4005,9 +4025,12 @@ pub fn management_toolbar_trailing_rect(
 pub fn management_table_scroll_track_rect(
     ui:&Ui,scroll_height:f32
 )->Rect {
-    management_table_scroll_track_geometry(
+    let track=management_table_scroll_track_geometry(
         ui.available_rect_before_wrap(),scroll_height
-    )
+    );
+    #[cfg(test)]
+    general_screen_geometry_tests::record("scroll rail",track);
+    track
 }
 
 /// The only place that computes top/bottom of a management table rail.
@@ -4137,6 +4160,8 @@ fn management_sticky_table_header_with_top_gap(
             -header_rect.right()).abs()<0.01,
             "header's data right edge must exclude the table scrollbar gutter");
     }
+    #[cfg(test)]
+    general_screen_geometry_tests::record("table header",header_rect);
     ManagementTableHeader{
         header_rect,header_content_rect,viewport_width,
         scrollbar_gutter,table_width
@@ -4169,6 +4194,8 @@ pub fn management_list_table_header(
         (header_rect.height()-theme::MANAGEMENT_TABLE_HEADER_HEIGHT).abs()<0.01,
         "management list header must use the shared 36pt height"
     );
+    #[cfg(test)]
+    general_screen_geometry_tests::record("table header",header_rect);
     ManagementTableHeader{
         header_rect,header_content_rect,viewport_width,
         scrollbar_gutter,table_width
@@ -8543,5 +8570,115 @@ mod shared_general_screen_audit_tests {
         let source=include_str!("main.rs");
         assert_eq!(source.matches("components::reception_source_text_edit(").count(),3);
         assert!(!source.contains("TextEdit::multiline("));
+    }
+}
+
+#[cfg(test)]
+mod general_screen_geometry_tests {
+    use super::*;
+    use std::{cell::RefCell,sync::Arc};
+    use crate::gateway::{BandoGateway,ReadOperation};
+    use crate::preview_store::WorkingSource;
+    use serde_json::Value;
+    type Sample=(&'static str,Rect);
+    thread_local!{
+        static TRACE:RefCell<Option<Vec<Sample>>>=RefCell::new(None);
+    }
+    pub(super) fn record(name:&'static str,rect:Rect){
+        TRACE.with(|trace|{if let Some(samples)=trace.borrow_mut().as_mut(){samples.push((name,rect));}});
+    }
+    // No files, network or database are accessed by fixture read workers.
+    struct GeometryGateway;
+    impl BandoGateway for GeometryGateway{
+        fn label(&self)->&'static str{"synthetic UI geometry"}
+        fn load_catalog(&self)->Result<Value,String>{Err("isolated fixture".into())}
+        fn load_working_source(&self)->Result<WorkingSource,String>{Err("isolated fixture".into())}
+        fn save_working_source(&self,_:&WorkingSource)->Result<u64,String>{Err("read only fixture".into())}
+        fn execute(&self,_:ReadOperation,_:Value)->Result<Value,String>{Err("isolated fixture".into())}
+    }
+    fn render(ctx:&egui::Context,screen:Vec2,work:Rect,mut page:impl FnMut(&mut Ui))->Vec<Sample>{
+        let mut measured=Vec::new();
+        for _ in 0..3{
+            TRACE.with(|trace|*trace.borrow_mut()=Some(Vec::new()));
+            let _=ctx.run(egui::RawInput{
+                screen_rect:Some(Rect::from_min_size(egui::Pos2::ZERO,screen)),
+                ..Default::default()
+            },|ctx|{
+                egui::CentralPanel::default().show(ctx,|root|{
+                    let mut host=root.new_child(egui::UiBuilder::new()
+                        .id_salt("actual-management-page")
+                        .max_rect(work).layout(Layout::top_down(Align::Min)));
+                    host.set_clip_rect(work);
+                    host.set_width(work.width());
+                    page(&mut host);
+                    record("page content",host.min_rect());
+                });
+            });
+            measured=TRACE.with(|trace|trace.borrow_mut().take().unwrap());
+        }
+        measured
+    }
+    fn screen_trace(name:&str,tab:usize,loaded:bool,screen:Vec2,work:Rect)->Vec<Sample>{
+        let ctx=test_context();
+        let gateway:Arc<dyn BandoGateway>=Arc::new(GeometryGateway);
+        match name{
+            "freight"=>{let mut p=crate::freight_manager::FreightManager::geometry_fixture(gateway,ctx.clone(),tab,loaded);render(&ctx,screen,work,|ui|p.show_page(ui))},
+            "history"=>{let mut p=crate::order_history_manager::OrderHistoryManager::geometry_fixture(gateway,ctx.clone(),tab,loaded);render(&ctx,screen,work,|ui|p.show_page(ui))},
+            "products"=>{let mut p=crate::product_manager::ProductManager::geometry_fixture(gateway,ctx.clone(),tab,loaded);render(&ctx,screen,work,|ui|p.show_page(ui))},
+            "clients"=>{let mut p=crate::client_manager::ClientManager::geometry_fixture(Arc::clone(&gateway),ctx.clone(),tab,loaded);render(&ctx,screen,work,|ui|p.show_page(ui,Arc::clone(&gateway)))},
+            "excel"=>{let mut p=crate::excel_manager::ExcelManager::geometry_fixture(gateway,ctx.clone(),tab,loaded);render(&ctx,screen,work,|ui|p.show_page(ui))},
+            "settings"=>{let mut p=crate::settings_view::SettingsView::geometry_fixture(Arc::clone(&gateway),ctx.clone(),tab,loaded);render(&ctx,screen,work,|ui|p.show_page(ui,Arc::clone(&gateway)))},
+            "settlement"=>{let mut p=crate::daily_settlement_manager::DailySettlementManager::geometry_fixture(gateway,ctx.clone(),tab,loaded);render(&ctx,screen,work,|ui|p.show_page(ui))},
+            _=>panic!("unregistered screen {name}")
+        }
+    }
+    fn first(trace:&[Sample],name:&str)->Rect{
+        trace.iter().find(|(kind,_)|*kind==name)
+            .unwrap_or_else(||panic!("missing actual {name} allocation")).1
+    }
+    fn verify_rects(name:&str,tab:usize,work:Rect,trace:&[Sample]){
+        assert!(trace.iter().any(|(kind,_)|*kind=="top content"),"{name}/{tab}: missing title/top content");
+        for (kind,rect) in trace{
+            assert!([rect.left(),rect.top(),rect.right(),rect.bottom()].iter().all(|v|v.is_finite())
+                && rect.is_positive(),"{name}/{tab}/{kind}: invalid {rect:?}");
+            if *kind=="table header"{
+                assert!((rect.height()-theme::MANAGEMENT_TABLE_HEADER_HEIGHT).abs()<=0.5,
+                    "{name}/{tab}: header height {rect:?}");
+            }
+            if *kind=="master card" || *kind=="table header"{
+                assert!(rect.left()>=work.left()-0.5 && rect.right()<=work.right()+0.5,
+                    "{name}/{tab}/{kind}: horizontal overflow {rect:?} outside {work:?}");
+            }
+        }
+    }
+    #[test]
+    fn actual_management_pages_allocate_valid_geometry_at_three_work_area_sizes(){
+        let cases=[("freight",4),("history",1),("products",5),("clients",3),
+            ("excel",3),("settings",4),("settlement",1)];
+        for (screen,left) in [(Vec2::new(1920.0,1080.0),380.0),
+            (Vec2::new(1366.0,768.0),320.0),(Vec2::new(1280.0,720.0),380.0)]{
+            let work=Rect::from_min_max(egui::pos2(left,80.0),
+                egui::pos2(screen.x-18.0,screen.y-18.0));
+            for (name,tabs) in cases{
+                for tab in 0..tabs{
+                    for loaded in [false,true]{
+                        let trace=screen_trace(name,tab,loaded,screen,work);
+                        verify_rects(name,tab,work,&trace);
+                    }
+                }
+            }
+        }
+    }
+    #[test]
+    fn actual_master_card_boundary_survives_loading_to_empty_transition(){
+        let screen=Vec2::new(1920.0,1080.0);
+        let work=Rect::from_min_max(egui::pos2(380.0,80.0),egui::pos2(1902.0,1062.0));
+        for name in ["freight","history","products","clients","excel"]{
+            let before=screen_trace(name,0,false,screen,work);
+            let after=screen_trace(name,0,true,screen,work);
+            let a=first(&before,"master card");
+            let b=first(&after,"master card");
+            assert_layout_rects_invariant(&[(name,a)],&[(name,b)]);
+        }
     }
 }

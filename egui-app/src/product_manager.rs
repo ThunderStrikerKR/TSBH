@@ -2903,3 +2903,12 @@ mod reception_selection_tests{
         assert!(!selectable_order_product(&json!({"id":"p","variants":[{"id":"v1"},{"id":"v2"}]})));
     }
 }
+
+#[cfg(test)]
+impl ProductManager {
+    pub(crate) fn geometry_fixture(gateway:Arc<dyn BandoGateway>,ctx:egui::Context,tab:usize,loaded:bool)->Self{
+        let mut page=Self::new(gateway,ctx);
+        page.result=LatestJob::default(); page.next_query=None; page.tab=tab; if loaded{page.catalog=Some(serde_json::json!({"revision":1,"products":[],"categories":[],"brands":[],"aliases":[],"settings":{}}));}
+        page
+    }
+}

@@ -126,7 +126,7 @@ fn section(ui:&mut Ui,title:&str,body:impl FnOnce(&mut Ui)){
     body(ui);
 }
 fn card(ui:&mut Ui,title:&str,body:impl FnOnce(&mut Ui)){
-    theme::section_frame().show(ui,|content|{
+    components::measured_management_section_card(ui,|content|{
         section(content,title,body);
     });
 }
@@ -618,7 +618,7 @@ impl SettingsView{
     fn show_work_settings(
         &mut self,ui:&mut Ui,editable:bool,gateway:Arc<dyn BandoGateway>
     ){
-        theme::section_frame().show(ui,|card|{
+        components::measured_management_section_card(ui,|card|{
             card.add_enabled_ui(editable,|form|{
                 section(form,"작업 환경",|content|{
                     content.horizontal(|row|{
@@ -637,7 +637,7 @@ impl SettingsView{
         });
     }
     fn show_sender_settings(&mut self,ui:&mut Ui,editable:bool){
-        theme::section_frame().show(ui,|card|{
+        components::measured_management_section_card(ui,|card|{
             card.add_enabled_ui(editable,|form|{
                 section(form,"반도스탠드 정보",|content|{
                     let width=content.available_width();
@@ -730,7 +730,7 @@ impl SettingsView{
         }
     }
     fn show_accounts(&mut self,ui:&mut Ui,editable:bool,card_budget:f32){
-        theme::section_frame().show(ui,|card|{
+        components::measured_management_section_card(ui,|card|{
             section(card,"입금 계좌",|content|{
                 content.add_enabled_ui(editable,|form|{
                     let wide_recommendations=form.available_width()
@@ -902,7 +902,7 @@ impl SettingsView{
         ];
         // React files tab has ONE section.card with three consecutive
         // information groups separated by whitespace, not three boxes.
-        theme::section_frame().show(ui,|form|{
+        components::measured_management_section_card(ui,|form|{
         for (index,(key,title,empty,button)) in sections.iter().enumerate(){
             if index>0{
                 form.add_space(theme::SPACE_12);
@@ -1234,5 +1234,14 @@ mod management_async_layout_tests{
             "restore action is not aligned to the title content's right edge");
         assert!(near(button.height(),theme::ACTION_STANDARD_HEIGHT));
         assert!(near(button.center().y,conflict.3.center().y));
+    }
+}
+
+#[cfg(test)]
+impl SettingsView {
+    pub(crate) fn geometry_fixture(gateway:Arc<dyn BandoGateway>,ctx:egui::Context,tab:usize,loaded:bool)->Self{
+        let mut page=Self::new(gateway,ctx);
+        page.loading=None;page.tab=SettingsTab::ALL[tab];page.loaded=loaded;if loaded{page.source=serde_json::json!({"settings":{},"readOnly":true,"dataAvailable":false});page.draft=serde_json::json!({});}
+        page
     }
 }

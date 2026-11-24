@@ -242,7 +242,7 @@ impl ModelGroupManager {
             .unwrap_or_default();
         let card_min_height=components::management_master_table_card_min_inner_height(ui);
         let mut save=false;
-        theme::management_master_table_frame().show(ui,|outer|{
+        components::measured_management_master_card(ui,|outer|{
             components::fill_management_primary_card(outer,card_min_height);
             outer.spacing_mut().scroll=theme::management_table_scroll_style();
             let available=outer.available_width();
