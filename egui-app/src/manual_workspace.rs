@@ -1339,6 +1339,13 @@ impl ManualWorkspace {
                 );
                 let blocks=list(model,"blocks").to_vec();
                 let assignments=model.get("assignments").cloned().unwrap_or_else(||json!({}));
+                // Exact native block assignment IDs drive the manual palette.
+                // Recognition/Reception use the unchanged shared default.
+                let assigned_source_ids=assignments.as_object().map(|map|
+                    map.iter().filter(|(_,cell)|cell.is_object())
+                        .map(|(id,_)|id.to_owned())
+                        .collect::<std::collections::HashSet<String>>()
+                ).unwrap_or_default();
                 let busy=self.busy();
                 let pending_quantity_cell=self.pending_quantity_cell();
                 let pending_quantity_active=pending_quantity_cell.is_some();
@@ -1408,8 +1415,9 @@ impl ManualWorkspace {
                                         -2.0*theme::SPACE_8).max(0.0))
                                     .show(panel,|ui|{
                             let interaction=crate::manual_source_view::source_document(
-                                ui,&self.raw,&spans,selected_recipient_id.as_deref(),
-                                active_link.as_ref(),scroll_link.as_ref(),!busy
+                                ui,&self.raw,&spans,&assigned_source_ids,
+                                selected_recipient_id.as_deref(),active_link.as_ref(),
+                                scroll_link.as_ref(),!busy
                             );
                             hovered_source=interaction.hovered;
                             source_did_scroll=interaction.did_scroll;
@@ -2683,6 +2691,18 @@ mod manual_workspace_modal_routing_tests {
         assert_eq!(visible_manual_shipment(1,3),Some(1));
         assert_eq!(visible_manual_shipment(2,3),Some(2));
         assert_eq!(visible_manual_shipment(9,3),Some(2));
+    }
+
+    #[test]
+    fn manual_source_palette_reads_exact_native_assignment_ids(){
+        let source=include_str!("manual_workspace.rs");
+        let render=source.split("pub fn show(").nth(1).unwrap()
+            .split("fn manual_hover_target(").next().unwrap();
+        assert!(render.contains("let assigned_source_ids=assignments.as_object()"));
+        assert!(render.contains("map.iter().filter(|(_,cell)|cell.is_object())"),
+            "only actual native assignment objects count as classified");
+        assert!(render.contains("ui,&self.raw,&spans,&assigned_source_ids,"),
+            "manual-only status must flow into its source renderer");
     }
 
     #[test]
