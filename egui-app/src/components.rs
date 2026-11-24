@@ -4201,7 +4201,12 @@ fn management_sticky_table_header_with_top_gap(
 pub fn management_list_table_header(
     ui:&mut Ui,min_table_width:f32
 )->ManagementTableHeader{
-    let viewport_width=ui.available_width().max(1.0);
+    // A nested vertical ScrollArea can retain a content width wider than
+    // the visible work area when a report table has large minimum columns.
+    // The fixed header itself must remain inside the actual clipped viewport;
+    // only its data rows may extend and scroll horizontally.
+    let viewport_width=ui.available_rect_before_wrap()
+        .intersect(ui.clip_rect()).width().max(1.0);
     let scrollbar_gutter=ui.spacing().scroll.allocated_width();
     let table_width=management_table_data_width(
         viewport_width,scrollbar_gutter,min_table_width
