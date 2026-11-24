@@ -257,9 +257,11 @@ pub const RECEPTION_RECIPIENT_NAV_WIDTH:f32 =
     +RECEPTION_RECIPIENT_NAV_NAME_WIDTH
     +RECEPTION_RECIPIENT_NAV_COUNT_WIDTH
     +2.0*FRAME_STROKE_WIDTH;
-// Reception section dividers keep one shared 8pt clearance on BOTH sides.
-// The same token drives the live layout and fixed-height body calculation.
+// Keep 8pt below the 34pt title/control row, but 16pt below the divider.
+// The title glyph is vertically centered inside its row; equal layout gaps
+// would leave visibly less whitespace between the divider and the body.
 pub const SECTION_CONTENT_GAP: f32 = SPACE_8;
+pub const SECTION_DIVIDER_BOTTOM_GAP: f32 = SPACE_16;
 // Canvas/footer clearance must be counted in the message editor's height.
 pub const RECEPTION_MESSAGE_ACTION_GAP: f32 = SPACE_12;
 // One 13pt shortcut label with 3pt keycap top/bottom padding and border.

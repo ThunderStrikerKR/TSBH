@@ -1053,14 +1053,16 @@ pub fn reception_capture_shortcut_hint(ui:&mut Ui){
 /// Section widgets must not impose independent minimums that can spill
 /// across the source/message splitter.
 pub fn docked_section_body_height(section_height: f32) -> f32 {
-    // Must match main.rs::section_with_header and docked_pane_frame.
-    // Both sides of the section divider use the same shared 8pt clearance.
-    // Keep the fixed pane rectangles unchanged and subtract both gaps once.
-    let chrome = theme::RECEPTION_PANE_PADDING_Y * 2.0
+    (section_height - docked_section_chrome_height()).max(0.0)
+}
+
+/// Shared forward/inverse height budget for every Reception section.
+pub fn docked_section_chrome_height() -> f32 {
+    theme::RECEPTION_PANE_PADDING_Y * 2.0
         + theme::SECTION_HEADER_HEIGHT
-        + theme::SECTION_CONTENT_GAP * 2.0
-        + theme::SOFT_DIVIDER_WIDTH;
-    (section_height - chrome).max(0.0)
+        + theme::SECTION_CONTENT_GAP
+        + theme::SECTION_DIVIDER_BOTTOM_GAP
+        + theme::SOFT_DIVIDER_WIDTH
 }
 
 
@@ -3023,7 +3025,7 @@ pub fn reception_section_with_header_tooltip(
         let divider=reception_section_divider(ui);
         #[cfg(test)]
         general_screen_geometry_tests::record("source divider",divider);
-        ui.add_space(theme::SECTION_CONTENT_GAP);
+        ui.add_space(theme::SECTION_DIVIDER_BOTTOM_GAP);
         let body=ui.scope(|body|{
             body.spacing_mut().item_spacing.y=body_item_spacing;
             content(body);
@@ -9468,31 +9470,32 @@ pub(crate) mod general_screen_geometry_tests {
         }
     }
     #[test]
-    fn reception_section_divider_has_equal_8pt_clearance_on_both_sides(){
+    fn reception_section_divider_keeps_16pt_to_visible_document_frame(){
         let ctx=test_context();
         let screen=Vec2::new(900.0,700.0);
         let work=Rect::from_min_max(egui::pos2(24.0,24.0),egui::pos2(876.0,676.0));
         let trace=render(&ctx,screen,work,|ui|{
             reception_section_with_header(ui,"발주 원문",320.0,|_|{},|body|{
-                body.allocate_exact_size(
-                    Vec2::new(body.available_width(),80.0),Sense::hover()
-                );
+                let document=theme::source_document_frame().show(body,|document|{
+                    document.allocate_exact_size(
+                        Vec2::new(document.available_width(),80.0),Sense::hover()
+                    );
+                });
+                record("visible document frame",document.response.rect);
             });
         });
         let header=first(&trace,"source header");
         let divider=first(&trace,"source divider");
-        let body=first(&trace,"source body");
+        let document=first(&trace,"visible document frame");
         let top_gap=divider.top()-header.bottom();
-        let bottom_gap=body.top()-divider.bottom();
-        assert!((top_gap-theme::SECTION_CONTENT_GAP).abs()<=0.5,
-            "header-to-divider clearance drifted: {top_gap:.2}pt");
-        assert!((bottom_gap-theme::SECTION_CONTENT_GAP).abs()<=0.5,
-            "divider-to-body clearance drifted: {bottom_gap:.2}pt");
-        assert!((top_gap-bottom_gap).abs()<=0.5,
-            "divider clearance must be symmetrical: top={top_gap:.2}pt bottom={bottom_gap:.2}pt");
+        let bottom_gap=document.top()-divider.bottom();
+        assert!((top_gap-8.0).abs()<=0.5,
+            "header-row-to-divider clearance drifted: {top_gap:.2}pt");
+        assert!((bottom_gap-16.0).abs()<=0.5,
+            "divider-to-visible-document-frame clearance drifted: {bottom_gap:.2}pt");
         let expected_chrome=2.0*theme::RECEPTION_PANE_PADDING_Y
             +theme::SECTION_HEADER_HEIGHT
-            +2.0*theme::SECTION_CONTENT_GAP
+            +8.0+16.0
             +theme::SOFT_DIVIDER_WIDTH;
         assert!((docked_section_body_height(320.0)-(320.0-expected_chrome)).abs()<=0.5,
             "fixed-height body calculator does not reserve both divider gaps");

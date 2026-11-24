@@ -1043,10 +1043,7 @@ pub struct ManualWorkspace {
 /// Keeping this arithmetic beside the renderer prevents the modal from
 /// reserving a full-screen body after the visible cards have ended.
 fn manual_recipient_card_height()->f32{
-    2.0*theme::RECEPTION_PANE_PADDING_Y
-        +theme::SECTION_HEADER_HEIGHT
-        +2.0*theme::SECTION_CONTENT_GAP
-        +theme::SOFT_DIVIDER_WIDTH
+    components::docked_section_chrome_height()
         +4.0*theme::INPUT_HEIGHT
         +3.0*theme::RECIPIENT_ROW_GAP
 }
@@ -4033,8 +4030,8 @@ mod manual_workspace_layout_tests{
     fn popup_height_tracks_the_visible_card_stack_and_fixed_modal_chrome(){
         assert_eq!(theme::RECEPTION_PANE_PADDING_Y,16.0);
         assert_eq!(manual_workspace_header_height(),97.0);
-        assert_eq!(manual_recipient_card_height(),251.0);
-        assert_eq!(manual_workspace_columns_height(),607.0);
+        assert_eq!(manual_recipient_card_height(),259.0);
+        assert_eq!(manual_workspace_columns_height(),615.0);
         assert_eq!(
             components::docked_section_body_height(manual_recipient_card_height()),
             4.0*theme::INPUT_HEIGHT+3.0*theme::RECIPIENT_ROW_GAP
@@ -4044,7 +4041,7 @@ mod manual_workspace_layout_tests{
         );
         let size=manual_workspace_dialog_size(work_area);
         assert_eq!(size.x,1364.0);
-        assert_eq!(size.y,828.0);
+        assert_eq!(size.y,836.0);
         let short_area=egui::Rect::from_min_size(
             egui::Pos2::ZERO,egui::vec2(1400.0,700.0)
         );
