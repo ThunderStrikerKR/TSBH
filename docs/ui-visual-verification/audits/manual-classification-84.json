@@ -1,0 +1,65 @@
+{
+  "schemaVersion": 1,
+  "id": "manual-classification-84",
+  "screen": "접수 / 수동 분류",
+  "files": [
+    "egui-app/src/manual_workspace.rs",
+    "egui-app/src/components.rs"
+  ],
+  "visualStatus": "FAIL",
+  "patchCommits": [
+    "9026c7ca26ba3b43fc81da39f06b4e94d3f38b70",
+    "1ac422ce73f615d507c5940dd0c491a60408aa34",
+    "0994cb8cd83b9df526f93d825c895f970641af9e",
+    "34a7773566d5db588201c34980c1369e918e0ecb"
+  ],
+  "reason": "2026-11-24 사용자가 Windows 실행 화면을 제시하여 UI 클리핑 및 레이아웃 품질 불합격을 확인했다. 자료에 배송지/연락처가 포함되어 공개 GitHub 저장소에 원본 스크린샷은 올리지 않는다.",
+  "defects": [
+    {
+      "id": "UI-84-CLIP-001",
+      "status": "OPEN",
+      "description": "수동 분류 우측 하단 발송·운임 버튼이 내부 패널 끝에서 잘려 조작이 불가능하거나 어렵다."
+    },
+    {
+      "id": "UI-84-DENSITY-002",
+      "status": "OPEN",
+      "description": "발주 원문 영역은 하부 공백이 크지만 우측 편집 영역에 상품과 배송 옵션이 과도하게 밀집되어 있다."
+    },
+    {
+      "id": "UI-84-ALIGN-003",
+      "status": "OPEN",
+      "description": "수취인/전화/주소 등 폭이 넓은 입력 셀의 중앙 정렬, 상품/수량/단가/행 동작의 균형이 부자연스럽다."
+    }
+  ],
+  "review": {
+    "reportedAt": "2026-11-24",
+    "platform": "Windows",
+    "source": "사용자 제공 실제 실행 캡처(채팅 첨부; 공개 저장소 업로드 금지)",
+    "result": "FAIL"
+  },
+  "releaseDecision": "NOT_APPROVED",
+  "nextVerification": {
+    "requiredViewports": [
+      {
+        "width": 1920,
+        "height": 1080,
+        "scalePercent": 100
+      },
+      {
+        "width": 1366,
+        "height": 768,
+        "scalePercent": 100
+      }
+    ],
+    "checks": [
+      "noClipping",
+      "footerVisible",
+      "scrollReachable",
+      "inputReadable",
+      "alignment",
+      "interaction",
+      "hoverAndFocus"
+    ],
+    "requiredEvidence": "실행 빌드와 동일한 소스 blob에 대해 개인정보를 마스킹한 캡처 및 사람의 실제 Windows 조작 검증"
+  }
+}
