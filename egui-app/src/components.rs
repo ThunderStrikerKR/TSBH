@@ -3190,6 +3190,11 @@ fn date_navigation_segment_button(
     }else{
         theme::DISABLED_ACTION_TEXT
     };
+    // Paint the translucent hover surface before the glyph so the icon/text
+    // remains crisp and uses the same z-order as the date-picker arrows.
+    if enabled{
+        theme::paint_button_hover(ui,&response,0.0);
+    }
     let painter=ui.painter().with_clip_rect(response.rect);
     match glyph{
         DateNavigationSegmentGlyph::Text(text)=>{
@@ -3204,9 +3209,6 @@ fn date_navigation_segment_button(
                 &painter,response.rect.center(),direction,ink
             );
         }
-    }
-    if enabled{
-        theme::paint_button_hover(ui,&response,0.0);
     }
     response.on_hover_text(tooltip)
 }
