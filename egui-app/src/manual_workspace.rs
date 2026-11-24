@@ -4092,9 +4092,9 @@ mod manual_workspace_layout_tests{
             .expect("card workspace follows the shared header");
         let columns_start=render.find("let mut draw_columns=")
             .expect("card columns are drawn inside the body");
-        assert!(header_start<toolbar_start && toolbar_start<body_start
+        assert!(toolbar_start<header_start && header_start<body_start
             && body_start<columns_start);
-        assert!(render[toolbar_start..body_start]
+        assert!(render[header_start..body_start]
             .contains("components::date_navigation_count_control("));
         assert!(!render[body_start..]
             .contains("components::date_navigation_count_control("));
