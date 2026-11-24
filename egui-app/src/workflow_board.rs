@@ -158,6 +158,13 @@ fn workflow_review_labels(native:&Value)->Vec<String>{
 /// Business prices, freight code, VAT and stage are ALWAYS Rust projections.
 pub fn load(gateway:&dyn BandoGateway)->Result<BoardSnapshot,String>{
     let state=gateway.load_business_state()?;
+    from_state(gateway,state)
+}
+
+/// Project the exact snapshot returned by an authoritative, verified write.
+/// Periodic reads still go through load() to detect external changes.
+pub fn from_state(gateway:&dyn BandoGateway,state:Value)->Result<BoardSnapshot,String>{
+    let started=std::time::Instant::now();
     let projected=gateway.execute(ReadOperation::PreviewWorkflow,json!({"state":&state}))?;
     let shipment_read=gateway.execute(ReadOperation::ReadShipments,json!({"state":&state}))?;
     let workflow=field(&state,"workflow");
@@ -250,12 +257,18 @@ pub fn load(gateway:&dyn BandoGateway)->Result<BoardSnapshot,String>{
             .collect::<Result<Vec<Value>,String>>()?;
         let automatic=gateway.execute(ReadOperation::RenderAutomaticMessage,json!({
             "state":&state,"groupId":group_id,"includeLinks":false,
-            "accountWire":&wire,
+            "accountWire":&wire,"includeCopyStatus":true,
         }));
-        let payment_copied=gateway.execute(ReadOperation::RenderAutomaticMessage,json!({
-            "state":&state,"groupId":group_id,"accountWire":&wire,
-            "mode":"payment_copy_status"
-        })).ok().is_some_and(|result|result["copied"]==true);
+        // One native rendering supplies both the signature and its copy
+        // evidence. Older adapters may omit copied; fall back safely.
+        let payment_copied=match automatic.as_ref().ok()
+            .and_then(|result|result["copied"].as_bool()){
+            Some(copied)=>copied,
+            None=>gateway.execute(ReadOperation::RenderAutomaticMessage,json!({
+                "state":&state,"groupId":group_id,"accountWire":&wire,
+                "mode":"payment_copy_status"
+            })).ok().is_some_and(|result|result["copied"]==true),
+        };
         let (automatic_text,automatic_error,automatic_phase,automatic_payment_issues,automatic_signature)=
             match automatic{
                 Ok(result)=>(
@@ -288,6 +301,10 @@ pub fn load(gateway:&dyn BandoGateway)->Result<BoardSnapshot,String>{
         });
     }
     groups.sort_by(|a,b|b.created_at.cmp(&a.created_at));
+    if std::env::var_os("BANDO_EGUI_PROFILE_WORKFLOW").is_some(){
+        eprintln!("[workflow-perf] phase=board_projection ms={:.3} groups={}",
+            started.elapsed().as_secs_f64()*1000.0,groups.len());
+    }
     Ok(BoardSnapshot{
         revision:state["revision"].as_u64(),groups
     })

@@ -8087,7 +8087,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
         ));
         let Some((group_id,action,result))=outcome else{return;};
         match result{
-            Ok(Ok(_saved))=>{
+            Ok(Ok(saved))=>{
                 self.workflow_action=None;
                 if action=="set_shipment_freight"{
                     self.submitted_workflow_freight=None;
@@ -8137,12 +8137,25 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                     }
                 }
                 self.workflow_ui.stop_preview();
-                // Keep the last successful board visible while the refreshed
-                // database snapshot is loading. The fresh read replaces it;
-                // action controls stay disabled until that read settles.
+                // The gateway already verified the committed DB snapshot.
+                // Project it off-frame rather than fetching that DB a third
+                // time. Keep dependent actions locked until projection ends.
+                // External changes are still detected by periodic polling/CAS.
                 self.workflow_receiver=None;
                 self.workflow_last_fetch=None;
                 self.workflow_error=None;
+                if saved["revision"].as_u64().is_some() && saved["workflow"].is_object(){
+                    let gateway=Arc::clone(&self.gateway);
+                    let (sender,receiver)=mpsc::channel();
+                    self.workflow_receiver=Some(receiver);
+                    self.workflow_last_fetch=Some(Instant::now());
+                    let context=ctx.clone();
+                    std::thread::spawn(move||{
+                        let result=workflow_board::from_state(gateway.as_ref(),saved);
+                        let _=sender.send(result);
+                        context.request_repaint();
+                    });
+                }
                 if action=="process_group"{
                     if let Some(excel)=self.excel_manager.as_mut(){
                         excel.refresh(ctx.clone());

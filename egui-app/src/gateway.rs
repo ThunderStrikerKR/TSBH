@@ -574,7 +574,20 @@ impl BandoGateway for LocalGateway {
             .map_err(|error|error.to_string())?;
         conn.execute_batch("PRAGMA foreign_keys=ON;")
             .map_err(|error|error.to_string())?;
+        let profile=std::env::var_os("BANDO_EGUI_PROFILE_WORKFLOW").is_some();
+        let started=std::time::Instant::now();
+        let mut previous=started;
+        let mut checkpoint=|phase:&str|{
+            let now=std::time::Instant::now();
+            if profile{
+                eprintln!("[workflow-perf] action={action} phase={phase} ms={:.3} total_ms={:.3}",
+                    now.duration_since(previous).as_secs_f64()*1000.0,
+                    now.duration_since(started).as_secs_f64()*1000.0);
+            }
+            previous=now;
+        };
         let before=bando_data_access::read_v2_snapshot(&conn)?;
+        checkpoint("read_snapshot");
         if before["revision"].as_u64()!=Some(expected_revision){
             return Err("다른 작업에서 주문이 변경되었습니다. 새로고침 후 다시 진행하세요.".into());
         }
@@ -688,6 +701,7 @@ impl BandoGateway for LocalGateway {
                 reconcile_payload["draft"]=draft.clone();
             }
             let reconciled=rules::execute("reconcile_workflow",reconcile_payload)?;
+            checkpoint("reconcile");
             let prepared=reconciled.get("state")
                 .ok_or("업무 재검증 결과에 상태가 없습니다.")?;
             let next_step=if action=="advance_group"{
@@ -716,7 +730,24 @@ impl BandoGateway for LocalGateway {
                 )?.get("payment").and_then(Value::as_str)
                     .ok_or("입금 안내 문구를 생성하지 못했습니다.")?.to_owned())
             }else{None};
-            let audit_ids=(0..2048).map(|_|
+            // Freight can invalidate only the target shipment's confirmations
+            // plus its own stage recheck. Keep UUID audit identities but do
+            // not allocate a fixed pool for every single-cell edit.
+            let audit_count=if action=="set_shipment_freight"{
+                let shipment_id=args["shipmentId"].as_str();
+                let needs_recheck=prepared["workflow"]["shipments"].as_array()
+                    .is_some_and(|ships|ships.iter().any(|ship|
+                        shipment_id.is_some() && ship["id"].as_str()==shipment_id &&
+                        ship["step"].as_i64().unwrap_or(0)>1));
+                if needs_recheck{
+                    1+prepared["workflow"]["confirmations"].as_array()
+                        .map(|rows|rows.iter().filter(|row|
+                            row["shipmentIds"].as_array().is_some_and(|ids|
+                                ids.iter().any(|id|id.as_str()==shipment_id))
+                        ).count()).unwrap_or(0)
+                }else{0}
+            }else{2048};
+            let audit_ids=(0..audit_count).map(|_|
                 uuid::Uuid::new_v4().to_string()).collect::<Vec<_>>();
             let mut request=serde_json::json!({
                 "state":prepared,"action":action,"now":now,"actor":actor,
@@ -746,11 +777,13 @@ impl BandoGateway for LocalGateway {
             else if group_delete{"apply_group_action"}
             else{"apply_workflow_action"};
         let result=rules::execute(op,request)?;
+        checkpoint("apply_action");
         let changed=result.get("state")
             .ok_or("업무 처리 결과에 상태가 없습니다.")?.clone();
         rules::execute("validate_workflow",serde_json::json!({
             "state":&changed,"before":&before
         }))?;
+        checkpoint("validate");
         if changed==before{
             return Err("현재 상태에서 수행할 변경이 없습니다.".into());
         }
@@ -759,6 +792,7 @@ impl BandoGateway for LocalGateway {
         let written=bando_data_access::write_v2_snapshot(
             &mut conn,changed,expected_revision,true
         )?;
+        checkpoint("write_transaction");
         let committed_revision=written["revision"].as_u64()
             .ok_or("업무 처리 결과의 revision이 없습니다.")?;
         drop(conn);
@@ -766,7 +800,10 @@ impl BandoGateway for LocalGateway {
         if verified["revision"].as_u64()!=Some(committed_revision){
             return Err("저장 후 다른 작업에서 상태가 변경되었습니다. 다시 조회하세요.".into());
         }
-        Ok(written)
+        checkpoint("verify_committed_snapshot");
+        // Reuse the verified, hydrated DB state for the board instead of
+        // immediately opening and reading the complete database again.
+        Ok(verified)
     }
     // The egui intake is a local autosaved draft, NOT a separate
     // operational working-order write. The old opt-in bridge was not part

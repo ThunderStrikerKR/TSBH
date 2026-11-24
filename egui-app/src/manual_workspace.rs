@@ -605,11 +605,29 @@ fn next_missing_recipient_cell(
 }
 
 fn resolve_remote_rows(gateway:&dyn BandoGateway,model:&Value)->Vec<RemoteRow>{
+    refresh_remote_rows(gateway,model,&Value::Null,&[])
+}
+
+fn reusable_remote_decision<'a>(previous_model:&Value,previous_rows:&'a [RemoteRow],
+    row:&Value)->Option<&'a Value>{
+    let id=text(row,"id");
+    let previous=list(previous_model,"rows").iter()
+        .find(|old|!id.is_empty() && text(old,"id")==id)?;
+    // The native resolver depends on address and explicit remote override.
+    // Never reuse an error, a different recipient, or a changed override.
+    if previous["remoteDelivery"]!=row["remoteDelivery"]{return None;}
+    remote_for(previous_rows,row)?.as_ref().ok()
+}
+
+fn refresh_remote_rows(gateway:&dyn BandoGateway,model:&Value,
+    previous_model:&Value,previous_rows:&[RemoteRow])->Vec<RemoteRow>{
     list(model,"rows").iter().map(|row|{
         let id=text(row,"id").to_owned();
         let address=text(row,"address").to_owned();
         let decision=if address.trim().is_empty(){Ok(Value::Null)}
-        else{gateway.execute(ReadOperation::ResolveRemoteDeliveryArea,json!({
+        else if let Some(cached)=reusable_remote_decision(previous_model,previous_rows,row){
+            Ok(cached.clone())
+        }else{gateway.execute(ReadOperation::ResolveRemoteDeliveryArea,json!({
             "recipient":row
         }))};
         (id,address,decision)
@@ -1667,6 +1685,7 @@ impl ManualWorkspace {
         let action=action.to_owned();
         let selected_client=self.client_id.clone();
         let previous_view_quote=self.view_quote.clone();
+        let previous_remote_rows=self.remote_rows.clone();
         let (tx,rx)=mpsc::channel();
         self.receiver=Some(rx);
         self.error=None;
@@ -1724,7 +1743,8 @@ impl ManualWorkspace {
                 let assignment_order=result.get("assignmentOrder")
                     .and_then(Value::as_array).map(|v|v.iter().filter_map(|s|s.as_str()
                         .map(str::to_owned)).collect()).unwrap_or_else(||keys.clone());
-                let remote_rows=resolve_remote_rows(service.as_ref(),&next);
+                let remote_rows=refresh_remote_rows(service.as_ref(),&next,&model,
+                    &previous_remote_rows);
                 let view_quote=manual_view_quote(service.as_ref(),&order,&next,
                     &assignment_order,selected_client.as_deref(),previous_view_quote.as_ref());
                 Ok(Outcome::Updated{
@@ -3757,6 +3777,23 @@ mod manual_pending_interaction_tests {
 #[cfg(test)]
 mod manual_remote_row_tests {
     use super::*;
+    #[test]
+    fn freight_edits_reuse_remote_decisions_but_address_override_and_error_do_not(){
+        let old=json!({"id":"r1","address":"제주특별자치도 제주시 1"});
+        let model=json!({"rows":[old.clone()]});
+        let cached=json!({"checked":true});
+        let rows=vec![("r1".to_owned(),text(&old,"address").to_owned(),Ok(cached.clone()))];
+        let mut changed=old.clone();
+        changed["shippingCharges"]=json!({"STORE":4000});
+        assert_eq!(reusable_remote_decision(&model,&rows,&changed),Some(&cached));
+        changed["remoteDelivery"]=json!({"checked":false,"manual":true});
+        assert!(reusable_remote_decision(&model,&rows,&changed).is_none());
+        changed=old.clone();
+        changed["address"]=json!("서울특별시 1");
+        assert!(reusable_remote_decision(&model,&rows,&changed).is_none());
+        let failed=vec![("r1".to_owned(),text(&old,"address").to_owned(),Err("failed".to_owned()))];
+        assert!(reusable_remote_decision(&model,&failed,&old).is_none());
+    }
     #[test]
     fn decision_is_bound_to_both_recipient_and_exact_address(){
         let row=json!({"id":"r1","address":"제주특별자치도 제주시 1"});

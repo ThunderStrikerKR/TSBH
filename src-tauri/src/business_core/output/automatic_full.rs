@@ -323,16 +323,20 @@ pub(super) fn execute(payload:&Value)->Result<Value,String>{
         .map(|i|format!("{}\n{}",string(i,"name"),string(i,"url"))));
     let signature=payment_signature(&view,string(&payment_with_links,"payment"),
         account,rows(payload,"accountWire"))?;
+    let copied=||rows(&state["workflow"],"events").iter().any(|e|
+        string(e,"groupId")==gid&&string(e,"action")=="메시지 복사"&&
+        string(&e["after"],"type")=="PAYMENT"&&
+        string(&e["after"],"signature")==signature);
     if string(payload,"mode")=="payment_copy_status"{
-        let copied=rows(&state["workflow"],"events").iter().any(|e|
-            string(e,"groupId")==gid&&string(e,"action")=="메시지 복사"&&
-            string(&e["after"],"type")=="PAYMENT"&&
-            string(&e["after"],"signature")==signature);
-        return Ok(json!({"copied":copied}));
+        return Ok(json!({"copied":copied()}));
     }
-    Ok(json!({
+    let mut result=json!({
         "phase":string(&request,"phase"),"text":text,
         "paymentIssues":issues,"signature":signature,
         "validRequestLinks":valid_links
-    }))
+    });
+    if is_true(payload,"includeCopyStatus"){
+        result["copied"]=json!(copied());
+    }
+    Ok(result)
 }
