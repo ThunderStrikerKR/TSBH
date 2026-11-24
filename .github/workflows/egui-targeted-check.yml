@@ -205,6 +205,12 @@ jobs:
         run: cargo test --manifest-path egui-app/Cargo.toml source_autosave::source_delta_tests -- --nocapture
       - name: Verify shared reception async admission rejects every conflicting write order
         run: cargo test --manifest-path egui-app/Cargo.toml reception_jobs::tests -- --nocapture
+      - name: Verify inline edits persist order-scoped recognition identities and assignment links
+        run: cargo test --manifest-path egui-app/Cargo.toml inline_recognition_identity_tests -- --nocapture
+      - name: Verify saved manual models scope recipient and item IDs per order
+        run: cargo test --manifest-path src-tauri/Cargo.toml --lib manual_model_scopes_rows_and_assignment_targets_per_order -- --nocapture
+      - name: Verify order confirmation commits the active cell before resuming
+        run: cargo test --manifest-path egui-app/Cargo.toml reception_workflow_admission_integration_tests -- --nocapture
       - name: Verify clipboard OCR, source replacement, draft deletion, workflow and locality admission
         run: cargo test --manifest-path egui-app/Cargo.toml reception_workflow_admission_integration_tests -- --nocapture
       - name: Verify saved native quote and recognition survive SQLite restart
