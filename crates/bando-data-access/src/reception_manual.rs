@@ -404,8 +404,12 @@ pub(crate) fn verify_apply(
 )->Result<Value,String>{
     let order_id=s(order,"id");
     let raw=s(order,"raw");
-    if order_id.is_empty() || raw.is_empty(){return Err("수동 분류할 발주서가 없습니다.".into());}
-    if s(source,"sourceRaw")!=raw ||
+    let direct=raw.is_empty() && s(source,"mode")=="DIRECT";
+    if order_id.is_empty() || (raw.is_empty() && !direct){
+        return Err("수동 분류할 발주서가 없습니다.".into());
+    }
+    if (s(source,"mode")=="DIRECT" && !direct) ||
+       s(source,"sourceRaw")!=raw ||
        s(source,"orderType")!=s(order,"orderType") ||
        s(source,"clientId")!=s(order,"clientId"){
         return Err("수동 분류 작업본의 원문·유형·거래처가 다릅니다.".into());
@@ -415,6 +419,15 @@ pub(crate) fn verify_apply(
     }
     let submission=source.get("model").filter(|v|v.is_object())
         .ok_or("수동 분류 모델이 없습니다.")?;
+    if direct{
+        if !list(submission,"blocks")?.is_empty() ||
+           submission.get("assignments").and_then(Value::as_object)
+                .is_none_or(|assignments|!assignments.is_empty()) ||
+           source.get("assignmentOrder").and_then(Value::as_array)
+                .is_none_or(|keys|!keys.is_empty()){
+            return Err("직접 입력에는 발주원문 블록이나 원문 배정이 존재할 수 없습니다.".into());
+        }
+    }
     let (mut native,mut keys)=model(rule("initial_manual",json!({"order":order}))?)?;
     trusted_blocks(&native,submission)?;
     canonical_rows(order_id,&mut native,&mut keys,submission)?;
@@ -449,6 +462,50 @@ mod tests{
         let forged=json!({"blocks":[{"id":"0:2","start":0,"end":2,"text":"다라"}]});
         assert!(trusted_blocks(&real,&forged).is_err());
     }
+    #[test]
+    fn direct_manual_entry_replays_without_fabricating_source_evidence(){
+        let order=json!({
+            "id":"egui-direct-example","raw":"","orderType":"AGENCY",
+            "clientId":"c","recipients":[]
+        });
+        let initial=rule("initial_manual",json!({"order":order})).unwrap();
+        let resized=rule("resize_manual_rows",json!({
+            "model":initial["model"],"count":1,
+            "newRecipientIds":["egui-manual-direct-recipient"],
+            "assignmentOrder":initial["assignmentOrder"]
+        })).unwrap();
+        let mut model=resized["model"].clone();
+        model["rows"][0]["name"]=json!("김가상");
+        model["rows"][0]["address"]=json!("서울특별시 강남구 테헤란로 10");
+        let state=json!({"products":[],"aliases":[],"clients":[{
+            "id":"c","tier":"wholesale","payment":"PREPAID",
+            "overrides":{},"shippingFeeExcluded":false
+        }]});
+        let submitted=json!({
+            "mode":"DIRECT","sourceRaw":"","orderType":"AGENCY",
+            "clientId":"c","model":model,"assignmentOrder":[]
+        });
+        let result=verify_apply(&order,&state,&state["clients"][0],&submitted).unwrap();
+        assert_eq!(result["raw"],"");
+        assert_eq!(result["analysisRaw"],"");
+        assert_eq!(result["recipients"][0]["name"],"김가상");
+        assert_eq!(result["recipients"][0]["address"],"서울특별시 강남구 테헤란로 10");
+        assert_eq!(result["manualClassification"]["blocks"],json!([]));
+        assert_eq!(result["manualClassification"]["assignments"],json!({}));
+        assert!(result.get("analysisEvidence").is_none());
+    }
+
+    #[test]
+    fn empty_source_without_direct_mode_is_rejected(){
+        let order=json!({"id":"egui-direct-example","raw":"","orderType":"AGENCY","clientId":"c"});
+        let submitted=json!({"sourceRaw":"","orderType":"AGENCY","clientId":"c",
+            "model":{"rows":[{"id":"egui-manual-r","name":"","address":"",
+                "phone":"","mobile":"","note":"","items":[]}],
+                "blocks":[],"assignments":{}},"assignmentOrder":[]});
+        assert!(verify_apply(&order,&json!({"clients":[{"id":"c"}]}),
+            &json!({"id":"c"}),&submitted).is_err());
+    }
+
     #[test]
     fn canonical_native_manual_fields_can_be_replayed_without_trusting_ui_prices(){
         let rid="egui-example:recognition:recipient:0";
