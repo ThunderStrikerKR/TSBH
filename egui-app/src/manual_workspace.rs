@@ -939,6 +939,7 @@ impl ManualWorkspace {
             }
             Some(Ok(Err(error)))=>{
                 self.error=Some(error);
+                if self.edit_text!=self.current_value(){self.focus_editor=true;}
                 self.advance_after_apply=None;
                 self.pending_select_after_apply=None;
                 if self.action_pending {self.last_action=None;}
@@ -973,6 +974,7 @@ impl ManualWorkspace {
         self.selected_item=item;
         self.selected_field=field.to_owned();
         self.edit_text=self.current_value();
+        self.active_editor_id=None;
         self.focus_editor=true;
     }
 
@@ -1081,19 +1083,22 @@ impl ManualWorkspace {
             };
         }
         if self.selected_field=="shippingCharge"{
-            return self.view_quote.as_ref().and_then(|quote|
-                crate::quoted_freight_line(quote,text(row,"id"),row["dispatchOrigin"].as_str())
-            ).and_then(|line|line["appliedCharge"].as_i64())
+            return crate::quoted_billable_freight(self.view_quote.as_ref(),row)
                 .map(components::money_edit_text).unwrap_or_default();
         }
         text(row,&self.selected_field).to_owned()
+    }
+
+    // A selected assignment target is not necessarily an active editor.
+    fn cell_editor_open(&self)->bool{
+        self.focus_editor || self.active_editor_id.is_some()
     }
 
     /// Overlay the approved Reception TextEdit on the already allocated
     /// recipient/item/freight cell. Editing never changes row geometry.
     fn selected_cell_editor_on_rect(
         &mut self,ui:&mut egui::Ui,rect:egui::Rect,linked:bool,busy:bool
-    )->(egui::Response,Option<CellNavigationKey>){
+    )->(egui::Response,Option<CellNavigationKey>,bool){
         let had_focus=!self.focus_editor && self.active_editor_id.is_some_and(
             |id|ui.ctx().memory(|memory|memory.has_focus(id))
         );
@@ -1119,6 +1124,7 @@ impl ManualWorkspace {
             !self.confirm_apply && !self.confirm_discard &&
             !self.product_dialog_open() &&
             self.remove_recipient_pending.is_none() && !self.reset_pending;
+        let mut step_interaction=false;
         let response=if self.selected_item.is_none() {
             if self.selected_field=="shippingCharge" {
                 components::reception_freight_inline_cell_editor(
@@ -1132,11 +1138,13 @@ impl ManualWorkspace {
                 )
             }
         }else if matches!(self.selected_field.as_str(),"quantity"|"unitPrice"){
-            components::reception_item_numeric_editor(
+            let (input,step)=components::reception_item_numeric_editor(
                 ui,rect,&mut self.edit_text,focus,None,
                 if self.selected_field=="quantity"{components::ReceptionNumericCell::Quantity}
                 else{components::ReceptionNumericCell::Money}
-            ).0
+            );
+            step_interaction=step;
+            input
         }else{
             components::reception_inline_cell_editor(
                 ui,rect,&mut self.edit_text,focus,None,false
@@ -1147,7 +1155,20 @@ impl ManualWorkspace {
             ui.scroll_to_rect(rect,Some(egui::Align::Center));
             self.focus_editor=false;
         }
-        (response,navigation)
+        // Preserve the assignment target while dismissing its editing
+        // overlay. Blank-space clicks must end editing even if egui kept focus.
+        let numeric=matches!(self.selected_field.as_str(),"quantity"|"unitPrice"|"shippingCharge");
+        let outside=ui.input(|input|input.pointer.any_pressed() &&
+            input.pointer.interact_pos().is_some_and(|pos|!rect.contains(pos)));
+        let finished=numeric && !busy && navigation.is_none() && !step_interaction &&
+            (components::reception_numeric_edit_finished(&response,step_interaction)
+                || outside || (!focus && !response.has_focus()));
+        if finished{
+            ui.ctx().memory_mut(|memory|memory.surrender_focus(response.id));
+            self.active_editor_id=None;
+            self.focus_editor=false;
+        }
+        (response,navigation,finished)
     }
 
     fn queue_cell_navigation(
@@ -1460,6 +1481,7 @@ impl ManualWorkspace {
         let mut discard=false;
         let mut discard_confirmed=false;
         let mut submit_direct=false;
+        let mut blur_commit=false;
         let mut lookup:Option<(String,String)>=None;
         let mut add_product:Option<String>=None;
         let mut remove_item:Option<(String,String)>=None;
@@ -1773,7 +1795,7 @@ impl ManualWorkspace {
                                                             self.selected_item.is_none() &&
                                                             self.selected_field==field;
                                                         if selected {
-                                                            let (editing,navigation)=
+                                                            let (editing,navigation,_finished)=
                                                                 self.selected_cell_editor_on_rect(
                                                                     fields,response.rect,
                                                                     source_highlight::is_active(
@@ -1870,8 +1892,8 @@ impl ManualWorkspace {
                                                             let selected=index==self.selected_recipient &&
                                                                 self.selected_item.as_deref()==Some(item_id) &&
                                                                 self.selected_field==field;
-                                                            let interaction=if selected{
-                                                                let (editing,navigation)=
+                                                            let interaction=if selected && (field=="product" || self.cell_editor_open()){
+                                                                let (editing,navigation,finished)=
                                                                     self.selected_cell_editor_on_rect(
                                                                         items_ui,response.rect,
                                                                         source_highlight::is_active(
@@ -1883,6 +1905,10 @@ impl ManualWorkspace {
                                                                         navigation,&mut submit_direct,
                                                                         &mut navigate_now
                                                                     );
+                                                                }
+                                                                if finished && self.edit_text!=self.current_value(){
+                                                                    submit_direct=true;
+                                                                    blur_commit=true;
                                                                 }
                                                                 if editing.hovered(){
                                                                     hovered_detail=Some(key.clone());
@@ -1954,9 +1980,7 @@ impl ManualWorkspace {
                                                     let remote_ready=remote_value.is_some();
                                                     let freight=components::reception_freight_row_editable(
                                                         items_ui,"운임",
-                                                        self.view_quote.as_ref().and_then(|quote|
-                                                            crate::quoted_freight_line(quote,rid,row["dispatchOrigin"].as_str())
-                                                        ).and_then(|line|line["appliedCharge"].as_i64()),
+                                                        crate::quoted_billable_freight(self.view_quote.as_ref(),row),
                                                         Some(code=="020"),
                                                         remote_ready.then_some(remote),
                                                         true,can_mutate
@@ -1970,12 +1994,17 @@ impl ManualWorkspace {
                                                         );
                                                     }
                                                     if self.selected_item.is_none() &&
-                                                        self.selected_field=="shippingCharge" {
+                                                        self.selected_field=="shippingCharge" && code!="020" &&
+                                                        self.cell_editor_open() {
                                                         if let Some(rect)=freight.amount_rect {
-                                                            let (_,navigation)=
+                                                            let (_,navigation,finished)=
                                                                 self.selected_cell_editor_on_rect(
                                                                     items_ui,rect,false,busy
                                                                 );
+                                                            if finished && self.edit_text!=self.current_value(){
+                                                                submit_direct=true;
+                                                                blur_commit=true;
+                                                            }
                                                             if let Some(navigation)=navigation{
                                                                 self.queue_cell_navigation(
                                                                     navigation,&mut submit_direct,
@@ -2161,7 +2190,7 @@ impl ManualWorkspace {
         }
 
         if submit_direct {
-            self.focus_editor=true;
+            self.focus_editor=!blur_commit;
             let rid=self.model.as_ref().and_then(|m|list(m,"rows")
                 .get(self.selected_recipient)).and_then(|r|r.get("id"))
                 .and_then(Value::as_str).map(str::to_owned);
@@ -2811,7 +2840,10 @@ mod manual_workspace_modal_routing_tests {
         assert!(!render.contains("reception_item_row_editable("));
         assert!(!render.contains("\"step_manual_quantity\""));
         assert!(render.contains("crate::quoted_item_line("));
-        assert!(render.contains("crate::quoted_freight_line("));
+        assert!(render.contains("crate::quoted_billable_freight("));
+        assert!(render.contains("field==\"product\" || self.cell_editor_open()"));
+        assert!(source.contains("components::reception_numeric_edit_finished("));
+        assert!(render.contains("self.focus_editor=!blur_commit"));
         assert!(render.contains("reception_item_delete_confirmation("));
         assert!(source.contains("add_selected_manual_product(service.as_ref()"));
         assert!(source.contains("ReadOperation::CalculateReceptionQuote"));

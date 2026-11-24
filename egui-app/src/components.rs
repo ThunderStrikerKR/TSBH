@@ -5384,6 +5384,12 @@ fn reception_quantity_step_keeps_unit_out_of_native_draft_and_respects_bounds(){
 #[derive(Clone,Copy)]
 pub enum ReceptionNumericCell{Quantity,Money}
 
+/// A stepper click may temporarily move the text focus. Both consumers
+/// must retain the draft until that click resolves.
+pub fn reception_numeric_edit_finished(response:&Response,step_interaction:bool)->bool{
+    response.lost_focus() && !step_interaction
+}
+
 pub fn reception_item_numeric_editor(
     ui:&mut Ui,rect:Rect,value:&mut String,focus:bool,
     click_at:Option<egui::Pos2>,kind:ReceptionNumericCell

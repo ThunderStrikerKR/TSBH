@@ -530,9 +530,32 @@ fn quoted_freight_line<'a>(
     )
 }
 
+/// Display the charged freight, not the retained parcel tariff.
+/// Legacy prepaid snapshots may contain only appliedCharge.
+fn quoted_billable_freight(quote:Option<&serde_json::Value>,recipient:&serde_json::Value)->Option<i64>{
+    if recipient["freightCode"].as_str()==Some("020"){return Some(0);}
+    let line=quoted_freight_line(quote?,recipient["id"].as_str()?,recipient["dispatchOrigin"].as_str())?;
+    if let Some(billable)=line.get("billableCharge"){billable.as_i64()}
+    else{line["appliedCharge"].as_i64()}
+}
+
 #[cfg(test)]
 mod quote_identity_tests {
     use super::*;
+    #[test]
+    fn cod_freight_displays_zero_and_prepaid_restores_native_charge(){
+        let mut recipient=serde_json::json!({"id":"r","dispatchOrigin":"FACTORY","freightCode":"010"});
+        let quote=serde_json::json!({"freightLines":[{"recipientId":"r","origin":"FACTORY",
+            "appliedCharge":8000,"billableCharge":8000}]});
+        assert_eq!(quoted_billable_freight(Some(&quote),&recipient),Some(8000));
+        recipient["freightCode"]=serde_json::json!("020");
+        assert_eq!(quoted_billable_freight(Some(&quote),&recipient),Some(0));
+        assert_eq!(quoted_billable_freight(None,&recipient),Some(0));
+        recipient["freightCode"]=serde_json::json!("010");
+        assert_eq!(quoted_billable_freight(Some(&quote),&recipient),Some(8000));
+        assert_eq!(quoted_billable_freight(None,&recipient),None);
+        assert_eq!(quote["freightLines"][0]["appliedCharge"],8000);
+    }
 
     #[test]
     fn native_scoped_quote_matches_unscoped_recognition_ids(){
@@ -595,10 +618,7 @@ fn current_inline_value(
         };
     }
     if target.field=="shippingCharge"{
-        let origin=recipient["dispatchOrigin"].as_str();
-        return Some(quote.and_then(|value|
-            quoted_freight_line(value,&target.recipient_id,origin)
-        ).and_then(|line|line["appliedCharge"].as_i64())
+        return Some(quoted_billable_freight(quote,recipient)
             .map(|v|v.to_string()).unwrap_or_default());
     }
     recipient[target.field].as_str().map(str::to_owned)
@@ -6274,7 +6294,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                         contents.add_space(theme::SPACE_8);
                                         components::reception_freight_row(
                                             contents,"운임",
-                                            if ship.collect {None} else {ship.freight},
+                                            if ship.collect {Some(0)} else {ship.freight},
                                             Some(ship.collect),remote,
                                             origin==Some("FACTORY"),
                                         );
@@ -6487,15 +6507,13 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                                 contents.add_space(theme::SPACE_8);
                                                 let origin=row["dispatchOrigin"].as_str();
                                                 let recipient_id=reception_service::text(row,"id");
-                                                let fee=preview.and_then(|quote|
-                                                    quoted_freight_line(quote,recipient_id,origin)
-                                                ).and_then(|line|line["appliedCharge"].as_i64());
+                                                let fee=quoted_billable_freight(preview,row);
                                                 let collect=row["freightCode"].as_str()
                                                     .map(|code|code=="020").unwrap_or(false);
                                                 let remote=row["remoteDelivery"]["checked"].as_bool();
                                                 components::reception_freight_row(
                                                     contents,"운임",
-                                                    if collect{None}else{fee},
+                                                    fee,
                                                     Some(collect),remote,
                                                     origin==Some("FACTORY")
                                                 );
@@ -6960,7 +6978,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                                             inline_cancel=true;
                                                         }else if let Some(key)=navigation{
                                                             inline_navigation_request=Some((target.clone(),key));
-                                                        }else if result.lost_focus() && !step_interaction{
+                                                        }else if components::reception_numeric_edit_finished(&result,step_interaction){
                                                             inline_commit=true;
                                                         }
                                                     }
@@ -7001,11 +7019,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                         );
                                         let origin=recipient.get("dispatchOrigin")
                                             .and_then(serde_json::Value::as_str);
-                                        let line_fee=preview
-                                            .and_then(|quote|quoted_freight_line(
-                                                quote,recipient_id,origin
-                                            ))
-                                            .and_then(|line|line["appliedCharge"].as_i64());
+                                        let line_fee=quoted_billable_freight(preview,recipient);
                                         let cod=recipient.get("freightCode")
                                             .and_then(serde_json::Value::as_str)
                                             .map(|code|code=="020");
@@ -7022,7 +7036,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                             cell:CellNavigationCell{
                                                 id:inline_target_key(&freight_target),
                                                 row:item_count+1,column:2,
-                                                order:5+item_count*2,enabled:editable
+                                                order:5+item_count*2,enabled:editable && cod!=Some(true)
                                             }
                                         });
                                         // Adding products belongs to the section header,
@@ -7058,7 +7072,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                         }
                                         if let (Some(editor),Some(rect))=(
                                             self.inline_editor.as_mut()
-                                                .filter(|edit|edit.target==freight_target),
+                                                .filter(|edit|edit.target==freight_target && cod!=Some(true)),
                                             freight_actions.amount_rect
                                         ){
                                             let navigation=inline_navigation_key(
