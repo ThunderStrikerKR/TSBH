@@ -241,6 +241,8 @@ jobs:
         run: cargo test --manifest-path egui-app/Cargo.toml vat_settings_ui_tests -- --nocapture
       - name: Verify recipient freight completes the entire order total automatically
         run: cargo test --manifest-path egui-app/Cargo.toml incomplete_second_recipient -- --nocapture
+      - name: Verify incremental native reception quote matches full calculation
+        run: cargo test --manifest-path egui-app/Cargo.toml reception_edit_cache_tests -- --nocapture
       - name: Verify native recipient freight is quoted and collected exactly once
         run: cargo test --manifest-path egui-app/Cargo.toml reception_manual_freight -- --nocapture
       - name: Verify submitted edits replay under authoritative SQLite pricing rules

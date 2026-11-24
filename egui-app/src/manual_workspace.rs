@@ -663,7 +663,7 @@ fn manual_view_quote(
     ){
         return Some(previous.clone());
     }
-    let mut quote=gateway.execute(ReadOperation::CalculateReceptionQuote,
+    let mut quote=gateway.calculate_reception_edit_quote(
         json!({"order":updated,"state":&state,"client":client})).ok()?;
     quote["orderId"]=order["id"].clone();
     quote["manualViewInput"]=inputs;
@@ -994,8 +994,7 @@ pub fn apply_inline(
                     source.pricing_preview.as_ref(),&updated
                 ){return Ok(reused);}
             }
-            let mut projected=gateway.execute(
-                ReadOperation::CalculateReceptionQuote,
+            let mut projected=gateway.calculate_reception_edit_quote(
                 json!({"order":&updated,"state":&state,"client":client})
             )?;
             projected["authorityRevision"]=state.get("revision").cloned()

@@ -239,6 +239,10 @@ pub trait BandoGateway: Send + Sync {
     fn load_working_source(&self) -> Result<WorkingSource, String>;
     /// Conditional write: another process may not overwrite a newer source.
     fn save_working_source(&self, source: &WorkingSource) -> Result<u64, String>;
+    /// Edit-only native preview. HTTP and test adapters retain the full quote.
+    fn calculate_reception_edit_quote(&self,payload:Value)->Result<Value,String>{
+        self.execute(ReadOperation::CalculateReceptionQuote,payload)
+    }
     /// Execute one of the explicitly allowed read-only business operations.
     fn execute(&self, operation: ReadOperation, payload: Value) -> Result<Value, String>;
 }
@@ -818,6 +822,18 @@ impl BandoGateway for LocalGateway {
 
     fn save_working_source(&self, source: &WorkingSource) -> Result<u64, String> {
         PreviewStore::initialize()?.save_source(source)
+    }
+
+    fn calculate_reception_edit_quote(&self,payload:Value)->Result<Value,String>{
+        static CACHE:std::sync::OnceLock<std::sync::Mutex<rules::ReceptionEditQuoteCache>>=
+            std::sync::OnceLock::new();
+        let cache=CACHE.get_or_init(||std::sync::Mutex::new(
+            rules::ReceptionEditQuoteCache::default()));
+        // Avoid making independent worker requests wait for this cache.
+        match cache.try_lock(){
+            Ok(mut cache)=>cache.quote(&payload),
+            Err(_)=>self.execute(ReadOperation::CalculateReceptionQuote,payload)
+        }
     }
 
     fn execute(&self, operation: ReadOperation, payload: Value) -> Result<Value, String> {

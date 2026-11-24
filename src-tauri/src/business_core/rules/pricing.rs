@@ -262,8 +262,12 @@ pub(super) fn reception_quote(payload:&Value)->Result<Value,String>{
         "order":original,"state":state,"client":client,
         "explicitEdit":true,"persistedOrders":[]
     }))?;
-    let mut order=repriced.get("order").filter(|value|value.is_object())
+    let order=repriced.get("order").filter(|value|value.is_object())
         .ok_or("Rust 품목 재계산 결과가 없습니다.")?.clone();
+    finish_reception_quote(order,state,client)
+}
+
+fn finish_reception_quote(mut order:Value,state:&Value,client:&Value)->Result<Value,String>{
     let freight=super::shipping::reception_recommend(&order,state)?;
     let shipping=if flag(client,"shippingFeeExcluded"){json!(0)}else{
         field(&freight,"total").clone()
@@ -303,6 +307,151 @@ pub(super) fn reception_quote(payload:&Value)->Result<Value,String>{
         "order":order,"totals":amounts,"linePrices":lines,
         "freightLines":freight_lines
     }))
+}
+
+/// Ephemeral native cache for employee edit previews only. The owning host
+/// keeps it in memory; neither persisted drafts nor remote callers supply
+/// cached money. Full quote remains the final approval/write authority.
+/// Compare complete pricing masters conservatively, and the exact recipient
+/// inputs, so a changed price, tariff, VAT, address or override cannot leak.
+#[derive(Default)]
+pub(crate) struct ReceptionEditQuoteCache{
+    master:Option<Value>,
+    order_header:Option<Value>,
+    entries:std::collections::HashMap<String,RecipientQuoteEntry>,
+}
+struct RecipientQuoteEntry{
+    input:Value,
+    quote:Value,
+}
+impl ReceptionEditQuoteCache{
+    pub(crate) fn quote(&mut self,payload:&Value)->Result<Value,String>{
+        let state=req(payload,"state")?;
+        let client=req(payload,"client")?;
+        let original=req(payload,"order")?;
+        if has_value(field(original,"confirmedAt")) || flag(original,"pricesLocked"){
+            return reception_quote(payload);
+        }
+        let recipients=rows(field(original,"recipients"));
+        let mut ids=std::collections::HashSet::new();
+        if recipients.is_empty() || recipients.len()>100 ||
+            str_field(original,"id").is_empty() ||
+            recipients.iter().any(|row|{
+                let id=str_field(row,"id");
+                id.is_empty() || !ids.insert(id)
+            }){
+            return reception_quote(payload);
+        }
+        let master=json!({"products":field(state,"products"),
+            "shipping":field(state,"shipping"),"client":client});
+        let mut header=original.clone();
+        header.as_object_mut().ok_or("발주서 형식 오류")?.remove("recipients");
+        // These two derived fields are overwritten by every native quote.
+        if let Some(map)=header.as_object_mut(){
+            map.remove("shippingFee");
+            map.remove("shippingVersion");
+        }
+        if self.master.as_ref()!=Some(&master) || self.order_header.as_ref()!=Some(&header){
+            self.entries.clear();
+            self.master=Some(master);
+            self.order_header=Some(header);
+        }
+        self.entries.retain(|id,_|ids.contains(id.as_str()));
+        let mut quoted_rows=Vec::with_capacity(recipients.len());
+        let mut amounts=Vec::with_capacity(recipients.len());
+        let mut lines=Vec::new();
+        let mut freight_lines=Vec::new();
+        let mut versions=Vec::new();
+        let mut pending=Vec::new();
+        // Match shipping::recommend's exact version string, including key
+        // ordering within each group. Do not parse/re-serialize that string.
+        let epoch=field(field(state,"shipping"),"epoch").as_i64().unwrap_or(1);
+        let prefix=format!("{{\"epoch\":{epoch},\"groups\":[");
+        for recipient in recipients{
+            let id=str_field(recipient,"id");
+            if !self.entries.get(id).is_some_and(|entry|entry.input==*recipient){
+                let mut single=original.clone();
+                set(&mut single,"recipients",json!([recipient]))?;
+                let quote=reception_quote(&json!({
+                    "order":single,"state":state,"client":client
+                }))?;
+                self.entries.insert(id.to_owned(),RecipientQuoteEntry{
+                    input:recipient.clone(),quote
+                });
+            }
+            let quote=&self.entries.get(id).ok_or("수취인 계산 캐시 누락")?.quote;
+            let quoted=rows(field(field(quote,"order"),"recipients"));
+            if quoted.len()!=1{return reception_quote(payload);}
+            quoted_rows.push(quoted[0].clone());
+            amounts.push(field(quote,"totals"));
+            lines.extend(rows(field(quote,"linePrices")).iter().cloned());
+            freight_lines.extend(rows(field(quote,"freightLines")).iter().cloned());
+            pending.extend(rows(field(field(quote,"totals"),"pendingRecipients")).iter().cloned());
+            let version=str_field(field(quote,"order"),"shippingVersion");
+            let Some(inner)=version.strip_prefix(&prefix).and_then(|v|v.strip_suffix("]}"))
+                else{return reception_quote(payload);};
+            if !inner.is_empty(){versions.push(inner);}
+        }
+        let sum=|key:&str|amounts.iter().map(|amount|safe(field(amount,key)))
+            .collect::<Option<Vec<_>>>().and_then(checked_sum);
+        let subtotal=sum("subtotal");
+        let shipping=sum("shipping");
+        let vat=sum("vat");
+        let total=subtotal.zip(shipping).zip(vat)
+            .and_then(|((items,shipping),vat)|checked_sum([items,shipping,vat]));
+        // shippingFee on the order is the aggregate bundle quote, not the
+        // per-recipient total (a recipient with no bundles remains pending).
+        let shipping_fee=if flag(client,"shippingFeeExcluded"){Some(0)}
+            else if freight_lines.is_empty(){None}
+            else{freight_lines.iter().map(|line|safe(field(line,"billableCharge")))
+                .collect::<Option<Vec<_>>>().and_then(checked_sum)};
+        let mut order=original.clone();
+        set(&mut order,"recipients",json!(quoted_rows))?;
+        set(&mut order,"shippingFee",json!(shipping_fee))?;
+        set(&mut order,"shippingVersion",json!(format!("{prefix}{}]}}",versions.join(","))))?;
+        Ok(json!({"order":order,
+            "totals":{"subtotal":subtotal,"shipping":shipping,"vat":vat,"total":total,
+                "pendingRecipients":pending},
+            "linePrices":lines,"freightLines":freight_lines}))
+    }
+}
+
+#[cfg(test)]
+mod reception_edit_cache_tests{
+    use super::*;
+    #[test]
+    fn recipient_cache_matches_full_quote_after_freight_vat_master_and_address_edits(){
+        let mut payload=json!({
+            "state":{"products":[{"id":"p","origin":"FACTORY","variants":[{"id":"v","wholesale":10000}]}],
+                "shipping":{"epoch":1,"productRules":{"p":{"version":"p1","fees":{"1":3000}}}}},
+            "client":{"id":"c","tier":"wholesale"},
+            "order":{"id":"draft","applyVat":true,"recipients":[
+                {"id":"a","address":"서울특별시 중구 세종대로 1","freightCode":"010",
+                    "shippingCharges":{"FACTORY":3000},"items":[{"id":"i1","productId":"p","variantId":"v","quantity":1,"origin":"FACTORY"}]},
+                {"id":"b","address":"제주특별자치도 제주시 연동 1","freightCode":"010",
+                    "shippingCharges":{"FACTORY":3000},"items":[{"id":"i2","productId":"p","variantId":"v","quantity":1,"origin":"FACTORY"}]}
+            ]}
+        });
+        let mut cache=ReceptionEditQuoteCache::default();
+        assert_eq!(cache.quote(&payload).unwrap(),reception_quote(&payload).unwrap());
+        let unchanged=cache.entries["b"].quote.clone();
+        payload["order"]["recipients"][0]["shippingCharges"]["FACTORY"]=json!(4000);
+        assert_eq!(cache.quote(&payload).unwrap(),reception_quote(&payload).unwrap());
+        assert_eq!(cache.entries["b"].quote,unchanged);
+        payload["order"]["recipients"][0]["freightCode"]=json!("020");
+        payload["order"]["recipients"][0]["vatOverride"]=json!(false);
+        assert_eq!(cache.quote(&payload).unwrap(),reception_quote(&payload).unwrap());
+        payload["order"]["recipients"][1]["address"]=json!("서울특별시 강남구 테헤란로 1");
+        assert_eq!(cache.quote(&payload).unwrap(),reception_quote(&payload).unwrap());
+        payload["state"]["products"][0]["variants"][0]["wholesale"]=json!(12000);
+        assert_eq!(cache.quote(&payload).unwrap(),reception_quote(&payload).unwrap());
+        payload["state"]["shipping"]["epoch"]=json!(2);
+        assert_eq!(cache.quote(&payload).unwrap(),reception_quote(&payload).unwrap());
+        payload["order"]["recipients"][1]["items"]=json!([]);
+        assert_eq!(cache.quote(&payload).unwrap(),reception_quote(&payload).unwrap());
+        payload["client"]["shippingFeeExcluded"]=json!(true);
+        assert_eq!(cache.quote(&payload).unwrap(),reception_quote(&payload).unwrap());
+    }
 }
 
 #[cfg(test)]
