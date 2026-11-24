@@ -2659,7 +2659,7 @@ mod manual_workspace_modal_routing_tests {
         assert!(count_flow.contains("self.request_resize(count,ctx)"),
             "the native asynchronous resize flow must remain in place");
 
-        let segmented=components.split("fn date_navigation_segmented_surface(").nth(1).unwrap()
+        let segmented=components.split("fn date_navigation_segmented_surface<R>(").nth(1).unwrap()
             .split("fn date_navigation_button_surface(").next().unwrap();
         assert!(segmented.contains("rect_filled("));
         assert!(segmented.contains("rect_stroke("));
