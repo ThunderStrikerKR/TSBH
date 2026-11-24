@@ -1156,4 +1156,13 @@ impl ClientManager {
         })
     }
     pub(crate) fn geometry_read_failed(&self)->bool{self.error.is_some()}
+    pub(crate) fn geometry_begin_message_read(&mut self)->Box<dyn FnOnce(Result<usize,String>)>{
+        self.messages.as_mut().expect("message fixture").geometry_begin_read()
+    }
+    pub(crate) fn geometry_message_failed(&self)->bool{
+        self.messages.as_ref().expect("message fixture").geometry_read_failed()
+    }
+    pub(crate) fn geometry_select_notice(&mut self){
+        self.messages.as_mut().expect("message fixture").geometry_select_first();
+    }
 }
