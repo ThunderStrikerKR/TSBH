@@ -961,20 +961,25 @@ mod tests {
 
     #[test]
     fn manual_assignment_state_changes_only_manual_palette_and_ink() {
-        assert_eq!(
-            theme::MANUAL_SOURCE_UNASSIGNED_FILL,
-            Color32::from_rgb(184,184,184)
-        );
         assert_ne!(theme::MANUAL_SOURCE_UNASSIGNED_FILL,theme::BRIGHT);
         assert_eq!(theme::MANUAL_SOURCE_BLOCK_RADIUS,4.0);
-        assert_eq!(
-            theme::MANUAL_SOURCE_UNASSIGNED_BORDER,
-            theme::SOURCE_RECOGNIZED_BORDER
-        );
-        assert_eq!(
-            theme::MANUAL_SOURCE_UNASSIGNED_TEXT,
-            Color32::from_rgb(23,23,23)
-        );
+        assert_eq!(theme::MANUAL_SOURCE_CLASSIFIED_BORDER,theme::SOURCE_RECOGNIZED_BORDER);
+        assert_ne!(theme::MANUAL_SOURCE_UNASSIGNED_BORDER,theme::SOURCE_RECOGNIZED_BORDER);
+        assert_ne!(theme::MANUAL_SOURCE_UNASSIGNED_FILL,ACTIVE_FILL);
+        assert_ne!(theme::MANUAL_SOURCE_UNASSIGNED_BORDER,ACTIVE_BORDER);
+        // Both reading states must remain legible; use the actual palette
+        // luminance contrast instead of hard-coding obsolete gray swatches.
+        let luminance=|c:Color32|{
+            let linear=|v:u8|{let v=f64::from(v)/255.0;
+                if v<=0.04045{v/12.92}else{((v+0.055)/1.055).powf(2.4)}};
+            0.2126*linear(c.r())+0.7152*linear(c.g())+0.0722*linear(c.b())
+        };
+        for (ink,fill) in [
+            (theme::MANUAL_SOURCE_UNASSIGNED_TEXT,theme::MANUAL_SOURCE_UNASSIGNED_FILL),
+            (theme::MANUAL_SOURCE_CLASSIFIED_TEXT,theme::MANUAL_SOURCE_CLASSIFIED_FILL)
+        ]{
+            assert!((luminance(ink)+0.05)/(luminance(fill)+0.05)>=4.5);
+        }
         assert_eq!(theme::MANUAL_SOURCE_BLOCK_BORDER_WIDTH,1.0);
         let raw="팔렬고등학교 30개";
         let rows=json!([{"id":"r1","items":[{"id":"i1"}]}]);
