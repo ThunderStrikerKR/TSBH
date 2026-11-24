@@ -4611,39 +4611,14 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
     }
 
     fn section_with_header(
-        ui: &mut Ui,
-        title: &str,
-        minimum_height: f32,
-        header_right: impl FnOnce(&mut Ui),
-        content: impl FnOnce(&mut Ui),
-    ) {
-        let width = ui.available_width();
-        theme::docked_pane_frame().show(ui, |ui| {
-            let width_inset = 2.0 * theme::SECTION_PADDING;
-            let height_inset = 2.0 * theme::RECEPTION_PANE_PADDING_Y;
-            ui.set_min_width((width - width_inset).max(60.0));
-            ui.set_min_height((minimum_height - height_inset).max(48.0));
-            // The section header owns its vertical rhythm. Eguis implicit
-            // item spacing must not be added on top of explicit gaps.
-            let body_item_spacing = theme::SPACING;
-            ui.spacing_mut().item_spacing.y = 0.0;
-            ui.allocate_ui_with_layout(
-                Vec2::new(ui.available_width(), theme::SECTION_HEADER_HEIGHT),
-                Layout::left_to_right(Align::Center),
-                |header| {
-                    header.set_min_height(theme::SECTION_HEADER_HEIGHT);
-                    header.label(typography::section_heading(title));
-                    header.with_layout(Layout::right_to_left(Align::Center), header_right);
-                },
-            );
-            ui.add_space(theme::SECTION_CONTENT_GAP);
-            components::reception_section_divider(ui);
-            ui.add_space(theme::SPACE_4);
-            ui.scope(|body| {
-                body.spacing_mut().item_spacing.y = body_item_spacing;
-                content(body);
-            });
-        });
+        ui:&mut Ui,title:&str,minimum_height:f32,
+        header_right:impl FnOnce(&mut Ui),content:impl FnOnce(&mut Ui),
+    ){
+        // Single shared card chrome: Reception and manual classification
+        // use identical header, spacing, divider and panel geometry.
+        components::reception_section_with_header(
+            ui,title,minimum_height,header_right,content
+        );
     }
 
     fn kakao_pane(&mut self, ui: &mut Ui) {
