@@ -634,6 +634,28 @@ struct PendingWorkingSync {
     receiver: Receiver<Result<serde_json::Value,String>>,
 }
 
+fn kakao_safe_modal_work_area(
+    viewport:Rect,layout:&layout::LayoutState
+)->Rect{
+    // Match workspace_shell_frame exactly: the reception/management canvas
+    // has NO left inset and a single PANEL_GAP inset on the right.
+    let content_left=viewport.left();
+    let content_right=(viewport.right()-theme::PANEL_GAP)
+        .max(content_left+1.0);
+    let content_width=(content_right-content_left)
+        .max(layout::LayoutState::minimum_width());
+    let kakao_edge=content_left+layout.widths(content_width)[0]
+        +layout::SPLITTER;
+    let gutter=theme::MODAL_VIEWPORT_GUTTER;
+    let left=(kakao_edge+gutter).min(content_right-1.0);
+    let right=(content_right-gutter).max(left+1.0).min(content_right);
+    let top=(viewport.top()+theme::HEADER_HEIGHT+theme::PANEL_GAP+gutter)
+        .min(viewport.bottom()-1.0);
+    let bottom=(viewport.bottom()-theme::PANEL_GAP-gutter)
+        .max(top+1.0).min(viewport.bottom());
+    Rect::from_min_max(egui::pos2(left,top),egui::pos2(right,bottom))
+}
+
 struct BandoEgui {
     brand_texture: Option<egui::TextureHandle>,
     gateway: Arc<dyn gateway::BandoGateway>,
@@ -2416,22 +2438,10 @@ impl BandoEgui {
 
     /// The only coordinate owner for every reception modal. KakaoTalk is an
     /// externally owned Windows surface: keep modal bodies outside its area.
+    /// Use the exact asymmetric inner rect of workspace_shell_frame rather
+    /// than approximating it with equal left/right PANEL_GAP values.
     fn modal_work_area(&self,ctx:&egui::Context)->Rect {
-        let viewport=ctx.screen_rect();
-        let gutter=theme::MODAL_VIEWPORT_GUTTER;
-        let content_width=(viewport.width()-2.0*theme::PANEL_GAP)
-            .max(layout::LayoutState::minimum_width());
-        // React HubShell reserves Kakao across every navigation tab.
-        let kakao_edge=viewport.left()+theme::PANEL_GAP+
-            self.layout.widths(content_width)[0]+layout::SPLITTER;
-        let left=(kakao_edge+gutter).min(viewport.right()-1.0);
-        let right=(viewport.right()-gutter).max(left+1.0)
-            .min(viewport.right());
-        let top=(viewport.top()+theme::HEADER_HEIGHT+gutter)
-            .min(viewport.bottom()-1.0);
-        let bottom=(viewport.bottom()-gutter).max(top+1.0)
-            .min(viewport.bottom());
-        Rect::from_min_max(egui::pos2(left,top),egui::pos2(right,bottom))
+        kakao_safe_modal_work_area(ctx.screen_rect(),&self.layout)
     }
 
     fn show_manual_workspace(&mut self,ctx:&egui::Context,work_area:Rect) {
@@ -9569,6 +9579,35 @@ mod reception_workflow_admission_integration_tests {
     }
 }
 
+
+#[cfg(test)]
+mod modal_work_area_geometry_tests{
+    use super::*;
+
+    #[test]
+    fn kakao_safe_modal_area_matches_workspace_shell_asymmetric_insets(){
+        let viewport=Rect::from_min_size(
+            egui::pos2(0.0,0.0),Vec2::new(1920.0,1080.0)
+        );
+        let layout=layout::LayoutState::default();
+        let work=kakao_safe_modal_work_area(viewport,&layout);
+        let content_left=viewport.left();
+        let content_right=viewport.right()-theme::PANEL_GAP;
+        let content_width=content_right-content_left;
+        let kakao_edge=content_left+layout.widths(content_width)[0]
+            +layout::SPLITTER;
+        let gutter=theme::MODAL_VIEWPORT_GUTTER;
+
+        assert!((work.left()-(kakao_edge+gutter)).abs()<0.01);
+        assert!((work.right()-(content_right-gutter)).abs()<0.01);
+        assert!((work.top()-(viewport.top()+theme::HEADER_HEIGHT
+            +theme::PANEL_GAP+gutter)).abs()<0.01);
+        assert!((work.bottom()-(viewport.bottom()
+            -theme::PANEL_GAP-gutter)).abs()<0.01);
+        assert!((work.center().x-(kakao_edge+gutter
+            +content_right-gutter)/2.0).abs()<0.01);
+    }
+}
 
 #[cfg(test)]
 mod reception_item_editor_integration_tests{
