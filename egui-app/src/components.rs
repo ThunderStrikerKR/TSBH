@@ -3262,7 +3262,7 @@ pub fn date_navigation_count_control(
                             .margin(typography::management_date_text_margin())
                             .frame(false)
                             .desired_width(input_width)
-                            .hint_text(&hint)
+                            .hint_text(hint.as_str())
                     )
                 }).inner;
                 let increment=date_navigation_segment_button(
