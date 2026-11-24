@@ -8821,47 +8821,78 @@ pub(crate) mod general_screen_geometry_tests {
         println!("GEOMETRY_DATA_TRANSITIONS {name} {screen:?}: pending/error/empty/one/many/recovered");
         recovered
     }
+    fn data_geometry_dimensions()->[(Vec2,f32);3]{
+        [(Vec2::new(1920.0,1080.0),380.0),
+         (Vec2::new(1366.0,768.0),320.0),(Vec2::new(1280.0,720.0),380.0)]
+    }
     #[test]
-    fn actual_five_management_tables_keep_fixed_slots_through_populated_read_transitions(){
-        for (screen,left) in [(Vec2::new(1920.0,1080.0),380.0),
-            (Vec2::new(1366.0,768.0),320.0),(Vec2::new(1280.0,720.0),380.0)]{
+    fn actual_freight_table_keeps_fixed_slots_through_populated_read_transitions(){
+        for (screen,left) in data_geometry_dimensions(){
             let work=Rect::from_min_max(egui::pos2(left,80.0),
                 egui::pos2(screen.x-18.0,screen.y-18.0));
+            let ctx=test_context();
             let gateway:Arc<dyn BandoGateway>=Arc::new(GeometryGateway);
-            {
-                let ctx=test_context();
-                let mut page=crate::freight_manager::FreightManager::geometry_fixture(Arc::clone(&gateway),ctx.clone(),0,false);
-                exercise_data_transitions("freight",&ctx,screen,work,&mut page,
-                    |p,ui|p.show_page(ui),|p|p.geometry_begin_read(),|p|p.geometry_read_failed());
-            }
-            {
-                let ctx=test_context();
-                let mut page=crate::order_history_manager::OrderHistoryManager::geometry_fixture(Arc::clone(&gateway),ctx.clone(),0,false);
-                let recovered=exercise_data_transitions("history",&ctx,screen,work,&mut page,
-                    |p,ui|p.show_page(ui),|p|p.geometry_begin_read(),|p|p.geometry_read_failed());
-                page.geometry_expand_first();
-                let expanded=render(&ctx,screen,work,|ui|page.show_page(ui));
-                compare_data_state_geometry("history","expanded order",&recovered,&expanded,true);
-                assert_visible_data_rows("history",&expanded,65);
-            }
-            {
-                let ctx=test_context();
-                let mut page=crate::product_manager::ProductManager::geometry_fixture(Arc::clone(&gateway),ctx.clone(),0,false);
-                exercise_data_transitions("products",&ctx,screen,work,&mut page,
-                    |p,ui|p.show_page(ui),|p|p.geometry_begin_read(),|p|p.geometry_read_failed());
-            }
-            {
-                let ctx=test_context();
-                let mut page=crate::client_manager::ClientManager::geometry_fixture(Arc::clone(&gateway),ctx.clone(),0,false);
-                exercise_data_transitions("clients",&ctx,screen,work,&mut page,
-                    |p,ui|p.show_page(ui,Arc::clone(&gateway)),|p|p.geometry_begin_read(),|p|p.geometry_read_failed());
-            }
-            {
-                let ctx=test_context();
-                let mut page=crate::excel_manager::ExcelManager::geometry_fixture(Arc::clone(&gateway),ctx.clone(),0,false);
-                exercise_data_transitions("excel",&ctx,screen,work,&mut page,
-                    |p,ui|p.show_page(ui),|p|p.geometry_begin_read(),|p|p.geometry_read_failed());
-            }
+            let mut page=crate::freight_manager::FreightManager::geometry_fixture(Arc::clone(&gateway),ctx.clone(),0,false);
+            exercise_data_transitions("freight",&ctx,screen,work,&mut page,
+                |p,ui|p.show_page(ui),|p|p.geometry_begin_read(),|p|p.geometry_read_failed());
+        }
+    }
+
+    #[test]
+    fn actual_history_table_keeps_fixed_slots_through_populated_read_transitions(){
+        for (screen,left) in data_geometry_dimensions(){
+            let work=Rect::from_min_max(egui::pos2(left,80.0),
+                egui::pos2(screen.x-18.0,screen.y-18.0));
+            let ctx=test_context();
+            let gateway:Arc<dyn BandoGateway>=Arc::new(GeometryGateway);
+            let mut page=crate::order_history_manager::OrderHistoryManager::geometry_fixture(Arc::clone(&gateway),ctx.clone(),0,false);
+            let recovered=exercise_data_transitions("history",&ctx,screen,work,&mut page,
+                |p,ui|p.show_page(ui),|p|p.geometry_begin_read(),|p|p.geometry_read_failed());
+            page.geometry_expand_first();
+            let expanded=render(&ctx,screen,work,|ui|page.show_page(ui));
+            compare_data_state_geometry("history","expanded order",&recovered,&expanded,true);
+            assert_visible_data_rows("history",&expanded,65);
+            assert_eq!(expanded.iter().filter(|(kind,_)|*kind=="history detail row").count(),1,
+                "expanded recipient detail must actually render");
+        }
+    }
+
+    #[test]
+    fn actual_products_table_keeps_fixed_slots_through_populated_read_transitions(){
+        for (screen,left) in data_geometry_dimensions(){
+            let work=Rect::from_min_max(egui::pos2(left,80.0),
+                egui::pos2(screen.x-18.0,screen.y-18.0));
+            let ctx=test_context();
+            let gateway:Arc<dyn BandoGateway>=Arc::new(GeometryGateway);
+            let mut page=crate::product_manager::ProductManager::geometry_fixture(Arc::clone(&gateway),ctx.clone(),0,false);
+            exercise_data_transitions("products",&ctx,screen,work,&mut page,
+                |p,ui|p.show_page(ui),|p|p.geometry_begin_read(),|p|p.geometry_read_failed());
+        }
+    }
+
+    #[test]
+    fn actual_clients_table_keeps_fixed_slots_through_populated_read_transitions(){
+        for (screen,left) in data_geometry_dimensions(){
+            let work=Rect::from_min_max(egui::pos2(left,80.0),
+                egui::pos2(screen.x-18.0,screen.y-18.0));
+            let ctx=test_context();
+            let gateway:Arc<dyn BandoGateway>=Arc::new(GeometryGateway);
+            let mut page=crate::client_manager::ClientManager::geometry_fixture(Arc::clone(&gateway),ctx.clone(),0,false);
+            exercise_data_transitions("clients",&ctx,screen,work,&mut page,
+                |p,ui|p.show_page(ui,Arc::clone(&gateway)),|p|p.geometry_begin_read(),|p|p.geometry_read_failed());
+        }
+    }
+
+    #[test]
+    fn actual_excel_table_keeps_fixed_slots_through_populated_read_transitions(){
+        for (screen,left) in data_geometry_dimensions(){
+            let work=Rect::from_min_max(egui::pos2(left,80.0),
+                egui::pos2(screen.x-18.0,screen.y-18.0));
+            let ctx=test_context();
+            let gateway:Arc<dyn BandoGateway>=Arc::new(GeometryGateway);
+            let mut page=crate::excel_manager::ExcelManager::geometry_fixture(Arc::clone(&gateway),ctx.clone(),0,false);
+            exercise_data_transitions("excel",&ctx,screen,work,&mut page,
+                |p,ui|p.show_page(ui),|p|p.geometry_begin_read(),|p|p.geometry_read_failed());
         }
     }
 
