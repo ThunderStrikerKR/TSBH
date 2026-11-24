@@ -38,7 +38,8 @@ fn same_id(order: &Value, order_id: &str) -> bool {
 
 pub fn commit_reception_v2(conn: &mut Connection, request: &Value) -> Result<Value, String> {
     let order_id = field(request, "orderId")?;
-    let raw = field(request, "sourceRaw")?;
+    let raw = request.get("sourceRaw").and_then(Value::as_str)
+        .ok_or("egui 접수 전달에 sourceRaw 값이 없습니다.")?;
     let kind = field(request, "orderType")?;
     let client_id = field(request, "clientId")?;
     // A caller must not forge native order timestamps or audit chronology.
@@ -49,6 +50,15 @@ pub fn commit_reception_v2(conn: &mut Connection, request: &Value) -> Result<Val
     let expected_working_version = request.get("expectedWorkingVersion")
         .and_then(Value::as_u64);
     let manual = request.get("manualModel").filter(|v|!v.is_null());
+    let direct=manual.is_some_and(|model|
+        model.get("mode").and_then(Value::as_str)==Some("DIRECT")
+    );
+    if raw.trim().is_empty() && !direct{
+        return Err("원문이 없는 접수는 직접 입력 작업본이어야 합니다.".into());
+    }
+    if direct && !raw.trim().is_empty(){
+        return Err("직접 입력 작업본에는 발주원문을 포함할 수 없습니다.".into());
+    }
     if (!order_id.starts_with("egui-") && order_id!="legacy-working-source") ||
        order_id.len() > 180 {
         return Err("egui에서 생성한 미확정 접수 ID만 이 경로로 저장할 수 있습니다.".into());
@@ -158,42 +168,50 @@ pub fn commit_reception_v2(conn: &mut Connection, request: &Value) -> Result<Val
         }))?)?
     }else{previous};
 
-    // Never trust price/total figures or a clientSnapshot supplied by egui.
-    // Re-run recognition, dealer guard, item reprice and freight using the
-    // fresh, authoritative state from inside the write transaction.
-    let evidence = crate::recognition::execute("analyze_order", json!({
-        "raw":raw, "state":&state, "client":selected_client
-    }))?;
-    if !evidence.get("recipients").is_some_and(Value::is_array) ||
-       !evidence.get("candidates").is_some_and(Value::is_array) {
-        return Err("발주 인식 결과가 올바르지 않습니다.".into());
-    }
-    let changed = order_from(rule("order_edit_rules", json!({
-        "action":"change_order_client",
-        "state":&state, "order":previous,
-        "dealerId":client_id, "now":at
-    }))?)?;
-    let merged = order_from(rule("merge_reception_analysis", json!({
-        "previous":changed,
-        "evidence":evidence,
-        "raw":raw, "clientId":client_id,
-        "client":selected_client, "state":&state, "at":at
-    }))?)?;
-    let merged=if let Some(manual_model)=manual {
-        // The existing egui manual editor builds its initial model using
-        // recognized recipient sources/candidates and an EMPTY top-level
-        // analysisEvidence array. Native merge stores a second candidates
-        // index there. Keep this editable-workspace input contract exact,
-        // then restore the canonical native candidates index for persistence.
-        let mut manual_baseline=merged.clone();
-        manual_baseline["analysisEvidence"]=json!([]);
-        let mut applied=crate::reception_manual::verify_apply(
-            &manual_baseline,&state,selected_client,manual_model
-        )?;
-        applied["analysisEvidence"]=merged.get("analysisEvidence")
-            .cloned().unwrap_or(Value::Null);
-        applied
-    }else{merged};
+    // Source-backed reception runs native recognition and merges evidence.
+    // Direct entry has no original source, so it skips recognition entirely
+    // and replays the same manual model against a blank native order.
+    let merged=if direct{
+        let changed=order_from(rule("order_edit_rules",json!({
+            "action":"change_order_client",
+            "state":&state,"order":previous,
+            "dealerId":client_id,"now":at
+        }))?)?;
+        crate::reception_manual::verify_apply(
+            &changed,&state,selected_client,
+            manual.ok_or("직접 입력 작업본이 없습니다.")?
+        )?
+    }else{
+        let evidence=crate::recognition::execute("analyze_order",json!({
+            "raw":raw,"state":&state,"client":selected_client
+        }))?;
+        if !evidence.get("recipients").is_some_and(Value::is_array) ||
+           !evidence.get("candidates").is_some_and(Value::is_array){
+            return Err("발주 인식 결과가 올바르지 않습니다.".into());
+        }
+        let changed=order_from(rule("order_edit_rules",json!({
+            "action":"change_order_client",
+            "state":&state,"order":previous,
+            "dealerId":client_id,"now":at
+        }))?)?;
+        let merged=order_from(rule("merge_reception_analysis",json!({
+            "previous":changed,"evidence":evidence,
+            "raw":raw,"clientId":client_id,
+            "client":selected_client,"state":&state,"at":at
+        }))?)?;
+        if let Some(manual_model)=manual{
+            // Keep the source-backed editor's empty analysisEvidence contract,
+            // then restore native evidence for the operational snapshot.
+            let mut baseline=merged.clone();
+            baseline["analysisEvidence"]=json!([]);
+            let mut applied=crate::reception_manual::verify_apply(
+                &baseline,&state,selected_client,manual_model
+            )?;
+            applied["analysisEvidence"]=merged.get("analysisEvidence")
+                .cloned().unwrap_or(Value::Null);
+            applied
+        }else{merged}
+    };
     let mut next = order_from(rule("reprice_order", json!({
         "order":merged, "state":&state, "client":selected_client,
         "explicitEdit":true, "persistedOrders":[]
