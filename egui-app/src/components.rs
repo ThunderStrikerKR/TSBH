@@ -2207,6 +2207,19 @@ fn paint_money_unit(ui:&Ui,rect:Rect,galley:std::sync::Arc<egui::Galley>,right_i
         .galley(pos,galley,theme::TEXT);
 }
 
+/// Shared money widget construction. Both allocated form fields and
+/// exact-rectangle worksheet overlays use the same text and suffix geometry.
+fn money_text_edit_with_unit<'a>(
+    ui:&Ui,value:&'a mut String,font:egui::FontId,width:f32,
+    unit:&str,right_inset:f32,margin:egui::Margin
+)->(egui::TextEdit<'a>,std::sync::Arc<egui::Galley>){
+    let (margin,galley)=money_unit_margin(ui,unit,font.clone(),right_inset,margin);
+    let edit=egui::TextEdit::singleline(value).font(font)
+        .horizontal_align(Align::RIGHT).vertical_align(Align::Center)
+        .margin(margin).desired_width(width);
+    (edit,galley)
+}
+
 /// Price-table variant of the same shared money editor. The won unit is
 /// a non-editable suffix inside the 112pt field, never part of the stored
 /// number. Reserve its actual rendered width in the TextEdit's right margin:
@@ -2219,11 +2232,16 @@ pub fn money_field_with_unit(
     ui:&mut Ui,value:&mut String,enabled:bool,
     unit:&str,unit_right_inset:f32
 )->Response{
-    let (margin,unit_galley)=money_unit_margin(
-        ui,unit,typography::numeric_editor_font(),unit_right_inset,
+    let before=value.clone();
+    let width=FieldKind::Money.preferred_width().min(ui.available_width().max(60.0));
+    let (edit,unit_galley)=money_text_edit_with_unit(
+        ui,value,typography::numeric_editor_font(),width,unit,unit_right_inset,
         typography::form_input_text_margin()
     );
-    let response=money_field_with_margin(ui,value,enabled,margin);
+    let response=ui.add_enabled_ui(enabled,|ui|{
+        ui.add_sized(Vec2::new(width,theme::INPUT_HEIGHT),edit)
+    }).inner;
+    normalize_money_edit(ui,value,&before,&response);
     paint_money_unit(ui,response.rect,unit_galley,unit_right_inset);
     response
 }
@@ -5141,23 +5159,33 @@ pub fn reception_money_inline_cell_editor(
     ui:&mut Ui,cell:Rect,value:&mut String,request_focus:bool,
     click_at:Option<egui::Pos2>
 )->Response{
-    let rect=cell.shrink2(egui::vec2(theme::SPACE_4,theme::SPACE_2));
-    let font=typography::data_value_font(
+    reception_money_editor_at_rect(
+        ui,cell.shrink2(egui::vec2(theme::SPACE_4,theme::SPACE_2)),
+        value,request_focus,click_at
+    )
+}
+
+fn reception_money_font()->egui::FontId{
+    typography::data_value_font(
         typography::DataValueKind::Money,typography::DataValueContext::Reception
-    );
+    )
+}
+
+fn reception_money_editor_at_rect(
+    ui:&mut Ui,rect:Rect,value:&mut String,request_focus:bool,
+    click_at:Option<egui::Pos2>
+)->Response{
     // The preformatted draft is also the comparison baseline in both
     // callers. Normalize raw initial values for direct component reuse.
     if let Some(formatted)=formatted_money_input(value){*value=formatted;}
     let before=value.clone();
     let inset=theme::SPACE_8;
-    let (margin,unit_galley)=money_unit_margin(
-        ui,"원",font.clone(),inset,egui::Margin::symmetric(8,2)
+    let (edit,unit_galley)=money_text_edit_with_unit(
+        ui,value,reception_money_font(),rect.width(),"원",inset,
+        egui::Margin::symmetric(8,2)
     );
     let response=reception_text_editor_at_click(
-        ui,rect,egui::TextEdit::singleline(value).font(font)
-            .horizontal_align(Align::RIGHT).vertical_align(Align::Center)
-            .margin(margin).desired_width(rect.width()),
-        request_focus,click_at
+        ui,rect,edit,request_focus,click_at
     );
     normalize_money_edit(ui,value,&before,&response);
     paint_money_unit(ui,response.rect,unit_galley,inset);
@@ -5539,35 +5567,30 @@ pub struct ReceptionFreightEdit {
     pub remote_clicked:bool,
     pub collect_clicked:bool,
 }
-/// Both resting and focused freight controls are the SAME 84×36pt TextEdit.
-/// A smaller overlay would reduce the perceived lower inset and move its
-/// right-aligned numeric baseline on click. Ui::place preserves row spacing.
-fn reception_freight_amount_text_edit(value:&mut String)->egui::TextEdit<'_>{
-    egui::TextEdit::singleline(value)
-        .font(typography::data_value_font(
-            typography::DataValueKind::Money,
-            typography::DataValueContext::Reception
-        ))
-        .horizontal_align(typography::data_value_align(
-            typography::DataValueKind::Money
-        ))
-        .vertical_align(Align::Center)
-        .margin(egui::Margin::symmetric(8,2))
-        .desired_width(84.0)
+/// The unit occupies the former external label's width, keeping the
+/// overall freight/COD group stable. Resting and focused money controls
+/// use identical suffix geometry; only their interaction mode differs.
+const RECEPTION_FREIGHT_MONEY_WIDTH:f32=104.0;
+
+fn reception_freight_money_readonly(ui:&mut Ui,value:&mut String)->Response{
+    let inset=theme::SPACE_8;
+    let (edit,unit_galley)=money_text_edit_with_unit(
+        ui,value,reception_money_font(),RECEPTION_FREIGHT_MONEY_WIDTH,
+        "원",inset,egui::Margin::symmetric(8,2)
+    );
+    let response=ui.add_sized(
+        Vec2::new(RECEPTION_FREIGHT_MONEY_WIDTH,theme::INPUT_HEIGHT),
+        edit.interactive(false)
+    );
+    paint_money_unit(ui,response.rect,unit_galley,inset);
+    response
 }
 
 pub fn reception_freight_inline_cell_editor(
     ui:&mut Ui,cell:Rect,value:&mut String,request_focus:bool,
     click_at:Option<egui::Pos2>
 )->Response{
-    // Freight already has a fixed external won label; do not duplicate it.
-    if let Some(formatted)=formatted_money_input(value){*value=formatted;}
-    let before=value.clone();
-    let response=reception_text_editor_at_click(
-        ui,cell,reception_freight_amount_text_edit(value),request_focus,click_at
-    );
-    normalize_money_edit(ui,value,&before,&response);
-    response
+    reception_money_editor_at_rect(ui,cell,value,request_focus,click_at)
 }
 pub fn reception_freight_row(
     ui: &mut Ui, label: &str, amount: Option<i64>, collect: Option<bool>,
@@ -5615,7 +5638,7 @@ pub fn reception_freight_row_editable(
     let mut collect_clicked=false;
     let mut amount_rect=None;
     let mut amount_text=amount
-        .map(|value|display_won(value).trim_end_matches('원').to_owned())
+        .map(money_edit_text)
         .unwrap_or_else(||"—".to_owned());
     // The item grid has a 392pt minimum horizontal scroll extent, but
     // freight has a larger combined intrinsic control width. Never put the
@@ -5647,11 +5670,7 @@ pub fn reception_freight_row_editable(
                 );
                 // Prevent editing without greying out an already entered
                 // amount. The disabled parent Ui was dimming valid freight.
-                let displayed=price.add_sized(
-                    Vec2::new(84.0,theme::INPUT_HEIGHT),
-                    reception_freight_amount_text_edit(&mut amount_text)
-                        .interactive(false),
-                );
+                let displayed=reception_freight_money_readonly(price,&mut amount_text);
                 amount_rect=Some(displayed.rect);
                 if editable && collect!=Some(true){
                     let hit=price.interact(
@@ -5667,8 +5686,6 @@ pub fn reception_freight_row_editable(
                         amount_click_pos=hit.interact_pointer_pos();
                     }
                 }
-                price.label(typography::body("원")
-                    .size(typography::FONT_RECEPTION_ITEM_TEXT));
             }
         );
         // A checkbox/VAT edit temporarily disables interactions while Rust
@@ -6467,11 +6484,7 @@ mod management_toolbar_geometry_tests {
         let _=ctx.run(egui::RawInput::default(),|ctx|{
             egui::CentralPanel::default().show(ctx,|ui|{
                 let mut readonly="6,000".to_owned();
-                let original=ui.add_sized(
-                    Vec2::new(84.0,theme::INPUT_HEIGHT),
-                    reception_freight_amount_text_edit(&mut readonly)
-                        .interactive(false)
-                );
+                let original=reception_freight_money_readonly(ui,&mut readonly);
                 let before=ui.available_rect_before_wrap().min;
                 let mut editing="6000".to_owned();
                 let active=reception_freight_inline_cell_editor(
@@ -6484,6 +6497,7 @@ mod management_toolbar_geometry_tests {
         let (original,focused,before,after)=measured.expect("freight geometry");
         assert_eq!(original,focused);
         assert_eq!(original.height(),theme::INPUT_HEIGHT);
+        assert_eq!(original.width(),RECEPTION_FREIGHT_MONEY_WIDTH);
         assert_eq!(before,after,
             "freight focus cannot consume the following row's vertical padding");
     }
