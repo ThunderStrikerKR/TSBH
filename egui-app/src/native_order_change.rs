@@ -66,6 +66,12 @@ pub fn prepare_cancellable(
     target_id:&str,cancel:&AtomicBool
 )->Result<ChangeResult,String>{
     check_cancelled(cancel)?;
+    if source.raw.trim().is_empty() &&
+        source.manual_model.as_ref().is_some_and(|saved|
+            saved.get("mode").and_then(Value::as_str)==Some("DIRECT")
+        ){
+        return prepare_direct(gateway,source,target_id,cancel);
+    }
     if source.raw.trim().is_empty() {
         return Err("발주원문이 없는 주문은 거래처를 변경할 수 없습니다.".into());
     }
@@ -116,6 +122,119 @@ pub fn prepare_cancellable(
             manual_model,
             recognition:None,
         });
+    }
+
+    // Direct-entry orders have no source analysis to rerun. Rebind the
+    // existing manual rows through the same native client-change and quote rules.
+    fn prepare_direct(
+        gateway:&dyn BandoGateway,source:&WorkingReception,
+        target_id:&str,cancel:&AtomicBool
+    )->Result<ChangeResult,String>{
+        check_cancelled(cancel)?;
+        if target_id.trim().is_empty(){
+            return Err("변경할 거래처가 없습니다.".into());
+        }
+        let saved=source.manual_model.as_ref()
+            .filter(|saved|saved.get("mode").and_then(Value::as_str)==Some("DIRECT"))
+            .ok_or("직접 입력 작업본이 없습니다.")?;
+        if saved.get("sourceRaw").and_then(Value::as_str)!=Some("") ||
+           saved.get("orderType").and_then(Value::as_str)!=Some(source.order_type.as_str()){
+            return Err("직접 입력 작업본의 접수 유형이 변경되었습니다.".into());
+        }
+        let model=saved.get("model").filter(|value|value.is_object())
+            .ok_or("저장된 직접 입력 작업본이 올바르지 않습니다.")?;
+        let keys=saved.get("assignmentOrder").filter(|value|value.is_array())
+            .ok_or("직접 입력 배정 순서가 없습니다.")?;
+
+        // An isolated catalog supports identity only. Never invent prices.
+        if gateway.isolated_client_identity_link(){
+            let index=gateway.load_catalog()?;
+            check_cancelled(cancel)?;
+            let exists=index.get("clients").and_then(Value::as_array)
+                .is_some_and(|clients|clients.iter().any(|client|
+                    client.get("id").and_then(Value::as_str)==Some(target_id) &&
+                    client.get("deletedAt").is_none_or(|value|
+                        value.is_null() || value.as_str()==Some("")) &&
+                    client.get("active")!=Some(&Value::Bool(false))
+                ));
+            if !exists{
+                return Err("현재 Rust 거래처 명단에 없는 거래처는 선택할 수 없습니다.".into());
+            }
+            return Ok(ChangeResult{
+                client_id:target_id.to_owned(),pricing_preview:None,
+                manual_model:Some(rebind_manual_model(saved,target_id,&model["rows"])?),
+                recognition:None,
+            });
+        }
+
+        let state=gateway.load_business_state()?;
+        check_cancelled(cancel)?;
+        let authority_revision=state.get("revision").and_then(Value::as_u64)
+            .ok_or("운영 DB revision이 유효하지 않습니다.")?;
+        if state.get("orders").and_then(Value::as_array).is_some_and(|orders|
+            orders.iter().any(|order|
+                order.get("id").and_then(Value::as_str)==Some(source.id.as_str())
+            )){
+            return Err("운영 DB에 이미 존재하는 주문은 egui 미확정 발주서로 수정할 수 없습니다.".into());
+        }
+        let client=state.get("clients").and_then(Value::as_array)
+            .and_then(|clients|clients.iter().find(|client|
+                client.get("id").and_then(Value::as_str)==Some(target_id) &&
+                client.get("deletedAt").is_none_or(Value::is_null) &&
+                client.get("active")!=Some(&Value::Bool(false))
+            )).ok_or("운영 거래처 명단에서 선택한 거래처를 확인할 수 없습니다.")?;
+        let now=Utc::now().to_rfc3339();
+        let created=gateway.execute(ReadOperation::NewReception,json!({
+            "action":"new_reception","id":source.id,
+            "clientId":"","now":now,"orderType":source.order_type
+        }))?;
+        check_cancelled(cancel)?;
+        let blank=required(&created,"order")?;
+        let changed=gateway.execute(ReadOperation::ChangeOrderClient,json!({
+            "action":"change_order_client","state":state,"order":blank,
+            "dealerId":target_id,"now":now
+        }))?;
+        check_cancelled(cancel)?;
+        let selected=required(&changed,"order")?;
+        let applied=gateway.execute(ReadOperation::ManualClassification,json!({
+            "action":"preview_manual","order":selected,
+            "model":model,"assignmentOrder":keys
+        }))?;
+        check_cancelled(cancel)?;
+        let edited=required(&applied,"order")?;
+        let quote=gateway.execute(ReadOperation::CalculateReceptionQuote,json!({
+            "order":edited,"state":state,"client":client
+        }))?;
+        check_cancelled(cancel)?;
+        let order=required(&quote,"order")?;
+        let totals=required(&quote,"totals")?;
+        if order.get("id").and_then(Value::as_str)!=Some(source.id.as_str()) ||
+           order.get("clientId").and_then(Value::as_str)!=Some(target_id) ||
+           order.get("raw").and_then(Value::as_str)!=Some(""){
+            return Err("직접 입력 거래처 재계산 결과가 현재 작업본과 일치하지 않습니다.".into());
+        }
+        let recipients=required(order,"recipients")?;
+        let manual_model=rebind_manual_model(saved,target_id,recipients)?;
+        let preview=json!({
+            "sourceRaw":"","orderId":source.id,
+            "orderType":source.order_type,"clientId":target_id,
+            "authorityRevision":authority_revision,
+            "status":order.get("status"),
+            "shippingFee":order.get("shippingFee"),
+            "shippingVersion":order.get("shippingVersion"),
+            "vatAmount":totals.get("vat"),
+            "subtotal":totals.get("subtotal"),
+            "total":totals.get("total"),
+            "pendingRecipients":totals.get("pendingRecipients"),
+            "notified":order.get("notified"),"paid":order.get("paid"),
+            "linePrices":quote.get("linePrices"),
+            "freightLines":quote.get("freightLines"),
+            "pricingBasis":crate::pricing_basis::snapshot(&state,client,order)
+        });
+        Ok(ChangeResult{
+            client_id:target_id.to_owned(),pricing_preview:Some(preview),
+            manual_model:Some(manual_model),recognition:None
+        })
     }
 
     // Full operating state follows the same Rust change_order_client →
