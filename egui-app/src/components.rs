@@ -3331,18 +3331,17 @@ fn date_navigation_segmented_surface<R>(
     ui.painter().rect_filled(
         outer,theme::CONTROL_RADIUS as f32,theme::INPUT
     );
-    let content=ui.scope_builder(
-        UiBuilder::new()
-            .id_salt(id_salt)
-            .max_rect(inner)
-            .layout(Layout::left_to_right(Align::Center)),
-        |segments|{
-            segments.set_width(inner.width());
-            segments.set_height(inner.height());
-            segments.spacing_mut().item_spacing=Vec2::ZERO;
-            add_segments(segments,inner)
-        }
-    ).inner;
+    // The parent has already allocated the complete frame. A scoped UI
+    // would advance its cursor again using the children's expanded bounds.
+    let mut segments=ui.new_child(
+        UiBuilder::new().id_salt(id_salt).max_rect(inner)
+            .layout(Layout::left_to_right(Align::Center))
+    );
+    segments.set_clip_rect(inner.intersect(ui.clip_rect()));
+    segments.set_width(inner.width());
+    segments.set_height(inner.height());
+    segments.spacing_mut().item_spacing=Vec2::ZERO;
+    let content=add_segments(&mut segments,inner);
     ui.painter().rect_stroke(
         outer.shrink(0.5),theme::CONTROL_RADIUS as f32,
         Stroke::new(theme::SOFT_DIVIDER_WIDTH,theme::BORDER),
@@ -3378,6 +3377,30 @@ fn date_navigation_segment_button(
             else if response.hovered(){theme::TEXT}else{theme::SECONDARY};
         let angle=if up{-std::f32::consts::FRAC_PI_2}else{std::f32::consts::FRAC_PI_2};
         paint_chevron_at_angle_scaled(&painter,rect.center(),angle,0.0,ink,0.72);
+        return response.on_hover_text(tooltip);
+    }
+    if let DateNavigationSegmentGlyph::Text(text)=glyph{
+        // Compact +/- buttons own an exact segment, not the minimum size of
+        // a standard egui Button. This avoids overflow at 28pt outer height.
+        let rect=ui.max_rect().intersect(ui.clip_rect());
+        let response=ui.interact(rect,ui.id().with("count-step"),
+            if enabled{Sense::click()}else{Sense::hover()});
+        let radius=theme::CONTROL_RADIUS.saturating_sub(2);
+        let left=text=="−";
+        let corners=egui::CornerRadius{
+            nw:if left{radius}else{0},sw:if left{radius}else{0},
+            ne:if left{0}else{radius},se:if left{0}else{radius},
+        };
+        let painter=ui.painter().with_clip_rect(rect);
+        if !enabled{
+            painter.rect_filled(rect,corners,theme::DISABLED_ACTION_BG);
+        }else{
+            theme::paint_button_hover_corners(ui,&response,corners);
+        }
+        let ink=if !enabled{theme::DISABLED_ACTION_TEXT}
+            else if response.hovered(){theme::TEXT}else{theme::SECONDARY};
+        painter.text(rect.center(),egui::Align2::CENTER_CENTER,text,
+            egui::FontId::proportional(typography::FONT_STANDARD_ACTION+2.0),ink);
         return response.on_hover_text(tooltip);
     }
     let height=ui.available_height();
@@ -3448,6 +3471,10 @@ pub struct DateNavigationCountControlResponse{
     pub increment_clicked:bool,
     pub input:Response,
     pub rect:Rect,
+    #[cfg(test)]
+    decrement_rect:Rect,
+    #[cfg(test)]
+    increment_rect:Rect,
 }
 
 pub fn date_navigation_count_control(
@@ -3462,18 +3489,31 @@ pub fn date_navigation_count_control(
     let input_width=64.0;
     let height=theme::CALENDAR_NAV_SIZE;
     let width=2.0*arrow_width+input_width+2.0*theme::FRAME_STROKE_WIDTH;
-    let (rect,(decrement_clicked,input,increment_clicked))=
+    let (rect,(decrement,input,increment))=
         date_navigation_segmented_surface(
             ui,id_salt,Vec2::new(width,height),|segments,inner|{
+                let x1=inner.left()+arrow_width;
+                let x2=inner.right()-arrow_width;
+                let left=Rect::from_min_max(inner.min,egui::pos2(x1,inner.bottom()));
+                let center=Rect::from_min_max(egui::pos2(x1,inner.top()),egui::pos2(x2,inner.bottom()));
+                let right=Rect::from_min_max(egui::pos2(x2,inner.top()),inner.max);
+                // Every segment gets its own fixed rectangle and ID. TextEdit
+                // margins or a disabled button cannot shift the next segment.
+                let mut minus=segments.new_child(UiBuilder::new().id_salt("count-minus")
+                    .max_rect(left).layout(Layout::top_down(Align::Center)));
+                minus.set_clip_rect(left.intersect(segments.clip_rect()));
                 let decrement=date_navigation_segment_button(
-                    segments,arrow_width,"배송 건수 1건 줄이기",
-                    decrement_enabled,
-                    DateNavigationSegmentGlyph::Text("−")
+                    &mut minus,arrow_width,"배송 건수 1건 줄이기",
+                    decrement_enabled,DateNavigationSegmentGlyph::Text("−")
                 );
+                let mut entry=segments.new_child(UiBuilder::new().id_salt("count-value")
+                    .max_rect(center).layout(Layout::centered_and_justified(egui::Direction::TopDown)));
+                entry.set_clip_rect(center.intersect(segments.clip_rect()));
+                entry.spacing_mut().interact_size=Vec2::ZERO;
                 let hint=format!("{minimum}~{maximum}");
-                let input=segments.add_enabled_ui(enabled,|entry|{
+                let input=entry.add_enabled_ui(enabled,|entry|{
                     entry.add_sized(
-                        Vec2::new(input_width,inner.height()),
+                        center.size(),
                         egui::TextEdit::singleline(value)
                             .font(typography::numeric_editor_font())
                             .horizontal_align(Align::Center)
@@ -3481,14 +3521,16 @@ pub fn date_navigation_count_control(
                             .char_limit(3)
                             .margin(typography::management_date_text_margin())
                             .frame(false)
-                            .desired_width(input_width)
+                            .desired_width((input_width-4.0).max(1.0))
                             .hint_text(hint.as_str())
                     )
                 }).inner;
+                let mut plus=segments.new_child(UiBuilder::new().id_salt("count-plus")
+                    .max_rect(right).layout(Layout::top_down(Align::Center)));
+                plus.set_clip_rect(right.intersect(segments.clip_rect()));
                 let increment=date_navigation_segment_button(
-                    segments,arrow_width,"배송 건수 1건 늘리기",
-                    increment_enabled,
-                    DateNavigationSegmentGlyph::Text("+")
+                    &mut plus,arrow_width,"배송 건수 1건 늘리기",
+                    increment_enabled,DateNavigationSegmentGlyph::Text("+")
                 );
                 for x in [
                     inner.left()+arrow_width,
@@ -3502,11 +3544,15 @@ pub fn date_navigation_count_control(
                         Stroke::new(theme::SOFT_DIVIDER_WIDTH,theme::DIVIDER)
                     );
                 }
-                (decrement.clicked(),input,increment.clicked())
+                (decrement,input,increment)
             }
         );
     DateNavigationCountControlResponse{
-        decrement_clicked,input,increment_clicked,rect
+        decrement_clicked:decrement.clicked(),input,increment_clicked:increment.clicked(),rect,
+        #[cfg(test)]
+        decrement_rect:decrement.rect,
+        #[cfg(test)]
+        increment_rect:increment.rect,
     }
 }
 
@@ -7862,6 +7908,41 @@ mod date_navigation_segmented_control_tests{
             (control.input.rect.right()-expected_input_right).abs()<0.5,
             "the plus segment must directly follow the numeric editor"
         );
+    }
+
+    #[test]
+    fn shipment_count_segments_do_not_overflow_in_actual_horizontal_row(){
+        for (value,enabled) in [("1",true),("50",true),("100",true),("1",false)]{
+            let ctx=test_context();
+            let mut value=value.to_owned();
+            let current=value.parse().unwrap();
+            let mut rendered=None;
+            let _=ctx.run(egui::RawInput::default(),|ctx|{
+                egui::CentralPanel::default().show(ctx,|ui|{
+                    ui.horizontal(|row|{
+                        form_field_label(row,"배송 건수");
+                        let control=date_navigation_count_control(
+                            row,"count-geometry",&mut value,current,enabled,1,100
+                        );
+                        let unit=row.label("건");
+                        rendered=Some((control,unit.rect));
+                    });
+                });
+            });
+            let (control,unit)=rendered.unwrap();
+            let inner=control.rect.shrink(theme::FRAME_STROKE_WIDTH);
+            for segment in [control.decrement_rect,control.input.rect,control.increment_rect]{
+                assert!(inner.expand(0.5).contains(segment.min)
+                    && inner.expand(0.5).contains(segment.max),
+                    "segment outside outer frame: {segment:?}, inner={inner:?}");
+                assert!((segment.center().y-inner.center().y).abs()<0.6,
+                    "segment is vertically off-center");
+            }
+            assert!((control.decrement_rect.right()-control.input.rect.left()).abs()<0.6);
+            assert!((control.input.rect.right()-control.increment_rect.left()).abs()<0.6);
+            assert!(unit.left()>=control.rect.right()-0.5,
+                "parent cursor must advance exactly once past the control");
+        }
     }
 
     #[test]
