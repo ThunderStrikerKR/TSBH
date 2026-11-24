@@ -385,6 +385,48 @@ fn full_staff_stage_sequence_reuses_same_native_ids_and_persists_each_step() {
 }
 
 #[test]
+fn payment_copy_evidence_survives_sqlite_reopen_and_rejects_changed_account(){
+    let (isolated,mut conn)=IsolatedDatabase::open();
+    let state=stage_three(&get_snapshot(&conn).unwrap(),"POSTPAID");
+    let saved=write_snapshot(&mut conn,state,0,true).unwrap();
+    let status=|state:&Value|{
+        business_core::execute("output","payment_copy_status",json!({
+            "state":state,"groupId":"group:synthetic","mode":"payment_copy_status"
+        })).unwrap()["copied"].as_bool().unwrap()
+    };
+    assert!(!status(&saved));
+    let message=business_core::execute("output","render_automatic_message",json!({
+        "state":&saved,"groupId":"group:synthetic","includeLinks":false
+    })).unwrap();
+    let signature=message["signature"].as_str().filter(|s|!s.is_empty()).unwrap();
+    let record=|state:&Value,copy_type:&str,token:&str,event_id:&str|{
+        rust("record_message_copy",json!({
+            "state":state,"groupId":"group:synthetic","copyType":copy_type,
+            "token":token,"signature":signature,"eventId":event_id,
+            "now":"2026-11-13T12:40:00+09:00"
+        })).unwrap()["state"].clone()
+    };
+    let request=record(&saved,"REQUEST","request-token","event:request-copy");
+    assert!(!status(&request),"request copy must not count as payment copy");
+    let copied=record(&request,"PAYMENT","payment-token","event:payment-copy");
+    assert!(status(&copied));
+    assert_eq!(record(&copied,"PAYMENT","payment-token","event:duplicate-copy"),copied,
+        "one clipboard transaction must create only one audit event");
+    assert_eq!(copied["workflow"]["shipments"],saved["workflow"]["shipments"]);
+    assert_eq!(copied["orders"],saved["orders"]);
+    rust("validate_workflow",json!({"state":&copied,"before":&saved})).unwrap();
+    let committed=write_snapshot(&mut conn,copied,1,true).unwrap();
+    drop(conn);
+    let reopened=initialize_database(&isolated.root.join("state.sqlite")).unwrap();
+    let mut fresh=get_snapshot(&reopened).unwrap();
+    assert_eq!(fresh,committed);
+    assert!(status(&fresh));
+    fresh["settings"]["accounts"][0]["number"]=json!("987-654");
+    assert!(!status(&fresh),"different payment account must require fresh copy evidence");
+    drop(reopened);
+}
+
+#[test]
 fn native_prepaid_stage_rejection_leaves_sqlite_order_and_audit_untouched() {
     let (isolated, mut conn) = IsolatedDatabase::open();
     let source = stage_three(&get_snapshot(&conn).unwrap(), "PREPAID");
