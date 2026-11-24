@@ -67,6 +67,45 @@ pub fn native_order(
     Ok(order)
 }
 
+/// Build the same native order shell for a manually entered draft. No source
+/// text, recognition result or evidence blocks are fabricated. The exact
+/// same manual reducers and worksheet operate on the empty source model.
+pub fn native_direct_order(
+    gateway:&dyn BandoGateway,row:&WorkingReception
+)->Result<Value,String>{
+    if !row.raw.trim().is_empty(){
+        return Err("원문이 있는 발주서는 직접 입력 모드로 열 수 없습니다.".into());
+    }
+    let now=chrono::Utc::now().to_rfc3339();
+    let initialized=gateway.execute(ReadOperation::NewReception,json!({
+        "action":"new_reception","id":row.id,"clientId":row.client_id,
+        "orderType":row.order_type,"now":now
+    }))?;
+    let mut order=initialized.get("order").filter(|v|v.is_object())
+        .ok_or("Rust 직접 입력 초기화 결과가 올바르지 않습니다.")?.clone();
+    order["id"]=json!(row.id);
+    order["raw"]=json!("");
+    order["orderType"]=json!(row.order_type);
+    order["clientId"]=json!(row.client_id);
+    order["recipients"]=json!([]);
+    if let Some(saved)=row.manual_model.as_ref().filter(|saved|
+        text(saved,"mode")=="DIRECT"
+    ){
+        let model=saved.get("model").filter(|v|v.is_object())
+            .ok_or("저장된 직접 입력 작업본이 올바르지 않습니다.")?;
+        order["recipients"]=model.get("rows").cloned().unwrap_or_else(||json!([]));
+        order["manualClassification"]=json!({
+            "blocks":model.get("blocks").cloned().unwrap_or_else(||json!([])),
+            "assignments":model.get("assignments").cloned().unwrap_or_else(||json!({}))
+        });
+    }
+    if let Some(fields)=order.as_object_mut(){
+        fields.remove("analysisRaw");
+        fields.remove("analysisEvidence");
+    }
+    Ok(order)
+}
+
 /// Each decision is computed by native Rust off the egui frame and is
 /// paired with both recipient ID and exact address to reject stale matches.
 type RemoteRow=(String,String,Result<Value,String>);
@@ -509,7 +548,7 @@ enum Outcome {
 pub enum Event {
     Closed,
     Applied { order_id:String,raw:String,order_type:String,client_id:Option<String>,
-        model:Value,assignment_order:Vec<String>,order:Value,
+        direct_input:bool,model:Value,assignment_order:Vec<String>,order:Value,
         quote:Option<Value>,quote_error:Option<String> },
 }
 
@@ -831,6 +870,7 @@ pub fn apply_inline(
 
 pub struct ManualWorkspace {
     pub order_id:String,
+    direct_input:bool,
     raw:String,
     order_type:String,
     client_id:Option<String>,
@@ -915,6 +955,16 @@ fn manual_workspace_content_width(available_width:f32,reception_source_width:f32
     )
 }
 
+fn manual_workspace_content_width_for_mode(
+    available_width:f32,reception_source_width:f32,direct_input:bool
+)->f32{
+    if direct_input{
+        available_width.max(theme::MANUAL_SHEET_MIN_WIDTH)
+    }else{
+        manual_workspace_content_width(available_width,reception_source_width)
+    }
+}
+
 fn manual_source_panel_width(reception_source_width:f32,content_width:f32)->f32{
     let maximum=(content_width-theme::MANUAL_SHEET_MIN_WIDTH
         -theme::MANUAL_COLUMN_GAP).max(theme::MANUAL_SOURCE_MIN_WIDTH);
@@ -923,54 +973,86 @@ fn manual_source_panel_width(reception_source_width:f32,content_width:f32)->f32{
 
 impl ManualWorkspace {
     pub fn new(source:WorkingReception,gateway:Arc<dyn BandoGateway>,ctx:Context)->Self {
+        Self::build(source,gateway,ctx,false)
+    }
+    pub fn new_direct(source:WorkingReception,gateway:Arc<dyn BandoGateway>,ctx:Context)->Self {
+        Self::build(source,gateway,ctx,true)
+    }
+    fn build(source:WorkingReception,gateway:Arc<dyn BandoGateway>,ctx:Context,direct_input:bool)->Self{
         let (tx,rx)=mpsc::channel();
         let row=source.clone();
         let service=Arc::clone(&gateway);
         thread::spawn(move||{
             let result=(||->Result<Outcome,String>{
-                let recognition=row.analysis_evidence.as_ref()
-                    .ok_or("현재 원문의 Rust 인식 결과가 없습니다.")?;
-                let order=native_order(service.as_ref(),&row,recognition)?;
-                let assignment_order=row.manual_model.as_ref()
-                    .and_then(|saved|saved.get("assignmentOrder"))
-                    .and_then(Value::as_array).cloned().unwrap_or_default();
-                let initial=rule(service.as_ref(),json!({
-                    "action":"initial_manual","order":order,
-                    "assignmentOrder":assignment_order
-                }))?;
-                let model=initial.get("model").filter(|v|v.is_object())
-                    .ok_or("Rust 수동 분류 초기 결과가 올바르지 않습니다.")?.clone();
-                let keys=initial.get("assignmentOrder").and_then(Value::as_array)
-                    .ok_or("Rust 배정 순서가 없습니다.")?.iter()
-                    .map(|v|v.as_str().map(str::to_owned).ok_or("Rust 배정 ID 오류".to_owned()))
-                    .collect::<Result<Vec<_>,_>>()?;
+                let (order,model,keys)=if direct_input{
+                    let order=native_direct_order(service.as_ref(),&row)?;
+                    let initial=rule(service.as_ref(),json!({
+                        "action":"initial_manual","order":order,
+                        "assignmentOrder":row.manual_model.as_ref()
+                            .and_then(|saved|saved.get("assignmentOrder"))
+                            .cloned().unwrap_or_else(||json!([]))
+                    }))?;
+                    let mut model=initial.get("model").filter(|v|v.is_object())
+                        .ok_or("Rust 직접 입력 초기 결과가 올바르지 않습니다.")?.clone();
+                    let mut keys=initial.get("assignmentOrder").and_then(Value::as_array)
+                        .ok_or("Rust 배정 순서가 없습니다.")?.iter()
+                        .map(|v|v.as_str().map(str::to_owned).ok_or("Rust 배정 ID 오류".to_owned()))
+                        .collect::<Result<Vec<_>,_>>()?;
+                    if list(&model,"rows").is_empty(){
+                        let resized=rule(service.as_ref(),json!({
+                            "action":"resize_manual_rows","model":model,"count":1,
+                            "newRecipientIds":[unique_id()],"assignmentOrder":keys
+                        }))?;
+                        model=resized.get("model").filter(|v|v.is_object())
+                            .ok_or("Rust 직접 입력 배송 행 초기화 결과가 올바르지 않습니다.")?.clone();
+                        keys=resized.get("assignmentOrder").and_then(Value::as_array)
+                            .ok_or("Rust 직접 입력 배정 순서가 없습니다.")?.iter()
+                            .map(|v|v.as_str().map(str::to_owned).ok_or("Rust 배정 ID 오류".to_owned()))
+                            .collect::<Result<Vec<_>,_>>()?;
+                    }
+                    (order,model,keys)
+                }else{
+                    let recognition=row.analysis_evidence.as_ref()
+                        .ok_or("현재 원문의 Rust 인식 결과가 없습니다.")?;
+                    let order=native_order(service.as_ref(),&row,recognition)?;
+                    let initial=rule(service.as_ref(),json!({
+                        "action":"initial_manual","order":order,
+                        "assignmentOrder":row.manual_model.as_ref()
+                            .and_then(|saved|saved.get("assignmentOrder"))
+                            .and_then(Value::as_array).cloned().unwrap_or_default()
+                    }))?;
+                    let model=initial.get("model").filter(|v|v.is_object())
+                        .ok_or("Rust 수동 분류 초기 결과가 올바르지 않습니다.")?.clone();
+                    let keys=initial.get("assignmentOrder").and_then(Value::as_array)
+                        .ok_or("Rust 배정 순서가 없습니다.")?.iter()
+                        .map(|v|v.as_str().map(str::to_owned).ok_or("Rust 배정 ID 오류".to_owned()))
+                        .collect::<Result<Vec<_>,_>>()?;
+                    (order,model,keys)
+                };
                 let remote_rows=resolve_remote_rows(service.as_ref(),&model);
-                let view_quote=manual_view_quote(service.as_ref(),&order,&model,&keys,row.client_id.as_deref(),None);
-                Ok(Outcome::Initial{
-                    order,model,assignment_order:keys,remote_rows,view_quote
-                })
+                let view_quote=manual_view_quote(
+                    service.as_ref(),&order,&model,&keys,row.client_id.as_deref(),None
+                );
+                Ok(Outcome::Initial{order,model,assignment_order:keys,remote_rows,view_quote})
             })();
             let _=tx.send(result);
             ctx.request_repaint();
         });
         Self {
-            order_id:source.id,raw:source.raw,order_type:source.order_type,
+            order_id:source.id,direct_input,raw:source.raw,order_type:source.order_type,
             client_id:source.client_id,gateway,base_order:None,
             cached_quote:source.pricing_preview,model:None,
             assignment_order:Vec::new(),remote_rows:Vec::new(),view_quote:None,
-            selected_recipient:0,
-            selected_item:None,selected_field:"name".into(),
+            selected_recipient:0,selected_item:None,selected_field:"name".into(),
             assignment_gesture:ManualAssignmentGesture::default(),
-            edit_text:String::new(),focus_editor:false,
-            active_editor_id:None,ime_preedit_active:false,
-            row_count_text:"1".into(),
+            edit_text:String::new(),focus_editor:false,active_editor_id:None,
+            ime_preedit_active:false,row_count_text:"1".into(),
             history:Vec::new(),pending_select_after_apply:None,
             advance_after_apply:None,last_action:None,action_pending:false,
             confirm_discard:false,confirm_apply:false,
             item_detail:None,pending_item_detail:None,detail_write_pending:false,
             add_product_picker:None,item_remove_confirmation:None,
-            remove_recipient_pending:None,
-            remove_recipient_target:None,reset_pending:false,
+            remove_recipient_pending:None,remove_recipient_target:None,reset_pending:false,
             receiver:Some(rx),error:None,dirty:false,applied:None,
         }
     }
@@ -1622,7 +1704,8 @@ impl ManualWorkspace {
                 return Some(Event::Applied {
                     order_id:self.order_id.clone(),raw:self.raw.clone(),
                     order_type:self.order_type.clone(),client_id:self.client_id.clone(),
-                    model,assignment_order:self.assignment_order.clone(),order,
+                    direct_input:self.direct_input,model,
+                    assignment_order:self.assignment_order.clone(),order,
                     quote,quote_error
                 });
             }
