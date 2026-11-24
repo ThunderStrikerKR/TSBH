@@ -2720,6 +2720,12 @@ mod manual_workspace_modal_routing_tests {
         assert!(!render.contains("egui::Grid::new((\"manual-products\""));
         assert!(render.contains("selected_cell_editor_on_rect("),
             "direct edits must overlay the shared input cell");
+        let navigator=render.split("let mut next_recipient=None;").nth(1).unwrap()
+            .split("},|fields|{").next().unwrap();
+        assert!(navigator.contains("reception_recipient_navigator("));
+        assert!(navigator.contains("rows.len(),can_switch"));
+        assert!(!navigator.contains("add_enabled_ui("),
+            "only arrow segments may be disabled; name and 1/N stay visible");
     }
 
     #[test]
