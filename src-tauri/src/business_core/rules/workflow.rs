@@ -644,7 +644,9 @@ pub(super) fn apply(payload:&Value)->Result<Value,String> {
                 "origin":origin,
                 "value":field(&state["workflow"]["shipments"][si]["charges"],origin),
                 "freightCode":field(&state["orders"][oi]["recipients"][ri],"freightCode"),
-                "remoteDelivery":field(&state["orders"][oi]["recipients"][ri],"remoteDelivery")
+                "remoteDelivery":field(&state["orders"][oi]["recipients"][ri],"remoteDelivery"),
+                "shippingCharges":field(&state["orders"][oi]["recipients"][ri],"shippingCharges"),
+                "chargeMode":field(&state["workflow"]["shipments"][si],"chargeMode")
             });
             let mut recipient=state["orders"][oi]["recipients"][ri].clone();
             if let Some(code)=requested_code {
@@ -673,11 +675,17 @@ pub(super) fn apply(payload:&Value)->Result<Value,String> {
                 }else{
                     field(payload,"value").clone()
                 };
-                if !field(&shipment,"charges").is_object(){
-                    set(&mut shipment,"charges",json!({}))?;
+                let mut charges=field(&shipment,"charges").clone();
+                if !charges.is_object(){charges=json!({});}
+                if let Some(existing)=field(&recipient,"shippingCharges").as_object(){
+                    for (key,value) in existing{
+                        if charges.get(key).is_none(){
+                            set(&mut charges,key,value.clone())?;
+                        }
+                    }
                 }
-                set(&mut shipment["charges"],origin,base_value)?;
-                let charges=field(&shipment,"charges").clone();
+                set(&mut charges,origin,base_value)?;
+                set(&mut shipment,"charges",charges.clone())?;
                 set(&mut recipient,"shippingCharges",charges)?;
                 set(&mut shipment,"chargeMode",json!("MANUAL"))?;
             }
@@ -685,7 +693,9 @@ pub(super) fn apply(payload:&Value)->Result<Value,String> {
                 "origin":origin,
                 "value":field(&shipment["charges"],origin),
                 "freightCode":field(&recipient,"freightCode"),
-                "remoteDelivery":field(&recipient,"remoteDelivery")
+                "remoteDelivery":field(&recipient,"remoteDelivery"),
+                "shippingCharges":field(&recipient,"shippingCharges"),
+                "chargeMode":field(&shipment,"chargeMode")
             });
             if !changed {
                 return Ok(json!({"state":state,"unchanged":true}));
