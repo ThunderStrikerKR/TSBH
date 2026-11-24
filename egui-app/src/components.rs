@@ -8142,10 +8142,12 @@ mod modal_editor_workspace_geometry_tests {
         let start=source.find("fn reception_recipient_text_edit(")
             .expect("recipient text editor");
         let tail=&source[start..];
-        let end=tail.find("\n}\n").expect("recipient text editor end");
-        assert!(tail[..end].contains(
-            ".margin(typography::form_input_text_margin())"
-        ));
+        let margin=tail.find(".margin(typography::form_input_text_margin())")
+            .expect("shared form input margin");
+        let desired_width=tail.find(".desired_width(width);")
+            .expect("recipient input width");
+        assert!(margin<desired_width,
+            "recipient input must use the shared margin before setting its width");
     }
 }
 
