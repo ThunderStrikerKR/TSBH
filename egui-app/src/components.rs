@@ -3211,6 +3211,16 @@ fn date_navigation_segment_button(
     response.on_hover_text(tooltip)
 }
 
+fn date_navigation_count_step_state(
+    value:&str,current:usize,enabled:bool,minimum:usize,maximum:usize
+)->(bool,bool){
+    let step_count=value.parse::<usize>().unwrap_or(current);
+    (
+        enabled && step_count>minimum,
+        enabled && step_count<maximum
+    )
+}
+
 /// The editable delivery count is one segmented date-selector control:
 /// minus | centered numeric editor | plus. The parent frame owns one border.
 pub struct DateNavigationCountControlResponse{
@@ -3225,7 +3235,9 @@ pub fn date_navigation_count_control(
     current:usize,enabled:bool,minimum:usize,maximum:usize
 )->DateNavigationCountControlResponse{
     let enabled=enabled && ui.is_enabled();
-    let step_count=value.parse::<usize>().unwrap_or(current);
+    let (decrement_enabled,increment_enabled)=date_navigation_count_step_state(
+        value,current,enabled,minimum,maximum
+    );
     let arrow_width=theme::CALENDAR_NAV_SIZE;
     let input_width=64.0;
     let height=theme::CALENDAR_NAV_SIZE;
@@ -3235,7 +3247,7 @@ pub fn date_navigation_count_control(
             ui,id_salt,Vec2::new(width,height),|segments,inner|{
                 let decrement=date_navigation_segment_button(
                     segments,arrow_width,"배송 건수 1건 줄이기",
-                    enabled && step_count>minimum,
+                    decrement_enabled,
                     DateNavigationSegmentGlyph::Text("−")
                 );
                 let hint=format!("{minimum}~{maximum}");
@@ -3255,7 +3267,7 @@ pub fn date_navigation_count_control(
                 }).inner;
                 let increment=date_navigation_segment_button(
                     segments,arrow_width,"배송 건수 1건 늘리기",
-                    enabled && step_count<maximum,
+                    increment_enabled,
                     DateNavigationSegmentGlyph::Text("+")
                 );
                 for x in [
@@ -7360,6 +7372,16 @@ mod date_navigation_segmented_control_tests{
             (control.input.rect.right()-expected_input_right).abs()<0.5,
             "the plus segment must directly follow the numeric editor"
         );
+    }
+
+    #[test]
+    fn count_stepper_bounds_follow_the_visible_draft_value(){
+        assert_eq!(date_navigation_count_step_state("1",2,true,1,100),(false,true));
+        assert_eq!(date_navigation_count_step_state("100",2,true,1,100),(true,false));
+        assert_eq!(date_navigation_count_step_state("",2,true,1,100),(true,true));
+        assert_eq!(date_navigation_count_step_state("0",2,true,1,100),(false,true));
+        assert_eq!(date_navigation_count_step_state("101",2,true,1,100),(true,false));
+        assert_eq!(date_navigation_count_step_state("2",2,false,1,100),(false,false));
     }
 
     #[test]
