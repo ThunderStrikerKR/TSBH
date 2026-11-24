@@ -74,7 +74,7 @@ fn rebind(candidates:&mut Value,key:&str,from:&str,to:&str){
 // independently received orders. SQLite core_recipients/core_items use a
 // GLOBAL primary key. Materialize per-order identities only at the merge
 // boundary, leaving the recognition evidence snapshot untouched.
-fn scope_recognition_ids(order_id:&str, recipients:&mut [Value],
+pub(super) fn scope_recognition_ids(order_id:&str, recipients:&mut [Value],
     candidates:&mut Value)->Result<(),String>{
     if order_id.trim().is_empty(){return Err("발주서 ID가 없습니다.".into());}
     for recipient in recipients {
@@ -121,6 +121,33 @@ fn scope_recognition_ids(order_id:&str, recipients:&mut [Value],
     }
     Ok(())
 }
+/// Apply the same per-order identity namespace to the persisted manual
+/// worksheet. The rows and assignment targets must move together; otherwise
+/// preview_manual would restore provisional recognition IDs after a merge.
+pub(super) fn scope_manual_model_ids(order_id:&str,model:&mut Value)->Result<(),String>{
+    {
+        let recipients=model.get_mut("rows").and_then(Value::as_array_mut)
+            .ok_or("수동 분류 배송 목록이 없습니다.")?;
+        let mut no_candidates=Value::Array(Vec::new());
+        scope_recognition_ids(order_id,recipients,&mut no_candidates)?;
+    }
+    if let Some(assignments)=model.get_mut("assignments").and_then(Value::as_object_mut){
+        for assignment in assignments.values_mut(){
+            for (key,prefix) in [
+                ("recipientId","recognition:recipient:"),
+                ("itemId","recognition:item:")
+            ]{
+                let id=assignment.get(key).and_then(Value::as_str)
+                    .map(str::to_owned);
+                if let Some(id)=id.filter(|id|id.starts_with(prefix)){
+                    assignment[key]=json!(format!("{order_id}:{id}"));
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
 fn qty_sources(item:&Value)->Vec<Value>{
     rows(field(item,"sources")).iter().filter(|s|str_field(s,"field")=="quantity")
         .map(|s|field(s,"text").clone()).collect()
@@ -359,6 +386,40 @@ mod tests{
                 "recognition:recipient:0");
         }
     }
+    #[test]
+    fn manual_model_scopes_rows_and_assignment_targets_per_order(){
+        let original=json!({
+            "rows":[{"id":"recognition:recipient:0","sources":[{
+                "recipientId":"recognition:recipient:0",
+                "targetId":"recognition:recipient:0"}],
+                "items":[{"id":"recognition:item:3:0","sources":[{
+                    "recipientId":"recognition:recipient:0",
+                    "targetId":"recognition:item:3:0"}]}]}],
+            "blocks":[{"id":"block-1"}],
+            "assignments":{"block-1":{"recipientId":"recognition:recipient:0",
+                "itemId":"recognition:item:3:0","field":"quantity"}}
+        });
+        let mut first=original.clone();
+        scope_manual_model_ids("order-one",&mut first).unwrap();
+        assert_eq!(first["rows"][0]["id"],"order-one:recognition:recipient:0");
+        assert_eq!(first["rows"][0]["items"][0]["id"],
+            "order-one:recognition:item:3:0");
+        assert_eq!(first["assignments"]["block-1"]["recipientId"],
+            "order-one:recognition:recipient:0");
+        assert_eq!(first["assignments"]["block-1"]["itemId"],
+            "order-one:recognition:item:3:0");
+        assert_eq!(first["rows"][0]["items"][0]["sources"][0]["recipientId"],
+            "order-one:recognition:recipient:0");
+        let once=first.clone();
+        scope_manual_model_ids("order-one",&mut first).unwrap();
+        assert_eq!(first,once,"scoping must be idempotent");
+        let mut second=original;
+        scope_manual_model_ids("order-two",&mut second).unwrap();
+        assert_ne!(first["rows"][0]["id"],second["rows"][0]["id"]);
+        assert_ne!(first["rows"][0]["items"][0]["id"],
+            second["rows"][0]["items"][0]["id"]);
+    }
+
     #[test]
     fn reanalysis_retains_scoped_recipient_and_item_id(){
         let evidence=json!({"recipients":[{
