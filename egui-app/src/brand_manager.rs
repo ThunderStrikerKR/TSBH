@@ -195,7 +195,7 @@ impl BrandManager {
                     list.set_min_width(header.table_width);
                     for brand in rows(&catalog["brands"]){
                         let id=field(brand,"id");
-                        list.horizontal(|line|{
+                        let _row=list.horizontal(|line|{
                             line.vertical(|description|{
                                 description.label(typography::body(field(brand,"name")));
                                 description.label(typography::caption(&format!(
@@ -217,6 +217,8 @@ impl BrandManager {
                                 }
                             });
                         });
+                        #[cfg(test)]
+                        components::general_screen_geometry_tests::record("catalog data row",_row.response.rect);
                         components::soft_divider(list);
                     }
                 });
