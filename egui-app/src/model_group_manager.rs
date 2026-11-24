@@ -191,6 +191,8 @@ impl ModelGroupManager {
     fn row(&mut self,ui:&mut Ui,id:&str,g:&Value,catalog:&Value){
         let (rect,response)=ui.allocate_exact_size(
             Vec2::new(ui.available_width(),theme::FAMILY_ROW_HEIGHT),Sense::click());
+        #[cfg(test)]
+        components::general_screen_geometry_tests::record("catalog data row",rect);
         if self.selected==id||response.hovered(){
             ui.painter().rect_filled(rect,theme::CONTROL_RADIUS as f32,
                 if self.selected==id{theme::RAISED}else{theme::INPUT});
