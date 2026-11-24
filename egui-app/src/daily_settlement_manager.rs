@@ -559,6 +559,8 @@ impl DailySettlementManager{
                     // Keep the section inside the bounded vertical viewport;
                     // its report rows own their independent horizontal scroll.
                     section.set_width(section_inner_max_width);
+                    // set_width is a minimum; cap content width before wide table children allocate.
+                    section.set_max_width(section_inner_max_width);
                     // The date selector is the first element of the
                     // settlement card. No redundant title/help row above it.
                     // Like Order History, the date picker is inside the
@@ -644,6 +646,8 @@ impl DailySettlementManager{
                     // Keep the section inside the bounded vertical viewport;
                     // its report rows own their independent horizontal scroll.
                     section.set_width(section_inner_max_width);
+                    // set_width is a minimum; cap content width before wide table children allocate.
+                    section.set_max_width(section_inner_max_width);
                     section.label(typography::section_heading(
                         "실제 입금 내역 / 입금 일시 기준"
                     ));
@@ -695,6 +699,7 @@ impl DailySettlementManager{
                 body.add_space(theme::SPACE_12);
                 components::measured_management_section_card(body,|review|{
                     review.set_width(section_inner_max_width);
+                    review.set_max_width(section_inner_max_width);
                     review.label(typography::section_heading("결산 검토 사항"));
                     components::soft_divider(review);
                     components::fixed_result_viewport(review,"settlement-warnings",100.0,|list|{

@@ -1,0 +1,42 @@
+{
+  "schemaVersion": 1,
+  "id": "daily-settlement-90",
+  "screen": "관리 / 일일결산",
+  "files": [
+    "egui-app/src/daily_settlement_manager.rs"
+  ],
+  "visualStatus": "NOT_VERIFIED",
+  "reason": "1366×768 좌표 회귀 테스트에서 표 헤더가 작업영역 오른쪽을 초과했다. 섹션 내부 UI에 최대 너비를 적용하는 수정은 반영했지만, 변경된 소스와 동일한 Windows 실행 빌드의 실제 화면 캡처 및 조작 검증은 아직 없다. 실화면 확인 전까지 PASS로 승격하지 않는다.",
+  "defects": [
+    {
+      "id": "UI-90-SETTLEMENT-WIDTH",
+      "status": "OPEN",
+      "description": "일일결산의 넓은 표가 좁은 작업영역에서 섹션 카드와 헤더의 최대 너비를 넘지 않는지 Windows 실화면 재검증이 필요하다.",
+      "verification": "WINDOWS_RECHECK_REQUIRED"
+    }
+  ],
+  "nextVerification": {
+    "requiredViewports": [
+      {
+        "width": 1920,
+        "height": 1080,
+        "scalePercent": 100
+      },
+      {
+        "width": 1366,
+        "height": 768,
+        "scalePercent": 100
+      }
+    ],
+    "checks": [
+      "noClipping",
+      "footerVisible",
+      "scrollReachable",
+      "inputReadable",
+      "alignment",
+      "interaction",
+      "hoverAndFocus"
+    ],
+    "requiredEvidence": "변경된 소스 blob과 동일한 Windows 실행 빌드의 개인정보 마스킹 캡처 및 실제 조작 검증"
+  }
+}

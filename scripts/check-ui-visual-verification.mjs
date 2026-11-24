@@ -31,6 +31,45 @@ export function isUiSource(filename) {
 export function isAuditFile(filename) {
   return /^docs\/ui-visual-verification\/audits\/[a-z0-9][a-z0-9-]*\.json$/.test(filename.replaceAll("\\", "/"));
 }
+
+/**
+ * Rust files often colocate UI and #[cfg(test)] modules. A diff wholly inside
+ * a test-only module cannot change a production frame and must not demand a
+ * human screenshot review. Any mixed/ambiguous hunk remains UI-affecting.
+ */
+function rustTestModuleRanges(source) {
+  const lines = source.split(/\r?\n/);
+  const ranges = [];
+  for (let i = 0; i < lines.length; i++) {
+    if (lines[i].trim() !== "#[cfg(test)]") continue;
+    let module = i + 1;
+    while (module < lines.length &&
+      (lines[module].trim() === "" || lines[module].trim().startsWith("#["))) module++;
+    if (!/^\s*(?:(?:pub(?:\([^)]*\))?)\s+)?mod\s+[A-Za-z_]\w*\s*\{/.test(lines[module] || "")) continue;
+    let end = module + 1;
+    while (end < lines.length && !/^\}\s*(?:\/\/.*)?$/.test(lines[end])) end++;
+    if (end < lines.length) ranges.push({ start: i + 1, end: end + 1 });
+  }
+  return ranges;
+}
+function changedSpanIsTestOnly(ranges, start, count) {
+  if (count === 0) return true;
+  return ranges.some((range) =>
+    start >= range.start && start + count - 1 <= range.end
+  );
+}
+export function isRustTestOnlyDiff(before, after, diff) {
+  const hunks = [...diff.matchAll(/^@@ -(\\d+)(?:,(\\d+))? \\+(\\d+)(?:,(\\d+))? @@/gm)];
+  if (!hunks.length) return false;
+  const oldRanges = rustTestModuleRanges(before);
+  const newRanges = rustTestModuleRanges(after);
+  return hunks.every((hunk) => {
+    const oldCount = Number(hunk[2] ?? 1);
+    const newCount = Number(hunk[4] ?? 1);
+    return changedSpanIsTestOnly(oldRanges, Number(hunk[1]), oldCount) &&
+      changedSpanIsTestOnly(newRanges, Number(hunk[3]), newCount);
+  });
+}
 function nonEmpty(s) { return typeof s === "string" && s.trim().length > 0; }
 function isSha(s) { return typeof s === "string" && /^[0-9a-f]{40}$/.test(s); }
 function safeEvidencePath(s) {
@@ -185,6 +224,21 @@ function main() {
     paths = [process.argv[3]];
   } else {
     throw Error("Usage: node scripts/check-ui-visual-verification.mjs --base <git-sha> | --all | --audit <path>");
+  }
+  if (arg === "--base" && process.argv[3]) {
+    const base = process.argv[3];
+    paths = paths.filter((path) => {
+      if (!isUiSource(path) || !path.endsWith(".rs")) return true;
+      try {
+        const diff = git("diff", "--unified=0", base + "...HEAD", "--", path);
+        const before = git("show", base + ":" + path);
+        const after = readFileSync(path, "utf8");
+        return !isRustTestOnlyDiff(before, after, diff);
+      } catch {
+        // Fail closed: an unreadable or ambiguous diff is still a UI change.
+        return true;
+      }
+    });
   }
   const result = checkVisualChanges(
     paths, (f) => JSON.parse(readFileSync(f, "utf8")), proofEnv()
