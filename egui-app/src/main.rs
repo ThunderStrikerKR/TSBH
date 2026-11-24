@@ -6627,7 +6627,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                             for item in items{
                                                 let origin=reception_service::text(item,"origin");
                                                 if ["FACTORY","STORE"].contains(&origin) &&
-                                                    !origins.iter().any(|saved|saved==origin){
+                                                    !origins.iter().any(|saved|saved.as_str()==origin){
                                                     origins.push(origin.to_owned());
                                                 }
                                             }
