@@ -695,9 +695,7 @@ impl AutomaticMessageManager {
         let Some(destination)=self.pending.clone()else{return;};
         let mut cancel=false;let mut discard=false;let mut save=false;
         components::modal_backdrop(ctx,"message-editor-leave-backdrop",false);
-        components::decision_window(
-            "저장하지 않은 변경사항","message-editor-leave",area
-        ).show(ctx,|dialog|{
+        components::show_decision_window(ctx,"저장하지 않은 변경사항","message-editor-leave",area,|dialog|{
             components::decision_workspace(dialog,|decision|{
                 cancel=decision.header("저장하지 않은 변경사항","취소",!self.busy()
                 );

@@ -2910,9 +2910,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
         let busy=self.vat_change.is_some();
         let mut cancel=false;
         let mut apply=false;
-        components::decision_window(
-            "부가세 설정","egui-order-vat-settings",work_area
-        ).show(ctx,|ui|{
+        components::show_decision_window(ctx,"부가세 설정","egui-order-vat-settings",work_area,|ui|{
             components::decision_workspace(ui,|decision|{
                 cancel=decision.header("부가세 설정","취소",!busy
                 );
@@ -4406,10 +4404,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
         if self.pending_replace.is_none() { return; }
         let mut accept = false;
         let mut cancel = false;
-        components::decision_window(
-            "발주원문 교체 확인","egui-replace-source-confirm",work_area
-        )
-            .show(ctx, |ui| {
+        components::show_decision_window(ctx,"발주원문 교체 확인","egui-replace-source-confirm",work_area,|ui|{
                 components::decision_workspace(ui,|decision|{
                     cancel=decision.header("발주원문 교체 확인","취소",true
                     );
@@ -7502,9 +7497,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                             other.source_id==group.source_id &&
                             other.dealer_id==group.dealer_id
                         ).cloned().collect::<Vec<_>>()).unwrap_or_default();
-                    components::decision_window(
-                        "배송 건 묶음 관리","egui-workflow-group-manage",work_area
-                    ).show(ctx,|ui|{
+                    components::show_decision_window(ctx,"배송 건 묶음 관리","egui-workflow-group-manage",work_area,|ui|{
                         components::decision_workspace(ui,|decision|{
                             close=decision.header("배송 건 묶음 관리","닫기",true
                             );
@@ -7595,9 +7588,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
             WorkflowDialog::ManagePending(id)=>{
                 let draft=self.drafts.iter().find(|row|row.id==id).cloned();
                 if let Some(draft)=draft{
-                    components::decision_window(
-                        "배송 건 묶음 관리","egui-workflow-pending-manage",work_area
-                    ).show(ctx,|ui|{
+                    components::show_decision_window(ctx,"배송 건 묶음 관리","egui-workflow-pending-manage",work_area,|ui|{
                         components::decision_workspace(ui,|decision|{
                             close=decision.header("배송 건 묶음 관리","닫기",true
                             );
@@ -7630,9 +7621,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                     board.groups.iter().find(|g|g.id==id)
                 ).cloned();
                 if let Some(group)=group{
-                    components::decision_window(
-                        "주문 묶음 삭제","egui-workflow-delete-group",work_area
-                    ).show(ctx,|ui|{
+                    components::show_decision_window(ctx,"주문 묶음 삭제","egui-workflow-delete-group",work_area,|ui|{
                         components::decision_workspace(ui,|decision|{
                             close=decision.header("주문 묶음 삭제","취소",true
                             );
@@ -7661,9 +7650,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
             WorkflowDialog::DeletePending(id)=>{
                 let draft=self.drafts.iter().find(|d|d.id==id).cloned();
                 if let Some(draft)=draft{
-                    components::decision_window(
-                        "미확정 발주서 삭제","egui-workflow-delete-pending",work_area
-                    ).show(ctx,|ui|{
+                    components::show_decision_window(ctx,"미확정 발주서 삭제","egui-workflow-delete-pending",work_area,|ui|{
                         components::decision_workspace(ui,|decision|{
                             close=decision.header("미확정 발주서 삭제","취소",true
                             );
@@ -7683,9 +7670,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                 }else{close=true;}
             }
             WorkflowDialog::PaymentNotice(id)=>{
-                components::decision_window(
-                    "계좌 안내 완료 확인","egui-workflow-payment-confirm",work_area
-                ).show(ctx,|ui|{
+                components::show_decision_window(ctx,"계좌 안내 완료 확인","egui-workflow-payment-confirm",work_area,|ui|{
                     components::decision_workspace(ui,|decision|{
                         close=decision.header("계좌 안내 완료 확인","돌아가기",true
                         );
@@ -7874,9 +7859,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
         }
         components::modal_backdrop(ctx,"freight-global-leave-backdrop",
             manager.has_rate_modal());
-        components::decision_window(
-            "저장하지 않은 변경사항","freight-global-leave",work_area
-        ).show(ctx,|dialog|{
+        components::show_decision_window(ctx,"저장하지 않은 변경사항","freight-global-leave",work_area,|dialog|{
             components::decision_workspace(dialog,|decision|{
                 if decision.header("저장하지 않은 변경사항","취소",!manager.busy()
                 ){
@@ -7925,9 +7908,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
             self.settings_pending_save=false;
         }
         components::modal_backdrop(ctx,"settings-page-leave-backdrop",false);
-        components::decision_window(
-            "저장하지 않은 변경사항","settings-global-leave",work_area
-        ).show(ctx,|ui|{
+        components::show_decision_window(ctx,"저장하지 않은 변경사항","settings-global-leave",work_area,|ui|{
             components::decision_workspace(ui,|decision|{
                 if decision.header("저장하지 않은 변경사항","취소",!view.busy()
                 ){self.settings_pending_page=None;}

@@ -431,9 +431,7 @@ impl SettingsView{
     ){
         if self.requested_tab.is_none(){return;}
         components::modal_backdrop(ctx,"settings-tab-changes-backdrop",false);
-        components::decision_window(
-            "저장하지 않은 변경사항","settings-tab-unsaved",area
-        ).show(ctx,|ui|{
+        components::show_decision_window(ctx,"저장하지 않은 변경사항","settings-tab-unsaved",area,|ui|{
             components::decision_workspace(ui,|decision|{
                 if decision.header("저장하지 않은 변경사항","취소",!self.busy()
                 ){self.requested_tab=None;}
@@ -1031,9 +1029,7 @@ impl SettingsView{
     ){
         if self.reload_confirmation{
             components::modal_backdrop(ctx,"settings-reload-backdrop",false);
-            components::decision_window(
-                "저장된 설정 불러오기","settings-reload-confirm",area
-            ).show(ctx,|ui|{
+            components::show_decision_window(ctx,"저장된 설정 불러오기","settings-reload-confirm",area,|ui|{
                 components::decision_workspace(ui,|decision|{
                     if decision.header("저장된 설정 불러오기","취소",true
                     ){self.reload_confirmation=false;}
@@ -1137,9 +1133,7 @@ impl SettingsView{
         }
         if let Some(filename)=self.restore_target.clone(){
             components::modal_backdrop(ctx,"settings-restore-backdrop",false);
-            components::decision_window(
-                "데이터 복구 확인","settings-restore-confirm",area
-            ).show(ctx,|ui|{
+            components::show_decision_window(ctx,"데이터 복구 확인","settings-restore-confirm",area,|ui|{
                 components::decision_workspace(ui,|decision|{
                     if decision.header("데이터 복구 확인","취소",!self.busy()
                     ){self.restore_target=None;}

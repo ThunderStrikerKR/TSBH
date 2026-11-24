@@ -231,8 +231,7 @@ impl BrandManager {
         let mut discard=false;
         let mut save=false;
         components::modal_backdrop(ctx,"brand-unsaved-dim",true);
-        components::decision_window("브랜드","brand-unsaved-confirm",work_area)
-            .show(ctx,|dialog|{
+        components::show_decision_window(ctx,"브랜드","brand-unsaved-confirm",work_area,|dialog|{
                 components::decision_workspace(dialog,|decision|{
                     cancel=decision.header("브랜드","취소",!busy);
                     decision.body(|dialog|{

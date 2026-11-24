@@ -2270,9 +2270,7 @@ impl ManualWorkspace {
             let target_count=self.remove_recipient_target
                 .unwrap_or_else(||current_count.saturating_sub(1));
             let removing_count=current_count.saturating_sub(target_count);
-            components::decision_window("배송 건수 줄이기","manual-shipment-removal",work_area)
-                .constrain_to(work_area)
-                .show(ctx,|ui|{
+            components::show_decision_window(ctx,"배송 건수 줄이기","manual-shipment-removal",work_area,|ui|{
                     components::decision_workspace(ui,|decision|{
                         cancel=decision.header("배송 건수 줄이기","취소",true
                         );
@@ -2319,9 +2317,7 @@ impl ManualWorkspace {
         if self.reset_pending {
             let mut confirm=false;
             let mut cancel=false;
-            components::decision_window("전체 초기화","manual-reset-confirm",work_area)
-                .constrain_to(work_area)
-                .show(ctx,|ui|{
+            components::show_decision_window(ctx,"전체 초기화","manual-reset-confirm",work_area,|ui|{
                     components::decision_workspace(ui,|decision|{
                         cancel=decision.header("전체 초기화","취소",true
                         );
@@ -2360,9 +2356,7 @@ impl ManualWorkspace {
         }
         if self.confirm_discard {
             let mut keep_editing=false;
-            components::decision_window("수동 분류 나가기","manual-discard-prompt",work_area)
-                .constrain_to(work_area)
-                .show(ctx,|ui|{
+            components::show_decision_window(ctx,"수동 분류 나가기","manual-discard-prompt",work_area,|ui|{
                     components::decision_workspace(ui,|decision|{
                         keep_editing=decision.header("수동 분류 나가기","계속 편집",true
                         );
@@ -2391,9 +2385,7 @@ impl ManualWorkspace {
         if self.confirm_apply {
             let mut cancel=false;
             let mut proceed=false;
-            components::decision_window(
-                "수동 분류 완료","manual-completion-prompt",work_area
-            ).constrain_to(work_area).show(ctx,|ui|{
+            components::show_decision_window(ctx,"수동 분류 완료","manual-completion-prompt",work_area,|ui|{
                 components::decision_workspace(ui,|decision|{
                     cancel=decision.header("수동 분류 완료","취소",true
                     );

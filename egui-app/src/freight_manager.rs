@@ -949,9 +949,7 @@ impl FreightManager {
             let mut close_product_reset=false;
             if self.tab==FreightTab::Rates && self.create_group_open {
                 components::modal_backdrop(ctx,"freight-create-backdrop",false);
-                components::decision_window(
-                    "배송 그룹 추가","freight-create",area
-                ).show(ctx,|modal|{
+                components::show_decision_window(ctx,"배송 그룹 추가","freight-create",area,|modal|{
                     components::decision_workspace(modal,|decision|{
                         if decision.header("배송 그룹 추가","취소",enabled
                         ){close_create=true;}
@@ -979,8 +977,7 @@ impl FreightManager {
                 });
             }else if let Some((id,name))=self.rename_target.as_mut(){
                 components::modal_backdrop(ctx,"freight-rename-backdrop",false);
-                components::decision_window("배송 그룹명","freight-rename",area)
-                    .show(ctx,|modal|{
+                components::show_decision_window(ctx,"배송 그룹명","freight-rename",area,|modal|{
                         components::decision_workspace(modal,|decision|{
                             if decision.header("배송 그룹명","취소",enabled){
                                 close_rename=true;
@@ -1003,8 +1000,7 @@ impl FreightManager {
                     text(p,"shippingGroupId")==id.as_str()).collect::<Vec<_>>();
                 let name=group_name(&groups,id);
                 components::modal_backdrop(ctx,"freight-delete-backdrop",false);
-                components::decision_window("배송 그룹 삭제","freight-delete",area)
-                    .show(ctx,|modal|{
+                components::show_decision_window(ctx,"배송 그룹 삭제","freight-delete",area,|modal|{
                         components::decision_workspace(modal,|decision|{
                             if decision.header("배송 그룹 삭제","취소",enabled
                             ){close_delete=true;}
@@ -1055,9 +1051,7 @@ impl FreightManager {
                     });
             }else if let Some(pid)=self.product_reset_target.as_ref(){
                 components::modal_backdrop(ctx,"freight-reset-backdrop",false);
-                components::decision_window(
-                    "운임 기준 변경","freight-product-reset",area
-                ).show(ctx,|dialog|{
+                components::show_decision_window(ctx,"운임 기준 변경","freight-product-reset",area,|dialog|{
                     components::decision_workspace(dialog,|decision|{
                         if decision.header("운임 기준 변경","취소",enabled
                         ){close_product_reset=true;}
@@ -1158,9 +1152,7 @@ impl FreightManager {
             }else if let Some(target)=self.basis_target.as_ref(){
                 let name=target.as_deref().map(|id|group_name(&groups,id));
                 components::modal_backdrop(ctx,"freight-basis-backdrop",false);
-                components::decision_window(
-                    "운임 기준 변경","freight-basis-confirm",area
-                ).show(ctx,|dialog|{
+                components::show_decision_window(ctx,"운임 기준 변경","freight-basis-confirm",area,|dialog|{
                     components::decision_workspace(dialog,|decision|{
                         if decision.header("운임 기준 변경","취소",enabled
                         ){close_basis=true;}
@@ -1201,9 +1193,7 @@ impl FreightManager {
             if let Some((id,amount))=self.exception_target.as_mut(){
                 let ctx=ui.ctx();
                 components::modal_backdrop(ctx,"freight-exception-backdrop",false);
-                components::decision_window(
-                    "새로 확인된 청구 운임 (원)","freight-exception",ui.max_rect()
-                ).show(ctx,|dialog|{
+                components::show_decision_window(ctx,"새로 확인된 청구 운임 (원)","freight-exception",ui.max_rect(),|dialog|{
                     components::decision_workspace(dialog,|decision|{
                         if decision.header("새로 확인된 청구 운임 (원)","취소",enabled
                         ){close=true;}

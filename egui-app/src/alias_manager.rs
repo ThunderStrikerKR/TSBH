@@ -536,9 +536,7 @@ impl AliasManager {
             let mut discard=false;
             let mut save_now=false;
             components::modal_backdrop(ctx,"alias-unsaved-dim",true);
-            components::decision_window(
-                "상품 별칭","alias-unsaved-confirm",work_area
-            ).show(ctx,|dialog|{
+            components::show_decision_window(ctx,"상품 별칭","alias-unsaved-confirm",work_area,|dialog|{
                 components::decision_workspace(dialog,|decision|{
                     cancel=decision.header("상품 별칭","취소",!busy
                     );

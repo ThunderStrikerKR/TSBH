@@ -539,8 +539,7 @@ impl ModelGroupManager {
         if self.confirm_delete{
             let mut delete=false;let mut cancel=false;
             components::modal_backdrop(ctx,"family-delete-dim",false);
-            components::decision_window("그룹 삭제","family-delete-confirm",rect)
-                .show(ctx,|dialog|{
+            components::show_decision_window(ctx,"그룹 삭제","family-delete-confirm",rect,|dialog|{
                     components::decision_workspace(dialog,|decision|{
                         cancel=decision.header("그룹 삭제","취소",true);
                         decision.body(|dialog|{
@@ -565,8 +564,7 @@ impl ModelGroupManager {
         if let Some(pending)=self.confirm.clone(){
             let mut cancel=false;let mut discard=false;let mut save=false;
             components::modal_backdrop(ctx,"family-unsaved-dim",true);
-            components::decision_window("모델군 관리","family-unsaved-confirm",rect)
-                .show(ctx,|dialog|{
+            components::show_decision_window(ctx,"모델군 관리","family-unsaved-confirm",rect,|dialog|{
                     components::decision_workspace(dialog,|decision|{
                         cancel=decision.header("모델군 관리","취소",!self.busy()
                         );

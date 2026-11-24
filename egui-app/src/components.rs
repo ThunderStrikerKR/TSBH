@@ -2024,7 +2024,7 @@ pub fn decision_content<R>(
     })
 }
 
-pub fn decision_window(
+fn decision_window(
     title:&str,id:&'static str,work_area:egui::Rect
 ) -> egui::Window<'static> {
     nested_modal_window(title,id,work_area)
@@ -7668,9 +7668,8 @@ mod modal_input_routing_tests {
                         ui.disable();
                         ui.label("parent worksheet");
                     });
-                decision_window(
-                    "수동 분류 변경 취소","manual-discard-prompt",work_area
-                ).show(ctx,|ui|{
+                modal_backdrop(ctx,"round87-nested-click-dim",true);
+                show_decision_window(ctx,"수동 분류 변경 취소","manual-discard-prompt",work_area,|ui|{
                     decision_workspace(ui,|decision|{
                         decision.header("수동 분류 변경 취소","돌아가기",true);
                         decision.body(|body|{
@@ -7690,7 +7689,6 @@ mod modal_input_routing_tests {
                         });
                     });
                 });
-                modal_foreground_for_window(ctx,"manual-discard-prompt");
             });
             assert_eq!(
                 ctx.memory(|memory|memory.top_modal_layer()),
@@ -8246,5 +8244,67 @@ mod round87_phase4_modal_safety_tests {
             assert!(footer.bottom()<=safe.bottom()+1.0,"footer outside {safe:?}: {footer:?}");
             assert!(footer.left()>=safe.left()-1.0 && footer.right()<=safe.right()+1.0);
         }
+    }
+}
+
+#[cfg(test)]
+mod round87_phase5_modal_contract_tests {
+    use super::*;
+
+    // Read the source tree rather than keeping a hand-maintained list:
+    // newly added screen modules are subject to the same contract.
+    fn scan(path:&std::path::Path,violations:&mut Vec<String>){
+        for entry in std::fs::read_dir(path).expect("read egui source directory"){
+            let entry=entry.expect("read source entry");
+            let p=entry.path();
+            if p.is_dir(){scan(&p,violations);continue;}
+            if p.extension().and_then(|v|v.to_str())!=Some("rs")
+                || p.file_name().and_then(|v|v.to_str())==Some("components.rs"){continue;}
+            let source=std::fs::read_to_string(&p).expect("read Rust source");
+            for (index,line) in source.lines().enumerate(){
+                // Ignore comments and textual assertions about source code.
+                // Compile-time visibility is the primary guard for the
+                // decision constructor; this audit also catches raw windows.
+                let code=line.trim_start();
+                if code.starts_with("//") || code.starts_with("/*") || code.starts_with('*'){continue;}
+                for forbidden in [
+                    "components::decision_window(",
+                    "Window::new(",
+                    "Modal::new(",
+                    "components::modal_header(",
+                    "components::modal_header_chrome(",
+                    "components::modal_footer_chrome(",
+                    "components::modal_action_row(",
+                    "components::modal_action_row_split(",
+                    ".movable(true)",
+                    ".resizable(true)",
+                ] {
+                    if let Some(pos)=code.find(forbidden){
+                        if !code[..pos].contains('"'){
+                            violations.push(format!("{}:{}: {}",p.display(),index+1,forbidden));
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn production_screens_do_not_bypass_shared_modal_chrome_or_decision_entry(){
+        let mut violations=Vec::new();
+        scan(&std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src"),&mut violations);
+        assert!(violations.is_empty(),"modal contract bypass:\n{}",violations.join("\n"));
+    }
+
+    #[test]
+    fn approved_modal_tokens_remain_unchanged(){
+        assert_eq!(theme::MODAL_MASTER_WORKSPACE_GAP,16.0);
+        assert_eq!(theme::MODAL_MASTER_CONTENT_INSET,16.0);
+        assert_eq!(theme::MODAL_SECTION_PADDING,16.0);
+        assert_eq!(theme::MODAL_SECTION_HEADER_RULE_GAP,16.0);
+        assert_eq!(theme::MODAL_PANEL_PADDING_Y,16.0);
+        assert_eq!(theme::MODAL_PANEL_PADDING_X,18.0);
+        assert_eq!(theme::MODAL_HEADER_HEIGHT,56.0);
+        assert_eq!(theme::MODAL_FOOTER_HEIGHT,58.0);
     }
 }

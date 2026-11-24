@@ -1152,9 +1152,7 @@ impl ExcelManager{
                 .filter_map(Value::as_str).map(str::to_owned).collect::<Vec<_>>();
             let origin=self.tab.origin().to_owned();
             components::modal_backdrop(ui.ctx(),"excel-output-backdrop",false);
-            components::decision_window(
-                "Excel 작성 확인","excel-export-confirm",ui.max_rect()
-            ).show(ui.ctx(),|dialog|{
+            components::show_decision_window(ui.ctx(),"Excel 작성 확인","excel-export-confirm",ui.max_rect(),|dialog|{
                 components::decision_workspace(dialog,|decision|{
                     if decision.header("Excel 작성 확인","취소",true
                     ){self.preview=None;}
