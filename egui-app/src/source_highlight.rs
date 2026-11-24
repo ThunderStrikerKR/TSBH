@@ -981,6 +981,44 @@ mod tests {
         );
         assert_eq!(highlighted[1].fill,ACTIVE_FILL);
         assert!(highlighted[1].focused);
+
+        // The same tokens must produce white/black vs muted ink only
+        // inside the manual viewer; ordinary Reception is unchanged.
+        let regular_layout=layout(
+            raw,&spans,None,None,360.0,
+            FontId::proportional(16.0),Color32::WHITE
+        );
+        assert!(regular_layout.sections.iter().all(|section|
+            section.format.color==Color32::WHITE
+        ));
+        let manual_layout=layout_manual(
+            raw,&spans,None,None,&assigned,360.0,
+            FontId::proportional(16.0),Color32::WHITE
+        );
+        assert!(manual_layout.sections.iter().any(|section|
+            section.format.color==theme::MANUAL_SOURCE_CLASSIFIED_TEXT
+        ));
+        assert!(manual_layout.sections.iter().any(|section|
+            section.format.color==theme::MANUAL_SOURCE_UNASSIGNED_TEXT
+        ));
+
+        let ctx=egui::Context::default();
+        let _=ctx.run(egui::RawInput::default(),|ctx|{
+            let galley=ctx.fonts_mut(|fonts|fonts.layout_job(manual_layout));
+            let area=egui::Rect::from_min_size(
+                egui::Pos2::ZERO,egui::vec2(400.0,200.0)
+            );
+            let (_fills,manual_strokes)=block_shapes_manual(
+                raw,&galley,egui::Pos2::ZERO,&spans,None,None,&assigned,area
+            );
+            assert_eq!(manual_strokes.len(),2,
+                "each classified/unclassified source block needs its own stroke");
+            let (_normal,receipt_strokes)=block_shapes(
+                raw,&galley,egui::Pos2::ZERO,&spans,None,None,area
+            );
+            assert!(receipt_strokes.is_empty(),
+                "Reception must not inherit manual white outlines");
+        });
     }
 
     #[test]
