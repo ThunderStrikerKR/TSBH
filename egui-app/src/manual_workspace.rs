@@ -1549,33 +1549,31 @@ impl ManualWorkspace {
                                     let can_switch=!busy && !pending_quantity_active
                                         && !count_resize_requested;
                                     panel.horizontal(|header|{
-                                        if theme::action(
-                                            header,"〈",ButtonRole::Standard,
-                                            can_switch && index>0
-                                        ).on_hover_text("이전 배송").clicked(){
-                                            self.queue_cell_selection(
-                                                ManualCellTarget{
-                                                    row:index-1,item:None,field:"name".into()
-                                                },&mut submit_direct
-                                            );
-                                        }
-                                        header.label(typography::subsection_heading(
-                                            &format!("배송 {} / {}",index+1,rows.len())
-                                        ));
-                                        if theme::action(
-                                            header,"〉",ButtonRole::Standard,
-                                            can_switch && index+1<rows.len()
-                                        ).on_hover_text("다음 배송").clicked(){
-                                            self.queue_cell_selection(
-                                                ManualCellTarget{
-                                                    row:index+1,item:None,field:"name".into()
-                                                },&mut submit_direct
-                                            );
-                                        }
                                         let recipient=text(&rows[index],"name");
-                                        if !recipient.is_empty(){
-                                            header.label(typography::caption(recipient))
-                                                .on_hover_text(recipient);
+                                        if rows.len()>1 {
+                                            // Reuse reception's approved segmented
+                                            // recipient navigator: shared chevrons,
+                                            // disabled endpoints and name overflow.
+                                            let target=header.add_enabled_ui(
+                                                can_switch,|nav|{
+                                                    components::reception_recipient_navigator(
+                                                        nav,recipient,index,rows.len()
+                                                    )
+                                                }
+                                            ).inner;
+                                            if let Some(next)=target {
+                                                self.queue_cell_selection(
+                                                    ManualCellTarget{
+                                                        row:next,item:None,field:"name".into()
+                                                    },&mut submit_direct
+                                                );
+                                            }
+                                        }else{
+                                            header.label(typography::field_label("배송 1 / 1"));
+                                            if !recipient.is_empty(){
+                                                header.label(typography::body(recipient))
+                                                    .on_hover_text(recipient);
+                                            }
                                         }
                                     });
                                 }
