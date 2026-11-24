@@ -18,7 +18,9 @@
     {
       "id": "UI-84-CLIP-001",
       "status": "OPEN",
-      "description": "수동 분류 우측 하단 발송·운임 버튼이 내부 패널 끝에서 잘려 조작이 불가능하거나 어렵다."
+      "description": "수동 분류 우측 하단 발송·운임 버튼이 내부 패널 끝에서 잘려 조작이 불가능하거나 어렵다.",
+      "patchCandidate": "c44a017db0694f51238d23c7a7f6397be0469e13",
+      "verification": "WINDOWS_RECHECK_REQUIRED"
     },
     {
       "id": "UI-84-DENSITY-002",
@@ -60,6 +62,33 @@
       "interaction",
       "hoverAndFocus"
     ],
-    "requiredEvidence": "실행 빌드와 동일한 소스 blob에 대해 개인정보를 마스킹한 캡처 및 사람의 실제 Windows 조작 검증"
+    "requiredEvidence": "실행 빌드와 동일한 소스 blob에 대해 개인정보를 마스킹한 캡처 및 사람의 실제 Windows 조작 검증",
+    "focus": [
+      "발송·운임 버튼까지 세로 스크롤로 접근 가능한지",
+      "운임 수정 클릭시 직접 입력 필드가 보이는 위치로 이동하는지",
+      "수량 직접 편집과 증감·상품 선택 취소가 스크롤 내부에서 정상 작동하는지",
+      "모달 푸터와 오른쪽 내부 스크롤 영역이 겹치지 않는지",
+      "접수 원문·배송정보의 기존 양방향 하이라이트 및 수취인 탐색이 유지되는지"
+    ]
+  },
+  "fixCandidate": {
+    "status": "PATCH_COMMITTED_WINDOWS_UNVERIFIED",
+    "commits": [
+      "c34b35d4582524a962d363cf84766e675cb7a109",
+      "c44a017db0694f51238d23c7a7f6397be0469e13"
+    ],
+    "sourceBlob": "9830f972ac69635534cb945e642d22c4739997ee",
+    "sourcePath": "egui-app/src/manual_workspace.rs",
+    "changes": [
+      "수량 스텝퍼와 운임 직접 입력을 배송 정보 ScrollArea 내부로 이동",
+      "오른쪽 패널에서 헤더·배송건수·수취인 탐색을 렌더링한 뒤 실제 남은 높이로 스크롤 영역 크기 산출",
+      "내용 초과 시 스크롤바 표시 및 운임 수정 편집칸 자동 노출"
+    ],
+    "staticInspection": "PASS_SCOPED",
+    "addedRegressionTest": "manual_scroll_surface_owns_quantity_and_freight_controls",
+    "rustTest": "NOT_EXECUTED",
+    "githubCI": "NOT_VERIFIED",
+    "windowsVisual": "NOT_VERIFIED",
+    "notes": "기존 실제 Windows 캡처의 하단 잘림은 확인됐으나 변경된 SHA를 Windows에서 다시 실행한 캡처가 없으므로 visualStatus FAIL 및 결함 OPEN 유지."
   }
 }
