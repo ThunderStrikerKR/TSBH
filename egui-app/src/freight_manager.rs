@@ -1570,6 +1570,8 @@ impl FreightManager {
                                 table_width,theme::FREIGHT_ASSIGNMENT_ROW_HEIGHT
                             )
                         );
+                        #[cfg(test)]
+                        components::general_screen_geometry_tests::record("data row",row_rect);
                         first_row_left.get_or_insert(row_rect.left());
                         table.scope_builder(
                             egui::UiBuilder::new()
@@ -3268,4 +3270,18 @@ impl FreightManager {
         page.receiver=None; page.tab=FreightTab::ALL[tab]; if loaded{page.state=Some(serde_json::json!({"revision":1,"products":[],"categories":[],"shipping":{"groups":[],"epoch":1}})); page.projection=Some(serde_json::json!({"productViews":[]}));}
         page
     }
+
+    pub(crate) fn geometry_begin_read(&mut self)->Box<dyn FnOnce(Result<usize,String>)>{
+        let (tx,rx)=std::sync::mpsc::channel();
+        self.receiver=Some(rx);
+        self.error=None;
+        Box::new(move |answer|{
+            let result=answer.map(|count|{
+                let products=(0..count).map(|i|serde_json::json!({"id":format!("geometry-p-{i}"),"name":format!("검증 상품 {i:03}"),"subtitle":"긴 상품명과 옵션 검증","active":true,"variants":[{"id":format!("v-{i}"),"color":"Black"}],"shippingGroupId":if i%2==0{"geometry-group"}else{""}})).collect::<Vec<_>>();
+                (serde_json::json!({"revision":1,"products":products,"categories":[],"shipping":{"groups":[{"id":"geometry-group","name":"검증 그룹","active":true}],"epoch":1}}),serde_json::json!({"productViews":[]}))
+            });
+            assert!(tx.send(result).is_ok());
+        })
+    }
+    pub(crate) fn geometry_read_failed(&self)->bool{self.error.is_some()}
 }
