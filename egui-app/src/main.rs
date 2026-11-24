@@ -2526,6 +2526,10 @@ impl BandoEgui {
     fn apply_manual_event(
         &mut self,event:manual_workspace::Event,ctx:&egui::Context
     ){
+        // A successful native cell result supersedes an older validation or
+        // admission message. Otherwise the confirmation handoff can mistake
+        // that stale error for a failure of this newly committed edit.
+        self.source_save_error=None;
         let manual_workspace::Event::Applied{
             order_id,raw,order_type,client_id,direct_input,model,assignment_order,
             order,quote,quote_error
@@ -2840,6 +2844,9 @@ impl BandoEgui {
     }
 
     fn submit_inline_edit(&mut self,ctx:&egui::Context){
+        // Errors belong to the previous attempt. Any failure below writes a
+        // fresh reason that the caller can surface to the employee.
+        self.source_save_error=None;
         match self.reception_job_admission(
             ReceptionJob::InlineEdit,self.inline_change.is_some()
         ){
@@ -2948,10 +2955,17 @@ impl BandoEgui {
             Some(pending.order_id.as_str())).then(||pending.order_id.clone());
         if self.active_id.as_deref()!=Some(pending.order_id.as_str()) ||
             self.raw_source!=pending.raw{
-            if confirm_order_id.is_some(){self.pending_draft_confirmation=None;}
-            self.source_save_error=Some(
-                "편집 중 다른 발주서로 이동하여 이전 셀 수정 결과를 적용하지 않았습니다.".into()
-            );
+            let message=
+                "편집 중 다른 발주서로 이동하여 이전 셀 수정 결과를 적용하지 않았습니다.";
+            self.source_save_error=Some(message.into());
+            if confirm_order_id.is_some(){
+                self.pending_draft_confirmation=None;
+                floating_notice::publish(
+                    ctx,"reception.workflow",floating_notice::Tone::Error,
+                    format!("셀 저장이 취소되어 주문 확정을 중단했습니다. {message}")
+                );
+            }
+            ctx.request_repaint();
             return;
         }
         match result {
@@ -3035,9 +3049,17 @@ impl BandoEgui {
             }
         }
         if let Some(order_id)=confirm_order_id{
-            let committed=self.source_save_error.is_none();
+            let error=self.source_save_error.clone();
             self.pending_draft_confirmation=None;
-            if committed{
+            if let Some(error)=error{
+                // Previously this failure was only stored in source_save_error,
+                // which is not rendered on the reception card. The employee
+                // saw the initial "saving" notice and then nothing.
+                floating_notice::publish(
+                    ctx,"reception.workflow",floating_notice::Tone::Error,
+                    format!("셀 수정에 실패해 주문 확정을 중단했습니다. {error}")
+                );
+            }else{
                 self.start_draft_confirmation(&order_id,ctx);
             }
         }
@@ -7555,27 +7577,25 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
     /// stale quote: submit the cell, wait for its native reducer result, then
     /// continue through start_draft_confirmation().
     fn request_draft_confirmation(&mut self,order_id:&str,ctx:&egui::Context){
-        // This flag is only valid while the same order's inline reducer is
-        // actually running. Recover a stale flag instead of silently eating
-        // every subsequent click.
-        if self.pending_draft_confirmation.as_deref()==Some(order_id){
-            if self.inline_change.as_ref().is_some_and(|pending|
-                pending.order_id==order_id
-            ){
+        // The pending marker is valid only while its matching native cell
+        // reducer is still alive. Recover stale markers for ANY order rather
+        // than permanently blocking the confirmation button.
+        if let Some(pending_id)=self.pending_draft_confirmation.clone(){
+            let save_is_running=self.inline_change.as_ref().is_some_and(|pending|
+                pending.order_id==pending_id
+            );
+            if save_is_running{
+                let message=if pending_id==order_id{
+                    "셀 저장 중입니다. 완료되면 주문 확정을 자동으로 이어갑니다."
+                }else{
+                    "다른 발주서의 셀 저장이 진행 중입니다."
+                };
                 floating_notice::publish(
-                    ctx,"reception.workflow",floating_notice::Tone::Info,
-                    "현재 셀 수정 저장 후 주문 확정을 진행합니다."
+                    ctx,"reception.workflow",floating_notice::Tone::Info,message
                 );
                 return;
             }
             self.pending_draft_confirmation=None;
-        }
-        if self.pending_draft_confirmation.is_some(){
-            floating_notice::publish(
-                ctx,"reception.workflow",floating_notice::Tone::Validation,
-                "다른 발주서의 주문 확인 작업이 진행 중입니다."
-            );
-            return;
         }
 
         if let Some(pending)=self.inline_change.as_mut(){
@@ -7584,8 +7604,9 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                 self.pending_draft_confirmation=Some(order_id.to_owned());
                 floating_notice::publish(
                     ctx,"reception.workflow",floating_notice::Tone::Info,
-                    "현재 셀 수정 저장 후 주문 확정을 진행합니다."
+                    "셀 저장 중입니다. 완료되면 주문 확정을 자동으로 이어갑니다."
                 );
+                ctx.request_repaint();
                 return;
             }
         }
@@ -7598,14 +7619,29 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
             if self.inline_change.is_some(){
                 floating_notice::publish(
                     ctx,"reception.workflow",floating_notice::Tone::Info,
-                    "수정 중인 셀을 저장한 뒤 주문을 확정합니다."
+                    "셀 저장 중입니다. 완료되면 주문 확정을 자동으로 이어갑니다."
                 );
+                ctx.request_repaint();
                 return;
             }
-            // Validation or admission failure restores the editor. Never
-            // advance with an uncommitted value.
+            // Validation/admission failures keep the edit in place. Report
+            // the actual reason; never leave the employee with a silent no-op.
+            if let Some(error)=self.source_save_error.clone(){
+                self.pending_draft_confirmation=None;
+                floating_notice::publish(
+                    ctx,"reception.workflow",floating_notice::Tone::Error,
+                    format!("셀 저장에 실패해 주문 확정을 중단했습니다. {error}")
+                );
+                ctx.request_repaint();
+                return;
+            }
             if self.inline_editor.is_some(){
                 self.pending_draft_confirmation=None;
+                floating_notice::publish(
+                    ctx,"reception.workflow",floating_notice::Tone::Error,
+                    "현재 셀 입력을 저장하지 못했습니다. 입력 내용을 확인한 뒤 다시 시도하세요."
+                );
+                ctx.request_repaint();
                 return;
             }
             self.pending_draft_confirmation=None;
@@ -9602,6 +9638,9 @@ mod reception_workflow_admission_integration_tests {
             next:None,receiver
         });
         app.pending_draft_confirmation=Some("draft-1".into());
+        // A stale error from an earlier attempt must not block this successful
+        // native cell commit from resuming the queued order confirmation.
+        app.source_save_error=Some("이전 작업 오류".into());
         tx.send(Ok(manual_workspace::Event::Applied{
             order_id:"draft-1".into(),raw:"원문".into(),order_type:"AGENCY".into(),
             client_id:None,direct_input:false,
@@ -9618,6 +9657,27 @@ mod reception_workflow_admission_integration_tests {
             .pointer("/model/rows/0/note").and_then(serde_json::Value::as_str),
             Some("저장할 메모"));
         assert!(app.source_save_error.is_none());
+    }
+
+    #[test]
+    fn failed_inline_commit_clears_confirmation_wait_and_keeps_the_error(){
+        let ctx=egui::Context::default();
+        let mut app=app();
+        inline_worker(&mut app);
+        let (tx,receiver)=mpsc::channel();
+        app.inline_change.as_mut().unwrap().receiver=receiver;
+        app.pending_draft_confirmation=Some("draft-1".into());
+        tx.send(Err("운영 데이터 저장 실패".into())).unwrap();
+
+        app.poll_inline_change(&ctx);
+
+        assert!(app.inline_change.is_none());
+        assert!(app.pending_draft_confirmation.is_none());
+        assert!(app.source_save_error.as_deref().is_some_and(|error|
+            error.contains("운영 데이터 저장 실패")
+        ));
+        assert!(app.inline_editor.is_some(),
+            "a failed cell write must preserve the employee's editable value");
     }
 
     #[test]
