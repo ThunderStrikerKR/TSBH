@@ -1045,9 +1045,8 @@ pub struct ManualWorkspace {
 fn manual_recipient_card_height()->f32{
     2.0*theme::RECEPTION_PANE_PADDING_Y
         +theme::SECTION_HEADER_HEIGHT
-        +theme::SECTION_CONTENT_GAP
+        +2.0*theme::SECTION_CONTENT_GAP
         +theme::SOFT_DIVIDER_WIDTH
-        +theme::SPACE_4
         +4.0*theme::INPUT_HEIGHT
         +3.0*theme::RECIPIENT_ROW_GAP
 }
@@ -4034,18 +4033,67 @@ mod manual_workspace_layout_tests{
     fn popup_height_tracks_the_visible_card_stack_and_fixed_modal_chrome(){
         assert_eq!(theme::RECEPTION_PANE_PADDING_Y,16.0);
         assert_eq!(manual_workspace_header_height(),97.0);
-        assert_eq!(manual_recipient_card_height(),247.0);
-        assert_eq!(manual_workspace_columns_height(),603.0);
+        assert_eq!(manual_recipient_card_height(),251.0);
+        assert_eq!(manual_workspace_columns_height(),607.0);
+        assert_eq!(
+            components::docked_section_body_height(manual_recipient_card_height()),
+            4.0*theme::INPUT_HEIGHT+3.0*theme::RECIPIENT_ROW_GAP
+        );
         let work_area=egui::Rect::from_min_size(
             egui::Pos2::ZERO,egui::vec2(1400.0,1000.0)
         );
         let size=manual_workspace_dialog_size(work_area);
         assert_eq!(size.x,1364.0);
-        assert_eq!(size.y,824.0);
+        assert_eq!(size.y,828.0);
         let short_area=egui::Rect::from_min_size(
             egui::Pos2::ZERO,egui::vec2(1400.0,700.0)
         );
         assert_eq!(manual_workspace_dialog_size(short_area).y,700.0);
+    }
+
+    #[test]
+    fn measured_recipient_card_height_matches_manual_workspace_budget(){
+        let ctx=components::test_context();
+        let mut height=0.0;
+        for _ in 0..3 {
+            let _=ctx.run(egui::RawInput{
+                screen_rect:Some(egui::Rect::from_min_size(
+                    egui::Pos2::ZERO,egui::vec2(1200.0,900.0)
+                )),
+                ..Default::default()
+            },|ctx|{
+                egui::CentralPanel::default().show(ctx,|ui|{
+                    ui.spacing_mut().item_spacing.y=0.0;
+                    let measured=ui.scope(|sheet|{
+                        sheet.set_width(800.0);
+                        sheet.spacing_mut().item_spacing.y=0.0;
+                        components::reception_section_with_header(
+                            sheet,"수취인별 주문 정보",0.0,
+                            |header|{
+                                let _=components::reception_recipient_navigator(
+                                    header,"테스트",0,1,true
+                                );
+                            },
+                            |body|{
+                                let mut name="테스트".to_owned();
+                                let mut address="테스트 주소".to_owned();
+                                let mut mobile=String::new();
+                                let mut phone=String::new();
+                                let mut note=String::new();
+                                let _=components::reception_recipient_fields(
+                                    body,&mut name,&mut address,&mut mobile,
+                                    &mut phone,&mut note,[false;5]
+                                );
+                            }
+                        );
+                    });
+                    height=measured.response.rect.height();
+                });
+            });
+        }
+        assert!((height-manual_recipient_card_height()).abs()<=1.0,
+            "recipient card measured {height:.2}pt, budget {:.2}pt",
+            manual_recipient_card_height());
     }
 
     #[test]
