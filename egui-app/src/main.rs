@@ -6566,7 +6566,6 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
         let mut hovered_detail: Option<source_highlight::LinkKey>=None;
         let linked_active=self.active_id.as_deref()
             .and_then(|id|self.link_hover.active_for(id)).cloned();
-        let mut refresh_price:Option<String>=None;
         ui.scope_builder(
             UiBuilder::new().id_salt("details-review").max_rect(review_rect)
                 .layout(Layout::top_down(Align::Min)),
@@ -6580,22 +6579,6 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                         .max_height(components::docked_section_body_height(review_height))
                         .auto_shrink([false, false])
                         .show(ui, |ui| {
-                    // An optional pricing retry is not a second save step.
-                    // Every accepted reception edit is already coalesced by
-                    // source_autosave into the isolated local workspace.
-                    let retry_client=self.active_id.as_deref()
-                        .and_then(|id|self.drafts.iter().find(|draft|draft.id==id))
-                        .and_then(|row|row.client_id.as_ref().filter(|_|
-                            row.pricing_preview.is_none() &&
-                            row.manual_model.is_none() &&
-                            self.client_change.is_none() &&
-                            self.auto_client_change.is_none()
-                        ));
-                    if theme::action(
-                        ui,"Rust 금액 다시 계산",ButtonRole::Standard,retry_client.is_some()
-                    ).clicked(){
-                        refresh_price=retry_client.cloned();
-                    }
                     if let Some(analysis)=&self.analysis {
                         let can_act=self.inline_change.is_none()
                             &&self.inline_editor.is_none()
@@ -6615,9 +6598,6 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
         );
         if let Some(action)=review_action {
             self.handle_review_action(action,ui.ctx());
-        }
-        if let Some(client_id)=refresh_price {
-            self.apply_manual_client(&client_id,ui.ctx());
         }
 
         let mut next_recipient = None;
