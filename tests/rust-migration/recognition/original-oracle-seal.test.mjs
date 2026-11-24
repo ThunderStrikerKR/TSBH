@@ -31,7 +31,8 @@ test("historical price snapshot is reference evidence, not a current-code freeze
   // Modern pricing may legitimately evolve. Never force the original body.
 });
 test("current reception differential never mirrors Rust's temporary null price/fee", () => {
-  assert.match(mergeOracle, /from "\.\.\/\.\.\/\.\.\/src\/shipping\.ts"/);
+  assert.match(mergeOracle, /from "\.\.\/\.\.\/\.\.\/src\/domain\.ts"/);
+  assert.match(mergeOracle, /from "\.\.\/oracles\/legacy-shipping\.ts"/);
   assert.match(mergeOracle, /item\.unitPrice = resolvePrice\(/);
   assert.match(mergeOracle, /next\.shippingFee = pricingClient\.shippingFeeExcluded \? 0 : reco\.total/);
   assert.doesNotMatch(mergeOracle, /item\.unitPrice = null/);

@@ -38,7 +38,7 @@ export function projectHistoricalRemoteDelivery(expected, actual) {
   const projected = {...actual};
   if (!Object.hasOwn(expected, "remoteDelivery") &&
       Object.hasOwn(actual, "remoteDelivery") &&
-      isAddedLegacyMarker(actual.remoteDelivery)) {
+      isAddedLegacyMarker(actual.remoteDelivery, actual)) {
     delete projected.remoteDelivery;
   }
   for (const key of Object.keys(projected)) {
