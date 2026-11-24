@@ -862,6 +862,7 @@ pub fn apply_inline(
     Ok(Event::Applied{
         order_id:source.id.clone(),raw:source.raw.clone(),
         order_type:source.order_type.clone(),client_id:source.client_id.clone(),
+        direct_input:false,
         model,assignment_order:keys.iter().filter_map(Value::as_str)
             .map(str::to_owned).collect(),
         order:updated,quote,quote_error
