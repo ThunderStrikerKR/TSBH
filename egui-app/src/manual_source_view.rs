@@ -2,6 +2,7 @@
 //! reception intake. This module owns only the worksheet's click-to-assign
 //! action; linked spans, hover timing, visual blocks and hit testing are shared.
 
+use std::collections::HashSet;
 use eframe::egui::{self, Align, FontId, Sense, Ui};
 use crate::{source_highlight::{self,LinkKey,LinkedSpan},theme,typography};
 
@@ -20,14 +21,15 @@ pub fn source_document(
     ui:&mut Ui,
     raw:&str,
     spans:&[LinkedSpan],
+    assigned_ids:&HashSet<String>,
     selected_recipient:Option<&str>,
     active:Option<&LinkKey>,
     scroll_to:Option<&LinkKey>,
     enabled:bool,
 )->SourceInteraction {
     let width=ui.available_width().max(1.0);
-    let job=source_highlight::layout(
-        raw,spans,selected_recipient,active,width,
+    let job=source_highlight::layout_manual(
+        raw,spans,selected_recipient,active,assigned_ids,width,
         FontId::proportional(typography::FONT_RECEPTION_SOURCE_TEXT),
         theme::TEXT,
     );
@@ -36,8 +38,8 @@ pub fn source_document(
         egui::vec2(width,galley.size().y.max(theme::INPUT_HEIGHT)),
         if enabled{Sense::click()}else{Sense::hover()},
     );
-    let (fills,outlines)=source_highlight::block_shapes(
-        raw,&galley,rect.min,spans,selected_recipient,active,
+    let (fills,outlines)=source_highlight::block_shapes_manual(
+        raw,&galley,rect.min,spans,selected_recipient,active,assigned_ids,
         rect.intersect(ui.clip_rect()),
     );
     ui.painter().add(egui::Shape::Vec(fills));
@@ -99,7 +101,7 @@ mod tests {
                 ui.set_width(320.0);
                 *origin=ui.cursor().min;
                 interaction=source_document(
-                    ui,raw,spans,None,None,None,enabled
+                    ui,raw,spans,&HashSet::new(),None,None,None,enabled
                 );
             });
         });
