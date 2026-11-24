@@ -683,9 +683,15 @@ fn add_selected_manual_product(
 pub fn apply_inline(
     gateway:&dyn BandoGateway,source:&WorkingReception,change:&InlineRequest
 )->Result<Event,String>{
-    let evidence=source.analysis_evidence.as_ref()
-        .ok_or("최초 Rust 인식 결과가 없습니다.")?;
-    let order=native_order(gateway,source,evidence)?;
+    let direct_input=source.raw.trim().is_empty() &&
+        source.manual_model.as_ref().is_some_and(|saved|text(saved,"mode")=="DIRECT");
+    let order=if direct_input{
+        native_direct_order(gateway,source)?
+    }else{
+        let evidence=source.analysis_evidence.as_ref()
+            .ok_or("최초 Rust 인식 결과가 없습니다.")?;
+        native_order(gateway,source,evidence)?
+    };
     let previous=source.manual_model.as_ref();
     let initialized=rule(gateway,json!({
         "action":"initial_manual","order":&order,
@@ -862,7 +868,7 @@ pub fn apply_inline(
     Ok(Event::Applied{
         order_id:source.id.clone(),raw:source.raw.clone(),
         order_type:source.order_type.clone(),client_id:source.client_id.clone(),
-        direct_input:false,
+        direct_input,
         model,assignment_order:keys.iter().filter_map(Value::as_str)
             .map(str::to_owned).collect(),
         order:updated,quote,quote_error
