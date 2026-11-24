@@ -2,43 +2,78 @@
 //! Validates the current and requested state, synchronizes core relation rows,
 //! legacy indexes and immutable receipt archive, and commits atomically.
 
-use rusqlite::{params, Connection, OptionalExtension};
+use rusqlite::{params, Connection, OptionalExtension, Transaction};
 use serde_json::{json,Value};
 use crate::{validate_brands,validate_clients};
 fn err<E:std::fmt::Display>(e:E)->String{e.to_string()}
 #[path = "../../../src-tauri/src/reception.rs"]
 mod reception;
 
-pub fn write_v2_snapshot(conn: &mut Connection, mut state: Value, expected_revision: u64, validate_orders: bool) -> Result<Value, String> {
-    // Workbook imports and stale editors must not persist the retired
-    // textual color placeholder in operational SQLite.
-    crate::product_colors::normalize_products(&mut state)?;
-    crate::valid_state(&state)?;
-    let version:i64=conn.query_row(
+fn read_current(tx:&Transaction<'_>,expected_revision:u64)->Result<Value,String>{
+    let version:i64=tx.query_row(
         "SELECT version FROM core_schema WHERE key='business-core'",
         [],|row|row.get(0),
     ).map_err(err)?;
     if version!=2 {return Err("지원하지 않는 운영 DB 버전입니다.".into());}
-    let tx = conn.transaction().map_err(err)?;
-    let current = crate::read_v2_snapshot(&tx)?;
-    let current_revision = current["revision"].as_u64().unwrap_or(0);
-    if current_revision != expected_revision {
+    let current=crate::read_v2_snapshot(tx)?;
+    if current["revision"].as_u64()!=Some(expected_revision){
         return Err("다른 작업에서 데이터가 수정되었습니다. 새로고침 후 다시 저장하세요.".into());
     }
-    validate_clients(&current, &state)?;
-    validate_brands(&current, &state)?;
-    if validate_orders { reception::validate_reception(&current, &state)?; }
-    let archive_entries = reception::new_archive_entries(&current, &state)?;
+    Ok(current)
+}
+
+pub fn write_v2_snapshot(conn: &mut Connection, mut state: Value, expected_revision: u64, validate_orders: bool) -> Result<Value, String> {
+    crate::product_colors::normalize_products(&mut state)?;
+    crate::valid_state(&state)?;
+    let tx=conn.transaction().map_err(err)?;
+    let current=read_current(&tx,expected_revision)?;
+    let written=write_validated(&tx,&current,state,expected_revision,validate_orders)?;
+    tx.commit().map_err(err)?;
+    Ok(written)
+}
+
+/// A native read-modify-write uses one consistent before-image for the
+/// reducer AND all write validations. No UI-supplied snapshot is trusted.
+/// The deferred transaction rolls back on reducer/validation errors or if
+/// a concurrent writer makes the read snapshot impossible to upgrade.
+pub fn update_v2_snapshot<F>(
+    conn:&mut Connection,expected_revision:u64,validate_orders:bool,mutate:F
+)->Result<Value,String>
+where F:FnOnce(&Value)->Result<Value,String>{
+    let tx=conn.transaction().map_err(err)?;
+    let current=read_current(&tx,expected_revision)?;
+    let mut state=mutate(&current)?;
+    crate::product_colors::normalize_products(&mut state)?;
+    crate::valid_state(&state)?;
+    let written=write_validated(&tx,&current,state,expected_revision,validate_orders)?;
+    // Read the persisted relational projection while still holding the
+    // transaction. A failed verification must roll back, not report a
+    // failure after a successful commit.
+    let verified=crate::read_v2_snapshot(&tx)?;
+    if verified["revision"]!=written["revision"]{
+        return Err("업무 저장 검증에 실패했습니다.".into());
+    }
+    tx.commit().map_err(err)?;
+    Ok(verified)
+}
+
+fn write_validated(tx:&Transaction<'_>,current:&Value,mut state:Value,
+    current_revision:u64,validate_orders:bool)->Result<Value,String>{
+    validate_clients(current, &state)?;
+    validate_brands(current, &state)?;
+    if validate_orders { reception::validate_reception(current, &state)?; }
+    let archive_entries = reception::new_archive_entries(current, &state)?;
     let products_changed = current["products"] != state["products"];
     let clients_changed = current["clients"] != state["clients"];
     let orders_changed = current["orders"] != state["orders"];
-    state["revision"] = json!(current_revision + 1);
+    state["revision"] = json!(current_revision.checked_add(1)
+        .ok_or("운영 DB revision 범위를 초과했습니다.")?);
     // The constrained SQLite tables own products, clients and orders.
     // Keep only non-core data in the compatibility envelope, atomically.
     let mut envelope = state.clone();
     // Settings-only changes never rewrite unchanged core rows.
     if products_changed || clients_changed || orders_changed {
-        crate::store_v2_relational(&tx, &state)?;
+        crate::store_v2_relational(tx, &state)?;
     }
     let root=envelope.as_object_mut().ok_or("업무 상태는 객체여야 합니다.")?;
     for key in ["products","clients","orders"] {root.remove(key);}
@@ -92,6 +127,5 @@ pub fn write_v2_snapshot(conn: &mut Connection, mut state: Value, expected_revis
             ).map_err(err)?;
         }
     }
-    tx.commit().map_err(err)?;
     Ok(state)
 }

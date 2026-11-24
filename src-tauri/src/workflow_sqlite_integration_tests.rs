@@ -898,3 +898,49 @@ fn scoped_freight_reconciliation_matches_full_for_target_and_preserves_other_ord
     })).is_err());
     assert_eq!(get_snapshot(&conn).unwrap(),before);
 }
+
+#[test]
+fn native_snapshot_update_reuses_authoritative_before_image_and_rolls_back(){
+    let (isolated,mut conn)=IsolatedDatabase::open();
+    let initial=get_snapshot(&conn).unwrap();
+    let fixture=stage_three(&initial,"POSTPAID");
+    let saved=write_snapshot(&mut conn,fixture,0,true).unwrap();
+    let revision=saved["revision"].as_u64().unwrap();
+    let mut calls=0;
+    let committed=bando_data_access::update_v2_snapshot(&mut conn,revision,true,|current|{
+        calls+=1;
+        assert_eq!(current,&saved);
+        let result=rust("apply_workflow_action",json!({
+            "state":current,"action":"set_shipment_freight",
+            "groupId":"group:synthetic","shipmentId":"shipment:synthetic",
+            "origin":"FACTORY","appliedCharge":4000,
+            "eventId":"event:transaction-freight","now":"2026-11-25T09:00:00+09:00",
+            "actor":"검증 담당자"
+        }))?;
+        let changed=result["state"].clone();
+        rust("validate_workflow",json!({"state":&changed,"before":current}))?;
+        Ok(changed)
+    }).expect("transactional freight update");
+    assert_eq!(calls,1);
+    assert_eq!(committed["revision"],revision+1);
+    assert_eq!(committed["workflow"]["shipments"][0]["charges"]["FACTORY"],4000);
+    assert_eq!(get_snapshot(&conn).unwrap(),committed);
+    let stale=bando_data_access::update_v2_snapshot(&mut conn,revision,true,|_|{
+        panic!("stale revision must be rejected before the reducer runs")
+    });
+    assert!(stale.is_err());
+    let rejected=bando_data_access::update_v2_snapshot(&mut conn,revision+1,true,|_|{
+        Err("synthetic reducer failure".into())
+    });
+    assert!(rejected.is_err());
+    let invalid=bando_data_access::update_v2_snapshot(&mut conn,revision+1,true,|current|{
+        let mut state=current.clone();
+        state["orders"]=Value::Null;
+        Ok(state)
+    });
+    assert!(invalid.is_err());
+    assert_eq!(get_snapshot(&conn).unwrap(),committed);
+    drop(conn);
+    let reopened=initialize_database(&isolated.root.join("state.sqlite")).unwrap();
+    assert_eq!(get_snapshot(&reopened).unwrap(),committed);
+}

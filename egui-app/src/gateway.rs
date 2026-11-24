@@ -586,11 +586,9 @@ impl BandoGateway for LocalGateway {
             }
             previous=now;
         };
-        let before=bando_data_access::read_v2_snapshot(&conn)?;
+        let verified=bando_data_access::update_v2_snapshot(
+            &mut conn,expected_revision,true,|before|{
         checkpoint("read_snapshot");
-        if before["revision"].as_u64()!=Some(expected_revision){
-            return Err("다른 작업에서 주문이 변경되었습니다. 새로고침 후 다시 진행하세요.".into());
-        }
         // An unconfirmed egui draft may enter the operational ledger ONLY
         // through the explicit first-stage approval. The full Order is a
         // fresh native quote result, not the isolated WorkingReception row.
@@ -794,25 +792,15 @@ impl BandoGateway for LocalGateway {
             "state":&changed,"before":&before
         }))?;
         checkpoint("validate");
-        if changed==before{
+        if &changed==before{
             return Err("현재 상태에서 수행할 변경이 없습니다.".into());
         }
-        // The same authoritative writer as Tauri: transactional revision
-        // compare, relational order validation, audit and single commit.
-        let written=bando_data_access::write_v2_snapshot(
-            &mut conn,changed,expected_revision,true
-        )?;
-        checkpoint("write_transaction");
-        let committed_revision=written["revision"].as_u64()
-            .ok_or("업무 처리 결과의 revision이 없습니다.")?;
-        drop(conn);
-        let verified=self.load_business_state()?;
-        if verified["revision"].as_u64()!=Some(committed_revision){
-            return Err("저장 후 다른 작업에서 상태가 변경되었습니다. 다시 조회하세요.".into());
-        }
-        checkpoint("verify_committed_snapshot");
-        // Reuse the verified, hydrated DB state for the board instead of
-        // immediately opening and reading the complete database again.
+        Ok(changed)
+        })?;
+        // Same transactional before-image, validation, write, and persisted
+        // projection verification. A concurrent update cannot be mistaken
+        // for a failed commit after the employee's own write succeeded.
+        checkpoint("write_verify_commit");
         Ok(verified)
     }
     // The egui intake is a local autosaved draft, NOT a separate
