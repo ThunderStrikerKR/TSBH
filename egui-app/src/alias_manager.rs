@@ -365,7 +365,7 @@ impl AliasManager {
                                 .find(|c|field(c,"id")==field(item,"clientId"))
                                 .map(|c|field(c,"name")).unwrap_or("")
                         };
-                        list.horizontal(|row|{
+                        let _row=list.horizontal(|row|{
                             row.vertical(|info|{
                                 info.label(typography::body(field(item,"text")));
                                 info.label(typography::caption(
@@ -379,6 +379,8 @@ impl AliasManager {
                                 }
                             });
                         });
+                        #[cfg(test)]
+                        components::general_screen_geometry_tests::record("catalog data row",_row.response.rect);
                         components::soft_divider(list);
                     }
                 });
