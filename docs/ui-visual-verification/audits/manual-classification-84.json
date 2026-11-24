@@ -32,9 +32,10 @@
     "688f996320e28870293ca56521391e7e4cfe1270",
     "f5ec9d4a7b6d301058e2f91bfbd6833f5f9b57ff",
     "18cd47fa8a2bd1de1ba7a8a3a010e856685172c9",
-    "0a3e8bca33f6bed501dc9b25960f6ae67f95eb93"
+    "0a3e8bca33f6bed501dc9b25960f6ae67f95eb93",
+    "5b6af536b0f3e878d2bda4b172df23d65ff72d0c"
   ],
-  "reason": "2026-11-24 사용자가 Windows 실행 화면을 제시하여 UI 클리핑 및 레이아웃 품질 불합격을 확인했다. 자료에 배송지/연락처가 포함되어 공개 GitHub 저장소에 원본 스크린샷은 올리지 않는다. 배송 건수 증감 버튼의 날짜 선택기 스타일 통합 패치는 main에 반영됐으나 Windows 실화면 재검증 전이므로 기존 FAIL을 유지한다. 2026-11-24 후속: 배송 건수 컨트롤을 단일 segmented UI로 교체하고 1/1 네비게이터의 이름/진행도를 유지하도록 수정했다. Windows 실화면 확인 전까지 FAIL 유지. 2026-11-24 후속: 배송 건수 입력부를 단일 segmented UI로 통합하고 1/1 네비게이터의 이름/진행도를 유지하도록 수정했다. 최신 Windows CI 및 실화면 검증이 끝날 때까지 FAIL 유지. 2026-11-24 후속: 배송 건수 일체형 segmented 컨트롤 및 1/1 네비게이터 구현. Windows cargo check 및 관련 회귀 workflow 전체 PASS. 사용자의 실제 실행 화면 시각 검증 전까지 visualStatus FAIL 유지.",
+  "reason": "2026-11-24 사용자가 Windows 실행 화면을 제시하여 UI 클리핑 및 레이아웃 품질 불합격을 확인했다. 자료에 배송지/연락처가 포함되어 공개 GitHub 저장소에 원본 스크린샷은 올리지 않는다. 배송 건수 증감 버튼의 날짜 선택기 스타일 통합 패치는 main에 반영됐으나 Windows 실화면 재검증 전이므로 기존 FAIL을 유지한다. 2026-11-24 후속: 배송 건수 컨트롤을 단일 segmented UI로 교체하고 1/1 네비게이터의 이름/진행도를 유지하도록 수정했다. Windows 실화면 확인 전까지 FAIL 유지. 2026-11-24 후속: 배송 건수 입력부를 단일 segmented UI로 통합하고 1/1 네비게이터의 이름/진행도를 유지하도록 수정했다. 최신 Windows CI 및 실화면 검증이 끝날 때까지 FAIL 유지. 2026-11-24 후속: 배송 건수 일체형 segmented 컨트롤 및 1/1 네비게이터 구현. Windows cargo check 및 관련 회귀 workflow 전체 PASS. 사용자의 실제 실행 화면 시각 검증 전까지 visualStatus FAIL 유지. 2026-11-25 후속: 수동분류 발주원문 패널을 접수 화면과 동일한 reception_section_with_header_tooltip 및 source_document_frame으로 통합했다. 공통 카드 프레임, 16pt 좌우/8pt 상하 패딩, 구분선, 원문 콘텐츠 4pt 내부 여백을 공유한다. Rust 컴파일 및 수동분류 레이아웃·기능 회귀 테스트는 PASS. 변경된 소스 blob과 동일한 Windows 실화면 캡처 및 실제 조작 검증은 아직 없어 visualStatus FAIL 및 기존 OPEN 결함은 유지한다.",
   "defects": [
     {
       "id": "UI-84-CLIP-001",
@@ -305,5 +306,29 @@
   },
   "latestDocs": {
     "docs/manual-classification-ui-84.md": "bf9edc5e6e93365a168f7964d8b496de746eab0f"
+  },
+  "sourcePaneLayoutUnification": {
+    "status": "PATCH_COMMITTED_WINDOWS_UNVERIFIED",
+    "date": "2026-11-25",
+    "request": "접수화면과 수동분류 화면의 발주원문 블록 내부 여백과 공통 프레임 통일",
+    "commit": "5b6af536b0f3e878d2bda4b172df23d65ff72d0c",
+    "files": [
+      "egui-app/src/components.rs",
+      "egui-app/src/manual_workspace.rs"
+    ],
+    "implementation": [
+      "수동분류 원문 패널에서 reception_section_with_header_tooltip 공통 렌더러 사용",
+      "접수화면과 동일한 docked_pane_frame, 16pt 좌우/8pt 상하 여백, 제목 행, 하단 구분선 적용",
+      "원문 텍스트 표면에 source_document_frame 적용: 4pt 내부 여백, 동일한 배경·테두리·모서리",
+      "기존 원문 배정, 클릭·드래그, 호버 연결, 스크롤 및 제목 툴팁 유지"
+    ],
+    "verification": {
+      "rustCompile": "PASS",
+      "manualWorkspaceLayoutTests": "PASS",
+      "manualModalRegression": "PASS",
+      "linkedSourceRegression": "PASS",
+      "windowsVisual": "NOT_VERIFIED"
+    },
+    "visualDecision": "FAIL_UNTIL_VERSION_BOUND_WINDOWS_SCREENSHOTS_AND_INTERACTION_REVIEW"
   }
 }
