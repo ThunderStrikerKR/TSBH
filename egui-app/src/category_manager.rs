@@ -713,10 +713,9 @@ impl CategoryManager {
                         tree.add_space(theme::SPACE_16);
                         tree.label(typography::subsection_heading(
                             &format!("상위 분류 소속 확인 ({})",legacy.len())
-                        ));
-                        tree.label(typography::caption(
+                        )).on_hover_text(
                             "기존 분류의 소속은 자동으로 변경하지 않습니다. 선택 후 위치를 지정하세요."
-                        ));
+                        );
                         for row in &legacy{
                             self.node(tree,&cats,&index,row,0,&[],true);
                         }

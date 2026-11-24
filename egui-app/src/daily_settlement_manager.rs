@@ -298,7 +298,7 @@ fn report_table<const N:usize>(
     ui:&mut Ui,id:&str,headings:[&str;N],base:[f32;N],
     align:[Align2;N],roles:[typography::ManagementTableCellRole;N],
     stretch_column:usize,indices:&[usize],
-    sort:&mut Option<Sort>,format_row:impl Fn(usize)->[String;N],
+    sort:&mut Option<Sort>,empty_notice:Option<&str>,format_row:impl Fn(usize)->[String;N],
 ){
     ui.spacing_mut().scroll=theme::management_table_scroll_style();
     let previous_gap=ui.spacing().item_spacing.y;
@@ -379,6 +379,7 @@ fn report_table<const N:usize>(
             }
         }
     );
+    components::management_body_state_overlay(ui,scroll.inner_rect,empty_notice);
     ui.spacing_mut().item_spacing.y=previous_gap;
     let left=first_x.unwrap_or(header.left()-scroll.state.offset.x);
     let header_cells=cells(egui::pos2(left,header.top()),&widths,HEADER_HEIGHT);
@@ -532,8 +533,11 @@ impl DailySettlementManager{
         });
         ui.add_space(theme::SPACE_16);
         components::align_management_primary_card(ui,page_origin_y);
-        let report=self.report.as_ref();
+        let missing=Value::Null;
+        let mut visible_report=self.report.as_ref();
         let mut date_changed=false;
+        let unavailable=self.error.as_deref().unwrap_or("해당 날짜의 결산 자료를 불러올 수 없습니다.");
+        let loading=self.receiver.is_some();
         egui::ScrollArea::vertical()
             .id_salt("daily-settlement-sections")
             .auto_shrink([false,false])
@@ -548,19 +552,8 @@ impl DailySettlementManager{
                         &mut self.calendar_month
                     );
                     components::soft_divider(section);
-                    if date_changed{
-                        return;
-                    }
-                    let Some(report)=report else{
-                        if let Some(error)=self.error.as_deref(){
-                            section.label(typography::status(error,theme::DANGER));
-                        }else if self.receiver.is_none(){
-                            section.label(typography::caption(
-                                "해당 날짜의 결산 자료를 불러올 수 없습니다."
-                            ));
-                        }
-                        return;
-                    };
+                    if date_changed{visible_report=None;}
+                    let report=visible_report.unwrap_or(&missing);
                     let orders=rows(&report["orderRows"]);
                     section.label(typography::subsection_heading(
                         "해당 날짜 접수 주문 / 청구 내역"
@@ -578,19 +571,19 @@ impl DailySettlementManager{
                             ("현재 미수 확인분","outstandingKnown"),
                             ("현재 공장 운임 확인분","actualFreightKnown"),
                         ]{
-                            metric(line,title,won(&report[key]));
+                            metric(line,title,if visible_report.is_some(){won(&report[key])}else{"—".to_owned()});
                         }
                     });
                     section.add_space(theme::SPACE_8);
                     section.horizontal(|review|{
                         review.spacing_mut().item_spacing.x=theme::SPACE_12;
                         review.label(typography::caption(&format!(
-                            "미수 미확정 {}건",
-                            report["outstandingUnknown"].as_u64().unwrap_or(0)
+                            "미수 미확정 {}",
+                            report["outstandingUnknown"].as_u64().map(|n|format!("{n}건")).unwrap_or_else(||"—".into())
                         )));
                         review.label(typography::caption(&format!(
-                            "실제 운임 미확정 {}건",
-                            report["freightUnknown"].as_u64().unwrap_or(0)
+                            "실제 운임 미확정 {}",
+                            report["freightUnknown"].as_u64().map(|n|format!("{n}건")).unwrap_or_else(||"—".into())
                         )));
                         settings_help::icon(review,"미수금과 실제 운임");
                     });
@@ -609,7 +602,11 @@ impl DailySettlementManager{
                         [typography::ManagementTableCellRole::ClientName,typography::ManagementTableCellRole::Status,
                          typography::ManagementTableCellRole::Money,typography::ManagementTableCellRole::Money,typography::ManagementTableCellRole::Money,typography::ManagementTableCellRole::RowTotal,
                          typography::ManagementTableCellRole::Money,typography::ManagementTableCellRole::Money],
-                        0,&indices,&mut self.order_sort,|index|{
+                        0,&indices,&mut self.order_sort,
+                        if visible_report.is_none(){
+                            if date_changed||loading{None}else{Some(unavailable)}
+                        }else if orders.is_empty(){Some("해당 날짜에 접수한 주문이 없습니다.")}else{None},
+                        |index|{
                             let order=&orders[index];
                             [
                                 format!("{} · {}",field(order,"clientName"),field(order,"status")),
@@ -623,15 +620,8 @@ impl DailySettlementManager{
                             ]
                         }
                     );
-                    if orders.is_empty(){
-                        section.add_space(theme::SPACE_8);
-                        section.label(typography::caption(
-                            "해당 날짜에 접수한 주문이 없습니다."
-                        ));
-                    }
                 });
-                if date_changed{return;}
-                let Some(report)=report else{return;};
+                let report=visible_report.unwrap_or(&missing);
                 let payments=rows(&report["paymentRows"]);
                 body.add_space(theme::SPACE_12);
                 theme::section_frame().show(body,|section|{
@@ -648,7 +638,7 @@ impl DailySettlementManager{
                             ("배송 건 배분액","allocatedCash"),
                             ("미배분 입금액","unallocatedCash"),
                         ]{
-                            metric(line,title,won(&report[key]));
+                            metric(line,title,if visible_report.is_some(){won(&report[key])}else{"—".to_owned()});
                         }
                     });
                     section.add_space(theme::SPACE_12);
@@ -665,7 +655,11 @@ impl DailySettlementManager{
                         [typography::ManagementTableCellRole::Text,typography::ManagementTableCellRole::ClientName,typography::ManagementTableCellRole::Description,
                          typography::ManagementTableCellRole::Money,typography::ManagementTableCellRole::Money,typography::ManagementTableCellRole::Money,
                          typography::ManagementTableCellRole::Description],
-                        6,&indices,&mut self.payment_sort,|index|{
+                        6,&indices,&mut self.payment_sort,
+                        if visible_report.is_some()&&payments.is_empty(){
+                            Some("해당 날짜의 실제 입금 기록이 없습니다.")
+                        }else{None},
+                        |index|{
                             let payment=&payments[index];
                             [
                                 seoul_datetime(field(payment,"paidAt")),
@@ -678,26 +672,19 @@ impl DailySettlementManager{
                             ]
                         }
                     );
-                    if payments.is_empty(){
-                        section.add_space(theme::SPACE_8);
-                        section.label(typography::caption(
-                            "해당 날짜의 실제 입금 기록이 없습니다."
-                        ));
-                    }
                 });
-                if let Some(warnings)=report["warnings"].as_array()
-                    .filter(|warnings|!warnings.is_empty()){
-                    body.add_space(theme::SPACE_12);
-                    theme::section_frame().show(body,|review|{
-                        review.label(typography::section_heading("결산 검토 사항"));
-                        components::soft_divider(review);
-                        for warning in warnings{
+                body.add_space(theme::SPACE_12);
+                theme::section_frame().show(body,|review|{
+                    review.label(typography::section_heading("결산 검토 사항"));
+                    components::soft_divider(review);
+                    components::fixed_result_viewport(review,"settlement-warnings",100.0,|list|{
+                        for warning in rows(&report["warnings"]){
                             if let Some(message)=warning.as_str(){
-                                review.label(typography::body(message));
+                                list.label(typography::body(message));
                             }
                         }
                     });
-                }
+                });
             });
         if date_changed{self.refresh(ui.ctx().clone());}
     }

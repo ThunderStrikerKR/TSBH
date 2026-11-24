@@ -100,10 +100,52 @@ pub fn fixed_row<R>(
     let mut row=ui.new_child(
         UiBuilder::new().max_rect(rect).layout(layout)
     );
-    row.set_clip_rect(rect);
+    row.set_clip_rect(rect.intersect(ui.clip_rect()));
     row.spacing_mut().item_spacing.y=0.0;
     let result=add_contents(&mut row);
     (rect,result)
+}
+
+/// A result list owns one bounded viewport regardless of its content.
+pub fn fixed_result_viewport<R>(
+    ui:&mut Ui,id:&str,height:f32,render:impl FnOnce(&mut Ui)->R
+)->(Rect,R){
+    let width=ui.available_width();
+    fixed_row(ui,Vec2::new(width,height),Layout::top_down(Align::Min),|pane|{
+        pane.set_min_height(height);
+        egui::ScrollArea::vertical().id_salt(id)
+            .max_height(height).auto_shrink([false,false])
+            .show(pane,render).inner
+    })
+}
+
+#[cfg(test)]
+mod result_viewport_invariance_tests{
+    use super::*;
+    #[test]
+    fn empty_pending_and_populated_lists_keep_following_controls_fixed(){
+        for width in [480.0,800.0,1200.0]{
+            let mut baseline:Option<[(&str,Rect);2]>=None;
+            for count in [0,1,30]{
+                let ctx=test_context();
+                let _=ctx.run(egui::RawInput{
+                    screen_rect:Some(Rect::from_min_size(egui::Pos2::ZERO,Vec2::new(width,800.0))),
+                    ..Default::default()
+                },|ctx|{
+                    egui::CentralPanel::default().show(ctx,|ui|{
+                        let (slot,())=fixed_result_viewport(ui,"results",180.0,|list|{
+                            for _ in 0..count{list.label("상품 검색 결과");}
+                        });
+                        let next=theme::action(ui,"다음 조작부",theme::ButtonRole::Standard,true);
+                        let current=[("results",slot),("next",next.rect)];
+                        if let Some(previous)=baseline.as_ref(){
+                            assert_layout_rects_invariant(previous,&current);
+                        }else{baseline=Some(current);}
+                    });
+                });
+            }
+        }
+    }
 }
 
 /// One-line status slot for state-dependent text. It always reserves the

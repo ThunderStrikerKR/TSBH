@@ -364,6 +364,8 @@ impl ModelGroupManager {
                                             "상품명으로 찾아서 추가");
                                     });
                                     let assigned=self.membership();
+                                    components::fixed_result_viewport(
+                                        body,"model-group-search-results",180.0,|results|{
                                     if !self.search.trim().is_empty(){
                                         let query=self.search.trim().to_lowercase();
                                         let choices=items(&catalog["products"]).iter()
@@ -374,10 +376,13 @@ impl ModelGroupManager {
                                                 text(p,"subtitle")).to_lowercase().contains(&query))
                                             .take(30).cloned().collect::<Vec<_>>();
                                         if choices.is_empty()&&!eligibility_pending{
-                                            body.label(typography::body("일치하는 상품이 없습니다."));
+                                            components::management_body_state_overlay(
+                                                results,results.available_rect_before_wrap(),
+                                                Some("일치하는 상품이 없습니다.")
+                                            );
                                         }
                                         for p in choices{
-                                            body.horizontal(|row|{
+                                            results.horizontal(|row|{
                                                 row.vertical(|name|{
                                                     name.label(typography::body(text(&p,"name")));
                                                     if !text(&p,"subtitle").is_empty(){
@@ -403,9 +408,10 @@ impl ModelGroupManager {
                                                         }
                                                     });
                                             });
-                                            components::soft_divider(body);
+                                            components::soft_divider(results);
                                         }
                                     }
+                                    });
                                     body.add_space(theme::SPACE_16);
                                     components::soft_divider(body);
                                     body.horizontal(|heading|{
@@ -429,11 +435,16 @@ impl ModelGroupManager {
                                     );
                                     let ids=items(&g["productIds"]).iter().filter_map(Value::as_str)
                                         .map(str::to_owned).collect::<Vec<_>>();
+                                    components::fixed_result_viewport(
+                                        body,"model-group-registered-products",220.0,|registered|{
                                     if ids.is_empty(){
-                                        body.label(typography::body("위에서 상품을 검색해 추가하세요."));
+                                        components::management_body_state_overlay(
+                                            registered,registered.available_rect_before_wrap(),
+                                            Some("위에서 상품을 검색해 추가하세요.")
+                                        );
                                     }
                                     for id in ids{
-                                        body.horizontal(|row|{
+                                        registered.horizontal(|row|{
                                             if let Some(p)=product(catalog,&id){
                                                 row.vertical(|info|{
                                                     info.label(typography::body(text(p,"name")));
@@ -457,11 +468,11 @@ impl ModelGroupManager {
                                                         }
                                                         self.status.clear();
                                                     }
-                                                    if text(&g,"representativeProductId")==id{
-                                                        actions.label(typography::caption("대표모델"));
-                                                    }else if theme::action(actions,"대표 지정",
+                                                    let representative=text(&g,"representativeProductId")==id;
+                                                    if theme::action_with_min_width(actions,
+                                                        if representative{"대표모델"}else{"대표 지정"},
                                                         theme::ButtonRole::Standard,
-                                                        writable&&!busy&&product(catalog,&id).is_some()
+                                                        !representative&&writable&&!busy&&product(catalog,&id).is_some(),100.0
                                                     ).clicked(){
                                                         self.draft[&self.selected]
                                                             ["representativeProductId"]=json!(id);
@@ -473,8 +484,9 @@ impl ModelGroupManager {
                                                     }
                                                 });
                                         });
-                                        components::soft_divider(body);
+                                        components::soft_divider(registered);
                                     }
+                                    });
                                 });
                             components::soft_divider(right);
                             right.horizontal(|footer|{

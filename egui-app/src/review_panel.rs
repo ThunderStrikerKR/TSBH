@@ -161,8 +161,10 @@ impl ReviewPanel {
         ui.label(typography::caption(&format!(
             "조치 {}건 / 안내 {}건",actions.len(),info_count
         )));
-        if actions.is_empty(){
-            ui.label(typography::body("필수 확인 사항 없음"));
+        if actions.is_empty() && facts.is_empty() && remote.is_none(){
+            crate::components::management_body_state_overlay(
+                ui,ui.available_rect_before_wrap(),Some("필수 확인 사항 없음")
+            );
         }
         for issue in actions {
             issue_card(ui,issue,analysis,interactive,&mut selected);

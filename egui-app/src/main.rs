@@ -6572,21 +6572,18 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                     // An optional pricing retry is not a second save step.
                     // Every accepted reception edit is already coalesced by
                     // source_autosave into the isolated local workspace.
-                    if let Some(row)=self.active_id.as_deref()
+                    let retry_client=self.active_id.as_deref()
                         .and_then(|id|self.drafts.iter().find(|draft|draft.id==id))
-                    {
-                        if let Some(client_id)=row.client_id.as_ref().filter(|_|
+                        .and_then(|row|row.client_id.as_ref().filter(|_|
                             row.pricing_preview.is_none() &&
                             row.manual_model.is_none() &&
                             self.client_change.is_none() &&
                             self.auto_client_change.is_none()
-                        ){
-                            if theme::action(
-                                ui,"Rust 금액 다시 계산",ButtonRole::Quiet,true
-                            ).clicked(){
-                                refresh_price=Some(client_id.clone());
-                            }
-                        }
+                        ));
+                    if theme::action(
+                        ui,"Rust 금액 다시 계산",ButtonRole::Standard,retry_client.is_some()
+                    ).clicked(){
+                        refresh_price=retry_client.cloned();
                     }
                     if let Some(analysis)=&self.analysis {
                         let can_act=self.inline_change.is_none()
