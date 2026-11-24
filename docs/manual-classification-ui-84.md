@@ -38,7 +38,7 @@
 | DIFF | NOT_VERIFIED | React 원본 대비 실제 동작 동등성·비동기 순서 역전 미검증 |
 | ACTION | NOT_VERIFIED | 마우스·키보드·IME·다건 배송 시나리오 실제 앱 재현 필요 |
 | CI | NOT_VERIFIED | 마지막 패치 커밋의 GitHub combined status 반환값이 빈 목록; 성공/실패 판정 불가 |
-| WINDOWS | NOT_VERIFIED | Windows 실화면·DPI·클리핑·스크롤 미실행 |
+| WINDOWS / VISUAL | **FAIL** | 사용자가 2026-11-24 실제 Windows 실행 캡처 제공. 우측 발송·운임 버튼 하단 클리핑 확인. `docs/ui-visual-verification/audits/manual-classification-84.json`에 결함 OPEN 기록. |
 
 ## 후속 검증 시나리오
 
@@ -48,4 +48,4 @@
 4. 1920×1080 및 축소 창에서 원문/편집 영역의 독립 스크롤, 상품명 툴팁, 입력 글꼴 16pt와 클리핑 확인.
 5. 도서/산간, 착불, 운임 수정, 상품 검색/제거, 초기화, 초안 적용, 취소의 이전 동작 회귀 확인.
 
-**현재 판정:** 코드 변경은 반영됨. 단위 테스트 작성은 검증 실행과 구분하며, CI 및 Windows 앱 검증까지 통과했다고 선언하지 않는다.
+**84차 최종 재판정(2026-11-24):** 코드 변경 커밋은 존재하지만, **UI 실화면 품질은 FAIL / 승인 보류**. 사용자 실제 실행 캡처에서 하단 콘텐츠 클리핑·좌우 정보 밀도 불균형이 확인되었다. 84차 개선을 ‘완료’로 보고한 것은 잘못된 판정이었다. 이번 검증 체계 보강은 결함 해결과 별개이며 화면 재설계·동일 소스 Windows 검수 전까지 PASS로 바꾸지 않는다. [검증 계약](ui-visual-verification/README.md) 및 [84차 FAIL 감사기록](ui-visual-verification/audits/manual-classification-84.json) 참조.
