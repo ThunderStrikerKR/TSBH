@@ -1149,7 +1149,7 @@ impl ClientManager {
         self.error=None;
         Box::new(move |answer|{
             let result=answer.map(|count|{
-                let clients=(0..count).map(|i|serde_json::json!({"id":format!("geometry-c-{i}"),"name":format!("검증 거래처 {i:03}"),"tier":["WHOLESALE","SEMI","RETAIL","SPECIAL"][i%4],"address":"합성 주소 — 실제 고객 정보 아님","active":true})).collect::<Vec<_>>();
+                let clients=(0..count).map(|i|serde_json::json!({"id":format!("geometry-c-{i}"),"name":format!("검증 거래처 {i:03}"),"tier":(["WHOLESALE","SEMI","RETAIL","SPECIAL"][i%4]),"address":"합성 주소 — 실제 고객 정보 아님","active":true})).collect::<Vec<_>>();
                 serde_json::json!({"revision":1,"clients":clients,"readOnly":true})
             });
             assert!(tx.send(result).is_ok());
