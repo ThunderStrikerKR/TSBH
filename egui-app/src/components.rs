@@ -1675,8 +1675,8 @@ fn modal_master_header_content_in_rect(
         Vec2::new(content.width().max(1.0),theme::ACTION_STANDARD_HEIGHT)
     );
     let subtitle=Rect::from_min_size(
-        egui::pos2(rect.left()+theme::SPACE_8,heading.bottom()+theme::SPACE_4),
-        Vec2::new(heading.width(),20.0)
+        egui::pos2(content.left(),heading.bottom()+theme::SPACE_4),
+        Vec2::new(content.width(),20.0)
     );
     let heading_clip=heading.intersect(ui.clip_rect());
     // Reserve the real close-button hitbox first; a long heading may
@@ -5621,7 +5621,7 @@ pub fn reception_inline_cell_editor(
             .font(font)
             .vertical_align(Align::Center)
             .horizontal_align(if numeric{Align::RIGHT}else{Align::LEFT})
-            .margin(typography::form_input_text_margin())
+            .margin(egui::Margin::symmetric(8,2))
             .desired_width(rect.width()),
         request_focus,click_at
     )
@@ -5656,7 +5656,7 @@ fn reception_money_editor_at_rect(
     let inset=theme::SPACE_8;
     let (edit,unit_galley)=money_text_edit_with_unit(
         ui,value,reception_money_font(),rect.width(),"원",inset,
-        RECEPTION_MONEY_UNIT_GAP,typography::form_input_text_margin()
+        RECEPTION_MONEY_UNIT_GAP,egui::Margin::symmetric(8,2)
     );
     let response=reception_text_editor_at_click(
         ui,rect,edit,request_focus,click_at
@@ -6089,7 +6089,7 @@ fn reception_freight_money_readonly(ui:&mut Ui,value:&mut String)->Response{
     let inset=theme::SPACE_8;
     let (edit,unit_galley)=money_text_edit_with_unit(
         ui,value,reception_money_font(),RECEPTION_FREIGHT_MONEY_WIDTH,
-        "원",inset,RECEPTION_MONEY_UNIT_GAP,typography::form_input_text_margin()
+        "원",inset,RECEPTION_MONEY_UNIT_GAP,egui::Margin::symmetric(8,2)
     );
     let response=ui.add_sized(
         Vec2::new(RECEPTION_FREIGHT_MONEY_WIDTH,theme::INPUT_HEIGHT),
@@ -7871,7 +7871,7 @@ mod money_live_format_tests{
             egui::CentralPanel::default().show(ctx,|ui|{
                 let (margin,unit)=money_unit_margin(
                     ui,"원",reception_money_font(),theme::SPACE_8,
-                    RECEPTION_MONEY_UNIT_GAP,typography::form_input_text_margin()
+                    RECEPTION_MONEY_UNIT_GAP,egui::Margin::symmetric(8,2)
                 );
                 let unit_left=money_unit_left(104.0,theme::SPACE_8,unit.size().x);
                 assert!(unit_left-(104.0-f32::from(margin.right))
@@ -9502,5 +9502,17 @@ mod modal_master_content_alignment_tests {
         assert!(theme::SECTION_RADIUS>theme::CONTROL_RADIUS);
         assert!(theme::CONTROL_RADIUS>theme::SOURCE_BLOCK_RADIUS as u8);
         assert_eq!(theme::MODAL_SECTION_RADIUS,theme::SECTION_RADIUS);
+    }
+
+    #[test]
+    fn recipient_text_editor_uses_the_shared_form_input_margin(){
+        let source=include_str!("components.rs");
+        let start=source.find("fn reception_recipient_text_edit(")
+            .expect("recipient text editor");
+        let tail=&source[start..];
+        let end=tail.find("\n}\n").expect("recipient text editor end");
+        assert!(tail[..end].contains(
+            ".margin(typography::form_input_text_margin())"
+        ));
     }
 }
