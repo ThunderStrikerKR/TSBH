@@ -1443,12 +1443,15 @@ impl ExcelManager {
         let (tx,rx)=std::sync::mpsc::channel();
         self.receiver=Some(rx);
         self.error=None;
+        let origin=if self.tab==Tab::Store{"STORE"}else{"FACTORY"};
+        if self.tab==Tab::History{self.export_from.clear();self.export_to.clear();self.export_from_input.clear();self.export_to_input.clear();}
         Box::new(move |answer|{
             let result=answer.map(|count|{
                 let orders=(0..count).map(|i|json!({"id":format!("geometry-o-{i}"),"clientSnapshot":{"name":"검증 거래처"},"recipients":[{"id":format!("r-{i}"),"name":"합성 수취인","items":[{"name":"검증 상품","quantity":2}]}]})).collect::<Vec<_>>();
                 let shipments=(0..count).map(|i|json!({"id":format!("geometry-s-{i}"),"orderId":format!("geometry-o-{i}"),"recipientId":format!("r-{i}")})).collect::<Vec<_>>();
-                let queue=(0..count).map(|i|json!({"id":format!("geometry-q-{i}"),"shipmentId":format!("geometry-s-{i}"),"origin":"FACTORY","status":"QUEUED"})).collect::<Vec<_>>();
-                Snapshot{state:json!({"orders":orders,"workflow":{"shipments":shipments,"queue":queue}}),shipments:json!({"shipments":[]})}
+                let queue=(0..count).map(|i|json!({"id":format!("geometry-q-{i}"),"shipmentId":format!("geometry-s-{i}"),"origin":origin,"status":"QUEUED"})).collect::<Vec<_>>();
+                let exports=(0..count).map(|i|json!({"id":format!("geometry-export-{i}"),"at":"2026-11-24T09:00:00+09:00","filename":format!("검증-{i}.xlsx"),"orderIds":[format!("geometry-o-{i}")],"snapshots":[{"snapshot":{"recipient":{"items":[{"name":"검증 상품","quantity":2}]}}}]})).collect::<Vec<_>>();
+                Snapshot{state:json!({"orders":orders,"exports":exports,"workflow":{"shipments":shipments,"queue":queue}}),shipments:json!({"shipments":[]})}
             });
             assert!(tx.send(result).is_ok());
         })
