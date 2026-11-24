@@ -3,15 +3,16 @@
   "id": "daily-settlement-90",
   "screen": "관리 / 일일결산",
   "files": [
-    "egui-app/src/daily_settlement_manager.rs"
+    "egui-app/src/daily_settlement_manager.rs",
+    "egui-app/src/components.rs"
   ],
   "visualStatus": "NOT_VERIFIED",
-  "reason": "1366×768 좌표 회귀 테스트에서 표 헤더가 작업영역 오른쪽을 초과했다. 섹션 내부 UI에 최대 너비를 적용하는 수정은 반영했지만, 변경된 소스와 동일한 Windows 실행 빌드의 실제 화면 캡처 및 조작 검증은 아직 없다. 실화면 확인 전까지 PASS로 승격하지 않는다.",
+  "reason": "90차 후속 Windows 좌표 회귀에서 일일결산 표 헤더가 좁은 작업영역의 오른쪽을 초과하는 문제가 재현되었다. 공통 management_list_table_header가 자식 콘텐츠 너비만 사용하던 것을 실제 클리핑 뷰포트와 교차해 고정 헤더 폭을 제한하도록 수정했다(de3653e23e93cea15cd2a76bfa89d264993b8343). 이 수정의 Windows CI 재검증 및 동일 소스 blob의 실제 화면 캡처·조작 검증은 아직 완료되지 않았다. 증거 확보 전까지 PASS로 승격하지 않는다.",
   "defects": [
     {
       "id": "UI-90-SETTLEMENT-WIDTH",
       "status": "OPEN",
-      "description": "일일결산의 넓은 표가 좁은 작업영역에서 섹션 카드와 헤더의 최대 너비를 넘지 않는지 Windows 실화면 재검증이 필요하다.",
+      "description": "공통 표 헤더 폭을 실제 클리핑 뷰포트 안으로 제한한 수정이 Windows 1366×768 및 1920×1080 실화면에서도 정확한지 확인해야 한다.",
       "verification": "WINDOWS_RECHECK_REQUIRED"
     }
   ],
@@ -37,6 +38,6 @@
       "interaction",
       "hoverAndFocus"
     ],
-    "requiredEvidence": "변경된 소스 blob과 동일한 Windows 실행 빌드의 개인정보 마스킹 캡처 및 실제 조작 검증"
+    "requiredEvidence": "de3653e23e93cea15cd2a76bfa89d264993b8343 이후 components.rs의 현재 blob과 동일한 Windows 실행 빌드의 개인정보 제거 캡처 및 실제 조작 검증"
   }
 }
