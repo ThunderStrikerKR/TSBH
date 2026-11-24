@@ -3128,6 +3128,153 @@ pub fn management_date_group<R>(
 /// The single date-navigation surface used by calendar arrows and compact
 /// count steppers. Geometry, border, fill, radius and hover treatment must not
 /// drift between controls that share the date-picker visual language.
+#[derive(Clone,Copy)]
+enum DateNavigationSegmentGlyph<'a>{
+    Text(&'a str),
+    Chevron(ManagementChevronDirection),
+}
+
+/// A single outer frame with zero-gap internal segments. Both the recipient
+/// navigator and shipment-count editor use this exact date-selector surface.
+fn date_navigation_segmented_surface<R>(
+    ui:&mut Ui,id_salt:impl std::hash::Hash,size:Vec2,
+    add_segments:impl FnOnce(&mut Ui,Rect)->R
+)->(Rect,R){
+    let (outer,_)=ui.allocate_exact_size(size,Sense::hover());
+    let inner=outer.shrink(theme::FRAME_STROKE_WIDTH);
+    ui.painter().rect_filled(
+        outer,theme::CONTROL_RADIUS as f32,theme::INPUT
+    );
+    let content=ui.scope_builder(
+        UiBuilder::new()
+            .id_salt(id_salt)
+            .max_rect(inner)
+            .layout(Layout::left_to_right(Align::Center)),
+        |segments|{
+            segments.set_width(inner.width());
+            segments.set_height(inner.height());
+            segments.spacing_mut().item_spacing=Vec2::ZERO;
+            add_segments(segments,inner)
+        }
+    ).inner;
+    ui.painter().rect_stroke(
+        outer.shrink(0.5),theme::CONTROL_RADIUS as f32,
+        Stroke::new(theme::SOFT_DIVIDER_WIDTH,theme::BORDER),
+        egui::StrokeKind::Inside
+    );
+    (outer,content)
+}
+
+/// A borderless segment button; its parent owns the only outer border.
+/// Enabled/disabled colors and hover feedback follow the date-selector roles.
+fn date_navigation_segment_button(
+    ui:&mut Ui,width:f32,tooltip:&str,enabled:bool,
+    glyph:DateNavigationSegmentGlyph<'_>
+)->Response{
+    let height=ui.available_height();
+    let fill=if enabled{theme::INPUT}else{theme::DISABLED_ACTION_BG};
+    let response=ui.add_enabled_ui(enabled,|button_ui|{
+        button_ui.add_sized(
+            Vec2::new(width,height),
+            egui::Button::new("")
+                .fill(fill)
+                .stroke(Stroke::NONE)
+                .corner_radius(0)
+        )
+    }).inner;
+    let ink=if enabled && response.hovered(){
+        theme::TEXT
+    }else if enabled{
+        theme::SECONDARY
+    }else{
+        theme::DISABLED_ACTION_TEXT
+    };
+    let painter=ui.painter().with_clip_rect(response.rect);
+    match glyph{
+        DateNavigationSegmentGlyph::Text(text)=>{
+            painter.text(
+                response.rect.center(),egui::Align2::CENTER_CENTER,text,
+                egui::FontId::proportional(typography::FONT_STANDARD_ACTION+2.0),
+                ink
+            );
+        }
+        DateNavigationSegmentGlyph::Chevron(direction)=>{
+            paint_management_chevron_with_color(
+                &painter,response.rect.center(),direction,ink
+            );
+        }
+    }
+    if enabled{
+        theme::paint_button_hover(ui,&response,0.0);
+    }
+    response.on_hover_text(tooltip)
+}
+
+/// The editable delivery count is one segmented date-selector control:
+/// minus | centered numeric editor | plus. The parent frame owns one border.
+pub struct DateNavigationCountControlResponse{
+    pub decrement_clicked:bool,
+    pub increment_clicked:bool,
+    pub input:Response,
+    pub rect:Rect,
+}
+
+pub fn date_navigation_count_control(
+    ui:&mut Ui,id_salt:impl std::hash::Hash,value:&mut String,
+    current:usize,enabled:bool,minimum:usize,maximum:usize
+)->DateNavigationCountControlResponse{
+    let arrow_width=theme::CALENDAR_NAV_SIZE;
+    let input_width=64.0;
+    let height=theme::CALENDAR_NAV_SIZE;
+    let width=2.0*arrow_width+input_width+2.0*theme::FRAME_STROKE_WIDTH;
+    let (rect,(decrement_clicked,input,increment_clicked))=
+        date_navigation_segmented_surface(
+            ui,id_salt,Vec2::new(width,height),|segments,inner|{
+                let decrement=date_navigation_segment_button(
+                    segments,arrow_width,"배송 건수 1건 줄이기",
+                    enabled && current>minimum,
+                    DateNavigationSegmentGlyph::Text("−")
+                );
+                let hint=format!("{minimum}~{maximum}");
+                let input=segments.add_enabled_ui(enabled,|entry|{
+                    entry.add_sized(
+                        Vec2::new(input_width,inner.height()),
+                        egui::TextEdit::singleline(value)
+                            .font(typography::numeric_editor_font())
+                            .horizontal_align(Align::Center)
+                            .vertical_align(Align::Center)
+                            .char_limit(3)
+                            .margin(typography::management_date_text_margin())
+                            .frame(false)
+                            .desired_width(input_width)
+                            .hint_text(&hint)
+                    )
+                }).inner;
+                let increment=date_navigation_segment_button(
+                    segments,arrow_width,"배송 건수 1건 늘리기",
+                    enabled && current<maximum,
+                    DateNavigationSegmentGlyph::Text("+")
+                );
+                for x in [
+                    inner.left()+arrow_width,
+                    inner.left()+arrow_width+input_width
+                ]{
+                    segments.painter().line_segment(
+                        [
+                            egui::pos2(x,inner.top()+4.0),
+                            egui::pos2(x,inner.bottom()-4.0)
+                        ],
+                        Stroke::new(theme::SOFT_DIVIDER_WIDTH,theme::DIVIDER)
+                    );
+                }
+                (decrement.clicked(),input,increment.clicked())
+            }
+        );
+    DateNavigationCountControlResponse{
+        decrement_clicked,input,increment_clicked,rect
+    }
+}
+
 fn date_navigation_button_surface(
     ui:&mut Ui,tooltip:&str,enabled:bool
 )->(Response,Color32){
