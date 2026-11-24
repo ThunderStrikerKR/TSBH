@@ -7988,8 +7988,9 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
 
     fn submit_workflow_freight_edit(&mut self,ctx:&egui::Context)->bool{
         let Some(editor)=self.workflow_freight_editor.take() else{return true;};
-        if editor.text.trim()==editor.original.trim(){return true;}
         let digits=editor.text.trim().replace(',',"");
+        let original_digits=editor.original.trim().replace(',',"");
+        if digits==original_digits{return true;}
         let amount=if digits.is_empty(){
             serde_json::Value::Null
         }else{
