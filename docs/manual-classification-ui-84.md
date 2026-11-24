@@ -118,3 +118,31 @@
 - 회귀 테스트 `shipment_count_steppers_share_the_date_picker_navigation_surface`를 추가했다.
 
 검증: 소스 연결 정적 확인 PASS. 해당 커밋의 GitHub status는 빈 배열이고 Rust 빌드 및 Windows 실화면 검증은 미실행이다. 따라서 84차 전체 UI 판정은 기존 FAIL을 유지한다.
+
+## 84차 후속 — 배송 건수 일체형 컨트롤 및 1/1 수취인 네비게이터 (2026-11-24)
+
+### 배송 건수
+
+- 기존의 독립된 `−` 버튼, 숫자 입력창, `+` 버튼을 제거했다.
+- 날짜 선택기의 세그먼트 컨트롤처럼 하나의 외곽 프레임 안에 `− | 숫자 입력 | +`를 배치한다.
+- 외곽 프레임은 단일 1pt 테두리와 공통 6pt 모서리, 입력 배경을 사용한다. 내부에는 세그먼트 구분선만 둔다.
+- 좌우 조작 영역은 각각 28pt, 중앙 숫자 편집 영역은 64pt이며 전체 컨트롤 높이는 28pt다. 단위 `건`은 컨트롤 외부에 유지한다.
+- 숫자 입력은 프레임 없는 TextEdit로 바꾸어 외곽 테두리가 중복되지 않도록 했다. 숫자 직접 입력, 3자리 제한, 1~100 검증은 유지한다.
+- 감소/증가 버튼의 비활성 경계는 실제 행 수뿐 아니라 현재 입력 중인 초안 값도 반영한다. 1에서 감소, 100에서 증가는 비활성화한다.
+- 비동기 `request_resize` 흐름은 유지하고, 배송 건수 변경이 잠긴 상태에서는 입력값이 자동 제출되지 않도록 `count_commit`을 `can_resize`로 보호한다.
+
+### 수취인 네비게이터
+
+- 배송 건수가 1건이어도 네비게이터를 숨기지 않고 `‹ 권기엽 › 1/1` 구조를 유지한다.
+- 1건일 때 이전·다음 화살표만 비활성화한다. 이름과 `1/1`은 정상 밝기로 표시한다.
+- 계산 중·대기 중에도 네비게이터 전체를 비활성화하지 않는다. `navigation_enabled`는 화살표에만 적용한다.
+- 수취인 네비게이터와 배송 건수 컨트롤은 `date_navigation_segmented_surface` 및 `date_navigation_segment_button`을 공유해 외곽선·세그먼트 간격·비활성/호버 표현을 통일한다.
+
+### 회귀 테스트 및 CI
+
+- `date_navigation_segmented_control_tests`: 배송 건수 컨트롤의 28pt 높이, 중앙 입력 64pt, 양쪽 화살표 인접 배치, 1건 네비게이터의 실제 공간 할당을 검증한다.
+- `reception_recipient_navigation_state_tests`: 1/1, 다건 경계, 작업 잠금 시 화살표만 비활성화되는 상태를 검증한다.
+- `shipment_count_is_one_date_selector_segmented_control`: 수동 분류가 하나의 공통 컨트롤만 호출하고 기존 비동기 변경 흐름을 유지하는지 확인한다.
+- `.github/workflows/egui-manual-classification-check.yml`에 위 세 테스트 그룹 실행 단계를 추가했다.
+
+**검증 상태:** 소스 연결 및 괄호 균형 정적 점검은 통과. GitHub Actions는 코드와 워크플로가 main에 반영된 뒤 실행 결과를 확인해야 한다. Windows 실화면 확인 전까지 84차 전체 `visualStatus=FAIL`을 유지한다.
