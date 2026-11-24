@@ -257,8 +257,8 @@ pub const RECEPTION_RECIPIENT_NAV_WIDTH:f32 =
     +RECEPTION_RECIPIENT_NAV_NAME_WIDTH
     +RECEPTION_RECIPIENT_NAV_COUNT_WIDTH
     +2.0*FRAME_STROKE_WIDTH;
-// Reception titles need the same breathing room as other management headings.
-// Body-height accounting consumes this shared token; split rectangles stay put.
+// Reception section dividers keep one shared 8pt clearance on BOTH sides.
+// The same token drives the live layout and fixed-height body calculation.
 pub const SECTION_CONTENT_GAP: f32 = SPACE_8;
 // Canvas/footer clearance must be counted in the message editor's height.
 pub const RECEPTION_MESSAGE_ACTION_GAP: f32 = SPACE_12;
