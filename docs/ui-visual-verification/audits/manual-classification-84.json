@@ -4,7 +4,8 @@
   "screen": "접수 / 수동 분류",
   "files": [
     "egui-app/src/manual_workspace.rs",
-    "egui-app/src/components.rs"
+    "egui-app/src/components.rs",
+    "egui-app/src/manual_source_view.rs"
   ],
   "visualStatus": "FAIL",
   "patchCommits": [
@@ -33,9 +34,11 @@
     "f5ec9d4a7b6d301058e2f91bfbd6833f5f9b57ff",
     "18cd47fa8a2bd1de1ba7a8a3a010e856685172c9",
     "0a3e8bca33f6bed501dc9b25960f6ae67f95eb93",
-    "5b6af536b0f3e878d2bda4b172df23d65ff72d0c"
+    "5b6af536b0f3e878d2bda4b172df23d65ff72d0c",
+    "946d03d5b4e039526b8b1cdda72fe1aa101e0017",
+    "a28bcc37bb1471a274251a2ef6862e727570f901"
   ],
-  "reason": "2026-11-24 사용자가 Windows 실행 화면을 제시하여 UI 클리핑 및 레이아웃 품질 불합격을 확인했다. 자료에 배송지/연락처가 포함되어 공개 GitHub 저장소에 원본 스크린샷은 올리지 않는다. 배송 건수 증감 버튼의 날짜 선택기 스타일 통합 패치는 main에 반영됐으나 Windows 실화면 재검증 전이므로 기존 FAIL을 유지한다. 2026-11-24 후속: 배송 건수 컨트롤을 단일 segmented UI로 교체하고 1/1 네비게이터의 이름/진행도를 유지하도록 수정했다. Windows 실화면 확인 전까지 FAIL 유지. 2026-11-24 후속: 배송 건수 입력부를 단일 segmented UI로 통합하고 1/1 네비게이터의 이름/진행도를 유지하도록 수정했다. 최신 Windows CI 및 실화면 검증이 끝날 때까지 FAIL 유지. 2026-11-24 후속: 배송 건수 일체형 segmented 컨트롤 및 1/1 네비게이터 구현. Windows cargo check 및 관련 회귀 workflow 전체 PASS. 사용자의 실제 실행 화면 시각 검증 전까지 visualStatus FAIL 유지. 2026-11-25 후속: 수동분류 발주원문 패널을 접수 화면과 동일한 reception_section_with_header_tooltip 및 source_document_frame으로 통합했다. 공통 카드 프레임, 16pt 좌우/8pt 상하 패딩, 구분선, 원문 콘텐츠 4pt 내부 여백을 공유한다. Rust 컴파일 및 수동분류 레이아웃·기능 회귀 테스트는 PASS. 변경된 소스 blob과 동일한 Windows 실화면 캡처 및 실제 조작 검증은 아직 없어 visualStatus FAIL 및 기존 OPEN 결함은 유지한다.",
+  "reason": "2026-11-24 사용자가 Windows 실행 화면을 제시하여 UI 클리핑 및 레이아웃 품질 불합격을 확인했다. 자료에 배송지/연락처가 포함되어 공개 GitHub 저장소에 원본 스크린샷은 올리지 않는다. 배송 건수 증감 버튼의 날짜 선택기 스타일 통합 패치는 main에 반영됐으나 Windows 실화면 재검증 전이므로 기존 FAIL을 유지한다. 2026-11-24 후속: 배송 건수 컨트롤을 단일 segmented UI로 교체하고 1/1 네비게이터의 이름/진행도를 유지하도록 수정했다. Windows 실화면 확인 전까지 FAIL 유지. 2026-11-24 후속: 배송 건수 입력부를 단일 segmented UI로 통합하고 1/1 네비게이터의 이름/진행도를 유지하도록 수정했다. 최신 Windows CI 및 실화면 검증이 끝날 때까지 FAIL 유지. 2026-11-24 후속: 배송 건수 일체형 segmented 컨트롤 및 1/1 네비게이터 구현. Windows cargo check 및 관련 회귀 workflow 전체 PASS. 사용자의 실제 실행 화면 시각 검증 전까지 visualStatus FAIL 유지. 2026-11-25 후속: 수동분류 발주원문 패널을 접수 화면과 동일한 reception_section_with_header_tooltip 및 source_document_frame으로 통합했다. 공통 카드 프레임, 16pt 좌우/8pt 상하 패딩, 구분선, 원문 콘텐츠 4pt 내부 여백을 공유한다. Rust 컴파일 및 수동분류 레이아웃·기능 회귀 테스트는 PASS. 변경된 소스 blob과 동일한 Windows 실화면 캡처 및 실제 조작 검증은 아직 없어 visualStatus FAIL 및 기존 OPEN 결함은 유지한다. 2026-11-25 후속: 수동 분류 원문 블록을 누르는 즉시 드래그 후보와 추천 셀을 표시하고, 선택 원문 텍스트를 Tooltip 레이어의 고스트 프리뷰로 포인터를 따라 이동하도록 수정했다. egui 기본 drag threshold로 클릭/드래그를 구분해 이동 없는 누름·해제는 기존 원문 클릭 선택으로 유지한다. Windows CI의 egui 컴파일, 수동 원문 hit-test, 양방향 클릭/드래그 배정 및 직접입력 공유 워크시트 테스트는 PASS. 실제 Windows 실행 화면의 드래그 중 캡처 및 사용자 조작 확인은 아직 없어 visualStatus FAIL과 releaseDecision NOT_APPROVED는 유지한다.",
   "defects": [
     {
       "id": "UI-84-CLIP-001",
@@ -298,11 +301,12 @@
   },
   "latestFileBlobs": {
     "egui-app/src/components.rs": "c9317760b496e2293d221ed28e8eb5ff579e8999",
-    "egui-app/src/manual_workspace.rs": "1b0567d68ebc59fcc3b36b3e86b63943e9603890",
+    "egui-app/src/manual_workspace.rs": "f7cd90dc5c68a53ae77cc03d1bb931a66f395c46",
     "egui-app/src/main.rs": "603bf36975cec616ee705b7c86ac8b474e7b63f6",
     "egui-app/src/source_highlight.rs": "fc3554b14498afd8c80b6a9fc2ffecafa1c4893b",
     ".github/workflows/egui-manual-classification-check.yml": "dd7a5863f1561ed6576355668a882fd70fa9f8b3",
-    "docs/manual-classification-ui-84.md": "7a919192285f082a6cfb610f57bd53f532ec9cfe"
+    "docs/manual-classification-ui-84.md": "7a919192285f082a6cfb610f57bd53f532ec9cfe",
+    "egui-app/src/manual_source_view.rs": "4eb1d82bbb52643f5006cdf25453f0761a22c34b"
   },
   "latestDocs": {
     "docs/manual-classification-ui-84.md": "bf9edc5e6e93365a168f7964d8b496de746eab0f"
@@ -330,5 +334,47 @@
       "windowsVisual": "NOT_VERIFIED"
     },
     "visualDecision": "FAIL_UNTIL_VERSION_BOUND_WINDOWS_SCREENSHOTS_AND_INTERACTION_REVIEW"
+  },
+  "sourceDragFeedbackCandidate": {
+    "status": "PATCH_COMMITTED_WINDOWS_CI_PASS_VISUAL_UNVERIFIED",
+    "date": "2026-11-25",
+    "request": "드래그를 시작하고 움직이지 않아도 추천 셀을 표시하고, 선택한 텍스트 블록이 마우스 커서를 따라오도록 구현",
+    "commits": [
+      "946d03d5b4e039526b8b1cdda72fe1aa101e0017",
+      "a28bcc37bb1471a274251a2ef6862e727570f901"
+    ],
+    "files": {
+      "egui-app/src/manual_source_view.rs": "4eb1d82bbb52643f5006cdf25453f0761a22c34b",
+      "egui-app/src/manual_workspace.rs": "f7cd90dc5c68a53ae77cc03d1bb931a66f395c46"
+    },
+    "implementation": [
+      "primary button press 프레임에 원문 source ID를 포착하고 같은 프레임에 호환 추천 셀을 계산",
+      "egui response.dragged_by의 기본 이동 임계값으로 실제 드래그와 클릭을 분리",
+      "이동 없이 놓으면 기존 원문 클릭 선택 및 셀 클릭 양방향 배정 흐름 유지",
+      "실제 드래그 중 원문 span의 텍스트를 Tooltip 레이어 고스트 프리뷰로 렌더링해 두 패널 위에서 포인터를 따라가도록 구현",
+      "드롭 시 기존 manual_assignment_payload 검증과 네이티브 reducer를 그대로 사용"
+    ],
+    "verification": {
+      "nativeEguiCompile": "PASS",
+      "manualSourceViewTests": "PASS: 3/3",
+      "manualAssignmentGestureTests": "PASS: 4/4",
+      "manualWorkspaceModalRoutingTests": "PASS: 21/21 including immediate press feedback contract",
+      "manualModalAndLinkedHighlightWorkflow": {
+        "runId": 45463893558,
+        "status": "SUCCESS",
+        "checks": "Windows compile, modal routing, manual source hit testing, source projection and hover delay"
+      },
+      "manualClassificationWorkflow": {
+        "runId": 45463893462,
+        "status": "SUCCESS",
+        "checks": "Windows compile, direct-input shared worksheet, manual source click/drag, both click orders, quantity guards, linked highlighting and related regressions"
+      },
+      "stateLayoutWorkflow": {
+        "runId": 45463893612,
+        "status": "SUCCESS"
+      },
+      "windowsVisual": "NOT_VERIFIED"
+    },
+    "visualDecision": "FAIL_UNTIL_VERSION_BOUND_WINDOWS_SCREENSHOTS_AND_REAL_POINTER_INTERACTION_REVIEW"
   }
 }
