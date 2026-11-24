@@ -698,17 +698,20 @@ impl AutomaticMessageManager {
         components::decision_window(
             "저장하지 않은 변경사항","message-editor-leave",area
         ).show(ctx,|dialog|{
-            cancel=components::modal_header(
-                dialog,"저장하지 않은 변경사항","취소",!self.busy()
-            );
-            dialog.label(typography::body(
-                "자동 메시지 편집 변경사항을 저장할까요?"
-            ));
-            components::modal_action_row(dialog,|actions|{
-                save=theme::action(actions,"저장하고 이동",ButtonRole::Primary,
-                    self.writable()&&!self.busy()).clicked();
-                discard=theme::action(actions,"저장 안 함",ButtonRole::Danger,
-                    !self.busy()).clicked();
+            components::decision_workspace(dialog,|decision|{
+                cancel=decision.header("저장하지 않은 변경사항","취소",!self.busy()
+                );
+                decision.body(|dialog|{
+                    dialog.label(typography::body(
+                        "자동 메시지 편집 변경사항을 저장할까요?"
+                    ));
+                });
+                decision.actions(|actions|{
+                    save=theme::action(actions,"저장하고 이동",ButtonRole::Primary,
+                        self.writable()&&!self.busy()).clicked();
+                    discard=theme::action(actions,"저장 안 함",ButtonRole::Danger,
+                        !self.busy()).clicked();
+                });
             });
         });
         if cancel{self.pending=None;}

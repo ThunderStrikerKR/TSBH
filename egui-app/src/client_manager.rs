@@ -984,19 +984,23 @@ impl ClientManager {
             components::decision_window(
                 "거래처 삭제","client-manager-delete-confirm",work_area
             ).show(ctx,|ui|{
-                let cancel=components::modal_header(ui,"거래처 삭제","취소",true);
-                ui.label("거래처를 삭제할까요? 기존 주문의 송하인과 금액은 그대로 보존합니다.");
-                let approve=components::modal_action_row(ui,|buttons|{
-                        theme::action(
-                            buttons,"거래처 삭제",ButtonRole::Danger,true
-                        ).clicked()
+                components::decision_workspace(ui,|decision|{
+                    let cancel=decision.header("거래처 삭제","취소",true);
+                    decision.body(|ui|{
+                        ui.label("거래처를 삭제할까요? 기존 주문의 송하인과 금액은 그대로 보존합니다.");
+                    });
+                    let approve=decision.actions(|buttons|{
+                            theme::action(
+                                buttons,"거래처 삭제",ButtonRole::Danger,true
+                            ).clicked()
+                        }
+                    ).inner;
+                    if cancel {self.confirm_delete=false;}
+                    if approve {
+                        self.confirm_delete=false;
+                        self.mutate(Arc::clone(&gateway),ctx,"archive_client");
                     }
-                ).inner;
-                if cancel {self.confirm_delete=false;}
-                if approve {
-                    self.confirm_delete=false;
-                    self.mutate(Arc::clone(&gateway),ctx,"archive_client");
-                }
+                });
             });
         }
         if self.confirm_discard {
@@ -1004,19 +1008,23 @@ impl ClientManager {
             components::decision_window(
                 "변경사항 확인","client-manager-discard-confirm",work_area
             ).show(ctx,|ui|{
-                let cancel=components::modal_header(ui,"변경사항 확인","취소",true);
-                ui.label("거래처의 수정 내용을 버릴까요?");
-                let approve=components::modal_action_row(ui,|buttons|{
-                        theme::action(
-                            buttons,"변경 취소",ButtonRole::Danger,true
-                        ).clicked()
+                components::decision_workspace(ui,|decision|{
+                    let cancel=decision.header("변경사항 확인","취소",true);
+                    decision.body(|ui|{
+                        ui.label("거래처의 수정 내용을 버릴까요?");
+                    });
+                    let approve=decision.actions(|buttons|{
+                            theme::action(
+                                buttons,"변경 취소",ButtonRole::Danger,true
+                            ).clicked()
+                        }
+                    ).inner;
+                    if cancel {self.confirm_discard=false;}
+                    if approve {
+                        self.confirm_discard=false;self.draft=None;self.original=None;
+                        self.tag_input.clear();self.tag_notice=None;
                     }
-                ).inner;
-                if cancel {self.confirm_discard=false;}
-                if approve {
-                    self.confirm_discard=false;self.draft=None;self.original=None;
-                    self.tag_input.clear();self.tag_notice=None;
-                }
+                });
             });
         }
     }

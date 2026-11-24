@@ -337,15 +337,18 @@ impl ProductExcelUi {
             let mut approve=false;
             components::decision_window("상품 변경사항 반영",
                 "egui-product-excel-confirm",work_area).show(ctx,|modal|{
-                cancel=components::modal_header(
-                    modal,"상품 변경사항 반영","취소",!self.busy()
-                );
-                modal.label(typography::table_cell(&format!(
-                    "신규 상품 {adds}개, 상품 정보 및 가격 수정 {updates}개를 반영할까요? Excel에서 누락된 상품은 그대로 유지합니다."
-                )));
-                components::modal_action_row(modal,|buttons|{
-                    if theme::action(buttons,"반영",theme::ButtonRole::Primary,
-                        self.can_apply()&&can_edit).clicked(){approve=true;}
+                components::decision_workspace(modal,|decision|{
+                    cancel=decision.header("상품 변경사항 반영","취소",!self.busy()
+                    );
+                    decision.body(|modal|{
+                        modal.label(typography::table_cell(&format!(
+                            "신규 상품 {adds}개, 상품 정보 및 가격 수정 {updates}개를 반영할까요? Excel에서 누락된 상품은 그대로 유지합니다."
+                        )));
+                    });
+                    decision.actions(|buttons|{
+                        if theme::action(buttons,"반영",theme::ButtonRole::Primary,
+                            self.can_apply()&&can_edit).clicked(){approve=true;}
+                    });
                 });
             });
             if cancel{self.confirming=false;}

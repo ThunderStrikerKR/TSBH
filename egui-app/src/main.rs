@@ -2893,96 +2893,98 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
         components::decision_window(
             "부가세 설정","egui-order-vat-settings",work_area
         ).show(ctx,|ui|{
-            cancel=components::modal_header(
-                ui,"부가세 설정","취소",!busy
-            );
-            // The tax rate applies to the whole order and precedes
-            // both the bulk and the per-recipient VAT selections.
-            ui.horizontal(|row|{
-                components::form_field_label(row,"부가세율");
-                // Three-digit compact field; decimals remain supported by
-                // native VAT parser. The 36pt shared TextEdit centers caret,
-                // selection and glyphs together.
-                components::compact_text_field(
-                    row,&mut dialog.rate_text,48.0,!busy
+            components::decision_workspace(ui,|decision|{
+                cancel=decision.header("부가세 설정","취소",!busy
                 );
-                // Let the horizontal row center the natural-height unit
-                // label against the 36pt TextEdit, instead of stretching the
-                // Label itself to 36pt (which top-aligns its glyphs).
-                row.label(typography::body("%"));
-            });
-            ui.add_space(theme::SPACE_12);
-            ui.horizontal_wrapped(|row|{
-                row.spacing_mut().item_spacing.x=theme::SPACE_12;
-                // These are mutually exclusive whole-order shortcuts,
-                // not a separate 3-state mode. Their checked state
-                // always follows the visible recipient checkboxes.
-                let mut none=dialog.scope(&recipients)==VatScope::None;
-                if components::checkbox(
-                    row,&mut none,"전체 미적용",!busy
-                ).changed() && none {
-                    // Unchecking an active global shortcut is a no-op.
-                    // Partial recipient selection leaves both shortcuts off.
-                    dialog.set_all_checked(&recipients,false);
-                }
-                let mut all=dialog.scope(&recipients)==VatScope::All;
-                if components::checkbox(
-                    row,&mut all,"전체 적용",!busy
-                ).changed() && all {
-                    dialog.set_all_checked(&recipients,true);
-                }
-            });
-            ui.add_space(theme::SPACE_12);
-            let list_height=Self::vat_recipient_list_height(
-                recipients.len(),work_area.height()
-            );
-            // The tinted bordered surface marks the exact scrollable region.
-            // Reserve five rows for short orders, expand to ten recipients,
-            // then scroll within the same surface for additional orders.
-            theme::modal_nested_frame()
-                .inner_margin(egui::Margin::symmetric(
-                    theme::SPACE_12 as i8,theme::SPACE_8 as i8
-                ))
-                .show(ui,|panel|{
-                    egui::ScrollArea::vertical()
-                        .max_height(list_height)
-                        .auto_shrink([false,false])
-                        .id_salt("order-vat-select-recipients")
-                        .show(panel,|list|{
-                            // The row height already includes all vertical
-                            // breathing room; egui's default item gap would
-                            // otherwise clip the 10th entry and show only ~8.
-                            list.spacing_mut().item_spacing.y=0.0;
-                            for (index,recipient) in recipients.iter().enumerate(){
-                                let id=reception_service::text(recipient,"id");
-                                if id.is_empty(){continue;}
-                                let name=reception_service::text(recipient,"name");
-                                let mut checked=dialog.recipients.contains(id);
-                                let label=format!(
-                                    "{} · {}",index+1,
-                                    if name.is_empty(){"수취인 확인"}else{name}
-                                );
-                                if components::checkbox_list_row(
-                                    list,("order-vat-recipient",id),
-                                    &mut checked,&label,!busy,
-                                    theme::RECEPTION_VAT_LIST_ROW_HEIGHT
-                                ).changed(){
-                                    dialog.set_recipient_checked(id,checked);
-                                }
-                            }
+                decision.body(|ui|{
+                    // The tax rate applies to the whole order and precedes
+                    // both the bulk and the per-recipient VAT selections.
+                    ui.horizontal(|row|{
+                        components::form_field_label(row,"부가세율");
+                        // Three-digit compact field; decimals remain supported by
+                        // native VAT parser. The 36pt shared TextEdit centers caret,
+                        // selection and glyphs together.
+                        components::compact_text_field(
+                            row,&mut dialog.rate_text,48.0,!busy
+                        );
+                        // Let the horizontal row center the natural-height unit
+                        // label against the 36pt TextEdit, instead of stretching the
+                        // Label itself to 36pt (which top-aligns its glyphs).
+                        row.label(typography::body("%"));
+                    });
+                    ui.add_space(theme::SPACE_12);
+                    ui.horizontal_wrapped(|row|{
+                        row.spacing_mut().item_spacing.x=theme::SPACE_12;
+                        // These are mutually exclusive whole-order shortcuts,
+                        // not a separate 3-state mode. Their checked state
+                        // always follows the visible recipient checkboxes.
+                        let mut none=dialog.scope(&recipients)==VatScope::None;
+                        if components::checkbox(
+                            row,&mut none,"전체 미적용",!busy
+                        ).changed() && none {
+                            // Unchecking an active global shortcut is a no-op.
+                            // Partial recipient selection leaves both shortcuts off.
+                            dialog.set_all_checked(&recipients,false);
+                        }
+                        let mut all=dialog.scope(&recipients)==VatScope::All;
+                        if components::checkbox(
+                            row,&mut all,"전체 적용",!busy
+                        ).changed() && all {
+                            dialog.set_all_checked(&recipients,true);
+                        }
+                    });
+                    ui.add_space(theme::SPACE_12);
+                    let list_height=Self::vat_recipient_list_height(
+                        recipients.len(),work_area.height()
+                    );
+                    // The tinted bordered surface marks the exact scrollable region.
+                    // Reserve five rows for short orders, expand to ten recipients,
+                    // then scroll within the same surface for additional orders.
+                    theme::modal_nested_frame()
+                        .inner_margin(egui::Margin::symmetric(
+                            theme::SPACE_12 as i8,theme::SPACE_8 as i8
+                        ))
+                        .show(ui,|panel|{
+                            egui::ScrollArea::vertical()
+                                .max_height(list_height)
+                                .auto_shrink([false,false])
+                                .id_salt("order-vat-select-recipients")
+                                .show(panel,|list|{
+                                    // The row height already includes all vertical
+                                    // breathing room; egui's default item gap would
+                                    // otherwise clip the 10th entry and show only ~8.
+                                    list.spacing_mut().item_spacing.y=0.0;
+                                    for (index,recipient) in recipients.iter().enumerate(){
+                                        let id=reception_service::text(recipient,"id");
+                                        if id.is_empty(){continue;}
+                                        let name=reception_service::text(recipient,"name");
+                                        let mut checked=dialog.recipients.contains(id);
+                                        let label=format!(
+                                            "{} · {}",index+1,
+                                            if name.is_empty(){"수취인 확인"}else{name}
+                                        );
+                                        if components::checkbox_list_row(
+                                            list,("order-vat-recipient",id),
+                                            &mut checked,&label,!busy,
+                                            theme::RECEPTION_VAT_LIST_ROW_HEIGHT
+                                        ).changed(){
+                                            dialog.set_recipient_checked(id,checked);
+                                        }
+                                    }
+                                });
                         });
+                    let error=dialog.error.as_deref();
+                    let status_width=ui.available_width();
+                    components::fixed_status_slot(
+                        ui,status_width,typography::METADATA_LINE_HEIGHT,
+                        error,error,theme::DANGER
+                    );
                 });
-            let error=dialog.error.as_deref();
-            let status_width=ui.available_width();
-            components::fixed_status_slot(
-                ui,status_width,typography::METADATA_LINE_HEIGHT,
-                error,error,theme::DANGER
-            );
-            ui.add_space(theme::SPACE_8);
-            components::modal_action_row(ui,|buttons|{
-                if theme::action(
-                    buttons,"적용",ButtonRole::Primary,!busy
-                ).clicked(){apply=true;}
+                decision.actions(|buttons|{
+                    if theme::action(
+                        buttons,"적용",ButtonRole::Primary,!busy
+                    ).clicked(){apply=true;}
+                });
             });
         });
         if cancel && !busy{self.vat_dialog=None;return;}
@@ -4343,19 +4345,22 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
             components::decision_window(
                 "변경사항 확인","ocr-review-discard-confirm",work_area
             ).show(ctx,|ui|{
-                if components::modal_header(
-                    ui,"변경사항 확인","돌아가기",true
-                ) {
-                    self.discard_ocr_confirm=false;
-                }
-                ui.label("OCR 검토에서 수정한 내용을 버릴까요?");
-                components::modal_action_row(ui,|buttons|{
-                    if theme::action(
-                        buttons,"수정 내용 버리기",ButtonRole::Danger,true
-                    ).clicked() {
-                        self.ocr_review=None;
+                components::decision_workspace(ui,|decision|{
+                    if decision.header("변경사항 확인","돌아가기",true
+                    ) {
                         self.discard_ocr_confirm=false;
                     }
+                    decision.body(|ui|{
+                        ui.label("OCR 검토에서 수정한 내용을 버릴까요?");
+                    });
+                    decision.actions(|buttons|{
+                        if theme::action(
+                            buttons,"수정 내용 버리기",ButtonRole::Danger,true
+                        ).clicked() {
+                            self.ocr_review=None;
+                            self.discard_ocr_confirm=false;
+                        }
+                    });
                 });
             });
         }
@@ -4388,14 +4393,17 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
             "발주원문 교체 확인","egui-replace-source-confirm",work_area
         )
             .show(ctx, |ui| {
-                cancel=components::modal_header(
-                    ui,"발주원문 교체 확인","취소",true
-                );
-                ui.label("현재 초안과 분석 결과를 새 원문으로 교체할까요?");
-                components::modal_action_row(ui,|actions|{
-                    if theme::action(actions, "교체", ButtonRole::Primary, true).clicked() {
-                        accept = true;
-                    }
+                components::decision_workspace(ui,|decision|{
+                    cancel=decision.header("발주원문 교체 확인","취소",true
+                    );
+                    decision.body(|ui|{
+                        ui.label("현재 초안과 분석 결과를 새 원문으로 교체할까요?");
+                    });
+                    decision.actions(|actions|{
+                        if theme::action(actions, "교체", ButtonRole::Primary, true).clicked() {
+                            accept = true;
+                        }
+                    });
                 });
             });
         if accept {
@@ -7486,87 +7494,90 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                     components::decision_window(
                         "배송 건 묶음 관리","egui-workflow-group-manage",work_area
                     ).show(ctx,|ui|{
-                        close=components::modal_header(
-                            ui,"배송 건 묶음 관리","닫기",true
-                        );
-                        ui.label(format!(
-                            "{} / 배송 {}건 / {}",
-                            group.dealer_name,group.shipments.len(),
-                            group.total.map(components::display_won)
-                                .unwrap_or_else(||"금액 미확정".to_owned())
-                        ));
-                        if !targets.is_empty(){
-                            ui.add_space(theme::SPACE_8);
-                            ui.label("다시 묶을 대상");
-                            components::management_dropdown(
-                                ui,targets.iter().find(|g|g.id==target)
-                                    .map(|g|g.dealer_name.as_str())
-                                    .unwrap_or("같은 최초 발주서의 묶음 선택"),
-                                theme::MANAGEMENT_SEARCH_MIN_WIDTH,true,
-                                "배송 건을 다시 묶을 대상 선택",|list|{
-                                    components::management_dropdown_option(
-                                        list,&mut target,String::new(),"대상 선택");
-                                    for other in &targets{
-                                        components::management_dropdown_option(
-                                            list,&mut target,other.id.clone(),
-                                            &format!("{} / 배송 {}건 / {}/4",
-                                                other.dealer_name,
-                                                other.shipments.len(),other.step)
-                                        );
-                                    }
-                                });
-                            components::checkbox(
-                                ui,&mut ack,
-                                "기존 안내액 / 입금 배분 / 변경 합계를 확인했습니다.",
-                                true
+                        components::decision_workspace(ui,|decision|{
+                            close=decision.header("배송 건 묶음 관리","닫기",true
                             );
-                        }
-                        ui.add_space(theme::SPACE_8);
-                        egui::ScrollArea::vertical()
-                            .max_height(work_area.height()*0.45)
-                            .show(ui,|list|{
-                                for ship in &group.shipments{
-                                    list.horizontal(|line|{
-                                        line.label(format!(
-                                            "{} / {}종 / {}/4",
-                                            if ship.recipient_name.is_empty(){
-                                                "수취인 확인"
-                                            }else{ship.recipient_name.as_str()},
-                                            ship.products.len(),group.step
-                                        ));
-                                        if theme::action(
-                                            line,"이 배송 건 분리",
-                                            ButtonRole::Standard,
-                                            writable&&!busy &&
-                                                group.shipments.len()>1 &&
-                                                !group.transferred
-                                        ).clicked(){
-                                            command=Some((
-                                                "detach_shipment".to_owned(),
-                                                group.id.clone(),
-                                                Some(ship.id.clone()),None,false
-                                            ));
-                                        }
-                                        if !target.is_empty() && theme::action(
-                                            line,"다시 묶기",ButtonRole::Standard,
-                                            writable&&!busy&&!group.transferred
-                                        ).clicked(){
-                                            command=Some((
-                                                "regroup_shipment".to_owned(),
-                                                group.id.clone(),
-                                                Some(ship.id.clone()),
-                                                Some(target.clone()),ack
-                                            ));
+                            decision.body(|ui|{
+                                ui.label(format!(
+                                    "{} / 배송 {}건 / {}",
+                                    group.dealer_name,group.shipments.len(),
+                                    group.total.map(components::display_won)
+                                        .unwrap_or_else(||"금액 미확정".to_owned())
+                                ));
+                                if !targets.is_empty(){
+                                    ui.add_space(theme::SPACE_8);
+                                    ui.label("다시 묶을 대상");
+                                    components::management_dropdown(
+                                        ui,targets.iter().find(|g|g.id==target)
+                                            .map(|g|g.dealer_name.as_str())
+                                            .unwrap_or("같은 최초 발주서의 묶음 선택"),
+                                        theme::MANAGEMENT_SEARCH_MIN_WIDTH,true,
+                                        "배송 건을 다시 묶을 대상 선택",|list|{
+                                            components::management_dropdown_option(
+                                                list,&mut target,String::new(),"대상 선택");
+                                            for other in &targets{
+                                                components::management_dropdown_option(
+                                                    list,&mut target,other.id.clone(),
+                                                    &format!("{} / 배송 {}건 / {}/4",
+                                                        other.dealer_name,
+                                                        other.shipments.len(),other.step)
+                                                );
+                                            }
+                                        });
+                                    components::checkbox(
+                                        ui,&mut ack,
+                                        "기존 안내액 / 입금 배분 / 변경 합계를 확인했습니다.",
+                                        true
+                                    );
+                                }
+                                ui.add_space(theme::SPACE_8);
+                                egui::ScrollArea::vertical()
+                                    .max_height(work_area.height()*0.45)
+                                    .show(ui,|list|{
+                                        for ship in &group.shipments{
+                                            list.horizontal(|line|{
+                                                line.label(format!(
+                                                    "{} / {}종 / {}/4",
+                                                    if ship.recipient_name.is_empty(){
+                                                        "수취인 확인"
+                                                    }else{ship.recipient_name.as_str()},
+                                                    ship.products.len(),group.step
+                                                ));
+                                                if theme::action(
+                                                    line,"이 배송 건 분리",
+                                                    ButtonRole::Standard,
+                                                    writable&&!busy &&
+                                                        group.shipments.len()>1 &&
+                                                        !group.transferred
+                                                ).clicked(){
+                                                    command=Some((
+                                                        "detach_shipment".to_owned(),
+                                                        group.id.clone(),
+                                                        Some(ship.id.clone()),None,false
+                                                    ));
+                                                }
+                                                if !target.is_empty() && theme::action(
+                                                    line,"다시 묶기",ButtonRole::Standard,
+                                                    writable&&!busy&&!group.transferred
+                                                ).clicked(){
+                                                    command=Some((
+                                                        "regroup_shipment".to_owned(),
+                                                        group.id.clone(),
+                                                        Some(ship.id.clone()),
+                                                        Some(target.clone()),ack
+                                                    ));
+                                                }
+                                            });
+                                            components::soft_divider(list);
                                         }
                                     });
-                                    components::soft_divider(list);
+                                if !writable{
+                                    ui.label(typography::caption(
+                                        "운영 DB 변경 권한이 없어 조회만 가능합니다."
+                                    ));
                                 }
                             });
-                        if !writable{
-                            ui.label(typography::caption(
-                                "운영 DB 변경 권한이 없어 조회만 가능합니다."
-                            ));
-                        }
+                        });
                     });
                 }else{close=true;}
             }
@@ -7576,26 +7587,29 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                     components::decision_window(
                         "배송 건 묶음 관리","egui-workflow-pending-manage",work_area
                     ).show(ctx,|ui|{
-                        close=components::modal_header(
-                            ui,"배송 건 묶음 관리","닫기",true
-                        );
-                        if let Some(rows)=draft.analysis_evidence.as_ref()
-                            .and_then(|v|v.get("recipients"))
-                            .and_then(serde_json::Value::as_array){
-                            for recipient in rows{
-                                let name=recipient.get("name")
-                                    .and_then(serde_json::Value::as_str)
-                                    .filter(|s|!s.is_empty())
-                                    .unwrap_or("수취인 확인");
-                                let count=recipient.get("items")
-                                    .and_then(serde_json::Value::as_array)
-                                    .map(Vec::len).unwrap_or(0);
-                                ui.label(format!("{name} / 상품 {count}종"));
-                            }
-                        }
-                        components::modal_action_row(ui,|buttons|{
-                            theme::action(buttons,"거래처 확인하기",
-                                ButtonRole::Primary,false);
+                        components::decision_workspace(ui,|decision|{
+                            close=decision.header("배송 건 묶음 관리","닫기",true
+                            );
+                            decision.body(|ui|{
+                                if let Some(rows)=draft.analysis_evidence.as_ref()
+                                    .and_then(|v|v.get("recipients"))
+                                    .and_then(serde_json::Value::as_array){
+                                    for recipient in rows{
+                                        let name=recipient.get("name")
+                                            .and_then(serde_json::Value::as_str)
+                                            .filter(|s|!s.is_empty())
+                                            .unwrap_or("수취인 확인");
+                                        let count=recipient.get("items")
+                                            .and_then(serde_json::Value::as_array)
+                                            .map(Vec::len).unwrap_or(0);
+                                        ui.label(format!("{name} / 상품 {count}종"));
+                                    }
+                                }
+                            });
+                            decision.actions(|buttons|{
+                                theme::action(buttons,"거래처 확인하기",
+                                    ButtonRole::Primary,false);
+                            });
                         });
                     });
                 }else{close=true;}
@@ -7608,24 +7622,27 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                     components::decision_window(
                         "주문 묶음 삭제","egui-workflow-delete-group",work_area
                     ).show(ctx,|ui|{
-                        close=components::modal_header(
-                            ui,"주문 묶음 삭제","취소",true
-                        );
-                        ui.label(format!(
-                            "{} / 배송 {}건 묶음을 삭제할까요?",
-                            group.dealer_name,group.shipments.len()
-                        ));
-                        ui.label("접수 원문과 감사 기록은 보존됩니다.");
-                        components::modal_action_row(ui,|buttons|{
-                            if theme::action(
-                                buttons,"묶음 삭제",ButtonRole::Danger,
-                                writable && !busy && !group.transferred
-                            ).clicked(){
-                                command=Some((
-                                    "delete_group".into(),id.clone(),
-                                    None,None,false
+                        components::decision_workspace(ui,|decision|{
+                            close=decision.header("주문 묶음 삭제","취소",true
+                            );
+                            decision.body(|ui|{
+                                ui.label(format!(
+                                    "{} / 배송 {}건 묶음을 삭제할까요?",
+                                    group.dealer_name,group.shipments.len()
                                 ));
-                            }
+                                ui.label("접수 원문과 감사 기록은 보존됩니다.");
+                            });
+                            decision.actions(|buttons|{
+                                if theme::action(
+                                    buttons,"묶음 삭제",ButtonRole::Danger,
+                                    writable && !busy && !group.transferred
+                                ).clicked(){
+                                    command=Some((
+                                        "delete_group".into(),id.clone(),
+                                        None,None,false
+                                    ));
+                                }
+                            });
                         });
                     });
                 }else{close=true;}
@@ -7636,17 +7653,20 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                     components::decision_window(
                         "미확정 발주서 삭제","egui-workflow-delete-pending",work_area
                     ).show(ctx,|ui|{
-                        close=components::modal_header(
-                            ui,"미확정 발주서 삭제","취소",true
-                        );
-                        ui.label("미확정 발주서를 삭제할까요?");
-                        components::modal_action_row(ui,|buttons|{
-                            if theme::action(
-                                buttons,"발주서 삭제",ButtonRole::Danger,
-                                !busy
-                            ).clicked(){
-                                delete_pending=Some(id.clone());
-                            }
+                        components::decision_workspace(ui,|decision|{
+                            close=decision.header("미확정 발주서 삭제","취소",true
+                            );
+                            decision.body(|ui|{
+                                ui.label("미확정 발주서를 삭제할까요?");
+                            });
+                            decision.actions(|buttons|{
+                                if theme::action(
+                                    buttons,"발주서 삭제",ButtonRole::Danger,
+                                    !busy
+                                ).clicked(){
+                                    delete_pending=Some(id.clone());
+                                }
+                            });
                         });
                     });
                 }else{close=true;}
@@ -7655,22 +7675,25 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                 components::decision_window(
                     "계좌 안내 완료 확인","egui-workflow-payment-confirm",work_area
                 ).show(ctx,|ui|{
-                    close=components::modal_header(
-                        ui,"계좌 안내 완료 확인","돌아가기",true
-                    );
-                    ui.label(
-                        "계좌 안내 메시지를 복사한 기록이 없습니다. 다른 방법으로 안내하셨나요?"
-                    );
-                    components::modal_action_row(ui,|buttons|{
-                        if theme::action(
-                            buttons,"전달 완료로 처리",ButtonRole::Primary,
-                            writable && !busy
-                        ).clicked(){
-                            command=Some((
-                                "advance_group".into(),id.clone(),
-                                None,None,false
-                            ));
-                        }
+                    components::decision_workspace(ui,|decision|{
+                        close=decision.header("계좌 안내 완료 확인","돌아가기",true
+                        );
+                        decision.body(|ui|{
+                            ui.label(
+                                "계좌 안내 메시지를 복사한 기록이 없습니다. 다른 방법으로 안내하셨나요?"
+                            );
+                        });
+                        decision.actions(|buttons|{
+                            if theme::action(
+                                buttons,"전달 완료로 처리",ButtonRole::Primary,
+                                writable && !busy
+                            ).clicked(){
+                                command=Some((
+                                    "advance_group".into(),id.clone(),
+                                    None,None,false
+                                ));
+                            }
+                        });
                     });
                 });
             }
@@ -7843,31 +7866,32 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
         components::decision_window(
             "저장하지 않은 변경사항","freight-global-leave",work_area
         ).show(ctx,|dialog|{
-            if components::modal_header(
-                dialog,"저장하지 않은 변경사항","취소",!manager.busy()
-            ){
-                self.freight_pending_page=None;
-                self.freight_pending_save=false;
-            }
-            dialog.label(typography::body(
-                "운임 관리에서 수정한 내용이 있습니다. 변경사항을 저장할까요?"
-            ));
-
-            dialog.add_space(theme::SPACE_12);
-            components::modal_action_row(dialog,|bar|{
-                if theme::action(bar,"저장하고 이동",ButtonRole::Primary,
-                    manager.can_save_dirty()).clicked(){
-                    if manager.save_dirty(ctx.clone()){
-                        self.freight_pending_save=true;
-                    }
-                }
-                if theme::action(bar,"저장 안 함",ButtonRole::Danger,
-                    !manager.busy()).clicked(){
-                    manager.discard_drafts();
-                    self.page=next;
+            components::decision_workspace(dialog,|decision|{
+                if decision.header("저장하지 않은 변경사항","취소",!manager.busy()
+                ){
                     self.freight_pending_page=None;
                     self.freight_pending_save=false;
                 }
+                decision.body(|dialog|{
+                    dialog.label(typography::body(
+                        "운임 관리에서 수정한 내용이 있습니다. 변경사항을 저장할까요?"
+                    ));
+                });
+                decision.actions(|bar|{
+                    if theme::action(bar,"저장하고 이동",ButtonRole::Primary,
+                        manager.can_save_dirty()).clicked(){
+                        if manager.save_dirty(ctx.clone()){
+                            self.freight_pending_save=true;
+                        }
+                    }
+                    if theme::action(bar,"저장 안 함",ButtonRole::Danger,
+                        !manager.busy()).clicked(){
+                        manager.discard_drafts();
+                        self.page=next;
+                        self.freight_pending_page=None;
+                        self.freight_pending_save=false;
+                    }
+                });
             });
         });
     }
@@ -7893,25 +7917,27 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
         components::decision_window(
             "저장하지 않은 변경사항","settings-global-leave",work_area
         ).show(ctx,|ui|{
-            if components::modal_header(
-                ui,"저장하지 않은 변경사항","취소",!view.busy()
-            ){self.settings_pending_page=None;}
-            ui.label(typography::body(
-                "설정에서 수정한 내용이 있습니다. 변경사항을 저장할까요?"
-            ));
-            ui.add_space(theme::SPACE_12);
-            components::modal_action_row(ui,|actions|{
-                if theme::action(actions,"저장하고 이동",ButtonRole::Primary,
-                    !view.busy()&&!view.read_only()).clicked(){
-                    self.settings_pending_save=true;
-                    view.save(Arc::clone(&self.gateway),ctx.clone());
-                }
-                if theme::action(actions,"저장 안 함",ButtonRole::Danger,
-                    !view.busy()).clicked(){
-                    view.discard();
-                    self.page=next;
-                    self.settings_pending_page=None;
-                }
+            components::decision_workspace(ui,|decision|{
+                if decision.header("저장하지 않은 변경사항","취소",!view.busy()
+                ){self.settings_pending_page=None;}
+                decision.body(|ui|{
+                    ui.label(typography::body(
+                        "설정에서 수정한 내용이 있습니다. 변경사항을 저장할까요?"
+                    ));
+                });
+                decision.actions(|actions|{
+                    if theme::action(actions,"저장하고 이동",ButtonRole::Primary,
+                        !view.busy()&&!view.read_only()).clicked(){
+                        self.settings_pending_save=true;
+                        view.save(Arc::clone(&self.gateway),ctx.clone());
+                    }
+                    if theme::action(actions,"저장 안 함",ButtonRole::Danger,
+                        !view.busy()).clicked(){
+                        view.discard();
+                        self.page=next;
+                        self.settings_pending_page=None;
+                    }
+                });
             });
         });
     }

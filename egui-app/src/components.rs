@@ -1816,28 +1816,80 @@ pub fn nested_modal_window(
     modal_window(title,id,work_area).order(egui::Order::Foreground)
 }
 
-/// Compact decision layout: the master header/footer own their rules and
-/// action slots. The body aligns with their 8pt content inset and has the
-/// master 16pt gap on BOTH sides, independent of default widget spacing.
+/// Shared decision layout. The owner allocates header, body and action
+/// regions in sequence, so form edits are available to the footer immediately.
+/// The caller supplies contents and actions, not outer padding or separators.
+pub struct DecisionWorkspace<'a>{
+    ui:&'a mut Ui,
+    header_bottom:Option<f32>,
+    body_bottom:Option<f32>,
+}
+
+impl DecisionWorkspace<'_>{
+    pub fn header(&mut self,title:&str,cancel_label:&str,enabled:bool)->bool{
+        let (rect,_)=self.ui.allocate_exact_size(
+            Vec2::new(self.ui.available_width(),theme::MODAL_HEADER_HEIGHT),
+            Sense::hover()
+        );
+        self.header_bottom=Some(rect.bottom());
+        modal_master_header_in_rect(self.ui,rect,title,"",cancel_label,enabled)
+    }
+
+    pub fn body<R>(&mut self,contents:impl FnOnce(&mut Ui)->R)->R{
+        let top=self.ui.cursor().top();
+        let target=self.header_bottom.unwrap_or(top)+theme::MODAL_MASTER_WORKSPACE_GAP;
+        self.ui.add_space((target-top).max(0.0));
+        let inset=theme::SPACE_8;
+        let width=(self.ui.available_width()-2.0*inset).max(1.0);
+        let body=Frame::NONE.inner_margin(egui::Margin::symmetric(inset as i8,0))
+            .show(self.ui,|content|{
+                content.set_min_width(width);
+                content.spacing_mut().item_spacing.y=theme::SPACING;
+                contents(content)
+            });
+        self.body_bottom=Some(body.response.rect.bottom());
+        body.inner
+    }
+
+    fn before_actions(&mut self){
+        let top=self.ui.cursor().top();
+        let target=self.body_bottom.unwrap_or(top)+theme::MODAL_MASTER_WORKSPACE_GAP;
+        self.ui.add_space((target-top).max(0.0));
+    }
+
+    pub fn actions<R>(&mut self,contents:impl FnOnce(&mut Ui)->R)->egui::InnerResponse<R>{
+        self.before_actions();
+        modal_action_row(self.ui,contents)
+    }
+
+    pub fn actions_split(&mut self,leading:impl FnOnce(&mut Ui),trailing:impl FnOnce(&mut Ui)){
+        self.before_actions();
+        modal_action_row_split(self.ui,leading,trailing);
+    }
+}
+
+pub fn decision_workspace<R>(
+    ui:&mut Ui,contents:impl FnOnce(&mut DecisionWorkspace<'_>)->R
+)->R{
+    ui.scope(|layout|{
+        modal_master_controlled_spacing(layout);
+        contents(&mut DecisionWorkspace{
+            ui:layout,header_bottom:None,body_bottom:None,
+        })
+    }).inner
+}
+
+/// Convenience entry point for simple decisions. Uses the same workspace
+/// as interactive decision forms; never assembles a second layout.
 pub fn decision_content<R>(
     ui:&mut Ui,title:&str,cancel_label:&str,enabled:bool,
     body:impl FnOnce(&mut Ui),actions:impl FnOnce(&mut Ui)->R
 )->(bool,R){
-    ui.scope(|layout|{
-        layout.spacing_mut().item_spacing.y=0.0;
-        let cancelled=modal_header_with_workspace_gap(layout,title,cancel_label,enabled);
-        let inset=theme::SPACE_8;
-        let width=(layout.available_width()-2.0*inset).max(1.0);
-        Frame::NONE.inner_margin(egui::Margin::symmetric(inset as i8,0))
-            .show(layout,|content|{
-                content.set_min_width(width);
-                content.spacing_mut().item_spacing.y=theme::SPACING;
-                body(content);
-            });
-        layout.add_space(theme::MODAL_MASTER_WORKSPACE_GAP);
-        let result=modal_action_row(layout,actions).inner;
-        (cancelled,result)
-    }).inner
+    decision_workspace(ui,|decision|{
+        let cancelled=decision.header(title,cancel_label,enabled);
+        decision.body(body);
+        (cancelled,decision.actions(actions).inner)
+    })
 }
 
 pub fn decision_window(

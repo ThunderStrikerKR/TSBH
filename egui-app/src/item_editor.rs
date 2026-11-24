@@ -378,16 +378,20 @@ impl ItemEditor{
             components::decision_window(
                 "변경사항 확인","reception-item-discard-confirm",work_area
             ).show(ctx,|ui|{
-                if components::modal_header(ui,"변경사항 확인","돌아가기",true){
-                    self.confirm_discard=false;
-                }
-                ui.label("선택한 상품 변경사항을 버릴까요?");
-                components::modal_action_row(ui,|actions|{
-                    if theme::action(actions,"수정 내용 버리기",ButtonRole::Danger,true)
-                        .clicked(){
+                components::decision_workspace(ui,|decision|{
+                    if decision.header("변경사항 확인","돌아가기",true){
                         self.confirm_discard=false;
-                        result=Some(Event::Closed);
                     }
+                    decision.body(|ui|{
+                        ui.label("선택한 상품 변경사항을 버릴까요?");
+                    });
+                    decision.actions(|actions|{
+                        if theme::action(actions,"수정 내용 버리기",ButtonRole::Danger,true)
+                            .clicked(){
+                            self.confirm_discard=false;
+                            result=Some(Event::Closed);
+                        }
+                    });
                 });
             });
         }

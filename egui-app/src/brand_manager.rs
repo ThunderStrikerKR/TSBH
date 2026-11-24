@@ -233,15 +233,19 @@ impl BrandManager {
         components::modal_backdrop(ctx,"brand-unsaved-dim",true);
         components::decision_window("브랜드","brand-unsaved-confirm",work_area)
             .show(ctx,|dialog|{
-                cancel=components::modal_header(dialog,"브랜드","취소",!busy);
-                dialog.label(typography::body("브랜드 변경사항을 저장할까요?"));
-                components::modal_action_row(dialog,|buttons|{
-                        save=theme::action(buttons,"저장",
-                            theme::ButtonRole::Primary,editable&&!busy).clicked();
-                        discard=theme::action(buttons,"저장 안 함",
-                            theme::ButtonRole::Danger,!busy).clicked();
-                    }
-                );
+                components::decision_workspace(dialog,|decision|{
+                    cancel=decision.header("브랜드","취소",!busy);
+                    decision.body(|dialog|{
+                        dialog.label(typography::body("브랜드 변경사항을 저장할까요?"));
+                    });
+                    decision.actions(|buttons|{
+                            save=theme::action(buttons,"저장",
+                                theme::ButtonRole::Primary,editable&&!busy).clicked();
+                            discard=theme::action(buttons,"저장 안 함",
+                                theme::ButtonRole::Danger,!busy).clicked();
+                        }
+                    );
+                });
             });
         if cancel{
             self.pending=None;

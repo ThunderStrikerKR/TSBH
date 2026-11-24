@@ -2295,17 +2295,20 @@ impl ProductManager {
             components::decision_window(
                 "상품 삭제","egui-product-archive-confirm",work_area
             ).show(ctx,|dialog|{
-                cancel=components::modal_header(
-                    dialog,"상품 삭제","취소",!busy
-                );
-                dialog.label(typography::body(
-                    "등록 상품에서 삭제할까요? 과거 주문과 가격 기록은 보존하며 홈페이지 재수집으로 자동 복원하지 않습니다."
-                ));
-                components::modal_action_row(dialog,|actions|{
-                        if theme::action(actions,"상품 삭제",theme::ButtonRole::Danger,
-                            editable&&!busy).clicked(){archive=true;}
-                    }
-                );
+                components::decision_workspace(dialog,|decision|{
+                    cancel=decision.header("상품 삭제","취소",!busy
+                    );
+                    decision.body(|dialog|{
+                        dialog.label(typography::body(
+                            "등록 상품에서 삭제할까요? 과거 주문과 가격 기록은 보존하며 홈페이지 재수집으로 자동 복원하지 않습니다."
+                        ));
+                    });
+                    decision.actions(|actions|{
+                            if theme::action(actions,"상품 삭제",theme::ButtonRole::Danger,
+                                editable&&!busy).clicked(){archive=true;}
+                        }
+                    );
+                });
             });
             if cancel{self.confirm_archive=false;}
             else if archive{
@@ -2321,17 +2324,20 @@ impl ProductManager {
             components::decision_window(
                 "저장하지 않은 상품","egui-product-discard-confirm",work_area
             ).show(ctx,|dialog|{
-                keep=components::modal_header(
-                    dialog,"저장하지 않은 상품","취소",!busy
-                );
-                dialog.label(typography::body(
-                    "상품 수정사항을 저장하지 않고 닫을까요?"
-                ));
-                components::modal_action_row(dialog,|actions|{
-                        if theme::action(actions,"저장 안 함",
-                            theme::ButtonRole::Danger,!busy).clicked(){discard=true;}
-                    }
-                );
+                components::decision_workspace(dialog,|decision|{
+                    keep=decision.header("저장하지 않은 상품","취소",!busy
+                    );
+                    decision.body(|dialog|{
+                        dialog.label(typography::body(
+                            "상품 수정사항을 저장하지 않고 닫을까요?"
+                        ));
+                    });
+                    decision.actions(|actions|{
+                            if theme::action(actions,"저장 안 함",
+                                theme::ButtonRole::Danger,!busy).clicked(){discard=true;}
+                        }
+                    );
+                });
             });
             if keep {self.confirm_discard=false;}
             else if discard{self.close_detail();}

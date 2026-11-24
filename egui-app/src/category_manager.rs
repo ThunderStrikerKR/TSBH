@@ -891,115 +891,118 @@ impl CategoryManager {
             };
             components::decision_window(title,"category-operation-modal",work_area)
                 .show(ctx,|modal|{
-                    cancel=components::modal_header(modal,title,"취소",!busy);
-                    if let Some(current)=self.current(&cats){
-                        match operation{
-                            Operation::Add=>{
-                                // Freight composition reference: identify the
-                                // target first, then group the actual input,
-                                // and keep the mandatory consent as its own
-                                // clearly separated information block.
-                                let location_path=path_text(&cats,&current.id);
-                                components::modal_labeled_row(
-                                    modal,"생성 위치",|line|{
-                                        let path_width=line.available_width().max(1.0);
-                                        let visible=typography::fit_category_path(
-                                            line,&location_path,path_width,
-                                            typography::CategoryPathFont::Body
+                    components::decision_workspace(modal,|decision|{
+                        cancel=decision.header(title,"취소",!busy);
+                        decision.body(|modal|{
+                            if let Some(current)=self.current(&cats){
+                                match operation{
+                                    Operation::Add=>{
+                                        // Freight composition reference: identify the
+                                        // target first, then group the actual input,
+                                        // and keep the mandatory consent as its own
+                                        // clearly separated information block.
+                                        let location_path=path_text(&cats,&current.id);
+                                        components::modal_labeled_row(
+                                            modal,"생성 위치",|line|{
+                                                let path_width=line.available_width().max(1.0);
+                                                let visible=typography::fit_category_path(
+                                                    line,&location_path,path_width,
+                                                    typography::CategoryPathFont::Body
+                                                );
+                                                line.add_sized(
+                                                    [path_width,theme::INPUT_HEIGHT],
+                                                    egui::Label::new(typography::body(&visible))
+                                                        .truncate()
+                                                ).on_hover_text(&location_path);
+                                            }
                                         );
-                                        line.add_sized(
-                                            [path_width,theme::INPUT_HEIGHT],
-                                            egui::Label::new(typography::body(&visible))
-                                                .truncate()
-                                        ).on_hover_text(&location_path);
+                                        modal.add_space(theme::SPACE_12);
+                                        components::soft_divider(modal);
+                                        modal.add_space(theme::SPACE_12);
+                                        components::modal_labeled_row(
+                                            modal,"새 분류 이름",|line|{
+                                                let input_width=line.available_width().max(1.0);
+                                                components::flexible_text_field(
+                                                    line,&mut self.new_name,input_width,
+                                                    "새 하위 분류 이름"
+                                                );
+                                            }
+                                        );
+                                        let count=direct_count(catalog,&current.id);
+                                        if count>0{
+                                            modal.add_space(theme::SPACE_12);
+                                            theme::modal_nested_frame().show(modal,|notice|{
+                                                let transfer_label=if children(&cats,&current.id).is_empty(){
+                                                    format!("직접 연결된 상품 {count}개를 새 하위 분류로 이전하는 데 동의합니다.")
+                                                }else{
+                                                    format!("기존 직접 연결 상품 {count}개는 현재 분류에 남습니다. 하위 분류 추가를 확인했습니다.")
+                                                };
+                                                components::checkbox(
+                                                    notice,&mut self.transfer,&transfer_label,true
+                                                );
+                                            });
+                                        }
                                     }
-                                );
-                                modal.add_space(theme::SPACE_12);
-                                components::soft_divider(modal);
-                                modal.add_space(theme::SPACE_12);
-                                components::modal_labeled_row(
-                                    modal,"새 분류 이름",|line|{
-                                        let input_width=line.available_width().max(1.0);
-                                        components::flexible_text_field(
-                                            line,&mut self.new_name,input_width,
-                                            "새 하위 분류 이름"
+                                    Operation::Move=>{
+                                        modal.label(typography::body(
+                                            "분류 ID와 기존 상품 연결은 유지하고 상위 분류만 변경합니다."
+                                        ));
+                                        let choices=cats.iter().filter(|row|{
+                                            row.active && row.id!=current.id
+                                            && !under(&cats,&row.id,&current.id)
+                                            && path(&cats,&row.id).iter().all(|c|c.active)
+                                        }).collect::<Vec<_>>();
+                                        // A move can only target active categories
+                                        // outside the current subtree. Reuse the
+                                        // same hierarchical popup without inventing
+                                        // an alternative category hierarchy.
+                                        let allowed=choices.iter()
+                                            .map(|row|row.id.as_str())
+                                            .collect::<HashSet<_>>();
+                                        let picker_nodes=
+                                            category_dropdown::nodes_from_catalog(catalog)
+                                            .into_iter()
+                                            .filter(|node|allowed.contains(node.id.as_str()))
+                                            .collect::<Vec<_>>();
+                                        components::modal_labeled_row(
+                                            modal,"상위 분류",|line|{
+                                                let picker_width=line.available_width()
+                                                    .min(theme::CATEGORY_PATH_PICKER_WIDTH).max(1.0);
+                                                category_dropdown::category_dropdown(
+                                                    line,&picker_nodes,&mut self.target,
+                                                    picker_width,"상위 분류 선택",true,false
+                                                );
+                                            }
                                         );
                                     }
-                                );
-                                let count=direct_count(catalog,&current.id);
-                                if count>0{
-                                    modal.add_space(theme::SPACE_12);
-                                    theme::modal_nested_frame().show(modal,|notice|{
-                                        let transfer_label=if children(&cats,&current.id).is_empty(){
-                                            format!("직접 연결된 상품 {count}개를 새 하위 분류로 이전하는 데 동의합니다.")
-                                        }else{
-                                            format!("기존 직접 연결 상품 {count}개는 현재 분류에 남습니다. 하위 분류 추가를 확인했습니다.")
-                                        };
-                                        components::checkbox(
-                                            notice,&mut self.transfer,&transfer_label,true
-                                        );
-                                    });
+                                    Operation::Delete=>{
+                                        modal.label(typography::body(
+                                            &format!("{} 분류를 삭제할까요? 상품과 하위 분류가 없어야 삭제할 수 있습니다.",
+                                                current.name)
+                                        ));
+                                    },
+                                };
+                            }
+                        });
+                        decision.actions(|right|{
+                            submit=theme::action(right,
+                                match operation{
+                                    Operation::Add=>"분류 생성",
+                                    Operation::Move=>"위치 변경",
+                                    Operation::Delete=>"분류 삭제",
+                                },
+                                if operation==Operation::Delete{
+                                    theme::ButtonRole::Danger
+                                }else{theme::ButtonRole::Primary},
+                                editable&&!busy && match operation{
+                                    Operation::Add=>!self.new_name.trim().is_empty()
+                                        && (self.current(&cats).is_some_and(|cur|
+                                            direct_count(catalog,&cur.id)==0)||self.transfer),
+                                    Operation::Move=>!self.target.is_empty(),
+                                    Operation::Delete=>true,
                                 }
-                            }
-                            Operation::Move=>{
-                                modal.label(typography::body(
-                                    "분류 ID와 기존 상품 연결은 유지하고 상위 분류만 변경합니다."
-                                ));
-                                let choices=cats.iter().filter(|row|{
-                                    row.active && row.id!=current.id
-                                    && !under(&cats,&row.id,&current.id)
-                                    && path(&cats,&row.id).iter().all(|c|c.active)
-                                }).collect::<Vec<_>>();
-                                // A move can only target active categories
-                                // outside the current subtree. Reuse the
-                                // same hierarchical popup without inventing
-                                // an alternative category hierarchy.
-                                let allowed=choices.iter()
-                                    .map(|row|row.id.as_str())
-                                    .collect::<HashSet<_>>();
-                                let picker_nodes=
-                                    category_dropdown::nodes_from_catalog(catalog)
-                                    .into_iter()
-                                    .filter(|node|allowed.contains(node.id.as_str()))
-                                    .collect::<Vec<_>>();
-                                components::modal_labeled_row(
-                                    modal,"상위 분류",|line|{
-                                        let picker_width=line.available_width()
-                                            .min(theme::CATEGORY_PATH_PICKER_WIDTH).max(1.0);
-                                        category_dropdown::category_dropdown(
-                                            line,&picker_nodes,&mut self.target,
-                                            picker_width,"상위 분류 선택",true,false
-                                        );
-                                    }
-                                );
-                            }
-                            Operation::Delete=>{
-                                modal.label(typography::body(
-                                    &format!("{} 분류를 삭제할까요? 상품과 하위 분류가 없어야 삭제할 수 있습니다.",
-                                        current.name)
-                                ));
-                            },
-                        };
-                    }
-                    modal.add_space(theme::SPACE_12);
-                    components::modal_action_row(modal,|right|{
-                        submit=theme::action(right,
-                            match operation{
-                                Operation::Add=>"분류 생성",
-                                Operation::Move=>"위치 변경",
-                                Operation::Delete=>"분류 삭제",
-                            },
-                            if operation==Operation::Delete{
-                                theme::ButtonRole::Danger
-                            }else{theme::ButtonRole::Primary},
-                            editable&&!busy && match operation{
-                                Operation::Add=>!self.new_name.trim().is_empty()
-                                    && (self.current(&cats).is_some_and(|cur|
-                                        direct_count(catalog,&cur.id)==0)||self.transfer),
-                                Operation::Move=>!self.target.is_empty(),
-                                Operation::Delete=>true,
-                            }
-                        ).clicked();
+                            ).clicked();
+                        });
                     });
                 });
             if cancel{self.request_close_operation(&cats);}
@@ -1018,19 +1021,22 @@ impl CategoryManager {
             components::decision_window(
                 "저장하지 않은 카테고리","category-unsaved-confirm",work_area
             ).show(ctx,|modal|{
-                cancel=components::modal_header(
-                    modal,"저장하지 않은 카테고리","취소",!busy
-                );
-                modal.label(typography::body(
-                    "카테고리 변경사항을 저장할까요?"
-                ));
-                components::modal_action_row(modal,|actions|{
-                        save=theme::action(actions,"저장하고 이동",
-                            theme::ButtonRole::Primary,editable&&!busy).clicked();
-                        discard=theme::action(actions,"저장 안 함",
-                            theme::ButtonRole::Danger,!busy).clicked();
-                    }
-                );
+                components::decision_workspace(modal,|decision|{
+                    cancel=decision.header("저장하지 않은 카테고리","취소",!busy
+                    );
+                    decision.body(|modal|{
+                        modal.label(typography::body(
+                            "카테고리 변경사항을 저장할까요?"
+                        ));
+                    });
+                    decision.actions(|actions|{
+                            save=theme::action(actions,"저장하고 이동",
+                                theme::ButtonRole::Primary,editable&&!busy).clicked();
+                            discard=theme::action(actions,"저장 안 함",
+                                theme::ButtonRole::Danger,!busy).clicked();
+                        }
+                    );
+                });
             });
             if cancel{self.confirm=None;}
             else if discard{

@@ -1155,61 +1155,64 @@ impl ExcelManager{
             components::decision_window(
                 "Excel 작성 확인","excel-export-confirm",ui.max_rect()
             ).show(ui.ctx(),|dialog|{
-                if components::modal_header(
-                    dialog,"Excel 작성 확인","취소",true
-                ){self.preview=None;}
-                dialog.label(typography::body(&format!(
-                    "{} {}건의 로젠택배 Excel을 작성할까요?",
-                    if origin=="FACTORY"{"공장 발송"}else{"매장 발송"},count
-                )));
-                dialog.label(typography::caption(
-                    "Excel 파일 작성은 실제 포장 또는 발송 완료가 아닙니다."
-                ));
-                let status_row_width=dialog.available_width();
-                let _=components::fixed_row(
-                    dialog,egui::Vec2::new(
-                        status_row_width,theme::ACTION_STANDARD_HEIGHT
-                    ),egui::Layout::left_to_right(egui::Align::Center),|row|{
-                        if missing{
-                            let message="송하인 정보가 미완성입니다. 설정을 확인하세요.";
-                            let button_width=148.0;
-                            let text_width=(row.available_width()-button_width
-                                -theme::SPACE_8).max(1.0);
-                            let response=row.add_sized(
-                                egui::Vec2::new(text_width,theme::ACTION_STANDARD_HEIGHT),
-                                egui::Label::new(
-                                    typography::status(message,theme::DANGER)
-                                ).truncate()
-                            );
-                            response.on_hover_text(message);
-                            if theme::action(row,"반도스탠드 정보 설정",
-                                theme::ButtonRole::Standard,true).clicked(){
-                                go_settings=true;
-                            }
-                        }
-                    }
-                );
-                components::modal_action_row(dialog,|bar|{
-                    if theme::action(bar,"Excel 작성",theme::ButtonRole::Primary,
-                        !busy&&self.gateway.excel_write_enabled()).clicked(){
-                        self.preview=None;
-                        let folder_after=origin=="FACTORY";
-                        self.task("export",ui.ctx().clone(),move|g|{
-                            let mut result=g.export_excel(&origin,&ids)?;
-                            let projection=g.execute(ReadOperation::ReadShipments,
-                                json!({"state":&result["state"]}))?;
-                            result["shipmentReads"]=projection;
-                            if folder_after{
-                                if let Some(export_id)=result["exportId"].as_str(){
-                                    // Explorer failure is NOT an export failure.
-                                    if let Err(reason)=g.open_excel_folder(Some(export_id),None){
-                                        result["folderWarning"]=json!(reason);
+                components::decision_workspace(dialog,|decision|{
+                    if decision.header("Excel 작성 확인","취소",true
+                    ){self.preview=None;}
+                    decision.body(|dialog|{
+                        dialog.label(typography::body(&format!(
+                            "{} {}건의 로젠택배 Excel을 작성할까요?",
+                            if origin=="FACTORY"{"공장 발송"}else{"매장 발송"},count
+                        )));
+                        dialog.label(typography::caption(
+                            "Excel 파일 작성은 실제 포장 또는 발송 완료가 아닙니다."
+                        ));
+                        let status_row_width=dialog.available_width();
+                        let _=components::fixed_row(
+                            dialog,egui::Vec2::new(
+                                status_row_width,theme::ACTION_STANDARD_HEIGHT
+                            ),egui::Layout::left_to_right(egui::Align::Center),|row|{
+                                if missing{
+                                    let message="송하인 정보가 미완성입니다. 설정을 확인하세요.";
+                                    let button_width=148.0;
+                                    let text_width=(row.available_width()-button_width
+                                        -theme::SPACE_8).max(1.0);
+                                    let response=row.add_sized(
+                                        egui::Vec2::new(text_width,theme::ACTION_STANDARD_HEIGHT),
+                                        egui::Label::new(
+                                            typography::status(message,theme::DANGER)
+                                        ).truncate()
+                                    );
+                                    response.on_hover_text(message);
+                                    if theme::action(row,"반도스탠드 정보 설정",
+                                        theme::ButtonRole::Standard,true).clicked(){
+                                        go_settings=true;
                                     }
                                 }
                             }
-                            Ok(result)
-                        });
-                    }
+                        );
+                    });
+                    decision.actions(|bar|{
+                        if theme::action(bar,"Excel 작성",theme::ButtonRole::Primary,
+                            !busy&&self.gateway.excel_write_enabled()).clicked(){
+                            self.preview=None;
+                            let folder_after=origin=="FACTORY";
+                            self.task("export",ui.ctx().clone(),move|g|{
+                                let mut result=g.export_excel(&origin,&ids)?;
+                                let projection=g.execute(ReadOperation::ReadShipments,
+                                    json!({"state":&result["state"]}))?;
+                                result["shipmentReads"]=projection;
+                                if folder_after{
+                                    if let Some(export_id)=result["exportId"].as_str(){
+                                        // Explorer failure is NOT an export failure.
+                                        if let Err(reason)=g.open_excel_folder(Some(export_id),None){
+                                            result["folderWarning"]=json!(reason);
+                                        }
+                                    }
+                                }
+                                Ok(result)
+                            });
+                        }
+                    });
                 });
             });
         }

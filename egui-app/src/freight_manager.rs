@@ -952,46 +952,50 @@ impl FreightManager {
                 components::decision_window(
                     "배송 그룹 추가","freight-create",area
                 ).show(ctx,|modal|{
-                    if components::modal_header(
-                        modal,"배송 그룹 추가","취소",enabled
-                    ){close_create=true;}
-                    modal.label(typography::field_label("배송 그룹명"));
-                    modal.add_enabled_ui(enabled,|field|{
-                        components::flexible_text_field(
-                            field,&mut self.new_name,
-                            theme::MANAGEMENT_SEARCH_MIN_WIDTH,"그룹 이름 입력"
+                    components::decision_workspace(modal,|decision|{
+                        if decision.header("배송 그룹 추가","취소",enabled
+                        ){close_create=true;}
+                        decision.body(|modal|{
+                            modal.label(typography::field_label("배송 그룹명"));
+                            modal.add_enabled_ui(enabled,|field|{
+                                components::flexible_text_field(
+                                    field,&mut self.new_name,
+                                    theme::MANAGEMENT_SEARCH_MIN_WIDTH,"그룹 이름 입력"
+                                );
+                            });
+                        });
+                        decision.actions(|controls|{
+                                if theme::action(
+                                    controls,"배송 그룹 추가",theme::ButtonRole::Primary,
+                                    enabled&&!self.new_name.trim().is_empty()
+                                ).clicked(){
+                                    action=Some(("create_group".into(),json!({
+                                        "name":self.new_name.trim()
+                                    })));
+                                }
+                            }
                         );
                     });
-                    modal.add_space(theme::SPACE_12);
-                    components::modal_action_row(modal,
-                        |controls|{
-                            if theme::action(
-                                controls,"배송 그룹 추가",theme::ButtonRole::Primary,
-                                enabled&&!self.new_name.trim().is_empty()
-                            ).clicked(){
-                                action=Some(("create_group".into(),json!({
-                                    "name":self.new_name.trim()
-                                })));
-                            }
-                        }
-                    );
                 });
             }else if let Some((id,name))=self.rename_target.as_mut(){
                 components::modal_backdrop(ctx,"freight-rename-backdrop",false);
                 components::decision_window("배송 그룹명","freight-rename",area)
                     .show(ctx,|modal|{
-                        if components::modal_header(modal,"배송 그룹명","취소",enabled){
-                            close_rename=true;
-                        }
-                        components::field(modal,name,components::FieldKind::Text,enabled);
-                        modal.add_space(theme::SPACE_12);
-                        components::modal_action_row(modal,|controls|{
-                            if theme::action(controls,"이름 수정",theme::ButtonRole::Primary,
-                                enabled&&!name.trim().is_empty()).clicked(){
-                                action=Some(("rename_group".into(),json!({
-                                    "groupId":id,"name":name.trim()
-                                })));
+                        components::decision_workspace(modal,|decision|{
+                            if decision.header("배송 그룹명","취소",enabled){
+                                close_rename=true;
                             }
+                            decision.body(|modal|{
+                                components::field(modal,name,components::FieldKind::Text,enabled);
+                            });
+                            decision.actions(|controls|{
+                                if theme::action(controls,"이름 수정",theme::ButtonRole::Primary,
+                                    enabled&&!name.trim().is_empty()).clicked(){
+                                    action=Some(("rename_group".into(),json!({
+                                        "groupId":id,"name":name.trim()
+                                    })));
+                                }
+                            });
                         });
                     });
             }else if let Some(id)=self.delete_target.as_ref(){
@@ -1001,53 +1005,54 @@ impl FreightManager {
                 components::modal_backdrop(ctx,"freight-delete-backdrop",false);
                 components::decision_window("배송 그룹 삭제","freight-delete",area)
                     .show(ctx,|modal|{
-                        if components::modal_header_chrome(
-                            modal,"배송 그룹 삭제","취소",enabled
-                        ){close_delete=true;}
-                        modal.add_space(theme::SPACE_12);
-                        components::modal_master_body(modal,|workspace|{
-                        components::modal_master_body_section(
-                            workspace,"삭제 대상",|details|{
-                            details.label(typography::section_heading(name));
-                            if !affected.is_empty(){
-                                details.label(typography::status(
-                                    "사용 중인 상품이 있습니다. 상품을 다른 그룹으로 옮기거나 미지정으로 변경한 후 삭제해야 합니다.",
-                                    theme::SELECTED_ORDER
-                                ));
-                                egui::ScrollArea::vertical()
-                                    .id_salt("freight-delete-affected-products")
-                                    .max_height((area.height()-310.0).max(70.0)
-                                        .min(theme::MANAGEMENT_MODAL_BODY_MAX_HEIGHT))
-                                    .show(details,|list|{
-                                        for product in &affected {
-                                            let first=rows(&product["variants"]).first();
-                                            let color=first.map(|v|color_label(text(v,"color")))
-                                                .unwrap_or_default();
-                                            let label=if color.is_empty(){
-                                                model_label(text(product,"name")).to_owned()
-                                            }else{
-                                                format!("{} / {}",model_label(text(product,"name")),color)
-                                            };
-                                            list.label(typography::table_cell(&label));
-                                        }
-                                    });
-                            }else{
-                                details.label(typography::body(
-                                    "연결된 현재 상품이 없습니다. 과거 운임과 주문 기록은 보존합니다."
-                                ));
-                            }
-                        });
-                        });
-                        modal.add_space(theme::SPACE_12);
-                        components::modal_footer_chrome(modal,|controls|{
-                            if theme::action(controls,if !affected.is_empty(){
-                                "상품 연결을 미지정으로 변경하고 삭제"
-                            }else{"그룹 삭제"},theme::ButtonRole::Danger,enabled)
-                                .clicked(){
-                                action=Some(("delete_group".into(),json!({
-                                    "groupId":id,"detach":!affected.is_empty()
-                                })));
-                            }
+                        components::decision_workspace(modal,|decision|{
+                            if decision.header("배송 그룹 삭제","취소",enabled
+                            ){close_delete=true;}
+                            decision.body(|modal|{
+                                components::modal_master_body(modal,|workspace|{
+                                components::modal_master_body_section(
+                                    workspace,"삭제 대상",|details|{
+                                    details.label(typography::section_heading(name));
+                                    if !affected.is_empty(){
+                                        details.label(typography::status(
+                                            "사용 중인 상품이 있습니다. 상품을 다른 그룹으로 옮기거나 미지정으로 변경한 후 삭제해야 합니다.",
+                                            theme::SELECTED_ORDER
+                                        ));
+                                        egui::ScrollArea::vertical()
+                                            .id_salt("freight-delete-affected-products")
+                                            .max_height((area.height()-310.0).max(70.0)
+                                                .min(theme::MANAGEMENT_MODAL_BODY_MAX_HEIGHT))
+                                            .show(details,|list|{
+                                                for product in &affected {
+                                                    let first=rows(&product["variants"]).first();
+                                                    let color=first.map(|v|color_label(text(v,"color")))
+                                                        .unwrap_or_default();
+                                                    let label=if color.is_empty(){
+                                                        model_label(text(product,"name")).to_owned()
+                                                    }else{
+                                                        format!("{} / {}",model_label(text(product,"name")),color)
+                                                    };
+                                                    list.label(typography::table_cell(&label));
+                                                }
+                                            });
+                                    }else{
+                                        details.label(typography::body(
+                                            "연결된 현재 상품이 없습니다. 과거 운임과 주문 기록은 보존합니다."
+                                        ));
+                                    }
+                                });
+                                });
+                            });
+                            decision.actions(|controls|{
+                                if theme::action(controls,if !affected.is_empty(){
+                                    "상품 연결을 미지정으로 변경하고 삭제"
+                                }else{"그룹 삭제"},theme::ButtonRole::Danger,enabled)
+                                    .clicked(){
+                                    action=Some(("delete_group".into(),json!({
+                                        "groupId":id,"detach":!affected.is_empty()
+                                    })));
+                                }
+                            });
                         });
                     });
             }else if let Some(pid)=self.product_reset_target.as_ref(){
@@ -1055,18 +1060,21 @@ impl FreightManager {
                 components::decision_window(
                     "운임 기준 변경","freight-product-reset",area
                 ).show(ctx,|dialog|{
-                    if components::modal_header(
-                        dialog,"운임 기준 변경","취소",enabled
-                    ){close_product_reset=true;}
-                    dialog.label(typography::body(
-                        "이 상품의 새 운임 기준을 시작하고 이전 자동 추천을 중단할까요?"
-                    ));
-                    components::modal_action_row(dialog,|bar|{
-                        if theme::action(bar,"기준 변경",
-                            theme::ButtonRole::Danger,enabled).clicked(){
-                            action=Some(("reset_product_freight_rule".into(),
-                                json!({"productId":pid})));
-                        }
+                    components::decision_workspace(dialog,|decision|{
+                        if decision.header("운임 기준 변경","취소",enabled
+                        ){close_product_reset=true;}
+                        decision.body(|dialog|{
+                            dialog.label(typography::body(
+                                "이 상품의 새 운임 기준을 시작하고 이전 자동 추천을 중단할까요?"
+                            ));
+                        });
+                        decision.actions(|bar|{
+                            if theme::action(bar,"기준 변경",
+                                theme::ButtonRole::Danger,enabled).clicked(){
+                                action=Some(("reset_product_freight_rule".into(),
+                                    json!({"productId":pid})));
+                            }
+                        });
                     });
                 });
             }
@@ -1125,30 +1133,33 @@ impl FreightManager {
                     components::decision_window(
                         "저장하지 않은 운임","freight-discard-confirm",area
                     ).show(ctx,|dialog|{
-                        if components::modal_header(
-                            dialog,"저장하지 않은 운임","취소",enabled
-                        ){editor.ask_discard=false;}
-                        dialog.label(typography::body(
-                            "운임 수정사항을 저장하지 않고 닫을까요?"
-                        ));
-                        components::modal_action_row(dialog,|bar|{
-                            if theme::action(bar,"저장하고 닫기",
-                                theme::ButtonRole::Primary,enabled&&editor.dirty()).clicked(){
-                                match editor.write_action(){
-                                    Ok(command)=>{
-                                        editor.error=None;
-                                        action=Some(command);
-                                    }
-                                    Err(message)=>{
-                                        editor.error=Some(message);
-                                        editor.ask_discard=false;
+                        components::decision_workspace(dialog,|decision|{
+                            if decision.header("저장하지 않은 운임","취소",enabled
+                            ){editor.ask_discard=false;}
+                            decision.body(|dialog|{
+                                dialog.label(typography::body(
+                                    "운임 수정사항을 저장하지 않고 닫을까요?"
+                                ));
+                            });
+                            decision.actions(|bar|{
+                                if theme::action(bar,"저장하고 닫기",
+                                    theme::ButtonRole::Primary,enabled&&editor.dirty()).clicked(){
+                                    match editor.write_action(){
+                                        Ok(command)=>{
+                                            editor.error=None;
+                                            action=Some(command);
+                                        }
+                                        Err(message)=>{
+                                            editor.error=Some(message);
+                                            editor.ask_discard=false;
+                                        }
                                     }
                                 }
-                            }
-                            if theme::action(bar,"저장 안 함",
-                                theme::ButtonRole::Danger,enabled).clicked(){
-                                close_editor=true;
-                            }
+                                if theme::action(bar,"저장 안 함",
+                                    theme::ButtonRole::Danger,enabled).clicked(){
+                                    close_editor=true;
+                                }
+                            });
                         });
                     });
                 }
@@ -1158,32 +1169,35 @@ impl FreightManager {
                 components::decision_window(
                     "운임 기준 변경","freight-basis-confirm",area
                 ).show(ctx,|dialog|{
-                    if components::modal_header(
-                        dialog,"운임 기준 변경","취소",enabled
-                    ){close_basis=true;}
-                    let warning=match name {
-                        None=>"전체 운임 기준을 변경하면 이전 운임의 자동 추천을 중단합니다. 새 운임을 다시 확인해 등록해야 합니다.",
-                        Some(_)=>"선택한 그룹의 이전 운임 추천을 중단하고 새 운임 기준으로 변경합니다."
-                    };
-                    let warning_width=dialog.available_width();
-                    let _=components::fixed_row(
-                        dialog,egui::Vec2::new(
-                            warning_width,typography::METADATA_LINE_HEIGHT
-                        ),egui::Layout::left_to_right(egui::Align::Center),|row|{
-                            let response=row.add(
-                                egui::Label::new(typography::body(warning)).truncate()
+                    components::decision_workspace(dialog,|decision|{
+                        if decision.header("운임 기준 변경","취소",enabled
+                        ){close_basis=true;}
+                        decision.body(|dialog|{
+                            let warning=match name {
+                                None=>"전체 운임 기준을 변경하면 이전 운임의 자동 추천을 중단합니다. 새 운임을 다시 확인해 등록해야 합니다.",
+                                Some(_)=>"선택한 그룹의 이전 운임 추천을 중단하고 새 운임 기준으로 변경합니다."
+                            };
+                            let warning_width=dialog.available_width();
+                            let _=components::fixed_row(
+                                dialog,egui::Vec2::new(
+                                    warning_width,typography::METADATA_LINE_HEIGHT
+                                ),egui::Layout::left_to_right(egui::Align::Center),|row|{
+                                    let response=row.add(
+                                        egui::Label::new(typography::body(warning)).truncate()
+                                    );
+                                    response.on_hover_text(warning);
+                                }
                             );
-                            response.on_hover_text(warning);
-                        }
-                    );
-                    components::modal_action_row(dialog,|bar|{
-                        if theme::action(bar,"기준 변경",
-                            theme::ButtonRole::Danger,enabled).clicked(){
-                            action=Some(("change_basis".into(),match target{
-                                Some(id)=>json!({"groupId":id}),
-                                None=>json!({})
-                            }));
-                        }
+                        });
+                        decision.actions(|bar|{
+                            if theme::action(bar,"기준 변경",
+                                theme::ButtonRole::Danger,enabled).clicked(){
+                                action=Some(("change_basis".into(),match target{
+                                    Some(id)=>json!({"groupId":id}),
+                                    None=>json!({})
+                                }));
+                            }
+                        });
                     });
                 });
             }
@@ -1198,23 +1212,25 @@ impl FreightManager {
                 components::decision_window(
                     "새로 확인된 청구 운임 (원)","freight-exception",ui.max_rect()
                 ).show(ctx,|dialog|{
-                    if components::modal_header(
-                        dialog,"새로 확인된 청구 운임 (원)","취소",enabled
-                    ){close=true;}
-                    components::money_field(dialog,amount,enabled);
-                    dialog.add_space(theme::SPACE_12);
-                    components::modal_action_row(dialog,|bar|{
-                        if theme::action(bar,"예외 운임 변경",
-                            theme::ButtonRole::Primary,enabled).clicked(){
-                            match components::parse_money_input(amount){
-                                Some(value)=>{
-                                    action=Some(("revise_combination".into(),json!({
-                                        "combinationId":id,"charge":value
-                                    })));
+                    components::decision_workspace(dialog,|decision|{
+                        if decision.header("새로 확인된 청구 운임 (원)","취소",enabled
+                        ){close=true;}
+                        decision.body(|dialog|{
+                            components::money_field(dialog,amount,enabled);
+                        });
+                        decision.actions(|bar|{
+                            if theme::action(bar,"예외 운임 변경",
+                                theme::ButtonRole::Primary,enabled).clicked(){
+                                match components::parse_money_input(amount){
+                                    Some(value)=>{
+                                        action=Some(("revise_combination".into(),json!({
+                                            "combinationId":id,"charge":value
+                                        })));
+                                    }
+                                    _=>self.error=Some("올바른 운임을 입력하세요.".into())
                                 }
-                                _=>self.error=Some("올바른 운임을 입력하세요.".into())
                             }
-                        }
+                        });
                     });
                 });
             }
@@ -1231,19 +1247,20 @@ impl FreightManager {
             components::decision_window(
                 "저장하지 않은 변경사항","freight-tab-leave",ui.max_rect()
             ).show(ctx,|dialog|{
-                cancel=components::modal_header(
-                    dialog,"저장하지 않은 변경사항","취소",enabled
-                );
-                dialog.label(typography::body(
-                    "운임 관리에서 수정한 내용이 있습니다. 변경사항을 저장할까요?"
-                ));
-
-                dialog.add_space(theme::SPACE_12);
-                components::modal_action_row(dialog,|bar|{
-                    if theme::action(bar,"저장하고 이동",
-                        theme::ButtonRole::Primary,can_save).clicked(){save=true;}
-                    if theme::action(bar,"저장 안 함",
-                        theme::ButtonRole::Danger,enabled).clicked(){discard=true;}
+                components::decision_workspace(dialog,|decision|{
+                    cancel=decision.header("저장하지 않은 변경사항","취소",enabled
+                    );
+                    decision.body(|dialog|{
+                        dialog.label(typography::body(
+                            "운임 관리에서 수정한 내용이 있습니다. 변경사항을 저장할까요?"
+                        ));
+                    });
+                    decision.actions(|bar|{
+                        if theme::action(bar,"저장하고 이동",
+                            theme::ButtonRole::Primary,can_save).clicked(){save=true;}
+                        if theme::action(bar,"저장 안 함",
+                            theme::ButtonRole::Danger,enabled).clicked(){discard=true;}
+                    });
                 });
             });
             if cancel{self.requested_tab=None;}

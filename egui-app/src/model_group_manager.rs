@@ -541,14 +541,18 @@ impl ModelGroupManager {
             components::modal_backdrop(ctx,"family-delete-dim",false);
             components::decision_window("그룹 삭제","family-delete-confirm",rect)
                 .show(ctx,|dialog|{
-                    cancel=components::modal_header(dialog,"그룹 삭제","취소",true);
-                    dialog.label(typography::body(
-                        "이 그룹을 삭제할까요? 기존 주문과 상품은 유지됩니다."));
-                    components::modal_action_row(dialog,|actions|{
-                            delete=theme::action(actions,"삭제",
-                                theme::ButtonRole::Danger,true).clicked();
-                        }
-                    );
+                    components::decision_workspace(dialog,|decision|{
+                        cancel=decision.header("그룹 삭제","취소",true);
+                        decision.body(|dialog|{
+                            dialog.label(typography::body(
+                                "이 그룹을 삭제할까요? 기존 주문과 상품은 유지됩니다."));
+                        });
+                        decision.actions(|actions|{
+                                delete=theme::action(actions,"삭제",
+                                    theme::ButtonRole::Danger,true).clicked();
+                            }
+                        );
+                    });
                 });
             if cancel{self.confirm_delete=false;}
             else if delete{
@@ -563,19 +567,22 @@ impl ModelGroupManager {
             components::modal_backdrop(ctx,"family-unsaved-dim",true);
             components::decision_window("모델군 관리","family-unsaved-confirm",rect)
                 .show(ctx,|dialog|{
-                    cancel=components::modal_header(
-                        dialog,"모델군 관리","취소",!self.busy()
-                    );
-                    dialog.label(typography::body("모델군 관리의 변경사항을 저장할까요?"));
-                    components::modal_action_row(dialog,|actions|{
-                            save=theme::action(actions,"저장",
-                                theme::ButtonRole::Primary,
-                                gateway.model_group_write_enabled()&&!self.busy()&&self.dirty()
-                                &&self.new_name.trim().is_empty()).clicked();
-                            discard=theme::action(actions,"저장 안 함",
-                                theme::ButtonRole::Danger,!self.busy()).clicked();
-                        }
-                    );
+                    components::decision_workspace(dialog,|decision|{
+                        cancel=decision.header("모델군 관리","취소",!self.busy()
+                        );
+                        decision.body(|dialog|{
+                            dialog.label(typography::body("모델군 관리의 변경사항을 저장할까요?"));
+                        });
+                        decision.actions(|actions|{
+                                save=theme::action(actions,"저장",
+                                    theme::ButtonRole::Primary,
+                                    gateway.model_group_write_enabled()&&!self.busy()&&self.dirty()
+                                    &&self.new_name.trim().is_empty()).clicked();
+                                discard=theme::action(actions,"저장 안 함",
+                                    theme::ButtonRole::Danger,!self.busy()).clicked();
+                            }
+                        );
+                    });
                 });
             if cancel{self.confirm=None;self.status.clear();}
             else if discard{

@@ -434,24 +434,26 @@ impl SettingsView{
         components::decision_window(
             "저장하지 않은 변경사항","settings-tab-unsaved",area
         ).show(ctx,|ui|{
-            if components::modal_header(
-                ui,"저장하지 않은 변경사항","취소",!self.busy()
-            ){self.requested_tab=None;}
-            ui.label(typography::body(
-                "현재 탭에서 수정한 설정이 있습니다. 변경사항을 저장할까요?"
-            ));
-            ui.add_space(theme::SPACE_12);
-            components::modal_action_row(ui,|actions|{
-                if theme::action(actions,"저장하고 이동",ButtonRole::Primary,
-                    !self.busy() && !self.read_only()).clicked(){
-                    self.switch_after_save=true;
-                    self.save(gateway.clone(),ctx.clone());
-                }
-                if theme::action(actions,"저장 안 함",ButtonRole::Danger,
-                    !self.busy()).clicked(){
-                    self.draft=settings(&self.source).clone();
-                    if let Some(next)=self.requested_tab.take(){self.tab=next;}
-                }
+            components::decision_workspace(ui,|decision|{
+                if decision.header("저장하지 않은 변경사항","취소",!self.busy()
+                ){self.requested_tab=None;}
+                decision.body(|ui|{
+                    ui.label(typography::body(
+                        "현재 탭에서 수정한 설정이 있습니다. 변경사항을 저장할까요?"
+                    ));
+                });
+                decision.actions(|actions|{
+                    if theme::action(actions,"저장하고 이동",ButtonRole::Primary,
+                        !self.busy() && !self.read_only()).clicked(){
+                        self.switch_after_save=true;
+                        self.save(gateway.clone(),ctx.clone());
+                    }
+                    if theme::action(actions,"저장 안 함",ButtonRole::Danger,
+                        !self.busy()).clicked(){
+                        self.draft=settings(&self.source).clone();
+                        if let Some(next)=self.requested_tab.take(){self.tab=next;}
+                    }
+                });
             });
         });
     }
@@ -1032,20 +1034,22 @@ impl SettingsView{
             components::decision_window(
                 "저장된 설정 불러오기","settings-reload-confirm",area
             ).show(ctx,|ui|{
-                if components::modal_header(
-                    ui,"저장된 설정 불러오기","취소",true
-                ){self.reload_confirmation=false;}
-                ui.label(typography::body(
-                    "입력 중인 설정을 닫고 저장된 설정을 다시 불러올까요?"
-                ));
-                ui.add_space(theme::SPACE_12);
-                components::modal_action_row(ui,|actions|{
-                    if theme::action(
-                        actions,"불러오기",ButtonRole::Primary,true
-                    ).clicked(){
-                        self.reload_confirmation=false;
-                        self.reload(Arc::clone(&gateway),ctx.clone());
-                    }
+                components::decision_workspace(ui,|decision|{
+                    if decision.header("저장된 설정 불러오기","취소",true
+                    ){self.reload_confirmation=false;}
+                    decision.body(|ui|{
+                        ui.label(typography::body(
+                            "입력 중인 설정을 닫고 저장된 설정을 다시 불러올까요?"
+                        ));
+                    });
+                    decision.actions(|actions|{
+                        if theme::action(
+                            actions,"불러오기",ButtonRole::Primary,true
+                        ).clicked(){
+                            self.reload_confirmation=false;
+                            self.reload(Arc::clone(&gateway),ctx.clone());
+                        }
+                    });
                 });
             });
             return;
@@ -1129,22 +1133,24 @@ impl SettingsView{
             components::decision_window(
                 "데이터 복구 확인","settings-restore-confirm",area
             ).show(ctx,|ui|{
-                if components::modal_header(
-                    ui,"데이터 복구 확인","취소",!self.busy()
-                ){self.restore_target=None;}
-                ui.label(typography::body(
-                    "선택한 시점의 전체 데이터베이스로 복원할까요? 현재 데이터는 먼저 안전 백업으로 보관합니다. 주문과 감사 기록도 선택한 시점으로 되돌아갑니다."
-                ));
-                ui.add_space(theme::SPACE_12);
-                components::modal_action_row(ui,|actions|{
-                    if theme::action(actions,"이 백업으로 복구",ButtonRole::Danger,
-                        self.data_available()&&!self.read_only()&&!self.busy()).clicked(){
-                        self.restore_target=None;
-                        self.data_action(
-                            "restore",Some(filename),
-                            Arc::clone(&gateway),ctx.clone()
-                        );
-                    }
+                components::decision_workspace(ui,|decision|{
+                    if decision.header("데이터 복구 확인","취소",!self.busy()
+                    ){self.restore_target=None;}
+                    decision.body(|ui|{
+                        ui.label(typography::body(
+                            "선택한 시점의 전체 데이터베이스로 복원할까요? 현재 데이터는 먼저 안전 백업으로 보관합니다. 주문과 감사 기록도 선택한 시점으로 되돌아갑니다."
+                        ));
+                    });
+                    decision.actions(|actions|{
+                        if theme::action(actions,"이 백업으로 복구",ButtonRole::Danger,
+                            self.data_available()&&!self.read_only()&&!self.busy()).clicked(){
+                            self.restore_target=None;
+                            self.data_action(
+                                "restore",Some(filename),
+                                Arc::clone(&gateway),ctx.clone()
+                            );
+                        }
+                    });
                 });
             });
         }

@@ -2245,16 +2245,19 @@ impl ManualWorkspace {
             components::decision_window("배송 건수 줄이기","manual-shipment-removal",work_area)
                 .constrain_to(work_area)
                 .show(ctx,|ui|{
-                    cancel=components::modal_header(
-                        ui,"배송 건수 줄이기","취소",true
-                    );
-                    ui.label(format!(
-                        "마지막 {removing_count}개 배송 건의 입력값과 원문 배정을 제거할까요?"
-                    ));
-                    components::modal_action_row(ui,|actions|{
-                        if theme::action(actions,"확인",ButtonRole::Danger,true).clicked(){
-                            confirm=true;
-                        }
+                    components::decision_workspace(ui,|decision|{
+                        cancel=decision.header("배송 건수 줄이기","취소",true
+                        );
+                        decision.body(|ui|{
+                            ui.label(format!(
+                                "마지막 {removing_count}개 배송 건의 입력값과 원문 배정을 제거할까요?"
+                            ));
+                        });
+                        decision.actions(|actions|{
+                            if theme::action(actions,"확인",ButtonRole::Danger,true).clicked(){
+                                confirm=true;
+                            }
+                        });
                     });
                 });
             if cancel {
@@ -2291,16 +2294,19 @@ impl ManualWorkspace {
             components::decision_window("전체 초기화","manual-reset-confirm",work_area)
                 .constrain_to(work_area)
                 .show(ctx,|ui|{
-                    cancel=components::modal_header(
-                        ui,"전체 초기화","취소",true
-                    );
-                    ui.label("구성표와 배정을 초기화할까요? 최초 원문과 마스터는 보존됩니다.");
-                    confirm=components::modal_action_row(ui,|actions|{
-                            theme::action(
-                                actions,"확인",ButtonRole::Primary,true
-                            ).clicked()
-                        }
-                    ).inner;
+                    components::decision_workspace(ui,|decision|{
+                        cancel=decision.header("전체 초기화","취소",true
+                        );
+                        decision.body(|ui|{
+                            ui.label("구성표와 배정을 초기화할까요? 최초 원문과 마스터는 보존됩니다.");
+                        });
+                        confirm=decision.actions(|actions|{
+                                theme::action(
+                                    actions,"확인",ButtonRole::Primary,true
+                                ).clicked()
+                            }
+                        ).inner;
+                    });
                 });
             if cancel{self.reset_pending=false;}
             if confirm {
@@ -2329,16 +2335,19 @@ impl ManualWorkspace {
             components::decision_window("수동 분류 나가기","manual-discard-prompt",work_area)
                 .constrain_to(work_area)
                 .show(ctx,|ui|{
-                    keep_editing=components::modal_header(
-                        ui,"수동 분류 나가기","계속 편집",true
-                    );
-                    ui.label("초안에 반영하지 않은 변경사항이 있습니다. 변경사항을 버리고 닫을까요?");
-                    components::modal_action_row(ui,|actions|{
-                        if theme::action(
-                            actions,"변경사항 버리고 닫기",ButtonRole::Danger,true
-                        ).clicked(){
-                            discard_confirmed=true;
-                        }
+                    components::decision_workspace(ui,|decision|{
+                        keep_editing=decision.header("수동 분류 나가기","계속 편집",true
+                        );
+                        decision.body(|ui|{
+                            ui.label("초안에 반영하지 않은 변경사항이 있습니다. 변경사항을 버리고 닫을까요?");
+                        });
+                        decision.actions(|actions|{
+                            if theme::action(
+                                actions,"변경사항 버리고 닫기",ButtonRole::Danger,true
+                            ).clicked(){
+                                discard_confirmed=true;
+                            }
+                        });
                     });
                 });
             if discard_confirmed {return Some(Event::Closed);}
@@ -2357,26 +2366,24 @@ impl ManualWorkspace {
             components::decision_window(
                 "수동 분류 완료","manual-completion-prompt",work_area
             ).constrain_to(work_area).show(ctx,|ui|{
-                components::modal_header(
-                    ui,"수동 분류 완료","닫기",false
-                );
-                ui.label("수동 분류 결과를 접수 초안에 반영할까요?");
-                components::modal_action_row_split(
-                    ui,
-                    |left|{
-                        let _=theme::action(
-                            left,"AI 자동분류 개선",ButtonRole::Standard,false
-                        );
-                    },
-                    |right|{
-                        if theme::action(
-                            right,"피드백 없이 진행",ButtonRole::Primary,true
-                        ).clicked(){proceed=true;}
-                        if theme::action(
-                            right,"취소",ButtonRole::Quiet,true
-                        ).clicked(){cancel=true;}
-                    }
-                );
+                components::decision_workspace(ui,|decision|{
+                    cancel=decision.header("수동 분류 완료","취소",true
+                    );
+                    decision.body(|ui|{
+                        ui.label("수동 분류 결과를 접수 초안에 반영할까요?");
+                    });
+                    decision.actions_split(|left|{
+                            let _=theme::action(
+                                left,"AI 자동분류 개선",ButtonRole::Standard,false
+                            );
+                        },
+                        |right|{
+                            if theme::action(
+                                right,"피드백 없이 진행",ButtonRole::Primary,true
+                            ).clicked(){proceed=true;}
+                        }
+                    );
+                });
             });
             if cancel {
                 self.confirm_apply=false;

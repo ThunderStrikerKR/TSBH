@@ -531,17 +531,20 @@ impl AliasManager {
             components::decision_window(
                 "상품 별칭","alias-unsaved-confirm",work_area
             ).show(ctx,|dialog|{
-                cancel=components::modal_header(
-                    dialog,"상품 별칭","취소",!busy
-                );
-                dialog.label(typography::body("상품 별칭 변경사항을 저장할까요?"));
-                components::modal_action_row(dialog,|actions|{
-                        save_now=theme::action(actions,"저장",
-                            theme::ButtonRole::Primary,editable&&!busy).clicked();
-                        discard=theme::action(actions,"저장 안 함",
-                            theme::ButtonRole::Danger,!busy).clicked();
-                    }
-                );
+                components::decision_workspace(dialog,|decision|{
+                    cancel=decision.header("상품 별칭","취소",!busy
+                    );
+                    decision.body(|dialog|{
+                        dialog.label(typography::body("상품 별칭 변경사항을 저장할까요?"));
+                    });
+                    decision.actions(|actions|{
+                            save_now=theme::action(actions,"저장",
+                                theme::ButtonRole::Primary,editable&&!busy).clicked();
+                            discard=theme::action(actions,"저장 안 함",
+                                theme::ButtonRole::Danger,!busy).clicked();
+                        }
+                    );
+                });
             });
             if cancel{self.pending=None;}
             else if discard{
