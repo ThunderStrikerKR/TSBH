@@ -754,7 +754,7 @@ pub fn manual_source_block_visual(
             let first_glyph=start-row_start;
             let last_glyph=end-row_start-1;
             if first_glyph>=glyphs.len() || last_glyph>=glyphs.len() {continue;}
-            let end_x=if glyphs[last_glyph].chr=='\\n' && last_glyph>first_glyph {
+            let end_x=if glyphs[last_glyph].chr=='\n' && last_glyph>first_glyph {
                 glyphs[last_glyph-1].pos.x+glyphs[last_glyph-1].advance_width
             } else {
                 glyphs[last_glyph].pos.x+glyphs[last_glyph].advance_width
@@ -778,7 +778,7 @@ pub fn manual_source_block_visual(
         }
         row_start=row_end;
         if row_index+1<galley.rows.len() &&
-            characters.get(row_start)==Some(&'\\n') {
+            characters.get(row_start)==Some(&'\n') {
             row_start+=1;
         }
     }
