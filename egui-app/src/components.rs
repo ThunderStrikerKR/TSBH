@@ -3110,20 +3110,46 @@ pub fn management_date_group<R>(
     output
 }
 
+/// The single date-navigation surface used by calendar arrows and compact
+/// count steppers. Geometry, border, fill, radius and hover treatment must not
+/// drift between controls that share the date-picker visual language.
+fn date_navigation_button_surface(
+    ui:&mut Ui,tooltip:&str,enabled:bool
+)->(Response,Color32){
+    let effective_enabled=enabled && ui.is_enabled();
+    let (fill,border,ink)=if effective_enabled{
+        (theme::INPUT,theme::BORDER,theme::SECONDARY)
+    }else{
+        (theme::DISABLED_ACTION_BG,theme::DISABLED_ACTION_BORDER,
+         theme::DISABLED_ACTION_TEXT)
+    };
+    let response=ui.add_enabled_ui(effective_enabled,|button_ui|{
+        button_ui.add_sized(
+            Vec2::splat(theme::CALENDAR_NAV_SIZE),
+            egui::Button::new("")
+                .fill(fill)
+                .stroke(Stroke::new(theme::SOFT_DIVIDER_WIDTH,border))
+                .corner_radius(theme::CONTROL_RADIUS)
+        )
+    }).inner.on_hover_text(tooltip);
+    let ink=if effective_enabled && response.hovered(){
+        theme::TEXT
+    }else{ink};
+    if effective_enabled{
+        theme::paint_button_hover(
+            ui,&response,theme::CONTROL_RADIUS as f32
+        );
+    }
+    (response,ink)
+}
+
 /// Shared calendar navigation: identical 28pt hit targets, border, radius,
 /// and vector chevrons for year/month movement in either direction.
 fn calendar_nav_button(
     ui:&mut Ui,direction:ManagementChevronDirection,
     year:bool,tooltip:&str
 )->bool{
-    let response=ui.add_sized(
-        Vec2::splat(theme::CALENDAR_NAV_SIZE),
-        egui::Button::new("")
-            .fill(theme::INPUT)
-            .stroke(Stroke::new(theme::SOFT_DIVIDER_WIDTH,theme::BORDER))
-            .corner_radius(theme::CONTROL_RADIUS)
-    ).on_hover_text(tooltip);
-    let ink=if response.hovered(){theme::TEXT}else{theme::SECONDARY};
+    let (response,ink)=date_navigation_button_surface(ui,tooltip,true);
     let painter=ui.painter().with_clip_rect(response.rect);
     if year{
         for offset in [-3.8,3.8]{
@@ -3137,10 +3163,23 @@ fn calendar_nav_button(
             &painter,response.rect.center(),direction,ink
         );
     }
-    theme::paint_button_hover(
-        ui,&response,theme::CONTROL_RADIUS as f32
-    );
     response.clicked()
+}
+
+/// Compact minus/plus control that deliberately reuses the date-picker's
+/// 28pt button surface. Only the centered glyph and tooltip are caller-owned.
+pub fn date_navigation_step_button(
+    ui:&mut Ui,glyph:&str,tooltip:&str,enabled:bool
+)->Response{
+    let (response,ink)=date_navigation_button_surface(ui,tooltip,enabled);
+    ui.painter().with_clip_rect(response.rect).text(
+        response.rect.center(),
+        egui::Align2::CENTER_CENTER,
+        glyph,
+        egui::FontId::proportional(typography::FONT_STANDARD_ACTION+2.0),
+        ink
+    );
+    response
 }
 
 /// A single popup for Order History and Excel export history. The header
