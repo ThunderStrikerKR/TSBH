@@ -9299,7 +9299,8 @@ mod client_chooser_async_handoff_tests {
         });
         tx.send(Ok(native_order_change::ChangeResult{
             client_id:"new".into(),manual_model:None,
-            pricing_preview:None,recognition:Some(recognition.clone()),
+            pricing_preview:None,order:None,
+            recognition:Some(recognition.clone()),
         })).unwrap();
         app.poll_client_change(&ctx);
         assert!(app.client_change.is_none());
