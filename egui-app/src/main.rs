@@ -1059,11 +1059,44 @@ impl BandoEgui {
         }
     }
 
+    /// Rebuild the reception worksheet projection from the saved direct
+    /// manual model. This is display data only: it never fabricates OCR,
+    /// source evidence, linked spans or an analysis cache.
+    fn restore_direct_manual_view(&mut self)->bool{
+        let Some(row)=self.active_id.as_deref()
+            .and_then(|id|self.drafts.iter().find(|item|item.id==id))
+            .cloned() else{return false};
+        if !row.raw.trim().is_empty(){return false;}
+        let Some(saved)=row.manual_model.as_ref().filter(|model|
+            model.get("mode").and_then(serde_json::Value::as_str)==Some("DIRECT")
+        )else{return false};
+        let Some(rows)=saved.pointer("/model/rows")
+            .filter(|rows|rows.is_array()).cloned() else{return false};
+        let count=rows.as_array().map(Vec::len).unwrap_or(0);
+        let chosen_name=row.client_id.as_deref()
+            .and_then(|id|self.client_names.get(id)).cloned();
+        self.analysis=Some(reception_service::ReceptionAnalysis{
+            recognition:serde_json::json!({"recipients":rows}),
+            reference:Vec::new(),client_match:serde_json::Value::Null,
+            client_candidates:Vec::new(),matched_client_name:None,
+            chosen_client_name:chosen_name,directory_count:0,
+            linked_spans:Vec::new(),
+        });
+        self.analysis_pending=false;
+        self.analysis_error=None;
+        self.analysis_due_at=None;
+        self.selected_recipient=self.selected_recipient.min(count.saturating_sub(1));
+        self.source_hover=None;
+        self.link_hover.clear();
+        self.remote_recheck_due=true;
+        true
+    }
+
     /// Restore exact Rust recognition and its display references from the
-    /// source-bound SQLite snapshot. No matcher, OCR or price engine runs on
-    /// an unchanged reception. A missing/old snapshot safely falls back to
-    /// the regular native analysis worker.
+    /// source-bound SQLite snapshot. Direct-entry rows instead rebuild from
+    /// their employee-authored manual model and never synthesize OCR evidence.
     fn restore_cached_analysis(&mut self)->bool {
+        if self.restore_direct_manual_view(){return true;}
         let Some(row)=self.active_id.as_deref()
             .and_then(|id|self.drafts.iter().find(|item|item.id==id))
         else{return false};
@@ -1549,9 +1582,13 @@ impl BandoEgui {
            row.pricing_preview.as_ref().is_some_and(complete_reception_quote) {
             return; // Same dealer with an already complete native quote.
         }
-        if row.analysis_raw.as_deref() != Some(row.raw.as_str()) ||
-            row.analysis_evidence.is_none() {
-            self.source_save_error = Some(
+        let direct_input=row.raw.trim().is_empty() &&
+            row.manual_model.as_ref().is_some_and(|saved|
+                saved.get("mode").and_then(serde_json::Value::as_str)==Some("DIRECT")
+            );
+        if !direct_input && (row.analysis_raw.as_deref()!=Some(row.raw.as_str()) ||
+            row.analysis_evidence.is_none()) {
+            self.source_save_error=Some(
                 "현재 발주원문 인식이 끝난 뒤 거래처를 다시 선택하세요.".into()
             );
             return;
@@ -1922,8 +1959,12 @@ impl BandoEgui {
         let Some(row)=self.active_id.as_deref().and_then(|id|
             self.drafts.iter().find(|row|row.id==id)
         )else{return};
-        if row.analysis_raw.as_deref()!=Some(self.raw_source.as_str()) ||
-            row.analysis_evidence.is_none(){
+        let direct_input=row.raw.trim().is_empty() &&
+            row.manual_model.as_ref().is_some_and(|saved|
+                saved.get("mode").and_then(serde_json::Value::as_str)==Some("DIRECT")
+            );
+        if !direct_input && (row.analysis_raw.as_deref()!=Some(self.raw_source.as_str()) ||
+            row.analysis_evidence.is_none()){
             self.source_save_error=Some(
                 "발주원문 인식이 완료된 뒤 품목을 수정하세요.".into()
             );
@@ -1947,10 +1988,11 @@ impl BandoEgui {
             .and_then(|line|line["unitPrice"].as_i64())
             .or_else(||item.get("unitPrice").and_then(serde_json::Value::as_i64));
         self.inline_editor=None;
-        self.item_editor=Some(item_editor::ItemEditor::new(
+        let editor=item_editor::ItemEditor::new(
             row.id.clone(),row.raw.clone(),recipient_id.into(),
             item,row.client_id.clone().unwrap_or_default(),price
-        ));
+        );
+        self.item_editor=Some(if direct_input{editor.for_manual_draft()}else{editor});
         ctx.request_repaint();
     }
 
@@ -1971,8 +2013,12 @@ impl BandoEgui {
         let Some(row)=self.active_id.as_deref().and_then(|id|
             self.drafts.iter().find(|row|row.id==id)
         )else{return};
-        if row.analysis_raw.as_deref()!=Some(self.raw_source.as_str())
-            || row.analysis_evidence.is_none(){return;}
+        let direct_input=row.raw.trim().is_empty() &&
+            row.manual_model.as_ref().is_some_and(|saved|
+                saved.get("mode").and_then(serde_json::Value::as_str)==Some("DIRECT")
+            );
+        if !direct_input && (row.analysis_raw.as_deref()!=Some(self.raw_source.as_str())
+            || row.analysis_evidence.is_none()){return;}
         self.product_picker=Some((row.id.clone(),row.raw.clone(),recipient_id,
             product_manager::ProductManager::new_selection(
                 Arc::clone(&self.gateway),ctx.clone(),row.client_id.clone().unwrap_or_default()
@@ -2152,8 +2198,12 @@ impl BandoEgui {
         let Some(source)=self.active_id.as_deref().and_then(|id|
             self.drafts.iter().find(|row|row.id==id)
         ).cloned()else{return};
-        if source.analysis_raw.as_deref()!=Some(source.raw.as_str())
-            ||source.analysis_evidence.is_none(){
+        let direct_input=source.raw.trim().is_empty() &&
+            source.manual_model.as_ref().is_some_and(|saved|
+                saved.get("mode").and_then(serde_json::Value::as_str)==Some("DIRECT")
+            );
+        if !direct_input && (source.analysis_raw.as_deref()!=Some(source.raw.as_str())
+            ||source.analysis_evidence.is_none()){
             self.source_save_error=Some(
                 "원문 인식이 완료된 뒤 확인 항목을 처리하세요.".into()
             );
@@ -2460,9 +2510,11 @@ impl BandoEgui {
                     self.source_editing=false;
                     self.direct_source_entry=false;
                     self.clear_source_analysis();
+                    self.restore_direct_manual_view();
                     self.working_sync_error=quote_error;
                     self.source_save_error=None;
                     self.queue_source_save();
+                    self.start_remote_recheck(ctx);
                     let _=recips;
                     return;
                 }
@@ -2732,8 +2784,12 @@ impl BandoEgui {
             );
             return;
         }
-        if source.analysis_raw.as_deref()!=Some(source.raw.as_str()) ||
-            source.analysis_evidence.is_none() ||
+        let direct_input=source.raw.trim().is_empty() &&
+            source.manual_model.as_ref().is_some_and(|saved|
+                saved.get("mode").and_then(serde_json::Value::as_str)==Some("DIRECT")
+            );
+        if (!direct_input && (source.analysis_raw.as_deref()!=Some(source.raw.as_str()) ||
+            source.analysis_evidence.is_none())) ||
             self.working_sync.is_some() || self.client_change.is_some(){
             self.source_save_error=Some("현재 주문은 수정할 수 없습니다.".into());
             self.inline_editor=Some(editor);
