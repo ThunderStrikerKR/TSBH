@@ -1090,7 +1090,7 @@ impl ProductManager {
         // Actions and optional Excel/registration editors stay INSIDE the card.
         components::align_management_primary_card(ui,page_origin_y);
         let card_min_height=components::management_master_table_card_min_inner_height(ui);
-        theme::management_master_table_frame().show(ui,|panel|{
+        components::measured_management_master_card(ui,|panel|{
             components::fill_management_primary_card(panel,card_min_height);
             panel.spacing_mut().item_spacing.y=0.0;
             // Freight-style dual-slot toolbar at wide widths. Only when
