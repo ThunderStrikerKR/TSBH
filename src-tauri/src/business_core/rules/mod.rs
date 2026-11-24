@@ -38,6 +38,20 @@ mod history;
 
 const MAX_SAFE: i64 = 9_007_199_254_740_991;
 
+/// Shared identity normalization for UI projections that build a manual
+/// model before the final native merge. Keep one implementation beside merge.
+pub(crate) fn scope_recognition_rows_for_order(
+    order_id:&str,recipients:&mut [Value],candidates:&mut Value
+)->Result<(),String>{
+    reception_merge::scope_recognition_ids(order_id,recipients,candidates)
+}
+
+pub(crate) fn scope_manual_model_ids(
+    order_id:&str,model:&mut Value
+)->Result<(),String>{
+    reception_merge::scope_manual_model_ids(order_id,model)
+}
+
 pub fn execute(operation: &str, payload: Value) -> Result<Value, String> {
     match operation {
         "list_order_history" => history::list(
