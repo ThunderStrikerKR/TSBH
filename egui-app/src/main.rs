@@ -7883,7 +7883,9 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                     }
                 }
                 self.workflow_ui.stop_preview();
-                self.workflow_snapshot=None;
+                // Keep the last successful board visible while the refreshed
+                // database snapshot is loading. The fresh read replaces it;
+                // action controls stay disabled until that read settles.
                 self.workflow_receiver=None;
                 self.workflow_last_fetch=None;
                 self.workflow_error=None;
@@ -8252,7 +8254,9 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                         &mut self.workflow_ui,
                         self.gateway.workflow_write_enabled() &&
                             self.workflow_action.is_none() &&
-                            self.pending_draft_confirmation.is_none(),
+                            self.pending_draft_confirmation.is_none() &&
+                            self.workflow_receiver.is_none() &&
+                            self.workflow_error.is_none(),
                         // Hover navigation must never switch the active receipt
                         // while a staff edit, dialog or pending write is open.
                         self.inline_editor.is_none() && self.inline_change.is_none() &&
