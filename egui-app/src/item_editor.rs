@@ -439,7 +439,10 @@ mod tests{
             assert!(details.contains(label));
         }
         assert!(details.contains("상품 변경"));
-        assert!(modal.contains("components::modal_action_row_split("));
+        assert!(modal.contains("components::modal_flow_workspace("));
+        assert!(modal.contains("workspace.scroll_region("));
+        assert!(modal.contains("workspace.footer("));
+        assert!(!modal.contains("components::modal_action_row_split("));
     }
     #[test]
     fn only_real_product_changes_with_confirmed_quantity_can_apply(){

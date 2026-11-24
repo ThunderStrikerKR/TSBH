@@ -1350,9 +1350,17 @@ impl ModalEditorWorkspace<'_> {
 /// Same master owner for sequential forms, viewers and existing dashboard
 /// bodies. No additional scrollbar is imposed on a split/list workspace.
 pub fn modal_flow_workspace<R>(ui:&mut Ui,contents:impl FnOnce(&mut ModalEditorWorkspace<'_>)->R)->R{
+    modal_flow_workspace_measured(ui,contents).0
+}
+
+fn modal_flow_workspace_measured<R>(
+    ui:&mut Ui,contents:impl FnOnce(&mut ModalEditorWorkspace<'_>)->R,
+)->(R,ModalEditorGeometry){
     ui.scope(|layout|{
         modal_master_controlled_spacing(layout);
-        contents(&mut ModalEditorWorkspace{ui:layout,geometry:ModalEditorGeometry::default()})
+        let mut owner=ModalEditorWorkspace{ui:layout,geometry:ModalEditorGeometry::default()};
+        let value=contents(&mut owner);
+        (value,owner.geometry)
     }).inner
 }
 
@@ -8000,5 +8008,74 @@ mod date_navigation_segmented_control_tests{
             consumed_height>=theme::SECTION_HEADER_HEIGHT-0.5,
             "the 1/1 recipient navigator must remain allocated even with both arrows disabled"
         );
+    }
+}
+
+#[cfg(test)]
+mod round87_modal_flow_contract_tests {
+    use super::*;
+
+    #[test]
+    fn phase_two_editors_and_viewers_keep_the_shared_workspace_entry_point(){
+        let sources=[
+            ("alias_manager",include_str!("alias_manager.rs")),
+            ("category_manager",include_str!("category_manager.rs")),
+            ("client_manager",include_str!("client_manager.rs")),
+            ("client_chooser",include_str!("client_chooser.rs")),
+            ("freight_manager",include_str!("freight_manager.rs")),
+            ("item_editor",include_str!("item_editor.rs")),
+            ("main",include_str!("main.rs")),
+            ("manual_product_search",include_str!("manual_product_search.rs")),
+            ("manual_workspace",include_str!("manual_workspace.rs")),
+            ("order_history_detail",include_str!("order_history_detail.rs")),
+            ("order_history_manager",include_str!("order_history_manager.rs")),
+            ("product_excel_ui",include_str!("product_excel_ui.rs")),
+            ("product_manager",include_str!("product_manager.rs")),
+            ("settings_view",include_str!("settings_view.rs")),
+        ];
+        for (name,source) in sources {
+            assert!(source.contains("components::modal_flow_workspace("),
+                "{name}: shared editor/viewer entry point removed");
+        }
+    }
+
+    #[test]
+    fn flow_regions_measure_master_vertical_gaps_at_normal_and_compact_widths(){
+        for width in [440.0,740.0] {
+            for kind in 0..3 {
+                let ctx=egui::Context::default();
+                crate::typography::install(&ctx);
+                let mut measured=None;
+                for _ in 0..3 {
+                    let _=ctx.run(egui::RawInput::default(),|ctx|{
+                        egui::CentralPanel::default().show(ctx,|ui|{
+                            ui.set_width(width);
+                            let (_,geometry)=modal_flow_workspace_measured(ui,|workspace|{
+                                workspace.header("편집","취소",true);
+                                let render=|body:&mut Ui|{
+                                    body.allocate_exact_size(Vec2::new(80.0,80.0),Sense::hover());
+                                };
+                                match kind {
+                                    0=>workspace.body_region(render),
+                                    1=>workspace.scroll_region("round87-flow",160.0,render),
+                                    _=>workspace.framed_region(render),
+                                }
+                                workspace.footer(|_|{},|_|{});
+                            });
+                            measured=Some(geometry);
+                        });
+                    });
+                }
+                let g=measured.expect("flow geometry not allocated");
+                let header=g.header.expect("header");
+                let body=g.body.expect("body");
+                let footer=g.footer.expect("footer");
+                let gap=theme::MODAL_MASTER_WORKSPACE_GAP;
+                assert!((body.top()-header.bottom()-gap).abs()<=1.0,
+                    "width={width} region={kind} header={header:?} body={body:?}");
+                assert!((footer.top()-body.bottom()-gap).abs()<=1.0,
+                    "width={width} region={kind} body={body:?} footer={footer:?}");
+            }
+        }
     }
 }

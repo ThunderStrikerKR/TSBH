@@ -1164,7 +1164,11 @@ mod modal_layout_contract_tests{
         assert!(!dialogs.contains("body.label(typography::field_label("));
         assert!(!dialogs.contains("modal.label(typography::field_label("));
         assert!(dialogs.contains("category_dropdown::category_dropdown("));
-        assert!(dialogs.contains("components::modal_action_row_split("));
-        assert!(dialogs.contains("components::modal_action_row("));
+        assert!(dialogs.contains("components::modal_flow_workspace("));
+        assert!(dialogs.contains("workspace.footer("));
+        assert!(dialogs.contains("components::decision_workspace("));
+        assert!(dialogs.contains("decision.actions("));
+        assert!(!dialogs.contains("components::modal_action_row_split("));
+        assert!(!dialogs.contains("components::modal_action_row("));
     }
 }
