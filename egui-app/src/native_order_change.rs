@@ -123,7 +123,7 @@ pub fn prepare_cancellable(
         }
         let manual_model=source.manual_model.as_ref()
             .map(|saved|rebind_manual_model(
-                saved,target_id,&saved["model"]["rows"]
+                &source.id,saved,target_id,&saved["model"]["rows"]
             )).transpose()?;
         return Ok(ChangeResult {
             client_id:target_id.to_owned(),
@@ -443,7 +443,7 @@ mod manual_rebind_tests {
         let recalculated=json!([{"id":"r1","name":"직접 수정한 이름",
             "address":"직접 수정한 주소",
             "items":[{"id":"i1","quantity":3,"manualUnitPrice":9900,"unitPrice":9900}]}]);
-        let updated=rebind_manual_model(&saved,"new",&recalculated).unwrap();
+        let updated=rebind_manual_model("order-1",&saved,"new",&recalculated).unwrap();
         assert_eq!(updated["clientId"],"new");
         assert_eq!(updated["model"]["rows"],recalculated);
         assert_eq!(updated["model"]["blocks"],saved["model"]["blocks"]);
@@ -523,8 +523,8 @@ mod manual_rebind_tests {
     #[test]
     fn malformed_model_does_not_replace_a_valid_client_selection(){
         let saved=json!({"model":{"rows":[]}});
-        assert!(rebind_manual_model(&saved,"new",&json!({})).is_err());
-        assert!(rebind_manual_model(&json!({}),"new",&json!([])).is_err());
+        assert!(rebind_manual_model("order-1",&saved,"new",&json!({})).is_err());
+        assert!(rebind_manual_model("order-1",&json!({}),"new",&json!([])).is_err());
     }
 
     // Exercise the complete adapter request chain with deterministic native
