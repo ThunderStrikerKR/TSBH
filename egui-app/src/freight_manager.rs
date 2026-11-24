@@ -1096,36 +1096,32 @@ impl FreightManager {
                 components::modal_backdrop(ctx,"freight-rate-backdrop",false);
                 components::modal_window(if editor.product{"기본 운임 설정"}else{"배송 그룹 운임 수정"},"freight-rate-modal",area)
                     .resizable(false).show(ctx,|modal|{
+
                         let title=if editor.product{
                             "기본 운임 설정"
                         }else{"배송 그룹 운임 수정"};
-                        if components::modal_header(
-                            modal,title,"취소",enabled
-                        ){
-                            if editor.dirty(){editor.ask_discard=true;}
-                            else{close_editor=true;}
-                        }
-                        egui::ScrollArea::vertical()
-                            .id_salt("freight-rate-editor-scroll")
-                            .max_height(theme::MANAGEMENT_MODAL_BODY_MAX_HEIGHT)
-                            .show(modal,|body|{
-                                Self::rate_dialog(body,editor,enabled);
-                            });
-                        // The save action stays anchored in the OCR-master
-                        // footer while the rate fields alone may scroll.
-                        modal.add_space(theme::SPACE_12);
-                        components::modal_action_row(modal,|bar|{
-                            if theme::action(bar,"확인한 운임 저장",
-                                theme::ButtonRole::Primary,
-                                enabled&&editor.dirty()).clicked(){
-                                match editor.write_action(){
-                                    Ok(command)=>{
-                                        editor.error=None;
-                                        action=Some(command);
-                                    }
-                                    Err(message)=>editor.error=Some(message),
-                                }
+                        components::modal_flow_workspace(modal,|workspace|{
+                            if workspace.header(title,"취소",enabled
+                            ){
+                                if editor.dirty(){editor.ask_discard=true;}
+                                else{close_editor=true;}
                             }
+                            workspace.scroll_region("freight-rate-editor-scroll",components::modal_editor_body_max_height(area.height()),|body|{
+                                        Self::rate_dialog(body,editor,enabled);
+                            });
+                            workspace.footer_single(|bar|{
+                                if theme::action(bar,"확인한 운임 저장",
+                                    theme::ButtonRole::Primary,
+                                    enabled&&editor.dirty()).clicked(){
+                                    match editor.write_action(){
+                                        Ok(command)=>{
+                                            editor.error=None;
+                                            action=Some(command);
+                                        }
+                                        Err(message)=>editor.error=Some(message),
+                                    }
+                                }
+                            });
                         });
                     });
                 if editor.ask_discard {

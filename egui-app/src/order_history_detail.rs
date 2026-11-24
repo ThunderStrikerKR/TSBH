@@ -457,60 +457,65 @@ pub fn show(ctx:&egui::Context,work_area:Rect,row:&Value,state:&Value)->bool{
     components::modal_window("발주서 상세","history-order-detail",work_area)
         .fixed_size(modal_size)
         .show(ctx,|ui|{
+
             // Reserve a full-window dashboard with a fixed grid, rather than
             // the old single vertical ScrollArea around every information row.
             ui.set_width(
                 (modal_size.x-2.0*theme::MODAL_PANEL_PADDING_X-2.0).max(1.0)
             );
-            close=components::modal_header(ui,"발주서 상세","닫기",true);
-            let body=ui.available_rect_before_wrap();
-            let summary_height=74.0_f32.min((body.height()*0.22).max(1.0));
-            let (summary_rect,_)=ui.allocate_exact_size(
-                Vec2::new(body.width(),summary_height),Sense::hover()
-            );
-            overview(ui,summary_rect,row,shipments.len());
-            ui.add_space(PANE_GAP);
-            let remaining=ui.available_rect_before_wrap();
-            let (grid_rect,_)=ui.allocate_exact_size(
-                Vec2::new(remaining.width(),remaining.height().max(1.0)),
-                Sense::hover()
-            );
-            let panes=dashboard_grid(grid_rect);
-            section_panel(ui,panes.raw,raw_title,"raw",order_id,|panel|{
-                if raw.is_empty(){
-                    panel.label(typography::caption("보존된 텍스트 원문이 없습니다."));
-                }else{
-                    panel.label(typography::body(raw));
-                }
-                if raw_title=="저장된 발주 원문"{
-                    panel.add_space(theme::SPACE_8);
-                    panel.label(typography::caption(
-                        "최초 원문 별도 보관 기록은 확인되지 않습니다."
-                    ));
-                }
-                let attachments=rows(&order["photos"]).len();
-                if attachments>0{
-                    components::soft_divider(panel);
-                    panel.label(typography::caption(&format!(
-                        "첨부 이미지 {}건 · 이미지 미리보기는 아직 연결되지 않았습니다.",
-                        attachments
-                    )));
-                }
+            components::modal_flow_workspace(ui,|workspace|{
+                close=workspace.header("발주서 상세","닫기",true);
+                workspace.body_region(|ui|{
+                    let body=ui.available_rect_before_wrap();
+                    let summary_height=74.0_f32.min((body.height()*0.22).max(1.0));
+                    let (summary_rect,_)=ui.allocate_exact_size(
+                        Vec2::new(body.width(),summary_height),Sense::hover()
+                    );
+                    overview(ui,summary_rect,row,shipments.len());
+                    ui.add_space(PANE_GAP);
+                    let remaining=ui.available_rect_before_wrap();
+                    let (grid_rect,_)=ui.allocate_exact_size(
+                        Vec2::new(remaining.width(),remaining.height().max(1.0)),
+                        Sense::hover()
+                    );
+                    let panes=dashboard_grid(grid_rect);
+                    section_panel(ui,panes.raw,raw_title,"raw",order_id,|panel|{
+                        if raw.is_empty(){
+                            panel.label(typography::caption("보존된 텍스트 원문이 없습니다."));
+                        }else{
+                            panel.label(typography::body(raw));
+                        }
+                        if raw_title=="저장된 발주 원문"{
+                            panel.add_space(theme::SPACE_8);
+                            panel.label(typography::caption(
+                                "최초 원문 별도 보관 기록은 확인되지 않습니다."
+                            ));
+                        }
+                        let attachments=rows(&order["photos"]).len();
+                        if attachments>0{
+                            components::soft_divider(panel);
+                            panel.label(typography::caption(&format!(
+                                "첨부 이미지 {}건 · 이미지 미리보기는 아직 연결되지 않았습니다.",
+                                attachments
+                            )));
+                        }
+                    });
+                    section_panel(ui,panes.changes,
+                        &format!("변경·처리 이력 · {}건",changes.len()),"changes",order_id,
+                        |panel|audit_panel(panel,&changes)
+                    );
+                    section_panel(ui,panes.payment,"접수 및 입금 정보","payment",order_id,
+                        |panel|payment_panel(panel,order,row,&payments,&confirmations)
+                    );
+                    section_panel(ui,panes.billing,"청구금액 상세","billing",order_id,
+                        |panel|billing_panel(panel,order,&row["billing"])
+                    );
+                    section_panel(ui,panes.shipments,
+                        &format!("발송 건별 상세 · {}건",shipments.len()),"shipments",order_id,
+                        |panel|shipment_panel(panel,order,&shipments)
+                    );
+                });
             });
-            section_panel(ui,panes.changes,
-                &format!("변경·처리 이력 · {}건",changes.len()),"changes",order_id,
-                |panel|audit_panel(panel,&changes)
-            );
-            section_panel(ui,panes.payment,"접수 및 입금 정보","payment",order_id,
-                |panel|payment_panel(panel,order,row,&payments,&confirmations)
-            );
-            section_panel(ui,panes.billing,"청구금액 상세","billing",order_id,
-                |panel|billing_panel(panel,order,&row["billing"])
-            );
-            section_panel(ui,panes.shipments,
-                &format!("발송 건별 상세 · {}건",shipments.len()),"shipments",order_id,
-                |panel|shipment_panel(panel,order,&shipments)
-            );
         });
     close
 }

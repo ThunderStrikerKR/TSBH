@@ -397,125 +397,130 @@ impl AliasManager {
             components::modal_window("상품 검색","alias-product-search",work_area)
                 .default_width(theme::MODAL_DEFAULT_MAX_WIDTH.min(work_area.width()))
                 .show(ctx,|modal|{
-                    if components::modal_header(modal,"상품 검색","닫기",!busy){
-                        close=true;
-                    }
-                    let width=modal.available_width();
-                    components::management_search_field(modal,&mut self.query,
-                        width,"브랜드 / 상품명 / 모델 / 별칭 검색");
-                    modal.horizontal_wrapped(|filters|{
-                        for (depth,(parent,selected,children)) in
-                            category_levels(catalog,&self.category).into_iter().enumerate(){
-                            let mut value=selected.clone();
-                            let label=children.iter()
-                                .find(|(id,_)|*id==value)
-                                .map(|(_,name)|name.as_str())
-                                .unwrap_or(if depth==0{
-                                    "전체 카테고리"
-                                }else{"현재 분류 전체"});
-                            let picker_width=theme::CATEGORY_PATH_PICKER_WIDTH;
-                            let text_width=picker_width-
-                                theme::CATEGORY_PATH_PICKER_TEXT_PADDING;
-                            let visible=typography::fit_category_path(
-                                filters,label,text_width,
-                                typography::CategoryPathFont::Body
-                            );
-                            components::management_dropdown(
-                                filters,&visible,picker_width,true,label,|choice|{
-                                    components::management_dropdown_option(
-                                        choice,&mut value,String::new(),
-                                        if depth==0{"전체 카테고리"}else{"현재 분류 전체"});
-                                    for (id,name) in &children{
-                                        let visible=typography::fit_category_path(
-                                            choice,name,text_width,
-                                            typography::CategoryPathFont::Body
-                                        );
-                                        components::management_dropdown_option(
-                                            choice,&mut value,id.clone(),&visible
-                                        ).on_hover_text(name.as_str());
-                                    }
-                                });
-                            if value!=selected{
-                                self.category=if value.is_empty(){
-                                    parent.unwrap_or_default()
-                                }else{value};
-                            }
+
+                    components::modal_flow_workspace(modal,|workspace|{
+                        if workspace.header("상품 검색","닫기",!busy){
+                            close=true;
                         }
-                        let available=self.picker_result.as_ref()
-                            .filter(|_|self.picker_key.as_ref()
-                                .is_some_and(|key|key.category==self.category))
-                            .map(|result|result.brands.clone()).unwrap_or_default();
-                        let selected_brand=self.brand.clone();
-                        let brand=rows(&catalog["brands"]).iter()
-                            .find(|b|field(b,"id")==selected_brand)
-                            .map(|b|field(b,"name")).unwrap_or("전체 브랜드");
-                        components::management_dropdown(
-                            filters,brand,theme::MANAGEMENT_FILTER_DROPDOWN_WIDTH,
-                            true,brand,|choice|{
-                                components::management_dropdown_option(
-                                    choice,&mut self.brand,String::new(),"전체 브랜드");
-                                for b in rows(&catalog["brands"])
-                                    .iter().filter(|b|{
-                                        available.contains(field(b,"id")) ||
-                                            field(b,"id")==selected_brand
-                                    }){
-                                    components::management_dropdown_option(
-                                        choice,&mut self.brand,field(b,"id").to_owned(),
-                                        field(b,"name"));
+                        workspace.body_region(|modal|{
+                            let width=modal.available_width();
+                            components::management_search_field(modal,&mut self.query,
+                                width,"브랜드 / 상품명 / 모델 / 별칭 검색");
+                            modal.horizontal_wrapped(|filters|{
+                                for (depth,(parent,selected,children)) in
+                                    category_levels(catalog,&self.category).into_iter().enumerate(){
+                                    let mut value=selected.clone();
+                                    let label=children.iter()
+                                        .find(|(id,_)|*id==value)
+                                        .map(|(_,name)|name.as_str())
+                                        .unwrap_or(if depth==0{
+                                            "전체 카테고리"
+                                        }else{"현재 분류 전체"});
+                                    let picker_width=theme::CATEGORY_PATH_PICKER_WIDTH;
+                                    let text_width=picker_width-
+                                        theme::CATEGORY_PATH_PICKER_TEXT_PADDING;
+                                    let visible=typography::fit_category_path(
+                                        filters,label,text_width,
+                                        typography::CategoryPathFont::Body
+                                    );
+                                    components::management_dropdown(
+                                        filters,&visible,picker_width,true,label,|choice|{
+                                            components::management_dropdown_option(
+                                                choice,&mut value,String::new(),
+                                                if depth==0{"전체 카테고리"}else{"현재 분류 전체"});
+                                            for (id,name) in &children{
+                                                let visible=typography::fit_category_path(
+                                                    choice,name,text_width,
+                                                    typography::CategoryPathFont::Body
+                                                );
+                                                components::management_dropdown_option(
+                                                    choice,&mut value,id.clone(),&visible
+                                                ).on_hover_text(name.as_str());
+                                            }
+                                        });
+                                    if value!=selected{
+                                        self.category=if value.is_empty(){
+                                            parent.unwrap_or_default()
+                                        }else{value};
+                                    }
+                                }
+                                let available=self.picker_result.as_ref()
+                                    .filter(|_|self.picker_key.as_ref()
+                                        .is_some_and(|key|key.category==self.category))
+                                    .map(|result|result.brands.clone()).unwrap_or_default();
+                                let selected_brand=self.brand.clone();
+                                let brand=rows(&catalog["brands"]).iter()
+                                    .find(|b|field(b,"id")==selected_brand)
+                                    .map(|b|field(b,"name")).unwrap_or("전체 브랜드");
+                                components::management_dropdown(
+                                    filters,brand,theme::MANAGEMENT_FILTER_DROPDOWN_WIDTH,
+                                    true,brand,|choice|{
+                                        components::management_dropdown_option(
+                                            choice,&mut self.brand,String::new(),"전체 브랜드");
+                                        for b in rows(&catalog["brands"])
+                                            .iter().filter(|b|{
+                                                available.contains(field(b,"id")) ||
+                                                    field(b,"id")==selected_brand
+                                            }){
+                                            components::management_dropdown_option(
+                                                choice,&mut self.brand,field(b,"id").to_owned(),
+                                                field(b,"name"));
+                                        }
+                                    });
+                                if !self.category.is_empty() &&
+                                    theme::action(filters,"카테고리 초기화",
+                                        theme::ButtonRole::Standard,true).clicked(){
+                                    self.category.clear();
                                 }
                             });
-                        if !self.category.is_empty() &&
-                            theme::action(filters,"카테고리 초기화",
-                                theme::ButtonRole::Standard,true).clicked(){
-                            self.category.clear();
-                        }
-                    });
-                    self.request_picker(ctx);
-                    let found=self.picker_result.clone();
-                    components::soft_divider(modal);
-                    egui::ScrollArea::vertical()
-                        .id_salt("alias-product-results")
-                        .max_height(theme::MANAGEMENT_MODAL_BODY_MAX_HEIGHT)
-                        .show(modal,|results|{
-                            match &found{
-                                Some(result)=>{
-                                    let data=&result.data;
-                                    let detail=rows(&data["detailLinkIds"]).iter()
-                                        .filter_map(Value::as_str).collect::<HashSet<_>>();
-                                    let ids=rows(&data["ids"]).iter()
-                                        .filter_map(Value::as_str).take(100)
-                                        .collect::<Vec<_>>();
-                                    if ids.is_empty(){
-                                        results.label(typography::body("검색 결과가 없습니다."));
-                                    }
-                                    for id in ids{
-                                        if let Some(p)=product(catalog,id){
-                                            results.horizontal(|row|{
-                                                if theme::action(row,
-                                                    &display_model(field(p,"name")),
-                                                    theme::ButtonRole::Standard,editable&&!busy)
-                                                    .clicked(){chosen=Some(id.to_owned());}
-                                                let description=if field(p,"subtitle").is_empty(){
-                                                    field(p,"specification")
-                                                }else{field(p,"subtitle")};
-                                                row.label(typography::caption(description));
-                                                if detail.contains(id){
-                                                    if let Some(url)=rows(&p["variants"]).first()
-                                                        .and_then(|v|v["url"].as_str()){
-                                                        if theme::action(row,"상세보기 ↗",
-                                                            theme::ButtonRole::Quiet,true).clicked(){
-                                                            ctx.open_url(egui::OpenUrl::new_tab(url));
+                            self.request_picker(ctx);
+                            let found=self.picker_result.clone();
+                            components::soft_divider(modal);
+                            egui::ScrollArea::vertical()
+                                .id_salt("alias-product-results")
+                                .max_height(theme::MANAGEMENT_MODAL_BODY_MAX_HEIGHT)
+                                .show(modal,|results|{
+                                    match &found{
+                                        Some(result)=>{
+                                            let data=&result.data;
+                                            let detail=rows(&data["detailLinkIds"]).iter()
+                                                .filter_map(Value::as_str).collect::<HashSet<_>>();
+                                            let ids=rows(&data["ids"]).iter()
+                                                .filter_map(Value::as_str).take(100)
+                                                .collect::<Vec<_>>();
+                                            if ids.is_empty(){
+                                                results.label(typography::body("검색 결과가 없습니다."));
+                                            }
+                                            for id in ids{
+                                                if let Some(p)=product(catalog,id){
+                                                    results.horizontal(|row|{
+                                                        if theme::action(row,
+                                                            &display_model(field(p,"name")),
+                                                            theme::ButtonRole::Standard,editable&&!busy)
+                                                            .clicked(){chosen=Some(id.to_owned());}
+                                                        let description=if field(p,"subtitle").is_empty(){
+                                                            field(p,"specification")
+                                                        }else{field(p,"subtitle")};
+                                                        row.label(typography::caption(description));
+                                                        if detail.contains(id){
+                                                            if let Some(url)=rows(&p["variants"]).first()
+                                                                .and_then(|v|v["url"].as_str()){
+                                                                if theme::action(row,"상세보기 ↗",
+                                                                    theme::ButtonRole::Quiet,true).clicked(){
+                                                                    ctx.open_url(egui::OpenUrl::new_tab(url));
+                                                                }
+                                                            }
                                                         }
-                                                    }
+                                                    });
+                                                    components::soft_divider(results);
                                                 }
-                                            });
-                                            components::soft_divider(results);
+                                            }
                                         }
+                                        None=>{}
                                     }
-                                }
-                                None=>{}
-                            }
+                                });
                         });
+                    });
                 });
             if close{self.product_search=false;}
             if let Some(id)=chosen{

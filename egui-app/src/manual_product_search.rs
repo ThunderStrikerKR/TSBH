@@ -115,143 +115,148 @@ impl ProductSearch{
                 .min((work_area.width()-theme::MANUAL_DIALOG_SIDE_GAP).max(0.0)))
             .constrain_to(work_area)
             .show(ctx,|ui|{
-                if components::modal_header(ui,"상품 검색","닫기",true){
-                    open=false;
-                }
-                let width=ui.available_width();
-                if components::management_search_field(
-                    ui,&mut self.query,width,
-                    "브랜드 / 상품명 / 모델 / 별칭 검색"
-                ).changed(){changed=true;}
-                if let Some(catalog)=&self.catalog{
-                    let brands=catalog.get("brands").and_then(Value::as_array)
-                        .cloned().unwrap_or_default();
-                    let categories=catalog.get("categories").and_then(Value::as_array)
-                        .cloned().unwrap_or_default();
-                    let levels=category_levels(&categories,&self.major);
-                    ui.horizontal_wrapped(|ui|{
-                        for (depth,parent,selected,children) in levels {
-                            let label=children.iter().find(|c|field(c,"id")==selected)
-                                .map(|c|field(c,"name"))
-                                .unwrap_or(if depth==0{"전체 카테고리"}else{"현재 분류 전체"});
-                            let width=theme::CATEGORY_PATH_PICKER_WIDTH;
-                            let text_width=width-theme::CATEGORY_PATH_PICKER_TEXT_PADDING;
-                            let visible=typography::fit_category_path(
-                                ui,label,text_width,typography::CategoryPathFont::Body
-                            );
-                            let mut value=selected.clone();
-                            components::management_dropdown(
-                                ui,&visible,width,true,label,|choices|{
-                                    components::management_dropdown_option(
-                                        choices,&mut value,String::new(),
-                                        if depth==0{"전체 카테고리"}else{"현재 분류 전체"}
+
+                components::modal_flow_workspace(ui,|workspace|{
+                    if workspace.header("상품 검색","닫기",true){
+                        open=false;
+                    }
+                    workspace.body_region(|ui|{
+                        let width=ui.available_width();
+                        if components::management_search_field(
+                            ui,&mut self.query,width,
+                            "브랜드 / 상품명 / 모델 / 별칭 검색"
+                        ).changed(){changed=true;}
+                        if let Some(catalog)=&self.catalog{
+                            let brands=catalog.get("brands").and_then(Value::as_array)
+                                .cloned().unwrap_or_default();
+                            let categories=catalog.get("categories").and_then(Value::as_array)
+                                .cloned().unwrap_or_default();
+                            let levels=category_levels(&categories,&self.major);
+                            ui.horizontal_wrapped(|ui|{
+                                for (depth,parent,selected,children) in levels {
+                                    let label=children.iter().find(|c|field(c,"id")==selected)
+                                        .map(|c|field(c,"name"))
+                                        .unwrap_or(if depth==0{"전체 카테고리"}else{"현재 분류 전체"});
+                                    let width=theme::CATEGORY_PATH_PICKER_WIDTH;
+                                    let text_width=width-theme::CATEGORY_PATH_PICKER_TEXT_PADDING;
+                                    let visible=typography::fit_category_path(
+                                        ui,label,text_width,typography::CategoryPathFont::Body
                                     );
-                                    for row in &children {
-                                        let id=field(row,"id");
-                                        let full=field(row,"name");
-                                        let visible=typography::fit_category_path(
-                                            choices,full,text_width,
-                                            typography::CategoryPathFont::Body
-                                        );
-                                        if !id.is_empty(){
+                                    let mut value=selected.clone();
+                                    components::management_dropdown(
+                                        ui,&visible,width,true,label,|choices|{
                                             components::management_dropdown_option(
-                                                choices,&mut value,id.to_owned(),&visible
-                                            ).on_hover_text(full);
-                                        }
-                                    }
-                                });
-                            if value!=selected {
-                                self.major=if value.is_empty(){parent}else{value};
-                                changed=true;
-                            }
-                        }
-                        if !self.major.is_empty() &&
-                            theme::action(ui,"카테고리 초기화",ButtonRole::Quiet,true).clicked() {
-                            self.major.clear();
-                            changed=true;
-                        }
-                        let previous_brand=self.brand.clone();
-                        components::management_dropdown(
-                            ui,brands.iter().find(|b|field(b,"id")==self.brand)
-                                .map(|v|field(v,"name")).unwrap_or("전체 브랜드"),
-                            theme::MANAGEMENT_FILTER_DROPDOWN_WIDTH,true,
-                            "브랜드 필터",|choices|{
-                                components::management_dropdown_option(
-                                    choices,&mut self.brand,String::new(),"전체 브랜드");
-                                for row in &brands {
-                                    let id=field(row,"id");
-                                    if !id.is_empty(){
-                                        components::management_dropdown_option(
-                                            choices,&mut self.brand,id.to_owned(),
-                                            field(row,"name"));
-                                    }
-                                }
-                            });
-                        if self.brand!=previous_brand {changed=true;}
-                    });
-                }
-                // Always allocate one result viewport. The search state
-                // changes inside it, never shrinking or jumping the modal.
-                ui.allocate_ui_with_layout(
-                    egui::vec2(ui.available_width(),theme::MANUAL_SEARCH_RESULTS_HEIGHT),
-                    egui::Layout::top_down(egui::Align::Min),
-                    |pane|{
-                        egui::ScrollArea::vertical()
-                            .id_salt("manual-product-search-results")
-                            .max_height(theme::MANUAL_SEARCH_RESULTS_HEIGHT)
-                            .show(pane,|ui|{
-                                if let Some(error)=&self.error {
-                                    ui.label(typography::status(error,theme::DANGER));
-                                } else if self.receiver.is_some() {
-                                    ui.label(typography::caption("상품 검색 중"));
-                                } else {
-                            for row in &self.products{
-                                let name=field(row,"name");
-                                let name=if name.is_empty(){field(row,"code")}else{name};
-                                let detail=field(row,"subtitle");
-                                let detail=if detail.is_empty(){field(row,"specification")}else{detail};
-                                ui.horizontal(|ui|{
-                                    ui.vertical(|info|{
-                                        info.label(typography::body(name));
-                                        if !detail.is_empty() {
-                                            info.label(typography::caption(detail));
-                                        }
-                                    });
-                                    ui.with_layout(
-                                        egui::Layout::right_to_left(egui::Align::Center),
-                                        |actions|{
-                                            if theme::action(actions,"선택",ButtonRole::Standard,true)
-                                                .clicked() {
-                                                chosen=Some(row.clone());
-                                            }
-                                            if self.detail_ids.iter().any(|id|id==field(row,"id")) {
-                                                let url=row.get("variants")
-                                                    .and_then(Value::as_array)
-                                                    .and_then(|variants|variants.first())
-                                                    .and_then(|variant|variant.get("url"))
-                                                    .and_then(Value::as_str);
-                                                if let Some(url)=url {
-                                                    if theme::action(actions,"상세보기 ↗",
-                                                        ButtonRole::Quiet,true).clicked() {
-                                                        ctx.open_url(egui::OpenUrl::new_tab(
-                                                            url.to_owned()
-                                                        ));
-                                                    }
+                                                choices,&mut value,String::new(),
+                                                if depth==0{"전체 카테고리"}else{"현재 분류 전체"}
+                                            );
+                                            for row in &children {
+                                                let id=field(row,"id");
+                                                let full=field(row,"name");
+                                                let visible=typography::fit_category_path(
+                                                    choices,full,text_width,
+                                                    typography::CategoryPathFont::Body
+                                                );
+                                                if !id.is_empty(){
+                                                    components::management_dropdown_option(
+                                                        choices,&mut value,id.to_owned(),&visible
+                                                    ).on_hover_text(full);
                                                 }
                                             }
-                                        }
-                                    );
-                                });
-                                components::soft_divider(ui);
-                            }
-
-                                    if self.products.is_empty() {
-                                        ui.label(typography::caption("검색 결과가 없습니다."));
+                                        });
+                                    if value!=selected {
+                                        self.major=if value.is_empty(){parent}else{value};
+                                        changed=true;
                                     }
                                 }
+                                if !self.major.is_empty() &&
+                                    theme::action(ui,"카테고리 초기화",ButtonRole::Quiet,true).clicked() {
+                                    self.major.clear();
+                                    changed=true;
+                                }
+                                let previous_brand=self.brand.clone();
+                                components::management_dropdown(
+                                    ui,brands.iter().find(|b|field(b,"id")==self.brand)
+                                        .map(|v|field(v,"name")).unwrap_or("전체 브랜드"),
+                                    theme::MANAGEMENT_FILTER_DROPDOWN_WIDTH,true,
+                                    "브랜드 필터",|choices|{
+                                        components::management_dropdown_option(
+                                            choices,&mut self.brand,String::new(),"전체 브랜드");
+                                        for row in &brands {
+                                            let id=field(row,"id");
+                                            if !id.is_empty(){
+                                                components::management_dropdown_option(
+                                                    choices,&mut self.brand,id.to_owned(),
+                                                    field(row,"name"));
+                                            }
+                                        }
+                                    });
+                                if self.brand!=previous_brand {changed=true;}
                             });
-                    },
-                );
+                        }
+                        // Always allocate one result viewport. The search state
+                        // changes inside it, never shrinking or jumping the modal.
+                        ui.allocate_ui_with_layout(
+                            egui::vec2(ui.available_width(),theme::MANUAL_SEARCH_RESULTS_HEIGHT),
+                            egui::Layout::top_down(egui::Align::Min),
+                            |pane|{
+                                egui::ScrollArea::vertical()
+                                    .id_salt("manual-product-search-results")
+                                    .max_height(theme::MANUAL_SEARCH_RESULTS_HEIGHT)
+                                    .show(pane,|ui|{
+                                        if let Some(error)=&self.error {
+                                            ui.label(typography::status(error,theme::DANGER));
+                                        } else if self.receiver.is_some() {
+                                            ui.label(typography::caption("상품 검색 중"));
+                                        } else {
+                                    for row in &self.products{
+                                        let name=field(row,"name");
+                                        let name=if name.is_empty(){field(row,"code")}else{name};
+                                        let detail=field(row,"subtitle");
+                                        let detail=if detail.is_empty(){field(row,"specification")}else{detail};
+                                        ui.horizontal(|ui|{
+                                            ui.vertical(|info|{
+                                                info.label(typography::body(name));
+                                                if !detail.is_empty() {
+                                                    info.label(typography::caption(detail));
+                                                }
+                                            });
+                                            ui.with_layout(
+                                                egui::Layout::right_to_left(egui::Align::Center),
+                                                |actions|{
+                                                    if theme::action(actions,"선택",ButtonRole::Standard,true)
+                                                        .clicked() {
+                                                        chosen=Some(row.clone());
+                                                    }
+                                                    if self.detail_ids.iter().any(|id|id==field(row,"id")) {
+                                                        let url=row.get("variants")
+                                                            .and_then(Value::as_array)
+                                                            .and_then(|variants|variants.first())
+                                                            .and_then(|variant|variant.get("url"))
+                                                            .and_then(Value::as_str);
+                                                        if let Some(url)=url {
+                                                            if theme::action(actions,"상세보기 ↗",
+                                                                ButtonRole::Quiet,true).clicked() {
+                                                                ctx.open_url(egui::OpenUrl::new_tab(
+                                                                    url.to_owned()
+                                                                ));
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            );
+                                        });
+                                        components::soft_divider(ui);
+                                    }
+
+                                            if self.products.is_empty() {
+                                                ui.label(typography::caption("검색 결과가 없습니다."));
+                                            }
+                                        }
+                                    });
+                            },
+                        );
+                    });
+                });
             });
         if changed{self.reload(gateway,ctx.clone());}
         if let Some(row)=chosen{return Some(Event::Chosen(row));}

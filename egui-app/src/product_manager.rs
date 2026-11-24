@@ -517,12 +517,17 @@ impl ProductManager {
         let height=(work_area.height()-theme::SPACE_16*4.0).clamp(1.0,650.0);
         components::modal_window("상품 선택",window_id,work_area)
             .default_width(width).show(ctx,|ui|{
+
                 ui.set_width(width);
-                cancelled=components::modal_header(ui,"상품 선택","취소",true);
-                ui.allocate_ui_with_layout(
-                    egui::vec2(width,height),Layout::top_down(Align::Min),
-                    |body|self.show_page(body)
-                );
+                components::modal_flow_workspace(ui,|workspace|{
+                    cancelled=workspace.header("상품 선택","취소",true);
+                    workspace.body_region(|ui|{
+                        ui.allocate_ui_with_layout(
+                            egui::vec2(ui.available_width(),height.min(ui.available_height().max(1.0))),Layout::top_down(Align::Min),
+                            |body|self.show_page(body)
+                        );
+                    });
+                });
             });
         (cancelled || ctx.input(|input|input.key_pressed(egui::Key::Escape)),
             self.take_selection())

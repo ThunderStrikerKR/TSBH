@@ -1233,6 +1233,65 @@ pub struct ModalEditorWorkspace<'a> {
     geometry:ModalEditorGeometry,
 }
 impl ModalEditorWorkspace<'_> {
+    pub fn header(&mut self,title:&str,close_label:&str,enabled:bool)->bool{
+        let (header,_)=self.ui.allocate_exact_size(
+            Vec2::new(self.ui.available_width(),theme::MODAL_HEADER_HEIGHT),
+            Sense::hover()
+        );
+        self.geometry.header=Some(header);
+        modal_master_header_in_rect(self.ui,header,title,"",close_label,enabled)
+    }
+
+    pub fn disable(&mut self){self.ui.disable();}
+
+    fn before_body(&mut self){
+        let top=self.ui.cursor().top();
+        let target=self.geometry.header.map(|r|r.bottom()).unwrap_or(top)
+            +theme::MODAL_MASTER_WORKSPACE_GAP;
+        self.ui.add_space((target-top).max(0.0));
+    }
+
+    /// Fixed dashboards and search/list workspaces keep their own inner scroll
+    /// regions. Only the master owns the outer inset and structural gaps.
+    pub fn body_region<R>(&mut self,contents:impl FnOnce(&mut Ui)->R)->R{
+        self.before_body();
+        let inset=theme::MODAL_MASTER_CONTENT_INSET;
+        let width=(self.ui.available_width()-2.0*inset).max(1.0);
+        let body=Frame::NONE.inner_margin(egui::Margin::symmetric(inset as i8,0))
+            .show(self.ui,|content|{
+                content.set_width(width);
+                content.spacing_mut().item_spacing.y=theme::SPACING;
+                contents(content)
+            });
+        self.geometry.body=Some(body.response.rect);
+        body.inner
+    }
+
+    /// Ordinary single-pane forms use one bounded body scrollbar.
+    pub fn scroll_region<R>(&mut self,id:&str,max_height:f32,contents:impl FnOnce(&mut Ui)->R)->R{
+        self.body_region(|host|{
+            egui::ScrollArea::vertical().id_salt(id)
+                .max_height(max_height.max(1.0))
+                .auto_shrink([false,true])
+                .show(host,contents).inner
+        })
+    }
+
+    fn before_footer(&mut self){
+        let top=self.ui.cursor().top();
+        let target=self.geometry.body.map(|r|r.bottom()).unwrap_or(top)
+            +theme::MODAL_MASTER_WORKSPACE_GAP;
+        self.ui.add_space((target-top).max(0.0));
+        self.geometry.footer=Some(Rect::from_min_size(
+            self.ui.cursor().min,Vec2::new(self.ui.available_width(),theme::MODAL_FOOTER_HEIGHT)
+        ));
+    }
+
+    pub fn footer_single<R>(&mut self,actions:impl FnOnce(&mut Ui)->R)->egui::InnerResponse<R>{
+        self.before_footer();
+        modal_action_row(self.ui,actions)
+    }
+
     pub fn body<R>(
         &mut self,max_height:f32,
         contents:impl FnOnce(&mut Ui)->(R,ModalEditorBodyGeometry),
@@ -1274,14 +1333,22 @@ impl ModalEditorWorkspace<'_> {
         leading:impl FnOnce(&mut Ui),
         trailing:impl FnOnce(&mut Ui),
     ){
-        self.ui.add_space(theme::MODAL_MASTER_WORKSPACE_GAP);
-        let top=self.ui.cursor().min;
-        let width=self.ui.available_width();
+        self.before_footer();
         modal_action_row_split(self.ui,leading,trailing);
-        self.geometry.footer=Some(Rect::from_min_size(
-            top,Vec2::new(width,theme::MODAL_FOOTER_HEIGHT)
-        ));
     }
+}
+
+/// Same master owner for sequential forms, viewers and existing dashboard
+/// bodies. No additional scrollbar is imposed on a split/list workspace.
+pub fn modal_flow_workspace<R>(ui:&mut Ui,contents:impl FnOnce(&mut ModalEditorWorkspace<'_>)->R)->R{
+    ui.scope(|layout|{
+        modal_master_controlled_spacing(layout);
+        contents(&mut ModalEditorWorkspace{ui:layout,geometry:ModalEditorGeometry::default()})
+    }).inner
+}
+
+pub fn modal_workspace_footer_reserve()->f32{
+    theme::MODAL_FOOTER_HEIGHT+theme::MODAL_MASTER_WORKSPACE_GAP
 }
 
 pub fn modal_editor_workspace<R>(

@@ -3041,43 +3041,42 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
             "reception-correction-history",work_area)
             .default_width(work_area.width().min(860.0))
             .show(ctx,|ui|{
-                close=components::modal_header(
-                    ui,"최초 분석 및 수정 이력","닫기",true
-                );
-                egui::ScrollArea::vertical()
-                    .id_salt("reception-correction-history-body")
-                    .max_height(work_area.height()*0.6)
-                    .show(ui,|body|{
-                        body.label(typography::section_heading("최초 분석"));
-                        body.add(egui::Label::new(
-                            typography::body(&serde_json::to_string_pretty(&original)
-                                .unwrap_or_default())
-                        ).selectable(true));
-                        components::soft_divider(body);
-                        body.label(typography::section_heading("현재 수정 결과"));
-                        body.add(egui::Label::new(
-                            typography::body(&serde_json::to_string_pretty(&latest)
-                                .unwrap_or_default())
-                        ).selectable(true));
-                        components::soft_divider(body);
-                        for (index,event) in receipt.edit_history.iter().enumerate().rev(){
-                            egui::CollapsingHeader::new(format!(
-                                "수정 {} · {}",index+1,
-                                event["at"].as_str().unwrap_or("")
-                            )).show(body,|history|{
-                                history.label(typography::field_label("수정 전"));
-                                history.add(egui::Label::new(typography::body(
-                                    &serde_json::to_string_pretty(&event["beforeRows"])
-                                        .unwrap_or_default()
-                                )).selectable(true));
-                                history.label(typography::field_label("수정 후"));
-                                history.add(egui::Label::new(typography::body(
-                                    &serde_json::to_string_pretty(&event["afterRows"])
-                                        .unwrap_or_default()
-                                )).selectable(true));
-                            });
-                        }
+
+                components::modal_flow_workspace(ui,|workspace|{
+                    close=workspace.header("최초 분석 및 수정 이력","닫기",true
+                    );
+                    workspace.scroll_region("reception-correction-history-body",(work_area.height()*0.6).min(components::modal_editor_body_max_height(work_area.height())),|body|{
+                                body.label(typography::section_heading("최초 분석"));
+                                body.add(egui::Label::new(
+                                    typography::body(&serde_json::to_string_pretty(&original)
+                                        .unwrap_or_default())
+                                ).selectable(true));
+                                components::soft_divider(body);
+                                body.label(typography::section_heading("현재 수정 결과"));
+                                body.add(egui::Label::new(
+                                    typography::body(&serde_json::to_string_pretty(&latest)
+                                        .unwrap_or_default())
+                                ).selectable(true));
+                                components::soft_divider(body);
+                                for (index,event) in receipt.edit_history.iter().enumerate().rev(){
+                                    egui::CollapsingHeader::new(format!(
+                                        "수정 {} · {}",index+1,
+                                        event["at"].as_str().unwrap_or("")
+                                    )).show(body,|history|{
+                                        history.label(typography::field_label("수정 전"));
+                                        history.add(egui::Label::new(typography::body(
+                                            &serde_json::to_string_pretty(&event["beforeRows"])
+                                                .unwrap_or_default()
+                                        )).selectable(true));
+                                        history.label(typography::field_label("수정 후"));
+                                        history.add(egui::Label::new(typography::body(
+                                            &serde_json::to_string_pretty(&event["afterRows"])
+                                                .unwrap_or_default()
+                                        )).selectable(true));
+                                    });
+                                }
                     });
+                });
             });
         if close {self.edit_history_open=false;}
     }

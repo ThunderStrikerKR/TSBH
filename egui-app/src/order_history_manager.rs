@@ -1220,55 +1220,58 @@ impl OrderHistoryManager {
         components::modal_window("관리 메모","history-shipment-memo",work_area)
             .default_width(520.0_f32.min(work_area.width()))
             .show(ctx,|ui|{
-                cancel=components::modal_header(ui,"관리 메모","취소",!busy);
-                if let Some(editor)=self.memo_editor.as_mut(){
-                    ui.label(typography::caption(&format!(
-                        "마지막 갱신: {}",
-                        memo_last_updated_label(&editor.updated_at)
-                    )));
-                    ui.add_space(theme::SPACE_8);
-                    // Use the full modal content width. The former nested
-                    // enabled UI could shrink the TextEdit to a narrow slot.
-                    // Twelve visible lines make this a real memo editor.
-                    let editor_width=ui.available_width().max(1.0);
-                    components::multiline_text_field(
-                        ui,&mut editor.draft,!busy,editor_width,12,
-                        Some("관리 메모를 입력하세요")
-                    );
-                    ui.label(typography::caption(&format!(
-                        "{} / 2,000자",editor.draft.chars().count()
-                    )));
-                    let mut status_messages=Vec::new();
-                    if !writable{
-                        status_messages.push(
-                            "현재 연결은 운영 메모 저장 권한이 없습니다.".to_owned()
-                        );
-                    }
-                    if let Some(error)=self.memo_error.as_ref(){
-                        status_messages.push(error.clone());
-                    }
-                    let status_text=status_messages.join(" · ");
-                    let status_color=if self.memo_error.is_some(){
-                        theme::DANGER
-                    }else{theme::MUTED};
-                    let status_width=ui.available_width();
-                    components::fixed_status_slot(
-                        ui,status_width,typography::METADATA_LINE_HEIGHT,
-                        (!status_text.is_empty()).then_some(status_text.as_str()),
-                        (!status_text.is_empty()).then_some(status_text.as_str()),
-                        status_color
-                    );
-                    ui.add_space(theme::SPACE_12);
-                    components::modal_action_row(ui,|bar|{
-                        if theme::action(bar,"저장",theme::ButtonRole::Primary,
-                            !busy && writable &&
-                            editor.draft!=editor.original &&
-                            editor.draft.chars().count()<=2_000 &&
-                            editor.expected_revision.is_some()).clicked(){
-                            save=true;
-                        }
-                    });
-                }
+
+                components::modal_flow_workspace(ui,|workspace|{
+                    cancel=workspace.header("관리 메모","취소",!busy);
+                    let Some(can_save)=workspace.scroll_region("history-memo-body",components::modal_editor_body_max_height(work_area.height()),|ui|{
+                            if let Some(editor)=self.memo_editor.as_mut(){
+                            ui.label(typography::caption(&format!(
+                                "마지막 갱신: {}",
+                                memo_last_updated_label(&editor.updated_at)
+                            )));
+                            ui.add_space(theme::SPACE_8);
+                            // Use the full modal content width. The former nested
+                            // enabled UI could shrink the TextEdit to a narrow slot.
+                            // Twelve visible lines make this a real memo editor.
+                            let editor_width=ui.available_width().max(1.0);
+                            components::multiline_text_field(
+                                ui,&mut editor.draft,!busy,editor_width,12,
+                                Some("관리 메모를 입력하세요")
+                            );
+                            ui.label(typography::caption(&format!(
+                                "{} / 2,000자",editor.draft.chars().count()
+                            )));
+                            let mut status_messages=Vec::new();
+                            if !writable{
+                                status_messages.push(
+                                    "현재 연결은 운영 메모 저장 권한이 없습니다.".to_owned()
+                                );
+                            }
+                            if let Some(error)=self.memo_error.as_ref(){
+                                status_messages.push(error.clone());
+                            }
+                            let status_text=status_messages.join(" · ");
+                            let status_color=if self.memo_error.is_some(){
+                                theme::DANGER
+                            }else{theme::MUTED};
+                            let status_width=ui.available_width();
+                            components::fixed_status_slot(
+                                ui,status_width,typography::METADATA_LINE_HEIGHT,
+                                (!status_text.is_empty()).then_some(status_text.as_str()),
+                                (!status_text.is_empty()).then_some(status_text.as_str()),
+                                status_color
+                            );
+                        Some(!busy && writable && editor.draft!=editor.original &&
+                            editor.draft.chars().count()<=2_000 && editor.expected_revision.is_some())
+                        }else{None}
+                    }) else{return;};
+                        workspace.footer_single(|bar|{
+                            if theme::action(bar,"저장",theme::ButtonRole::Primary,
+                                can_save).clicked(){
+                                save=true;
+                            }
+                        });
+                });
             });
         if cancel && !busy{
             self.memo_editor=None;

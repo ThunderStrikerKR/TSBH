@@ -919,43 +919,35 @@ impl ClientManager {
         components::modal_window(title,"native-client-manager-editor",work_area)
             .default_width(theme::MODAL_DEFAULT_MAX_WIDTH.min(work_area.width()))
             .show(ctx,|ui|{
-                if components::modal_header(ui,title,"취소",!busy){
-                    close=true;
-                }
-                // Reserve the native header, footer, gap and outer frame
-                // before allocating the only scrollable editor region.
-                let body_height=components::modal_editor_body_max_height(
-                    work_area.height()
-                );
-                egui::ScrollArea::vertical()
-                    .id_salt("native-client-manager-fields")
-                    .max_height(body_height)
-                    .auto_shrink([false,false])
-                    .show(ui,|body|{
-                        body.add_enabled_ui(editable && !busy,|form|{
-                            self.editor_fields(form,&mut draft);
-                        });
-                    });
-                ui.add_space(theme::SPACE_12);
-                components::modal_action_row_split(
-                    ui,
-                    |left|{
-                        if exists && theme::action(left,"거래처 삭제",
-                            ButtonRole::Danger,editable && !busy).clicked(){
-                            delete=true;
-                        }
-                    },
-                    |right|{
-                        let label=if exists {"변경사항 저장"}else{"거래처 등록"};
-                        let dirty=self.original.as_ref()
-                            .is_some_and(|old|*old!=draft)
-                            || !self.tag_input.trim().is_empty();
-                        if theme::action(right,label,ButtonRole::Primary,
-                            editable && !busy && (!exists || dirty)).clicked(){
-                            save=true;
-                        }
+
+                components::modal_flow_workspace(ui,|workspace|{
+                    if workspace.header(title,"취소",!busy){
+                        close=true;
                     }
-                );
+                    let body_height=components::modal_editor_body_max_height(work_area.height());
+                    workspace.scroll_region("native-client-manager-fields",body_height,|body|{
+                                body.add_enabled_ui(editable && !busy,|form|{
+                                    self.editor_fields(form,&mut draft);
+                                });
+                    });
+                    workspace.footer(|left|{
+                            if exists && theme::action(left,"거래처 삭제",
+                                ButtonRole::Danger,editable && !busy).clicked(){
+                                delete=true;
+                            }
+                        },
+                        |right|{
+                            let label=if exists {"변경사항 저장"}else{"거래처 등록"};
+                            let dirty=self.original.as_ref()
+                                .is_some_and(|old|*old!=draft)
+                                || !self.tag_input.trim().is_empty();
+                            if theme::action(right,label,ButtonRole::Primary,
+                                editable && !busy && (!exists || dirty)).clicked(){
+                                save=true;
+                            }
+                        }
+                    );
+                });
             });
         if ctx.input(|input|input.key_pressed(egui::Key::Escape)) {
             if self.confirm_delete || self.confirm_discard {

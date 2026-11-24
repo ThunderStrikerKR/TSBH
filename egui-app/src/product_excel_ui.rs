@@ -253,80 +253,83 @@ impl ProductExcelUi {
             "egui-product-excel-review",work_area)
             .default_width(work_area.width().min(1070.0))
             .show(ctx,|ui|{
+
                 ui.set_min_width(work_area.width().min(900.0));
-                close=components::modal_header(
-                    ui,"상품 전체 Excel 변경 검토","취소",!self.busy()
-                );
-                ui.label(typography::table_cell(&self.filename));
-                ui.horizontal_wrapped(|counts|{
-                    for (title,value) in [
-                        ("신규",adds),("수정",updates),("변경 없음",unchanged),
-                        ("보류",holds),("오류",errors)
-                    ]{
-                        counts.label(typography::field_label(
-                            &format!("{title} {value}건")
+                components::modal_flow_workspace(ui,|workspace|{
+                    close=workspace.header("상품 전체 Excel 변경 검토","취소",!self.busy()
+                    );
+                    workspace.body_region(|ui|{
+                        ui.label(typography::table_cell(&self.filename));
+                        ui.horizontal_wrapped(|counts|{
+                            for (title,value) in [
+                                ("신규",adds),("수정",updates),("변경 없음",unchanged),
+                                ("보류",holds),("오류",errors)
+                            ]{
+                                counts.label(typography::field_label(
+                                    &format!("{title} {value}건")
+                                ));
+                            }
+                        });
+                        let missing_note=(missing>0).then(||format!(
+                            "Excel에서 누락된 기존 상품 {missing}개는 삭제하거나 판매중지하지 않고 그대로 유지합니다."
                         ));
-                    }
-                });
-                let missing_note=(missing>0).then(||format!(
-                    "Excel에서 누락된 기존 상품 {missing}개는 삭제하거나 판매중지하지 않고 그대로 유지합니다."
-                ));
-                let missing_width=ui.available_width();
-                components::fixed_status_slot(
-                    ui,missing_width,typography::METADATA_LINE_HEIGHT,
-                    missing_note.as_deref(),missing_note.as_deref(),theme::SECONDARY
-                );
-                ui.horizontal(|filters|{
-                    for (value,label) in ReviewFilter::options(){
-                        if theme::action(filters,label,
-                            if self.filter==value{theme::ButtonRole::Primary}
-                            else{theme::ButtonRole::Standard},!self.busy()
-                        ).clicked(){self.filter=value;}
-                    }
-                });
-                components::soft_divider(ui);
-                // Review-only. The original React limits the visible audit
-                // table to 500 records while validating every source row.
-                let full=review["rows"].as_array().map(Vec::as_slice).unwrap_or(&[]);
-                let visible=review_table_rows(&review,self.filter);
-                let headings=["시트","행","독립 상품","판정","변경 및 사유"];
-                components::management_readonly_table(
-                    ui,"product-excel-review-rows",&headings,&visible,
-                    work_area.height()*0.40,
-                    |available|{
-                        let name=available*0.24;
-                        let message=(available-86.0-52.0-name-70.0
-                            -4.0*theme::SPACE_8).max(190.0);
-                        vec![86.0,52.0,name,70.0,message]
-                    }
-                );
-                let large_table_note=(full.len()>500).then_some(
-                    "표에는 최대 500행을 표시하며 모든 행을 검증합니다."
-                );
-                let table_note_width=ui.available_width();
-                components::fixed_status_slot(
-                    ui,table_note_width,typography::METADATA_LINE_HEIGHT,
-                    large_table_note,large_table_note,theme::MUTED
-                );
-                ui.label(typography::caption(
-                    "홈페이지 등록 여부와 관계없이 신규 등록 및 수정할 수 있습니다. 기존 상품 ID와 가격 기록 ID, 주문 이력, 이미지 및 홈페이지 연결 정보는 보존됩니다."
-                ));
-                components::checkbox(
-                    ui,&mut self.approved,
-                    "Excel 변경사항과 오류를 확인했고, 누락 행은 보존한 채 변경사항만 반영하는 데 동의합니다.",
-                    true
-                );
-                let error_width=ui.available_width();
-                components::fixed_status_slot(
-                    ui,error_width,typography::METADATA_LINE_HEIGHT,
-                    self.error.as_deref(),self.error.as_deref(),theme::DANGER
-                );
-                ui.add_space(theme::SPACE_12);
-                components::modal_action_row(ui,|buttons|{
-                    if theme::action(buttons,
-                        "백업 후 상품 변경사항 반영",theme::ButtonRole::Primary,
-                        self.can_apply()&&can_edit
-                    ).clicked(){request_commit=true;}
+                        let missing_width=ui.available_width();
+                        components::fixed_status_slot(
+                            ui,missing_width,typography::METADATA_LINE_HEIGHT,
+                            missing_note.as_deref(),missing_note.as_deref(),theme::SECONDARY
+                        );
+                        ui.horizontal(|filters|{
+                            for (value,label) in ReviewFilter::options(){
+                                if theme::action(filters,label,
+                                    if self.filter==value{theme::ButtonRole::Primary}
+                                    else{theme::ButtonRole::Standard},!self.busy()
+                                ).clicked(){self.filter=value;}
+                            }
+                        });
+                        components::soft_divider(ui);
+                        // Review-only. The original React limits the visible audit
+                        // table to 500 records while validating every source row.
+                        let full=review["rows"].as_array().map(Vec::as_slice).unwrap_or(&[]);
+                        let visible=review_table_rows(&review,self.filter);
+                        let headings=["시트","행","독립 상품","판정","변경 및 사유"];
+                        components::management_readonly_table(
+                            ui,"product-excel-review-rows",&headings,&visible,
+                            work_area.height()*0.40,
+                            |available|{
+                                let name=available*0.24;
+                                let message=(available-86.0-52.0-name-70.0
+                                    -4.0*theme::SPACE_8).max(190.0);
+                                vec![86.0,52.0,name,70.0,message]
+                            }
+                        );
+                        let large_table_note=(full.len()>500).then_some(
+                            "표에는 최대 500행을 표시하며 모든 행을 검증합니다."
+                        );
+                        let table_note_width=ui.available_width();
+                        components::fixed_status_slot(
+                            ui,table_note_width,typography::METADATA_LINE_HEIGHT,
+                            large_table_note,large_table_note,theme::MUTED
+                        );
+                        ui.label(typography::caption(
+                            "홈페이지 등록 여부와 관계없이 신규 등록 및 수정할 수 있습니다. 기존 상품 ID와 가격 기록 ID, 주문 이력, 이미지 및 홈페이지 연결 정보는 보존됩니다."
+                        ));
+                        components::checkbox(
+                            ui,&mut self.approved,
+                            "Excel 변경사항과 오류를 확인했고, 누락 행은 보존한 채 변경사항만 반영하는 데 동의합니다.",
+                            true
+                        );
+                        let error_width=ui.available_width();
+                        components::fixed_status_slot(
+                            ui,error_width,typography::METADATA_LINE_HEIGHT,
+                            self.error.as_deref(),self.error.as_deref(),theme::DANGER
+                        );
+                    });
+                    workspace.footer_single(|buttons|{
+                        if theme::action(buttons,
+                            "백업 후 상품 변경사항 반영",theme::ButtonRole::Primary,
+                            self.can_apply()&&can_edit
+                        ).clicked(){request_commit=true;}
+                    });
                 });
             });
         if close{self.dismiss();}

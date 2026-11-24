@@ -1059,74 +1059,78 @@ impl SettingsView{
             components::modal_window(
                 "접수 원문 감사 보관함","settings-audit-records",area
             ).default_width(720.0).show(ctx,|ui|{
-                if components::modal_header(
-                    ui,"접수 원문 감사 보관함","닫기",true
-                ){self.archive_open=false;}
-                ui.spacing_mut().scroll=theme::management_scroll_style();
-                let search_width=ui.available_width();
-                components::management_search_field(
-                    ui,&mut self.archive_query,search_width,
-                    "원문 / 담당자 / 주문 ID 검색"
-                );
-                let matches=self.archive.as_ref().into_iter().flatten()
-                    .filter(|row|self.archive_query.trim().is_empty() ||
-                        row.to_string().to_lowercase().contains(
-                            &self.archive_query.trim().to_lowercase()
-                        )).collect::<Vec<_>>();
-                ui.label(typography::caption(&format!("{}건 조회",matches.len())));
-                egui::ScrollArea::vertical().id_salt("settings-audit-records-scroll")
-                    .max_height(area.height()*0.62)
-                    .show(ui,|entries|{
-                        for row in matches{
-                            let id=field(row,"id");
-                            let order_id=field(row,"orderId");
-                            let record=&row["record"];
-                            let at=field(record,"at");
-                            let actor=record.get("actor").and_then(Value::as_str)
-                                .filter(|v|!v.is_empty()).unwrap_or("담당자 미확인");
-                            let correction=id.starts_with("correction:")||
-                                id.starts_with("legacy-correction:");
-                            let unverified=record.get("verified")==Some(&Value::Bool(false));
-                            let title=format!(
-                                "{} / {} / {} / {}{}",
-                                order_id,at,actor,
-                                if correction{"원문 정정"}else{"최초 접수"},
-                                if unverified{" (과거 자료 / 독립 감사 미확인)"}else{""}
-                            );
-                            egui::CollapsingHeader::new(title)
-                                .icon(components::paint_collapsing_header_icon)
-                                .show(entries,|detail|{
-                                if correction{
-                                    detail.label(typography::field_label(
-                                        "정정 전 작업용 원문"
-                                    ));
-                                    detail.add(egui::Label::new(typography::body(
-                                        &field(record,"before")
-                                    )).selectable(true));
-                                    detail.label(typography::field_label(
-                                        "정정 후 작업용 원문"
-                                    ));
-                                    detail.add(egui::Label::new(typography::body(
-                                        &field(record,"after")
-                                    )).selectable(true));
-                                    detail.label(typography::caption(&format!(
-                                        "정정 사유: {}",
-                                        record.get("reason").and_then(Value::as_str)
-                                            .filter(|v|!v.is_empty())
-                                            .unwrap_or("과거 기록 / 사유 미확인")
-                                    )));
-                                }else{
-                                    detail.label(typography::field_label(
-                                        "최초 접수 원문"
-                                    ));
-                                    detail.add(egui::Label::new(typography::body(
-                                        &field(record,"original")
-                                    )).selectable(true));
+
+                components::modal_flow_workspace(ui,|workspace|{
+                    if workspace.header("접수 원문 감사 보관함","닫기",true
+                    ){self.archive_open=false;}
+                    workspace.body_region(|ui|{
+                        ui.spacing_mut().scroll=theme::management_scroll_style();
+                        let search_width=ui.available_width();
+                        components::management_search_field(
+                            ui,&mut self.archive_query,search_width,
+                            "원문 / 담당자 / 주문 ID 검색"
+                        );
+                        let matches=self.archive.as_ref().into_iter().flatten()
+                            .filter(|row|self.archive_query.trim().is_empty() ||
+                                row.to_string().to_lowercase().contains(
+                                    &self.archive_query.trim().to_lowercase()
+                                )).collect::<Vec<_>>();
+                        ui.label(typography::caption(&format!("{}건 조회",matches.len())));
+                        egui::ScrollArea::vertical().id_salt("settings-audit-records-scroll")
+                            .max_height(area.height()*0.62)
+                            .show(ui,|entries|{
+                                for row in matches{
+                                    let id=field(row,"id");
+                                    let order_id=field(row,"orderId");
+                                    let record=&row["record"];
+                                    let at=field(record,"at");
+                                    let actor=record.get("actor").and_then(Value::as_str)
+                                        .filter(|v|!v.is_empty()).unwrap_or("담당자 미확인");
+                                    let correction=id.starts_with("correction:")||
+                                        id.starts_with("legacy-correction:");
+                                    let unverified=record.get("verified")==Some(&Value::Bool(false));
+                                    let title=format!(
+                                        "{} / {} / {} / {}{}",
+                                        order_id,at,actor,
+                                        if correction{"원문 정정"}else{"최초 접수"},
+                                        if unverified{" (과거 자료 / 독립 감사 미확인)"}else{""}
+                                    );
+                                    egui::CollapsingHeader::new(title)
+                                        .icon(components::paint_collapsing_header_icon)
+                                        .show(entries,|detail|{
+                                        if correction{
+                                            detail.label(typography::field_label(
+                                                "정정 전 작업용 원문"
+                                            ));
+                                            detail.add(egui::Label::new(typography::body(
+                                                &field(record,"before")
+                                            )).selectable(true));
+                                            detail.label(typography::field_label(
+                                                "정정 후 작업용 원문"
+                                            ));
+                                            detail.add(egui::Label::new(typography::body(
+                                                &field(record,"after")
+                                            )).selectable(true));
+                                            detail.label(typography::caption(&format!(
+                                                "정정 사유: {}",
+                                                record.get("reason").and_then(Value::as_str)
+                                                    .filter(|v|!v.is_empty())
+                                                    .unwrap_or("과거 기록 / 사유 미확인")
+                                            )));
+                                        }else{
+                                            detail.label(typography::field_label(
+                                                "최초 접수 원문"
+                                            ));
+                                            detail.add(egui::Label::new(typography::body(
+                                                &field(record,"original")
+                                            )).selectable(true));
+                                        }
+                                    });
                                 }
                             });
-                        }
                     });
-              });
+                });
+            });
         }
         if let Some(filename)=self.restore_target.clone(){
             components::modal_backdrop(ctx,"settings-restore-backdrop",false);

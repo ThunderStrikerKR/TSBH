@@ -240,117 +240,117 @@ impl ItemEditor{
             .default_width(740.0_f32.min(safe_width).max(0.0))
             .constrain_to(work_area)
             .show(ctx,|ui|{
-                if components::modal_header(
-                    ui,"상품 상세 수정","닫기",!busy && self.search.is_none()
-                ){
-                    result=self.close();
-                }
-                ui.add_space(theme::SPACE_8);
-                let outer_width=ui.available_width().max(1.0);
-                // The approved nested frame has an 8pt internal inset on
-                // each side. Its content fills the whole modal, not just
-                // the natural 128pt thumbnail + a short text column.
-                let content_width=(outer_width-2.0*theme::SPACE_8
-                    -2.0*theme::FRAME_STROKE_WIDTH).max(1.0);
-                let photo_side=item_detail_photo_side(
-                    content_width,work_area.height()
-                );
-                theme::modal_nested_frame().show(ui,|body|{
-                    body.set_min_width(content_width);
-                    // Own the display snapshot so search and selection
-                    // actions can mutate ItemEditor during this same frame.
-                    let product=self.replacement.as_ref()
-                        .or(self.original_catalog_product.as_ref())
-                        .unwrap_or(&self.initial).clone();
-                    if content_width<ITEM_DETAIL_STACK_WIDTH {
-                        // Narrow Kakao-safe workspace: the image still grows
-                        // to a useful size; rows and actions stay readable
-                        // instead of being squeezed beside the image.
-                        let (photo,_)=body.allocate_exact_size(
-                            Vec2::splat(photo_side),egui::Sense::hover()
+
+                components::modal_flow_workspace(ui,|workspace|{
+                    if workspace.header("상품 상세 수정","닫기",!busy && self.search.is_none()
+                    ){
+                        result=self.close();
+                    }
+                    workspace.scroll_region("reception-item-detail-body",components::modal_editor_body_max_height(work_area.height()),|ui|{
+                        let outer_width=ui.available_width().max(1.0);
+                        // The approved nested frame has an 8pt internal inset on
+                        // each side. Its content fills the whole modal, not just
+                        // the natural 128pt thumbnail + a short text column.
+                        let content_width=(outer_width-2.0*theme::SPACE_8
+                            -2.0*theme::FRAME_STROKE_WIDTH).max(1.0);
+                        let photo_side=item_detail_photo_side(
+                            content_width,work_area.height()
                         );
-                        self.photos.paint(body,&product,photo);
-                        body.painter().rect_stroke(
-                            photo,theme::CONTROL_RADIUS as f32,
-                            egui::Stroke::new(1.0,theme::BORDER),
-                            egui::StrokeKind::Inside
-                        );
-                        body.add_space(theme::SPACE_16);
-                        self.detail_information(
-                            body,name,category,&price,Arc::clone(&gateway),
-                            ctx,busy,edited,None
-                        );
-                    }else{
-                        body.horizontal(|line|{
-                            // No implicit spacing around the explicit 16pt
-                            // image-to-details gutter: fill the card exactly.
-                            line.spacing_mut().item_spacing.x=0.0;
-                            let (photo,_)=line.allocate_exact_size(
-                                Vec2::splat(photo_side),egui::Sense::hover()
-                            );
-                            self.photos.paint(line,&product,photo);
-                            line.painter().rect_stroke(
-                                photo,theme::CONTROL_RADIUS as f32,
-                                egui::Stroke::new(1.0,theme::BORDER),
-                                egui::StrokeKind::Inside
-                            );
-                            line.add_space(ITEM_DETAIL_PANEL_GAP);
-                            let detail_width=(content_width-photo_side
-                                -ITEM_DETAIL_PANEL_GAP).max(1.0);
-                            line.vertical(|details|{
-                                details.set_width(detail_width);
-                                details.set_min_height(photo_side);
-                                self.detail_information(
-                                    details,name,category,&price,
-                                    Arc::clone(&gateway),ctx,
-                                    busy,edited,Some(photo_side)
+                        theme::modal_nested_frame().show(ui,|body|{
+                            body.set_min_width(content_width);
+                            // Own the display snapshot so search and selection
+                            // actions can mutate ItemEditor during this same frame.
+                            let product=self.replacement.as_ref()
+                                .or(self.original_catalog_product.as_ref())
+                                .unwrap_or(&self.initial).clone();
+                            if content_width<ITEM_DETAIL_STACK_WIDTH {
+                                // Narrow Kakao-safe workspace: the image still grows
+                                // to a useful size; rows and actions stay readable
+                                // instead of being squeezed beside the image.
+                                let (photo,_)=body.allocate_exact_size(
+                                    Vec2::splat(photo_side),egui::Sense::hover()
                                 );
-                            });
+                                self.photos.paint(body,&product,photo);
+                                body.painter().rect_stroke(
+                                    photo,theme::CONTROL_RADIUS as f32,
+                                    egui::Stroke::new(1.0,theme::BORDER),
+                                    egui::StrokeKind::Inside
+                                );
+                                body.add_space(theme::SPACE_16);
+                                self.detail_information(
+                                    body,name,category,&price,Arc::clone(&gateway),
+                                    ctx,busy,edited,None
+                                );
+                            }else{
+                                body.horizontal(|line|{
+                                    // No implicit spacing around the explicit 16pt
+                                    // image-to-details gutter: fill the card exactly.
+                                    line.spacing_mut().item_spacing.x=0.0;
+                                    let (photo,_)=line.allocate_exact_size(
+                                        Vec2::splat(photo_side),egui::Sense::hover()
+                                    );
+                                    self.photos.paint(line,&product,photo);
+                                    line.painter().rect_stroke(
+                                        photo,theme::CONTROL_RADIUS as f32,
+                                        egui::Stroke::new(1.0,theme::BORDER),
+                                        egui::StrokeKind::Inside
+                                    );
+                                    line.add_space(ITEM_DETAIL_PANEL_GAP);
+                                    let detail_width=(content_width-photo_side
+                                        -ITEM_DETAIL_PANEL_GAP).max(1.0);
+                                    line.vertical(|details|{
+                                        details.set_width(detail_width);
+                                        details.set_min_height(photo_side);
+                                        self.detail_information(
+                                            details,name,category,&price,
+                                            Arc::clone(&gateway),ctx,
+                                            busy,edited,Some(photo_side)
+                                        );
+                                    });
+                                });
+                            }
                         });
-                    }
-                });
-                // Validation and customer guidance share one fixed
-                // slot. A new error can never move the modal footer.
-                let mut status_messages=Vec::new();
-                if let Some(error)=&self.error{
-                    status_messages.push(error.clone());
-                }
-                if invalid_selection{
-                    status_messages.push(
-                        "수량이 확정되고 판매 구성이 하나인 독립 상품만 적용할 수 있습니다.".to_owned()
+                        // Validation and customer guidance share one fixed
+                        // slot. A new error can never move the modal footer.
+                        let mut status_messages=Vec::new();
+                        if let Some(error)=&self.error{
+                            status_messages.push(error.clone());
+                        }
+                        if invalid_selection{
+                            status_messages.push(
+                                "수량이 확정되고 판매 구성이 하나인 독립 상품만 적용할 수 있습니다.".to_owned()
+                            );
+                        }
+                        if needs_customer{
+                            status_messages.push("추천 상품 고객 확인 필요".to_owned());
+                        }
+                        let status_text=status_messages.join(" · ");
+                        let status_color=if self.error.is_some()||invalid_selection{
+                            theme::DANGER
+                        }else{theme::SECONDARY};
+                        let status_width=ui.available_width();
+                        components::fixed_status_slot(
+                            ui,status_width,typography::METADATA_LINE_HEIGHT,
+                            (!status_text.is_empty()).then_some(status_text.as_str()),
+                            (!status_text.is_empty()).then_some(status_text.as_str()),
+                            status_color
+                        );
+                    });
+                    workspace.footer(|left|{
+                            if theme::action(left,"삭제",ButtonRole::Danger,!busy)
+                                .clicked(){
+                                delete_clicked=true;
+                            }
+                        },
+                        |right|{
+                            if theme::action(
+                                right,"적용",ButtonRole::Primary,allow_apply
+                            ).clicked(){
+                                apply_clicked=true;
+                            }
+                        }
                     );
-                }
-                if needs_customer{
-                    status_messages.push("추천 상품 고객 확인 필요".to_owned());
-                }
-                let status_text=status_messages.join(" · ");
-                let status_color=if self.error.is_some()||invalid_selection{
-                    theme::DANGER
-                }else{theme::SECONDARY};
-                let status_width=ui.available_width();
-                components::fixed_status_slot(
-                    ui,status_width,typography::METADATA_LINE_HEIGHT,
-                    (!status_text.is_empty()).then_some(status_text.as_str()),
-                    (!status_text.is_empty()).then_some(status_text.as_str()),
-                    status_color
-                );
-                ui.add_space(theme::SPACE_16);
-                components::modal_action_row_split(
-                    ui,
-                    |left|{
-                        if theme::action(left,"삭제",ButtonRole::Danger,!busy)
-                            .clicked(){
-                            delete_clicked=true;
-                        }
-                    },
-                    |right|{
-                        if theme::action(
-                            right,"적용",ButtonRole::Primary,allow_apply
-                        ).clicked(){
-                            apply_clicked=true;
-                        }
-                    }
-                );
+                });
             });
         if delete_clicked{self.confirm_delete=true;}
         if apply_clicked{result=self.replacement.clone().map(Event::Apply);}

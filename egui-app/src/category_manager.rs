@@ -738,146 +738,139 @@ impl CategoryManager {
             )
                 .default_width(theme::MODAL_DECISION_MAX_WIDTH.min(work_area.width()))
                 .show(ctx,|modal|{
-                    if components::modal_header(
-                        modal,"선택 분류 편집","취소",!busy&&!nested_dialog
-                    ){
-                        self.request_close_editor(&cats);
-                    }
-                    // Only the fields scroll. Keep the shared footer
-                    // outside the ScrollArea and visible on short screens.
-                    egui::ScrollArea::vertical()
-                        .id_salt("native-category-editor-fields")
-                        .max_height(components::modal_editor_body_max_height(
+
+                    components::modal_flow_workspace(modal,|workspace|{
+                        if workspace.header("선택 분류 편집","취소",!busy&&!nested_dialog
+                        ){
+                            self.request_close_editor(&cats);
+                        }
+                        workspace.scroll_region("native-category-editor-fields",components::modal_editor_body_max_height(
                             work_area.height()
-                        ))
-                        .auto_shrink([false,true])
-                        .show(modal,|scroll|{
-                            scroll.add_enabled_ui(!nested_dialog,|body|{
-                        if let Some(current)=self.current(&cats){
-                            let name_display=typography::fit_category_path(
-                                body,&current.name,
-                                (body.available_width()-theme::CATEGORY_PARENT_ACTION_RESERVE_WIDTH)
-                                    .max(0.0),
-                                typography::CategoryPathFont::Subsection
-                            );
-                            body.label(typography::subsection_heading(
-                                &name_display
-                            )).on_hover_text(&current.name);
-                            let breadcrumb=path_text(&cats,&current.id);
-                            let visible=typography::fit_category_path(
-                                body,&breadcrumb,body.available_width(),
-                                typography::CategoryPathFont::Metadata
-                            );
-                            body.label(typography::caption(&visible))
-                                .on_hover_text(&breadcrumb);
-                            // Compact context for an editor, not KPI cards.
-                            // Keep a single divider between context and fields.
-                            body.label(typography::caption(&format!(
-                                "직접 연결 상품 {}개 · 하위 분류 {}개",
-                                direct_count(catalog,&current.id),
-                                children(&cats,&current.id).len()
-                            )));
-                            // Default 8pt item gaps around the single divider
-                            // already provide enough breathing room.
-                            components::soft_divider(body);
-                            components::modal_labeled_row(body,"분류 이름",|row|{
-                                row.add_enabled_ui(
-                                    editable && !busy && !is_root(&current.id),
-                                    |field_ui|{
-                                        let input_width=field_ui.available_width().max(1.0);
-                                        components::flexible_text_field(
-                                            field_ui,&mut self.name,input_width,"분류 이름"
+                        ),|scroll|{
+                                    scroll.add_enabled_ui(!nested_dialog,|body|{
+                                if let Some(current)=self.current(&cats){
+                                    let name_display=typography::fit_category_path(
+                                        body,&current.name,
+                                        (body.available_width()-theme::CATEGORY_PARENT_ACTION_RESERVE_WIDTH)
+                                            .max(0.0),
+                                        typography::CategoryPathFont::Subsection
+                                    );
+                                    body.label(typography::subsection_heading(
+                                        &name_display
+                                    )).on_hover_text(&current.name);
+                                    let breadcrumb=path_text(&cats,&current.id);
+                                    let visible=typography::fit_category_path(
+                                        body,&breadcrumb,body.available_width(),
+                                        typography::CategoryPathFont::Metadata
+                                    );
+                                    body.label(typography::caption(&visible))
+                                        .on_hover_text(&breadcrumb);
+                                    // Compact context for an editor, not KPI cards.
+                                    // Keep a single divider between context and fields.
+                                    body.label(typography::caption(&format!(
+                                        "직접 연결 상품 {}개 · 하위 분류 {}개",
+                                        direct_count(catalog,&current.id),
+                                        children(&cats,&current.id).len()
+                                    )));
+                                    // Default 8pt item gaps around the single divider
+                                    // already provide enough breathing room.
+                                    components::soft_divider(body);
+                                    components::modal_labeled_row(body,"분류 이름",|row|{
+                                        row.add_enabled_ui(
+                                            editable && !busy && !is_root(&current.id),
+                                            |field_ui|{
+                                                let input_width=field_ui.available_width().max(1.0);
+                                                components::flexible_text_field(
+                                                    field_ui,&mut self.name,input_width,"분류 이름"
+                                                );
+                                            }
                                         );
-                                    }
-                                );
-                            });
-                            body.add_space(theme::SPACE_12);
-                            components::modal_labeled_row(body,"상위 분류",|location|{
-                                // Align category text to the button's vertical
-                                // center; keep them adjacent at a shared 8pt gap.
-                                location.spacing_mut().item_spacing.x=theme::SPACE_8;
-                                let parent_label=if current.parent.is_empty(){
-                                    if is_root(&current.id){
-                                        "최상위".to_owned()
-                                    }else{"소속 확인 필요".to_owned()}
-                                }else{path_text(&cats,&current.parent)};
-                                let name_width=(location.available_width()-
-                                    theme::CATEGORY_PARENT_ACTION_RESERVE_WIDTH)
-                                    .max(0.0);
-                                let visible=typography::fit_category_path(
-                                    location,&parent_label,name_width,
-                                    typography::CategoryPathFont::Body
-                                );
-                                let galley=typography::category_tree_name_galley(
-                                    location,&visible,false
-                                );
-                                let (text_rect,text_response)=location.allocate_exact_size(
-                                    Vec2::new(galley.size().x.min(name_width),
-                                        theme::ACTION_STANDARD_HEIGHT),
-                                    Sense::hover()
-                                );
-                                location.painter().with_clip_rect(text_rect).galley(
-                                    egui::pos2(text_rect.left(),
-                                        text_rect.center().y-galley.size().y/2.0),
-                                    galley,theme::TEXT
-                                );
-                                text_response.on_hover_text(&parent_label);
-                                if theme::action(location,"위치 변경",
-                                    theme::ButtonRole::Standard,
-                                    editable&&!busy&&!is_root(&current.id)
-                                ).clicked(){
-                                    self.begin_operation(&cats,catalog,Operation::Move);
+                                    });
+                                    body.add_space(theme::SPACE_12);
+                                    components::modal_labeled_row(body,"상위 분류",|location|{
+                                        // Align category text to the button's vertical
+                                        // center; keep them adjacent at a shared 8pt gap.
+                                        location.spacing_mut().item_spacing.x=theme::SPACE_8;
+                                        let parent_label=if current.parent.is_empty(){
+                                            if is_root(&current.id){
+                                                "최상위".to_owned()
+                                            }else{"소속 확인 필요".to_owned()}
+                                        }else{path_text(&cats,&current.parent)};
+                                        let name_width=(location.available_width()-
+                                            theme::CATEGORY_PARENT_ACTION_RESERVE_WIDTH)
+                                            .max(0.0);
+                                        let visible=typography::fit_category_path(
+                                            location,&parent_label,name_width,
+                                            typography::CategoryPathFont::Body
+                                        );
+                                        let galley=typography::category_tree_name_galley(
+                                            location,&visible,false
+                                        );
+                                        let (text_rect,text_response)=location.allocate_exact_size(
+                                            Vec2::new(galley.size().x.min(name_width),
+                                                theme::ACTION_STANDARD_HEIGHT),
+                                            Sense::hover()
+                                        );
+                                        location.painter().with_clip_rect(text_rect).galley(
+                                            egui::pos2(text_rect.left(),
+                                                text_rect.center().y-galley.size().y/2.0),
+                                            galley,theme::TEXT
+                                        );
+                                        text_response.on_hover_text(&parent_label);
+                                        if theme::action(location,"위치 변경",
+                                            theme::ButtonRole::Standard,
+                                            editable&&!busy&&!is_root(&current.id)
+                                        ).clicked(){
+                                            self.begin_operation(&cats,catalog,Operation::Move);
+                                        }
+                                    });
+                                    let legacy_notice=(!is_root(&current.id)
+                                        &&current.parent.is_empty()).then_some(
+                                        "현재 최상위로 남아 있는 기존 분류입니다. 반도스탠드 또는 반도몰에 직접 소속을 지정하면 기존 분류 ID와 상품 연결은 유지됩니다."
+                                    );
+                                    let notice_width=body.available_width();
+                                    components::fixed_status_slot(
+                                        body,notice_width,typography::METADATA_LINE_HEIGHT,
+                                        legacy_notice,legacy_notice,theme::MUTED
+                                    );
+                                    body.add_space(theme::SPACE_8);
                                 }
                             });
-                            let legacy_notice=(!is_root(&current.id)
-                                &&current.parent.is_empty()).then_some(
-                                "현재 최상위로 남아 있는 기존 분류입니다. 반도스탠드 또는 반도몰에 직접 소속을 지정하면 기존 분류 ID와 상품 연결은 유지됩니다."
-                            );
-                            let notice_width=body.available_width();
-                            components::fixed_status_slot(
-                                body,notice_width,typography::METADATA_LINE_HEIGHT,
-                                legacy_notice,legacy_notice,theme::MUTED
-                            );
-                            body.add_space(theme::SPACE_8);
+                        });
+                        // The footer stays visible independently of form length.
+                        // Capture intent before calling the existing state machine.
+                        let can_delete=self.current(&cats).is_some_and(|cur|{
+                            !is_root(&cur.id)
+                                &&children(&cats,&cur.id).is_empty()
+                                &&direct_count(catalog,&cur.id)==0
+                        });
+                        let can_save=self.current(&cats).is_some()
+                            &&self.rename_dirty(&cats);
+                        let mut request_delete=false;
+                        let mut request_save=false;
+                        workspace.footer(|left|{
+                                request_delete=theme::action(left,"분류 삭제",
+                                    theme::ButtonRole::Danger,
+                                    editable&&!busy&&!nested_dialog&&can_delete
+                                ).clicked();
+                            },
+                            |right|{
+                                request_save=theme::action(right,"변경사항 저장",
+                                    theme::ButtonRole::Primary,
+                                    editable&&!busy&&!nested_dialog&&can_save
+                                ).clicked();
+                            }
+                        );
+                        if request_delete {
+                            self.begin_operation(&cats,catalog,Operation::Delete);
+                        }
+                        if request_save {
+                            match self.write_request(&cats,catalog){
+                                Ok(req)=>write=Some(req),
+                                Err(e)=>self.error=Some(e),
+                            }
                         }
                     });
-                });
-                    modal.add_space(theme::SPACE_12);
-                    // The footer stays visible independently of form length.
-                    // Capture intent before calling the existing state machine.
-                    let can_delete=self.current(&cats).is_some_and(|cur|{
-                        !is_root(&cur.id)
-                            &&children(&cats,&cur.id).is_empty()
-                            &&direct_count(catalog,&cur.id)==0
-                    });
-                    let can_save=self.current(&cats).is_some()
-                        &&self.rename_dirty(&cats);
-                    let mut request_delete=false;
-                    let mut request_save=false;
-                    components::modal_action_row_split(
-                        modal,
-                        |left|{
-                            request_delete=theme::action(left,"분류 삭제",
-                                theme::ButtonRole::Danger,
-                                editable&&!busy&&!nested_dialog&&can_delete
-                            ).clicked();
-                        },
-                        |right|{
-                            request_save=theme::action(right,"변경사항 저장",
-                                theme::ButtonRole::Primary,
-                                editable&&!busy&&!nested_dialog&&can_save
-                            ).clicked();
-                        }
-                    );
-                    if request_delete {
-                        self.begin_operation(&cats,catalog,Operation::Delete);
-                    }
-                    if request_save {
-                        match self.write_request(&cats,catalog){
-                            Ok(req)=>write=Some(req),
-                            Err(e)=>self.error=Some(e),
-                        }
-                    }
                 });
         }
         if let Some(operation)=self.operation{
