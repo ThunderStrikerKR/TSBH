@@ -1698,7 +1698,9 @@ impl ManualWorkspace {
                                                         theme::RECEPTION_ITEMS_MIN_TABLE_WIDTH
                                                     );
                                                     items_ui.set_min_width(row_width);
-                                                    components::reception_items_header(items_ui);
+                                                    components::reception_items_header_with_amount_label(
+                                                        items_ui,"단가"
+                                                    );
                                                     for item in list(row,"items"){
                                                         let item_id=text(item,"id");
                                                         let quantity=item.get("quantity")
@@ -2629,7 +2631,7 @@ mod manual_workspace_modal_routing_tests {
         assert_eq!(render.matches("reception_section_with_header(").count(),2);
         for common in [
             "reception_recipient_fields(",
-            "reception_items_header(",
+            "reception_items_header_with_amount_label(",
             "reception_item_row_editable(",
             "reception_item_add_action_editable(",
             "reception_freight_row_editable(",
