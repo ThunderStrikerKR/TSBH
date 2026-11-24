@@ -418,6 +418,9 @@ struct ProductWrite {
 
 pub struct ProductManager {
     gateway:Arc<dyn BandoGateway>,
+    selection_client:Option<String>,
+    selection_result:Option<Value>,
+    focus_search:bool,
     catalog:Option<Value>,
     products:Vec<Value>,
     query:String,
@@ -470,7 +473,8 @@ impl ProductManager {
     }
     pub fn new(gateway:Arc<dyn BandoGateway>,ctx:Context)->Self {
         let mut page=Self {
-            gateway,catalog:None,products:Vec::new(),
+            gateway,selection_client:None,selection_result:None,focus_search:false,
+            catalog:None,products:Vec::new(),
             query:String::new(),tab:0,
             category_manager:CategoryManager::default(),
             model_groups:ModelGroupManager::default(),
@@ -492,6 +496,16 @@ impl ProductManager {
         };
         page.reload(ctx);
         page
+    }
+    pub fn new_selection(gateway:Arc<dyn BandoGateway>,ctx:Context,client_id:String)->Self{
+        let mut page=Self::new(gateway,ctx.clone());
+        page.selection_client=Some(client_id);
+        page.focus_search=true;
+        page.reload(ctx);
+        page
+    }
+    pub fn take_selection(&mut self)->Option<Value>{
+        self.selection_result.take()
     }
     pub fn refresh(&mut self,ctx:Context) {
         // Re-read an explicitly connected operating catalog when returning
@@ -520,10 +534,18 @@ impl ProductManager {
         let brand=self.brand.clone();
         let missing=self.missing;
         if !self.has_pending_prices(){self.error=None;}
+        let selection_client=self.selection_client.clone();
         self.result.submit(ctx,move||{
-            management_queries::query_management_products(
-                gateway.as_ref(),cached,&query,&category,&brand,missing,
-            )
+            if let Some(client)=selection_client{
+                let result=management_queries::query_manual_products(
+                    gateway.as_ref(),cached,&query,&client,&category,&brand
+                )?;
+                Ok(ManagementProductRows{catalog:result.catalog,products:result.products})
+            }else{
+                management_queries::query_management_products(
+                    gateway.as_ref(),cached,&query,&category,&brand,missing,
+                )
+            }
         });
     }
     fn has_pending_prices(&self)->bool{
@@ -894,6 +916,8 @@ impl ProductManager {
             if self.price_mode&&self.tab==0{"products.price"}else{"products.action"},
             crate::floating_notice::Tone::Error,self.error.as_deref()
         );
+        let selecting=self.selection_client.is_some();
+        if !selecting{
         components::management_page_title_top_gap(ui);
         components::management_top_content(ui,|top|{
             top.label(typography::page_heading("상품 관리"));
@@ -983,11 +1007,13 @@ impl ProductManager {
             });
             ui.add_space(theme::SPACE_16);
         }
-        let can_edit=self.gateway.product_write_enabled()
+        }
+        let can_edit=!selecting && self.gateway.product_write_enabled()
             && self.catalog.as_ref().is_some_and(|c|c["revision"].as_u64().is_some());
         let saving=self.writing.is_some()||self.excel.busy();
         let mut price_write:Option<(String,Value)>=None;
         let mut open_detail:Option<Value>=None;
+        let mut picked:Option<Value>=None;
         let mut begin_new=false;
         // Category/model/alias/brand views own one primary section each.
         // Only the product-list tab has extra actions above its table card.
@@ -1051,10 +1077,15 @@ impl ProductManager {
             panel.horizontal_wrapped(|filter|{
                     filter.spacing_mut().item_spacing.x=theme::SPACE_8;
                     let before=self.query.clone();
-                    if components::management_search_field(
+                    let search_response=components::management_search_field(
                         filter,&mut self.query,theme::MANAGEMENT_SEARCH_MIN_WIDTH,
-                        "모델명 또는 상품명 검색"
-                    ).changed(){
+                        if selecting{"상품명 / 모델 / 별칭 검색"}else{"모델명 또는 상품명 검색"}
+                    );
+                    if self.focus_search{
+                        search_response.request_focus();
+                        self.focus_search=false;
+                    }
+                    if search_response.changed(){
                         if self.has_pending_prices(){
                             self.query=before;
                             self.error=Some("가격 입력 저장이 완료된 뒤 검색 조건을 변경할 수 있습니다.".into());
@@ -1094,6 +1125,7 @@ impl ProductManager {
                             self.error=Some("가격 입력 저장이 완료된 뒤 검색 조건을 변경할 수 있습니다.".into());
                         }else{self.changed(filter.ctx());}
                     }
+                    if !selecting{
                     let before_missing=self.missing;
                     if components::checkbox(
                         filter,&mut self.missing,"가격 미등록만",true
@@ -1103,10 +1135,12 @@ impl ProductManager {
                             self.error=Some("가격 입력 저장이 완료된 뒤 검색 조건을 변경할 수 있습니다.".into());
                         }else{self.changed(filter.ctx());}
                     }
+                    }
             });
 
             // The trailing slot ends at the CARD inner-right edge, without
             // subtracting the table-only scrollbar gutter (master contract).
+            if !selecting{
             let actions_rect=if dual_slot{
                 components::management_toolbar_trailing_rect(
                     toolbar_rect,390.0,0.0,theme::INPUT_HEIGHT
@@ -1163,6 +1197,7 @@ impl ProductManager {
                     );
                 }
             );
+            }
             if self.adding {
                 panel.add_space(theme::SPACE_8);
                 panel.horizontal(|actions|{
@@ -1202,8 +1237,10 @@ impl ProductManager {
             let headings=[
                 components::ManagementTableColumnLabel::ProductName.text(),
                 "색상/옵션","도매가",
-                "반도매가","소매가","상세"];
+                "반도매가","소매가",if selecting{"선택"}else{"상세"}];
             let selection_locked=self.has_pending_prices();
+            let selection_ready=selecting && self.next_query.is_none()
+                && !self.result.pending() && self.error.is_none();
             let ordered=product_sort_order(
                 &self.products,&self.selected_variants,self.sort
             );
@@ -1551,7 +1588,19 @@ impl ProductManager {
                                 if saving{builder=builder.disabled();}
                                 row.scope_builder(builder,|actions|{
                                         actions.set_clip_rect(action_rect.intersect(row_clip));
-                                        if theme::action(
+                                        if selecting{
+                                            // Order engine accepts only independent sale units.
+                                            let allowed=selection_ready && variants.len()==1
+                                                && product["requiresOption"]!=true
+                                                && selected_variant.is_some_and(|v|!field(v,"id").is_empty());
+                                            if theme::action(actions,"선택",
+                                                theme::ButtonRole::TableSecondary,allowed
+                                            ).clicked(){
+                                                picked=Some(serde_json::json!({
+                                                    "productId":product_id,"variantId":selected_id
+                                                }));
+                                            }
+                                        }else if theme::action(
                                             actions,"상세 관리",
                                             theme::ButtonRole::TableSecondary,!saving
                                         ).clicked(){
@@ -1685,6 +1734,9 @@ impl ProductManager {
             }
         }
         self.finish_price_mode_exit_if_ready();
+        if let Some(product)=picked{
+            self.selection_result=Some(product);
+        }
         if let Some(product)=open_detail {
             self.begin_edit(product);
         }else if begin_new {

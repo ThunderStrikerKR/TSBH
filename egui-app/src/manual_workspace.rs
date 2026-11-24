@@ -517,7 +517,53 @@ pub fn apply_inline(
         payload["state"]=state;
         payload["candidateIds"]=json!((0..20).map(|_|unique_id()).collect::<Vec<_>>());
     }
-    let response=if action=="native_approve_one" || action=="native_cancel_approval"{
+    let response=if action=="add_manual_item"{
+        // Build the row only in the temporary native model. A failed catalog
+        // lookup or confirmation never returns an empty row to the order.
+        let pid=change.value["productId"].as_str()
+            .filter(|id|!id.is_empty()).ok_or("추가할 상품을 선택하세요.")?;
+        let vid=change.value["variantId"].as_str()
+            .filter(|id|!id.is_empty()).ok_or("추가할 상품 옵션을 선택하세요.")?;
+        let state=if std::env::var_os("BANDO_EGUI_BUSINESS_DB")
+            .is_some_and(|value|!value.is_empty()){
+            gateway.load_business_state()?
+        }else{gateway.load_catalog()?};
+        let product=state["products"].as_array().into_iter().flatten()
+            .find(|product|text(product,"id")==pid)
+            .ok_or("선택한 상품이 최신 상품 목록에 없습니다.")?;
+        let variants=product["variants"].as_array()
+            .ok_or("등록된 판매 구성이 없습니다.")?;
+        if product["requiresOption"]==true || product["active"]==false
+            || variants.len()!=1 || text(&variants[0],"id")!=vid{
+            return Err("등록된 독립 판매 상품을 다시 선택하세요.".into());
+        }
+        let iid=payload["itemId"].clone();
+        let added=rule(gateway,payload)?;
+        let cell=json!({"recipientId":change.recipient_id,"itemId":iid,"field":"product"});
+        let selected=rule(gateway,json!({
+            "action":"set_manual_product","order":&order,"model":added["model"],
+            "assignmentOrder":&keys,"cell":cell,"value":text(product,"name"),
+            "product":product,"state":state,"preserveExistingQuantity":true
+        }))?;
+        let item=selected["model"]["rows"].as_array().into_iter().flatten()
+            .find(|row|text(row,"id")==change.recipient_id)
+            .and_then(|row|row["items"].as_array()).into_iter().flatten()
+            .find(|item|item["id"]==iid)
+            .ok_or("추가된 상품 행을 확인할 수 없습니다.")?;
+        if text(item,"productId")!=pid || text(item,"variantId")!=vid{
+            return Err("선택한 상품을 주문 품목으로 확정하지 못했습니다.".into());
+        }
+        let quantity_cell=json!({"recipientId":change.recipient_id,
+            "itemId":iid,"field":"quantity"});
+        let draft=rule(gateway,json!({
+            "action":"set_manual_quantity_draft","model":selected["model"],
+            "cell":quantity_cell,"value":"1"
+        }))?;
+        rule(gateway,json!({
+            "action":"confirm_manual_quantity","model":draft["model"],
+            "cell":quantity_cell,"assignmentOrder":&keys
+        }))?
+    }else if action=="native_approve_one" || action=="native_cancel_approval"{
         let rid=change.recipient_id.as_str();
         let iid=change.item_id.as_deref()
             .ok_or("수량 승인 대상 품목이 없습니다.")?;
