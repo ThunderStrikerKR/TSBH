@@ -138,7 +138,8 @@ pub fn prepare_cancellable(
             .filter(|saved|saved.get("mode").and_then(Value::as_str)==Some("DIRECT"))
             .ok_or("직접 입력 작업본이 없습니다.")?;
         if saved.get("sourceRaw").and_then(Value::as_str)!=Some("") ||
-           saved.get("orderType").and_then(Value::as_str)!=Some(source.order_type.as_str()){
+           saved.get("orderType").and_then(Value::as_str)!=Some(source.order_type.as_str()) ||
+           saved.get("clientId").and_then(Value::as_str)!=source.client_id.as_deref(){
             return Err("직접 입력 작업본의 접수 유형이 변경되었습니다.".into());
         }
         let model=saved.get("model").filter(|value|value.is_object())

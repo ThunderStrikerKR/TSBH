@@ -91,6 +91,11 @@ pub fn native_direct_order(
     if let Some(saved)=row.manual_model.as_ref().filter(|saved|
         text(saved,"mode")=="DIRECT"
     ){
+        if saved.get("sourceRaw").and_then(Value::as_str)!=Some("") ||
+            saved.get("orderType").and_then(Value::as_str)!=Some(row.order_type.as_str()) ||
+            saved.get("clientId").and_then(Value::as_str)!=row.client_id.as_deref(){
+            return Err("직접 입력 작업본과 접수 정보가 일치하지 않습니다.".into());
+        }
         let model=saved.get("model").filter(|v|v.is_object())
             .ok_or("저장된 직접 입력 작업본이 올바르지 않습니다.")?;
         if !list(model,"blocks").is_empty() ||

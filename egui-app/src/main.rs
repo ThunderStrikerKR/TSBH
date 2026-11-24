@@ -1070,6 +1070,11 @@ impl BandoEgui {
         let Some(saved)=row.manual_model.as_ref().filter(|model|
             model.get("mode").and_then(serde_json::Value::as_str)==Some("DIRECT")
         )else{return false};
+        if saved.get("sourceRaw").and_then(serde_json::Value::as_str)!=Some("") ||
+            saved.get("orderType").and_then(serde_json::Value::as_str)!=Some(row.order_type.as_str()) ||
+            saved.get("clientId").and_then(serde_json::Value::as_str)!=row.client_id.as_deref(){
+            return false;
+        }
         let Some(rows)=saved.pointer("/model/rows")
             .filter(|rows|rows.is_array()).cloned() else{return false};
         let count=rows.as_array().map(Vec::len).unwrap_or(0);
