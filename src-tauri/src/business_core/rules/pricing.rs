@@ -383,7 +383,7 @@ impl ReceptionEditQuoteCache{
             let quoted=rows(field(field(quote,"order"),"recipients"));
             if quoted.len()!=1{return reception_quote(payload);}
             quoted_rows.push(quoted[0].clone());
-            amounts.push(field(quote,"totals"));
+            amounts.push(field(quote,"totals").clone());
             lines.extend(rows(field(quote,"linePrices")).iter().cloned());
             freight_lines.extend(rows(field(quote,"freightLines")).iter().cloned());
             pending.extend(rows(field(field(quote,"totals"),"pendingRecipients")).iter().cloned());
