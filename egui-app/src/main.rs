@@ -7541,14 +7541,16 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
     /// overlays the full Rust Order and commits confirmation + workflow in one
     /// revision-checked SQLite transaction.
     fn start_draft_confirmation(&mut self,order_id:&str,ctx:&egui::Context){
-        if let JobAdmission::Conflict(blocker)=self.reception_job_admission(
-            ReceptionJob::WorkflowAction,false
-        ){
-            floating_notice::publish(
-                ctx,"reception.workflow",floating_notice::Tone::Error,
-                format!("{} 중에는 주문을 확정할 수 없습니다.",blocker.label())
-            );
-            return;
+        match self.reception_job_admission(ReceptionJob::WorkflowAction,false){
+            JobAdmission::Conflict(blocker)=>{
+                floating_notice::publish(
+                    ctx,"reception.workflow",floating_notice::Tone::Error,
+                    format!("{} 중에는 주문을 확정할 수 없습니다.",blocker.label())
+                );
+                return;
+            }
+            JobAdmission::Start=>{}
+            JobAdmission::Duplicate=>return,
         }
         if !self.gateway.workflow_write_enabled(){
             floating_notice::publish(
