@@ -3096,7 +3096,11 @@ mod manual_workspace_modal_routing_tests {
     fn manual_cards_reuse_the_real_reception_renderers(){
         // Source assertions must not match their own assertion strings.
         // Keep the entire production implementation, excluding all test modules.
-        let (source,_)=include_str!("manual_workspace.rs")
+        // Windows checkout may materialize CRLF even though Git stores LF.
+        // Normalize before splitting so the production-only source audit is
+        // stable on both Windows and Unix runners.
+        let normalized=include_str!("manual_workspace.rs").replace("\r\n","\n");
+        let (source,_)=normalized
             .split_once("\n#[cfg(test)]\nmod manual_assignment_gesture_tests{")
             .expect("production/test source boundary");
         let render=source.split("pub fn show(").nth(1).unwrap()
