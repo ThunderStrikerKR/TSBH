@@ -190,6 +190,45 @@ mod tests {
     }
 
     #[test]
+    fn dragging_uses_the_block_at_press_origin_even_after_pointer_leaves_source(){
+        let raw="가나다";
+        let spans=vec![LinkedSpan{
+            start:0,end:raw.len(),start_char:0,end_char:raw.chars().count(),
+            key:source_highlight::key("r1","r1","name"),source_id:Some("block".into()),
+        }];
+        let ctx=egui::Context::default();
+        let mut origin=egui::Pos2::ZERO;
+        draw(&ctx,egui::RawInput{
+            screen_rect:Some(egui::Rect::from_min_size(egui::Pos2::ZERO,egui::vec2(600.0,400.0))),
+            ..Default::default()
+        },raw,&spans,&mut origin,true);
+        let job=source_highlight::layout(raw,&spans,None,None,320.0,
+            FontId::proportional(typography::FONT_RECEPTION_SOURCE_TEXT),theme::TEXT);
+        let galley=ctx.fonts_mut(|fonts|fonts.layout_job(job));
+        let glyph=&galley.rows[0].row.glyphs[0];
+        let from=origin+egui::vec2(glyph.pos.x+glyph.advance_width*0.5,
+            galley.rows[0].row.size.y*0.5);
+        draw(&ctx,egui::RawInput{events:vec![egui::Event::PointerMoved(from)],
+            time:Some(0.1),..Default::default()},raw,&spans,&mut origin,true);
+        draw(&ctx,egui::RawInput{events:vec![egui::Event::PointerButton{
+            pos:from,button:egui::PointerButton::Primary,pressed:true,
+            modifiers:egui::Modifiers::NONE
+        }],time:Some(0.2),..Default::default()},raw,&spans,&mut origin,true);
+        let to=from+egui::vec2(360.0,30.0);
+        let dragged=draw(&ctx,egui::RawInput{
+            events:vec![egui::Event::PointerMoved(to)],
+            time:Some(0.3),..Default::default()
+        },raw,&spans,&mut origin,true);
+        assert_eq!(dragged.drag_started_block.as_deref(),Some("block"));
+        assert!(dragged.clicked_block.is_none());
+        let released=draw(&ctx,egui::RawInput{events:vec![egui::Event::PointerButton{
+            pos:to,button:egui::PointerButton::Primary,pressed:false,
+            modifiers:egui::Modifiers::NONE
+        }],time:Some(0.4),..Default::default()},raw,&spans,&mut origin,true);
+        assert!(released.clicked_block.is_none());
+    }
+
+    #[test]
     fn busy_source_view_keeps_links_visible_but_blocks_hover_and_click(){
         let raw="가나다";
         let spans=vec![LinkedSpan{

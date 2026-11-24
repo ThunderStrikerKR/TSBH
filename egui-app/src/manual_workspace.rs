@@ -1559,6 +1559,7 @@ impl ManualWorkspace {
         let mut source_clicked=None;
         let mut clicked_target:Option<ManualCellTarget>=None;
         let mut drop_target:Option<ManualCellTarget>=None;
+        let mut drop_allowed=false;
         let drag_pointer=ctx.input(|i|i.pointer.interact_pos());
         let drag_released=ctx.input(|i|i.pointer.button_released(egui::PointerButton::Primary));
         let mut apply=false;
@@ -1838,9 +1839,17 @@ impl ManualWorkspace {
                                                             for (field,response) in recipient_keys
                                                                 .into_iter().zip(responses.into_iter()){
                                                                 let target=ManualCellTarget{row:index,item:None,field:field.to_owned()};
-                                                                if self.assignment_gesture.dragging.is_some() &&
-                                                                    manual_assignment_drop_hit(fields,response.rect,drag_pointer){
+                                                                if let Some(source)=self.assignment_gesture.dragging.as_deref().filter(|_|
+                                                                    manual_assignment_drop_hit(fields,response.rect,drag_pointer)){
+                                                                    drop_allowed=self.model.as_ref().is_some_and(|model|
+                                                                        manual_assignment_payload(model,source,&target,pending_quantity_cell.as_ref()).is_ok());
                                                                     drop_target=Some(target.clone());
+                                                                    fields.painter().with_clip_rect(fields.clip_rect()).rect_stroke(
+                                                                        response.rect,theme::CONTROL_RADIUS,
+                                                                        egui::Stroke::new(theme::FRAME_STROKE_WIDTH,
+                                                                            if drop_allowed{theme::SELECTION}else{theme::DANGER}),
+                                                                        egui::StrokeKind::Inside
+                                                                    );
                                                                 }
                                                                 let key=source_highlight::key(rid,rid,field);
                                                                 let selected=index==self.selected_recipient &&
@@ -1875,6 +1884,7 @@ impl ManualWorkspace {
                                                         }
                                                     );
                                                     if let Some(next)=next_recipient {
+                                                        self.assignment_gesture.cell=None;
                                                         self.queue_cell_selection(
                                                             ManualCellTarget{
                                                                 row:next,item:None,field:"name".into()
@@ -1950,9 +1960,17 @@ impl ManualWorkspace {
                                                                     ("unitPrice",cells.amount,&keys[2])
                                                                 ]{
                                                                     let target=ManualCellTarget{row:index,item:Some(item_id.to_owned()),field:field.to_owned()};
-                                                                    if self.assignment_gesture.dragging.is_some() &&
-                                                                        manual_assignment_drop_hit(items_ui,response.rect,drag_pointer){
+                                                                    if let Some(source)=self.assignment_gesture.dragging.as_deref().filter(|_|
+                                                                        manual_assignment_drop_hit(items_ui,response.rect,drag_pointer)){
+                                                                        drop_allowed=self.model.as_ref().is_some_and(|model|
+                                                                            manual_assignment_payload(model,source,&target,pending_quantity_cell.as_ref()).is_ok());
                                                                         drop_target=Some(target.clone());
+                                                                        items_ui.painter().with_clip_rect(items_ui.clip_rect()).rect_stroke(
+                                                                            response.rect,theme::CONTROL_RADIUS,
+                                                                            egui::Stroke::new(theme::FRAME_STROKE_WIDTH,
+                                                                                if drop_allowed{theme::SELECTION}else{theme::DANGER}),
+                                                                            egui::StrokeKind::Inside
+                                                                        );
                                                                     }
                                                                     let selected=index==self.selected_recipient &&
                                                                         self.selected_item.as_deref()==Some(item_id) &&
@@ -2187,7 +2205,12 @@ impl ManualWorkspace {
             self.assignment_gesture.clear();
         }
         if self.assignment_gesture.dragging.is_some(){
-            ctx.set_cursor_icon(egui::CursorIcon::Grabbing);
+            if !ctx.input(|input|input.pointer.primary_down()){
+                self.assignment_gesture.clear();
+            }else{
+                ctx.set_cursor_icon(if drop_allowed{egui::CursorIcon::Grabbing}
+                    else{egui::CursorIcon::NotAllowed});
+            }
         }
         if let Some(rid)=add_product{
             if !self.busy() && !self.product_dialog_open() && self.edit_text==self.current_value(){
