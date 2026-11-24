@@ -3724,7 +3724,7 @@ mod direct_input_workspace_tests{
             client_id:None,client_selection:None,pricing_preview:None,
             working_version:None,working_synced:false,
             manual_model:Some(json!({"mode":"DIRECT","sourceRaw":"","orderType":"AGENCY",
-                "model":model,"assignmentOrder":[]})),
+                "clientId":null,"model":model,"assignmentOrder":[]})),
             edit_history:Vec::new(),
         };
         assert!(native_direct_order(&gateway,&row).is_err());
@@ -3745,7 +3745,8 @@ mod direct_input_workspace_tests{
             client_match:None,chat_handle:None,chat_title:None,
             client_id:None,client_selection:None,pricing_preview:None,
             working_version:None,working_synced:false,
-            manual_model:Some(json!({"mode":"DIRECT","model":model,
+            manual_model:Some(json!({"mode":"DIRECT","sourceRaw":"",
+                "orderType":"AGENCY","clientId":null,"model":model,
                 "assignmentOrder":[]})),
             edit_history:Vec::new(),
         };

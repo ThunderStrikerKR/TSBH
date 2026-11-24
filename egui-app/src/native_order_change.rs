@@ -486,7 +486,7 @@ mod manual_rebind_tests {
             working_version:None,working_synced:false,
             manual_model:Some(json!({
                 "mode":"DIRECT","sourceRaw":"","orderType":"AGENCY",
-                "clientId":"","model":model,"assignmentOrder":[]
+                "clientId":null,"model":model,"assignmentOrder":[]
             })),
             edit_history:vec![]
         };

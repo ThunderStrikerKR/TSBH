@@ -9330,7 +9330,7 @@ mod reception_workflow_admission_integration_tests {
         row.analysis_evidence=None;
         row.analysis_view=None;
         row.manual_model=Some(serde_json::json!({
-            "mode":"DIRECT","sourceRaw":"","orderType":"AGENCY","clientId":"",
+            "mode":"DIRECT","sourceRaw":"","orderType":"AGENCY","clientId":null,
             "assignmentOrder":[],"model":{
                 "rows":[{"id":"egui-manual-r1","name":"직접 입력 수취인",
                     "address":"서울특별시 강남구 테헤란로 10",
@@ -9355,7 +9355,7 @@ mod reception_workflow_admission_integration_tests {
         app.raw_source.clear();
         app.drafts[0].raw.clear();
         app.drafts[0].manual_model=Some(serde_json::json!({
-            "mode":"DIRECT","sourceRaw":"","orderType":"AGENCY",
+            "mode":"DIRECT","sourceRaw":"","orderType":"AGENCY","clientId":null,
             "model":{"rows":[{"id":"egui-manual-r1","name":"saved","items":[]}],
                 "blocks":[],"assignments":{}},
             "assignmentOrder":[]
