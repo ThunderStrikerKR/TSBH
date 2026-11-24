@@ -7,7 +7,8 @@
 //! into the isolated egui workspace. Production write_snapshot/state_save
 //! remains the sole writer of operational orders.
 
-use crate::{gateway::{BandoGateway,ReadOperation},preview_store::WorkingReception};
+use crate::{gateway::{BandoGateway,ReadOperation,rules::scope_manual_model_ids},
+    preview_store::WorkingReception};
 use chrono::Utc;
 use serde_json::{json,Value};
 use std::sync::atomic::{AtomicBool,Ordering};
@@ -36,14 +37,19 @@ fn required<'a>(value:&'a Value,key:&str)->Result<&'a Value,String>{
 
 /// Preserve the employee's rows, source assignments and editing metadata.
 /// Only Rust's newly calculated row prices/freight may replace the row snapshot.
-fn rebind_manual_model(saved:&Value,client_id:&str,rows:&Value)->Result<Value,String>{
+fn rebind_manual_model(order_id:&str,saved:&Value,client_id:&str,
+    rows:&Value)->Result<Value,String>{
     let mut updated=saved.clone();
-    let model=updated.get_mut("model").and_then(Value::as_object_mut)
-        .ok_or("저장된 수동 수정 작업본이 올바르지 않습니다.")?;
-    if !rows.is_array(){
-        return Err("수동 수정 배송 목록이 올바르지 않습니다.".into());
+    {
+        let model=updated.get_mut("model").and_then(Value::as_object_mut)
+            .ok_or("저장된 수동 수정 작업본이 올바르지 않습니다.")?;
+        if !rows.is_array(){
+            return Err("수동 수정 배송 목록이 올바르지 않습니다.".into());
+        }
+        model.insert("rows".into(),rows.clone());
     }
-    model.insert("rows".into(),rows.clone());
+    scope_manual_model_ids(order_id,updated.get_mut("model")
+        .ok_or("저장된 수동 수정 작업본이 올바르지 않습니다.")?)?;
     updated["clientId"]=json!(client_id);
     Ok(updated)
 }
@@ -146,8 +152,9 @@ pub fn prepare_cancellable(
            saved.get("clientId").and_then(Value::as_str)!=source.client_id.as_deref(){
             return Err("직접 입력 작업본의 접수 유형이 변경되었습니다.".into());
         }
-        let model=saved.get("model").filter(|value|value.is_object())
-            .ok_or("저장된 직접 입력 작업본이 올바르지 않습니다.")?;
+        let mut model=saved.get("model").filter(|value|value.is_object())
+            .cloned().ok_or("저장된 직접 입력 작업본이 올바르지 않습니다.")?;
+        scope_manual_model_ids(&source.id,&mut model)?;
         let keys=saved.get("assignmentOrder").filter(|value|value.is_array())
             .ok_or("직접 입력 배정 순서가 없습니다.")?;
         if !model.get("blocks").and_then(Value::as_array).is_some_and(|blocks|blocks.is_empty()) ||
@@ -174,7 +181,7 @@ pub fn prepare_cancellable(
             return Ok(ChangeResult{
                 client_id:target_id.to_owned(),pricing_preview:None,
                 order:None,
-                manual_model:Some(rebind_manual_model(saved,target_id,&model["rows"])?),
+                manual_model:Some(rebind_manual_model(&source.id,saved,target_id,&model["rows"])?),
                 recognition:None,
             });
         }
@@ -226,7 +233,7 @@ pub fn prepare_cancellable(
             return Err("직접 입력 거래처 재계산 결과가 현재 작업본과 일치하지 않습니다.".into());
         }
         let recipients=required(order,"recipients")?;
-        let manual_model=rebind_manual_model(saved,target_id,recipients)?;
+        let manual_model=rebind_manual_model(&source.id,saved,target_id,recipients)?;
         let preview=json!({
             "sourceRaw":"","orderId":source.id,
             "orderType":source.order_type,"clientId":target_id,
@@ -316,8 +323,9 @@ pub fn prepare_cancellable(
     // native Rust reducer used by the in-place editor; then reprice all
     // non-overridden lines, freight and VAT with the selected client.
     if let Some(saved)=source.manual_model.as_ref(){
-        let model=saved.get("model").filter(|value|value.is_object())
-            .ok_or("저장된 수동 수정 작업본이 올바르지 않습니다.")?;
+        let mut model=saved.get("model").filter(|value|value.is_object())
+            .cloned().ok_or("저장된 수동 수정 작업본이 올바르지 않습니다.")?;
+        scope_manual_model_ids(&source.id,&mut model)?;
         let keys=saved.get("assignmentOrder").filter(|value|value.is_array())
             .ok_or("수동 수정 원문 연결 순서가 없습니다.")?;
         let applied=gateway.execute(ReadOperation::ManualClassification,json!({
@@ -338,7 +346,7 @@ pub fn prepare_cancellable(
             return Err("수동 수정 거래처 재계산 결과가 현재 발주서와 일치하지 않습니다.".into());
         }
         let recipients=required(order,"recipients")?;
-        let manual_model=rebind_manual_model(saved,target_id,recipients)?;
+        let manual_model=rebind_manual_model(&source.id,saved,target_id,recipients)?;
         let mut selected_recognition=evidence.clone();
         selected_recognition["recipients"]=recipients.clone();
         let preview=json!({
