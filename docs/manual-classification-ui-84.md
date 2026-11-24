@@ -129,3 +129,16 @@
 - `.github/workflows/egui-manual-classification-check.yml`에 세 테스트 그룹을 실행하는 단계를 추가했다.
 
 **검증 상태:** 소스 정적 점검 PASS. Windows GitHub Actions 실행 결과는 별도 확인 대상이며, Windows 실화면 확인 전까지 전체 UI 판정은 `FAIL`을 유지한다.
+
+### 최종 Windows CI 확인 (2026-11-24)
+
+- GitHub Actions 실행: [Manual classification modal and linked-source checks](https://github.com/ThunderStrikerKR/TSBH/actions/runs/45339534936)
+- `cargo check --manifest-path egui-app/Cargo.toml`: PASS
+- 일체형 배송 건수의 3분할 배치/1건 네비게이터 실제 공간 테스트: PASS
+- 1/N 네비게이터 상태 테스트: PASS
+- 수동 분류의 공통 컨트롤 호출 및 비동기 resize 흐름 계약 테스트: PASS
+- 기존 모달 라우팅, 원문 하이라이트, 방향키/IME, 운임 및 수량 관련 workflow 테스트: PASS
+- 수취인 화살표의 비활성 색상은 기존 전용 저대비 팔레트(`RECEPTION_RECIPIENT_NAV_DISABLED_BG/ICON`)를 유지하고, 배송 건수 +/-에는 일반 비활성 액션 팔레트를 적용한다.
+- 테스트 실행을 막던 기존 `source_highlight.rs` 테스트의 LayoutJob 이동 오류는 테스트 프레임마다 `clone()`하도록 수정했다. 런타임 동작은 변경하지 않았다.
+
+**최종 판정:** 코드 컴파일 및 해당 Windows CI 테스트는 PASS. 단, 사용자의 실제 실행 화면에서 DPI·클리핑·시각적 일체감을 확인하지 않았으므로 UI 시각 검증은 여전히 OPEN/FAIL이다.
