@@ -78,7 +78,7 @@ pub const CATEGORY_EXPLORER_SEPARATOR_WIDTH:f32=12.0;
 pub const CATEGORY_EXPLORER_BACK_WIDTH:f32=88.0;
 pub const CATEGORY_EXPLORER_ROOT_WIDTH:f32=48.0;
 pub const CATEGORY_EXPLORER_APPLY_WIDTH:f32=70.0;
-pub const CATEGORY_EXPLORER_APPLIED_BG:Color32=Color32::from_rgb(90,61,33);
+pub const CATEGORY_EXPLORER_APPLIED_BG:Color32=Color32::from_rgb(105,65,25);
 pub const CATEGORY_EXPLORER_APPLIED_BORDER:Color32=SELECTED_ORDER;
 // The current exploration point is plain bright text, never a filled badge.
 pub const CATEGORY_EXPLORER_CURRENT_BG:Color32=Color32::TRANSPARENT;
@@ -86,7 +86,8 @@ pub const CATEGORY_EXPLORER_CURRENT_BORDER:Color32=Color32::TRANSPARENT;
 // Darker than the generic 185/153 grey text, without obscuring navigation.
 // Applied categories remain orange; current exploration stays bright.
 pub const CATEGORY_EXPLORER_ANCESTOR_TEXT:Color32=Color32::from_rgb(112,112,112);
-pub const SELECTED_ORDER: Color32 = Color32::from_rgb(242, 186, 100);
+// Confirmed orange selections share one chromatic accent; preserve each control's geometry.
+pub const SELECTED_ORDER: Color32 = Color32::from_rgb(255, 150, 46); // #FF962E
 // Compact working-order cards derive every slot from the actual right pane.
 // The horizontal outer inset, inter-control gaps and vertical insets use
 // the same 6pt rhythm. Long dealer text cannot move any control.
@@ -94,7 +95,7 @@ pub const WORKFLOW_CARD_BG: Color32 = Color32::from_rgb(32, 32, 32);
 pub const WORKFLOW_CARD_LOWER_BG: Color32 = INPUT;
 pub const WORKFLOW_SELECTED_BG: Color32 = Color32::from_rgb(36, 36, 36);
 pub const WORKFLOW_CARD_BORDER: Color32 = DIVIDER;
-pub const WORKFLOW_SELECTED_BORDER: Color32 = Color32::from_rgb(245, 158, 11);
+pub const WORKFLOW_SELECTED_BORDER: Color32 = SELECTED_ORDER;
 pub const WORKFLOW_CARD_PADDING_X: f32 = 6.0;
 pub const WORKFLOW_CARD_PADDING_Y: f32 = 8.0;
 pub const WORKFLOW_CARD_RADIUS: u8 = 7;
