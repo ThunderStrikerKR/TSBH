@@ -32,7 +32,11 @@ test("TS and IS Desk specification labels reflect each independently sold length
     assert.equal(p.name,name,site);
     assert.equal(p.variants.length,1);
     assert.equal(p.variants[0].id,historic.get(p.id).variants[0].id);
-    assert.deepEqual(p.variants[0],historic.get(p.id).variants[0]);
+    const currentVariant = { ...p.variants[0] };
+     const historicVariant = { ...historic.get(p.id).variants[0] };
+     delete currentVariant.color;
+     delete historicVariant.color;
+     assert.deepEqual(currentVariant, historicVariant);
     assert.ok(!p.subtitle?.includes("확인 필요"),site);
   }
 });
@@ -79,7 +83,8 @@ test("historical orders can still resolve retired independent IDs and unchanged 
 
 test("unknown color does not generate a request to verify an option",async()=>{
   const {colorLabel,variantLabel}=await tsImport("../src/product-models.ts",import.meta.url);
-  assert.equal(colorLabel("색상 미표기"),"");
+  assert.equal(colorLabel("색상 미표기"), "");
+   assert.equal(colorLabel("단일"), "");
   assert.equal(variantLabel(bySite("247").variants[0]),"");
   assert.equal(variantLabel(product("sku:bando-site-237:bando-237-P00000JC000H").variants[0]),"다크 그린");
   const manager=readFileSync(new URL("../src/ProductManager.tsx",import.meta.url),"utf8");

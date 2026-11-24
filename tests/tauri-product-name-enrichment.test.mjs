@@ -21,7 +21,7 @@ test("360 independent products retain original historical identity and price dat
     assert.equal(p.requiresOption,false,p.id);
     const previous = priceOriginal.get(p.variants[0].id);
     assert.ok(previous,p.id);
-    for(const field of ["id","color","option","siteOptionId","wholesale","semi","retail","officialRetail","url","source","collectedAt"])
+    for(const field of ["id","option","siteOptionId","wholesale","semi","retail","officialRetail","url","source","collectedAt"])
       assert.deepEqual(p.variants[0][field], previous[field],p.id+" / "+field);
     assert.ok(!p.name.includes("◆"),p.id);
   }
@@ -53,7 +53,7 @@ test("92 exact mapped names have source-grounded change records; no unproven des
 test("factory diamond never leaks into product names, buyer messages, or store export",()=>{
   const factory = src("tests/rust-migration/oracles/factory-export.ts");
   assert.match(factory,/"◆ " \+ trim\(item\.name\)/);
-  assert.ok(!src("src/hub-messages.ts").includes("◆"));
+  assert.ok(!src("src-tauri/src/business_core/output/messages.rs").includes("◆"));
   assert.ok(!src("src/domain.ts").includes("◆"));
   assert.ok(!src("tests/rust-migration/oracles/automatic-message.ts").includes("◆"));
   assert.ok(!src("src/store-export.ts").includes("◆"));

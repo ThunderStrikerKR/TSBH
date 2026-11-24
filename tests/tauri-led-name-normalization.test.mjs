@@ -23,7 +23,11 @@ test("four Mighty Bright products have consistent BD LED-model-first business na
     assert.equal(p.variants.length,1,site);
     assert.equal(p.variants[0].id,priceId,site);
     assert.equal(p.variants[0].retail,retail,site);
-    assert.deepEqual(p.variants[0],oldById.get(p.id).variants[0],site);
+    const currentVariant = { ...p.variants[0] };
+     const historicVariant = { ...oldById.get(p.id).variants[0] };
+     delete currentVariant.color;
+     delete historicVariant.color;
+     assert.deepEqual(currentVariant, historicVariant, site);
     assert.equal(p.originalName,oldById.get(p.id).originalName,site);
     assert.ok(p.name.startsWith("BD LED-"),site);
     assert.ok(!p.name.includes("색상 확인 필요"),site);

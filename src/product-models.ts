@@ -69,7 +69,11 @@ export function variantLabel(v: Variant) {
     )
     .replace(/[()[\]]/g, "")
     .trim();
-  return [colorLabel(v.color), option].filter(Boolean).join(" / ");
+  const color = colorLabel(v.color);
+  const normalizedColor = color.replace(/\s+/g, " ").trim().toLocaleLowerCase("ko-KR");
+  const normalizedOption = option.replace(/\s+/g, " ").trim().toLocaleLowerCase("ko-KR");
+  if (normalizedColor && normalizedOption === normalizedColor) option = "";
+  return [color, option].filter(Boolean).join(" / ");
 }
 function subtitle(name: string, models: string[]) {
   let text = name.replace(/반도스탠드|Bandostand/gi, "").replace(/^\s*반도\s*/, "");

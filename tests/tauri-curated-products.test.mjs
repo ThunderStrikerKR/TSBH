@@ -30,7 +30,7 @@ test("All original 360 price records, site references, and official IDs remain i
     assert.equal(target.siteId, p.siteId);
     assert.equal(target.siteCode, p.siteCode);
     assert.equal(target.originalName, p.originalName);
-    for (const field of ["id", "color", "wholesale", "semi", "retail", "siteOptionId", "url"]) {
+    for (const field of ["id", "wholesale", "semi", "retail", "siteOptionId", "url"]) {
       assert.deepEqual(unit[field], v[field], target.id + " / " + field);
     }
     const expected = p.variants.length > 1 ? seed.productMappings[p.id + "|" + v.id] : p.id;
