@@ -2564,6 +2564,12 @@ impl BandoEgui {
             );
             return;
         }
+        // Compare the same display representation before/after editing,
+        // so adding separators alone never creates a native write.
+        let original=if matches!(target.field,"unitPrice"|"shippingCharge"){
+            components::parse_money_input(&original)
+                .map(components::money_edit_text).unwrap_or(original)
+        }else{original};
         self.inline_editor=Some(InlineReceptionEditor{
             source_id:self.active_id.clone().unwrap_or_default(),
             target,original:original.clone(),text:original,
@@ -6948,6 +6954,11 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                                                 editor.focus_next,editor.click_at.take()
                                                             );
                                                             (control.input,control.step_interaction)
+                                                        }else if field=="price"{
+                                                            (components::reception_money_inline_cell_editor(
+                                                                items_ui,response.rect,&mut editor.text,
+                                                                editor.focus_next,editor.click_at.take()
+                                                            ),false)
                                                         }else{
                                                             (components::reception_inline_cell_editor(
                                                                 items_ui,response.rect,&mut editor.text,

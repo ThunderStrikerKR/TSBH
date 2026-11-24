@@ -2126,10 +2126,15 @@ fn money_field_with_margin(
 )->Response{
     let before=value.clone();
     let response=field_with_margin(ui,value,FieldKind::Money,enabled,input_margin);
-    // Normalize both keystroke and initial raw data. Never persist display
-    // punctuation as an alternative numerical business representation.
+    normalize_money_edit(ui,value,&before,&response);
+    response
+}
+
+/// One live formatting/caret path for forms and exact-rect worksheet cells.
+fn normalize_money_edit(ui:&Ui,value:&mut String,before:&str,response:&Response){
+    // Never persist display punctuation as an alternative business value.
     let formatted=formatted_money_input(value);
-    let next=formatted.unwrap_or(before.clone());
+    let next=formatted.unwrap_or_else(||before.to_owned());
     if *value!=next{
         let raw=value.clone();
         if response.has_focus(){
@@ -2153,7 +2158,29 @@ fn money_field_with_margin(
         *value=next;
         ui.ctx().request_repaint();
     }
-    response
+}
+
+/// Canonical numeric draft text, shared by resting and focused cells.
+/// No currency suffix enters the native business value.
+pub fn money_edit_text(amount:i64)->String{
+    formatted_money_input(&amount.to_string()).unwrap_or_else(||amount.to_string())
+}
+
+fn money_unit_margin(
+    ui:&Ui,unit:&str,font:egui::FontId,right_inset:f32,mut margin:egui::Margin
+)->(egui::Margin,std::sync::Arc<egui::Galley>){
+    let galley=ui.painter().layout_no_wrap(unit.to_owned(),font,theme::TEXT);
+    margin.right=(galley.size().x+right_inset).ceil().clamp(0.0,127.0) as i8;
+    margin.top=2;
+    margin.bottom=2;
+    (margin,galley)
+}
+
+fn paint_money_unit(ui:&Ui,rect:Rect,galley:std::sync::Arc<egui::Galley>,right_inset:f32){
+    let pos=egui::pos2(rect.right()-right_inset-galley.size().x,
+        rect.center().y-galley.size().y/2.0);
+    ui.painter().with_clip_rect(rect.intersect(ui.clip_rect()))
+        .galley(pos,galley,theme::TEXT);
 }
 
 /// Price-table variant of the same shared money editor. The won unit is
@@ -2168,24 +2195,12 @@ pub fn money_field_with_unit(
     ui:&mut Ui,value:&mut String,enabled:bool,
     unit:&str,unit_right_inset:f32
 )->Response{
-    let unit_font=typography::numeric_editor_font();
-    let unit_galley=ui.painter().layout_no_wrap(
-        unit.to_owned(),unit_font,theme::TEXT
+    let (margin,unit_galley)=money_unit_margin(
+        ui,unit,typography::numeric_editor_font(),unit_right_inset,
+        typography::form_input_text_margin()
     );
-    let unit_width=unit_galley.size().x;
-    let mut margin=typography::form_input_text_margin();
-    margin.right=(unit_width+unit_right_inset).ceil().clamp(0.0,127.0) as i8;
-    // A centered table datum has no form-only -1pt ink displacement.
-    // Keep both digit glyphs and the unit optically centered in the 42pt row.
-    margin.top=2;
-    margin.bottom=2;
     let response=money_field_with_margin(ui,value,enabled,margin);
-    let suffix_pos=egui::pos2(
-        response.rect.right()-unit_right_inset-unit_width,
-        response.rect.center().y-unit_galley.size().y/2.0
-    );
-    ui.painter().with_clip_rect(response.rect.intersect(ui.clip_rect()))
-        .galley(suffix_pos,unit_galley,theme::TEXT);
+    paint_money_unit(ui,response.rect,unit_galley,unit_right_inset);
     response
 }
 
@@ -5096,6 +5111,35 @@ pub fn reception_inline_cell_editor(
     )
 }
 
+/// Money variant of the exact-rect editor: preserve the native caret,
+/// table footprint and shared live separator/suffix behavior.
+pub fn reception_money_inline_cell_editor(
+    ui:&mut Ui,cell:Rect,value:&mut String,request_focus:bool,
+    click_at:Option<egui::Pos2>
+)->Response{
+    let rect=cell.shrink2(egui::vec2(theme::SPACE_4,theme::SPACE_2));
+    let font=typography::data_value_font(
+        typography::DataValueKind::Money,typography::DataValueContext::Reception
+    );
+    // The preformatted draft is also the comparison baseline in both
+    // callers. Normalize raw initial values for direct component reuse.
+    if let Some(formatted)=formatted_money_input(value){*value=formatted;}
+    let before=value.clone();
+    let inset=theme::SPACE_8;
+    let (margin,unit_galley)=money_unit_margin(
+        ui,"원",font.clone(),inset,egui::Margin::symmetric(8,2)
+    );
+    let response=reception_text_editor_at_click(
+        ui,rect,egui::TextEdit::singleline(value).font(font)
+            .horizontal_align(Align::RIGHT).vertical_align(Align::Center)
+            .margin(margin).desired_width(rect.width()),
+        request_focus,click_at
+    );
+    normalize_money_edit(ui,value,&before,&response);
+    paint_money_unit(ui,response.rect,unit_galley,inset);
+    response
+}
+
 /// Quantity uses the shared date-selector frame and segment buttons.
 /// Only the numeric draft is editable; the fixed suffix never enters the
 /// native quantity parser or changes when the cell gains focus.
@@ -5492,9 +5536,14 @@ pub fn reception_freight_inline_cell_editor(
     ui:&mut Ui,cell:Rect,value:&mut String,request_focus:bool,
     click_at:Option<egui::Pos2>
 )->Response{
-    reception_text_editor_at_click(
+    // Freight already has a fixed external won label; do not duplicate it.
+    if let Some(formatted)=formatted_money_input(value){*value=formatted;}
+    let before=value.clone();
+    let response=reception_text_editor_at_click(
         ui,cell,reception_freight_amount_text_edit(value),request_focus,click_at
-    )
+    );
+    normalize_money_edit(ui,value,&before,&response);
+    response
 }
 pub fn reception_freight_row(
     ui: &mut Ui, label: &str, amount: Option<i64>, collect: Option<bool>,
@@ -7118,6 +7167,27 @@ mod money_live_format_tests{
         let (a,b)=(money_cursor_after_format("1234567","1,234,567",2),
             money_cursor_after_format("1234567","1,234,567",6));
         assert_eq!((a,b),(3,8));
+    }
+    #[test]
+    fn reception_money_cell_formats_without_storing_suffix_or_changing_layout(){
+        let ctx=crate::components::test_context();
+        let mut amount="59000".to_owned();
+        let mut observed=None;
+        let _=ctx.run(egui::RawInput::default(),|ctx|{
+            egui::CentralPanel::default().show(ctx,|ui|{
+                let (cell,_)=ui.allocate_exact_size(Vec2::new(128.0,42.0),Sense::hover());
+                let before=ui.available_rect_before_wrap().min;
+                let response=reception_money_inline_cell_editor(ui,cell,&mut amount,true,None);
+                observed=Some((cell,response.rect,before,ui.available_rect_before_wrap().min));
+            });
+        });
+        let (cell,rect,before,after)=observed.unwrap();
+        assert!(cell.contains(rect.min)&&cell.contains(rect.max));
+        assert_eq!(before,after);
+        assert_eq!(amount,"59,000");
+        assert_eq!(money_edit_text(59000),amount);
+        assert_eq!(parse_money_input(&amount),Some(59000));
+        assert!(!amount.contains('원'));
     }
     #[test]
     fn grouped_display_roundtrips_through_original_native_price_parser(){

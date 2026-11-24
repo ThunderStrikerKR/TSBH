@@ -1019,7 +1019,7 @@ impl ManualWorkspace {
                 "unitPrice"=>item.get("manualUnitPrice")
                     .or_else(||item.get("unitPrice"))
                     .and_then(Value::as_i64)
-                    .map(|n|n.to_string()).unwrap_or_default(),
+                    .map(components::money_edit_text).unwrap_or_default(),
                 _=>text(item,"name").to_owned()
             };
         }
@@ -1074,10 +1074,14 @@ impl ManualWorkspace {
                     linked
                 )
             }
+        }else if self.selected_field=="unitPrice"{
+            components::reception_money_inline_cell_editor(
+                ui,rect,&mut self.edit_text,focus,None
+            )
         }else{
             components::reception_inline_cell_editor(
                 ui,rect,&mut self.edit_text,focus,None,
-                matches!(self.selected_field.as_str(),"quantity"|"unitPrice")
+                self.selected_field=="quantity"
             )
         };
         self.active_editor_id=Some(response.id);
