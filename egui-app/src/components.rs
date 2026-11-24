@@ -4852,7 +4852,15 @@ fn reception_item_text_clip(rect:Rect,index:usize)->Rect {
     }else{rect}
 }
 
-pub fn reception_items_header(ui: &mut Ui) {
+pub fn reception_items_header(ui:&mut Ui){
+    reception_items_header_with_amount_label(ui,"금액");
+}
+
+/// Same approved three-column header geometry; manual editing labels its
+/// final cell as unit price until Rust supplies a priced line amount.
+pub fn reception_items_header_with_amount_label(
+    ui:&mut Ui,amount_heading:&str
+){
     let width = reception_item_table_width(ui.available_width());
     let (rect, _) = ui.allocate_exact_size(
         Vec2::new(width, theme::RECEPTION_ITEMS_HEADER_HEIGHT), Sense::hover()
@@ -4862,7 +4870,7 @@ pub fn reception_items_header(ui: &mut Ui) {
     // No extra layout height or clipped 1pt edge is introduced.
     ui.painter().rect_filled(rect,0.0,theme::RAISED);
     let columns = reception_item_columns(rect);
-    for (index, label) in ["품목", "수량", "금액"].iter().enumerate() {
+    for (index, label) in ["품목", "수량", amount_heading].iter().enumerate() {
         // Header and value cells use identical text start coordinates.
         let cell = reception_item_text_clip(
             columns[index].shrink2(egui::vec2(theme::SPACE_8, 0.0)),index
