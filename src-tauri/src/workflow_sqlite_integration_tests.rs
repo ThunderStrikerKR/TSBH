@@ -266,6 +266,13 @@ fn native_unconfirmed_draft_first_stage_confirmation_commits_as_one_order() {
     assert_eq!(confirmed["orders"][0]["clientSnapshot"]["id"],client["id"]);
     assert_eq!(confirmed["orders"][0]["receipt"]["original"],raw);
     assert_eq!(confirmed["workflow"]["shipments"][0]["step"],1);
+    assert_eq!(confirmed["workflow"]["shipments"][0]["transferred"],false,
+        "first-stage confirmation must not transfer the shipment to the Excel queue");
+    assert_eq!(confirmed["workflow"]["groups"][0]["id"],
+        "group:order:unconfirmed-draft",
+        "first-stage confirmation must keep the order in its existing workflow group");
+    assert!(confirmed["workflow"]["groups"][0]["deletedAt"].is_null(),
+        "first-stage confirmation must not archive or delete the workflow group");
     rust("validate_workflow",json!({
         "state":confirmed,"before":saved
     })).expect("first-stage confirmation and audit must validate");
@@ -274,6 +281,9 @@ fn native_unconfirmed_draft_first_stage_confirmation_commits_as_one_order() {
         &mut conn,confirmed,saved["revision"].as_u64().unwrap(),true
     ).expect("confirmed order and first workflow stage must commit atomically");
     assert_eq!(committed["revision"],saved["revision"].as_u64().unwrap()+1);
+    assert_eq!(committed["workflow"]["shipments"][0]["transferred"],false);
+    assert_eq!(committed["workflow"]["groups"][0]["id"],
+        "group:order:unconfirmed-draft");
     assert_eq!(get_snapshot(&conn).unwrap(),committed);
     let count:i64=conn.query_row(
         "SELECT COUNT(*) FROM core_orders WHERE id='order:unconfirmed-draft'",
