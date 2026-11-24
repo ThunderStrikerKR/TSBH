@@ -1,12 +1,6 @@
 name: Native Windows client registration audit (real Tauri EXE)
 on:
-  push:
-    branches:
-      - fix/03-client-registration-native-audit
-      - migration/03-integration
-    paths:
-      - scripts/migration03-client-registration-native-uia.ps1
-      - .github/workflows/migration-client-registration-native.yml
+  # Historical EXE client registration audit; launch manually on main.
   workflow_dispatch:
 permissions:
   contents: read

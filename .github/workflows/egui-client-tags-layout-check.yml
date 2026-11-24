@@ -2,7 +2,6 @@ name: Client tag and freight-master table layout verification
 on:
   push:
     branches:
-      - ui/client-search-tag-chips-67
       - main
     paths:
       - .github/workflows/egui-client-tags-layout-check.yml

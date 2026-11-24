@@ -6,9 +6,6 @@ on:
       - migration/01-recognition
       - migration/02-rules
       - migration/03-integration
-      - migration/28-ts-runtime-closure
-      - migration/28-reception-manual-rust
-      - migration/28-order-edit-rules-rust
   workflow_dispatch:
 
 permissions:
@@ -37,7 +34,7 @@ jobs:
             migration/02-rules)
               required="tests/rust-migration/rules/Cargo.toml"
               ;;
-            migration/03-integration|migration/28-ts-runtime-closure|migration/28-reception-manual-rust|migration/28-order-edit-rules-rust)
+            migration/03-integration)
               required="tests/rust-migration/output/Cargo.toml"
               ;;
             *)
@@ -66,7 +63,7 @@ jobs:
 
   integration-windows-rust:
     name: Integrated app Rust tests (Windows)
-    if: github.ref == 'refs/heads/migration/03-integration' || github.ref == 'refs/heads/migration/28-ts-runtime-closure' || github.ref == 'refs/heads/migration/28-reception-manual-rust' || github.ref == 'refs/heads/migration/28-order-edit-rules-rust'
+    if: github.ref == 'refs/heads/migration/03-integration'
     runs-on: windows-latest
     timeout-minutes: 45
     steps:

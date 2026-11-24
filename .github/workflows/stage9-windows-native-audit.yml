@@ -1,13 +1,6 @@
 name: Stage 9 real Windows EXE UI audit
 on:
-  push:
-    branches:
-      - feature/tauri-product-bulk-registration
-    paths:
-      - scripts/stage9-windows-native-audit.mjs
-      - scripts/stage9-windows-uia-audit.ps1
-      - scripts/stage9-windows-desktop-probe.ps1
-      - .github/workflows/stage9-windows-native-audit.yml
+  # Historical stage-9 Windows evidence audit remains manually runnable.
   workflow_dispatch:
 permissions:
   contents: read

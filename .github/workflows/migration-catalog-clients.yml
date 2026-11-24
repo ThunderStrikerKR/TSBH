@@ -1,9 +1,6 @@
 name: Rust catalog and client management migration
 on:
-  push:
-    branches:
-      - migration/07-catalog-clients
-      - integration/07-catalog-clients
+  # Historical catalog parity suite remains available by manual dispatch.
   workflow_dispatch:
 permissions:
   contents: read

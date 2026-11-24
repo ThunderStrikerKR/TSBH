@@ -1,8 +1,6 @@
 name: Rust workflow preview migration
 on:
-  push:
-    branches:
-      - migration/04-workflow-preview
+  # Historical preview parity checks remain manually runnable.
   workflow_dispatch:
 permissions:
   contents: read

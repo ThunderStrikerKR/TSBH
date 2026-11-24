@@ -3,8 +3,6 @@ on:
   push:
     branches:
       - main
-      - domain/client-name-alias-migration-67
-      - ui/client-search-tag-chips-67
     paths:
       - .github/workflows/client-name-migration-safety.yml
       - crates/bando-data-access/src/client_names.rs
