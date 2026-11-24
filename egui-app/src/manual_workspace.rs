@@ -3925,14 +3925,15 @@ mod manual_workspace_layout_tests{
 
     #[test]
     fn popup_height_tracks_the_visible_card_stack_and_fixed_modal_chrome(){
-        assert_eq!(manual_recipient_card_height(),231.0);
-        assert_eq!(manual_workspace_columns_height(),631.0);
+        assert_eq!(theme::RECEPTION_PANE_PADDING_Y,16.0);
+        assert_eq!(manual_recipient_card_height(),247.0);
+        assert_eq!(manual_workspace_columns_height(),647.0);
         let work_area=egui::Rect::from_min_size(
             egui::Pos2::ZERO,egui::vec2(1400.0,1000.0)
         );
         let size=manual_workspace_dialog_size(work_area);
         assert_eq!(size.x,1364.0);
-        assert_eq!(size.y,846.0);
+        assert_eq!(size.y,862.0);
         let short_area=egui::Rect::from_min_size(
             egui::Pos2::ZERO,egui::vec2(1400.0,700.0)
         );
