@@ -3132,6 +3132,7 @@ pub fn management_date_group<R>(
 enum DateNavigationSegmentGlyph<'a>{
     Text(&'a str),
     Chevron(ManagementChevronDirection),
+    CompactVerticalChevron { up: bool },
 }
 
 /// A single outer frame with zero-gap internal segments. Both the recipient
@@ -3172,9 +3173,31 @@ fn date_navigation_segment_button(
     glyph:DateNavigationSegmentGlyph<'_>
 )->Response{
     let enabled=enabled && ui.is_enabled();
+    // Half-height stepper segments must not inherit the full-sized Button's
+    // minimum height or widget expansion. Use their allocated rectangle.
+    if let DateNavigationSegmentGlyph::CompactVerticalChevron{up}=glyph {
+        let rect=ui.max_rect().intersect(ui.clip_rect());
+        let response=ui.interact(rect,ui.id().with("compact-chevron"),
+            if enabled{Sense::click()}else{Sense::hover()});
+        let corners=egui::CornerRadius{
+            nw:if up{3}else{0},ne:0,
+            sw:if up{0}else{3},se:0,
+        };
+        let painter=ui.painter().with_clip_rect(rect);
+        if !enabled{
+            painter.rect_filled(rect,corners,theme::RECEPTION_RECIPIENT_NAV_DISABLED_BG);
+        }else{
+            theme::paint_button_hover_corners(ui,&response,corners);
+        }
+        let ink=if !enabled{theme::RECEPTION_RECIPIENT_NAV_DISABLED_ICON}
+            else if response.hovered(){theme::TEXT}else{theme::SECONDARY};
+        let angle=if up{-std::f32::consts::FRAC_PI_2}else{std::f32::consts::FRAC_PI_2};
+        paint_chevron_at_angle_scaled(&painter,rect.center(),angle,0.0,ink,0.72);
+        return response.on_hover_text(tooltip);
+    }
     let height=ui.available_height();
     let (disabled_fill,disabled_ink)=match glyph{
-        DateNavigationSegmentGlyph::Chevron(_)=>(
+        DateNavigationSegmentGlyph::Chevron(_)|DateNavigationSegmentGlyph::CompactVerticalChevron{..}=>(
             theme::RECEPTION_RECIPIENT_NAV_DISABLED_BG,
             theme::RECEPTION_RECIPIENT_NAV_DISABLED_ICON
         ),
@@ -3218,6 +3241,7 @@ fn date_navigation_segment_button(
                 &painter,response.rect.center(),direction,ink
             );
         }
+        DateNavigationSegmentGlyph::CompactVerticalChevron{..}=>unreachable!("handled above"),
     }
     response.on_hover_text(tooltip)
 }
@@ -3929,21 +3953,29 @@ fn paint_chevron_at_angle(
     painter:&egui::Painter,center:egui::Pos2,angle:f32,optical_raise:f32,
     ink:Color32
 ){
-    const HALF_SPAN:f32=5.0;
-    const DEPTH:f32=2.5;
-    const STROKE:f32=1.8;
+    paint_chevron_at_angle_scaled(painter,center,angle,optical_raise,ink,1.0);
+}
+
+/// Shared chevron geometry, scaled only for constrained half-height segments.
+fn paint_chevron_at_angle_scaled(
+    painter:&egui::Painter,center:egui::Pos2,angle:f32,optical_raise:f32,
+    ink:Color32,scale:f32
+){
+    let half_span=5.0*scale;
+    let depth=2.5*scale;
+    let stroke=(1.8*scale).max(1.0);
     let (s,c)=angle.sin_cos();
     let rotated=|x:f32,y:f32|egui::pos2(
         center.x+x*c-y*s,
         center.y+x*s+y*c-optical_raise
     );
-    let a=rotated(-DEPTH,-HALF_SPAN);
-    let tip=rotated(DEPTH,0.0);
-    let b=rotated(-DEPTH,HALF_SPAN);
+    let a=rotated(-depth,-half_span);
+    let tip=rotated(depth,0.0);
+    let b=rotated(-depth,half_span);
     // One tessellated stroke owns the corner, diagonal edges and caps.
     // Preserve the approved 10pt shape, rotation and 1.8pt thickness.
     painter.add(egui::Shape::line(
-        vec![a,tip,b],Stroke::new(STROKE,ink)
+        vec![a,tip,b],Stroke::new(stroke,ink)
     ));
 }
 
@@ -5107,8 +5139,10 @@ pub fn reception_quantity_editor(
             let unit_width=segments.painter().layout_no_wrap(
                 "개".to_owned(),font.clone(),theme::TEXT
             ).size().x;
+            // Leave clearance for the rounded outer focus stroke.
             let arrow_rect=Rect::from_min_max(
-                inner.min,egui::pos2(inner.left()+arrow_width,inner.bottom())
+                inner.min+egui::vec2(1.0,1.0),
+                egui::pos2(inner.left()+arrow_width,inner.bottom()-1.0)
             );
             let unit_rect=Rect::from_min_max(
                 egui::pos2(inner.right()-unit_width-2.0,inner.top()),
@@ -5117,8 +5151,13 @@ pub fn reception_quantity_editor(
             let input_rect=Rect::from_min_max(
                 egui::pos2(arrow_rect.right()+2.0,inner.top()),
                 egui::pos2(unit_rect.left(),inner.bottom()));
+            let mut input_ui=segments.new_child(
+                UiBuilder::new().id_salt("quantity-value")
+                    .max_rect(input_rect).layout(Layout::top_down(Align::Min))
+            );
+            input_ui.set_clip_rect(input_rect.intersect(segments.clip_rect()));
             let input=reception_text_editor_at_click(
-                segments,input_rect,
+                &mut input_ui,input_rect,
                 egui::TextEdit::singleline(value).font(font.clone())
                     .horizontal_align(Align::RIGHT).vertical_align(Align::Center)
                     .margin(egui::Margin::ZERO).frame(false)
@@ -5130,13 +5169,13 @@ pub fn reception_quantity_editor(
             );
             let mut clicked=false;
             let half=arrow_rect.height()/2.0;
-            for (index,caption,next,glyph) in [
-                (0,"수량 1개 늘리기",increase, "▴"),
-                (1,"수량 1개 줄이기",decrease, "▾"),
+            for (index,caption,next,up) in [
+                (0,"수량 1개 늘리기",increase,true),
+                (1,"수량 1개 줄이기",decrease,false),
             ]{
                 let part=Rect::from_min_size(
                     egui::pos2(arrow_rect.left(),arrow_rect.top()+index as f32*half),
-                    egui::vec2(arrow_width,half)
+                    egui::vec2(arrow_rect.width(),half)
                 );
                 let mut button=segments.new_child(
                     UiBuilder::new().id_salt(("quantity-arrow",index))
@@ -5149,8 +5188,8 @@ pub fn reception_quantity_editor(
                 button.spacing_mut().interact_size=Vec2::ZERO;
                 button.spacing_mut().button_padding=Vec2::ZERO;
                 let response=date_navigation_segment_button(
-                    &mut button,arrow_width,caption,next.is_some(),
-                    DateNavigationSegmentGlyph::Text(glyph)
+                    &mut button,arrow_rect.width(),caption,next.is_some(),
+                    DateNavigationSegmentGlyph::CompactVerticalChevron{up}
                 );
                 if response.clicked(){
                     if let Some(next)=next{*value=next;clicked=true;}
