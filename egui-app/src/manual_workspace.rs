@@ -1711,7 +1711,7 @@ impl ManualWorkspace {
                                                             grid,text(item,"name"),product_col,
                                                             false,product_linked
                                                         )
-                                                    };
+                                                    }.on_hover_text(text(item,"name"));
                                                     if product_response.hovered(){
                                                         hovered_detail=Some(product_key);
                                                     }
@@ -1874,6 +1874,8 @@ impl ManualWorkspace {
                                                         ));
                                                     }
                                                 }
+                                                options.add_space(theme::SPACE_12);
+                                                components::form_field_label(options,"운임 방식");
                                                 for (label,value) in [
                                                     ("선불","010"),("착불","020")
                                                 ]{
