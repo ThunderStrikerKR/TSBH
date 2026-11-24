@@ -52,12 +52,23 @@ on:
       - 'DEV_WINDOWS_TAURI.cmd'
       - '.github/workflows/migration-output.yml'
   workflow_dispatch:
+    inputs:
+      legacy_windows_audit:
+        description: 'Optional historical Windows regression diagnostic'
+        required: false
+        default: none
+        type: choice
+        options:
+          - none
+          - compact-workflow
+          - ocr-capture
+          - factory-notices
+          - persistent-notices
 permissions:
   contents: read
 concurrency:
-  # P1/P2 exact-EXE gate is isolated from long-running older branch attempts.
-  # All ordinary migration branches retain their original cancellation group.
-  group: ${{ github.ref_name == 'migration/27-unified-rust' && format('rust-output-gate4-{0}', github.ref) || format('rust-output-migration03-{0}', github.ref) }}
+  # Keep the existing cancellation group for main and PR refs.
+  group: rust-output-migration03-${{ github.ref }}
   cancel-in-progress: true
 jobs:
   rust-core-batch:
@@ -253,9 +264,9 @@ jobs:
         run: cargo test --manifest-path src-tauri/Cargo.toml --lib
 
   windows-p1p2-real-exe:
-    # Explicit one-branch native GUI audit for the 32차 reported Windows
-    # regressions. Ordinary PRs still skip the heavy Release/WebView2 build.
-    if: github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && (github.head_ref == 'fix/32-compact-workflow-price-refresh' || github.head_ref == 'fix/32-ocr-capture-escape-window-lifecycle' || github.head_ref == 'fix/32-factory-reply-validation-notification-center' || github.head_ref == 'fix/32-persistent-notification-sqlite'))
+    # Retire old PR-head-only triggers; explicit manual audit options retain
+    # the 32차 diagnostics without keeping deleted branch names alive.
+    if: github.event_name == 'workflow_dispatch'
     runs-on: windows-latest
     timeout-minutes: 75
     steps:
@@ -295,10 +306,10 @@ jobs:
           BANDO_NATIVE_OUT: native-p1p2-evidence
           BANDO_NATIVE_BIN_COMMIT: ${{ github.sha }}
           BANDO_P1P2_AUDIT: "true"
-          BANDO_32_AUDIT: ${{ github.event_name == 'pull_request' && github.head_ref == 'fix/32-compact-workflow-price-refresh' && 'true' || 'false' }}
-          BANDO_OCR_AUDIT: ${{ github.event_name == 'pull_request' && github.head_ref == 'fix/32-ocr-capture-escape-window-lifecycle' && 'true' || 'false' }}
-          BANDO_FACTORY_NOTICE_AUDIT: ${{ github.event_name == 'pull_request' && (github.head_ref == 'fix/32-factory-reply-validation-notification-center' || github.head_ref == 'fix/32-persistent-notification-sqlite') && 'true' || 'false' }}
-          BANDO_PERSISTENT_NOTICE_AUDIT: ${{ github.event_name == 'pull_request' && github.head_ref == 'fix/32-persistent-notification-sqlite' && 'true' || 'false' }}
+          BANDO_32_AUDIT: ${{ inputs.legacy_windows_audit == 'compact-workflow' && 'true' || 'false' }}
+          BANDO_OCR_AUDIT: ${{ inputs.legacy_windows_audit == 'ocr-capture' && 'true' || 'false' }}
+          BANDO_FACTORY_NOTICE_AUDIT: ${{ (inputs.legacy_windows_audit == 'factory-notices' || inputs.legacy_windows_audit == 'persistent-notices') && 'true' || 'false' }}
+          BANDO_PERSISTENT_NOTICE_AUDIT: ${{ inputs.legacy_windows_audit == 'persistent-notices' && 'true' || 'false' }}
         run: node scripts/migration03-reception-native-ui.mjs
       - name: Verify last window position, size, and maximized state across real Windows EXE restarts
         shell: pwsh
