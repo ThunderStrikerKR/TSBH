@@ -2310,7 +2310,14 @@ impl BandoEgui {
                     if kind=="CLIENT" || kind.starts_with("CLIENT_MATCH_"){
                         self.open_client_chooser(ctx);
                     }else if kind=="RECIPIENT"{
-                        self.open_manual_workspace(ctx);
+                        let direct=self.active_id.as_deref()
+                            .and_then(|id|self.drafts.iter().find(|row|row.id==id))
+                            .is_some_and(|row|row.raw.trim().is_empty() &&
+                                row.manual_model.as_ref().is_some_and(|saved|
+                                    saved.get("mode").and_then(serde_json::Value::as_str)==Some("DIRECT")
+                                ));
+                        if direct{self.open_direct_workspace(ctx);}
+                        else{self.open_manual_workspace(ctx);}
                     }
                     return;
                 }
@@ -2347,7 +2354,14 @@ impl BandoEgui {
                     "MODEL"|"MODEL_CHOICE"|"ALIAS_CONFLICT"|
                     "CATEGORY_CONFLICT"|"QUANTITY_LINK"|"MODEL_CONFIRM");
                 if manual{
-                    self.open_manual_workspace(ctx);
+                    let direct=self.active_id.as_deref()
+                        .and_then(|id|self.drafts.iter().find(|row|row.id==id))
+                        .is_some_and(|row|row.raw.trim().is_empty() &&
+                            row.manual_model.as_ref().is_some_and(|saved|
+                                saved.get("mode").and_then(serde_json::Value::as_str)==Some("DIRECT")
+                            ));
+                    if direct{self.open_direct_workspace(ctx);}
+                    else{self.open_manual_workspace(ctx);}
                     if let Some(editor)=self.manual_workspace.as_mut(){
                         editor.focus_cell(
                             index,item_id,
@@ -6828,8 +6842,14 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
         let mut inline_command:Option<(InlineTarget,String)>=None;
         let editable=self.active_id.as_deref()
             .and_then(|id|self.drafts.iter().find(|row|row.id==id))
-            .is_some_and(|row|row.analysis_raw.as_deref()==Some(self.raw_source.as_str())
-                && row.analysis_evidence.is_some())
+            .is_some_and(|row|{
+                let direct=row.raw.trim().is_empty() &&
+                    row.manual_model.as_ref().is_some_and(|saved|
+                        saved.get("mode").and_then(serde_json::Value::as_str)==Some("DIRECT")
+                    );
+                direct || (row.analysis_raw.as_deref()==Some(self.raw_source.as_str())
+                    && row.analysis_evidence.is_some())
+            })
             && visible_index==self.selected_recipient
             && self.workflow_ui.pending_preview().is_none()
             && self.manual_workspace.is_none()
