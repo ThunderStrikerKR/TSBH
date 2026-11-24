@@ -13,7 +13,9 @@
     "check:types": "tsc --noEmit",
     "check:products": "python scripts/validate-product-seed.py",
     "audit:ts-business": "node scripts/audit-ts-business-retirement.mjs",
-    "check:ui-design": "node scripts/check-ui-design.mjs"
+    "check:ui-design": "node scripts/check-ui-design.mjs",
+    "check:ui-visual": "node scripts/check-ui-visual-verification.mjs --all",
+    "test:ui-visual": "node --test tests/ui-visual-verification.test.mjs"
   },
   "dependencies": {
     "cheerio": "^1.1.0",
