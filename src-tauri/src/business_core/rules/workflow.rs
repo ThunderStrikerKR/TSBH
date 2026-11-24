@@ -1454,3 +1454,89 @@ mod shipment_read_migration_tests {
         assert_eq!(result["shipments"][1]["actualFreight"]["STORE"],3000);
     }
 }
+ 
+#[cfg(test)]
+mod workflow_freight_edit_tests {
+    use super::*;
+
+    fn state()->Value{
+        json!({
+            "clients":[{
+                "id":"c","name":"가상 거래처","payment":"PREPAID",
+                "shippingFeeExcluded":false
+            }],
+            "orders":[{
+                "id":"o","clientId":"c","orderType":"AGENCY",
+                "freightCode":"010","recipients":[{
+                    "id":"r","name":"가상 수취인",
+                    "address":"제주특별자치도 서귀포시 대정읍 테스트로 3",
+                    "freightCode":"010",
+                    "items":[{"id":"i","origin":"FACTORY","quantity":1}],
+                    "shippingCharges":{"FACTORY":null}
+                }]
+            }],
+            "workflow":{
+                "groups":[{"id":"g","needsNotice":false}],
+                "shipments":[{
+                    "id":"s","orderId":"o","recipientId":"r","groupId":"g",
+                    "step":1,"completedAt":{},"charges":{"FACTORY":null},
+                    "transferred":false,"rechecks":[]
+                }],
+                "events":[],"confirmations":[],"payments":[]
+            }
+        })
+    }
+
+    #[test]
+    fn applied_remote_freight_is_normalized_to_base_before_saving(){
+        let result=apply(&json!({
+            "state":state(),"action":"set_shipment_freight",
+            "groupId":"g","shipmentId":"s","origin":"FACTORY",
+            "appliedCharge":6000,"remoteChecked":true,
+            "eventId":"event-freight-remote","now":"2026-11-25T08:00:00+09:00",
+            "actor":"검증 담당자"
+        })).expect("workflow freight edit");
+        let next=&result["state"];
+        assert_eq!(next["workflow"]["shipments"][0]["charges"]["FACTORY"],3000);
+        assert_eq!(next["orders"][0]["recipients"][0]["shippingCharges"]["FACTORY"],3000);
+        assert_eq!(next["orders"][0]["recipients"][0]["remoteDelivery"]["checked"],true);
+        assert_eq!(fee_total(
+            &next["workflow"]["shipments"][0],
+            &next["orders"][0]["recipients"][0],
+            &next["orders"][0]
+        ),Some(6000));
+        assert_eq!(next["workflow"]["shipments"][0]["step"],1);
+        assert_eq!(next["workflow"]["shipments"][0]["transferred"],false);
+    }
+
+    #[test]
+    fn workflow_freight_code_and_remote_override_are_independently_editable(){
+        let result=apply(&json!({
+            "state":state(),"action":"set_shipment_freight",
+            "groupId":"g","shipmentId":"s","origin":"FACTORY",
+            "freightCode":"020","remoteChecked":false,
+            "eventId":"event-freight-options","now":"2026-11-25T08:01:00+09:00",
+            "actor":"검증 담당자"
+        })).expect("workflow freight options");
+        let next=&result["state"];
+        assert_eq!(next["orders"][0]["recipients"][0]["freightCode"],"020");
+        assert_eq!(next["orders"][0]["recipients"][0]["remoteDelivery"]["checked"],false);
+        assert_eq!(fee_total(
+            &next["workflow"]["shipments"][0],
+            &next["orders"][0]["recipients"][0],
+            &next["orders"][0]
+        ),Some(0));
+    }
+
+    #[test]
+    fn cod_freight_amount_cannot_be_manually_edited(){
+        let result=apply(&json!({
+            "state":state(),"action":"set_shipment_freight",
+            "groupId":"g","shipmentId":"s","origin":"FACTORY",
+            "freightCode":"020","appliedCharge":3000,
+            "eventId":"event-freight-cod","now":"2026-11-25T08:02:00+09:00",
+            "actor":"검증 담당자"
+        }));
+        assert!(result.unwrap_err().contains("착불 운임은 직접 수정할 수 없습니다."));
+    }
+}
