@@ -689,7 +689,7 @@ fn analyze(raw: &str, state: &Value, client: Option<&Value>) -> Result<Value, St
     let mut product_hits: Vec<ProductHit> = Vec::new();
     let phone = phone_regex();
     let person_label = Regex::new(
-        r"(?:수취인(?:명)?|수하인(?:명)?|수령자|받는\s*(?:분|사람)|성함|이름)\s*[:：]?\s*([가-힣A-Za-z0-9 ()]{2,30}?)(?=\s*(?:연락처|전화|휴대|주소|배송지|$))",
+        r"(?:수취인(?:명)?|수하인(?:명)?|수령자|받는\s*(?:분|사람)|성함|이름)\s*[:：]?\s*([가-힣A-Za-z0-9 ()]{2,30}?)(?:\s*(?:연락처|전화|휴대|주소|배송지)|$)",
     ).expect("name label");
     let inline_person = Regex::new(r"(?:^|[\s|/])([가-힣]{2,5})(?:님)?\s+(?:0(?:50\d|1[016789]|2|[3-6]\d|70|80))")
         .expect("inline name");
