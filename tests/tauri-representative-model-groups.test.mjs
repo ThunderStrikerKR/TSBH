@@ -103,7 +103,7 @@ test("representative-model notices are generated only from employee selection ev
 test("model-group UI, employee resolver, Rust persistence and messages use product IDs", () => {
   const ui = source("src/ColorGuidanceManager.tsx");
   const resolver = source("src/IssueResolver.tsx");
-  const native = source("crates/bando-data-access/src/validation.rs");
+  const native = source("src-tauri/src/business_core/catalog_clients/model_groups.rs");
    const messages = source("egui-app/src/automatic_message_manager.rs");
   assert.match(ui, /active\.representativeProductId===id/);
   assert.match(ui, /g\[activeId\]\.representativeProductId=id/);
@@ -115,7 +115,7 @@ test("model-group UI, employee resolver, Rust persistence and messages use produ
   assert.match(resolver, /"suggest_group_representative"/);
   assert.doesNotMatch(resolver, /suggestGroupRepresentative\(state,/);
   assert.match(resolver, /대표모델.*선택/);
-  assert.match(native, /group\.get\("representativeProductId"\)/);
+  assert.match(native, /field\(group,"representativeProductId"\)/);
   assert.match(messages, /modelRepresentative/);
   assert.match(source("tests/rust-migration/oracles/issue-actions.ts"), /appliedRepresentativeModel/);
   assert.match(source("tests/rust-migration/oracles/legacy-hub-messages.ts"), /appliedRepresentativeModelNotice/);

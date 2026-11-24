@@ -92,5 +92,5 @@ test("native settings-only patch saves notice map without touching sale products
   assert.match(s,/await window\.bando\.patchSettings\(/);
   assert.match(s,/provisionalProductNotices:baseline/);
   assert.match(native,/"provisionalProductNotices"/);
-  assert.match(validation,/validate_provisional_product_notices\(&state\)/);
+  assert.match(validation,/validate_provisional_product_notices\(s\)\?/);
 });

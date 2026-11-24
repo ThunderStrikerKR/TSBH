@@ -61,7 +61,7 @@ test("editing templates does not modify sale prices or historical orders",()=>{
   assert.match(ui,/const expected=Object\.keys\(baseline\)\.length \? baseline : null/);
   assert.doesNotMatch(ui,/state_save|setPrice|write_snapshot/);
   assert.match(native,/"automaticMessageTemplates"/);
-  assert.match(validation,/validate_message_templates\(&state\)/);
+  assert.match(validation,/validate_message_templates\(s\)\?/);
   assert.match(native,/before != &expected\[field\] && before != updated/);
 });
 
