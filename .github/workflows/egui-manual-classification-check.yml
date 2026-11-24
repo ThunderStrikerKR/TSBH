@@ -50,6 +50,10 @@ jobs:
           workspaces: egui-app -> target
       - name: Compile the native egui workspace
         run: cargo check --manifest-path egui-app/Cargo.toml
+      - name: Verify inline editing persists order-scoped recognition IDs and assignment links
+        run: cargo test --manifest-path egui-app/Cargo.toml inline_recognition_identity_tests -- --nocapture
+      - name: Verify order confirmation commits the active cell before resuming
+        run: cargo test --manifest-path egui-app/Cargo.toml reception_workflow_admission_integration_tests -- --nocapture
       - name: Verify content-fitted manual popup and Reception source-pane geometry
         run: cargo test --manifest-path egui-app/Cargo.toml manual_workspace_layout_tests -- --nocapture
       - name: Verify the unified date-selector count control geometry and single-recipient 1/1 header
