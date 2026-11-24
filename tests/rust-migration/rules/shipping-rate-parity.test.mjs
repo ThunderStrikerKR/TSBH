@@ -4,7 +4,8 @@ import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { tsImport } from "tsx/esm/api";
-const { combinationVersions }=await tsImport("../oracles/legacy-shipping.ts",import.meta.url);
+const legacyShippingUrl = new URL("../oracles/legacy-shipping.ts", import.meta.url).href;
+const { combinationVersions } = await tsImport(legacyShippingUrl, import.meta.url);
 const root=fileURLToPath(new URL("../../../",import.meta.url));
 const cargo=fileURLToPath(new URL("../integration/Cargo.toml",import.meta.url));
 const old={

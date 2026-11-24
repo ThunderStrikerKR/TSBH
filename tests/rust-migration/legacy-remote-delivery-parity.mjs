@@ -11,13 +11,18 @@ const knownKeys = new Set([
   "address", "checked", "manual", "legacy", "status", "suggestedChecked",
   "requiresReview", "matchedPath", "reason", "sources", "dataVersion",
 ]);
-function isAddedLegacyMarker(value, parent) {
+function isAddedLegacyMarker(value) {
   return value && typeof value === "object" && !Array.isArray(value)
     && value.checked === false && value.manual === false
     && value.legacy === true
-    && (value.address === undefined ||
-        (typeof parent.address === "string" &&
-          value.address === parent.address))
+    && typeof value.address === "string" && value.address.trim().length > 0
+    && value.status === "unknown"
+    && value.suggestedChecked === false
+    && value.requiresReview === false
+    && value.matchedPath === null
+    && value.reason === null
+    && Array.isArray(value.sources) && value.sources.length === 0
+    && typeof value.dataVersion === "string" && value.dataVersion.length > 0
     && Object.keys(value).every((key) => knownKeys.has(key));
 }
 
@@ -33,7 +38,7 @@ export function projectHistoricalRemoteDelivery(expected, actual) {
   const projected = {...actual};
   if (!Object.hasOwn(expected, "remoteDelivery") &&
       Object.hasOwn(actual, "remoteDelivery") &&
-      isAddedLegacyMarker(actual.remoteDelivery, actual)) {
+      isAddedLegacyMarker(actual.remoteDelivery)) {
     delete projected.remoteDelivery;
   }
   for (const key of Object.keys(projected)) {
