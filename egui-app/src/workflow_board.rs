@@ -11,6 +11,7 @@ pub struct ShipmentRow {
     pub id: String,
     pub order_id: String,
     pub recipient_id: String,
+    pub transferred: bool,
     pub recipient_name: String,
     pub products: Vec<String>,
     pub source_raw: String,
@@ -185,6 +186,7 @@ pub fn load(gateway:&dyn BandoGateway)->Result<BoardSnapshot,String>{
                 id:text(ship,"id").to_owned(),
                 order_id:text(ship,"orderId").to_owned(),
                 recipient_id:text(ship,"recipientId").to_owned(),
+                transferred:field(ship,"transferred")==&Value::Bool(true),
                 recipient_name:text(recipient,"name").to_owned(),
                 products,
                 source_raw:text(order,"raw").to_owned(),
@@ -298,7 +300,7 @@ mod linked_recipient_selection_tests{
     fn shipment(id:&str,order:&str,recipient:&str)->ShipmentRow{
         ShipmentRow{
             id:id.into(),order_id:order.into(),recipient_id:recipient.into(),
-            recipient_name:"동명이인".into(),products:vec![],
+            transferred:false,recipient_name:"동명이인".into(),products:vec![],
             source_raw:"공통 발주원문".into(),recipient:json!({"id":recipient}),
             remote:None,display_charges:HashMap::new(),
             freight_editing_blocked:false,freight_code:"010".into(),
