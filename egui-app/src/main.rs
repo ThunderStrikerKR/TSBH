@@ -247,6 +247,19 @@ struct PendingWorkflowAction {
     receiver: Receiver<Result<serde_json::Value,String>>,
 }
 
+/// Local editor for a confirmed workflow shipment. It is intentionally
+/// separate from InlineReceptionEditor: confirmed orders must be saved by
+/// the workflow reducer, never by the temporary reception workspace.
+struct WorkflowFreightEditor {
+    group_id:String,
+    shipment_id:String,
+    origin:String,
+    original:String,
+    text:String,
+    focus_next:bool,
+    click_at:Option<egui::Pos2>,
+}
+
 #[derive(Clone)]
 enum WorkflowDialog {
     ManageGroup(String),
@@ -769,6 +782,8 @@ struct BandoEgui {
     workflow_last_fetch: Option<Instant>,
     workflow_ui: workflow_board_ui::BoardUi,
     workflow_action: Option<PendingWorkflowAction>,
+    workflow_freight_editor:Option<WorkflowFreightEditor>,
+    workflow_freight_next_selection:Option<workflow_board_ui::Selection>,
     /// Workflow approval requested while this same draft's inline cell is
     /// committing. Resume only after the native edit succeeds.
     pending_draft_confirmation:Option<String>,
@@ -883,6 +898,8 @@ impl BandoEgui {
             workflow_last_fetch: None,
             workflow_ui: workflow_board_ui::BoardUi::default(),
             workflow_action: None,
+            workflow_freight_editor:None,
+            workflow_freight_next_selection:None,
             pending_draft_confirmation:None,
             workflow_stage_deadlines: HashMap::new(),
             workflow_dialog: None,
