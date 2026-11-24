@@ -117,5 +117,48 @@
     "cargoTest": "NOT_EXECUTED",
     "windowsVisual": "NOT_VERIFIED",
     "receptionRegression": "STATIC_ONLY_RUNTIME_NOT_VERIFIED"
+  },
+  "manualSourcePaletteApproved": {
+    "status": "PATCH_COMMITTED_WINDOWS_UNVERIFIED",
+    "approvedAt": "2026-11-24",
+    "scope": "수동 분류 미분류 블록만 앰버 팔레트; 분류완료 회색, 현재 호버/선택 기존 파란색 유지",
+    "unclassified": {
+      "background": "#493716",
+      "text": "#FFF4DA",
+      "border": "#F0B44C",
+      "borderWidthPt": 1
+    },
+    "classified": {
+      "background": "#424242",
+      "text": "#BEBEBE",
+      "border": "#636363",
+      "borderWidthPt": 1
+    },
+    "active": {
+      "background": "#17436D",
+      "text": "#EAF4FF",
+      "border": "#75B5FF",
+      "borderWidthPt": 2
+    },
+    "sourceOfTruth": "Rust manual model assignments keyed by source block ID; not name matching",
+    "changes": [
+      "egui-app/src/theme.rs",
+      "egui-app/src/source_highlight.rs",
+      "egui-app/src/manual_source_view.rs",
+      "egui-app/src/manual_workspace.rs"
+    ],
+    "commits": [
+      "75005fc362b46eddb210f76398d4ad350852ef43",
+      "0bcfb7058aafc776b649ed120258580b600622e5",
+      "a4a98a6e949ebe430951eeefdb996c122f37b942"
+    ],
+    "receptionNote": "접수 원문 source_highlight 일반 블록에는 흰색 1pt 외곽선 추가. 단 복사용 자동 메시지 표시 경로는 별도 Label 렌더러이므로 해당 메시지의 독립 데이터 블록 스타일은 이번 패치로 검증되지 않음.",
+    "verification": {
+      "static": "PASS_SCOPED",
+      "rustTests": "NOT_EXECUTED",
+      "gitHubCI": "NOT_VERIFIED",
+      "windowsVisual": "NOT_VERIFIED"
+    },
+    "visualStatusRationale": "기존 수동 분류 팝업 하단 클리핑 및 레이아웃 FAIL은 수정 코드의 실화면 재검증까지 OPEN 유지"
   }
 }
