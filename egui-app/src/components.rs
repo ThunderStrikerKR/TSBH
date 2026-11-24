@@ -1816,6 +1816,30 @@ pub fn nested_modal_window(
     modal_window(title,id,work_area).order(egui::Order::Foreground)
 }
 
+/// Compact decision layout: the master header/footer own their rules and
+/// action slots. The body aligns with their 8pt content inset and has the
+/// master 16pt gap on BOTH sides, independent of default widget spacing.
+pub fn decision_content<R>(
+    ui:&mut Ui,title:&str,cancel_label:&str,enabled:bool,
+    body:impl FnOnce(&mut Ui),actions:impl FnOnce(&mut Ui)->R
+)->(bool,R){
+    ui.scope(|layout|{
+        layout.spacing_mut().item_spacing.y=0.0;
+        let cancelled=modal_header_with_workspace_gap(layout,title,cancel_label,enabled);
+        let inset=theme::SPACE_8;
+        let width=(layout.available_width()-2.0*inset).max(1.0);
+        Frame::NONE.inner_margin(egui::Margin::symmetric(inset as i8,0))
+            .show(layout,|content|{
+                content.set_min_width(width);
+                content.spacing_mut().item_spacing.y=theme::SPACING;
+                body(content);
+            });
+        layout.add_space(theme::MODAL_MASTER_WORKSPACE_GAP);
+        let result=modal_action_row(layout,actions).inner;
+        (cancelled,result)
+    }).inner
+}
+
 pub fn decision_window(
     title:&str,id:&'static str,work_area:egui::Rect
 ) -> egui::Window<'static> {

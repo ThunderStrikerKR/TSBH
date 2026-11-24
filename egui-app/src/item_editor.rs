@@ -199,20 +199,20 @@ impl ItemEditor{
         components::decision_window(
             "품목 삭제 확인","reception-item-delete-confirm",work_area
         ).constrain_to(work_area).show(ctx,|ui|{
-            if components::modal_header(ui,"품목 삭제 확인","취소",!busy){
-                cancel=true;
-            }
             let name=field(&self.initial,"name");
             let name=if name.is_empty(){field(&self.initial,"code")}else{name};
-            ui.label(format!("{} 품목을 발주서에서 삭제할까요?",name));
-            if let Some(error)=self.error.as_deref(){
-                ui.label(typography::status(error,theme::DANGER));
-            }
-            components::modal_action_row(ui,|actions|{
-                if theme::action(actions,"삭제",ButtonRole::Danger,!busy).clicked(){
-                    remove=true;
-                }
-            });
+            (cancel,remove)=components::decision_content(
+                ui,"품목 삭제 확인","취소",!busy,
+                |body|{
+                    body.add(egui::Label::new(typography::body(
+                        &format!("{} 품목을 발주서에서 삭제할까요?",name)
+                    )).wrap());
+                    if let Some(error)=self.error.as_deref(){
+                        body.add(egui::Label::new(typography::status(error,theme::DANGER)).wrap());
+                    }
+                },
+                |actions|theme::action(actions,"삭제",ButtonRole::Danger,!busy).clicked()
+            );
         });
         (cancel,remove)
     }
