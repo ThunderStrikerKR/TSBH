@@ -674,6 +674,7 @@ struct BandoEgui {
     settings_pending_save: bool,
     manual_workspace: Option<manual_workspace::ManualWorkspace>,
     item_editor:Option<item_editor::ItemEditor>,
+    product_picker:Option<(String,String,String,product_manager::ProductManager)>,
     inline_editor:Option<InlineReceptionEditor>,
     inline_change:Option<PendingInlineChange>,
     vat_dialog:Option<VatDialog>,
@@ -778,6 +779,7 @@ impl Default for BandoEgui {
             settings_pending_save: false,
             manual_workspace: None,
             item_editor:None,
+            product_picker:None,
             inline_editor:None,
             inline_change:None,
             vat_dialog:None,
@@ -833,7 +835,7 @@ impl BandoEgui {
         if self.vat_change.is_some(){active.push(ReceptionJob::VatEdit);}
         if self.working_sync.is_some(){active.push(ReceptionJob::WorkingSync);}
         if self.manual_workspace.is_some(){active.push(ReceptionJob::ManualWorkspace);}
-        if self.item_editor.is_some(){active.push(ReceptionJob::ItemDialog);}
+        if self.item_editor.is_some() || self.product_picker.is_some(){active.push(ReceptionJob::ItemDialog);}
         // A changed cell is uncommitted employee input. A clean, unchanged
         // editor may be dismissed by navigation or an approved draft delete;
         // other actions keep their existing edit-focus protection.
@@ -1404,6 +1406,7 @@ impl BandoEgui {
         self.client_change=None;
         self.inline_editor=None;
         self.item_editor=None;
+        self.product_picker=None;
         self.active_id = Some(item.id);
         self.requested_recipient_focus=None;
         self.raw_source = item.raw;
@@ -1923,6 +1926,57 @@ impl BandoEgui {
             item,row.client_id.clone().unwrap_or_default(),price
         ));
         ctx.request_repaint();
+    }
+
+    fn open_product_picker(&mut self,recipient_id:String,ctx:&egui::Context){
+        if self.product_picker.is_some() || self.item_editor.is_some()
+            || self.inline_editor.is_some()
+            || self.reception_job_admission(ReceptionJob::InlineEdit,false)!=JobAdmission::Start{
+            return;
+        }
+        let Some(row)=self.active_id.as_deref().and_then(|id|
+            self.drafts.iter().find(|row|row.id==id)
+        )else{return};
+        if row.analysis_raw.as_deref()!=Some(self.raw_source.as_str())
+            || row.analysis_evidence.is_none(){return;}
+        self.product_picker=Some((row.id.clone(),row.raw.clone(),recipient_id,
+            product_manager::ProductManager::new_selection(
+                Arc::clone(&self.gateway),ctx.clone(),row.client_id.clone().unwrap_or_default()
+            )));
+        ctx.request_repaint();
+    }
+
+    fn show_product_picker(&mut self,ctx:&egui::Context,work_area:Rect){
+        let Some((order_id,raw,recipient_id,manager))=self.product_picker.as_mut()else{return};
+        if self.active_id.as_deref()!=Some(order_id.as_str()) || self.raw_source!=*raw{
+            self.product_picker=None;
+            return;
+        }
+        let mut cancelled=false;
+        let width=(work_area.width()-theme::SPACE_16*2.0).clamp(1.0,1120.0);
+        let height=(work_area.height()-theme::SPACE_16*4.0).clamp(1.0,650.0);
+        components::modal_window("상품 선택","reception-add-product-picker",work_area)
+            .default_width(width).show(ctx,|ui|{
+                ui.set_width(width);
+                cancelled=components::modal_header(ui,"상품 선택","취소",true);
+                ui.allocate_ui_with_layout(
+                    egui::vec2(width,height),
+                    egui::Layout::top_down(egui::Align::Min),
+                    |body|manager.show_page(body)
+                );
+            });
+        let chosen=manager.take_selection();
+        let recipient_id=recipient_id.clone();
+        if cancelled || ctx.input(|input|input.key_pressed(egui::Key::Escape)){
+            self.product_picker=None;
+        }else if let Some(product)=chosen{
+            // Close immediately; the existing native worker commits the
+            // selected item and recalculates the order as one operation.
+            self.product_picker=None;
+            self.start_review_inline_action(
+                InlineTarget{recipient_id,item_id:None,field:"addItem"},product,ctx
+            );
+        }
     }
 
     fn show_item_editor(&mut self,ctx:&egui::Context,work_area:Rect){
@@ -2712,7 +2766,7 @@ impl BandoEgui {
                         dialog.report_error(error);
                     }
                 }else if !matches!(pending.target.field,
-                    "approveOne"|"cancelApproval"){
+                    "approveOne"|"cancelApproval"|"addItem"){
                     self.inline_editor=Some(pending.editor);
                 }
             }
@@ -7184,7 +7238,9 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
         }else if inline_commit{
             self.submit_inline_edit(ui.ctx());
         }else if let Some((target,value))=inline_command{
-            if self.inline_editor.is_none() && self.inline_change.is_none(){
+            if target.field=="addItem"{
+                self.open_product_picker(target.recipient_id,ui.ctx());
+            }else if self.inline_editor.is_none() && self.inline_change.is_none(){
                 self.inline_editor=Some(InlineReceptionEditor{
                     source_id:self.active_id.clone().unwrap_or_default(),
                     target,original:"__previous__".into(),
@@ -7352,6 +7408,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
             self.client_change=None;
             self.inline_editor=None;
             self.item_editor=None;
+            self.product_picker=None;
             self.active_id=None;
             self.raw_source.clear();
             self.source_editing=false;
@@ -8080,6 +8137,7 @@ impl eframe::App for BandoEgui {
             self.order_history_manager=None;
             self.client_chooser=None;
             self.item_editor=None;
+            self.product_picker=None;
             self.working_sync=None;
             self.vat_change=None;
             self.vat_dialog=None;
@@ -8153,7 +8211,8 @@ impl eframe::App for BandoEgui {
             (self.page==Page::Reception &&
                 (self.client_chooser.is_some() || self.manual_workspace.is_some() ||
                 self.edit_history_open || self.workflow_dialog.is_some()
-                 || self.vat_dialog.is_some() || self.item_editor.is_some())) {
+                 || self.vat_dialog.is_some() || self.item_editor.is_some()
+                 || self.product_picker.is_some())) {
             components::modal_backdrop(
                 ctx,"bando-workspace-modal-backdrop",false
             );
@@ -8164,6 +8223,7 @@ impl eframe::App for BandoEgui {
             self.show_client_chooser(ctx,work_area);
             self.show_manual_workspace(ctx,work_area);
             self.show_item_editor(ctx,work_area);
+            self.show_product_picker(ctx,work_area);
             self.show_vat_settings(ctx,work_area);
             self.show_edit_history(ctx,work_area);
             self.show_workflow_dialog(ctx,work_area);
