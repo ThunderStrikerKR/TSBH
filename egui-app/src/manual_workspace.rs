@@ -320,18 +320,23 @@ fn paint_manual_source_drag_preview(
     let painter=ctx.layer_painter(egui::LayerId::new(
         egui::Order::Tooltip,egui::Id::new("manual-source-drag-preview")
     ));
-    for rect in original_geometry.rects {
-        let rect=rect.translate(translation);
-        painter.rect_filled(rect,original_geometry.style.radius,original_geometry.style.fill);
+    for rect in &original_geometry.rects {
+        painter.rect_filled(
+            rect.translate(translation),original_geometry.style.radius,
+            original_geometry.style.fill
+        );
+    }
+    painter.galley(galley_pos,galley,theme::TEXT);
+    // Match the source document's paint order: glyphs first, then the outline.
+    for rect in &original_geometry.rects {
         painter.rect_stroke(
-            rect,original_geometry.style.radius,
+            rect.translate(translation),original_geometry.style.radius,
             egui::Stroke::new(
                 original_geometry.style.border_width,original_geometry.style.border
             ),
             egui::StrokeKind::Inside
         );
     }
-    painter.galley(galley_pos,galley,theme::TEXT);
 }
 
 fn item_quantity_pending(item:&Value)->bool{
