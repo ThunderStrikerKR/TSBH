@@ -602,9 +602,34 @@ pub(super) fn apply(payload:&Value)->Result<Value,String> {
         "set_shipment_freight" => {
             let ship_id=required_str(payload,"shipmentId")?;
             let origin=required_str(payload,"origin")?;
-            if !["STORE","FACTORY"].contains(&origin) {return Err("이 배송 건의 출고지가 아닙니다.".into());}
-            let value=req(payload,"value")?;
-            if !value.is_null() && safe(value).is_none() {return Err("운임은 원 단위 정수로 입력하세요.".into());}
+            if !["STORE","FACTORY"].contains(&origin) {
+                return Err("이 배송 건의 출고지가 아닙니다.".into());
+            }
+            let has_applied=payload.get("appliedCharge").is_some();
+            let has_legacy_value=payload.get("value").is_some();
+            let has_amount=has_applied||has_legacy_value;
+            let requested_code=payload.get("freightCode");
+            let requested_remote=payload.get("remoteChecked");
+            if !has_amount && requested_code.is_none() && requested_remote.is_none(){
+                return Err("변경할 운임 정보가 없습니다.".into());
+            }
+            if let Some(code)=requested_code {
+                if !matches!(code.as_str(),Some("010"|"020")){
+                    return Err("운임 구분은 선불 또는 착불을 선택하세요.".into());
+                }
+            }
+            if requested_remote.is_some() && requested_remote.and_then(Value::as_bool).is_none(){
+                return Err("도서/산간 선택값이 올바르지 않습니다.".into());
+            }
+            if has_applied {
+                if !payload["appliedCharge"].is_null() &&
+                    !safe(&payload["appliedCharge"]).is_some_and(|n|(0..=99_999).contains(&n)){
+                    return Err("적용 운임은 0~99,999원의 정수로 입력하세요.".into());
+                }
+            }else if has_legacy_value && !payload["value"].is_null() &&
+                !safe(&payload["value"]).is_some_and(|n|n>=0){
+                return Err("운임은 0 이상의 원 단위 정수로 입력하세요.".into());
+            }
             let (si,oi,ri)=shipment_indices(&state,ship_id)?;
             if flag(&state["workflow"]["shipments"][si],"transferred") {
                 return Err("수정할 배송 건을 확인하세요.".into());
@@ -613,17 +638,66 @@ pub(super) fn apply(payload:&Value)->Result<Value,String> {
                 return Err("이 배송 건의 출고지가 아닙니다.".into());
             }
             let group_id=str_field(&state["workflow"]["shipments"][si],"groupId").to_string();
-            let previous=field(&state["workflow"]["shipments"][si]["charges"],origin).clone();
-            set(&mut state["workflow"]["shipments"][si]["charges"],origin,value.clone())?;
-            let charges=field(&state["workflow"]["shipments"][si],"charges").clone();
-            set(&mut state["orders"][oi]["recipients"][ri],"shippingCharges",charges)?;
-            set(&mut state["workflow"]["shipments"][si],"chargeMode",json!("MANUAL"))?;
-            let old_step=field(&state["workflow"]["shipments"][si],"step").as_i64().unwrap_or(0);
-            if previous!=*value && old_step>1 {
+            let old_step=field(&state["workflow"]["shipments"][si],"step")
+                .as_i64().unwrap_or(0);
+            let previous=json!({
+                "origin":origin,
+                "value":field(&state["workflow"]["shipments"][si]["charges"],origin),
+                "freightCode":field(&state["orders"][oi]["recipients"][ri],"freightCode"),
+                "remoteDelivery":field(&state["orders"][oi]["recipients"][ri],"remoteDelivery")
+            });
+            let mut recipient=state["orders"][oi]["recipients"][ri].clone();
+            if let Some(code)=requested_code {
+                set(&mut recipient,"freightCode",code.clone())?;
+            }
+            if let Some(checked)=requested_remote {
+                set(&mut recipient,"remoteDelivery",json!({
+                    "address":field(&recipient,"address"),
+                    "checked":checked,
+                    "manual":true
+                }))?;
+            }
+            let mut shipment=state["workflow"]["shipments"][si].clone();
+            if has_amount {
+                let base_value=if has_applied {
+                    if str_field(&recipient,"freightCode")=="020"{
+                        return Err("착불 운임은 직접 수정할 수 없습니다.".into());
+                    }
+                    let order=state["orders"][oi].clone();
+                    let normalized=super::remote_delivery::normalize_applied_input(&json!({
+                        "recipient":recipient,"shipment":shipment,"order":order,
+                        "appliedCharge":payload["appliedCharge"]
+                    }))?;
+                    field(&normalized,"baseCharge").clone()
+                }else{
+                    field(payload,"value").clone()
+                };
+                if !field(&shipment,"charges").is_object(){
+                    set(&mut shipment,"charges",json!({}))?;
+                }
+                set(&mut shipment["charges"],origin,base_value)?;
+                let charges=field(&shipment,"charges").clone();
+                set(&mut recipient,"shippingCharges",charges)?;
+                set(&mut shipment,"chargeMode",json!("MANUAL"))?;
+            }
+            let changed=previous!=json!({
+                "origin":origin,
+                "value":field(&shipment["charges"],origin),
+                "freightCode":field(&recipient,"freightCode"),
+                "remoteDelivery":field(&recipient,"remoteDelivery")
+            });
+            if !changed {
+                return Ok(json!({"state":state,"unchanged":true}));
+            }
+            state["orders"][oi]["recipients"][ri]=recipient.clone();
+            state["workflow"]["shipments"][si]=shipment;
+            if old_step>1 {
                 let gi=index_by_id(field(&state["workflow"],"groups"),&group_id)
                     .ok_or("현재 주문 묶음을 찾지 못했습니다.")?;
                 set(&mut state["workflow"]["shipments"][si],"step",json!(1))?;
-                if old_step>=3 {set(&mut state["workflow"]["groups"][gi],"needsNotice",json!(true))?;}
+                if old_step>=3 {
+                    set(&mut state["workflow"]["groups"][gi],"needsNotice",json!(true))?;
+                }
                 set(&mut state["workflow"]["shipments"][si],"legacyApproval",json!(false))?;
                 let active_confirms=rows(field(&state["workflow"],"confirmations")).iter()
                     .filter(|c|rows(field(c,"shipmentIds")).iter()
@@ -638,7 +712,7 @@ pub(super) fn apply(payload:&Value)->Result<Value,String> {
                 }
                 state["workflow"]["shipments"][si]["rechecks"].as_array_mut()
                     .ok_or("재확인 이력 목록 오류")?.push(json!({
-                    "at":required_str(payload,"now")?,"reason":"직원이 운임 변경",
+                    "at":required_str(payload,"now")?,"reason":"직원이 운임 설정 변경",
                     "fromStage":old_step,"toStage":1
                 }));
                 let seed=required_str(payload,"eventId")?;
@@ -651,18 +725,23 @@ pub(super) fn apply(payload:&Value)->Result<Value,String> {
                     audit_cursor+=1;
                     append_extra_event(&mut state,payload,id,
                         "입금 승인 재확인 필요",&[ship_id.to_string()],&group_id,
-                        json!(confirmation_id),Value::Null,"시스템","직원이 운임 변경")?;
+                        json!(confirmation_id),Value::Null,"시스템","직원이 운임 설정 변경")?;
                 }
                 let fallback=format!("{seed}:recheck:{ship_id}");
                 let id=audit_ids.get(audit_cursor).and_then(Value::as_str)
                     .unwrap_or(fallback.as_str());
                 append_extra_event(&mut state,payload,id,"재검증 필요",
                     &[ship_id.to_string()],&group_id,json!(old_step),json!(1),
-                    "시스템","직원이 운임 변경")?;
+                    "시스템","직원이 운임 설정 변경")?;
             }
+            let after=json!({
+                "origin":origin,
+                "value":field(&state["workflow"]["shipments"][si]["charges"],origin),
+                "freightCode":field(&state["orders"][oi]["recipients"][ri],"freightCode"),
+                "remoteDelivery":field(&state["orders"][oi]["recipients"][ri],"remoteDelivery")
+            });
             append_event(&mut state,payload,"배송 건 운임 수정",&[ship_id.to_string()],
-                json!({"origin":origin,"value":previous}),
-                json!({"origin":origin,"value":value}),&group_id)?;
+                previous,after,&group_id)?;
             let result_step=field(&state["workflow"]["shipments"][si],"step").clone();
             Ok(json!({"state":state,"step":result_step}))
         }
