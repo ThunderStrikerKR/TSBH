@@ -2363,7 +2363,9 @@ pub fn manual_linked_table_editor(
     editor_ui.add_sized(
         inner.size(),
         egui::TextEdit::singleline(value)
-            .font(egui::FontId::proportional(typography::FONT_BODY))
+            .font(egui::FontId::proportional(
+                typography::FONT_RECEPTION_RECIPIENT_TEXT
+            ))
             .text_color(if linked{source_highlight::ACTIVE_TEXT}else{theme::TEXT})
             .vertical_align(Align::Center)
             .margin(egui::Margin::symmetric(2,0))
