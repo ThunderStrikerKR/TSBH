@@ -1929,7 +1929,8 @@ impl BandoEgui {
     }
 
     fn open_product_picker(&mut self,recipient_id:String,ctx:&egui::Context){
-        if self.product_picker.is_some() || self.inline_editor.is_some()
+        if self.product_picker.is_some() || self.item_editor.is_some()
+            || self.inline_editor.is_some()
             || self.reception_job_admission(ReceptionJob::InlineEdit,false)!=JobAdmission::Start{
             return;
         }
@@ -1966,7 +1967,7 @@ impl BandoEgui {
             });
         let chosen=manager.take_selection();
         let recipient_id=recipient_id.clone();
-        if cancelled{
+        if cancelled || ctx.input(|input|input.key_pressed(egui::Key::Escape)){
             self.product_picker=None;
         }else if let Some(product)=chosen{
             // Close immediately; the existing native worker commits the

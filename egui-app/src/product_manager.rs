@@ -455,6 +455,11 @@ pub struct ProductManager {
     error:Option<String>,
 }
 
+fn selectable_order_product(product:&Value)->bool{
+    product["active"]!=false && product["requiresOption"]!=true
+        && rows(&product["variants"]).len()==1
+}
+
 fn product_summary_counts(catalog:Option<&Value>)->Option<[usize;4]>{
     let catalog=catalog?;
     Some([
@@ -1590,8 +1595,7 @@ impl ProductManager {
                                         actions.set_clip_rect(action_rect.intersect(row_clip));
                                         if selecting{
                                             // Order engine accepts only independent sale units.
-                                            let allowed=selection_ready && variants.len()==1
-                                                && product["requiresOption"]!=true
+                                            let allowed=selection_ready && selectable_order_product(product)
                                                 && selected_variant.is_some_and(|v|!field(v,"id").is_empty());
                                             if theme::action(actions,"선택",
                                                 theme::ButtonRole::TableSecondary,allowed
@@ -2853,5 +2857,24 @@ mod tests {
                 assert_eq!(row[i].left()-row[i-1].right(),theme::SPACE_8);
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod reception_selection_tests{
+    use super::selectable_order_product;
+    use serde_json::json;
+    #[test]
+    fn picker_accepts_only_active_independent_catalog_sale_units(){
+        let independent=json!({"id":"p","active":true,"variants":[{"id":"v"}]});
+        assert!(selectable_order_product(&independent));
+        let mut archived=independent.clone();
+        archived["active"]=json!(false);
+        assert!(!selectable_order_product(&archived));
+        let mut undecided=independent.clone();
+        undecided["requiresOption"]=json!(true);
+        assert!(!selectable_order_product(&undecided));
+        assert!(!selectable_order_product(&json!({"id":"p","variants":[]})));
+        assert!(!selectable_order_product(&json!({"id":"p","variants":[{"id":"v1"},{"id":"v2"}]})));
     }
 }
