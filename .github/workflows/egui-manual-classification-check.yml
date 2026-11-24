@@ -58,6 +58,8 @@ jobs:
         run: cargo test --manifest-path egui-app/Cargo.toml reception_recipient_navigation_state_tests -- --nocapture
       - name: Verify manual shipment count uses one segmented control and preserves resize flow
         run: cargo test --manifest-path egui-app/Cargo.toml shipment_count_is_one_date_selector_segmented_control -- --nocapture
+      - name: Verify direct input shares the manual worksheet without source evidence
+        run: cargo test --manifest-path egui-app/Cargo.toml direct_input_workspace_tests -- --nocapture
       - name: Verify intake and manual share the current editable worksheet master
         run: cargo test --manifest-path egui-app/Cargo.toml manual_cards_reuse_the_real_reception_renderers -- --nocapture
       - name: Verify live money cell and quantity stepper contracts
