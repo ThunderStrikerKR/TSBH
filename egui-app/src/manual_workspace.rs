@@ -145,6 +145,9 @@ struct ManualAssignmentGesture{
     source:Option<String>,
     cell:Option<ManualCellTarget>,
     dragging:Option<String>,
+    /// egui confirms a drag only after its native movement threshold.
+    /// Until then the pointer press is a pending drag preview, not a drop.
+    drag_moved:bool,
 }
 
 impl ManualAssignmentGesture{
@@ -172,8 +175,16 @@ impl ManualAssignmentGesture{
         self.clear();
         self.dragging=Some(id);
     }
+    fn mark_drag_moved(&mut self){
+        if self.dragging.is_some(){self.drag_moved=true;}
+    }
+    fn cancel_pending_drag(&mut self){
+        self.dragging=None;
+        self.drag_moved=false;
+    }
     fn finish_drag(&mut self,target:Option<ManualCellTarget>)->Option<(String,ManualCellTarget)>{
         let id=self.dragging.take()?;
+        self.drag_moved=false;
         target.map(|cell|(id,cell))
     }
 }
@@ -240,6 +251,43 @@ fn paint_manual_assignment_recommendation(
         egui::Stroke::new(if hovered{2.0}else{1.25},color),
         egui::StrokeKind::Inside
     );
+}
+
+/// Paint the selected source block above both panes while it follows the pointer.
+fn paint_manual_source_drag_preview(
+    ctx:&Context,
+    raw:&str,
+    spans:&[source_highlight::LinkedSpan],
+    source_id:&str,
+    pointer:egui::Pos2,
+){
+    let Some(span)=spans.iter().find(|span|span.source_id.as_deref()==Some(source_id))
+        else{return};
+    let Some(value)=raw.get(span.start..span.end).map(str::trim)
+        else{return};
+    if value.is_empty(){return;}
+
+    let mut job=egui::text::LayoutJob::default();
+    job.wrap.max_width=320.0;
+    job.append(value,0.0,egui::TextFormat{
+        font_id:egui::FontId::proportional(typography::FONT_RECEPTION_SOURCE_TEXT),
+        color:theme::MANUAL_SOURCE_UNASSIGNED_TEXT,
+        ..Default::default()
+    });
+    let galley=ctx.fonts_mut(|fonts|fonts.layout_job(job));
+    let padding=egui::vec2(8.0,6.0);
+    let rect=egui::Rect::from_min_size(
+        pointer+egui::vec2(16.0,18.0),galley.size()+padding*2.0
+    );
+    let painter=ctx.layer_painter(egui::LayerId::new(
+        egui::Order::Tooltip,egui::Id::new("manual-source-drag-preview")
+    ));
+    let fill=theme::MANUAL_SOURCE_UNASSIGNED_FILL;
+    painter.rect_filled(rect,theme::CONTROL_RADIUS,
+        egui::Color32::from_rgba_unmultiplied(fill.r(),fill.g(),fill.b(),228));
+    painter.rect_stroke(rect,theme::CONTROL_RADIUS,
+        egui::Stroke::new(1.5,theme::SELECTION),egui::StrokeKind::Inside);
+    painter.galley(rect.min+padding,galley,theme::MANUAL_SOURCE_UNASSIGNED_TEXT);
 }
 
 fn item_quantity_pending(item:&Value)->bool{
@@ -1956,13 +2004,15 @@ impl ManualWorkspace {
                                                         if let Some(id)=interaction.drag_started_block {
                                                             if assignments.get(&id).is_none(){
                                                                 self.assignment_gesture.start_drag(id.clone());
-                                                                // Populate recommendations in the same frame the
-                                                                // drag threshold is crossed; do not wait for the
-                                                                // next pointer-move event.
+                                                                // Recommend valid cells on the initial press frame,
+                                                                // even while the pointer remains completely still.
                                                                 drag_recommendations=manual_assignment_recommendations(
                                                                     &recommendation_model,&id,pending_quantity_cell.as_ref()
                                                                 );
                                                             }
+                                                        }
+                                                        if interaction.drag_moved{
+                                                            self.assignment_gesture.mark_drag_moved();
                                                         }
                                                         source_clicked=interaction.clicked_block;
                                                     });
@@ -2452,6 +2502,13 @@ impl ManualWorkspace {
             && chosen.is_none() && lookup.is_none() && add_product.is_none() && remove_item.is_none();
         if gesture_allowed{
             let mut assignment=None;
+            // A press without crossing egui's drag threshold is a click.
+            // Clear its temporary drag preview first so source-click selection
+            // keeps the existing two-click assignment behavior.
+            if drag_released && self.assignment_gesture.dragging.is_some()
+                && !self.assignment_gesture.drag_moved{
+                self.assignment_gesture.cancel_pending_drag();
+            }
             if drag_released && self.assignment_gesture.dragging.is_some(){
                 assignment=self.assignment_gesture.finish_drag(drop_target);
             }else if let Some(id)=source_clicked{
@@ -2491,8 +2548,16 @@ impl ManualWorkspace {
             if !ctx.input(|input|input.pointer.primary_down()){
                 self.assignment_gesture.clear();
             }else{
-                ctx.set_cursor_icon(if drop_allowed{egui::CursorIcon::Grabbing}
-                    else{egui::CursorIcon::NotAllowed});
+                ctx.set_cursor_icon(if self.assignment_gesture.drag_moved && !drop_allowed{
+                    egui::CursorIcon::NotAllowed
+                }else{egui::CursorIcon::Grabbing});
+                if let (Some(source_id),Some(pointer))=(
+                    self.assignment_gesture.dragging.as_deref(),drag_pointer
+                ){
+                    paint_manual_source_drag_preview(
+                        ctx,&self.raw,&spans,source_id,pointer
+                    );
+                }
             }
         }
         if let Some(rid)=add_product{
@@ -2887,11 +2952,28 @@ mod manual_assignment_gesture_tests{
         assert!(gesture.cell_click(target()).is_none());
         assert_eq!(gesture.source_click("block".into()),Some(("block".into(),target())));
         gesture.start_drag("block".into());
+        assert!(!gesture.drag_moved);
+        gesture.mark_drag_moved();
+        assert!(gesture.drag_moved);
         assert_eq!(gesture.finish_drag(Some(target())),Some(("block".into(),target())));
         gesture.start_drag("block".into());
-        assert!(gesture.finish_drag(None).is_none());
+        assert!(!gesture.drag_moved);
+        gesture.cancel_pending_drag();
         assert!(gesture.dragging.is_none());
+        assert!(!gesture.drag_moved);
     }
+    #[test]
+    fn holding_a_source_shows_a_pending_drag_but_release_without_movement_remains_a_click(){
+        let mut gesture=ManualAssignmentGesture::default();
+        gesture.start_drag("block".into());
+        assert_eq!(gesture.dragging.as_deref(),Some("block"));
+        assert!(!gesture.drag_moved,
+            "holding still must keep the gesture pending rather than dropping");
+        gesture.cancel_pending_drag();
+        assert!(gesture.source_click("block".into()).is_none());
+        assert_eq!(gesture.cell_click(target()),Some(("block".into(),target())));
+    }
+
     #[test]
     fn all_gestures_share_type_and_pending_quantity_guards(){
         let model=json!({"rows":[{"id":"r","items":[{"id":"i"}]}],
@@ -3354,6 +3436,18 @@ mod manual_workspace_modal_routing_tests {
         assert_eq!(visible_manual_shipment(1,3),Some(1));
         assert_eq!(visible_manual_shipment(2,3),Some(2));
         assert_eq!(visible_manual_shipment(9,3),Some(2));
+    }
+
+    #[test]
+    fn source_drag_feedback_starts_on_press_and_uses_a_cursor_following_preview(){
+        let source_view=include_str!("manual_source_view.rs");
+        let workspace=include_str!("manual_workspace.rs");
+        assert!(source_view.contains("pointer.button_pressed(egui::PointerButton::Primary)"),
+            "drag feedback must start on primary press");
+        assert!(source_view.contains("response.dragged_by(egui::PointerButton::Primary)"),
+            "actual drag classification must retain egui's native threshold");
+        assert!(workspace.contains("interaction.drag_moved"));
+        assert!(workspace.contains("paint_manual_source_drag_preview("));
     }
 
     #[test]
