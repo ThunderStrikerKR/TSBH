@@ -433,11 +433,11 @@ const exceptionRequests=exceptionCases.map(([,combinationId,charge],index)=>({
     newId:"revised-"+index,now,
   },
 }));
-// Call the repository's actual TS function instead of copying its internal
-// group/product resolution into a second test-only implementation.
+// Use the frozen legacy oracle; the original TS source is separately sealed
+// and retained for the live reception differential.
 const tsVersionsScript=String.raw`
 import fs from "node:fs";
-import { combinationVersions } from "../oracles/legacy-shipping.ts";
+import { combinationVersions } from "./tests/rust-migration/oracles/legacy-shipping-parity.mjs";
 const requests=JSON.parse(fs.readFileSync(0,"utf8"));
 process.stdout.write(JSON.stringify(requests.map(r=>
   combinationVersions(
@@ -447,7 +447,7 @@ process.stdout.write(JSON.stringify(requests.map(r=>
 )));
 `;
 const tsVersionRun=spawnSync(process.execPath,[
-  "--import","tsx","--input-type=module","-e",tsVersionsScript,
+  "--input-type=module","-e",tsVersionsScript,
 ],{
   cwd:root,
   input:JSON.stringify(exceptionRequests.map(r=>({

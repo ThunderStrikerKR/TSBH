@@ -32,7 +32,9 @@ test("historical price snapshot is reference evidence, not a current-code freeze
 });
 test("current reception differential never mirrors Rust's temporary null price/fee", () => {
   assert.match(mergeOracle, /from "\.\.\/\.\.\/\.\.\/src\/domain\.ts"/);
-  assert.match(mergeOracle, /from "\.\.\/oracles\/legacy-shipping-parity\.mjs"/);
+  assert.match(mergeOracle, /from "\.\.\/oracles\/legacy-shipping\.ts"/);
+  const shippingParity = read("tests/rust-migration/rules/shipping-rate-parity.test.mjs");
+  assert.match(shippingParity, /from "\.\.\/oracles\/legacy-shipping-parity\.mjs"/);
   const originalShipping = read("tests/rust-migration/oracles/legacy-shipping.ts");
   assert.match(originalShipping, /export function combinationVersions/);
   assert.match(mergeOracle, /item\.unitPrice = resolvePrice\(/);
