@@ -6766,19 +6766,12 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                 });
             }else if workflow_freight_commit{
                 self.submit_workflow_freight_edit(ui.ctx());
-            }else if let Some((origin,extra))=workflow_freight_option{
+            }else if let Some((origin,mut extra))=workflow_freight_option{
+                if !extra.is_object(){extra=serde_json::json!({});}
+                extra["origin"]=serde_json::json!(origin);
                 self.start_workflow_action_with_args(
                     "set_shipment_freight",&group.id,Some(&ship.id),
-                    None,false,serde_json::json!({
-                        "origin":origin
-                    }).as_object().map(|base|{
-                        let mut values=base.clone();
-                        if let Some(extra_values)=extra.as_object(){
-                            values.extend(extra_values.clone());
-                        }
-                        serde_json::Value::Object(values)
-                    }).unwrap_or(serde_json::Value::Null),
-                    ui.ctx()
+                    None,false,extra,ui.ctx()
                 );
             }
             return;
