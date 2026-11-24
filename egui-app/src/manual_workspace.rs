@@ -1730,7 +1730,7 @@ impl ManualWorkspace {
                                                 }
                                                 count_resize_requested=true;
                                             }
-                                            ui.label(typography::caption("건"));
+                                            components::form_field_label(ui,"건");
                                         });
                                         if count_resize_requested {panel.disable();}
                                         let can_switch=!busy && !pending_quantity_active
@@ -2779,10 +2779,10 @@ mod manual_workspace_modal_routing_tests {
         for token in [
             "date_navigation_segmented_surface(",
             "date_navigation_segment_button(",
-            "TextEdit::singleline(value)",
+            "management_date_text_field_impl(",
             "FRAME_STROKE_WIDTH",
             "CALENDAR_NAV_SIZE",
-            "segmented_count_text_margin()"
+            "theme::INPUT_HEIGHT"
         ]{
             assert!(control.contains(token),"missing segmented control detail: {token}");
         }

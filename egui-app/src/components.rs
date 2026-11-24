@@ -2395,19 +2395,24 @@ pub fn flexible_text_field(
 pub fn management_date_text_field(
     ui:&mut Ui,value:&mut String,width:f32,height:f32,hint:&str
 )->Response{
-    ui.add_sized(
-        Vec2::new(width,height),
-        egui::TextEdit::singleline(value)
-            .font(typography::data_value_font(
-                typography::DataValueKind::Date,
-                typography::DataValueContext::Form
-            ))
-            .frame(false)
-            .horizontal_align(Align::Center)
-            .vertical_align(Align::Center)
-            .margin(typography::management_date_text_margin())
-            .hint_text(hint)
-    )
+    management_date_text_field_impl(ui,value,width,height,hint,None)
+}
+
+fn management_date_text_field_impl(
+    ui:&mut Ui,value:&mut String,width:f32,height:f32,hint:&str,limit:Option<usize>
+)->Response{
+    let mut edit=egui::TextEdit::singleline(value)
+        .font(typography::data_value_font(
+            typography::DataValueKind::Date,
+            typography::DataValueContext::Form
+        ))
+        .frame(false)
+        .horizontal_align(Align::Center)
+        .vertical_align(Align::Center)
+        .margin(typography::management_date_text_margin())
+        .hint_text(hint);
+    if let Some(limit)=limit{edit=edit.char_limit(limit);}
+    ui.add_sized(Vec2::new(width,height),edit)
 }
 
 /// Shared multiline editor for long-form messages and management memos.
@@ -3275,39 +3280,10 @@ pub fn management_date_group<R>(
     ui:&mut Ui,id:&'static str,width:f32,
     add_contents:impl FnOnce(&mut Ui,Rect)->R
 )->R{
-    let (outer,_)=ui.allocate_exact_size(
-        Vec2::new(width,theme::INPUT_HEIGHT),Sense::hover()
-    );
-    let inset=theme::FRAME_STROKE_WIDTH;
-    let inner=Rect::from_center_size(
-        outer.center(),
-        Vec2::new(
-            (outer.width()-2.0*inset).max(0.0),
-            (outer.height()-2.0*inset).max(0.0)
-        )
-    );
-    ui.painter().rect_filled(
-        outer,theme::CONTROL_RADIUS as f32,theme::INPUT
-    );
-    let output=ui.scope_builder(
-        egui::UiBuilder::new()
-            .id_salt(("management-date-group",id))
-            .max_rect(inner)
-            .layout(Layout::left_to_right(Align::Center)),
-        |row|{
-            row.set_width(inner.width());
-            row.set_height(inner.height());
-            row.set_clip_rect(row.clip_rect().intersect(inner));
-            row.spacing_mut().item_spacing=Vec2::ZERO;
-            add_contents(row,inner)
-        }
-    ).inner;
-    ui.painter().rect_stroke(
-        outer.shrink(0.5),theme::CONTROL_RADIUS as f32,
-        Stroke::new(theme::SOFT_DIVIDER_WIDTH,theme::BORDER),
-        egui::StrokeKind::Inside
-    );
-    output
+    date_navigation_segmented_surface(
+        ui,("management-date-group",id),Vec2::new(width,theme::INPUT_HEIGHT),
+        add_contents
+    ).1
 }
 
 /// The single date-navigation surface used by calendar arrows and compact
@@ -3501,7 +3477,9 @@ pub fn date_navigation_count_control(
     );
     let arrow_width=theme::CALENDAR_NAV_SIZE;
     let input_width=64.0;
-    let height=theme::CALENDAR_NAV_SIZE;
+    // The inline date group (not the small popup calendar buttons) is the
+    // master: 36pt outer height and 34pt interior.
+    let height=theme::INPUT_HEIGHT;
     let width=2.0*arrow_width+input_width+2.0*theme::FRAME_STROKE_WIDTH;
     let (rect,(decrement,input,increment))=
         date_navigation_segmented_surface(
@@ -3526,17 +3504,8 @@ pub fn date_navigation_count_control(
                 entry.spacing_mut().interact_size=Vec2::ZERO;
                 let hint=format!("{minimum}~{maximum}");
                 let input=entry.add_enabled_ui(enabled,|entry|{
-                    entry.add_sized(
-                        center.size(),
-                        egui::TextEdit::singleline(value)
-                            .font(typography::numeric_editor_font())
-                            .horizontal_align(Align::Center)
-                            .vertical_align(Align::Center)
-                            .char_limit(3)
-                            .margin(typography::segmented_count_text_margin())
-                            .frame(false)
-                            .desired_width((input_width-4.0).max(1.0))
-                            .hint_text(hint.as_str())
+                    management_date_text_field_impl(
+                        entry,value,center.width(),center.height(),hint.as_str(),Some(3)
                     )
                 }).inner;
                 let mut plus=segments.new_child(UiBuilder::new().id_salt("count-plus")
@@ -7908,7 +7877,8 @@ mod date_navigation_segmented_control_tests{
             });
         });
         let control=rendered.expect("count control must render");
-        assert_eq!(control.rect.height(),theme::CALENDAR_NAV_SIZE);
+        assert_eq!(control.rect.height(),theme::INPUT_HEIGHT);
+        assert_eq!(control.input.rect.height(),theme::ACTION_STANDARD_HEIGHT);
         assert_eq!(control.input.rect.width(),64.0);
         let expected_input_left=control.rect.left()
             +theme::FRAME_STROKE_WIDTH+theme::CALENDAR_NAV_SIZE;
@@ -7934,16 +7904,21 @@ mod date_navigation_segmented_control_tests{
             let _=ctx.run(egui::RawInput::default(),|ctx|{
                 egui::CentralPanel::default().show(ctx,|ui|{
                     ui.horizontal(|row|{
-                        form_field_label(row,"배송 건수");
+                        let label=form_field_label(row,"배송 건수");
                         let control=date_navigation_count_control(
                             row,"count-geometry",&mut value,current,enabled,1,100
                         );
-                        let unit=row.label("건");
-                        rendered=Some((control,unit.rect));
+                        let unit=form_field_label(row,"건");
+                        rendered=Some((control,label.rect,unit.rect));
                     });
                 });
             });
-            let (control,unit)=rendered.unwrap();
+            let (control,label,unit)=rendered.unwrap();
+            assert_eq!(control.rect.height(),theme::INPUT_HEIGHT);
+            assert_eq!(label.height(),control.rect.height());
+            assert_eq!(unit.height(),control.rect.height());
+            assert!((label.center().y-control.rect.center().y).abs()<0.5);
+            assert!((unit.center().y-control.rect.center().y).abs()<0.5);
             let inner=control.rect.shrink(theme::FRAME_STROKE_WIDTH);
             for segment in [control.decrement_rect,control.input.rect,control.increment_rect]{
                 assert!(inner.expand(0.5).contains(segment.min)
@@ -7971,7 +7946,7 @@ mod date_navigation_segmented_control_tests{
                     rendered=Some(date_navigation_count_control(
                         row,"count-symbols",&mut value,2,true,1,100
                     ));
-                    row.label("건");
+                    form_field_label(row,"건");
                 });
             });
         });
@@ -7989,9 +7964,12 @@ mod date_navigation_segmented_control_tests{
                     if *points==endpoints && (stroke.width-1.25).abs()<0.01)
             ),"missing centered count symbol stroke: {endpoints:?}");
         }
-        let margin=typography::segmented_count_text_margin();
-        assert_eq!(margin.top,margin.bottom,
-            "count input must not inherit the date-only upward baseline shift");
+        let source=include_str!("components.rs");
+        let count=source.split("pub fn date_navigation_count_control(").nth(1).unwrap()
+            .split("fn date_navigation_button_surface(").next().unwrap();
+        assert!(count.contains("management_date_text_field_impl("));
+        assert!(!count.contains("numeric_editor_font("));
+        assert_eq!(control.rect.height(),theme::INPUT_HEIGHT);
     }
 
     #[test]
