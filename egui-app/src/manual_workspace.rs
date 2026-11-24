@@ -293,6 +293,13 @@ fn manual_row_has_data(row:&Value,assignments:&Value)->bool{
     ))
 }
 
+/// Keep the worksheet focused on one delivery at a time while retaining
+/// every shipment in the Rust manual model. The selected index is clamped
+/// defensively if an asynchronous resize completed in the previous frame.
+fn visible_manual_shipment(selected:usize,total:usize)->Option<usize>{
+    (total>0).then(||selected.min(total.saturating_sub(1)))
+}
+
 fn parse_manual_row_count(raw:&str)->Result<usize,String>{
     if raw.is_empty() || !raw.bytes().all(|byte|byte.is_ascii_digit()){
         return Err("배송 건수는 1~100 사이의 정수로 입력하세요.".into());
@@ -1327,6 +1334,9 @@ impl ManualWorkspace {
                 }
                 let Some(model)=self.model.as_ref() else {return};
                 let rows=list(model,"rows").to_vec();
+                let visible_shipment=visible_manual_shipment(
+                    self.selected_recipient,rows.len()
+                );
                 let blocks=list(model,"blocks").to_vec();
                 let assignments=model.get("assignments").cloned().unwrap_or_else(||json!({}));
                 let busy=self.busy();
@@ -1391,7 +1401,8 @@ impl ManualWorkspace {
                                 panel.set_min_height(
                                     (height-2.0*theme::SPACE_8).max(0.0)
                                 );
-                                panel.label(typography::subsection_heading("발주원문 · 항목 클릭으로 연결/해제"));
+                                panel.label(typography::subsection_heading("발주 원문"))
+                                    .on_hover_text("원문 항목을 클릭해 선택한 배송 정보 셀과 연결하거나 해제합니다.");
                                 egui::ScrollArea::vertical().id_salt("manual-source-blocks")
                                     .max_height((height-theme::SECTION_HEADER_HEIGHT
                                         -2.0*theme::SPACE_8).max(0.0))
@@ -1530,18 +1541,56 @@ impl ManualWorkspace {
                                     ui.label(typography::caption("건"));
                                 });
                                 if count_resize_requested {panel.disable();}
+                                // The shipment switcher remains visible when the
+                                // recipient/product worksheet scrolls. Switching
+                                // is a selection only: other deliveries and their
+                                // manual source assignments stay intact.
+                                if let Some(index)=visible_shipment {
+                                    let can_switch=!busy && !pending_quantity_active
+                                        && !count_resize_requested;
+                                    panel.horizontal(|header|{
+                                        if theme::action(
+                                            header,"〈",ButtonRole::Standard,
+                                            can_switch && index>0
+                                        ).on_hover_text("이전 배송").clicked(){
+                                            self.queue_cell_selection(
+                                                ManualCellTarget{
+                                                    row:index-1,item:None,field:"name".into()
+                                                },&mut submit_direct
+                                            );
+                                        }
+                                        header.label(typography::subsection_heading(
+                                            &format!("배송 {} / {}",index+1,rows.len())
+                                        ));
+                                        if theme::action(
+                                            header,"〉",ButtonRole::Standard,
+                                            can_switch && index+1<rows.len()
+                                        ).on_hover_text("다음 배송").clicked(){
+                                            self.queue_cell_selection(
+                                                ManualCellTarget{
+                                                    row:index+1,item:None,field:"name".into()
+                                                },&mut submit_direct
+                                            );
+                                        }
+                                        let recipient=text(&rows[index],"name");
+                                        if !recipient.is_empty(){
+                                            header.label(typography::caption(recipient))
+                                                .on_hover_text(recipient);
+                                        }
+                                    });
+                                }
                             egui::ScrollArea::both()
                                 .id_salt("manual-recipients-table")
                                 .auto_shrink([false,false])
                                 .max_height((height-theme::SECTION_HEADER_HEIGHT
                                     -theme::INPUT_HEIGHT
-                                    -theme::ACTION_STANDARD_HEIGHT
+                                    -2.0*theme::ACTION_STANDARD_HEIGHT
                                     -theme::SPACE_24)
                                     .max(3.0*theme::MANUAL_TABLE_ROW_HEIGHT))
                                 .show(panel,|ui|{
-                                    // The React source displays ALL shipments
-                                    // as a spreadsheet with six stable
-                                    // recipient columns and product subrows.
+                                    // Keep other shipments in the native model,
+                                    // but render only the selected shipment's
+                                    // editable cells to avoid an endless worksheet.
                                     let table_width=ui.available_width()
                                         .max(theme::MANUAL_TABLE_MIN_WIDTH);
                                     ui.set_min_width(table_width);
@@ -1556,25 +1605,9 @@ impl ManualWorkspace {
                                     let product_col=(table_width-quantity_col-price_col
                                         -actions_col).max(260.0)
                                         .min(theme::MANUAL_TABLE_PRODUCT_COL);
-                                    for (index,row) in rows.iter().enumerate() {
+                                    for (index,row) in rows.iter().enumerate()
+                                        .filter(|(index,_)|Some(*index)==visible_shipment) {
                                         let rid=text(row,"id");
-                                        ui.horizontal(|header|{
-                                            if theme::action(
-                                                header,&format!("배송 {} / {}",index+1,rows.len()),
-                                                if index==self.selected_recipient{
-                                                    ButtonRole::TableSecondary
-                                                }else{ButtonRole::Standard},
-                                                !busy && !pending_quantity_active &&
-                                                    self.edit_text==self.current_value()
-                                            ).clicked(){
-                                                self.queue_cell_selection(
-                                                    ManualCellTarget{
-                                                        row:index,item:None,field:"name".into()
-                                                    },&mut submit_direct
-                                                );
-                                            }
-                                            header.label(typography::body(text(row,"name")));
-                                        });
                                         ui.add_space(theme::SPACE_8);
                                         let label_width=92.0;
                                         let field_width=(table_width-label_width
@@ -2597,6 +2630,15 @@ mod manual_workspace_modal_routing_tests {
         assert_eq!(history.first().unwrap().model["value"],1);
         assert_eq!(history.last().unwrap().model["value"],100);
         assert_eq!(history.pop().unwrap().model["value"],100);
+    }
+
+    #[test]
+    fn manual_editor_keeps_one_delivery_visible_without_dropping_other_rows(){
+        assert_eq!(visible_manual_shipment(0,0),None);
+        assert_eq!(visible_manual_shipment(0,3),Some(0));
+        assert_eq!(visible_manual_shipment(1,3),Some(1));
+        assert_eq!(visible_manual_shipment(2,3),Some(2));
+        assert_eq!(visible_manual_shipment(9,3),Some(2));
     }
 
     #[test]
