@@ -7968,7 +7968,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
         if ack{args["ack"]=serde_json::json!(true);}
         if let Some(values)=extra.as_object(){
             for (key,value) in values{
-                args[key]=value.clone();
+                args[key.as_str()]=value.clone();
             }
         }
         let gateway=Arc::clone(&self.gateway);
