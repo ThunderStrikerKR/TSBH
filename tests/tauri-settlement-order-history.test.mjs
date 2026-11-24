@@ -23,7 +23,6 @@ function moduleFor(path) {
   evaluate(out, (name) => {
     if (name === "exceljs") return ExcelJS;
     if (name === "../../../src/app/seoul-date") return moduleFor("seoul-date");
-    if (name.startsWith("./")) return moduleFor(name.slice(2).replace(/\.js$/, ""));
     if (name === "../../../src/domain") return {
       orderClient: (o, state) => state.clients.find((c) => c.id === o.clientId) ?? o.clientSnapshot,
       totals: (o) => o.fixtureTotals,
@@ -37,6 +36,7 @@ function moduleFor(path) {
         recipient: state.orders.find((o) => o.id === ship.orderId)?.recipients.find((r) => r.id === ship.recipientId),
       }),
     };
+    if (name.startsWith("./")) return moduleFor(name.slice(2).replace(/\.js$/, ""));
     if (name === "../../../src/workspace-selection") return { onlyDeletedGroups: () => false };
     throw Error("Unknown dependency in report test: " + name);
   }, structuredClone);
