@@ -827,11 +827,20 @@ pub fn apply_inline(
         native_order(gateway,source,evidence)?
     };
     let previous=source.manual_model.as_ref();
-    let initialized=rule(gateway,json!({
-        "action":"initial_manual","order":&order,
-        "assignmentOrder":previous.and_then(|v|v.get("assignmentOrder"))
-            .cloned().unwrap_or_else(||json!([]))
-    }))?;
+    // A complete persisted worksheet is already the native edit model.
+    // Initialization is needed only for new drafts or incomplete legacy
+    // snapshots. The existing ID scoping and reducer validation still run.
+    let initialized=if previous.is_some_and(|saved|
+        saved.get("model").is_some_and(Value::is_object) &&
+        saved.get("assignmentOrder").is_some_and(Value::is_array)){
+        Value::Null
+    }else{
+        rule(gateway,json!({
+            "action":"initial_manual","order":&order,
+            "assignmentOrder":previous.and_then(|v|v.get("assignmentOrder"))
+                .cloned().unwrap_or_else(||json!([]))
+        }))?
+    };
     let mut model=previous.and_then(|v|v.get("model")).filter(|v|v.is_object())
         .cloned().or_else(||initialized.get("model").cloned())
         .ok_or("수취인 편집 작업본이 없습니다.")?;
