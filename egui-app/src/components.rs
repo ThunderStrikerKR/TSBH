@@ -5597,9 +5597,9 @@ pub fn reception_item_delete_confirmation(
                     body.add(egui::Label::new(typography::body(
                         &format!("{} 품목을 발주서에서 삭제할까요?",name)
                     )).wrap());
-                    if let Some(error)=error{
-                        body.add(egui::Label::new(typography::status(error,theme::DANGER)).wrap());
-                    }
+                    let width=body.available_width();
+                    fixed_status_slot(body,width,typography::METADATA_LINE_HEIGHT,
+                        error,error,theme::DANGER);
                 },
                 |actions|theme::action(actions,"삭제",theme::ButtonRole::Danger,!busy).clicked()
             );
@@ -6036,8 +6036,121 @@ mod reception_cod_selector_tests {
 
 /// Shared add-product action; the reception title row owns its placement.
 pub fn reception_item_add_action_editable(ui:&mut Ui,editable:bool)->bool{
-    theme::action(ui,"＋ 상품 추가",theme::ButtonRole::Standard,editable)
-        .clicked()
+    reception_item_header_action(ui,false,editable).clicked()
+}
+
+/// The add/rollback modes occupy exactly the same header action slot.
+/// Never insert a pending-assignment action between the item and freight rows.
+pub fn reception_item_header_action(ui:&mut Ui,rollback:bool,enabled:bool)->Response{
+    theme::action_with_min_width(
+        ui,if rollback{"선택 취소"}else{"＋ 상품 추가"},
+        theme::ButtonRole::Standard,enabled,112.0
+    )
+}
+
+/// Persistent validation is attached to an existing cell, not an extra row.
+/// The small marker and tooltip consume no parent layout space.
+pub fn reception_item_issue_feedback(ui:&Ui,cell:&Response,message:&str){
+    if message.trim().is_empty(){return;}
+    let rect=cell.rect.intersect(ui.clip_rect());
+    if rect.width()>12.0 && rect.height()>12.0{
+        ui.painter().with_clip_rect(rect).circle_filled(
+            egui::pos2(rect.right()-4.0,rect.top()+4.0),2.5,theme::SELECTED_ORDER
+        );
+    }
+    cell.clone().on_hover_text(message);
+}
+
+#[cfg(test)]
+pub(crate) fn assert_layout_rects_invariant(
+    before:&[(&str,Rect)],after:&[(&str,Rect)]
+){
+    assert_eq!(before.len(),after.len(),"protected layout slot count changed");
+    for ((name,a),(other,b)) in before.iter().zip(after){
+        assert_eq!(name,other,"protected layout slot identity changed");
+        for (edge,x,y) in [
+            ("left",a.left(),b.left()),("top",a.top(),b.top()),
+            ("right",a.right(),b.right()),("bottom",a.bottom(),b.bottom())
+        ]{
+            assert!((x-y).abs()<=0.5,
+                "layout drift {name}.{edge}: {x} -> {y}");
+        }
+    }
+}
+
+#[cfg(test)]
+mod reception_state_layout_invariance_tests{
+    use super::*;
+
+    fn render(width:f32,pending:bool,issues:bool,editable:bool)->Vec<(&'static str,Rect)>{
+        let ctx=test_context();
+        let mut rects=Vec::new();
+        let _=ctx.run(egui::RawInput{
+            screen_rect:Some(Rect::from_min_size(egui::Pos2::ZERO,Vec2::new(width,800.0))),
+            ..Default::default()
+        },|ctx|{
+            egui::CentralPanel::default().show(ctx,|ui|{
+                let header=reception_item_header_action(ui,pending,editable);
+                rects.push(("header action",header.rect));
+                reception_editable_items_header(ui);
+                let cells=reception_item_row_with_remove(
+                    ui,"BD 709-1",if pending{"—"}else{"1개"},"—",[false;3],editable
+                );
+                rects.extend([("product",cells.product.rect),("quantity",cells.quantity.rect),
+                    ("amount",cells.amount.rect)]);
+                if issues{
+                    reception_item_issue_feedback(ui,&cells.product,
+                        "수량 확인 필요 / 금액 확인 필요 / 긴 오류 메시지");
+                }
+                ui.add_space(theme::SPACE_8);
+                let freight=reception_freight_row_editable(
+                    ui,"운임",Some(3000),Some(false),Some(false),true,editable
+                );
+                rects.push(("freight amount",freight.amount_rect.expect("freight amount slot")));
+                ui.add_space(theme::SPACE_8);
+                let origin=ui.cursor().top();
+                reception_item_origin_action_editable(ui,Some("FACTORY"),editable);
+                rects.push(("origin row",Rect::from_min_max(
+                    egui::pos2(ui.min_rect().left(),origin),
+                    egui::pos2(ui.min_rect().right(),ui.cursor().top())
+                )));
+                let footer=theme::action(ui,"초안에 적용",theme::ButtonRole::Standard,editable);
+                rects.push(("following action",footer.rect));
+            });
+        });
+        rects
+    }
+
+    #[test]
+    fn pending_assignment_and_issue_feedback_do_not_move_reception_controls(){
+        for width in [480.0,800.0,1200.0]{
+            let base=render(width,false,false,true);
+            for (pending,issues,editable) in [
+                (true,false,true),(true,true,true),(false,true,true),(true,true,false)
+            ]{
+                assert_layout_rects_invariant(&base,&render(width,pending,issues,editable));
+            }
+        }
+    }
+
+    #[test]
+    #[should_panic(expected="layout drift")]
+    fn invariant_detector_rejects_inserted_row(){
+        let a=Rect::from_min_size(egui::Pos2::ZERO,Vec2::new(100.0,34.0));
+        assert_layout_rects_invariant(&[("freight",a)],
+            &[("freight",a.translate(Vec2::new(0.0,24.0)))]);
+    }
+
+    #[test]
+    fn production_consumers_do_not_reinsert_item_feedback_rows(){
+        let manual=include_str!("manual_workspace.rs");
+        let production=manual.split("#[cfg(test)]").next().unwrap();
+        assert!(!production.contains("theme::action(items_ui,\"상품 선택 취소\""));
+        assert!(production.contains("components::reception_item_header_action("));
+        let main=include_str!("main.rs");
+        assert!(!main.contains("items_ui.label(typography::status("));
+        assert!(main.contains("components::reception_item_issue_feedback("));
+    }
 }
 
 /// Dispatch origin is a separate right-aligned row below freight.

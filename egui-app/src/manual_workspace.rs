@@ -1833,13 +1833,24 @@ impl ManualWorkspace {
                                                     }
                                                     sheet.add_space(theme::SPACE_8);
                                                     let mut header_add_item=false;
+                                                    let mut header_rollback=false;
+                                                    let rollback_pending=self.selected_quantity_pending()
+                                                        && matches!(self.last_action.as_deref(),
+                                                            Some("set_manual_product"|"assign_manual_block"));
+                                                    let rollback_enabled=!busy && self.edit_text==self.current_value();
                                                     components::reception_section_with_header(
                                                         sheet,"품목 및 운임",340.0,
                                                         |header|{
-                                                            header_add_item=
-                                                                components::reception_item_add_action_editable(
-                                                                    header,can_mutate
-                                                                );
+                                                            if rollback_pending{
+                                                                header_rollback=components::reception_item_header_action(
+                                                                    header,true,rollback_enabled
+                                                                ).clicked();
+                                                            }else{
+                                                                header_add_item=
+                                                                    components::reception_item_add_action_editable(
+                                                                        header,can_mutate
+                                                                    );
+                                                            }
                                                         },|items_ui|{
                                                             items_ui.spacing_mut().item_spacing.y=0.0;
                                                             let row_width=items_ui.available_width().max(
@@ -1955,15 +1966,7 @@ impl ManualWorkspace {
                                                                     }
                                                                 }
                                                             }
-                                                            // Integrated quantity arrows live inside the common editor.
-                                                            // Preserve the explicit rollback of an unconfirmed assignment.
-                                                            if self.selected_quantity_pending() &&
-                                                                matches!(self.last_action.as_deref(),
-                                                                    Some("set_manual_product"|"assign_manual_block")) &&
-                                                                theme::action(items_ui,"상품 선택 취소",ButtonRole::Quiet,
-                                                                    !busy && self.edit_text==self.current_value()).clicked(){
-                                                                self.undo();
-                                                            }
+                                                            // Pending assignment rollback lives in the fixed header action.
                                                             items_ui.add_space(theme::SPACE_8);
                                                             let code=if text(row,"freightCode")=="020"{
                                                                 "020"
@@ -2042,7 +2045,9 @@ impl ManualWorkspace {
                                                             }
                                                         }
                                                     );
-                                                    if header_add_item {
+                                                    if header_rollback{
+                                                        self.undo();
+                                                    }else if header_add_item {
                                                         add_product=Some(rid.to_owned());
                                                     }
                                                 }

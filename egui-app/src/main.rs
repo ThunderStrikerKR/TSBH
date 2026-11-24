@@ -6885,6 +6885,14 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                                 if cells.remove_clicked{
                                                     item_remove_popup=Some((recipient_id.to_owned(),item_id.to_owned()));
                                                 }
+                                                let issue_feedback=item.get("issues")
+                                                    .and_then(serde_json::Value::as_array)
+                                                    .map(|issues|issues.iter().filter_map(|issue|issue.as_str())
+                                                        .collect::<Vec<_>>().join("\n"))
+                                                    .unwrap_or_default();
+                                                components::reception_item_issue_feedback(
+                                                    items_ui,&cells.product,&issue_feedback
+                                                );
                                                 for (response,field) in [
                                                     (&cells.product,"product"),
                                                     (&cells.quantity,"quantity"),
@@ -6972,17 +6980,6 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                                             inline_navigation_request=Some((target.clone(),key));
                                                         }else if components::reception_numeric_edit_finished(&result,step_interaction){
                                                             inline_commit=true;
-                                                        }
-                                                    }
-                                                }
-                                                if let Some(issues)=item.get("issues")
-                                                    .and_then(serde_json::Value::as_array)
-                                                {
-                                                    for issue in issues.iter().take(3){
-                                                        if let Some(message)=issue.as_str(){
-                                                            items_ui.label(typography::status(
-                                                                message,theme::SELECTED_ORDER
-                                                            ));
                                                         }
                                                     }
                                                 }
@@ -7103,10 +7100,10 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                             ));
                                         }
                                     } else {
-                                        items_ui.add_space(theme::SPACE_8);
-                                        items_ui.label(typography::caption(
-                                            "거래처 선택 후 운임과 청구금액을 확인합니다."
-                                        ));
+                                        components::management_body_state_overlay(
+                                            items_ui,items_ui.available_rect_before_wrap(),
+                                            Some("거래처 선택 후 운임과 청구금액을 확인합니다.")
+                                        );
                                     }
                                 });
                         }

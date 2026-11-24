@@ -660,16 +660,15 @@ impl AutomaticMessageManager {
                         body.add_space(theme::SPACE_12);
                         components::soft_divider(body);
                         body.horizontal(|footer|{
-                            if self.dirty(){
-                                footer.label(typography::caption(
-                                    "저장하지 않은 변경사항 있음"
-                                ));
-                            }
                             footer.with_layout(Layout::right_to_left(Align::Center),|right|{
-                                save=theme::action(right,
+                                let action=theme::action(right,
                                     "변경사항 저장",
                                     ButtonRole::Primary,self.writable()&&!self.busy()
-                                        &&self.dirty()).clicked();
+                                        &&self.dirty());
+                                save=action.clicked();
+                                if self.dirty(){
+                                    action.on_hover_text("저장하지 않은 변경사항 있음");
+                                }
                             });
                         });
                         // One-off save errors use the shared floating notice.

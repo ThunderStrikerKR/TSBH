@@ -946,15 +946,16 @@ impl SettingsView{
     fn save_bar(&mut self,ui:&mut Ui,gateway:Arc<dyn BandoGateway>){
         ui.add_space(theme::SPACE_8);
         ui.horizontal(|bar|{
-            if self.dirty(){
-                bar.label(typography::caption("저장하지 않은 설정이 있습니다."));
-            }
             bar.with_layout(Layout::right_to_left(Align::Center),|actions|{
-                if theme::action(
+                let response=theme::action(
                     actions,"설정 저장",
                     ButtonRole::Primary,!self.read_only()&&!self.busy()
-                ).clicked(){
+                );
+                if response.clicked(){
                     self.save(gateway.clone(),actions.ctx().clone());
+                }
+                if self.dirty(){
+                    response.on_hover_text("저장하지 않은 설정이 있습니다.");
                 }
             });
         });

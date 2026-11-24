@@ -147,8 +147,8 @@ impl ItemEditor{
             ).clicked(){
                 self.open_search(Arc::clone(&gateway),ctx);
             }
-            if edited && theme::action(
-                controls,"선택 취소",ButtonRole::Quiet,!busy
+            if theme::action(
+                controls,"선택 취소",ButtonRole::Standard,edited&&!busy
             ).clicked(){
                 self.replacement=None;
                 self.error=None;
