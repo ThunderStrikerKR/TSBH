@@ -62,7 +62,7 @@ test("editing templates does not modify sale prices or historical orders",()=>{
   assert.doesNotMatch(ui,/state_save|setPrice|write_snapshot/);
   assert.match(native,/"automaticMessageTemplates"/);
   assert.match(validation,/validate_message_templates\(s\)\?/);
-  assert.match(native,/before != &expected\[field\] && before != updated/);
+  assert.match(native,/before!=&expected\[field\]\s*&&\s*before!=updated/);
 });
 
 test("the live copy pipelines resolve templates for payment, request and color",()=>{

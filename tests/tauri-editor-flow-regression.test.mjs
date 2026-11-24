@@ -170,7 +170,7 @@ test("the product confirmation wizard and retail settings navigation guard draft
 
 test("native egui Escape cancels the topmost draft before closing the workspace", () => {
   const workspace = src("../egui-app/src/manual_workspace.rs");
-  const editor = src("egui-app/src/item_editor.rs");
+  const editor = src("../egui-app/src/item_editor.rs");
   assert.match(workspace, /enum EscapeAction/);
   assert.match(workspace, /EscapeAction::CancelApply/);
   assert.match(workspace, /EscapeAction::CancelDiscard/);
