@@ -1953,6 +1953,9 @@ impl ManualWorkspace {
                                             .auto_shrink([false,false])
                                             .max_height(body_height)
                                             .show(panel,|sheet|{
+                                                // The card gap is the explicit 8pt below;
+                                                // do not add egui's implicit item spacing too.
+                                                sheet.spacing_mut().item_spacing.y=0.0;
                                                 if let Some(index)=visible_shipment {
                                                     let row=&rows[index];
                                                     let rid=text(row,"id");
@@ -3582,6 +3585,7 @@ mod manual_workspace_layout_tests{
         let render=production.split("pub fn show(").nth(1).unwrap();
         assert!(render.contains("components::reception_section_divider(ui);"));
         assert!(render.contains("panel.spacing_mut().item_spacing.y=theme::SPACE_8;"));
+        assert!(render.contains("sheet.spacing_mut().item_spacing.y=0.0;"));
         assert!(render.contains("ui.spacing_mut().item_spacing.x=theme::MANUAL_COLUMN_GAP;"));
         assert!(render.contains("manual_workspace_columns_height()"));
         assert!(render.contains(".fixed_size(manual_workspace_dialog_size(work_area))"));
