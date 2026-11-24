@@ -1,0 +1,29 @@
+name: egui conditional layout allocation gate
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'egui-app/src/**'
+      - 'scripts/check-egui-state-layout.mjs'
+      - '.github/workflows/egui-state-layout.yml'
+  pull_request:
+    paths:
+      - 'egui-app/src/**'
+      - 'scripts/check-egui-state-layout.mjs'
+      - '.github/workflows/egui-state-layout.yml'
+permissions:
+  contents: read
+jobs:
+  state-layout:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Reject newly introduced conditional layout allocations
+        env:
+          UI_DIFF_BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: node scripts/check-egui-state-layout.mjs --base "$UI_DIFF_BASE" --require-base
