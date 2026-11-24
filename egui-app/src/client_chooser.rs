@@ -236,11 +236,9 @@ impl ClientChooser {
         components::modal_window("거래처 찾기","egui-reception-client-chooser",work_area)
             .fixed_size(dialog_size)
             .show(ctx,|ui|{
-                if components::modal_header_chrome(
-                    ui,"거래처 찾기","닫기",true
-                ){is_open=false;}
-                ui.add_space(theme::MODAL_MASTER_WORKSPACE_GAP);
-                components::modal_master_body(ui,|workspace|{
+                components::modal_flow_workspace(ui,|master|{
+                    if master.header("거래처 찾기","닫기",true){is_open=false;}
+                    master.framed_region(|workspace|{
                     components::modal_master_body_section(
                         workspace,"거래처 검색",|search_panel|{
                             let response=search_panel.add_enabled_ui(true,|field|{
@@ -419,6 +417,7 @@ impl ClientChooser {
                             }
                         }
                     );
+                    });
                 });
             });
         if let Some(id)=chosen {

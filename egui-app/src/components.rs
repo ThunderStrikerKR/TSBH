@@ -1267,6 +1267,15 @@ impl ModalEditorWorkspace<'_> {
         body.inner
     }
 
+    /// A viewer that already has the master framed body uses its own
+    /// 16pt inset exactly once. Do not wrap it in a second body_region.
+    pub fn framed_region<R>(&mut self,contents:impl FnOnce(&mut Ui)->R)->R{
+        self.before_body();
+        let region=self.ui.scope(|host|modal_master_body(host,contents));
+        self.geometry.body=Some(region.response.rect);
+        region.inner
+    }
+
     /// Ordinary single-pane forms use one bounded body scrollbar.
     pub fn scroll_region<R>(&mut self,id:&str,max_height:f32,contents:impl FnOnce(&mut Ui)->R)->R{
         self.body_region(|host|{
