@@ -6147,6 +6147,20 @@ pub fn reception_freight_row_editable(
     ui:&mut Ui,label:&str,amount:Option<i64>,collect:Option<bool>,
     remote:Option<bool>,inquiry_visible:bool,editable:bool
 )->ReceptionFreightEdit{
+    reception_freight_row_controls(
+        ui,label,amount,collect,remote,inquiry_visible,
+        editable,editable,editable
+    )
+}
+
+/// Workflow freight rows have independent permissions: the amount can be
+/// blocked for COD/waived shipments while the freight-code and locality
+/// controls remain available until the shipment is transferred.
+pub fn reception_freight_row_controls(
+    ui:&mut Ui,label:&str,amount:Option<i64>,collect:Option<bool>,
+    remote:Option<bool>,inquiry_visible:bool,
+    amount_editable:bool,collect_editable:bool,remote_editable:bool
+)->ReceptionFreightEdit{
     let mut clicked=false;
     let mut amount_click_pos=None;
     let mut remote_clicked=false;
@@ -6187,7 +6201,7 @@ pub fn reception_freight_row_editable(
                 // amount. The disabled parent Ui was dimming valid freight.
                 let displayed=reception_freight_money_readonly(price,&mut amount_text);
                 amount_rect=Some(displayed.rect);
-                if editable && collect!=Some(true){
+                if amount_editable && collect!=Some(true){
                     let hit=price.interact(
                         displayed.rect,
                         price.make_persistent_id(("edit-applied-freight",label)),
@@ -6205,7 +6219,7 @@ pub fn reception_freight_row_editable(
         );
         // A checkbox/VAT edit temporarily disables interactions while Rust
         // saves. Keep the SAME common dropdown instead of flashing "(선불)".
-        let (changed,_response)=reception_cod_dropdown(line,collect,editable);
+        let (changed,_response)=reception_cod_dropdown(line,collect,collect_editable);
         collect_clicked=changed;
     };
     let mut draw_remote_and_inquiry=|line:&mut Ui|{
@@ -6213,13 +6227,16 @@ pub fn reception_freight_row_editable(
         // Right edge matches React: disabled inquiry is the rightmost
         // action and the 도서/산간 checkbox is immediately to its left.
         line.with_layout(Layout::right_to_left(Align::Center),|right|{
-            let _=inquiry_visible;
-            theme::action(right,"공장에 운임 문의",theme::ButtonRole::Standard,false);
-            let mut checked=remote.unwrap_or(false);
-            if right.add_enabled(editable && remote.is_some(),
-                egui::Checkbox::new(&mut checked,"도서/산간")
-            ).changed(){
-                remote_clicked=true;
+            if inquiry_visible{
+                theme::action(right,"공장에 운임 문의",theme::ButtonRole::Standard,false);
+            }
+            if let Some(value)=remote{
+                let mut checked=value;
+                if right.add_enabled(remote_editable,
+                    egui::Checkbox::new(&mut checked,"도서/산간")
+                ).changed(){
+                    remote_clicked=true;
+                }
             }
         });    };
     if stack_actions {
