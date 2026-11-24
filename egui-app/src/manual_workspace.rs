@@ -971,12 +971,11 @@ impl ManualWorkspace {
         text(row,&self.selected_field).to_owned()
     }
 
-    fn selected_cell_editor(
-        &mut self,ui:&mut egui::Ui,width:f32,linked:bool,busy:bool
+    /// Overlay the approved Reception TextEdit on the already allocated
+    /// recipient/item/freight cell. Editing never changes row geometry.
+    fn selected_cell_editor_on_rect(
+        &mut self,ui:&mut egui::Ui,rect:egui::Rect,linked:bool,busy:bool
     )->(egui::Response,Option<CellNavigationKey>){
-        // TextEdit consumes arrow keys as caret moves. Capture AND consume
-        // navigation before it runs, but only when this sheet cell already
-        // owns keyboard focus. Search and document editors are unaffected.
         let had_focus=!self.focus_editor && self.active_editor_id.is_some_and(
             |id|ui.ctx().memory(|memory|memory.has_focus(id))
         );
@@ -998,14 +997,31 @@ impl ManualWorkspace {
                 consumed.then_some(navigation)
             })
         }else{None};
-        let response=components::manual_linked_table_editor(
-            ui,&mut self.edit_text,width,linked
-        );
+        let focus=self.focus_editor && !busy &&
+            !self.confirm_apply && !self.confirm_discard &&
+            self.product_search.is_none() &&
+            self.remove_recipient_pending.is_none() && !self.reset_pending;
+        let response=if self.selected_item.is_none() {
+            if self.selected_field=="shippingCharge" {
+                components::reception_freight_inline_cell_editor(
+                    ui,rect,&mut self.edit_text,focus,None
+                )
+            }else{
+                components::reception_recipient_inline_cell_editor(
+                    ui,rect,&mut self.edit_text,focus,None,
+                    matches!(self.selected_field.as_str(),"mobile"|"phone"),
+                    linked
+                )
+            }
+        }else{
+            components::reception_inline_cell_editor(
+                ui,rect,&mut self.edit_text,focus,None,
+                matches!(self.selected_field.as_str(),"quantity"|"unitPrice")
+            )
+        };
         self.active_editor_id=Some(response.id);
-        if self.focus_editor && !busy && !self.confirm_apply &&
-            !self.confirm_discard && self.product_search.is_none() &&
-            self.remove_recipient_pending.is_none() && !self.reset_pending {
-            response.request_focus();
+        if focus {
+            ui.scroll_to_rect(rect,Some(egui::Align::Center));
             self.focus_editor=false;
         }
         (response,navigation)
