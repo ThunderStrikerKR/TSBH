@@ -160,6 +160,37 @@ fn manual_assignment_drop_hit(ui:&egui::Ui,rect:egui::Rect,pointer:Option<egui::
     ui.is_enabled() && pointer.is_some_and(|pos|rect.intersect(ui.clip_rect()).contains(pos))
 }
 
+/// Return every visible worksheet target that accepts this exact source block.
+/// The same payload validator is used again at drop time, so recommendations
+/// cannot drift from type, assignment, or pending-quantity business rules.
+fn manual_assignment_recommendations(
+    model:&Value,id:&str,pending:Option<&ManualCellTarget>
+)->Vec<ManualCellTarget>{
+    manual_cell_targets(model).into_iter().filter(|target|
+        manual_assignment_payload(model,id,target,pending).is_ok()
+    ).collect()
+}
+
+/// A translucent fill marks every valid destination; the stronger outline
+/// marks only the cell currently under the pointer.
+fn paint_manual_assignment_recommendation(
+    ui:&egui::Ui,rect:egui::Rect,hovered:bool
+){
+    let clip=rect.intersect(ui.clip_rect());
+    if clip.width()<=0.0 || clip.height()<=0.0{return;}
+    let color=theme::SELECTION;
+    let fill=egui::Color32::from_rgba_unmultiplied(
+        color.r(),color.g(),color.b(),if hovered{42}else{20}
+    );
+    let painter=ui.painter().with_clip_rect(clip);
+    painter.rect_filled(rect,theme::CONTROL_RADIUS,fill);
+    painter.rect_stroke(
+        rect,theme::CONTROL_RADIUS,
+        egui::Stroke::new(if hovered{2.0}else{1.25},color),
+        egui::StrokeKind::Inside
+    );
+}
+
 fn item_quantity_pending(item:&Value)->bool{
     let has_product=item.get("productId").is_some_and(|value|!value.is_null()) ||
         !text(item,"name").trim().is_empty();
@@ -1662,6 +1693,10 @@ impl ManualWorkspace {
                         ).unwrap_or_default();
                         let busy=self.busy();
                         let pending_quantity_cell=self.pending_quantity_cell();
+                        let drag_recommendations=self.assignment_gesture.dragging.as_deref()
+                            .map(|source|manual_assignment_recommendations(
+                                model,source,pending_quantity_cell.as_ref()
+                            )).unwrap_or_default();
                         let pending_quantity_active=pending_quantity_cell.is_some();
                         let pending_quantity_count=model_pending_quantity_count(model);
                         let has_pending_quantity=pending_quantity_count>0;
@@ -1890,17 +1925,12 @@ impl ManualWorkspace {
                                                             for (field,response) in recipient_keys
                                                                 .into_iter().zip(responses.into_iter()){
                                                                 let target=ManualCellTarget{row:index,item:None,field:field.to_owned()};
-                                                                if let Some(source)=self.assignment_gesture.dragging.as_deref().filter(|_|
-                                                                    manual_assignment_drop_hit(fields,response.rect,drag_pointer)){
-                                                                    drop_allowed=self.model.as_ref().is_some_and(|model|
-                                                                        manual_assignment_payload(model,source,&target,pending_quantity_cell.as_ref()).is_ok());
+                                                                let recommended=drag_recommendations.contains(&target);
+                                                                let hovered=recommended &&
+                                                                    manual_assignment_drop_hit(fields,response.rect,drag_pointer);
+                                                                if hovered{
+                                                                    drop_allowed=true;
                                                                     drop_target=Some(target.clone());
-                                                                    fields.painter().with_clip_rect(fields.clip_rect()).rect_stroke(
-                                                                        response.rect,theme::CONTROL_RADIUS,
-                                                                        egui::Stroke::new(theme::FRAME_STROKE_WIDTH,
-                                                                            if drop_allowed{theme::SELECTION}else{theme::DANGER}),
-                                                                        egui::StrokeKind::Inside
-                                                                    );
                                                                 }
                                                                 let key=source_highlight::key(rid,rid,field);
                                                                 let selected=index==self.selected_recipient &&
@@ -1930,6 +1960,9 @@ impl ManualWorkspace {
                                                                         clicked_target=Some(target.clone());
                                                                         self.queue_cell_selection(target,&mut submit_direct);
                                                                     }
+                                                                }
+                                                                if recommended{
+                                                                    paint_manual_assignment_recommendation(fields,response.rect,hovered);
                                                                 }
                                                             }
                                                         }
@@ -2011,17 +2044,12 @@ impl ManualWorkspace {
                                                                     ("unitPrice",cells.amount,&keys[2])
                                                                 ]{
                                                                     let target=ManualCellTarget{row:index,item:Some(item_id.to_owned()),field:field.to_owned()};
-                                                                    if let Some(source)=self.assignment_gesture.dragging.as_deref().filter(|_|
-                                                                        manual_assignment_drop_hit(items_ui,response.rect,drag_pointer)){
-                                                                        drop_allowed=self.model.as_ref().is_some_and(|model|
-                                                                            manual_assignment_payload(model,source,&target,pending_quantity_cell.as_ref()).is_ok());
+                                                                    let recommended=drag_recommendations.contains(&target);
+                                                                    let hovered=recommended &&
+                                                                        manual_assignment_drop_hit(items_ui,response.rect,drag_pointer);
+                                                                    if hovered{
+                                                                        drop_allowed=true;
                                                                         drop_target=Some(target.clone());
-                                                                        items_ui.painter().with_clip_rect(items_ui.clip_rect()).rect_stroke(
-                                                                            response.rect,theme::CONTROL_RADIUS,
-                                                                            egui::Stroke::new(theme::FRAME_STROKE_WIDTH,
-                                                                                if drop_allowed{theme::SELECTION}else{theme::DANGER}),
-                                                                            egui::StrokeKind::Inside
-                                                                        );
                                                                     }
                                                                     let selected=index==self.selected_recipient &&
                                                                         self.selected_item.as_deref()==Some(item_id) &&
@@ -2099,6 +2127,11 @@ impl ManualWorkspace {
                                                                                 menu.close();
                                                                             }
                                                                         });
+                                                                    }
+                                                                    if recommended{
+                                                                        paint_manual_assignment_recommendation(
+                                                                            items_ui,response.rect,hovered
+                                                                        );
                                                                     }
                                                                 }
                                                             }
@@ -2666,6 +2699,45 @@ mod manual_assignment_gesture_tests{
         let mut assigned=model.clone();
         assigned["assignments"]["block"]=json!({"recipientId":"r","field":"name"});
         assert!(manual_assignment_payload(&assigned,"block",&target(),None).is_err());
+    }
+
+    #[test]
+    fn drag_recommends_every_compatible_cell_and_only_those_cells(){
+        let model=json!({
+            "rows":[
+                {"id":"r1","items":[{"id":"i1"}]},
+                {"id":"r2","items":[{"id":"i2"}]}
+            ],
+            "blocks":[
+                {"id":"name","field":"name"},
+                {"id":"product","field":"product"},
+                {"id":"quantity","field":"quantity"}
+            ],
+            "assignments":{}
+        });
+        let names=manual_assignment_recommendations(&model,"name",None);
+        assert_eq!(names.len(),2);
+        assert!(names.iter().all(|cell|cell.field=="name" && cell.item.is_none()));
+        assert!(names.contains(&ManualCellTarget{row:0,item:None,field:"name".into()}));
+        assert!(names.contains(&ManualCellTarget{row:1,item:None,field:"name".into()}));
+
+        let products=manual_assignment_recommendations(&model,"product",None);
+        assert_eq!(products.len(),2);
+        assert!(products.iter().all(|cell|cell.field=="product" && cell.item.is_some()));
+        let quantities=manual_assignment_recommendations(&model,"quantity",None);
+        assert_eq!(quantities.len(),2);
+        assert!(quantities.iter().all(|cell|cell.field=="quantity" && cell.item.is_some()));
+
+        let wrong=ManualCellTarget{row:0,item:None,field:"address".into()};
+        assert!(!names.contains(&wrong));
+        let pending=ManualCellTarget{row:0,item:Some("i1".into()),field:"quantity".into()};
+        assert_eq!(manual_assignment_recommendations(&model,"quantity",Some(&pending)),
+            vec![pending.clone()]);
+        assert!(manual_assignment_recommendations(&model,"product",Some(&pending)).is_empty());
+
+        let mut assigned=model.clone();
+        assigned["assignments"]["name"]=json!({"recipientId":"r1","field":"name"});
+        assert!(manual_assignment_recommendations(&assigned,"name",None).is_empty());
     }
 }
 
