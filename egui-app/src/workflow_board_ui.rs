@@ -527,17 +527,34 @@ fn money(amount:Option<i64>)->String{
 /// control's layer is the topmost layer at the pointer (never click through a
 /// modal or another foreground window).
 fn primary_release_inside(ui:&Ui,rect:Rect)->bool{
-    let click=ui.ctx().input(|input|{
-        if !input.pointer.button_clicked(egui::PointerButton::Primary){
-            return None;
-        }
-        let start=input.pointer.press_origin()?;
-        let end=input.pointer.interact_pos()?;
-        (rect.contains(start) && rect.contains(end)).then_some(end)
+    let ctx=ui.ctx();
+    let press_origin_id=Id::new("bando-workflow-primary-press-origin");
+    let (pressed,released,clicked,origin,release_pos)=ctx.input(|input|{
+        (
+            input.pointer.button_pressed(egui::PointerButton::Primary),
+            input.pointer.button_released(egui::PointerButton::Primary),
+            input.pointer.button_clicked(egui::PointerButton::Primary),
+            input.pointer.press_origin(),
+            input.pointer.interact_pos()
+        )
     });
-    click.is_some_and(|pos|
-        ui.ctx().layer_id_at(pos)==Some(ui.layer_id())
-    )
+    if pressed{
+        ctx.data_mut(|data|data.insert_temp(press_origin_id,origin));
+    }
+    if !released{return false;}
+    if !clicked{
+        ctx.data_mut(|data|data.insert_temp(press_origin_id,None::<Pos2>));
+        return false;
+    }
+    let Some(pos)=release_pos.filter(|pos|
+        rect.contains(*pos) && ctx.layer_id_at(*pos)==Some(ui.layer_id())
+    )else{return false;};
+    let origin=ctx.data_mut(|data|{
+        let origin=data.get_temp::<Option<Pos2>>(press_origin_id).flatten();
+        data.insert_temp(press_origin_id,None::<Pos2>);
+        origin
+    });
+    origin.is_some_and(|start|rect.contains(start)) && rect.contains(pos)
 }
 fn workflow_primary_at(
     ui:&mut Ui,id:&str,rect:Rect,text:&str,enabled:bool,in_preview:bool
