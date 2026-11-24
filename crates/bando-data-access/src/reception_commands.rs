@@ -1,7 +1,7 @@
 //! Native unconfirmed reception CAS writer shared with egui.
 //! This performs NO confirmed order insert, payment mutation or audit unlock.
-//! Original Rust recognition, manual classification, order edit, repricing
-//! and freight rules execute INSIDE one IMMEDIATE SQLite transaction.
+//! Source recognition (when supplied), manual classification, order edit,
+//! repricing and freight rules execute INSIDE one IMMEDIATE SQLite transaction.
 //! The caller owns the explicitly authorized existing schema-v2 connection.
 
 use rusqlite::{params,Connection,OptionalExtension,TransactionBehavior};

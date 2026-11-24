@@ -1,8 +1,9 @@
 //! Validate and replay an egui employee manual draft inside the authoritative
 //! Tauri SQLite transaction. Never trust item price, product snapshots,
 //! recipient sources, freight, or client identity supplied by the UI.
-//! Validate staff edits against fresh Rust recognition, then replay typed
-//! override values via the same native reducer. Never accept a raw unitPrice.
+//! Validate source-backed staff edits against fresh Rust recognition and
+//! direct-entry edits against an empty native source model, then replay typed
+//! overrides through the same reducer. Never accept a raw unitPrice.
 //!
 //! All meaningful mutations are replayed through existing Rust reducers.
 //! UI-submitted rows provide ONLY target IDs, editable strings and quantities;
@@ -493,6 +494,23 @@ mod tests{
         assert_eq!(result["manualClassification"]["blocks"],json!([]));
         assert_eq!(result["manualClassification"]["assignments"],json!({}));
         assert!(result.get("analysisEvidence").is_none());
+    }
+
+    #[test]
+    fn direct_mode_rejects_fabricated_source_blocks_and_assignments(){
+        let order=json!({"id":"egui-direct-example","raw":"","orderType":"AGENCY","clientId":"c"});
+        let state=json!({"products":[],"aliases":[],"clients":[{"id":"c"}]});
+        let initial=rule("initial_manual",json!({"order":order.clone()})).unwrap();
+        let resized=rule("resize_manual_rows",json!({
+            "model":initial["model"],"count":1,
+            "newRecipientIds":["egui-manual-direct-forged"],
+            "assignmentOrder":initial["assignmentOrder"]
+        })).unwrap();
+        let mut model=resized["model"].clone();
+        model["blocks"]=json!([{"id":"0:1","start":0,"end":1,"text":"x"}]);
+        let submitted=json!({"mode":"DIRECT","sourceRaw":"","orderType":"AGENCY",
+            "clientId":"c","model":model,"assignmentOrder":[]});
+        assert!(verify_apply(&order,&state,&state["clients"][0],&submitted).is_err());
     }
 
     #[test]

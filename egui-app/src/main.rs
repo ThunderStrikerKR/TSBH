@@ -1076,7 +1076,7 @@ impl BandoEgui {
         let chosen_name=row.client_id.as_deref()
             .and_then(|id|self.client_names.get(id)).cloned();
         self.analysis=Some(reception_service::ReceptionAnalysis{
-            recognition:serde_json::json!({"recipients":rows}),
+            recognition:serde_json::json!({"recipients":rows,"candidates":[]}),
             reference:Vec::new(),client_match:serde_json::Value::Null,
             client_candidates:Vec::new(),matched_client_name:None,
             chosen_client_name:chosen_name,directory_count:0,
