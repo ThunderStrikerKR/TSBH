@@ -908,6 +908,13 @@ fn manual_workspace_dialog_size(work_area:egui::Rect)->egui::Vec2{
     egui::vec2(width,height)
 }
 
+fn manual_workspace_content_width(available_width:f32,reception_source_width:f32)->f32{
+    available_width.max(
+        reception_source_width.max(theme::MANUAL_SOURCE_MIN_WIDTH)
+            +theme::MANUAL_SHEET_MIN_WIDTH+theme::MANUAL_COLUMN_GAP
+    )
+}
+
 fn manual_source_panel_width(reception_source_width:f32,content_width:f32)->f32{
     let maximum=(content_width-theme::MANUAL_SHEET_MIN_WIDTH
         -theme::MANUAL_COLUMN_GAP).max(theme::MANUAL_SOURCE_MIN_WIDTH);
@@ -1782,10 +1789,8 @@ impl ManualWorkspace {
                         // The right worksheet takes the remaining width; on narrow windows keep
                         // both minimum widths and scroll the workspace horizontally
                         // instead of letting one panel clip or move the footer.
-                        let content_width=ui.available_width().max(
-                            theme::MANUAL_SOURCE_MIN_WIDTH+
-                            theme::MANUAL_SHEET_MIN_WIDTH+
-                            theme::MANUAL_COLUMN_GAP
+                        let content_width=manual_workspace_content_width(
+                            ui.available_width(),reception_source_width
                         );
                         // Keep the worksheet at its natural one-recipient / one-item
                         // height. More items remain reachable through the existing
@@ -3558,8 +3563,10 @@ mod manual_workspace_layout_tests{
     fn source_panel_uses_reception_width_and_preserves_a_minimum_right_sheet(){
         let reception=crate::layout::LayoutState::default().widths(1600.0)[1];
         assert_eq!(manual_source_panel_width(reception,1200.0),reception);
-        assert_eq!(manual_source_panel_width(reception,702.0),
-            theme::MANUAL_SOURCE_MIN_WIDTH);
+        let narrow_content=manual_workspace_content_width(700.0,reception);
+        assert_eq!(narrow_content,reception+
+            theme::MANUAL_SHEET_MIN_WIDTH+theme::MANUAL_COLUMN_GAP);
+        assert_eq!(manual_source_panel_width(reception,narrow_content),reception);
         assert_eq!(theme::MANUAL_SOURCE_MIN_WIDTH,crate::layout::MIN_WIDTHS[1]);
     }
 
