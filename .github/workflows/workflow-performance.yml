@@ -8,6 +8,7 @@ on:
       - egui-app/src/main.rs
       - egui-app/src/kakao_context.rs
       - egui-app/src/kakao_dock.rs
+      - egui-app/src/clipboard_intake.rs
       - egui-app/src/gateway.rs
       - egui-app/src/components.rs
       - egui-app/src/reception_jobs.rs
@@ -47,6 +48,8 @@ jobs:
       - name: Compile egui and verify admission and scope contracts
         shell: pwsh
         run: |
+          cargo test --manifest-path egui-app/Cargo.toml clipboard_intake:: -- --nocapture
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           cargo test --manifest-path egui-app/Cargo.toml kakao_context:: -- --nocapture
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           cargo test --manifest-path egui-app/Cargo.toml periodic_workflow_read_is_advisory_but_post_commit_refresh_is_mandatory -- --nocapture
