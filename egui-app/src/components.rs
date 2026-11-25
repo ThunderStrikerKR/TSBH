@@ -6432,7 +6432,6 @@ pub fn reception_freight_row_controls(
                 let displayed=reception_freight_money_readonly(price,&mut amount_text);
                 amount_rect=Some(displayed.rect);
                 if crate::one_touch::stage(price).freight(){crate::one_touch::mark(price,displayed.rect);}
-                if crate::one_touch::stage(price)==crate::one_touch::Stage::Review{crate::one_touch::mark(price,label_rect);}
                 if amount_editable && collect!=Some(true){
                     let hit=price.interact(
                         displayed.rect,
