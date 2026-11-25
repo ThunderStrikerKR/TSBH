@@ -163,6 +163,9 @@ fn native_unconfirmed_draft_first_stage_confirmation_commits_as_one_order() {
     let mut initial=get_snapshot(&conn).expect("initial relational SQLite snapshot");
     let product_id=initial["products"][0]["id"].as_str().unwrap().to_owned();
     let variant_id=initial["products"][0]["variants"][0]["id"].as_str().unwrap().to_owned();
+    let product_name=initial["products"][0]["name"].as_str().unwrap().to_owned();
+    let product_color=initial["products"][0]["variants"][0]["color"].as_str().unwrap().to_owned();
+    assert_eq!(initial["products"][0]["variants"].as_array().unwrap().len(),1);
     // The seed is intentionally catalog-only. Give this isolated fixture one
     // valid priced variant and one existing operational client.
     initial["products"][0]["variants"][0]["wholesale"]=json!(30000);
@@ -171,16 +174,18 @@ fn native_unconfirmed_draft_first_stage_confirmation_commits_as_one_order() {
         "name":"합성 미확정 거래처",
         "tier":"wholesale",
         "payment":"POSTPAID",
-        "shippingFeeExcluded":true,
+        "shippingFeeExcluded":false,
         "defaultApplyVat":false,
         "address":"서울특별시 강남구 테헤란로 123",
         "phone":"02-1234-5678",
         "mobile":"",
-        "preferredAccountId":"",
+        "preferredAccountId":"account:lifecycle",
         "overrides":{},
         "active":true
     });
     initial["clients"].as_array_mut().unwrap().push(client.clone());
+    initial["settings"]["accounts"]=json!([{"id":"account:lifecycle","bank":"가상은행","holder":"합성 계좌","number":"123-456"}]);
+    initial["settings"]["defaultAccountId"]=json!("account:lifecycle");
     let saved=write_snapshot(&mut conn,initial,0,true)
         .expect("synthetic client and price fixture must persist");
 
@@ -212,8 +217,8 @@ fn native_unconfirmed_draft_first_stage_confirmation_commits_as_one_order() {
                 "id":"item:unconfirmed-draft",
                 "productId":product_id,
                 "variantId":variant_id,
-                "name":"합성 상품",
-                "color":"색상 미표기",
+                "name":product_name,
+                "color":product_color,
                 "quantity":1,
                 "quantityConfirmed":true,
                 "unitPrice":30000,
@@ -291,10 +296,113 @@ fn native_unconfirmed_draft_first_stage_confirmation_commits_as_one_order() {
     ).unwrap();
     assert_eq!(count,1);
     drop(conn);
-    let reopened=initialize_database(&isolated.root.join("state.sqlite")).unwrap();
+    let mut reopened=initialize_database(&isolated.root.join("state.sqlite")).unwrap();
     assert_eq!(get_snapshot(&reopened).unwrap(),committed);
     assert_eq!(committed["workflow"]["shipments"][0]["step"],1);
+
+    // Continue the exact same order, recipient and shipment through billing,
+    // real bank evidence, export finalization, reply and daily settlement.
+    let shipment_id=committed["workflow"]["shipments"][0]["id"].clone();
+    let group_id=committed["workflow"]["groups"][0]["id"].clone();
+    let persist=|conn:&mut Connection, before:&Value, next:Value| {
+        rust("validate_workflow",json!({"state":next,"before":before}))
+            .expect("each lifecycle transition must preserve workflow invariants");
+        let revision=before["revision"].as_u64().unwrap();
+        let saved=write_snapshot(conn,next,revision,true).unwrap();
+        assert_eq!(saved["revision"],revision+1);
+        assert_eq!(get_snapshot(conn).unwrap(),saved);
+        assert_eq!(saved["orders"].as_array().unwrap().len(),1);
+        assert_eq!(saved["orders"][0]["id"],"order:unconfirmed-draft");
+        assert_eq!(saved["orders"][0]["recipients"][0]["id"],"recipient:unconfirmed-draft");
+        assert_eq!(saved["workflow"]["shipments"][0]["id"],shipment_id);
+        saved
+    };
+    let output=|operation:&str,payload:Value| {
+        business_core::execute("output",operation,payload)
+            .unwrap_or_else(|error|panic!("{operation}: {error}"))
+    };
+    let action=|payload:Value| rust("apply_workflow_action",payload)
+        .unwrap_or_else(|error|panic!("lifecycle workflow action: {error}"));
+
+    let freight=action(json!({"state":committed,"action":"set_shipment_freight",
+        "shipmentId":shipment_id,"origin":"FACTORY","value":3000,
+        "eventId":"lifecycle:freight","now":at,"actor":"검증 담당자"}));
+    let mut saved=persist(&mut reopened,&committed,freight["state"].clone());
+    for step in 2..=3 {
+        let result=action(json!({"state":saved,"action":"advance_group","groupId":group_id,
+            "eventId":format!("lifecycle:step:{step}"),"now":at,"actor":"검증 담당자",
+            "noticeId":"lifecycle:notice","paymentMessage":"가상 거래처 입금 안내"}));
+        assert_eq!(result["step"],step);
+        saved=persist(&mut reopened,&saved,result["state"].clone());
+    }
+    let totals=rust("calculate_shipment_totals",json!({"state":saved,"shipmentId":shipment_id})).unwrap();
+    assert_eq!(totals["subtotal"],30000);
+    assert_eq!(totals["shipping"],3000);
+    assert_eq!(totals["total"],33000);
+    let payment=action(json!({"state":saved,"action":"record_payment","groupId":group_id,
+        "paidAmount":33000,"paidAt":at,"allocations":[{"shipmentId":shipment_id,"amount":33000}],
+        "allocationIds":["lifecycle:allocation"],"paymentId":"lifecycle:payment",
+        "eventId":"lifecycle:cash","now":at,"actor":"검증 담당자"}));
+    saved=persist(&mut reopened,&saved,payment["state"].clone());
+    let approval=action(json!({"state":saved,"action":"advance_group","groupId":group_id,
+        "eventId":"lifecycle:approval","now":at,"actor":"검증 담당자"}));
+    assert_eq!(approval["step"],4);
+    saved=persist(&mut reopened,&saved,approval["state"].clone());
+    let queued=action(json!({"state":saved,"action":"process_group","groupId":group_id,
+        "eventId":"lifecycle:queue","now":at,"actor":"검증 담당자"}));
+    assert_eq!(queued["entries"].as_array().unwrap().len(),1);
+    let queue_id=queued["entries"][0]["id"].clone();
+    saved=persist(&mut reopened,&saved,queued["state"].clone());
+    let preview=output("prepare_factory_export",json!({"state":saved,"ids":[queue_id]}));
+    assert_eq!(get_snapshot(&reopened).unwrap(),saved);
+    // This tests the native export ledger boundary, not XLSX file bytes.
+    let exported=output("finalize_export",json!({"state":saved,"preview":preview,
+        "origin":"FACTORY","savedPath":"C:/synthetic/lifecycle.xlsx","now":at,
+        "exportId":"lifecycle:export","eventId":"lifecycle:export-event"}));
+    saved=persist(&mut reopened,&saved,exported["next"].clone());
+    assert_eq!(saved["workflow"]["queue"][0]["status"],"EXPORTED");
+    let report=|state:&Value| {
+        let history=rust("list_order_history",json!({"state":state,"query":"","date":"2026-11-25"})).unwrap();
+        assert_eq!(history.as_array().unwrap().len(),1);
+        assert_eq!(history[0]["shipmentIds"],json!([shipment_id]));
+        (output("prepare_settlement",json!({"state":state,"date":"2026-11-25","historyRows":history})),history)
+    };
+    let (before_reply,history)=report(&saved);
+    assert_eq!(history[0]["status"],"엑셀 추출 완료");
+    assert_eq!(before_reply["freightUnknown"],1);
+    assert!(before_reply["orderRows"][0]["freightCost"].is_null());
+    let reply=rust("analyze_factory_reply",json!({"state":saved,"sourceRowCount":1,"sourceRows":[{
+        "row":2,"name":"김테스트","address":"서울특별시 강남구 테헤란로 123, 4층",
+        "phone":"010-1234-5678","mobile":"","rawFreight":"4,000","tracking":"001234567890",
+        "trackingNumeric":false,"reservedJ":false,"extraAfterQ":false}],
+        "id":"lifecycle:reply","filename":"reply.xlsx","businessDate":"2026-11-25",
+        "at":at,"actor":"검증 담당자"})).unwrap();
+    assert_eq!(reply["applied"],1);
+    assert_eq!(get_snapshot(&reopened).unwrap(),saved);
+    let replied=rust("apply_factory_reply",json!({"state":saved,"preview":reply,"freightAt":at,
+        "freightEventIds":["lifecycle:actual"],"replyEventIds":["lifecycle:reply-event"]})).unwrap();
+    assert_eq!(replied["applied"],1);
+    assert_eq!(replied["held"],0);
+    saved=persist(&mut reopened,&saved,replied["next"].clone());
+    assert_eq!(saved["workflow"]["shipments"][0]["charges"]["FACTORY"],3000);
+    assert_eq!(saved["workflow"]["shipments"][0]["actualFreight"]["FACTORY"],4000);
+    assert_eq!(saved["workflow"]["shipments"][0]["tracking"]["FACTORY"],"001234567890");
+    assert_eq!(saved["workflow"]["payments"][0]["amount"],33000);
+    let (settled,history)=report(&saved);
+    assert_eq!(history[0]["status"],"공장 회신 완료");
+    assert_eq!(settled["billedKnown"],33000);
+    assert_eq!(settled["shippingKnown"],3000);
+    assert_eq!(settled["paidCash"],33000);
+    assert_eq!(settled["outstandingKnown"],0);
+    assert_eq!(settled["actualFreightKnown"],4000);
+    assert_eq!(settled["freightUnknown"],0);
+    assert_eq!(get_snapshot(&reopened).unwrap(),saved);
     drop(reopened);
+    let final_reopen=initialize_database(&isolated.root.join("state.sqlite")).unwrap();
+    let final_state=get_snapshot(&final_reopen).unwrap();
+    assert_eq!(final_state,saved);
+    assert_eq!(report(&final_state).0,settled);
+    drop(final_reopen);
 }
 
 #[test]
