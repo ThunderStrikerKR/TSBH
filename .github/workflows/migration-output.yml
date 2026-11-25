@@ -50,6 +50,8 @@ jobs:
         run: cargo test --manifest-path tests/rust-migration/recognition/Cargo.toml hongcheon_school_reception_keeps_two_phones_and_three_order_quantities -- --nocapture
       - name: Verify 20 native reception documents and exact recipient ownership
         run: cargo test --manifest-path tests/rust-migration/recognition/Cargo.toml regressions::order_ -- --nocapture
+      - name: Verify native recipient regressions and evidence links without TypeScript
+        run: cargo test --manifest-path tests/rust-migration/recognition/Cargo.toml recipient_regressions:: -- --nocapture
       - name: Verify ten native institution and recipient boundary cases
         run: cargo test --manifest-path tests/rust-migration/recognition/Cargo.toml regressions::institution_ -- --nocapture
       - name: Verify independent native price, freight, VAT and workflow contracts

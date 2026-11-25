@@ -1,3 +1,5 @@
+> **2026-11-26 TypeScript 퇴역:** main에서 TypeScript/TSX/MTS 소스와 npm 패키지 의존성을 제거했다. 과거 TS 비교용 실행·검증은 완전한 이전 소스 `869de27b942928cd0474ef065ee5b91b3a273c3f`의 별도 체크아웃에서만 재현한다. 현행 UI/업무/SQLite는 Rust/egui이며 Node는 외부 패키지 없는 개발용 정적 검사에 한정한다. Tauri Rust 라이브러리 및 현행 native CI는 유지하고, 남은 역사적 JS 검사 정리는 별도 범위다.
+
 > **현행 실행 경로 (2026-11-26):** Rust/egui가 단일 운영 UI다. React/TypeScript UI와 Vite 실행·빌드 진입점은 main에서 퇴역했다. 이전 UI 및 전체 과거 검증 환경은 [퇴역 직전 커밋 `869de27`](https://github.com/ThunderStrikerKR/TSBH/tree/869de27b942928cd0474ef065ee5b91b3a273c3f)에서만 확인한다. 운영 Rust 및 공통 데이터는 유지하며, 남은 TypeScript 비교 오라클 의존성은 별도 퇴역 범위다. 현행 Windows 실행은 `DEV_WINDOWS_EGUI.cmd`, 컴파일은 `cargo check --manifest-path egui-app/Cargo.toml`을 사용한다. 아래 React/Tauri 운영 안내는 역사 기록이다.
 
 > **현재 개발·검증의 최우선 지침:** [AGENTS.md](AGENTS.md) · [기능별 누적 검증표](docs/rust-migration/verification-ledger.json) · [실제 사용자 행동 E2E 계약](docs/rust-migration/user-action-e2e-contract.md). 아래 오래된 Tauri v0.0.2/v0.0.4 릴리스 안내는 역사적 문서이며 현재 `main` 기능·배포 절차나 Rust 이전 완료 상태를 대표하지 않는다. 최신 합의는 Rust 업무 처리, React UI 전담, 승인 개선 보존, 테스트·CI·Windows 별도 판정이다.

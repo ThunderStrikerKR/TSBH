@@ -7,7 +7,7 @@ pub mod recognition;
 mod catalog_audit;
 
 #[cfg(test)]
-mod differential;
+mod recipient_regressions;
 
 #[cfg(test)]
 mod regressions {
