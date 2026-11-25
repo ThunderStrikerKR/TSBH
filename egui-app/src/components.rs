@@ -9394,7 +9394,8 @@ pub(crate) mod general_screen_geometry_tests {
         let a=fixed(base);let b=fixed(next);
         assert!(a.iter().any(|(kind,_)|*kind=="master card"),"{name}/{phase}: no master card");
         assert_eq!(a.len(),b.len(),"{name}/{phase}: fixed allocation count changed");
-        for ((kind,old),(_,new)) in a.iter().zip(&b){
+        for ((kind,old),(other,new)) in a.iter().zip(&b){
+            assert_eq!(kind,other,"{name}/{phase}: protected slot identity changed");
             for (edge,x,y) in [("left",old.left(),new.left()),("right",old.right(),new.right()),
                 ("top",old.top(),new.top()),("bottom",old.bottom(),new.bottom())]{
                 assert!((x-y).abs()<=0.5,"{name}/{phase}/{kind}/{edge}: {x} -> {y}");
@@ -9447,12 +9448,15 @@ pub(crate) mod general_screen_geometry_tests {
         let initial_error=draw(page);
         assert!(failed(page),"{name}: initial failure was not consumed");
         let finish=begin(page);
-        let _retry_pending=draw(page);
+        let retry_pending=draw(page);
+        assert_visible_data_rows(name,&retry_pending,0);
+        assert!(!failed(page),"{name}: retry did not clear the previous error");
         finish(Ok(0));
         let empty=draw(page);
         assert!(!failed(page),"{name}: successful empty response did not clear failure");
         assert_visible_data_rows(name,&empty,0);
-        for (phase,trace) in [("initial pending",&pending),("initial error",&initial_error)]{
+        for (phase,trace) in [("initial pending",&pending),("initial error",&initial_error),
+            ("initial retry pending",&retry_pending)]{
             compare_data_state_geometry(name,phase,&empty,trace,name!="freight");
         }
         let finish=begin(page);
@@ -9468,17 +9472,38 @@ pub(crate) mod general_screen_geometry_tests {
         assert_visible_data_rows(name,&populated,64);
         compare_data_state_geometry(name,"64 rows",&empty,&populated,true);
         let finish=begin(page);
+        let populated_pending=draw(page);
+        assert!(!failed(page),"{name}: populated refresh must start without an error");
+        compare_data_state_geometry(name,"populated refresh pending",&populated,&populated_pending,true);
         finish(Err("합성 재조회 실패: 데이터 로딩 이후 오류".into()));
         let error=draw(page);
         assert!(failed(page),"{name}: refresh failure was not consumed");
         compare_data_state_geometry(name,"refresh error",&empty,&error,true);
         let finish=begin(page);
+        let retry=draw(page);
+        assert!(!failed(page),"{name}: populated retry must clear failure");
+        compare_data_state_geometry(name,"populated retry pending",&empty,&retry,true);
+        // Drop the actual sender without delivering a result. This is a
+        // disconnected channel, not an ordinary application Err response.
+        drop(finish);
+        let disconnected=draw(page);
+        assert!(failed(page),"{name}: disconnected read was not consumed");
+        compare_data_state_geometry(name,"disconnected read",&empty,&disconnected,true);
+        let finish=begin(page);
+        let reconnecting=draw(page);
+        assert!(!failed(page),"{name}: reconnect must clear the old error");
+        compare_data_state_geometry(name,"reconnect pending",&empty,&reconnecting,true);
         finish(Ok(64));
         let recovered=draw(page);
         assert!(!failed(page),"{name}: retry did not clear failure");
         assert_visible_data_rows(name,&recovered,64);
         compare_data_state_geometry(name,"recovered",&empty,&recovered,true);
-        println!("GEOMETRY_DATA_TRANSITIONS {name} {screen:?}: pending/error/empty/one/many/recovered");
+        // The scrollbar exception only applies to differing row counts.
+        // A fully restored result must also restore the viewport right edge.
+        let stable=|trace:&[Sample]|trace.iter().copied().filter(|(role,_)|
+            matches!(*role,"top content"|"master card"|"toolbar transition"|"table header"|"scroll rail"|"row viewport")).collect::<Vec<_>>();
+        assert_layout_rects_invariant(&stable(&populated),&stable(&recovered));
+        println!("GEOMETRY_DATA_TRANSITIONS {name} {screen:?}: pending/error/empty/one/many/disconnected/recovered");
         recovered
     }
     fn data_geometry_dimensions()->[(Vec2,f32);3]{
@@ -9597,10 +9622,13 @@ pub(crate) mod general_screen_geometry_tests {
         finish(Err("합성 최초 조회 오류 — 긴 문구에도 제목과 탭이 이동하지 않아야 함".into()));
         let error=draw(page);
         assert!(failed(page),"{name}: initial error not consumed");
-        begin(page)(Ok(0));
+        let finish=begin(page);
+        let retry_pending=draw(page);
+        assert!(!failed(page),"{name}: initial retry did not clear error");
+        finish(Ok(0));
         let empty=draw(page);
         assert!(!failed(page),"{name}: empty recovery failed");
-        for (phase,trace) in [("pending",&pending),("error",&error)]{
+        for (phase,trace) in [("pending",&pending),("error",&error),("retry pending",&retry_pending)]{
             compare_top_slots(name,phase,&empty,trace);
         }
         begin(page)(Ok(1));
@@ -9624,7 +9652,22 @@ pub(crate) mod general_screen_geometry_tests {
         assert!(failed(page),"{name}: refresh error not consumed");
         compare_top_slots(name,"refresh error",&many,&failed_trace);
         compare_primary_origin(name,"refresh error",&many,&failed_trace);
-        begin(page)(Ok(64));
+        let finish=begin(page);
+        let retry=draw(page);
+        assert!(!failed(page),"{name}: refresh retry did not clear error");
+        compare_top_slots(name,"retry pending",&many,&retry);
+        compare_primary_origin(name,"retry pending",&many,&retry);
+        drop(finish);
+        let disconnected=draw(page);
+        assert!(failed(page),"{name}: disconnected read was not consumed");
+        compare_top_slots(name,"disconnected",&many,&disconnected);
+        compare_primary_origin(name,"disconnected",&many,&disconnected);
+        let finish=begin(page);
+        let reconnecting=draw(page);
+        assert!(!failed(page),"{name}: reconnect did not clear error");
+        compare_top_slots(name,"reconnecting",&many,&reconnecting);
+        compare_primary_origin(name,"reconnecting",&many,&reconnecting);
+        finish(Ok(64));
         let recovered=draw(page);
         assert!(!failed(page),"{name}: recovery failed");
         compare_top_slots(name,"recovery",&many,&recovered);
