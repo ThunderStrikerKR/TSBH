@@ -280,10 +280,11 @@ fn cell(ui:&Ui,rect:Rect,visible:&str,align:Align2,
     }else if align==Align2::CENTER_CENTER{
         padded.center().x-label.size().x/2.0
     }else{padded.left()};
+    let overflow=components::text_exceeds_rect(label.size(),clip);
     ui.painter().with_clip_rect(clip).galley(
         egui::pos2(x,padded.center().y-label.size().y/2.0),label,color
     );
-    if !visible.is_empty(){
+    if overflow&&!visible.is_empty(){
         ui.interact(clip,ui.make_persistent_id(("excel-table-cell",id)),Sense::hover())
             .on_hover_text(visible);
     }
