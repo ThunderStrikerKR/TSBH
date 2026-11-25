@@ -3185,6 +3185,124 @@ mod tests {
         assert_eq!(scrolled_clip.right(),cell.right());
     }
     #[test]
+    fn rendered_price_grid_keeps_won_and_header_anchors(){
+        let (mut manager,ctx,requests)=price_test_manager();
+        // Unique nonempty amounts make all three rendered cells identifiable.
+        manager.products[0]["variants"][0]["wholesale"]=json!(15000);
+        manager.catalog.as_mut().unwrap()["products"][0]["variants"][0]["wholesale"]=json!(15000);
+        manager.price_mode=false;
+        let browse=product_page_text(&mut manager,&ctx);
+        manager.price_mode=true;
+        let edit=product_page_text(&mut manager,&ctx);
+        let find=|text:&[(String,Rect)],label:&str|->Rect{
+            text.iter().find(|(s,_)|s==label).map(|(_,rect)|*rect)
+                .unwrap_or_else(||panic!("missing rendered product text {label}"))
+        };
+        let mut suffixes=edit.iter().filter(|(s,_)|s=="원")
+            .map(|(_,rect)|*rect).collect::<Vec<_>>();
+        suffixes.sort_by(|a,b|a.left().total_cmp(&b.left()));
+        assert_eq!(suffixes.len(),3,"one non-editable won unit per price cell");
+        for (i,(header,amount)) in [("도매가","15,000"),("반도매가","19,000"),("소매가","26,000")]
+            .into_iter().enumerate(){
+            let normal=find(&browse,&format!("{amount}원"));
+            let number=find(&edit,amount);
+            let unit=suffixes[i];
+            let before_header=find(&browse,header);
+            let after_header=find(&edit,header);
+            assert!((before_header.min-after_header.min).length()<=1.0,
+                "column header {header} shifted: {before_header:?} -> {after_header:?}");
+            assert!((normal.right()-unit.right()).abs()<=1.0,
+                "won right anchor changed for {header}: {normal:?} -> {unit:?}");
+            assert!((normal.center().y-unit.center().y).abs()<=1.0,
+                "won vertical alignment changed for {header}");
+            // The TextEdit margin rounds the reserved suffix width to a whole
+            // point. Allow its rounding and the glyph-layout pixel rounding.
+            assert!(number.right()<=unit.left()+1.0,
+                "number overlaps its non-editable won suffix: {number:?} {unit:?}");
+            assert!((number.center().y-unit.center().y).abs()<=1.0,
+                "number and suffix are vertically misaligned for {header}");
+        }
+        for tier in ["wholesale","semi","retail"]{
+            let draft=&manager.price_drafts[&format!("p1:v1:{tier}")];
+            assert!(!draft.input.contains('원'));
+            assert!(!draft.dirty());
+        }
+        assert!(requests.try_recv().is_err(),"switching display mode must not write");
+    }
+
+    // Use the real list filter or the real product-detail editor. Locate
+    // controls from rendered text and deliver native egui pointer/key events.
+    fn brand_test_frame(manager:&mut ProductManager,ctx:&Context,detail:bool,
+        events:Vec<egui::Event>)->Vec<(String,Rect)>{
+        let work=Rect::from_min_size(egui::Pos2::ZERO,Vec2::new(1760.0,1000.0));
+        let time=ctx.input(|i|i.time)+0.1;
+        let output=ctx.run(egui::RawInput{
+            screen_rect:Some(work),time:Some(time),predicted_dt:0.1,
+            events,..Default::default()
+        },|ctx|{
+            if detail{manager.show_detail(ctx,work);}
+            else{egui::CentralPanel::default().show(ctx,|ui|manager.show_page(ui));}
+        });
+        let mut text=Vec::new();
+        for shape in &output.shapes{collect_product_text(&shape.shape,&mut text);}
+        text
+    }
+    fn brand_test_click(manager:&mut ProductManager,ctx:&Context,detail:bool,pos:egui::Pos2)
+        ->Vec<(String,Rect)>{
+        brand_test_frame(manager,ctx,detail,vec![egui::Event::PointerMoved(pos)]);
+        for pressed in [true,false]{
+            brand_test_frame(manager,ctx,detail,vec![egui::Event::PointerButton{
+                pos,button:egui::PointerButton::Primary,pressed,
+                modifiers:egui::Modifiers::NONE
+            }]);
+        }
+        brand_test_frame(manager,ctx,detail,vec![])
+    }
+    fn brand_test_label(text:&[(String,Rect)],label:&str)->egui::Pos2{
+        text.iter().rev().find(|(s,_)|s==label)
+            .unwrap_or_else(||panic!("missing rendered brand control {label}")).1.center()
+    }
+    #[test]
+    fn rendered_brand_search_selects_registered_id_in_list_and_detail(){
+        for detail in [false,true]{
+            for query in ["k&m","케이앤엠","독일브랜드","K AND M"]{
+                let (mut manager,ctx,requests)=price_test_manager();
+                manager.price_mode=false;
+                manager.catalog.as_mut().unwrap()["brands"]=json!([
+                    {"id":"brand-target","name":"K&M","korean":"케이앤엠",
+                        "aliases":["독일브랜드","K and M"]},
+                    {"id":"brand-other","name":"Other Brand","korean":"다른 브랜드","aliases":[]}
+                ]);
+                if detail{manager.begin_edit(manager.products[0].clone());}
+                let mut text=Vec::new();
+                for _ in 0..6{text=brand_test_frame(&mut manager,&ctx,detail,vec![]);}
+                let trigger=brand_test_label(&text,if detail{"브랜드 미지정"}else{"전체 브랜드"});
+                text=brand_test_click(&mut manager,&ctx,detail,trigger);
+                assert!(text.iter().any(|(s,_)|s=="K&M"),"brand popup did not open");
+                let search=brand_test_label(&text,"브랜드 검색");
+                brand_test_click(&mut manager,&ctx,detail,search);
+                text=brand_test_frame(&mut manager,&ctx,detail,
+                    vec![egui::Event::Text(query.into())]);
+                assert!(text.iter().any(|(s,_)|s=="K&M"),"query {query} missed its brand");
+                assert!(!text.iter().any(|(s,_)|s=="Other Brand"),
+                    "query {query} did not filter an unrelated option");
+                if detail{
+                    assert!(field(manager.selected.as_ref().unwrap(),"brandId").is_empty());
+                }else{assert!(manager.brand.is_empty());}
+                let option=brand_test_label(&text,"K&M");
+                brand_test_click(&mut manager,&ctx,detail,option);
+                if detail{
+                    assert_eq!(manager.selected.as_ref().unwrap()["brandId"],"brand-target");
+                    assert_eq!(manager.selected.as_ref().unwrap()["variants"],
+                        manager.original_selected.as_ref().unwrap()["variants"]);
+                    assert!(field(manager.original_selected.as_ref().unwrap(),"brandId").is_empty());
+                }else{assert_eq!(manager.brand,"brand-target");}
+                assert!(requests.try_recv().is_err(),"brand search/selection must not save a product");
+            }
+        }
+    }
+
+    #[test]
     fn price_editor_won_suffix_shares_read_only_right_alignment(){
         let cell=Rect::from_min_size(
             egui::pos2(10.0,10.0),
