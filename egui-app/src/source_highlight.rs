@@ -579,7 +579,11 @@ fn style_visual_blocks(
     let mut covering=std::collections::BTreeSet::new();
     for &(start,end,start_char,char_cursor) in &geometry.intervals{
         while starts<geometry.starts.len() && spans[geometry.starts[starts]].start<=start{
-            covering.insert(geometry.starts[starts]);starts+=1;
+            let index=geometry.starts[starts];
+            // Malformed evidence may have byte bounds inside one valid
+            // interval. Never reinsert it after its end was already passed.
+            if spans[index].end>=end{covering.insert(index);}
+            starts+=1;
         }
         while ends<geometry.ends.len() && spans[geometry.ends[ends]].end<end{
             covering.remove(&geometry.ends[ends]);ends+=1;
