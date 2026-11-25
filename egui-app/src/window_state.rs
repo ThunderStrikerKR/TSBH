@@ -64,6 +64,7 @@ mod native{
         fn GetWindowThreadProcessId(hwnd:Hwnd,pid:*mut u32)->u32;
         fn GetWindowTextW(hwnd:Hwnd,buffer:*mut u16,len:i32)->i32;
         fn IsWindowVisible(hwnd:Hwnd)->i32;
+        fn IsWindow(hwnd:Hwnd)->i32;
         fn IsIconic(hwnd:Hwnd)->i32;
         fn IsZoomed(hwnd:Hwnd)->i32;
         fn GetWindowPlacement(hwnd:Hwnd,placement:*mut Placement)->i32;
@@ -144,17 +145,26 @@ mod native{
     #[derive(Default)]
     pub struct Tracker{
         initialized:bool,
-        last_check:Option<Instant>,
+        hwnd:Option<Hwnd>,
+        last_write:Option<Instant>,
+        last_observed:Option<Saved>,
         last_saved:Option<Saved>,
     }
     impl Tracker{
-        pub fn update(&mut self,ctx:&eframe::egui::Context){
-            if self.last_check.is_some_and(|t|t.elapsed()<Duration::from_millis(500)){
-                return;
+        fn handle(&mut self)->Option<Hwnd>{
+            if let Some(hwnd)=self.hwnd{
+                let mut pid=0u32;
+                unsafe{GetWindowThreadProcessId(hwnd,&mut pid);}
+                if pid==std::process::id()&&unsafe{IsWindow(hwnd)}!=0{
+                    return Some(hwnd);
+                }
             }
-            self.last_check=Some(Instant::now());
-            let Some(hwnd)=hub() else{
-                if !self.initialized{ctx.request_repaint_after(Duration::from_millis(500));}
+            self.hwnd=hub();
+            self.hwnd
+        }
+        pub fn update(&mut self,ctx:&eframe::egui::Context){
+            let Some(hwnd)=self.handle() else{
+                if !self.initialized{ctx.request_repaint_after(Duration::from_millis(100));}
                 return;
             };
             if !self.initialized{
@@ -162,27 +172,49 @@ mod native{
                 self.last_saved=ui_state_path("window-state.json")
                     .and_then(|p|std::fs::read_to_string(p).ok())
                     .and_then(|s|Saved::decode(&s));
+                self.last_observed=self.last_saved;
                 if let Some(saved)=self.last_saved{
                     if let Err(error)=saved.restore(hwnd){
                         eprintln!("[BANDO HUB] 창 상태 복원 실패: {error}");
                     }
                 }
-                ctx.request_repaint_after(Duration::from_millis(500));
+                ctx.request_repaint_after(Duration::from_millis(100));
                 return;
             }
-            self.save(hwnd);
+            // Observe before every UI action (including auto-minimize), but
+            // throttle actual disk writes. Native HWND lookup is cached.
+            self.observe(hwnd);
+            if self.last_observed==self.last_saved{return;}
+            let remaining=self.last_write.map(|t|
+                Duration::from_millis(500).saturating_sub(t.elapsed()))
+                .unwrap_or_default();
+            if !remaining.is_zero(){
+                ctx.request_repaint_after(remaining);
+                return;
+            }
+            self.save();
         }
-        fn save(&mut self,hwnd:Hwnd){
-            let Some(current)=Saved::capture(hwnd,self.last_saved) else{return;};
+        fn observe(&mut self,hwnd:Hwnd){
+            if let Some(current)=Saved::capture(hwnd,self.last_observed){
+                self.last_observed=Some(current);
+            }
+        }
+        fn save(&mut self){
+            let Some(current)=self.last_observed else{return;};
             if self.last_saved==Some(current){return;}
             let Some(path)=ui_state_path("window-state.json") else{return;};
+            self.last_write=Some(Instant::now());
             match write_atomic(&path,current.encode().as_bytes()){
                 Ok(())=>self.last_saved=Some(current),
                 Err(error)=>eprintln!("[BANDO HUB] 창 상태 저장 실패: {error}"),
             }
         }
         pub fn finish(&mut self){
-            if self.initialized{if let Some(hwnd)=hub(){self.save(hwnd);}}
+            if !self.initialized{return;}
+            // The cached HWND may still be valid when eframe hides the
+            // window on close. If already destroyed, flush last observation.
+            if let Some(hwnd)=self.handle(){self.observe(hwnd);}
+            self.save();
         }
     }
     #[cfg(test)]
