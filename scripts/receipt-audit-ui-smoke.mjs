@@ -559,8 +559,8 @@ try {
   await page.getByText("3건 조회").waitFor();
   // Two explicit layouts inside one Kakao pane; connection is not a view.
   await page.reload();
-  await page.getByRole("button", { name: "카카오톡 함께 보기" }).click();
-  const modes = page.getByRole("group", { name: "카카오톡 보기 방식" });
+  await page.getByRole("button", { name: "카카오톡 연결", exact: true }).click();
+  const modes = page.getByRole("group", { name: "카카오톡 보기 및 연결 관리" });
   await modes.waitFor();
   assert.equal(await page.getByRole("dialog", { name: "연결할 카카오톡 창 선택" }).count(), 0,
     "v0.8.10 connects directly without requiring an unnecessary picker");
@@ -576,7 +576,7 @@ try {
   await overlap.click();
   assert.equal(await overlap.getAttribute("aria-pressed"), "true");
   await modes.getByRole("button", { name: "카카오톡 연결 해제" }).click();
-  await page.getByRole("button", { name: "카카오톡 함께 보기" }).waitFor();
+  await page.getByRole("button", { name: "카카오톡 연결", exact: true }).waitFor();
   // STORE file is a frozen Logen workbook, not proof of shipment.
   await nav.getByRole("button", { name: "엑셀 관리" }).click();
   const factoryFolder = page.getByRole("button", { name: "오늘 공장 Excel 폴더 열기" });
