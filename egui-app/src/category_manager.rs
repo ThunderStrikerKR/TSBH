@@ -453,7 +453,7 @@ impl CategoryManager {
             +theme::CATALOG_TREE_INDENT*depth as f32;
         let icon_rect=egui::Rect::from_min_size(
             egui::pos2(icon_x,rect.center().y-theme::SPACE_8),
-            Vec2::splat(theme::SPACE_12)
+            Vec2::splat(theme::SPACE_16)
         );
         let tree_stroke=egui::Stroke::new(
             theme::CATALOG_TREE_GUIDE_WIDTH,theme::CATALOG_TREE_GUIDE_COLOR

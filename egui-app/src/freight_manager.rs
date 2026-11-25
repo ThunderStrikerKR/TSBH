@@ -851,7 +851,7 @@ impl FreightManager {
                 summary(strip,"배송 그룹",groups.len());
             });
         });
-        // One 16pt boundary between the stats strip and the next section.
+        // One 12pt boundary between the stats strip and the next section.
         // show_groups() must not add a second top margin on top of this.
         ui.add_space(theme::SPACE_12);
         // Keep the approved Freight Assignment as the layout reference,
@@ -1281,7 +1281,7 @@ impl FreightManager {
             // Dual-master CONFLICT-001=C: align the rightmost toolbar
             // control with the CARD'S INNER RIGHT EDGE, like Order History.
             // Do not subtract the table-only 10pt scrollbar gutter here.
-            // Keep the same 16pt separation between left and right tools.
+            // Keep the same 12pt separation between left and right tools.
             let toolbar_content_width=toolbar_rect.width().max(0.0);
             let bulk_width=500.0_f32.min(toolbar_content_width);
             let left_width=(toolbar_content_width-bulk_width-theme::SPACE_12).max(0.0);
@@ -2894,9 +2894,9 @@ mod rate_toolbar_tests{
             theme::SECTION_DIVIDER_GAP+
             theme::SOFT_DIVIDER_WIDTH+
             theme::SECTION_DIVIDER_GAP;
-        assert!((expected_gap-69.0).abs()<0.01);
+        assert!((expected_gap-61.0).abs()<0.01);
         assert!((header.top()-top-expected_gap).abs()<0.01,
-            "history header must stay at master's 36pt + 33pt origin");
+            "history header must stay at master's 36pt + 25pt origin");
         assert!((header.height()-theme::MANAGEMENT_TABLE_HEADER_HEIGHT).abs()<0.01);
         assert!((content.height()-theme::MANAGEMENT_TABLE_HEADER_HEIGHT).abs()<0.01);
     }

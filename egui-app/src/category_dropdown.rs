@@ -164,7 +164,7 @@ fn category_option_row(
     if !show_ancestors{labels.push(&node.name);}
     // The right chevron has a fixed, separate 16pt reserve. Text length
     // cannot expand the row or alter the popup's fixed 546pt width.
-    let available=(rect.width()-theme::SPACE_8*2.0-theme::SPACE_12).max(0.0);
+    let available=(rect.width()-theme::SPACE_8*2.0-theme::SPACE_16).max(0.0);
     let measure=|value:&str|ui.painter().layout_no_wrap(
         value.to_owned(),font.clone(),theme::TEXT
     ).size().x;

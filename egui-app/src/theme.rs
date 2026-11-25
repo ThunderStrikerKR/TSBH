@@ -220,8 +220,7 @@ pub const SECTION_PADDING: f32 = SPACE_12;
 // One structural section-divider geometry across Reception, management and modal sections.
 pub const SECTION_DIVIDER_GAP: f32 = SPACE_12;
 pub const SECTION_DIVIDER_HEIGHT: f32 = 2.0 * SECTION_DIVIDER_GAP + SOFT_DIVIDER_WIDTH;
-// Reception card side/bottom inset. The title row has its own top inset
-// so optical header balance does not change the body bottom clearance.
+// Reception card insets share the same 12pt structural spacing.
 pub const RECEPTION_PANE_PADDING_Y: f32 = SECTION_PADDING;
 // The outer source frame owns the 4pt document inset. Both native TextEdit
 // and the manual Galley renderer use this same additional text margin.
@@ -250,7 +249,7 @@ pub const RECEPTION_RECIPIENT_NAV_WIDTH:f32 =
     +RECEPTION_RECIPIENT_NAV_NAME_WIDTH
     +RECEPTION_RECIPIENT_NAV_COUNT_WIDTH
     +2.0*FRAME_STROKE_WIDTH;
-// Reception card title top inset is independent of the shared section divider.
+// Reception card title top inset follows the shared section padding.
 pub const RECEPTION_SECTION_HEADER_TOP: f32 = SECTION_PADDING;
 // Canvas/footer clearance must be counted in the message editor's height.
 pub const RECEPTION_MESSAGE_ACTION_GAP: f32 = SPACE_12;
