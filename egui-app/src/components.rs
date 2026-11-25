@@ -1656,33 +1656,6 @@ pub fn modal_window(
         .frame(theme::modal_frame())
 }
 
-/// Backward-compatible title entry point. All ordinary dialogs now use
-/// the approved OCR master header: one PANEL surface, one divider, title
-/// LEFT and Cancel/Close RIGHT. Compact dialogs omit the second subtitle
-/// row; they do not inherit the large OCR dialog's 84pt header.
-pub fn modal_header(ui:&mut Ui,title:&str,close_label:&str,enabled:bool)->bool{
-    let (rect,_)=ui.allocate_exact_size(
-        Vec2::new(ui.available_width(),theme::MODAL_HEADER_HEIGHT),
-        Sense::hover()
-    );
-    let close=modal_master_header_in_rect(ui,rect,title,"",close_label,enabled);
-    // Keep the first body line clear of the header's bottom divider. The
-    // compact dialog has no separate scrolling chrome or subtitle row.
-    ui.add_space(theme::SPACE_8);
-    close
-}
-
-/// Header for modal workspaces that use exact structural spacing.
-/// The compact base header already allocates 8pt after its border; top it
-/// up to the shared 16pt block gap, without changing existing popups.
-pub fn modal_header_with_workspace_gap(
-    ui:&mut Ui,title:&str,close_label:&str,enabled:bool
-)->bool{
-    let close=modal_header(ui,title,close_label,enabled);
-    ui.add_space((theme::MODAL_MASTER_WORKSPACE_GAP-theme::SPACE_8).max(0.0));
-    close
-}
-
 /// Runtime-measured rects for the common editable modal stack.
 /// These are actual egui allocation results, not inferred pixel offsets.
 #[derive(Clone,Debug,Default)]
@@ -1925,39 +1898,6 @@ pub fn modal_editor_workspace<R>(
     (close,value,owner.geometry)
 }
 
-/// Fixed popup title region with its own background and a single
-/// Freight-master DIVIDER at the bottom. This is an opt-in popup v2
-/// component during the three-screen rollout: old dialogs keep their
-/// approved geometry until explicitly migrated.
-/// Compatibility for fixed-position compact headers during migration.
-pub fn modal_header_in_rect(
-    ui:&mut Ui,rect:Rect,title:&str,close_label:&str,enabled:bool
-)->bool {
-    modal_master_header_in_rect(ui,rect,title,"",close_label,enabled)
-}
-
-/// Standard 56pt title slot. The returned event is still the original
-/// user-supplied cancel/close action; this component changes appearance only.
-pub fn modal_header_chrome(
-    ui:&mut Ui,title:&str,close_label:&str,enabled:bool
-)->bool {
-    let (rect,_)=ui.allocate_exact_size(
-        Vec2::new(ui.available_width(),theme::MODAL_HEADER_HEIGHT),
-        Sense::hover()
-    );
-    modal_header_in_rect(ui,rect,title,close_label,enabled)
-}
-
-/// Footer has a stable height, a subtle background and ONE upper divider.
-/// Do not create extra cancel buttons inside it.
-/// Backward-compatible master footer; reserve the full 36pt primary
-/// button height and render a single PANEL upper rule in every dialog.
-pub fn modal_footer_in_rect(
-    ui:&mut Ui,rect:Rect,actions:impl FnOnce(&mut Ui)
-) {
-    modal_master_footer_in_rect(ui,rect,actions)
-}
-
 /// Approved OCR modal geometry, now the default structural baseline for
 /// future egui dialogs. Text length and local scrollbars never move these
 /// three regions. Callers choose the appropriate popup size.
@@ -2109,18 +2049,6 @@ pub fn modal_master_workspace_finish(
         Stroke::new(outer_width,theme::DIVIDER),
         egui::StrokeKind::Inside
     );
-}
-
-/// Keep the one-call API for other dialogs. Screens with separately painted
-/// content can opt into background/finish without changing the master style.
-pub fn modal_master_workspace_surface(
-    ui:&Ui,rect:Rect,toolbar_height:f32,split_ratio:Option<f32>
-)->ModalMasterWorkspace {
-    let geometry=modal_master_workspace_background(
-        ui,rect,toolbar_height,split_ratio
-    );
-    modal_master_workspace_finish(ui,rect,geometry);
-    geometry
 }
 
 /// Draw the shared title/close controls inside an already allocated title row.
@@ -2387,20 +2315,6 @@ pub fn modal_list_max_height(
         .max(1.0).min(preferred.max(1.0))
 }
 
-/// Two-ended footer for an editor with both a contextual/danger action
-/// and a final Save/Apply action. The OCR-master surface, rule, height and
-/// button hitbox still belong to `modal_action_row`.
-///
-/// Independent LEFT and RIGHT slots prevent the primary action from being
-/// pushed off-screen by a longer destructive label or variable-width status.
-pub fn modal_action_row_split(
-    ui:&mut Ui,
-    leading:impl FnOnce(&mut Ui),
-    trailing:impl FnOnce(&mut Ui),
-) {
-    modal_action_row_split_measured(ui,leading,trailing);
-}
-
 fn modal_action_row_split_measured(
     ui:&mut Ui,
     leading:impl FnOnce(&mut Ui),
@@ -2416,14 +2330,6 @@ fn modal_action_row_split_measured(
             );
         });
     }).1
-}
-
-pub fn modal_footer_chrome(ui:&mut Ui,actions:impl FnOnce(&mut Ui)) {
-    let (rect,_)=ui.allocate_exact_size(
-        Vec2::new(ui.available_width(),theme::MODAL_FOOTER_HEIGHT),
-        Sense::hover()
-    );
-    modal_footer_in_rect(ui,rect,actions);
 }
 
 /// Single plain-body inset for both decision and editor workspaces.
@@ -2480,15 +2386,6 @@ pub fn modal_master_body_section<R>(
     }).inner
 }
 
-/// One coherent nested information section, visually related to Freight
-/// Shipping-Group Assignment's PANEL/DIVIDER hierarchy. Continuous fields
-/// share the same frame rather than each receiving a redundant border.
-pub fn modal_section<R>(
-    ui:&mut Ui,title:&str,contents:impl FnOnce(&mut Ui)->R
-)->R {
-    modal_section_measured(ui,title,contents).inner
-}
-
 /// Exact outer card rectangle from the same canonical section renderer.
 /// Do not estimate it from the inner body or content text size.
 pub fn modal_section_measured<R>(
@@ -2513,38 +2410,9 @@ pub fn modal_section_measured<R>(
 /// Eguis default item_spacing is additive to manual add_space() calls.
 /// A controlled modal sets vertical spacing to zero, and structural gaps
 /// are then allocated exactly once by the master components below.
-/// Keep normal 8pt spacing *inside* ordinary modal_section field content.
+/// Keep normal 8pt spacing inside the shared section field content.
 pub fn modal_master_controlled_spacing(ui:&mut Ui){
     ui.spacing_mut().item_spacing.y=0.0;
-}
-
-/// Same nested-section surface for absolute-layout dialogs such as OCR.
-/// Caller is responsible for fixed content hit areas and clipping.
-pub fn modal_section_surface(ui:&Ui,rect:Rect,header_height:f32) {
-    let painter=ui.painter();
-    painter.rect_filled(
-        rect,theme::MODAL_SECTION_RADIUS,theme::MODAL_SECTION_BG
-    );
-    let band=Rect::from_min_max(
-        rect.min+Vec2::splat(1.0),
-        egui::pos2(
-            (rect.right()-1.0).max(rect.left()+1.0),
-            (rect.top()+header_height).min(rect.bottom()).max(rect.top()+1.0)
-        )
-    );
-    painter.rect_filled(
-        band,theme::MODAL_SECTION_RADIUS,theme::MODAL_SECTION_HEADER_BG
-    );
-    let y=(rect.top()+header_height).min(rect.bottom());
-    painter.line_segment(
-        [egui::pos2(rect.left()+1.0,y),egui::pos2(rect.right()-1.0,y)],
-        Stroke::new(theme::SOFT_DIVIDER_WIDTH,theme::DIVIDER)
-    );
-    painter.rect_stroke(
-        rect,theme::MODAL_SECTION_RADIUS,
-        Stroke::new(theme::FRAME_STROKE_WIDTH,theme::DIVIDER),
-        egui::StrokeKind::Inside
-    );
 }
 
 /// A nested decision remains an interactive Foreground window.
@@ -2604,11 +2472,6 @@ impl DecisionWorkspace<'_>{
     pub fn actions<R>(&mut self,contents:impl FnOnce(&mut Ui)->R)->egui::InnerResponse<R>{
         self.before_actions();
         modal_action_row(self.ui,contents)
-    }
-
-    pub fn actions_split(&mut self,leading:impl FnOnce(&mut Ui),trailing:impl FnOnce(&mut Ui)){
-        self.before_actions();
-        modal_action_row_split(self.ui,leading,trailing);
     }
 }
 
@@ -2711,38 +2574,6 @@ pub fn modal_window_layer(id:&'static str)->egui::LayerId {
 pub fn modal_foreground_for_window(
     ctx:&egui::Context,window_id:&'static str
 ){
-    let dialog_layer=modal_window_layer(window_id);
-    ctx.memory_mut(|memory|{
-        memory.areas_mut().move_to_top(dialog_layer);
-        memory.set_modal_layer(dialog_layer);
-    });
-}
-
-/// Render the nested dim first, then restore the decision window to the top
-/// of the Foreground stack. The full-screen backdrop itself can be marked
-/// topmost by egui when the pointer is pressed anywhere inside its rectangle.
-/// Without this explicit reordering, the backdrop can move above the dialog
-/// and swallow every button. The modal input boundary is the dialog layer.
-pub fn modal_backdrop_for_window(
-    ctx:&egui::Context,backdrop_id:&'static str,window_id:&'static str
-) {
-    let viewport=ctx.screen_rect();
-    let area=egui::Area::new(egui::Id::new(backdrop_id))
-        .order(egui::Order::Foreground)
-        .fixed_pos(viewport.min)
-        .movable(false)
-        .interactable(false)
-        .sense(egui::Sense::hover());
-    area.show(ctx,|ui|{
-        let (rect,_)=ui.allocate_exact_size(
-            viewport.size(),egui::Sense::hover()
-        );
-        ui.painter().rect_filled(
-            rect,0.0,egui::Color32::from_black_alpha(
-                theme::MODAL_NESTED_BACKDROP_ALPHA
-            )
-        );
-    });
     let dialog_layer=modal_window_layer(window_id);
     ctx.memory_mut(|memory|{
         memory.areas_mut().move_to_top(dialog_layer);
@@ -5371,16 +5202,6 @@ impl ClientDisplaySummary{
     pub fn secondary_mobile(&self)->&str{
         if self.phone.trim().is_empty() || self.mobile.trim().is_empty()
             || self.phone==self.mobile{""}else{&self.mobile}
-    }
-    pub fn hover_details(&self)->String{
-        let mut parts=vec![self.name.clone()];
-        if !self.address.trim().is_empty(){parts.push(format!("주소: {}",self.address));}
-        if !self.phone.trim().is_empty(){parts.push(format!("전화번호: {}",self.phone));}
-        if !self.mobile.trim().is_empty()&&self.mobile!=self.phone{
-            parts.push(format!("휴대폰번호: {}",self.mobile));
-        }
-        if !self.conditions.is_empty(){parts.push(self.conditions.clone());}
-        parts.join("\n")
     }
 }
 
@@ -8819,7 +8640,7 @@ mod modal_section_heading_spacing_tests {
             .split("/// A heading and one divider").next().unwrap();
         assert!(helper.contains("ui.spacing_mut().item_spacing.y=0.0;"));
         assert!(helper.contains("section_divider(ui);"));
-        let boxed=source.split("pub fn modal_section<R>(").nth(1).unwrap()
+        let boxed=source.split("pub fn modal_section_measured<R>(").nth(1).unwrap()
             .split("/// Structural spacing").next().unwrap();
         assert!(boxed.contains("modal_section_heading_with_rule(section,title)"));
         assert!(!boxed.contains("theme::divider(section)"));
