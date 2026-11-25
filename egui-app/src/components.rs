@@ -1110,6 +1110,56 @@ pub fn paint_workflow_auxiliary_content(
     }
 }
 
+/// Fixed-size workflow actions share one renderer; callers retain workflow IDs
+/// and business transitions. Stage controls keep hover when disabled because
+/// they also open the existing order preview.
+#[derive(Clone, Copy)]
+pub enum WorkflowFixedAction<'a> {
+    Auxiliary(WorkflowAuxiliaryAction),
+    Stage(&'a str),
+}
+
+pub fn workflow_fixed_action(
+    ui:&mut Ui,id:egui::Id,rect:Rect,
+    action:WorkflowFixedAction<'_>,enabled:bool
+)->Response{
+    let response=ui.interact(
+        rect,id,if enabled{Sense::click()}else{Sense::hover()}
+    );
+    let stage=matches!(action,WorkflowFixedAction::Stage(_));
+    let (fill,ink,stroke)=if enabled{
+        if stage{(theme::BRIGHT,theme::BRIGHT_TEXT,Stroke::NONE)}
+        else{(theme::RAISED,theme::TEXT,Stroke::new(theme::FRAME_STROKE_WIDTH,theme::BORDER))}
+    }else{
+        (theme::DISABLED_ACTION_BG,theme::DISABLED_ACTION_TEXT,
+         Stroke::new(if stage{theme::SOFT_DIVIDER_WIDTH}else{theme::FRAME_STROKE_WIDTH},
+            theme::DISABLED_ACTION_BORDER))
+    };
+    let radius=5.0;
+    let painter=ui.painter();
+    painter.rect_filled(rect,radius,fill);
+    if !stage || !enabled{
+        painter.rect_stroke(rect,radius,stroke,egui::StrokeKind::Inside);
+    }
+    match action{
+        WorkflowFixedAction::Auxiliary(action)=>
+            paint_workflow_auxiliary_content(painter,rect.center(),action,ink),
+        WorkflowFixedAction::Stage(text)=>{
+            let galley=painter.layout_no_wrap(
+                text.to_owned(),
+                egui::FontId::proportional(typography::FONT_STANDARD_ACTION),ink
+            );
+            painter.with_clip_rect(rect.shrink2(Vec2::new(theme::SPACE_8,0.0)))
+                .galley(egui::Pos2::new(
+                    rect.center().x-galley.size().x/2.0,
+                    rect.center().y-galley.size().y/2.0
+                ),galley,ink);
+        }
+    }
+    if enabled || stage{theme::paint_button_hover(ui,&response,radius);}
+    response
+}
+
 #[cfg(test)]
 mod common_action_tooltip_tests{
     use super::*;

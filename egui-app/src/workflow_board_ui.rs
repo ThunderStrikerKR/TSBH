@@ -329,27 +329,10 @@ fn workflow_auxiliary_at(
         components::WorkflowAuxiliaryAction::Delete=>"delete",
         components::WorkflowAuxiliaryAction::PreviousStage=>"undo",
     };
-    let effective=enabled;
-    let response=ui.interact(
-        rect,Id::new(("workflow-aux",id,kind,in_preview)),
-        if effective{egui::Sense::click()}else{egui::Sense::hover()}
-    );
-    let painter=ui.painter();
-    let (fill,stroke,ink)=if effective{
-        (theme::RAISED,theme::BORDER,theme::TEXT)
-    }else{
-        (theme::DISABLED_ACTION_BG,theme::DISABLED_ACTION_BORDER,
-         theme::DISABLED_ACTION_TEXT)
-    };
-    painter.rect_filled(rect,5.0,fill);
-    painter.rect_stroke(
-        rect,5.0,
-        egui::Stroke::new(theme::FRAME_STROKE_WIDTH,stroke),
-        egui::StrokeKind::Inside
-    );
-    components::paint_workflow_auxiliary_content(painter,rect.center(),action,ink);
-    if effective{theme::paint_button_hover(ui,&response,5.0);}
-    response
+    components::workflow_fixed_action(
+        ui,Id::new(("workflow-aux",id,kind,in_preview)),rect,
+        components::WorkflowFixedAction::Auxiliary(action),enabled
+    )
 }
 /// One allocated 85pt rectangle, not three independent egui allocations.
 /// The divider position and both 42pt band bounds come from this same rect.
@@ -533,33 +516,11 @@ fn primary_release_inside(ui:&Ui,rect:Rect)->bool{
 fn workflow_primary_at(
     ui:&mut Ui,id:&str,rect:Rect,text:&str,enabled:bool,in_preview:bool
 )->(egui::Response,bool){
-    let response=ui.interact(
-        rect,workflow_widget_id("workflow-stage-button",id,in_preview),
-        if enabled{egui::Sense::click()}else{egui::Sense::hover()}
+    let response=components::workflow_fixed_action(
+        ui,workflow_widget_id("workflow-stage-button",id,in_preview),rect,
+        components::WorkflowFixedAction::Stage(text),enabled
     );
     let clicked=enabled && (response.clicked() || primary_release_inside(ui,rect));
-    let fill=if enabled{theme::BRIGHT}else{theme::DISABLED_ACTION_BG};
-    let ink=if enabled{theme::BRIGHT_TEXT}else{theme::DISABLED_ACTION_TEXT};
-    ui.painter().rect_filled(rect,5.0,fill);
-    if !enabled{
-        ui.painter().rect_stroke(
-            rect,5.0,
-            egui::Stroke::new(theme::SOFT_DIVIDER_WIDTH,theme::DISABLED_ACTION_BORDER),
-            egui::StrokeKind::Inside
-        );
-    }
-    let galley=ui.painter().layout_no_wrap(
-        text.to_owned(),
-        egui::FontId::proportional(typography::FONT_STANDARD_ACTION),ink
-    );
-    ui.painter().with_clip_rect(rect.shrink2(Vec2::new(theme::SPACE_8,0.0)))
-        .galley(Pos2::new(
-            rect.center().x-galley.size().x/2.0,
-            rect.center().y-galley.size().y/2.0
-        ),galley,ink);
-    // A completed workflow's stage can be disabled for click yet remains an
-    // interactive hover-preview trigger; show the preview affordance.
-    theme::paint_button_hover(ui,&response,5.0);
     (response,clicked)
 }
 /// The lower band is a true full-bleed #292929 surface. Shipping and money
