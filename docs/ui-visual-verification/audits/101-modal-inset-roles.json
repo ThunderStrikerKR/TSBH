@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "id": "101-modal-inset-roles",
+  "screen": "Modal nested recipient checklist and removable search tags (101차 3단계)",
+  "files": [
+    "egui-app/src/theme.rs",
+    "egui-app/src/components.rs",
+    "egui-app/src/main.rs"
+  ],
+  "visualStatus": "NOT_VERIFIED",
+  "reason": "Preserved original role-specific margins and surface attributes in the shared theme, with a regression test. Human-reviewed Windows screenshots for the changed blobs at two viewport sizes are not available."
+}

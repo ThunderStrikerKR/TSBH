@@ -886,8 +886,47 @@ fn nested_input_surface_frame()->Frame{
         .corner_radius(CornerRadius::same(CONTROL_RADIUS))
 }
 
+/// Nested surface variants describe a content role, not a screen-specific
+/// style override. All variants inherit identical fill, border and rounding.
+#[derive(Clone,Copy,Debug,Eq,PartialEq)]
+pub enum ModalNestedRole {
+    Standard,
+    RecipientChecklist,
+    CompactTag,
+}
+
+pub fn modal_nested_role_frame(role:ModalNestedRole)->Frame{
+    let margin=match role{
+        ModalNestedRole::Standard=>egui::Margin::same(SPACE_8 as i8),
+        ModalNestedRole::RecipientChecklist=>egui::Margin::symmetric(SPACE_12 as i8,SPACE_8 as i8),
+        ModalNestedRole::CompactTag=>egui::Margin::symmetric(SPACE_8 as i8,SPACE_2 as i8),
+    };
+    nested_input_surface_frame().inner_margin(margin)
+}
+
 pub fn modal_nested_frame() -> Frame {
-    nested_input_surface_frame().inner_margin(SPACE_8)
+    modal_nested_role_frame(ModalNestedRole::Standard)
+}
+
+#[cfg(test)]
+mod modal_nested_role_tests{
+    use super::*;
+
+    #[test]
+    fn nested_roles_preserve_approved_margins_and_shared_surface(){
+        let standard=modal_nested_frame();
+        for (role,x,y) in [
+            (ModalNestedRole::Standard,8,8),
+            (ModalNestedRole::RecipientChecklist,12,8),
+            (ModalNestedRole::CompactTag,8,2),
+        ]{
+            let frame=modal_nested_role_frame(role);
+            assert_eq!(frame.inner_margin,egui::Margin::symmetric(x,y));
+            assert_eq!(frame.fill,standard.fill);
+            assert_eq!(frame.stroke,standard.stroke);
+            assert_eq!(frame.corner_radius,standard.corner_radius);
+        }
+    }
 }
 
 pub fn section_frame() -> Frame {

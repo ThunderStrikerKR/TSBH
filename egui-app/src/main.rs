@@ -3495,10 +3495,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                     // The tinted bordered surface marks the exact scrollable region.
                     // Reserve five rows for short orders, expand to ten recipients,
                     // then scroll within the same surface for additional orders.
-                    theme::modal_nested_frame()
-                        .inner_margin(egui::Margin::symmetric(
-                            theme::SPACE_12 as i8,theme::SPACE_8 as i8
-                        ))
+                    theme::modal_nested_role_frame(theme::ModalNestedRole::RecipientChecklist)
                         .show(ui,|panel|{
                             egui::ScrollArea::vertical()
                                 .max_height(list_height)

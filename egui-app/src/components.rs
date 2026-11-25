@@ -730,7 +730,8 @@ mod shared_screen_component_contract_tests {
             .split("\n    fn ").next().unwrap();
         assert!(vat.contains("components::checkbox("));
         assert!(vat.contains("components::checkbox_list_row("));
-        assert!(vat.contains("theme::modal_nested_frame()"));
+        assert!(vat.contains("theme::modal_nested_role_frame(theme::ModalNestedRole::RecipientChecklist)"));
+        assert!(!vat.contains(".inner_margin("));
 
         let messages=production_source(include_str!("automatic_message_manager.rs"));
         assert!(messages.contains("components::multiline_text_field("));
@@ -989,8 +990,7 @@ pub fn removable_tag_chip(ui:&mut Ui,tag:&str)->Response{
     let visible=if tag.chars().count()>22{
         format!("{}…",tag.chars().take(22).collect::<String>())
     }else{tag.to_owned()};
-    theme::modal_nested_frame()
-        .inner_margin(egui::Margin::symmetric(8,2))
+    theme::modal_nested_role_frame(theme::ModalNestedRole::CompactTag)
         .show(ui,|chip|{
             chip.horizontal(|line|{
                 line.spacing_mut().item_spacing.x=theme::SPACE_4;
@@ -2129,7 +2129,7 @@ pub fn modal_master_body<R>(
 }
 
 /// Shared modal-section heading geometry. Both margins around its
-/// 1pt rule are explicit 12pt, independent of egui's default item spacing.
+/// 1pt rule are explicit 16pt, independent of egui's default item spacing.
 /// Its content gets a separate scope to prevent an implicit extra 8pt gap.
 fn modal_section_heading_with_rule(ui:&mut Ui,title:&str){
     ui.spacing_mut().item_spacing.y=0.0;
@@ -6972,7 +6972,8 @@ mod shared_checkbox_contract_tests {
             .split("fn show_edit_history(").next().unwrap();
         assert!(dialog.contains("components::checkbox("));
         assert!(dialog.contains("components::checkbox_list_row("));
-        assert!(dialog.contains("theme::modal_nested_frame()"));
+        assert!(dialog.contains("theme::modal_nested_role_frame(theme::ModalNestedRole::RecipientChecklist)"));
+        assert!(!dialog.contains(".inner_margin("));
         assert!(!dialog.contains("egui::Checkbox::new("));
         assert!(!dialog.contains("egui::Frame::new()"));
 
@@ -9129,7 +9130,8 @@ mod round87_phase5_modal_contract_tests {
         assert_eq!(theme::MODAL_SECTION_PADDING,16.0);
         assert_eq!(theme::MODAL_SECTION_HEADER_RULE_GAP,16.0);
         assert_eq!(theme::MODAL_PANEL_PADDING_Y,16.0);
-        assert_eq!(theme::MODAL_PANEL_PADDING_X,18.0);
+        // 735ea52b normalized both outer popup insets to 16pt.
+        assert_eq!(theme::MODAL_PANEL_PADDING_X,16.0);
         assert_eq!(theme::MODAL_HEADER_HEIGHT,56.0);
         assert_eq!(theme::MODAL_FOOTER_HEIGHT,58.0);
     }
