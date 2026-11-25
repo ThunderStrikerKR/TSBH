@@ -17,6 +17,7 @@ on:
       - egui-app/src/manual_source_view.rs
       - egui-app/src/workflow_board_ui.rs
       - egui-app/src/cell_navigation.rs
+      - egui-app/src/reception_service.rs
       - egui-app/src/workflow_board.rs
       - egui-app/src/manual_workspace.rs
       - crates/bando-data-access/**
@@ -52,6 +53,10 @@ jobs:
       - name: Compile egui and verify admission and scope contracts
         shell: pwsh
         run: |
+          cargo test --manifest-path egui-app/Cargo.toml compact_virtualization_tests -- --nocapture
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cargo test --manifest-path egui-app/Cargo.toml reception_product_ellipsis_respects_width_and_korean_boundaries -- --nocapture
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           cargo test --manifest-path egui-app/Cargo.toml quote_identity_tests -- --nocapture
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           cargo test --manifest-path egui-app/Cargo.toml cell_navigation:: -- --nocapture
