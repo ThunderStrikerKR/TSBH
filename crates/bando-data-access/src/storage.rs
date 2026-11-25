@@ -49,37 +49,34 @@ where F:FnOnce(&Value)->Result<Value,String>{
     crate::product_colors::normalize_products(&mut state)?;
     crate::valid_state(&state)?;
     let changes_before=total_changes(&tx)?;
-    let (written,envelope_only)=write_validated(&tx,&current,state,expected_revision,validate_orders)?;
-    let verified=verify_written(&tx,current,written,envelope_only,changes_before)?;
+    let (written,scope)=write_validated(&tx,&current,state,expected_revision,validate_orders)?;
+    let verified=verify_written(&tx,current,written,scope,changes_before)?;
     tx.commit().map_err(err)?;
     Ok(verified)
 }
 
-// SQLite's total_changes includes trigger and foreign-key writes, unlike
-// changes(). Only a single app_state UPDATE with no other writes can reuse
-// the authoritative core rows already hydrated in this same transaction.
+// Compare the actual SQLite change counter with all direct DML results.
+// A trigger/cascade difference forces the original full projection.
 fn total_changes(tx:&Transaction<'_>)->Result<i64,String>{
     tx.query_row("SELECT total_changes()",[],|row|row.get(0)).map_err(err)
 }
 
-fn verify_written(tx:&Transaction<'_>,mut current:Value,written:Value,
-    envelope_only:bool,changes_before:i64)->Result<Value,String>{
+#[derive(Clone,Copy,Default)]
+struct WriteScope{
+    products:bool,
+    clients:bool,
+    orders:bool,
+    direct:usize,
+}
+
+fn verify_written(tx:&Transaction<'_>,current:Value,written:Value,
+    scope:WriteScope,changes_before:i64)->Result<Value,String>{
     let revision=written["revision"].as_u64().ok_or("업무 저장 revision 누락")?;
-    let verified=if envelope_only &&
-        total_changes(tx)?.checked_sub(changes_before)==Some(1){
-        // Read the actual persisted envelope, not the requested settings.
-        // No core SQL ran and SQLite reports no additional row writes.
-        let mut envelope=crate::read_envelope(tx)?;
-        let root=envelope.as_object_mut().ok_or("업무 상태는 객체여야 합니다.")?;
-        let prior=current.as_object_mut().ok_or("업무 상태는 객체여야 합니다.")?;
-        for key in ["products","clients","orders"]{
-            let value=prior.remove(key).ok_or("기존 업무자료 누락")?;
-            root.insert(key.to_owned(),value);
-        }
-        envelope
+    let actual=total_changes(tx)?.checked_sub(changes_before)
+        .and_then(|n|usize::try_from(n).ok());
+    let verified=if actual==Some(scope.direct) && scope.direct>0{
+        verify_scoped(tx,current,&written,scope)?
     }else{
-        // Changed core data or unexpected trigger/cascade writes: retain
-        // the original full persisted verification, still before COMMIT.
         drop(current);
         drop(written);
         crate::read_v2_snapshot(tx)?
@@ -90,8 +87,55 @@ fn verify_written(tx:&Transaction<'_>,mut current:Value,written:Value,
     Ok(verified)
 }
 
+fn verify_scoped(tx:&Transaction<'_>,mut current:Value,written:&Value,
+    scope:WriteScope)->Result<Value,String>{
+    let mut envelope=crate::read_envelope(tx)?;
+    let root=envelope.as_object_mut().ok_or("업무 상태는 객체여야 합니다.")?;
+    let prior=current.as_object_mut().ok_or("기존 업무 상태 오류")?;
+    for (key,changed) in [("products",scope.products),("clients",scope.clients),("orders",scope.orders)]{
+        let old=prior.remove(key).ok_or("기존 업무자료 누락")?;
+        let value=if !changed{old}else{
+            match key{
+                "products"=>Value::Array(crate::read_product_entities(tx)?),
+                "clients"=>Value::Array(crate::read_entities(tx,crate::CORE_CLIENTS_SQL)?),
+                "orders"=>Value::Array(verify_order_domain(tx,old,&written["orders"])?),
+                _=>unreachable!(),
+            }
+        };
+        root.insert(key.to_owned(),value);
+    }
+    Ok(envelope)
+}
+
+// Stable identities and positions permit indexed single-order readback.
+// Structural/bulk edits use the full order-domain projector; a mismatch
+// likewise falls back, rather than substituting requested data.
+fn verify_order_domain(tx:&Transaction<'_>,old:Value,next:&Value)
+    ->Result<Vec<Value>,String>{
+    if crate::relational_write::stable_orders(&old,next){
+        if let (Value::Array(mut rows),Some(expected))=(old,next.as_array()){
+            let changed:Vec<usize>=rows.iter().zip(expected)
+                .enumerate().filter_map(|(i,(a,b))|(a!=b).then_some(i)).collect();
+            if changed.len()<=8{
+                let mut matches=true;
+                for i in changed{
+                    let id=expected[i]["id"].as_str().ok_or("주문 ID 누락")?;
+                    let mut actual=crate::read_order_entities(tx,Some(id))?;
+                    if actual.len()!=1 || actual[0]!=expected[i]{
+                        matches=false;
+                        break;
+                    }
+                    rows[i]=actual.pop().unwrap();
+                }
+                if matches{return Ok(rows);}
+            }
+        }
+    }
+    crate::read_order_entities(tx,None)
+}
+
 fn write_validated(tx:&Transaction<'_>,current:&Value,mut state:Value,
-    current_revision:u64,validate_orders:bool)->Result<(Value,bool),String>{
+    current_revision:u64,validate_orders:bool)->Result<(Value,WriteScope),String>{
     let products_changed = current["products"] != state["products"];
     let clients_changed = current["clients"] != state["clients"];
     let orders_changed = current["orders"] != state["orders"];
@@ -116,25 +160,25 @@ fn write_validated(tx:&Transaction<'_>,current:&Value,mut state:Value,
     }else{
         reception::new_archive_entries(current,&state)?
     };
-    let envelope_only=!products_changed && !clients_changed &&
-        !orders_changed && archive_entries.is_empty();
+    let mut scope=WriteScope{products:products_changed,clients:clients_changed,
+        orders:orders_changed,direct:0};
     state["revision"] = json!(current_revision.checked_add(1)
         .ok_or("운영 DB revision 범위를 초과했습니다.")?);
     // The constrained SQLite tables own products, clients and orders.
     // Keep only non-core data in the compatibility envelope, atomically.
     // Settings-only changes never rewrite unchanged core rows.
     if products_changed || clients_changed || orders_changed {
-        crate::relational_write::store_v2_relational_delta(tx,current,&state)?;
+        scope.direct+=crate::relational_write::store_v2_relational_delta(tx,current,&state)?;
     }
-    tx.execute("UPDATE app_state SET payload=?1 WHERE id=1",
+    scope.direct+=tx.execute("UPDATE app_state SET payload=?1 WHERE id=1",
         [serialize_envelope(&state)?]).map_err(err)?;
     // Legacy search indexes are projections of the same before-image.
     // Child-only order edits do not change indexed columns.
     if products_changed {
-        sync_product_index(tx,current,&state)?;
+        scope.direct+=sync_product_index(tx,current,&state)?;
     }
     if orders_changed {
-        sync_order_index(tx,current,&state)?;
+        scope.direct+=sync_order_index(tx,current,&state)?;
     }
     for (id, order_id, record) in archive_entries {
         // Never silently discard a colliding audit ID with a different owner or payload.
@@ -149,13 +193,13 @@ fn write_validated(tx:&Transaction<'_>,current:&Value,mut state:Value,
                 return Err("기존 원문 감사 기록과 ID가 충돌합니다. 변경을 저장하지 않았습니다.".into());
             }
         } else {
-            tx.execute(
+            scope.direct+=tx.execute(
                 "INSERT INTO receipt_archive(id,order_id,record) VALUES (?1,?2,?3)",
                 params![id,order_id,serde_json::to_string(&record).map_err(err)?],
             ).map_err(err)?;
         }
     }
-    Ok((state,envelope_only))
+    Ok((state,scope))
 }
 
 
@@ -178,28 +222,30 @@ fn index_rows<'a>(value:&'a Value,key:&str)->Result<std::collections::HashMap<&'
     }
     Ok(map)
 }
-fn sync_product_index(tx:&Transaction<'_>,before:&Value,state:&Value)->Result<(),String>{
+fn sync_product_index(tx:&Transaction<'_>,before:&Value,state:&Value)->Result<usize,String>{
+    let mut direct=0;
     let old=index_rows(before,"products")?;
     let next=index_rows(state,"products")?;
     let mut insert=tx.prepare("INSERT INTO product_index(id,code,name,payload) VALUES (?1,?2,?3,?4)
         ON CONFLICT(id) DO UPDATE SET code=excluded.code,name=excluded.name,payload=excluded.payload").map_err(err)?;
     for (id,product) in &next{
         if old.get(id)==Some(product){continue;}
-        insert.execute(params![id,product["code"].as_str().ok_or("상품 코드 누락")?,
+        direct+=insert.execute(params![id,product["code"].as_str().ok_or("상품 코드 누락")?,
             product["name"].as_str().ok_or("상품명 누락")?,
             serde_json::to_string(product).map_err(err)?]).map_err(err)?;
     }
     for id in old.keys(){
-        if !next.contains_key(id){tx.execute("DELETE FROM product_index WHERE id=?1",[id]).map_err(err)?;}
+        if !next.contains_key(id){direct+=tx.execute("DELETE FROM product_index WHERE id=?1",[id]).map_err(err)?;}
     }
-    Ok(())
+    Ok(direct)
 }
 fn order_index_fields(order:&Value)->(&str,&str,Option<&str>,&str){
     (order["clientId"].as_str().unwrap_or(""),
         order["createdAt"].as_str().unwrap_or(""),order["confirmedAt"].as_str(),
         order["status"].as_str().unwrap_or("REVIEW"))
 }
-fn sync_order_index(tx:&Transaction<'_>,before:&Value,state:&Value)->Result<(),String>{
+fn sync_order_index(tx:&Transaction<'_>,before:&Value,state:&Value)->Result<usize,String>{
+    let mut direct=0;
     let old=index_rows(before,"orders")?;
     let next=index_rows(state,"orders")?;
     let mut insert=tx.prepare("INSERT INTO order_index(id,client_id,created_at,confirmed_at,status)
@@ -209,12 +255,12 @@ fn sync_order_index(tx:&Transaction<'_>,before:&Value,state:&Value)->Result<(),S
     for (id,order) in &next{
         let fields=order_index_fields(order);
         if old.get(id).is_some_and(|row|order_index_fields(row)==fields){continue;}
-        insert.execute(params![id,fields.0,fields.1,fields.2,fields.3]).map_err(err)?;
+        direct+=insert.execute(params![id,fields.0,fields.1,fields.2,fields.3]).map_err(err)?;
     }
     for id in old.keys(){
-        if !next.contains_key(id){tx.execute("DELETE FROM order_index WHERE id=?1",[id]).map_err(err)?;}
+        if !next.contains_key(id){direct+=tx.execute("DELETE FROM order_index WHERE id=?1",[id]).map_err(err)?;}
     }
-    Ok(())
+    Ok(direct)
 }
 
 #[cfg(test)]
@@ -257,7 +303,7 @@ mod snapshot_cost_tests {
                 [serialize_envelope(&written).unwrap()]).unwrap();
             // There are deliberately no core tables. Successful verification
             // proves they were not queried again for the envelope-only write.
-            assert_eq!(verify_written(&tx,current.clone(),written.clone(),true,before).unwrap(),written);
+            assert_eq!(verify_written(&tx,current.clone(),written.clone(),WriteScope{direct:1,..Default::default()},before).unwrap(),written);
             tx.rollback().unwrap();
         }
         conn.execute_batch("CREATE TRIGGER unexpected AFTER UPDATE ON app_state
@@ -269,11 +315,44 @@ mod snapshot_cost_tests {
                 [serialize_envelope(&written).unwrap()]).unwrap();
             // A trigger write must force the original full read, which fails
             // here because core tables are intentionally absent.
-            assert!(verify_written(&tx,current,written,true,before).is_err());
+            assert!(verify_written(&tx,current,written,WriteScope{direct:1,..Default::default()},before).is_err());
             tx.rollback().unwrap();
         }
         assert_eq!(conn.query_row("SELECT COUNT(*) FROM side_effect",[],
             |row|row.get::<_,i64>(0)).unwrap(),0);
+    }
+
+    #[test]
+    fn order_only_readback_reuses_catalog_and_unrelated_orders(){
+        let mut conn=Connection::open_in_memory().unwrap();
+        conn.execute_batch("CREATE TABLE app_state(id INTEGER PRIMARY KEY,payload TEXT);
+            CREATE TABLE core_orders(id TEXT PRIMARY KEY,position INTEGER,payload TEXT);
+            CREATE TABLE core_recipients(id TEXT PRIMARY KEY,order_id TEXT,position INTEGER,payload TEXT);
+            CREATE TABLE core_items(id TEXT PRIMARY KEY,recipient_id TEXT,position INTEGER,payload TEXT);
+            INSERT INTO app_state VALUES (1,'{}');").unwrap();
+        let current=json!({"revision":1,"products":[{"id":"p"}],"clients":[{"id":"c"}],
+            "orders":[{"id":"a","recipients":[{"id":"r","items":[{"id":"i"}],"shippingCharges":{"FACTORY":3000}}]},
+                {"id":"b","recipients":[]}]});
+        let mut written=current.clone();
+        written["revision"]=json!(2);
+        written["orders"][0]["recipients"][0]["shippingCharges"]["FACTORY"]=json!(4000);
+        conn.execute("INSERT INTO core_orders VALUES ('a',0,?1)",[json!({"id":"a"}).to_string()]).unwrap();
+        conn.execute("INSERT INTO core_recipients VALUES ('r','a',0,?1)",
+            [json!({"id":"r","shippingCharges":{"FACTORY":3000}}).to_string()]).unwrap();
+        conn.execute("INSERT INTO core_items VALUES ('i','r',0,?1)",[json!({"id":"i"}).to_string()]).unwrap();
+        // Isolate readback from initial hydration: any accidental full
+        // catalog or unrelated-order rehydration must fail in this fixture.
+        conn.execute("INSERT INTO core_orders VALUES ('b',1,'not JSON')",[]).unwrap();
+        let tx=conn.transaction().unwrap();
+        let before=total_changes(&tx).unwrap();
+        let direct=tx.execute("UPDATE core_recipients SET payload=?1 WHERE id='r'",
+            [json!({"id":"r","shippingCharges":{"FACTORY":4000}}).to_string()]).unwrap()
+            +tx.execute("UPDATE app_state SET payload=?1 WHERE id=1",
+                [serialize_envelope(&written).unwrap()]).unwrap();
+        let scope=WriteScope{orders:true,direct,..Default::default()};
+        assert_eq!(verify_written(&tx,current.clone(),written.clone(),scope,before).unwrap(),written);
+        assert!(verify_written(&tx,current,written,WriteScope{direct:1,..scope},before).is_err());
+        tx.rollback().unwrap();
     }
 
     #[test]

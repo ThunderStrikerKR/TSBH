@@ -48,9 +48,14 @@ pub use reception_commands::commit_reception_v2;
 
 
 fn read_entities(conn: &Connection, sql: &str) -> Result<Vec<Value>, String> {
+    read_entities_with(conn,sql,[])
+}
+
+fn read_entities_with(conn:&Connection,sql:&str,params:impl rusqlite::Params)
+    ->Result<Vec<Value>,String>{
     let mut stmt = conn.prepare(sql)
         .map_err(|_| "운영 업무자료 조회를 준비하지 못했습니다.".to_owned())?;
-    let rows = stmt.query_map([], |row| row.get::<_, String>(0))
+    let rows = stmt.query_map(params, |row| row.get::<_, String>(0))
         .map_err(|_| "운영 업무자료 조회에 실패했습니다.".to_owned())?;
     rows.map(|row| {
         let raw = row.map_err(|_| "운영 업무자료 행을 읽지 못했습니다.".to_owned())?;
@@ -63,9 +68,14 @@ fn read_children(
     conn: &Connection,
     sql: &str,
 ) -> Result<HashMap<String, Vec<Value>>, String> {
+    read_children_with(conn,sql,[])
+}
+
+fn read_children_with(conn:&Connection,sql:&str,params:impl rusqlite::Params)
+    ->Result<HashMap<String,Vec<Value>>,String>{
     let mut stmt = conn.prepare(sql)
         .map_err(|_| "운영 하위자료 조회를 준비하지 못했습니다.".to_owned())?;
-    let rows = stmt.query_map([], |row| {
+    let rows = stmt.query_map(params, |row| {
         Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
     }).map_err(|_| "운영 하위자료 조회에 실패했습니다.".to_owned())?;
     let mut grouped: HashMap<String, Vec<Value>> = HashMap::new();
@@ -144,7 +154,7 @@ fn read_envelope(conn: &Connection) -> Result<Value, String> {
         .map_err(|_| "운영 업무 상태의 JSON 형식이 잘못되었습니다.".to_owned())
 }
 
-fn read_catalog_entities(conn: &Connection) -> Result<(Vec<Value>, Vec<Value>), String> {
+fn read_product_entities(conn:&Connection)->Result<Vec<Value>,String>{
     let mut products = read_entities(
         conn,
         "SELECT payload FROM core_products ORDER BY position,id",
@@ -154,8 +164,11 @@ fn read_catalog_entities(conn: &Connection) -> Result<(Vec<Value>, Vec<Value>), 
         "SELECT product_id,payload FROM core_product_prices ORDER BY product_id",
     )?;
     attach(&mut products, "variants", prices)?;
-    let clients = read_entities(conn, CORE_CLIENTS_SQL)?;
-    Ok((products, clients))
+    Ok(products)
+}
+
+fn read_catalog_entities(conn: &Connection) -> Result<(Vec<Value>, Vec<Value>), String> {
+    Ok((read_product_entities(conn)?,read_entities(conn, CORE_CLIENTS_SQL)?))
 }
 
 /// Read the complete v2 business snapshot through the same relational
@@ -183,32 +196,29 @@ pub fn read_v2_catalog_snapshot(conn: &Connection) -> Result<Value, String> {
     Ok(state)
 }
 
-/// Hydrate only an already-verified schema-v2 snapshot.
-///
-/// The caller must hold a consistent read snapshot or a write transaction.
-/// Retains array ordering, nested variants/items/recipients and the legacy
-/// app_state envelope without recomputing or modifying any business values.
-pub fn hydrate_v2(conn: &Connection, state: &mut Value) -> Result<(), String> {
-    let (products, clients) = read_catalog_entities(conn)?;
-    let mut orders = read_entities(
-        conn,
-        "SELECT payload FROM core_orders ORDER BY position,id",
-    )?;
-    let mut recipients = read_entities(
-        conn,
-        "SELECT payload FROM core_recipients ORDER BY position,id",
-    )?;
-    let items = read_children(
-        conn,
-        "SELECT recipient_id,payload FROM core_items ORDER BY recipient_id,position,id",
-    )?;
+// The full and single-order paths use the same ownership checks.
+fn read_order_entities(conn:&Connection,only:Option<&str>)->Result<Vec<Value>,String>{
+    let (mut orders,mut recipients,items,owner_sql)=if let Some(id)=only{
+        (
+            read_entities_with(conn,"SELECT payload FROM core_orders WHERE id=?1 ORDER BY position,id",[id])?,
+            read_entities_with(conn,"SELECT payload FROM core_recipients WHERE order_id=?1 ORDER BY position,id",[id])?,
+            read_children_with(conn,"SELECT recipient_id,payload FROM core_items
+                WHERE recipient_id IN (SELECT id FROM core_recipients WHERE order_id=?1)
+                ORDER BY recipient_id,position,id",[id])?,
+            "SELECT order_id,id FROM core_recipients WHERE order_id=?1 ORDER BY order_id,position,id"
+        )
+    }else{
+        (
+            read_entities(conn,"SELECT payload FROM core_orders ORDER BY position,id")?,
+            read_entities(conn,"SELECT payload FROM core_recipients ORDER BY position,id")?,
+            read_children(conn,"SELECT recipient_id,payload FROM core_items ORDER BY recipient_id,position,id")?,
+            "SELECT order_id,id FROM core_recipients ORDER BY order_id,position,id"
+        )
+    };
     attach(&mut recipients, "items", items)?;
-
-    let mut stmt = conn.prepare(
-        "SELECT order_id,id FROM core_recipients ORDER BY order_id,position,id",
-    ).map_err(|_| "수취인 소속 조회 준비 실패".to_owned())?;
-    let owners = stmt.query_map([], |row| {
-        Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+    let mut stmt=conn.prepare(owner_sql).map_err(|_|"수취인 소속 조회 준비 실패".to_owned())?;
+    let owners=stmt.query_map(rusqlite::params_from_iter(only),|row|{
+        Ok((row.get::<_,String>(0)?,row.get::<_,String>(1)?))
     }).map_err(|_| "수취인 소속 조회 실패".to_owned())?
         .collect::<rusqlite::Result<Vec<_>>>()
         .map_err(|_| "수취인 소속 결과 오류".to_owned())?;
@@ -234,7 +244,13 @@ pub fn hydrate_v2(conn: &Connection, state: &mut Value) -> Result<(), String> {
         return Err("연결되지 않은 수취인 기록이 있습니다.".into());
     }
     attach(&mut orders, "recipients", grouped)?;
+    Ok(orders)
+}
 
+/// Hydrate a schema-v2 snapshot within a consistent transaction.
+pub fn hydrate_v2(conn: &Connection, state: &mut Value) -> Result<(), String> {
+    let (products,clients)=read_catalog_entities(conn)?;
+    let orders=read_order_entities(conn,None)?;
     let root = state.as_object_mut()
         .ok_or("업무 상태는 객체여야 합니다.")?;
     root.insert("products".into(), Value::Array(products));
