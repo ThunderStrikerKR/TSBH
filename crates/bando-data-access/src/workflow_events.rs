@@ -50,23 +50,26 @@ pub(crate) fn hydrate(conn:&Connection,state:&mut Value)->Result<(),String>{
 }
 
 fn envelope(state:&Value)->Result<String,String>{
-    // Serialize borrowed non-event fields only. No historical event clone.
-    #[derive(serde::Serialize)]
-    #[serde(untagged)]
-    enum Field<'a>{
-        Borrowed(&'a Value),
-        Workflow(BTreeMap<&'a str,&'a Value>),
-        Marker(u8),
-    }
+    // Stream borrowed fields with serde_json's normal escaping, without
+    // introducing another serde dependency or cloning old event payloads.
     let root=state.as_object().ok_or("업무 상태는 객체여야 합니다.")?;
     let workflow=state["workflow"].as_object().ok_or("업무 상태 목록 누락")?;
-    let mut out:BTreeMap<&str,Field<'_>>=root.iter()
-        .filter(|(k,_)|!matches!(k.as_str(),"products"|"clients"|"orders"|"workflow") && k.as_str()!=MARKER)
-        .map(|(k,v)|(k.as_str(),Field::Borrowed(v))).collect();
-    out.insert("workflow",Field::Workflow(workflow.iter().filter(|(k,_)|k.as_str()!="events")
-        .map(|(k,v)|(k.as_str(),v)).collect()));
-    out.insert(MARKER,Field::Marker(1));
-    serde_json::to_string(&out).map_err(err)
+    let workflow:BTreeMap<&str,&Value>=workflow.iter().filter(|(k,_)|k.as_str()!="events")
+        .map(|(k,v)|(k.as_str(),v)).collect();
+    let mut bytes=vec![b'{'];
+    serde_json::to_writer(&mut bytes,MARKER).map_err(err)?;
+    bytes.extend_from_slice(b":1");
+    for (key,value) in root{
+        if matches!(key.as_str(),"products"|"clients"|"orders"|"workflow") || key==MARKER{continue;}
+        bytes.push(b',');
+        serde_json::to_writer(&mut bytes,key).map_err(err)?;
+        bytes.push(b':');
+        serde_json::to_writer(&mut bytes,value).map_err(err)?;
+    }
+    bytes.extend_from_slice(b",\"workflow\":");
+    serde_json::to_writer(&mut bytes,&workflow).map_err(err)?;
+    bytes.push(b'}');
+    String::from_utf8(bytes).map_err(err)
 }
 
 fn insert_events(tx:&Transaction<'_>,start:usize,rows:&[Value])->Result<usize,String>{

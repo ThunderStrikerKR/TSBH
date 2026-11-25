@@ -1136,4 +1136,11 @@ fn relational_workflow_event_migration_and_append_preserve_audit(){
     drop(conn);
     let reopened=initialize_database(&isolated.root.join("state.sqlite")).unwrap();
     assert_eq!(get_snapshot(&reopened).unwrap(),committed);
+    let mut reopened=reopened;
+    let split_backup=bando_data_access::backup_service::manual_backup(&reopened,&isolated.root).unwrap();
+    let name=std::path::Path::new(&split_backup).file_name().unwrap().to_str().unwrap();
+    bando_data_access::backup_service::restore_backup(&mut reopened,&isolated.root,name).unwrap();
+    let mut restored=committed.clone();
+    restored["revision"]=json!(committed["revision"].as_u64().unwrap()+1);
+    assert_eq!(get_snapshot(&reopened).unwrap(),restored);
 }
