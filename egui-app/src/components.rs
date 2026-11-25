@@ -32,8 +32,7 @@ pub fn virtual_fixed_rows<R>(
 ) -> egui::containers::scroll_area::ScrollAreaOutput<R> {
     debug_assert!(row_height>0.0 && row_height.is_finite());
     let output=scroll.show_viewport(ui,move |body,viewport|{
-        body.spacing_mut().item_spacing.y=0.0;
-        body.set_min_width(content_width);
+        management_table_row_body(body,content_width);
         body.set_min_height(row_height*total_rows as f32);
         let first=((viewport.top()/row_height).floor().max(0.0) as usize)
             .saturating_sub(1).min(total_rows);
@@ -60,6 +59,52 @@ pub fn virtual_fixed_rows<R>(
     #[cfg(test)]
     general_screen_geometry_tests::record("row viewport",output.inner_rect);
     output
+}
+
+/// Shared management table container policy. The caller owns its layout
+/// scope; return the preceding vertical gap for existing explicit restores.
+/// Column widths, row heights, table IDs and header positions stay unchanged.
+pub fn management_table_container_style(ui:&mut Ui)->f32{
+    let previous_gap=ui.spacing().item_spacing.y;
+    ui.spacing_mut().scroll=theme::management_table_scroll_style();
+    ui.spacing_mut().item_spacing.y=0.0;
+    previous_gap
+}
+
+/// Fixed and variable row viewports share the minimum-width and zero-gap
+/// rules. Retain the caller's existing width and height calculations.
+pub fn management_table_row_body(ui:&mut Ui,width:f32){
+    ui.set_min_width(width);
+    ui.spacing_mut().item_spacing.y=0.0;
+}
+
+#[cfg(test)]
+mod management_table_container_style_tests{
+    use super::*;
+    #[test]
+    fn container_and_row_body_preserve_reference_metrics(){
+        let ctx=test_context();
+        let _=ctx.run(egui::RawInput::default(),|ctx|{
+            egui::CentralPanel::default().show(ctx,|ui|{
+                ui.spacing_mut().item_spacing.y=7.0;
+                ui.spacing_mut().item_spacing.x=13.0;
+                let old=management_table_container_style(ui);
+                let expected=theme::management_table_scroll_style();
+                assert_eq!(old,7.0);
+                assert_eq!(ui.spacing().item_spacing.y,0.0);
+                assert_eq!(ui.spacing().item_spacing.x,13.0);
+                assert_eq!(ui.spacing().scroll.bar_width,expected.bar_width);
+                assert_eq!(ui.spacing().scroll.allocated_width(),expected.allocated_width());
+                assert_eq!(ui.spacing().scroll.bar_inner_margin,expected.bar_inner_margin);
+                assert_eq!(ui.spacing().scroll.bar_outer_margin,expected.bar_outer_margin);
+                ui.spacing_mut().item_spacing.y=old;
+                assert_eq!(ui.spacing().item_spacing.y,7.0);
+                management_table_row_body(ui,420.0);
+                assert!(ui.min_rect().width()>=420.0);
+                assert_eq!(ui.spacing().item_spacing.y,0.0);
+            });
+        });
+    }
 }
 
 pub const TABLE_HEADER_HEIGHT: f32 = theme::MANAGEMENT_TABLE_HEADER_HEIGHT;

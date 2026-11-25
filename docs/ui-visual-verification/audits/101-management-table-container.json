@@ -1,0 +1,22 @@
+{
+  "schemaVersion": 1,
+  "id": "101-management-table-container",
+  "screen": "Reception/manual worksheet and management tables (101차 1–2단계)",
+  "files": [
+    "egui-app/src/components.rs",
+    "egui-app/src/alias_manager.rs",
+    "egui-app/src/brand_manager.rs",
+    "egui-app/src/client_manager.rs",
+    "egui-app/src/client_chooser.rs",
+    "egui-app/src/daily_settlement_manager.rs",
+    "egui-app/src/excel_manager.rs",
+    "egui-app/src/freight_manager.rs",
+    "egui-app/src/model_group_manager.rs",
+    "egui-app/src/order_history_manager.rs",
+    "egui-app/src/product_manager.rs",
+    "egui-app/src/main.rs",
+    "egui-app/src/manual_workspace.rs"
+  ],
+  "visualStatus": "NOT_VERIFIED",
+  "reason": "Layout refactor preserves existing dimensions and IDs by source inspection. Human-reviewed Windows screenshots for the changed blobs at two distinct viewport sizes have not been captured. Do not mark PASS until real visual and interaction evidence is recorded."
+}

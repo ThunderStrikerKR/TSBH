@@ -290,8 +290,7 @@ impl ModelGroupManager {
                         });
                         // Fixed register header and one local scroll
                         // viewport, as in the Shipping Assignment master.
-                        left.spacing_mut().item_spacing.y=0.0;
-                        left.spacing_mut().scroll=theme::management_table_scroll_style();
+                        components::management_table_container_style(left);
                         let header=components::management_master_register_header(
                             left,"모델군","상품 수",104.0
                         );
