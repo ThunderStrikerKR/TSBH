@@ -3505,7 +3505,12 @@ mod manual_workspace_modal_routing_tests {
             .next().expect("production/test source boundary");
         let render=source.split("pub fn show(").nth(1).unwrap()
             .split("fn manual_hover_target(").next().unwrap();
-        assert_eq!(render.matches("reception_section_with_header(").count(),2);
+        assert_eq!(render.matches("reception_section_with_header(").count(),3);
+        for (ui,title) in [("source_ui","발주 원문"),("sheet","수취인별 주문 정보"),("sheet","품목 및 운임")] {
+            let compact=render.split_whitespace().collect::<String>();
+            let call=format!("components::reception_section_with_header({ui},\"{}\",",title.replace(' ',""));
+            assert!(compact.contains(&call),"missing shared reception section: {title}");
+        }
         for common in [
             "reception_recipient_fields(",
             "reception_editable_items_header(",
