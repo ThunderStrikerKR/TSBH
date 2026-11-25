@@ -21,6 +21,18 @@ export async function selectGroupForRecipient(page, recipient) {
   throw Error("Unable to open an order group for recipient: "+recipient);
 }
 
+// The empty intake panel now contains instructional text and buttons.
+ // Assert the actual empty-receipt state, not an empty DOM textContent.
+async function waitForFreshReceipt(page){
+  await page.waitForFunction(()=>{
+    const source=document.querySelector(".source-document.source-awaiting-input");
+    const top=document.querySelector(".source-top");
+    return !!source && !!top && !!source.querySelector(".source-intake-choice") &&
+      !top.querySelector(".receipt-client,.source-client-actions");
+  },null,{timeout:20000});
+  await page.getByRole("button",{name:"대리발송",exact:true}).waitFor({state:"visible",timeout:20000});
+}
+
 // Real Windows Tauri EXE + WebView2 test: confirm TWO independent orders.
 // Synthetic dealer/account are provisioned by the preceding smoke test.
 // GitHub Actions disposable developer TEST SQLite only.
@@ -56,6 +68,10 @@ export async function probeTwoConsecutiveOrders(page,{record,snap},{holdBoth=fal
   await page.reload();
   await page.locator("nav[aria-label='업무 메뉴']").waitFor({timeout:60000});
   await page.getByRole("button",{name:"접수",exact:true}).click();
+  // A reload may restore the previously inspected unconfirmed receipt.
+  // The independent two-order scenario must explicitly open a fresh one.
+  await page.getByRole("button",{name:/새 주문/}).first().click();
+  await waitForFreshReceipt(page);
 
   const cases=[
     {name:"김가상",model:"709 2개",address:"경기도 의정부시 시민로 100",
@@ -72,12 +88,7 @@ export async function probeTwoConsecutiveOrders(page,{record,snap},{holdBoth=fal
       // A missing/remounting SourceDocument must NEVER satisfy the fresh
       // draft check (the older "!text.includes(name)" check could pass when
       // the source element was temporarily absent).
-      await page.waitForFunction(()=>{
-        const source=document.querySelector(".source-document");
-        const top=document.querySelector(".source-top");
-        return !!source && !!top && source.textContent.trim()==="" &&
-          !top.querySelector(".receipt-client");
-      },null,{timeout:20000});
+      await waitForFreshReceipt(page);
       assert.equal(await page.locator(".receipt-client").count(),0,
         "NEW_ORDER_INHERITED_CLIENT before second clipboard paste");
       record("SIM33_NEW_RECEPTION_INDEPENDENT_BEFORE_PASTE",{
@@ -316,13 +327,7 @@ export async function probeCrossDealerOrderIsolation(page,{record,snap}) {
     });
     await page.getByRole("button",{name:/새 주문/}).first().click();
     // Before pasting, no previous order/client may remain active.
-    await page.waitForFunction(()=>{
-      const source=document.querySelector(".source-document");
-      const top=document.querySelector(".source-top");
-      // A new receipt has no clipboard text and no assigned client.
-      return source && top && source.textContent.trim()==="" &&
-        !top.querySelector(".receipt-client");
-    },null,{timeout:20000});
+    await waitForFreshReceipt(page);
     assert.equal(await page.locator(".receipt-client").count(),0,
       "P1_NEW_ORDER_STALE_DEALER "+scenario.recipient);
     const chooserBefore=page.getByRole("button",{name:"거래처 찾기",exact:true});

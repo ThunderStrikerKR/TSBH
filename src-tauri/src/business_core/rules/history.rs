@@ -10,15 +10,7 @@ fn client_for<'a>(state:&'a Value,order:&'a Value)->Option<Value>{
     let saved=field(order,"clientSnapshot");
     if str_field(order,"orderType")=="RETAIL" {
         if has_value(saved){return Some(saved.clone())}
-        let settings=field(state,"settings");
-        let name="반도스탠드";
-        return Some(json!({
-            "postcode":str_field(settings,"senderPostcode"),"id":"","name":name,
-            "displayName":name,"address":str_field(settings,"senderAddress"),
-            "phone":str_field(settings,"senderPhone"),"mobile":str_field(settings,"senderMobile"),
-            "contact":"","tier":"retail","payment":"POSTPAID",
-            "shippingFeeExcluded":false,"active":true,"identifiers":"","overrides":{}
-        }))
+        return Some(super::validation::company_party(state))
     }
     if (has_value(field(order,"confirmedAt"))||flag(order,"pricesLocked")) && has_value(saved){
         return Some(saved.clone())

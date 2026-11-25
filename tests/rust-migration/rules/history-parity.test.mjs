@@ -256,7 +256,7 @@ test("same Rust history projections feed Rust settlement with full TS parity",()
 test("Rust history view removes TS tracking, historical matching and payment algorithms",()=>{
   const viewCases=[];
   const expected=[];
-  function check(name,mutate=()=>{},query="",date=""){
+  function check(name,mutate=()=>{},query="",date="",employeePaymentConfirmation=null){
     const state=base();
     mutate(state);
     const trackingOrder=(state.workflow?.shipments??[]).map(ship=>({
@@ -267,6 +267,9 @@ test("Rust history view removes TS tracking, historical matching and payment alg
       ...row,
       display:{
         trackingMessage:trackingMessage(state,row.order.id),
+        // The staff-approval date is a newer native display contract.
+        // Do not derive it from bank allocations or the legacy paid flag.
+        employeePaymentConfirmation,
         paymentEvidenceMissing:!!row.order.paid &&
           !(state.workflow?.payments??[]).some(p=>
             p.allocations.some(a=>row.shipmentIds.includes(a.shipmentId))),
@@ -328,6 +331,17 @@ test("Rust history view removes TS tracking, historical matching and payment alg
   check("old paid flag with unrelated bank allocation",s=>{
     s.orders[0].paid=true;
     s.workflow.payments=[{id:"bank-p1",allocations:[{shipmentId:"s3",amount:5000}]}];
+  });
+  check("explicit staff approval is not bank payment date",s=>{
+    s.workflow.confirmations=[{id:"approval",shipmentIds:["s1"],
+      confirmedAt:"2026-11-13T16:30:00Z",actor:"직원 A"}];
+    s.workflow.payments=[{id:"payment",paidAt:"2026-11-12T00:00:00Z",
+      allocations:[{shipmentId:"s1",amount:5000}]}];
+  },"","",{date:"2026-11-14",partial:false,approvedShipments:1,totalShipments:1,actors:["직원 A"]});
+  check("invalidated staff approval is not evidence",s=>{
+    s.workflow.confirmations=[{id:"approval",shipmentIds:["s1"],
+      confirmedAt:"2026-11-13T16:30:00Z",actor:"직원 A"}];
+    s.workflow.events=[{action:"입금 승인 재확인 필요",before:"approval",shipmentIds:["s1"]}];
   });
   check("past orders filtered",()=>{},"","2026-11-12");
   check("deleted orders excluded",s=>{s.orders[0].deletedAt="2026-11-14"});
