@@ -395,9 +395,6 @@ fn push_manual_history(
     if history.len()>100 {history.remove(0);}
 }
 
-fn manual_cell_key(cell:&ManualCellTarget)->String{
-    format!("{}:{}:{}",cell.row,cell.item.as_deref().unwrap_or(""),cell.field)
-}
 fn manual_cell_targets(model:&Value)->Vec<ManualCellTarget>{
     let mut cells=Vec::new();
     for (row_index,row) in list(model,"rows").iter().enumerate(){

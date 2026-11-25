@@ -178,10 +178,6 @@ impl ReviewPanel {
         }
     }
     pub fn ready(&self)->bool{self.ready && self.error.is_none()}
-    pub fn show(&self,ui:&mut Ui,analysis:&ReceptionAnalysis,
-                selected_recipient:usize,enabled:bool)->Option<Action>{
-        self.show_with_client_actions(ui,analysis,selected_recipient,enabled,enabled)
-    }
     /// A client action may be queued while an unrelated delivery edit commits.
     /// Other issue actions still require the ordinary edit admission policy.
     pub fn show_with_client_actions(&self,ui:&mut Ui,analysis:&ReceptionAnalysis,

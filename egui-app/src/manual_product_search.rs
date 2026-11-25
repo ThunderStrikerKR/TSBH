@@ -51,10 +51,6 @@ pub struct ProductSearch{
     error:Option<String>,
 }
 impl ProductSearch{
-    pub fn new(recipient_id:String,item_id:String,client_id:String,gateway:Arc<dyn BandoGateway>,ctx:Context)->Self{
-        Self::with_query(recipient_id,item_id,client_id,
-            String::new(),gateway,ctx)
-    }
     /// Reuse React's initial model-based query in the item-detail dialog.
     /// Rust still decides product inclusion and variant eligibility.
     pub fn with_query(

@@ -254,10 +254,6 @@ impl SourceAutosave {
         Self { sender, results, thread: Some(worker) }
     }
 
-    pub fn queue(&self, source: WorkingSource) -> Result<(), String> {
-        self.queue_with_feedback(source, Vec::new())
-    }
-
     /// Lightweight direct-source edit, never a full draft collection clone.
     pub fn queue_source_edit(&self,edit:SourceTextEdit)->Result<(),String>{
         self.sender.send(Command::Edit(edit))

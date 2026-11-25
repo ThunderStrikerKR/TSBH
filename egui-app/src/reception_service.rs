@@ -392,27 +392,6 @@ pub fn item_title(item: &Value) -> String {
     item_title_ref(item).to_owned()
 }
 
-pub fn item_quantity(item: &Value) -> String {
-    match item.get("quantity").and_then(Value::as_i64) {
-        Some(quantity) if quantity > 0 => format!("{quantity}개"),
-        _ => "수량 확인 필요".to_owned(),
-    }
-}
-
-/// Display formatting only. The monetary amount is always calculated by
-/// the Rust rules above; formatting it never changes the business decision.
-pub fn display_won(amount: i64) -> String {
-    let digits = amount.to_string();
-    let mut output = String::new();
-    for (index, ch) in digits.chars().enumerate() {
-        if index != 0 && (digits.len() - index) % 3 == 0 {
-            output.push(',');
-        }
-        output.push(ch);
-    }
-    format!("{output}원")
-}
-
 #[cfg(test)]
 mod remote_notice_tests{
     use super::*;

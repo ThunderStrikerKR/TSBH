@@ -470,9 +470,6 @@ fn stage_name(step:usize,notice:bool)->&'static str{
     else {["주문 확인 완료","운임 적용","계좌 안내 완료","입금 확인 완료"]
         [step.min(3)]}
 }
-fn money(amount:Option<i64>)->String{
-    amount.map(components::display_won).unwrap_or_else(||"—".to_owned())
-}
 /// Compact one-touch button, 154×30pt at the 1080p reference, preserving
 /// every stage label including "계좌 재안내 완료" without shrinking text.
 /// This uses the shared Emphasized/disabled palette and 13pt action type,

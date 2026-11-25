@@ -91,18 +91,6 @@ fn read_local(conn:&Connection)->Result<(u64,Value),String>{
     if !settings.is_object(){return Err("설정은 JSON 객체여야 합니다.".into());}
     Ok((revision,settings))
 }
-/// Isolated egui settings own preview account preferences only.
-/// Real customer account references are checked against the operational DB.
-pub fn load_local_accounts()->Result<Value,String>{
-    if using_business(){
-        return Err("운영 계좌는 격리 저장소에서 조회하지 않습니다.".into());
-    }
-    let conn=connection()?;
-    let (_,state)=read_local(&conn)?;
-    Ok(state.get("accounts").and_then(Value::as_array)
-        .cloned().map(Value::Array).unwrap_or_else(||json!([])))
-}
-
 pub fn load()->Result<Value,String>{
     if using_business(){
         let state=business_state::load_settings_metadata()?;
