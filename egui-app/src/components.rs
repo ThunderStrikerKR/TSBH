@@ -5473,7 +5473,8 @@ pub fn reception_client_summary_card(
             // Truncate the name only when genuinely necessary. Short names
             // occupy their measured width, not the whole flexible subcell:
             // the next condition starts directly after the visible name.
-            let shown_galley=if full.size().x>name_limit{
+            let name_overflow=full.size().x>name_limit;
+            let shown_galley=if name_overflow{
                 let shown=fitted_client_name(ui,name,name_limit);
                 typography::management_table_cell_galley(
                     ui,&shown,typography::ManagementTableCellRole::ClientName
@@ -5486,6 +5487,10 @@ pub fn reception_client_summary_card(
                     egui::pos2(x+name_width,row.bottom())
                 );
                 paint_client_line(ui,name_cell,x,shown_galley,theme::TEXT);
+                if name_overflow{
+                    ui.interact(name_cell,ui.make_persistent_id("source-client-name-overflow"),Sense::hover())
+                        .on_hover_text(name);
+                }
             }
             if !terms.is_empty(){
                 let terms_x=x+name_width+theme::SPACE_8;
@@ -5493,23 +5498,17 @@ pub fn reception_client_summary_card(
                     let terms_cell=Rect::from_min_max(
                         egui::pos2(terms_x,row.top()),row.right_bottom()
                     );
+                    let overflow=text_exceeds_rect(terms_galley.size(),terms_cell.intersect(ui.clip_rect()));
                     paint_client_line(
                         ui,terms_cell,terms_x,terms_galley,theme::MUTED
                     );
+                    if overflow{
+                        ui.interact(terms_cell,ui.make_persistent_id("source-client-terms-overflow"),Sense::hover())
+                            .on_hover_text(terms);
+                    }
                 }
             }
         }
-    }
-    // Register a hover surface first; the action rendered afterward keeps
-    // its own click target and normal shared hover highlight.
-    if let Some(data)=summary{
-        ui.interact(
-            rect,ui.make_persistent_id("source-client-card-hover"),Sense::hover()
-        ).on_hover_text(data.hover_details());
-    }else if linked&&!fallback.is_empty(){
-        ui.interact(
-            rect,ui.make_persistent_id("source-client-card-hover"),Sense::hover()
-        ).on_hover_text(fallback);
     }
     if !has_button{return false;}
     let button_rect=Rect::from_min_size(
@@ -6336,6 +6335,7 @@ fn reception_item_row_with_mode(
     // header used another alignment calculation.
     // One 16pt proportional font for product names, digits and Korean units.
     // Mono font fallback gave quantity digits and '개' differing visual heights.
+    let mut item_overflow=[false;3];
     for (index, (text, color)) in [
         (name, theme::TEXT),
         (quantity, theme::SECONDARY),
@@ -6374,6 +6374,7 @@ fn reception_item_row_with_mode(
         let ink=if active[index] {source_highlight::ACTIVE_TEXT} else {color};
         let label=visible_product.as_deref().unwrap_or(row_text);
         let galley=ui.painter().layout_no_wrap(label.to_owned(),font,ink);
+        item_overflow[index]=label!=text || text_exceeds_rect(galley.size(),value_clip.intersect(ui.clip_rect()));
         let mut origin=reception_item_value_origin(value_clip,galley.size(),right);
         // Pending monetary markers are not digits; do not inherit the
         // approved 2.5pt downward numeric glyph correction.
@@ -6390,17 +6391,20 @@ fn reception_item_row_with_mode(
     let product = ui.interact(
         cells[0], ui.make_persistent_id(("item-cell", row_id, 0)),
         if editable{Sense::click()}else{Sense::hover()},
-    ).on_hover_text(name);
+    );
+    let product=overflow_tooltip(product,item_overflow[0],name);
     let product = if editable { product.on_hover_cursor(egui::CursorIcon::PointingHand) } else { product };
     let quantity = ui.interact(
         cells[1], ui.make_persistent_id(("item-cell", row_id, 1)),
         if editable{Sense::click()}else{Sense::hover()},
-    ).on_hover_text(quantity);
+    );
+    let quantity=overflow_tooltip(quantity,item_overflow[1],quantity);
     let quantity = if editable { quantity.on_hover_cursor(egui::CursorIcon::Text) } else { quantity };
     let amount = ui.interact(
         cells[2], ui.make_persistent_id(("item-cell", row_id, 2)),
         if editable{Sense::click()}else{Sense::hover()},
-    ).on_hover_text(amount);
+    );
+    let amount=overflow_tooltip(amount,item_overflow[2],amount);
     let amount = if editable { amount.on_hover_cursor(egui::CursorIcon::Text) } else { amount };
     ui.painter().line_segment(
         [egui::pos2(rect.left(), rect.bottom()),
