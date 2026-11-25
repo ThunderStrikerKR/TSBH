@@ -321,25 +321,33 @@ fn analyze(payload:&Value)->Result<Value,String>{
 /// Automatic inbox only: the caller supplies the authoritative transaction
 /// before-image, not an external preview. Parse and match exactly once.
 pub(crate) fn import_automatic_factory_reply(state:&Value,payload:&Value)->Result<Value,String>{
-    let (reply,_) = prepare_automatic_factory_reply(state,payload)?;
-    apply_prepared_factory_reply(state,&reply,payload)
+    apply_prepared_factory_reply(state,&parse_reply(payload)?,payload)
 }
-/// Match against the complete exported queue, even when only a few order
-/// trees will be hydrated. Keep ambiguous candidates in the scope so the
-/// reducer can hold them exactly as it did on a full state.
+/// Derive a conservative order scope from the full exported queue using
+/// name/address keys. Contact, ambiguity and global waybill checks stay in
+/// the actual reducer. A superset is safe; never omit a possible match.
 pub(crate) fn prepare_automatic_factory_reply(state:&Value,payload:&Value)
     ->Result<(Value,Vec<String>),String>{
     let reply=parse_reply(payload)?;
     let workflow=field(state,"workflow");
-    let shipments=rows(workflow,"shipments");
+    let mut shipments=HashMap::new();
+    for ship in rows(workflow,"shipments"){
+        shipments.entry(s(ship,"id")).or_insert(ship);
+    }
+    let keys=rows(&reply,"rows").iter().filter(|row|s(row,"issue").is_empty())
+        .map(|row|(normalized(s(row,"name")),normalized(s(row,"address"))))
+        .collect::<HashSet<_>>();
     let mut orders=std::collections::BTreeSet::new();
-    for row in rows(&reply,"rows").iter().filter(|row|s(row,"issue").is_empty()){
-        for queue in rows(workflow,"queue").iter().filter(|q|
-            s(q,"origin")=="FACTORY" && s(q,"status")=="EXPORTED" &&
-            !field(q,"snapshot").is_null() && row_matches(row,q)){
-            if let Some(ship)=shipments.iter().find(|ship|s(ship,"id")==s(queue,"shipmentId")){
+    for queue in rows(workflow,"queue").iter().filter(|q|
+        s(q,"origin")=="FACTORY" && s(q,"status")=="EXPORTED" &&
+        !field(q,"snapshot").is_null()){
+        let recipient=field(field(queue,"snapshot"),"recipient");
+        if keys.contains(&(normalized(s(recipient,"name")),normalized(s(recipient,"address")))){
+            if let Some(ship)=shipments.get(s(queue,"shipmentId")){
                 let order_id=s(ship,"orderId");
-                if !order_id.is_empty(){orders.insert(order_id.to_owned());}
+                // An empty ID is malformed, but the full reducer may still
+                // reach that exact payload. Include it rather than guess.
+                orders.insert(order_id.to_owned());
             }
         }
     }
