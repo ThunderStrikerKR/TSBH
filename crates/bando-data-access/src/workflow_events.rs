@@ -5,6 +5,7 @@ use serde_json::{json,Value};
 use std::{collections::{HashSet,BTreeMap},path::Path};
 
 const MARKER:&str="_workflowEventsRelational";
+const COUNT_MARKER:&str="_workflowEventsCount";
 fn err<E:std::fmt::Display>(e:E)->String{e.to_string()}
 pub(crate) fn active(conn:&Connection)->Result<bool,String>{
     conn.query_row("SELECT EXISTS(SELECT 1 FROM main.sqlite_master
@@ -38,14 +39,20 @@ pub(crate) fn hydrate(conn:&Connection,state:&mut Value)->Result<(),String>{
     // Preserve legacy behavior for malformed/non-object envelopes when
     // no split table is present; downstream existing validation rejects them.
     if !enabled{
-        if state.get(MARKER).is_some(){return Err("업무 이벤트 테이블 누락".into());}
+        if state.get(MARKER).is_some() || state.get(COUNT_MARKER).is_some(){return Err("업무 이벤트 테이블 누락".into());}
         return Ok(());
     }
     let root=state.as_object_mut().ok_or("업무 상태는 객체여야 합니다.")?;
     if root.remove(MARKER)!=Some(json!(1)){return Err("업무 이벤트 저장 형식 불일치".into());}
+    let expected=root.remove(COUNT_MARKER).and_then(|v|v.as_u64())
+        .ok_or("업무 이벤트 저장 개수 누락 또는 형식 오류")?;
     let workflow=root.get_mut("workflow").and_then(Value::as_object_mut).ok_or("업무 상태 목록 누락")?;
     if workflow.contains_key("events"){return Err("업무 이벤트 이중 저장 오류".into());}
-    workflow.insert("events".into(),Value::Array(read_rows(conn)?));
+    let stored=read_rows(conn)?;
+    if u64::try_from(stored.len()).map_err(err)?!=expected{
+        return Err("업무 이벤트 저장 개수 불일치".into());
+    }
+    workflow.insert("events".into(),Value::Array(stored));
     Ok(())
 }
 
@@ -59,7 +66,10 @@ pub(crate) fn envelope(state:&Value,split_state:bool)->Result<String,String>{
         .map(|(k,v)|(k.as_str(),v)).collect();
     let mut bytes=vec![b'{'];
     serde_json::to_writer(&mut bytes,MARKER).map_err(err)?;
-    bytes.extend_from_slice(b":1");
+    bytes.extend_from_slice(b":1,");
+    serde_json::to_writer(&mut bytes,COUNT_MARKER).map_err(err)?;
+    bytes.push(b':');
+    serde_json::to_writer(&mut bytes,&events(state)?.len()).map_err(err)?;
     if split_state{
         bytes.push(b',');
         serde_json::to_writer(&mut bytes,crate::workflow_state::MARKER).map_err(err)?;
@@ -67,7 +77,7 @@ pub(crate) fn envelope(state:&Value,split_state:bool)->Result<String,String>{
         serde_json::to_writer(&mut bytes,&crate::workflow_state::marker(state)?).map_err(err)?;
     }
     for (key,value) in root{
-        if matches!(key.as_str(),"products"|"clients"|"orders"|"workflow") || key==MARKER || key==crate::workflow_state::MARKER{continue;}
+        if matches!(key.as_str(),"products"|"clients"|"orders"|"workflow") || key==MARKER || key==COUNT_MARKER || key==crate::workflow_state::MARKER{continue;}
         bytes.push(b',');
         serde_json::to_writer(&mut bytes,key).map_err(err)?;
         bytes.push(b':');
@@ -118,6 +128,7 @@ pub fn migrate_with_backup(conn:&mut Connection,base:&Path)->Result<Option<Strin
     if active(&tx)?{return Err("다른 작업에서 업무 이벤트 이관이 진행되었습니다.".into());}
     let mut before=crate::read_v2_snapshot(&tx)?;
     if before!=backed_up{return Err("백업 후 업무 상태가 변경되어 이관하지 않았습니다.".into());}
+    crate::rules::validate_workflow_transition(&before,&before)?;
     let rows=events(&before)?;
     let mut ids=HashSet::new();
     for row in rows{

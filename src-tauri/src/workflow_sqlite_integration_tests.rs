@@ -1111,6 +1111,7 @@ fn relational_workflow_event_migration_and_append_preserve_audit(){
     let envelope:Value=serde_json::from_str(&raw).unwrap();
     assert!(envelope["workflow"].get("events").is_none());
     assert_eq!(envelope["_workflowEventsRelational"],1);
+    assert_eq!(envelope["_workflowEventsCount"],json!(saved["workflow"]["events"].as_array().unwrap().len()));
     assert!(bando_data_access::workflow_events::migrate_with_backup(&mut conn,&isolated.root).unwrap().is_none());
     let committed=bando_data_access::update_v2_freight_snapshot(
         &mut conn,revision,"shipment:synthetic","group:synthetic",|current|{
@@ -1126,6 +1127,21 @@ fn relational_workflow_event_migration_and_append_preserve_audit(){
     assert_eq!(committed["workflow"]["events"][0],saved["workflow"]["events"][0]);
     let count:i64=conn.query_row("SELECT COUNT(*) FROM core_workflow_events",[],|r|r.get(0)).unwrap();
     assert_eq!(count as usize,committed["workflow"]["events"].as_array().unwrap().len());
+    // A missing final row leaves a contiguous sequence, so the physical
+    // manifest count must independently reject tail loss and missing markers.
+    {
+        let tx=conn.transaction().unwrap();
+        tx.execute("DELETE FROM core_workflow_events WHERE sequence=(SELECT MAX(sequence) FROM core_workflow_events)",[]).unwrap();
+        assert!(get_snapshot(&tx).unwrap_err().contains("업무 이벤트 저장 개수 불일치"));
+        tx.rollback().unwrap();
+    }
+    {
+        let tx=conn.transaction().unwrap();
+        tx.execute("UPDATE app_state SET payload=json_remove(payload,'$._workflowEventsCount') WHERE id=1",[]).unwrap();
+        assert!(get_snapshot(&tx).unwrap_err().contains("업무 이벤트 저장 개수"));
+        tx.rollback().unwrap();
+    }
+    assert_eq!(get_snapshot(&conn).unwrap(),committed);
     let failed=bando_data_access::update_v2_snapshot(&mut conn,revision+1,true,|state|{
         let mut next=state.clone();
         next["workflow"]["events"][0]["action"]=json!("tampered");
@@ -1142,6 +1158,14 @@ fn relational_workflow_event_migration_and_append_preserve_audit(){
     let mut restored=committed.clone();
     restored["revision"]=json!(committed["revision"].as_u64().unwrap()+1);
     assert_eq!(get_snapshot(&reopened).unwrap(),restored);
+    // Restore the original pre-migration backup, including its physical
+    // schema, rather than merging its JSON into a split database.
+    bando_data_access::backup_service::restore_backup(&mut reopened,&isolated.root,&backup).unwrap();
+    let mut legacy=saved.clone();
+    legacy["revision"]=json!(restored["revision"].as_u64().unwrap()+1);
+    assert_eq!(get_snapshot(&reopened).unwrap(),legacy);
+    let split_exists:bool=reopened.query_row("SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE name='core_workflow_events')",[],|r|r.get(0)).unwrap();
+    assert!(!split_exists);
 }
 
 #[test]
@@ -1197,6 +1221,13 @@ fn relational_workflow_state_migration_and_delta_preserve_links(){
         Ok(next)
     });
     assert!(failed.is_err());
+    assert_eq!(get_snapshot(&conn).unwrap(),moved);
+    for table in ["core_workflow_groups","core_workflow_shipments"]{
+        let tx=conn.transaction().unwrap();
+        tx.execute(&format!("DELETE FROM {table} WHERE position=(SELECT MAX(position) FROM {table})"),[]).unwrap();
+        assert!(get_snapshot(&tx).unwrap_err().contains("배송 상태 저장 개수"));
+        tx.rollback().unwrap();
+    }
     assert_eq!(get_snapshot(&conn).unwrap(),moved);
     let split_backup=bando_data_access::backup_service::manual_backup(&conn,&isolated.root).unwrap();
     bando_data_access::backup_service::restore_backup(&mut conn,&isolated.root,&split_backup).unwrap();
