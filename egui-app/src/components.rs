@@ -5686,6 +5686,7 @@ fn management_row_impl(
             egui::pos2(x+col_width-theme::SPACE_12,rect.bottom())
         );
         // Every header and value shares the column's leading inset.
+        // Only the exact field that exceeds its painted rectangle gets a tooltip.
         if heading {
             paint_client_line(
                 ui,cell,cell.left(),typography::table_header_galley(ui,primary),
@@ -5695,23 +5696,27 @@ fn management_row_impl(
             let badge=paint_client_tier_badge(
                 ui,cell,primary,tier.unwrap_or("")
             );
+            let (_,ink)=client_tier_colors(tier.unwrap_or(""));
+            let badge_size=typography::client_table_metadata_galley(ui,primary,ink).size();
+            if !primary.is_empty()&&text_exceeds_rect(badge_size,badge.intersect(ui.clip_rect())){
+                ui.interact(badge,ui.make_persistent_id(("management-row-hover",row_id,i,0)),Sense::hover())
+                    .on_hover_text(*primary);
+            }
             if !secondary.is_empty(){
                 let second=Rect::from_min_max(
                     egui::pos2((badge.right()+theme::SPACE_8).min(cell.right()),cell.top()),
                     cell.max
                 );
-                // Show only exceptions, left-aligned directly after the
-                // tier badge; no blank payment/VAT slots or centering.
-                paint_client_line(
-                    ui,second,second.left(),
-                    typography::client_table_metadata_galley(
-                        ui,secondary,theme::MUTED
-                    ),theme::MUTED
-                );
+                let galley=typography::client_table_metadata_galley(ui,secondary,theme::MUTED);
+                let overflow=text_exceeds_rect(galley.size(),second.intersect(ui.clip_rect()));
+                paint_client_line(ui,second,second.left(),galley,theme::MUTED);
+                if overflow{
+                    ui.interact(second,ui.make_persistent_id(("management-row-hover",row_id,i,1)),Sense::hover())
+                        .on_hover_text(*secondary);
+                }
             }
         }else{
-            // Only the primary value is visible in a name/address/phone cell.
-            // Secondary contacts remain available through the hover tooltip.
+            // A secondary contact is a separate field, not clipped primary text.
             let visible=if primary.is_empty(){secondary}else{primary};
             if !visible.is_empty(){
                 let metadata=primary.is_empty() && i==0;
@@ -5726,21 +5731,15 @@ fn management_row_impl(
                         }
                     )
                 };
+                let overflow=text_exceeds_rect(galley.size(),cell.intersect(ui.clip_rect()));
                 paint_client_line(
                     ui,cell,cell.left(),galley,
                     if metadata{theme::MUTED}else{theme::TEXT}
                 );
-            }
-        }
-        // Keep full, unclipped information accessible without changing the
-        // row-wide click-to-edit behavior or inserting extra visible controls.
-        if !heading {
-            let full=if secondary.is_empty(){primary.to_string()}
-                else if primary.is_empty(){secondary.to_string()}
-                else{format!("{primary} / {secondary}")};
-            if !full.is_empty() {
-                let hover_id=ui.make_persistent_id(("management-row-hover",row_id,i));
-                ui.interact(cell,hover_id,Sense::hover()).on_hover_text(full);
+                if overflow{
+                    ui.interact(cell,ui.make_persistent_id(("management-row-hover",row_id,i,0)),Sense::hover())
+                        .on_hover_text(*visible);
+                }
             }
         }
         x+=col_width;
@@ -6694,16 +6693,6 @@ pub fn reception_item_issue_values(ui:&Ui,cell:&Response,issues:&[serde_json::Va
         let message=issues.iter().filter_map(serde_json::Value::as_str).collect::<Vec<_>>().join("\n");
         ui.label(message);
     });
-}
-pub fn reception_item_issue_feedback(ui:&Ui,cell:&Response,message:&str){
-    if message.trim().is_empty(){return;}
-    let rect=cell.rect.intersect(ui.clip_rect());
-    if rect.width()>12.0 && rect.height()>12.0{
-        ui.painter().with_clip_rect(rect).circle_filled(
-            egui::pos2(rect.right()-4.0,rect.top()+4.0),2.5,theme::SELECTED_ORDER
-        );
-    }
-    cell.clone().on_hover_text(message);
 }
 
 #[cfg(test)]
