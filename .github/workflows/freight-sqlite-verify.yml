@@ -58,6 +58,8 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           cargo test --manifest-path src-tauri/Cargo.toml --lib native_snapshot_update_reuses_authoritative_before_image_and_rolls_back -- --nocapture
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Measure isolated SQLite read reducer and transactional write phases
+        run: cargo test --manifest-path src-tauri/Cargo.toml --lib sqlite_freight_phase_benchmark -- --ignored --nocapture
       - name: Verify scoped freight before-image and full-ledger parity
         run: |
           cargo test --manifest-path src-tauri/Cargo.toml --lib scoped_freight_before_read_matches_full_reducer_and_preserves_ledger -- --nocapture

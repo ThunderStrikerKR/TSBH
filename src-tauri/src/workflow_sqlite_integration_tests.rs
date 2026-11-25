@@ -1173,6 +1173,120 @@ fn scoped_freight_before_read_matches_full_reducer_and_preserves_ledger(){
     assert_eq!(get_snapshot(&conn).unwrap(),committed);
 }
 
+// Timings are diagnostic, never correctness thresholds on a shared CI VM.
+#[test]
+#[ignore = "explicit SQLite performance run, not a normal regression test"]
+fn sqlite_freight_phase_benchmark(){
+    use std::time::Instant;
+    const SAMPLES:usize=7;
+    fn median(values:&mut [f64])->f64{
+        values.sort_by(f64::total_cmp);
+        values[values.len()/2]
+    }
+    fn ms(start:Instant)->f64{start.elapsed().as_secs_f64()*1000.0}
+    fn fixture(base:&Value,count:usize)->Value{
+        let mut state=stage_three(base,"POSTPAID");
+        let template=json!({"order":state["orders"][0],"workflow":state["workflow"]});
+        for index in 1..count{
+            let copy:Value=serde_json::from_str(&template.to_string()
+                .replace("order:synthetic",&format!("order:bench-{index}"))
+                .replace("recipient:synthetic",&format!("recipient:bench-{index}"))
+                .replace("item:synthetic",&format!("item:bench-{index}"))
+                .replace("source:synthetic",&format!("source:bench-{index}"))
+                .replace("group:synthetic",&format!("group:bench-{index}"))
+                .replace("shipment:synthetic",&format!("shipment:bench-{index}"))
+                .replace("event:confirmation",&format!("event:bench-{index}"))).unwrap();
+            state["orders"].as_array_mut().unwrap().push(copy["order"].clone());
+            for key in ["sources","groups","shipments","events"]{
+                let mut row=copy["workflow"][key][0].clone();
+                if key=="sources"{row["number"]=json!(index+1);}
+                state["workflow"][key].as_array_mut().unwrap().push(row);
+            }
+        }
+        state
+    }
+    fn timed_update(conn:&mut Connection,revision:u64,scoped:bool,index:usize)
+        ->(Value,[f64;4]){
+        let start=Instant::now();
+        let mut phases=[0.0;4];
+        let reduce=|state:&Value|->Result<Value,String>{
+            phases[0]=ms(start);
+            let calc=Instant::now();
+            let reconciled=rust("reconcile_shipment_workflow",json!({
+                "state":state,"shipmentId":"shipment:synthetic","groupId":"group:synthetic",
+                "eventSeed":format!("bench-reconcile-{index}"),"now":"2026-11-25T09:00:00+09:00"
+            }))?;
+            let result=rust("apply_workflow_action",json!({
+                "state":reconciled["state"],"action":"set_shipment_freight",
+                "shipmentId":"shipment:synthetic","groupId":"group:synthetic",
+                "origin":"FACTORY","appliedCharge":if index%2==0{4000}else{5000},
+                "eventId":format!("bench-edit-{index}"),"now":"2026-11-25T09:00:00+09:00",
+                "actor":"검증 담당자"
+            }))?;
+            let next=result["state"].clone();
+            phases[1]=ms(calc);
+            Ok(next)
+        };
+        let saved=if scoped{
+            bando_data_access::update_v2_freight_snapshot(
+                conn,revision,"shipment:synthetic","group:synthetic",reduce).unwrap()
+        }else{
+            bando_data_access::update_v2_snapshot(conn,revision,true,reduce).unwrap()
+        };
+        phases[3]=ms(start);
+        phases[2]=(phases[3]-phases[0]-phases[1]).max(0.0);
+        (saved,phases)
+    }
+    for count in [1,30,100]{
+        let (_full_dir,mut full)=IsolatedDatabase::open();
+        let (_scoped_dir,mut scoped)=IsolatedDatabase::open();
+        let source=fixture(&get_snapshot(&full).unwrap(),count);
+        let initial=write_snapshot(&mut full,source.clone(),0,true).unwrap();
+        assert_eq!(write_snapshot(&mut scoped,source,0,true).unwrap(),initial);
+        let mut revision=initial["revision"].as_u64().unwrap();
+        let mut full_times:[Vec<f64>;4]=std::array::from_fn(|_|Vec::new());
+        let mut scoped_times:[Vec<f64>;4]=std::array::from_fn(|_|Vec::new());
+        let mut reads=Vec::new();
+        let mut validation=Vec::new();
+        // Warm both connections once, then alternate measurement order.
+        for index in 0..=SAMPLES{
+            let ((expected,ft),(actual,st))=if index%2==0{
+                let f=timed_update(&mut full,revision,false,index);
+                let s=timed_update(&mut scoped,revision,true,index);
+                (f,s)
+            }else{
+                let s=timed_update(&mut scoped,revision,true,index);
+                let f=timed_update(&mut full,revision,false,index);
+                (f,s)
+            };
+            assert_eq!(expected,actual,"full and scoped state must match");
+            assert_eq!(actual["orders"].as_array().unwrap().len(),count);
+            revision+=1;
+            assert_eq!(actual["revision"],revision);
+            let read_start=Instant::now();
+            let readback=get_snapshot(&scoped).unwrap();
+            let read_ms=ms(read_start);
+            assert_eq!(readback,actual);
+            let validation_start=Instant::now();
+            rust("validate_workflow",json!({"state":actual,"before":actual})).unwrap();
+            let validation_ms=ms(validation_start);
+            if index>0{
+                for phase in 0..4{
+                    full_times[phase].push(ft[phase]);
+                    scoped_times[phase].push(st[phase]);
+                }
+                reads.push(read_ms);
+                validation.push(validation_ms);
+            }
+        }
+        let f=full_times.each_mut().map(|v|median(v));
+        let s=scoped_times.each_mut().map(|v|median(v));
+        eprintln!("[sqlite-bench] orders={count} samples={SAMPLES} profile={} full_read_ms={:.3} full_reducer_ms={:.3} full_write_verify_commit_ms={:.3} full_total_ms={:.3} scoped_read_ms={:.3} scoped_reducer_ms={:.3} scoped_write_verify_commit_ms={:.3} scoped_total_ms={:.3} standalone_full_read_ms={:.3} standalone_validator_dispatch_ms={:.3}",
+            if cfg!(debug_assertions){"debug"}else{"release"},
+            f[0],f[1],f[2],f[3],s[0],s[1],s[2],s[3],median(&mut reads),median(&mut validation));
+    }
+}
+
 #[test]
 fn stable_freight_precommit_global_validation_rolls_back_unrelated_invalid_link(){
     let (_isolated,mut conn)=IsolatedDatabase::open();
