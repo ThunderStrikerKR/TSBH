@@ -146,14 +146,42 @@ pub fn read_client_index_rows(conn: &Connection) -> Result<Vec<Value>, String> {
     Ok(clients)
 }
 
+/// The v3 physical root is deliberately not an object: older v2 projectors
+/// cannot mistake a split ledger for an ordinary incomplete snapshot.
+pub fn supported_relational_version(version:i64)->bool{matches!(version,2|3)}
+
+pub(crate) fn decode_physical_envelope(conn:&Connection,raw:&str)->Result<Value,String>{
+    let version=recovery::schema_version(conn)?;
+    if version>3{return Err("이 프로그램보다 새로운 DB 구조입니다.".into());}
+    let split=workflow_events::active(conn)?;
+    if split!=(version==3){return Err("업무 이벤트 테이블과 DB 버전 불일치".into());}
+    let mut stored:Value=serde_json::from_str(raw)
+        .map_err(|_|"운영 업무 상태의 JSON 형식이 잘못되었습니다.".to_owned())?;
+    if version==3{
+        let items=stored.as_array_mut().ok_or("DB v3 저장 형식 불일치")?;
+        if items.len()!=1 || !items[0].is_object(){return Err("DB v3 저장 형식 불일치".into());}
+        return Ok(items.pop().expect("checked single element"));
+    }
+    Ok(stored)
+}
+
+pub(crate) fn encode_physical_envelope(conn:&Connection,state:&Value)->Result<String,String>{
+    if !state.is_object(){return Err("업무 상태는 객체여야 합니다.".into());}
+    let version=recovery::schema_version(conn)?;
+    match version{
+        0|1|2=>serde_json::to_string(state),
+        3=>serde_json::to_string(&[state]),
+        _=>return Err("지원하지 않는 DB 저장 형식입니다.".into()),
+    }.map_err(|e|e.to_string())
+}
+
 fn read_envelope(conn: &Connection) -> Result<Value, String> {
     let raw: String = conn.query_row(
         "SELECT payload FROM app_state WHERE id=1",
         [],
         |row| row.get(0),
     ).map_err(|_| "운영 업무 상태를 읽지 못했습니다.".to_owned())?;
-    let mut state:Value=serde_json::from_str(&raw)
-        .map_err(|_| "운영 업무 상태의 JSON 형식이 잘못되었습니다.".to_owned())?;
+    let mut state=decode_physical_envelope(conn,&raw)?;
     workflow_events::hydrate(conn,&mut state)?;
     workflow_state::hydrate(conn,&mut state)?;
     Ok(state)

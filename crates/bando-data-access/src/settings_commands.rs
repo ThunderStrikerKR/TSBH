@@ -74,7 +74,7 @@ pub fn patch_settings_v2(
         "SELECT version FROM core_schema WHERE key='business-core'",
         [],|row|row.get(0),
     ).map_err(|_|"운영 DB 스키마 버전 확인에 실패했습니다.".to_owned())?;
-    if version!=2{return Err("지원하지 않는 업무 DB 버전입니다.".into());}
+    if !crate::supported_relational_version(version){return Err("지원하지 않는 업무 DB 버전입니다.".into());}
     if changes.as_object().is_some_and(serde_json::Map::is_empty){
         return crate::read_v2_snapshot(conn);
     }

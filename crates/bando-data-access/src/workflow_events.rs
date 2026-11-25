@@ -64,7 +64,7 @@ pub(crate) fn envelope(state:&Value,split_state:bool)->Result<String,String>{
     let workflow:BTreeMap<&str,&Value>=workflow.iter().filter(|(k,_)|
         k.as_str()!="events" && !(split_state && matches!(k.as_str(),"groups"|"shipments")))
         .map(|(k,v)|(k.as_str(),v)).collect();
-    let mut bytes=vec![b'{'];
+    let mut bytes=vec![b'[',b'{'];
     serde_json::to_writer(&mut bytes,MARKER).map_err(err)?;
     bytes.extend_from_slice(b":1,");
     serde_json::to_writer(&mut bytes,COUNT_MARKER).map_err(err)?;
@@ -85,7 +85,7 @@ pub(crate) fn envelope(state:&Value,split_state:bool)->Result<String,String>{
     }
     bytes.extend_from_slice(b",\"workflow\":");
     serde_json::to_writer(&mut bytes,&workflow).map_err(err)?;
-    bytes.push(b'}');
+    bytes.extend_from_slice(b"}]");
     String::from_utf8(bytes).map_err(err)
 }
 
@@ -146,6 +146,8 @@ pub fn migrate_with_backup(conn:&mut Connection,base:&Path)->Result<Option<Strin
         .ok_or("업무 이벤트 이관 revision 오류")?;
     before["revision"]=json!(revision);
     tx.execute("UPDATE app_state SET payload=?1 WHERE id=1",[envelope(&before,false)?]).map_err(err)?;
+    let updated=tx.execute("UPDATE core_schema SET version=3 WHERE key='business-core' AND version=2",[]).map_err(err)?;
+    if updated!=1{return Err("DB 버전 이관 충돌".into());}
     if crate::read_v2_snapshot(&tx)?!=before{return Err("업무 이벤트 이관 결과 검증에 실패했습니다.".into());}
     tx.commit().map_err(err)?;
     Ok(Some(backup))

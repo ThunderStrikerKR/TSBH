@@ -107,6 +107,9 @@ pub fn test_database_preview(db: State<'_, Database>) -> Result<Value, String> {
 }
 fn backup_test_and_reset(conn: &mut Connection, base: &Path, expected_revision: u64)
     -> Result<String, String> {
+    // A reset of the retired isolated workspace must not erase split audit rows.
+    let split:bool=conn.query_row("SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE name='core_workflow_events')",[],|r|r.get(0)).map_err(err)?;
+    if split{return Err("관계형 업무 이력 DB는 테스트 초기화를 지원하지 않습니다.".into());}
     let previous = get_snapshot(conn)?;
     if previous["revision"].as_u64().unwrap_or(0) != expected_revision {
         return Err("다른 시험 작업에서 데이터가 변경됐습니다. 다시 조회하세요.".into());

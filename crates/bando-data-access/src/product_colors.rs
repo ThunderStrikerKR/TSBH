@@ -64,7 +64,7 @@ fn migrate_inner(conn:&mut Connection,backup_base:Option<&Path>)->Result<usize,S
         "SELECT version FROM core_schema WHERE key='business-core'",
         [],|row|row.get(0),
     ).map_err(|e|e.to_string())?;
-    if version!=2{return Ok(0);}
+    if !crate::supported_relational_version(version){return Err("지원하지 않는 운영 DB 버전입니다.".into());}
     let mut state=crate::read_v2_snapshot(conn)?;
     let revision=state["revision"].as_u64().ok_or("상품 색상 정리 DB revision 오류")?;
     let changed=normalize_products(&mut state)?;

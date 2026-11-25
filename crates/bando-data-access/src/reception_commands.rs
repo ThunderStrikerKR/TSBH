@@ -110,8 +110,8 @@ pub fn commit_reception_v2(conn: &mut Connection, request: &Value) -> Result<Val
         "SELECT version FROM core_schema WHERE key='business-core'",
         [], |row| row.get(0),
     ).map_err(|_| "운영 DB의 관계형 스키마를 확인할 수 없습니다.".to_owned())?;
-    if version != 2 {
-        return Err("운영 DB 관계형 버전 2만 지원합니다.".into());
+    if !crate::supported_relational_version(version) {
+        return Err("지원하지 않는 운영 DB 관계형 버전입니다.".into());
     }
     let state=read_working_authority(&tx,expected_revision,order_id)?;
     let selected_client = state.get("clients").and_then(Value::as_array)

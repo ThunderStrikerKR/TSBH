@@ -54,7 +54,7 @@ pub fn patch_model_groups_v2(
         "SELECT version FROM core_schema WHERE key='business-core'",
         [],|row|row.get(0),
     ).map_err(|_|"운영 DB 스키마를 확인할 수 없습니다.".to_owned())?;
-    if version!=2{return Err("지원하지 않는 운영 DB 버전입니다.".into());}
+    if !crate::supported_relational_version(version){return Err("지원하지 않는 운영 DB 버전입니다.".into());}
     let mut state=crate::read_v2_snapshot(conn)?;
     let revision=state["revision"].as_u64()
         .ok_or("운영 DB revision 오류")?;
@@ -118,7 +118,7 @@ pub fn patch_product_v2(conn:&mut Connection, request:&Value)->Result<Value,Stri
         "SELECT version FROM core_schema WHERE key='business-core'",
         [],|row|row.get(0),
     ).map_err(|_|"운영 DB 스키마를 확인할 수 없습니다.".to_owned())?;
-    if version!=2{return Err("지원하지 않는 운영 DB 버전입니다.".into());}
+    if !crate::supported_relational_version(version){return Err("지원하지 않는 운영 DB 버전입니다.".into());}
     let before=crate::read_v2_snapshot(conn)?;
     let current=before["revision"].as_u64().ok_or("운영 DB revision 오류")?;
     if expected!=current {

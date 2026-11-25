@@ -188,11 +188,11 @@ fn restore_selected(conn: &mut Connection, base: &Path, filename: &str)
         // Keep the physical split envelope rather than re-embedding events.
         let raw:String=conn.query_row("SELECT payload FROM app_state WHERE id=1",
             [],|row|row.get(0)).map_err(err)?;
-        let mut restored:serde_json::Value=serde_json::from_str(&raw).map_err(err)?;
+        let mut restored=crate::decode_physical_envelope(conn,&raw)?;
         restored["revision"] = json!(next_revision);
         recovery::strip_core(&mut restored);
         conn.execute("UPDATE app_state SET payload=?1 WHERE id=1",
-            [serde_json::to_string(&restored).map_err(err)?]).map_err(err)?;
+            [crate::encode_physical_envelope(conn,&restored)?]).map_err(err)?;
         // Retire legacy invoice names BEFORE declaring restore success.
         // A failure now follows the established pre-restore rollback path;
         // migration reuses the verified safety copy rather than creating a

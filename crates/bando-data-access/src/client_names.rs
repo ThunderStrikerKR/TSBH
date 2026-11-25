@@ -81,7 +81,7 @@ fn migrate_v2_inner(conn:&mut Connection,backup_base:Option<&Path>)
         "SELECT version FROM core_schema WHERE key='business-core'",
         [],|r|r.get(0)
     ).map_err(|e|e.to_string())?;
-    if version!=2{return Ok(0);}
+    if !crate::supported_relational_version(version){return Err("지원하지 않는 운영 DB 버전입니다.".into());}
     let mut changes=Vec::<(String,String,String)>::new();
     {
         let mut stmt=conn.prepare("SELECT id,payload FROM core_clients ORDER BY position,id")
@@ -117,12 +117,12 @@ fn migrate_v2_inner(conn:&mut Connection,backup_base:Option<&Path>)
     }
     let raw:String=tx.query_row("SELECT payload FROM app_state WHERE id=1",[],
         |r|r.get(0)).map_err(|e|e.to_string())?;
-    let mut envelope:Value=serde_json::from_str(&raw).map_err(|e|e.to_string())?;
+    let mut envelope=crate::decode_physical_envelope(&tx,&raw)?;
     let revision=envelope["revision"].as_u64().ok_or("거래처 이관 DB revision 오류")?;
     envelope["revision"]=json!(revision.checked_add(1)
         .ok_or("거래처 이관 DB revision 한도 초과")?);
     let updated=tx.execute("UPDATE app_state SET payload=?1 WHERE id=1 AND payload=?2",
-        params![serde_json::to_string(&envelope).map_err(|e|e.to_string())?,raw]
+        params![crate::encode_physical_envelope(&tx,&envelope)?,raw]
     ).map_err(|e|e.to_string())?;
     if updated!=1{return Err("거래처 이관 중 DB 변경을 감지했습니다.".into());}
     tx.commit().map_err(|e|e.to_string())?;

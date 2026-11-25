@@ -14,7 +14,7 @@ fn read_current_envelope(tx:&Transaction<'_>,expected_revision:u64)->Result<Valu
         "SELECT version FROM core_schema WHERE key='business-core'",
         [],|row|row.get(0),
     ).map_err(err)?;
-    if version!=2 {return Err("지원하지 않는 운영 DB 버전입니다.".into());}
+    if !crate::supported_relational_version(version) {return Err("지원하지 않는 운영 DB 버전입니다.".into());}
     // The envelope owns revision. Reject stale writers before loading any
     // relational rows, using the same transaction snapshot.
     let current=crate::read_envelope(tx)?;

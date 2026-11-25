@@ -1108,9 +1108,25 @@ fn relational_workflow_event_migration_and_append_preserve_audit(){
     expected["revision"]=json!(revision);
     assert_eq!(get_snapshot(&conn).unwrap(),expected);
     let raw:String=conn.query_row("SELECT payload FROM app_state WHERE id=1",[],|r|r.get(0)).unwrap();
-    let envelope:Value=serde_json::from_str(&raw).unwrap();
+    let physical:Value=serde_json::from_str(&raw).unwrap();
+    assert!(physical.is_array());
+    let envelope=&physical[0];
+    let version:i64=conn.query_row("SELECT version FROM core_schema WHERE key='business-core'",[],|r|r.get(0)).unwrap();
+    assert_eq!(version,3);
     assert!(envelope["workflow"].get("events").is_none());
     assert_eq!(envelope["_workflowEventsRelational"],1);
+    // Reproduce the old v2 projector: it cannot hydrate a non-object root,
+    // and its raw revision query cannot return an apparently valid revision.
+    let mut old_projection=physical.clone();
+    assert!(bando_data_access::hydrate_v2(&conn,&mut old_projection).is_err());
+    let old_revision:Option<i64>=conn.query_row("SELECT json_extract(payload,'$.revision') FROM app_state WHERE id=1",[],|r|r.get(0)).unwrap();
+    assert!(old_revision.is_none());
+    {
+        let tx=conn.transaction().unwrap();
+        tx.execute("UPDATE core_schema SET version=2 WHERE key='business-core'",[]).unwrap();
+        assert!(get_snapshot(&tx).unwrap_err().contains("DB 버전 불일치"));
+        tx.rollback().unwrap();
+    }
     assert_eq!(envelope["_workflowEventsCount"],json!(saved["workflow"]["events"].as_array().unwrap().len()));
     assert!(bando_data_access::workflow_events::migrate_with_backup(&mut conn,&isolated.root).unwrap().is_none());
     let committed=bando_data_access::update_v2_freight_snapshot(
@@ -1137,7 +1153,7 @@ fn relational_workflow_event_migration_and_append_preserve_audit(){
     }
     {
         let tx=conn.transaction().unwrap();
-        tx.execute("UPDATE app_state SET payload=json_remove(payload,'$._workflowEventsCount') WHERE id=1",[]).unwrap();
+        tx.execute("UPDATE app_state SET payload=json_remove(payload,'$[0]._workflowEventsCount') WHERE id=1",[]).unwrap();
         assert!(get_snapshot(&tx).unwrap_err().contains("업무 이벤트 저장 개수"));
         tx.rollback().unwrap();
     }
@@ -1166,6 +1182,7 @@ fn relational_workflow_event_migration_and_append_preserve_audit(){
     assert_eq!(get_snapshot(&reopened).unwrap(),legacy);
     let split_exists:bool=reopened.query_row("SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE name='core_workflow_events')",[],|r|r.get(0)).unwrap();
     assert!(!split_exists);
+    assert_eq!(reopened.query_row("SELECT version FROM core_schema WHERE key=\'business-core\'",[],|r|r.get::<_,i64>(0)).unwrap(),2);
 }
 
 #[test]
@@ -1184,7 +1201,11 @@ fn relational_workflow_state_migration_and_delta_preserve_links(){
     let revision=before["revision"].as_u64().unwrap();
     assert_eq!(before["workflow"],saved["workflow"]);
     let raw:String=conn.query_row("SELECT payload FROM app_state WHERE id=1",[],|r|r.get(0)).unwrap();
-    let envelope:Value=serde_json::from_str(&raw).unwrap();
+    let physical:Value=serde_json::from_str(&raw).unwrap();
+    assert!(physical.is_array());
+    let envelope=&physical[0];
+    let version:i64=conn.query_row("SELECT version FROM core_schema WHERE key='business-core'",[],|r|r.get(0)).unwrap();
+    assert_eq!(version,3);
     for key in ["groups","shipments","events"]{assert!(envelope["workflow"].get(key).is_none());}
     assert_eq!(envelope["_workflowStateRelational"]["shipments"],1);
     assert!(bando_data_access::workflow_state::migrate_with_backup(&mut conn,&isolated.root).unwrap().is_none());

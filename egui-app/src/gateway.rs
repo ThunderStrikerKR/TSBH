@@ -289,12 +289,12 @@ fn message_account_wire(state:&Value)->Result<Vec<Value>,String>{
 fn read_reception_metadata(conn:&rusqlite::Connection,known:Option<u64>)
     ->Result<(Option<u64>,Option<ReceptionMetadata>),String>{
     let revision:i64=conn.query_row(
-        "SELECT json_extract(payload,'$.revision') FROM app_state WHERE id=1 AND (SELECT version FROM core_schema WHERE key='business-core')=2",
+        "SELECT CASE (SELECT version FROM core_schema WHERE key='business-core') WHEN 3 THEN json_extract(payload,'$[0].revision') WHEN 2 THEN json_extract(payload,'$.revision') END FROM app_state WHERE id=1",
         [],|row|row.get(0)).map_err(|e|format!("업무 DB 리비전 확인 실패: {e}"))?;
     let revision=u64::try_from(revision).map_err(|_|"업무 DB 리비전 범위 오류")?;
     if known==Some(revision){return Ok((Some(revision),None));}
     let path:Option<String>=conn.query_row(
-        "SELECT json_extract(payload,'$.settings.orderImageInboxDirectory') FROM app_state WHERE id=1",
+        "SELECT CASE (SELECT version FROM core_schema WHERE key='business-core') WHEN 3 THEN json_extract(payload,'$[0].settings.orderImageInboxDirectory') WHEN 2 THEN json_extract(payload,'$.settings.orderImageInboxDirectory') END FROM app_state WHERE id=1",
         [],|row|row.get(0)).map_err(|e|e.to_string())?;
     let clients=bando_data_access::read_client_index_rows(conn)?;
     let inbox=Ok(path.map(|p|p.trim().to_owned()).filter(|p|!p.is_empty()));
@@ -585,7 +585,7 @@ impl BandoGateway for LocalGateway {
             "SELECT version FROM core_schema WHERE key='business-core'",
             [],|row|row.get(0),
         ).map_err(|_|"운영 DB 스키마를 확인할 수 없습니다.".to_owned())?;
-        if version!=2{return Err("지원하지 않는 운영 DB 버전입니다.".into());}
+        if !bando_data_access::supported_relational_version(version){return Err("지원하지 않는 운영 DB 버전입니다.".into());}
         let before=bando_data_access::read_v2_snapshot(&conn)?;
         let current=before["revision"].as_u64().ok_or("운영 DB 리비전 오류")?;
         if current!=revision{

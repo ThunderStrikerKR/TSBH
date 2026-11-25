@@ -126,7 +126,7 @@ pub fn migrate_with_backup(conn:&mut Connection,base:&Path)->Result<Option<Strin
     if active(conn)?{crate::read_v2_snapshot(conn)?;return Ok(None);}
     if !crate::workflow_events::active(conn)?{return Err("업무 이벤트를 먼저 이관하세요.".into());}
     let version:i64=conn.query_row("SELECT version FROM core_schema WHERE key='business-core'",[],|r|r.get(0)).map_err(err)?;
-    if version!=2{return Err("관계형 DB v2만 지원합니다.".into());}
+    if version!=3{return Err("업무 이벤트가 이관된 관계형 DB v3만 지원합니다.".into());}
     let backup=crate::backup_service::manual_backup(conn,base)?;
     let backup_conn=crate::backup_service::read_backup(Path::new(&backup))?;
     let backed_up=crate::read_v2_snapshot(&backup_conn)?;
