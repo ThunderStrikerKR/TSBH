@@ -1723,13 +1723,7 @@ impl ProductManager {
                     let response=panel.interact(
                         rect,panel.make_persistent_id(("product-price-sort",index)),
                         Sense::click()
-                    ).on_hover_text(match ProductSort::next(self.sort,column){
-                        Some(ProductSort{direction:ProductSortDirection::Ascending,..})
-                            =>"오름차순 정렬",
-                        Some(ProductSort{direction:ProductSortDirection::Descending,..})
-                            =>"내림차순 정렬",
-                        None=>"기본 순서로 복귀",
-                    });
+                    ).on_hover_text(components::management_sort_tooltip(ProductSort::next(self.sort,column).map(|value|matches!(value.direction,ProductSortDirection::Descending))));
                     if response.hovered(){
                         components::management_master_header_sort_hover(panel,rect);
                     }
