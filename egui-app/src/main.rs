@@ -1874,6 +1874,37 @@ impl BandoEgui {
         cache.as_ref().cloned()
     }
 
+    /// Shared pending-card navigation for the card and its management action.
+    /// A blocked selection keeps the current view and lets the caller retain
+    /// its decision dialog. Never confirm a dealer or create a group here.
+    fn select_pending_workflow_card(&mut self,id:&str,ctx:&egui::Context)->bool{
+        self.workflow_freight_guidance=None;
+        if self.workflow_freight_editor.as_ref().is_some_and(|editor|
+            editor.text.trim()!=editor.original.trim()
+        ){
+            self.submit_workflow_freight_edit(ctx);
+            return false;
+        }
+        if self.active_id.as_deref()!=Some(id){
+            if let JobAdmission::Conflict(blocker)=self.reception_job_admission(
+                ReceptionJob::NavigateReception,false
+            ){
+                self.reception_job_conflict(ReceptionJob::NavigateReception,blocker);
+                return false;
+            }
+        }
+        if !self.drafts.iter().any(|draft|draft.id==id){return false;}
+        self.workflow_freight_editor=None;
+        self.workflow_freight_next_selection=None;
+        self.workflow_ui.selection=None;
+        self.workflow_ui.folded=None;
+        self.workflow_ui.stop_preview();
+        self.link_hover.clear();
+        self.source_hover=None;
+        self.select_reception(id,ctx);
+        self.active_id.as_deref()==Some(id)
+    }
+
     fn select_reception(&mut self, id: &str, ctx: &egui::Context) {
         if self.active_id.as_deref()==Some(id){return;}
         if let JobAdmission::Conflict(blocker)=self.reception_job_admission(
@@ -8810,6 +8841,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
         let Some(dialog)=self.workflow_dialog.clone() else{return;};
         let mut close=false;
         let mut delete_pending:Option<String>=None;
+        let mut select_pending:Option<String>=None;
         let mut command:Option<(
             String,String,Option<String>,Option<String>,bool
         )>=None;
@@ -8944,6 +8976,8 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                             close=decision.header("배송 건 묶음 관리","닫기",true
                             );
                             decision.body(|ui|{
+                                ui.label(typography::body("거래처와 주문 내용을 확인한 후 주문 확인을 완료하면 배송 건을 분리하거나 다시 묶을 수 있습니다."));
+                                components::section_divider(ui);
                                 let rows=workflow_board_ui::pending_recipients(&draft);
                                 if rows.is_empty(){
                                     ui.label(typography::body("수취인 확인"));
@@ -8960,8 +8994,10 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                 }
                             });
                             decision.actions(|buttons|{
-                                theme::action(buttons,"거래처 확인하기",
-                                    ButtonRole::Primary,false);
+                                if theme::action(buttons,"거래처 확인하기",
+                                    ButtonRole::Primary,true).clicked(){
+                                    select_pending=Some(id.clone());
+                                }
                             });
                         });
                     });
@@ -9046,6 +9082,17 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
         }
         self.workflow_manage_target=target;
         self.workflow_manage_ack=ack;
+        if let Some(id)=select_pending{
+            // Navigation admission deliberately rejects open modal dialogs.
+            // Release only this approved modal, not the general safety policy.
+            let previous=self.workflow_dialog.take();
+            if self.select_pending_workflow_card(&id,ctx){
+                close=true;
+            }else{
+                self.workflow_dialog=previous;
+                close=false;
+            }
+        }
         if let Some(id)=delete_pending{
             floating_notice::dispatch_pointer(ctx,"reception.workflow");
             // A conflict is not a dismissal: keep the employee's
@@ -9211,21 +9258,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                 self.request_draft_confirmation(&id,ui.ctx());
             }
             Some(workflow_board_ui::Event::SelectPending(id))=>{
-                self.workflow_freight_guidance=None;
-                if self.workflow_freight_editor.as_ref().is_some_and(|editor|
-                    editor.text.trim()!=editor.original.trim()
-                ){
-                    self.submit_workflow_freight_edit(ui.ctx());
-                }else{
-                    self.workflow_freight_editor=None;
-                    self.workflow_freight_next_selection=None;
-                    self.workflow_ui.selection=None;
-                    self.workflow_ui.folded=None;
-                    self.workflow_ui.stop_preview();
-                    self.link_hover.clear();
-                    self.source_hover=None;
-                    self.select_reception(&id,ui.ctx());
-                }
+                self.select_pending_workflow_card(&id,ui.ctx());
             }
             Some(workflow_board_ui::Event::SelectPendingRecipient(target))=>{
                 self.workflow_freight_guidance=None;
