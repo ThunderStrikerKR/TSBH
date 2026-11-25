@@ -8944,19 +8944,19 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                             close=decision.header("배송 건 묶음 관리","닫기",true
                             );
                             decision.body(|ui|{
-                                if let Some(rows)=draft.analysis_evidence.as_ref()
-                                    .and_then(|v|v.get("recipients"))
-                                    .and_then(serde_json::Value::as_array){
-                                    for recipient in rows{
-                                        let name=recipient.get("name")
-                                            .and_then(serde_json::Value::as_str)
-                                            .filter(|s|!s.is_empty())
-                                            .unwrap_or("수취인 확인");
-                                        let count=recipient.get("items")
-                                            .and_then(serde_json::Value::as_array)
-                                            .map(Vec::len).unwrap_or(0);
-                                        ui.label(format!("{name} / 상품 {count}종"));
-                                    }
+                                let rows=workflow_board_ui::pending_recipients(&draft);
+                                if rows.is_empty(){
+                                    ui.label(typography::body("수취인 확인"));
+                                }
+                                for recipient in rows{
+                                    let name=recipient.get("name")
+                                        .and_then(serde_json::Value::as_str)
+                                        .filter(|s|!s.is_empty())
+                                        .unwrap_or("수취인 확인");
+                                    let count=recipient.get("items")
+                                        .and_then(serde_json::Value::as_array)
+                                        .map(Vec::len).unwrap_or(0);
+                                    ui.label(typography::body(&format!("{name} / 상품 {count}종")));
                                 }
                             });
                             decision.actions(|buttons|{
