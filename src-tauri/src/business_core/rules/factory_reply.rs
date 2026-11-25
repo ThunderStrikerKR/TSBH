@@ -36,6 +36,36 @@ fn parse_freight(input:&str)->Option<i64>{
     input.replace(',',"").parse::<i64>().ok()
         .filter(|n|(0..=9_007_199_254_740_991).contains(n))
 }
+type QueueMatchIndex<'a> = HashMap<(String,String),Vec<&'a Value>>;
+
+fn match_key(recipient:&Value)->(String,String){
+    (normalized(s(recipient,"name")),normalized(s(recipient,"address")))
+}
+fn contacts_match(row:&Value,recipient:&Value)->bool{
+    rows(row,"contacts").iter().filter_map(Value::as_str).any(|contact|{
+        ["phone","mobile"].iter().any(|key|{
+            let saved=s(recipient,key);
+            !saved.is_empty() && normalized(saved)==normalized(contact)
+        })
+    })
+}
+fn queue_match_index(state:&Value)->QueueMatchIndex<'_>{
+    let mut index=HashMap::new();
+    for queue in rows(field(state,"workflow"),"queue").iter().filter(|q|
+        s(q,"origin")=="FACTORY" && s(q,"status")=="EXPORTED"
+        && !field(q,"snapshot").is_null()){
+        let key=match_key(field(field(queue,"snapshot"),"recipient"));
+        index.entry(key).or_insert_with(Vec::new).push(queue);
+    }
+    index
+}
+fn matching_queues<'a>(index:&QueueMatchIndex<'a>,row:&Value)->Vec<&'a Value>{
+    index.get(&match_key(row)).into_iter().flatten().copied()
+        .filter(|q|contacts_match(row,field(field(q,"snapshot"),"recipient")))
+        .collect()
+}
+// Independent pre-index matching path retained only for differential tests.
+#[cfg(test)]
 fn row_matches(row:&Value,queue:&Value)->bool{
     let recipient=field(field(queue,"snapshot"),"recipient");
     let name=s(row,"name");
@@ -77,6 +107,9 @@ fn connect(input:&Value,source:&Value,approve:bool,context:&Value)->Result<Value
     let mut reply=source.clone();
     let count=rows(&reply,"rows").len();
     let mut claimed=HashSet::<String>::new();
+    // The reducer only mutates shipments, events and reply history.
+    // Borrow the immutable input queue and preserve its original order.
+    let queue_index=queue_match_index(input);
     for index in 0..count {
         let current=reply["rows"][index].clone();
         if !s(&current,"issue").is_empty(){continue}
@@ -89,10 +122,7 @@ fn connect(input:&Value,source:&Value,approve:bool,context:&Value)->Result<Value
             reply["rows"][index]["issue"]=json!("필수 배송정보 / Q열 운송장 / 실제 운임 확인 필요");
             continue
         }
-        let candidates=rows(field(&next,"workflow"),"queue").iter()
-            .filter(|q|s(q,"origin")=="FACTORY" && s(q,"status")=="EXPORTED"
-                && !field(q,"snapshot").is_null() && row_matches(&current,q))
-            .collect::<Vec<_>>();
+        let candidates=matching_queues(&queue_index,&current);
         let mut ids=Vec::<String>::new();
         for q in &candidates {
             let id=s(q,"shipmentId").to_string();
@@ -632,6 +662,78 @@ mod tests {
         assert_eq!(events[1]["action"],"공장 송장 / 운임 정정");
         assert_eq!(next["factoryReplies"][0],before["factoryReplies"][0]);
         assert_eq!(next["factoryReplies"][1]["resolves"],json!({"id":"factory-reply-test","row":2}));
+    }
+
+    fn legacy_matching_queues<'a>(state:&'a Value,row:&Value)->Vec<&'a Value>{
+        rows(field(state,"workflow"),"queue").iter()
+            .filter(|q|s(q,"origin")=="FACTORY" && s(q,"status")=="EXPORTED"
+                && !field(q,"snapshot").is_null() && row_matches(row,q))
+            .collect()
+    }
+
+    #[test]
+    fn indexed_queue_matching_preserves_contact_filter_and_original_candidate_order(){
+        let mut state=fixture();
+        let original=state["workflow"]["queue"][0].clone();
+        let mut same=original.clone();
+        same["shipmentId"]=json!("s2");
+        same["snapshot"]["recipient"]["name"]=json!("김 수취");
+        same["snapshot"]["recipient"]["address"]=json!("서울, 종로구 10");
+        same["snapshot"]["recipient"]["phone"]=json!("");
+        same["snapshot"]["recipient"]["mobile"]=json!("01012345678");
+        let mut wrong_contact=original.clone();
+        wrong_contact["shipmentId"]=json!("s3");
+        wrong_contact["snapshot"]["recipient"]["phone"]=json!("010-9999-9999");
+        let mut store=original.clone();
+        store["origin"]=json!("STORE");
+        let mut pending=original.clone();
+        pending["status"]=json!("PENDING");
+        let mut missing=original.clone();
+        missing["snapshot"]=Value::Null;
+        state["workflow"]["queue"]=json!([original.clone(),wrong_contact,same.clone(),
+            store,original.clone(),pending,missing]);
+        let index=queue_match_index(&state);
+        for row in [
+            json!({"name":"김 수취","address":"서울 종로구 10","contacts":["010-1234-5678"]}),
+            json!({"name":"김수취","address":"서울 종로구 10","contacts":["010-9999-9999"]}),
+            json!({"name":"김수취","address":"서울 종로구 10","contacts":["no match"]}),
+            json!({"name":"김수취","address":"다른 주소","contacts":["010-1234-5678"]}),
+            json!({"name":"김수취","address":"서울 종로구 10","contacts":[]})
+        ]{
+            assert_eq!(matching_queues(&index,&row),legacy_matching_queues(&state,&row));
+        }
+        let row=json!({"name":"김수취","address":"서울 종로구 10","contacts":["01012345678"]});
+        assert_eq!(matching_queues(&index,&row),vec![&original,&same,&original]);
+    }
+
+    #[test]
+    fn indexed_factory_queue_large_synthetic_benchmark(){
+        const QUEUE:usize=10_000;
+        const REPLIES:usize=100;
+        let queue=(0..QUEUE).map(|i|json!({
+            "origin":"FACTORY","status":"EXPORTED","shipmentId":format!("s{i}"),
+            "snapshot":{"recipient":{"name":format!("합성 수취인 {i}"),
+                "address":format!("서울 종로구 {i}"),"phone":"010-1234-5678"}}
+        })).collect::<Vec<_>>();
+        let state=json!({"workflow":{"queue":queue}});
+        let replies=(0..REPLIES).map(|i|json!({
+            "name":format!("합성수취인{}",i*100),
+            "address":format!("서울 종로구 {}",i*100),"contacts":["01012345678"]
+        })).collect::<Vec<_>>();
+        let start=std::time::Instant::now();
+        let expected=replies.iter().map(|r|legacy_matching_queues(&state,r)).collect::<Vec<_>>();
+        let legacy=start.elapsed();
+        let start=std::time::Instant::now();
+        let index=queue_match_index(&state);
+        let actual=replies.iter().map(|r|matching_queues(&index,r)).collect::<Vec<_>>();
+        let indexed=start.elapsed();
+        assert_eq!(actual,expected);
+        assert!(actual.iter().all(|c|c.len()==1));
+        let candidate_visits=replies.iter().map(|r|index.get(&match_key(r))
+            .map_or(0,Vec::len)).sum::<usize>();
+        assert_eq!(candidate_visits,REPLIES);
+        // Deterministic work bound, not a flaky wall-clock threshold.
+        eprintln!("factory queue benchmark: {QUEUE} queue / {REPLIES} rows; legacy={legacy:?}, indexed including build={indexed:?}; legacy visits={}, indexed build + candidate visits={}",QUEUE*REPLIES,QUEUE+candidate_visits);
     }
 
     #[test] fn valid_reply_matches_and_audits(){
