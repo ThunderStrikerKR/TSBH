@@ -789,7 +789,8 @@ impl ExcelManager{
                             bar.label(typography::caption(&format!("{}/{}",self.reply_page+1,(count.saturating_add(49)/50).max(1))));
                             if theme::action(bar,"다음",theme::ButtonRole::Standard,!busy&&(self.reply_page+1)*50<count).clicked(){self.reply_page+=1;}
                             let error=self.error.as_deref();
-                            components::fixed_status_slot(bar,bar.available_width(),
+                            let error_width=bar.available_width();
+                            components::fixed_status_slot(bar,error_width,
                                 typography::METADATA_LINE_HEIGHT,error,error,theme::DANGER);
                         });
                     });
