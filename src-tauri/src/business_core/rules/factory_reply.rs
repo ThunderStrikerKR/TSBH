@@ -238,8 +238,7 @@ fn preview(state:&Value,reply:&Value)->Result<Value,String>{
         "applied":applied,"held":held,"status":field(matched,"status")
     }))
 }
-fn analyze(payload:&Value)->Result<Value,String>{
-    let state=field(payload,"state");
+fn parse_reply(payload:&Value)->Result<Value,String>{
     let count=field(payload,"sourceRowCount").as_i64()
         .ok_or("공장 회신 Excel 행 수가 없습니다.")?;
     if count>1000{return Err("공장 회신은 한 번에 최대 1,000행을 처리합니다.".into())}
@@ -314,7 +313,23 @@ fn analyze(payload:&Value)->Result<Value,String>{
         "actor":field(payload,"actor"),
         "status":"REVIEW","rows":parsed
     });
-    preview(state,&reply)
+    Ok(reply)
+}
+fn analyze(payload:&Value)->Result<Value,String>{
+    preview(field(payload,"state"),&parse_reply(payload)?)
+}
+/// Automatic inbox only: the caller supplies the authoritative transaction
+/// before-image, not an external preview. Parse and match exactly once.
+pub(crate) fn import_automatic_factory_reply(state:&Value,payload:&Value)->Result<Value,String>{
+    let reply=parse_reply(payload)?;
+    if is_duplicate(state,s(&reply,"id")){
+        return Err("이미 등록된 동일 회신 파일입니다. 회신 이력에서 확인하세요.".into())
+    }
+    let next=connect(state,&reply,false,payload)?;
+    let record=rows(&next,"factoryReplies").last().ok_or("회신 저장 결과 누락")?;
+    let applied=rows(record,"rows").iter().filter(|row|field(row,"applied")==true).count();
+    let held=rows(record,"rows").len()-applied;
+    Ok(json!({"applied":applied,"held":held,"next":next}))
 }
 fn apply(payload:&Value)->Result<Value,String>{
     let state=payload.get("state").ok_or("공장 회신 저장 상태 누락")?;
@@ -523,6 +538,30 @@ mod tests {
         let denied=conflict_confirmation(&json!({
             "state":frozen,"id":"f1","rowNumber":99}));
         assert!(denied.is_err());
+    }
+    #[test]
+    fn automatic_inbox_matches_reviewed_reducer_with_identical_audit_and_holds(){
+        for (tracking,freight,old_tracking) in [
+            ("001234567890","4000",""),
+            ("001234567890","4000","9999999999"),
+            ("001234567890","invalid",""),
+            ("001234567890","0","")
+        ]{
+            let mut state=fixture();
+            if !old_tracking.is_empty(){
+                state["workflow"]["shipments"][0]["tracking"]["FACTORY"]=json!(old_tracking);
+            }
+            let mut payload=input(state.clone(),tracking,freight);
+            payload["freightAt"]=json!("2026-11-13T10:00:00Z");
+            payload["freightEventIds"]=json!(["f1"]);
+            payload["replyEventIds"]=json!(["r1"]);
+            let reviewed=analyze(&payload).unwrap();
+            payload["preview"]=reviewed;
+            let old=apply(&payload).unwrap();
+            let new=import_automatic_factory_reply(&state,&payload).unwrap();
+            assert_eq!(old,new);
+            assert!(import_automatic_factory_reply(&new["next"],&payload).is_err());
+        }
     }
     #[test] fn valid_reply_matches_and_audits(){
         let s=fixture();
