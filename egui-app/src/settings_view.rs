@@ -914,8 +914,7 @@ impl SettingsView{
             section(form,title,|area|{
                 let value=field(&self.draft,key);
                 let displayed=if value.is_empty(){*empty}else{value.as_str()};
-                area.add(egui::Label::new(typography::body(displayed)).truncate())
-                    .on_hover_text(displayed);
+                area.add(egui::Label::new(typography::body(displayed)).truncate());
                 area.add_space(theme::SPACE_8);
                 area.horizontal_wrapped(|buttons|{
                     if theme::action(
@@ -956,9 +955,7 @@ impl SettingsView{
                 if response.clicked(){
                     self.save(gateway.clone(),actions.ctx().clone());
                 }
-                if self.dirty(){
-                    response.on_hover_text("저장하지 않은 설정이 있습니다.");
-                }
+
             });
         });
     }
