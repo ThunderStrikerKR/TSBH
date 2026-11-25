@@ -4980,7 +4980,7 @@ pub fn management_chooser_row(
 
 /// Read-only presentation of a canonical client. Used by both management
 /// rows and the compact Reception card; never modifies billing or matching.
-#[derive(Clone,Debug)]
+#[derive(Clone,Debug,PartialEq,Eq)]
 pub struct ClientDisplaySummary{
     pub name:String,pub tier:String,pub address:String,
     pub phone:String,pub mobile:String,pub conditions:String,
