@@ -629,10 +629,20 @@ fn draw_line(ui:&mut Ui,rect:Rect,line:HistoryLine,snapshot:&HistorySnapshot,
                 let lower=Rect::from_min_max(egui::pos2(columns[4].left(),
                     columns[4].center().y),columns[4].max);
                 paint_text(ui,upper,&total,typography::ManagementTableCellRole::RowTotal,true);
-                paint_caption(ui,lower,&cautions.join(" / "));
-                ui.interact(columns[4].intersect(area),
-                    ui.make_persistent_id(("history-billing-caution",id)),
-                    Sense::hover()).on_hover_text(cautions.join("\n"));
+                let warning=cautions.join(" / ");
+                let warning_rect=Rect::from_min_max(
+                    egui::pos2(lower.left()+6.0,lower.top()),lower.right_bottom()
+                ).intersect(area);
+                let overflow=components::text_exceeds_rect(
+                    typography::client_table_metadata_galley(ui,&warning,theme::MUTED).size(),
+                    warning_rect
+                );
+                paint_caption(ui,lower,&warning);
+                if overflow{
+                    ui.interact(lower.intersect(area),
+                        ui.make_persistent_id(("history-billing-caution",id)),
+                        Sense::hover()).on_hover_text(&warning);
+                }
             }
             // Staff confirmation is NOT the bank transfer's paidAt date.
             // It comes from the Rust projection of workflow.confirmations.
