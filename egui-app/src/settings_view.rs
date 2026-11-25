@@ -457,6 +457,7 @@ impl SettingsView{
     }
     fn choose_folder(&mut self,key:&str,ctx:Context){
         if self.folder_picker.is_some()||self.saving.is_some()||self.read_only(){return;}
+        crate::floating_notice::dispatch_pointer(&ctx,"settings.action");
         let key=key.to_owned();
         let (tx,rx)=mpsc::channel();
         self.folder_picker=Some((key.clone(),rx));

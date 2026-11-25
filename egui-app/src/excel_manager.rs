@@ -954,6 +954,7 @@ impl ExcelManager{
                             &mut self.export_from_month,&mut self.export_to_month,
                             history_compact
                         ){
+                            crate::floating_notice::inherit_origin(dates.ctx(),"history.date","excel.history-dates");
                             apply_valid_export_date_range(
                                 &mut self.export_from,&mut self.export_to,
                                 &self.export_from_input,&self.export_to_input

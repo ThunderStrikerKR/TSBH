@@ -369,6 +369,7 @@ impl ClientChooser {
                                                             );
                                                     }
                                                     if !selected&&response.clicked(){
+                                                        floating_notice::action_rect(row_ui.ctx(),"reception.client_change",response.rect.intersect(clip));
                                                         chosen=Some(client_id.to_owned());
                                                     }
                                                 } else {

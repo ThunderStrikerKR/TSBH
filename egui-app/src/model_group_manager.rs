@@ -162,13 +162,13 @@ impl ModelGroupManager {
     }
     fn save(&mut self,gateway:Arc<dyn BandoGateway>,ctx:Context){
         if self.busy()||!self.dirty(){return;}
+        crate::floating_notice::dispatch_pointer(&ctx,"products.model");
         if !self.new_name.trim().is_empty(){
             self.status="새 그룹 이름은 먼저 그룹 생성으로 등록하세요.".into();return;
         }
         if !gateway.model_group_write_enabled(){
             self.status="모델군 변경 저장 권한이 없습니다.".into();return;
         }
-        crate::floating_notice::dispatch_pointer(&ctx,"products.model");
         let groups=self.draft.clone();
         let expected=self.baseline.clone();
         let (tx,rx)=mpsc::channel();

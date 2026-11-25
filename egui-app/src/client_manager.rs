@@ -281,9 +281,9 @@ impl ClientManager {
     fn mutate(&mut self,gateway:Arc<dyn BandoGateway>,ctx:&Context,action:&str) {
         if self.saving.is_some() || !self.editable(){return;}
         let Some(client)=self.draft.clone() else {return};
+        crate::floating_notice::dispatch_pointer(ctx,"clients.action");
         let Some(revision)=self.state.get("revision").and_then(Value::as_u64)
             else{self.error=Some("최신 거래처 정보를 확인할 수 없습니다.".into());return};
-        crate::floating_notice::dispatch_pointer(ctx,"clients.action");
         let (tx,rx)=mpsc::channel();
         self.saving=Some(rx);
         self.error=None;

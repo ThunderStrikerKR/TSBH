@@ -638,6 +638,9 @@ impl ProductManager {
     fn launch_write(
         &mut self,action:&str,data:Value,key:Option<String>,ctx:Context
     ){
+        if action!="set_price"{
+            crate::floating_notice::dispatch_pointer(&ctx,"products.action");
+        }
         let Some(revision)=self.catalog.as_ref()
             .and_then(|catalog|catalog["revision"].as_u64()) else{
             if action=="set_price"{
@@ -664,9 +667,6 @@ impl ProductManager {
             };
             Some(update)
         }else{None};
-        if action!="set_price"{
-            crate::floating_notice::dispatch_pointer(&ctx,"products.action");
-        }
         let gateway=Arc::clone(&self.gateway);
         let name=action.to_owned();
         let (tx,rx)=mpsc::channel();

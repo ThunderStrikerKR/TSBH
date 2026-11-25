@@ -738,6 +738,7 @@ fn range_date_picker_rtl(
             )
                 ;
             if prev.clicked(){
+                crate::floating_notice::action_rect(row.ctx(),"history.date",prev.rect);
                 *date=move_date(date,-1);
                 changed=true;
             }
@@ -760,6 +761,7 @@ fn range_date_picker_rtl(
                 ;
             debug_assert!((prev.rect.width()-next.rect.width()).abs()<0.01);
             if next.clicked(){
+                crate::floating_notice::action_rect(row.ctx(),"history.date",next.rect);
                 *date=move_date(date,1);
                 changed=true;
             }
@@ -776,6 +778,7 @@ fn range_date_picker_rtl(
             if let Some(day)=components::date_calendar(
                 &trigger,month,date,id
             ){
+                crate::floating_notice::action_rect(row.ctx(),"history.date",trigger.rect);
                 *date=day.format("%Y-%m-%d").to_string();
                 changed=true;
             }
@@ -1312,6 +1315,9 @@ impl OrderHistoryManager {
                         &mut self.from_month,&mut self.to_month,compact
                     );
                 });
+            if changed{
+                crate::floating_notice::dispatch_pointer(section.ctx(),"history.query");
+            }
             if changed && date_range_error(
                 &self.from_input,&self.to_input
             ).is_none(){

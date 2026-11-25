@@ -704,12 +704,12 @@ impl FreightManager {
         if self.write_receiver.is_some() || !self.gateway.shipping_write_enabled(){
             return;
         }
+        crate::floating_notice::dispatch_pointer(&ctx,"freight.action");
         let Some(revision)=self.state.as_ref()
             .and_then(|s|s["revision"].as_u64()) else {
                 self.error=Some("최신 운임 정보를 확인할 수 없습니다.".into());
                 return;
             };
-        crate::floating_notice::dispatch_pointer(&ctx,"freight.action");
         let gateway=Arc::clone(&self.gateway);
         let requested=action.clone();
         let (sender,receiver)=mpsc::channel();

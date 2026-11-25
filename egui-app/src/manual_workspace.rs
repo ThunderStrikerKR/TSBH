@@ -1805,6 +1805,7 @@ impl ManualWorkspace {
     }
     fn apply(&mut self,ctx:&Context) {
         if self.busy(){return;}
+        crate::floating_notice::dispatch_pointer(ctx,"reception.manual");
         let (Some(model),Some(order))=(self.model.clone(),self.base_order.clone())
             else{return};
         let cached_quote=self.cached_quote.clone();
