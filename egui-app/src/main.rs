@@ -6798,10 +6798,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                 let mut note = reception_service::text(&ship.recipient,"note").to_owned();
                                 let id=ship.recipient_id.as_str();
                                 let fields=["name","address","mobile","phone","note"];
-                                let highlighted=fields.map(|field|source_highlight::is_active(
-                                    linked_active.as_ref(),
-                                    &source_highlight::key(id,id,field)
-                                ));
+                                let highlighted=fields.map(|field|source_highlight::is_active_field(linked_active.as_ref(),id,id,field));
                                 let responses=components::reception_recipient_fields(
                                     contents,&mut name,&mut address,&mut mobile,
                                     &mut phone,&mut note,highlighted
@@ -6902,12 +6899,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                                 let item_id=reception_service::text(item,"id");
                                                 let fields=["product","quantity","price"];
                                                 let highlighted=fields.map(|field|
-                                                    source_highlight::is_active(
-                                                        linked_active.as_ref(),
-                                                        &source_highlight::key(
-                                                            &ship.recipient_id,item_id,field
-                                                        )
-                                                    )
+                                                    source_highlight::is_active_field(linked_active.as_ref(),&ship.recipient_id,item_id,field)
                                                 );
                                                 let cells=components::reception_item_row(
                                                     contents,
@@ -7175,8 +7167,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                         let fields=["name","address","mobile","phone","note"];
                                         let active_fields=fields.map(|field|
                                             (linked_active.is_none() && field=="name") ||
-                                            source_highlight::is_active(linked_active.as_ref(),
-                                                &source_highlight::key(recipient_id,recipient_id,field))
+                                            source_highlight::is_active_field(linked_active.as_ref(),recipient_id,recipient_id,field)
                                         );
                                         let responses=components::reception_recipient_fields(
                                             contents,&mut name,&mut address,&mut mobile,
@@ -7236,10 +7227,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                                         let recipient_id=reception_service::text(row,"id");
                                                         let fields=["product","quantity","price"];
                                                         let active_fields=fields.map(|field|
-                                                            source_highlight::is_active(
-                                                                linked_active.as_ref(),
-                                                                &source_highlight::key(recipient_id,item_id,field)
-                                                            )
+                                                            source_highlight::is_active_field(linked_active.as_ref(),recipient_id,item_id,field)
                                                         );
                                                         let cells=components::reception_item_row(
                                                             contents,
@@ -7448,10 +7436,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                     let active_fields=[
                                         "name","address","mobile","phone","note"
                                     ].map(|field|(board_preview && field=="name") ||
-                                        source_highlight::is_active(
-                                            linked_active.as_ref(),
-                                            &source_highlight::key(recipient_id,recipient_id,field)
-                                        ));
+                                        source_highlight::is_active_field(linked_active.as_ref(),recipient_id,recipient_id,field));
                                     let responses = components::reception_recipient_fields(
                                         fields, &mut name, &mut address, &mut mobile,
                                         &mut phone, &mut note, active_fields,
@@ -7609,10 +7594,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                                 let active_fields=[
                                                     "product","quantity","price"
                                                 ].map(|field|(board_preview && field=="product") ||
-                                                    source_highlight::is_active(
-                                                        linked_active.as_ref(),
-                                                        &source_highlight::key(recipient_id,item_id,field)
-                                                    ));
+                                                    source_highlight::is_active_field(linked_active.as_ref(),recipient_id,item_id,field));
                                                 let cells=components::reception_item_row_with_remove(
                                                     items_ui,&reception_service::item_title(item),
                                                     &quantity,&amount,active_fields,editable
@@ -7620,13 +7602,9 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                                 if cells.remove_clicked{
                                                     item_remove_popup=Some((recipient_id.to_owned(),item_id.to_owned()));
                                                 }
-                                                let issue_feedback=item.get("issues")
-                                                    .and_then(serde_json::Value::as_array)
-                                                    .map(|issues|issues.iter().filter_map(|issue|issue.as_str())
-                                                        .collect::<Vec<_>>().join("\n"))
-                                                    .unwrap_or_default();
-                                                components::reception_item_issue_feedback(
-                                                    items_ui,&cells.product,&issue_feedback
+                                                components::reception_item_issue_values(
+                                                    items_ui,&cells.product,
+                                                    item["issues"].as_array().map(Vec::as_slice).unwrap_or(&[])
                                                 );
                                                 for (response,field) in [
                                                     (&cells.product,"product"),
@@ -9267,6 +9245,7 @@ impl eframe::App for BandoEgui {
         self.clipboard_monitor.shutdown();
         source_highlight::clear_visual_cache();
             clear_quote_display_cache();
+            components::clear_reception_text_fit();
     }
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         let frame_started=Instant::now();
@@ -9314,6 +9293,7 @@ impl eframe::App for BandoEgui {
             self.workflow_source_display=None;
             source_highlight::clear_visual_cache();
             clear_quote_display_cache();
+            components::clear_reception_text_fit();
             self.workflow_receiver=None;
             self.workflow_refresh_required=false;
             self.workflow_last_fetch=None;
