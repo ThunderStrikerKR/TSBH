@@ -295,9 +295,9 @@ pub fn from_state(gateway:&dyn BandoGateway,state:Value)->Result<BoardSnapshot,S
     project_state(gateway,&state,None)
 }
 
-/// Native freight edits reconcile exactly one source order. Only reuse a
-/// board at the immediately preceding committed revision, with a provable
-/// source/order join. Otherwise use the unchanged full projection.
+/// Native freight edits and group moves reconcile exactly one source order.
+/// Only reuse the immediately preceding board with a provable source/order
+/// join. Include new and emptied groups; otherwise use full projection.
 fn freight_refresh_scope(previous:&BoardSnapshot,state:&Value,group_id:&str)
     ->Option<HashSet<String>>{
     if previous.revision?.checked_add(1)!=state["revision"].as_u64(){return None;}
@@ -587,6 +587,12 @@ mod linked_recipient_selection_tests{
         }});
         let scope=freight_refresh_scope(&previous,&state,"a").unwrap();
         assert_eq!(scope,["a","b","new"].into_iter().map(str::to_owned).collect::<HashSet<_>>());
+        // A newly detached card joins the scope; the emptied original
+        // card must still be removed when its last shipment is regrouped.
+        state["workflow"]["shipments"][0]["groupId"]=json!("new");
+        assert_eq!(freight_refresh_scope(&previous,&state,"a").unwrap(),scope);
+        state["workflow"]["shipments"][0]["groupId"]=json!("b");
+        assert_eq!(freight_refresh_scope(&previous,&state,"a").unwrap(),scope);
         state["revision"]=json!(9);
         assert!(freight_refresh_scope(&previous,&state,"a").is_none());
         state["revision"]=json!(8);
