@@ -1768,12 +1768,7 @@ impl FreightManager {
                         // of the column gaps. No opacity multiplication:
                         // 0.30 × DIVIDER was darker than the row background,
                         // which made the separators effectively invisible.
-                        let boundaries=std::array::from_fn::<_,5,_>(|index|{
-                            cells[index].right()+theme::FREIGHT_ASSIGNMENT_COL_GAP/2.0
-                        });
-                        components::management_master_column_rules(
-                            row,row_rect,&boundaries
-                        );
+                        components::management_table_column_rules(row,row_rect,&cells,theme::FREIGHT_ASSIGNMENT_COL_GAP);
                         components::paint_management_table_row_rule(row.painter(),row_rect);
                             }
                         );
@@ -1866,12 +1861,7 @@ impl FreightManager {
                     }
                 }
             }
-            let boundaries=std::array::from_fn::<_,5,_>(|index|{
-                header_cells[index].right()+theme::FREIGHT_ASSIGNMENT_COL_GAP/2.0
-            });
-            components::management_master_column_rules(
-                section,header_rect,&boundaries
-            );
+            components::management_table_column_rules(section,header_text_rect,&header_cells,theme::FREIGHT_ASSIGNMENT_COL_GAP);
             // This shared painter preserves the exact master 2pt bottom band.
             components::management_master_header_finish(section,header_rect);
 
@@ -2171,11 +2161,7 @@ impl FreightManager {
                                             });
                                     }
                                 );
-                                for col in 0..3{
-                                    let x=cells[col].right()
-                                        +theme::FREIGHT_ASSIGNMENT_COL_GAP/2.0;
-                                    components::paint_management_table_column_rule(row.painter(),x,row_rect.top(),row_rect.bottom());
-                                }
+                                components::management_table_column_rules(row,row_rect,&cells,theme::FREIGHT_ASSIGNMENT_COL_GAP);
                                 components::paint_management_table_row_rule(row.painter(),row_rect);
                             }
                         );
@@ -2243,11 +2229,8 @@ impl FreightManager {
                         arrow,color
                     );
                 }
-                if index<3{
-                    let x=cell.right()+theme::FREIGHT_ASSIGNMENT_COL_GAP/2.0;
-                    components::paint_management_table_column_rule(&painter,x,header_rect.top(),header_rect.bottom());
-                }
             }
+            components::management_table_column_rules(section,header_text_rect,&header_cells,theme::FREIGHT_ASSIGNMENT_COL_GAP);
             components::management_master_header_finish(section,header_rect);
             if ordered.is_empty(){
                 let caption=if groups.is_empty(){
@@ -2752,11 +2735,7 @@ fn freight_history_table<const N:usize>(
                             theme::FREIGHT_ASSIGNMENT_ROW_HEIGHT,theme::FREIGHT_ASSIGNMENT_COL_GAP);
                         components::paint_management_table_row_background(row.painter(),row_rect,index);
                         render_row(row,&cells,index);
-                        for column in 0..N.saturating_sub(1){
-                            let boundary=cells[column].right()
-                                +theme::FREIGHT_ASSIGNMENT_COL_GAP/2.0;
-                            components::paint_management_table_column_rule(row.painter(),boundary,row_rect.top(),row_rect.bottom());
-                        }
+                        components::management_table_column_rules(row,row_rect,&cells,theme::FREIGHT_ASSIGNMENT_COL_GAP);
                         components::paint_management_table_row_rule(row.painter(),row_rect);
                     }
                 );
@@ -2840,11 +2819,8 @@ fn freight_history_table<const N:usize>(
                 arrow_galley,color
             );
         }
-        if index<N.saturating_sub(1){
-            let boundary=cell.right()+theme::FREIGHT_ASSIGNMENT_COL_GAP/2.0;
-            components::paint_management_table_column_rule(&painter,boundary,header_rect.top(),header_rect.bottom());
-        }
     }
+    components::management_table_column_rules(ui,header_text_rect,&columns,theme::FREIGHT_ASSIGNMENT_COL_GAP);
     components::management_master_header_finish(ui,header_rect);
     if total_rows==0 {
         if let Some(message)=empty_message {

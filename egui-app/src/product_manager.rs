@@ -1628,6 +1628,7 @@ impl ProductManager {
                                         }
                                     }
                                 );
+                                components::management_table_column_rules(row,row_rect,&cells,theme::SPACE_8);
                                 components::paint_management_table_row_rule(row.painter(),row_rect);
                             }
                         );
@@ -1696,11 +1697,8 @@ impl ProductManager {
                     }
                     if response.clicked(){clicked_sort=Some(ProductSort::next(self.sort,column));}
                 }
-                if index<5{
-                    let edge=header_cells[index].right()+theme::SPACE_8/2.0;
-                    components::paint_management_table_column_rule(&painter,edge,header_text_rect.top(),header_text_rect.bottom());
-                }
             }
+            components::management_table_column_rules(panel,header_text_rect,&header_cells,theme::SPACE_8);
             components::management_master_header_finish(panel,header_rect);
             if let Some(next)=clicked_sort{
                 self.sort=next;

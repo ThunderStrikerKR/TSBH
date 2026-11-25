@@ -327,11 +327,8 @@ fn report_table<const N:usize>(
                                 row,*cell,&data[column],align[column],
                                 roles[column],(id,indices[index],column),
                             );
-                            if column+1<N{
-                                let x=cell.right()+COL_GAP/2.0;
-                                components::paint_management_table_column_rule(row.painter(),x,rect.top(),rect.bottom());
-                            }
                         }
+                        components::management_table_column_rules(row,rect,&row_cells,COL_GAP);
                         components::paint_management_table_row_rule(row.painter(),rect);
                     }
                 );
@@ -381,12 +378,8 @@ fn report_table<const N:usize>(
                 sort_change=Some(Sort::next(*sort,column));
             }
         }
-        if column+1<N{
-            let x=cell.right()+COL_GAP/2.0;
-            let painter=painter.with_clip_rect(header_text_rect);
-            components::paint_management_table_column_rule(&painter,x,header.top(),header.bottom());
-        }
     }
+    components::management_table_column_rules(ui,header_text_rect,&header_cells,COL_GAP);
     if let Some(next)=sort_change{*sort=next;}
     components::management_master_header_finish(ui,header);
 }

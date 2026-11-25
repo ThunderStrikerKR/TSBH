@@ -359,10 +359,7 @@ fn table<const N:usize>(
                     components::paint_management_table_row_background(row.painter(),r,index);
                     let cols=components::management_table_cells(r.min,&widths,HEIGHT,GAP);
                     render(row,cols,index);
-                    for c in cols.iter().take(N-1){
-                        let x=c.right()+GAP/2.0;
-                        components::paint_management_table_column_rule(row.painter(),x,r.top(),r.bottom());
-                    }
+                    components::management_table_column_rules(row,r,&cols,GAP);
                     components::paint_management_table_row_rule(row.painter(),r);
                 });
             }
@@ -426,12 +423,7 @@ fn table<const N:usize>(
     }
     if let Some(next)=clicked{*sort=next;}
     // Paint the very same column separators as the data rows.
-    for c in heads.iter().take(N.saturating_sub(1)) {
-        let x=c.right()+GAP/2.0;
-        if x>=header_content.left() && x<=header_content.right() {
-            components::paint_management_table_column_rule(&painter,x,header.top(),header.bottom());
-        }
-    }
+    components::management_table_column_rules(ui,header_text_rect,&heads,GAP);
     components::management_master_header_finish(ui,header);
     if let Some((all,enabled))=header_selection{
         let mut checked=all;

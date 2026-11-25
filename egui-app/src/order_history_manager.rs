@@ -398,14 +398,11 @@ fn paint_column_dividers(
     ui:&Ui,rect:Rect,widths:&[f32;7],detail:bool,content_clip:Rect
 ){
     let columns=components::management_table_cells(rect.min,widths,rect.height(),COL_GAP);
-    let painter=ui.painter().with_clip_rect(content_clip.intersect(ui.clip_rect()));
-    // Expanded rows merge columns 2–6 to show long recipient, product,
-    // freight and billing details. Do not draw lines THROUGH merged text.
-    let separators=if detail{2}else{6};
-    for column in columns.iter().take(separators){
-        let x=column.right()+COL_GAP/2.0;
-        components::paint_management_table_column_rule(&painter,x,rect.top(),rect.bottom());
-    }
+    // Expanded rows retain only the boundaries outside merged content.
+    let visible_columns=if detail{3}else{7};
+    components::management_table_column_rules(
+        ui,rect.intersect(content_clip),&columns[..visible_columns],COL_GAP
+    );
 }
 fn history_text_overflow(ui:&Ui,rect:Rect,value:&str,role:typography::ManagementTableCellRole)->bool{
     let content=Rect::from_min_max(egui::pos2(rect.left()+6.0,rect.top()),rect.right_bottom());
@@ -1532,9 +1529,6 @@ impl OrderHistoryManager {
             // Header labels AND column separators must use the same
             // horizontally scrolled origin as the data rows. The viewport
             // background, bottom outline and scrollbar rail remain fixed.
-            paint_column_dividers(
-                section,scrolled_header,&widths,false,header_content_rect
-            );
             // Freight centers headings in the 34pt area above its
             // INSIDE-the-header 2pt outline, excluding the right rail.
             let header_text_center_y=header_text_rect.center().y;
@@ -1584,6 +1578,7 @@ impl OrderHistoryManager {
                     }
                 }
             }
+            components::management_table_column_rules(section,header_text_rect,&header_cells,COL_GAP);
             if let Some(sort)=next_sort {self.sort=sort;}
             components::management_master_header_finish(section,head_rect);
             section.spacing_mut().item_spacing.y=old_gap;

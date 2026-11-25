@@ -1360,7 +1360,7 @@ pub fn window_control(ui: &mut Ui, control: WindowControl) -> Response {
     response
 }
 
-/// Shared horizontal rule surface for allocated separators and table rows.
+/// Shared solid divider surface for horizontal and vertical rules.
 pub(crate) fn paint_soft_rule(painter:&egui::Painter,rect:egui::Rect){
     painter.rect_filled(rect,0.0,DIVIDER);
 }

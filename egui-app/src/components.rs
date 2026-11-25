@@ -147,10 +147,12 @@ pub fn paint_management_table_row_rule(painter:&egui::Painter,rect:Rect){
     ));
 }
 
-/// Preserve the caller's clip, scrolled origin and merged-column exclusions.
-pub fn paint_management_table_column_rule(painter:&egui::Painter,x:f32,top:f32,bottom:f32){
-    painter.line_segment([egui::pos2(x,top),egui::pos2(x,bottom)],
-        Stroke::new(theme::SOFT_DIVIDER_WIDTH,theme::DIVIDER));
+/// One solid 1pt strip centered on the shared column boundary.
+fn paint_management_table_column_rule(painter:&egui::Painter,x:f32,top:f32,bottom:f32){
+    let half=theme::SOFT_DIVIDER_WIDTH/2.0;
+    theme::paint_soft_rule(painter,Rect::from_min_max(
+        egui::pos2(x-half,top),egui::pos2(x+half,bottom)
+    ));
 }
 
 /// Fixed and variable row viewports share the minimum-width and zero-gap
@@ -4910,10 +4912,7 @@ pub fn management_master_register_header(
             text_rect.center().y-right.size().y/2.0),
         right,theme::SECONDARY
     );
-    painter.line_segment(
-        [egui::pos2(x,text_rect.top()),egui::pos2(x,text_rect.bottom())],
-        Stroke::new(theme::SOFT_DIVIDER_WIDTH,theme::DIVIDER)
-    );
+    management_master_column_rules(ui,text_rect,[x]);
     management_master_header_finish(ui,layout.header_rect);
     layout
 }
@@ -5663,17 +5662,23 @@ pub fn reception_client_summary_card(
 /// clips the header before its scrollbar gutter and keeps body rules inside
 /// each virtualized row. Header bottom 2pt outline remains owned by the
 /// existing `management_master_header_finish` function.
-pub fn management_master_column_rules(
-    ui:&Ui,region:Rect,boundaries:&[f32]
+fn management_master_column_rules(
+    ui:&Ui,region:Rect,boundaries:impl IntoIterator<Item=f32>
 ){
     let clip=region.intersect(ui.clip_rect());
     if clip.width()<=0.0 || clip.height()<=0.0{return;}
     let painter=ui.painter().with_clip_rect(clip);
-    for &x in boundaries{
+    for x in boundaries{
         if x>clip.left() && x<clip.right() {
             paint_management_table_column_rule(&painter,x,region.top(),region.bottom());
         }
     }
+}
+
+/// Header and body use the same cell edges and inter-column midpoint.
+pub fn management_table_column_rules(ui:&Ui,region:Rect,cells:&[Rect],gap:f32){
+    management_master_column_rules(ui,region,
+        cells.iter().take(cells.len().saturating_sub(1)).map(|cell|cell.right()+gap/2.0));
 }
 
 /// The three compact columns keep fixed widths; the address gets all spare
@@ -5757,7 +5762,7 @@ pub fn management_client_header(
     }
     management_master_column_rules(
         ui,text_row,
-        &management_client_column_edges(table_left,table_width)
+        management_client_column_edges(table_left,table_width)
     );
     management_master_header_finish(ui,header);
     selected
@@ -5864,7 +5869,7 @@ fn management_row_impl(
     }
     management_master_column_rules(
         ui,rect,
-        &management_client_column_edges(rect.left(),rect.width())
+        management_client_column_edges(rect.left(),rect.width())
     );
     if !heading {
         theme::paint_button_hover(ui,&response,0.0);
