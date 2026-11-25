@@ -9483,11 +9483,16 @@ pub(crate) mod general_screen_geometry_tests {
         let retry=draw(page);
         assert!(!failed(page),"{name}: populated retry must clear failure");
         compare_data_state_geometry(name,"populated retry pending",&empty,&retry,true);
-        // Drop the actual sender without delivering a result. This is a
-        // disconnected channel, not an ordinary application Err response.
-        drop(finish);
+        // LatestJob (products) publishes caught worker panics as an Err
+        // rather than exposing an mpsc disconnect to the view. Its staged
+        // answer fixture has no sender-drop semantics.
+        if name=="products"{
+            finish(Err("조회 작업이 중단되었습니다.".into()));
+        }else{
+            drop(finish);
+        }
         let disconnected=draw(page);
-        assert!(failed(page),"{name}: disconnected read was not consumed");
+        assert!(failed(page),"{name}: interrupted read was not consumed");
         compare_data_state_geometry(name,"disconnected read",&empty,&disconnected,true);
         let finish=begin(page);
         let reconnecting=draw(page);
@@ -9657,9 +9662,13 @@ pub(crate) mod general_screen_geometry_tests {
         assert!(!failed(page),"{name}: refresh retry did not clear error");
         compare_top_slots(name,"retry pending",&many,&retry);
         compare_primary_origin(name,"retry pending",&many,&retry);
-        drop(finish);
+        if matches!(name,"categories"|"model groups"|"aliases"|"brands"){
+            finish(Err("조회 작업이 중단되었습니다.".into()));
+        }else{
+            drop(finish);
+        }
         let disconnected=draw(page);
-        assert!(failed(page),"{name}: disconnected read was not consumed");
+        assert!(failed(page),"{name}: interrupted read was not consumed");
         compare_top_slots(name,"disconnected",&many,&disconnected);
         compare_primary_origin(name,"disconnected",&many,&disconnected);
         let finish=begin(page);
