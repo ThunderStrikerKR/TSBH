@@ -673,14 +673,14 @@ fn shipment_row_fill(chosen:bool,previewed:bool)->egui::Color32{
 fn shipment_line(
     ui:&mut Ui,name:&str,products:&[String],chosen:bool,previewed:bool
 )->egui::Response{
-    shipment_line_with_freight(ui,name,products,chosen,previewed,None)
+    shipment_line_with_freight(ui,name,products,chosen,previewed,None,false)
 }
 fn shipment_line_with_freight(
-    ui:&mut Ui,name:&str,products:&[String],chosen:bool,previewed:bool,freight:Option<&str>
+    ui:&mut Ui,name:&str,products:&[String],chosen:bool,previewed:bool,freight:Option<&str>,freight_emphasis:bool
 )->egui::Response{
     components::workflow_shipment_row(
         ui,name,&shipment_product_summary(products),shipment_row_fill(chosen,previewed),
-        chosen,previewed,freight
+        chosen,previewed,freight,freight_emphasis
     )
 }
 
@@ -690,12 +690,13 @@ fn row(
     let name=if ship.recipient_name.is_empty(){
         "수취인 확인"
     }else{ship.recipient_name.as_str()};
-    let freight=freight_emphasis.then(||{
-        if ship.collect{return "착불".to_owned();}
+    let freight={
+        if ship.collect{"착불".to_owned()}else{
         let values=["FACTORY","STORE"].into_iter().filter_map(|origin|ship.display_charges.get(origin)).map(|amount|amount.map(components::display_won).unwrap_or_else(||"—".into())).collect::<Vec<_>>();
         if values.is_empty(){"—".to_owned()}else{values.join(" / ")}
-    });
-    shipment_line_with_freight(ui,name,&ship.products,chosen,previewed,freight.as_deref())
+        }
+    };
+    shipment_line_with_freight(ui,name,&ship.products,chosen,previewed,Some(&freight),freight_emphasis)
 }
 fn group_frame(
     ui:&mut Ui,group:&GroupRow,selected:Option<&Selection>,
@@ -941,7 +942,7 @@ fn pending_frame(
                 let summary=format!("원문: {excerpt}");
                 let response=components::workflow_shipment_row(
                     ui,"수취인 확인",&summary,shipment_row_fill(false,false),
-                    false,false,None
+                    false,false,None,false
                 );
                 let action=ui.interact(response.rect,
                     Id::new(("pending-reception-row",draft.id.as_str(),0usize,in_preview)),
@@ -1240,6 +1241,23 @@ mod shipment_list_tests {
             ]),
             "◆ BD 709 × 4  ·  ◆ BD 뮤직 트레이 × 1"
         );
+    }
+
+    #[test]
+    fn shipment_freight_hover_does_not_resize_row(){
+        let ctx=egui::Context::default();
+        let mut measured=Vec::new();
+        let _=ctx.run(egui::RawInput::default(),|ctx|{
+            egui::CentralPanel::default().show(ctx,|ui|{
+                ui.set_width(390.0);
+                for emphasized in [false,true]{
+                    let response=shipment_line_with_freight(ui,"수취인",&["상품명".into()],false,false,Some("4,000원"),emphasized);
+                    measured.push(response.rect.size());
+                }
+            });
+        });
+        assert_eq!(measured.len(),2);
+        assert_eq!(measured[0],measured[1]);
     }
 
     #[test]

@@ -1178,10 +1178,25 @@ pub fn workflow_idle_caption(ui:&Ui,rect:Rect,caption:&str){
     let _=paint_table_galley(ui,rect,x,galley,theme::SECONDARY);
 }
 
+/// Use the existing semantic numeric/body layout for shipment charges.
+fn workflow_freight_text_job(text:&str,ink:Color32)->egui::text::LayoutJob{
+    let mut parts=Vec::new();
+    for (index,part) in text.split(" / ").enumerate(){
+        if index>0{parts.push((" / ",None));}
+        if let Some(number)=part.strip_suffix("원"){
+            parts.push((number,Some(typography::DataValueKind::Money)));
+            parts.push(("원",None));
+        }else{parts.push((part,None));}
+    }
+    let mut job=typography::inline_body_values(&parts);
+    for section in &mut job.sections{section.format.color=ink;}
+    job
+}
+
 /// Shared shipment row renderer. Selection changes only its own surface;
 /// content widths, label positions and one-touch freight emphasis are stable.
 pub fn workflow_shipment_row(
-    ui:&mut Ui,name:&str,summary:&str,fill:Color32,chosen:bool,previewed:bool,freight:Option<&str>
+    ui:&mut Ui,name:&str,summary:&str,fill:Color32,chosen:bool,previewed:bool,freight:Option<&str>,freight_emphasis:bool
 )->egui::Response{
     let outer=ui.available_width();
     let preview_ink=if chosen{
@@ -1203,7 +1218,12 @@ pub fn workflow_shipment_row(
                     egui::FontId::proportional(typography::FONT_BODY),preview_ink).size().x;
                 let name_width=theme::WORKFLOW_DETAIL_NAME_WIDTH.max(name_natural)
                     .min((inside*0.36).max(0.0));
-                let freight_width=freight.map_or(0.0,|text|cols.painter().layout_no_wrap(text.to_owned(),egui::FontId::proportional(typography::FONT_BODY),theme::TEXT).size().x+12.0).min(inside*0.42);
+                let freight_ink=if freight_emphasis{crate::one_touch::INK}else{theme::TEXT};
+                let freight_galley=freight.map(|text|{
+                    let job=workflow_freight_text_job(text,freight_ink);
+                    cols.fonts_mut(|fonts|fonts.layout_job(job))
+                });
+                let freight_width=freight_galley.as_ref().map_or(0.0,|galley|galley.size().x+12.0).min(inside*0.42);
                 let product_width=(inside-name_width-theme::SPACE_8-if freight.is_some(){freight_width+theme::SPACE_8}else{0.0}).max(0.0);
                 let name_response=cols.add_sized(
                     [name_width,theme::WORKFLOW_DETAIL_ROW_CONTENT_HEIGHT],
@@ -1219,11 +1239,16 @@ pub fn workflow_shipment_row(
                     egui::Label::new(typography::body(summary).color(summary_ink)).truncate()
                 );
                 let _=overflow_tooltip(summary_response,summary_natural>product_width+0.5,summary);
-                if let Some(freight)=freight{
-                    let (rect,_)=cols.allocate_exact_size(Vec2::new(freight_width,theme::WORKFLOW_DETAIL_ROW_CONTENT_HEIGHT),egui::Sense::hover());
-                    crate::one_touch::background(cols,rect);crate::one_touch::outline(cols,rect);
-                    let galley=cols.painter().layout_no_wrap(freight.to_owned(),egui::FontId::proportional(typography::FONT_BODY),crate::one_touch::INK);
-                    cols.painter().with_clip_rect(rect.intersect(cols.clip_rect())).galley(egui::Pos2::new(rect.left()+6.0,rect.center().y-galley.size().y/2.0),galley,crate::one_touch::INK);
+                if let (Some(freight),Some(galley))=(freight,freight_galley){
+                    let (rect,hit)=cols.allocate_exact_size(Vec2::new(freight_width,theme::WORKFLOW_DETAIL_ROW_CONTENT_HEIGHT),egui::Sense::hover());
+                    if freight_emphasis{
+                        crate::one_touch::background(cols,rect);
+                        crate::one_touch::outline(cols,rect);
+                    }
+                    let overflow=galley.size().x+12.0>rect.width()+0.5;
+                    let x=(rect.right()-6.0-galley.size().x).max(rect.left()+6.0);
+                    cols.painter().with_clip_rect(rect.intersect(cols.clip_rect())).galley(egui::Pos2::new(x,rect.center().y-galley.size().y/2.0),galley,freight_ink);
+                    let _=overflow_tooltip(hit,overflow,freight);
                 }
             });
         });
@@ -1241,6 +1266,30 @@ pub fn workflow_shipment_row(
         );
     }
     response.response
+}
+
+#[cfg(test)]
+mod workflow_freight_typography_tests{
+    use super::*;
+    #[test]
+    fn freight_uses_semantic_money_and_stable_layout_in_both_states(){
+        let text="4,000원 / —";
+        let regular=workflow_freight_text_job(text,theme::TEXT);
+        let emphasized=workflow_freight_text_job(text,crate::one_touch::INK);
+        assert_eq!(regular.text,text);
+        assert_eq!(regular.sections.len(),emphasized.sections.len());
+        let money=typography::data_value_font(typography::DataValueKind::Money,typography::DataValueContext::Form);
+        assert_eq!(regular.sections[0].format.font_id,money);
+        assert_eq!(regular.sections[0].format.line_height,Some(22.0));
+        assert_eq!(regular.sections[1].format.font_id.family,egui::FontFamily::Proportional);
+        for (a,b) in regular.sections.iter().zip(&emphasized.sections){
+            assert_eq!(a.byte_range,b.byte_range);
+            assert_eq!(a.format.font_id,b.format.font_id);
+            assert_eq!(a.format.line_height,b.format.line_height);
+        }
+        let cod=workflow_freight_text_job("착불",theme::TEXT);
+        assert_eq!(cod.sections[0].format.font_id.family,egui::FontFamily::Proportional);
+    }
 }
 
 /// Same state precedence in draft bundles and confirmed orders.
