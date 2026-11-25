@@ -1,3 +1,4 @@
+import { installNativeBusinessFixture } from "./native-business-fixture.mjs";
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { readFileSync } from "node:fs";
@@ -123,6 +124,7 @@ try {
   page.setDefaultTimeout(12000);
   const pageErrors = [];
   page.on("pageerror", (err) => pageErrors.push(err.message));
+  await installNativeBusinessFixture(page);
   await page.addInitScript(
     ({ state, archive, storePath }) => {
       let mode = "ORIGINAL";
@@ -456,6 +458,7 @@ try {
             { handle: "456", title: "테스트 대화", processId: 11, kind: "CHAT" },
           ];
           if (command === "dock_select_native") { mode = "OVERLAP"; return response(); }
+          if (command === "business_core_call") return window.__nativeBusinessFixture(args);
           throw Error("Unexpected native IPC in UI smoke test: " + command);
         },
       };
@@ -741,6 +744,7 @@ try {
     BANDOMALL: "ci-account-b",
     BANDOSTAND: "ci-account-a",
   };
+  await installNativeBusinessFixture(settingsPage);
   await settingsPage.addInitScript(({ initial }) => {
     let current = structuredClone(initial);
     const normalized = (value) =>
@@ -782,6 +786,7 @@ try {
           window.__accountSave = { changes: structuredClone(args.changes), saved: true };
           return structuredClone(current);
         }
+        if (command === "business_core_call") return window.__nativeBusinessFixture(args);
         throw Error("Unexpected account reproduction IPC: " + command);
       },
     };
@@ -900,6 +905,7 @@ try {
   navPage.setDefaultTimeout(8000);
   const navErrors = [];
   navPage.on("pageerror", (err) => navErrors.push(err.message));
+  await installNativeBusinessFixture(navPage);
   await navPage.addInitScript(({ initial }) => {
     let current = structuredClone(initial);
     const saveLog = [];
@@ -1330,6 +1336,7 @@ try {
         }
         if (command === "backup_create") return "C:\\BANDO_CI\\navigation-backup.sqlite";
         if (command === "product_image") return null;
+        if (command === "business_core_call") return window.__nativeBusinessFixture(args);
         throw Error("Unexpected navigation-test IPC: " + command);
       },
     };

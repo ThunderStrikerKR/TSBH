@@ -132,12 +132,19 @@ jobs:
   receipt-audit-ui-smoke:
     name: Browser audit view smoke test (mock Tauri IPC)
     runs-on: ubuntu-24.04
-    timeout-minutes: 16
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: tests/rust-migration/integration -> target
+          cache-targets: true
+      - name: Build production Rust domain bridge for browser fixtures
+        run: cargo build --manifest-path tests/rust-migration/integration/Cargo.toml --bin reception_runner
       - name: Install frontend dependencies
         run: npm install --no-audit --no-fund --ignore-scripts
       - name: Install browser test driver
