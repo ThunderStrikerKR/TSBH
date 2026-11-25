@@ -190,6 +190,8 @@ jobs:
         run: cargo test --manifest-path egui-app/Cargo.toml management_async_layout_contract_tests -- --nocapture
       - name: Verify conditional status and action rows preserve exact egui Rects
         run: cargo test --manifest-path egui-app/Cargo.toml fixed_layout_slot_contract_tests -- --nocapture
+      - name: Verify shared action tooltip semantics
+        run: cargo test --manifest-path egui-app/Cargo.toml common_action_tooltip_tests -- --nocapture
       - name: Reject state-dependent reception control layout drift over 0.5pt
         run: cargo test --manifest-path egui-app/Cargo.toml reception_state_layout_invariance_tests -- --nocapture
       - name: Reject result list state-dependent geometry drift
