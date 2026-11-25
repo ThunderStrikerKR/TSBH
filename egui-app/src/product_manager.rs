@@ -2182,7 +2182,6 @@ impl ProductManager {
                                         }
                                     }
                                 );
-                                advanced.add_space(theme::SPACE_12);
                                 components::modal_labeled_row(
                                     advanced,"발송지",|origin_ui|{
                                         let before=field(&draft,"origin").to_owned();
