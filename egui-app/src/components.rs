@@ -192,6 +192,15 @@ pub fn management_body_state_overlay(
 /// Draw an error within an existing body rectangle without advancing its
 /// layout cursor. The full translated text is also available on hover when
 /// the visible rectangle is too short to contain the wrapped text.
+pub fn text_exceeds_rect(size:Vec2,rect:Rect)->bool{
+    size.x>rect.width()+0.5 || size.y>rect.height()+0.5
+}
+
+/// Attach a tooltip only for text whose rendered content is not fully visible.
+pub fn overflow_tooltip(response:Response,overflow:bool,full:&str)->Response{
+    if overflow&&!full.trim().is_empty(){response.on_hover_text(full)}else{response}
+}
+
 pub fn body_error_overlay(ui:&Ui,viewport:Rect,context:&str,error:&str){
     let visible=viewport.intersect(ui.clip_rect());
     if visible.width()<=0.0||visible.height()<=0.0{return;}
@@ -204,9 +213,12 @@ pub fn body_error_overlay(ui:&Ui,viewport:Rect,context:&str,error:&str){
         visible.center().x-galley.size().x/2.0,
         (visible.center().y-galley.size().y/2.0).max(visible.top())
     );
+    let clipped=text_exceeds_rect(galley.size(),visible);
     painter.galley(pos,galley,theme::DANGER);
-    ui.interact(visible,ui.id().with(("body-error-overlay",context)),Sense::hover())
-        .on_hover_text(display.as_ref());
+    if clipped{
+        ui.interact(visible,ui.id().with(("body-error-overlay",context)),Sense::hover())
+            .on_hover_text(display.as_ref());
+    }
 }
 
 /// Allocate a row with an immutable parent footprint. The child can
@@ -981,7 +993,7 @@ pub fn workflow_auxiliary_button(ui: &mut Ui, action: WorkflowAuxiliaryAction) -
 
     paint_workflow_auxiliary_content(ui.painter(),response.rect.center(),action,
         theme::DISABLED_ACTION_TEXT);
-    response.on_hover_text(workflow_auxiliary_tooltip(action))
+    response
 }
 
 /// Shared label and glyph painting for allocated and fixed-rectangle workflow controls.
@@ -1001,38 +1013,16 @@ pub fn paint_workflow_auxiliary_content(
     }
 }
 
-pub fn workflow_auxiliary_tooltip(action:WorkflowAuxiliaryAction)->&'static str{
-    match action{
-        WorkflowAuxiliaryAction::Manage=>"배송 건 묶음 관리",
-        WorkflowAuxiliaryAction::Delete=>"주문 묶음 삭제",
-        WorkflowAuxiliaryAction::PreviousStage=>"이전 단계로 돌아가기",
-    }
-}
-
-/// Tooltip describes the next sort action, not the currently selected order.
-/// Some(false) = ascending, Some(true) = descending, None = original order.
-pub fn management_sort_tooltip(next_descending:Option<bool>)->&'static str{
-    match next_descending{
-        Some(false)=>"오름차순 정렬",
-        Some(true)=>"내림차순 정렬",
-        None=>"기본 순서로 복귀",
-    }
-}
-
 #[cfg(test)]
 mod common_action_tooltip_tests{
     use super::*;
     #[test]
-    fn sort_tooltips_describe_the_next_action(){
-        assert_eq!(management_sort_tooltip(Some(false)),"오름차순 정렬");
-        assert_eq!(management_sort_tooltip(Some(true)),"내림차순 정렬");
-        assert_eq!(management_sort_tooltip(None),"기본 순서로 복귀");
-    }
-    #[test]
-    fn workflow_tooltips_match_their_operations(){
-        assert_eq!(workflow_auxiliary_tooltip(WorkflowAuxiliaryAction::Manage),"배송 건 묶음 관리");
-        assert_eq!(workflow_auxiliary_tooltip(WorkflowAuxiliaryAction::Delete),"주문 묶음 삭제");
-        assert_eq!(workflow_auxiliary_tooltip(WorkflowAuxiliaryAction::PreviousStage),"이전 단계로 돌아가기");
+    fn only_overflowing_text_qualifies_for_a_tooltip(){
+        let rect=Rect::from_min_size(egui::Pos2::ZERO,Vec2::new(100.0,20.0));
+        assert!(!text_exceeds_rect(Vec2::new(80.0,18.0),rect));
+        assert!(!text_exceeds_rect(Vec2::new(100.0,20.0),rect));
+        assert!(text_exceeds_rect(Vec2::new(101.0,18.0),rect));
+        assert!(text_exceeds_rect(Vec2::new(80.0,21.0),rect));
     }
 }
 
@@ -1100,7 +1090,7 @@ pub fn kakao_menu_icon(ui:&mut Ui) -> Response {
             0.75,theme::KAKAO_ICON_YELLOW
         );
     }
-    response.on_hover_text("카카오톡")
+    response
 }
 
 /// Shared checkbox control. The caller owns the checked state and its
@@ -1149,7 +1139,7 @@ pub fn icon_action_button(
             ui,&response,theme::CONTROL_RADIUS as f32
         );
     }
-    response.on_hover_text(tooltip)
+    response
 }
 
 /// Removable search-tag chip. The modal nested-frame master owns its fill,
@@ -1162,8 +1152,8 @@ pub fn removable_tag_chip(ui:&mut Ui,tag:&str)->Response{
         .show(ui,|chip|{
             chip.horizontal(|line|{
                 line.spacing_mut().item_spacing.x=theme::SPACE_4;
-                line.label(typography::body(&visible))
-                    .on_hover_text(tag);
+                let label=line.label(typography::body(&visible));
+                overflow_tooltip(label,visible!=tag,tag);
                 icon_action_button(
                     line,"×",&format!("검색 태그 '{tag}' 삭제"),true
                 )
@@ -2000,7 +1990,7 @@ fn modal_master_header_content_in_rect(
         );
         title_ui.set_clip_rect(title_rect.intersect(heading_clip));
         title_ui.add(egui::Label::new(typography::modal_title(title)).truncate())
-            .on_hover_text(title);
+            ;
     }
     if has_description{
         let subtitle_clip=subtitle.intersect(ui.clip_rect());
@@ -2011,7 +2001,7 @@ fn modal_master_header_content_in_rect(
                 details.set_clip_rect(subtitle_clip);
                 details.set_width(subtitle.width());
                 details.add(egui::Label::new(typography::caption(description)).truncate())
-                    .on_hover_text(description);
+                    ;
             },
         );
     }
@@ -3979,7 +3969,7 @@ fn date_navigation_segment_button(
             else if response.hovered(){theme::TEXT}else{theme::SECONDARY};
         let angle=if up{-std::f32::consts::FRAC_PI_2}else{std::f32::consts::FRAC_PI_2};
         paint_chevron_at_angle_scaled(&painter,rect.center(),angle,0.0,ink,0.72);
-        return response.on_hover_text(tooltip);
+        return response;
     }
     if let DateNavigationSegmentGlyph::Text(text)=glyph{
         // Compact +/- buttons own an exact segment, not the minimum size of
@@ -4003,7 +3993,7 @@ fn date_navigation_segment_button(
             theme::paint_button_hover_corners(ui,&response,corners);
         }
         paint_count_step_symbol(&painter,rect.center(),!left,ink);
-        return response.on_hover_text(tooltip);
+        return response;
     }
     let height=ui.available_height();
     let (disabled_fill,disabled_ink)=match glyph{
@@ -4053,7 +4043,7 @@ fn date_navigation_segment_button(
         }
         DateNavigationSegmentGlyph::CompactVerticalChevron{..}=>unreachable!("handled above"),
     }
-    response.on_hover_text(tooltip)
+    response
 }
 
 fn date_navigation_count_step_state(
@@ -4169,7 +4159,7 @@ fn date_navigation_button_surface(
                 .stroke(Stroke::new(theme::SOFT_DIVIDER_WIDTH,border))
                 .corner_radius(theme::CONTROL_RADIUS)
         )
-    }).inner.on_hover_text(tooltip);
+    }).inner;
     let ink=if effective_enabled && response.hovered(){
         theme::TEXT
     }else{ink};
@@ -4948,8 +4938,6 @@ pub(crate) fn management_dropdown_trigger(
             .stroke(Stroke::new(theme::SOFT_DIVIDER_WIDTH,border))
             .corner_radius(egui::CornerRadius::same(theme::CONTROL_RADIUS))
     );
-    let trigger=if tooltip.is_empty(){trigger}
-        else{trigger.on_hover_text(tooltip)};
     let rect=trigger.rect;
     let painter=ui.painter().with_clip_rect(rect);
     let arrow_left=rect.right()-30.0;
@@ -5281,7 +5269,7 @@ pub fn management_chooser_row(
             ui,&response,theme::CONTROL_RADIUS as f32
         );
     }
-    response.on_hover_text(format!("{title} / {status}"))
+    response
 }
 
 /// Read-only presentation of a canonical client. Used by both management
@@ -5594,7 +5582,7 @@ pub fn management_client_header(
     table_left:f32,table_width:f32,current_sort:Option<(usize,bool)>
 )->Option<usize>{
     let titles=["거래처","주소","전화번호","거래 조건"];
-    let sort_keys=["거래처명","주소","전화번호","가격 등급"];
+
     let text_row=management_master_header_begin(
         ui,header,header_content_rect
     );
@@ -5613,13 +5601,7 @@ pub fn management_client_header(
             let response=ui.interact(
                 visible,ui.make_persistent_id(("client-management-sort",i)),
                 Sense::click()
-            ).on_hover_text(format!(
-                "{} · {}",sort_keys[i],management_sort_tooltip(match current_sort{
-                    Some((col,false)) if col==i=>Some(true),
-                    Some((col,true)) if col==i=>None,
-                    _=>Some(false)
-                })
-            ));
+            );
             if response.clicked(){selected=Some(i);}
             if response.hovered(){
                 management_master_header_sort_hover(ui,visible);
@@ -6449,7 +6431,7 @@ fn reception_item_row_with_mode(
                 center+egui::vec2(4.0,4.0*sign)
             ],stroke);
         }
-        remove_clicked=enabled && action.on_hover_text("품목 삭제").clicked();
+        remove_clicked=enabled && action.clicked();
     }
     #[cfg(test)]
     for (name,response) in [("item product",&product),("item quantity",&quantity),("item amount",&amount)]{
@@ -7044,7 +7026,7 @@ pub fn management_readonly_table_aligned(
                         let label=if right_aligned.contains(&index){
                             label.halign(Align::RIGHT)
                         }else{label};
-                        line.add_sized(Vec2::new(*width,row_height),label).on_hover_text(value);
+                        line.add_sized(Vec2::new(*width,row_height),label);
                     }
                 });
                 soft_divider(body);
