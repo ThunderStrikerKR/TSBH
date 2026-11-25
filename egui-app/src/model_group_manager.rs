@@ -260,7 +260,7 @@ impl ModelGroupManager {
                         left.label(typography::caption(
                             "색상, 크기, 규격, 타공 여부가 다른 상품을 직원이 직접 묶고 그중 대표모델을 정합니다. 자동으로 묶거나 주문에 자동 적용하지 않습니다."
                         ));
-                        components::soft_divider(left);
+                        components::section_divider(left);
                         left.label(typography::field_label("새 그룹 이름"));
                         left.horizontal(|form|{
                             form.add_enabled_ui(writable&&!busy,|entry|{
@@ -281,7 +281,7 @@ impl ModelGroupManager {
                                 self.create();
                             }
                         });
-                        components::soft_divider(left);
+                        components::section_divider(left);
                         left.horizontal(|search|{
                             components::form_field_label(search,"상품 검색");
                             components::management_search_field(search,&mut self.query,
@@ -340,10 +340,11 @@ impl ModelGroupManager {
                                     }
                                 });
                             });
-                            components::soft_divider(right);
+                            let divider=components::section_divider(right);
+                            let extra_divider_height=(divider.height()-theme::SOFT_DIVIDER_WIDTH).max(0.0);
                             egui::ScrollArea::vertical().id_salt("family-editor")
                                 .auto_shrink([false,false])
-                                .max_height((height-theme::FAMILY_FOOTER_HEIGHT).max(
+                                .max_height((height-theme::FAMILY_FOOTER_HEIGHT-extra_divider_height).max(
                                     theme::MANAGEMENT_TABLE_ROW_HEIGHT))
                                 .show(right,|body|{
                                     body.label(typography::field_label("그룹 이름"));
@@ -356,8 +357,7 @@ impl ModelGroupManager {
                                         self.draft[&self.selected]["name"]=json!(name);
                                         self.status.clear();
                                     }
-                                    body.add_space(theme::SPACE_16);
-                                    components::soft_divider(body);
+                                    components::section_divider(body);
                                     body.label(typography::subsection_heading("상품 추가"));
                                     body.add_enabled_ui(writable&&!busy,|search|{
                                         components::management_search_field(search,&mut self.search,
@@ -413,8 +413,7 @@ impl ModelGroupManager {
                                         }
                                     }
                                     });
-                                    body.add_space(theme::SPACE_16);
-                                    components::soft_divider(body);
+                                    components::section_divider(body);
                                     body.horizontal(|heading|{
                                         heading.label(typography::subsection_heading("등록한 상품"));
                                         heading.label(typography::caption(

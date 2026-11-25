@@ -569,7 +569,7 @@ impl DailySettlementManager{
                         section,&mut self.date,&mut self.date_input,
                         &mut self.calendar_month
                     );
-                    components::soft_divider(section);
+                    components::section_divider(section);
                     if date_changed{visible_report=None;}
                     let report=visible_report.unwrap_or(&missing);
                     let orders=rows(&report["orderRows"]);
@@ -605,8 +605,7 @@ impl DailySettlementManager{
                         )));
                         settings_help::icon(review,"미수금과 실제 운임");
                     });
-                    section.add_space(theme::SPACE_12);
-                    components::soft_divider(section);
+                    components::section_divider(section);
                     let indices=sorted_indices(orders,self.order_sort,false);
                     report_table(
                         section,"settlement-orders",
@@ -651,7 +650,7 @@ impl DailySettlementManager{
                     section.label(typography::section_heading(
                         "실제 입금 내역 / 입금 일시 기준"
                     ));
-                    components::soft_divider(section);
+                    components::section_divider(section);
                     section.horizontal_wrapped(|line|{
                         line.spacing_mut().item_spacing=Vec2::new(
                             theme::SPACE_16,theme::SPACE_8
@@ -664,8 +663,7 @@ impl DailySettlementManager{
                             metric(line,title,if visible_report.is_some(){won(&report[key])}else{"—".to_owned()});
                         }
                     });
-                    section.add_space(theme::SPACE_12);
-                    components::soft_divider(section);
+                    components::section_divider(section);
                     let indices=sorted_indices(payments,self.payment_sort,true);
                     report_table(
                         section,"settlement-payments",
@@ -701,7 +699,7 @@ impl DailySettlementManager{
                     review.set_width(section_inner_max_width);
                     review.set_max_width(section_inner_max_width);
                     review.label(typography::section_heading("결산 검토 사항"));
-                    components::soft_divider(review);
+                    components::section_divider(review);
                     components::fixed_result_viewport(review,"settlement-warnings",100.0,|list|{
                         for warning in rows(&report["warnings"]){
                             if let Some(message)=warning.as_str(){

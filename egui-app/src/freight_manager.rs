@@ -2641,7 +2641,7 @@ impl FreightManager {
             ui.add_space(theme::SPACE_12);
             components::measured_management_section_card(ui,|section| {
                 section.label(typography::section_heading("이전 그룹 운임 기준"));
-            components::soft_divider(section);
+            components::section_divider(section);
             // Preserve the existing group-by-group expand/collapse behavior.
             // Expanded histories become one-row-per-version fixed tables,
             // rather than unaligned long sentences.

@@ -183,7 +183,7 @@ fn billing_panel(ui:&mut Ui,order:&Value,billing:&Value){
             });
         });
     }
-    components::soft_divider(ui);
+    components::section_divider(ui);
     ui.horizontal(|line|{
         line.label(typography::section_heading("청구 합계"));
         line.with_layout(Layout::right_to_left(Align::Center),|right|{
@@ -493,7 +493,7 @@ pub fn show(ctx:&egui::Context,work_area:Rect,row:&Value,state:&Value)->bool{
                         }
                         let attachments=rows(&order["photos"]).len();
                         if attachments>0{
-                            components::soft_divider(panel);
+                            components::section_divider(panel);
                             panel.label(typography::caption(&format!(
                                 "첨부 이미지 {}건 · 이미지 미리보기는 아직 연결되지 않았습니다.",
                                 attachments

@@ -769,9 +769,7 @@ impl CategoryManager {
                                         direct_count(catalog,&current.id),
                                         children(&cats,&current.id).len()
                                     )));
-                                    // Default 8pt item gaps around the single divider
-                                    // already provide enough breathing room.
-                                    components::soft_divider(body);
+                                    components::section_divider(body);
                                     components::modal_labeled_row(body,"분류 이름",|row|{
                                         row.add_enabled_ui(
                                             editable && !busy && !is_root(&current.id),
@@ -905,9 +903,7 @@ impl CategoryManager {
                                                 components::overflow_tooltip(response,visible!=location_path,&location_path);
                                             }
                                         );
-                                        modal.add_space(theme::SPACE_12);
-                                        components::soft_divider(modal);
-                                        modal.add_space(theme::SPACE_12);
+                                        components::section_divider(modal);
                                         components::modal_labeled_row(
                                             modal,"새 분류 이름",|line|{
                                                 let input_width=line.available_width().max(1.0);

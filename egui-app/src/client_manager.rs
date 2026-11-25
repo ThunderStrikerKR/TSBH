@@ -735,14 +735,14 @@ impl ClientManager {
         ui.label(typography::section_heading("거래처 식별"));
         label_edit(ui,draft,"name","거래처명");
         self.search_tag_editor(ui,draft);
-        components::soft_divider(ui);
+        components::section_divider(ui);
         ui.label(typography::section_heading("주소 / 전화번호"));
         label_edit(ui,draft,"address","주소");
         ui.columns(2,|cols|{
             label_edit(&mut cols[0],draft,"phone","전화번호");
             label_edit(&mut cols[1],draft,"mobile","휴대폰번호");
         });
-        components::soft_divider(ui);
+        components::section_divider(ui);
         ui.label(typography::section_heading("거래 조건"));
         ui.columns(2,|cols|{
             cols[0].label(typography::field_label("가격 등급"));
@@ -803,7 +803,7 @@ impl ClientManager {
             bool_edit(flags,draft,"defaultApplyVat","부가세 포함");
         });
         if field(draft,"tier")=="special" {
-            components::soft_divider(ui);
+            components::section_divider(ui);
             ui.label(typography::section_heading("특수 / 예외 품목 단가"));
             let mut remove=None;
             if let Some(overrides)=draft.get("overrides").and_then(Value::as_object) {
@@ -880,7 +880,7 @@ impl ClientManager {
         let history=draft.get("history").and_then(Value::as_array)
             .cloned().unwrap_or_default();
         if !aliases.is_empty() || !history.is_empty() {
-            components::soft_divider(ui);
+            components::section_divider(ui);
             egui::CollapsingHeader::new("상품 별칭 / 변경 이력")
                 .icon(components::paint_collapsing_header_icon)
                 .show(ui,|ui|{

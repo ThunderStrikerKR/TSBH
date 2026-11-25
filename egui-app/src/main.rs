@@ -3687,13 +3687,13 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                     typography::body(&serde_json::to_string_pretty(&original)
                                         .unwrap_or_default())
                                 ).selectable(true));
-                                components::soft_divider(body);
+                                components::section_divider(body);
                                 body.label(typography::section_heading("현재 수정 결과"));
                                 body.add(egui::Label::new(
                                     typography::body(&serde_json::to_string_pretty(&latest)
                                         .unwrap_or_default())
                                 ).selectable(true));
-                                components::soft_divider(body);
+                                components::section_divider(body);
                                 for (index,event) in receipt.edit_history.iter().enumerate().rev(){
                                     egui::CollapsingHeader::new(format!(
                                         "수정 {} · {}",index+1,
@@ -6409,10 +6409,9 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                 // intake instructions, never the source/message divider.
                 let intake_height = components::docked_section_body_height(height)
                     .min(ui.available_height().max(0.0));
-                // Four identical free-space gaps: above the first group,
-                // between the three groups, and below the last group.
-                // Existing internal 8pt rhythms stay unchanged. When the
-                // pane is short, the minimum gap triggers LOCAL scrolling.
+                // The two inter-group dividers use the fixed shared geometry.
+                // Distribute remaining space above and below the three groups.
+                // Existing internal 8pt rhythms and local scrolling remain.
                 let clipboard_group_height = typography::SUBSECTION_LINE_HEIGHT
                     + typography::METADATA_LINE_HEIGHT
                     + theme::RECEPTION_SHORTCUT_ROW_HEIGHT
@@ -6430,10 +6429,10 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                 let folder_group_height = typography::SUBSECTION_LINE_HEIGHT
                     + folder_body_height + theme::SPACE_8
 ;
-                let dividers_height = 2.0 * theme::SOFT_DIVIDER_WIDTH;
+                let dividers_height = 2.0 * theme::SECTION_DIVIDER_HEIGHT;
                 let balanced_gap = ((intake_height - clipboard_group_height
                     - manual_group_height - folder_group_height - dividers_height)
-                    / 4.0).max(theme::SPACE_8);
+                    / 2.0).max(theme::SPACE_8);
                 egui::ScrollArea::vertical()
                     .id_salt("source-intake-instructions")
                     .max_height(intake_height)
@@ -6459,9 +6458,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                         }
                         intake.add_space(theme::SPACE_8);
                         components::reception_capture_shortcut_hint(intake);
-                        intake.add_space(balanced_gap / 2.0);
-                        components::soft_divider(intake);
-                        intake.add_space(balanced_gap / 2.0);
+                        components::section_divider(intake);
                         intake.label(typography::subsection_heading("다른 방법으로 접수"));
                         intake.add_space(theme::SPACE_8);
                         let (direct,capture) = components::paired_actions(
@@ -6478,9 +6475,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                         if capture.clicked(){
                             start_region_capture=true;
                         }
-                        intake.add_space(balanced_gap / 2.0);
-                        components::soft_divider(intake);
-                        intake.add_space(balanced_gap / 2.0);
+                        components::section_divider(intake);
                         let folder_heading=intake.label(
                             typography::subsection_heading("폴더 자동 인식")
                         );

@@ -766,9 +766,7 @@ impl SettingsView{
                         }));
                         self.draft["accounts"]=json!(accounts);
                     }
-                    form.add_space(theme::SPACE_8);
-                    components::soft_divider(form);
-                    form.add_space(theme::SPACE_8);
+                    components::section_divider(form);
                     let recommendations=[
                         ("BANDOSTAND","반도스탠드 추천 계좌"),
                         ("BANDOMALL","반도몰 추천 계좌")
@@ -907,9 +905,7 @@ impl SettingsView{
         components::measured_management_section_card(ui,|form|{
         for (index,(key,title,empty,button)) in sections.iter().enumerate(){
             if index>0{
-                form.add_space(theme::SPACE_12);
-                components::soft_divider(form);
-                form.add_space(theme::SPACE_12);
+                components::section_divider(form);
             }
             section(form,title,|area|{
                 let value=field(&self.draft,key);

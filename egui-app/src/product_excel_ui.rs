@@ -319,7 +319,7 @@ impl ProductExcelUi {
                                 ).clicked(){self.filter=value;}
                             }
                         });
-                        components::soft_divider(ui);
+                        components::section_divider(ui);
                         // Review-only. The original React limits the visible audit
                         // table to 500 records while validating every source row.
                         let full=review["rows"].as_array().map(Vec::as_slice).unwrap_or(&[]);

@@ -477,7 +477,7 @@ impl AliasManager {
                             });
                             self.request_picker(ctx);
                             let found=self.picker_result.clone();
-                            components::soft_divider(modal);
+                            components::section_divider(modal);
                             let results_height=components::modal_list_max_height(
                                 modal,work_area.height(),theme::MANAGEMENT_MODAL_BODY_MAX_HEIGHT,false
                             );

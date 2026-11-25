@@ -509,7 +509,7 @@ impl AutomaticMessageManager {
             });
         });
         ui.label(typography::caption(def.description));
-        components::soft_divider(ui);
+        components::section_divider(ui);
         ui.label(typography::field_label("복사용 자동 메시지 편집"));
         let mut content=Self::template_value(&self.draft_templates,def);
         let width=ui.available_width();
@@ -555,7 +555,7 @@ impl AutomaticMessageManager {
                     }
                 });
             });
-            components::soft_divider(ui);
+            components::section_divider(ui);
             ui.label(typography::field_label(
                 "잠정 선택 시 복사용 계좌안내에 추가할 문구"
             ));

@@ -3625,18 +3625,26 @@ pub fn paint_reception_client_summary_surface(ui:&Ui,rect:Rect){
 }
 
 /// Structural section divider: one 16/1/16pt allocation, separate from row rules.
-/// Call from a zero-implicit-vertical-spacing layout.
+/// Ordinary vertical layouts already reserve item_spacing on both sides.
+/// Count that spacing toward the 16pt clearance, not on top of it.
 pub fn section_divider(ui:&mut Ui)->Rect{
-    section_divider_with_top_gap(ui,theme::SECTION_DIVIDER_GAP).0
+    let implicit=ui.spacing().item_spacing.y;
+    debug_assert!(implicit>=0.0 && implicit<=theme::SECTION_DIVIDER_GAP);
+    let gap=(theme::SECTION_DIVIDER_GAP-implicit).max(0.0);
+    allocate_section_divider(ui,gap,gap).0
 }
 
 /// Shared renderer also supports a preceding inset already consumed by the
 /// toolbar, or a reserved missing-toolbar slot. The bottom gap never varies.
 fn section_divider_with_top_gap(ui:&mut Ui,top_gap:f32)->(Rect,Rect){
     debug_assert!(ui.spacing().item_spacing.y.abs()<0.01);
+    allocate_section_divider(ui,top_gap,theme::SECTION_DIVIDER_GAP)
+}
+
+fn allocate_section_divider(ui:&mut Ui,top_gap:f32,bottom_gap:f32)->(Rect,Rect){
     let (strip,_)=ui.allocate_exact_size(
         Vec2::new(ui.available_width(),top_gap+theme::SOFT_DIVIDER_WIDTH
-            +theme::SECTION_DIVIDER_GAP),Sense::hover()
+            +bottom_gap),Sense::hover()
     );
     let rule=Rect::from_min_size(
         egui::pos2(strip.left(),strip.top()+top_gap),
@@ -7059,7 +7067,8 @@ mod shared_detail_divider_contract_tests {
     #[test]
     fn order_history_detail_uses_shared_soft_dividers(){
         let source=include_str!("order_history_detail.rs");
-        assert_eq!(source.matches("components::soft_divider(").count(),3);
+        assert_eq!(source.matches("components::soft_divider(").count(),1);
+        assert_eq!(source.matches("components::section_divider(").count(),2);
         assert!(!source.contains(".separator("));
     }
 }
@@ -10904,3 +10913,70 @@ pub(crate) mod general_screen_geometry_tests {
 }
 
 
+
+
+#[cfg(test)]
+mod structural_divider_contract_tests {
+    use super::*;
+
+    #[test]
+    fn structural_divider_counts_implicit_spacing_only_once(){
+        for spacing in [0.0,8.0,12.0,16.0] {
+            let ctx=egui::Context::default();
+            let _=ctx.run(egui::RawInput::default(),|ctx|{
+                egui::CentralPanel::default().show(ctx,|ui|{
+                    ui.spacing_mut().item_spacing.y=spacing;
+                    let (before,_)=ui.allocate_exact_size(Vec2::new(100.0,24.0),Sense::hover());
+                    let strip=section_divider(ui);
+                    let (after,_)=ui.allocate_exact_size(Vec2::new(100.0,24.0),Sense::hover());
+                    let rule_top=strip.top()+theme::SECTION_DIVIDER_GAP-spacing;
+                    let rule_bottom=rule_top+theme::SOFT_DIVIDER_WIDTH;
+                    assert!((rule_top-before.bottom()-16.0).abs()<=0.5);
+                    assert!((after.top()-rule_bottom-16.0).abs()<=0.5);
+                });
+            });
+        }
+    }
+
+    /// Compact record rows and fixed footer/menu boundaries are not sections.
+    /// New raw-divider calls must be reviewed instead of silently adding a
+    /// screen-local structural gap. This is a lexical gate, not a Rust parser.
+    #[test]
+    fn production_has_no_unreviewed_compact_divider_calls(){
+        let allowed:&[(&str,usize)]=&[
+            ("main.rs",1), // repeated shipment rows
+            ("settings_view.rs",2), // repeated account and backup records
+            ("alias_manager.rs",2), // repeated list/result rows
+            ("brand_manager.rs",1), // repeated list rows
+            ("model_group_manager.rs",4), // repeated result/registered rows, fixed footer
+            ("automatic_message_manager.rs",1), // fixed footer
+            ("order_history_detail.rs",1), // repeated payment records
+            ("freight_manager.rs",1), // compact context menu
+            ("excel_manager.rs",1), // repeated reply rows
+            ("workflow_board_ui.rs",2), // compact expanded card boundaries
+            ("manual_product_search.rs",1), // repeated search rows
+            ("category_dropdown.rs",2), // compact menu
+        ];
+        let root=std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
+        let mut violations=Vec::new();
+        for entry in std::fs::read_dir(root).unwrap(){
+            let path=entry.unwrap().path();
+            if path.extension().and_then(|s|s.to_str())!=Some("rs"){continue;}
+            let name=path.file_name().unwrap().to_str().unwrap();
+            if name=="components.rs"||name=="theme.rs"{continue;}
+            let source=std::fs::read_to_string(&path).unwrap();
+            let production=production_source_for_contract(&source);
+            let count=production.lines().filter(|line|!line.trim_start().starts_with("//"))
+                .map(|line|line.matches("soft_divider(").count()).sum::<usize>();
+            let limit=allowed.iter().find(|(file,_)|*file==name).map(|(_,n)|*n).unwrap_or(0);
+            if count>limit{violations.push(format!("{name}: {count} compact dividers, reviewed maximum {limit}"));}
+            for (line_no,line) in production.lines().enumerate(){
+                if line.trim_start().starts_with("//"){continue;}
+                if line.contains("theme::soft_rule(")||line.contains("theme::divider(")||line.contains(".separator("){
+                    violations.push(format!("{name}:{}: raw divider bypass",line_no+1));
+                }
+            }
+        }
+        assert!(violations.is_empty(),"structural divider bypass:\n{}",violations.join("\n"));
+    }
+}
