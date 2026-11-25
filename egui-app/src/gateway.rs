@@ -126,6 +126,16 @@ impl ReadOperation {
     }
 }
 
+/// Only the two reception metadata domains; no order or product projection.
+pub struct ReceptionMetadata {
+    pub inbox:Result<Option<String>,String>,
+    pub clients:Result<Vec<Value>,String>,
+}
+fn inbox_path(settings:&Value)->Option<String>{
+    settings.get("orderImageInboxDirectory").and_then(Value::as_str)
+        .map(str::trim).filter(|path|!path.is_empty()).map(str::to_owned)
+}
+
 pub trait BandoGateway: Send + Sync {
     fn label(&self) -> &'static str;
     /// A minimal catalog snapshot (products, aliases, brands), plus an
@@ -223,6 +233,18 @@ pub trait BandoGateway: Send + Sync {
     fn workflow_write_enabled(&self)->bool{false}
     /// Lightweight revision probe; None means this adapter cannot probe cheaply.
     fn workflow_revision(&self)->Result<Option<u64>,String>{Ok(None)}
+    /// Adapters without a native revision probe refresh only on entry.
+    fn reception_metadata(&self,_known:Option<u64>)
+        ->Result<(Option<u64>,Option<ReceptionMetadata>),String>{
+        let inbox=self.load_settings().and_then(|v|{
+            let settings=v.get("settings").filter(|v|v.is_object())
+                .ok_or("저장된 폴더 설정 형식 오류")?;
+            Ok(inbox_path(settings))
+        });
+        let clients=self.load_catalog().and_then(|v|v.get("clients")
+            .and_then(Value::as_array).cloned().ok_or("거래처 목록 형식 오류".into()));
+        Ok((None,Some(ReceptionMetadata{inbox,clients})))
+    }
     /// Only the native scoped freight writer guarantees the dependency scope.
     fn supports_scoped_freight_refresh(&self)->bool{false}
     fn mutate_workflow(
@@ -264,6 +286,23 @@ fn message_account_wire(state:&Value)->Result<Vec<Value>,String>{
     ).collect()
 }
 
+/// Read all reception metadata from one consistent read transaction.
+/// An equal revision does not even touch core_clients.
+fn read_reception_metadata(conn:&rusqlite::Connection,known:Option<u64>)
+    ->Result<(Option<u64>,Option<ReceptionMetadata>),String>{
+    let revision:i64=conn.query_row(
+        "SELECT json_extract(payload,'$.revision') FROM app_state WHERE id=1 AND (SELECT version FROM core_schema WHERE key='business-core')=2",
+        [],|row|row.get(0)).map_err(|e|format!("업무 DB 리비전 확인 실패: {e}"))?;
+    let revision=u64::try_from(revision).map_err(|_|"업무 DB 리비전 범위 오류")?;
+    if known==Some(revision){return Ok((Some(revision),None));}
+    let path:Option<String>=conn.query_row(
+        "SELECT json_extract(payload,'$.settings.orderImageInboxDirectory') FROM app_state WHERE id=1",
+        [],|row|row.get(0)).map_err(|e|e.to_string())?;
+    let clients=bando_data_access::read_client_index_rows(conn)?;
+    let inbox=Ok(path.map(|p|p.trim().to_owned()).filter(|p|!p.is_empty()));
+    Ok((Some(revision),Some(ReceptionMetadata{inbox,clients:Ok(clients)})))
+}
+
 #[derive(Default)]
 pub struct LocalGateway;
 
@@ -289,6 +328,29 @@ impl BandoGateway for LocalGateway {
             [],|row|row.get(0)
         ).map_err(|e|format!("업무 DB 리비전 확인 실패: {e}"))?;
         Ok(Some(u64::try_from(revision).map_err(|_|"업무 DB 리비전 범위 오류")?))
+    }
+
+    fn reception_metadata(&self,known:Option<u64>)
+        ->Result<(Option<u64>,Option<ReceptionMetadata>),String>{
+        if !std::env::var_os("BANDO_EGUI_BUSINESS_DB").is_some_and(|p|!p.is_empty()){
+            let inbox=crate::settings_store::load().map(|v|inbox_path(&v["settings"]));
+            let clients=crate::client_directory::attach(serde_json::json!({}))
+                .and_then(|v|v.get("clients").and_then(Value::as_array).cloned()
+                    .ok_or("거래처 목록 형식 오류".into()));
+            return Ok((None,Some(ReceptionMetadata{inbox,clients})));
+        }
+        if std::env::var_os("BANDO_EGUI_CLIENT_INDEX").is_some_and(|p|!p.is_empty()){
+            return Err("JSON 거래처 인덱스와 운영 DB를 동시에 사용할 수 없습니다.".into());
+        }
+        let path=std::env::var_os("BANDO_EGUI_BUSINESS_DB").ok_or("업무 DB 연결 없음")?;
+        let mut conn=rusqlite::Connection::open_with_flags(std::path::PathBuf::from(path),
+            rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY).map_err(|e|e.to_string())?;
+        conn.busy_timeout(std::time::Duration::from_secs(2)).map_err(|e|e.to_string())?;
+        conn.execute_batch("PRAGMA query_only=ON").map_err(|e|e.to_string())?;
+        let tx=conn.transaction().map_err(|e|e.to_string())?;
+        let result=read_reception_metadata(&tx,known)?;
+        tx.commit().map_err(|e|e.to_string())?;
+        Ok(result)
     }
 
     fn load_catalog(&self) -> Result<Value, String> {
@@ -1022,5 +1084,24 @@ mod shipping_gateway_direct_roundtrip_tests {
         assert_eq!(api.load_business_state().unwrap(),after);
         // The CI runner owns and disposes of this dedicated test DB. Do not
         // delete any operational file or write to a non-isolated path.
+    }
+}
+
+#[cfg(test)]
+mod reception_metadata_tests {
+    use super::*;
+    #[test]
+    fn unchanged_revision_skips_client_and_setting_projection(){
+        let conn=rusqlite::Connection::open_in_memory().unwrap();
+        conn.execute_batch("CREATE TABLE core_schema(key TEXT,version INTEGER); INSERT INTO core_schema VALUES('business-core',2); CREATE TABLE app_state(id INTEGER,payload TEXT); INSERT INTO app_state VALUES(1,'{\"revision\":7,\"settings\":{}}');").unwrap();
+        let (revision,metadata)=read_reception_metadata(&conn,Some(7)).unwrap();
+        assert_eq!(revision,Some(7)); assert!(metadata.is_none());
+        // There is deliberately no core_clients table in this fixture.
+        assert!(read_reception_metadata(&conn,Some(6)).is_err());
+        conn.execute_batch("CREATE TABLE core_clients(id TEXT,position INTEGER,payload TEXT); INSERT INTO core_clients VALUES('c',0,'{\"id\":\"c\",\"name\":\"가상 거래처\"}');").unwrap();
+        let (_,metadata)=read_reception_metadata(&conn,None).unwrap();
+        let metadata=metadata.unwrap();
+        assert_eq!(metadata.inbox.unwrap(),None);
+        assert_eq!(metadata.clients.unwrap()[0]["id"],"c");
     }
 }
