@@ -386,7 +386,8 @@ struct PendingInlineChange {
     order_id:String,
     raw:String,
     target:InlineTarget,
-    editor:InlineReceptionEditor,
+    /// Only a real text cell can be restored after a failed write.
+    editor:Option<InlineReceptionEditor>,
     /// Captured from the SAME click that blurs the previous field.
     /// Never discard this intent merely because native saving is async.
     next:Option<(InlineTarget,Option<egui::Pos2>)>,
@@ -783,7 +784,7 @@ struct BandoEgui {
     link_hover: source_highlight::HoverState,
     workflow_snapshot: Option<workflow_board::BoardSnapshot>,
     workflow_error: Option<String>,
-    workflow_receiver: Option<Receiver<Result<workflow_board::BoardSnapshot,String>>>,
+    workflow_receiver: Option<Receiver<Result<Option<workflow_board::BoardSnapshot>,String>>>,
     /// A committed write must publish its new revision before another
     /// operational write; an ordinary periodic read is advisory.
     workflow_refresh_required: bool,
@@ -1434,7 +1435,11 @@ impl BandoEgui {
     fn poll_workflow_board(&mut self,ctx:&egui::Context){
         if let Some(receiver)=self.workflow_receiver.as_ref(){
             match receiver.try_recv(){
-                Ok(Ok(snapshot))=>{
+                Ok(Ok(None))=>{
+                    // An unchanged DB revision is not a new UI snapshot.
+                    self.workflow_receiver=None;
+                }
+                Ok(Ok(Some(snapshot)))=>{
                     self.workflow_receiver=None;
                     if self.workflow_ui.selection.as_ref().is_some_and(|selected|
                         !snapshot.groups.iter().any(|group|
@@ -1480,7 +1485,11 @@ impl BandoEgui {
                 Err(mpsc::TryRecvError::Empty)=>{}
             }
         }
-        if self.page!=Page::Reception || self.workflow_receiver.is_some() ||
+        if self.page!=Page::Reception{
+            self.workflow_last_fetch=None;
+            return;
+        }
+        if self.workflow_receiver.is_some() ||
             self.workflow_action.is_some() ||
             (self.workflow_freight_editor.is_some() && self.workflow_error.is_none()) ||
             !std::env::var_os("BANDO_EGUI_BUSINESS_DB")
@@ -1491,9 +1500,19 @@ impl BandoEgui {
         let gateway=Arc::clone(&self.gateway);
         let (sender,receiver)=mpsc::channel();
         self.workflow_receiver=Some(receiver);
+        let known_revision=if self.workflow_refresh_required || self.workflow_error.is_some(){
+            None
+        }else{
+            self.workflow_snapshot.as_ref().and_then(|board|board.revision)
+        };
         let context=ctx.clone();
         std::thread::spawn(move||{
-            let result=workflow_board::load(gateway.as_ref());
+            let result=(||->Result<Option<workflow_board::BoardSnapshot>,String>{
+                if let Some(known)=known_revision{
+                    if gateway.workflow_revision()?==Some(known){return Ok(None);}
+                }
+                workflow_board::load(gateway.as_ref()).map(Some)
+            })();
             let _=sender.send(result);
             context.request_repaint();
         });
@@ -2324,7 +2343,8 @@ impl BandoEgui {
         self.manual_workspace=Some(editor);
     }
 
-    /// Staff issue edits use the existing serialized native edit pipeline.
+    /// Non-text commands use the same serialized native reducer without
+    /// creating a hidden text editor (delivery toggles, issue approvals).
     fn start_review_inline_action(
         &mut self,target:InlineTarget,value:serde_json::Value,ctx:&egui::Context
     ){
@@ -2334,9 +2354,17 @@ impl BandoEgui {
             );
             return;
         }
-        if self.reception_job_admission(
-            ReceptionJob::InlineEdit,false
-        )!=JobAdmission::Start{return;}
+        match self.reception_job_admission(ReceptionJob::InlineEdit,false){
+            JobAdmission::Start=>{},
+            JobAdmission::Duplicate=>return,
+            JobAdmission::Conflict(blocker)=>{
+                self.reception_job_conflict(ReceptionJob::InlineEdit,blocker);
+                if let Some(error)=self.source_save_error.as_deref(){
+                    floating_notice::publish(ctx,"reception.workflow",floating_notice::Tone::Validation,error);
+                }
+                return;
+            }
+        }
         let Some(source)=self.active_id.as_deref().and_then(|id|
             self.drafts.iter().find(|row|row.id==id)
         ).cloned()else{return};
@@ -2351,20 +2379,11 @@ impl BandoEgui {
             );
             return;
         }
-        let original=self.analysis.as_ref().and_then(|analysis|
-            current_inline_value(
-                &analysis.recognition,source.pricing_preview.as_ref(),&target
-            )
-        ).unwrap_or_default();
-        let editor=InlineReceptionEditor{
-            source_id:source.id.clone(),target:target.clone(),
-            original:original.clone(),text:original,
-            focus_next:false,click_at:None
-        };
+        self.source_save_error=None;
         let (tx,receiver)=mpsc::channel();
         self.inline_change=Some(PendingInlineChange{
             order_id:source.id.clone(),raw:source.raw.clone(),
-            target:target.clone(),editor,next:None,receiver
+            target:target.clone(),editor:None,next:None,receiver
         });
         let gateway=Arc::clone(&self.gateway);
         let context=ctx.clone();
@@ -2993,7 +3012,7 @@ impl BandoEgui {
         let (tx,receiver)=mpsc::channel();
         let gateway=Arc::clone(&self.gateway);
         self.inline_change=Some(PendingInlineChange{
-            order_id,raw,target:editor.target.clone(),editor,next:None,receiver
+            order_id,raw,target:editor.target.clone(),editor:Some(editor),next:None,receiver
         });
         let context=ctx.clone();
         std::thread::spawn(move||{
@@ -3109,9 +3128,13 @@ impl BandoEgui {
                     if let Some(dialog)=self.item_editor.as_mut(){
                         dialog.report_error(error);
                     }
-                }else if !matches!(pending.target.field,
-                    "approveOne"|"cancelApproval"|"addItem"){
-                    self.inline_editor=Some(pending.editor);
+                }else if let Some(editor)=pending.editor{
+                    self.inline_editor=Some(editor);
+                }else{
+                    // A non-text command has no editor to restore. The last
+                    // committed delivery state remains visible and retryable.
+                    floating_notice::publish(ctx,"reception.workflow",
+                        floating_notice::Tone::Error,format!("변경 저장 실패: {error}"));
                 }
             }
         }
@@ -7793,12 +7816,12 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
             if target.field=="addItem"{
                 self.open_product_picker(target.recipient_id,ui.ctx());
             }else if self.inline_editor.is_none() && self.inline_change.is_none(){
-                self.inline_editor=Some(InlineReceptionEditor{
-                    source_id:self.active_id.clone().unwrap_or_default(),
-                    target,original:"__previous__".into(),
-                    text:value,focus_next:false,click_at:None
-                });
-                self.submit_inline_edit(ui.ctx());
+                let value=if target.field=="remoteDelivery"{
+                    serde_json::json!(value=="true")
+                }else{
+                    serde_json::json!(value)
+                };
+                self.start_review_inline_action(target,value,ui.ctx());
             }
         }
     }
@@ -8230,7 +8253,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                         }else{
                             workflow_board::from_state(gateway.as_ref(),saved)
                         };
-                        let _=sender.send(result);
+                        let _=sender.send(result.map(Some));
                         context.request_repaint();
                     });
                 }
@@ -9900,11 +9923,11 @@ mod reception_workflow_admission_integration_tests {
         app.inline_change=Some(PendingInlineChange{
             order_id:"draft-1".into(),raw:"원문".into(),
             target:target.clone(),
-            editor:InlineReceptionEditor{
+            editor:Some(InlineReceptionEditor{
                 source_id:"draft-1".into(),target,
                 original:"A".into(),text:"B".into(),
                 focus_next:false,click_at:None
-            },
+            }),
             next:None,receiver:rx
         });
     }
@@ -10055,10 +10078,10 @@ mod reception_workflow_admission_integration_tests {
         let (tx,receiver)=mpsc::channel();
         app.inline_change=Some(PendingInlineChange{
             order_id:"draft-1".into(),raw:"원문".into(),target:target.clone(),
-            editor:InlineReceptionEditor{
+            editor:Some(InlineReceptionEditor{
                 source_id:"draft-1".into(),target,original:String::new(),
                 text:"저장할 메모".into(),focus_next:false,click_at:None
-            },
+            }),
             next:None,receiver
         });
         app.pending_draft_confirmation=Some("draft-1".into());
@@ -10260,6 +10283,41 @@ mod reception_workflow_admission_integration_tests {
         assert_eq!(app.active_id.as_deref(),Some("draft-1"));
         assert!(app.source_save_error.as_deref()
             .is_some_and(|s|s.contains("부가세 변경")));
+    }
+
+    #[test]
+    fn failed_delivery_command_never_restores_a_hidden_editor(){
+        let ctx=egui::Context::default();
+        for field in ["remoteDelivery","freightCode","dispatchOrigin"]{
+            let mut app=app();
+            let (tx,receiver)=mpsc::channel();
+            app.inline_change=Some(PendingInlineChange{
+                order_id:app.active_id.clone().unwrap(),raw:app.raw_source.clone(),
+                target:InlineTarget{recipient_id:"r1".into(),item_id:None,field},
+                editor:None,next:None,receiver
+            });
+            tx.send(Err("synthetic delivery failure".into())).unwrap();
+            app.poll_inline_change(&ctx);
+            assert!(app.inline_change.is_none());
+            assert!(app.inline_editor.is_none());
+            assert!(app.source_save_error.is_some());
+            assert_eq!(app.reception_job_admission(ReceptionJob::ManualClient,false),JobAdmission::Start);
+        }
+    }
+
+    #[test]
+    fn unchanged_workflow_revision_keeps_current_snapshot_and_selection(){
+        let ctx=egui::Context::default();
+        let mut app=app();
+        app.workflow_snapshot=Some(workflow_board::BoardSnapshot{revision:Some(7),groups:vec![]});
+        let (tx,receiver)=mpsc::channel();
+        app.workflow_receiver=Some(receiver);
+        app.workflow_last_fetch=Some(Instant::now());
+        tx.send(Ok(None)).unwrap();
+        app.poll_workflow_board(&ctx);
+        assert!(app.workflow_receiver.is_none());
+        assert_eq!(app.workflow_snapshot.as_ref().and_then(|board|board.revision),Some(7));
+        assert!(app.workflow_mutation_ready());
     }
 
     #[test]
