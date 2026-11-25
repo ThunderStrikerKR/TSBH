@@ -5094,6 +5094,37 @@ fn client_card_name_limit(
     name_width.min((available-reserved).max(0.0))
 }
 
+// Preserve the exact existing prefix/ellipsis measurement and reuse it
+// across idle frames. The full galley is still supplied by egui.
+thread_local!{
+    static CLIENT_NAME_FIT:std::cell::RefCell<Vec<(String,u32,u32,std::sync::Arc<str>)>>=
+        const{std::cell::RefCell::new(Vec::new())};
+}
+fn fitted_client_name(ui:&Ui,name:&str,limit:f32)->std::sync::Arc<str>{
+    let scale=ui.ctx().pixels_per_point().to_bits();
+    CLIENT_NAME_FIT.with(|cache|{
+        let mut cache=cache.borrow_mut();
+        if let Some(index)=cache.iter().position(|(text,width,dpi,_)|
+            text==name && *width==limit.to_bits() && *dpi==scale){
+            let entry=cache.remove(index);let shown=entry.3.clone();cache.push(entry);return shown;
+        }
+        let measure=|text:&str|typography::management_table_cell_galley(
+            ui,text,typography::ManagementTableCellRole::ClientName).size().x;
+        let mut shown=String::new();
+        if measure("…")<=limit{
+            for ch in name.chars(){
+                let next=format!("{shown}{ch}…");
+                if measure(&next)>limit{break;}
+                shown.push(ch);
+            }
+            shown.push('…');
+        }
+        let shown:std::sync::Arc<str>=shown.into();
+        if cache.len()>=64{cache.remove(0);}
+        cache.push((name.to_owned(),limit.to_bits(),scale,shown.clone()));shown
+    })
+}
+
 /// Single-line Reception client reference. It shares the management badge
 /// and exceptional terms but does not reserve a redundant status/header row
 /// or use the 900pt-wide management table geometry.
@@ -5146,27 +5177,12 @@ pub fn reception_client_summary_card(
             // Truncate the name only when genuinely necessary. Short names
             // occupy their measured width, not the whole flexible subcell:
             // the next condition starts directly after the visible name.
-            let mut shown=name.to_owned();
-            if full.size().x>name_limit{
-                shown.clear();
-                let ellipsis=typography::management_table_cell_galley(
-                    ui,"…",typography::ManagementTableCellRole::ClientName
-                );
-                if ellipsis.size().x<=name_limit{
-                    for ch in name.chars(){
-                        let next=format!("{shown}{ch}…");
-                        let measured=typography::management_table_cell_galley(
-                            ui,&next,typography::ManagementTableCellRole::ClientName
-                        );
-                        if measured.size().x>name_limit{break;}
-                        shown.push(ch);
-                    }
-                    shown.push('…');
-                }
-            }
-            let shown_galley=typography::management_table_cell_galley(
-                ui,&shown,typography::ManagementTableCellRole::ClientName
-            );
+            let shown_galley=if full.size().x>name_limit{
+                let shown=fitted_client_name(ui,name,name_limit);
+                typography::management_table_cell_galley(
+                    ui,&shown,typography::ManagementTableCellRole::ClientName
+                )
+            }else{full};
             let name_width=shown_galley.size().x.min(name_limit);
             if name_width>0.0{
                 let name_cell=Rect::from_min_max(
@@ -5623,7 +5639,10 @@ fn cached_reception_product(ui:&Ui,text:&str,width:f32,font:&egui::FontId,color:
         shown
     })
 }
-pub fn clear_reception_text_fit(){RECEPTION_TEXT_FIT.with(|cache|cache.borrow_mut().clear());}
+pub fn clear_reception_text_fit(){
+    RECEPTION_TEXT_FIT.with(|cache|cache.borrow_mut().clear());
+    CLIENT_NAME_FIT.with(|cache|cache.borrow_mut().clear());
+}
 fn reception_ellipsized_product(
     full:&str,max_width:f32,mut measure:impl FnMut(&str)->f32
 )->String {
