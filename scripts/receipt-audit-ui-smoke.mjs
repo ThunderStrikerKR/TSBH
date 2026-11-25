@@ -1189,6 +1189,49 @@ try {
         }
         if (command === "business_core_call" && args?.domain === "output" &&
             args.operation === "render_correction_summaries") return {records:[]};
+        // Native read fixtures for the explicitly synthetic modal scenarios.
+        if (command === "business_core_call" && args?.domain === "catalog_clients" &&
+            args.operation === "resolution_product_candidates") return [];
+        if (command === "business_core_call" && args?.domain === "catalog_clients" &&
+            args.operation === "suggest_group_representative") return null;
+        if (command === "business_core_call" && args?.domain === "catalog_clients" &&
+            args.operation === "search_products_with_urls") {
+          const {state:catalog,query=""}=args.payload;
+          const needle=query.trim().toLocaleLowerCase();
+          const rows=(catalog.products??[]).filter(p=>p.active!==false&&!p.deletedAt&&
+            !p.supersededBy&&p.catalog!=="DEMO"&&p.variants?.length&&
+            !p.variants.some(v=>v.source==="DEMO")&&
+            (!needle||[p.name,p.subtitle,p.code,p.modelKey].some(v=>String(v??"").toLocaleLowerCase().includes(needle))));
+          return {ids:rows.map(p=>p.id),detailLinkIds:rows.filter(p=>p.variants[0]?.url).map(p=>p.id)};
+        }
+        if (command === "business_core_call" && args?.domain === "rules" &&
+            args.operation === "apply_retail_action" && args.payload?.action === "new_retail_order") {
+          const {orderId,recipientId,now}=args.payload;
+          window.__navRetailDraftId=orderId;
+          return {order:{id:orderId,clientId:"",raw:"",channel:"카카오톡",
+            recipients:[{id:recipientId,name:"",address:"",mobile:"",phone:"",note:"",
+              items:[],dispatchOrigin:"FACTORY"}],shippingFee:null,applyVat:false,vatAmount:null,
+            status:"RECEIVED",notified:false,paid:false,postpaidApproved:false,freightCode:"010",
+            createdAt:now,updatedAt:now,orderType:"RETAIL",receptionVersion:1}};
+        }
+        if (command === "business_core_call" && args?.domain === "rules" &&
+            args.operation === "apply_retail_action" && args.payload?.action === "retail_preflight" &&
+            args.payload.draft?.id===window.__navRetailDraftId) {
+          const row=args.payload.draft.recipients[0];
+          if(row.name||row.address||row.mobile||row.phone||row.items.length)
+            throw Error("Retail modal fixture only covers an empty draft");
+          window.__navRetailPreflight=(window.__navRetailPreflight??0)+1;
+          return {delivery:[{recipientId:row.id,name:false,address:false,contact:false,product:false,quantity:false}],
+            senderIssues:[],issues:["수취인 정보 및 품목 입력 필요"]};
+        }
+        if (command === "business_core_call" && args?.domain === "rules" &&
+            args.operation === "order_issues_with_actions" &&
+            args.payload.order?.id==="ci-modal-manual") return {issues:[]};
+        if (command === "business_core_call" && args?.domain === "rules" &&
+            args.operation === "delivery_requirements_with_messages" &&
+            args.payload.rows?.length===1 && args.payload.rows[0].id==="ci-store-recipient") {
+          return {results:[{recipientId:"ci-store-recipient",name:true,address:false,contact:true,product:false,quantity:true}]};
+        }
         if (command === "business_core_call" && args?.domain === "rules" &&
             args.operation === "apply_manual_classification" &&
             args.payload?.action === "initial_manual") {
@@ -2576,12 +2619,24 @@ try {
     await closeNative(dialog);
   }
   for(const popup of ["correction","resolver","product-search","category","retail"]){
+    console.log("STAGE7_MODAL_BEGIN",popup);
     await popupSelect.selectOption(popup);
     await popupOpen.click();
     const dialog=nativeOpen();
-    await dialog.waitFor();
-    await measureStage7(popup,dialog);
-    await closeNative(dialog);
+    try{
+      await dialog.waitFor();
+      if(popup==="retail"){
+        await dialog.getByRole("textbox",{name:"수취인명",exact:true}).waitFor();
+        await navPage.waitForFunction(()=>window.__navRetailPreflight>0);
+      }
+      await measureStage7(popup,dialog);
+      await closeNative(dialog);
+    }catch(error){
+      console.error("STAGE7_MODAL_FAILURE",JSON.stringify({popup,navErrors,
+        dialogs:await navPage.locator("[role=dialog],dialog").allTextContents(),
+        fixture:await navPage.locator("#ci-modal-fixture").textContent().catch(()=>null)}));
+      throw error;
+    }
   }
   await popupSelect.selectOption("manual");
   await popupOpen.click();
