@@ -236,7 +236,7 @@ fn read_order_entities(conn:&Connection,only:Option<&str>)->Result<Vec<Value>,St
 
 fn read_order_partition(conn:&Connection,only:Option<&str>,exclude:bool)
     ->Result<Vec<Value>,String>{
-    let (mut orders,mut recipients,items,owner_sql)=if exclude{
+    let (orders,recipients,items,owner_sql)=if exclude{
         let id=only.ok_or("제외할 주문 ID 누락")?;
         (
             read_entities_with(conn,"SELECT payload FROM core_orders WHERE id<>?1 ORDER BY position,id",[id])?,
@@ -263,9 +263,30 @@ fn read_order_partition(conn:&Connection,only:Option<&str>,exclude:bool)
             "SELECT order_id,id FROM core_recipients ORDER BY order_id,position,id"
         )
     };
+    attach_order_children(conn,orders,recipients,items,owner_sql,rusqlite::params_from_iter(only))
+}
+
+/// Multi-order partition for factory replies. A single JSON-array parameter
+/// avoids SQL variable limits and uses the same child ownership checks.
+fn read_factory_order_partition(conn:&Connection,ids:&[String],exclude:bool)
+    ->Result<Vec<Value>,String>{
+    let ids=serde_json::to_string(ids).map_err(|e|e.to_string())?;
+    let op=if exclude{"NOT IN"}else{"IN"};
+    let orders_sql=format!("SELECT payload FROM core_orders WHERE id {op} (SELECT value FROM json_each(?1)) ORDER BY position,id");
+    let recipients_sql=format!("SELECT payload FROM core_recipients WHERE order_id {op} (SELECT value FROM json_each(?1)) ORDER BY position,id");
+    let items_sql=format!("SELECT recipient_id,payload FROM core_items WHERE recipient_id IN (SELECT id FROM core_recipients WHERE order_id {op} (SELECT value FROM json_each(?1))) ORDER BY recipient_id,position,id");
+    let owner_sql=format!("SELECT order_id,id FROM core_recipients WHERE order_id {op} (SELECT value FROM json_each(?1)) ORDER BY order_id,position,id");
+    let orders=read_entities_with(conn,&orders_sql,[&ids])?;
+    let recipients=read_entities_with(conn,&recipients_sql,[&ids])?;
+    let items=read_children_with(conn,&items_sql,[&ids])?;
+    attach_order_children(conn,orders,recipients,items,&owner_sql,[&ids])
+}
+fn attach_order_children(conn:&Connection,mut orders:Vec<Value>,mut recipients:Vec<Value>,
+    items:HashMap<String,Vec<Value>>,owner_sql:&str,params:impl rusqlite::Params)
+    ->Result<Vec<Value>,String>{
     attach(&mut recipients, "items", items)?;
     let mut stmt=conn.prepare(owner_sql).map_err(|_|"수취인 소속 조회 준비 실패".to_owned())?;
-    let owners=stmt.query_map(rusqlite::params_from_iter(only),|row|{
+    let owners=stmt.query_map(params,|row|{
         Ok((row.get::<_,String>(0)?,row.get::<_,String>(1)?))
     }).map_err(|_| "수취인 소속 조회 실패".to_owned())?
         .collect::<rusqlite::Result<Vec<_>>>()
