@@ -3,7 +3,7 @@
 //! the original Rust business core and Tauri's existing SQLite database.
 use crate::{components,gateway::{BandoGateway,ReadOperation},order_history_manager,settings_help,theme,typography};
 use chrono::{DateTime,FixedOffset,NaiveDate,Utc};
-use eframe::egui::{self,Align,Align2,Rect,Sense,Stroke,Ui,UiBuilder,Vec2};
+use eframe::egui::{self,Align,Align2,Rect,Sense,Ui,UiBuilder,Vec2};
 use serde_json::{json,Value};
 use std::{collections::{BTreeSet,HashMap},sync::{mpsc::{self,Receiver,TryRecvError},Arc}};
 
@@ -251,16 +251,7 @@ fn sort_history(lines:&mut [HistoryRow],sort:Option<Sort>){
         });
     }
 }
-fn geometry<const N:usize>(
-    origin:egui::Pos2,widths:&[f32;N],height:f32
-)->[Rect;N]{
-    let mut x=origin.x;
-    std::array::from_fn(|col|{
-        let cell=Rect::from_min_size(egui::pos2(x,origin.y),Vec2::new(widths[col],height));
-        x+=widths[col]+GAP;
-        cell
-    })
-}
+
 fn cell(ui:&Ui,rect:Rect,visible:&str,align:Align2,
     role:typography::ManagementTableCellRole,id:impl std::hash::Hash){
     let padded=if align==Align2::LEFT_CENTER{
@@ -365,24 +356,20 @@ fn table<const N:usize>(
                 body.scope_builder(UiBuilder::new().id_salt((id,index)).max_rect(r)
                     .layout(egui::Layout::top_down(Align::Min)),|row|{
                     row.allocate_exact_size(Vec2::new(width,HEIGHT),Sense::hover());
-                    row.painter().rect_filled(r,0.0,
-                        if index%2==0{theme::PANEL}else{theme::TABLE_ROW_ALT_BG});
-                    let cols=geometry(r.min,&widths,HEIGHT);
+                    components::paint_management_table_row_background(row.painter(),r,index);
+                    let cols=components::management_table_cells(r.min,&widths,HEIGHT,GAP);
                     render(row,cols,index);
                     for c in cols.iter().take(N-1){
                         let x=c.right()+GAP/2.0;
-                        row.painter().line_segment(
-                            [egui::pos2(x,r.top()),egui::pos2(x,r.bottom())],
-                            Stroke::new(theme::SOFT_DIVIDER_WIDTH,theme::DIVIDER));
+                        components::paint_management_table_column_rule(row.painter(),x,r.top(),r.bottom());
                     }
-                    row.painter().line_segment([r.left_bottom(),r.right_bottom()],
-                        Stroke::new(theme::SOFT_DIVIDER_WIDTH,theme::DIVIDER));
+                    components::paint_management_table_row_rule(row.painter(),r,components::ManagementRowRule::Standard);
                 });
             }
         });
     ui.spacing_mut().item_spacing.y=old_gap;
     let left=left.unwrap_or(header.left()-output.state.offset.x);
-    let heads=geometry(egui::pos2(left,header.top()),&widths,HEADER);
+    let heads=components::management_table_cells(egui::pos2(left,header.top()),&widths,HEADER,GAP);
     let painter=ui.painter().with_clip_rect(header);
     let header_text_rect=components::management_master_header_begin(ui,header,header_content);
     let mut clicked=None;
@@ -442,10 +429,7 @@ fn table<const N:usize>(
     for c in heads.iter().take(N.saturating_sub(1)) {
         let x=c.right()+GAP/2.0;
         if x>=header_content.left() && x<=header_content.right() {
-            painter.line_segment(
-                [egui::pos2(x,header.top()),egui::pos2(x,header.bottom())],
-                Stroke::new(theme::SOFT_DIVIDER_WIDTH,theme::DIVIDER)
-            );
+            components::paint_management_table_column_rule(&painter,x,header.top(),header.bottom());
         }
     }
     components::management_master_header_finish(ui,header);

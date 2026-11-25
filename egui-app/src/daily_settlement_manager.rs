@@ -6,7 +6,7 @@ use crate::{
     settings_help,theme,typography,
 };
 use chrono::{DateTime,Duration as Days,FixedOffset,NaiveDate,Utc};
-use eframe::egui::{self,Align,Align2,Rect,Sense,Stroke,Ui,UiBuilder,Vec2};
+use eframe::egui::{self,Align,Align2,Rect,Sense,Ui,UiBuilder,Vec2};
 use serde_json::{json,Value};
 use std::sync::{mpsc::{self,Receiver,TryRecvError},Arc};
 
@@ -256,17 +256,7 @@ fn metric(ui:&mut Ui,label:&str,value:String){
         ).line_height(Some(22.0)));
     });
 }
-fn cells<const N:usize>(
-    origin:egui::Pos2,widths:&[f32;N],height:f32
-)->[Rect;N]{
-    let mut x=origin.x;
-    std::array::from_fn(|index|{
-        let r=Rect::from_min_size(
-            egui::pos2(x,origin.y),Vec2::new(widths[index],height));
-        x+=widths[index]+COL_GAP;
-        r
-    })
-}
+
 fn paint_cell(
     ui:&Ui,rect:Rect,content:&str,align:Align2,
     role:typography::ManagementTableCellRole,id:impl std::hash::Hash,
@@ -329,12 +319,8 @@ fn report_table<const N:usize>(
                         row.allocate_exact_size(
                             Vec2::new(width,ROW_HEIGHT),Sense::hover()
                         );
-                        let row_cells=cells(rect.min,&widths,ROW_HEIGHT);
-                        row.painter().rect_filled(
-                            rect,0.0,if index%2==0{
-                                theme::PANEL
-                            }else{theme::TABLE_ROW_ALT_BG}
-                        );
+                        let row_cells=components::management_table_cells(rect.min,&widths,ROW_HEIGHT,COL_GAP);
+                        components::paint_management_table_row_background(row.painter(),rect,index);
                         let data=format_row(indices[index]);
                         for (column,cell) in row_cells.iter().enumerate(){
                             paint_cell(
@@ -343,19 +329,10 @@ fn report_table<const N:usize>(
                             );
                             if column+1<N{
                                 let x=cell.right()+COL_GAP/2.0;
-                                row.painter().line_segment(
-                                    [egui::pos2(x,rect.top()),egui::pos2(x,rect.bottom())],
-                                    Stroke::new(theme::SOFT_DIVIDER_WIDTH,theme::DIVIDER)
-                                );
+                                components::paint_management_table_column_rule(row.painter(),x,rect.top(),rect.bottom());
                             }
                         }
-                        row.painter().line_segment(
-                            [rect.left_bottom(),rect.right_bottom()],
-                            Stroke::new(
-                                theme::SOFT_DIVIDER_WIDTH,
-                                theme::DIVIDER.linear_multiply(0.70)
-                            )
-                        );
+                        components::paint_management_table_row_rule(row.painter(),rect,components::ManagementRowRule::Muted);
                     }
                 );
             }
@@ -364,7 +341,7 @@ fn report_table<const N:usize>(
     components::management_body_state_overlay(ui,scroll.inner_rect,empty_notice);
     ui.spacing_mut().item_spacing.y=previous_gap;
     let left=first_x.unwrap_or(header.left()-scroll.state.offset.x);
-    let header_cells=cells(egui::pos2(left,header.top()),&widths,HEADER_HEIGHT);
+    let header_cells=components::management_table_cells(egui::pos2(left,header.top()),&widths,HEADER_HEIGHT,COL_GAP);
     let painter=ui.painter().with_clip_rect(header);
     let header_text_rect=components::management_master_header_begin(
         ui,header,layout.header_content_rect
@@ -407,10 +384,7 @@ fn report_table<const N:usize>(
         if column+1<N{
             let x=cell.right()+COL_GAP/2.0;
             let painter=painter.with_clip_rect(header_text_rect);
-            painter.line_segment(
-                [egui::pos2(x,header.top()),egui::pos2(x,header.bottom())],
-                Stroke::new(theme::SOFT_DIVIDER_WIDTH,theme::DIVIDER)
-            );
+            components::paint_management_table_column_rule(&painter,x,header.top(),header.bottom());
         }
     }
     if let Some(next)=sort_change{*sort=next;}

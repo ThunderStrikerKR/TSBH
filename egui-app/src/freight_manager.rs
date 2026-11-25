@@ -171,18 +171,7 @@ fn text<'a>(row: &'a Value, key: &str) -> &'a str {
 }
 /// Shared geometry for header and item rows. Each label/control uses this
 /// exact column rectangle; no intrinsic egui Grid sizing can shift a column.
-fn freight_table_cells<const N:usize>(
-    origin: egui::Pos2, widths: &[f32;N], height:f32
-) -> [egui::Rect;N] {
-    let mut x=origin.x;
-    std::array::from_fn(|index|{
-        let cell=egui::Rect::from_min_size(
-            egui::pos2(x,origin.y),egui::vec2(widths[index],height)
-        );
-        x+=widths[index]+theme::FREIGHT_ASSIGNMENT_COL_GAP;
-        cell
-    })
-}
+
 
 /// These table cells use the shared 14pt semantic regular-data roles.
 /// Only headings and explicit final results retain strong emphasis.
@@ -1570,12 +1559,10 @@ impl FreightManager {
                         let id=text(product,"id");
                         let committed=text(product,"shippingGroupId");
                         let mut checked=selected.contains(id);
-                        let cells=freight_table_cells(
-                            row_rect.min,&widths,theme::FREIGHT_ASSIGNMENT_ROW_HEIGHT
-                        );
+                        let cells=components::management_table_cells(
+                            row_rect.min,&widths,theme::FREIGHT_ASSIGNMENT_ROW_HEIGHT,theme::FREIGHT_ASSIGNMENT_COL_GAP);
                         let background=if checked {theme::WORKFLOW_SELECTED_BG}
-                            else if row_index%2==0 {theme::PANEL}
-                            else {theme::TABLE_ROW_ALT_BG};
+                            else {components::management_table_row_fill(row_index)};
                         row.painter().rect_filled(row_rect,0.0,background);
                         if checked {
                             row.painter().rect_filled(
@@ -1789,13 +1776,7 @@ impl FreightManager {
                         components::management_master_column_rules(
                             row,row_rect,&boundaries
                         );
-                        row.painter().line_segment(
-                            [row_rect.left_bottom(),row_rect.right_bottom()],
-                            egui::Stroke::new(
-                                theme::SOFT_DIVIDER_WIDTH,
-                                theme::DIVIDER.linear_multiply(0.70)
-                            )
-                        );
+                        components::paint_management_table_row_rule(row.painter(),row_rect,components::ManagementRowRule::Muted);
                             }
                         );
                     }
@@ -1807,15 +1788,14 @@ impl FreightManager {
             }
             // Limit the zero-gap setting to the header+rows block.
             section.spacing_mut().item_spacing.y=previous_table_spacing_y;
-            // Header and body use freight_table_cells() AND the body
+            // Header and body use the shared column geometry AND the body
             // scroll origin, so no egui padding / Grid sizing can drift.
             let header_left=first_row_left.unwrap_or(
                 header_rect.left()-scroll_output.state.offset.x
             );
-            let header_cells=freight_table_cells(
+            let header_cells=components::management_table_cells(
                 egui::pos2(header_left,header_rect.top()),
-                &widths,header_rect.height()
-            );
+                &widths,header_rect.height(),theme::FREIGHT_ASSIGNMENT_COL_GAP);
             // Paint the header background through the complete table viewport,
             // including the scrollbar rail. Only text/checkbox interaction
             // stays inside the column content rect, not the scrollbar.
@@ -2086,14 +2066,9 @@ impl FreightManager {
                                     ),
                                     egui::Sense::hover()
                                 );
-                                let cells=freight_table_cells(
-                                    row_rect.min,&widths,theme::FREIGHT_ASSIGNMENT_ROW_HEIGHT
-                                );
-                                row.painter().rect_filled(
-                                    row_rect,0.0,
-                                    if index%2==0 {theme::PANEL}
-                                    else {theme::TABLE_ROW_ALT_BG}
-                                );
+                                let cells=components::management_table_cells(
+                                    row_rect.min,&widths,theme::FREIGHT_ASSIGNMENT_ROW_HEIGHT,theme::FREIGHT_ASSIGNMENT_COL_GAP);
+                                components::paint_management_table_row_background(row.painter(),row_rect,index);
                                 // Name owns its own column. Membership is
                                 // shown separately from the rate rule and
                                 // matches the registered product assignments.
@@ -2202,21 +2177,9 @@ impl FreightManager {
                                 for col in 0..3{
                                     let x=cells[col].right()
                                         +theme::FREIGHT_ASSIGNMENT_COL_GAP/2.0;
-                                    row.painter().line_segment(
-                                        [egui::pos2(x,row_rect.top()),
-                                         egui::pos2(x,row_rect.bottom())],
-                                        egui::Stroke::new(
-                                            theme::SOFT_DIVIDER_WIDTH,theme::DIVIDER
-                                        )
-                                    );
+                                    components::paint_management_table_column_rule(row.painter(),x,row_rect.top(),row_rect.bottom());
                                 }
-                                row.painter().line_segment(
-                                    [row_rect.left_bottom(),row_rect.right_bottom()],
-                                    egui::Stroke::new(
-                                        theme::SOFT_DIVIDER_WIDTH,
-                                        theme::DIVIDER.linear_multiply(0.70)
-                                    )
-                                );
+                                components::paint_management_table_row_rule(row.painter(),row_rect,components::ManagementRowRule::Muted);
                             }
                         );
                     }
@@ -2226,9 +2189,8 @@ impl FreightManager {
             let left=first_row_left.unwrap_or(
                 header_rect.left()-scroll_output.state.offset.x
             );
-            let header_cells=freight_table_cells(
-                egui::pos2(left,header_rect.top()),&widths,header_rect.height()
-            );
+            let header_cells=components::management_table_cells(
+                egui::pos2(left,header_rect.top()),&widths,header_rect.height(),theme::FREIGHT_ASSIGNMENT_COL_GAP);
             let header_text_rect=components::management_master_header_begin(
                 section,header_rect,rate_layout.header_content_rect
             );
@@ -2286,13 +2248,7 @@ impl FreightManager {
                 }
                 if index<3{
                     let x=cell.right()+theme::FREIGHT_ASSIGNMENT_COL_GAP/2.0;
-                    painter.line_segment(
-                        [egui::pos2(x,header_rect.top()),
-                         egui::pos2(x,header_rect.bottom())],
-                        egui::Stroke::new(
-                            theme::SOFT_DIVIDER_WIDTH,theme::DIVIDER
-                        )
-                    );
+                    components::paint_management_table_column_rule(&painter,x,header_rect.top(),header_rect.bottom());
                 }
             }
             components::management_master_header_finish(section,header_rect);
@@ -2794,34 +2750,17 @@ fn freight_history_table<const N:usize>(
                             egui::vec2(width,theme::FREIGHT_ASSIGNMENT_ROW_HEIGHT),
                             egui::Sense::hover()
                         );
-                        let cells=freight_table_cells(
+                        let cells=components::management_table_cells(
                             row_rect.min,&widths,
-                            theme::FREIGHT_ASSIGNMENT_ROW_HEIGHT
-                        );
-                        row.painter().rect_filled(
-                            row_rect,0.0,if index%2==0{
-                                theme::PANEL
-                            }else{theme::TABLE_ROW_ALT_BG}
-                        );
+                            theme::FREIGHT_ASSIGNMENT_ROW_HEIGHT,theme::FREIGHT_ASSIGNMENT_COL_GAP);
+                        components::paint_management_table_row_background(row.painter(),row_rect,index);
                         render_row(row,&cells,index);
                         for column in 0..N.saturating_sub(1){
                             let boundary=cells[column].right()
                                 +theme::FREIGHT_ASSIGNMENT_COL_GAP/2.0;
-                            row.painter().line_segment(
-                                [egui::pos2(boundary,row_rect.top()),
-                                 egui::pos2(boundary,row_rect.bottom())],
-                                egui::Stroke::new(
-                                    theme::SOFT_DIVIDER_WIDTH,theme::DIVIDER
-                                )
-                            );
+                            components::paint_management_table_column_rule(row.painter(),boundary,row_rect.top(),row_rect.bottom());
                         }
-                        row.painter().line_segment(
-                            [row_rect.left_bottom(),row_rect.right_bottom()],
-                            egui::Stroke::new(
-                                theme::SOFT_DIVIDER_WIDTH,
-                                theme::DIVIDER.linear_multiply(0.70)
-                            )
-                        );
+                        components::paint_management_table_row_rule(row.painter(),row_rect,components::ManagementRowRule::Muted);
                     }
                 );
             }
@@ -2831,9 +2770,8 @@ fn freight_history_table<const N:usize>(
     let left=first_row_left.unwrap_or(
         header_rect.left()-scroll.state.offset.x
     );
-    let columns=freight_table_cells(
-        egui::pos2(left,header_rect.top()),&widths,header_rect.height()
-    );
+    let columns=components::management_table_cells(
+        egui::pos2(left,header_rect.top()),&widths,header_rect.height(),theme::FREIGHT_ASSIGNMENT_COL_GAP);
     let header_text_rect=components::management_master_header_begin(
         ui,header_rect,layout.header_content_rect
     );
@@ -2907,13 +2845,7 @@ fn freight_history_table<const N:usize>(
         }
         if index<N.saturating_sub(1){
             let boundary=cell.right()+theme::FREIGHT_ASSIGNMENT_COL_GAP/2.0;
-            painter.line_segment(
-                [egui::pos2(boundary,header_rect.top()),
-                 egui::pos2(boundary,header_rect.bottom())],
-                egui::Stroke::new(
-                    theme::SOFT_DIVIDER_WIDTH,theme::DIVIDER
-                )
-            );
+            components::paint_management_table_column_rule(&painter,boundary,header_rect.top(),header_rect.bottom());
         }
     }
     components::management_master_header_finish(ui,header_rect);

@@ -278,14 +278,7 @@ fn history_detail_cells(block:Rect)->[Rect;4]{
     let product=(content.width()-recipient-freight-tracking
         -3.0*theme::SPACE_8).max(1.0);
     let sizes=[recipient,product,freight,tracking];
-    let mut left=content.left();
-    std::array::from_fn(|i|{
-        let rect=Rect::from_min_size(
-            egui::pos2(left,content.top()),Vec2::new(sizes[i],content.height())
-        );
-        left+=sizes[i]+theme::SPACE_8;
-        rect
-    })
+    components::management_table_cells(content.min,&sizes,content.height(),theme::SPACE_8)
 }
 fn paint_history_branch(ui:&Ui,row_rect:Rect,widths:&[f32;7],
     branch:HistoryBranch,spacing:DetailSpacing){
@@ -390,15 +383,7 @@ fn display_lines(snapshot:&HistorySnapshot,expanded:&BTreeSet<String>,
     lines
 }
 
-fn cells(origin:Pos2,widths:&[f32;7],height:f32)->[Rect;7]{
-    let mut left=origin.x;
-    std::array::from_fn(|index|{
-        let cell=Rect::from_min_size(egui::pos2(left,origin.y),
-            Vec2::new(widths[index],height));
-        left+=widths[index]+COL_GAP;
-        cell
-    })
-}
+
 /// The header background and its bottom outline stay pinned to the
 /// viewport, but its columns and vertical separators scroll together with
 /// the body. Never derive the separators from the unscrolled header rect.
@@ -413,17 +398,14 @@ fn history_scrolled_header_row(
 fn paint_column_dividers(
     ui:&Ui,rect:Rect,widths:&[f32;7],detail:bool,content_clip:Rect
 ){
-    let columns=cells(rect.min,widths,rect.height());
+    let columns=components::management_table_cells(rect.min,widths,rect.height(),COL_GAP);
     let painter=ui.painter().with_clip_rect(content_clip.intersect(ui.clip_rect()));
     // Expanded rows merge columns 2–6 to show long recipient, product,
     // freight and billing details. Do not draw lines THROUGH merged text.
     let separators=if detail{2}else{6};
     for column in columns.iter().take(separators){
         let x=column.right()+COL_GAP/2.0;
-        painter.line_segment(
-            [egui::pos2(x,rect.top()),egui::pos2(x,rect.bottom())],
-            Stroke::new(theme::SOFT_DIVIDER_WIDTH,theme::DIVIDER)
-        );
+        components::paint_management_table_column_rule(&painter,x,rect.top(),rect.bottom());
     }
 }
 fn history_text_overflow(ui:&Ui,rect:Rect,value:&str,role:typography::ManagementTableCellRole)->bool{
@@ -549,7 +531,7 @@ fn draw_line(ui:&mut Ui,rect:Rect,line:HistoryLine,snapshot:&HistorySnapshot,
     let id=field(&row["order"],"id");
     match line {
         HistoryLine::Order(_)=>{
-            let columns=cells(rect.min,widths,rect.height());
+            let columns=components::management_table_cells(rect.min,widths,rect.height(),COL_GAP);
             paint_text(ui,columns[0],&order_date(row),typography::ManagementTableCellRole::Description,false);
             paint_text(ui,columns[1],&display_client_name(order_client(row)),
                 typography::ManagementTableCellRole::ClientName,false);
@@ -1481,13 +1463,8 @@ impl OrderHistoryManager {
                                         );
                                         match line {
                                             HistoryLine::Order(_)=>{
-                                                let background=if line_index%2==0{theme::PANEL}
-                                                    else{theme::TABLE_ROW_ALT_BG};
-                                                row_ui.painter().rect_filled(
-                                                    row_rect,0.0,background);
-                                                row_ui.painter().line_segment(
-                                                    [row_rect.left_bottom(),row_rect.right_bottom()],
-                                                    Stroke::new(theme::FRAME_STROKE_WIDTH,theme::DIVIDER));
+                                                components::paint_management_table_row_background(row_ui.painter(),row_rect,line_index);
+                                                components::paint_management_table_row_rule(row_ui.painter(),row_rect,components::ManagementRowRule::Frame);
                                             },
                                             HistoryLine::Recipient(_,_,_)=>{
                                                 row_ui.painter().rect_filled(
@@ -1548,7 +1525,7 @@ impl OrderHistoryManager {
             let scrolled_header=history_scrolled_header_row(
                 head_rect,left,table_width
             );
-            let header_cells=cells(scrolled_header.min,&widths,HEADER_HEIGHT);
+            let header_cells=components::management_table_cells(scrolled_header.min,&widths,HEADER_HEIGHT,COL_GAP);
             let painter=section.painter().with_clip_rect(head_rect);
             let header_text_rect=components::management_master_header_begin(
                 section,head_rect,header_content_rect
@@ -1811,8 +1788,8 @@ mod tests{
             let row=history_scrolled_header_row(
                 viewport,viewport.left()-offset,MIN_WIDTH
             );
-            let text_cells=cells(row.min,&COLS,HEADER_HEIGHT);
-            let divider_cells=cells(row.min,&COLS,HEADER_HEIGHT);
+            let text_cells=components::management_table_cells(row.min,&COLS,HEADER_HEIGHT,COL_GAP);
+            let divider_cells=components::management_table_cells(row.min,&COLS,HEADER_HEIGHT,COL_GAP);
             assert_eq!(row.top(),viewport.top());
             assert_eq!(row.height(),viewport.height());
             assert_eq!(row.width(),MIN_WIDTH);

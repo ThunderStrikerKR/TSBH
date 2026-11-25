@@ -117,6 +117,49 @@ pub fn management_table_container_style(ui:&mut Ui)->f32{
     previous_gap
 }
 
+/// Shared fixed-column geometry for headers and data rows. The existing
+/// table policy supplies widths, height and gap.
+pub fn management_table_cells<const N:usize>(
+    origin:egui::Pos2,widths:&[f32;N],height:f32,gap:f32
+)->[Rect;N]{
+    let mut x=origin.x;
+    std::array::from_fn(|index|{
+        let rect=Rect::from_min_size(egui::pos2(x,origin.y),Vec2::new(widths[index],height));
+        x+=widths[index]+gap;
+        rect
+    })
+}
+
+pub fn management_table_row_fill(index:usize)->Color32{
+    if index%2==0{theme::PANEL}else{theme::TABLE_ROW_ALT_BG}
+}
+
+pub fn paint_management_table_row_background(painter:&egui::Painter,rect:Rect,index:usize){
+    painter.rect_filled(rect,0.0,management_table_row_fill(index));
+}
+
+/// Retain existing rule roles and paint geometry in one implementation.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ManagementRowRule { Standard, Muted, Frame, Inset }
+
+pub fn paint_management_table_row_rule(painter:&egui::Painter,rect:Rect,role:ManagementRowRule){
+    if role==ManagementRowRule::Inset{
+        painter.rect_filled(Rect::from_min_max(
+            egui::pos2(rect.left(),rect.bottom()-theme::SOFT_DIVIDER_WIDTH),rect.right_bottom()
+        ),0.0,theme::DIVIDER);
+        return;
+    }
+    let width=if role==ManagementRowRule::Frame{theme::FRAME_STROKE_WIDTH}else{theme::SOFT_DIVIDER_WIDTH};
+    let color=if role==ManagementRowRule::Muted{theme::DIVIDER.linear_multiply(0.70)}else{theme::DIVIDER};
+    painter.line_segment([rect.left_bottom(),rect.right_bottom()],Stroke::new(width,color));
+}
+
+/// Preserve the caller's clip, scrolled origin and merged-column exclusions.
+pub fn paint_management_table_column_rule(painter:&egui::Painter,x:f32,top:f32,bottom:f32){
+    painter.line_segment([egui::pos2(x,top),egui::pos2(x,bottom)],
+        Stroke::new(theme::SOFT_DIVIDER_WIDTH,theme::DIVIDER));
+}
+
 /// Fixed and variable row viewports share the minimum-width and zero-gap
 /// rules. Retain the caller's existing width and height calculations.
 pub fn management_table_row_body(ui:&mut Ui,width:f32){
@@ -5635,10 +5678,7 @@ pub fn management_master_column_rules(
     let painter=ui.painter().with_clip_rect(clip);
     for &x in boundaries{
         if x>clip.left() && x<clip.right() {
-            painter.line_segment(
-                [egui::pos2(x,region.top()),egui::pos2(x,region.bottom())],
-                Stroke::new(theme::SOFT_DIVIDER_WIDTH,theme::DIVIDER)
-            );
+            paint_management_table_column_rule(&painter,x,region.top(),region.bottom());
         }
     }
 }
@@ -5760,20 +5800,12 @@ fn management_row_impl(
     );
     let bg=if heading {theme::RAISED}
         else if response.hovered() {theme::INPUT}
-        else if visible_index.is_some_and(|index|index%2==1) {
-            theme::TABLE_ROW_ALT_BG
-        }else{theme::PANEL};
+        else {management_table_row_fill(visible_index.unwrap_or(0))};
     ui.painter().rect_filled(rect,0.0,bg);
     // Paint the 1pt row rule inside its allocated rect. A centered
     // line_segment on bottom() was half-clipped and looked inconsistent
     // against the master's crisp 2pt header band at fractional DPI.
-    ui.painter().rect_filled(
-        Rect::from_min_max(
-            egui::pos2(rect.left(),
-                rect.bottom()-theme::SOFT_DIVIDER_WIDTH),
-            rect.right_bottom()
-        ),0.0,theme::DIVIDER
-    );
+    paint_management_table_row_rule(ui.painter(),rect,ManagementRowRule::Inset);
 
     let mut x=rect.left();
     let column_widths=management_client_column_widths(rect.width());

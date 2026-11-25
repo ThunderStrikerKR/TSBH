@@ -223,16 +223,7 @@ fn product_price_editor_rects(cell:Rect,scroll_clip:Rect)->(Rect,Rect){
     (cell.shrink2(Vec2::new(inset,0.0)),cell.intersect(scroll_clip))
 }
 
-fn product_table_cells(origin:Pos2,widths:&[f32;6],height:f32)->[Rect;6]{
-    let mut x=origin.x;
-    std::array::from_fn(|i|{
-        let rect=Rect::from_min_size(
-            egui::pos2(x,origin.y),egui::vec2(widths[i],height)
-        );
-        x+=widths[i]+theme::SPACE_8;
-        rect
-    })
-}
+
 fn product_table_text(ui:&mut Ui,rect:Rect,text:&str,
     role:typography::ManagementTableCellRole,unique:impl std::hash::Hash){
     components::paint_management_text_cell(
@@ -1352,14 +1343,9 @@ impl ProductManager {
                                     Vec2::new(table_width,theme::PRODUCT_TABLE_ROW_HEIGHT),
                                     Sense::hover()
                                 );
-                                row.painter().rect_filled(
-                                    row_rect,0.0,
-                                    if row_index%2==0{theme::PANEL}
-                                    else{theme::TABLE_ROW_ALT_BG}
-                                );
-                                let cells=product_table_cells(
-                                    row_rect.min,&widths,theme::PRODUCT_TABLE_ROW_HEIGHT
-                                );
+                                components::paint_management_table_row_background(row.painter(),row_rect,row_index);
+                                let cells=components::management_table_cells(
+                                    row_rect.min,&widths,theme::PRODUCT_TABLE_ROW_HEIGHT,theme::SPACE_8);
                                 // Capture before descendant scope borrows row mutably.
                                 let row_clip=row.clip_rect();
                                 let name=field(product,"name");
@@ -1643,12 +1629,7 @@ impl ProductManager {
                                         }
                                     }
                                 );
-                                row.painter().line_segment(
-                                    [row_rect.left_bottom(),row_rect.right_bottom()],
-                                    egui::Stroke::new(
-                                        theme::SOFT_DIVIDER_WIDTH,theme::DIVIDER
-                                    )
-                                );
+                                components::paint_management_table_row_rule(row.painter(),row_rect,components::ManagementRowRule::Standard);
                             }
                         );
                     }
@@ -1659,10 +1640,9 @@ impl ProductManager {
             let header_left=row_left.unwrap_or(
                 header_rect.left()-scroll_output.state.offset.x
             );
-            let header_cells=product_table_cells(
+            let header_cells=components::management_table_cells(
                 egui::pos2(header_left,header_rect.top()),
-                &widths,header_rect.height()
-            );
+                &widths,header_rect.height(),theme::SPACE_8);
             // Master header owns the same 34pt text area and inset 2pt
             // bottom rule as Freight Assignment; no clipped 1pt edge stroke.
             let header_text_rect=components::management_master_header_begin(
@@ -1719,11 +1699,7 @@ impl ProductManager {
                 }
                 if index<5{
                     let edge=header_cells[index].right()+theme::SPACE_8/2.0;
-                    painter.line_segment(
-                        [egui::pos2(edge,header_text_rect.top()),
-                         egui::pos2(edge,header_text_rect.bottom())],
-                        egui::Stroke::new(theme::SOFT_DIVIDER_WIDTH,theme::DIVIDER)
-                    );
+                    components::paint_management_table_column_rule(&painter,edge,header_text_rect.top(),header_text_rect.bottom());
                 }
             }
             components::management_master_header_finish(panel,header_rect);
@@ -3452,12 +3428,10 @@ mod tests {
             let browse=product_table_column_widths(data_width);
             let edit=product_table_column_widths(data_width);
             assert_eq!(browse,edit);
-            let browse_rects=product_table_cells(
-                egui::pos2(0.0,0.0),&browse,theme::MANAGEMENT_TABLE_HEADER_HEIGHT
-            );
-            let edit_rects=product_table_cells(
-                egui::pos2(0.0,0.0),&edit,theme::PRODUCT_TABLE_ROW_HEIGHT
-            );
+            let browse_rects=components::management_table_cells(
+                egui::pos2(0.0,0.0),&browse,theme::MANAGEMENT_TABLE_HEADER_HEIGHT,theme::SPACE_8);
+            let edit_rects=components::management_table_cells(
+                egui::pos2(0.0,0.0),&edit,theme::PRODUCT_TABLE_ROW_HEIGHT,theme::SPACE_8);
             for i in 0..6{
                 assert_eq!(browse_rects[i].left(),edit_rects[i].left());
                 assert_eq!(browse_rects[i].right(),edit_rects[i].right());
@@ -3474,11 +3448,10 @@ mod tests {
     fn fixed_product_table_columns_share_identical_header_and_row_geometry(){
         let widths=[340.0,182.0,116.0,116.0,116.0,100.0];
         let start=egui::pos2(20.0,30.0);
-        let header=product_table_cells(start,&widths,theme::MANAGEMENT_TABLE_HEADER_HEIGHT);
-        let row=product_table_cells(
+        let header=components::management_table_cells(start,&widths,theme::MANAGEMENT_TABLE_HEADER_HEIGHT,theme::SPACE_8);
+        let row=components::management_table_cells(
             egui::pos2(start.x,start.y+theme::MANAGEMENT_TABLE_HEADER_HEIGHT),
-            &widths,theme::PRODUCT_TABLE_ROW_HEIGHT
-        );
+            &widths,theme::PRODUCT_TABLE_ROW_HEIGHT,theme::SPACE_8);
         for i in 0..widths.len(){
             assert_eq!(header[i].left(),row[i].left());
             assert_eq!(header[i].right(),row[i].right());
