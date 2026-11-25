@@ -168,7 +168,9 @@ fn category_option_row(
     let measure=|value:&str|ui.painter().layout_no_wrap(
         value.to_owned(),font.clone(),theme::TEXT
     ).size().x;
+    let full=labels.join(" > ");
     let (ancestors,leaf)=fitted_category_row_text(&labels,available,measure);
+    let overflow=format!("{ancestors}{leaf}")!=full;
     let text_left=rect.left()+theme::SPACE_8;
     let painter=ui.painter().with_clip_rect(rect.shrink(1.0));
     let mut x=text_left;
@@ -189,7 +191,7 @@ fn category_option_row(
         egui::pos2(rect.right()-theme::SPACE_12,rect.center().y),
         Align2::CENTER_CENTER,"›",font,theme::SECONDARY
     );
-    response
+    components::overflow_tooltip(response,overflow,&full)
 }
 
 fn crumb(
@@ -459,10 +461,9 @@ fn menu_body(
             }
             for node in items{
                 let path=chain(index,&node.id);
-                let full=full_name(index,&path);
                 let response=category_option_row(
                     list,node,index,&path,list_width,selected,searching
-                ).on_hover_text(&full);
+                );
                 if response.clicked(){next_path=Some(path);}
             }
         });
