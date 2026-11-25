@@ -4579,7 +4579,10 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                         review.model_receiver=None;
                     }
                     Ok(Err(error))=>{
-                        review.model_error=Some(error);
+                        review.model_error=Some(format!(
+                            "학습 모델을 읽지 못해 기본 OCR 모드를 유지합니다. {}",
+                            user_error::display("reception.ocr_learning",&error)
+                        ));
                         review.model_receiver=None;
                     }
                     Err(mpsc::TryRecvError::Disconnected)=>{
@@ -4598,6 +4601,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
         let dialog_rect=components::modal_ocr_review_rect(work_area);
         let dialog_size=dialog_rect.size();
         if let Some(review)=self.ocr_review.as_mut() {
+            floating_notice::section(ctx,"reception.ocr_learning",dialog_rect);
             components::modal_window(
                 "OCR 문자 인식 검토","egui-ocr-review",work_area
             )
@@ -4720,17 +4724,17 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                             toolbar.add(egui::Label::new(
                                 typography::subsection_heading("인식된 텍스트 · 직접 수정")
                             ).truncate());
-                            let help=review.model_error.as_deref()
-                                .unwrap_or("확정된 OCR 원문과 수정 결과는 항상 학습 자료로 기록됩니다. 이 옵션은 저장된 정정 패턴을 이번 분석에 사용할지만 결정합니다.");
                             let mut changed=false;
                             toolbar.with_layout(
                                 Layout::right_to_left(Align::Center),
                                 |option|{
-                                    changed=components::checkbox(
+                                    let response=components::checkbox(
                                         option,
                                         &mut review.learned_analysis_enabled,
                                         "학습된 분석 사용 (시험 기능)",true
-                                    ).on_hover_text(help).changed();
+                                    );
+                                    floating_notice::clicked(option.ctx(),"reception.ocr_learning",&response);
+                                    changed=response.changed();
                                 },
                             );
                             if changed {
@@ -7125,7 +7129,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                             }else if group.vat_included>0{"부가세 포함"}
                             else{"부가세 별도"};
                             components::reception_total_footer(
-                                body,ship.order_total,Some(ship.shipment_count),vat,""
+                                body,ship.order_total,Some(ship.shipment_count),vat
                             );
                         }
                     );
@@ -7360,7 +7364,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                             else{"부가세 별도"};
                             components::reception_total_footer(
                                 body,preview.and_then(|quote|quote["total"].as_i64()),
-                                Some(recipients.len()),vat,""
+                                Some(recipients.len()),vat
                             );
                         }
                     );
@@ -7655,10 +7659,6 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                                 if cells.remove_clicked{
                                                     item_remove_popup=Some((recipient_id.to_owned(),item_id.to_owned()));
                                                 }
-                                                components::reception_item_issue_values(
-                                                    items_ui,&cells.product,
-                                                    item["issues"].as_array().map(Vec::as_slice).unwrap_or(&[])
-                                                );
                                                 for (response,field) in [
                                                     (&cells.product,"product"),
                                                     (&cells.quantity,"quantity"),
@@ -7884,9 +7884,6 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                         .filter(|quote|quote.get("sourceRaw")
                             .and_then(serde_json::Value::as_str)
                             ==Some(self.raw_source.as_str()));
-                    let note=if preview.is_some(){
-                        "예상 청구 금액"
-                    }else{""};
                     let total=preview.and_then(|v|v.get("total"))
                         .and_then(serde_json::Value::as_i64);
                     let recipients=self.analysis.as_ref()
@@ -7902,17 +7899,8 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                             else if inclusive>0{"부가세 일부 포함"}
                             else{"부가세 별도"})
                     }).unwrap_or("—");
-                    let pending=preview
-                        .and_then(|quote|quote.get("pendingRecipients"))
-                        .and_then(serde_json::Value::as_array);
-                    let footer_note=if total.is_none(){
-                        if let Some(rows)=pending.filter(|rows|!rows.is_empty()){
-                            format!("{note} · 배송 {}건 중 {}건 상품금액 또는 운임 미확정",
-                                shipment_count.unwrap_or(0),rows.len())
-                        }else{note.to_owned()}
-                    }else{note.to_owned()};
                     components::reception_total_footer(
-                        body,total,shipment_count,vat_label,&footer_note
+                        body,total,shipment_count,vat_label
                     );
 
                     });
@@ -9506,6 +9494,12 @@ impl eframe::App for BandoEgui {
         self.frameless_resize(ctx);
         // Tooltip-order overlay is drawn LAST, on top of the current modal,
         // without allocating space in any card, row or scrollbar viewport.
+        floating_notice::sync(ctx,"ocr_learning_error","reception.ocr_learning",
+            floating_notice::Tone::Error,self.ocr_review.as_ref().and_then(|review|review.model_error.as_deref()));
+        if self.manual_workspace.is_none(){
+            floating_notice::sync(ctx,"manual_workspace_error","reception.manual",
+                floating_notice::Tone::Error,None);
+        }
         floating_notice::show(ctx);
         // Developer console only; never expose performance diagnostics as
         // product notifications or include any order/customer data.
