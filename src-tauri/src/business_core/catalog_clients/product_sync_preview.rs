@@ -335,7 +335,7 @@ pub(super) fn preview(payload:&Value)->Result<Value,String>{
             }
         }
     }
-    for (index,entry) in option_sources.iter().enumerate(){
+    for entry in option_sources.iter(){
         let cells=raw(entry);
         if !cells.iter().any(|c|!c.is_empty()){continue}
         let id=cell(&cells,0);let key=cell(&cells,1);

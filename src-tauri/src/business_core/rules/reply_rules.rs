@@ -2,7 +2,7 @@
 //! Proposal recognition and address parsing remain session 1 inputs.
 use serde_json::{json,Value};
 use std::collections::HashSet;
-use super::{field,find_by_id,flag,has_value,req,required_str,rows,set,str_field};
+use super::{field,flag,req,required_str,rows,set,str_field};
 
 pub(super) fn billing(order:&Value,state:&Value,reason:&str,now:&str)->Result<Value,String>{
     let client=super::workflow::party(state,order)

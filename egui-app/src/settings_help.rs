@@ -2,7 +2,7 @@
 //! Matches React HelpTooltip: 500ms hover, 180ms leave, mouse click pin,
 //! outside pointer/keyboard/wheel dismissal. It is NOT an alert or modal.
 use crate::{theme,typography};
-use eframe::egui::{self,Align,Align2,Color32,Pos2,Rect,Sense,Stroke,Ui,Vec2};
+use eframe::egui::{self,Align2,Pos2,Rect,Sense,Stroke,Ui,Vec2};
 use std::time::{Duration,Instant};
 
 /// Temporarily hide every circular '?' contextual-help control across the

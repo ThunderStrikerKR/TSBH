@@ -3,8 +3,7 @@
 //! The native egui view owns only date/search presentation, sort, expansion,
 //! clipboard copy and virtualized fixed-height rows.
 use crate::{
-    components::{self, calendar_dates, calendar_month_start as month_start,
-        date_calendar, shift_calendar_month},
+    components::{self, calendar_month_start as month_start},
     gateway::{BandoGateway, ReadOperation},
     settings_help, theme, typography,
 };
@@ -735,7 +734,7 @@ pub(crate) fn date_range_error(from:&str,to:&str)->Option<&'static str>{
 /// one normal, sequential left-to-right layout; the parent cursor advances
 /// only for its explicitly reserved 36pt rectangle.
 fn range_date_picker_rtl(
-    ui:&mut Ui,label:&str,all_dates:bool,date:&mut String,month:&mut NaiveDate,
+    ui:&mut Ui,all_dates:bool,date:&mut String,month:&mut NaiveDate,
     id:&'static str
 )->bool{
     const PREV:f32=theme::MANAGEMENT_DATE_NAV_BUTTON_WIDTH;
@@ -828,7 +827,7 @@ fn history_date_range_start(
     let mut changed=history_basis_dropdown(ui,basis);
     let all_dates=from.is_empty()&&to.is_empty();
     changed|=range_date_picker_rtl(
-        ui,"시작일",all_dates,from,from_month,"order-history-date-from-calendar"
+        ui,all_dates,from,from_month,"order-history-date-from-calendar"
     );
     changed
 }
@@ -850,7 +849,7 @@ fn history_date_range_end(
     );
     let all_dates=from.is_empty()&&to.is_empty();
     let mut changed=range_date_picker_rtl(
-        ui,"종료일",all_dates,to,to_month,"order-history-date-to-calendar"
+        ui,all_dates,to,to_month,"order-history-date-to-calendar"
     );
     if theme::action(ui,"기간 전체",theme::ButtonRole::Standard,
         !from.is_empty()||!to.is_empty()).clicked(){
@@ -893,7 +892,7 @@ pub(crate) fn excel_export_date_controls(
                 line.set_width(first.width());
                 line.spacing_mut().item_spacing.x=theme::MANAGEMENT_DATE_CONTROL_GAP;
                 let all_dates=from.is_empty()&&to.is_empty();
-                changed|=range_date_picker_rtl(line,"시작일",all_dates,from,from_month,
+                changed|=range_date_picker_rtl(line,all_dates,from,from_month,
                     "excel-export-from-calendar");
             });
         ui.scope_builder(UiBuilder::new().id_salt("excel-export-to-line")
@@ -907,7 +906,7 @@ pub(crate) fn excel_export_date_controls(
     }else{
         let all_dates=from.is_empty()&&to.is_empty();
         changed|=range_date_picker_rtl(
-            ui,"시작일",all_dates,from,from_month,"excel-export-from-calendar");
+            ui,all_dates,from,from_month,"excel-export-from-calendar");
         changed|=excel_export_date_end(ui,from,to,to_month);
     }
     if changed{
@@ -934,7 +933,7 @@ fn excel_export_date_end(
     );
     let all_dates=from.is_empty()&&to.is_empty();
     let mut changed=range_date_picker_rtl(
-        ui,"종료일",all_dates,to,to_month,"excel-export-to-calendar"
+        ui,all_dates,to,to_month,"excel-export-to-calendar"
     );
     if theme::action(ui,"기간 전체",theme::ButtonRole::Standard,
         !from.is_empty()||!to.is_empty()).clicked(){
@@ -1604,6 +1603,7 @@ impl OrderHistoryManager {
 #[cfg(test)]
 mod tests{
     use super::*;
+    use crate::components::{calendar_dates,shift_calendar_month};
     #[test]
     fn expanded_order_groups_two_recipients_and_preserves_full_delivery_details(){
         let snapshot=HistorySnapshot{

@@ -2,7 +2,7 @@
 //! tauri-stage2-products.css own the interaction and overlay layout.
 //! All add/rename/move/delete decisions are delegated to catalog_clients.
 use crate::{category_dropdown,components,theme,typography};
-use eframe::egui::{self,Align,Context,Layout,Rect,Response,Sense,Ui,Vec2};
+use eframe::egui::{self,Align,Context,Layout,Rect,Sense,Ui,Vec2};
 use serde_json::{json,Value};
 use std::collections::{HashMap,HashSet};
 

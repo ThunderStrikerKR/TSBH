@@ -881,7 +881,7 @@ impl FreightManager {
                     &mut self.create_group_open,&mut self.rename_target,
                     &mut self.delete_target,&mut self.rate_editor,
                     &mut self.basis_target,&mut self.rate_sort,
-                    &mut self.rate_search,&mut self.error,enabled,&mut action
+                    &mut self.rate_search,&mut self.error,enabled
                 ),
                 FreightTab::History => {
                     if SHOW_PREVIOUS_GROUP_FREIGHT_HISTORY {
@@ -1477,8 +1477,6 @@ impl FreightManager {
             let table_header=components::management_sticky_table_header(
                 section,theme::FREIGHT_ASSIGNMENT_TABLE_MIN_WIDTH
             );
-            let viewport_width=table_header.viewport_width;
-            let scrollbar_gutter=table_header.scrollbar_gutter;
             let table_width=table_header.table_width;
             let header_rect=table_header.header_rect;
             let header_content_rect=table_header.header_content_rect;
@@ -1971,7 +1969,6 @@ impl FreightManager {
         basis: &mut Option<Option<String>>,
         sort: &mut Option<RateSort>,search:&mut String,
         error: &mut Option<String>,enabled:bool,
-        action: &mut Option<(String,Value)>,
     ) {
         let group_rules=&projection["editableRules"];
         // A single group table replaces the duplicate group cards + audit grid.

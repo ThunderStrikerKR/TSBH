@@ -445,7 +445,7 @@ impl AutomaticMessageManager {
                             "수정됨"
                         }else{"기본 문구"};
                         if components::management_chooser_row(
-                            list,def.id,def.label,caption,index==self.selected
+                            list,def.label,caption,index==self.selected
                         ).clicked(){
                             *target=Some(Destination::Template(index));
                         }
@@ -484,7 +484,7 @@ impl AutomaticMessageManager {
                         "안내문 등록됨"
                     }else{"안내문 미등록"};
                     let choice=components::management_chooser_row(
-                        list,id,product_name(product),caption,self.selected_product==id
+                        list,product_name(product),caption,self.selected_product==id
                     );
                     #[cfg(test)]
                     components::general_screen_geometry_tests::record("notice product row",choice.rect);

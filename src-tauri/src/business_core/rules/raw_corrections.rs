@@ -2,7 +2,7 @@
 //! The original recognition parser is a separately injected service output.
 use serde_json::{json,Value};
 use std::collections::HashSet;
-use super::{field,find_by_id,flag,has_value,req,required_str,rows,set,str_field};
+use super::{field,flag,has_value,req,required_str,rows,set,str_field};
 
 fn correctable(kind:&str)->bool {
     ["NAME","ADDRESS","CONTACT","CONTACT_INVALID","MODEL",

@@ -1,6 +1,6 @@
 //! The right-hand workflow board. Layout/hover/selection only; no business rules.
 //! Native Rust provides groups, amounts, freight, stage and shipment identity.
-use eframe::egui::{self, Align, Frame, Id, Layout, Pos2, Rect, Ui, Vec2};
+use eframe::egui::{self, Id, Pos2, Rect, Ui, Vec2};
 use std::time::{Duration, Instant};
 use crate::{components, preview_store::WorkingReception, source_highlight, theme, typography};
 use std::collections::{HashMap,HashSet};

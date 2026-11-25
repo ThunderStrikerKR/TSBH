@@ -2,7 +2,6 @@
 //! The source is the original TS previewRegistrationWorkbook row algorithm.
 //! Inputs contain only worksheet text, unsafe-cell marker and caller-supplied IDs.
 use serde_json::{json, Value,Map};
-use unicode_normalization::UnicodeNormalization;
 use std::collections::{HashMap,HashSet};
 use super::{field,items,normalized_color,product_url_ok,validate_product};
 use super::registration::{registry_key,existing_matches};

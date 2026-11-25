@@ -48,7 +48,7 @@ fn amount(value:&Value)->String {
         None=>"미확인".into(),
     }
 }
-fn confirm(state:&Value,record:&Value,row:&Value)->Result<String,String> {
+fn confirm(state:&Value,row:&Value)->Result<String,String> {
     if s(row,"shipmentId").is_empty() ||
         !s(row,"issue").contains("충돌") || truthy(field(row,"applied")) {
         return Err("승인 가능한 회신 충돌 행을 찾지 못했습니다.".into());
@@ -92,7 +92,7 @@ pub(super) fn project(payload:&Value)->Result<Value,String>{
                 !s(row,"shipmentId").is_empty() &&
                 s(row,"issue").contains("충돌") && !later;
             let (confirmation,confirmation_error)=if candidate{
-                match confirm(state,record,row){
+                match confirm(state,row){
                     Ok(text)=>(Some(text),None),
                     Err(error)=>(None,Some(error))
                 }

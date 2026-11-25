@@ -2263,7 +2263,7 @@ impl BandoEgui {
         });
     }
 
-    fn poll_working_sync(&mut self, ctx:&egui::Context) {
+    fn poll_working_sync(&mut self) {
         let value=self.working_sync.as_ref().map(|sync|sync.receiver.try_recv());
         let outcome=match value {
             Some(Ok(value))=>Some(value),
@@ -4037,7 +4037,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
     /// Async results are accepted only for the exact recognition request,
     /// working receipt, source, Kakao chat, proposed client and owner state.
     /// A manual selection in progress cancels any outstanding automatic edit.
-    fn poll_auto_client_change(&mut self,ctx:&egui::Context) {
+    fn poll_auto_client_change(&mut self) {
         let received=self.auto_client_change.as_ref()
             .map(|pending|pending.receiver.try_recv());
         let result=match received {
@@ -7322,7 +7322,6 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                                 }
                                                 components::reception_items_to_freight_gap(contents);
                                                 let origin=row["dispatchOrigin"].as_str();
-                                                let recipient_id=reception_service::text(row,"id");
                                                 let fee=indexed_billable_freight(quote_index.as_deref(),row);
                                                 let collect=row["freightCode"].as_str()
                                                     .map(|code|code=="020").unwrap_or(false);
@@ -8729,8 +8728,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                 }else{close=true;}
             }
             WorkflowDialog::DeletePending(id)=>{
-                let draft=self.drafts.iter().find(|d|d.id==id).cloned();
-                if let Some(draft)=draft{
+                if self.drafts.iter().any(|d|d.id==id){
                     components::show_decision_window(ctx,"미확정 발주서 삭제","egui-workflow-delete-pending",work_area,|ui|{
                         components::decision_workspace(ui,|decision|{
                             close=decision.header("미확정 발주서 삭제","취소",true
@@ -9307,7 +9305,7 @@ impl eframe::App for BandoEgui {
             }
         }
         self.poll_source_analysis(ctx);
-        self.poll_auto_client_change(ctx);
+        self.poll_auto_client_change();
         self.poll_pricing_basis_check(ctx);
         if self.settings_view.as_mut().is_some_and(|view|view.take_restored()){
             // A restored operational DB invalidates every prior projected
@@ -9367,7 +9365,7 @@ impl eframe::App for BandoEgui {
         self.poll_reception_metadata(ctx);
         self.poll_workflow_board(ctx);
         self.poll_client_change(ctx);
-        self.poll_working_sync(ctx);
+        self.poll_working_sync();
         self.poll_inline_change(ctx);
         self.poll_vat_change(ctx);
         self.poll_remote_recheck(ctx);

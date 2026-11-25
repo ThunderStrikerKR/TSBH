@@ -63,7 +63,7 @@ fn used_accounts(clients:&Value)->Vec<String>{
 }
 fn connection()->Result<Connection,String>{
     let store=PreviewStore::initialize()?;
-    let mut conn=Connection::open(store.path())
+    let conn=Connection::open(store.path())
         .map_err(|_|"격리 설정 DB를 열지 못했습니다.".to_owned())?;
     conn.busy_timeout(Duration::from_secs(5)).map_err(|e|e.to_string())?;
     let defaults=local_defaults().to_string();

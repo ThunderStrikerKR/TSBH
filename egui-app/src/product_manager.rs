@@ -14,7 +14,7 @@ use crate::{
     latest_job::LatestJob,
     product_excel_ui::ProductExcelUi,
     product_images::{self,ProductImageCache},
-    settings_help, theme, typography,
+    theme, typography,
 };
 use eframe::egui::{self, Align, Context, Layout, Sense, Ui, UiBuilder, Rect, Pos2, Vec2};
 use serde_json::{json, Value};
@@ -711,9 +711,8 @@ impl ProductManager {
         let written=self.writing.as_ref().map(|job|job.receiver.try_recv());
         match written {
             Some(Ok(Ok(catalog)))=>{
-                let mut price_job=false;
                 if let Some(job)=self.writing.take(){
-                    price_job=job.kind=="set_price";
+                    let price_job=job.kind=="set_price";
                     if let Some(update)=job.price_update.as_ref(){
                         update.apply_to_products(&mut self.products);
                         if let Some(key)=job.key.as_deref(){

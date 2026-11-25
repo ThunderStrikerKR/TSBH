@@ -2,7 +2,7 @@
 //! Only the four explicit brand edit fields live here; normalize/validate
 //! and mutate catalog brands with original Rust catalog_clients::upsert_brand.
 use crate::{components,theme,typography};
-use eframe::egui::{Vec2,self,Align,Context,Layout,Rect,Ui};
+use eframe::egui::{Vec2,Align,Context,Layout,Rect,Ui};
 use serde_json::{json,Value};
 
 fn field<'a>(row:&'a Value,key:&str)->&'a str{

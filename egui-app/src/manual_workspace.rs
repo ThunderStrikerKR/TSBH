@@ -862,7 +862,7 @@ pub fn apply_inline(
         .and_then(Value::as_array).cloned().unwrap_or_default();
     let mut cell=json!({"recipientId":change.recipient_id,"field":change.field});
     if let Some(item)=change.item_id.as_deref(){cell["itemId"]=json!(item);}
-    let mut action=if change.item_id.is_some(){
+    let action=if change.item_id.is_some(){
         match change.field.as_str(){
             "quantity"=>"native_confirm_quantity",
             "approveOne"=>"native_approve_one",

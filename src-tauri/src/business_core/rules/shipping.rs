@@ -1,6 +1,6 @@
 //! Port of shippingBundles / recommendShipping in src/shipping.ts.
 //! Tariff selection is read-only; historical shipment charges are not rewritten.
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 use serde_json::{json, Value};
 use super::{checked_sum, field, find_by_id, flag, has_value, rows, safe, str_field};
 

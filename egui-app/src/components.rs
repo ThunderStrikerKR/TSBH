@@ -3483,12 +3483,12 @@ pub fn reception_section_with_header(
         let (_transition,_divider)=section_divider_with_top_gap(ui,theme::SECTION_DIVIDER_GAP);
         #[cfg(test)]
         general_screen_geometry_tests::record("source divider",_divider);
-        let body=ui.scope(|body|{
+        let _body=ui.scope(|body|{
             body.spacing_mut().item_spacing.y=body_item_spacing;
             content(body);
         });
         #[cfg(test)]
-        general_screen_geometry_tests::record("source body",body.response.rect);
+        general_screen_geometry_tests::record("source body",_body.response.rect);
     });
     #[cfg(test)]
     general_screen_geometry_tests::record(reception_geometry_role(title,false),_card.response.rect);
@@ -5367,7 +5367,7 @@ pub fn management_tabs(ui:&mut Ui,labels:&[(&str,bool,bool)]) -> Option<usize> {
 /// Painting is confined to the reserved fixed-height rectangle, so hover
 /// and selected styles never change the following row positions.
 pub fn management_chooser_row(
-    ui:&mut Ui,id:&str,title:&str,status:&str,selected:bool
+    ui:&mut Ui,title:&str,status:&str,selected:bool
 )->Response{
     let width=ui.available_width().max(1.0);
     let (rect,response)=ui.allocate_exact_size(

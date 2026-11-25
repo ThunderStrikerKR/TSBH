@@ -1,6 +1,8 @@
 //! Native factory reply inbox: scan only the saved configured directory,
 //! preserve original bytes, and derive every mutation inside the native rules.
-use crate::{business_state,excel_service,gateway::rules,native_workbooks};
+use crate::{business_state,excel_service,native_workbooks};
+#[cfg(test)]
+use crate::gateway::rules;
 use chrono::{FixedOffset,Utc};
 use eframe::egui::Context;
 use rusqlite::{Connection,OpenFlags};

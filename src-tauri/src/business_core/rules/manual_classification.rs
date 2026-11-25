@@ -3,7 +3,6 @@
 //! application of rows, evidence ownership and issue resolution updates.
 use serde_json::{json, Value, Map};
 use super::{field, has_value, req, required_str, rows, set, str_field};
-use std::collections::HashSet;
 
 // Exact single-cell quantity syntax from parser.ts::quantities and
 // manual-classification.ts::setManualValue. A draft can contain a partial

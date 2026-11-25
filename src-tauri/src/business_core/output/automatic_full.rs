@@ -144,7 +144,7 @@ fn provisional_notice(state:&Value,item:&Value)->String{
     }
     string(&state["settings"]["provisionalProductNotices"],pid).trim().to_string()
 }
-fn price_issues(state:&Value,view:&Value,client:&Value,account:Option<&Value>,
+fn price_issues(view:&Value,client:&Value,account:Option<&Value>,
     amounts:&[(Value,Value)])->Result<Vec<String>,String>{
     let mut issues=Vec::new();
     if string(client,"id").is_empty(){issues.push("거래처 선택 필요".into());}
@@ -314,7 +314,7 @@ pub(super) fn execute(payload:&Value)->Result<Value,String>{
             payment_data["includeLinks"]=json!(false);
             payment(&payment_data,&state["settings"])?
         };
-    let issues=price_issues(state,&view,&client,account,&amounts)?;
+    let issues=price_issues(&view,&client,account,&amounts)?;
     let greeting=render(&state["settings"],"paymentGreeting",&Value::Null)?;
     let pay=string(&rendered,"payment");
     let payment_text=if pay.starts_with(&greeting){pay[greeting.len()..].trim_start()}
