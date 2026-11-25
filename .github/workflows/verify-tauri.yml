@@ -30,6 +30,19 @@ jobs:
       - name: Rust receipt boundary unit tests (no Tauri GUI libraries)
         run: cargo test --manifest-path tests/reception-rust/Cargo.toml
 
+  shared-native-backup:
+    name: Shared Rust SQLite backup and restore safety
+    runs-on: windows-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: crates/bando-data-access -> target
+      - name: Verify isolated native backup restore retention and transaction safety
+        run: cargo test --manifest-path crates/bando-data-access/Cargo.toml backup_service::operational_backup_tests -- --nocapture
+
   windows-native-sqlite:
     name: Windows SQLite persistence and Rust tests
     runs-on: windows-latest

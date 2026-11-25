@@ -220,3 +220,219 @@ pub fn restore_backup(conn: &mut Connection, base: &Path, filename: &str)
     restore_selected(conn, base, filename)
 }
 
+
+
+#[cfg(test)]
+mod operational_backup_tests {
+    use super::*;
+    use serde_json::Value;
+    use std::sync::atomic::{AtomicUsize,Ordering};
+
+    // Each test owns an isolated directory. Never resolves an app workspace
+    // or reads a user DB/environment variable.
+    struct Temp(PathBuf);
+    impl Temp {
+        fn new()->Self{
+            static SEQ:AtomicUsize=AtomicUsize::new(0);
+            let path=std::env::temp_dir().join(format!("bando-native-backup-{}-{}-{}",
+                std::process::id(),SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos(),
+                SEQ.fetch_add(1,Ordering::Relaxed)));
+            fs::create_dir(&path).unwrap();
+            Self(path)
+        }
+    }
+    impl Drop for Temp{
+        fn drop(&mut self){let _=fs::remove_dir_all(&self.0);}
+    }
+
+    fn fixture(base:&Path)->Connection{
+        let mut conn=Connection::open(base.join("synthetic.sqlite")).unwrap();
+        conn.execute_batch(r#"
+            PRAGMA journal_mode=WAL;
+            PRAGMA wal_autocheckpoint=0;
+            PRAGMA foreign_keys=ON;
+            CREATE TABLE app_state(id INTEGER PRIMARY KEY,payload TEXT);
+            CREATE TABLE product_index(id TEXT PRIMARY KEY,code TEXT,name TEXT,payload TEXT);
+            CREATE TABLE order_index(id TEXT PRIMARY KEY,client_id TEXT,created_at TEXT,confirmed_at TEXT,status TEXT);
+            CREATE TABLE receipt_archive(id TEXT PRIMARY KEY,order_id TEXT,record TEXT);
+        "#).unwrap();
+        recovery::create_v2_schema_for_tests(&conn).unwrap();
+        recovery::initialize_working(&conn).unwrap();
+        conn.execute("INSERT INTO core_schema(key,version) VALUES('business-core',2)",[]).unwrap();
+        let state=json!({
+            "revision":7,"aliases":[{"id":"alias","text":"합성 별칭","productId":"p","variantId":"v"}],
+            "queue":[],"exports":[],"settings":{"accounts":[],"operatorName":"합성 담당자"},
+            "workflow":{"shipments":[{"id":"s","orderId":"o","recipientId":"r"}],
+                "events":[{"id":"event","action":"합성 원문 기록"}],"payments":[]},
+            "products":[{"id":"p","code":"709","name":"합성 상품","defaultColor":"Black",
+                "variants":[{"id":"v","color":"Black","wholesale":10000,"semi":12000,"retail":15000}]}],
+            "clients":[{"id":"c","name":"합성 거래처","tier":"special","address":"합성 주소",
+                "phone":"010-0000-0000","overrides":{"v":9000}}],
+            "orders":[{"id":"o","clientId":"c","raw":"합성 주문 원문","status":"STATEMENT",
+                "createdAt":"2026-11-13T09:00:00Z",
+                "recipients":[{"id":"r","name":"합성 수취인","items":[{
+                    "id":"i","productId":"p","variantId":"v","unitPrice":9000,"quantity":2}]}]}]
+        });
+        let tx=conn.transaction().unwrap();
+        crate::store_v2_relational(&tx,&state).unwrap();
+        tx.execute("INSERT INTO product_index VALUES('p','709','합성 상품',?1)",
+            [state["products"][0].to_string()]).unwrap();
+        tx.execute("INSERT INTO order_index VALUES('o','c','2026-11-13T09:00:00Z',NULL,'STATEMENT')",[]).unwrap();
+        let mut envelope=state;
+        recovery::strip_core(&mut envelope);
+        tx.execute("INSERT INTO app_state VALUES(1,?1)",[envelope.to_string()]).unwrap();
+        tx.execute("INSERT INTO receipt_archive VALUES('receipt:o','o',?1)",
+            [json!({"original":"합성 주문 원문"}).to_string()]).unwrap();
+        tx.execute("INSERT INTO reception_working_orders VALUES('draft','2026-11-13',?1)",
+            [json!({"id":"draft","raw":"합성 임시 발주"}).to_string()]).unwrap();
+        tx.execute("INSERT INTO reception_confirmed_edits VALUES('o','2026-11-13',?1,?2)",
+            [json!({"id":"o","raw":"이전 원문"}).to_string(),
+             json!({"id":"o","raw":"합성 수정안"}).to_string()]).unwrap();
+        tx.commit().unwrap();
+        validate_database(&conn).unwrap();
+        conn
+    }
+    fn auxiliary(conn:&Connection)->Vec<String>{
+        [
+            "SELECT record FROM receipt_archive WHERE id='receipt:o'",
+            "SELECT payload FROM reception_working_orders WHERE id='draft'",
+            "SELECT base_payload FROM reception_confirmed_edits WHERE id='o'",
+            "SELECT payload FROM reception_confirmed_edits WHERE id='o'",
+            "SELECT payload FROM product_index WHERE id='p'",
+            "SELECT status FROM order_index WHERE id='o'"
+        ].iter().map(|sql|conn.query_row(sql,[],|r|r.get::<_,String>(0)).unwrap()).collect()
+    }
+
+    #[test]
+    fn full_wal_backup_restore_preserves_core_auxiliary_and_pre_restore_snapshot(){
+        let temp=Temp::new();
+        let mut conn=fixture(&temp.0);
+        let before=get_snapshot(&conn).unwrap();
+        let before_aux=auxiliary(&conn);
+        let backup=manual_backup(&conn,&temp.0).unwrap();
+        {
+            let saved=read_backup(Path::new(&backup)).unwrap();
+            assert_eq!(get_snapshot(&saved).unwrap(),before);
+            assert_eq!(auxiliary(&saved),before_aux);
+        }
+        let changed=crate::update_v2_snapshot(&mut conn,7,false,|current|{
+            let mut next=current.clone();
+            next["products"][0]["variants"][0]["retail"]=json!(16000);
+            next["settings"]["operatorName"]=json!("변경 담당자");
+            Ok(next)
+        }).unwrap();
+        assert_eq!(changed["revision"],8);
+        conn.execute("UPDATE reception_working_orders SET payload=?1 WHERE id='draft'",
+            [json!({"id":"draft","raw":"변경 임시 발주"}).to_string()]).unwrap();
+        conn.execute("UPDATE receipt_archive SET record=?1 WHERE id='receipt:o'",
+            [json!({"original":"합성 변경 기록"}).to_string()]).unwrap();
+        conn.execute("UPDATE reception_confirmed_edits SET payload=?1 WHERE id='o'",
+            [json!({"id":"o","raw":"변경 수정안"}).to_string()]).unwrap();
+        let changed_aux=auxiliary(&conn);
+        let safety=restore_backup(&mut conn,&temp.0,&backup).unwrap();
+        assert!(Path::new(&safety).file_name().unwrap().to_string_lossy().starts_with("pre-restore-"));
+        {
+            let saved=read_backup(Path::new(&safety)).unwrap();
+            assert_eq!(get_snapshot(&saved).unwrap(),changed);
+            assert_eq!(auxiliary(&saved),changed_aux);
+        }
+        let mut restored=get_snapshot(&conn).unwrap();
+        assert_eq!(restored["revision"],9);
+        assert_eq!(auxiliary(&conn),before_aux);
+        restored["revision"]=before["revision"].clone();
+        assert_eq!(restored,before);
+        // A pre-restore editor cannot overwrite a newer restored revision.
+        assert!(crate::write_v2_snapshot(&mut conn,changed,8,false).is_err());
+        drop(conn);
+        let reopened=Connection::open(temp.0.join("synthetic.sqlite")).unwrap();
+        validate_database(&reopened).unwrap();
+        assert_eq!(get_snapshot(&reopened).unwrap()["revision"],9);
+        assert_eq!(auxiliary(&reopened),before_aux);
+    }
+
+    #[test]
+    fn invalid_and_outside_backups_are_rejected_before_any_restore_write(){
+        let temp=Temp::new();
+        let mut conn=fixture(&temp.0);
+        let before=get_snapshot(&conn).unwrap();
+        let before_aux=auxiliary(&conn);
+        let saved=manual_backup(&conn,&temp.0).unwrap();
+        let outside=temp.0.join("outside.sqlite");
+        fs::copy(&saved,&outside).unwrap();
+        let corrupt=backup_dir(&temp.0).join("corrupt.sqlite");
+        fs::write(&corrupt,b"not a sqlite database").unwrap();
+        let invalid=backup_dir(&temp.0).join("missing-price.sqlite");
+        fs::copy(&saved,&invalid).unwrap();
+        {
+            let invalid_db=Connection::open(&invalid).unwrap();
+            invalid_db.execute("DELETE FROM core_product_prices WHERE product_id='p'",[]).unwrap();
+        }
+        let count=list_backups(&temp.0).unwrap().len();
+        for path in [&outside,&corrupt,&invalid] {
+            assert!(restore_backup(&mut conn,&temp.0,path.to_str().unwrap()).is_err());
+            assert_eq!(get_snapshot(&conn).unwrap(),before);
+            assert_eq!(auxiliary(&conn),before_aux);
+        }
+        assert_eq!(list_backups(&temp.0).unwrap().len(),count);
+    }
+
+    #[test]
+    fn automatic_backup_retention_preserves_monthly_manual_and_safety_files(){
+        let temp=Temp::new();
+        let conn=fixture(&temp.0);
+        let day=|y,m,d|NaiveDate::from_ymd_opt(y,m,d).unwrap();
+        let monthly=automatic_backup_if_needed(&conn,&temp.0,day(2026,10,1)).unwrap().unwrap();
+        assert!(Path::new(&monthly).file_name().unwrap().to_string_lossy().starts_with("monthly-20261001-"));
+        assert!(automatic_backup_if_needed(&conn,&temp.0,day(2026,10,1)).unwrap().is_none());
+        let expired=automatic_backup_if_needed(&conn,&temp.0,day(2026,10,2)).unwrap().unwrap();
+        let boundary=automatic_backup_if_needed(&conn,&temp.0,day(2026,10,3)).unwrap().unwrap();
+        let manual=manual_backup(&conn,&temp.0).unwrap();
+        let safety=write_backup(&conn,&temp.0,"pre-restore",day(2026,10,1)).unwrap();
+        let unknown=backup_dir(&temp.0).join("legacy-unknown.sqlite");
+        fs::copy(&manual,&unknown).unwrap();
+        let next=automatic_backup_if_needed(&conn,&temp.0,day(2026,11,1)).unwrap().unwrap();
+        assert!(Path::new(&next).file_name().unwrap().to_string_lossy().starts_with("monthly-20261101-"));
+        assert!(!Path::new(&expired).exists());
+        for path in [Path::new(&monthly),Path::new(&boundary),Path::new(&manual),&safety,&unknown,Path::new(&next)]{
+            assert!(path.is_file(),"preserve {}",path.display());
+            assert!(read_backup(path).is_ok());
+        }
+    }
+
+    #[test]
+    fn native_revision_compare_and_swap_rejects_stale_independent_writer(){
+        let temp=Temp::new();
+        let mut first=fixture(&temp.0);
+        let mut second=Connection::open(temp.0.join("synthetic.sqlite")).unwrap();
+        let old=get_snapshot(&second).unwrap();
+        let written=crate::update_v2_snapshot(&mut first,7,false,|state|{
+            let mut next=state.clone();
+            next["settings"]["operatorName"]=json!("첫 번째 저장");
+            Ok(next)
+        }).unwrap();
+        assert_eq!(written["revision"],8);
+        let mut stale=old;
+        stale["settings"]["operatorName"]=json!("오래된 저장");
+        assert!(crate::write_v2_snapshot(&mut second,stale,7,false).is_err());
+        assert_eq!(get_snapshot(&second).unwrap(),written);
+    }
+
+    #[test]
+    fn failed_envelope_write_rolls_back_relational_price_and_legacy_index(){
+        let temp=Temp::new();
+        let mut conn=fixture(&temp.0);
+        let before=get_snapshot(&conn).unwrap();
+        let before_aux=auxiliary(&conn);
+        conn.execute_batch("CREATE TRIGGER fail_envelope BEFORE UPDATE ON app_state
+            BEGIN SELECT RAISE(ABORT,'synthetic write failure'); END;").unwrap();
+        let result=crate::update_v2_snapshot(&mut conn,7,false,|state|{
+            let mut next=state.clone();
+            next["products"][0]["variants"][0]["retail"]=json!(99999);
+            Ok(next)
+        });
+        assert!(result.is_err());
+        assert_eq!(get_snapshot(&conn).unwrap(),before);
+        assert_eq!(auxiliary(&conn),before_aux);
+        validate_database(&conn).unwrap();
+    }
+}
