@@ -8,7 +8,8 @@ import {spawnSync} from "node:child_process";
 import {fileURLToPath} from "node:url";
 import {tsImport} from "tsx/esm/api";
 
-const {orderClient,repriceOrder}=await tsImport("../../../src/domain.ts",import.meta.url);
+const {orderClient}=await tsImport("../../../src/domain.ts",import.meta.url);
+const {repriceOrder}=await tsImport("../oracles/reprice-order.ts",import.meta.url);
 const {billingSnapshot}=await tsImport("../oracles/replies.ts",import.meta.url);
 const {recommendShipping}=await tsImport("../oracles/legacy-shipping.ts",import.meta.url);
 const root=fileURLToPath(new URL("../../../",import.meta.url));
