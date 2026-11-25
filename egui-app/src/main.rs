@@ -7002,7 +7002,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
             one_touch::prepare_reveal(ui.ctx(),hover_stage,&group.id,&ship.id);
             let linked_active=self.link_hover.active_for(&ship.order_id).cloned();
             let mut hovered_detail:Option<source_highlight::LinkKey>=None;
-            let mut workflow_freight_open:Option<(String,String,String,Option<egui::Pos2>)>=None;
+            let mut workflow_freight_open:Option<(String,String,String,Option<egui::Pos2>,bool)>=None;
             let mut workflow_freight_commit=false;
             let mut workflow_freight_cancel=false;
             let mut workflow_freight_option:Option<(String,serde_json::Value)>=None;
@@ -7036,7 +7036,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                                 && self.workflow_mutation_ready()
                                                 && self.workflow_freight_editor.is_none();
                                             if theme::review_action(content,"운임 입력",theme::ButtonRole::Standard,enabled).clicked(){
-                                                workflow_freight_open=Some((target.id.clone(),origin,String::new(),None));
+                                                workflow_freight_open=Some((target.id.clone(),origin,String::new(),None,true));
                                             }
                                         }
                                     });
@@ -7226,7 +7226,8 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                                 workflow_freight_open=Some((
                                                     ship.id.clone(),origin.clone(),
                                                     amount.map(|value|value.to_string()).unwrap_or_default(),
-                                                    freight_actions.amount_click_pos
+                                                    freight_actions.amount_click_pos,
+                                                    workflow_board::missing_freight_origin(group,ship,origin)
                                                 ));
                                             }
                                             if freight_actions.collect_clicked{
@@ -7330,9 +7331,11 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                 self.workflow_freight_guidance=None;
                 self.workflow_freight_editor=None;
                 self.workflow_freight_next_selection=None;
-            }else if let Some((target_id,origin,original,click_at))=workflow_freight_open{
-                self.workflow_freight_guidance=None;
+            }else if let Some((target_id,origin,original,click_at,guide))=workflow_freight_open{
                 let Some(target)=group.shipments.iter().find(|s|s.id==target_id)else{return;};
+                // The review action and a missing amount click enter the same
+                // guided flow as the one-touch stage button.
+                self.workflow_freight_guidance=guide.then(||group.id.clone());
                 self.discard_advisory_workflow_read();
                 // Editing a hover preview commits its exact shipment first.
                 // Pointer movement must not hide the live cell editor.
@@ -7347,6 +7350,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                     origin,original:original.clone(),text:original,
                     focus_next:true,click_at
                 });
+                ui.ctx().request_repaint();
             }else if workflow_freight_commit{
                 self.submit_workflow_freight_edit(ui.ctx());
             }else if let Some((origin,mut extra))=workflow_freight_option{
