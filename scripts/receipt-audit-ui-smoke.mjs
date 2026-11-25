@@ -410,11 +410,18 @@ try {
           if (command === "dock_mode_native") {
             if (mode === "ORIGINAL") throw Error("Kakao must connect before layout selection");
             if (!["OVERLAP", "STACK"].includes(args.mode)) throw Error("Invalid Kakao view mode");
+            window.__kakaoTestCalls.push(["mode",args.mode]);
             mode = args.mode;
             return response();
           }
-          if (command === "dock_stop_native") { mode = "ORIGINAL"; return response(); }
-          if (command === "dock_start_native") { mode = "OVERLAP"; return response(); }
+          if (command === "dock_stop_native") {
+            window.__kakaoTestCalls.push(["stop"]);
+            mode = "ORIGINAL"; return response();
+          }
+          if (command === "dock_start_native") {
+            window.__kakaoTestCalls = [["start",args.handle,args.ratio]];
+            mode = "OVERLAP"; return response();
+          }
           if (command === "dock_windows_native") return [
             { handle: "123", title: "카카오톡", processId: 11, kind: "MAIN" },
             { handle: "456", title: "테스트 대화", processId: 11, kind: "CHAT" },
@@ -562,8 +569,9 @@ try {
   await page.getByText("3건 조회").waitFor();
   // Two explicit layouts inside one Kakao pane; connection is not a view.
   await page.reload();
-  await page.getByRole("button", { name: "카카오톡 함께 보기" }).click();
-  const modes = page.getByRole("group", { name: "카카오톡 보기 방식" });
+  const connectKakao = page.getByRole("button", { name: "카카오톡 연결", exact: true });
+  await connectKakao.click();
+  const modes = page.getByRole("group", { name: "카카오톡 보기 및 연결 관리", exact: true });
   await modes.waitFor();
   assert.equal(await page.getByRole("dialog", { name: "연결할 카카오톡 창 선택" }).count(), 0,
     "v0.8.10 connects directly without requiring an unnecessary picker");
@@ -579,7 +587,12 @@ try {
   await overlap.click();
   assert.equal(await overlap.getAttribute("aria-pressed"), "true");
   await modes.getByRole("button", { name: "카카오톡 연결 해제" }).click();
-  await page.getByRole("button", { name: "카카오톡 함께 보기" }).waitFor();
+  await connectKakao.waitFor();
+  await modes.waitFor({ state: "detached" });
+  assert.deepEqual(await page.evaluate(() => window.__kakaoTestCalls), [
+    ["start","456",0.8],["mode","STACK"],["mode","OVERLAP"],["stop"]
+  ], "Kakao layout changes must preserve connection and disconnect explicitly");
+  console.log("PASS: Kakao direct connection, two layouts and explicit disconnect");
   // STORE file is a frozen Logen workbook, not proof of shipment.
   await nav.getByRole("button", { name: "엑셀 관리" }).click();
   const factoryFolder = page.getByRole("button", { name: "오늘 공장 Excel 폴더 열기" });
@@ -3064,10 +3077,10 @@ try {
   await navPage.locator(".client-table tbody tr")
     .filter({hasText:"검증악기"}).first().click();
   const clientEdit=navPage.locator("dialog.app-modal-layer[open]").last();
-  const displayName=clientEdit.getByRole("textbox",{name:"송장 표시 상호"});
-  const originalDisplayName=await displayName.inputValue();
-  await displayName.fill(originalDisplayName+" 임시검사");
-  await displayName.fill(originalDisplayName);
+  const clientName=clientEdit.getByRole("textbox",{name:"거래처명",exact:true});
+  const originalClientName=await clientName.inputValue();
+  await clientName.fill(originalClientName+" 임시검사");
+  await clientName.fill(originalClientName);
   await closeCleanDialog("거래처 상세 / 원상복구");
 
   await navMenu.getByRole("button",{name:"운임 관리",exact:true}).click();
