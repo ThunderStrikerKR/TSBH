@@ -931,7 +931,19 @@ try {
     // An in-browser mock still models the native notification contract.
     // The actual disk durability gate uses real Tauri / SQLite on Windows.
     let storedHubNotices = [];
-    window.__navSaved = () => ({ state: structuredClone(current), saves: structuredClone(saveLog) });
+    // Model the independent working-copy table, not confirmed state_save.
+    // Only the dedicated restart scenario opts into reload persistence.
+    const workingKey="ci-working-receptions";
+    let working=JSON.parse(sessionStorage.getItem(workingKey)??"[]");
+    window.__navWorkingReads=0;
+    window.__navWorkingWrites=0;
+    window.__navSaved = () => ({ state: structuredClone(current), saves: structuredClone(saveLog),
+      working:structuredClone(working) });
+    function assertWorkingPayload(orders) {
+      if(!Array.isArray(orders)||orders.some(o=>!o.id)||
+        new Set(orders.map(o=>o.id)).size!==orders.length)
+        throw Error("Invalid working reception payload");
+    }
     window.__navOcrCalls=[];
     let navOcrPhaseCallback;
     window.__TAURI_EVENT_PLUGIN_INTERNALS__ = {
@@ -955,6 +967,18 @@ try {
           return undefined;
         }
         if (command === "cancel_ocr") return undefined;
+        if (command === "working_receptions_load") {
+          window.__navWorkingReads++;
+          return structuredClone(working);
+        }
+        if (command === "working_receptions_replace") {
+          assertWorkingPayload(args.orders);
+          working=structuredClone(args.orders);
+          window.__navWorkingWrites++;
+          if(sessionStorage.getItem("ci-working-restart")==="1")
+            sessionStorage.setItem(workingKey,JSON.stringify(working));
+          return;
+        }
         if (command === "hub_notifications_list")
           return structuredClone(storedHubNotices);
         if (command === "hub_notifications_add") {
@@ -2038,9 +2062,8 @@ try {
   ));
   console.log("PASS: shipping group Save / Discard / Cancel (actual React tabs)");
 
-  // New reception is intentionally not saveable until order confirmation.
-  // Cancel keeps its raw text; Save must explain the restriction and stay put;
-  // Discard may navigate away without creating an unconfirmed order.
+  // Reception navigation autosaves the independent working copy without
+  // presenting a decision dialog or creating a confirmed order.
   await navPage.reload();
   await navPage.getByRole("button",{name:"캡처 범위 지정"}).click();
   const ocr=navPage.getByRole("dialog",{name:"OCR 문자 인식 검토"});
@@ -2060,23 +2083,35 @@ try {
   await navPage.waitForFunction(() => document.querySelector(".source-document")?.textContent?.includes("검증 발주 원문"));
   assert.equal(await navPage.evaluate(() => window.__navNativeOcrReplacements),1,
     "OCR review must use the native replace_reception action, not a TS-only update");
+  const receiptBefore=await mockState();
+  const raw="검증 발주 원문 709B 2개";
   await navMenu.getByRole("button",{name:"상품 관리"}).click();
-  await checkPrompt("unconfirmed reception");
-  await leave.getByRole("button",{name:"취소",exact:true}).click();
-  assert.ok((await navPage.locator(".source-document").textContent()).includes("검증 발주 원문"));
-  await navMenu.getByRole("button",{name:"상품 관리"}).click();
-  await leave.getByRole("button",{name:"저장",exact:true}).click();
-  await navPage.getByRole("button",{name:/^알림(?: \d+건)?$/}).click();
-  const alertCenter=navPage.getByRole("dialog",{name:"알림"});
-  await alertCenter.locator(".notification-center-item").first().click();
-  await alertCenter.getByText(/신규 발주서는 주문 확인 완료 후 저장할 수 있습니다/).waitFor();
-  await alertCenter.getByRole("button",{name:/닫기/}).first().click();
-  assert.ok((await navPage.locator(".source-document").textContent()).includes("검증 발주 원문"));
-  await navMenu.getByRole("button",{name:"상품 관리"}).click();
-  await leave.getByRole("button",{name:"저장 안 함"}).click();
   await navPage.getByRole("heading",{name:/상품 가격표/}).waitFor();
+  assert.equal(await leave.count(),0,"Reception navigation must not ask to save or discard");
+  const receiptAfter=await mockState();
+  const savedWorking=receiptAfter.working.find(o=>o.raw===raw);
+  assert.ok(savedWorking && !savedWorking.confirmedAt,"Navigation must flush unconfirmed working copy");
+  assert.deepEqual(receiptAfter.state.orders,receiptBefore.state.orders,"Working copy must stay out of confirmed order history");
+  assert.equal(receiptAfter.state.revision,receiptBefore.state.revision,"Working copy must not advance business revision");
+  assert.equal(receiptAfter.saves.length,receiptBefore.saves.length,"Working copy must not use state_save");
+  assert.ok(await navPage.evaluate(()=>window.__navWorkingReads>0 && window.__navWorkingWrites>0));
+  await navMenu.getByRole("button",{name:"접수",exact:true}).click();
+  await navPage.waitForFunction(text=>document.querySelector(".source-document")?.textContent?.includes(text),raw);
+  // Preserve only this scenario across reload; other fixtures start clean.
+  await navPage.evaluate(()=>{
+    sessionStorage.setItem("ci-working-restart","1");
+    sessionStorage.setItem("ci-working-receptions",JSON.stringify(window.__navSaved().working));
+  });
+  await navPage.reload();
+  await navPage.waitForFunction(id=>window.__navWorkingReads>0 &&
+    window.__navSaved().working.some(o=>o.id===id),savedWorking.id);
+  await navPage.waitForFunction(text=>document.querySelector(".source-document")?.textContent?.includes(text),raw);
   assert.equal((await mockState()).state.orders.length,navFixture.orders.length);
-  console.log("PASS: unconfirmed reception Cancel / Save-blocked / Discard (actual React UI)");
+  await navPage.evaluate(()=>{
+    sessionStorage.removeItem("ci-working-restart");
+    sessionStorage.removeItem("ci-working-receptions");
+  });
+  console.log("PASS: reception working-copy autosave, navigation and reload preserve unconfirmed order");
 
   // Automatic-message sub-tabs are independent editors. Switching without
   // saving must not silently discard text (the previous unmount bug).
