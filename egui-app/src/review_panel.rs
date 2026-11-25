@@ -137,8 +137,15 @@ impl ReviewPanel {
     pub fn ready(&self)->bool{self.ready && self.error.is_none()}
     pub fn show(&self,ui:&mut Ui,analysis:&ReceptionAnalysis,
                 selected_recipient:usize,enabled:bool)->Option<Action>{
+        self.show_with_client_actions(ui,analysis,selected_recipient,enabled,enabled)
+    }
+    /// A client action may be queued while an unrelated delivery edit commits.
+    /// Other issue actions still require the ordinary edit admission policy.
+    pub fn show_with_client_actions(&self,ui:&mut Ui,analysis:&ReceptionAnalysis,
+                selected_recipient:usize,enabled:bool,client_enabled:bool)->Option<Action>{
         let mut selected=None;
         let interactive=self.ready() && enabled;
+        let client_interactive=self.ready() && client_enabled;
         if let Some(error)=self.error.as_deref(){
             theme::review_issue_card(ui,ReviewTone::Error,|cell|{
                 cell.add(egui::Label::new(typography::body(
@@ -167,7 +174,9 @@ impl ReviewPanel {
             );
         }
         for issue in actions {
-            issue_card(ui,issue,analysis,interactive,&mut selected);
+            let kind=text(issue,"kind");
+            let is_client=kind=="CLIENT" || kind.starts_with("CLIENT_MATCH_");
+            issue_card(ui,issue,analysis,if is_client{client_interactive}else{interactive},&mut selected);
         }
         if let Some(remote)=remote{
             let tone=ReviewTone::Info;
