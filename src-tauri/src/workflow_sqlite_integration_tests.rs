@@ -1123,6 +1123,50 @@ fn scoped_freight_reconciliation_matches_full_for_target_and_preserves_other_ord
     assert_eq!(scoped_shipments["shipments"],json!(expected));
     assert_eq!(expected.len(),1);
     assert_eq!(get_snapshot(&conn).unwrap(),before);
+
+    // Group moves use this same order-scoped reconciliation. A split
+    // sibling in another group must be reconciled, but an unrelated order
+    // must remain unchanged even when its own stale state is repairable.
+    let mut split=input.clone();
+    let mut recipient=split["orders"][0]["recipients"][0].clone();
+    recipient["id"]=json!("recipient:scope-sibling");
+    recipient["items"][0]["id"]=json!("item:scope-sibling");
+    split["orders"][0]["recipients"].as_array_mut().unwrap().push(recipient);
+    let mut sibling_group=split["workflow"]["groups"][0].clone();
+    sibling_group["id"]=json!("group:scope-sibling");
+    split["workflow"]["groups"].as_array_mut().unwrap().push(sibling_group);
+    let mut sibling=split["workflow"]["shipments"][0].clone();
+    sibling["id"]=json!("shipment:scope-sibling");
+    sibling["recipientId"]=json!("recipient:scope-sibling");
+    sibling["groupId"]=json!("group:scope-sibling");
+    split["workflow"]["shipments"].as_array_mut().unwrap().push(sibling);
+    let scope=rust("reconcile_shipment_workflow",json!({
+        "state":&split,"shipmentId":"shipment:synthetic",
+        "groupId":"group:synthetic","eventSeed":"group-scope","now":at
+    })).unwrap();
+    let all=rust("reconcile_workflow",json!({
+        "state":&split,"now":at,
+        "eventIds":(0..256).map(|i|format!("group-full:{i}")).collect::<Vec<_>>()
+    })).unwrap();
+    let scoped=&scope["state"];
+    assert_eq!(scoped["orders"][0],all["state"]["orders"][0]);
+    for (field,index) in [("shipments",0usize),("shipments",2),("groups",0),("groups",2)]{
+        assert_eq!(scoped["workflow"][field][index],all["state"]["workflow"][field][index]);
+    }
+    assert_eq!(scoped["orders"][1],split["orders"][1]);
+    assert_eq!(scoped["workflow"]["shipments"][1],split["workflow"]["shipments"][1]);
+    assert_eq!(scoped["workflow"]["groups"][1],split["workflow"]["groups"][1]);
+    let moved=rust("apply_workflow_action",json!({
+        "state":scoped,"action":"regroup_shipment",
+        "shipmentId":"shipment:scope-sibling","groupId":"group:scope-sibling",
+        "targetGroupId":"group:synthetic","ack":true,
+        "eventId":"group-scope:regroup","now":at
+    })).unwrap()["state"].clone();
+    assert_eq!(moved["workflow"]["shipments"][2]["groupId"],"group:synthetic");
+    assert_eq!(moved["orders"][1],split["orders"][1]);
+    assert_eq!(moved["workflow"]["shipments"][1],split["workflow"]["shipments"][1]);
+    assert_eq!(moved["workflow"]["groups"][1],split["workflow"]["groups"][1]);
+    assert_eq!(get_snapshot(&conn).unwrap(),before);
 }
 
 #[test]
