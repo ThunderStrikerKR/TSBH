@@ -30,7 +30,7 @@ pub fn write_v2_snapshot(conn: &mut Connection, mut state: Value, expected_revis
     crate::valid_state(&state)?;
     let tx=conn.transaction().map_err(err)?;
     let current=read_current(&tx,expected_revision)?;
-    let written=write_validated(&tx,&current,state,expected_revision,validate_orders)?;
+    let (written,_)=write_validated(&tx,&current,state,expected_revision,validate_orders)?;
     tx.commit().map_err(err)?;
     Ok(written)
 }
@@ -48,32 +48,76 @@ where F:FnOnce(&Value)->Result<Value,String>{
     let mut state=mutate(&current)?;
     crate::product_colors::normalize_products(&mut state)?;
     crate::valid_state(&state)?;
-    let written=write_validated(&tx,&current,state,expected_revision,validate_orders)?;
-    // Read the persisted relational projection while still holding the
-    // transaction. A failed verification must roll back, not report a
-    // failure after a successful commit.
-    let written_revision=written["revision"].as_u64()
-        .ok_or("업무 저장 revision 누락")?;
-    // Neither full snapshot is needed while verifying the persisted rows.
-    drop(written);
-    drop(current);
-    let verified=crate::read_v2_snapshot(&tx)?;
-    if verified["revision"].as_u64()!=Some(written_revision){
-        return Err("업무 저장 검증에 실패했습니다.".into());
-    }
+    let changes_before=total_changes(&tx)?;
+    let (written,envelope_only)=write_validated(&tx,&current,state,expected_revision,validate_orders)?;
+    let verified=verify_written(&tx,current,written,envelope_only,changes_before)?;
     tx.commit().map_err(err)?;
     Ok(verified)
 }
 
+// SQLite's total_changes includes trigger and foreign-key writes, unlike
+// changes(). Only a single app_state UPDATE with no other writes can reuse
+// the authoritative core rows already hydrated in this same transaction.
+fn total_changes(tx:&Transaction<'_>)->Result<i64,String>{
+    tx.query_row("SELECT total_changes()",[],|row|row.get(0)).map_err(err)
+}
+
+fn verify_written(tx:&Transaction<'_>,mut current:Value,written:Value,
+    envelope_only:bool,changes_before:i64)->Result<Value,String>{
+    let revision=written["revision"].as_u64().ok_or("업무 저장 revision 누락")?;
+    let verified=if envelope_only &&
+        total_changes(tx)?.checked_sub(changes_before)==Some(1){
+        // Read the actual persisted envelope, not the requested settings.
+        // No core SQL ran and SQLite reports no additional row writes.
+        let mut envelope=crate::read_envelope(tx)?;
+        let root=envelope.as_object_mut().ok_or("업무 상태는 객체여야 합니다.")?;
+        let prior=current.as_object_mut().ok_or("업무 상태는 객체여야 합니다.")?;
+        for key in ["products","clients","orders"]{
+            let value=prior.remove(key).ok_or("기존 업무자료 누락")?;
+            root.insert(key.to_owned(),value);
+        }
+        envelope
+    }else{
+        // Changed core data or unexpected trigger/cascade writes: retain
+        // the original full persisted verification, still before COMMIT.
+        drop(current);
+        drop(written);
+        crate::read_v2_snapshot(tx)?
+    };
+    if verified["revision"].as_u64()!=Some(revision){
+        return Err("업무 저장 검증에 실패했습니다.".into());
+    }
+    Ok(verified)
+}
+
 fn write_validated(tx:&Transaction<'_>,current:&Value,mut state:Value,
-    current_revision:u64,validate_orders:bool)->Result<Value,String>{
-    validate_clients(current, &state)?;
-    validate_brands(current, &state)?;
-    if validate_orders { reception::validate_reception(current, &state)?; }
-    let archive_entries = reception::new_archive_entries(current, &state)?;
+    current_revision:u64,validate_orders:bool)->Result<(Value,bool),String>{
     let products_changed = current["products"] != state["products"];
     let clients_changed = current["clients"] != state["clients"];
     let orders_changed = current["orders"] != state["orders"];
+    if clients_changed {
+        validate_clients(current, &state)?;
+    }else{
+        crate::validation::validate_unchanged_clients(&state)?;
+    }
+    validate_brands(current, &state)?;
+    if validate_orders {
+        if orders_changed {
+            reception::validate_reception(current, &state)?;
+        }else{
+            reception::validate_order_ids(&state)?;
+        }
+    }
+    // Only skip archive generation if equality and unique order IDs were
+    // both established. The legacy validate_orders=false route retains
+    // its original archive checks.
+    let archive_entries=if validate_orders && !orders_changed{
+        Vec::new()
+    }else{
+        reception::new_archive_entries(current,&state)?
+    };
+    let envelope_only=!products_changed && !clients_changed &&
+        !orders_changed && archive_entries.is_empty();
     state["revision"] = json!(current_revision.checked_add(1)
         .ok_or("운영 DB revision 범위를 초과했습니다.")?);
     // The constrained SQLite tables own products, clients and orders.
@@ -111,7 +155,7 @@ fn write_validated(tx:&Transaction<'_>,current:&Value,mut state:Value,
             ).map_err(err)?;
         }
     }
-    Ok(state)
+    Ok((state,envelope_only))
 }
 
 
@@ -193,6 +237,43 @@ mod snapshot_cost_tests {
         assert_eq!(actual,expected);
         assert_eq!(state["orders"][0]["recipients"][0]["items"][0]["id"],"i");
         assert!(serialize_envelope(&Value::Null).is_err());
+    }
+
+    #[test]
+    fn envelope_only_verification_reuses_core_rows_and_falls_back_on_trigger(){
+        let mut conn=Connection::open_in_memory().unwrap();
+        conn.execute_batch("CREATE TABLE app_state(id INTEGER PRIMARY KEY,payload TEXT);
+            CREATE TABLE side_effect(id INTEGER PRIMARY KEY);
+            INSERT INTO app_state VALUES (1,'{}');").unwrap();
+        let current=json!({"revision":1,"products":[{"id":"p"}],
+            "clients":[{"id":"c"}],"orders":[{"id":"o"}]});
+        let mut written=current.clone();
+        written["revision"]=json!(2);
+        written["settings"]=json!({"uiScale":1.2});
+        {
+            let tx=conn.transaction().unwrap();
+            let before=total_changes(&tx).unwrap();
+            tx.execute("UPDATE app_state SET payload=?1 WHERE id=1",
+                [serialize_envelope(&written).unwrap()]).unwrap();
+            // There are deliberately no core tables. Successful verification
+            // proves they were not queried again for the envelope-only write.
+            assert_eq!(verify_written(&tx,current.clone(),written.clone(),true,before).unwrap(),written);
+            tx.rollback().unwrap();
+        }
+        conn.execute_batch("CREATE TRIGGER unexpected AFTER UPDATE ON app_state
+            BEGIN INSERT INTO side_effect VALUES (1); END;").unwrap();
+        {
+            let tx=conn.transaction().unwrap();
+            let before=total_changes(&tx).unwrap();
+            tx.execute("UPDATE app_state SET payload=?1 WHERE id=1",
+                [serialize_envelope(&written).unwrap()]).unwrap();
+            // A trigger write must force the original full read, which fails
+            // here because core tables are intentionally absent.
+            assert!(verify_written(&tx,current,written,true,before).is_err());
+            tx.rollback().unwrap();
+        }
+        assert_eq!(conn.query_row("SELECT COUNT(*) FROM side_effect",[],
+            |row|row.get::<_,i64>(0)).unwrap(),0);
     }
 
     #[test]

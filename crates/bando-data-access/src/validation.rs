@@ -57,6 +57,18 @@ pub fn validate_brands(before: &Value, next: &Value) -> Result<(), String> {
     Ok(())
 }
 
+// Exact equality to the authoritative before-image establishes that every
+// existing client would take the unchanged branch of validate_clients.
+// Still enforce the same list, account-list and client-ID preconditions.
+pub(crate) fn validate_unchanged_clients(state:&Value)->Result<(),String>{
+    let clients=state["clients"].as_array().ok_or("거래처 데이터 형식 오류")?;
+    state["settings"]["accounts"].as_array().ok_or("입금 계좌 형식 오류")?;
+    for client in clients{
+        client["id"].as_str().ok_or("거래처 ID 누락")?;
+    }
+    Ok(())
+}
+
 // Validate only newly created or edited clients. Existing historical test rows are
 // not silently rewritten, but cannot be re-saved with missing sender information.
 pub fn validate_clients(before: &Value, next: &Value) -> Result<(), String> {
@@ -158,3 +170,21 @@ pub fn validate_message_templates(state: &Value) -> Result<(), String> {
     Ok(())
 }
 
+
+#[cfg(test)]
+mod scoped_client_validation_tests{
+    use super::*;
+    use serde_json::json;
+    #[test]
+    fn unchanged_client_validation_matches_full(){
+        for state in [
+            json!({"clients":[{"id":"old"}],"settings":{"accounts":[]}}),
+            json!({"clients":[{"id":"same"},{"id":"same"}],"settings":{"accounts":[]}}),
+            json!({"clients":[{"name":"missing id"}],"settings":{"accounts":[]}}),
+            json!({"clients":[],"settings":{"accounts":null}}),
+            json!({"clients":null,"settings":{"accounts":[]}})
+        ]{
+            assert_eq!(validate_unchanged_clients(&state),validate_clients(&state,&state));
+        }
+    }
+}
