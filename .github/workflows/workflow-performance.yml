@@ -8,6 +8,7 @@ on:
       - egui-app/src/main.rs
       - egui-app/src/gateway.rs
       - egui-app/src/reception_jobs.rs
+      - egui-app/src/review_panel.rs
       - egui-app/src/workflow_board.rs
       - egui-app/src/manual_workspace.rs
       - crates/bando-data-access/**
@@ -44,6 +45,10 @@ jobs:
         shell: pwsh
         run: |
           cargo test --manifest-path egui-app/Cargo.toml periodic_workflow_read_is_advisory_but_post_commit_refresh_is_mandatory -- --nocapture
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cargo test --manifest-path egui-app/Cargo.toml unchanged_workflow_revision_keeps_current_snapshot_and_selection -- --nocapture
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cargo test --manifest-path egui-app/Cargo.toml failed_delivery_command_never_restores_a_hidden_editor -- --nocapture
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           cargo test --manifest-path egui-app/Cargo.toml reception_jobs::tests -- --nocapture
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
