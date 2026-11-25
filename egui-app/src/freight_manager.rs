@@ -1857,11 +1857,7 @@ impl FreightManager {
                         let visible=region.intersect(header_text_rect);
                         if visible.width()>0.0 && visible.height()>0.0 {
                             let next=FreightSort::next(*sort,column);
-                            let tooltip=match next.map(|value|value.direction){
-                                Some(FreightSortDirection::Ascending)=>"오름차순 정렬",
-                                Some(FreightSortDirection::Descending)=>"내림차순 정렬",
-                                None=>"기본 순서로 복귀",
-                            };
+                            let tooltip=components::management_sort_tooltip(next.map(|value|matches!(value.direction,FreightSortDirection::Descending)));
                             let response=section.interact(
                                 visible,section.make_persistent_id(("freight-sort-column",i)),
                                 egui::Sense::click()
@@ -2268,11 +2264,7 @@ impl FreightManager {
                     let hit=cell.intersect(header_text_rect);
                     if hit.width()>0.0 && hit.height()>0.0{
                         let next=RateSort::next(*sort,column);
-                        let tooltip=match next.map(|value|value.direction){
-                            Some(FreightSortDirection::Ascending)=>"오름차순 정렬",
-                            Some(FreightSortDirection::Descending)=>"내림차순 정렬",
-                            None=>"기본 순서로 복귀",
-                        };
+                        let tooltip=components::management_sort_tooltip(next.map(|value|matches!(value.direction,FreightSortDirection::Descending)));
                         let response=section.interact(
                             hit,section.make_persistent_id(("freight-rate-sort",index)),
                             egui::Sense::click()
@@ -2902,11 +2894,7 @@ fn freight_history_table<const N:usize>(
             let hit=cell.intersect(header_text_rect);
             if hit.width()>0.0 && hit.height()>0.0{
                 let next=HistorySort::next(current,column);
-                let tooltip=match next.map(|value|value.direction){
-                    Some(FreightSortDirection::Ascending)=>"오름차순 정렬",
-                    Some(FreightSortDirection::Descending)=>"내림차순 정렬",
-                    None=>"기본 순서로 복귀",
-                };
+                let tooltip=components::management_sort_tooltip(next.map(|value|matches!(value.direction,FreightSortDirection::Descending)));
                 let response=ui.interact(
                     hit,ui.make_persistent_id((id,"history-sort",index)),
                     egui::Sense::click()
