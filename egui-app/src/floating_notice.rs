@@ -335,7 +335,7 @@ fn paint_status_icon(painter: &egui::Painter, center: Pos2, tone: Tone) {
         Tone::Info => theme::SECONDARY,
         Tone::Validation | Tone::Error => theme::DANGER,
     };
-    let stroke = Stroke::new(1.5, ink);
+    let stroke = Stroke::new(1.5_f32, ink);
     painter.circle_stroke(center,6.5,stroke);
     match tone {
         Tone::Success => {
@@ -402,7 +402,7 @@ fn paint_tail(
 }
 
 fn paint_close(painter: &egui::Painter, center: Pos2) {
-    let ink = Stroke::new(1.4,theme::SECONDARY);
+    let ink = Stroke::new(1.4_f32,theme::SECONDARY);
     painter.line_segment([
         center + Vec2::new(-3.2,-3.2),
         center + Vec2::new(3.2,3.2),

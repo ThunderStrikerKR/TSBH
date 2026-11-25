@@ -1160,7 +1160,7 @@ pub(crate) fn action_style(
             ACTION_STANDARD_HEIGHT,
             Color32::from_rgb(35, 35, 35),
             SECONDARY,
-            Stroke::new(1.0, DIVIDER),
+            Stroke::new(1.0_f32, DIVIDER),
         ),
         ButtonRole::Emphasized => (ACTION_EMPHASIZED_HEIGHT, BRIGHT, BRIGHT_TEXT, Stroke::NONE),
         ButtonRole::Quiet => (ACTION_QUIET_HEIGHT, Color32::TRANSPARENT, SECONDARY, Stroke::NONE),
@@ -1169,7 +1169,7 @@ pub(crate) fn action_style(
         ButtonRole::Navigation => (NAV_HEIGHT, Color32::TRANSPARENT, SECONDARY, Stroke::NONE),
         ButtonRole::ActiveNavigation => (NAV_HEIGHT, Color32::from_rgb(41, 72, 92), TEXT, Stroke::NONE),
         ButtonRole::ManagementTab => (MANAGEMENT_TAB_HEIGHT, Color32::TRANSPARENT, SECONDARY, Stroke::NONE),
-        ButtonRole::ActiveManagementTab => (MANAGEMENT_TAB_HEIGHT, RAISED, TEXT, Stroke::new(1.0,BORDER)),
+        ButtonRole::ActiveManagementTab => (MANAGEMENT_TAB_HEIGHT, RAISED, TEXT, Stroke::new(1.0_f32,BORDER)),
         ButtonRole::KakaoControl => (KAKAO_CONTROL_HEIGHT, Color32::TRANSPARENT, SECONDARY, Stroke::NONE),
         ButtonRole::ActiveKakaoControl => (KAKAO_CONTROL_HEIGHT, RAISED, TEXT, Stroke::new(FRAME_STROKE_WIDTH,BORDER)),
     };
@@ -1293,7 +1293,7 @@ pub fn window_control(ui: &mut Ui, control: WindowControl) -> Response {
     paint_button_hover(ui,&response,4.0);
     let center = response.rect.center();
     let ink = if response.hovered() { TEXT } else { SECONDARY };
-    let line = Stroke::new(1.35, ink);
+    let line = Stroke::new(1.35_f32, ink);
     let painter = ui.painter();
     match control {
         WindowControl::Minimize => {

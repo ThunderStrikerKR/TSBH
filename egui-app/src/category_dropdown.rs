@@ -250,7 +250,7 @@ fn category_path_separator(ui:&mut Ui)->Response{
         ),Sense::hover()
     );
     let mid=rect.center();
-    let stroke=Stroke::new(1.25,theme::SECONDARY);
+    let stroke=Stroke::new(1.25_f32,theme::SECONDARY);
     let painter=ui.painter().with_clip_rect(rect);
     painter.line_segment([
         egui::pos2(mid.x-2.0,mid.y-4.0),

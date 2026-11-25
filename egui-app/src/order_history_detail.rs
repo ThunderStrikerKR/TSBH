@@ -76,7 +76,7 @@ fn section_panel(
 fn overview(ui:&mut Ui,rect:Rect,row:&Value,shipment_count:usize){
     ui.painter().rect(
         rect,theme::CONTROL_RADIUS as f32,theme::RAISED,
-        Stroke::new(1.0,theme::DIVIDER),egui::StrokeKind::Inside
+        Stroke::new(1.0_f32,theme::DIVIDER),egui::StrokeKind::Inside
     );
     let inner=rect.shrink2(Vec2::new(theme::SPACE_12,theme::SPACE_8));
     let clip=inner.intersect(ui.clip_rect());

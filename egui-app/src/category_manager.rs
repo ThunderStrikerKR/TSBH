@@ -516,7 +516,7 @@ impl CategoryManager {
             egui::pos2(folder_right,folder_y+theme::SPACE_4),
             egui::pos2(folder_right,folder_bottom),
             egui::pos2(folder_x,folder_bottom)
-        ],egui::Stroke::new(1.0,theme::SECONDARY)));
+        ],egui::Stroke::new(1.0_f32,theme::SECONDARY)));
         let count=index.total(&item.id);
         // Show totals immediately after the category name, not in a
         // spreadsheet-style column at the far right of the workspace.

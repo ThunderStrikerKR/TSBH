@@ -123,7 +123,7 @@ pub fn admit(request:Kind, active:&[Kind], same_request:bool)->Admission{
             | (Kind::WorkflowAction,
                 Kind::ManualClient | Kind::AutomaticClient |
                 Kind::PricingBasis | Kind::Analysis |
-                Kind::RemoteRecheck | Kind::SourceIntake)
+                Kind::SourceIntake)
             | (Kind::AutomaticClient | Kind::PricingBasis |
                 Kind::Analysis | Kind::RemoteRecheck,Kind::WorkflowAction)
             // A confirmed freight write does not own the separate unconfirmed

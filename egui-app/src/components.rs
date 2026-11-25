@@ -1225,7 +1225,7 @@ pub fn paint_workflow_icon(
     icon: WorkflowIcon,
     ink: Color32,
 ) {
-    let stroke = Stroke::new(1.55, ink);
+    let stroke = Stroke::new(1.55_f32, ink);
     let p = |x: f32, y: f32| egui::pos2(center.x + x, center.y + y);
     match icon {
         WorkflowIcon::Collapsed => {
@@ -1428,13 +1428,13 @@ fn reception_keycap(ui:&mut Ui,key:&str){
         Stroke::NONE
     ));
     painter.rect_stroke(
-        rect,radius,Stroke::new(1.0,theme::BORDER),
+        rect,radius,Stroke::new(1.0_f32,theme::BORDER),
         egui::StrokeKind::Inside
     );
     // Recessed upper rim and light-catching front face.
     painter.rect_filled(face,radius,theme::RECEPTION_KEYCAP_FACE);
     painter.rect_stroke(
-        face,radius,Stroke::new(1.0,theme::RECEPTION_KEYCAP_EDGE),
+        face,radius,Stroke::new(1.0_f32,theme::RECEPTION_KEYCAP_EDGE),
         egui::StrokeKind::Inside
     );
     painter.line_segment(
@@ -1442,14 +1442,14 @@ fn reception_keycap(ui:&mut Ui,key:&str){
             egui::pos2(face.left()+5.0,face.top()+1.5),
             egui::pos2(face.right()-5.0,face.top()+1.5)
         ],
-        Stroke::new(1.0,theme::RECEPTION_KEYCAP_HIGHLIGHT)
+        Stroke::new(1.0_f32,theme::RECEPTION_KEYCAP_HIGHLIGHT)
     );
     painter.line_segment(
         [
             egui::pos2(rect.left()+4.0,rect.bottom()-1.7),
             egui::pos2(rect.right()-4.0,rect.bottom()-1.7)
         ],
-        Stroke::new(1.0,theme::RECEPTION_KEYCAP_BOTTOM_HIGHLIGHT)
+        Stroke::new(1.0_f32,theme::RECEPTION_KEYCAP_BOTTOM_HIGHLIGHT)
     );
     if key=="Win"{
         paint_windows_key_glyph(painter,face);
@@ -3843,7 +3843,7 @@ fn date_navigation_segmented_surface<R>(
 /// Both horizontal bars have the same length and the same center line.
 fn paint_count_step_symbol(painter:&egui::Painter,center:egui::Pos2,increase:bool,ink:Color32){
     let half=4.0;
-    let stroke=Stroke::new(1.8,ink);
+    let stroke=Stroke::new(1.8_f32,ink);
     painter.line_segment(
         [center-egui::vec2(half,0.0),center+egui::vec2(half,0.0)],stroke
     );
@@ -4156,9 +4156,9 @@ pub fn date_calendar(
                             )).corner_radius(theme::CONTROL_RADIUS);
                             if selected_date==Some(*date){
                                 button=button.fill(theme::WORKFLOW_SELECTED_BG)
-                                    .stroke(Stroke::new(1.0,theme::SELECTION));
+                                    .stroke(Stroke::new(1.0_f32,theme::SELECTION));
                             }else if *date==today{
-                                button=button.stroke(Stroke::new(1.0,theme::BORDER));
+                                button=button.stroke(Stroke::new(1.0_f32,theme::BORDER));
                             }
                             let response=grid.add_sized(
                                 egui::vec2(width,width),button
@@ -4698,13 +4698,13 @@ fn management_dropdown_option_palette(ui:&mut Ui){
     // egui::selectable_value uses selection.bg_fill for the current value.
     // Keep that persistent state darker than the pointer's transient hover.
     visuals.selection.bg_fill=theme::MANAGEMENT_DROPDOWN_SELECTED_BG;
-    visuals.selection.stroke=Stroke::new(1.0,theme::TEXT);
+    visuals.selection.stroke=Stroke::new(1.0_f32,theme::TEXT);
     visuals.widgets.hovered.bg_fill=theme::MANAGEMENT_DROPDOWN_HOVER_BG;
     visuals.widgets.hovered.weak_bg_fill=theme::MANAGEMENT_DROPDOWN_HOVER_BG;
     visuals.widgets.hovered.bg_stroke=Stroke::new(
         theme::SOFT_DIVIDER_WIDTH,theme::SELECTION.linear_multiply(0.8)
     );
-    visuals.widgets.hovered.fg_stroke=Stroke::new(1.5,theme::TEXT);
+    visuals.widgets.hovered.fg_stroke=Stroke::new(1.5_f32,theme::TEXT);
     visuals.widgets.active.bg_fill=theme::MANAGEMENT_DROPDOWN_HOVER_BG;
     visuals.widgets.active.weak_bg_fill=theme::MANAGEMENT_DROPDOWN_HOVER_BG;
 }
@@ -5859,7 +5859,7 @@ fn reception_quantity_editor(
     if input.has_focus() || step_interaction{
         placed.painter().rect_stroke(
             rect.shrink(0.5),theme::CONTROL_RADIUS as f32,
-            Stroke::new(2.0,theme::SELECTION),egui::StrokeKind::Inside
+            Stroke::new(2.0_f32,theme::SELECTION),egui::StrokeKind::Inside
         );
     }
     ReceptionQuantityEditorResponse{input,step_interaction}
@@ -6140,7 +6140,7 @@ fn reception_item_row_with_mode(
         let ink=if enabled{theme::SECONDARY}else{theme::DISABLED_ACTION_TEXT};
         if enabled{theme::paint_button_hover(ui,&action,theme::CONTROL_RADIUS as f32);}
         let center=hit.center();
-        let stroke=Stroke::new(1.5,ink);
+        let stroke=Stroke::new(1.5_f32,ink);
         for sign in [-1.0_f32,1.0]{
             ui.painter().line_segment([
                 center+egui::vec2(-4.0,-4.0*sign),

@@ -292,7 +292,7 @@ fn paint_history_branch(ui:&Ui,row_rect:Rect,widths:&[f32;7],
     }else{
         detail.center().y
     };
-    let stroke=Stroke::new(1.25,theme::MUTED);
+    let stroke=Stroke::new(1.25_f32,theme::MUTED);
     match branch{
         HistoryBranch::Root=>{
             painter.circle_filled(egui::pos2(x,center),2.0,theme::MUTED);
