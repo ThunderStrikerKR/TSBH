@@ -565,7 +565,7 @@ impl CategoryManager {
             egui::pos2(summary_x,rect.center().y-summary_galley.size().y/2.0),
             summary_galley,theme::SECONDARY
         );
-        let response=response.on_hover_text(&item.name);
+        let response=components::overflow_tooltip(response,visible!=item.name.as_str(),&item.name);
         if response.clicked(){
             self.selected=item.id.clone();
             self.name=item.name.clone();
@@ -715,9 +715,7 @@ impl CategoryManager {
                         tree.add_space(theme::SPACE_16);
                         tree.label(typography::subsection_heading(
                             &format!("상위 분류 소속 확인 ({})",legacy.len())
-                        )).on_hover_text(
-                            "기존 분류의 소속은 자동으로 변경하지 않습니다. 선택 후 위치를 지정하세요."
-                        );
+                        ));
                         for row in &legacy{
                             self.node(tree,&cats,&index,row,0,&[],true);
                         }
@@ -756,16 +754,17 @@ impl CategoryManager {
                                             .max(0.0),
                                         typography::CategoryPathFont::Subsection
                                     );
-                                    body.label(typography::subsection_heading(
+                                    let name_response=body.label(typography::subsection_heading(
                                         &name_display
-                                    )).on_hover_text(&current.name);
+                                    ));
+                                    components::overflow_tooltip(name_response,name_display!=current.name,&current.name);
                                     let breadcrumb=path_text(&cats,&current.id);
                                     let visible=typography::fit_category_path(
                                         body,&breadcrumb,body.available_width(),
                                         typography::CategoryPathFont::Metadata
                                     );
-                                    body.label(typography::caption(&visible))
-                                        .on_hover_text(&breadcrumb);
+                                    let breadcrumb_response=body.label(typography::caption(&visible));
+                                    components::overflow_tooltip(breadcrumb_response,visible!=breadcrumb,&breadcrumb);
                                     // Compact context for an editor, not KPI cards.
                                     // Keep a single divider between context and fields.
                                     body.label(typography::caption(&format!(
@@ -817,7 +816,7 @@ impl CategoryManager {
                                                 text_rect.center().y-galley.size().y/2.0),
                                             galley,theme::TEXT
                                         );
-                                        text_response.on_hover_text(&parent_label);
+                                        components::overflow_tooltip(text_response,visible!=parent_label,&parent_label);
                                         if theme::action(location,"위치 변경",
                                             theme::ButtonRole::Standard,
                                             editable&&!busy&&!is_root(&current.id)
@@ -901,11 +900,12 @@ impl CategoryManager {
                                                     line,&location_path,path_width,
                                                     typography::CategoryPathFont::Body
                                                 );
-                                                line.add_sized(
+                                                let response=line.add_sized(
                                                     [path_width,theme::INPUT_HEIGHT],
                                                     egui::Label::new(typography::body(&visible))
                                                         .truncate()
-                                                ).on_hover_text(&location_path);
+                                                );
+                                                components::overflow_tooltip(response,visible!=location_path,&location_path);
                                             }
                                         );
                                         modal.add_space(theme::SPACE_12);
