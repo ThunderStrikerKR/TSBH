@@ -253,6 +253,7 @@ try {
               ((args?.domain === "rules" && args.operation === "read_shipments") ||
                (args?.domain === "output" && args.operation === "review_export_sender")))
             return window.__shipmentReadMock(args.operation,args.payload);
+          if (command === "hub_notifications_list") return [];
           if (command === "state_load") return structuredClone(state);
           if (command === "business_core_call" &&
               args?.domain === "rules" &&
@@ -779,14 +780,14 @@ try {
           return { windowShownMs: null, databaseMs: 1, dataMs: null, readyMs: 1 };
         if (command === "workspace_mode") return false;
         if (command === "state_load") return structuredClone(current);
-        if (command === "business_core_call" && args.domain === "rules" &&
+        if (command === "hub_notifications_list") {
+          window.__accountNotificationReads=(window.__accountNotificationReads??0)+1;
+          return [];
+        }
+        if (command === "business_core_call" && args?.domain === "rules" &&
             args.operation === "factory_reply_review_statuses") {
-          // The account fixture contains no factory replies. Keep unrelated
-          // background Rust reads from polluting account-edit assertions.
-          if ((args.payload?.state?.factoryReplies??[]).length)
-            throw Error("This isolated account mock does not cover factory reply records");
           window.__accountNativeReviewReads=(window.__accountNativeReviewReads??0)+1;
-          return {reviews:[]};
+          throw Error("Factory reply history must not run in the background of account settings");
         }
         if (command === "dock_status_native")
           return { active: false, ratio: 0.8 };
@@ -824,8 +825,9 @@ try {
   assert.deepEqual(accountAddAlerts,[],
     "Account add save must not show an error: "+JSON.stringify(accountAddAlerts));
   assert.equal(await settingsPage.getByRole("button", { name: "설정 저장" }).isDisabled(), false);
-  assert.ok((await settingsPage.evaluate(() => window.__accountNativeReviewReads??0)) > 0,
-    "Account test must not conceal background Rust factory-notification IPC");
+  await settingsPage.waitForFunction(() => (window.__accountNotificationReads??0)>0);
+  assert.equal(await settingsPage.evaluate(() => window.__accountNativeReviewReads??0),0,
+    "Account settings must not query factory reply history for notifications");
   const addChanges = await settingsPage.evaluate(() => window.__accountSave.changes);
   assert.equal(addChanges.accounts.length, 3);
   console.log("PASS: adding a third account saves with no false conflict");
@@ -891,6 +893,8 @@ try {
   const savedOperator = await settingsPage.evaluate(() => window.__accountSave.changes.operatorName);
   assert.equal(savedOperator, "이동 테스트 담당");
   assert.deepEqual(settingsErrors, [], "Settings page errors: " + settingsErrors.join("\\n"));
+  assert.equal(await settingsPage.evaluate(() => window.__accountNativeReviewReads??0),0,
+    "Account navigation must not revive retired background factory review");
   await settingsPage.close();
   // Real React navigation tests with isolated synthetic Tauri data. Each choice
   // is clicked in its real modal; no user data or production SQLite is touched.
