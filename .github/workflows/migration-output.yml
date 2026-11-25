@@ -58,3 +58,5 @@ jobs:
         run: cargo test --manifest-path tests/rust-migration/rules/Cargo.toml rules::pricing::migration_tests -- --nocapture
       - name: Verify live native tariff and remote-area rules
         run: cargo test --manifest-path tests/rust-migration/rules/Cargo.toml rules::shipping:: -- --nocapture
+      - name: Verify native factory reply matching, conflict and row safety
+        run: cargo test --manifest-path tests/rust-migration/rules/Cargo.toml rules::factory_reply::tests -- --nocapture

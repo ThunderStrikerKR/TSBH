@@ -311,5 +311,23 @@ mod tests{
         ];
         let bytes=encode(&json!({"rows":[{"values":values}]})).unwrap();
         assert!(bytes.starts_with(b"PK\x03\x04"));
+        // Reopen the exact output bytes, not just the ZIP signature.
+        use calamine::{Data,Reader,Xlsx};
+        let mut book=Xlsx::new(std::io::Cursor::new(bytes)).unwrap();
+        let sheet=book.worksheet_range("로젠택배").unwrap();
+        assert_eq!(sheet.width(),16);
+        for (column,header) in HEADERS.iter().enumerate(){
+            assert_eq!(sheet.get_value((0,column as u32)),Some(&Data::String((*header).to_string())));
+        }
+        for (column,expected) in values.iter().enumerate(){
+            let cell=sheet.get_value((1,column as u32));
+            if expected.is_empty(){
+                assert!(matches!(cell,None|Some(Data::Empty)) ||
+                    cell==Some(&Data::String(String::new())),"blank column {column}: {cell:?}");
+            }else{
+                assert_eq!(cell,Some(&Data::String((*expected).to_string())),
+                    "text and leading zeros at column {column}");
+            }
+        }
     }
 }

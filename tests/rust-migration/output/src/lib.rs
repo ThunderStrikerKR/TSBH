@@ -367,4 +367,49 @@ mod tests {
         assert_eq!(records[1]["id"],"legacy");
         assert_eq!(records[1]["text"],Value::Null);
     }
+
+    #[test]
+    fn operational_export_finalization_preserves_frozen_snapshot_and_file_only_status(){
+        for (origin,operation) in [("FACTORY","prepare_factory_export"),("STORE","prepare_store_export")]{
+            let s=state(origin);
+            let preview=output::execute(operation,json!({"state":s,"ids":["queue-1"]})).unwrap();
+            let payload=json!({"state":s,"preview":preview,"origin":origin,
+                "savedPath":"C:/synthetic/배송.xlsx","now":"2026-11-13T09:00:00Z",
+                "exportId":"e1","eventId":"audit1"});
+            let r=output::execute("finalize_export",payload.clone()).unwrap();
+            let next=&r["next"];
+            assert_eq!(r["filename"],"배송.xlsx");
+            assert_eq!(next["workflow"]["queue"][0]["status"],"EXPORTED");
+            assert_eq!(next["workflow"]["queue"][0]["fileOnly"],true);
+            assert_eq!(next["workflow"]["shipments"],s["workflow"]["shipments"]);
+            assert_eq!(next["orders"],s["orders"]);
+            assert_eq!(next["exports"][0]["snapshots"][0]["snapshot"],s["workflow"]["queue"][0]["snapshot"]);
+            assert_eq!(next["workflow"]["events"][0]["after"]["exportId"],"e1");
+            let mut stale=payload.clone(); stale["state"]["revision"]=json!(8);
+            assert!(output::execute("finalize_export",stale).is_err());
+            let mut changed=payload.clone(); changed["preview"]["rows"][0]["values"][0]=json!("다른 수취인");
+            assert!(output::execute("finalize_export",changed).is_err());
+        }
+    }
+    #[test]
+    fn operational_factory_review_requires_successful_row_specific_resolution(){
+        let mut s=json!({"factoryReplies":[{"id":"f1","status":"PARTIAL","rows":[
+            {"row":2,"applied":true},{"row":3,"applied":false}]}]});
+        let read=|state:&Value|output::execute("project_factory_reply_review",json!({"state":state})).unwrap();
+        let p=read(&s);
+        assert_eq!(p["records"][0]["needsReview"],true);
+        assert_eq!(p["records"][0]["notificationLabel"],"일부 반영");
+        s["factoryReplies"].as_array_mut().unwrap().push(json!({
+            "id":"f2","resolves":{"id":"f1","row":3},"rows":[{"row":3,"applied":false}]
+        }));
+        let p=read(&s);
+        assert_eq!(p["records"][0]["rows"][1]["hasLaterResolution"],true);
+        assert_eq!(p["records"][0]["rows"][1]["resolved"],false);
+        assert_eq!(p["records"][0]["needsReview"],true);
+        s["factoryReplies"][1]["rows"][0]["applied"]=json!(true);
+        let p=read(&s);
+        assert_eq!(p["records"][0]["rows"][1]["resolved"],true);
+        assert_eq!(p["records"][0]["needsReview"],false);
+        assert_eq!(p["records"][0]["notificationLabel"],"반영 완료");
+    }
 }
