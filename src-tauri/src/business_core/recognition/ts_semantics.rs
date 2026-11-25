@@ -74,20 +74,6 @@ pub(super) fn only_contact_or_identity(text: &str, phone_spans: &[(usize,usize)]
     !has_product
 }
 
-/// From order-evidence.ts:185-221. An end-of-line person is
-/// independent of the model/quantity; shipping requests are not people.
-pub(super) fn trailing_product_name(text: &str) -> Option<(usize,usize)> {
-    let re = Regex::new(
-        r"(?i)(?:\d+)\s*(?:개|대|세트|ea|pcs)\s+([가-힣]{2,5})(?:님)?\s*$"
-    ).expect("trailing recipient");
-    let m = re.captures(text)?.get(1)?;
-    if !person(m.as_str()) { return None; }
-    if Regex::new(
-        r"(?:보면대|스탠드|마이크|교회|학교|성당|병원|학원|도서관|회관|센터|배송|출고|발송|요청|선불|착불|확인|주세요|감사|택배|부탁)"
-    ).expect("nonperson tail").is_match(m.as_str()) { return None; }
-    Some((m.start(),m.end()))
-}
-
 /// Original-table bytes retain their positions. Never rebuild with join.
 pub(super) fn table_product_prefix(text: &str) -> &str {
     if !text.contains('|') { return text; }
@@ -197,7 +183,6 @@ mod tests {
         assert!(person("이가상"));
         assert!(!person("납품장소"));
         assert!(!person("택배"));
-        assert!(trailing_product_name("BD-950 *2개 선출고부탁드립니다.").is_none());
     }
     #[test]
     fn preserve_original_table_byte_spans() {

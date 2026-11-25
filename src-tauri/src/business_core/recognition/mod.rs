@@ -296,59 +296,133 @@ fn address_begin(line: &str) -> Option<usize> {
 // one receiver label; never infer that only the parenthesized person is the
 // shipping name. This function finds field BOUNDARIES, not a name format.
 // An independent address must already have been recognized by the caller.
+fn trim_span(text:&str,start:usize,end:usize)->Option<(usize,usize)>{
+    let field=&text[start..end];
+    let begin=start+field.len()-field.trim_start().len();
+    let end=start+field.trim_end().len();
+    (begin<end).then_some((begin,end))
+}
+fn recipient_label()->Regex {
+    Regex::new(r"^\s*(?:수취인(?:명)?|수하인(?:명)?|수령자|받(?:는|으시는)\s*(?:분|사람)|성함|이름|(?i:recipient|consignee))(?:(?:\s*[:：]\s*|\s+)|$)")
+        .expect("recipient field label")
+}
+// An explicit field is authoritative. Recognize the next actual field
+// boundary, never impose a character, length, surname, or title constraint.
+fn explicit_recipient_span(line:&str,label:&Regex,phone:&Regex)->Option<(usize,usize)>{
+    let start=label.find(line)?.end();
+    let tail=&line[start..];
+    let mut end=line.len();
+    let fields=Regex::new(r"(?i)(?:\s+|\s*[|]\s*)(?:연락처(?:\([^)]*\))?|전화(?:번호)?|휴대(?:전화|폰)?|번호|주소|배송지(?:\s*주소)?|배송주소|받는곳|TEL|phone|address|배송메모|메모|비고)\s*[:：]\s*")
+        .expect("explicit next field");
+    if let Some(m)=fields.find(tail){end=start+m.start();}
+    let contact=Regex::new(r"(?i)\s+(?:연락처(?:\([^)]*\))?|전화(?:번호)?|휴대(?:전화|폰)?|번호|TEL|phone)\s*[:：]?\s*$")
+        .expect("contact field boundary");
+    // A standalone phone-shaped value after an explicit label is still a
+    // name; only a separate phone after a nonempty value establishes a field.
+    if let Some(m)=phone.find(tail){
+        let prefix=&tail[..m.start()];
+        let cut=contact.find(prefix).map_or(m.start(),|c|c.start());
+        if !tail[..cut].trim().is_empty(){end=end.min(start+cut);}
+    }
+    trim_span(line,start,end)
+}
+// Exclusions identify other document fields, not invalid name spellings.
+fn other_recipient_field(text:&str)->bool{
+    let text=text.trim();
+    let heading=text.trim_end_matches([':', '：']).trim();
+    matches!(heading,"주소"|"배송지"|"배송지 주소"|"배송주소"|"받는곳"|"수취인주소"|
+        "수취인 주소"|"배송 주소"|"배송지주소"|"배송메모"|"배송 요청"|"배송 요청사항"|
+        "메모"|"비고"|"연락처"|"전화번호"|"품목"|"수량"|"상품명"|"모델명"|"수령정보"|
+        "ㅇ수령정보"|"ㅇ품목"|"발주서"|"발 주 서"|"공통"|"모두"|"전부"|"전원"|
+        "민판"|"무타공"|"비타공"|"선불"|"착불"|"택배"|"반도"|"반도스탠드")
+    || is_money_or_header(text)
+    || recipient_label().is_match(text)
+    || Regex::new(r"(?i)^(?:주소|배송지(?:\s*주소)?|배송주소|받는곳|수취인\s*주소|연락처|전화(?:번호)?|휴대(?:전화|폰)?|번호|TEL|배송\s*(?:메모|메시지|요청)|메모|비고|모델명|상품명|품목|수량|보내는\s*(?:분|사람|곳)|송하인(?:명)?|발주처|수주처)(?:\s*[:：]|\s+|$)")
+        .expect("other field label").is_match(text)
+    || Regex::new(r"^(?:[■@*]+|택배\s*(?:선불|착불)|배송\s*(?:전|후)|(?:오늘|내일)\s*(?:발송|배송)|(?:빠른|당일|선)\s*(?:출고|발송))|(?:부탁(?:드려요|드립니다|합니다)?[.!~]*$|주세요[.!~]*$|감사합니다[.!~]*$)")
+        .expect("document instruction").is_match(text)
+}
 fn composite_name_before_address(prefix: &str) -> Option<(usize,usize)> {
-    // A postal code before the administrative address is not part of the
-    // shipping name. Leave source offsets for the retained name untouched.
     let postal=Regex::new(
         r"(?:\s+(?:\d{5}|\(\d{5,6}\)|\[\d{5,6}\])|(?:\(\d{5,6}\)|\[\d{5,6}\]))\s*$"
     ).expect("trailing postal marker");
-    let without_postal=postal.find(prefix)
-        .map_or(prefix, |m| &prefix[..m.start()]);
-    let raw_start=without_postal.len()-without_postal.trim_start().len();
-    let name_start=Regex::new(
-        r"^(?:수취인(?:명)?|수령자|수하인(?:명)?|받는\s*(?:분|사람)|성함|이름)\s*[:：]\s*"
-    ).expect("explicit recipient label");
-    let field=&without_postal[raw_start..];
-    let label_width=name_start.find(field).map_or(0,|m|m.end());
-    let start=raw_start+label_width;
-    let name=&without_postal[start..];
-    let end=start+name.trim_end().len();
-    if end<=start || end-start>160 {return None;}
+    let end=postal.find(prefix).map_or(prefix.len(),|m|m.start());
+    let label=recipient_label();
+    let start=label.find(&prefix[..end]).map_or(0,|m|m.end());
+    let (start,end)=trim_span(prefix,start,end)?;
     let candidate=&prefix[start..end];
-    // The existing single-name recognizer intentionally strips parentheses
-    // from "(김가상)" alone; preserve that compatibility.
-    if Regex::new(r"^\([가-힣]{2,5}\)$").expect("lone contact").is_match(candidate) {
-        return None;
-    }
-    if candidate.chars().filter(|c|('가'..='힣').contains(c)).count()<2 {
-        return None;
-    }
-    // A heading is not a receiver name, even when followed by a complete
-    // same-line address. This protects "배송지 주소 경기도 ..." from creating
-    // a fake recipient while retaining arbitrary real name composition.
-    let heading=candidate.trim().trim_end_matches([':', '：']).trim();
-    if matches!(heading,
-        "주소"|"배송지"|"배송지 주소"|"배송주소"|"받는곳"|
-        "수취인주소"|"수취인 주소"|"배송 주소"|"배송지주소"|
-        "배송메모"|"배송 요청"|"배송 요청사항"|"메모"|"비고"|
-        "연락처"|"전화번호"
-    ) {return None;}
-    // Refuse a product/quantity, note label, address header or multiple
-    // potential recipients. Ambiguous layouts remain reviewable instead of
-    // being forcefully assigned to a fabricated compound name.
-    if quantity::extract(candidate).len()>0
-        || Regex::new(r"(?i)(?:\bBD\s*[- ]?\d{3}|(?:^|\s)\d{3}(?:-\d+)?(?:\s|$))")
-            .expect("model code").is_match(candidate)
-        || Regex::new(r"^(?:주소|배송지|배송주소|메시지|메세지|배송\s*요청|비고)\s*[:：]")
-            .expect("non-recipient label").is_match(candidate)
-        || candidate.contains('|') || candidate.contains(';')
-    {return None;}
+    if label.is_match(prefix){return Some((start,end));}
+    if other_recipient_field(candidate) ||
+        !quantity::extract(candidate).is_empty() ||
+        candidate.contains('|') {return None;}
     Some((start,end))
 }
-fn is_person(text: &str) -> bool { ts_semantics::person(text) }
-fn is_institution(text: &str) -> bool {
-    Regex::new(r"^[가-힣A-Za-z0-9 ()]{2,30}(?:학교|교회|성당|병원|학원|월드|도서관|회관)$")
-        .expect("institution").is_match(text)
+// Weak hints for incomplete unlabelled documents only; never used to
+// validate an explicit or structurally bounded recipient value.
+fn weak_recipient_hint(text: &str) -> bool {
+    ts_semantics::person(text) ||
+    Regex::new(r"(?:학교|교회|성당|병원|학원|월드|도서관|회관|목사|선생님|님)$")
+        .expect("weak recipient hint").is_match(text)
+}
+fn delivery_boundary(line:&str,phone:&Regex)->bool{
+    address_begin(line).is_some() || phone.is_match(line)
+}
+fn unlabelled_recipient_span(
+    line:&str,address:Option<usize>,phone:&Regex,near_delivery:bool,state:&Value,client_id:&str
+)->Option<(usize,usize)>{
+    let contact=phone.find(line).map(|m|m.start());
+    let end=address.into_iter().chain(contact).min().unwrap_or(line.len());
+    let prefix=&line[..end];
+    // The contact label and table's slash separator are field boundaries.
+    let contact_label=Regex::new(r"(?i)\s+(?:연락처(?:\([^)]*\))?|전화(?:번호)?|휴대(?:전화|폰)?|번호|TEL)\s*[:：]?\s*$")
+        .expect("contact label before phone");
+    let end=if contact==Some(end){
+        contact_label.find(prefix).map_or(end,|m|m.start())
+    }else{end};
+    let prefix=&line[..end];
+    let bounded=address.is_some()||contact.is_some()||near_delivery;
+    // A real transcribed table contains product columns before the
+    // recipient remarks column. Do not treat bars inside names as columns.
+    if bounded && prefix.matches('|').count()>=4 {
+        let start=prefix.rfind('|')?+1;
+        let tail=prefix[start..].trim_end();
+        let tail=tail.strip_suffix('/').unwrap_or(tail);
+        let (a,b)=trim_span(line,start,start+tail.len())?;
+        if !other_recipient_field(&line[a..b]){return Some((a,b));}
+        return None;
+    }
+    // A known product followed by an explicit quantity is a separate field.
+    // Preserve the ENTIRE suffix, including company and English names.
+    for q in quantity::extract(prefix).into_iter().rev(){
+        let before=&prefix[..q.end];
+        let decision=model::decision_json(&model::decide(before,state,client_id));
+        if !product_signal(before,&decision,state){continue;}
+        let tail=&prefix[q.end..];
+        let tail=tail.trim_start_matches(|c:char|c.is_whitespace()||c=='|'||c=='ㅣ');
+        let a=q.end+prefix[q.end..].len()-tail.len();
+        let Some((a,b))=trim_span(line,a,end) else{continue};
+        let candidate=&line[a..b];
+        if other_recipient_field(candidate){continue;}
+        if bounded || weak_recipient_hint(candidate){
+            return Some((a,b));
+        }
+    }
+    if address.is_some() || contact.is_some(){
+        let (a,b)=composite_name_before_address(prefix)?;
+        let candidate=&line[a..b];
+        // Address/phone prefixes with no product quantity must not promote
+        // a known model to a consignee. The explicit label path has priority.
+        let decision=model::decision_json(&model::decide(candidate,state,client_id));
+        if product_signal(candidate,&decision,state){return None;}
+        return Some((a,b));
+    }
+    let (a,b)=trim_span(line,0,line.len())?;
+    let candidate=&line[a..b];
+    if other_recipient_field(candidate) || !quantity::extract(candidate).is_empty(){return None;}
+    if !near_delivery && !weak_recipient_hint(candidate){return None;}
+    let decision=model::decision_json(&model::decide(candidate,state,client_id));
+    if product_signal(candidate,&decision,state){return None;}
+    Some((a,b))
 }
 fn is_money_or_header(text: &str) -> bool { ts_semantics::ignored_document_line(text) }
 fn product_signal(text: &str, decision: &Value, _state: &Value) -> bool {
@@ -688,11 +762,7 @@ fn analyze(raw: &str, state: &Value, client: Option<&Value>) -> Result<Value, St
     let mut events: Vec<Evidence> = Vec::new();
     let mut product_hits: Vec<ProductHit> = Vec::new();
     let phone = phone_regex();
-    let person_label = Regex::new(
-        r"(?:수취인(?:명)?|수하인(?:명)?|수령자|받는\s*(?:분|사람)|성함|이름)\s*[:：]?\s*([가-힣A-Za-z0-9 ()]{2,30}?)(?:\s*(?:연락처|전화|휴대|주소|배송지)|$)",
-    ).expect("name label");
-    let inline_person = Regex::new(r"(?:^|[\s|/])([가-힣]{2,5})(?:님)?\s+(?:0(?:50\d|1[016789]|2|[3-6]\d|70|80))")
-        .expect("inline name");
+    let person_label = recipient_label();
     // Direct translation of order-evidence.ts:140-170: parenthesized
     // delivery requests and note continuation remain separate evidence.
     let note_label = Regex::new(
@@ -700,8 +770,16 @@ fn analyze(raw: &str, state: &Value, client: Option<&Value>) -> Result<Value, St
     ).expect("note");
     let mut note_continuation: Option<usize>=None;
     let mut sender_section = false;
-    for line in &lines {
+    for (line_index,line) in lines.iter().enumerate() {
         let text = line.text.trim();
+        let explicit_name=explicit_recipient_span(line.text,&person_label,&phone);
+        let near_delivery=lines.get(line_index+1).is_some_and(|next|
+            next.number<=line.number+2 && delivery_boundary(next.text,&phone)) ||
+            (line_index>0 && lines.get(line_index-1).is_some_and(|prev|
+                line.number<=prev.number+2 && phone.is_match(prev.text)) &&
+                lines.get(line_index+1).is_none_or(|next|next.paragraph!=line.paragraph));
+        let after_label=line_index>0 && lines.get(line_index-1).is_some_and(|prev|
+            person_label.find(prev.text).is_some_and(|m|prev.text[m.end()..].trim().is_empty()));
         if Regex::new(r"^(?:보내는\s*(?:분|사람|곳)|송하인(?:명)?)\s*[:：]")
             .expect("sender prefix").is_match(text) {
             sender_section = true;
@@ -712,10 +790,10 @@ fn analyze(raw: &str, state: &Value, client: Option<&Value>) -> Result<Value, St
         // lines in the same paragraph, stopping at any contact/address/item.
         if let Some(i)=note_continuation {
             let field=person_label.is_match(line.text)
-                || inline_person.is_match(line.text)
                 || address_begin(line.text).is_some()
                 || phone.is_match(line.text)
-                || is_person(text) || is_institution(text)
+                || (near_delivery && !other_recipient_field(text))
+                || weak_recipient_hint(text)
                 || (quantity::extract(line.text).len()>0
                     && model::category(line.text).is_some())
                 || product_signal(line.text,
@@ -744,7 +822,7 @@ fn analyze(raw: &str, state: &Value, client: Option<&Value>) -> Result<Value, St
         // is continuation of the preceding address, never a new item.
         if line.text.starts_with("  ") && address_begin(line.text).is_none()
             && !phone.is_match(line.text)
-            && !is_person(text)
+            && !weak_recipient_hint(text)
             && Regex::new(r"\d+\s*(?:층|호)").expect("address detail").is_match(text) {
             if let Some(previous)=events.iter().rev()
                 .find(|e|e.kind=="address" && e.paragraph==line.paragraph) {
@@ -760,7 +838,10 @@ fn analyze(raw: &str, state: &Value, client: Option<&Value>) -> Result<Value, St
             }
         }
 
-        let address = address_begin(line.text);
+        // An address-shaped substring inside an explicit name is not an address.
+        let address = if let Some((_,end))=explicit_name{
+            address_begin(&line.text[end..]).map(|a|end+a)
+        }else{address_begin(line.text)};
         // parser.ts::parseLegacy masks complete phone numbers *before*
         // interpreting a mixed address/phone row. A phone is a distinct
         // contact field, not part of the recipient's delivery address.
@@ -780,92 +861,22 @@ fn analyze(raw: &str, state: &Value, client: Option<&Value>) -> Result<Value, St
             }
         }
 
-        // A name-format-independent complete receiver label wins over
-        // extracting just a parenthesized person from the same source span.
-        let whole_receiver=address.and_then(|at|
-            composite_name_before_address(&line.text[..at]));
-        if let Some((begin,end))=whole_receiver {
-            add_match(&mut events,line,begin,end,"name",
-                line.text[begin..end].to_owned(),
-                "주소 전 전체 수취인 문자열 보존");
-        } else {
-        if let Some(c) = person_label.captures(line.text) {
-            if let Some(name) = c.get(1) {
-                let labeled_name = name.as_str().trim();
-                // Apply the same explicit title rule as standalone recipient
-                // lines, retaining the original source span for evidence.
-                let title_name = Regex::new(r"^([가-힣]{2,5})\s+(?:목사|선생님)$")
-                    .expect("labeled recipient title")
-                    .captures(labeled_name)
-                    .and_then(|c| c.get(1))
-                    .map(|m| m.as_str())
-                    .filter(|value| is_person(value));
-                if title_name.is_some() || is_person(labeled_name) || is_institution(labeled_name) {
-                    add_match(&mut events, line, name.start(), name.end(), "name",
-                        labeled_name.to_owned(), "명시적 수취인 이름");
-                }
+        let name_span=explicit_name.or_else(||{
+            if after_label && address.is_none() && !phone.is_match(line.text) &&
+                !other_recipient_field(text){
+                trim_span(line.text,0,line.text.len())
+            }else{
+                unlabelled_recipient_span(line.text,address,&phone,near_delivery,state,client_id)
             }
-        }
-        if let Some(c) = inline_person.captures(line.text) {
-            if let Some(name) = c.get(1) {
-                if is_person(name.as_str()) && address.map_or(true, |a| name.end() <= a) {
-                    add_match(&mut events, line, name.start(), name.end(), "name",
-                        name.as_str().to_owned(), "이름과 연락처가 같은 행");
-                }
-            }
-        }
-        // Port of order-evidence.ts:190-221: only an independent, trailing
-        // name after a quantity, never shipping-request text in the sentence.
-        let name_region = address.map_or(line.text, |at| &line.text[..at]);
-        let name_region = name_region.trim_end_matches(|c: char| c.is_whitespace() || c=='ㅣ' || c=='|');
-        if let Some((start,end)) = ts_semantics::trailing_product_name(name_region) {
-            add_match(&mut events,line,start,end,"name",
-                name_region[start..end].to_owned(),"상품 수량 뒤의 독립 수취인명");
-        }
-        // A column-separated (but address-sharing) row uses the same name
-        // boundary, after the explicit separator and before the address.
-        if let Some(at)=address {
-            if let Some(c)=Regex::new(
-                r"(?i)(?:\d+)\s*(?:개|대|ea|pcs)\s*[ㅣ|]\s*([가-힣]{2,5})\s*$"
-            ).expect("same-line name").captures(&line.text[..at].trim_end()) {
-                if let Some(m)=c.get(1) {
-                    if is_person(m.as_str()) {
-                        add_match(&mut events,line,m.start(),m.end(),"name",
-                            m.as_str().to_owned(),"상품과 주소 사이의 독립 이름");
-                    }
-                }
-            }
-        }
-        // A transcribed table can carry the recipient in its remarks column.
-        if line.text.contains('|') {
-            let table_recipient=Regex::new(r"\|\s*([가-힣]{2,5})\s*/")
-                .expect("table recipient");
-            if let Some(c)=table_recipient.captures(line.text) {
-                if let Some(name)=c.get(1) {
-                    if is_person(name.as_str()) && address.map_or(true,|a|name.end()<=a) {
-                        add_match(&mut events,line,name.start(),name.end(),"name",
-                            name.as_str().to_owned(),"표 비고란의 수취인");
-                    }
-                }
-            }
-        }
-        // A parenthesized person before the address remains a fallback when
-        // the whole receiver label is absent or lacks sufficient evidence.
-        if let Some(address_start) = address {
-            let prefix = &line.text[..address_start];
-            let enclosed=Regex::new(r"\(([가-힣]{2,5})\)").expect("enclosed name");
-            for c in enclosed.captures_iter(prefix) {
-                if let Some(name)=c.get(1) {
-                    if is_person(name.as_str()) {
-                        add_match(&mut events,line,name.start(),name.end(),"name",
-                            name.as_str().to_owned(),"주소 앞 괄호의 수취인");
-                    }
-                }
-            }
-        }
+        });
+        if let Some((begin,end))=name_span{
+            add_match(&mut events,line,begin,end,"name",line.text[begin..end].to_owned(),
+                if explicit_name.is_some()||after_label{"명시적 수취인 이름"}
+                else{"수취인 필드 경계에서 원문 전체 보존"});
         }
         for c in phone.captures_iter(line.text) {
             let full = c.get(0).expect("phone match");
+            if name_span.is_some_and(|(a,b)|a<full.end()&&full.start()<b){continue;}
             // Reject a phone-like substring embedded in a longer digit run.
             if (full.start() > 0 && line.text[..full.start()].chars().next_back()
                 .map_or(false, |v| v.is_ascii_digit()))
@@ -882,55 +893,11 @@ fn analyze(raw: &str, state: &Value, client: Option<&Value>) -> Result<Value, St
         if address.is_none() && ts_semantics::only_contact_or_identity(line.text,&contact_spans) {
             continue;
         }
-        let has_name = events.iter().any(|e| e.kind == "name" && e.line == line.number);
-        if !has_name && address.is_none() {
-            let mut recognized_full_name=false;
-            // A recognized title is part of the recipient field, not a
-            // disposable suffix. Check it before the generic two-word rule.
-            if let Some(c)=Regex::new(r"^([가-힣]{2,5})\s+(?:목사|선생님)$")
-                .expect("recipient title").captures(text) {
-                if let Some(name)=c.get(1) {
-                    if is_person(name.as_str()) {
-                        if let Some(at)=line.text.find(text) {
-                            add_match(&mut events,line,at,at+text.len(),"name",
-                                text.to_owned(),
-                                "수취 기관 또는 직함을 포함한 이름");
-                            recognized_full_name=true;
-                        }
-                    }
-                }
-            }
-            if !recognized_full_name && Regex::new(r"^[가-힣]{2,5}\s+[가-힣]{2,5}님$")
-                .expect("two-word recipient").is_match(text) {
-                if let Some(at)=line.text.find(text) {
-                    add_match(&mut events,line,at,at+text.len(),"name",
-                        text.trim_end_matches('님').to_owned(),
-                        "수취인 복수 표기 이름");
-                    recognized_full_name=true;
-                }
-            }
-            if !recognized_full_name {
-                let standalone=text.trim_end_matches('님');
-                if is_person(standalone) || is_institution(text) {
-                    if let Some(at)=line.text.find(text) {
-                        add_match(&mut events,line,at,at+text.len(),"name",
-                            standalone.to_owned(),"독립 수취인 또는 기관명");
-                    }
-                }
-                if text.starts_with("김") || text.starts_with("박") || text.starts_with("이") {
-                    let first=text.split_whitespace().next().unwrap_or("");
-                    if is_person(first) && text.split_whitespace().count()==2 {
-                        if let Some(at)=line.text.find(first) {
-                            add_match(&mut events,line,at,at+first.len(),"name",
-                                first.to_owned(),"수취인명과 부연 문구");
-                        }
-                    }
-                }
-            }
-        }
-        if address.is_none() && !has_name {
-            // "진해구 안청남로 40" is already picked up by address_begin.
-            // A bare building continuation is left attached to the previous address later.
+        // A name-only field cannot create a phantom product or quantity,
+        // even if the name itself looks like a registered model.
+        if explicit_name.is_some() || name_span.is_some_and(|(a,_)|
+            line.text[..a].trim().is_empty()) || (after_label && name_span.is_some()){
+            continue;
         }
 
         // parser.ts::logicalLines gives the address the whole line unless
@@ -939,7 +906,12 @@ fn analyze(raw: &str, state: &Value, client: Option<&Value>) -> Result<Value, St
         if let Some(begin)=address {
             if !ts_semantics::model_before_address(&line.text[..begin],state) {continue;}
         }
-        let product_part = address.map_or(line.text, |begin| &line.text[..begin]);
+        let product_end=address.unwrap_or(line.text.len());
+        let product_end=name_span.map_or(product_end,|(a,_)|a.min(product_end));
+        // Table quantities depend on the original column boundaries.
+        let product_part=if line.text[..product_end].matches('|').count()>=4 {
+            &line.text[..address.unwrap_or(line.text.len())]
+        }else{&line.text[..product_end]};
         let trimmed = product_part.trim();
         if trimmed.is_empty() || is_money_or_header(trimmed)
             || (trimmed.contains('|') && trimmed.split('|').any(|column|
@@ -1552,6 +1524,39 @@ mod tests {
         assert_ne!(item["productId"],"p709");
     }
     #[test]
+    fn recipient_field_has_no_name_shape_or_length_restriction(){
+        let names=["John Smith","BANDO Music & Sound","(주)대한악기","A/S 담당자","ABC-123",
+            "홍길동님","(김가상)","수취인: 연구소","A","123","山田 太郎","🎵 Music / 2F",
+            "서울 음악 연구소","BD 709 2개","국제공연예술교육지원센터(교육기획팀)(John Smith)(3층)"];
+        for name in names{
+            let raw=format!("수취인: {name}\n연락처: 010-1234-5678\n주소: 서울특별시 마포구 월드컵로 20\n709 1개");
+            let out=execute("analyze_order",json!({"raw":raw,"state":state()})).unwrap();
+            let rows=out["recipients"].as_array().unwrap();
+            assert_eq!(rows.len(),1,"{name}: {out}");
+            assert_eq!(rows[0]["name"],name,"{out}");
+            assert_eq!(rows[0]["mobile"],"010-1234-5678");
+            assert_eq!(rows[0]["items"].as_array().unwrap().len(),1);
+            assert!(rows[0]["sources"].as_array().unwrap().iter().any(|v|v["field"]=="name"&&v["text"]==name));
+        }
+        let long="A very long international organization and department name ".repeat(8);
+        let raw=format!("수취인: {}\n010-1234-5678",long.trim_end());
+        let out=execute("analyze_order",json!({"raw":raw,"state":state()})).unwrap();
+        assert_eq!(out["recipients"][0]["name"],long.trim_end());
+    }
+    #[test]
+    fn structurally_bounded_unlabelled_recipient_preserves_whole_value(){
+        for name in ["John Smith","BANDO Music & Sound","(주)대한악기","홍길동님","(김가상)","A/S 담당자"]{
+            for raw in [format!("709 1개\n{name}\n010-1234-5678\n서울특별시 마포구 월드컵로 20"),
+                format!("709 1개\n{name} 010-1234-5678 서울특별시 마포구 월드컵로 20")]{
+                let out=execute("analyze_order",json!({"raw":raw,"state":state()})).unwrap();
+                assert_eq!(out["recipients"].as_array().unwrap().len(),1,"{out}");
+                assert_eq!(out["recipients"][0]["name"],name,"{out}");
+                assert_eq!(out["recipients"][0]["mobile"],"010-1234-5678");
+                assert_eq!(out["recipients"][0]["items"][0]["quantity"],1);
+            }
+        }
+    }
+    #[test]
     fn explicitly_labeled_recipient_with_title_preserves_name_and_contacts() {
         for (label, title) in [("받는 사람", "선생님"), ("수취인:", "목사"), ("", "선생님"), ("", "목사")] {
             let raw = format!(
@@ -1955,7 +1960,7 @@ mod tests {
                 .filter(|c|c["field"]=="name").count(),1,
                 "no duplicate short name candidates: {name}");
         }
-        assert_eq!(composite_name_before_address("(김가상) (12416) "),None);
+        assert_eq!(composite_name_before_address("(김가상) (12416) "),Some((0,"(김가상)".len())));
         assert_eq!(composite_name_before_address("709 1개 (김가상) (12416) "),None);
         assert_eq!(composite_name_before_address("매장 (김가상) (12416) "),
             Some((0,"매장 (김가상)".len())));
@@ -1982,11 +1987,11 @@ mod tests {
         assert_eq!(composite_name_before_address("연락처 :"),None);
     }
     #[test]
-    fn lone_parenthesized_recipient_still_uses_existing_name_rule() {
+    fn lone_parenthesized_recipient_preserves_parentheses() {
         let raw="(김가상) (12416) 경기도 가평군 가평읍 문화로 120 010-1234-5678";
         let out=execute("analyze_order",json!({"raw":raw,"state":state()})).unwrap();
         assert_eq!(out["recipients"].as_array().unwrap().len(),1);
-        assert_eq!(out["recipients"][0]["name"],"김가상");
+        assert_eq!(out["recipients"][0]["name"],"(김가상)");
         assert_eq!(out["recipients"][0]["mobile"],"010-1234-5678");
         assert!(out["recipients"][0]["address"].as_str().unwrap().contains("문화로 120"));
     }
