@@ -1976,16 +1976,18 @@ impl ProductManager {
         brands:&[Value],categories:&[(String,String)],
         category_nodes:&[category_dropdown::CategoryNode],editable:bool,busy:bool
     ){
-        Self::detail_overview_column(ui,draft,brands,categories,category_nodes,editable,busy);
-        // Ordinary form spacing is 8pt. The divider allocation already
-        // includes its full 16pt on each side, so compensate for the
-        // automatic row gap rather than adding it a second time.
-        ui.spacing_mut().item_spacing.y=0.0;
-        // The previous row advanced the cursor by the normal row gap.
-        ui.add_space(-theme::SPACING);
+        // The shared divider owns its full 16pt on each side; group scopes
+        // own only their internal 8pt row gaps, not the structural gap.
+        components::modal_master_controlled_spacing(ui);
+        ui.scope(|group|{
+            group.spacing_mut().item_spacing.y=theme::SPACING;
+            Self::detail_overview_column(group,draft,brands,categories,category_nodes,editable,busy);
+        });
         components::modal_master_spaced_divider(ui);
-        ui.spacing_mut().item_spacing.y=theme::SPACING;
-        Self::detail_price_column(ui,draft,prices,editable,busy);
+        ui.scope(|group|{
+            group.spacing_mut().item_spacing.y=theme::SPACING;
+            Self::detail_price_column(group,draft,prices,editable,busy);
+        });
     }
     pub fn show_detail(&mut self,ctx:&Context,work_area:egui::Rect){
         if self.tab==0 && self.excel.has_modal(){
