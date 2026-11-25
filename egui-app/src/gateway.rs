@@ -221,6 +221,8 @@ pub trait BandoGateway: Send + Sync {
     /// use the original native Rust rule reducers and the v2 revision CAS.
     /// Never mutate the read-only egui preview store or an HTTP fallback.
     fn workflow_write_enabled(&self)->bool{false}
+    /// Lightweight revision probe; None means this adapter cannot probe cheaply.
+    fn workflow_revision(&self)->Result<Option<u64>,String>{Ok(None)}
     /// Only the native scoped freight writer guarantees the dependency scope.
     fn supports_scoped_freight_refresh(&self)->bool{false}
     fn mutate_workflow(
@@ -268,6 +270,25 @@ pub struct LocalGateway;
 impl BandoGateway for LocalGateway {
     fn label(&self) -> &'static str {
         "로컬 Rust"
+    }
+
+    fn workflow_revision(&self)->Result<Option<u64>,String>{
+        use rusqlite::{Connection,OpenFlags};
+        let path=std::env::var_os("BANDO_EGUI_BUSINESS_DB")
+            .filter(|p|!p.is_empty()).ok_or("실제 업무 DB가 연결되지 않았습니다.")?;
+        if std::env::var_os("BANDO_EGUI_CLIENT_INDEX").is_some_and(|p|!p.is_empty()){
+            return Err("JSON 거래처 인덱스는 업무 DB를 대신할 수 없습니다.".into());
+        }
+        let conn=Connection::open_with_flags(std::path::PathBuf::from(path),OpenFlags::SQLITE_OPEN_READ_ONLY)
+            .map_err(|e|format!("업무 DB 변경 확인 실패: {e}"))?;
+        conn.busy_timeout(std::time::Duration::from_secs(2)).map_err(|e|e.to_string())?;
+        // The canonical writer increments app_state.revision in the same transaction.
+        // Do not hydrate relational orders or project workflow/message data here.
+        let revision:i64=conn.query_row(
+            "SELECT json_extract(payload,'$.revision') FROM app_state WHERE id=1 AND (SELECT version FROM core_schema WHERE key='business-core')=2",
+            [],|row|row.get(0)
+        ).map_err(|e|format!("업무 DB 리비전 확인 실패: {e}"))?;
+        Ok(Some(u64::try_from(revision).map_err(|_|"업무 DB 리비전 범위 오류")?))
     }
 
     fn load_catalog(&self) -> Result<Value, String> {
