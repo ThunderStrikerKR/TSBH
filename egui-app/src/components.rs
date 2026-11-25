@@ -6379,6 +6379,20 @@ pub fn reception_item_header_action(ui:&mut Ui,rollback:bool,enabled:bool)->Resp
 
 /// Persistent validation is attached to an existing cell, not an extra row.
 /// The small marker and tooltip consume no parent layout space.
+/// Only construct the tooltip's combined text when it is actually requested.
+pub fn reception_item_issue_values(ui:&Ui,cell:&Response,issues:&[serde_json::Value]){
+    if !issues.iter().filter_map(serde_json::Value::as_str).any(|message|!message.trim().is_empty()){return;}
+    let rect=cell.rect.intersect(ui.clip_rect());
+    if rect.width()>12.0 && rect.height()>12.0{
+        ui.painter().with_clip_rect(rect).circle_filled(
+            egui::pos2(rect.right()-4.0,rect.top()+4.0),2.5,theme::SELECTED_ORDER
+        );
+    }
+    cell.clone().on_hover_ui(|ui|{
+        let message=issues.iter().filter_map(serde_json::Value::as_str).collect::<Vec<_>>().join("\n");
+        ui.label(message);
+    });
+}
 pub fn reception_item_issue_feedback(ui:&Ui,cell:&Response,message:&str){
     if message.trim().is_empty(){return;}
     let rect=cell.rect.intersect(ui.clip_rect());
