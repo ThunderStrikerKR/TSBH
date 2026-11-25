@@ -31,6 +31,7 @@ mod brand_manager;
 mod model_group_manager;
 mod product_manager;
 mod product_excel;
+mod native_workbooks;
 mod product_excel_ui;
 mod client_chooser;
 mod business_state;
@@ -9367,6 +9368,8 @@ impl eframe::App for BandoEgui {
                     manager.show_message_confirmation(
                         ctx,work_area,Arc::clone(&self.gateway)
                     );
+                }else if manager.has_excel_review(){
+                    manager.show_excel_review(ctx,work_area,Arc::clone(&self.gateway));
                 }else if manager.has_modal(){
                     components::modal_backdrop(
                         ctx,"client-manager-modal-backdrop",false

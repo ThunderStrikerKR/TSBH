@@ -6,6 +6,11 @@ on:
       - 'egui-app/src/native_workbooks.rs'
       - 'egui-app/tests/native_workbooks.rs'
       - 'egui-app/Cargo.toml'
+      - 'egui-app/src/client_master.rs'
+      - 'egui-app/src/client_manager.rs'
+      - 'egui-app/src/product_excel_ui.rs'
+      - 'egui-app/src/gateway.rs'
+      - 'crates/bando-data-access/**'
       - 'src-tauri/src/business_core/catalog_clients/**'
       - 'src-tauri/src/business_core/rules/factory_reply.rs'
       - '.github/workflows/native-workbook-boundary.yml'
@@ -14,6 +19,11 @@ on:
       - 'egui-app/src/native_workbooks.rs'
       - 'egui-app/tests/native_workbooks.rs'
       - 'egui-app/Cargo.toml'
+      - 'egui-app/src/client_master.rs'
+      - 'egui-app/src/client_manager.rs'
+      - 'egui-app/src/product_excel_ui.rs'
+      - 'egui-app/src/gateway.rs'
+      - 'crates/bando-data-access/**'
       - 'src-tauri/src/business_core/catalog_clients/**'
       - 'src-tauri/src/business_core/rules/factory_reply.rs'
       - '.github/workflows/native-workbook-boundary.yml'
@@ -32,3 +42,7 @@ jobs:
           workspaces: egui-app -> target
       - name: Verify actual binary XLSX and native business rules
         run: cargo test --manifest-path egui-app/Cargo.toml --test native_workbooks -- --nocapture
+      - name: Verify client workbook transactional backup and CAS
+        run: cargo test --manifest-path crates/bando-data-access/Cargo.toml --lib client_workbook_ -- --nocapture
+      - name: Verify shared Excel review and approval UI
+        run: cargo test --manifest-path egui-app/Cargo.toml --bin bando-hub-egui product_excel_ui::tests -- --nocapture

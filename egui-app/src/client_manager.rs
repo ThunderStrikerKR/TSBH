@@ -108,6 +108,7 @@ pub struct ClientManager {
     tag_notice:Option<String>,
     show_messages:bool,
     messages:Option<AutomaticMessageManager>,
+    excel:crate::product_excel_ui::ProductExcelUi,
 }
 
 fn client_tier_kpi_values(available:bool,counts:[usize;4])->[String;4]{
@@ -133,11 +134,11 @@ impl ClientManager {
             draft:None,original:None,confirm_delete:false,confirm_discard:false,
             exception_id:String::new(),exception_price:String::new(),
             tag_input:String::new(),tag_notice:None,
-            show_messages:false,messages:None,
+            show_messages:false,messages:None,excel:crate::product_excel_ui::ProductExcelUi::for_clients(),
         }
     }
     pub fn has_modal(&self)->bool {
-        self.draft.is_some() || self.messages.as_ref()
+        self.draft.is_some() || self.excel.has_modal() || self.messages.as_ref()
             .is_some_and(|message|self.show_messages && message.has_confirmation())
     }
     pub fn has_message_confirmation(&self)->bool{
@@ -158,6 +159,7 @@ impl ClientManager {
         }
     }
     pub fn request_global_leave(&mut self)->bool{
+        if self.excel.blocks_navigation(){return false;}
         if !self.show_messages{return true;}
         self.messages.as_mut().is_none_or(|m|m.request_global_leave())
     }
@@ -306,15 +308,16 @@ impl ClientManager {
     }
     /// Keep the existing actions in their approved order, anchored right.
     /// Rendering alone is refactored; Excel remains disabled until migrated.
-    fn list_toolbar_actions(&mut self,ui:&mut Ui) {
+    fn list_toolbar_actions(&mut self,ui:&mut Ui,gateway:Arc<dyn BandoGateway>) {
         ui.with_layout(Layout::right_to_left(Align::Center),|actions|{
             if theme::action(actions,"＋ 거래처 등록",ButtonRole::Primary,
-                self.ready && self.editable() && self.saving.is_none()
+                self.ready && self.editable() && self.saving.is_none() && !self.excel.blocks_navigation()
             ).clicked(){
                 self.begin(empty_client());
             }
-            theme::action(actions,"Excel 관리",ButtonRole::Standard,false)
-                .on_disabled_hover_text("Excel 관리 기능은 이전되지 않았습니다.");
+            let allowed=self.ready&&self.editable()&&self.saving.is_none()&&self.draft.is_none()&&!self.excel.blocks_navigation();
+            let response=theme::action(actions,"Excel 관리",ButtonRole::Standard,allowed);
+            self.excel.show_menu(actions,&response,gateway,allowed);
         });
     }
 
@@ -333,6 +336,10 @@ impl ClientManager {
     pub fn show_page(&mut self,ui:&mut Ui,gateway:Arc<dyn BandoGateway>) {
         let page_origin_y=ui.cursor().top();
         self.poll(Arc::clone(&gateway),ui.ctx());
+        if let Some(state)=self.excel.poll(ui.ctx()){
+            self.state=state;self.changed=true;self.error=None;
+            self.query(Arc::clone(&gateway),ui.ctx().clone());
+        }
         crate::floating_notice::sync(
             ui.ctx(),"clients.error","clients.action",
             crate::floating_notice::Tone::Error,self.error.as_deref()
@@ -395,7 +402,7 @@ impl ClientManager {
                 ("자동 메시지 편집",self.show_messages,true),
             ])
         );
-        if let Some(tab)=chosen_tab{
+        if let Some(tab)=chosen_tab.filter(|_|!self.excel.blocks_navigation()){
             if tab==1 && !self.show_messages {
                 if self.messages.is_none(){
                     self.messages=Some(AutomaticMessageManager::new(
@@ -505,7 +512,7 @@ impl ClientManager {
                     |actions|{
                         actions.set_clip_rect(actions_rect);
                         actions.set_width(actions_rect.width());
-                        self.list_toolbar_actions(actions);
+                        self.list_toolbar_actions(actions,Arc::clone(&gateway));
                     }
                 );
             }else{
@@ -545,7 +552,7 @@ impl ClientManager {
                     |actions|{
                         actions.set_clip_rect(action_rect);
                         actions.set_width(action_rect.width());
-                        self.list_toolbar_actions(actions);
+                        self.list_toolbar_actions(actions,Arc::clone(&gateway));
                     }
                 );
             }
@@ -658,7 +665,7 @@ impl ClientManager {
                 };
                 section.ctx().request_repaint();
             }
-            if let Some(client)=chosen{self.begin(client);}
+            if !self.excel.blocks_navigation(){if let Some(client)=chosen{self.begin(client);}}
         });
     }
     fn accept_tag_text(&mut self,draft:&mut Value,text:&str){
@@ -903,6 +910,11 @@ impl ClientManager {
             }
         }
         id.to_owned()
+    }
+    pub fn has_excel_review(&self)->bool{self.excel.has_modal()}
+    pub fn show_excel_review(&mut self,ctx:&Context,area:egui::Rect,gateway:Arc<dyn BandoGateway>){
+        let allowed=self.editable();
+        self.excel.show_review(ctx,area,gateway,allowed);
     }
     pub fn show_editor(
         &mut self,ctx:&Context,work_area:egui::Rect,gateway:Arc<dyn BandoGateway>

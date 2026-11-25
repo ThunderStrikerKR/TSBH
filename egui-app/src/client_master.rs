@@ -107,3 +107,36 @@ pub fn mutate(expected:u64,action:&str,client:Value)->Result<Value,String>{
     }
     Ok(current)
 }
+
+pub fn archive_workbook()->Result<String,String>{
+    if !editable(){return Err("거래처 Excel 권한이 없습니다.".into());}
+    let state=crate::business_state::load_catalog()?;
+    let bytes=crate::native_workbooks::export_clients(&state)?;
+    crate::excel_service::archive_client_workbook(&state,&bytes)
+        .map(|p|p.to_string_lossy().into_owned())
+}
+pub fn preview_workbook(mut source:Value)->Result<Value,String>{
+    if !editable(){return Err("거래처 Excel 권한이 없습니다.".into());}
+    let count=source["input"].as_array().ok_or("거래처 Excel 행 누락")?.len();
+    if count>20_000{return Err("거래처 최대 20,000행".into());}
+    source["newIds"]=json!((0..count).map(|_|uuid::Uuid::new_v4().to_string()).collect::<Vec<_>>());
+    let state=crate::business_state::load_catalog()?;
+    bando_data_access::preview_client_workbook(&state,&source)
+}
+pub fn apply_workbook(reviewed:Value)->Result<Value,String>{
+    if !editable(){return Err("거래처 Excel 저장 권한이 없습니다.".into());}
+    let path=crate::business_state::authorized_client_write_path()?;
+    let base=path.parent().ok_or("백업 경로 누락")?;
+    let mut conn=Connection::open_with_flags(&path,OpenFlags::SQLITE_OPEN_READ_WRITE)
+        .map_err(|e|e.to_string())?;
+    conn.busy_timeout(Duration::from_secs(5)).map_err(|e|e.to_string())?;
+    conn.execute_batch("PRAGMA foreign_keys=ON;").map_err(|e|e.to_string())?;
+    let committed=bando_data_access::commit_client_workbook_v2(&mut conn,base,&reviewed)?;
+    let revision=committed["revision"].as_u64().ok_or("거래처 저장 리비전 누락")?;
+    drop(conn);
+    let current=load()?;
+    if current["revision"].as_u64()!=Some(revision){
+        return Err("거래처 Excel은 저장됐지만 이후 데이터가 변경되었습니다. 최신 목록을 다시 확인하세요.".into());
+    }
+    Ok(current)
+}

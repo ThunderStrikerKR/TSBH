@@ -27,6 +27,7 @@ enum JobResult{
     Applied(Value),
 }
 pub struct ProductExcelUi {
+    client:bool,
     review:Option<Arc<Value>>,
     filename:String,
     filter:ReviewFilter,
@@ -38,7 +39,7 @@ pub struct ProductExcelUi {
 }
 impl Default for ProductExcelUi {
     fn default()->Self{
-        Self{review:None,filename:String::new(),filter:ReviewFilter::All,
+        Self{client:false,review:None,filename:String::new(),filter:ReviewFilter::All,
             approved:false,confirming:false,job:None,notice:None,error:None}
     }
 }
@@ -82,31 +83,39 @@ fn review_table_rows(review:&Value,filter:ReviewFilter)->Vec<Vec<String>>{
 fn saved_message(path:&PathBuf)->String{
     format!("독립 상품 및 가격 전체 목록을 저장했습니다: {}",path.display())
 }
-fn export_file(gateway:&dyn BandoGateway)->Result<JobResult,String>{
+fn export_file(gateway:&dyn BandoGateway,client:bool)->Result<JobResult,String>{
     // The original React action saves in the configured product archive,
     // with a date folder and collision-safe numbered filename. It never
     // prompts for an arbitrary Save As destination.
-    gateway.archive_product_workbook()
+    (if client{gateway.archive_client_workbook()}else{gateway.archive_product_workbook()})
         .map(|path|JobResult::Exported(PathBuf::from(path)))
 }
 #[cfg(windows)]
-fn preview_file(gateway:&dyn BandoGateway)->Result<JobResult,String>{
+fn preview_file(gateway:&dyn BandoGateway,client:bool)->Result<JobResult,String>{
     let file=rfd::FileDialog::new()
         .set_title("Excel 업로드 / 전체 변경 검토")
         .add_filter("Excel 통합 문서",&["xlsx"]).pick_file();
     let Some(path)=file else{return Ok(JobResult::Cancelled)};
-    let source=product_excel::read(&path)?;
-    let preview=gateway.preview_product_workbook(source)?;
+    let preview=if client{
+        use std::io::Read;
+        let mut bytes=Vec::new();
+        std::fs::File::open(&path).map_err(|e|e.to_string())?
+            .take(20*1024*1024+1).read_to_end(&mut bytes).map_err(|e|e.to_string())?;
+        gateway.preview_client_workbook(crate::native_workbooks::read_clients(&bytes)?)?
+    }else{gateway.preview_product_workbook(product_excel::read(&path)?)?};
     Ok(JobResult::Previewed{
         name:path.file_name().map(|name|name.to_string_lossy().into_owned())
             .unwrap_or_default(),preview
     })
 }
 #[cfg(not(windows))]
-fn preview_file(_gateway:&dyn BandoGateway)->Result<JobResult,String>{
-    Err("상품 Excel 파일 선택은 Windows 프로그램에서 지원합니다.".into())
+fn preview_file(_gateway:&dyn BandoGateway,_client:bool)->Result<JobResult,String>{
+    Err("Excel 파일 선택은 Windows 프로그램에서 지원합니다.".into())
 }
 impl ProductExcelUi {
+    pub fn for_clients()->Self{Self{client:true,..Self::default()}}
+    fn entity(&self)->&'static str{if self.client{"거래처"}else{"상품"}}
+    fn notice_key(&self)->&'static str{if self.client{"clients.excel"}else{"products.excel"}}
     pub fn busy(&self)->bool{self.job.is_some()}
     pub fn has_modal(&self)->bool{self.review.is_some()}
     pub fn blocks_navigation(&self)->bool{
@@ -115,7 +124,7 @@ impl ProductExcelUi {
     fn start<F>(&mut self,ctx:&Context,job:F)
         where F:FnOnce()->Result<JobResult,String>+Send+'static {
         if self.busy(){return;}
-        crate::floating_notice::dispatch_pointer(ctx,"products.excel");
+        crate::floating_notice::dispatch_pointer(ctx,self.notice_key());
         self.error=None;
         self.notice=None;
         let (tx,rx)=mpsc::channel();
@@ -133,7 +142,7 @@ impl ProductExcelUi {
                 self.job=None;
                 match event{
                     JobResult::Cancelled=>{},
-                    JobResult::Exported(path)=>self.notice=Some(saved_message(&path)),
+                    JobResult::Exported(path)=>self.notice=Some(if self.client{format!("거래처 전체 목록을 저장했습니다: {}",path.display())}else{saved_message(&path)}),
                     JobResult::Previewed{name,preview}=>{
                         self.review=Some(Arc::new(preview));
                         self.filename=name;
@@ -146,7 +155,7 @@ impl ProductExcelUi {
                         self.approved=false;
                         self.confirming=false;
                         self.notice=Some(
-                            "상품 Excel 변경사항을 저장했습니다. 기존 데이터는 백업했습니다.".into()
+                            format!("{} Excel 변경사항을 저장했습니다. 기존 데이터는 백업했습니다.",self.entity())
                         );
                         return Some(catalog);
                     }
@@ -158,7 +167,7 @@ impl ProductExcelUi {
             }
             Some(Err(TryRecvError::Disconnected))=>{
                 self.job=None;
-                self.error=Some("상품 Excel 작업 응답이 중단됐습니다. 다시 조회하세요.".into());
+                self.error=Some(format!("{} Excel 작업 응답이 중단됐습니다. 다시 조회하세요.",self.entity()));
             }
             // The Excel worker wakes egui as soon as the channel is ready.
             Some(Err(TryRecvError::Empty))=>{},
@@ -174,11 +183,11 @@ impl ProductExcelUi {
     ){
         // Result messages must remain visible after the popup closes.
         crate::floating_notice::sync(
-            ui.ctx(),"products.excel.result","products.excel",
+            ui.ctx(),if self.client{"clients.excel.result"}else{"products.excel.result"},self.notice_key(),
             crate::floating_notice::Tone::Success,self.notice.as_deref()
         );
         crate::floating_notice::sync(
-            ui.ctx(),"products.excel.error","products.excel",
+            ui.ctx(),if self.client{"clients.excel.error"}else{"products.excel.error"},self.notice_key(),
             crate::floating_notice::Tone::Error,
             if self.review.is_none(){self.error.as_deref()}else{None}
         );
@@ -197,12 +206,13 @@ impl ProductExcelUi {
                 menu.spacing_mut().item_spacing.y=theme::SPACE_4;
                 let enabled=!self.busy()&&allowed;
                 if theme::action(
-                    menu,"현재 상품 전체 Excel 다운로드",
+                    menu,if self.client{"현재 거래처 전체 Excel 다운로드"}else{"현재 상품 전체 Excel 다운로드"},
                     theme::ButtonRole::Standard,enabled
                 ).clicked(){
                     let native=Arc::clone(&gateway);
                     crate::floating_notice::dropdown_option_selected(menu.ctx());
-                    self.start(menu.ctx(),move||export_file(native.as_ref()));
+                    let client=self.client;
+                    self.start(menu.ctx(),move||export_file(native.as_ref(),client));
                     menu.close();
                 }
                 if theme::action(
@@ -211,7 +221,8 @@ impl ProductExcelUi {
                 ).clicked(){
                     let native=Arc::clone(&gateway);
                     crate::floating_notice::dropdown_option_selected(menu.ctx());
-                    self.start(menu.ctx(),move||preview_file(native.as_ref()));
+                    let client=self.client;
+                    self.start(menu.ctx(),move||preview_file(native.as_ref(),client));
                     menu.close();
                 }
                 // Keep popup height identical before, during and after
@@ -241,7 +252,10 @@ impl ProductExcelUi {
         // Arc handle per frame, never the full validated JSON projection.
         let Some(review)=self.review.as_ref().cloned() else{return;};
         components::modal_backdrop(ctx,"egui-product-excel-review-backdrop",false);
-        let missing=review["missingProducts"].as_u64().unwrap_or(0);
+        let missing=review[if self.client{"missing"}else{"missingProducts"}].as_u64().unwrap_or(0);
+        let entity=self.entity();
+        let title=if self.client{"거래처 전체 Excel 변경 검토"}else{"상품 전체 Excel 변경 검토"};
+        let confirm_title=if self.client{"거래처 변경사항 반영"}else{"상품 변경사항 반영"};
         let adds=review_count(&review,"ADD");
         let updates=review_count(&review,"UPDATE");
         let unchanged=review_count(&review,"UNCHANGED");
@@ -249,8 +263,8 @@ impl ProductExcelUi {
         let errors=review_count(&review,"ERROR");
         let mut close=false;
         let mut request_commit=false;
-        components::modal_window("상품 전체 Excel 변경 검토",
-            "egui-product-excel-review",work_area)
+        components::modal_window(title,
+            if self.client{"egui-client-excel-review"}else{"egui-product-excel-review"},work_area)
             .default_width(work_area.width().min(1070.0))
             .show(ctx,|ui|{
 
@@ -258,7 +272,7 @@ impl ProductExcelUi {
                     +theme::FRAME_STROKE_WIDTH)).max(1.0);
                 ui.set_min_width(inner_width.min(900.0));
                 components::modal_flow_workspace(ui,|workspace|{
-                    close=workspace.header("상품 전체 Excel 변경 검토","취소",!self.busy()&&!self.confirming
+                    close=workspace.header(title,"취소",!self.busy()&&!self.confirming
                     );
                     if self.confirming{workspace.disable();}
                     workspace.scroll_region("product-excel-review-body",
@@ -275,7 +289,7 @@ impl ProductExcelUi {
                             }
                         });
                         let missing_note=(missing>0).then(||format!(
-                            "Excel에서 누락된 기존 상품 {missing}개는 삭제하거나 판매중지하지 않고 그대로 유지합니다."
+                            "Excel에서 누락된 기존 {entity} {missing}개는 삭제하거나 중지하지 않고 그대로 유지합니다."
                         ));
                         let missing_width=ui.available_width();
                         components::fixed_status_slot(
@@ -294,8 +308,9 @@ impl ProductExcelUi {
                         // Review-only. The original React limits the visible audit
                         // table to 500 records while validating every source row.
                         let full=review["rows"].as_array().map(Vec::as_slice).unwrap_or(&[]);
-                        let visible=review_table_rows(&review,self.filter);
-                        let headings=["시트","행","독립 상품","판정","변경 및 사유"];
+                        let mut visible=review_table_rows(&review,self.filter);
+                        if self.client{for row in &mut visible{row[0]="거래처 목록".into();}}
+                        let headings=["시트","행",if self.client{"거래처"}else{"독립 상품"},"판정","변경 및 사유"];
                         components::management_readonly_table(
                             ui,"product-excel-review-rows",&headings,&visible,
                             work_area.height()*0.40,
@@ -315,7 +330,7 @@ impl ProductExcelUi {
                             large_table_note,large_table_note,theme::MUTED
                         );
                         ui.label(typography::caption(
-                            "홈페이지 등록 여부와 관계없이 신규 등록 및 수정할 수 있습니다. 기존 상품 ID와 가격 기록 ID, 주문 이력, 이미지 및 홈페이지 연결 정보는 보존됩니다."
+                            if self.client{"기존 거래처 ID, 특수 단가 및 주문 이력을 유지합니다. 누락 행은 삭제하지 않습니다."}else{"홈페이지 등록 여부와 관계없이 신규 등록 및 수정할 수 있습니다. 기존 상품 ID와 가격 기록 ID, 주문 이력, 이미지 및 홈페이지 연결 정보는 보존됩니다."}
                         ));
                         components::checkbox(
                             ui,&mut self.approved,
@@ -330,7 +345,7 @@ impl ProductExcelUi {
                     });
                     workspace.footer_single(|buttons|{
                         if theme::action(buttons,
-                            "백업 후 상품 변경사항 반영",theme::ButtonRole::Primary,
+                            if self.client{"백업 후 거래처 변경사항 반영"}else{"백업 후 상품 변경사항 반영"},theme::ButtonRole::Primary,
                             self.can_apply()&&can_edit
                         ).clicked(){request_commit=true;}
                     });
@@ -342,13 +357,13 @@ impl ProductExcelUi {
             components::modal_backdrop(ctx,"egui-product-excel-confirm-backdrop",true);
             let mut cancel=false;
             let mut approve=false;
-            components::show_decision_window(ctx,"상품 변경사항 반영","egui-product-excel-confirm",work_area,|modal|{
+            components::show_decision_window(ctx,confirm_title,if self.client{"egui-client-excel-confirm"}else{"egui-product-excel-confirm"},work_area,|modal|{
                 components::decision_workspace(modal,|decision|{
-                    cancel=decision.header("상품 변경사항 반영","취소",!self.busy()
+                    cancel=decision.header(confirm_title,"취소",!self.busy()
                     );
                     decision.body(|modal|{
                         modal.label(typography::table_cell(&format!(
-                            "신규 상품 {adds}개, 상품 정보 및 가격 수정 {updates}개를 반영할까요? Excel에서 누락된 상품은 그대로 유지합니다."
+                            "신규 {entity} {adds}개, {entity} 수정 {updates}개를 반영할까요? Excel에서 누락된 행은 그대로 유지합니다."
                         )));
                     });
                     decision.actions(|buttons|{
@@ -361,10 +376,11 @@ impl ProductExcelUi {
             if approve{
                 self.confirming=false;
                 if let Some(preview)=self.review.clone(){
+                    let client=self.client;
                     self.start(ctx,move||{
                         // The native transaction consumes JSON once, on explicit
                         // approval, rather than copying every review frame.
-                        let catalog=gateway.apply_product_workbook((*preview).clone())?;
+                        let catalog=if client{gateway.apply_client_workbook((*preview).clone())?}else{gateway.apply_product_workbook((*preview).clone())?};
                         Ok(JobResult::Applied(catalog))
                     });
                 }
