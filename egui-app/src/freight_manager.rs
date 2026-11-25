@@ -1123,7 +1123,7 @@ impl FreightManager {
                                     warning_width,typography::METADATA_LINE_HEIGHT
                                 ),egui::Layout::left_to_right(egui::Align::Center),|row|{
                                     let response=row.add(
-                                        egui::Label::new(typography::body(warning)).truncate()
+                                        components::truncated_label(typography::body(warning))
                                     );
                                     let _=response;
                                 }

@@ -415,8 +415,8 @@ impl AliasManager {
                                         filters,label,text_width,
                                         typography::CategoryPathFont::Body
                                     );
-                                    let response=components::management_dropdown(
-                                        filters,&visible,picker_width,true,|choice|{
+                                    components::management_dropdown_full_label(
+                                        filters,&visible,label,picker_width,true,|choice|{
                                             components::management_dropdown_option(
                                                 choice,&mut value,String::new(),
                                                 if depth==0{"전체 카테고리"}else{"현재 분류 전체"});
@@ -431,7 +431,6 @@ impl AliasManager {
                                                 components::shortened_text_tooltip(response,&visible,name.as_str());
                                             }
                                         });
-                                    components::shortened_text_tooltip(response,&visible,label);
                                     if value!=selected{
                                         self.category=if value.is_empty(){
                                             parent.unwrap_or_default()

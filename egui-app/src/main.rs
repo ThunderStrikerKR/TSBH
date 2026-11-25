@@ -4900,9 +4900,9 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                             // experimental option in a distinct RIGHT-anchored
                             // slot. The checkbox never consumes the heading's
                             // leading edge or gets pushed outside its clip.
-                            toolbar.add(egui::Label::new(
+                            toolbar.add(components::truncated_label(
                                 typography::subsection_heading("인식된 텍스트 · 직접 수정")
-                            ).truncate());
+                            ));
                             let mut changed=false;
                             toolbar.with_layout(
                                 Layout::right_to_left(Align::Center),

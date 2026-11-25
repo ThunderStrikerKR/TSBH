@@ -137,8 +137,8 @@ impl ProductSearch{
                                         ui,label,text_width,typography::CategoryPathFont::Body
                                     );
                                     let mut value=selected.clone();
-                                    let response=components::management_dropdown(
-                                        ui,&visible,width,true,|choices|{
+                                    components::management_dropdown_full_label(
+                                        ui,&visible,label,width,true,|choices|{
                                             components::management_dropdown_option(
                                                 choices,&mut value,String::new(),
                                                 if depth==0{"전체 카테고리"}else{"현재 분류 전체"}
@@ -158,7 +158,6 @@ impl ProductSearch{
                                                 }
                                             }
                                         });
-                                    components::shortened_text_tooltip(response,&visible,label);
                                     if value!=selected {
                                         self.major=if value.is_empty(){parent}else{value};
                                         changed=true;

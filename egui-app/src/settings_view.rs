@@ -911,7 +911,7 @@ impl SettingsView{
             section(form,title,|area|{
                 let value=field(&self.draft,key);
                 let displayed=if value.is_empty(){*empty}else{value.as_str()};
-                area.add(egui::Label::new(typography::body(displayed)).truncate());
+                area.add(components::truncated_label(typography::body(displayed)));
                 area.add_space(theme::SPACE_8);
                 area.horizontal_wrapped(|buttons|{
                     if theme::action(

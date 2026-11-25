@@ -258,6 +258,19 @@ fn overflow_tooltip_needed(overflow:bool,full:&str)->bool{
     overflow&&!full.trim().is_empty()
 }
 
+/// Labels with only native elision feedback use the native owner; labels
+/// with explicit full text/overflow feedback MUST turn the native owner off.
+/// Both paths keep identical label sizing, painting and interaction.
+pub fn truncated_label(text:impl Into<egui::WidgetText>)->egui::Label{
+    egui::Label::new(text).truncate()
+}
+pub fn label_for_explicit_tooltip(text:impl Into<egui::WidgetText>)->egui::Label{
+    egui::Label::new(text).show_tooltip_when_elided(false)
+}
+pub fn truncated_label_for_explicit_tooltip(text:impl Into<egui::WidgetText>)->egui::Label{
+    label_for_explicit_tooltip(text).truncate()
+}
+
 /// Attach a tooltip to an existing interactive widget without changing its sense.
 pub fn overflow_tooltip(response:Response,overflow:bool,full:&str)->Response{
     if overflow_tooltip_needed(overflow,full)
@@ -436,9 +449,10 @@ pub fn fixed_status_slot(
                 let natural=slot.painter().layout_no_wrap(display.as_ref().to_owned(),
                     egui::FontId::proportional(typography::FONT_METADATA),color);
                 let overflow=text_exceeds_rect(natural.size(),slot.available_rect_before_wrap().intersect(slot.clip_rect()));
-                let response=slot.add(
-                    egui::Label::new(typography::status(display.as_ref(),color)).truncate()
-                );
+                let label=typography::status(display.as_ref(),color);
+                let response=slot.add(if tooltip.is_some(){
+                    truncated_label_for_explicit_tooltip(label)
+                }else{truncated_label(label)});
                 if let Some(tooltip)=tooltip{
                     let detail=if color==theme::DANGER{
                         crate::user_error::display("status",tooltip)
@@ -1227,7 +1241,7 @@ pub fn workflow_shipment_row(
                 let product_width=(inside-name_width-theme::SPACE_8-if freight.is_some(){freight_width+theme::SPACE_8}else{0.0}).max(0.0);
                 let name_response=cols.add_sized(
                     [name_width,theme::WORKFLOW_DETAIL_ROW_CONTENT_HEIGHT],
-                    egui::Label::new(typography::body(name).color(preview_ink)).truncate()
+                    truncated_label_for_explicit_tooltip(typography::body(name).color(preview_ink))
                 );
                 let name_overflow=name_natural>name_width+0.5;
                 let _=overflow_tooltip(name_response,name_overflow,name);
@@ -1236,7 +1250,7 @@ pub fn workflow_shipment_row(
                     egui::FontId::proportional(typography::FONT_BODY),summary_ink).size().x;
                 let summary_response=cols.add_sized(
                     [product_width,theme::WORKFLOW_DETAIL_ROW_CONTENT_HEIGHT],
-                    egui::Label::new(typography::body(summary).color(summary_ink)).truncate()
+                    truncated_label_for_explicit_tooltip(typography::body(summary).color(summary_ink))
                 );
                 let _=overflow_tooltip(summary_response,summary_natural>product_width+0.5,summary);
                 if let (Some(freight),Some(galley))=(freight,freight_galley){
@@ -1330,6 +1344,44 @@ mod common_action_tooltip_tests{
     }
 
     #[test]
+    fn truncated_labels_have_exactly_one_tooltip_owner(){
+        fn full_text_count(shape:&egui::Shape,full:&str)->usize{
+            match shape{
+                egui::Shape::Text(text)=>usize::from(!text.galley.elided&&text.galley.text()==full),
+                egui::Shape::Vec(shapes)=>shapes.iter().map(|shape|full_text_count(shape,full)).sum(),
+                _=>0
+            }
+        }
+        let full="BD 950 microphone stand";
+        for explicit in [false,true]{
+            for width in [48.0,400.0]{
+                let ctx=test_context();
+                ctx.memory_mut(|memory|memory.set_everything_is_visible(true));
+                let mut count=0;
+                // The tooltip Area measures its size before the visible pass.
+                for _ in 0..3{
+                    let output=ctx.run(egui::RawInput{
+                        screen_rect:Some(Rect::from_min_size(egui::Pos2::ZERO,Vec2::new(800.0,500.0))),
+                        ..Default::default()
+                    },|ctx|{
+                        egui::CentralPanel::default().show(ctx,|ui|{
+                            let label=if explicit{
+                                truncated_label_for_explicit_tooltip(typography::body(full))
+                            }else{truncated_label(typography::body(full))};
+                            let response=ui.add_sized(Vec2::new(width,32.0),label);
+                            if explicit{overflow_tooltip(response,width<100.0,full);}
+                        });
+                    });
+                    count=output.shapes.iter().map(|shape|full_text_count(&shape.shape,full)).sum();
+                }
+                // Narrow: one full tooltip, elided label excluded. Wide:
+                // one full label, no tooltip. Neither may draw two copies.
+                assert_eq!(count,1,"explicit={explicit}, width={width}");
+            }
+        }
+    }
+
+    #[test]
     fn native_label_elision_uses_actual_width_for_reviewed_text_roles(){
         let ctx=test_context();
         let text="반도스탠드 대형 오케스트라 보면대";
@@ -1349,8 +1401,8 @@ mod common_action_tooltip_tests{
                         ui.allocate_ui_with_layout(
                             Vec2::new(width,36.0),Layout::left_to_right(Align::Center),|slot|{
                                 slot.set_width(width);
-                                let (_,galley,_)=egui::Label::new(style(text))
-                                    .truncate().layout_in_ui(slot);
+                                let (_,galley,_)=truncated_label_for_explicit_tooltip(style(text))
+                                    .layout_in_ui(slot);
                                 assert_eq!(galley.elided,expected_elided,
                                     "{role}: wrong native elision at width {width}");
                                 assert_eq!(galley.text(),text,
@@ -2254,7 +2306,7 @@ fn modal_master_header_content_in_rect(
                 .layout(Layout::left_to_right(Align::Center))
         );
         title_ui.set_clip_rect(title_rect.intersect(heading_clip));
-        title_ui.add(egui::Label::new(typography::modal_title(title)).truncate())
+        title_ui.add(truncated_label(typography::modal_title(title)))
             ;
     }
     if has_description{
@@ -2265,7 +2317,7 @@ fn modal_master_header_content_in_rect(
             |details|{
                 details.set_clip_rect(subtitle_clip);
                 details.set_width(subtitle.width());
-                details.add(egui::Label::new(typography::caption(description)).truncate())
+                details.add(truncated_label(typography::caption(description)))
                     ;
             },
         );
@@ -3361,8 +3413,8 @@ pub fn reception_recipient_navigator(
             let clipped=natural_width>content_width;
             let label=segments.add_sized(
                 Vec2::new(name_width,inner.height()),
-                egui::Label::new(typography::body(display))
-                    .truncate().halign(Align::Center)
+                truncated_label_for_explicit_tooltip(typography::body(display))
+                    .halign(Align::Center)
                     .sense(if clipped{Sense::click()}else{Sense::hover()})
             );
             let label=overflow_tooltip(label,clipped,display);
@@ -4907,7 +4959,14 @@ pub fn management_dropdown(
     ui:&mut Ui,label:&str,width:f32,enabled:bool,
     options:impl FnOnce(&mut Ui)
 )->Response {
-    management_dropdown_inner(ui,label,width,enabled,false,None,options)
+    management_dropdown_inner(ui,label,label,width,enabled,false,None,options)
+}
+/// Pre-fitted category paths retain the original text as the single tooltip.
+pub fn management_dropdown_full_label(
+    ui:&mut Ui,label:&str,full_label:&str,width:f32,enabled:bool,
+    options:impl FnOnce(&mut Ui)
+)->Response{
+    management_dropdown_inner(ui,label,full_label,width,enabled,false,None,options)
 }
 /// Same management dropdown master, with an optional colored status mark.
 /// This only changes the glyph painting; popup placement, hover and row
@@ -4917,7 +4976,7 @@ pub fn management_status_dropdown(
     status_color:Color32,options:impl FnOnce(&mut Ui)
 )->Response {
     management_dropdown_inner(
-        ui,label,width,enabled,false,Some(status_color),options
+        ui,label,label,width,enabled,false,Some(status_color),options
     )
 }
 
@@ -4927,13 +4986,20 @@ pub fn management_dropdown_compact(
     ui:&mut Ui,label:&str,width:f32,enabled:bool,
     options:impl FnOnce(&mut Ui)
 )->Response {
-    management_dropdown_inner(ui,label,width,enabled,true,None,options)
+    management_dropdown_inner(ui,label,label,width,enabled,true,None,options)
 }
 
 /// Shared 34pt management trigger; the hierarchical category popup and
 /// ordinary selectors must use the SAME paint, chevron and hover geometry.
 pub(crate) fn management_dropdown_trigger(
     ui:&mut Ui,label:&str,width:f32,enabled:bool,
+    indicator:Option<Color32>,
+)->Response {
+    management_dropdown_trigger_full_label(ui,label,label,width,enabled,indicator)
+}
+
+pub(crate) fn management_dropdown_trigger_full_label(
+    ui:&mut Ui,label:&str,full_label:&str,width:f32,enabled:bool,
     indicator:Option<Color32>,
 )->Response {
     // Keep exact toolbar/cell width without stretching the subsequent action
@@ -4998,17 +5064,17 @@ pub(crate) fn management_dropdown_trigger(
             ui,&trigger,theme::CONTROL_RADIUS as f32
         );
     }
-    overflow_tooltip(trigger,overflow,label)
+    overflow_tooltip(trigger,overflow||label!=full_label,full_label)
 }
 
 fn management_dropdown_inner(
-    ui:&mut Ui,label:&str,width:f32,enabled:bool,
+    ui:&mut Ui,label:&str,full_label:&str,width:f32,enabled:bool,
     compact:bool,indicator:Option<Color32>,
     options:impl FnOnce(&mut Ui)
 )->Response {
     let width=width.min(ui.available_width()).max(1.0);
-    let trigger=management_dropdown_trigger(
-        ui,label,width,enabled,indicator
+    let trigger=management_dropdown_trigger_full_label(
+        ui,label,full_label,width,enabled,indicator
     );
     let rect=trigger.rect;
     egui::Popup::menu(&trigger)
@@ -6863,7 +6929,7 @@ pub fn management_readonly_table(
                 body.horizontal(|line|{
                     line.spacing_mut().item_spacing.x=theme::SPACE_8;
                     for (index,(value,width)) in values.iter().zip(&widths).enumerate(){
-                        let label=egui::Label::new(typography::table_cell(value)).truncate();
+                        let label=truncated_label(typography::table_cell(value));
                         let label=if right_aligned.contains(&index){
                             label.halign(Align::RIGHT)
                         }else{label};

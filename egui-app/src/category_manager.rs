@@ -751,8 +751,8 @@ impl CategoryManager {
                                             .max(0.0),
                                         typography::CategoryPathFont::Subsection
                                     );
-                                    let name_response=body.label(typography::subsection_heading(
-                                        &name_display
+                                    let name_response=body.add(components::label_for_explicit_tooltip(
+                                        typography::subsection_heading(&name_display)
                                     ));
                                     components::overflow_tooltip(name_response,name_display!=current.name,&current.name);
                                     let breadcrumb=path_text(&cats,&current.id);
@@ -760,7 +760,7 @@ impl CategoryManager {
                                         body,&breadcrumb,body.available_width(),
                                         typography::CategoryPathFont::Metadata
                                     );
-                                    let breadcrumb_response=body.label(typography::caption(&visible));
+                                    let breadcrumb_response=body.add(components::label_for_explicit_tooltip(typography::caption(&visible)));
                                     components::overflow_tooltip(breadcrumb_response,visible!=breadcrumb,&breadcrumb);
                                     // Compact context for an editor, not KPI cards.
                                     // Keep a single divider between context and fields.
@@ -897,8 +897,7 @@ impl CategoryManager {
                                                 );
                                                 let response=line.add_sized(
                                                     [path_width,theme::INPUT_HEIGHT],
-                                                    egui::Label::new(typography::body(&visible))
-                                                        .truncate()
+                                                    components::truncated_label_for_explicit_tooltip(typography::body(&visible))
                                                 );
                                                 components::overflow_tooltip(response,visible!=location_path,&location_path);
                                             }
