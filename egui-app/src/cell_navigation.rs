@@ -14,35 +14,26 @@ pub fn resolve_cell_navigation_target(
     cells: &[CellNavigationCell], current_id: &str, key: CellNavigationKey,
 ) -> Option<String> {
     let current = cells.iter().find(|cell| cell.id == current_id && cell.enabled)?;
-    let mut candidates: Vec<&CellNavigationCell> = cells.iter()
-        .filter(|cell| cell.enabled && cell.id != current_id).collect();
-    match key {
-        CellNavigationKey::Left => {
-            candidates.retain(|cell| cell.row == current.row && cell.column < current.column);
-            candidates.sort_by_key(|cell| (usize::MAX - cell.column, usize::MAX - cell.order));
-        }
-        CellNavigationKey::Right => {
-            candidates.retain(|cell| cell.row == current.row && cell.column > current.column);
-            candidates.sort_by_key(|cell| (cell.column, cell.order));
-        }
-        CellNavigationKey::Up => {
-            candidates.retain(|cell| cell.column == current.column && cell.row < current.row);
-            candidates.sort_by_key(|cell| (usize::MAX - cell.row, cell.order));
-        }
-        CellNavigationKey::Down => {
-            candidates.retain(|cell| cell.column == current.column && cell.row > current.row);
-            candidates.sort_by_key(|cell| (cell.row, cell.order));
-        }
-        CellNavigationKey::Next => {
-            candidates.retain(|cell| cell.order > current.order);
-            candidates.sort_by_key(|cell| cell.order);
-        }
-        CellNavigationKey::Previous => {
-            candidates.retain(|cell| cell.order < current.order);
-            candidates.sort_by_key(|cell| usize::MAX - cell.order);
-        }
-    }
-    candidates.first().map(|cell| cell.id.clone())
+    // Preserve stable input-order tie breaking while selecting the nearest
+    // cell in a single pass. No temporary candidate list or sort.
+    cells.iter().filter(|cell|cell.enabled && cell.id!=current_id)
+        .filter_map(|cell|{
+            let rank=match key{
+                CellNavigationKey::Left if cell.row==current.row && cell.column<current.column=>
+                    (usize::MAX-cell.column,usize::MAX-cell.order),
+                CellNavigationKey::Right if cell.row==current.row && cell.column>current.column=>
+                    (cell.column,cell.order),
+                CellNavigationKey::Up if cell.column==current.column && cell.row<current.row=>
+                    (usize::MAX-cell.row,cell.order),
+                CellNavigationKey::Down if cell.column==current.column && cell.row>current.row=>
+                    (cell.row,cell.order),
+                CellNavigationKey::Next if cell.order>current.order=>(cell.order,0),
+                CellNavigationKey::Previous if cell.order<current.order=>(usize::MAX-cell.order,0),
+                _=>return None,
+            };
+            Some((rank,cell))
+        })
+        .min_by_key(|(rank,_)|*rank).map(|(_,cell)|cell.id.clone())
 }
 
 /// Shared, focus-scoped spreadsheet input contract for egui TextEdit.
@@ -224,5 +215,18 @@ mod tests {
         let cells = grid();
         assert_eq!(resolve_cell_navigation_target(&cells, "d", CellNavigationKey::Next), None);
         assert_eq!(resolve_cell_navigation_target(&cells, "e", CellNavigationKey::Next), None);
+    }
+}
+
+#[cfg(test)]
+mod navigation_single_pass_tests{
+    use super::*;
+    #[test]
+    fn nearest_enabled_cell_keeps_original_tie_order(){
+        let make=|id:&str,row,column,order,enabled|CellNavigationCell{id:id.into(),row,column,order,enabled};
+        let cells=[make("current",1,1,1,true),make("disabled",1,2,2,false),
+            make("first",1,3,3,true),make("second",1,3,3,true),make("far",1,4,4,true)];
+        assert_eq!(resolve_cell_navigation_target(&cells,"current",CellNavigationKey::Right).as_deref(),Some("first"));
+        assert_eq!(resolve_cell_navigation_target(&cells,"current",CellNavigationKey::Next).as_deref(),Some("first"));
     }
 }
