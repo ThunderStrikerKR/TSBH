@@ -392,6 +392,180 @@ impl ProductExcelUi {
 #[cfg(test)]
 mod tests {
     use super::*;
+    // Gate the worker's reply so that busy/disabled state can be observed
+    // deterministically. Never construct LocalGateway or touch files/SQLite.
+    struct ArchiveRequest{
+        client:bool,
+        reply:mpsc::Sender<Result<String,String>>,
+    }
+    struct ArchiveGateway{
+        requests:mpsc::Sender<ArchiveRequest>,
+    }
+    impl ArchiveGateway{
+        fn archive(&self,client:bool)->Result<String,String>{
+            let (reply,answer)=mpsc::channel();
+            self.requests.send(ArchiveRequest{client,reply})
+                .map_err(|_|"synthetic archive receiver closed".to_owned())?;
+            answer.recv_timeout(std::time::Duration::from_secs(10))
+                .map_err(|_|"synthetic archive reply timed out".to_owned())?
+        }
+    }
+    impl BandoGateway for ArchiveGateway{
+        fn label(&self)->&'static str{"synthetic workbook test"}
+        fn load_catalog(&self)->Result<Value,String>{Err("catalog access forbidden".into())}
+        fn load_working_source(&self)->Result<crate::preview_store::WorkingSource,String>{
+            Err("source access forbidden".into())
+        }
+        fn save_working_source(&self,_:&crate::preview_store::WorkingSource)->Result<u64,String>{
+            Err("source write forbidden".into())
+        }
+        fn execute(&self,_:crate::gateway::ReadOperation,_:Value)->Result<Value,String>{
+            Err("business reads forbidden".into())
+        }
+        fn archive_client_workbook(&self)->Result<String,String>{self.archive(true)}
+        fn archive_product_workbook(&self)->Result<String,String>{self.archive(false)}
+    }
+    fn menu_text(shape:&egui::Shape,out:&mut Vec<(String,egui::Rect)>){
+        match shape{
+            egui::Shape::Text(text)=>out.push((text.galley.text().to_owned(),
+                egui::Rect::from_min_size(text.pos,text.galley.size()))),
+            egui::Shape::Vec(shapes)=>for shape in shapes{menu_text(shape,out);},
+            _=>{}
+        }
+    }
+    fn menu_frame(ui:&mut ProductExcelUi,ctx:&Context,gateway:&Arc<dyn BandoGateway>,
+        allowed:bool,events:Vec<egui::Event>)->(egui::Rect,Vec<(String,egui::Rect)>){
+        let mut trigger_rect=egui::Rect::NOTHING;
+        let time=ctx.input(|i|i.time)+0.1;
+        let output=ctx.run(egui::RawInput{
+            screen_rect:Some(egui::Rect::from_min_size(egui::Pos2::ZERO,egui::vec2(1000.0,700.0))),
+            time:Some(time),predicted_dt:0.1,events,..Default::default()
+        },|ctx|{
+            egui::CentralPanel::default().show(ctx,|host|{
+                // The trigger remains accessible in this fixture so that
+                // the popup's own permission/busy guard is tested as well.
+                let trigger=components::management_dropdown_trigger(
+                    host,"Excel 관리",148.0,true,"",None
+                );
+                trigger_rect=trigger.rect;
+                ui.show_menu(host,&trigger,Arc::clone(gateway),allowed);
+            });
+        });
+        let mut text=Vec::new();
+        for shape in &output.shapes{menu_text(&shape.shape,&mut text);}
+        (trigger_rect,text)
+    }
+    fn menu_click(ui:&mut ProductExcelUi,ctx:&Context,gateway:&Arc<dyn BandoGateway>,
+        allowed:bool,pos:egui::Pos2)->Vec<(String,egui::Rect)>{
+        menu_frame(ui,ctx,gateway,allowed,vec![egui::Event::PointerMoved(pos)]);
+        for pressed in [true,false]{
+            menu_frame(ui,ctx,gateway,allowed,vec![egui::Event::PointerButton{
+                pos,button:egui::PointerButton::Primary,pressed,modifiers:egui::Modifiers::NONE
+            }]);
+        }
+        menu_frame(ui,ctx,gateway,allowed,vec![]).1
+    }
+    fn open_menu(ui:&mut ProductExcelUi,ctx:&Context,gateway:&Arc<dyn BandoGateway>,
+        allowed:bool)->Vec<(String,egui::Rect)>{
+        let (trigger,_)=menu_frame(ui,ctx,gateway,allowed,vec![]);
+        menu_frame(ui,ctx,gateway,allowed,vec![]);
+        menu_click(ui,ctx,gateway,allowed,trigger.center())
+    }
+    fn option_rect(text:&[(String,egui::Rect)],label:&str)->egui::Rect{
+        text.iter().rev().find(|(s,_)|s==label)
+            .unwrap_or_else(||panic!("missing rendered Excel action {label}")).1
+    }
+    fn settle_excel(ui:&mut ProductExcelUi,ctx:&Context){
+        let deadline=std::time::Instant::now()+std::time::Duration::from_secs(10);
+        while ui.busy(){
+            assert!(ui.poll(ctx).is_none(),"archive/preview must not commit a catalog");
+            assert!(std::time::Instant::now()<deadline,"Excel worker did not settle");
+            std::thread::sleep(std::time::Duration::from_millis(1));
+        }
+    }
+    #[test]
+    fn actual_excel_menu_dispatches_the_selected_workbook_and_retains_result(){
+        for client in [false,true]{
+            let (tx,rx)=mpsc::channel();
+            let gateway:Arc<dyn BandoGateway>=Arc::new(ArchiveGateway{requests:tx});
+            let ctx=components::test_context();
+            let mut ui=if client{ProductExcelUi::for_clients()}else{ProductExcelUi::default()};
+            let export=if client{"현재 거래처 전체 Excel 다운로드"}else{"현재 상품 전체 Excel 다운로드"};
+            let upload="Excel 업로드 / 전체 변경 검토";
+            let menu=open_menu(&mut ui,&ctx,&gateway,true);
+            let export_rect=option_rect(&menu,export);
+            let upload_rect=option_rect(&menu,upload);
+            assert!(export_rect.bottom()<upload_rect.top());
+            menu_click(&mut ui,&ctx,&gateway,true,export_rect.center());
+            let request=rx.recv_timeout(std::time::Duration::from_secs(10)).expect("real menu archive dispatch");
+            assert_eq!(request.client,client);
+            assert!(ui.busy()&&ui.blocks_navigation());
+            assert!(ui.notice.is_none()&&ui.error.is_none());
+            let busy=open_menu(&mut ui,&ctx,&gateway,true);
+            let busy_export=option_rect(&busy,export);
+            let busy_upload=option_rect(&busy,upload);
+            assert!((busy_export.min-export_rect.min).length()<=1.0);
+            assert!((busy_upload.min-upload_rect.min).length()<=1.0);
+            menu_click(&mut ui,&ctx,&gateway,true,busy_export.center());
+            assert!(ui.busy(),"disabled repeat click must not replace the first job");
+            assert!(rx.try_recv().is_err(),"busy menu must not dispatch twice");
+            request.reply.send(Ok("synthetic.xlsx".into())).unwrap();
+            settle_excel(&mut ui,&ctx);
+            let notice=ui.notice.as_deref().expect("completion notice");
+            assert!(notice.contains("synthetic.xlsx"));
+            assert!(notice.contains(if client{"거래처"}else{"상품"}));
+            assert!(ui.error.is_none()&&!ui.blocks_navigation()&&!ui.has_modal());
+            assert!(rx.try_recv().is_err());
+        }
+    }
+    #[test]
+    fn actual_excel_menu_denies_unallowed_export_and_surfaces_worker_failure(){
+        for client in [false,true]{
+            let (tx,rx)=mpsc::channel();
+            let gateway:Arc<dyn BandoGateway>=Arc::new(ArchiveGateway{requests:tx});
+            let export=if client{"현재 거래처 전체 Excel 다운로드"}else{"현재 상품 전체 Excel 다운로드"};
+            let mut ui=if client{ProductExcelUi::for_clients()}else{ProductExcelUi::default()};
+            let ctx=components::test_context();
+            let denied=open_menu(&mut ui,&ctx,&gateway,false);
+            option_rect(&denied,"Excel 업로드 / 전체 변경 검토");
+            menu_click(&mut ui,&ctx,&gateway,false,option_rect(&denied,export).center());
+            assert!(!ui.busy()&&!ui.blocks_navigation());
+            assert!(rx.try_recv().is_err(),"permission denial must not dispatch");
+            // Fresh UI context avoids retaining the previous popup's open ID.
+            let ctx=components::test_context();
+            let allowed=open_menu(&mut ui,&ctx,&gateway,true);
+            menu_click(&mut ui,&ctx,&gateway,true,option_rect(&allowed,export).center());
+            let request=rx.recv_timeout(std::time::Duration::from_secs(10)).unwrap();
+            assert_eq!(request.client,client);
+            request.reply.send(Err("synthetic archive failure".into())).unwrap();
+            settle_excel(&mut ui,&ctx);
+            assert_eq!(ui.error.as_deref(),Some("synthetic archive failure"));
+            assert!(ui.notice.is_none()&&!ui.has_modal()&&!ui.blocks_navigation());
+        }
+    }
+    #[test]
+    fn excel_preview_completion_and_cancellation_preserve_review_safety(){
+        for client in [false,true]{
+            let ctx=components::test_context();
+            let mut ui=if client{ProductExcelUi::for_clients()}else{ProductExcelUi::default()};
+            ui.error=Some("previous failure".into());
+            ui.start(&ctx,||Ok(JobResult::Cancelled));
+            settle_excel(&mut ui,&ctx);
+            assert!(ui.error.is_none()&&ui.notice.is_none()&&!ui.has_modal());
+            ui.start(&ctx,||Ok(JobResult::Previewed{
+                name:"synthetic.xlsx".into(),
+                preview:serde_json::json!({"rows":[{"status":"UPDATE"}]})
+            }));
+            settle_excel(&mut ui,&ctx);
+            assert!(ui.has_modal()&&ui.blocks_navigation());
+            assert_eq!(ui.filename,"synthetic.xlsx");
+            assert_eq!(review_count(ui.review.as_ref().unwrap(),"UPDATE"),1);
+            assert!(!ui.approved&&!ui.confirming&&!ui.can_apply());
+            ui.dismiss();
+            assert!(!ui.has_modal()&&!ui.blocks_navigation());
+        }
+    }
+
     #[test]
     fn review_table_rows_preserve_filter_message_and_500_row_cap(){
         let rows=(0..502).map(|index|serde_json::json!({
