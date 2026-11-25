@@ -9243,7 +9243,11 @@ pub(crate) mod general_screen_geometry_tests {
         fn save_working_source(&self,_:&WorkingSource)->Result<u64,String>{Err("read only fixture".into())}
         fn execute(&self,_:ReadOperation,_:Value)->Result<Value,String>{Err("isolated fixture".into())}
     }
-    fn render(ctx:&egui::Context,screen:Vec2,work:Rect,mut page:impl FnMut(&mut Ui))->Vec<Sample>{
+    fn render(ctx:&egui::Context,screen:Vec2,work:Rect,page:impl FnMut(&mut Ui))->Vec<Sample>{
+        render_observed(ctx,screen,work,page,|_,_|{})
+    }
+    fn render_observed(ctx:&egui::Context,screen:Vec2,work:Rect,
+        mut page:impl FnMut(&mut Ui),mut observe:impl FnMut(usize,&[Sample]))->Vec<Sample>{
         let mut measured=Vec::new();
         // egui solid scrollbars interpolate their reserved space. Three
         // frames at 60 Hz captured different fractions (e.g. 8.75/10pt)
@@ -9271,6 +9275,7 @@ pub(crate) mod general_screen_geometry_tests {
                 });
             });
             let next=TRACE.with(|trace|trace.borrow_mut().take().unwrap());
+            observe(frame,&next);
             if frame==11{
                 let slots=|trace:&[Sample]|trace.iter().copied().filter(|(role,_)|
                     matches!(*role,"top content"|"master card"|"section card"|"table header"|"toolbar transition"|"scroll rail"|"row viewport"|"account viewport")).collect::<Vec<_>>();
@@ -9432,13 +9437,65 @@ pub(crate) mod general_screen_geometry_tests {
                 "{name}: actual data rows overlap {pair:?}");
         }
     }
+    // Compare the protected allocations on every sampled transition frame,
+    // not just the final settled frame. Scrollbar interpolation can change
+    // the row viewport's right edge; it cannot move title/header/card edges.
+    fn assert_transition_frame_geometry(name:&str,frame:usize,
+        settled:&[Sample],current:&[Sample],editor:bool){
+        let phase=format!("transient frame {frame}");
+        if editor{
+            compare_top_slots(name,&phase,settled,current);
+            let fixed=|trace:&[Sample]|trace.iter().find(|(role,_)|
+                matches!(*role,"master card"|"section card")).map(|(_,r)|*r);
+            match (fixed(settled),fixed(current)){
+                (Some(a),Some(b))=>assert!((a.left()-b.left()).abs()<=0.5
+                    &&(a.top()-b.top()).abs()<=0.5,
+                    "{name}/{phase}: primary origin drift {a:?} -> {b:?}"),
+                (None,None)=>{},
+                _=>panic!("{name}/{phase}: primary card appeared/disappeared"),
+            }
+        }else{
+            let requires_table=settled.iter().any(|(role,_)|*role=="table header");
+            assert_eq!(requires_table,current.iter().any(|(role,_)|*role=="table header"),
+                "{name}/{phase}: table header appeared/disappeared");
+            compare_data_state_geometry(name,&phase,settled,current,requires_table);
+        }
+    }
+    fn render_transition(ctx:&egui::Context,screen:Vec2,work:Rect,
+        page:impl FnMut(&mut Ui),name:&str,editor:bool,check:bool)->Vec<Sample>{
+        let mut frames=Vec::new();
+        let settled=render_observed(ctx,screen,work,page,|frame,trace|{
+            if check{frames.push((frame,trace.to_vec()));}
+        });
+        for (frame,trace) in &frames{
+            assert_transition_frame_geometry(name,*frame,&settled,trace,editor);
+        }
+        settled
+    }
+    #[test]
+    #[should_panic(expected="transient frame 2")]
+    fn transient_detector_rejects_one_frame_drift_even_if_final_frame_recovers(){
+        let card=Rect::from_min_size(egui::pos2(16.0,100.0),Vec2::new(500.0,400.0));
+        let stable=[("master card",card)];
+        let shifted=[("master card",card.translate(Vec2::new(0.0,2.0)))];
+        assert_transition_frame_geometry("synthetic",1,&stable,&stable,false);
+        assert_transition_frame_geometry("synthetic",2,&stable,&shifted,false);
+        assert_transition_frame_geometry("synthetic",3,&stable,&stable,false);
+    }
     fn exercise_data_transitions<P>(
         name:&str,ctx:&egui::Context,screen:Vec2,work:Rect,page:&mut P,
         mut show:impl FnMut(&mut P,&mut Ui),
         begin:impl Fn(&mut P)->Box<dyn FnOnce(Result<usize,String>)>,
         failed:impl Fn(&P)->bool,
     )->Vec<Sample>{
-        let mut draw=|page:&mut P|render(ctx,screen,work,|ui|show(page,ui));
+        let mut established=false;
+        let mut draw=|page:&mut P|{
+            // First mount has no previous frame; subsequent state changes
+            // are measured from the first frame through the settled frame.
+            let trace=render_transition(ctx,screen,work,|ui|show(page,ui),name,false,established);
+            established=true;
+            trace
+        };
         // Keep the sender alive across real render frames: this is an
         // actually pending receiver, not just a false loaded boolean.
         let finish=begin(page);
@@ -9621,7 +9678,14 @@ pub(crate) mod general_screen_geometry_tests {
         begin:impl Fn(&mut P)->Box<dyn FnOnce(Result<usize,String>)>,
         failed:impl Fn(&P)->bool, data_roles:&[&str],
     )->Vec<Sample>{
-        let mut draw=|p:&mut P|render(ctx,screen,work,|ui|show(p,ui));
+        let mut established=false;
+        let mut draw=|page:&mut P|{
+            // First mount has no previous frame; subsequent state changes
+            // are measured from the first frame through the settled frame.
+            let trace=render_transition(ctx,screen,work,|ui|show(page,ui),name,true,established);
+            established=true;
+            trace
+        };
         let finish=begin(page);
         let pending=draw(page);
         finish(Err("합성 최초 조회 오류 — 긴 문구에도 제목과 탭이 이동하지 않아야 함".into()));
