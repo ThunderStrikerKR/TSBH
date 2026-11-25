@@ -67,6 +67,12 @@ pub(crate) fn validate_workflow_transition(state:&Value,before:&Value)->Result<(
     validation::validate(state,Some(before))
 }
 
+/// Factory reply storage proves core equality before dropping the duplicate
+/// trees. The original validator uses the same core for old recipient lookup.
+pub(crate) fn validate_workflow_transition_shared_core(state:&Value,before:&Value)->Result<(),String>{
+    validation::validate_with_prior_core(state,Some(before),Some(state))
+}
+
 pub fn execute(operation: &str, payload: Value) -> Result<Value, String> {
     match operation {
         "list_order_history" => history::list(

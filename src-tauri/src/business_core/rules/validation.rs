@@ -42,6 +42,13 @@ fn shipment_for<'a>(state: &'a Value, ship: &Value) -> Result<(&'a Value,&'a Val
     Ok((order,row))
 }
 pub(super) fn validate(state: &Value, before: Option<&Value>) -> Result<(),String> {
+    validate_with_prior_core(state,before,before)
+}
+
+/// The caller may borrow the same authoritative order/client trees for
+/// both snapshots only when relational core data was proven unchanged.
+pub(super) fn validate_with_prior_core(state:&Value,before:Option<&Value>,
+    prior_core:Option<&Value>)->Result<(),String>{
     let w = field(state,"workflow");
     if w.is_null() { return Ok(()) }
     for name in ["sources","groups","shipments","payments","queue","events","deliveries","changeRequests"] {
@@ -213,7 +220,7 @@ pub(super) fn validate(state: &Value, before: Option<&Value>) -> Result<(),Strin
                     // part of the immutable audit value.
                     if old_actual.get(origin).is_some()==current_actual.get(origin).is_some() &&
                         old_freight == current_freight {continue;}
-                    let old_recipient=shipment_for(old_state,old)?.1;
+                    let old_recipient=shipment_for(prior_core.unwrap_or(old_state),old)?.1;
                     let original_freight=if field(old,"actualFreight").get(origin).is_some() {
                         old_freight
                     } else {

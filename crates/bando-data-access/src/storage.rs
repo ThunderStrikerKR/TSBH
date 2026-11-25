@@ -174,8 +174,71 @@ fn finish_factory_scope(tx:&Transaction<'_>,mut before:Value,mut next:Value,
     before["orders"]=Value::Array(orders);
     before["products"]=Value::Array(products);
     before["clients"]=Value::Array(clients);
-    for key in ["orders","products","clients"]{next[key]=before[key].clone();}
-    finish_update_with_patch(tx,before,next,expected_revision,true,true)
+    // Scope equality was established before the full trees were attached.
+    // Legacy catalog normalization and triggers retain the conservative
+    // writer. Otherwise one authoritative core allocation is sufficient.
+    if crate::product_colors::needs_normalization(&before)? || has_write_triggers(tx)?{
+        for key in ["orders","products","clients"]{next[key]=before[key].clone();}
+        return finish_update_with_patch(tx,before,next,expected_revision,true,true);
+    }
+    move_factory_core(&mut before,&mut next)?;
+    finish_factory_shared_core(tx,&before,next,expected_revision)
+}
+
+fn has_write_triggers(tx:&Transaction<'_>)->Result<bool,String>{
+    tx.query_row("SELECT EXISTS(
+        SELECT 1 FROM main.sqlite_master WHERE type='trigger'
+        UNION ALL SELECT 1 FROM temp.sqlite_master WHERE type='trigger')",
+        [],|row|row.get(0)).map_err(err)
+}
+
+fn move_factory_core(before:&mut Value,next:&mut Value)->Result<(),String>{
+    let old=before.as_object_mut().ok_or("기존 업무 상태 오류")?;
+    let new=next.as_object_mut().ok_or("업무 처리 결과 오류")?;
+    for key in ["orders","products","clients"]{
+        let core=old.remove(key).filter(Value::is_array).ok_or("기존 업무자료 누락")?;
+        new.insert(key.to_owned(),core);
+    }
+    Ok(())
+}
+
+/// Called only after immutable-core scope validation, normalization guard
+/// and trigger exclusion. Preserve the same global validators as the
+/// generic writer; only the old core lookup borrows the new state's trees.
+fn finish_factory_shared_core(tx:&Transaction<'_>,before:&Value,mut next:Value,
+    expected_revision:u64)->Result<Value,String>{
+    crate::valid_state(&next)?;
+    crate::validation::validate_unchanged_clients(&next)?;
+    validate_brands(before,&next)?;
+    if crate::workflow_state::active(tx)?{
+        crate::rules::validate_workflow_transition_shared_core(&next,before)?;
+    }
+    reception::validate_order_ids(&next)?;
+    next["revision"]=json!(expected_revision.checked_add(1)
+        .ok_or("운영 DB revision 범위를 초과했습니다.")?);
+    let changes=total_changes(tx)?;
+    let direct=write_workflow_envelope(tx,before,&next)?;
+    if direct==0 || total_changes(tx)?.checked_sub(changes)!=i64::try_from(direct).ok(){
+        return Err("공장 회신 저장 중 예상하지 못한 DB 변경이 발생했습니다.".into());
+    }
+    let mut verified=crate::read_envelope(tx)?;
+    verify_factory_envelope(&verified,&next)?;
+    // No relational core writes, triggers or unaccounted DML occurred.
+    // Move the original authoritative allocation into the returned state;
+    // neither clone nor rehydrate any product, client or order tree.
+    move_factory_core(&mut next,&mut verified)?;
+    Ok(verified)
+}
+
+fn verify_factory_envelope(actual:&Value,expected:&Value)->Result<(),String>{
+    let actual=actual.as_object().ok_or("저장 업무 상태 오류")?;
+    let expected=expected.as_object().ok_or("업무 처리 결과 오류")?;
+    let non_core=|key:&str|!matches!(key,"products"|"clients"|"orders");
+    if !actual.iter().filter(|(k,_)|non_core(k)).eq(
+        expected.iter().filter(|(k,_)|non_core(k))){
+        return Err("공장 회신 저장 결과가 요청과 일치하지 않습니다.".into());
+    }
+    Ok(())
 }
 
 /// Only for the native set_shipment_freight reducer. Keep the full workflow
@@ -276,11 +339,7 @@ fn stable_freight_candidate(tx:&Transaction<'_>,before:&Value,changed:&Value)
     // Do not silently omit a pending legacy catalog migration.
     let mut catalog=json!({"products":&changed["products"]});
     if crate::product_colors::normalize_products(&mut catalog)?!=0{return Ok(false);}
-    let triggers:bool=tx.query_row("SELECT EXISTS(
-        SELECT 1 FROM main.sqlite_master WHERE type='trigger'
-        UNION ALL SELECT 1 FROM temp.sqlite_master WHERE type='trigger')",
-        [],|row|row.get(0)).map_err(err)?;
-    if triggers{return Ok(false);}
+    if has_write_triggers(tx)?{return Ok(false);}
     // A corrupt payload ID must not direct an UPSERT at another order's
     // physical row. Verify the target tree's relational ownership first.
     let order_id=old["id"].as_str().ok_or("주문 ID 누락")?;
@@ -413,15 +472,8 @@ fn verify_written(tx:&Transaction<'_>,current:Value,written:Value,
 fn verify_scoped(tx:&Transaction<'_>,mut current:Value,written:&Value,
     scope:WriteScope)->Result<Value,String>{
     let mut envelope=crate::read_envelope(tx)?;
+    if scope.verify_envelope{verify_factory_envelope(&envelope,written)?;}
     let root=envelope.as_object_mut().ok_or("업무 상태는 객체여야 합니다.")?;
-    if scope.verify_envelope{
-        let expected=written.as_object().ok_or("업무 처리 결과 오류")?;
-        let non_core=|key:&str|!matches!(key,"products"|"clients"|"orders");
-        if !root.iter().filter(|(k,_)|non_core(k)).eq(
-            expected.iter().filter(|(k,_)|non_core(k))){
-            return Err("공장 회신 저장 결과가 요청과 일치하지 않습니다.".into());
-        }
-    }
     let prior=current.as_object_mut().ok_or("기존 업무 상태 오류")?;
     for (key,changed) in [("products",scope.products),("clients",scope.clients),("orders",scope.orders)]{
         let old=prior.remove(key).ok_or("기존 업무자료 누락")?;
@@ -744,6 +796,46 @@ mod snapshot_cost_tests {
         assert_eq!(write_workflow_envelope(&tx,&before,&next).unwrap(),1);
         assert_eq!(crate::read_envelope(&tx).unwrap(),expected);
         tx.rollback().unwrap();
+    }
+
+    #[test]
+    fn factory_shared_core_preserves_original_allocations_without_relational_readback(){
+        let mut conn=Connection::open_in_memory().unwrap();
+        conn.execute_batch("CREATE TABLE core_schema(key TEXT,version INTEGER);
+            INSERT INTO core_schema VALUES ('business-core',2);
+            CREATE TABLE app_state(id INTEGER PRIMARY KEY,payload TEXT);").unwrap();
+        let mut before=json!({"revision":7,"products":[{"id":"p","variants":[]}],
+            "clients":[{"id":"c"}],"orders":(0..2000).map(|i|
+                json!({"id":format!("o-{i}"),"raw":"합성 발주서","recipients":[]}))
+                .collect::<Vec<_>>(),"aliases":[],"queue":[],"exports":[],
+            "settings":{"accounts":[]},"factoryReplies":[],"workflow":{"events":[]}});
+        conn.execute("INSERT INTO app_state VALUES (1,?1)",[serialize_envelope(&before).unwrap()]).unwrap();
+        // There are deliberately no core tables. Rehydration must fail.
+        let order_ptr=before["orders"].as_array().unwrap().as_ptr();
+        let product_ptr=before["products"].as_array().unwrap().as_ptr();
+        let client_ptr=before["clients"].as_array().unwrap().as_ptr();
+        let mut next:Value=serde_json::from_str(&serialize_envelope(&before).unwrap()).unwrap();
+        next["factoryReplies"].as_array_mut().unwrap().push(json!({"id":"new"}));
+        let tx=conn.transaction().unwrap();
+        assert!(!has_write_triggers(&tx).unwrap());
+        assert!(!crate::product_colors::needs_normalization(&before).unwrap());
+        move_factory_core(&mut before,&mut next).unwrap();
+        assert!(before.get("orders").is_none() && before.get("products").is_none()
+            && before.get("clients").is_none());
+        let verified=finish_factory_shared_core(&tx,&before,next,7).unwrap();
+        assert_eq!(verified["orders"].as_array().unwrap().as_ptr(),order_ptr);
+        assert_eq!(verified["products"].as_array().unwrap().as_ptr(),product_ptr);
+        assert_eq!(verified["clients"].as_array().unwrap().as_ptr(),client_ptr);
+        assert_eq!(verified["revision"],8);
+        assert_eq!(verified["factoryReplies"],json!([{"id":"new"}]));
+        tx.rollback().unwrap();
+        let mut legacy=verified;
+        legacy["products"][0]["defaultColor"]=json!("색상 미표기");
+        assert!(crate::product_colors::needs_normalization(&legacy).unwrap());
+        conn.execute_batch("CREATE TEMP TRIGGER check_factory AFTER UPDATE ON app_state
+            BEGIN SELECT 1; END;").unwrap();
+        let tx=conn.transaction().unwrap();
+        assert!(has_write_triggers(&tx).unwrap());
     }
 
     #[test]

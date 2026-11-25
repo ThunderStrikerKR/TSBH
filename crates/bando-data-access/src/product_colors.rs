@@ -54,6 +54,14 @@ fn normalize_product(product:&mut Value)->usize{
     }
     changed
 }
+/// Read-only guard for a transaction whose core tables must remain unchanged.
+pub(crate) fn needs_normalization(state:&Value)->Result<bool,String>{
+    let products=state["products"].as_array().ok_or("상품 색상 정리 대상 목록이 없습니다.")?;
+    Ok(products.iter().any(|p|p["defaultColor"].as_str()==Some(LEGACY) ||
+        p["variants"].as_array().is_some_and(|vs|
+            vs.iter().any(|v|v["color"].as_str()==Some(LEGACY)))))
+}
+
 pub fn normalize_products(state:&mut Value)->Result<usize,String>{
     let products=state.get_mut("products").and_then(Value::as_array_mut)
         .ok_or("상품 색상 정리 대상 목록이 없습니다.")?;
