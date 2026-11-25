@@ -304,6 +304,9 @@ pub fn fixed_status_slot(
                 let display=if color==theme::DANGER{
                     crate::user_error::display("status",text)
                 }else{std::borrow::Cow::Borrowed(text)};
+                let natural=slot.painter().layout_no_wrap(display.as_ref().to_owned(),
+                    egui::FontId::proportional(typography::FONT_METADATA),color);
+                let overflow=text_exceeds_rect(natural.size(),slot.available_rect_before_wrap().intersect(slot.clip_rect()));
                 let response=slot.add(
                     egui::Label::new(typography::status(display.as_ref(),color)).truncate()
                 );
@@ -311,7 +314,7 @@ pub fn fixed_status_slot(
                     let detail=if color==theme::DANGER{
                         crate::user_error::display("status",tooltip)
                     }else{std::borrow::Cow::Borrowed(tooltip)};
-                    response.on_hover_text(detail.as_ref());
+                    overflow_tooltip(response,overflow,detail.as_ref());
                 }
             }
         }
@@ -3258,7 +3261,8 @@ pub fn reception_recipient_navigator(
                 egui::Label::new(typography::body(display))
                     .truncate().halign(Align::Center)
                     .sense(if clipped{Sense::click()}else{Sense::hover()})
-            ).on_hover_text(display);
+            );
+            let label=overflow_tooltip(label,clipped,display);
             if clipped{
                 egui::Popup::menu(&label)
                     .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
@@ -3333,10 +3337,7 @@ pub fn reception_section_with_header_tooltip(
             Vec2::new(ui.available_width(),theme::SECTION_HEADER_HEIGHT),
             Layout::left_to_right(Align::Center),|header|{
                 header.set_min_height(theme::SECTION_HEADER_HEIGHT);
-                let heading=header.label(typography::section_heading(title));
-                if let Some(tooltip)=title_tooltip{
-                    heading.on_hover_text(tooltip);
-                }
+                header.label(typography::section_heading(title));
                 header.with_layout(Layout::right_to_left(Align::Center),header_right);
             }
         );
@@ -4959,6 +4960,7 @@ pub(crate) fn management_dropdown_trigger(
             3.5,color
         );
     }
+    let overflow=text_exceeds_rect(caption.size(),text_clip.intersect(ui.clip_rect()));
     painter.with_clip_rect(text_clip).galley(
         egui::pos2(caption_x,
             rect.center().y-caption.size().y/2.0
@@ -4981,7 +4983,7 @@ pub(crate) fn management_dropdown_trigger(
             ui,&trigger,theme::CONTROL_RADIUS as f32
         );
     }
-    trigger
+    overflow_tooltip(trigger,overflow,label)
 }
 
 fn management_dropdown_inner(
