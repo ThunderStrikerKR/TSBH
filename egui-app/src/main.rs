@@ -4700,8 +4700,6 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                         Vec2::new(118.0,24.0),
                                         egui::Slider::new(&mut review.zoom,0.5..=4.0)
                                             .show_value(false)
-                                    ).on_hover_text(
-                                        "원본 이미지 위에서 마우스 휠로 확대·축소"
                                     );
                                 }
                             );
