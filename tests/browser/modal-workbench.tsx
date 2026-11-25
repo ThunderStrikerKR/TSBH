@@ -19,6 +19,29 @@ import { ReceiptArchive } from "../../src/ReceiptArchive";
 import type { State, Order } from "../../src/types";
 import type { NoticeSink } from "../../src/shared/notices";
 
+// Test-harness layout only. Keep these styles with the browser fixture so
+// removing retired developer-mode CSS cannot change production-component tests.
+// Legacy class names remain temporarily for existing smoke-test selectors.
+const fixtureStyles = `
+.developer-long-text { white-space: pre-wrap; overflow-wrap: anywhere; }
+.developer-preview-dialog input { display: block; width: 100%; margin: 8px 0 20px; }
+.developer-modal-workbench { min-width: 0; }
+.developer-modal-workbench > .actions { flex-wrap: wrap; }
+.developer-live-container {
+  position: relative;
+  isolation: isolate;
+  overflow: auto;
+  min-height: 260px;
+  max-height: 65vh;
+  padding: 12px;
+  margin-top: 12px;
+  border: 1px solid #565656;
+  border-radius: 7px;
+}
+.developer-live-container .fixed-manager { width: 100%; min-height: 300px; }
+.developer-live-container .management-scroll { max-height: 52vh; overflow: auto; }
+`;
+
 const modes = ["NORMAL","EMPTY","ERROR","BUSY","LONG","WARNING","SUCCESS","FAILURE","CANCEL"];
 const popups = ["common","correction","manual","resolver","product-search","category","retail",
   "product","client","registration","reply","receipt"];
@@ -75,6 +98,7 @@ function Workbench({state}: {state: State}) {
     return <ReceiptArchive/>;
   };
   return <NoticeContext.Provider value={notice}><section className="card developer-modal-workbench">
+    <style data-ci-modal-fixture-styles>{fixtureStyles}</style>
     <label htmlFor="dev-popup">CI 검사 대상</label>
     <select id="dev-popup" value={popup} onChange={e=>{close();setPopup(e.target.value);}}>
       {popups.map(p=><option key={p} value={p}>{p}</option>)}
