@@ -1109,9 +1109,7 @@ pub struct ManualWorkspace {
 /// Keeping this arithmetic beside the renderer prevents the modal from
 /// reserving a full-screen body after the visible cards have ended.
 fn manual_recipient_card_height()->f32{
-    components::docked_section_chrome_height()
-        +4.0*theme::INPUT_HEIGHT
-        +3.0*theme::RECIPIENT_ROW_GAP
+    components::docked_section_chrome_height()+theme::RECEPTION_RECIPIENT_BODY_HEIGHT
 }
 
 fn manual_workspace_header_height()->f32{
@@ -1120,7 +1118,7 @@ fn manual_workspace_header_height()->f32{
 
 fn manual_workspace_columns_height()->f32{
     manual_recipient_card_height()
-        +2.0*theme::SPACE_8
+        +components::RECEPTION_STACKED_CARD_GAP
         +theme::MANUAL_ITEMS_CARD_MIN_HEIGHT
 }
 
@@ -2259,7 +2257,7 @@ impl ManualWorkspace {
                                             .auto_shrink([false,false])
                                             .max_height(body_height)
                                             .show(panel,|sheet|{
-                                                // The card gap is the explicit 8pt below;
+                                                // The shared stack gap is allocated explicitly below;
                                                 // do not add egui's implicit item spacing too.
                                                 sheet.spacing_mut().item_spacing.y=0.0;
                                                 if let Some(index)=visible_shipment {
@@ -2354,9 +2352,7 @@ impl ManualWorkspace {
                                                             },&mut submit_direct
                                                         );
                                                     }
-                                                    // Preserve the existing 16pt card gap explicitly:
-                                                    // 8pt layout spacing plus the 8pt authored inset.
-                                                    sheet.add_space(2.0*theme::SPACE_8);
+                                                    sheet.add_space(components::RECEPTION_STACKED_CARD_GAP);
                                                     let mut header_add_item=false;
                                                     let mut header_rollback=false;
                                                     let rollback_pending=self.selected_quantity_pending()
@@ -2377,11 +2373,7 @@ impl ManualWorkspace {
                                                                     );
                                                             }
                                                         },|items_ui|{
-                                                            items_ui.spacing_mut().item_spacing.y=0.0;
-                                                            let row_width=items_ui.available_width().max(
-                                                                theme::RECEPTION_ITEMS_MIN_TABLE_WIDTH+theme::RECEPTION_ITEM_REMOVE_WIDTH
-                                                            );
-                                                            items_ui.set_min_width(row_width);
+                                                            components::reception_worksheet_items_body(items_ui);
                                                             components::reception_editable_items_header(items_ui);
                                                             for item in list(row,"items"){
                                                                 let item_id=text(item,"id");

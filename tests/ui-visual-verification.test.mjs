@@ -38,8 +38,8 @@ test("UI source recognition does not misclassify backend-only files",()=>{
   assert.equal(isUiSource("egui-app/src/theme.rs"),true);
   assert.equal(isUiSource("egui-app/src/settings_help.rs"),true);
   assert.equal(isUiSource("egui-app/src/cell_navigation.rs"),true);
-  assert.equal(isUiSource("src/orders/ManualClassification.tsx"),true);
-  assert.equal(isUiSource("src/styles/ui.css"),true);
+  assert.equal(isUiSource("src/orders/ManualClassification.tsx"),false);
+  assert.equal(isUiSource("src/styles/ui.css"),false);
   assert.equal(isUiSource("egui-app/src/gateway.rs"),false);
   assert.equal(isUiSource("crates/bando-data-access/src/lib.rs"),false);
 });
@@ -121,4 +121,12 @@ test("a newly added cfg(test) module is recognized as test-only",()=>{
   const after=before+"\n#[cfg(test)]\nmod tests {\n    #[test]\n    fn contract() {}\n}";
   const diff="@@ -1,0 +2,5 @@\n+#[cfg(test)]\n+mod tests {\n+    #[test]\n+    fn contract() {}\n+}";
   assert.equal(isRustTestOnlyDiff(before,after,diff),true);
+});
+
+test("retired React changes cannot block an egui-only operational visual gate",()=>{
+  const old=["src/orders/ManualClassification.tsx","src/styles/developer.css"];
+  assert.equal(checkVisualChanges(old,()=>{throw Error("unreachable");},proof).pass,true);
+  const mixed=checkVisualChanges([...old,source],()=>{throw Error("unreachable");},proof);
+  assert.equal(mixed.pass,false);
+  assert.deepEqual(mixed.ui,[source]);
 });

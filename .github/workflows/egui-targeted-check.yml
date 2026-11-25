@@ -15,7 +15,6 @@ on:
       - src-tauri/src/business_core/rules/history.rs
       - egui-app/src/management_queries.rs
       - egui-app/src/gateway.rs
-      - egui-app/src/developer_ui_samples.rs
       - egui-app/src/main.rs
       - egui-app/src/client_chooser.rs
       - egui-app/src/http_gateway.rs
@@ -41,7 +40,6 @@ on:
       - egui-app/src/automatic_message_manager.rs
       - egui-app/src/product_excel_ui.rs
       - egui-app/src/business_state.rs
-      - DEV_WINDOWS_EGUI.cmd
       - egui-app/src/category_manager.rs
       - egui-app/src/category_dropdown.rs
       - egui-app/src/product_manager.rs
@@ -141,8 +139,6 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: src-tauri -> target
-      - name: Compile Tauri executable using the shared in-process Rust data-access crate
-        run: cargo check --manifest-path src-tauri/Cargo.toml --bin bando_hub_tauri
       - name: Compile standalone egui client-management entrypoint
         run: cargo check --manifest-path egui-app/Cargo.toml
       - name: Verify legacy SQLite backup restore, rollback and revision safety
@@ -320,8 +316,6 @@ jobs:
         run: cargo test --manifest-path egui-app/Cargo.toml daily_settlement_manager::tests -- --nocapture
       - name: Verify egui Logen native XLSX serializer uses the original sixteen text columns
         run: cargo test --manifest-path egui-app/Cargo.toml excel_service::tests -- --nocapture
-      - name: Verify synthetic UI samples cover seven management views without changing original catalog
-        run: cargo test --manifest-path egui-app/Cargo.toml developer_ui_samples::tests -- --nocapture
       - name: Verify existing Tauri app-data DB selection remains mode-isolated
         run: cargo test --manifest-path egui-app/Cargo.toml auto_database_location_tests -- --nocapture
       - name: Verify unified product Excel V2 import-export roundtrip and review approval

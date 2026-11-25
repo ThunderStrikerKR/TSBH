@@ -743,6 +743,60 @@ pub fn numeric_editor_font() -> FontId {
     data_value_font(DataValueKind::Money,DataValueContext::Form)
 }
 
+/// A missing product photo is ordinary body-size proportional text.
+pub fn product_image_placeholder_font()->FontId{
+    FontId::proportional(FONT_BODY)
+}
+
+/// The OCR labels retain the existing inherited egui text style, rather
+/// than adding a line-height or font-family override during extraction.
+pub fn ocr_zoom_label(zoom:f32)->RichText{
+    RichText::new(format!("{:>3.0}%",zoom*100.0))
+}
+
+pub fn ocr_validation_hint(text:&str)->RichText{
+    RichText::new(text).color(crate::theme::DANGER)
+}
+
+pub fn ocr_progress_title(text:&str)->RichText{
+    RichText::new(text).size(FONT_OCR_PROGRESS_TITLE).strong().color(TEXT)
+}
+
+/// Measurement and rendering share the same notice size and font family.
+pub fn floating_notice_font()->FontId{
+    FontId::proportional(crate::theme::FLOATING_NOTICE_TEXT_SIZE)
+}
+
+pub fn floating_notice_text(text:&str)->RichText{
+    RichText::new(text).size(crate::theme::FLOATING_NOTICE_TEXT_SIZE).color(TEXT)
+}
+
+/// Review content deliberately keeps its existing body and caption roles.
+/// Tone changes ink only; it does not change the role's line metrics.
+pub fn review_error_text(text:&str)->RichText{
+    body(text).color(crate::theme::ReviewTone::Error.text_color())
+}
+pub fn review_title(text:&str,tone:crate::theme::ReviewTone)->RichText{
+    body(text).strong().color(tone.text_color())
+}
+pub fn review_detail(text:&str,tone:crate::theme::ReviewTone)->RichText{
+    caption(text).color(tone.detail_color())
+}
+
+#[cfg(test)]
+mod extracted_text_role_tests{
+    use super::*;
+
+    #[test]
+    fn extracted_painter_fonts_keep_existing_metrics(){
+        assert_eq!(product_image_placeholder_font(),FontId::proportional(14.0));
+        assert_eq!(floating_notice_font(),FontId::proportional(crate::theme::FLOATING_NOTICE_TEXT_SIZE));
+        assert_eq!(FONT_OCR_PROGRESS_TITLE,28.0);
+        assert_eq!(FONT_RECEPTION_SOURCE_TEXT,16.0);
+        assert_eq!(DATA_NUMERIC_GLYPH_OFFSET_Y,2.5);
+    }
+}
+
 pub fn status(text: &str, color: Color32) -> RichText {
     render(text, Role::Status).color(color)
 }

@@ -59,7 +59,6 @@ mod daily_settlement_manager;
 mod excel_manager;
 mod excel_service;
 mod management_queries;
-mod developer_ui_samples;
 
 use eframe::egui::{self, Align, Layout, Rect, Sense, Ui, UiBuilder, Vec2};
 use theme::{ButtonRole, WindowControl};
@@ -3495,10 +3494,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                     // The tinted bordered surface marks the exact scrollable region.
                     // Reserve five rows for short orders, expand to ten recipients,
                     // then scroll within the same surface for additional orders.
-                    theme::modal_nested_frame()
-                        .inner_margin(egui::Margin::symmetric(
-                            theme::SPACE_12 as i8,theme::SPACE_8 as i8
-                        ))
+                    theme::modal_nested_role_frame(theme::ModalNestedRole::RecipientChecklist)
                         .show(ui,|panel|{
                             egui::ScrollArea::vertical()
                                 .max_height(list_height)
@@ -4591,9 +4587,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                     zoom.add_sized(
                                         Vec2::new(54.0,24.0),
                                         egui::Label::new(
-                                            egui::RichText::new(format!(
-                                                "{:>3.0}%",review.zoom*100.0
-                                            ))
+                                            typography::ocr_zoom_label(review.zoom)
                                         )
                                     );
                                     zoom.add_sized(
@@ -4860,9 +4854,9 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                 .max_rect(hint_rect),
                             |hint|{
                                 hint.set_clip_rect(clip);
-                                hint.label(egui::RichText::new(
+                                hint.label(typography::ocr_validation_hint(
                                     "인식된 텍스트는 1~20,000자로 수정해 주세요."
-                                ).color(theme::DANGER));
+                                ));
                             },
                         );
                     }
@@ -5946,10 +5940,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                             progress.add_space(theme::SPACE_12);
                         }
                         progress.label(
-                            egui::RichText::new("이미지 분석중...")
-                                .size(typography::FONT_OCR_PROGRESS_TITLE)
-                                .strong()
-                                .color(theme::TEXT)
+                            typography::ocr_progress_title("이미지 분석중...")
                         );
                         progress.add_space(theme::SPACE_16);
                         if theme::action(
@@ -6851,34 +6842,9 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                         |header|{
                             components::reception_item_add_action_editable(header,false);
                         },|ui|{
-                        // Footer slots must consume EXACTLY their reserved
-                        // heights, with no hidden egui spacing added between.
-                        ui.spacing_mut().item_spacing.y=0.0;
-                        // The list inherits the master's 10pt reserved solid
-                        // rail; only the interior data viewport can scroll.
-                        ui.spacing_mut().scroll=theme::management_table_scroll_style();
-                        // React structure: 3-column product grid + freight + actions,
-                        // independently scrolling above a fixed VAT and total footer.
-                        let available = components::docked_section_body_height(
-                            bottom_rect.height()
-                        ).min(ui.available_height().max(0.0));
-                        let list_height=available;
-                        components::reception_goods_viewport(
-                            ui,list_height,|area| {
-                                let table_width=
-                                    components::reception_items_scroll_content_width(area);
-                                egui::ScrollArea::both()
-                                    .scroll_bar_visibility(
-                                        egui::containers::scroll_area::ScrollBarVisibility::VisibleWhenNeeded
-                                    )
-                                    .id_salt(("native-workflow-products",ship.id.as_str()))
-                                    .max_height(list_height)
-                                    .auto_shrink([false,false])
-                                    .show(area,|contents|{
-                                        // A horizontal ScrollArea may report an unbounded
-                                        // available width. Explicitly lock its child width.
-                                        contents.set_width(table_width);
-                                        contents.spacing_mut().item_spacing.y=0.0;
+                        components::reception_docked_goods_scroll(
+                            ui,bottom_rect.height(),("native-workflow-products",ship.id.as_str()),
+                            false,|contents|{
                                         components::reception_items_header(contents);
                                         if let Some(items)=ship.recipient.get("items")
                                             .and_then(serde_json::Value::as_array)
@@ -7019,7 +6985,6 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                         components::reception_item_origin_action_editable(
                                             contents,origin,false
                                         );
-                                    });
                             }
                         );
                         // Whole-order billing is rendered in its own section.
@@ -7195,21 +7160,9 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                         |header|{
                             components::reception_item_add_action_editable(header,false);
                         },|ui|{
-                            ui.spacing_mut().item_spacing.y=0.0;
-                            ui.spacing_mut().scroll=theme::management_table_scroll_style();
-                            let available=components::docked_section_body_height(
-                                bottom_rect.height()
-                            ).min(ui.available_height().max(0.0));
-                            components::reception_goods_viewport(
-                                ui,available,|area|{
-                                    let table_width=
-                                        components::reception_items_scroll_content_width(area);
-                                    egui::ScrollArea::both()
-                                        .id_salt(("pending-hover-products",draft.id.as_str()))
-                                        .max_height(available).auto_shrink([false,false])
-                                        .show(area,|contents|{
-                                            contents.set_width(table_width);
-                                            contents.spacing_mut().item_spacing.y=0.0;
+                            components::reception_docked_goods_scroll(
+                                ui,bottom_rect.height(),("pending-hover-products",draft.id.as_str()),
+                                false,|contents|{
                                             components::reception_items_header(contents);
                                             if let Some(row)=recipient{
                                                 if let Some(items)=row["items"].as_array(){
@@ -7264,7 +7217,6 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                                     contents,origin,false
                                                 );
                                             }
-                                        });
                                 }
                             );
                         }
@@ -7538,8 +7490,6 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                         && self.analysis.is_none() {
                         return;
                     }
-                    ui.spacing_mut().item_spacing.y=0.0;
-                    ui.spacing_mut().scroll=theme::management_table_scroll_style();
                     let preview = self.active_id.as_deref()
                         .and_then(|id|self.drafts.iter().find(|draft|draft.id==id))
                         .and_then(|draft|draft.pricing_preview.as_ref())
@@ -7547,24 +7497,8 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                             .and_then(serde_json::Value::as_str)
                             ==Some(self.raw_source.as_str()));
                     let quote_index=preview.map(indexed_quote);
-                    let available=components::docked_section_body_height(remaining)
-                        .min(ui.available_height().max(0.0));
-                    let list_height=available;
-                    components::reception_goods_viewport(
-                        ui,list_height,|list_area|{
-                            let table_width=
-                                components::reception_items_scroll_content_width(list_area)
-                                .max(theme::RECEPTION_ITEMS_MIN_TABLE_WIDTH+theme::RECEPTION_ITEM_REMOVE_WIDTH);
-                            egui::ScrollArea::both()
-                                .scroll_bar_visibility(
-                                    egui::containers::scroll_area::ScrollBarVisibility::VisibleWhenNeeded
-                                )
-                                .id_salt("recognized-items")
-                                .max_height(list_height)
-                                .auto_shrink([false,false])
-                                .show(list_area,|items_ui|{
-                                    items_ui.set_width(table_width);
-                                    items_ui.spacing_mut().item_spacing.y=0.0;
+                    components::reception_docked_goods_scroll(
+                        ui,remaining,"recognized-items",true,|items_ui|{
                                     components::reception_editable_items_header(items_ui);
                                     if let Some(recipient)=selected {
                                         let recipient_id=reception_service::text(recipient,"id");
@@ -7792,7 +7726,6 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                             Some("거래처 선택 후 운임과 청구금액을 확인합니다.")
                                         );
                                     }
-                                });
                         }
                     );
                     // The goods section does not own the entire-order VAT
@@ -9671,9 +9604,8 @@ mod inline_single_click_handoff_tests {
 }
 
 fn main() -> eframe::Result<()> {
-    // Connect to the EXISTING Tauri v2 database before creating any gateway
-    // or background worker. Debug uses only the developer-test DB, release
-    // uses only the production DB. This never creates an operating DB.
+    // Connect to an existing operating v2 DB before starting workers.
+    // Debug builds do not auto-discover it. No DB is created here.
     match business_state::bind_existing_tauri_database() {
         Ok(Some(_)) => {},
         Ok(None) => {},
@@ -9681,13 +9613,6 @@ fn main() -> eframe::Result<()> {
             eprintln!("[BANDO HUB] 기존 Tauri 업무 DB 자동 연결 실패: {error}");
             std::process::exit(2);
         }
-    }
-    // Only the explicitly opted-in Windows developer launcher appends
-    // synthetic UI-density fixtures to the existing isolated TEST DB.
-    // It never touches an operating DB or launches a save-helper process.
-    if let Err(error) = developer_ui_samples::seed_if_requested() {
-        eprintln!("[BANDO HUB TEST] 가상 UI 데이터 준비 실패: {error}");
-        std::process::exit(2);
     }
     let backend = match gateway::from_environment() {
         Ok(backend) => backend,

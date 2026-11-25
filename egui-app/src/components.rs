@@ -32,8 +32,7 @@ pub fn virtual_fixed_rows<R>(
 ) -> egui::containers::scroll_area::ScrollAreaOutput<R> {
     debug_assert!(row_height>0.0 && row_height.is_finite());
     let output=scroll.show_viewport(ui,move |body,viewport|{
-        body.spacing_mut().item_spacing.y=0.0;
-        body.set_min_width(content_width);
+        management_table_row_body(body,content_width);
         body.set_min_height(row_height*total_rows as f32);
         let first=((viewport.top()/row_height).floor().max(0.0) as usize)
             .saturating_sub(1).min(total_rows);
@@ -60,6 +59,52 @@ pub fn virtual_fixed_rows<R>(
     #[cfg(test)]
     general_screen_geometry_tests::record("row viewport",output.inner_rect);
     output
+}
+
+/// Shared management table container policy. The caller owns its layout
+/// scope; return the preceding vertical gap for existing explicit restores.
+/// Column widths, row heights, table IDs and header positions stay unchanged.
+pub fn management_table_container_style(ui:&mut Ui)->f32{
+    let previous_gap=ui.spacing().item_spacing.y;
+    ui.spacing_mut().scroll=theme::management_table_scroll_style();
+    ui.spacing_mut().item_spacing.y=0.0;
+    previous_gap
+}
+
+/// Fixed and variable row viewports share the minimum-width and zero-gap
+/// rules. Retain the caller's existing width and height calculations.
+pub fn management_table_row_body(ui:&mut Ui,width:f32){
+    ui.set_min_width(width);
+    ui.spacing_mut().item_spacing.y=0.0;
+}
+
+#[cfg(test)]
+mod management_table_container_style_tests{
+    use super::*;
+    #[test]
+    fn container_and_row_body_preserve_reference_metrics(){
+        let ctx=test_context();
+        let _=ctx.run(egui::RawInput::default(),|ctx|{
+            egui::CentralPanel::default().show(ctx,|ui|{
+                ui.spacing_mut().item_spacing.y=7.0;
+                ui.spacing_mut().item_spacing.x=13.0;
+                let old=management_table_container_style(ui);
+                let expected=theme::management_table_scroll_style();
+                assert_eq!(old,7.0);
+                assert_eq!(ui.spacing().item_spacing.y,0.0);
+                assert_eq!(ui.spacing().item_spacing.x,13.0);
+                assert_eq!(ui.spacing().scroll.bar_width,expected.bar_width);
+                assert_eq!(ui.spacing().scroll.allocated_width(),expected.allocated_width());
+                assert_eq!(ui.spacing().scroll.bar_inner_margin,expected.bar_inner_margin);
+                assert_eq!(ui.spacing().scroll.bar_outer_margin,expected.bar_outer_margin);
+                ui.spacing_mut().item_spacing.y=old;
+                assert_eq!(ui.spacing().item_spacing.y,7.0);
+                management_table_row_body(ui,420.0);
+                assert!(ui.min_rect().width()>=420.0);
+                assert_eq!(ui.spacing().item_spacing.y,0.0);
+            });
+        });
+    }
 }
 
 pub const TABLE_HEADER_HEIGHT: f32 = theme::MANAGEMENT_TABLE_HEADER_HEIGHT;
@@ -685,7 +730,8 @@ mod shared_screen_component_contract_tests {
             .split("\n    fn ").next().unwrap();
         assert!(vat.contains("components::checkbox("));
         assert!(vat.contains("components::checkbox_list_row("));
-        assert!(vat.contains("theme::modal_nested_frame()"));
+        assert!(vat.contains("theme::modal_nested_role_frame(theme::ModalNestedRole::RecipientChecklist)"));
+        assert!(!vat.contains(".inner_margin("));
 
         let messages=production_source(include_str!("automatic_message_manager.rs"));
         assert!(messages.contains("components::multiline_text_field("));
@@ -944,8 +990,7 @@ pub fn removable_tag_chip(ui:&mut Ui,tag:&str)->Response{
     let visible=if tag.chars().count()>22{
         format!("{}…",tag.chars().take(22).collect::<String>())
     }else{tag.to_owned()};
-    theme::modal_nested_frame()
-        .inner_margin(egui::Margin::symmetric(8,2))
+    theme::modal_nested_role_frame(theme::ModalNestedRole::CompactTag)
         .show(ui,|chip|{
             chip.horizontal(|line|{
                 line.spacing_mut().item_spacing.x=theme::SPACE_4;
@@ -1112,6 +1157,47 @@ pub fn reception_goods_viewport(
     child.set_height(rect.height());
     child.spacing_mut().item_spacing.y=0.0;
     content(&mut child);
+}
+
+/// Docked reception goods own their fixed viewport; the manual worksheet
+/// scrolls its complete card stack instead. Both use the same item table
+/// spacing and minimum-width rules without introducing another child ID.
+pub fn reception_items_body(ui:&mut Ui,width:f32,exact_width:bool){
+    if exact_width{ui.set_width(width);}else{ui.set_min_width(width);}
+    ui.spacing_mut().item_spacing.y=0.0;
+}
+
+pub fn reception_worksheet_items_body(ui:&mut Ui){
+    let width=ui.available_width().max(
+        theme::RECEPTION_ITEMS_MIN_TABLE_WIDTH+theme::RECEPTION_ITEM_REMOVE_WIDTH
+    );
+    reception_items_body(ui,width,false);
+}
+
+/// Preserve the established 16pt worksheet stack gap in one semantic rule.
+/// Docked panes retain their independent draggable splitter instead.
+pub const RECEPTION_STACKED_CARD_GAP:f32=theme::SPACE_16;
+
+pub fn reception_docked_goods_scroll(
+    ui:&mut Ui,section_height:f32,id_salt:impl std::hash::Hash,
+    editable_columns:bool,content:impl FnOnce(&mut Ui)
+){
+    ui.spacing_mut().item_spacing.y=0.0;
+    ui.spacing_mut().scroll=theme::management_table_scroll_style();
+    let height=docked_section_body_height(section_height)
+        .min(ui.available_height().max(0.0));
+    reception_goods_viewport(ui,height,|area|{
+        let minimum=theme::RECEPTION_ITEMS_MIN_TABLE_WIDTH+
+            if editable_columns{theme::RECEPTION_ITEM_REMOVE_WIDTH}else{0.0};
+        let width=reception_items_scroll_content_width(area).max(minimum);
+        egui::ScrollArea::both()
+            .scroll_bar_visibility(egui::containers::scroll_area::ScrollBarVisibility::VisibleWhenNeeded)
+            .id_salt(id_salt).max_height(height).auto_shrink([false,false])
+            .show(area,|items|{
+                reception_items_body(items,width,true);
+                content(items);
+            });
+    });
 }
 
 /// Shared forward/inverse height budget for every Reception section.
@@ -2043,7 +2129,7 @@ pub fn modal_master_body<R>(
 }
 
 /// Shared modal-section heading geometry. Both margins around its
-/// 1pt rule are explicit 12pt, independent of egui's default item spacing.
+/// 1pt rule are explicit 16pt, independent of egui's default item spacing.
 /// Its content gets a separate scope to prevent an implicit extra 8pt gap.
 fn modal_section_heading_with_rule(ui:&mut Ui,title:&str){
     ui.spacing_mut().item_spacing.y=0.0;
@@ -6886,7 +6972,8 @@ mod shared_checkbox_contract_tests {
             .split("fn show_edit_history(").next().unwrap();
         assert!(dialog.contains("components::checkbox("));
         assert!(dialog.contains("components::checkbox_list_row("));
-        assert!(dialog.contains("theme::modal_nested_frame()"));
+        assert!(dialog.contains("theme::modal_nested_role_frame(theme::ModalNestedRole::RecipientChecklist)"));
+        assert!(!dialog.contains(".inner_margin("));
         assert!(!dialog.contains("egui::Checkbox::new("));
         assert!(!dialog.contains("egui::Frame::new()"));
 
@@ -9043,7 +9130,8 @@ mod round87_phase5_modal_contract_tests {
         assert_eq!(theme::MODAL_SECTION_PADDING,16.0);
         assert_eq!(theme::MODAL_SECTION_HEADER_RULE_GAP,16.0);
         assert_eq!(theme::MODAL_PANEL_PADDING_Y,16.0);
-        assert_eq!(theme::MODAL_PANEL_PADDING_X,18.0);
+        // 735ea52b normalized both outer popup insets to 16pt.
+        assert_eq!(theme::MODAL_PANEL_PADDING_X,16.0);
         assert_eq!(theme::MODAL_HEADER_HEIGHT,56.0);
         assert_eq!(theme::MODAL_FOOTER_HEIGHT,58.0);
     }
@@ -9698,6 +9786,30 @@ pub(crate) mod general_screen_geometry_tests {
             assert_layout_rects_invariant(&fields(&second_recipient),&fields(&pending));
         }
     }
+    #[test]
+    fn docked_goods_scroll_keeps_card_and_following_slot_fixed(){
+        let ctx=test_context();
+        let screen=Vec2::new(900.0,700.0);
+        let work=Rect::from_min_max(egui::pos2(24.0,24.0),egui::pos2(876.0,676.0));
+        let draw=|overflow:bool|render(&ctx,screen,work,|ui|{
+            reception_section_with_header(ui,"품목 및 운임",320.0,|_|{},|body|{
+                reception_docked_goods_scroll(body,320.0,"goods-regression",true,|items|{
+                    assert_eq!(items.spacing().item_spacing.y,0.0);
+                    assert!(items.available_width()+0.5>=theme::RECEPTION_ITEMS_MIN_TABLE_WIDTH+theme::RECEPTION_ITEM_REMOVE_WIDTH);
+                    reception_editable_items_header(items);
+                    items.allocate_exact_size(Vec2::new(200.0,if overflow{900.0}else{20.0}),Sense::hover());
+                });
+            });
+            let (rect,_)=ui.allocate_exact_size(Vec2::new(100.0,20.0),Sense::hover());
+            record("after goods",rect);
+        });
+        let short=draw(false);
+        let long=draw(true);
+        assert_layout_rects_invariant(
+            &[("items card",first(&short,"items card")),("after goods",first(&short,"after goods"))],
+            &[("items card",first(&long,"items card")),("after goods",first(&long,"after goods"))]);
+    }
+
     #[test]
     fn goods_viewport_reserves_fixed_parent_height_even_with_oversized_content(){
         let ctx=test_context();

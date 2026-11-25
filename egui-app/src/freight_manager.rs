@@ -1290,11 +1290,9 @@ impl FreightManager {
             // Keep the 10pt thumb width but dock its rail flush with the
             // table rows. The 6pt inset on the last action cell still
             // separates clickable buttons from the scroll hit target.
-            section.spacing_mut().scroll=theme::management_table_scroll_style();
             // Both Freight and Order History now reserve the toolbar, divider
             // and header with one common zero-implicit-gap layout path.
-            let previous_table_spacing_y=section.spacing().item_spacing.y;
-            section.spacing_mut().item_spacing.y=0.0;
+            let previous_table_spacing_y=components::management_table_container_style(section);
             // The parent page title and active "배송 그룹 편성" tab already
             // establish context. Start directly with the search/bulk toolbar:
             // do not leave an empty title row or its implicit vertical gap.
@@ -1543,8 +1541,7 @@ impl FreightManager {
                 section,table_width,theme::FREIGHT_ASSIGNMENT_ROW_HEIGHT,
                 filtered.len(),
                 |table,visible_rows|{
-                    table.set_min_width(table_width);
-                    table.spacing_mut().item_spacing.y=0.0;
+                    components::management_table_row_body(table,table_width);
                     theme::apply_table_row_colors(table);
                     // Rows outside the viewport keep their selections and
                     // pending assignments, but create no widget this frame.
@@ -2027,11 +2024,9 @@ impl FreightManager {
         let card_min_height=components::management_master_table_card_min_inner_height(ui);
         components::measured_management_master_card(ui,|section| {
             components::fill_management_primary_card(section,card_min_height);
-            section.spacing_mut().scroll=theme::management_table_scroll_style();
             // Search and group creation share one fixed 36pt toolbar.
             // The global rate-basis action is now on the dedicated Basis tab.
-            let old_gap=section.spacing().item_spacing.y;
-            section.spacing_mut().item_spacing.y=0.0;
+            let old_gap=components::management_table_container_style(section);
             let (create,_toolbar,_search)=
                 Self::rate_toolbar(section,search,enabled);
             if create.clicked(){*create_group_open=true;}
@@ -2088,8 +2083,7 @@ impl FreightManager {
                     .auto_shrink([false,false]),
                 section,table_width,theme::FREIGHT_ASSIGNMENT_ROW_HEIGHT,
                 ordered.len(),|table,visible_rows|{
-                    table.set_min_width(table_width);
-                    table.spacing_mut().item_spacing.y=0.0;
+                    components::management_table_row_body(table,table_width);
                     let origin=table.max_rect().min;
                     let first_index=visible_rows.start;
                     for index in visible_rows {
@@ -2789,9 +2783,7 @@ fn freight_history_table<const N:usize>(
     follows_master_toolbar:bool,empty_message:Option<&str>,
     mut render_row:impl FnMut(&mut Ui,&[egui::Rect;N],usize),
 ){
-    ui.spacing_mut().scroll=theme::management_table_scroll_style();
-    let old_spacing=ui.spacing().item_spacing.y;
-    ui.spacing_mut().item_spacing.y=0.0;
+    let old_spacing=components::management_table_container_style(ui);
     let minimum=bases.iter().sum::<f32>()
         +N.saturating_sub(1) as f32*theme::FREIGHT_ASSIGNMENT_COL_GAP;
     let layout=if follows_master_toolbar {
@@ -2831,8 +2823,7 @@ fn freight_history_table<const N:usize>(
             .auto_shrink([false,false]),
         ui,width,theme::FREIGHT_ASSIGNMENT_ROW_HEIGHT,total_rows,
         |table,visible_rows|{
-            table.set_min_width(width);
-            table.spacing_mut().item_spacing.y=0.0;
+            components::management_table_row_body(table,width);
             let first=visible_rows.start;
             let origin=table.max_rect().min;
             for index in visible_rows {

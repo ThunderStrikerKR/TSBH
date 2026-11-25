@@ -739,10 +739,9 @@ impl ExcelManager{
         let card_min_height=components::management_master_table_card_min_inner_height(ui);
         components::measured_management_master_card(ui,|section|{
             components::fill_management_primary_card(section,card_min_height);
-            section.spacing_mut().scroll=theme::management_table_scroll_style();
             // Allocate a true 36pt master toolbar. Search and trailing
             // actions use the SAME 16pt card interior width as the header.
-            section.spacing_mut().item_spacing.y=0.0;
+            components::management_table_container_style(section);
             let toolbar_width=section.available_width().max(1.0);
             let has_actions=self.tab!=Tab::History;
             let history_tab=self.tab==Tab::History;

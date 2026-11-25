@@ -21,14 +21,9 @@ mod regressions {
     }
 
     fn samples() -> Vec<Value> {
-        // Reuse the original untouched 20-order audit inputs and expected values.
-        // The samples are a strict JSON array embedded in the JS test file.
-        let fixture = include_str!("../../../audit-20-order-samples.test.mjs");
-        let start = fixture.find("const samples=[").expect("samples declaration")
-            + "const samples=".len();
-        let end = fixture[start..].find("\n];").expect("end of sample array") + start + 2;
-        let all: Vec<Value> = serde_json::from_str(&fixture[start..end])
-            .expect("20 original sample records");
+        // Independent input/expectation fixture, not an executable legacy parser.
+        let all: Vec<Value> = serde_json::from_str(include_str!("../operational-order-samples.json"))
+            .expect("20 native order fixtures");
         assert_eq!(all.len(), 20);
         all
     }
@@ -76,6 +71,15 @@ mod regressions {
         if let Some(names)=expected_names {
             let actual:Vec<_>=recipients.iter().map(|r|r["name"].as_str().unwrap_or("")).collect();
             assert_eq!(actual,names,"order {id}: institution/name boundary");
+            assert!(recipients[0]["address"].as_str().unwrap_or("").contains("가상교회"),
+                "order {id}: institution must remain in the delivery address");
+            let per_recipient:Vec<_>=recipients.iter()
+                .map(|r|r["items"].as_array().expect("items").len()).collect();
+            assert_eq!(per_recipient,if id==17 {vec![1,1]} else {vec![1]});
+            if id==17 {
+                assert_eq!(recipients[0]["items"][0]["quantity"],4);
+                assert_eq!(recipients[1]["items"][0]["quantity"],1);
+            }
             assert!(recipients.iter().all(|r|r["address"].as_str()
                 .map_or(false,|v|!v.is_empty()) && (
                 !r["phone"].as_str().unwrap_or("").is_empty() ||
@@ -112,6 +116,45 @@ mod regressions {
     case!(order_18,18);
     case!(order_19,19);
     case!(order_20,20);
+
+    // Current reception contract: address institutions are not extra
+    // recipients, but explicitly named institutions are valid recipients.
+    fn institution_boundary(institution:&str, standalone:bool) {
+        let raw=if standalone {
+            format!("BD 709 (블랙) 1개\n{institution}\n서울특별시 송파구 석촌호수로 162\n010-1234-5678")
+        } else {
+            format!("BD 709 (블랙) 1개\n김가상\n010-1234-5678\n서울특별시 송파구 석촌호수로 162 {institution}")
+        };
+        let result=recognition::execute("analyze_order",json!({
+            "raw":raw,"state":seed(),"client":{"id":"ci-recipient","name":"합성 거래처",
+                "active":true,"tier":"wholesale","payment":"PREPAID","overrides":{},
+                "identifiers":"","shippingFeeExcluded":false}
+        })).expect("native recognition");
+        let recipients=result["recipients"].as_array().expect("recipients");
+        assert_eq!(recipients.len(),1,"institution={institution}, standalone={standalone}: {result}");
+        let r=&recipients[0];
+        assert_eq!(r["name"],if standalone {institution} else {"김가상"});
+        let address=r["address"].as_str().expect("address");
+        assert!(address.contains("석촌호수로"));
+        if !standalone { assert!(address.contains(institution),"address lost institution: {result}"); }
+        assert_eq!(r["mobile"],"010-1234-5678");
+        let quantities:Vec<_>=r["items"].as_array().expect("items").iter()
+            .map(|item|item["quantity"].clone()).collect();
+        assert_eq!(quantities,vec![json!(1)]);
+    }
+
+    macro_rules! institution_cases {
+        ($address:ident,$recipient:ident,$name:literal) => {
+            #[test] fn $address(){institution_boundary($name,false);}
+            #[test] fn $recipient(){institution_boundary($name,true);}
+        };
+    }
+    institution_cases!(institution_address_church,institution_recipient_church,"가상교회");
+    institution_cases!(institution_address_school,institution_recipient_school,"가상학교");
+    institution_cases!(institution_address_cathedral,institution_recipient_cathedral,"가상성당");
+    institution_cases!(institution_address_hospital,institution_recipient_hospital,"가상병원");
+    institution_cases!(institution_address_academy,institution_recipient_academy,"가상학원");
+
 
     #[test]
     fn an_explicitly_unregistered_color_does_not_select_black() {

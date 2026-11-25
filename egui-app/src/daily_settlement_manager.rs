@@ -300,9 +300,7 @@ fn report_table<const N:usize>(
     stretch_column:usize,indices:&[usize],
     sort:&mut Option<Sort>,empty_notice:Option<&str>,format_row:impl Fn(usize)->[String;N],
 ){
-    ui.spacing_mut().scroll=theme::management_table_scroll_style();
-    let previous_gap=ui.spacing().item_spacing.y;
-    ui.spacing_mut().item_spacing.y=0.0;
+    let previous_gap=components::management_table_container_style(ui);
     let minimum=base.iter().sum::<f32>()+(N.saturating_sub(1)) as f32*COL_GAP;
     // Keep existing column minima; the shared 36pt header now uses the
     // same zero-extra scrollbar reservation as both master tables.
@@ -329,8 +327,7 @@ fn report_table<const N:usize>(
             .auto_shrink([false,false]),
         ui,width,ROW_HEIGHT,indices.len(),
         |list,visible_rows|{
-            list.set_min_width(width);
-            list.spacing_mut().item_spacing.y=0.0;
+            components::management_table_row_body(list,width);
             let first=visible_rows.start;
             let origin=list.max_rect().min;
             for index in visible_rows{

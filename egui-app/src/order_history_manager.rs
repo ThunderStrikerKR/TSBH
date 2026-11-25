@@ -1322,12 +1322,10 @@ impl OrderHistoryManager {
         let card_min_height=components::management_master_table_card_min_inner_height(ui);
         components::measured_management_master_card(ui,|section|{
             components::fill_management_primary_card(section,card_min_height);
-            section.spacing_mut().scroll=theme::management_table_scroll_style();
             // Use the identical zero-implicit-gap toolbar-to-header
             // allocator as Freight Assignment. Do not inject extra space
             // or move the header independently on either screen.
-            let old_gap=section.spacing().item_spacing.y;
-            section.spacing_mut().item_spacing.y=0.0;
+            let old_gap=components::management_table_container_style(section);
             let full_width=section.available_width().max(1.0);
             // The search toolbar itself has NO scrollbar. Align its last
             // "전체 날짜" control to the card's 16pt inner right edge.
@@ -1490,8 +1488,7 @@ impl OrderHistoryManager {
                 .max_height(scroll_max_height)
                 .auto_shrink([false,false])
                 .show_viewport(section,|body,viewport|{
-                    body.spacing_mut().item_spacing.y=0.0;
-                    body.set_min_width(table_width);
+                    components::management_table_row_body(body,table_width);
                     body.set_min_height(total_height);
                     let first=offsets.partition_point(|value|*value<=viewport.top())
                         .saturating_sub(1).min(lines.len());

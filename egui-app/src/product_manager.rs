@@ -1245,9 +1245,7 @@ impl ProductManager {
             if !direct_filter_to_header{
                 components::soft_divider(panel);
             }
-            let original_spacing=panel.spacing().item_spacing.y;
-            panel.spacing_mut().item_spacing.y=0.0;
-            panel.spacing_mut().scroll=theme::management_table_scroll_style();
+            let original_spacing=components::management_table_container_style(panel);
             // Fixed six-column geometry: editing changes only a cell's
             // contents, never its width, column origin or scroll range.
             let base=product_table_base_widths();
@@ -1326,8 +1324,7 @@ impl ProductManager {
                     .auto_shrink([false,false]),
                 panel,table_width,theme::PRODUCT_TABLE_ROW_HEIGHT,ordered.len(),
                 |table,visible_rows|{
-                    table.set_min_width(table_width);
-                    table.spacing_mut().item_spacing.y=0.0;
+                    components::management_table_row_body(table,table_width);
                     theme::apply_table_row_colors(table);
                     let first=visible_rows.start;
                     let origin=table.max_rect().min;

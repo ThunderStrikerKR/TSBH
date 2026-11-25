@@ -520,4 +520,70 @@ mod tests {
         current["revision"]=json!(4);
         assert!(apply(&json!({"state":current,"preview":preview})).unwrap_err().contains("DB"));
     }
+
+    #[test]
+    fn operational_reply_matches_normalized_frozen_recipient_not_live_address(){
+        let mut state=fixture();
+        state["orders"][0]["recipients"][0]["address"]=json!("서울 다른 주소 20");
+        let mut request=input(state.clone(),"001234567890","4000");
+        request["sourceRows"][0]["name"]=json!("김 수취");
+        request["sourceRows"][0]["address"]=json!("서울 종로구 １０");
+        request["sourceRows"][0]["phone"]=json!("010 (1234)-5678");
+        assert_eq!(analyze(&request).unwrap()["applied"],1);
+        request["sourceRows"][0]["address"]=json!("서울 다른 주소 20");
+        assert_eq!(analyze(&request).unwrap()["held"],1);
+        request["sourceRows"][0]["address"]=json!("서울 종로구 10");
+        request["sourceRows"][0]["phone"]=json!("010-0000-0000");
+        assert_eq!(analyze(&request).unwrap()["held"],1);
+    }
+    #[test]
+    fn operational_reply_only_matches_exported_factory_and_unique_shipment(){
+        let state=fixture();
+        for (key,value) in [("origin","STORE"),("status","QUEUED")]{
+            let mut changed=state.clone();
+            changed["workflow"]["queue"][0][key]=json!(value);
+            assert_eq!(analyze(&input(changed,"001234567890","4000")).unwrap()["held"],1);
+        }
+        let mut repeated=state.clone();
+        let second=repeated["workflow"]["queue"][0].clone();
+        repeated["workflow"]["queue"].as_array_mut().unwrap().push(second);
+        assert_eq!(analyze(&input(repeated.clone(),"001234567890","4000")).unwrap()["applied"],1);
+        repeated["workflow"]["queue"][1]["shipmentId"]=json!("s2");
+        assert_eq!(analyze(&input(repeated,"001234567890","4000")).unwrap()["held"],1);
+    }
+    #[test]
+    fn operational_reply_freight_and_waybill_boundaries(){
+        for (freight,accepted) in [("0",true),("1",true),("4,000",true),
+            ("9,007,199,254,740,991",true),("9007199254740992",false),
+            ("-1",false),("0.5",false),("4,00",false)]{
+            let p=analyze(&input(fixture(),"001234567890",freight)).unwrap();
+            assert_eq!(p["applied"],if accepted{1}else{0},"freight={freight}");
+        }
+        for (tracking,accepted) in [("00000000",true),("1234567",false),
+            ("123-45678",true),("１２３４５６７８",false)]{
+            let p=analyze(&input(fixture(),tracking,"4000")).unwrap();
+            assert_eq!(p["applied"],if accepted{1}else{0},"tracking={tracking}");
+        }
+        assert_eq!(analyze(&input(fixture(),&"0".repeat(30),"4000")).unwrap()["applied"],1);
+        assert_eq!(analyze(&input(fixture(),&"1".repeat(31),"4000")).unwrap()["held"],1);
+    }
+    #[test]
+    fn operational_reply_repeat_and_duplicate_tracking_do_not_rewrite_history(){
+        let mut state=fixture();
+        state["workflow"]["shipments"][0]["tracking"]["FACTORY"]=json!("001234567890");
+        state["workflow"]["shipments"][0]["actualFreight"]["FACTORY"]=json!(4000);
+        let p=analyze(&input(state.clone(),"001234567890","4000")).unwrap();
+        let r=apply(&json!({"state":state,"preview":p})).unwrap();
+        assert_eq!(r["applied"],1);
+        assert_eq!(r["next"]["workflow"]["events"],json!([]));
+        assert_eq!(r["next"]["workflow"]["shipments"][0]["actualFreight"]["FACTORY"],4000);
+        assert!(analyze(&input(r["next"].clone(),"001234567890","4000")).unwrap_err().contains("동일 회신"));
+        let mut another=fixture();
+        another["workflow"]["shipments"].as_array_mut().unwrap().push(json!({
+            "id":"s2","tracking":{"FACTORY":"001234567890"},"actualFreight":{}
+        }));
+        let p=analyze(&input(another,"001234567890","4000")).unwrap();
+        assert_eq!(p["held"],1);
+        assert!(p["rows"][0]["issue"].as_str().unwrap().contains("다른 배송 건"));
+    }
 }

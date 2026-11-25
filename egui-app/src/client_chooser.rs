@@ -260,9 +260,7 @@ impl ClientChooser {
                     workspace.add_space(theme::SPACE_16);
                     components::modal_master_body_section(
                         workspace,"검색 결과",|results_panel|{
-                            results_panel.spacing_mut().scroll=
-                                theme::management_table_scroll_style();
-                            results_panel.spacing_mut().item_spacing.y=0.0;
+                            components::management_table_container_style(results_panel);
                             // Errors belong to the shared floating toast,
                             // not an inline row that shifts the pinned table
                             // header or steals space from the scroll viewport.
@@ -325,8 +323,7 @@ impl ClientChooser {
                                 theme::MANAGEMENT_CLIENT_ROW_HEIGHT,
                                 clients.len().max(1),
                                 |table,visible_rows|{
-                                    table.set_min_width(table_width);
-                                    table.spacing_mut().item_spacing.y=0.0;
+                                    components::management_table_row_body(table,table_width);
                                     let first=visible_rows.start;
                                     let origin=table.max_rect().min;
                                     let clip=table.clip_rect();

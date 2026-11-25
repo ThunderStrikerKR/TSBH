@@ -170,8 +170,7 @@ impl BrandManager {
             }
             // Shared Freight master: toolbar-to-header transition,
             // fixed 36pt register header and 10pt solid scroll rail.
-            card.spacing_mut().item_spacing.y=0.0;
-            card.spacing_mut().scroll=theme::management_table_scroll_style();
+            components::management_table_container_style(card);
             let header=components::management_master_register_header(
                 card,"브랜드명 / 한글 표기 / 검색 별칭","관리",132.0
             );

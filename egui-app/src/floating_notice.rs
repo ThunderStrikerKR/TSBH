@@ -284,7 +284,7 @@ fn measured_notice(
     let wrap_width = (max_width - chrome).max(1.0);
     let galley = ctx.fonts_mut(|fonts| fonts.layout(
         message.to_owned(),
-        egui::FontId::proportional(theme::FLOATING_NOTICE_TEXT_SIZE),
+        typography::floating_notice_font(),
         theme::TEXT,
         wrap_width,
     ));
@@ -509,9 +509,7 @@ pub fn show(ctx: &Context) {
                             .show(inner,|content| {
                                 content.set_width(text_rect.width().max(1.0));
                                 content.add(egui::Label::new(
-                                    egui::RichText::new(&active.message)
-                                        .size(theme::FLOATING_NOTICE_TEXT_SIZE)
-                                        .color(theme::TEXT)
+                                    typography::floating_notice_text(&active.message)
                                 ).wrap());
                             });
                     },
