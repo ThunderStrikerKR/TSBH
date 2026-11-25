@@ -21,7 +21,7 @@ permissions:
   contents: read
 concurrency:
   group: client-ui-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 jobs:
   egui-client-ui:
     runs-on: windows-latest

@@ -1,0 +1,45 @@
+name: Windows egui compile gate
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/egui-compile-gate.yml
+      - egui-app/**
+      - src-tauri/src/business_core/rules/history.rs
+      - src-tauri/src/business_core/rules/manual_draft.rs
+      - src-tauri/src/workflow_sqlite_integration_tests.rs
+      - src-tauri/src/business_core/rules/pricing.rs
+      - src-tauri/src/business_core/catalog_clients/brands.rs
+      - src-tauri/src/business_core/catalog_clients/aliases.rs
+      - src-tauri/src/business_core/catalog_clients/model_groups.rs
+      - crates/bando-data-access/**
+      - src-tauri/src/business_core/catalog_clients/categories.rs
+      - src-tauri/src/egui_shipping_bridge.rs
+      - src-tauri/src/main.rs
+      - src-tauri/src/lib.rs
+      - src-tauri/src/backup_manager.rs
+      - src-tauri/src/relational_store.rs
+      - src-tauri/src/sale_unit_migration.rs
+      - src-tauri/src/business_core/rules/reception_merge.rs
+      - src-tauri/resources/legacy-state-seed-303.json
+      - src-tauri/src/business_core/**
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  # A newer source revision supersedes only this short compile check.
+  group: egui-compile-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  compile:
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: egui-app -> target
+          key: egui-compile
+      - name: Compile current Windows egui source
+        run: cargo check --manifest-path egui-app/Cargo.toml

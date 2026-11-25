@@ -37,7 +37,7 @@ permissions:
   contents: read
 concurrency:
   group: egui-manual-classification-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 jobs:
   manual-classification:
     runs-on: windows-latest
@@ -72,6 +72,8 @@ jobs:
           cargo test --manifest-path egui-app/Cargo.toml reception_quantity_step_keeps_unit_out_of_native_draft_and_respects_bounds -- --nocapture
       - name: Verify nested modal input routing
         run: cargo test --manifest-path egui-app/Cargo.toml modal_input_routing_tests -- --nocapture
+      - name: Reproduce modal pointer clicks and shared linked-cell blue emphasis
+        run: cargo test --manifest-path egui-app/Cargo.toml manual_nested_prompt_regression_tests -- --nocapture
       - name: Verify manual modal routing and Escape behavior
         run: cargo test --manifest-path egui-app/Cargo.toml manual_workspace_modal_routing_tests -- --nocapture
       - name: Verify React-equivalent pending quantity guards

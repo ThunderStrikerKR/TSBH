@@ -1,70 +1,14 @@
 # Targeted compilation and existing isolated checks for the shared Rust data-access path (no GUI).
 name: Native Rust data-access and egui targeted check
 on:
+  # Main source pushes are checked by egui-compile-gate and scoped gates.
+  # Batch the expensive integrated suite on the current main revision.
   push:
     branches: [main]
     paths:
       - .github/workflows/egui-targeted-check.yml
-      - egui-app/**
-      - egui-app/src/freight_manager.rs
-      - egui-app/src/order_history_manager.rs
-      - egui-app/src/excel_manager.rs
-      - egui-app/src/excel_service.rs
-      - egui-app/Cargo.toml
-      - egui-app/src/daily_settlement_manager.rs
-      - src-tauri/src/business_core/rules/history.rs
-      - egui-app/src/management_queries.rs
-      - egui-app/src/gateway.rs
-      - egui-app/src/main.rs
-      - egui-app/src/client_chooser.rs
-      - egui-app/src/http_gateway.rs
-      - egui-app/src/preview_store.rs
-      - egui-app/src/reception_service.rs
-      - egui-app/src/pricing_basis.rs
-      - egui-app/src/reception_jobs.rs
-      - egui-app/src/native_order_change.rs
-      - egui-app/src/workflow_board_ui.rs
-      - egui-app/src/workflow_board.rs
-      - egui-app/src/source_highlight.rs
-      - egui-app/src/manual_workspace.rs
-      - egui-app/src/manual_source_view.rs
-      - egui-app/src/item_editor.rs
-      - egui-app/src/product_images.rs
-      - egui-app/src/manual_product_search.rs
-      - src-tauri/src/business_core/rules/manual_draft.rs
-      - src-tauri/src/workflow_sqlite_integration_tests.rs
-      - src-tauri/src/business_core/rules/pricing.rs
-      - egui-app/src/floating_notice.rs
-      - egui-app/src/settings_view.rs
-      - egui-app/src/client_manager.rs
-      - egui-app/src/automatic_message_manager.rs
-      - egui-app/src/product_excel_ui.rs
-      - egui-app/src/business_state.rs
-      - egui-app/src/category_manager.rs
-      - egui-app/src/category_dropdown.rs
-      - egui-app/src/product_manager.rs
-      - egui-app/src/alias_manager.rs
-      - egui-app/src/brand_manager.rs
-      - src-tauri/src/business_core/catalog_clients/brands.rs
-      - src-tauri/src/business_core/catalog_clients/aliases.rs
-      - egui-app/src/model_group_manager.rs
-      - egui-app/src/settings_store.rs
-      - src-tauri/src/business_core/catalog_clients/model_groups.rs
-      - egui-app/src/catalog_query_bridge.rs
-      - egui-app/src/theme.rs
-      - egui-app/src/typography.rs
-      - egui-app/src/components.rs
-      - crates/bando-data-access/**
-      - src-tauri/src/business_core/catalog_clients/categories.rs
-      - src-tauri/src/egui_shipping_bridge.rs
-      - src-tauri/src/main.rs
-      - src-tauri/src/lib.rs
-      - src-tauri/src/workflow_sqlite_integration_tests.rs
-      - src-tauri/src/backup_manager.rs
-      - src-tauri/src/relational_store.rs
-      - src-tauri/src/sale_unit_migration.rs
-      - src-tauri/src/business_core/rules/reception_merge.rs
-      - src-tauri/resources/legacy-state-seed-303.json
+  schedule:
+    - cron: '17,47 * * * *'
   pull_request:
     paths:
       - egui-app/**
@@ -78,11 +22,36 @@ on:
   workflow_dispatch:
 permissions:
   contents: read
+  actions: read
 concurrency:
-  group: egui-native-targeted-${{ github.ref }}
+  group: egui-native-targeted-${{ github.ref }}-${{ github.event_name == 'pull_request' && 'pr' || 'full' }}
   cancel-in-progress: false
 jobs:
+  plan:
+    runs-on: ubuntu-latest
+    outputs:
+      run_checks: ${{ steps.plan.outputs.run_checks }}
+    steps:
+      - id: plan
+        name: Skip only an already successful identical scheduled revision
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          run_checks=true
+          if [ "$GITHUB_EVENT_NAME" = schedule ]; then
+            if completed=$(gh api --method GET "repos/$GITHUB_REPOSITORY/actions/workflows/egui-targeted-check.yml/runs" \
+              -f branch=main -f status=success -f head_sha="$GITHUB_SHA" -f per_page=100 \
+              --jq '[.workflow_runs[] | select(.event != "pull_request")] | length'); then
+              if [ "$completed" -gt 0 ]; then run_checks=false; fi
+            else
+              echo "::warning::Could not read previous runs; executing all checks."
+            fi
+          fi
+          echo "run_checks=$run_checks" >> "$GITHUB_OUTPUT"
   egui-geometry-windows-check:
+    needs: plan
+    if: needs.plan.outputs.run_checks == 'true'
     name: Isolated egui geometry regression (Windows)
     runs-on: windows-latest
     timeout-minutes: 45
@@ -138,7 +107,8 @@ jobs:
             if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           }
   native-data-access-windows-check:
-    if: github.event_name != 'pull_request'
+    needs: plan
+    if: github.event_name != 'pull_request' && needs.plan.outputs.run_checks == 'true'
     runs-on: windows-latest
     timeout-minutes: 30
     steps:

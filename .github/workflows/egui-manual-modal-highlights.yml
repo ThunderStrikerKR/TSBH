@@ -1,20 +1,13 @@
 name: Manual classification modal and linked-highlight regression
 on:
-  push:
-    branches: [main]
-    paths:
-      - .github/workflows/egui-manual-modal-highlights.yml
-      - egui-app/src/manual_workspace.rs
-      - egui-app/src/manual_source_view.rs
-      - egui-app/src/source_highlight.rs
-      - egui-app/src/components.rs
-      - egui-app/src/theme.rs
+  # Automatic coverage is provided by egui-manual-classification-check.yml.
+  # Retain this focused workflow for explicit troubleshooting.
   workflow_dispatch:
 permissions:
   contents: read
 concurrency:
   group: egui-manual-modal-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 jobs:
   manual-modal-windows:
     runs-on: windows-latest

@@ -1,20 +1,13 @@
 name: Product sale status four-state regression
 on:
-  push:
-    branches: [main]
-    paths:
-      - .github/workflows/egui-product-sale-status.yml
-      - egui-app/src/product_manager.rs
-      - egui-app/src/components.rs
-      - egui-app/src/theme.rs
-      - src-tauri/src/business_core/catalog_clients.rs
-      - src-tauri/src/business_core/catalog_clients/editor.rs
+  # Automatic coverage is provided by egui-targeted-check.yml.
+  # Retain this focused workflow for explicit troubleshooting.
   workflow_dispatch:
 permissions:
   contents: read
 concurrency:
   group: sale-status-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 jobs:
   four-state:
     runs-on: windows-latest

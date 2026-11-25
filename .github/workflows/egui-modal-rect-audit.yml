@@ -1,12 +1,7 @@
 name: Product modal exact rect audit
 on:
-  push:
-    branches: [main]
-    paths:
-      - .github/workflows/egui-modal-rect-audit.yml
-      - egui-app/src/components.rs
-      - egui-app/src/product_manager.rs
-      - egui-app/src/theme.rs
+  # Automatic coverage is provided by egui-targeted-check.yml.
+  # Retain this focused workflow for explicit troubleshooting.
   workflow_dispatch:
 permissions:
   contents: read
