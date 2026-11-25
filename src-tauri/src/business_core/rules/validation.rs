@@ -371,7 +371,6 @@ fn snapshot_sender(order:&Value,state:&Value)->Value{
 pub(super) fn company_party(state:&Value)->Value{
     let mut company=super::reconciliation::company_client(state);
     let _=super::set(&mut company,"name",serde_json::json!("반도스탠드"));
-    let _=super::set(&mut company,"displayName",serde_json::json!("반도스탠드"));
     company
 }
 fn truthy(value:&Value)->bool {

@@ -57,7 +57,7 @@ pub(super) fn company_client(state:&Value)->Value{
     let name=if str_field(settings,"senderName").trim().is_empty() {"반도스탠드"}
         else{str_field(settings,"senderName").trim()};
     json!({"postcode":str_field(settings,"senderPostcode"),"id":"",
-        "name":name,"displayName":name,
+        "name":name,
         "address":str_field(settings,"senderAddress"),
         "phone":str_field(settings,"senderPhone"),
         "mobile":str_field(settings,"senderMobile"),
@@ -101,7 +101,7 @@ pub(super) fn explicit_sender(raw:&str,base:&Value)->Option<Value>{
             let mut sender=base.clone();
             let map=sender.as_object_mut()?;
             map.insert("name".into(),json!(name));
-            map.insert("displayName".into(),json!(name));
+            // Preserve historical fields on the base; never regenerate the retired invoice name.
             map.insert("address".into(),json!(explicit_sender_address(relevant)));
             map.insert("phone".into(),json!(super::workflow_issues::sender_phone(relevant)));
             map.insert("mobile".into(),json!(""));
@@ -150,6 +150,24 @@ fn signature(order:&Value,recipient:&Value,sender:&Value)->String {
     // Explicit key order is significant: TS stores JSON.stringify output.
     format!("{{\"dealer\":{},\"sender\":{},\"recipient\":{},\"items\":{}}}",
         field(order,"clientId"),sender_data,recipient_data,json!(items))
+}
+/// Preserve the old signature only for the exact former generated-name
+/// representation of otherwise identical data. Frozen snapshots stay intact.
+fn compatible_info_signature(order:&Value,recipient:&Value,sender:&Value,old:&str)->String{
+    let current=signature(order,recipient,sender);
+    if old==current || has_value(field(order,"senderSnapshot")) || old.is_empty(){
+        return current;
+    }
+    let raw=field(order,"analysisRaw").as_str().unwrap_or_else(||str_field(order,"raw"));
+    if ["DEALER","RETAIL"].contains(&str_field(order,"orderType")) ||
+        raw.lines().any(|line|explicit_sender_name(line).is_some()){
+        let mut legacy=sender.clone();
+        if let Some(map)=legacy.as_object_mut(){
+            map.insert("displayName".into(),field(sender,"name").clone());
+            if signature(order,recipient,&legacy)==old{return old.to_owned();}
+        }
+    }
+    current
 }
 fn downgrade(state:&mut Value,audit:&mut Audit<'_>,index:usize,to:i64,reason:&str)
     ->Result<(),String> {
@@ -424,7 +442,9 @@ fn reconcile_inner(payload:&Value,order_scope:Option<&str>,scoped_seed:Option<&s
             let order=state["orders"][oi].clone();
             let client=party(&state,&order).ok_or("거래처 정보를 확인하세요.")?.clone();
             let sender=sender_for(&state,&order);
-            let info=signature(&order,&recipient,&sender);
+            let previous_info=index.map(|si|str_field(
+                &state["workflow"]["shipments"][si],"infoSignature")).unwrap_or("");
+            let info=compatible_info_signature(&order,&recipient,&sender,previous_info);
             let mut single=order.clone();
             set(&mut single,"recipients",json!([recipient]))?;
             let reco=shipping::recommend(&single,&state)?;
@@ -543,4 +563,37 @@ fn reconcile_inner(payload:&Value,order_scope:Option<&str>,scoped_seed:Option<&s
         }
     }
     Ok(json!({"state":state,"emittedEvents":audit.position}))
+}
+
+
+#[cfg(test)]
+mod retired_sender_name_tests{
+    use super::*;
+    #[test]
+    fn generated_senders_use_official_name_and_preserve_legacy_signature(){
+        let state=json!({"settings":{"senderName":"반도스탠드","senderAddress":"가상 주소",
+            "senderPhone":"02-1234-5678"}});
+        let company=company_client(&state);
+        assert_eq!(company["name"],"반도스탠드");
+        assert!(company.get("displayName").is_none());
+        assert!(super::super::validation::company_party(&state).get("displayName").is_none());
+        let explicit=explicit_sender("송하인: 가상 송하인\n주소: 가상 주소\n010-1234-5678",
+            &json!({"id":"c","name":"가상 거래처"})).unwrap();
+        assert_eq!(explicit["name"],"가상 송하인");
+        assert!(explicit.get("displayName").is_none());
+        let order=json!({"orderType":"DEALER","clientId":"c"});
+        let recipient=json!({"name":"가상 수취인","address":"가상 주소","items":[]});
+        let mut legacy=company.clone();
+        legacy["displayName"]=company["name"].clone();
+        let old=signature(&order,&recipient,&legacy);
+        assert_ne!(signature(&order,&recipient,&company),old);
+        assert_eq!(compatible_info_signature(&order,&recipient,&company,&old),old);
+        let mut edited=recipient.clone();
+        edited["address"]=json!("다른 주소");
+        assert_ne!(compatible_info_signature(&order,&edited,&company,&old),old);
+        let mut frozen=order.clone();
+        frozen["senderSnapshot"]=legacy.clone();
+        assert_eq!(sender_for(&state,&frozen),legacy);
+        assert_eq!(compatible_info_signature(&frozen,&recipient,&legacy,&old),old);
+    }
 }
