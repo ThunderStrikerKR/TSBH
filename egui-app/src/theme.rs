@@ -89,10 +89,13 @@ pub const CATEGORY_EXPLORER_ANCESTOR_TEXT:Color32=Color32::from_rgb(112,112,112)
 // React workflow.css and receipt-layout.css amber palette; paint only.
 pub const SELECTED_ORDER: Color32 = Color32::from_rgb(245, 158, 11); // #F59E0B
 pub const ORANGE_EMPHASIS_BG: Color32 = Color32::from_rgb(59, 43, 27); // #3B2B1B
-// Selected shipment rows reuse the shared orange emphasis surface; hover stays blue.
+// Approved selected shipment row: a single rounded surface, not an
+// added left stripe. The enclosing order card retains its own accent.
 pub const WORKFLOW_SELECTED_ROW_TEXT:Color32=TEXT;
+pub const WORKFLOW_SELECTED_ROW_BG:Color32=Color32::from_rgb(48,42,34); // #302A22
+pub const WORKFLOW_SELECTED_ROW_BORDER:Color32=Color32::from_rgb(183,128,56); // #B78038
 pub fn workflow_selected_row_fill() -> Color32 {
-    ORANGE_EMPHASIS_BG
+    WORKFLOW_SELECTED_ROW_BG
 }
 // Compact working-order cards derive every slot from the actual right pane.
 // The horizontal outer inset, inter-control gaps and vertical insets use
@@ -802,8 +805,9 @@ pub fn workflow_group_card_frame(highlighted:bool)->Frame{
     bordered_surface(if highlighted{WORKFLOW_SELECTED_BG}else{WORKFLOW_CARD_BG},WORKFLOW_CARD_BORDER,WORKFLOW_CARD_RADIUS)
         .inner_margin(0)
 }
-pub fn workflow_shipment_row_frame(fill:Color32)->Frame{
-    bordered_surface(fill,WORKFLOW_DETAIL_ROW_BORDER,CONTROL_RADIUS)
+pub fn workflow_shipment_row_frame(fill:Color32,chosen:bool)->Frame{
+    // Keep the existing stroke width and inner margin in every state.
+    bordered_surface(fill,if chosen{WORKFLOW_SELECTED_ROW_BORDER}else{WORKFLOW_DETAIL_ROW_BORDER},CONTROL_RADIUS)
         .inner_margin(egui::Margin::symmetric(
             WORKFLOW_DETAIL_ROW_PADDING_X as i8,SPACE_4 as i8
         ))

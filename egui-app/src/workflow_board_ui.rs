@@ -678,67 +678,12 @@ fn shipment_line(
 fn shipment_line_with_freight(
     ui:&mut Ui,name:&str,products:&[String],chosen:bool,previewed:bool,freight:Option<&str>
 )->egui::Response{
-    let fill=shipment_row_fill(chosen,previewed);
-    let outer=ui.available_width();
-    let summary=shipment_product_summary(products);
-    let preview_ink=if chosen{
-        theme::WORKFLOW_SELECTED_ROW_TEXT
-    }else if previewed{
-        source_highlight::ACTIVE_TEXT
-    }else{theme::TEXT};
-    let response=theme::workflow_shipment_row_frame(fill)
-        .show(ui,|row|{
-            // Inner margins do not include the 1pt frame stroke on either
-            // edge. Reserve both strokes so neighboring rows have exactly
-            // the same width and the list never grows a horizontal rail.
-            let inside=(outer-2.0*theme::WORKFLOW_DETAIL_ROW_PADDING_X
-                -2.0*theme::SOFT_DIVIDER_WIDTH).max(0.0);
-            row.set_min_width(inside);
-            row.horizontal(|cols|{
-                cols.spacing_mut().item_spacing.x=theme::SPACE_8;
-                let name_width=theme::WORKFLOW_DETAIL_NAME_WIDTH
-                    .min((inside*0.36).max(0.0));
-                let freight_width=freight.map_or(0.0,|text|cols.painter().layout_no_wrap(text.to_owned(),egui::FontId::proportional(typography::FONT_BODY),theme::TEXT).size().x+12.0).min(inside*0.42);
-                let product_width=(inside-name_width-theme::SPACE_8-if freight.is_some(){freight_width+theme::SPACE_8}else{0.0}).max(0.0);
-                cols.add_sized(
-                    [name_width,theme::WORKFLOW_DETAIL_ROW_CONTENT_HEIGHT],
-                    egui::Label::new(typography::body(name).color(preview_ink)).truncate()
-                );
-                cols.add_sized(
-                    [product_width,theme::WORKFLOW_DETAIL_ROW_CONTENT_HEIGHT],
-                    egui::Label::new(typography::body(&summary).color(preview_ink)).truncate()
-                );
-                if let Some(freight)=freight{
-                    let (rect,_)=cols.allocate_exact_size(Vec2::new(freight_width,theme::WORKFLOW_DETAIL_ROW_CONTENT_HEIGHT),egui::Sense::hover());
-                    crate::one_touch::background(cols,rect);crate::one_touch::outline(cols,rect);
-                    let galley=cols.painter().layout_no_wrap(freight.to_owned(),egui::FontId::proportional(typography::FONT_BODY),crate::one_touch::INK);
-                    cols.painter().with_clip_rect(rect.intersect(cols.clip_rect())).galley(Pos2::new(rect.left()+6.0,rect.center().y-galley.size().y/2.0),galley,crate::one_touch::INK);
-                }
-            });
-        });
-    if chosen || previewed{
-        let color=if chosen{theme::WORKFLOW_SELECTED_BORDER}
-            else{source_highlight::ACTIVE_BORDER};
-        let rect=response.response.rect;
-        ui.painter().rect_filled(Rect::from_min_max(
-            Pos2::new(rect.left(),rect.top()),
-            Pos2::new(rect.left()+theme::WORKFLOW_SELECTED_STRIPE,rect.bottom())
-        ),0.0,color);
-        if previewed && !chosen {
-            // Overlay rather than changing Frame::stroke; changing a frame
-            // stroke also changes its content width and can cause clipping.
-            ui.painter().rect_stroke(
-                rect.shrink(0.5),theme::CONTROL_RADIUS as f32,
-                egui::Stroke::new(
-                    source_highlight::ACTIVE_BORDER_WIDTH,
-                    source_highlight::ACTIVE_BORDER
-                ),
-                egui::StrokeKind::Inside,
-            );
-        }
-    }
-    response.response
+    components::workflow_shipment_row(
+        ui,name,&shipment_product_summary(products),shipment_row_fill(chosen,previewed),
+        chosen,previewed,freight
+    )
 }
+
 fn row(
     ui:&mut Ui,ship:&ShipmentRow,chosen:bool,previewed:bool,freight_emphasis:bool
 )->egui::Response{
@@ -1770,7 +1715,14 @@ mod linked_highlight_palette_tests {
         assert_eq!(theme::WORKFLOW_SELECTED_BORDER,theme::SELECTED_ORDER);
         assert_eq!(theme::WORKFLOW_SELECTED_STRIPE,2.0);
         assert_eq!(theme::WORKFLOW_SELECTED_BG,Color32::from_rgb(36,36,36));
-        assert_eq!(shipment_row_fill(true,false),theme::ORANGE_EMPHASIS_BG);
+        assert_eq!(shipment_row_fill(true,false),Color32::from_rgb(48,42,34));
+        let selected=theme::workflow_shipment_row_frame(shipment_row_fill(true,false),true);
+        let normal=theme::workflow_shipment_row_frame(shipment_row_fill(false,false),false);
+        assert_eq!(selected.fill,Color32::from_rgb(48,42,34));
+        assert_eq!(selected.stroke.color,Color32::from_rgb(183,128,56));
+        assert_eq!(selected.stroke.width,normal.stroke.width);
+        assert_eq!(selected.inner_margin,normal.inner_margin);
+        assert_eq!(selected.corner_radius,normal.corner_radius);
         assert_eq!(theme::WORKFLOW_SELECTED_ROW_TEXT,theme::TEXT);
         assert_eq!(shipment_row_fill(true,true),shipment_row_fill(true,false));
         assert_eq!(theme::ReviewTone::Action.palette(),(
