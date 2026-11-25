@@ -843,8 +843,7 @@ fn range_date_picker_rtl(
 fn history_basis_dropdown(ui:&mut Ui,basis:&mut HistoryDateBasis)->bool{
     let previous=*basis;
     components::management_dropdown(
-        ui,basis.label(),HISTORY_DATE_BASIS_WIDTH,true,
-        "조회 날짜 기준 선택",|options|{
+        ui,basis.label(),HISTORY_DATE_BASIS_WIDTH,true,|options|{
             components::management_dropdown_option(
                 options,basis,HistoryDateBasis::Reception,"접수일 기준"
             );

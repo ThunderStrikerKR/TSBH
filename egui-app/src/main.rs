@@ -8597,8 +8597,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                         ui,targets.iter().find(|g|g.id==target)
                                             .map(|g|g.dealer_name.as_str())
                                             .unwrap_or("같은 최초 발주서의 묶음 선택"),
-                                        theme::MANAGEMENT_SEARCH_MIN_WIDTH,true,
-                                        "배송 건을 다시 묶을 대상 선택",|list|{
+                                        theme::MANAGEMENT_SEARCH_MIN_WIDTH,true,|list|{
                                             components::management_dropdown_option(
                                                 list,&mut target,String::new(),"대상 선택");
                                             for other in &targets{

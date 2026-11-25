@@ -298,7 +298,7 @@ impl AliasManager {
                     v.add_enabled_ui(editable&&!busy,|input|{
                         components::management_dropdown(
                             input,scope_name,theme::MANAGEMENT_SEARCH_MIN_WIDTH,
-                            true,"적용할 거래처 선택",|choices|{
+                            true,|choices|{
                                 components::management_dropdown_option(
                                     choices,&mut self.form.scope,
                                     "common".to_owned(),"회사 공통 별칭");
@@ -424,8 +424,8 @@ impl AliasManager {
                                         filters,label,text_width,
                                         typography::CategoryPathFont::Body
                                     );
-                                    components::management_dropdown(
-                                        filters,&visible,picker_width,true,label,|choice|{
+                                    let response=components::management_dropdown(
+                                        filters,&visible,picker_width,true,|choice|{
                                             components::management_dropdown_option(
                                                 choice,&mut value,String::new(),
                                                 if depth==0{"전체 카테고리"}else{"현재 분류 전체"});
@@ -440,6 +440,7 @@ impl AliasManager {
                                                 components::overflow_tooltip(response,visible!=name.as_str(),name.as_str());
                                             }
                                         });
+                                    components::overflow_tooltip(response,visible!=label,label);
                                     if value!=selected{
                                         self.category=if value.is_empty(){
                                             parent.unwrap_or_default()
@@ -456,7 +457,7 @@ impl AliasManager {
                                     .map(|b|field(b,"name")).unwrap_or("전체 브랜드");
                                 components::management_dropdown(
                                     filters,brand,theme::MANAGEMENT_FILTER_DROPDOWN_WIDTH,
-                                    true,brand,|choice|{
+                                    true,|choice|{
                                         components::management_dropdown_option(
                                             choice,&mut self.brand,String::new(),"전체 브랜드");
                                         for b in rows(&catalog["brands"])

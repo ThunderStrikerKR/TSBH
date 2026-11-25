@@ -1162,7 +1162,7 @@ impl ProductManager {
                     let brand_choices=brand_search_choices(&brands,"전체 브랜드");
                     components::management_searchable_dropdown(
                         filter,brand_text,theme::MANAGEMENT_FILTER_DROPDOWN_WIDTH,
-                        true,brand_text,&mut self.brand,&brand_choices,"브랜드 검색"
+                        true,&mut self.brand,&brand_choices,"브랜드 검색"
                     );
                     if self.brand!=before_brand{
                         if self.has_pending_prices(){
@@ -1232,8 +1232,7 @@ impl ProductManager {
                     // Match the shared management dropdown and overlay layer.
                     let trigger=components::management_dropdown_trigger(
                         actions,"Excel 관리",112.0,
-                        !saving&&!self.has_pending_prices(),
-                        "상품 Excel 관리",None
+                        !saving&&!self.has_pending_prices(),None
                     );
                     self.excel.show_menu(
                         actions,&trigger,Arc::clone(&self.gateway),
@@ -1401,7 +1400,7 @@ impl ProductManager {
                                                 if current_label.is_empty(){"기본"}
                                                 else{&current_label},
                                                 (variant_cell.width()-theme::SPACE_8).max(1.0),
-                                                true,"상품 옵션 선택",|choices|{
+                                                true,|choices|{
                                                     for variant in variants{
                                                         let label=option_text(product,variant);
                                                         components::management_dropdown_option(
@@ -1918,7 +1917,7 @@ impl ProductManager {
                 let width=input.available_width().max(1.0);
                 let brand_choices=brand_search_choices(brands,"브랜드 미지정");
                 components::management_searchable_dropdown(
-                    input,label,width,true,"브랜드 선택",
+                    input,label,width,true,
                     &mut brand_id,&brand_choices,"브랜드 검색"
                 );
             });
@@ -1939,7 +1938,7 @@ impl ProductManager {
             line.add_enabled_ui(editable&&!busy,|input|{
                 let width=input.available_width().max(1.0);
                 components::management_status_dropdown(
-                    input,current,width,true,"판매 상태 선택",
+                    input,current,width,true,
                     sale_status_color(current),|options|{
                         for state in SALE_STATES{
                             components::management_status_dropdown_option(
@@ -2182,7 +2181,7 @@ impl ProductManager {
                                         group_ui.add_enabled_ui(editable&&!busy,|input|{
                                             let width=input.available_width().max(1.0);
                                             components::management_dropdown(
-                                                input,label,width,true,"배송 그룹 선택",|choices|{
+                                                input,label,width,true,|choices|{
                                                     components::management_dropdown_option(
                                                         choices,&mut group,String::new(),"미지정");
                                                     for row in &groups{
@@ -2207,7 +2206,7 @@ impl ProductManager {
                                             let width=input.available_width().max(1.0);
                                             components::management_dropdown(
                                                 input,if origin=="STORE"{"매장"}else{"공장"},
-                                                width,true,"발송지 선택",|options|{
+                                                width,true,|options|{
                                                     components::management_dropdown_option(
                                                         options,&mut origin,
                                                         "FACTORY".into(),"공장");

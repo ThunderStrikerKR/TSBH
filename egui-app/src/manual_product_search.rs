@@ -143,8 +143,8 @@ impl ProductSearch{
                                         ui,label,text_width,typography::CategoryPathFont::Body
                                     );
                                     let mut value=selected.clone();
-                                    components::management_dropdown(
-                                        ui,&visible,width,true,label,|choices|{
+                                    let response=components::management_dropdown(
+                                        ui,&visible,width,true,|choices|{
                                             components::management_dropdown_option(
                                                 choices,&mut value,String::new(),
                                                 if depth==0{"전체 카테고리"}else{"현재 분류 전체"}
@@ -164,6 +164,7 @@ impl ProductSearch{
                                                 }
                                             }
                                         });
+                                    components::overflow_tooltip(response,visible!=label,label);
                                     if value!=selected {
                                         self.major=if value.is_empty(){parent}else{value};
                                         changed=true;
@@ -178,8 +179,7 @@ impl ProductSearch{
                                 components::management_dropdown(
                                     ui,brands.iter().find(|b|field(b,"id")==self.brand)
                                         .map(|v|field(v,"name")).unwrap_or("전체 브랜드"),
-                                    theme::MANAGEMENT_FILTER_DROPDOWN_WIDTH,true,
-                                    "브랜드 필터",|choices|{
+                                    theme::MANAGEMENT_FILTER_DROPDOWN_WIDTH,true,|choices|{
                                         components::management_dropdown_option(
                                             choices,&mut self.brand,String::new(),"전체 브랜드");
                                         for row in &brands {

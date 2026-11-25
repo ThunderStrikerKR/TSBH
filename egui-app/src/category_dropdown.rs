@@ -530,8 +530,9 @@ pub fn category_dropdown(
         typography::CategoryPathFont::Body
     );
     let mut trigger=components::management_dropdown_trigger(
-        ui,&visible,width,enabled,&full,None
+        ui,&visible,width,enabled,None
     );
+    trigger=components::overflow_tooltip(trigger,visible!=full,&full);
     let state_id:Id=trigger.id.with("hierarchical-category-explorer");
     let ctx:Context=ui.ctx().clone();
     let mut state=ctx.data_mut(|data|

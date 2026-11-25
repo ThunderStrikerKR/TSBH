@@ -747,7 +747,7 @@ impl ClientManager {
             let width=cols[0].available_width();
             components::management_dropdown(
                 &mut cols[0],components::client_tier_label(&tier),
-                width,true,"가격 등급 선택",|ui|{
+                width,true,|ui|{
                     for (key,label) in [
                         ("wholesale","도매"),("semi","반도매"),
                         ("retail","소매"),("special","특수")
@@ -762,7 +762,7 @@ impl ClientManager {
             let width=cols[1].available_width();
             components::management_dropdown(
                 &mut cols[1],if payment=="POSTPAID"{"후불"}else{"선입금"},
-                width,true,"결제 방식 선택",|ui|{
+                width,true,|ui|{
                     components::management_dropdown_option(
                         ui,&mut payment,"PREPAID".into(),"선입금");
                     components::management_dropdown_option(
@@ -782,7 +782,7 @@ impl ClientManager {
         let mut next_selected=selected.clone();
         let width=ui.available_width();
         components::management_dropdown(
-            ui,selected_label,width,true,"주 사용 입금계좌 선택",|menu|{
+            ui,selected_label,width,true,|menu|{
                 for (id,label) in &choices {
                     components::management_dropdown_option(
                         menu,&mut next_selected,id.clone(),label
@@ -843,8 +843,7 @@ impl ClientManager {
                         .find(|(id,_)|id==&self.exception_id)
                         .map(|(_,label)|label.as_str())
                         .unwrap_or("예외 품목 / 색상 선택"),
-                    theme::MANAGEMENT_SEARCH_MIN_WIDTH,true,
-                    "특수 단가 적용 품목 선택",|ui|{
+                    theme::MANAGEMENT_SEARCH_MIN_WIDTH,true,|ui|{
                         for (id,label) in &variants {
                             components::management_dropdown_option(
                                 ui,&mut self.exception_id,id.clone(),label);

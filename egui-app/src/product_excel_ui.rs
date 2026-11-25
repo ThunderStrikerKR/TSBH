@@ -464,7 +464,7 @@ mod tests {
                 // The trigger remains accessible in this fixture so that
                 // the popup's own permission/busy guard is tested as well.
                 let trigger=components::management_dropdown_trigger(
-                    host,"Excel 관리",148.0,true,"",None
+                    host,"Excel 관리",148.0,true,None
                 );
                 trigger_rect=trigger.rect;
                 ui.show_menu(host,&trigger,Arc::clone(gateway),allowed);

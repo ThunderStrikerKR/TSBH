@@ -1333,7 +1333,7 @@ impl FreightManager {
                     }else if group_filter.as_str()=="none" {
                         "그룹 미지정"
                     }else{group_name(groups,group_filter)},
-                    theme::MANAGEMENT_FILTER_DROPDOWN_WIDTH,true,"상품 표시 범위 선택",|menu|{
+                    theme::MANAGEMENT_FILTER_DROPDOWN_WIDTH,true,|menu|{
                         components::management_dropdown_option(
                             menu,group_filter,String::new(),"전체 상품"
                         );
@@ -1465,7 +1465,7 @@ impl FreightManager {
                                 Some(id)=>group_name(groups,id),
                             },
                             theme::FREIGHT_BULK_GROUP_WIDTH,
-                            enabled,"일괄 적용할 배송 그룹 선택",|menu|{
+                            enabled,|menu|{
                                 components::management_dropdown_option(
                                     menu,bulk_group,Some(String::new()),"미지정으로 변경"
                                 );
@@ -1666,8 +1666,7 @@ impl FreightManager {
                                     if current.is_empty() {
                                         "그룹 선택"
                                     }else{group_name(groups,&current)},
-                                    selector_rect.width(),enabled,
-                                    "상품의 배송 그룹 선택",|menu|{
+                                    selector_rect.width(),enabled,|menu|{
                                         components::management_dropdown_option(
                                             menu,&mut current,String::new(),"그룹 선택"
                                         );
@@ -2351,10 +2350,7 @@ impl FreightManager {
                 components::management_dropdown(
                     input,&editor.max_bundle
                         .map(|v|format!("{v}개")).unwrap_or_else(||"미확정".into()),
-                    theme::MANAGEMENT_FILTER_DROPDOWN_WIDTH,true,
-                    if editor.max_bundle.is_none(){
-                        "최대 묶음 수량을 먼저 선택하세요."
-                    }else{"최대 묶음포장 수량 선택"},|choice|{
+                    theme::MANAGEMENT_FILTER_DROPDOWN_WIDTH,true,|choice|{
                         components::management_dropdown_option(
                             choice,&mut editor.max_bundle,None,"미확정");
                         for n in 1..=6 {
@@ -2395,8 +2391,7 @@ impl FreightManager {
                         input,&editor.add_count
                             .map(|n|format!("{n}개"))
                             .unwrap_or_else(||"묶음 수량 선택".into()),
-                        theme::MANAGEMENT_FILTER_DROPDOWN_WIDTH,true,
-                        "운임 구간 수량 선택",|choice|{
+                        theme::MANAGEMENT_FILTER_DROPDOWN_WIDTH,true,|choice|{
                             for count in &available{
                                 components::management_dropdown_option(
                                     choice,&mut editor.add_count,

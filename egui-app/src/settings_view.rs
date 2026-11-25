@@ -146,7 +146,7 @@ fn recommendation_picker(ui:&mut Ui,draft:&mut Value,key:&str,label:&str){
     components::management_dropdown(
         ui,&preview,
         ui.available_width().min(theme::SETTINGS_ACCOUNT_PICKER_MAX_WIDTH),
-        true,&preview,|choices|{
+        true,|choices|{
             components::management_dropdown_option(
                 choices,&mut selected,String::new(),"계좌 선택"
             );
@@ -714,7 +714,7 @@ impl SettingsView{
         components::management_dropdown(
             ui,&format!("{scale}%"),
             theme::MANAGEMENT_FILTER_DROPDOWN_WIDTH.min(ui.available_width()),
-            !self.read_only()&&!self.busy(),"",|choices|{
+            !self.read_only()&&!self.busy(),|choices|{
                 for candidate in [90u64,100,110,125]{
                     components::management_dropdown_option(
                         choices,&mut scale,candidate,&format!("{candidate}%")

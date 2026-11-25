@@ -1192,10 +1192,10 @@ pub fn checkbox_list_row(
 }
 
 /// Shared compact icon-only action. Its 28pt hit target follows the
-/// management date-navigation control; glyph, tooltip and enabled state are
+/// management date-navigation control; glyph and enabled state are
 /// supplied by the caller while hover paint stays in the common layer.
 pub fn icon_action_button(
-    ui:&mut Ui,label:&str,tooltip:&str,enabled:bool
+    ui:&mut Ui,label:&str,enabled:bool
 )->Response{
     let response=ui.scope(|button|{
         button.spacing_mut().button_padding=Vec2::ZERO;
@@ -1227,7 +1227,7 @@ pub fn removable_tag_chip(ui:&mut Ui,tag:&str)->Response{
                 let label=line.label(typography::body(&visible));
                 overflow_tooltip(label,visible!=tag,tag);
                 icon_action_button(
-                    line,"×",&format!("검색 태그 '{tag}' 삭제"),true
+                    line,"×",true
                 )
             }).inner
         }).inner
@@ -3284,7 +3284,7 @@ pub fn reception_recipient_navigator(
             segments.spacing_mut().item_spacing=Vec2::ZERO;
 
             let previous=date_navigation_segment_button(
-                segments,arrow_width,"이전 수취인",previous_enabled,
+                segments,arrow_width,previous_enabled,
                 DateNavigationSegmentGlyph::Chevron(
                     ManagementChevronDirection::Left
                 )
@@ -3317,7 +3317,7 @@ pub fn reception_recipient_navigator(
             }
 
             let next=date_navigation_segment_button(
-                segments,arrow_width,"다음 수취인",next_enabled,
+                segments,arrow_width,next_enabled,
                 DateNavigationSegmentGlyph::Chevron(
                     ManagementChevronDirection::Right
                 )
@@ -3355,18 +3355,6 @@ pub fn reception_recipient_navigator(
 /// now render in both screens; business actions stay in their callers.
 pub fn reception_section_with_header(
     ui:&mut Ui,title:&str,minimum_height:f32,
-    header_right:impl FnOnce(&mut Ui),content:impl FnOnce(&mut Ui),
-){
-    reception_section_with_header_tooltip(
-        ui,title,None,minimum_height,header_right,content
-    );
-}
-
-/// Identical Reception section chrome with an optional title explanation.
-/// The tooltip variant lets specialised panes retain their existing guidance
-/// without rebuilding the approved card, divider or content insets.
-pub fn reception_section_with_header_tooltip(
-    ui:&mut Ui,title:&str,title_tooltip:Option<&str>,minimum_height:f32,
     header_right:impl FnOnce(&mut Ui),content:impl FnOnce(&mut Ui),
 ){
     let width=ui.available_width();
@@ -4006,7 +3994,7 @@ fn count_step_palette(enabled:bool)->(Color32,Color32){
 /// A borderless segment button; its parent owns the only outer border.
 /// Enabled/disabled colors and hover feedback follow the date-selector roles.
 fn date_navigation_segment_button(
-    ui:&mut Ui,width:f32,tooltip:&str,enabled:bool,
+    ui:&mut Ui,width:f32,enabled:bool,
     glyph:DateNavigationSegmentGlyph<'_>
 )->Response{
     let enabled=enabled && ui.is_enabled();
@@ -4158,7 +4146,7 @@ pub fn date_navigation_count_control(
                     .max_rect(left).layout(Layout::top_down(Align::Center)));
                 minus.set_clip_rect(left.intersect(segments.clip_rect()));
                 let decrement=date_navigation_segment_button(
-                    &mut minus,arrow_width,"배송 건수 1건 줄이기",
+                    &mut minus,arrow_width,
                     decrement_enabled,DateNavigationSegmentGlyph::Text("−")
                 );
                 let mut entry=segments.new_child(UiBuilder::new().id_salt("count-value")
@@ -4175,7 +4163,7 @@ pub fn date_navigation_count_control(
                     .max_rect(right).layout(Layout::top_down(Align::Center)));
                 plus.set_clip_rect(right.intersect(segments.clip_rect()));
                 let increment=date_navigation_segment_button(
-                    &mut plus,arrow_width,"배송 건수 1건 늘리기",
+                    &mut plus,arrow_width,
                     increment_enabled,DateNavigationSegmentGlyph::Text("+")
                 );
                 for x in [
@@ -4203,7 +4191,7 @@ pub fn date_navigation_count_control(
 }
 
 fn date_navigation_button_surface(
-    ui:&mut Ui,tooltip:&str,enabled:bool
+    ui:&mut Ui,enabled:bool
 )->(Response,Color32){
     let effective_enabled=enabled && ui.is_enabled();
     let (fill,border,ink)=if effective_enabled{
@@ -4236,9 +4224,8 @@ fn date_navigation_button_surface(
 /// and vector chevrons for year/month movement in either direction.
 fn calendar_nav_button(
     ui:&mut Ui,direction:ManagementChevronDirection,
-    year:bool,tooltip:&str
-)->bool{
-    let (response,ink)=date_navigation_button_surface(ui,tooltip,true);
+    year:bool)->bool{
+    let (response,ink)=date_navigation_button_surface(ui,true);
     let painter=ui.painter().with_clip_rect(response.rect);
     if year{
         for offset in [-3.8,3.8]{
@@ -4256,11 +4243,11 @@ fn calendar_nav_button(
 }
 
 /// Compact minus/plus control that deliberately reuses the date-picker's
-/// 28pt button surface. Only the centered glyph and tooltip are caller-owned.
+/// 28pt button surface. Only the centered glyph and enabled state are caller-owned.
 pub fn date_navigation_step_button(
-    ui:&mut Ui,glyph:&str,tooltip:&str,enabled:bool
+    ui:&mut Ui,glyph:&str,enabled:bool
 )->Response{
-    let (response,ink)=date_navigation_button_surface(ui,tooltip,enabled);
+    let (response,ink)=date_navigation_button_surface(ui,enabled);
     ui.painter().with_clip_rect(response.rect).text(
         response.rect.center(),
         egui::Align2::CENTER_CENTER,
@@ -4291,13 +4278,11 @@ pub fn date_calendar(
             calendar.horizontal(|nav|{
                 nav.spacing_mut().item_spacing.x=theme::CALENDAR_GRID_GAP;
                 if calendar_nav_button(
-                    nav,ManagementChevronDirection::Left,true,"이전 연도"
-                ){
+                    nav,ManagementChevronDirection::Left,true){
                     *month=shift_calendar_month(*month,-12);
                 }
                 if calendar_nav_button(
-                    nav,ManagementChevronDirection::Left,false,"이전 달"
-                ){
+                    nav,ManagementChevronDirection::Left,false){
                     *month=shift_calendar_month(*month,-1);
                 }
                 let title_width=theme::CALENDAR_GRID_WIDTH
@@ -4310,13 +4295,11 @@ pub fn date_calendar(
                     ))).halign(Align::Center)
                 );
                 if calendar_nav_button(
-                    nav,ManagementChevronDirection::Right,false,"다음 달"
-                ){
+                    nav,ManagementChevronDirection::Right,false){
                     *month=shift_calendar_month(*month,1);
                 }
                 if calendar_nav_button(
-                    nav,ManagementChevronDirection::Right,true,"다음 연도"
-                ){
+                    nav,ManagementChevronDirection::Right,true){
                     *month=shift_calendar_month(*month,12);
                 }
             });
@@ -4932,36 +4915,36 @@ fn management_dropdown_option_palette(ui:&mut Ui){
 /// ComboBox triggers where management screens need the same visual language.
 /// The caller retains its existing option values and change handling.
 pub fn management_dropdown(
-    ui:&mut Ui,label:&str,width:f32,enabled:bool,tooltip:&str,
+    ui:&mut Ui,label:&str,width:f32,enabled:bool,
     options:impl FnOnce(&mut Ui)
 )->Response {
-    management_dropdown_inner(ui,label,width,enabled,tooltip,false,None,options)
+    management_dropdown_inner(ui,label,width,enabled,false,None,options)
 }
 /// Same management dropdown master, with an optional colored status mark.
 /// This only changes the glyph painting; popup placement, hover and row
 /// selection remain owned by the shared management dropdown.
 pub fn management_status_dropdown(
-    ui:&mut Ui,label:&str,width:f32,enabled:bool,tooltip:&str,
+    ui:&mut Ui,label:&str,width:f32,enabled:bool,
     status_color:Color32,options:impl FnOnce(&mut Ui)
 )->Response {
     management_dropdown_inner(
-        ui,label,width,enabled,tooltip,false,Some(status_color),options
+        ui,label,width,enabled,false,Some(status_color),options
     )
 }
 
 /// Compact, two-option menus such as 선불 / 착불 never grow wider than their
 /// own trigger. Other selectors may expand to fit longer catalog names.
 pub fn management_dropdown_compact(
-    ui:&mut Ui,label:&str,width:f32,enabled:bool,tooltip:&str,
+    ui:&mut Ui,label:&str,width:f32,enabled:bool,
     options:impl FnOnce(&mut Ui)
 )->Response {
-    management_dropdown_inner(ui,label,width,enabled,tooltip,true,None,options)
+    management_dropdown_inner(ui,label,width,enabled,true,None,options)
 }
 
 /// Shared 34pt management trigger; the hierarchical category popup and
 /// ordinary selectors must use the SAME paint, chevron and hover geometry.
 pub(crate) fn management_dropdown_trigger(
-    ui:&mut Ui,label:&str,width:f32,enabled:bool,tooltip:&str,
+    ui:&mut Ui,label:&str,width:f32,enabled:bool,
     indicator:Option<Color32>,
 )->Response {
     // Keep exact toolbar/cell width without stretching the subsequent action
@@ -5036,13 +5019,13 @@ pub(crate) fn management_dropdown_trigger(
 }
 
 fn management_dropdown_inner(
-    ui:&mut Ui,label:&str,width:f32,enabled:bool,tooltip:&str,
+    ui:&mut Ui,label:&str,width:f32,enabled:bool,
     compact:bool,indicator:Option<Color32>,
     options:impl FnOnce(&mut Ui)
 )->Response {
     let width=width.min(ui.available_width()).max(1.0);
     let trigger=management_dropdown_trigger(
-        ui,label,width,enabled,tooltip,indicator
+        ui,label,width,enabled,indicator
     );
     let rect=trigger.rect;
     egui::Popup::menu(&trigger)
@@ -5103,10 +5086,10 @@ fn management_search_choice_matches(
 /// anchor all remain shared; only a 36pt search field is added above the
 /// internally scrolling choices. Search never changes the selected value.
 pub fn management_searchable_dropdown(
-    ui:&mut Ui,label:&str,width:f32,enabled:bool,tooltip:&str,
+    ui:&mut Ui,label:&str,width:f32,enabled:bool,
     current:&mut String,options:&[ManagementSearchChoice],hint:&str,
 )->Response{
-    let trigger=management_dropdown_trigger(ui,label,width,enabled,tooltip,None);
+    let trigger=management_dropdown_trigger(ui,label,width,enabled,None);
     let rect=trigger.rect;
     let id=trigger.id.with("management-searchable-dropdown");
     let ctx=ui.ctx().clone();
@@ -6140,9 +6123,9 @@ fn reception_quantity_editor(
             );
             let mut clicked=false;
             let half=arrow_rect.height()/2.0;
-            for (index,caption,next,up) in [
-                (0,"수량 1개 늘리기",increase,true),
-                (1,"수량 1개 줄이기",decrease,false),
+            for (index,next,up) in [
+                (0,increase,true),
+                (1,decrease,false),
             ]{
                 let part=Rect::from_min_size(
                     egui::pos2(arrow_rect.left(),arrow_rect.top()+index as f32*half),
@@ -6159,7 +6142,7 @@ fn reception_quantity_editor(
                 button.spacing_mut().interact_size=Vec2::ZERO;
                 button.spacing_mut().button_padding=Vec2::ZERO;
                 let response=date_navigation_segment_button(
-                    &mut button,arrow_rect.width(),caption,next.is_some(),
+                    &mut button,arrow_rect.width(),next.is_some(),
                     DateNavigationSegmentGlyph::CompactVerticalChevron{up}
                 );
                 if response.clicked(){
@@ -6544,7 +6527,7 @@ fn reception_cod_dropdown(
         None if editable=>"선불",
         None=>"—",
     };
-    let response=management_dropdown_compact(ui,label,90.0,editable,"",|menu|{
+    let response=management_dropdown_compact(ui,label,90.0,editable,|menu|{
         management_dropdown_compact_option(menu,&mut selected,false,"선불",90.0);
         management_dropdown_compact_option(menu,&mut selected,true,"착불",90.0);
     });
@@ -7213,10 +7196,10 @@ mod shared_selection_interaction_tests {
                     }
                 };
                 let trigger=ui.add_enabled_ui(parent_enabled,|ui|match kind{
-                    Selector::Ordinary=>management_dropdown(ui,label,width,enabled,"",choose),
-                    Selector::Compact=>management_dropdown_compact(ui,label,width,enabled,"",choose),
+                    Selector::Ordinary=>management_dropdown(ui,label,width,enabled,choose),
+                    Selector::Compact=>management_dropdown_compact(ui,label,width,enabled,choose),
                     Selector::Status=>management_status_dropdown(
-                        ui,label,width,enabled,"",current_color,choose),
+                        ui,label,width,enabled,current_color,choose),
                 }).inner;
                 let next=ui.allocate_exact_size(Vec2::new(80.0,36.0),Sense::hover()).0;
                 let outside=Rect::from_min_size(egui::pos2(700.0,500.0),Vec2::splat(20.0));
@@ -8597,9 +8580,9 @@ mod management_dropdown_unification_tests {
         let mut form=Rect::NOTHING;
         let _=ctx.run(egui::RawInput::default(),|ctx|{
             egui::CentralPanel::default().show(ctx,|ui|{
-                toolbar=management_dropdown(ui,"toolbar",140.0,true,"",|_|{}).rect;
+                toolbar=management_dropdown(ui,"toolbar",140.0,true,|_|{}).rect;
                 modal_labeled_row_with_width(ui,"홈페이지 상품 연결",150.0,|line|{
-                    form=management_dropdown(line,"form",140.0,true,"",|_|{}).rect;
+                    form=management_dropdown(line,"form",140.0,true,|_|{}).rect;
                 });
             });
         });
@@ -8637,7 +8620,7 @@ mod management_dropdown_unification_tests {
                     ("비활성",148.0,false),
                 ]{
                     let response=management_dropdown(
-                        ui,label,width,enabled,"",|choices|{
+                        ui,label,width,enabled,|choices|{
                             let mut value=String::from("A");
                             management_dropdown_option(
                                 choices,&mut value,String::from("A"),"선택 A");

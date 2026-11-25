@@ -2150,9 +2150,8 @@ impl ManualWorkspace {
                                 egui::vec2(source_width,height),
                                 egui::Layout::top_down(egui::Align::Min),
                                 |source_ui|{
-                                    components::reception_section_with_header_tooltip(
+                                    components::reception_section_with_header(
                                         source_ui,"발주 원문",
-                                        Some("원문과 셀을 어느 순서로든 클릭하거나 원문 블록을 셀로 드래그하세요. 배정된 원문은 클릭하면 해제됩니다."),
                                         height,|_|{},|body|{
                                             // Use the same outer Reception card, title row,
                                             // divider, and 16pt inset on all four sides
@@ -4314,7 +4313,7 @@ mod manual_workspace_layout_tests{
         let production=source.split("mod manual_assignment_gesture_tests{")
             .next().expect("production source boundary");
         let render=production.split("pub fn show(").nth(1).unwrap();
-        assert!(render.contains("components::reception_section_with_header_tooltip("));
+        assert!(render.contains("components::reception_section_with_header("));
         let header_start=render.find("workspace.header_with_toolbar(")
             .expect("status/count controls belong to the shared modal header");
         let toolbar_start=render.find("let mut count_resize_requested=false;")
