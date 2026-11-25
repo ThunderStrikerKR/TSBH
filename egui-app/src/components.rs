@@ -6394,17 +6394,17 @@ fn reception_item_row_with_mode(
     );
     let product=overflow_tooltip(product,item_overflow[0],name);
     let product = if editable { product.on_hover_cursor(egui::CursorIcon::PointingHand) } else { product };
-    let quantity = ui.interact(
+    let quantity_response = ui.interact(
         cells[1], ui.make_persistent_id(("item-cell", row_id, 1)),
         if editable{Sense::click()}else{Sense::hover()},
     );
-    let quantity=overflow_tooltip(quantity,item_overflow[1],quantity);
+    let quantity=overflow_tooltip(quantity_response,item_overflow[1],quantity);
     let quantity = if editable { quantity.on_hover_cursor(egui::CursorIcon::Text) } else { quantity };
-    let amount = ui.interact(
+    let amount_response = ui.interact(
         cells[2], ui.make_persistent_id(("item-cell", row_id, 2)),
         if editable{Sense::click()}else{Sense::hover()},
     );
-    let amount=overflow_tooltip(amount,item_overflow[2],amount);
+    let amount=overflow_tooltip(amount_response,item_overflow[2],amount);
     let amount = if editable { amount.on_hover_cursor(egui::CursorIcon::Text) } else { amount };
     ui.painter().line_segment(
         [egui::pos2(rect.left(), rect.bottom()),
