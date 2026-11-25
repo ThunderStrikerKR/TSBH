@@ -105,6 +105,22 @@ fn price(value: &Value) -> String {
     value.as_i64().map(components::display_won)
         .unwrap_or_else(|| "—".to_owned())
 }
+fn price_history_description(entry:&Value)->String{
+    let raw_field=field(entry,"field");
+    let tier=match raw_field.rsplit('.').next().unwrap_or(raw_field){
+        "wholesale"=>"도매가","semi"=>"반도매가","retail"=>"소매가",
+        other=>other,
+    };
+    let raw_at=field(entry,"at");
+    let at=chrono::DateTime::parse_from_rfc3339(raw_at)
+        .map(|date|date.with_timezone(&chrono::Local).format("%Y.%m.%d %H:%M").to_string())
+        .unwrap_or_else(|_|raw_at.to_owned());
+    let amount=|value:&Value|if value.is_null(){"미등록".to_owned()}else{
+        value.as_i64().map(components::display_won).unwrap_or_else(||
+            value.as_str().map(str::to_owned).unwrap_or_else(||value.to_string()))
+    };
+    format!("{at}  /  {tier}  /  {} → {}",amount(&entry["before"]),amount(&entry["after"]))
+}
 fn option_text(product: &Value, variant: &Value) -> String {
     let mut parts = Vec::new();
     if field(product, "colorStatus") != "NOT_REQUIRED" {
@@ -2216,10 +2232,7 @@ impl ProductManager {
                                     ));
                                     for item in history.iter().rev(){
                                         advanced.label(typography::caption(
-                                            &format!("{} / {} / {} → {}",
-                                                field(item,"at"),field(item,"field"),
-                                                item["before"],item["after"]
-                                            )
+                                            &price_history_description(item)
                                         ));
                                     }
                                 }
@@ -2358,6 +2371,15 @@ impl ProductManager {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn price_history_uses_korean_tier_and_won_without_internal_id(){
+        let entry=json!({"at":"2026-11-26T01:00:00+09:00","field":"v1.semi",
+            "before":null,"after":15000});
+        let description=price_history_description(&entry);
+        assert!(description.contains("반도매가"));
+        assert!(description.contains("미등록 → 15,000원"));
+        assert!(!description.contains("v1"));
+    }
     #[test]
     fn product_list_fetch_does_not_insert_transient_loading_strips(){
         let source=include_str!("product_manager.rs");
