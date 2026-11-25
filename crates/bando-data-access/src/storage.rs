@@ -56,6 +56,74 @@ where F:FnOnce(&Value)->Result<Value,String>{
     Ok(verified)
 }
 
+/// Native automatic factory reply: only candidate order trees enter the
+/// reducer. All shipments and payment evidence remain visible for collision
+/// and immutability checks. Hydrate the complementary trees exactly once
+/// for the original global validator and transactional writer.
+pub fn update_v2_factory_reply_snapshot<F>(
+    conn:&mut Connection,expected_revision:u64,source:&Value,preserve:F
+)->Result<Value,String>
+where F:FnOnce(&Value)->Result<String,String>{
+    let tx=conn.transaction().map_err(err)?;
+    let mut before=read_current_envelope(&tx,expected_revision)?;
+    let mut payload=source.clone();
+    payload["actor"]=json!(before["settings"]["operatorName"].as_str().unwrap_or(""));
+    let (reply,ids)=crate::rules::prepare_automatic_factory_reply(&before,&payload)?;
+    // The relational tables, never a legacy embedded core list, own orders.
+    let target=crate::read_factory_order_partition(&tx,&ids,false)?;
+    if target.iter().any(|order|!order["id"].as_str()
+        .is_some_and(|id|ids.iter().any(|expected|expected==id))){
+        return Err("회신 대상 주문의 관계형 ID 불일치".into());
+    }
+    let root=before.as_object_mut().ok_or("업무 상태 형식 오류")?;
+    root.remove("products");
+    root.remove("clients");
+    root.insert("orders".into(),Value::Array(target));
+    let mut result=crate::rules::apply_prepared_factory_reply(&before,&reply,&payload)?;
+    let mut next=result.as_object_mut().and_then(|m|m.remove("next"))
+        .ok_or("회신 저장 결과 누락")?;
+    // This reducer may mutate workflow and append reply records, but it
+    // must never alter the candidate order trees or other envelope fields.
+    let old=before.as_object().ok_or("기존 회신 상태 오류")?;
+    let new=next.as_object().ok_or("회신 상태 오류")?;
+    let protected=|key:&str|!matches!(key,"workflow"|"factoryReplies");
+    if !old.iter().filter(|(k,_)|protected(k)).eq(new.iter().filter(|(k,_)|protected(k))){
+        return Err("공장 회신이 허용되지 않은 업무 자료를 변경했습니다.".into());
+    }
+    let archived=preserve(&before)?;
+    next["factoryReplies"].as_array_mut().and_then(|rows|rows.last_mut())
+        .ok_or("회신 이력 누락")?["archivedPath"]=json!(archived);
+
+    // Reassemble the full snapshot in authoritative SQL order; the scoped
+    // rows are reused, so unrelated rows never enter the matching reducer.
+    let mut by_id=std::collections::HashMap::new();
+    let target=before["orders"].as_array_mut().ok_or("대상 주문 목록 누락")?;
+    for order in std::mem::take(target).into_iter()
+        .chain(crate::read_factory_order_partition(&tx,&ids,true)?){
+        let id=order["id"].as_str().ok_or("주문 ID 누락")?.to_owned();
+        if by_id.insert(id,order).is_some(){return Err("주문 ID 중복".into());}
+    }
+    let ordered_ids={
+        let mut stmt=tx.prepare("SELECT id FROM core_orders ORDER BY position,id").map_err(err)?;
+        let rows=stmt.query_map([],|r|r.get::<_,String>(0)).map_err(err)?
+            .collect::<rusqlite::Result<Vec<_>>>().map_err(err)?;
+        rows
+    };
+    let orders=ordered_ids.into_iter().map(|id|
+        by_id.remove(&id).ok_or_else(||"주문 관계형 ID 불일치".to_owned()))
+        .collect::<Result<Vec<_>,_>>()?;
+    if !by_id.is_empty(){return Err("주문 관계형 ID 불일치".into());}
+    let (products,clients)=crate::read_catalog_entities(&tx)?;
+    before["orders"]=Value::Array(orders);
+    before["products"]=Value::Array(products);
+    before["clients"]=Value::Array(clients);
+    for key in ["orders","products","clients"]{next[key]=before[key].clone();}
+    let verified=finish_update(&tx,before,next,expected_revision,true)?;
+    tx.commit().map_err(err)?;
+    result["next"]=verified;
+    Ok(result)
+}
+
 /// Only for the native set_shipment_freight reducer. Keep the full workflow
 /// envelope and catalog (audit identities, allocations, tariffs, clients).
 /// Stable confirmed-order edits use the scoped relational delta, then
