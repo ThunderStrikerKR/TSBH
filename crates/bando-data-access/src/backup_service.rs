@@ -477,4 +477,29 @@ mod operational_backup_tests {
         assert_eq!(get_snapshot(&reopened).unwrap(),active);
         assert_eq!(auxiliary(&reopened),before_aux);
     }
+
+    #[test]
+    fn client_workbook_commit_preserves_unrelated_state_and_backup(){
+        let temp=Temp::new();
+        let mut conn=fixture(&temp.0);
+        let before=get_snapshot(&conn).unwrap();
+        let mut row=vec!["";17];row[0]="c";row[2]="변경된 합성 주소";
+        let source=json!({"sourceRevision":7,"input":[{"row":2,"cells":row}],"newIds":["unused"]});
+        let preview=crate::preview_client_workbook(&before,&source).unwrap();
+        assert_eq!(preview["rows"][0]["status"],"UPDATE");
+        let mut tampered=preview.clone();tampered["rows"][0]["client"]["overrides"]=json!({});
+        assert!(crate::commit_client_workbook_v2(&mut conn,&temp.0,&tampered).is_err());
+        assert_eq!(get_snapshot(&conn).unwrap(),before);
+        let after=crate::commit_client_workbook_v2(&mut conn,&temp.0,&preview).unwrap();
+        assert_eq!(after["revision"],8);
+        assert_eq!(after["clients"][0]["address"],"변경된 합성 주소");
+        assert_eq!(after["clients"][0]["overrides"],before["clients"][0]["overrides"]);
+        for k in ["orders","products","workflow","settings"]{assert_eq!(after[k],before[k]);}
+        let backups=list_backups(&temp.0).unwrap();
+        assert_eq!(backups.len(),1);
+        assert_eq!(get_snapshot(&read_backup(std::path::Path::new(&backups[0])).unwrap()).unwrap(),before);
+        assert!(crate::commit_client_workbook_v2(&mut conn,&temp.0,&preview).is_err());
+        assert_eq!(list_backups(&temp.0).unwrap().len(),1);
+        assert_eq!(get_snapshot(&conn).unwrap(),after);
+    }
 }

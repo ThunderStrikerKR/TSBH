@@ -153,43 +153,8 @@ fn upsert(state: &Value, entity: &Value, collection: &str) -> Result<Value, Stri
 /// Original oracle: src/client-workbook.ts::applyClientWorkbook.
 /// The Excel parser and per-row draft remain in TypeScript; the approved
 /// collection update is owned by Rust and saved by the existing SQLite layer.
-fn apply_client_workbook(state: &Value, preview: &Value) -> Result<Value, String> {
-    let revision = state.get("revision").and_then(Value::as_i64).unwrap_or(0);
-    if revision != preview.get("revision").and_then(Value::as_i64).unwrap_or(-1) {
-        return Err("검토 후 거래처 데이터가 변경되었습니다. Excel을 다시 검증하세요.".into());
-    }
-    if items(preview, "rows").iter().any(|row|
-        ["ERROR", "HOLD"].contains(&field(row, "status")))
-    {
-        return Err("중복 또는 오류 항목이 남아 있어 Excel 변경사항을 저장할 수 없습니다.".into());
-    }
-    let mut next = state.clone();
-    let mut created = 0_i64;
-    let mut updated = 0_i64;
-    for row in items(preview, "rows") {
-        let status = field(row, "status");
-        if status != "ADD" && status != "UPDATE" { continue; }
-        let Some(client) = row.get("client").filter(|c| !c.is_null()) else { continue };
-        let canonical=bando_data_access::client_names::normalized(client);
-        validate_client(&next, &canonical)?;
-        let clients = next.get_mut("clients").and_then(Value::as_array_mut)
-            .ok_or("거래처 목록이 없습니다.")?;
-        let id = field(&canonical, "id");
-        if status == "ADD" {
-            if clients.iter().any(|c| field(c, "id") == id) {
-                return Err("거래처 ID 충돌입니다.".into());
-            }
-            clients.push(canonical.clone());
-            created += 1;
-        } else {
-            let index = clients.iter().position(|c| field(c, "id") == id
-                && !value_present(c, "deletedAt"))
-                .ok_or("기존 거래처 정보를 확인할 수 없습니다.")?;
-            clients[index] = canonical;
-            updated += 1;
-        }
-    }
-    Ok(json!({"next":next, "created":created, "updated":updated}))
+fn apply_client_workbook(state:&Value,preview:&Value)->Result<Value,String>{
+    client_mutation::apply_client_workbook(state,preview)
 }
 
 /// Original oracle: src/product-sync-workbook.ts::applyProductSyncWorkbook,
