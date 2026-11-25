@@ -21,7 +21,7 @@ pub struct LinkKey {
     pub field: String,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct LinkedSpan {
     pub start: usize, // UTF-8 byte
     pub end: usize,
@@ -459,7 +459,7 @@ const SOURCE_ACTIVE:Color32=ACTIVE_FILL;
 const SOURCE_ACTIVE_TEXT:Color32=ACTIVE_TEXT;
 const SOURCE_ACTIVE_BORDER:Color32=ACTIVE_BORDER;
 
-#[derive(Clone,Debug)]
+#[derive(Clone,Debug,PartialEq,Eq)]
 struct VisualBlock {
     start:usize,
     end:usize,
@@ -473,6 +473,45 @@ struct VisualBlock {
 
 #[derive(Clone,Copy,Debug,PartialEq,Eq)]
 enum ManualBlockState { Unassigned, Classified }
+
+// Bounded, UI-thread-local cache shared by the text layout and block painter.
+ // Compare borrowed inputs exactly before allocating; no hash collisions or
+ // pointer-address reuse can let a changed source inherit old evidence.
+struct VisualCacheEntry{
+    raw:String,spans:Vec<LinkedSpan>,selected:Option<String>,
+    active:Option<LinkKey>,assigned:Option<HashSet<String>>,
+    blocks:std::sync::Arc<[VisualBlock]>,characters:std::sync::Arc<[char]>,
+}
+thread_local!{
+    static VISUAL_CACHE:std::cell::RefCell<Vec<VisualCacheEntry>>=
+        const{std::cell::RefCell::new(Vec::new())};
+}
+fn cached_visual_blocks(raw:&str,spans:&[LinkedSpan],selected:Option<&str>,
+    active:Option<&LinkKey>,assigned:Option<&HashSet<String>>)
+    ->(std::sync::Arc<[VisualBlock]>,std::sync::Arc<[char]>){
+    VISUAL_CACHE.with(|cache|{
+        let mut cache=cache.borrow_mut();
+        if let Some(index)=cache.iter().position(|entry|
+            entry.raw==raw && entry.spans==spans &&
+            entry.selected.as_deref()==selected && entry.active.as_ref()==active &&
+            entry.assigned.as_ref()==assigned){
+            let entry=cache.remove(index);
+            let result=(entry.blocks.clone(),entry.characters.clone());
+            cache.push(entry);
+            return result;
+        }
+        let blocks:std::sync::Arc<[VisualBlock]>=visual_blocks_with_manual_states(
+            raw,spans,selected,active,assigned).into();
+        let characters:std::sync::Arc<[char]>=raw.chars().collect::<Vec<_>>().into();
+        // Bound retained document data; do not keep an unbounded order cache.
+        if cache.len()>=3{cache.remove(0);}
+        cache.push(VisualCacheEntry{raw:raw.to_owned(),spans:spans.to_vec(),
+            selected:selected.map(str::to_owned),active:active.cloned(),assigned:assigned.cloned(),
+            blocks:blocks.clone(),characters:characters.clone()});
+        (blocks,characters)
+    })
+}
+pub fn clear_visual_cache(){VISUAL_CACHE.with(|cache|cache.borrow_mut().clear());}
 
 // Resolve overlapping evidence once per character interval, so two
 // classifiers cannot paint competing fills over the same source text.
@@ -579,9 +618,8 @@ fn layout_with_states(
     let mut job=egui::text::LayoutJob::default();
     job.wrap.max_width=width;
     let mut cursor=0;
-    for block in visual_blocks_with_manual_states(
-        raw,spans,selected_recipient,active,assigned_ids
-    ) {
+    let (blocks,_)=cached_visual_blocks(raw,spans,selected_recipient,active,assigned_ids);
+    for block in blocks.iter() {
         if cursor<block.start {
             job.append(&raw[cursor..block.start],0.0,egui::TextFormat {
                 font_id:font.clone(),color,..Default::default()
@@ -814,10 +852,7 @@ fn block_shapes_with_states(
     spans:&[LinkedSpan],selected_recipient:Option<&str>,
     active:Option<&LinkKey>,assigned_ids:Option<&HashSet<String>>,clip:egui::Rect,
 )->(Vec<egui::Shape>,Vec<egui::Shape>) {
-    let blocks=visual_blocks_with_manual_states(
-        raw,spans,selected_recipient,active,assigned_ids
-    );
-    let characters:Vec<char>=raw.chars().collect();
+    let (blocks,characters)=cached_visual_blocks(raw,spans,selected_recipient,active,assigned_ids);
     let mut normal=Vec::new();
     let mut focused=Vec::new();
     let mut outlines=Vec::new();
@@ -829,7 +864,10 @@ fn block_shapes_with_states(
         let y=galley_pos.y+placed.pos.y;
         let height=placed.row.size.y;
         if y<=clip.bottom()+2.0 && y+height>=clip.top()-2.0 {
-            for block in &blocks {
+            // Blocks are ordered, non-overlapping character intervals.
+            // Skip earlier blocks and stop before the next visual row.
+            let first_block=blocks.partition_point(|block|block.end_char<=row_start);
+            for block in blocks[first_block..].iter().take_while(|block|block.start_char<row_end) {
                 let start=block.start_char.max(row_start);
                 let end=block.end_char.min(row_end);
                 if start>=end {continue;}
@@ -856,12 +894,12 @@ fn block_shapes_with_states(
                     text_left,text_right,ink_top,ink_bottom
                 ) else {continue};
                 if !block.focused {
-                    let left=blocks.iter().any(|other|
-                        other.key!=block.key && other.end_char==start
-                    );
-                    let right=blocks.iter().any(|other|
-                        other.key!=block.key && other.start_char==end
-                    );
+                    let left_index=blocks.partition_point(|other|other.end_char<start);
+                    let left=blocks.get(left_index).is_some_and(|other|
+                        other.key!=block.key && other.end_char==start);
+                    let right_index=blocks.partition_point(|other|other.start_char<end);
+                    let right=blocks.get(right_index).is_some_and(|other|
+                        other.key!=block.key && other.start_char==end);
                     rect=separate_touching_blocks(rect,left,right);
                     if rect.width()<=0.0 {continue;}
                 } else {
@@ -1386,5 +1424,30 @@ mod manual_span_projection_tests {
                 .and_then(|span|span.source_id.clone());
         });
         assert_eq!(hit.as_deref(),Some("last"));
+    }
+}
+
+#[cfg(test)]
+mod visual_cache_tests{
+    use super::*;
+    #[test]
+    fn shared_visual_cache_reuses_exact_projection_and_invalidates_on_change(){
+        clear_visual_cache();
+        let raw="가나";
+        let spans=vec![LinkedSpan{start:0,end:3,start_char:0,end_char:1,
+            key:key("r","r","name"),source_id:Some("b".into())}];
+        let (first,chars)=cached_visual_blocks(raw,&spans,None,None,None);
+        let (same,same_chars)=cached_visual_blocks(raw,&spans,None,None,None);
+        assert!(std::sync::Arc::ptr_eq(&first,&same));
+        assert!(std::sync::Arc::ptr_eq(&chars,&same_chars));
+        let (focused,_)=cached_visual_blocks(raw,&spans,None,Some(&spans[0].key),None);
+        assert!(!std::sync::Arc::ptr_eq(&first,&focused));
+        assert!(focused[0].focused);
+        let assigned=HashSet::from(["b".to_owned()]);
+        let (manual,_)=cached_visual_blocks(raw,&spans,None,None,Some(&assigned));
+        assert_eq!(manual[0].manual_state,Some(ManualBlockState::Classified));
+        let (changed,_)=cached_visual_blocks("다라",&spans,None,None,None);
+        assert!(!std::sync::Arc::ptr_eq(&first,&changed));
+        clear_visual_cache();
     }
 }
