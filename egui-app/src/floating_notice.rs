@@ -459,9 +459,13 @@ pub fn show(ctx: &Context) {
         Tone::Error => {},
     }
 
+    // Preserve original notice identity for sync/clear and deduplication.
+    let display=if matches!(active.tone,Tone::Error|Tone::Validation){
+        crate::user_error::display(active.source,&active.message)
+    }else{std::borrow::Cow::Borrowed(active.message.as_str())};
     let screen = ctx.screen_rect();
     let (size, galley, _content_height) = measured_notice(
-        ctx, &active.message, active.tone, screen,
+        ctx, display.as_ref(), active.tone, screen,
     );
     let (at, above) = placement(active.at, size, screen, active.kind);
     let pad_x = f32::from(theme::FLOATING_NOTICE_PADDING_X);
@@ -533,7 +537,7 @@ pub fn show(ctx: &Context) {
                             .show(inner,|content| {
                                 content.set_width(text_rect.width().max(1.0));
                                 content.add(egui::Label::new(
-                                    typography::floating_notice_text(&active.message)
+                                    typography::floating_notice_text(display.as_ref())
                                 ).wrap());
                             });
                     },

@@ -346,7 +346,7 @@ impl ItemEditor{
                         // slot. A new error can never move the modal footer.
                         let mut status_messages=Vec::new();
                         if let Some(error)=&self.error{
-                            status_messages.push(error.clone());
+                            status_messages.push(crate::user_error::display("reception.item",error).into_owned());
                         }
                         if invalid_selection{
                             status_messages.push(

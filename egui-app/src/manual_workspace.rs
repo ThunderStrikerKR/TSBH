@@ -2018,13 +2018,15 @@ impl ManualWorkspace {
                             .and_then(|row|remote_for(&self.remote_rows,row))
                             .and_then(|decision|match decision{
                                 Ok(value)=>crate::reception_service::remote_delivery_notice(value),
-                                Err(error)=>Some(format!("도서/산간 판정 실패 · {error}"))
+                                Err(error)=>Some(format!("도서/산간 판정 실패 · {}",
+                                    crate::user_error::display("reception.remote",error)))
                             })
                     });
                     let header_client_notice=(
                         self.client_id.is_some() && self.view_quote.is_none() && !header_busy
                     ).then_some("상품 금액과 운임을 확인할 수 없습니다.");
-                    let header_error=self.error.clone();
+                    let header_error=self.error.as_deref().map(|error|
+                        crate::user_error::display("reception.manual",error).into_owned());
                     let mut count_resize_requested=false;
                     let (close_clicked,())=workspace.header_with_toolbar(
                         workspace_title,"닫기",

@@ -207,7 +207,7 @@ impl ProductSearch{
                                     .max_height(results_height)
                                     .show(pane,|ui|{
                                         if let Some(error)=&self.error {
-                                            ui.label(typography::status(error,theme::DANGER));
+                                            ui.label(typography::status(crate::user_error::display("reception.product",error).as_ref(),theme::DANGER));
                                         } else if self.receiver.is_some() {
                                             ui.label(typography::caption("상품 검색 중"));
                                         } else {

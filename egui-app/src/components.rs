@@ -269,11 +269,17 @@ pub fn fixed_status_slot(
         ui,Vec2::new(width,height),Layout::left_to_right(Align::Center),
         |slot|{
             if let Some(text)=display.filter(|text|!text.trim().is_empty()){
+                let display=if color==theme::DANGER{
+                    crate::user_error::display("status",text)
+                }else{std::borrow::Cow::Borrowed(text)};
                 let response=slot.add(
-                    egui::Label::new(typography::status(text,color)).truncate()
+                    egui::Label::new(typography::status(display.as_ref(),color)).truncate()
                 );
                 if let Some(tooltip)=tooltip{
-                    response.on_hover_text(tooltip);
+                    let detail=if color==theme::DANGER{
+                        crate::user_error::display("status",tooltip)
+                    }else{std::borrow::Cow::Borrowed(tooltip)};
+                    response.on_hover_text(detail.as_ref());
                 }
             }
         }
@@ -3549,8 +3555,9 @@ pub fn reception_section_divider(ui:&mut Ui)->Rect{
 /// Untyped recognition/workflow notices retain informational coloring.
 pub fn reception_review_status(ui:&mut Ui,message:&str){
     let tone=theme::ReviewTone::Info;
+    let display=crate::user_error::display("reception.review",message);
     theme::review_issue_card(ui,tone,|content|{
-        content.add(egui::Label::new(typography::body(message)
+        content.add(egui::Label::new(typography::body(display.as_ref())
             .color(tone.text_color())).wrap());
     });
 }

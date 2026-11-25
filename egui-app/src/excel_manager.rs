@@ -789,7 +789,7 @@ impl ExcelManager{
                             bar.label(typography::caption(&format!("{}/{}",self.reply_page+1,(count.saturating_add(49)/50).max(1))));
                             if theme::action(bar,"다음",theme::ButtonRole::Standard,!busy&&(self.reply_page+1)*50<count).clicked(){self.reply_page+=1;}
                         });
-                        if let Some(error)=self.error.as_deref(){ui.label(typography::status(error,theme::DANGER));}
+                        if let Some(error)=self.error.as_deref(){ui.label(typography::status(crate::user_error::display("excel.reply",error).as_ref(),theme::DANGER));}
                     });
                     workspace.footer_single(|bar|{if theme::action(bar,"닫기",theme::ButtonRole::Standard,!busy&&self.reply_confirm.is_none()).clicked(){close=true;}});
                 });

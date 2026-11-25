@@ -535,7 +535,8 @@ impl DailySettlementManager{
         let missing=Value::Null;
         let mut visible_report=self.report.as_ref();
         let mut date_changed=false;
-        let unavailable=self.error.as_deref().unwrap_or("해당 날짜의 결산 자료를 불러올 수 없습니다.");
+        let unavailable=crate::user_error::display("settlement.query",
+            self.error.as_deref().unwrap_or("해당 날짜의 결산 자료를 불러올 수 없습니다."));
         let loading=self.receiver.is_some();
         // The report tables scroll horizontally inside their own row
         // viewports. Keep the OUTER vertical section stack bounded by the
@@ -619,7 +620,7 @@ impl DailySettlementManager{
                          typography::ManagementTableCellRole::Money,typography::ManagementTableCellRole::Money],
                         0,&indices,&mut self.order_sort,
                         if visible_report.is_none(){
-                            if date_changed||loading{None}else{Some(unavailable)}
+                            if date_changed||loading{None}else{Some(unavailable.as_ref())}
                         }else if orders.is_empty(){Some("해당 날짜에 접수한 주문이 없습니다.")}else{None},
                         |index|{
                             let order=&orders[index];

@@ -11,6 +11,7 @@ mod window_state;
 mod components;
 mod cell_navigation;
 mod floating_notice;
+mod user_error;
 mod reception_service;
 mod review_panel;
 mod gateway;
