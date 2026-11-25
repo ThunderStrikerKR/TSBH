@@ -5255,20 +5255,17 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                         }
                         bar.with_layout(Layout::right_to_left(Align::Center), |actions| {
                             actions.spacing_mut().item_spacing.x = theme::SPACE_4;
-                            if theme::window_control(actions, WindowControl::Close)
-                                .on_hover_text("닫기").clicked()
+                            if theme::window_control(actions, WindowControl::Close).clicked()
                             {
                                 ctx.send_viewport_cmd(egui::ViewportCommand::Close);
                             }
-                            if theme::window_control(actions, WindowControl::Maximize)
-                                .on_hover_text("창 최대화 또는 복원").clicked()
+                            if theme::window_control(actions, WindowControl::Maximize).clicked()
                             {
                                 ctx.send_viewport_cmd(
                                     egui::ViewportCommand::Maximized(!maximized)
                                 );
                             }
-                            if theme::window_control(actions, WindowControl::Minimize)
-                                .on_hover_text("최소화").clicked()
+                            if theme::window_control(actions, WindowControl::Minimize).clicked()
                             {
                                 ctx.send_viewport_cmd(egui::ViewportCommand::Minimized(true));
                             }
