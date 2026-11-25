@@ -281,8 +281,24 @@ try {
     "박가상","010-2345-6789","서울특별시 마포구 월드컵로 20","GT-1 1개"].join("\n");
   await page.evaluate(text=>window.bando.copy(text),raw);
   await page.getByRole("button",{name:"대리발송",exact:true}).click();
-  await page.waitForFunction(()=>document.querySelector(".review-pane")?.textContent?.includes("김가상"),
-    null,{timeout:30000});
+  // Staff checks are not the recipient value surface: a valid recipient
+  // need not be mentioned by any issue. Require the current source AND
+  // an actual rendered recipient input, as in the subsequent SIM34 check.
+  try {
+    await page.waitForFunction(()=>
+      (document.querySelector(".source-document")?.textContent||"").includes("김가상") &&
+      [...document.querySelectorAll(".recipient-review input")]
+        .some(input=>input.value==="김가상"),null,{timeout:30000});
+  } catch(error) {
+    record("INITIAL_RECOGNITION_GUI_DIAGNOSTIC",await page.evaluate(()=>({
+      source:document.querySelector(".source-document")?.textContent?.slice(0,500),
+      recipientInputs:[...document.querySelectorAll(".recipient-review input")].map(input=>input.value),
+      review:document.querySelector(".review-pane")?.textContent?.slice(0,500),
+      alerts:[...document.querySelectorAll("[role=alert]")].map(el=>el.textContent?.slice(0,300)),
+    })));
+    await snap(page,"initial-recognition-failed");
+    throw error;
+  }
   record("RECOGNIZED_TWO_RECIPIENT_SOURCE",{rawLength:raw.length});
   await sleep(650);
   await endPerf("PASTE_TWO_RECIPIENTS",pasteMark);
