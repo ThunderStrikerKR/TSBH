@@ -1053,6 +1053,40 @@ mod common_action_tooltip_tests{
         assert!(text_exceeds_rect(Vec2::new(101.0,18.0),rect));
         assert!(text_exceeds_rect(Vec2::new(80.0,21.0),rect));
     }
+
+    #[test]
+    fn native_label_elision_uses_actual_width_for_reviewed_text_roles(){
+        let ctx=test_context();
+        let text="반도스탠드 대형 오케스트라 보면대";
+        let roles:[(&str,fn(&str)->egui::RichText);4]=[
+            ("modal title",typography::modal_title),
+            ("modal description",typography::caption),
+            ("table cell",typography::table_cell),
+            ("body / shipment / folder / warning",typography::body),
+        ];
+        let _=ctx.run(egui::RawInput{
+            screen_rect:Some(Rect::from_min_size(egui::Pos2::ZERO,Vec2::new(1024.0,600.0))),
+            ..Default::default()
+        },|ctx|{
+            egui::CentralPanel::default().show(ctx,|ui|{
+                for (role,style) in roles{
+                    for (width,expected_elided) in [(60.0,true),(800.0,false)]{
+                        ui.allocate_ui_with_layout(
+                            Vec2::new(width,36.0),Layout::left_to_right(Align::Center),|slot|{
+                                slot.set_width(width);
+                                let (_,galley,_)=egui::Label::new(style(text))
+                                    .truncate().layout_in_ui(slot);
+                                assert_eq!(galley.elided,expected_elided,
+                                    "{role}: wrong native elision at width {width}");
+                                assert_eq!(galley.text(),text,
+                                    "{role}: native tooltip must retain the original string");
+                            }
+                        );
+                    }
+                }
+            });
+        });
+    }
 }
 
 /// Draw workflow glyphs as stable vectors; the UI font may not contain
