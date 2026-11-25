@@ -15,6 +15,8 @@ pub struct ChatWindow {
 pub struct KakaoTracker {
     chats: Vec<ChatWindow>,
     last_focused: Option<(String, Instant)>,
+    #[cfg(windows)]
+    observed:Option<std::sync::Arc<windows::Snapshot>>,
 }
 
 impl KakaoTracker {
@@ -22,13 +24,22 @@ impl KakaoTracker {
         #[cfg(windows)] {
             windows::start(ctx.clone());
             let snapshot=windows::snapshot();
-            let chats:Vec<_>=snapshot.windows.iter().filter(|w|!w.main)
-                .map(|w|ChatWindow{handle:format!("{:016X}",w.hwnd as usize),title:w.title.clone()})
-                .collect();
-            if self.chats!=chats{self.chats=chats;}
+            let changed=self.observed.as_ref().is_none_or(|old|!std::sync::Arc::ptr_eq(old,&snapshot));
+            if changed{
+                self.chats=snapshot.windows.iter().filter(|w|!w.main)
+                    .map(|w|ChatWindow{handle:format!("{:016X}",w.hwnd as usize),title:w.title.clone()})
+                    .collect();
+                self.observed=Some(snapshot.clone());
+            }
             if let Some(chat)=snapshot.windows.iter().find(|w|
                 !w.main && w.hwnd==snapshot.foreground){
-                self.last_focused=Some((format!("{:016X}",chat.hwnd as usize),Instant::now()));
+                // Preserve the recent-focus clock while focused, but don't
+                // allocate the same handle string on every frame.
+                if !changed && self.last_focused.is_some(){
+                    if let Some((_,seen))=self.last_focused.as_mut(){*seen=Instant::now();}
+                }else{
+                    self.last_focused=Some((format!("{:016X}",chat.hwnd as usize),Instant::now()));
+                }
             }
             if self.last_focused.as_ref().is_some_and(|(handle,_)|
                 !self.chats.iter().any(|chat|chat.handle==*handle)){
@@ -65,7 +76,7 @@ impl KakaoTracker {
 #[cfg(windows)]
 pub(crate) mod windows {
     use std::{cell::{Cell,RefCell},collections::{HashMap,HashSet},path::Path,
-        sync::{OnceLock,Mutex,atomic::{AtomicBool,AtomicU32,Ordering}},
+        sync::{Arc,OnceLock,Mutex,atomic::{AtomicBool,AtomicU32,Ordering}},
         time::{Duration,Instant}};
     type Hwnd=isize;
     type Handle=isize;
@@ -190,7 +201,7 @@ pub(crate) mod windows {
         Snapshot{windows:state.windows,foreground:unsafe{GetForegroundWindow()},layout_epoch:0}
     }
     struct Monitor{
-        snapshot:Mutex<Snapshot>,stop:AtomicBool,thread:AtomicU32,
+        snapshot:Mutex<Arc<Snapshot>>,stop:AtomicBool,thread:AtomicU32,
     }
     static MONITOR:OnceLock<Monitor>=OnceLock::new();
     thread_local!{
@@ -252,7 +263,7 @@ pub(crate) mod windows {
                 if !known && process_is_kakao(pid(foreground)){dirty=true;}
                 let mut current=m.snapshot.lock().unwrap_or_else(|p|p.into_inner());
                 if current.foreground!=foreground{
-                    current.foreground=foreground;drop(current);ctx.request_repaint();
+                    Arc::make_mut(&mut *current).foreground=foreground;drop(current);ctx.request_repaint();
                 }
             }
             if last.elapsed()>=FALLBACK || (dirty && last.elapsed()>=COALESCE){
@@ -265,7 +276,7 @@ pub(crate) mod windows {
                 let mut current=m.snapshot.lock().unwrap_or_else(|p|p.into_inner());
                 let changed=current.windows!=next.windows || current.foreground!=next.foreground ||
                     current.layout_epoch!=next.layout_epoch;
-                *current=next;drop(current);
+                if changed{*current=Arc::new(next);}drop(current);
                 if changed{ctx.request_repaint();}
                 last=Instant::now();dirty=false;
             }
@@ -282,14 +293,14 @@ pub(crate) mod windows {
         m.thread.store(0,Ordering::Release);
     }
     pub(crate) fn start(ctx:eframe::egui::Context){
-        let m=MONITOR.get_or_init(||Monitor{snapshot:Mutex::new(Snapshot::default()),
+        let m=MONITOR.get_or_init(||Monitor{snapshot:Mutex::new(Arc::new(Snapshot::default())),
             stop:AtomicBool::new(false),thread:AtomicU32::new(0)});
         // Only one UI owner exists. Thread ID is initially zero, so use a
         // separate one-shot gate to avoid starting duplicate workers.
         static STARTED:OnceLock<()>=OnceLock::new();
         STARTED.get_or_init(||{std::thread::spawn(move||worker(m,ctx));});
     }
-    pub(crate) fn snapshot()->Snapshot{
+    pub(crate) fn snapshot()->Arc<Snapshot>{
         MONITOR.get().map(|m|m.snapshot.lock().unwrap_or_else(|p|p.into_inner()).clone())
             .unwrap_or_default()
     }
