@@ -15,20 +15,15 @@ use crate::{
 fn text<'a>(row:&'a Value,key:&str)->&'a str {
     row.get(key).and_then(Value::as_str).unwrap_or("")
 }
-/// Keep the normal empty caption centered in the entire content viewport.
-/// If a splitter makes the panel too short, reserve the count's footprint
-/// and center only within a usable remainder rather than overlap the count.
-fn review_empty_overlay_rect(body:egui::Rect,count_bottom:f32)->Option<egui::Rect>{
-    let minimum=typography::METADATA_LINE_HEIGHT;
-    if !body.is_positive(){return None;}
-    let top=(count_bottom+theme::SPACE_4).max(body.top());
-    if body.center().y-minimum/2.0>=top && body.height()>=minimum{
-        return Some(body);
-    }
-    let remaining=egui::Rect::from_min_max(
-        egui::pos2(body.left(),top),body.right_bottom()
-    );
-    (remaining.width()>0.0 && remaining.height()>=minimum).then_some(remaining)
+/// The summary lives in the header, leaving the entire body for the empty state.
+fn review_empty_overlay_rect(body:egui::Rect)->Option<egui::Rect>{
+    (body.is_positive() && body.height()>=typography::METADATA_LINE_HEIGHT)
+        .then_some(body)
+}
+fn remote_notice(analysis:&ReceptionAnalysis,selected_recipient:usize)->Option<&Value>{
+    analysis.reference.get(selected_recipient)
+        .and_then(|row|row.remote.as_ref()).filter(|decision|
+            ["auto","review"].contains(&text(decision,"status")))
 }
 #[derive(Clone,Debug,PartialEq)]
 struct ReviewKey {
@@ -178,6 +173,17 @@ impl ReviewPanel {
         }
     }
     pub fn ready(&self)->bool{self.ready && self.error.is_none()}
+    pub fn show_header_summary(&self,ui:&mut Ui,analysis:&ReceptionAnalysis,
+        selected_recipient:usize){
+        if self.error.is_some() || (self.pending.is_some() && self.issues.is_empty()){
+            return;
+        }
+        let info_count=self.fact_indices.len()+self.inherited_indices.len()
+            +usize::from(remote_notice(analysis,selected_recipient).is_some());
+        ui.add(egui::Label::new(typography::caption(&format!(
+            "조치 {}건 / 안내 {}건",self.action_indices.len(),info_count
+        ))).truncate());
+    }
     /// A client action may be queued while an unrelated delivery edit commits.
     /// Other issue actions still require the ordinary edit admission policy.
     pub fn show_with_client_actions(&self,ui:&mut Ui,analysis:&ReceptionAnalysis,
@@ -196,19 +202,10 @@ impl ReviewPanel {
         let actions=&self.action_indices;
         let facts=&self.fact_indices;
         let inherited=&self.inherited_indices;
-        let remote=analysis.reference.get(selected_recipient)
-            .and_then(|row|row.remote.as_ref()).filter(|decision|
-                ["auto","review"].contains(&text(decision,"status")));
-        let info_count=facts.len()+inherited.len()+usize::from(remote.is_some());
-        // Capture the visible body BEFORE the count advances the cursor.
-        // The fixed count is an upper-left annotation, not a second table
-        // header: using the remaining rect shifts the empty state downward.
+        let remote=remote_notice(analysis,selected_recipient);
         let body=ui.available_rect_before_wrap().intersect(ui.clip_rect());
-        let count=ui.label(typography::caption(&format!(
-            "조치 {}건 / 안내 {}건",actions.len(),info_count
-        )));
         if actions.is_empty() && facts.is_empty() && inherited.is_empty() && remote.is_none(){
-            if let Some(viewport)=review_empty_overlay_rect(body,count.rect.bottom()){
+            if let Some(viewport)=review_empty_overlay_rect(body){
                 crate::components::management_body_state_overlay(
                     ui,viewport,Some("필수 확인 사항 없음")
                 );
@@ -387,18 +384,13 @@ fn issue_card(
 mod tests {
     use super::*;
     #[test]
-    fn empty_review_caption_uses_full_body_center_and_avoids_count_overlap(){
+    fn empty_review_caption_uses_full_body_center_without_count_reservation(){
         let body=egui::Rect::from_min_size(egui::pos2(26.0,76.0),egui::vec2(580.0,152.0));
-        let normal=review_empty_overlay_rect(body,101.0).unwrap();
-        assert_eq!(normal,body);
-        assert_eq!(normal.center(),body.center());
+        assert_eq!(review_empty_overlay_rect(body),Some(body));
         let short=egui::Rect::from_min_size(body.min,egui::vec2(580.0,60.0));
-        let fallback=review_empty_overlay_rect(short,101.0).unwrap();
-        assert_eq!(fallback.center().x,short.center().x);
-        assert!(fallback.top()>=101.0+theme::SPACE_4);
-        assert!(fallback.bottom()<=short.bottom());
-        let tiny=egui::Rect::from_min_size(body.min,egui::vec2(580.0,32.0));
-        assert!(review_empty_overlay_rect(tiny,101.0).is_none());
+        assert_eq!(review_empty_overlay_rect(short),Some(short));
+        let tiny=egui::Rect::from_min_size(body.min,egui::vec2(580.0,1.0));
+        assert!(review_empty_overlay_rect(tiny).is_none());
     }
     #[test]
     fn empty_review_caption_keeps_the_shared_overlay_and_metadata_font(){

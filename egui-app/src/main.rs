@@ -7389,7 +7389,11 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                 pane.set_clip_rect(review_rect);
                 pane.set_width(review_rect.width());
                 pane.set_height(review_rect.height());
-                Self::section(pane, "확인할 내용", review_height, |ui| {
+                Self::section_with_header(pane, "확인할 내용", review_height, |header| {
+                    if let Some(analysis)=&self.analysis {
+                        self.review_panel.show_header_summary(header,analysis,visible_index);
+                    }
+                }, |ui| {
                     components::scroll_area(components::ScrollAxes::Vertical)
                         .id_salt("reception-review-content-scroll")
                         .max_height(components::docked_section_body_height(review_height))
