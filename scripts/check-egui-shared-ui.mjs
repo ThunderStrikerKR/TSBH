@@ -92,6 +92,43 @@ const tableContracts = {
 const tableMarkers = new Set(["management_table_cells","management_table_column_rules",
   "management_master_header_begin","management_row","management_readonly_table"]);
 
+// Fixed workflow actions must be rendered by components::workflow_fixed_action.
+// Existing non-button painting is reviewed by exact function/call/count.
+const workflowPaintMethods = new Set(["rect_filled","rect_stroke","rect","line_segment","hline","vline","circle_filled","circle_stroke","galley","text","layout_no_wrap","interact","add_sized","add_enabled"]);
+const workflowThemePaintMethods = new Set(["paint_bordered_surface","paint_button_hover","paint_button_hover_corners","paint_surface_outline","paint_soft_rule","action","action_with_min_width","action_full_width","review_action"]);
+const workflowPaintAllowance = new Map([
+  ["workflow_card:rect_filled ( Rect :: from_min_max ( Pos2 :: new ( r . left ( ) , r . top ( ) + theme :: SOFT_DIVIDER_WIDTH ) , Pos2 :: new ( r . left ( ) + theme :: WORKFLOW_SELECTED_STRIPE , r . bottom ( ) - theme :: SOFT_DIVIDER_WIDTH ) , ) , 0.0 , if preview { source_highlight :: ACTIVE_BORDER } else { theme :: WORKFLOW_SELECTED_BORDER } )",1],
+  ["workflow_compact_rows:rect_filled ( divider , 0.0 , theme :: WORKFLOW_CARD_BORDER )",1],
+  ["workflow_compact_rows:rect_filled ( lower , 0.0 , theme :: WORKFLOW_CARD_LOWER_BG )",1],
+  ["workflow_header:galley ( Pos2 :: new ( text_rect . left ( ) , text_rect . center ( ) . y - galley . size ( ) . y / 2.0 ) , galley , theme :: TEXT )",1],
+  ["workflow_header:interact ( arrow . union ( title_rect ) , workflow_widget_id ( <literal> , id , in_preview ) , egui :: Sense :: click ( ) )",1],
+  ["workflow_header:paint_bordered_surface ( ui . painter ( ) , block , 5.0 , theme :: WORKFLOW_SIGNAL_BLOCK_BG , theme :: WORKFLOW_SIGNAL_BLOCK_BORDER )",1],
+  ["workflow_header:paint_bordered_surface ( ui . painter ( ) , lamp , theme :: WORKFLOW_SIGNAL_RADIUS , fill , border )",1],
+  ["workflow_header:paint_button_hover ( ui , & title_response , theme :: CONTROL_RADIUS as f32 )",1],
+  ["workflow_action_line:layout_no_wrap ( shipping_text . clone ( ) , egui :: FontId :: proportional ( theme :: WORKFLOW_VAT_FONT_SIZE ) , theme :: SECONDARY )",1],
+  ["workflow_action_line:galley ( Pos2 :: new ( shipping . left ( ) , bottom_y - ship_galley . size ( ) . y ) , ship_galley , theme :: SECONDARY )",1],
+  ["workflow_action_line:layout_no_wrap ( amount . clone ( ) , typography :: data_value_font ( typography :: DataValueKind :: Money , typography :: DataValueContext :: CompactCard ) , theme :: TEXT )",1],
+  ["workflow_action_line:galley ( Pos2 :: new ( price_ink . right ( ) - money_galley . size ( ) . x , bottom_y - money_galley . size ( ) . y ) , money_galley , theme :: TEXT )",1],
+  ["workflow_action_line:layout_no_wrap ( visible , egui :: FontId :: proportional ( theme :: WORKFLOW_VAT_FONT_SIZE ) , theme :: WORKFLOW_VAT_TEXT )",1],
+  ["workflow_action_line:galley ( Pos2 :: new ( price_ink . right ( ) - vat_galley . size ( ) . x , price . top ( ) + 3.0 ) , vat_galley , theme :: WORKFLOW_VAT_TEXT )",1],
+  ["shipment_line:add_sized ( [ name_width , theme :: WORKFLOW_DETAIL_ROW_CONTENT_HEIGHT ] , egui :: Label :: new ( typography :: body ( name ) . color ( preview_ink ) ) . truncate ( ) )",1],
+  ["shipment_line:add_sized ( [ product_width , theme :: WORKFLOW_DETAIL_ROW_CONTENT_HEIGHT ] , egui :: Label :: new ( typography :: body ( & summary ) . color ( preview_ink ) ) . truncate ( ) )",1],
+  ["shipment_line:rect_filled ( Rect :: from_min_max ( Pos2 :: new ( rect . left ( ) , rect . top ( ) ) , Pos2 :: new ( rect . left ( ) + theme :: WORKFLOW_SELECTED_STRIPE , rect . bottom ( ) ) ) , 0.0 , color )",1],
+  ["shipment_line:rect_stroke ( rect . shrink ( 0.5 ) , theme :: CONTROL_RADIUS as f32 , egui :: Stroke :: new ( source_highlight :: ACTIVE_BORDER_WIDTH , source_highlight :: ACTIVE_BORDER ) , egui :: StrokeKind :: Inside , )",1],
+  ["group_frame:interact ( label . rect , Id :: new ( ( <literal> , ship . id . as_str ( ) , in_preview ) ) , egui :: Sense :: click ( ) )",1],
+  ["group_frame:paint_button_hover ( ui , & response , 0.0 )",1],
+  ["pending_frame:interact ( response . rect , Id :: new ( ( <literal> , draft . id . as_str ( ) , 0 usize , in_preview ) ) , egui :: Sense :: click ( ) )",1],
+  ["pending_frame:paint_button_hover ( ui , & action , 0.0 )",2],
+  ["pending_frame:interact ( response . rect , Id :: new ( ( <literal> , draft . id . as_str ( ) , index , in_preview ) ) , egui :: Sense :: click ( ) )",1],
+]);
+const workflowContracts = {
+  "workflow_auxiliary_at:workflow_fixed_action":1,
+  "workflow_primary_at:workflow_fixed_action":1,
+  "workflow_header:workflow_auxiliary_at":2,
+  "workflow_action_line:workflow_primary_at":1,
+  "workflow_action_line:workflow_auxiliary_at":1,
+};
+
 const controls = [
   "Button :: new (","Frame :: new (","TextEdit :: singleline (",
   "TextEdit :: multiline (","Checkbox :: new (","ComboBox ::",
@@ -134,6 +171,8 @@ export function audit(source,file,checkTableContracts=false){
   const hits=[],used=new Map(),paintUsed=new Map(),sharedCalls=new Map();
   const is=(i,pattern)=>v.slice(i,i+pattern.split(" ").length).join(" ")===pattern;
   const flag=(i,rule)=>hits.push({line:tokens[i].line,rule});
+  const workflow=file==="workflow_board_ui.rs";
+  const workflowCalls=new Map(),workflowPaintUsed=new Map();
   const base=file==="components.rs"||file==="theme.rs";
   const managed=!base&&(tableScreens.has(file)||v.some((x,i)=>
     x==="components"&&v[i+1]==="::"&&tableMarkers.has(v[i+2])));
@@ -155,6 +194,31 @@ export function audit(source,file,checkTableContracts=false){
     if(is(i,"components ::")&&v[i+3]==="("){
       const key=file+":"+fn+":"+v[i+2];
       sharedCalls.set(key,(sharedCalls.get(key)||0)+1);
+    }
+    if(workflow){
+      const fixed=is(i,"components :: workflow_fixed_action (");
+      const wrapper=["workflow_auxiliary_at","workflow_primary_at"].includes(v[i])
+        &&v[i+1]==="("&&v[i-1]!=="fn";
+      if(fixed||wrapper){
+        const key=fn+":"+(fixed?"workflow_fixed_action":v[i]);
+        const count=(workflowCalls.get(key)||0)+1;
+        workflowCalls.set(key,count);
+        if(count>(workflowContracts[key]||0))
+          flag(i,"unexpected workflow action call: "+key);
+      }
+      const local=v[i]==="."&&workflowPaintMethods.has(v[i+1])&&v[i+2]==="(";
+      const themed=is(i,"theme ::")&&workflowThemePaintMethods.has(v[i+2])&&v[i+3]==="(";
+      if(local||themed){
+        const start=local?i+1:i+2;
+        const fingerprint=v.slice(start,callEnd(start+1)+1).join(" ");
+        const key=fn+":"+fingerprint;
+        const count=(workflowPaintUsed.get(key)||0)+1;
+        workflowPaintUsed.set(key,count);
+        if(count>(workflowPaintAllowance.get(key)||0))
+          flag(i,"raw workflow action/paint: "+v[start]+"; use shared workflow renderer");
+      }
+      if(is(i,"components :: paint_workflow_auxiliary_content ("))
+        flag(i,"workflow auxiliary glyph outside shared renderer");
     }
     if(managed){
       if(is(i,"theme :: TABLE_ROW_ALT_BG"))
@@ -199,6 +263,13 @@ export function audit(source,file,checkTableContracts=false){
         flag(i,"tooltip outside shared overflow policy");
     }
   }
+  if(workflow&&checkTableContracts){
+    for(const [key,required] of Object.entries(workflowContracts)){
+      const count=workflowCalls.get(key)||0;
+      if(count<required)hits.push({line:1,rule:"missing shared workflow contract: "+
+        key+" ("+count+"/"+required+")"});
+    }
+  }
   if(checkTableContracts){
     for(const [scope,required] of Object.entries(tableContracts)){
       if(!scope.startsWith(file+":"))continue;
@@ -214,6 +285,18 @@ export function audit(source,file,checkTableContracts=false){
 
 function selfTest(){
   const cases=[
+    ["workflow_board_ui.rs","fn workflow_auxiliary_at(){components::workflow_fixed_action(ui,id,rect,action,enabled);}",0],
+    ["workflow_board_ui.rs","fn workflow_primary_at(){components::workflow_fixed_action(ui,id,rect,action,enabled);}",0],
+    ["workflow_board_ui.rs","fn workflow_primary_at(){painter.rect_filled(rect,5.0,fill);}",1],
+    ["workflow_board_ui.rs","fn other(){painter.rect_stroke(rect,5.0,stroke,kind);}",1],
+    ["workflow_board_ui.rs","fn workflow_auxiliary_at(){components::paint_workflow_auxiliary_content(p,r,a,c);}",1],
+    ["workflow_board_ui.rs","fn workflow_header(){theme::paint_bordered_surface(p,r,5.0,c,b);}",1],
+    ["workflow_board_ui.rs","fn workflow_action_line(){ui.interact(rect,id,sense);}",1],
+    ["workflow_board_ui.rs","fn other(){theme::action(ui,label,role,enabled);}",1],
+    ["workflow_board_ui.rs","fn other(){components::workflow_fixed_action(ui,id,rect,action,enabled);}",1],
+    ["workflow_board_ui.rs","fn workflow_compact_rows(){painter.rect_filled(divider,0.0,theme::WORKFLOW_CARD_BORDER);painter.rect_filled(divider,0.0,theme::WORKFLOW_CARD_BORDER);}",1],
+    ["workflow_board_ui.rs","#[cfg(test)] fn t(){painter.rect_filled(rect,5.0,fill);} fn workflow_primary_at(){components::workflow_fixed_action(ui,id,rect,action,enabled);}",0],
+    ["workflow_board_ui.rs","fn other(){/* painter.rect_filled(r,5.0,c); */ let note=\"theme::action(ui,label,role,enabled)\";}",0],
     ["product_manager.rs","fn render(){egui::ScrollArea :: both ( );}",1],
     ["main.rs","fn render(){egui::ScrollArea::both();}",1],
     ["alias_manager.rs","fn show_page(){egui::ScrollArea::vertical();}",1],
@@ -262,7 +345,9 @@ function selfTest(){
   for(const [file,source,count] of cases)assert.equal(audit(source,file).length,count,source);
   assert.equal(audit("fn show_page(){}","product_manager.rs",true).length,7);
   assert.equal(audit("fn show(){components::management_row(ui,id,c,t,i);components::management_client_header(ui,h,c,l,w,s);}","client_chooser.rs",true).length,0);
-  console.log("EGUI_SHARED_UI_SELFTEST_PASS",cases.length+2);
+  assert.equal(audit("fn workflow_primary_at(){}","workflow_board_ui.rs",true).length,5);
+  assert.equal(audit("fn workflow_auxiliary_at(){components::workflow_fixed_action(ui,id,r,a,e);} fn workflow_primary_at(){components::workflow_fixed_action(ui,id,r,a,e);} fn workflow_header(){workflow_auxiliary_at();workflow_auxiliary_at();} fn workflow_action_line(){workflow_primary_at();workflow_auxiliary_at();}","workflow_board_ui.rs",true).length,0);
+  console.log("EGUI_SHARED_UI_SELFTEST_PASS",cases.length+4);
 }
 
 function main(){
