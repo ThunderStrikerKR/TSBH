@@ -360,9 +360,7 @@ impl ClientChooser {
                                                             (components::client_tier_label(&data.tier),
                                                                 &data.conditions),
                                                         ],Some(&data.tier),index
-                                                    ).on_hover_text(if selected {
-                                                        "현재 연결된 거래처"
-                                                    }else{"클릭하여 거래처 선택"});
+                                                    );
                                                     if selected {
                                                         row_ui.painter().with_clip_rect(clip)
                                                             .rect_stroke(
