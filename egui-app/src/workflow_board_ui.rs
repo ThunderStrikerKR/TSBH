@@ -667,7 +667,9 @@ fn shipment_line(
     let fill=shipment_row_fill(chosen,previewed);
     let outer=ui.available_width();
     let summary=shipment_product_summary(products);
-    let preview_ink=if previewed && !chosen{
+    let preview_ink=if chosen{
+        theme::WORKFLOW_SELECTED_ROW_TEXT
+    }else if previewed{
         source_highlight::ACTIVE_TEXT
     }else{theme::TEXT};
     let response=theme::workflow_shipment_row_frame(fill)
@@ -1729,13 +1731,14 @@ mod linked_highlight_palette_tests {
     }
 
     #[test]
-    fn react_amber_palette_preserves_selection_geometry_and_white_buttons() {
+    fn gold_selection_palette_preserves_selection_geometry_and_white_buttons() {
         use egui::Color32;
         assert_eq!(theme::SELECTED_ORDER,Color32::from_rgb(245,158,11));
         assert_eq!(theme::WORKFLOW_SELECTED_BORDER,theme::SELECTED_ORDER);
         assert_eq!(theme::WORKFLOW_SELECTED_STRIPE,2.0);
         assert_eq!(theme::WORKFLOW_SELECTED_BG,Color32::from_rgb(36,36,36));
-        assert_eq!(shipment_row_fill(true,false),Color32::from_rgba_unmultiplied(245,158,11,51));
+        assert_eq!(shipment_row_fill(true,false),Color32::from_rgb(128,90,25));
+        assert_eq!(theme::WORKFLOW_SELECTED_ROW_TEXT,Color32::from_rgb(255,243,213));
         assert_eq!(shipment_row_fill(true,true),shipment_row_fill(true,false));
         assert_eq!(theme::ReviewTone::Action.palette(),(
             Color32::from_rgb(46,36,25),Color32::from_rgb(245,158,11),
