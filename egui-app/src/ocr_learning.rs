@@ -11,6 +11,7 @@ pub const MAX_RULES_PER_REVIEW: usize = 12;
 /// The two learning families are reported separately, even though the
 /// employee sees one proposed OCR text. This makes audit/debugging explicit
 /// without ever turning a candidate into a confirmed order.
+#[cfg(test)]
 #[derive(Clone,Debug,Default,PartialEq,Eq)]
 pub struct LearningBreakdown{
     pub repeated_error_corrections:usize,
@@ -24,6 +25,7 @@ pub struct Suggestion{
     pub text:String,
     pub replacements:usize,
     pub patterns:usize,
+    #[cfg(test)]
     pub learning:LearningBreakdown,
 }
 
@@ -146,6 +148,7 @@ pub fn suggest(
     }
     Suggestion{
         text:current,replacements,patterns,
+        #[cfg(test)]
         learning:LearningBreakdown{
             repeated_error_corrections:replacements,
             repeated_error_patterns:patterns,
@@ -330,6 +333,7 @@ pub fn suggest_with_layout(
         text:ordinary.text,
         replacements:ordinary.replacements+joins,
         patterns:ordinary.patterns+usize::from(joins>0),
+        #[cfg(test)]
         learning:LearningBreakdown{
             repeated_error_corrections:ordinary.replacements,
             client_form_corrections:joins,

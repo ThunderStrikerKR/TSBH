@@ -168,65 +168,6 @@ pub(super) fn account_for<'a>(state: &'a Value,group:&Value,order:&Value,client:
         else {str_field(field(settings,"brandAccounts"),"BANDOSTAND")};
     find_by_id(accounts,if id.is_empty() {str_field(settings,"defaultAccountId")} else {id})
 }
-fn valid_contact(value:&str)->bool {
-    let digits:String=value.chars().filter(|c|![' ','(',')','.','-'].contains(c)).collect();
-    let numeric=digits.chars().all(|c|c.is_ascii_digit());
-    numeric && ((digits.starts_with('0') && (9..=11).contains(&digits.len())) ||
-        (digits.starts_with("050") && digits.len()==12)) &&
-        (!digits.starts_with("010") || digits.len()==11)
-}
-fn valid_address(row:&Value,legacy:bool)->bool {
-    let address=str_field(row,"address").trim();
-    if address.is_empty() || (legacy && str_field(row,"addressStatus")=="CONFIRMED") {return legacy && !address.is_empty();}
-    if str_field(row,"addressStatus")=="INCOMPLETE" || (address.contains('#') || address.contains('@')) {return false;}
-    // Conservative non-regex equivalent for common road / lot / PO box forms.
-    let markers=["대로","로","길","동 ","리 ","읍 ","면 ","사서함"];
-    markers.iter().any(|m|address.match_indices(*m).any(|(i,_)| {
-        address[i+m.len()..].trim_start().chars().next().is_some_and(|c|c.is_ascii_digit())
-    }))
-}
-fn basic_issues(order:&Value,recipient:&Value,client:&Value) -> Vec<String> {
-    let mut issues=Vec::new();
-    let name=if str_field(recipient,"name").is_empty() {"수취인"}
-        else {str_field(recipient,"name")};
-    if str_field(recipient,"name").trim().is_empty() {issues.push(format!("{name}: 수취인 이름을 확인하세요"));}
-    if !valid_address(recipient,field(order,"receptionVersion").as_i64()!=Some(1)) {
-        issues.push(format!("{name}: 상세 배송주소가 부족합니다"));
-    }
-    let phone=str_field(recipient,"phone");
-    let mobile=str_field(recipient,"mobile");
-    if !valid_contact(phone) && !valid_contact(mobile) {
-        issues.push(format!("{name}: 연락처를 확인하세요"));
-    }
-    if !rows(field(recipient,"unassignedEvidence")).is_empty() {
-        issues.push(format!("{name}: 상품 또는 수량 정보가 연결되지 않았습니다"));
-    }
-    if rows(field(recipient,"items")).is_empty() {issues.push(format!("{name}: 상품명 누락"));}
-    for item in rows(field(recipient,"items")) {
-        if str_field(item,"productId").is_empty() || str_field(item,"variantId").is_empty() {
-            issues.push(format!("{name}: 미등록 상품입니다."));
-        }
-        if flag(field(item,"modelProposal"),"required") {
-            issues.push(format!("{name}: 추천 상품의 고객 확인이 필요합니다"));
-        }
-        if field(item,"quantityConfirmed").as_bool()==Some(false) {
-            issues.push(format!("{name}: 상품에 귀속된 수량을 확정하세요."));
-        }
-        if field(item,"quantity").as_i64().is_none_or(|n|n<=0) {
-            issues.push(format!("{name}: 수량을 확인하세요"));
-        }
-        if str_field(order,"orderType")!="RETAIL" &&
-            !str_field(client,"id").is_empty() &&
-            safe(field(item,"unitPrice")).is_none() {
-            issues.push(format!("{name}: 판매가를 등록하세요"));
-        }
-        if rows(field(item,"issues")).iter().any(|v|v.as_str().is_some_and(|s|
-            s.contains("색상") || s.contains("옵션"))) {
-            issues.push(format!("{name}: 정확한 상품 구성을 확인하세요"));
-        }
-    }
-    issues
-}
 fn stage_issues(state:&Value,group_id:&str,next:i64)->Result<Vec<String>,String>{
     super::workflow_issues::stage_issues(state,group_id,next)
 }

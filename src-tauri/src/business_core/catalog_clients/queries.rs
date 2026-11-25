@@ -124,14 +124,6 @@ fn family_kind(text:&str)->Option<&'static str>{
         Some("보면대")
     }else{None}
 }
-fn expression_key(text:&str)->String{
-    let re=Regex::new(r"(?i)\s*\d+\s*(?:개|대|세트|ea).*$").unwrap();
-    let normalized=re.replace(text,"");
-    normalized.trim().to_uppercase().chars()
-        .filter(|c|!c.is_whitespace()).collect::<String>()
-        .strip_prefix("BD").unwrap_or_else(||"")
-        .to_owned()
-}
 // The JS modelKey drops only an initial BD; keep the original key when there
 // is no prefix (not an empty identity).
 fn model_expression(text:&str)->String{

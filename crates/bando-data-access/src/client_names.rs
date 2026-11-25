@@ -5,9 +5,6 @@ use rusqlite::{params, Connection, TransactionBehavior};
 use serde_json::{json, Value};
 use std::path::Path;
 
-fn text<'a>(v:&'a Value,key:&str)->&'a str{
-    v.get(key).and_then(Value::as_str).unwrap_or("")
-}
 fn key(raw:&str)->String{
     raw.chars().filter(|ch|!ch.is_whitespace())
         .flat_map(char::to_lowercase).collect()
