@@ -183,3 +183,16 @@ test("one-touch preview enters and restores at 250ms without reflow or delayed c
   assert.match(css, /\.workflow-card-overlay \.workflow-shipment\.previewed::before/);
 
 });
+
+
+test("late SQLite working-copy recovery cannot steal focus from an explicit new receipt", () => {
+  const hub = read("src/HubWorkspace.tsx");
+  assert.match(hub, /const explicitNewReception = useRef\(false\)/);
+  const restore = hub.split("workingReceptionsLoad().then((stored) => {")[1]
+    ?.split("setWorkingStoreReady(true)")[0];
+  assert.ok(restore);
+  assert.match(restore, /setEdits\(\(previous\) => \(\{/,
+    "all recovered receipts remain available on the board");
+  assert.match(restore, /if \(pending && !explicitNewReception\.current\) setReceptionId\(pending\.id\)/);
+  assert.match(hub, /const createReceptionLive = useEventCallback\(\(\) => \{\s*explicitNewReception\.current = true;/);
+});

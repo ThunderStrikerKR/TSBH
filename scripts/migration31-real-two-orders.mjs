@@ -23,14 +23,31 @@ export async function selectGroupForRecipient(page, recipient) {
 
 // The empty intake panel now contains instructional text and buttons.
  // Assert the actual empty-receipt state, not an empty DOM textContent.
-async function waitForFreshReceipt(page){
-  await page.waitForFunction(()=>{
-    const source=document.querySelector(".source-document.source-awaiting-input");
-    const top=document.querySelector(".source-top");
-    return !!source && !!top && !!source.querySelector(".source-intake-choice") &&
-      !top.querySelector(".receipt-client,.source-client-actions");
-  },null,{timeout:20000});
-  await page.getByRole("button",{name:"대리발송",exact:true}).waitFor({state:"visible",timeout:20000});
+async function waitForFreshReceipt(page,{record,snap}){
+  try {
+    await page.waitForFunction(()=>{
+      const source=document.querySelector(".source-document.source-awaiting-input");
+      const top=document.querySelector(".source-top");
+      return !!source && !!top && !!source.querySelector(".source-intake-choice") &&
+        !top.querySelector(".receipt-client,.source-client-actions");
+    },null,{timeout:20000});
+    await page.getByRole("button",{name:"대리발송",exact:true}).waitFor({state:"visible",timeout:20000});
+  } catch (error) {
+    const details=await page.evaluate(async()=>({
+      sourceClass:document.querySelector(".source-document")?.className,
+      sourceText:document.querySelector(".source-document")?.textContent?.slice(0,300),
+      clientText:document.querySelector(".source-top")?.textContent?.slice(0,200),
+      alerts:[...document.querySelectorAll('[role="alert"],[role="status"]')]
+        .map(node=>node.textContent?.slice(0,200)),
+      dialogs:[...document.querySelectorAll('[role="dialog"]')]
+        .map(node=>node.textContent?.slice(0,200)),
+      pending:(await window.bando.workingReceptionsLoad().catch(()=>[]))
+        .map(order=>({id:order.id,clientId:order.clientId,rawLength:order.raw?.length}))
+    }));
+    record("NEW_RECEPTION_FOCUS_DIAGNOSTIC",details);
+    await snap(page,"new-reception-focus-failed");
+    throw error;
+  }
 }
 
 // Real Windows Tauri EXE + WebView2 test: confirm TWO independent orders.
@@ -71,7 +88,7 @@ export async function probeTwoConsecutiveOrders(page,{record,snap},{holdBoth=fal
   // A reload may restore the previously inspected unconfirmed receipt.
   // The independent two-order scenario must explicitly open a fresh one.
   await page.getByRole("button",{name:/새 주문/}).first().click();
-  await waitForFreshReceipt(page);
+  await waitForFreshReceipt(page,{record,snap});
 
   const cases=[
     {name:"김가상",model:"709 2개",address:"경기도 의정부시 시민로 100",
@@ -88,7 +105,7 @@ export async function probeTwoConsecutiveOrders(page,{record,snap},{holdBoth=fal
       // A missing/remounting SourceDocument must NEVER satisfy the fresh
       // draft check (the older "!text.includes(name)" check could pass when
       // the source element was temporarily absent).
-      await waitForFreshReceipt(page);
+      await waitForFreshReceipt(page,{record,snap});
       assert.equal(await page.locator(".receipt-client").count(),0,
         "NEW_ORDER_INHERITED_CLIENT before second clipboard paste");
       record("SIM33_NEW_RECEPTION_INDEPENDENT_BEFORE_PASTE",{
@@ -327,7 +344,7 @@ export async function probeCrossDealerOrderIsolation(page,{record,snap}) {
     });
     await page.getByRole("button",{name:/새 주문/}).first().click();
     // Before pasting, no previous order/client may remain active.
-    await waitForFreshReceipt(page);
+    await waitForFreshReceipt(page,{record,snap});
     assert.equal(await page.locator(".receipt-client").count(),0,
       "P1_NEW_ORDER_STALE_DEALER "+scenario.recipient);
     const chooserBefore=page.getByRole("button",{name:"거래처 찾기",exact:true});

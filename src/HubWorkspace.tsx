@@ -41,6 +41,9 @@ export function HubWorkspace(props: Props) {
   );
   const { state, draft } = props;
   const [receptionId, setReceptionId] = useState(draft.id);
+  // Startup recovery still restores every working copy to the board, but
+  // must never take focus back after an explicit New Order click.
+  const explicitNewReception = useRef(false);
   // A new draft must replace the old order before the next screen paints.
   // Never let a late Rust preview or remembered workflow selection replace
   // the newly blank reception with the first persisted shipment.
@@ -196,7 +199,7 @@ export function HubWorkspace(props: Props) {
       } else if (!current.raw.trim() && !current.clientId &&
           !current.recipients.length && !current.photos?.length) {
         const pending = recovered.find((row) => !row.confirmedAt);
-        if (pending) setReceptionId(pending.id);
+        if (pending && !explicitNewReception.current) setReceptionId(pending.id);
       }
       setWorkingStoreReady(true);
     }).catch((error) =>
@@ -601,6 +604,7 @@ export function HubWorkspace(props: Props) {
     setStageHover(undefined);
   });
   const createReceptionLive = useEventCallback(() => {
+    explicitNewReception.current = true;
     // Multiple unfinished documents stay visible while their SQLite working
     // records are durably saved outside the confirmed order history.
     const draftsToRetain = [draft, receptionOrder].filter((order) =>
