@@ -5,7 +5,7 @@ import { resolve, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import assert from "node:assert/strict";
 
-function scan(source) {
+export function tokenizeRust(source) {
   // Preserve quoted text for diagnostics/fingerprints; ignore comments and
   // braces inside Rust string literals, including raw strings.
   const tokens=[]; let i=0,line=1;
@@ -22,6 +22,11 @@ function scan(source) {
     const m=tail.match(/^(?:r#)?[A-Za-z_][A-Za-z_0-9]*|^\d+(?:\.\d+)?|^(?:::|&&|\|\||=>|==|!=|<=|>=)|^[\s\S]/);
     tokens.push({v:m[0],line,kind:"code"});advance(m[0].length);
   }
+  return tokens;
+}
+
+function scan(source) {
+  const tokens=tokenizeRust(source);
   const v=tokens.map(t=>t.v);const pairs=new Map(),stack=[];
   for(let j=0;j<v.length;j++){if(tokens[j].kind==="literal")continue;if(["(","[","{"].includes(v[j]))stack.push(j);else if([")","]","}"].includes(v[j])){const a=stack.pop();if(a!==undefined&&{"(":")","[":"]","{":"}"}[v[a]]===v[j]){pairs.set(a,j);pairs.set(j,a);}}}
   const state=/^(?:.*(?:error|warning|notice|guidance|feedback|status|pending|busy|loading|ready|dirty|conflict|unassigned|blocked|validation|issues|receiver|empty|retry|edited|failure|success|can_apply|can_save|can_mutate).*)$/i;

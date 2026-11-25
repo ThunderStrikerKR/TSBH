@@ -5,11 +5,13 @@ on:
     paths:
       - 'egui-app/src/**'
       - 'scripts/check-egui-state-layout.mjs'
+      - 'scripts/check-egui-shared-ui.mjs'
       - '.github/workflows/egui-state-layout.yml'
   pull_request:
     paths:
       - 'egui-app/src/**'
       - 'scripts/check-egui-state-layout.mjs'
+      - 'scripts/check-egui-shared-ui.mjs'
       - '.github/workflows/egui-state-layout.yml'
 permissions:
   contents: read
@@ -27,3 +29,6 @@ jobs:
         env:
           UI_DIFF_BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
         run: node scripts/check-egui-state-layout.mjs --base "$UI_DIFF_BASE" --require-base
+
+      - name: Reject shared UI bypasses in all production screens
+        run: node scripts/check-egui-shared-ui.mjs
