@@ -190,6 +190,12 @@ export function audit(source,file,checkTableContracts=false){
   for(let i=0;i<v.length;i++){
     if(v[i]==="fn"&&/^[A-Za-z_]\w*$/.test(v[i+1]??""))fn=v[i+1];
     for(const pattern of retired)if(is(i,pattern))flag(i,"retired UI entry: "+pattern);
+    const overlayNative=["Area :: new (","Window :: new (","Modal :: new (",
+      "Popup :: menu (","Popup :: context_menu (","Popup :: from_response (","Popup :: new (",
+      ". context_menu (",". layer_painter (",". set_sublayer (",
+      "Popup :: open_id (","Popup :: close_all (","Popup :: close_id ("];
+    for(const pattern of overlayNative)
+      if(file!=="overlay.rs"&&is(i,pattern))flag(i,"raw overlay outside shared manager: "+pattern);
     if(retiredTable.has(v[i]))flag(i,"retired table entry: "+v[i]);
     if(is(i,"components ::")&&v[i+3]==="("){
       const key=file+":"+fn+":"+v[i+2];
@@ -241,7 +247,7 @@ export function audit(source,file,checkTableContracts=false){
       }
     }
     if(!base){
-      for(const pattern of controls)if(is(i,pattern))flag(i,"raw shared control: "+pattern);
+      for(const pattern of controls)if(is(i,pattern)&&!(file==="overlay.rs"&&pattern==="Window :: new ("))flag(i,"raw shared control: "+pattern);
       for(const pattern of ["theme :: soft_rule (","theme :: divider (",". separator (",
         ". on_hover_text (",". on_hover_text_at_pointer ("])
         if(is(i,pattern))flag(i,"raw divider/tooltip: "+pattern);
@@ -310,6 +316,10 @@ function selfTest(){
     ["main.rs","#[cfg(test)] mod tests {fn t(){egui::ScrollArea::vertical();}} fn render(){egui::ScrollArea::horizontal();}",1],
     ["new_screen.rs","fn render(){egui::Button :: new ( \"x\" );}",1],
     ["new_screen.rs","fn render(){ui.on_hover_text(\"x\");}",1],
+    ["new_screen.rs","fn render(){egui::Area::new(id);}",1],
+    ["overlay.rs","fn area(){egui::Area::new(id);}",0],
+    ["new_screen.rs","fn render(){egui::Popup::menu(&response);}",1],
+    ["new_screen.rs","fn render(){ctx.set_sublayer(a,b);}",1],
     ["new_screen.rs","fn render(){components::section_divider(ui);}",0],
     ["new_screen.rs","fn render(){components::soft_divider(ui);}",1],
     ["settings_view.rs","fn show_account_rows(){components::soft_divider(ui);}",0],

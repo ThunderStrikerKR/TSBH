@@ -411,9 +411,8 @@ fn crumbs_row(
 fn menu_body(
     menu:&mut Ui,nodes:&[CategoryNode],index:&HashMap<&str,&CategoryNode>,
     state:&mut ExplorerState,selected:&mut String,enabled:bool,
-    allow_empty:bool,changed:&mut bool,trigger_rect:egui::Rect,popup_width:f32,
+    allow_empty:bool,changed:&mut bool,popup_width:f32,
 ){
-    floating_notice::dropdown_popup_trigger(menu.ctx(),trigger_rect);
     // Explicitly fix the menu's content rect. Text length and breadcrumb
     // count may change internal allocation but never the popup width.
     menu.set_min_width(popup_width);
@@ -548,13 +547,10 @@ pub fn category_dropdown(
     // Only shrink to the actual viewport on a genuinely narrow screen.
     let popup_width=theme::CATEGORY_EXPLORER_POPUP_WIDTH
         .min((ui.ctx().content_rect().width()-theme::SPACE_24).max(1.0));
-    egui::Popup::menu(&trigger)
-        .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
-        .show(|menu|{
-            components::attach_popup_to_owner(&trigger,menu);
+    crate::overlay::show_menu(&trigger,None,|menu|{
             menu_body(
                 menu,nodes,&index,&mut state,selected,enabled,allow_empty,
-                &mut changed,trigger.rect,popup_width
+                &mut changed,popup_width
             );
         });
     ctx.data_mut(|data|data.insert_temp(state_id,state));

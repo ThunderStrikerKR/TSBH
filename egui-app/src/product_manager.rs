@@ -1461,9 +1461,7 @@ impl ProductManager {
                                                                     CellNavigationKey::Down,
                                                                     CellNavigationKey::Up
                                                                 );
-                                                            let escape_pressed=inputs.input(|i|
-                                                                i.key_pressed(egui::Key::Escape)
-                                                            );
+                                                            let escape_pressed=crate::overlay::cell_escape_requested(inputs.ctx());
                                                             let response=components::money_field_with_unit(
                                                                 inputs,&mut entry.input,true,"원",
                                                                 theme::SPACE_8-theme::SPACE_4/2.0
@@ -1495,7 +1493,8 @@ impl ProductManager {
                                                             let blurred=response.lost_focus()
                                                                 ||(was_focused&&!response.has_focus());
                                                             let escape=escape_pressed&&(was_focused||response.lost_focus()
-                                                                ||(response.has_focus()&&!response.gained_focus()));
+                                                                ||(response.has_focus()&&!response.gained_focus()))
+                                                                && crate::overlay::take_cell_escape(&response,was_focused);
                                                             let navigation_target=navigation_key
                                                                 .and_then(|navigation|
                                                                     price_navigation_target(
@@ -3053,7 +3052,7 @@ mod tests {
         assert!(editor.contains("response.lost_focus()"));
         assert!(editor.contains("response.gained_focus()"));
         assert!(editor.contains("select_all_price_text("));
-        assert!(editor.contains("egui::Key::Escape"));
+        assert!(editor.contains("crate::overlay::take_cell_escape("));
         assert!(editor.contains("entry.reset_to_original()"));
         let escape_branch=editor.split("if escape{").nth(1).unwrap()
             .split("}else if keyboard_commit").next().unwrap_or("");

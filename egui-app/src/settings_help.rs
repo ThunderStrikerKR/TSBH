@@ -387,8 +387,7 @@ pub fn icon(heading:&mut Ui,title:&str){
             let top=if rect.bottom()+8.0+height<=viewport.bottom()-12.0 {
                 rect.bottom()+8.0
             }else{(rect.top()-height-8.0).max(viewport.top()+12.0)};
-            let response=egui::Area::new(id.with("popup"))
-                .order(egui::Order::Foreground)
+            let response=crate::overlay::area(id.with("popup"),crate::overlay::AreaRole::Help)
                 .fixed_pos(Pos2::new(left,top))
                 .movable(false)
                 .show(&ctx,|popup|{

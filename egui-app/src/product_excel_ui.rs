@@ -206,15 +206,8 @@ impl ProductExcelUi {
             crate::floating_notice::Tone::Error,
             if self.review.is_none(){self.error.as_deref()}else{None}
         );
-        egui::Popup::menu(trigger)
-            .align(egui::RectAlign::BOTTOM_END)
-            .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
-            .show(|menu|{
-                crate::components::attach_popup_to_owner(trigger,menu);
-                crate::floating_notice::dropdown_popup_trigger(
-                    menu.ctx(),trigger.rect
-                );
-                let width=300.0_f32.min(
+        crate::overlay::show_menu(trigger,Some(egui::RectAlign::BOTTOM_END),|menu|{
+            let width=300.0_f32.min(
                     (menu.ctx().content_rect().width()-theme::SPACE_24).max(1.0)
                 );
                 menu.set_min_width(width);

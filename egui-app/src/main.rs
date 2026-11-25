@@ -2732,7 +2732,7 @@ impl BandoEgui {
     fn publish_validation_focus(response:&egui::Response,ctx:&egui::Context,
         channel:&'static str,message:&str){
         response.scroll_to_me(Some(Align::Center));
-        floating_notice::action_rect(ctx,channel,response.rect);
+        floating_notice::action_response(ctx,channel,response);
         floating_notice::publish(ctx,channel,floating_notice::Tone::Validation,message);
     }
     /// Start only after a real failed native confirmation; never auto-approve.
@@ -7298,9 +7298,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                                         Self::publish_validation_focus(&response,contents.ctx(),"reception.freight",
                                                             "배송 운임을 입력하세요.");
                                                     }
-                                                    if response.has_focus() && contents.input(|input|
-                                                        input.key_pressed(egui::Key::Escape)
-                                                    ){
+                                                    if overlay::take_cell_escape(&response,false){
                                                         workflow_freight_cancel=true;
                                                     }else if response.has_focus() && contents.input(|input|
                                                         input.key_pressed(egui::Key::Enter)
@@ -7813,8 +7811,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                             Self::show_inline_validation_focus(
                                                 &mut self.inline_validation_focus,&target,&edit_response,fields.ctx());
 
-                                            if edit_response.has_focus() && fields.input(|input|
-                                                input.key_pressed(egui::Key::Escape)){
+                                            if overlay::take_cell_escape(&edit_response,false){
                                                 inline_cancel=true;
                                             }else if let Some(key)=navigation{
                                                 inline_navigation_request=Some((target.clone(),key));
@@ -7982,8 +7979,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                                         Self::show_inline_validation_focus(
                                                             &mut self.inline_validation_focus,&target,&result,items_ui.ctx());
 
-                                                        if result.has_focus() && items_ui.input(|input|
-                                                            input.key_pressed(egui::Key::Escape)) {
+                                                        if overlay::take_cell_escape(&result,false) {
                                                             inline_cancel=true;
                                                         }else if let Some(key)=navigation{
                                                             inline_navigation_request=Some((target.clone(),key));
@@ -8079,8 +8075,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                             Self::show_inline_validation_focus(
                                                 &mut self.inline_validation_focus,&freight_target,&result,items_ui.ctx());
 
-                                            if result.has_focus() && items_ui.input(|input|
-                                                input.key_pressed(egui::Key::Escape)){
+                                            if overlay::take_cell_escape(&result,false){
                                                 inline_cancel=true;
                                             }else if let Some(key)=navigation{
                                                 inline_navigation_request=Some((freight_target.clone(),key));
@@ -9611,6 +9606,7 @@ impl eframe::App for BandoEgui {
         let frame_started=Instant::now();
         self.window_state.update(ctx);
         overlay::begin_frame(ctx);
+        overlay::begin_page(ctx,self.page.label());
         floating_notice::begin_page(ctx,self.page.label());
         if let Some(page)=self.client_pending_page{
             let approved=self.client_manager.as_mut()
@@ -9751,6 +9747,7 @@ impl eframe::App for BandoEgui {
             self.guided_inline_target=None;
         }
         self.top_bar(ctx);
+        overlay::begin_page(ctx,self.page.label());
         if self.page == Page::Reception {
             self.reception(ctx);
         } else {
@@ -9838,6 +9835,7 @@ impl eframe::App for BandoEgui {
         floating_notice::sync(ctx,"workflow_board_read_error","reception.workflow.read",
             floating_notice::Tone::Error,
             if self.page==Page::Reception{self.workflow_read_error.as_deref()}else{None});
+        overlay::finish_frame(ctx);
         floating_notice::show(ctx);
         // Developer console only; never expose performance diagnostics as
         // product notifications or include any order/customer data.

@@ -325,9 +325,9 @@ fn paint_manual_source_drag_preview(
     let desired_block_min=pointer-anchor_offset;
     let translation=desired_block_min-original_bounds.min;
     let galley_pos=egui::Pos2::ZERO+translation;
-    let painter=ctx.layer_painter(egui::LayerId::new(
-        egui::Order::Tooltip,egui::Id::new("manual-source-drag-preview")
-    ));
+    let Some(painter)=crate::overlay::drag_painter(ctx,
+        components::modal_window_layer("bando-native-manual-classification"),
+        egui::Id::new("manual-source-drag-preview")) else{return;};
     for rect in &original_geometry.rects {
         painter.rect_filled(
             rect.translate(translation),original_geometry.style.radius,
@@ -2452,8 +2452,7 @@ impl ManualWorkspace {
                                                                         && self.edit_text==self.current_value()
                                                                         && !submit_direct;
                                                                     if actions_enabled {
-                                                                        interaction.context_menu(|menu|{
-                                                                            components::attach_popup_to_owner(&interaction,menu);
+                                                                        crate::overlay::show_context_menu(&interaction,|menu|{
                                                                             if theme::action(
                                                                                 menu,"상품 상세 수정",ButtonRole::Standard,true
                                                                             ).clicked(){

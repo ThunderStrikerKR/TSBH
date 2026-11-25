@@ -275,7 +275,7 @@ pub fn truncated_label_for_explicit_tooltip(text:impl Into<egui::WidgetText>)->e
 pub fn overflow_tooltip(response:Response,overflow:bool,full:&str)->Response{
     if overflow_tooltip_needed(overflow,full)
         && response.rect.width()>0.0 && response.rect.height()>0.0{
-        response.on_hover_text(full)
+        if crate::overlay::tooltip_allowed(&response){response.on_hover_text(full)}else{response}
     }else{response}
 }
 
@@ -1847,11 +1847,8 @@ pub fn modal_master_ocr_body_is_usable(body:Vec2)->bool{
 pub fn modal_window(
     ctx:&egui::Context,title:&str,id:&'static str,work_area:egui::Rect
 ) -> egui::Window<'static> {
-    crate::overlay::register_modal(ctx,modal_window_layer(id));
-    egui::Window::new(typography::modal_title(title))
+    crate::overlay::window(ctx,typography::modal_title(title),egui::Id::new(id))
         .title_bar(false)
-        .id(egui::Id::new(id))
-        .order(egui::Order::Foreground)
         .pivot(egui::Align2::CENTER_CENTER)
         // The caller already excluded navigation and KakaoTalk.
         .fixed_pos(work_area.center())
@@ -2735,8 +2732,7 @@ pub fn modal_backdrop(
     } else {
         theme::MODAL_BACKDROP_ALPHA
     };
-    let area=egui::Area::new(egui::Id::new(id))
-        .order(if nested {egui::Order::Foreground}else{egui::Order::Middle})
+    let area=crate::overlay::area(egui::Id::new(id),crate::overlay::AreaRole::Backdrop{nested})
         .fixed_pos(viewport.min)
         .movable(false)
         // The backdrop cannot rise above the dialog after an outside click.
@@ -3419,11 +3415,8 @@ pub fn reception_recipient_navigator(
             );
             let label=overflow_tooltip(label,clipped,display);
             if clipped{
-                egui::Popup::menu(&label)
-                    .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
-                    .show(|popup|{
-                        attach_popup_to_owner(&label,popup);
-                        popup.set_max_width(320.0);
+                crate::overlay::show_menu(&label,None,|popup|{
+            popup.set_max_width(320.0);
                         popup.add(egui::Label::new(typography::body(display)).wrap());
                     });
             }
@@ -4334,10 +4327,7 @@ pub fn date_calendar(
     let mut chosen=None;
     let selected_date=NaiveDate::parse_from_str(selected,"%Y-%m-%d").ok();
     let today=(chrono::Utc::now()+Days::hours(9)).date_naive();
-    egui::Popup::menu(trigger)
-        .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
-        .show(|calendar|{
-            attach_popup_to_owner(trigger,calendar);
+    crate::overlay::show_menu(trigger,None,|calendar|{
             calendar.spacing_mut().item_spacing=egui::vec2(
                 theme::CALENDAR_GRID_GAP,theme::CALENDAR_GRID_GAP
             );
@@ -5076,14 +5066,9 @@ fn management_dropdown_inner(
     let trigger=management_dropdown_trigger_full_label(
         ui,label,full_label,width,enabled,indicator
     );
-    let rect=trigger.rect;
-    egui::Popup::menu(&trigger)
-        .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
-        .show(|menu|{
-            attach_popup_to_owner(&trigger,menu);
+    crate::overlay::show_menu(&trigger,None,|menu|{
             // Every selectable row reports its parent trigger, never its
             // popup-row pointer, to the shared action-notice origin.
-            crate::floating_notice::dropdown_popup_trigger(menu.ctx(),rect);
             menu.set_min_width(width);
             if compact {menu.set_max_width(width);}
             management_dropdown_option_palette(menu);
@@ -5151,11 +5136,7 @@ pub fn management_searchable_dropdown(
     // long brand names must never stretch the popup or surrounding toolbar.
     let popup_width=width.max(theme::MANAGEMENT_SEARCHABLE_POPUP_MIN_WIDTH)
         .min((ctx.content_rect().width()-theme::SPACE_24).max(1.0));
-    egui::Popup::menu(&trigger)
-        .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
-        .show(|menu|{
-            attach_popup_to_owner(&trigger,menu);
-            crate::floating_notice::dropdown_popup_trigger(menu.ctx(),rect);
+    crate::overlay::show_menu(&trigger,None,|menu|{
             menu.set_min_width(popup_width);
             menu.set_max_width(popup_width);
             menu.set_width(popup_width);
@@ -8598,7 +8579,8 @@ mod management_dropdown_unification_tests {
         assert_eq!(source[first..end].matches("management_dropdown_option_inner(").count(),3);
         assert!(!source[first..end].contains("dropdown_option_selected(ui.ctx())"));
         let popup=source.find("fn management_dropdown_inner(").unwrap();
-        assert!(source[popup..inner].contains("dropdown_popup_trigger(menu.ctx(),rect)"));
+        assert!(source[popup..inner].contains("crate::overlay::show_menu("));
+        assert!(include_str!("overlay.rs").contains("dropdown_popup_trigger_response(owner)"));
     }
 
     #[test]

@@ -1,11 +1,15 @@
 //! Shared egui overlay lifetime and input-priority policy.
 //! Geometry and business actions remain owned by their existing components.
-use eframe::egui::{self,Context,Id,LayerId,Order};
+use eframe::egui::{self,Context,Id,LayerId,Order,Response,Ui};
+use std::collections::{HashMap,HashSet};
 
 #[derive(Clone,Default)]
 struct FrameScope {
     pass:u64,
-    modal:Option<LayerId>,
+    page:Option<&'static str>,
+    modals:Vec<LayerId>,
+    popup_owners:HashMap<LayerId,LayerId>,
+    seen_popups:HashSet<LayerId>,
     popup_at_start:bool,
     escape_claimed:bool,
 }
@@ -18,7 +22,8 @@ fn with_scope<R>(ctx:&Context,f:impl FnOnce(&mut FrameScope)->R)->R{
             pass,popup_at_start,..Default::default()
         });
         if state.pass!=pass{
-            state=FrameScope{pass,popup_at_start,..Default::default()};
+            state=FrameScope{pass,popup_at_start,page:state.page,
+                popup_owners:std::mem::take(&mut state.popup_owners),..Default::default()};
         }
         let out=f(&mut state);
         data.insert_temp(id,state);
@@ -28,10 +33,113 @@ fn with_scope<R>(ctx:&Context,f:impl FnOnce(&mut FrameScope)->R)->R{
 /// Snapshot popup ownership BEFORE any render path can consume Escape.
 pub fn begin_frame(ctx:&Context){with_scope(ctx,|_|());}
 pub fn register_modal(ctx:&Context,layer:LayerId){
-    with_scope(ctx,|state|state.modal=Some(layer));
+    with_scope(ctx,|state|{
+        state.modals.retain(|old|*old!=layer);
+        state.modals.push(layer);
+    });
 }
 pub fn modal_scope(ctx:&Context)->Option<LayerId>{
-    with_scope(ctx,|state|state.modal)
+    with_scope(ctx,|state|state.modals.last().copied())
+}
+/// Page transitions explicitly retire native popup memory, including a
+/// menu whose trigger was virtualized away before the next render.
+pub fn begin_page(ctx:&Context,page:&'static str){
+    let changed=with_scope(ctx,|s|{
+        let changed=s.page.is_some_and(|old|old!=page);
+        s.page=Some(page);
+        if changed{s.popup_owners.clear();s.seen_popups.clear();s.modals.clear();}
+        changed
+    });
+    if changed{egui::Popup::close_all(ctx);}
+}
+fn owner_in_scope(s:&FrameScope,mut layer:LayerId)->Option<LayerId>{
+    for _ in 0..=s.popup_owners.len(){
+        if s.modals.contains(&layer){return Some(layer);}
+        let Some(parent)=s.popup_owners.get(&layer)else{return None;};
+        if *parent==layer{return None;}
+        layer=*parent;
+    }
+    None
+}
+/// Use the actual widget layer, not the last modal rendered.
+pub fn response_owner(response:&Response)->Option<LayerId>{
+    with_scope(&response.ctx,|s|owner_in_scope(s,response.layer_id))
+}
+fn record_popup(owner:&Response,popup:&Ui){
+    let child=popup.layer_id();
+    with_scope(popup.ctx(),|s|{
+        s.popup_owners.insert(child,owner.layer_id);
+        s.seen_popups.insert(child);
+    });
+    attach_popup(popup.ctx(),owner.layer_id,child);
+    crate::floating_notice::dropdown_popup_trigger_response(owner);
+}
+/// egui owns native outside-click and option-close behavior; all callers
+/// use the same owner registration and close policy.
+pub fn show_menu<R>(owner:&Response,align:Option<egui::RectAlign>,
+    content:impl FnOnce(&mut Ui)->R)->Option<egui::InnerResponse<R>>{
+    if !owner.enabled(){
+        egui::Popup::close_id(&owner.ctx,egui::Popup::default_response_id(owner));
+        return None;
+    }
+    let popup=egui::Popup::menu(owner)
+        .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside);
+    let popup=if let Some(align)=align{popup.align(align)}else{popup};
+    popup.show(|ui|{record_popup(owner,ui);content(ui)})
+}
+pub fn show_context_menu(owner:&Response,content:impl FnOnce(&mut Ui)){
+    if !owner.enabled(){
+        egui::Popup::close_id(&owner.ctx,egui::Popup::default_response_id(owner));
+        return;
+    }
+    egui::Popup::context_menu(owner).show(|ui|{record_popup(owner,ui);content(ui);});
+}
+/// Close only orphaned native popup IDs, never a different live menu.
+pub fn finish_frame(ctx:&Context){
+    let stale=with_scope(ctx,|s|{
+        let active=s.modals.last().copied();
+        let stale:Vec<_>=s.popup_owners.iter().filter_map(|(popup,parent)|
+            (!s.seen_popups.contains(popup)||owner_in_scope(s,*parent)!=active)
+                .then_some(*popup)).collect();
+        for popup in &stale{s.popup_owners.remove(popup);}
+        stale
+    });
+    for popup in stale{egui::Popup::close_id(ctx,popup.id);}
+}
+pub enum AreaRole{Backdrop{nested:bool},Preview,Notice,Help}
+pub fn area(id:Id,role:AreaRole)->egui::Area{
+    let order=match role{
+        AreaRole::Backdrop{nested:false}=>Order::Middle,
+        AreaRole::Notice=>Order::Tooltip,
+        _=>Order::Foreground,
+    };
+    egui::Area::new(id).order(order).movable(false)
+}
+pub fn window(ctx:&Context,title:impl Into<egui::WidgetText>,id:Id)->egui::Window<'static>{
+    register_modal(ctx,LayerId::new(Order::Foreground,id));
+    egui::Window::new(title).id(id).order(Order::Foreground)
+}
+pub fn drag_painter(ctx:&Context,owner:LayerId,id:Id)->Option<egui::Painter>{
+    (modal_scope(ctx)==Some(owner)&&!egui::Popup::is_any_open(ctx))
+        .then(||ctx.layer_painter(LayerId::new(Order::Tooltip,id)))
+}
+pub fn tooltip_allowed(response:&Response)->bool{
+    let ctx=&response.ctx;
+    !egui::Popup::is_any_open(ctx)
+        && modal_scope(ctx).is_none_or(|active|response_owner(response)==Some(active))
+        && ctx.memory(|m|m.allows_interaction(response.layer_id))
+}
+pub fn cell_escape_requested(ctx:&Context)->bool{
+    ctx.input(|input|input.key_pressed(egui::Key::Escape))
+        && with_scope(ctx,|s|!s.popup_at_start&&!s.escape_claimed)
+}
+pub fn take_cell_escape(response:&Response,was_focused:bool)->bool{
+    if !(response.has_focus()||response.lost_focus()||was_focused)
+        || !response.enabled()
+        || !response.ctx.memory(|m|m.allows_interaction(response.layer_id)){
+        return false;
+    }
+    take_modal_escape(&response.ctx)
 }
 /// Same-order popups stay immediately above their own window, not above
 /// a subsequently opened modal. Lower-order owners need no sublayer.
@@ -102,6 +210,31 @@ mod modal_input_routing_tests{
             begin_frame(ctx);
             assert!(take_modal_escape(ctx));
             assert!(!take_modal_escape(ctx));
+        });
+    }
+    #[test]
+    fn popup_owner_is_resolved_from_the_actual_layer_and_orphans_close(){
+        let ctx=Context::default();
+        let root=LayerId::new(Order::Foreground,Id::new("root"));
+        let child=LayerId::new(Order::Foreground,Id::new("child"));
+        let popup=LayerId::new(Order::Foreground,Id::new("popup"));
+        let _=ctx.run(egui::RawInput::default(),|ctx|{
+            begin_page(ctx,"Products");
+            register_modal(ctx,root);
+            with_scope(ctx,|s|{
+                s.popup_owners.insert(popup,root);
+                s.seen_popups.insert(popup);
+                assert_eq!(owner_in_scope(s,popup),Some(root));
+            });
+            egui::Popup::open_id(ctx,popup.id);
+            register_modal(ctx,child);
+            finish_frame(ctx);
+            assert!(!egui::Popup::is_id_open(ctx,popup.id));
+        });
+        let _=ctx.run(egui::RawInput::default(),|ctx|{
+            egui::Popup::open_id(ctx,popup.id);
+            begin_page(ctx,"History");
+            assert!(!egui::Popup::is_id_open(ctx,popup.id));
         });
     }
     #[test]

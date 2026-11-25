@@ -1142,8 +1142,7 @@ pub fn show(
         let pane_clip=ui.clip_rect();
         let mut overlay_event=None;
         let mut overlay_hover=None;
-        let area=egui::Area::new(Id::new(("pending-card-overlay",draft.id.clone())))
-            .order(egui::Order::Foreground)
+        let area=crate::overlay::area(Id::new(("pending-card-overlay",draft.id.clone())),crate::overlay::AreaRole::Preview)
             .fixed_pos(Pos2::new(pos.x,pos.y))
             .movable(false);
         let response=area.show(ui.ctx(),|overlay_ui|{
@@ -1187,8 +1186,7 @@ pub fn show(
         let pane_clip=ui.clip_rect();
         let mut overlay_event=None;
         let mut hovered_row=None;
-        let area=egui::Area::new(Id::new(("workflow-card-overlay",group.id.clone())))
-            .order(egui::Order::Foreground)
+        let area=crate::overlay::area(Id::new(("workflow-card-overlay",group.id.clone())),crate::overlay::AreaRole::Preview)
             .fixed_pos(Pos2::new(pos.x,pos.y))
             .movable(false);
         let response=area.show(ui.ctx(),|ui|{

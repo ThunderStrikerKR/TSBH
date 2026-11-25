@@ -2094,13 +2094,8 @@ impl FreightManager {
                                             buttons,"관리",
                                             theme::ButtonRole::TableSecondary,enabled
                                         );
-                                        egui::Popup::menu(&trigger)
-                                            .close_behavior(
-                                                egui::PopupCloseBehavior::CloseOnClickOutside
-                                            )
-                                            .show(|menu|{
-                                                components::attach_popup_to_owner(&trigger,menu);
-                                                menu.set_min_width(148.0);
+                                        crate::overlay::show_menu(&trigger,None,|menu|{
+            menu.set_min_width(148.0);
                                                 menu.spacing_mut().item_spacing.y=
                                                     theme::SPACE_4;
                                                 if theme::action_full_width(
@@ -2481,13 +2476,8 @@ impl FreightManager {
                             // Registration and verification are retained in
                             // the record, but are no longer table columns.
                             // Popup lives above the virtualized row layout.
-                            egui::Popup::menu(&trigger)
-                                .close_behavior(
-                                    egui::PopupCloseBehavior::CloseOnClickOutside
-                                )
-                                .show(|menu|{
-                                    components::attach_popup_to_owner(&trigger,menu);
-                                    menu.set_min_width(280.0);
+                            crate::overlay::show_menu(&trigger,None,|menu|{
+            menu.set_min_width(280.0);
                                     menu.label(typography::field_label("등록일"));
                                     let at=text(record,"at");
                                     menu.label(typography::body(

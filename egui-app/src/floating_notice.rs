@@ -116,9 +116,20 @@ fn record_origin(ctx:&Context,source:&'static str,origin:ElementOrigin,kind:Anch
 /// Record the original click *when it happens*, not after async Rust finishes.
 pub fn clicked(ctx: &Context, source: &'static str, response: &Response) {
     if !response.clicked() { return; }
-    action_rect(ctx,source,response.rect);
+    action_response(ctx,source,response);
 }
 
+pub fn action_response(ctx:&Context,source:&'static str,response:&Response){
+    let origin=response_origin(response);
+    remember_origin(ctx,origin);
+    record_origin(ctx,source,origin,AnchorKind::Action);
+}
+fn response_origin(response:&Response)->ElementOrigin{
+    ElementOrigin{rect:response.rect,owner:crate::overlay::response_owner(response)}
+}
+fn remember_origin(ctx:&Context,origin:ElementOrigin){
+    if origin.rect.is_positive(){with_state(ctx,|s|s.last_element=Some(origin));}
+}
 /// Custom buttons may use a release hit-test instead of Response::clicked.
 pub fn action_rect(ctx:&Context,source:&'static str,rect:Rect){
     remember_element(ctx,rect);
@@ -132,7 +143,7 @@ pub fn remember_element(ctx:&Context,rect:Rect){
     }
 }
 pub fn remember_response(ctx:&Context,response:&Response){
-    if response.clicked() || response.changed(){remember_element(ctx,response.rect);}
+    if response.clicked() || response.changed(){remember_origin(ctx,response_origin(response));}
 }
 pub fn capture_origin(ctx:&Context,source:&'static str)->Option<Anchor>{
     with_state(ctx,|s|s.anchors.get(source).filter(|a|
@@ -147,7 +158,12 @@ pub fn inherit_origin(ctx:&Context,from:&'static str,to:&'static str){
 /// The visible dropdown button, rather than a row in its popup, owns any
 /// operation feedback triggered by the selected option. Set this only while
 /// the shared popup is being rendered, immediately before its options.
-pub fn dropdown_popup_trigger(ctx: &Context, trigger: Rect) {
+pub fn dropdown_popup_trigger_response(response:&Response){
+    let origin=response_origin(response);
+    with_state(&response.ctx,|state|state.dropdown_popup_trigger=Some(origin));
+}
+#[cfg(test)]
+fn dropdown_popup_trigger(ctx: &Context, trigger: Rect) {
     let owner=crate::overlay::modal_scope(ctx);
     with_state(ctx, |state| {
         state.dropdown_popup_trigger = Some(ElementOrigin{rect:trigger,owner});
@@ -179,8 +195,9 @@ pub fn sized_text_caret(
     _value:&str,_font:egui::FontId,_centered:bool,_horizontal_padding:f32,
 ){
     if response.changed() || response.gained_focus() || response.clicked(){
-        remember_element(ui.ctx(),response.rect);
-        record_element(ui.ctx(),source,response.rect,AnchorKind::Caret);
+        let origin=response_origin(response);
+        remember_origin(ui.ctx(),origin);
+        record_origin(ui.ctx(),source,origin,AnchorKind::Caret);
     }
     if response.changed(){
         with_state(ui.ctx(),|state|{
@@ -193,8 +210,9 @@ pub fn text_edit_caret(
 ){
     let response=&output.response;
     if response.changed() || response.gained_focus() || response.clicked(){
-        remember_element(ctx,response.rect);
-        record_element(ctx,source,response.rect,AnchorKind::Caret);
+        let origin=response_origin(response);
+        remember_origin(ctx,origin);
+        record_origin(ctx,source,origin,AnchorKind::Caret);
     }
 }
 
@@ -457,8 +475,7 @@ pub fn show(ctx: &Context) {
     let pad_x = f32::from(theme::FLOATING_NOTICE_PADDING_X);
     let pad_y = f32::from(theme::FLOATING_NOTICE_PADDING_Y);
     let mut close = false;
-    egui::Area::new(Id::new(NOTICE_ID).with("bubble"))
-        .order(egui::Order::Tooltip)
+    crate::overlay::area(Id::new(NOTICE_ID).with("bubble"),crate::overlay::AreaRole::Notice)
         .fixed_pos(at)
         .movable(false)
         .interactable(active.tone==Tone::Error || galley.size().y > size.y-2.0*pad_y)
