@@ -2693,11 +2693,18 @@ pub fn form_field_label(ui:&mut Ui,label:&str)->Response {
 pub fn modal_labeled_row<R>(
     ui:&mut Ui,label:&str,control:impl FnOnce(&mut Ui)->R
 )->R {
+    modal_labeled_row_with_width(ui,label,theme::MODAL_FORM_LABEL_WIDTH,control)
+}
+
+/// A wider label column for forms containing longer localized captions.
+/// The same row geometry applies to all controls, including selectors.
+pub fn modal_labeled_row_with_width<R>(
+    ui:&mut Ui,label:&str,label_width:f32,control:impl FnOnce(&mut Ui)->R
+)->R {
     ui.horizontal(|line|{
         line.spacing_mut().item_spacing.x=theme::SPACE_8;
-        form_field_label_sized(
-            line,label,theme::MODAL_FORM_LABEL_WIDTH
-        );
+        line.spacing_mut().interact_size.y=theme::INPUT_HEIGHT;
+        form_field_label_sized(line,label,label_width);
         control(line)
     }).inner
 }
@@ -4930,10 +4937,13 @@ pub(crate) fn management_dropdown_trigger(
         else{theme::DISABLED_ACTION_TEXT};
     let arrow_ink=if interactive{theme::SECONDARY}
         else{theme::DISABLED_ACTION_TEXT};
+    // Inline modal rows opt into the 36pt form interaction height;
+    // standard management toolbars retain their 34pt minimum.
+    let height=theme::ACTION_STANDARD_HEIGHT.max(ui.spacing().interact_size.y);
     let trigger=ui.add_enabled(
         enabled,
         egui::Button::new("")
-            .min_size(Vec2::new(width,theme::ACTION_STANDARD_HEIGHT))
+            .min_size(Vec2::new(width,height))
             .fill(fill)
             .stroke(Stroke::new(theme::SOFT_DIVIDER_WIDTH,border))
             .corner_radius(egui::CornerRadius::same(theme::CONTROL_RADIUS))
@@ -6980,7 +6990,8 @@ pub fn management_readonly_table_aligned(
     assert!(!headings.is_empty(),"a management table needs at least one column");
     let original_scroll=ui.spacing().scroll.clone();
     ui.spacing_mut().scroll=theme::management_table_scroll_style();
-    let viewport_width=ui.available_width().max(1.0);
+    let viewport_width=ui.available_rect_before_wrap()
+        .intersect(ui.clip_rect()).width().max(1.0);
     let available_data_width=(viewport_width
         -ui.spacing().scroll.allocated_width()).max(1.0);
     let widths=widths_for_available(available_data_width);
