@@ -528,7 +528,7 @@ pub fn category_dropdown(
         ui,&full,(width-theme::CATEGORY_PATH_PICKER_TEXT_PADDING).max(1.0),
         typography::CategoryPathFont::Body
     );
-    let trigger=components::management_dropdown_trigger_full_label(
+    let mut trigger=components::management_dropdown_trigger_full_label(
         ui,&visible,&full,width,enabled,None
     );
     let state_id:Id=trigger.id.with("hierarchical-category-explorer");
