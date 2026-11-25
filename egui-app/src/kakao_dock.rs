@@ -594,6 +594,7 @@ mod native {
         pub(super) mode:super::DockMode,
         last_region:Option<Rect>,pub(super) last_sync:Option<Instant>,
         last_layout_key:Vec<(Hwnd,bool,bool)>,last_layout_epoch:u64,
+        last_observed:Option<std::sync::Arc<windows::Snapshot>>,
         last_foreground:Hwnd,last_placed:Vec<(Hwnd,Rect)>,
         pub(super) overlap_footer:Option<i32>,
     }
@@ -648,7 +649,7 @@ mod native {
                 hub,pid,windows:tracked,active_chat,
                 mode:super::DockMode::Together,
                 last_region:None,last_sync:None,last_layout_key:Vec::new(),
-                last_layout_epoch:0,last_foreground:0,last_placed:Vec::new(),overlap_footer:None,
+                last_layout_epoch:0,last_observed:None,last_foreground:0,last_placed:Vec::new(),overlap_footer:None,
             })
         }
         pub fn foreground_related(&self)->bool {
@@ -680,16 +681,20 @@ mod native {
             if unsafe{IsIconic(self.hub)}!=0{self.last_sync=None;return Ok(());}
             let region=physical_region(self.hub,rect,scale)?;
             let observed=windows::snapshot();
-            let layout_key=observed.layout_key(self.pid);
+            let layout_key=self.last_observed.as_ref()
+                .filter(|old|std::sync::Arc::ptr_eq(old,&observed))
+                .map(|_|None).unwrap_or_else(||Some(observed.layout_key(self.pid)));
             let foreground=unsafe{GetForegroundWindow()};
             let fallback=self.last_sync.is_some_and(|t|t.elapsed()>=Duration::from_secs(5));
             let changed=self.last_sync.is_none() || self.last_region!=Some(region) ||
-                self.last_layout_key!=layout_key || self.last_layout_epoch!=observed.layout_epoch;
+                layout_key.as_ref().is_some_and(|key|key!=&self.last_layout_key) ||
+                self.last_layout_epoch!=observed.layout_epoch;
             // A slow safety check repairs missed native events, not a full
             // split layout calculation. Compare actual outer rectangles only.
             let drift=fallback && self.last_placed.iter().any(|(hwnd,expected)|
                 outer(*hwnd).ok()!=Some(*expected));
             let lost=fallback && self.windows.iter().any(|w|!w.alive());
+            self.last_observed=Some(observed.clone());
             if !changed && !drift && !lost{
                 if fallback || foreground!=self.last_foreground{
                     self.last_foreground=foreground;
@@ -700,12 +705,12 @@ mod native {
             }
             self.last_region=Some(region);
             self.last_sync=Some(Instant::now());
-            self.last_layout_key=layout_key;
+            if let Some(key)=layout_key{self.last_layout_key=key;}
             self.last_layout_epoch=observed.layout_epoch;
             self.last_foreground=foreground;
             // Read the HUB monitor, never the already offscreen Kakao MAIN.
             let screen_bottom=monitor_screen_bottom(self.hub).unwrap_or(region.bottom);
-            let discovered=observed.windows;
+            let discovered=&observed.windows;
             self.windows.retain(|w|w.alive());
             for c in discovered.iter().filter(|c|c.pid==self.pid){
                 if !self.windows.iter().any(|w|w.hwnd==c.hwnd) &&
