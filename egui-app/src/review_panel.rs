@@ -173,6 +173,46 @@ impl ReviewPanel {
         }
     }
     pub fn ready(&self)->bool{self.ready && self.error.is_none()}
+    /// Route only a current native validation failure with an exact linked
+    /// input. A review hint alone must never block order confirmation.
+    pub fn failed_input_targets(&self,source:&WorkingReception,
+        analysis:&ReceptionAnalysis,error:&str)->Vec<(String,Option<String>,&'static str,String)>{
+        if !self.ready() || !self.key.as_ref().is_some_and(|key|key.matches(source,analysis)){
+            return Vec::new();
+        }
+        let recipients=analysis.recognition.get("recipients")
+            .and_then(Value::as_array).map(Vec::as_slice).unwrap_or(&[]);
+        let mut result=Vec::new();
+        for recipient in recipients{
+            let rid=text(recipient,"id");
+            if rid.is_empty(){continue;}
+            for &index in &self.action_indices{
+                let issue=&self.issues[index];
+                if text(issue,"recipientId")!=rid{continue;}
+                let item=issue.get("itemId").and_then(Value::as_str).filter(|v|!v.is_empty());
+                let field=issue.get("linkKey").and_then(Value::as_str)
+                    .and_then(|key|key.rsplit_once(':').map(|(_,f)|f))
+                    .or_else(||(text(issue,"kind")=="QUANTITY_MISSING").then_some("quantity"));
+                let field=match (item.is_some(),field){
+                    (false,Some("name"))=>"name",
+                    (false,Some("address"))=>"address",
+                    (false,Some("mobile"))=>"mobile",
+                    (false,Some("phone"))=>"phone",
+                    (true,Some("quantity"))=>"quantity",
+                    (true,Some("unitPrice"|"price"))=>"unitPrice",
+                    _=>continue,
+                };
+                let title=text(issue,"title");
+                let detail=text(issue,"detail");
+                let name=text(recipient,"name");
+                let prefix=if name.is_empty(){"수취인"}else{name};
+                if !failure_matches_issue(error,prefix,title,detail){continue;}
+                result.push((rid.to_owned(),item.map(str::to_owned),field,
+                    if title.is_empty(){detail.to_owned()}else{title.to_owned()}));
+            }
+        }
+        result
+    }
     pub fn show_header_summary(&self,ui:&mut Ui,analysis:&ReceptionAnalysis,
         selected_recipient:usize){
         if self.error.is_some() || (self.pending.is_some() && self.issues.is_empty()){
@@ -245,6 +285,17 @@ impl ReviewPanel {
         }
         selected
     }
+}
+/// Compare complete native message lines, never a loose substring of an
+/// unrelated technical error or a differently named recipient's issue.
+fn failure_matches_issue(error:&str,name:&str,title:&str,detail:&str)->bool{
+    let normalize=|s:&str|s.trim().trim_end_matches('.').trim_end().replace(" / ",": ");
+    let title=normalize(title);
+    let detail=normalize(detail);
+    let named=normalize(&format!("{name}: {title}"));
+    error.lines().map(normalize).any(|line|
+        (!title.is_empty()&&(line==title||line==named)) ||
+        (!detail.is_empty()&&line==detail))
 }
 /// Visual mapping only. The native severity and action routing remain authoritative.
 fn issue_tone(issue:&Value)->ReviewTone {
@@ -383,6 +434,12 @@ fn issue_card(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn input_failure_matching_rejects_unrelated_recipient_and_technical_error(){
+        assert!(failure_matches_issue("김씨: 수량을 입력하세요.","김씨","수량을 입력하세요","김씨 / 수량을 입력하세요"));
+        assert!(!failure_matches_issue("박씨: 수량을 입력하세요","김씨","수량을 입력하세요","김씨 / 수량을 입력하세요"));
+        assert!(!failure_matches_issue("저장 실패: 수량을 입력하세요","김씨","수량을 입력하세요","김씨 / 수량을 입력하세요"));
+    }
     #[test]
     fn empty_review_caption_uses_full_body_center_without_count_reservation(){
         let body=egui::Rect::from_min_size(egui::pos2(26.0,76.0),egui::vec2(580.0,152.0));

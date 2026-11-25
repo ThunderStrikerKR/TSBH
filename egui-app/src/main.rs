@@ -950,6 +950,7 @@ struct BandoEgui {
     item_editor:Option<item_editor::ItemEditor>,
     product_picker:Option<(String,String,String,product_manager::ProductManager)>,
     inline_editor:Option<InlineReceptionEditor>,
+    inline_validation_focus:Option<(InlineTarget,String)>,
     inline_change:Option<PendingInlineChange>,
     vat_dialog:Option<VatDialog>,
     vat_change:Option<PendingVatChange>,
@@ -1076,6 +1077,7 @@ impl BandoEgui {
             item_editor:None,
             product_picker:None,
             inline_editor:None,
+            inline_validation_focus:None,
             inline_change:None,
             vat_dialog:None,
             vat_change:None,
@@ -2670,6 +2672,54 @@ impl BandoEgui {
         });
     }
 
+    /// Only show the validation balloon once the real input widget is
+    /// rendered and focused. No pointer coordinates or guessed screen rect.
+    fn show_inline_validation_focus(
+        guidance:&mut Option<(InlineTarget,String)>,target:&InlineTarget,
+        response:&egui::Response,ctx:&egui::Context
+    ){
+        if !response.has_focus() || !guidance.as_ref().is_some_and(|(t,_)|t==target){return;}
+        if let Some((_,message))=guidance.take(){
+            response.scroll_to_me(Some(Align::Center));
+            floating_notice::action_rect(ctx,"reception.cell",response.rect);
+            floating_notice::publish(ctx,"reception.cell",floating_notice::Tone::Validation,message);
+        }
+    }
+
+    /// An actual native order confirmation failure may identify an existing
+    /// review issue and exact cell. Keep all other failure handling intact.
+    fn focus_failed_draft_input(&mut self,order_id:&str,error:&str,ctx:&egui::Context)->bool{
+        if self.page!=Page::Reception || self.active_id.as_deref()!=Some(order_id)
+            || self.inline_editor.is_some(){return false;}
+        let Some(source)=self.drafts.iter().find(|r|r.id==order_id)else{return false;};
+        let Some(analysis)=self.analysis.as_ref()else{return false;};
+        let candidates=self.review_panel.failed_input_targets(source,analysis,error);
+        let target=candidates.into_iter().find_map(|(rid,item_id,field,message)|{
+            let index=reception_service::recipients(analysis).iter().position(|r|
+                reception_service::text(r,"id")==rid)?;
+            let target=InlineTarget{recipient_id:rid,item_id,field};
+            let original=current_inline_value(&analysis.recognition,
+                source.pricing_preview.as_ref(),&target).unwrap_or_default();
+            let missing=match field{
+                "quantity"=>original.trim().parse::<i64>().map_or(true,|n|n<=0),
+                "unitPrice"=>original.trim().is_empty(),
+                _=>original.trim().is_empty(),
+            };
+            missing.then_some((index,target,original,message))
+        });
+        let Some((index,target,original,message))=target else{return false;};
+        self.selected_recipient=index;
+        self.workflow_ui.selection=None;
+        self.workflow_ui.stop_preview();
+        self.link_hover.clear();
+        self.source_hover=None;
+        self.begin_inline_edit(target.clone(),original,None);
+        if !self.inline_editor.as_ref().is_some_and(|e|e.target==target){return false;}
+        self.inline_validation_focus=Some((target,message));
+        ctx.request_repaint();
+        true
+    }
+
     /// React StaffChecks routing: navigate to the exact recipient/item
     /// rather than opening an unrelated manual screen or creating UI rules.
     fn handle_review_action(
@@ -2828,7 +2878,18 @@ impl BandoEgui {
                         self.link_hover.active=Some(link.clone());
                         self.link_hover.scroll_to=Some(link);
                     }
-                    self.switch_inline_edit(target,original,None,ctx);
+                    self.switch_inline_edit(target.clone(),original,None,ctx);
+                    if self.inline_editor.as_ref().is_some_and(|e|e.target==target){
+                        let message=match edit_field{
+                            "name"=>"수취인 이름을 확인하세요.",
+                            "address"=>"수취인 주소를 확인하세요.",
+                            "phone"|"mobile"=>"연락처를 확인하세요.",
+                            "quantity"=>"상품 수량을 확인하세요.",
+                            "unitPrice"=>"상품 단가를 확인하세요.",
+                            _=>"입력 내용을 확인하세요.",
+                        };
+                        self.inline_validation_focus=Some((target,message.to_owned()));
+                    }
                 }
             }
         }
@@ -3974,6 +4035,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
     }
 
     fn clear_source_analysis(&mut self) {
+        self.inline_validation_focus=None;
         self.auto_client_change=None;
         self.pricing_basis_check=None;
         self.remote_recheck=None;
@@ -7579,6 +7641,8 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                                 edit_response.id
                                             );
                                             editor.focus_next=false;
+                                            Self::show_inline_validation_focus(
+                                                &mut self.inline_validation_focus,&target,&edit_response,fields.ctx());
 
                                             if edit_response.has_focus() && fields.input(|input|
                                                 input.key_pressed(egui::Key::Escape)){
@@ -7740,6 +7804,8 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                                             result.id
                                                         );
                                                         editor.focus_next=false;
+                                                        Self::show_inline_validation_focus(
+                                                            &mut self.inline_validation_focus,&target,&result,items_ui.ctx());
 
                                                         if result.has_focus() && items_ui.input(|input|
                                                             input.key_pressed(egui::Key::Escape)) {
@@ -7973,6 +8039,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                 self.open_item_editor(&recipient_id,&item_id,ui.ctx());
             }
         }else if inline_cancel{
+            self.inline_validation_focus=None;
             self.inline_editor=None;
         }else if let Some((target,text,click_at))=inline_open {
             // B's click and A's blur happen on the same egui frame.
@@ -8488,9 +8555,13 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                 }
                 self.workflow_last_fetch=None;
                 self.workflow_error=Some(error.clone());
-                floating_notice::publish_from(
-                    ctx,"reception.workflow",floating_notice::Tone::Error,error,notice_origin.as_ref()
-                );
+                let routed=action=="confirm_reception" && group_id.strip_prefix("group:")
+                    .is_some_and(|order_id|self.focus_failed_draft_input(order_id,&error,ctx));
+                if !routed{
+                    floating_notice::publish_from(
+                        ctx,"reception.workflow",floating_notice::Tone::Error,error,notice_origin.as_ref()
+                    );
+                }
             }
             Err(mpsc::TryRecvError::Disconnected)=>{
                 self.workflow_action=None;
