@@ -1,57 +1,16 @@
 # Targeted compilation and existing isolated checks for the shared Rust data-access path (no GUI).
 name: Native Rust data-access and egui targeted check
 on:
-  # Main source pushes are checked by egui-compile-gate and scoped gates.
-  # Batch the expensive integrated suite on the current main revision.
-  push:
-    branches: [main]
-    paths:
-      - .github/workflows/egui-targeted-check.yml
-  schedule:
-    - cron: '17,47 * * * *'
-  pull_request:
-    paths:
-      - egui-app/**
-      - src-tauri/src/business_core/**
-      - src-tauri/src/backup_manager.rs
-      - src-tauri/src/relational_store.rs
-      - src-tauri/src/sale_unit_migration.rs
-      - src-tauri/resources/legacy-state-seed-303.json
-      - crates/bando-data-access/**
-      - .github/workflows/egui-targeted-check.yml
+  # Main pushes use the quick compile gate and scoped checks.
+  # Run the complete integrated suite explicitly at a checkpoint.
   workflow_dispatch:
 permissions:
   contents: read
-  actions: read
 concurrency:
-  group: egui-native-targeted-${{ github.ref }}-${{ github.event_name == 'pull_request' && 'pr' || 'full' }}
+  group: egui-native-targeted-${{ github.ref }}
   cancel-in-progress: false
 jobs:
-  plan:
-    runs-on: ubuntu-latest
-    outputs:
-      run_checks: ${{ steps.plan.outputs.run_checks }}
-    steps:
-      - id: plan
-        name: Skip only an already successful identical scheduled revision
-        shell: bash
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          run_checks=true
-          if [ "$GITHUB_EVENT_NAME" = schedule ]; then
-            if completed=$(gh api --method GET "repos/$GITHUB_REPOSITORY/actions/workflows/egui-targeted-check.yml/runs" \
-              -f branch=main -f status=success -f head_sha="$GITHUB_SHA" -f per_page=100 \
-              --jq '[.workflow_runs[] | select(.event != "pull_request")] | length'); then
-              if [ "$completed" -gt 0 ]; then run_checks=false; fi
-            else
-              echo "::warning::Could not read previous runs; executing all checks."
-            fi
-          fi
-          echo "run_checks=$run_checks" >> "$GITHUB_OUTPUT"
   egui-geometry-windows-check:
-    needs: plan
-    if: needs.plan.outputs.run_checks == 'true'
     name: Isolated egui geometry regression (Windows)
     runs-on: windows-latest
     timeout-minutes: 45
@@ -107,8 +66,6 @@ jobs:
             if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           }
   native-data-access-windows-check:
-    needs: plan
-    if: github.event_name != 'pull_request' && needs.plan.outputs.run_checks == 'true'
     runs-on: windows-latest
     timeout-minutes: 30
     steps:
