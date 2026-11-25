@@ -1466,12 +1466,10 @@ impl ModalEditorGeometry {
         if let (Some(header),Some(card))=(self.header,self.content.cards.first()){
             out.push(("header_to_card",card.top()-header.bottom()));
         }
-        if self.content.cards.len()==3{
-            let cards=&self.content.cards;
-            if (cards[0].top()-cards[1].top()).abs()<1.0
-                && (cards[1].top()-cards[2].top()).abs()<1.0
-            {
-                out.push(("card_gap_1",cards[1].left()-cards[0].right()));
+        let cards=&self.content.cards;
+        if cards.len()>=2 && (cards[0].top()-cards[1].top()).abs()<1.0{
+            out.push(("card_gap_1",cards[1].left()-cards[0].right()));
+            if cards.len()>=3 && (cards[1].top()-cards[2].top()).abs()<1.0{
                 out.push(("card_gap_2",cards[2].left()-cards[1].right()));
             }
         }
@@ -6892,6 +6890,15 @@ pub fn management_readonly_table(
     max_height:f32,
     widths_for_available:impl FnOnce(f32)->Vec<f32>,
 ){
+    management_readonly_table_aligned(ui,id,headings,rows,max_height,&[],widths_for_available);
+}
+
+/// Optional right alignment for numeric columns, retaining the same shared
+/// table header, row geometry, virtualization and scrolling.
+pub fn management_readonly_table_aligned(
+    ui:&mut Ui,id:&str,headings:&[&str],rows:&[Vec<String>],max_height:f32,
+    right_aligned:&[usize],widths_for_available:impl FnOnce(f32)->Vec<f32>,
+){
     assert!(!headings.is_empty(),"a management table needs at least one column");
     let original_scroll=ui.spacing().scroll.clone();
     ui.spacing_mut().scroll=theme::management_table_scroll_style();
@@ -6912,15 +6919,18 @@ pub fn management_readonly_table(
     let header_clip=layout.header_content_rect.intersect(ui.clip_rect());
     let painter=ui.painter().with_clip_rect(header_clip);
     let mut x=layout.header_rect.left();
-    for (heading,width) in headings.iter().zip(&widths){
+    for (index,(heading,width)) in headings.iter().zip(&widths).enumerate(){
         let galley=typography::table_header_galley(ui,heading);
+        let text_x=if right_aligned.contains(&index){
+            x+(*width-galley.size().x).max(0.0)
+        }else{x};
         let y=layout.header_rect.center().y-galley.size().y/2.0;
         if header_clip.width()>0.0&&header_clip.height()>0.0{
             painter.with_clip_rect(egui::Rect::from_min_max(
                 egui::pos2(x,layout.header_rect.top()),
                 egui::pos2((x+*width).min(layout.header_rect.right()),
                     layout.header_rect.bottom())
-            )).galley(egui::pos2(x,y),galley,theme::SECONDARY);
+            )).galley(egui::pos2(text_x,y),galley,theme::SECONDARY);
         }
         x+=*width+theme::SPACE_8;
     }
@@ -6940,12 +6950,12 @@ pub fn management_readonly_table(
                     "management table row must match its column count");
                 body.horizontal(|line|{
                     line.spacing_mut().item_spacing.x=theme::SPACE_8;
-                    for (value,width) in values.iter().zip(&widths){
-                        line.add_sized(
-                            Vec2::new(*width,row_height),
-                            egui::Label::new(typography::table_cell(value))
-                                .truncate()
-                        ).on_hover_text(value);
+                    for (index,(value,width)) in values.iter().zip(&widths).enumerate(){
+                        let label=egui::Label::new(typography::table_cell(value)).truncate();
+                        let label=if right_aligned.contains(&index){
+                            label.halign(Align::RIGHT)
+                        }else{label};
+                        line.add_sized(Vec2::new(*width,row_height),label).on_hover_text(value);
                     }
                 });
                 soft_divider(body);
