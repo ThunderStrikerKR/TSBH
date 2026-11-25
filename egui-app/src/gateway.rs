@@ -231,8 +231,6 @@ pub trait BandoGateway: Send + Sync {
     /// use the original native Rust rule reducers and the v2 revision CAS.
     /// Never mutate the read-only egui preview store or an HTTP fallback.
     fn workflow_write_enabled(&self)->bool{false}
-    /// Lightweight revision probe; None means this adapter cannot probe cheaply.
-    fn workflow_revision(&self)->Result<Option<u64>,String>{Ok(None)}
     /// Adapters without a native revision probe refresh only on entry.
     fn reception_metadata(&self,_known:Option<u64>)
         ->Result<(Option<u64>,Option<ReceptionMetadata>),String>{
@@ -309,25 +307,6 @@ pub struct LocalGateway;
 impl BandoGateway for LocalGateway {
     fn label(&self) -> &'static str {
         "로컬 Rust"
-    }
-
-    fn workflow_revision(&self)->Result<Option<u64>,String>{
-        use rusqlite::{Connection,OpenFlags};
-        let path=std::env::var_os("BANDO_EGUI_BUSINESS_DB")
-            .filter(|p|!p.is_empty()).ok_or("실제 업무 DB가 연결되지 않았습니다.")?;
-        if std::env::var_os("BANDO_EGUI_CLIENT_INDEX").is_some_and(|p|!p.is_empty()){
-            return Err("JSON 거래처 인덱스는 업무 DB를 대신할 수 없습니다.".into());
-        }
-        let conn=Connection::open_with_flags(std::path::PathBuf::from(path),OpenFlags::SQLITE_OPEN_READ_ONLY)
-            .map_err(|e|format!("업무 DB 변경 확인 실패: {e}"))?;
-        conn.busy_timeout(std::time::Duration::from_secs(2)).map_err(|e|e.to_string())?;
-        // The canonical writer increments app_state.revision in the same transaction.
-        // Do not hydrate relational orders or project workflow/message data here.
-        let revision:i64=conn.query_row(
-            "SELECT json_extract(payload,'$.revision') FROM app_state WHERE id=1 AND (SELECT version FROM core_schema WHERE key='business-core')=2",
-            [],|row|row.get(0)
-        ).map_err(|e|format!("업무 DB 리비전 확인 실패: {e}"))?;
-        Ok(Some(u64::try_from(revision).map_err(|_|"업무 DB 리비전 범위 오류")?))
     }
 
     fn reception_metadata(&self,known:Option<u64>)
@@ -1103,5 +1082,10 @@ mod reception_metadata_tests {
         let metadata=metadata.unwrap();
         assert_eq!(metadata.inbox.unwrap(),None);
         assert_eq!(metadata.clients.unwrap()[0]["id"],"c");
+        conn.execute("UPDATE app_state SET payload=?1 WHERE id=1",[serde_json::json!({"revision":8,"settings":{"orderImageInboxDirectory":"  inbox  "}}).to_string()]).unwrap();
+        let (revision,metadata)=read_reception_metadata(&conn,Some(7)).unwrap();
+        assert_eq!(revision,Some(8));
+        assert_eq!(metadata.unwrap().inbox.unwrap().as_deref(),Some("inbox"));
+        assert!(read_reception_metadata(&conn,Some(8)).unwrap().1.is_none());
     }
 }
