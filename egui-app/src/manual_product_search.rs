@@ -38,8 +38,6 @@ fn category_levels(categories:&[Value],selected_id:&str)->Vec<(usize,String,Stri
 
 pub enum Event{Cancelled,Chosen(Value)}
 pub struct ProductSearch{
-    pub recipient_id:String,
-    pub item_id:String,
     query:String,
     major:String,
     brand:String,
@@ -54,10 +52,10 @@ impl ProductSearch{
     /// Reuse React's initial model-based query in the item-detail dialog.
     /// Rust still decides product inclusion and variant eligibility.
     pub fn with_query(
-        recipient_id:String,item_id:String,client_id:String,query:String,
+        client_id:String,query:String,
         gateway:Arc<dyn BandoGateway>,ctx:Context
     )->Self{
-        let mut state=Self{recipient_id,item_id,query,major:String::new(),
+        let mut state=Self{query,major:String::new(),
             brand:String::new(),client_id,catalog:None,products:Vec::new(),
             detail_ids:Vec::new(),receiver:None,error:None};
         state.reload(gateway,ctx);

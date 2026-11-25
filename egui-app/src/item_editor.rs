@@ -134,7 +134,6 @@ impl ItemEditor{
         let raw_name=field(&self.initial,"name");
         let query=raw_name.split(" / ").next().unwrap_or(raw_name).to_owned();
         self.search=Some(ProductSearch::with_query(
-            self.recipient_id.clone(),self.item_id.clone(),
             self.client_id.clone(),query,gateway,ctx.clone()
         ));
     }

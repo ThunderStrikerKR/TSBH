@@ -13,7 +13,6 @@ pub(crate) fn test_context()->egui::Context {
     ctx
 }
 
-pub const LABEL_WIDTH: f32 = theme::FIELD_LABEL_WIDTH;
 
 /// Common native scroll construction. Screen-specific IDs, bounds and shrink
 /// behavior are applied by the caller; shared role policies build on this.

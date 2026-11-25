@@ -131,8 +131,6 @@ pub const WORKFLOW_SIGNAL_CURRENT: Color32 = Color32::from_rgb(233, 154, 53);
 pub const WORKFLOW_SIGNAL_CURRENT_BORDER: Color32 = Color32::from_rgb(245, 183, 96);
 pub const WORKFLOW_SIGNAL_PENDING: Color32 = Color32::from_rgb(51, 51, 51);
 pub const WORKFLOW_SIGNAL_PENDING_BORDER: Color32 = Color32::from_rgb(85, 85, 85);
-pub const WORKFLOW_RECIPIENT_COL: f32 = 64.0;
-pub const WORKFLOW_FREIGHT_COL: f32 = 68.0;
 pub const WORKFLOW_VAT_TEXT: Color32 = Color32::from_rgb(185, 215, 246);
 // At the 1920×1080 reference, the right-pane card is ~394pt wide.
 // Usable width = 394 - 2 border - (6 left + 6 right) = 380pt.
@@ -153,7 +151,6 @@ pub const WORKFLOW_SHIPPING_WIDTH: f32 = 44.0;
 pub const WORKFLOW_AUX_CONTROL_HEIGHT: f32 = 30.0;
 pub const WORKFLOW_ACTION_ROW_HEIGHT: f32 = 30.0;
 pub const WORKFLOW_TOGGLE_ICON_WIDTH: f32 = 12.0;
-pub const WORKFLOW_SUMMARY_LINE_HEIGHT: f32 = 18.0;
 pub const WORKFLOW_VAT_FONT_SIZE: f32 = 10.0;
 // Expanded working-order shipments are a plain list, not a table.
 // All rows use one bottom-tier surface; only real hover/selection tint it.
@@ -233,7 +230,6 @@ pub const SOURCE_DOCUMENT_TEXT_MARGIN: i8 = 0;
 // primary INPUT editor. Use master row/subsection roles, not a second editor.
 pub const RECEPTION_CLIENT_SUMMARY_BG: Color32 = TABLE_ROW_ALT_BG;
 pub const RECEPTION_CLIENT_SUMMARY_BORDER: Color32 = DIVIDER;
-pub const NESTED_PADDING: f32 = SPACE_12;
 // The 34pt title row still fully accommodates the standard "+ 새 주문"
 // button and other header controls without shortening their labels.
 pub const SECTION_HEADER_HEIGHT: f32 = 34.0;
@@ -249,7 +245,6 @@ pub const RECEPTION_RECIPIENT_NAV_DISABLED_BG:Color32 =
     Color32::from_rgb(27,27,27);
 pub const RECEPTION_RECIPIENT_NAV_DISABLED_ICON:Color32 =
     Color32::from_rgb(72,72,72);
-pub const RECEPTION_RECIPIENT_NAV_ACTIVE_ICON:Color32 = SECONDARY;
 pub const RECEPTION_RECIPIENT_NAV_WIDTH:f32 =
     2.0*RECEPTION_RECIPIENT_NAV_ARROW_WIDTH
     +RECEPTION_RECIPIENT_NAV_NAME_WIDTH
@@ -273,8 +268,6 @@ pub const RECEPTION_KEYCAP_SIDE:Color32 = Color32::from_rgb(34,34,34);
 pub const RECEPTION_KEYCAP_EDGE:Color32 = Color32::from_rgb(112,112,112);
 pub const RECEPTION_KEYCAP_HIGHLIGHT:Color32 = Color32::from_rgb(150,150,150);
 pub const RECEPTION_KEYCAP_BOTTOM_HIGHLIGHT:Color32 = Color32::from_rgb(70,70,70);
-pub const CARD_PADDING: f32 = SPACE_12;
-pub const FIELD_LABEL_WIDTH: f32 = 68.0;
 // React recipient detail grid: full-width rows and paired contact cells.
 // Three-character labels (휴대폰/메시지) fit with a compact 56pt column.
 // All recipient rows share this left-aligned label width.
@@ -333,7 +326,6 @@ pub const ACTION_STANDARD_HEIGHT: f32 = 34.0;
 pub const ACTION_EMPHASIZED_HEIGHT: f32 = 34.0;
 pub const ACTION_QUIET_HEIGHT: f32 = 32.0;
 // Reserve space for the single-row order total at the bottom of its pane.
-pub const SUMMARY_STRIP_HEIGHT: f32 = 58.0;
 // The four freight KPIs remain separate cards, each with a centered value
 // above its supporting label (not a merged summary strip).
 pub const FREIGHT_SUMMARY_CARD_WIDTH: f32 = 228.0;
@@ -381,7 +373,6 @@ pub const RECEPTION_VAT_LIST_VISIBLE_ROWS: usize = 10;
 pub const RECEPTION_VAT_LIST_ROW_HEIGHT: f32 = 42.0;
 pub const RECEPTION_VAT_LIST_SCREEN_RESERVE: f32 = 256.0;
 
-pub const RECEPTION_VAT_ROW_HEIGHT: f32 = 32.0;
 pub const RECEPTION_TOTAL_HEIGHT: f32 = 56.0;
 pub const HEADER_HEIGHT: f32 = 62.0;
 pub const NAV_HEIGHT: f32 = 44.0;
@@ -426,14 +417,11 @@ pub const RECEPTION_ITEMS_TO_FREIGHT_GAP: f32 = SPACE_16;
 pub const MANUAL_ITEMS_CARD_MIN_HEIGHT: f32 = 340.0 + (RECEPTION_ITEMS_TO_FREIGHT_GAP - SPACE_8);
 pub const MANUAL_SEARCH_DIALOG_WIDTH: f32 = MODAL_DEFAULT_MAX_WIDTH;
 pub const MANUAL_SEARCH_RESULTS_HEIGHT: f32 = 420.0;
-pub const MANUAL_INPUT_WIDTH: f32 = 250.0;
 // Shared native modal/table roles. Manual source and spreadsheet-like rows
 // inherit these values instead of locally painted one-off geometry.
 // Popup chrome uses the same neutral surface hierarchy as the Freight
 // Shipping-Group Assignment master. No independent popup color palette.
-pub const MODAL_CHROME_BG: Color32 = TABLE_ROW_ALT_BG;
 pub const MODAL_SECTION_BG: Color32 = TABLE_ROW_ALT_BG;
-pub const MODAL_SECTION_HEADER_BG: Color32 = INPUT;
 // Approved OCR review chrome is now the common popup structural master.
 // These are visual-role tokens; pane counts and OCR document gutters remain
 // content-specific. Changing one master token updates all adopted dialogs.
@@ -534,7 +522,6 @@ pub const MANAGEMENT_CHOOSER_ROW_HEIGHT: f32 = 48.0;
 // otherwise the old 760pt dialog forced horizontal scrolling at desktop sizes.
 pub const CLIENT_CHOOSER_DIALOG_WIDTH: f32 = 1200.0;
 pub const CLIENT_CHOOSER_DIALOG_HEIGHT: f32 = 700.0;
-pub const CLIENT_CHOOSER_ROW_HEIGHT: f32 = 78.0;
 pub const CLIENT_CHOOSER_RESULTS_MAX_HEIGHT: f32 = 460.0;
 // Dual-master table geometry contract, approved on 2026-11-21.
 // Source of truth: table widths, minimums and spare-width distribution live
@@ -731,14 +718,11 @@ pub const MANUAL_TABLE_ACTION_COL: f32 = 120.0;
 // the same subdued gray 1pt outline. Focused blue evidence keeps its own 2pt stroke.
 pub const SOURCE_RECOGNIZED_BORDER: Color32 = Color32::from_rgb(96, 96, 96);
 pub const SOURCE_RECOGNIZED_BORDER_WIDTH: f32 = 1.0;
-pub const MANUAL_SOURCE_PENDING_BG: Color32 = Color32::from_rgb(63, 63, 63);
-pub const MANUAL_SOURCE_ASSIGNED_BG: Color32 = Color32::from_rgb(42, 60, 74);
 // All source blocks (Reception, manual classification, and linked focus)
 // use one geometry regardless of state. Horizontal padding follows text;
 // vertical geometry follows the fixed source-document row.
 pub const SOURCE_BLOCK_RADIUS: f32 = 4.0;
 pub const SOURCE_BLOCK_HORIZONTAL_PADDING: f32 = 1.5;
-pub const SOURCE_BLOCK_VERTICAL_PADDING: f32 = 0.5;
 /// Normal chip leaves 1pt above and below its 22pt row; the focus stroke
 /// can extend into this clearance without shifting any text or adjacent row.
 pub const SOURCE_BLOCK_ROW_INSET: f32 = 1.0;
