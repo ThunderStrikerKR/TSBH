@@ -668,9 +668,7 @@ impl AutomaticMessageManager {
                                     ButtonRole::Primary,self.writable()&&!self.busy()
                                         &&self.dirty());
                                 save=action.clicked();
-                                if self.dirty(){
-                                    action.on_hover_text("저장하지 않은 변경사항 있음");
-                                }
+
                             });
                         });
                         // One-off save errors use the shared floating notice.
