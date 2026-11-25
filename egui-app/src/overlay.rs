@@ -7,6 +7,7 @@ use std::collections::{HashMap,HashSet};
 struct FrameScope {
     pass:u64,
     page:Option<&'static str>,
+    page_epoch:u64,
     modals:Vec<LayerId>,
     popup_owners:HashMap<LayerId,LayerId>,
     seen_popups:HashSet<LayerId>,
@@ -22,7 +23,7 @@ fn with_scope<R>(ctx:&Context,f:impl FnOnce(&mut FrameScope)->R)->R{
             pass,popup_at_start,..Default::default()
         });
         if state.pass!=pass{
-            state=FrameScope{pass,popup_at_start,page:state.page,
+            state=FrameScope{pass,popup_at_start,page:state.page,page_epoch:state.page_epoch,
                 popup_owners:std::mem::take(&mut state.popup_owners),..Default::default()};
         }
         let out=f(&mut state);
@@ -47,11 +48,12 @@ pub fn begin_page(ctx:&Context,page:&'static str){
     let changed=with_scope(ctx,|s|{
         let changed=s.page.is_some_and(|old|old!=page);
         s.page=Some(page);
-        if changed{s.popup_owners.clear();s.seen_popups.clear();s.modals.clear();}
+        if changed{s.page_epoch=s.page_epoch.wrapping_add(1);s.popup_owners.clear();s.seen_popups.clear();s.modals.clear();}
         changed
     });
     if changed{egui::Popup::close_all(ctx);}
 }
+pub fn page_epoch(ctx:&Context)->u64{with_scope(ctx,|s|s.page_epoch)}
 fn owner_in_scope(s:&FrameScope,mut layer:LayerId)->Option<LayerId>{
     for _ in 0..=s.popup_owners.len(){
         if s.modals.contains(&layer){return Some(layer);}
@@ -115,6 +117,13 @@ pub fn area(id:Id,role:AreaRole)->egui::Area{
     };
     egui::Area::new(id).order(order).movable(false)
 }
+pub fn activate_modal(ctx:&Context,layer:LayerId,raise:bool){
+    register_modal(ctx,layer);
+    ctx.memory_mut(|memory|{
+        if raise{memory.areas_mut().move_to_top(layer);}
+        memory.set_modal_layer(layer);
+    });
+}
 pub fn window(ctx:&Context,title:impl Into<egui::WidgetText>,id:Id)->egui::Window<'static>{
     register_modal(ctx,LayerId::new(Order::Foreground,id));
     egui::Window::new(title).id(id).order(Order::Foreground)
@@ -125,7 +134,8 @@ pub fn drag_painter(ctx:&Context,owner:LayerId,id:Id)->Option<egui::Painter>{
 }
 pub fn tooltip_allowed(response:&Response)->bool{
     let ctx=&response.ctx;
-    !egui::Popup::is_any_open(ctx)
+    let popup_layer=with_scope(ctx,|s|s.seen_popups.contains(&response.layer_id));
+    (!egui::Popup::is_any_open(ctx)||popup_layer)
         && modal_scope(ctx).is_none_or(|active|response_owner(response)==Some(active))
         && ctx.memory(|m|m.allows_interaction(response.layer_id))
 }

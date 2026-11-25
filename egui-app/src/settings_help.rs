@@ -13,6 +13,7 @@ pub const HELP_ICONS_ENABLED: bool = false;
 
 #[derive(Clone,Default)]
 struct TooltipState {
+    page_epoch:u64,
     entered:Option<Instant>,
     leave:Option<Instant>,
     shown:bool,
@@ -330,6 +331,8 @@ pub fn icon(heading:&mut Ui,title:&str){
         let mut state=ctx.data_mut(|data|
             data.get_temp::<TooltipState>(id).unwrap_or_default()
         );
+        let epoch=crate::overlay::page_epoch(&ctx);
+        if state.page_epoch!=epoch{state=TooltipState{page_epoch:epoch,..Default::default()};}
         let pointer=ctx.input(|i|i.pointer.hover_pos());
         let inside_popup=state.popup.is_some_and(|r|
             pointer.is_some_and(|p|r.contains(p))
@@ -376,7 +379,7 @@ pub fn icon(heading:&mut Ui,title:&str){
             }else if inside_popup{state.leave=None;}
         }
         if state.shown && !ctx.memory(|m|m.allows_interaction(response.layer_id)){
-            state=TooltipState::default();
+            state=TooltipState{page_epoch:epoch,..Default::default()};
         }
         if state.shown{
             let viewport=ctx.content_rect();
