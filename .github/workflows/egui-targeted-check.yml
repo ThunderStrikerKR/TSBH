@@ -224,9 +224,7 @@ jobs:
         run: cargo test --manifest-path egui-app/Cargo.toml inline_recognition_identity_tests -- --nocapture
       - name: Verify saved manual models scope recipient and item IDs per order
         run: cargo test --manifest-path src-tauri/Cargo.toml --lib manual_model_scopes_rows_and_assignment_targets_per_order -- --nocapture
-      - name: Verify order confirmation commits the active cell before resuming
-        run: cargo test --manifest-path egui-app/Cargo.toml reception_workflow_admission_integration_tests -- --nocapture
-      - name: Verify clipboard OCR, source replacement, draft deletion, workflow and locality admission
+      - name: Verify reception admission (active cell commit, clipboard OCR, source replacement, draft deletion, workflow and locality)
         run: cargo test --manifest-path egui-app/Cargo.toml reception_workflow_admission_integration_tests -- --nocapture
       - name: Verify saved native quote and recognition survive SQLite restart
         run: cargo test --manifest-path egui-app/Cargo.toml cached_reception_roundtrip_tests -- --nocapture
