@@ -1818,6 +1818,15 @@ impl ProductManager {
         if overview<310.0{return None;}
         Some((overview,image))
     }
+    fn detail_image_size(available:f32)->f32{
+        theme::PRODUCT_DETAIL_IMAGE_SIZE.min(available.max(1.0))
+    }
+    fn detail_history_widths(available:f32)->Vec<f32>{
+        // Share the visible width without a 500pt minimum that creates an
+        // unnecessary horizontal scroll. Tooltips retain full cell text.
+        let usable=(available-4.0*theme::SPACE_8).max(5.0);
+        [0.27,0.13,0.19,0.19,0.22].into_iter().map(|ratio|usable*ratio).collect()
+    }
     /// Both cards share the taller natural body, with each gap counted once.
     fn detail_section_body_height()->f32{
         let image=theme::PRODUCT_DETAIL_IMAGE_SIZE+theme::SPACING
@@ -1829,7 +1838,12 @@ impl ProductManager {
     fn detail_wide_text(
         ui:&mut Ui,draft:&mut Value,key:&str,label:&str,enabled:bool
     ){
-        components::modal_labeled_row(ui,label,|line|{
+        Self::detail_wide_text_with_width(ui,draft,key,label,enabled,theme::MODAL_FORM_LABEL_WIDTH);
+    }
+    fn detail_wide_text_with_width(
+        ui:&mut Ui,draft:&mut Value,key:&str,label:&str,enabled:bool,label_width:f32
+    ){
+        components::modal_labeled_row_with_width(ui,label,label_width,|line|{
             let mut value=field(draft,key).to_owned();
             line.add_enabled_ui(enabled,|input|{
                 let width=input.available_width().max(1.0);
@@ -1846,11 +1860,10 @@ impl ProductManager {
         editable:bool,busy:bool,photo_error:&mut Option<String>
     ){
         // The caller's shared modal_section owns the title and divider.
-        // Never shrink an image to fill a narrower sibling column.
-        // The responsive fallback stacks the editor instead.
-        // The section already provides the standard 8pt item gap.
-        // Do not add another spacer between the image and its action row.
-        self.photos.photo(ui,draft,theme::PRODUCT_DETAIL_IMAGE_SIZE);
+        // Keep 320pt whenever possible. Only a genuinely narrow stacked
+        // workspace may reduce the square to its available card width.
+        let size=Self::detail_image_size(ui.available_width());
+        self.photos.photo(ui,draft,size);
         ui.horizontal_wrapped(|actions|{
             if theme::action(
                 actions,"이미지 등록",theme::ButtonRole::Standard,
@@ -2085,6 +2098,14 @@ impl ProductManager {
                         if let Some((overview_width,image_width))=
                             Self::detail_columns(content_width)
                         {
+                            // Use the measured natural content heights from the
+                            // previous frame, not the height of already padded cards.
+                            let height_id=body.id().with("product-detail-paired-height");
+                            let previous=body.ctx().data(|data|data.get_temp::<(f32,f32)>(height_id));
+                            let target=previous.filter(|(width,_)|(width-content_width).abs()<0.5)
+                                .map(|(_,height)|height).unwrap_or_else(Self::detail_section_body_height);
+                            let mut natural_image=0.0_f32;
+                            let mut natural_overview=0.0_f32;
                             // Image first; all eight editable fields share one overview.
                             body.horizontal(|top|{
                                 top.spacing_mut().item_spacing.x=theme::MODAL_MASTER_WORKSPACE_GAP;
@@ -2092,10 +2113,11 @@ impl ProductManager {
                                     media.set_width(image_width);
                                     let section=components::modal_section_measured(
                                         media,"상품 이미지",|photos|{
-                                            photos.set_min_height(Self::detail_section_body_height());
                                             self.detail_image_column(
                                                 photos,&mut draft,editable,busy,&mut photo_error
                                             );
+                                            natural_image=photos.min_rect().height();
+                                            photos.set_min_height(target);
                                         }
                                     );
                                     measured.cards.push(section.response.rect);
@@ -2104,16 +2126,24 @@ impl ProductManager {
                                     overview.set_width(overview_width);
                                     let section=components::modal_section_measured(
                                         overview,"상품 개요",|fields|{
-                                            fields.set_min_height(Self::detail_section_body_height());
                                             Self::detail_information_column(
                                                 fields,&mut draft,&mut prices,&brands,&categories,
                                                 &category_nodes,editable,busy
                                             );
+                                            natural_overview=fields.min_rect().height();
+                                            fields.set_min_height(target);
                                         }
                                     );
                                     measured.cards.push(section.response.rect);
                                 });
                             });
+                            let measured_height=natural_image.max(natural_overview);
+                            if (measured_height-target).abs()>0.25{
+                                body.ctx().request_repaint();
+                            }
+                            body.ctx().data_mut(|data|data.insert_temp(
+                                height_id,(content_width,measured_height)
+                            ));
                         }else{
                             body.vertical(|stack|{
                                 let section=components::modal_section_measured(
@@ -2149,9 +2179,13 @@ impl ProductManager {
                             .icon(components::paint_collapsing_header_icon)
                             .show(body,|advanced|{
                                 advanced.spacing_mut().item_spacing.y=theme::SPACING;
-                                advanced.add_space(theme::SPACE_8);
-                                components::modal_labeled_row(
-                                    advanced,"배송 그룹",|group_ui|{
+                                // Reserve the longest label using the shared font
+                                // metrics, and use that width for every advanced row.
+                                let label_width=typography::field_label_galley(
+                                    advanced,"홈페이지 상품 연결"
+                                ).size().x.ceil().max(theme::MODAL_FORM_LABEL_WIDTH);
+                                components::modal_labeled_row_with_width(
+                                    advanced,"배송 그룹",label_width,|group_ui|{
                                         let before=field(&draft,"shippingGroupId").to_owned();
                                         let mut group=before.clone();
                                         let label=groups.iter().find(|g|field(g,"id")==group)
@@ -2176,8 +2210,8 @@ impl ProductManager {
                                         }
                                     }
                                 );
-                                components::modal_labeled_row(
-                                    advanced,"발송지",|origin_ui|{
+                                components::modal_labeled_row_with_width(
+                                    advanced,"발송지",label_width,|origin_ui|{
                                         let before=field(&draft,"origin").to_owned();
                                         let mut origin=before.clone();
                                         origin_ui.add_enabled_ui(editable&&!busy,|input|{
@@ -2198,9 +2232,9 @@ impl ProductManager {
                                 );
                                 if let Some(variant)=draft["variants"].as_array_mut()
                                     .and_then(|variants|variants.first_mut()){
-                                    Self::detail_wide_text(
+                                    Self::detail_wide_text_with_width(
                                         advanced,variant,"url","홈페이지 상품 연결",
-                                        editable&&!busy
+                                        editable&&!busy,label_width
                                     );
                                 }
                                 if !is_new {
@@ -2218,11 +2252,7 @@ impl ProductManager {
                                         components::management_readonly_table_aligned(
                                             advanced,"product-price-history",
                                             &["변경일시","항목","이전값","변경값","수정 경로"],
-                                            &entries,height,&[2,3],|width|{
-                                                let usable=(width-4.0*theme::SPACE_8).max(500.0);
-                                                vec![usable*0.27,usable*0.13,usable*0.19,
-                                                    usable*0.19,usable*0.22]
-                                            }
+                                            &entries,height,&[2,3],Self::detail_history_widths
                                         );
                                     }
                                 }
@@ -2441,6 +2471,17 @@ mod tests {
         assert_eq!(theme::MODAL_MASTER_WORKSPACE_GAP,16.0);
         assert_eq!(theme::MODAL_SECTION_PADDING,16.0);
         assert_eq!(theme::MODAL_SECTION_HEADER_RULE_GAP,16.0);
+    }
+    #[test]
+    fn product_detail_narrow_media_and_history_fit_available_width(){
+        assert_eq!(ProductManager::detail_image_size(400.0),320.0);
+        assert_eq!(ProductManager::detail_image_size(240.0),240.0);
+        for width in [260.0,400.0,520.0,800.0]{
+            let columns=ProductManager::detail_history_widths(width);
+            assert_eq!(columns.len(),5);
+            assert!(columns.iter().all(|value|*value>0.0));
+            assert!((columns.iter().sum::<f32>()+4.0*theme::SPACE_8-width).abs()<0.01);
+        }
     }
     #[test]
     fn product_detail_modal_width_uses_compact_master_and_safe_frame(){
