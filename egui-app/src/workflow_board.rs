@@ -618,6 +618,20 @@ mod linked_recipient_selection_tests{
         assert!(missing_freight_target(&settled,&entries[0],"s1").is_none());
     }
     #[test]
+    fn every_missing_origin_is_accented_until_its_own_charge_is_resolved(){
+        let mut first=shipment("s1","o1","r1");
+        first.recipient=json!({"items":[{"origin":"STORE"},{"origin":"FACTORY"}]});
+        let mut g=group("g",vec![first]);
+        g.issues=vec![json!({"kind":"FREIGHT","severity":"ACTION","orderId":"o1","recipientId":"r1"})];
+        assert!(missing_freight_origin(&g,&g.shipments[0],"STORE"));
+        assert!(missing_freight_origin(&g,&g.shipments[0],"FACTORY"));
+        g.shipments[0].display_charges.insert("STORE".into(),Some(0));
+        assert!(!missing_freight_origin(&g,&g.shipments[0],"STORE"));
+        assert!(missing_freight_origin(&g,&g.shipments[0],"FACTORY"));
+        g.shipments[0].collect=true;
+        assert!(!missing_freight_origin(&g,&g.shipments[0],"FACTORY"));
+    }
+    #[test]
     fn freight_guidance_follows_display_order_and_skips_completed_origins(){
         let mut first=shipment("s1","o1","r1");
         first.recipient=json!({"items":[{"origin":"STORE"},{"origin":"FACTORY"}]});

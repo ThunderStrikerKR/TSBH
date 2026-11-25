@@ -6524,9 +6524,9 @@ mod reception_cod_selector_tests {
 pub fn paint_required_input(ui:&Ui,rect:Rect){
     if !rect.is_positive() || !rect.intersects(ui.clip_rect()){return;}
     let painter=ui.painter().with_clip_rect(ui.clip_rect().intersect(rect));
-    painter.rect_filled(rect,theme::CONTROL_RADIUS,egui::Color32::from_rgba_unmultiplied(231,122,120,18));
+    painter.rect_filled(rect,theme::CONTROL_RADIUS,theme::REQUIRED_INPUT_TINT);
     painter.rect_stroke(rect,theme::CONTROL_RADIUS,
-        Stroke::new(2.0,theme::SALE_STATUS_SOLD_OUT),egui::StrokeKind::Inside);
+        Stroke::new(2.0,theme::REQUIRED_INPUT_BORDER),egui::StrokeKind::Inside);
 }
 /// Shared add-product action; the reception title row owns its placement.
 pub fn reception_item_add_action_editable(ui:&mut Ui,editable:bool)->bool{

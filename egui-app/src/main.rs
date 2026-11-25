@@ -7809,7 +7809,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                     |header|{
                         let response=components::reception_item_header_action(
                             header,false,editable && selected.is_some());
-                        if required.contains(target,"addItem"){
+                        if selected.is_some_and(|row|required.contains(reception_service::text(row,"id"),"addItem")){
                             components::paint_required_input(header,response.rect);
                         }
                         header_add_item=response.clicked();
