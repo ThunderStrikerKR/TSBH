@@ -311,12 +311,9 @@ impl ClientChooser {
                             );
                             let mut first_row_left=None;
                             let output=components::virtual_fixed_rows(
-                                egui::ScrollArea::both()
+                                components::management_fixed_table_scroll_area(results_panel,table_width)
                                     .id_salt("egui-all-clients-scroll")
                                     .scroll_bar_rect(scroll_track)
-                                    .scroll_bar_visibility(
-                                        egui::containers::scroll_area::ScrollBarVisibility::VisibleWhenNeeded
-                                    )
                                     .max_height(height)
                                     .auto_shrink([false,false]),
                                 results_panel,table_width,

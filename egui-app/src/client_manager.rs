@@ -573,12 +573,9 @@ impl ClientManager {
                 section,scroll_max_height
             );
             let scroll_output=components::virtual_fixed_rows(
-                egui::ScrollArea::both()
+                components::management_fixed_table_scroll_area(section,table_width)
                     .scroll_bar_rect(scroll_track)
                     .id_salt("client-management-table-rows")
-                    .scroll_bar_visibility(
-                        egui::containers::scroll_area::ScrollBarVisibility::VisibleWhenNeeded
-                    )
                     .max_height(scroll_max_height)
                     .auto_shrink([false,false]),
                 section,table_width,theme::MANAGEMENT_CLIENT_ROW_HEIGHT,

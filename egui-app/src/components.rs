@@ -201,6 +201,32 @@ pub fn overflow_tooltip(response:Response,overflow:bool,full:&str)->Response{
     if overflow&&!full.trim().is_empty(){response.on_hover_text(full)}else{response}
 }
 
+/// Shared clipped single-line management cell. Callers choose semantic role,
+/// alignment and the existing column-specific insets; no business interaction
+/// or row identity is owned by the painter.
+pub fn paint_management_text_cell(
+    ui:&Ui,content:Rect,text:&str,role:typography::ManagementTableCellRole,
+    align:egui::Align2,id:impl std::hash::Hash
+){
+    let visible=content.intersect(ui.clip_rect());
+    if visible.width()<=0.0||visible.height()<=0.0{return;}
+    let color=typography::management_table_cell_color(role);
+    let galley=typography::management_table_cell_galley(ui,text,role);
+    let x=if align==egui::Align2::RIGHT_CENTER{
+        content.right()-galley.size().x
+    }else if align==egui::Align2::CENTER_CENTER{
+        content.center().x-galley.size().x/2.0
+    }else{content.left()};
+    let overflow=text_exceeds_rect(galley.size(),visible);
+    ui.painter().with_clip_rect(visible).galley(
+        egui::pos2(x,content.center().y-galley.size().y/2.0),galley,color
+    );
+    if overflow&&!text.trim().is_empty(){
+        let response=ui.interact(visible,ui.make_persistent_id(id),Sense::hover());
+        overflow_tooltip(response,true,text);
+    }
+}
+
 pub fn body_error_overlay(ui:&Ui,viewport:Rect,context:&str,error:&str){
     let visible=viewport.intersect(ui.clip_rect());
     if visible.width()<=0.0||visible.height()<=0.0{return;}
@@ -2690,6 +2716,17 @@ pub fn modal_labeled_row_with_width<R>(
     }).inner
 }
 
+/// Shared construction for single-line text and numeric editors. Wrappers
+/// retain their semantic font, allocation, focus and business behavior.
+fn singleline_editor<'a>(
+    value:&'a mut String,font:impl Into<egui::FontSelection>,width:f32,
+    align:Align,margin:egui::Margin
+)->egui::TextEdit<'a>{
+    egui::TextEdit::singleline(value).font(font)
+        .horizontal_align(align).vertical_align(Align::Center)
+        .margin(margin).desired_width(width)
+}
+
 /// Short body-text input (for rates and percentages): same caret, selection,
 /// margins and row height as every form editor. Font remains proportional,
 /// so the independent Consolas +2.5pt data-value tweak is not involved.
@@ -2697,11 +2734,8 @@ pub fn compact_text_field(
     ui:&mut Ui,value:&mut String,width:f32,enabled:bool
 )->Response{
     let width=width.min(ui.available_width().max(1.0)).max(1.0);
-    let edit=egui::TextEdit::singleline(value)
-        .font(egui::TextStyle::Body)
-        .vertical_align(Align::Center)
-        .margin(typography::form_input_text_margin())
-        .desired_width(width);
+    let edit=singleline_editor(value,egui::TextStyle::Body,width,Align::LEFT,
+        typography::form_input_text_margin());
     ui.add_enabled_ui(enabled,|entry|
         entry.add_sized(Vec2::new(width,theme::INPUT_HEIGHT),edit)
     ).inner
@@ -2732,12 +2766,8 @@ fn field_with_margin(
             typography::data_value_font(role,typography::DataValueContext::Form)
         )
     );
-    let field = egui::TextEdit::singleline(value)
-        .font(editor_font)
-        .horizontal_align(semantic.map_or(Align::LEFT,typography::data_value_align))
-        .vertical_align(Align::Center)
-        .margin(input_margin)
-        .desired_width(width);
+    let field=singleline_editor(value,editor_font,width,
+        semantic.map_or(Align::LEFT,typography::data_value_align),input_margin);
     ui.add_enabled_ui(enabled, |ui| {
         ui.add_sized(Vec2::new(width, theme::INPUT_HEIGHT), field)
     }).inner
@@ -2877,9 +2907,7 @@ fn money_text_edit_with_unit<'a>(
     unit:&str,right_inset:f32,unit_gap:f32,margin:egui::Margin
 )->(egui::TextEdit<'a>,std::sync::Arc<egui::Galley>){
     let (margin,galley)=money_unit_margin(ui,unit,font.clone(),right_inset,unit_gap,margin);
-    let edit=egui::TextEdit::singleline(value).font(font)
-        .horizontal_align(Align::RIGHT).vertical_align(Align::Center)
-        .margin(margin).desired_width(width);
+    let edit=singleline_editor(value,font,width,Align::RIGHT,margin);
     (edit,galley)
 }
 
@@ -2915,12 +2943,8 @@ pub fn flexible_text_field(
     ui:&mut Ui, value:&mut String, width:f32, placeholder:&str
 )->Response {
     let width=width.min(ui.available_width().max(60.0));
-    let edit=egui::TextEdit::singleline(value)
-        .font(egui::TextStyle::Body)
-        .vertical_align(Align::Center)
-        .margin(typography::form_input_text_margin())
-        .hint_text(placeholder)
-        .desired_width(width);
+    let edit=singleline_editor(value,egui::TextStyle::Body,width,Align::LEFT,
+        typography::form_input_text_margin()).hint_text(placeholder);
     ui.add_sized(Vec2::new(width,theme::INPUT_HEIGHT),edit)
 }
 
@@ -3373,12 +3397,8 @@ fn reception_recipient_text_edit(
     }else{
         egui::FontId::proportional(typography::FONT_RECEPTION_RECIPIENT_TEXT)
     };
-    let input=egui::TextEdit::singleline(value)
-        .font(font)
-        .horizontal_align(Align::LEFT)
-        .vertical_align(Align::Center)
-        .margin(typography::form_input_text_margin())
-        .desired_width(width);
+    let input=singleline_editor(value,font,width,Align::LEFT,
+        typography::form_input_text_margin());
     if active {
         // TextEdit's native background uses a different square/filled
         // geometry. Let the shared evidence surface own the rounded fill
@@ -5972,12 +5992,8 @@ pub fn reception_inline_cell_editor(
     };
     reception_text_editor_at_click(
         ui,rect,
-        egui::TextEdit::singleline(value)
-            .font(font)
-            .vertical_align(Align::Center)
-            .horizontal_align(if numeric{Align::RIGHT}else{Align::LEFT})
-            .margin(egui::Margin::symmetric(8,2))
-            .desired_width(rect.width()),
+        singleline_editor(value,font,rect.width(),
+            if numeric{Align::RIGHT}else{Align::LEFT},typography::reception_cell_text_margin()),
         request_focus,click_at
     )
 }
@@ -6011,7 +6027,7 @@ fn reception_money_editor_at_rect(
     let inset=theme::SPACE_8;
     let (edit,unit_galley)=money_text_edit_with_unit(
         ui,value,reception_money_font(),rect.width(),"원",inset,
-        RECEPTION_MONEY_UNIT_GAP,egui::Margin::symmetric(8,2)
+        RECEPTION_MONEY_UNIT_GAP,typography::reception_cell_text_margin()
     );
     let response=reception_text_editor_at_click(
         ui,rect,edit,request_focus,click_at
@@ -6461,7 +6477,7 @@ fn reception_freight_money_readonly(ui:&mut Ui,value:&mut String)->Response{
     let inset=theme::SPACE_8;
     let (edit,unit_galley)=money_text_edit_with_unit(
         ui,value,reception_money_font(),RECEPTION_FREIGHT_MONEY_WIDTH,
-        "원",inset,RECEPTION_MONEY_UNIT_GAP,egui::Margin::symmetric(8,2)
+        "원",inset,RECEPTION_MONEY_UNIT_GAP,typography::reception_cell_text_margin()
     );
     let response=ui.add_sized(
         Vec2::new(RECEPTION_FREIGHT_MONEY_WIDTH,theme::INPUT_HEIGHT),
@@ -6603,9 +6619,8 @@ pub fn reception_freight_row_controls(
             }
             if remote_visible{
                 let mut checked=remote.unwrap_or(false);
-                if right.add_enabled(remote_editable && remote.is_some(),
-                    egui::Checkbox::new(&mut checked,"도서/산간")
-                ).changed(){
+                if checkbox(right,&mut checked,"도서/산간",
+                    remote_editable && remote.is_some()).changed(){
                     remote_clicked=true;
                 }
             }
@@ -6972,7 +6987,7 @@ pub fn management_readonly_table_aligned(
 
     let row_height=theme::MANAGEMENT_COMPACT_ROW_HEIGHT;
     let row_advance=management_readonly_table_row_advance();
-    let scroll=egui::ScrollArea::both()
+    let scroll=management_fixed_table_scroll_area(ui,layout.table_width)
         .id_salt(id)
         .max_height(max_height)
         .auto_shrink([false,false]);
@@ -8818,7 +8833,7 @@ mod money_live_format_tests{
             egui::CentralPanel::default().show(ctx,|ui|{
                 let (margin,unit)=money_unit_margin(
                     ui,"원",reception_money_font(),theme::SPACE_8,
-                    RECEPTION_MONEY_UNIT_GAP,egui::Margin::symmetric(8,2)
+                    RECEPTION_MONEY_UNIT_GAP,typography::reception_cell_text_margin()
                 );
                 let unit_left=money_unit_left(104.0,theme::SPACE_8,unit.size().x);
                 assert!(unit_left-(104.0-f32::from(margin.right))
@@ -10950,5 +10965,35 @@ mod structural_divider_contract_tests {
             }
         }
         assert!(violations.is_empty(),"structural divider bypass:\n{}",violations.join("\n"));
+    }
+}
+
+#[cfg(test)]
+mod shared_ui_base_113_contract_tests {
+    use super::*;
+    #[test]
+    fn managed_table_screens_use_shared_scroll_constructor(){
+        for (name,source) in [
+            ("product",include_str!("product_manager.rs")),
+            ("client",include_str!("client_manager.rs")),
+            ("client chooser",include_str!("client_chooser.rs")),
+            ("excel",include_str!("excel_manager.rs")),
+            ("settlement",include_str!("daily_settlement_manager.rs")),
+            ("history",include_str!("order_history_manager.rs")),
+        ]{
+            let production=production_source_for_contract(source);
+            assert!(production.contains("components::management_fixed_table_scroll_area("),"{name}");
+            assert!(!production.contains("egui::ScrollArea::both()"),"{name}: local table scroll");
+        }
+    }
+    #[test]
+    fn standard_text_cells_and_history_header_use_shared_painters(){
+        for source in [include_str!("product_manager.rs"),include_str!("excel_manager.rs"),
+            include_str!("daily_settlement_manager.rs")]{
+            assert!(production_source_for_contract(source).contains("components::paint_management_text_cell("));
+        }
+        let history=production_source_for_contract(include_str!("order_history_manager.rs"));
+        assert!(history.contains("components::management_master_header_begin("));
+        assert!(history.contains("components::management_master_header_finish("));
     }
 }

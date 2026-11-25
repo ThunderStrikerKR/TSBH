@@ -235,19 +235,10 @@ fn product_table_cells(origin:Pos2,widths:&[f32;6],height:f32)->[Rect;6]{
 }
 fn product_table_text(ui:&mut Ui,rect:Rect,text:&str,
     role:typography::ManagementTableCellRole,unique:impl std::hash::Hash){
-    let content=rect.shrink2(Vec2::new(theme::SPACE_8,0.0));
-    let color=typography::management_table_cell_color(role);
-    let galley=typography::management_table_cell_galley(ui,text,role);
-    let overflow=components::text_exceeds_rect(galley.size(),content.intersect(ui.clip_rect()));
-    ui.painter().with_clip_rect(content.intersect(ui.clip_rect())).galley(
-        egui::pos2(content.left(),content.center().y-galley.size().y/2.0),
-        galley,color,
+    components::paint_management_text_cell(
+        ui,rect.shrink2(Vec2::new(theme::SPACE_8,0.0)),text,role,
+        egui::Align2::LEFT_CENTER,("product-table-text",unique)
     );
-    if overflow&&!text.is_empty(){
-        ui.interact(content.intersect(ui.clip_rect()),
-            ui.make_persistent_id(("product-table-text",unique)),
-            Sense::hover()).on_hover_text(text);
-    }
 }
 fn product_price_text(ui:&mut Ui,rect:Rect,value:&Value) {
     let text=price(value);
@@ -1324,12 +1315,9 @@ impl ProductManager {
             );
             let mut row_left=None;
             let scroll_output=components::virtual_fixed_rows(
-                egui::ScrollArea::both()
+                components::management_fixed_table_scroll_area(panel,table_width)
                     .scroll_bar_rect(scroll_track)
                     .id_salt("egui-product-price-grid")
-                    .scroll_bar_visibility(
-                        egui::containers::scroll_area::ScrollBarVisibility::VisibleWhenNeeded
-                    )
                     .max_height(scroll_max_height)
                     .auto_shrink([false,false]),
                 panel,table_width,theme::PRODUCT_TABLE_ROW_HEIGHT,ordered.len(),

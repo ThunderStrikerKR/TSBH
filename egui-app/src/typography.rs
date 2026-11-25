@@ -157,6 +157,10 @@ pub const FORM_INPUT_OPTICAL_SHIFT_Y: i8 = -1;
 pub fn form_label_text_y(row_height:f32,galley_height:f32)->f32 {
     (row_height-galley_height)*0.5+FORM_LABEL_OPTICAL_CENTER_Y
 }
+/// Exact-rectangle worksheet cells retain their existing symmetric padding.
+pub fn reception_cell_text_margin()->egui::Margin{
+    egui::Margin::symmetric(8,2)
+}
 pub fn form_input_text_margin()->egui::Margin{
     const VERTICAL:i8=2;
     egui::Margin {

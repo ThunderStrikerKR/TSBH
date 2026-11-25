@@ -1451,17 +1451,10 @@ impl OrderHistoryManager {
             // ScrollArea exposed a bottom scrollbar even at desktop widths.
             // Only allow horizontal scrolling if the viewport is actually
             // narrower than the seven-column minimum.
-            let needs_horizontal=(viewport-gutter)+0.5<MIN_WIDTH;
-            let table_scroll=if needs_horizontal{
-                egui::ScrollArea::both()
-            }else{
-                egui::ScrollArea::vertical()
-            };
+            let table_scroll=components::management_fixed_table_scroll_area(section,table_width);
             let output=table_scroll
                 .scroll_bar_rect(scroll_track)
                 .id_salt("order-history-table-rows")
-                .scroll_bar_visibility(
-                    egui::containers::scroll_area::ScrollBarVisibility::VisibleWhenNeeded)
                 .max_height(scroll_max_height)
                 .auto_shrink([false,false])
                 .show_viewport(section,|body,viewport|{
@@ -1575,7 +1568,9 @@ impl OrderHistoryManager {
             );
             let header_cells=cells(scrolled_header.min,&widths,HEADER_HEIGHT);
             let painter=section.painter().with_clip_rect(head_rect);
-            painter.rect_filled(head_rect,0.0,theme::RAISED);
+            let header_text_rect=components::management_master_header_begin(
+                section,head_rect,header_content_rect
+            );
             // Header labels AND column separators must use the same
             // horizontally scrolled origin as the data rows. The viewport
             // background, bottom outline and scrollbar rail remain fixed.
@@ -1584,12 +1579,6 @@ impl OrderHistoryManager {
             );
             // Freight centers headings in the 34pt area above its
             // INSIDE-the-header 2pt outline, excluding the right rail.
-            let header_outline_height=2.0_f32;
-            let header_text_rect=Rect::from_min_max(
-                header_content_rect.min,
-                egui::pos2(header_content_rect.right(),
-                    header_content_rect.bottom()-header_outline_height)
-            );
             let header_text_center_y=header_text_rect.center().y;
             let mut next_sort=None;
             for (index,title) in headings.iter().enumerate(){
@@ -1638,13 +1627,7 @@ impl OrderHistoryManager {
                 }
             }
             if let Some(sort)=next_sort {self.sort=sort;}
-            painter.rect_filled(
-                Rect::from_min_max(
-                    egui::pos2(head_rect.left(),
-                        head_rect.bottom()-header_outline_height),
-                    head_rect.right_bottom()
-                ),0.0,theme::TABLE_HEADER_OUTLINE
-            );
+            components::management_master_header_finish(section,head_rect);
             section.spacing_mut().item_spacing.y=old_gap;
             if let Some(order_id)=pending_toggle {
                 toggle_history_expansion(&mut self.expanded,&order_id);

@@ -271,23 +271,9 @@ fn cell(ui:&Ui,rect:Rect,visible:&str,align:Align2,
     }else{
         rect.shrink2(Vec2::new(theme::SPACE_8,0.0))
     };
-    let clip=padded.intersect(ui.clip_rect());
-    if clip.width()<=0.0||clip.height()<=0.0{return}
-    let color=typography::management_table_cell_color(role);
-    let label=typography::management_table_cell_galley(ui,visible,role);
-    let x=if align==Align2::RIGHT_CENTER{
-        padded.right()-label.size().x
-    }else if align==Align2::CENTER_CENTER{
-        padded.center().x-label.size().x/2.0
-    }else{padded.left()};
-    let overflow=components::text_exceeds_rect(label.size(),clip);
-    ui.painter().with_clip_rect(clip).galley(
-        egui::pos2(x,padded.center().y-label.size().y/2.0),label,color
+    components::paint_management_text_cell(
+        ui,padded,visible,role,align,("excel-table-cell",id)
     );
-    if overflow&&!visible.is_empty(){
-        ui.interact(clip,ui.make_persistent_id(("excel-table-cell",id)),Sense::hover())
-            .on_hover_text(visible);
-    }
 }
 /// Each Excel tab shows one table at a time. Loading and empty-state text
 /// belongs to the scrollable table BODY, not the search-to-header transition.
@@ -364,9 +350,7 @@ fn table<const N:usize>(
     );
     let mut left=None;
     let output=components::virtual_fixed_rows(
-        egui::ScrollArea::both().scroll_bar_rect(scroll_track).id_salt(id)
-            .scroll_bar_visibility(
-                egui::containers::scroll_area::ScrollBarVisibility::VisibleWhenNeeded)
+        components::management_fixed_table_scroll_area(ui,width).scroll_bar_rect(scroll_track).id_salt(id)
             .max_height(scroll_max_height)
             .auto_shrink([false,false]),
         ui,width,HEIGHT,rows,|body,range|{

@@ -271,26 +271,10 @@ fn paint_cell(
     ui:&Ui,rect:Rect,content:&str,align:Align2,
     role:typography::ManagementTableCellRole,id:impl std::hash::Hash,
 ){
-    let padded=rect.shrink2(Vec2::new(theme::SPACE_8,0.0));
-    let visible=padded.intersect(ui.clip_rect());
-    if visible.width()<=0.0 || visible.height()<=0.0{return;}
-    let color=typography::management_table_cell_color(role);
-    let text=typography::management_table_cell_galley(ui,content,role);
-    let x=if align==Align2::RIGHT_CENTER{
-        padded.right()-text.size().x
-    }else if align==Align2::CENTER_CENTER{
-        padded.center().x-text.size().x/2.0
-    }else{padded.left()};
-    let overflow=components::text_exceeds_rect(text.size(),visible);
-    ui.painter().with_clip_rect(visible).galley(
-        egui::pos2(x,padded.center().y-text.size().y/2.0),text,color
+    components::paint_management_text_cell(
+        ui,rect.shrink2(Vec2::new(theme::SPACE_8,0.0)),content,role,
+        align,("settlement-cell",id)
     );
-    if overflow&&!content.is_empty(){
-        ui.interact(
-            visible,ui.make_persistent_id(("settlement-cell",id)),
-            Sense::hover()
-        ).on_hover_text(content);
-    }
 }
 
 /// One record per row with one header/row geometry. Header stays pinned
@@ -321,10 +305,7 @@ fn report_table<const N:usize>(
     );
     let mut first_x=None;
     let scroll=components::virtual_fixed_rows(
-        egui::ScrollArea::both().scroll_bar_rect(scroll_track).id_salt(id)
-            .scroll_bar_visibility(
-                egui::containers::scroll_area::ScrollBarVisibility::VisibleWhenNeeded
-            )
+        components::management_fixed_table_scroll_area(ui,width).scroll_bar_rect(scroll_track).id_salt(id)
             .max_height(scroll_max_height)
             .auto_shrink([false,false]),
         ui,width,ROW_HEIGHT,indices.len(),
