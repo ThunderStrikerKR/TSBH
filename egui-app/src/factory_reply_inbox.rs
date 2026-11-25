@@ -456,6 +456,68 @@ mod tests{
     }
 
     #[test]
+    fn scoped_factory_reply_matches_full_result_and_checks_unrelated_waybills(){
+        let base=Temp::new();
+        let (mut conn,_)=synthetic_db(&base.0);
+        let mut initial=snapshot(&mut conn).unwrap();
+        for (n,name,tracking) in [(2,"두번째 수취인",""),(3,"다른 수취인","001234567890")]{
+            let mut recipient=initial["orders"][0]["recipients"][0].clone();
+            recipient["id"]=json!(format!("r{n}"));
+            recipient["name"]=json!(name);
+            recipient["items"][0]["id"]=json!(format!("i{n}"));
+            initial["orders"].as_array_mut().unwrap().push(json!({
+                "id":format!("o{n}"),"clientId":"c1","recipients":[recipient.clone()]
+            }));
+            initial["workflow"]["shipments"].as_array_mut().unwrap().push(json!({
+                "id":format!("s{n}"),"orderId":format!("o{n}"),"recipientId":format!("r{n}"),
+                "charges":{"FACTORY":3000},"actualFreight":{},"tracking":{"FACTORY":tracking}
+            }));
+            initial["workflow"]["queue"].as_array_mut().unwrap().push(json!({
+                "id":format!("q{n}"),"shipmentId":format!("s{n}"),
+                "origin":"FACTORY","status":"EXPORTED","snapshot":{"recipient":recipient}
+            }));
+        }
+        let tx=conn.transaction().unwrap();
+        bando_data_access::store_v2_relational(&tx,&initial).unwrap();
+        let mut envelope=initial.clone();
+        for key in ["products","clients","orders"]{envelope.as_object_mut().unwrap().remove(key);}
+        tx.execute("UPDATE app_state SET payload=?1 WHERE id=1",[envelope.to_string()]).unwrap();
+        tx.commit().unwrap();
+        let initial=snapshot(&mut conn).unwrap();
+        let bytes=reply_bytes("001234567890",4000);
+        let mut source=native_workbooks::read_factory_reply("reply.xlsx",&bytes).unwrap();
+        let mut second=source["sourceRows"][0].clone();
+        second["row"]=json!(3);
+        second["name"]=json!("두번째 수취인");
+        second["tracking"]=json!("009876543210");
+        source["sourceRows"].as_array_mut().unwrap().push(second);
+        source["sourceRowCount"]=json!(2);
+        source["businessDate"]=json!("2026-11-25");
+        source["at"]=json!("2026-11-25T01:00:00Z");
+        source["freightAt"]=source["at"].clone();
+        source["actor"]=json!("합성 직원");
+        source["freightEventIds"]=json!(["f1","f2"]);
+        source["replyEventIds"]=json!(["e1","e2"]);
+        let mut expected=rules::import_automatic_factory_reply(&initial,&source).unwrap();
+        expected["next"]["revision"]=json!(8);
+        expected["next"]["factoryReplies"][0]["archivedPath"]=json!("synthetic.xlsx");
+        let result=bando_data_access::update_v2_factory_reply_snapshot(&mut conn,7,&source,|scope|{
+            let orders=scope["orders"].as_array().unwrap();
+            assert_eq!(orders.iter().map(|o|o["id"].as_str().unwrap()).collect::<Vec<_>>(),vec!["o1","o2"]);
+            assert!(scope.get("products").is_none());
+            assert!(scope.get("clients").is_none());
+            assert_eq!(scope["workflow"]["shipments"].as_array().unwrap().len(),3);
+            assert_eq!(scope["workflow"]["payments"],initial["workflow"]["payments"]);
+            Ok("synthetic.xlsx".to_owned())
+        }).unwrap();
+        assert_eq!(result,expected);
+        assert_eq!(result["applied"],1);
+        assert_eq!(result["held"],1);
+        assert_eq!(result["next"]["workflow"]["shipments"][2],initial["workflow"]["shipments"][2]);
+        assert_eq!(snapshot(&mut conn).unwrap(),result["next"]);
+    }
+
+    #[test]
     fn duplicate_metadata_does_not_hydrate_relational_order_tables(){
         let base=Temp::new();
         let (mut conn,inbox)=synthetic_db(&base.0);
