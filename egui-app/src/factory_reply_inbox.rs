@@ -328,8 +328,8 @@ mod tests{
         assert!(read_bounded(&path).is_err());
     }
 
-    // Isolated v2 fixture. Schema mirrors recovery::sql_schema; business
-    // rows are seeded through the shared production relational writer.
+    // Isolated v2 fixture. Reuse the test workspace schema and seed both
+    // relational business rows and the production lookup indexes.
     fn synthetic_db(base:&Path)->(Connection,PathBuf){
         synthetic_db_with_export(base,false)
     }
@@ -339,55 +339,7 @@ mod tests{
         fs::create_dir(&inbox).unwrap();
         fs::create_dir(&archive).unwrap();
         let mut conn=Connection::open(base.join("synthetic.sqlite")).unwrap();
-        conn.execute_batch(r#"
-            PRAGMA foreign_keys=ON;
-            CREATE TABLE app_state(id INTEGER PRIMARY KEY,payload TEXT);
-            
-        CREATE TABLE IF NOT EXISTS core_schema(
-            key TEXT PRIMARY KEY, version INTEGER NOT NULL CHECK(version > 0)
-        );
-        CREATE TABLE IF NOT EXISTS core_products(
-            id TEXT PRIMARY KEY, position INTEGER NOT NULL,
-            code TEXT NOT NULL, name TEXT NOT NULL, payload TEXT NOT NULL CHECK(json_valid(payload))
-        );
-        CREATE INDEX IF NOT EXISTS idx_core_products_name ON core_products(name);
-        CREATE INDEX IF NOT EXISTS idx_core_products_code ON core_products(code);
-        CREATE TABLE IF NOT EXISTS core_product_prices(
-            product_id TEXT PRIMARY KEY REFERENCES core_products(id) ON DELETE CASCADE,
-            price_record_id TEXT NOT NULL UNIQUE,
-            color TEXT NOT NULL,
-            wholesale INTEGER CHECK(wholesale IS NULL OR wholesale >= 0),
-            semi INTEGER CHECK(semi IS NULL OR semi >= 0),
-            retail INTEGER CHECK(retail IS NULL OR retail >= 0),
-            payload TEXT NOT NULL CHECK(json_valid(payload))
-        );
-        CREATE TABLE IF NOT EXISTS core_clients(
-            id TEXT PRIMARY KEY, position INTEGER NOT NULL, name TEXT NOT NULL,
-            tier TEXT NOT NULL, address TEXT NOT NULL, payload TEXT NOT NULL CHECK(json_valid(payload))
-        );
-        CREATE INDEX IF NOT EXISTS idx_core_clients_name ON core_clients(name);
-        CREATE TABLE IF NOT EXISTS core_orders(
-            id TEXT PRIMARY KEY, position INTEGER NOT NULL, client_id TEXT,
-            created_at TEXT, confirmed_at TEXT, status TEXT,
-            payload TEXT NOT NULL CHECK(json_valid(payload))
-        );
-        CREATE INDEX IF NOT EXISTS idx_core_orders_created ON core_orders(created_at);
-        CREATE INDEX IF NOT EXISTS idx_core_orders_client ON core_orders(client_id);
-        CREATE TABLE IF NOT EXISTS core_recipients(
-            id TEXT PRIMARY KEY, order_id TEXT NOT NULL REFERENCES core_orders(id) ON DELETE CASCADE,
-            position INTEGER NOT NULL, name TEXT NOT NULL, payload TEXT NOT NULL CHECK(json_valid(payload))
-        );
-        CREATE INDEX IF NOT EXISTS idx_core_recipients_order ON core_recipients(order_id,position);
-        CREATE TABLE IF NOT EXISTS core_items(
-            id TEXT PRIMARY KEY, recipient_id TEXT NOT NULL REFERENCES core_recipients(id) ON DELETE CASCADE,
-            position INTEGER NOT NULL, product_id TEXT, variant_id TEXT,
-            payload TEXT NOT NULL CHECK(json_valid(payload))
-        );
-        CREATE INDEX IF NOT EXISTS idx_core_items_recipient ON core_items(recipient_id,position);
-        CREATE INDEX IF NOT EXISTS idx_core_items_product ON core_items(product_id);
-    
-            INSERT INTO core_schema(key,version) VALUES('business-core',2);
-        "#).unwrap();
+        conn.execute_batch(include_str!("test_workspace_schema.sql")).unwrap();
         let recipient=json!({"id":"r1","name":"합성 수취인","address":"서울 종로구 10",
             "phone":"010-0000-0000","mobile":"","actualFreight":null,
             "items":[{"id":"i1","origin":"FACTORY","quantity":1,"unitPrice":10000}]});
@@ -433,6 +385,20 @@ mod tests{
         }
         let tx=conn.transaction().unwrap();
         bando_data_access::store_v2_relational(&tx,&state).unwrap();
+        // Mirror the index rows maintained by the production snapshot writer.
+        for product in state["products"].as_array().unwrap(){
+            tx.execute("INSERT INTO product_index(id,code,name,payload) VALUES (?1,?2,?3,?4)",
+                rusqlite::params![product["id"].as_str().unwrap(),
+                    product["code"].as_str().unwrap(),product["name"].as_str().unwrap(),
+                    product.to_string()]).unwrap();
+        }
+        for order in state["orders"].as_array().unwrap(){
+            tx.execute("INSERT INTO order_index(id,client_id,created_at,confirmed_at,status) VALUES (?1,?2,?3,?4,?5)",
+                rusqlite::params![order["id"].as_str().unwrap(),
+                    order["clientId"].as_str().unwrap_or(""),
+                    order["createdAt"].as_str().unwrap_or(""),order["confirmedAt"].as_str(),
+                    order["status"].as_str().unwrap_or("REVIEW")]).unwrap();
+        }
         for key in ["products","clients","orders"]{state.as_object_mut().unwrap().remove(key);}
         tx.execute("INSERT INTO app_state VALUES(1,?1)",[state.to_string()]).unwrap();
         tx.commit().unwrap();
