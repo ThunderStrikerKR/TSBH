@@ -173,6 +173,41 @@ fn workflow_review_entries(native:&Value,shipments:&[ShipmentRow])->Vec<Value>{
     issues
 }
 
+/// Presentation-only equality for the native detail and legacy blocker
+/// wording. Keep the recipient prefix; different recipients are not duplicates.
+fn review_message_key(message:&str)->String{
+    message.trim().trim_end_matches('.').trim_end()
+        .replace(" / ",": ")
+}
+/// The structured issue card owns its action and severity. Additional string
+/// errors from mutations and automatic message generation must not repeat it.
+/// Do not alter stored errors, refresh admission or native validation.
+pub fn workflow_review_extra_messages(group:&GroupRow,workflow_error:Option<&str>)->Vec<String>{
+    let mut represented=HashSet::new();
+    for issue in &group.issues{
+        if let Some(label)=workflow_issue_label(issue){
+            represented.insert(review_message_key(&label));
+        }
+        let title=text(issue,"title");
+        if title.is_empty() || text(issue,"recipientId").is_empty(){continue;}
+        if let Some(ship)=group.shipments.iter().find(|s|
+            s.recipient_id==text(issue,"recipientId") &&
+            (text(issue,"orderId").is_empty() || s.order_id==text(issue,"orderId"))
+        ){
+            let name=if ship.recipient_name.is_empty(){"수취인"}else{&ship.recipient_name};
+            represented.insert(review_message_key(&format!("{name}: {title}")));
+        }
+    }
+    let mut extra=Vec::new();
+    for raw in [workflow_error,group.automatic_error.as_deref()].into_iter().flatten(){
+        let remaining=raw.lines().filter(|line|!line.trim().is_empty())
+            .filter(|line|represented.insert(review_message_key(line)))
+            .collect::<Vec<_>>();
+        if !remaining.is_empty(){extra.push(remaining.join("\n"));}
+    }
+    extra
+}
+
 /// Resolve only an actual editable, missing per-origin charge. Never route
 /// by the display name or an unrelated currently visible shipment.
 pub fn missing_freight_target<'a>(group:&'a GroupRow,issue:&Value,preferred:&str)
@@ -543,6 +578,25 @@ mod linked_recipient_selection_tests{
         settled.shipments[1].display_charges.insert("FACTORY".into(),None);
         settled.shipments[1].collect=true;
         assert!(missing_freight_target(&settled,&entries[0],"s1").is_none());
+    }
+    #[test]
+    fn action_card_owns_duplicate_mutation_and_automatic_message_errors(){
+        let mut group=group("g",vec![shipment("s1","o1","r1")]);
+        group.issues=vec![json!({"issueId":"freight-r1","kind":"FREIGHT","severity":"ACTION",
+            "recipientId":"r1","orderId":"o1","title":"배송 운임을 확인하세요",
+            "detail":"동명이인 / 배송 운임을 확인하세요"})];
+        group.automatic_error=Some("동명이인: 배송 운임을 확인하세요.".into());
+        assert!(workflow_review_extra_messages(&group,
+            Some("동명이인: 배송 운임을 확인하세요")).is_empty());
+        assert_eq!(workflow_review_extra_messages(&group,
+            Some("동명이인: 배송 운임을 확인하세요\n다른 수취인: 배송 운임을 확인하세요")),
+            vec!["다른 수취인: 배송 운임을 확인하세요".to_owned()]);
+        group.automatic_error=Some("주문 상태를 확인하세요.".into());
+        assert_eq!(workflow_review_extra_messages(&group,Some("주문 상태를 확인하세요")),
+            vec!["주문 상태를 확인하세요".to_owned()]);
+        group.issues.clear();
+        assert_eq!(workflow_review_extra_messages(&group,
+            Some("동명이인: 배송 운임을 확인하세요")).len(),2);
     }
     #[test]
     fn structured_workflow_issues_render_their_detail_and_title(){

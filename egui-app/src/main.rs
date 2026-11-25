@@ -6861,11 +6861,10 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                         }
                                     });
                                 }
-                                if let Some(error)=self.workflow_error.as_deref(){
-                                    components::reception_review_status(issues,error);
-                                }
-                                if let Some(error)=group.automatic_error.as_deref(){
-                                    components::reception_review_status(issues,error);
+                                for message in workflow_board::workflow_review_extra_messages(
+                                    group,self.workflow_error.as_deref()
+                                ){
+                                    components::reception_review_status(issues,&message);
                                 }
                             });
                     });
