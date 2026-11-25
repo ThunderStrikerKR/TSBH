@@ -176,9 +176,9 @@ impl ReviewPanel {
         let client_interactive=self.ready() && client_enabled;
         if let Some(error)=self.error.as_deref(){
             theme::review_issue_card(ui,ReviewTone::Error,|cell|{
-                cell.add(egui::Label::new(typography::body(
+                cell.add(egui::Label::new(typography::review_error_text(
                     &format!("Rust 확인 항목 조회 실패: {error}")
-                ).color(ReviewTone::Error.text_color())).wrap());
+                )).wrap());
             });
             return None;
         }
@@ -209,15 +209,14 @@ impl ReviewPanel {
         if let Some(remote)=remote{
             let tone=ReviewTone::Info;
             theme::review_issue_card(ui,tone,|content|{
-                    content.add(egui::Label::new(typography::body("도서·산간 지역 확인")
-                        .strong().color(tone.text_color())).wrap());
-                    content.add(egui::Label::new(typography::caption(
+                    content.add(egui::Label::new(typography::review_title("도서·산간 지역 확인",tone)).wrap());
+                    content.add(egui::Label::new(typography::review_detail(
                         if text(remote,"status")=="auto" {
                             "도서·산간 지역으로 판단했습니다. 확인 후 체크 여부를 결정하세요."
                         }else{
                             "도서·산간 지역일 수 있습니다. 주소를 확인 후 체크 여부를 결정하세요."
-                        }
-                    ).color(tone.detail_color())).wrap());
+                        },tone
+                )).wrap());
                 });
         }
         if !inherited.is_empty(){
@@ -259,31 +258,30 @@ fn issue_card(
     let link_key=issue.get("linkKey").and_then(Value::as_str);
     let tone=issue_tone(issue);
     theme::review_issue_card(ui,tone,|cell|{
-            cell.add(egui::Label::new(typography::body(
+            cell.add(egui::Label::new(typography::review_title(
                 if kind=="QUANTITY_MISSING"
                     &&text(issue,"resolution")=="PROVISIONALLY_APPROVED"{
                     "수량 1개 잠정 처리됨"
-                }else{title}
-            ).strong().color(tone.text_color())).wrap());
+                }else{title},tone
+            )).wrap());
             if !detail.is_empty() && detail!=title {
-                cell.add(egui::Label::new(typography::caption(detail)
-                    .color(tone.detail_color())).wrap());
+                cell.add(egui::Label::new(typography::review_detail(detail,tone)).wrap());
             }
             if kind=="UNASSIGNED_EVIDENCE" {
-                cell.add(egui::Label::new(typography::caption(
-                    "상품 또는 수량으로 인식된 문구입니다. 수동 분류에서 실제 주문 내용과 연결할지 확인하세요."
-                ).color(tone.detail_color())).wrap());
+                cell.add(egui::Label::new(typography::review_detail(
+                    "상품 또는 수량으로 인식된 문구입니다. 수동 분류에서 실제 주문 내용과 연결할지 확인하세요.",tone
+                )).wrap());
             }
             if text(issue,"resolution")=="PENDING_CUSTOMER" {
-                cell.add(egui::Label::new(typography::caption(
-                    "거래처 확인 대기 / 문의 복사만으로 해결되지 않습니다."
-                ).color(tone.detail_color())).wrap());
+                cell.add(egui::Label::new(typography::review_detail(
+                    "거래처 확인 대기 / 문의 복사만으로 해결되지 않습니다.",tone
+                )).wrap());
             }
             if kind=="QUANTITY_MISSING"
                 &&text(issue,"resolution")=="PROVISIONALLY_APPROVED"{
-                cell.add(egui::Label::new(typography::caption(
-                    "1개 발송 예정 안내가 복사용 메시지에 포함됩니다. 실제 수량이 확인되면 수량을 수정하세요."
-                ).color(tone.detail_color())).wrap());
+                cell.add(egui::Label::new(typography::review_detail(
+                    "1개 발송 예정 안내가 복사용 메시지에 포함됩니다. 실제 수량이 확인되면 수량을 수정하세요.",tone
+                )).wrap());
             }
             let is_client=kind=="CLIENT" || kind.starts_with("CLIENT_MATCH_");
             let is_candidate=kind.starts_with("CANDIDATE_");

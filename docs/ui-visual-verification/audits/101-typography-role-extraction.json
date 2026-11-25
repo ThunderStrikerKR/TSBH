@@ -1,0 +1,14 @@
+{
+  "schemaVersion": 1,
+  "id": "101-typography-role-extraction",
+  "screen": "OCR, product photo placeholder, review and floating notice text (101차 4단계)",
+  "files": [
+    "egui-app/src/typography.rs",
+    "egui-app/src/main.rs",
+    "egui-app/src/product_images.rs",
+    "egui-app/src/review_panel.rs",
+    "egui-app/src/floating_notice.rs"
+  ],
+  "visualStatus": "NOT_VERIFIED",
+  "reason": "Extracted existing typography roles without changing numeric font policy or intended rendering. Human-reviewed Windows screenshots for changed source blobs at two viewport sizes are not yet available."
+}

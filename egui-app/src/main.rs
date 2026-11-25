@@ -4588,9 +4588,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                     zoom.add_sized(
                                         Vec2::new(54.0,24.0),
                                         egui::Label::new(
-                                            egui::RichText::new(format!(
-                                                "{:>3.0}%",review.zoom*100.0
-                                            ))
+                                            typography::ocr_zoom_label(review.zoom)
                                         )
                                     );
                                     zoom.add_sized(
@@ -4857,9 +4855,9 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                 .max_rect(hint_rect),
                             |hint|{
                                 hint.set_clip_rect(clip);
-                                hint.label(egui::RichText::new(
+                                hint.label(typography::ocr_validation_hint(
                                     "인식된 텍스트는 1~20,000자로 수정해 주세요."
-                                ).color(theme::DANGER));
+                                ));
                             },
                         );
                     }
@@ -5943,10 +5941,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                             progress.add_space(theme::SPACE_12);
                         }
                         progress.label(
-                            egui::RichText::new("이미지 분석중...")
-                                .size(typography::FONT_OCR_PROGRESS_TITLE)
-                                .strong()
-                                .color(theme::TEXT)
+                            typography::ocr_progress_title("이미지 분석중...")
                         );
                         progress.add_space(theme::SPACE_16);
                         if theme::action(

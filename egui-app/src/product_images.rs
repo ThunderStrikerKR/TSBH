@@ -7,7 +7,7 @@ use std::{collections::HashMap,fs,path::{Path,PathBuf}};
 use base64::{Engine as _,engine::general_purpose::STANDARD};
 use eframe::egui::{self,Color32,Context,Rect,TextureHandle,TextureOptions,Ui,Vec2};
 use serde_json::Value;
-use crate::theme;
+use crate::{theme,typography};
 
 const BUNDLED: &str = include_str!("../../src/tauri-product-images.json");
 const MAX_IMAGE_BYTES: usize = 8 * 1024 * 1024;
@@ -182,7 +182,7 @@ impl ProductImageCache {
                 Color32::WHITE);
         }else{
             ui.painter().text(rect.center(),egui::Align2::CENTER_CENTER,
-                "상품 사진 없음",egui::FontId::proportional(14.0),theme::SECONDARY);
+                "상품 사진 없음",typography::product_image_placeholder_font(),theme::SECONDARY);
         }
     }
     pub fn photo(&mut self,ui:&mut Ui,product:&Value,size:f32){
