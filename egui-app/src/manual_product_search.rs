@@ -206,7 +206,7 @@ impl ProductSearch{
                                         if self.error.is_some() {
                                             // Error uses the reserved outer result viewport below.
                                         } else if self.receiver.is_some() {
-                                            ui.label(typography::caption("상품 검색 중"));
+                                            // Pending status is painted in the reserved result viewport.
                                         } else {
                                     for row in &self.products{
                                         let name=field(row,"name");
@@ -248,13 +248,15 @@ impl ProductSearch{
                                         components::soft_divider(ui);
                                     }
 
-                                            if self.products.is_empty() {
-                                                ui.label(typography::caption("검색 결과가 없습니다."));
-                                            }
                                         }
                                     });
                                 if let Some(error)=self.error.as_deref(){
                                     components::body_error_overlay(pane,results_rect,"reception.product",error);
+                                }else{
+                                    let caption=if self.receiver.is_some(){Some("상품 검색 중")}
+                                        else if self.products.is_empty(){Some("검색 결과가 없습니다.")}
+                                        else{None};
+                                    components::management_body_state_overlay(pane,results_rect,caption);
                                 }
                             },
                         );
