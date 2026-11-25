@@ -249,7 +249,7 @@ pub trait BandoGateway: Send + Sync {
             .and_then(Value::as_array).cloned().ok_or("거래처 목록 형식 오류".into()));
         Ok((None,Some(ReceptionMetadata{inbox,clients})))
     }
-    /// Only the native scoped freight writer guarantees the dependency scope.
+    /// Native shipment mutations support order-scoped projection when the commit proves its scope.
     fn supports_scoped_freight_refresh(&self)->bool{false}
     fn mutate_workflow(
         &self,_expected_revision:u64,_action:&str,_args:Value
@@ -882,7 +882,7 @@ impl BandoGateway for LocalGateway {
         checkpoint("apply_action");
         let changed=result.get("state")
             .ok_or("업무 처리 결과에 상태가 없습니다.")?.clone();
-        if !scoped_freight{
+        if !scoped_freight && !scoped_group_move{
             rules::execute("validate_workflow",serde_json::json!({
                 "state":&changed,"before":&before
             }))?;
@@ -893,11 +893,15 @@ impl BandoGateway for LocalGateway {
         }
         Ok(changed)
         };
-        let verified=if scoped_freight{
+        let verified=if scoped_freight || scoped_group_move{
             let shipment_id=args["shipmentId"].as_str().ok_or("배송 건 ID 누락")?;
             let group_id=args["groupId"].as_str().ok_or("주문 묶음 ID 누락")?;
-            bando_data_access::update_v2_freight_snapshot(
-                &mut conn,expected_revision,shipment_id,group_id,mutate)?
+            let (mut state,stable)=bando_data_access::update_v2_shipment_snapshot(
+                &mut conn,expected_revision,shipment_id,group_id,mutate)?;
+            // Transient response metadata only, never written to SQLite.
+            // A fallback may include catalog normalization or trigger effects.
+            state["_scopedShipmentRefresh"]=Value::Bool(stable);
+            state
         }else{
             bando_data_access::update_v2_snapshot(
                 &mut conn,expected_revision,true,mutate)?
