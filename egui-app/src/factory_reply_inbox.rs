@@ -73,58 +73,67 @@ fn preserve(base:&Path,bytes:&[u8])->Result<PathBuf,String>{
 }
 fn today()->String{Utc::now().with_timezone(&FixedOffset::east_opt(9*3600).unwrap()).format("%Y-%m-%d").to_string()}
 fn ids(n:usize)->Vec<String>{(0..n).map(|_|Uuid::new_v4().to_string()).collect()}
+#[cfg(test)]
 fn snapshot(conn:&mut Connection)->Result<Value,String>{
     let tx=conn.transaction().map_err(|e|e.to_string())?;
     let value=bando_data_access::read_v2_snapshot(&tx)?;
     tx.commit().map_err(|e|e.to_string())?;
     Ok(value)
 }
-/// Only called after a stable file observation. The bytes are verified again
-/// before commit; no UI-provided candidate snapshot is accepted.
-fn import(conn:&mut Connection,base:&Path,dir:&Path,path:&Path,bytes:&[u8])->Result<Value,String>{
-    let filename=path.file_name().and_then(|n|n.to_str()).filter(|n|valid_name(n)).ok_or("회신 파일명 오류")?;
+/// The v2 envelope owns revision and reply history. Do not hydrate products,
+/// clients or orders merely to identify a duplicate inbox file.
+fn import_metadata(conn:&Connection,file_id:&str)->Result<(u64,bool),String>{
+    let (revision,duplicate):(Option<i64>,bool)=conn.query_row(
+        "SELECT CASE WHEN json_type(payload,'$.revision')='integer'
+                     THEN json_extract(payload,'$.revision') END,
+            EXISTS(SELECT 1 FROM json_each(CASE
+                WHEN json_type(app_state.payload,'$.factoryReplies')='array'
+                THEN json_extract(app_state.payload,'$.factoryReplies') ELSE '[]' END) AS entry
+                WHERE CASE WHEN entry.type='object'
+                    THEN json_type(entry.value,'$.id')='text'
+                         AND json_extract(entry.value,'$.id')=?1 ELSE 0 END)
+         FROM app_state WHERE id=1",
+        [file_id],|r|Ok((r.get(0)?,r.get(1)?))).map_err(|e|e.to_string())?;
+    let revision=revision.and_then(|v|u64::try_from(v).ok()).ok_or("DB 리비전 누락")?;
+    Ok((revision,duplicate))
+}
+/// Stable bytes have already been parsed by the scanner. The only hydrated
+/// before-image is the CAS transaction's authoritative state.
+fn import(conn:&mut Connection,base:&Path,dir:&Path,path:&Path,bytes:&[u8],mut source:Value)->Result<Value,String>{
+    path.file_name().and_then(|n|n.to_str()).filter(|n|valid_name(n)).ok_or("회신 파일명 오류")?;
     if path.canonicalize().map_err(|e|e.to_string())?.parent()!=Some(dir){
         return Err("지정한 수신 폴더 외부의 회신 파일은 허용하지 않습니다.".into());
     }
-    let source=native_workbooks::read_factory_reply(filename,bytes)?;
-    let file_id=text(&source,"id");
-    let current=snapshot(conn)?;
-    if rules::execute("factory_reply_duplicate",json!({"state":current,"id":file_id}))?["duplicate"]==true{
-        return Ok(json!({"duplicate":true}))
-    }
-    if directory(text(&current["settings"],"factoryReplyDirectory"))?.as_deref()!=Some(dir){
+    let (rev,duplicate)=import_metadata(conn,text(&source,"id"))?;
+    if duplicate{return Ok(json!({"duplicate":true}))}
+    if configured(conn)?.as_deref()!=Some(dir){
         return Err("회신 수신 폴더 설정이 변경됐습니다.".into())
     }
-    let rev=current["revision"].as_u64().ok_or("DB 리비전 누락")?;
     let at=Utc::now().to_rfc3339();
-    let business_date=today();
     let n=source["sourceRows"].as_array().map(Vec::len).unwrap_or(0);
-    let freight_ids=ids(n);let reply_ids=ids(n);
-    let mut analyze=source.clone();
-    analyze["state"]=current.clone();
-    analyze["businessDate"]=json!(business_date);
-    analyze["at"]=json!(at);
-    analyze["actor"]=json!(text(&current["settings"],"operatorName"));
-    let preview=rules::execute("analyze_factory_reply",analyze)?;
-    if read_bounded(path)?!=bytes{return Err("회신 파일이 변경됐습니다.".into())}
-    let archived=preserve(base,bytes)?;
+    source["businessDate"]=json!(today());
+    source["at"]=json!(at);
+    source["freightAt"]=json!(at);
+    source["freightEventIds"]=json!(ids(n));
+    source["replyEventIds"]=json!(ids(n));
+    let mut counts=(Value::Null,Value::Null);
     let result=bando_data_access::update_v2_snapshot(conn,rev,true,|before|{
         if directory(text(&before["settings"],"factoryReplyDirectory"))?.as_deref()!=Some(dir){
             return Err("회신 폴더 설정 변경".into())
         }
-        let mut data=source.clone();
-        data["state"]=before.clone();data["businessDate"]=json!(business_date);
-        data["at"]=json!(at);data["actor"]=json!(text(&before["settings"],"operatorName"));
-        let fresh=rules::execute("analyze_factory_reply",data)?;
-        if fresh!=preview{return Err("회신 연결 결과가 달라졌습니다.".into())}
-        let mut next=rules::execute("apply_factory_reply",json!({"state":before,"preview":fresh,
-            "freightAt":at,"freightEventIds":freight_ids,"replyEventIds":reply_ids}))?;
+        source["actor"]=json!(text(&before["settings"],"operatorName"));
+        let mut next=rules::import_automatic_factory_reply(before,&source)?;
+        counts=(next["applied"].clone(),next["held"].clone());
+        // Only a semantically valid candidate is archived. Check the live
+        // source bytes again before preserving and committing the candidate.
+        if read_bounded(path)?!=bytes{return Err("회신 파일이 변경됐습니다.".into())}
+        let archived=preserve(base,bytes)?;
         let record=next["next"]["factoryReplies"].as_array_mut().and_then(|r|r.last_mut()).ok_or("회신 이력 누락")?;
         record["archivedPath"]=json!(archived.to_string_lossy());
         next.as_object_mut().and_then(|m|m.remove("next")).ok_or("회신 저장 결과 누락".into())
     })?;
     let warning=excel_service::archive_reply_workbook(&result,bytes).err();
-    Ok(json!({"duplicate":false,"applied":preview["applied"],"held":preview["held"],"archiveWarning":warning}))
+    Ok(json!({"duplicate":false,"applied":counts.0,"held":counts.1,"archiveWarning":warning}))
 }
 pub fn approve(review:Value)->Result<Value,String>{
     let (mut conn,base)=open_db()?;
@@ -185,10 +194,11 @@ fn scan_with_db(cache:&mut Scan,conn:&mut Connection,base:&Path)->Result<Outcome
         let bytes=match read_bounded(&path){Ok(b)=>b,Err(e)=>{outcome.error=Some(e);continue}};
         if stamp(&path).ok()!=Some(current)||bytes.len() as u64!=current.0{continue}
         // Invalid binary files are reported once until the file changes.
-        if let Err(e)=native_workbooks::read_factory_reply(name.to_str().unwrap_or(""),&bytes){
-            seen.done=true;outcome.error=Some(format!("회신 파일 검토 필요: {e}"));continue
-        }
-        match import(conn,base,&dir,&path,&bytes){
+        let source=match native_workbooks::read_factory_reply(name.to_str().unwrap_or(""),&bytes){
+            Ok(source)=>source,
+            Err(e)=>{seen.done=true;outcome.error=Some(format!("회신 파일 검토 필요: {e}"));continue}
+        };
+        match import(conn,base,&dir,&path,&bytes,source){
             Ok(result)=>{
                 seen.done=true;
                 if result["duplicate"]!=true{
@@ -450,6 +460,26 @@ mod tests{
         assert!(replay.error.is_none(),"{:?}",replay.error);
         assert_eq!((replay.files,replay.applied,replay.held),(0,0,0));
         assert_eq!(snapshot(&mut conn).unwrap(),stored);
+    }
+
+    #[test]
+    fn duplicate_metadata_does_not_hydrate_relational_order_tables(){
+        let base=Temp::new();
+        let (mut conn,inbox)=synthetic_db(&base.0);
+        let bytes=reply_bytes("001234567890",4000);
+        fs::write(inbox.join("reply.xlsx"),&bytes).unwrap();
+        let imported=scan_ready(&mut Scan::default(),&mut conn,&base.0);
+        assert_eq!((imported.files,imported.applied),(1,1));
+        assert!(imported.error.is_none(),"{:?}",imported.error);
+        assert_eq!(import_metadata(&conn,&id(&bytes)).unwrap(),(8,true));
+        // A missing relational table would make a full hydration fail.
+        // A duplicate is nevertheless recognized from the envelope alone.
+        conn.execute_batch("DROP TABLE core_items;").unwrap();
+        assert!(snapshot(&mut conn).is_err());
+        let replay=scan_ready(&mut Scan::default(),&mut conn,&base.0);
+        assert!(replay.error.is_none(),"{:?}",replay.error);
+        assert_eq!((replay.files,replay.applied,replay.held),(0,0,0));
+        assert_eq!(import_metadata(&conn,&id(&bytes)).unwrap(),(8,true));
     }
 
     #[test]
