@@ -1357,7 +1357,7 @@ mod common_action_tooltip_tests{
             for width in [48.0,400.0]{
                 let ctx=test_context();
                 ctx.memory_mut(|memory|memory.set_everything_is_visible(true));
-                let mut count=0;
+                let mut count=0usize;
                 // The tooltip Area measures its size before the visible pass.
                 for _ in 0..3{
                     let output=ctx.run(egui::RawInput{
