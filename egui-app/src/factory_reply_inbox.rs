@@ -160,7 +160,11 @@ struct Scan{seen:HashMap<PathBuf,Seen>,directory:Option<PathBuf>}
 pub struct Outcome{pub files:usize,pub applied:usize,pub held:usize,pub error:Option<String>}
 fn scan(cache:&mut Scan)->Result<Outcome,String>{
     let (mut conn,base)=open_db()?;
-    let dir=configured(&conn)?;
+    scan_with_db(cache,&mut conn,&base)
+}
+// The live caller retains authorization; tests supply an explicitly isolated DB.
+fn scan_with_db(cache:&mut Scan,conn:&mut Connection,base:&Path)->Result<Outcome,String>{
+    let dir=configured(conn)?;
     if cache.directory!=dir{cache.seen.clear();cache.directory=dir.clone();}
     let Some(dir)=dir else{return Ok(Outcome::default())};
     let mut outcome=Outcome::default();let mut active=HashSet::new();let mut attempted=0;
@@ -180,7 +184,7 @@ fn scan(cache:&mut Scan)->Result<Outcome,String>{
         if let Err(e)=native_workbooks::read_factory_reply(name.to_str().unwrap_or(""),&bytes){
             seen.done=true;outcome.error=Some(format!("회신 파일 검토 필요: {e}"));continue
         }
-        match import(&mut conn,&base,&dir,&path,&bytes){
+        match import(conn,base,&dir,&path,&bytes){
             Ok(result)=>{
                 seen.done=true;
                 if result["duplicate"]!=true{
@@ -296,5 +300,166 @@ mod tests{
         drop(file);
         assert!(stamp(&path).is_err());
         assert!(read_bounded(&path).is_err());
+    }
+
+    // Isolated v2 fixture. Schema mirrors recovery::sql_schema; business
+    // rows are seeded through the shared production relational writer.
+    fn synthetic_db(base:&Path)->(Connection,PathBuf){
+        let inbox=base.join("inbox");
+        let archive=base.join("excel");
+        fs::create_dir(&inbox).unwrap();
+        fs::create_dir(&archive).unwrap();
+        let mut conn=Connection::open(base.join("synthetic.sqlite")).unwrap();
+        conn.execute_batch(r#"
+            PRAGMA foreign_keys=ON;
+            CREATE TABLE app_state(id INTEGER PRIMARY KEY,payload TEXT);
+            
+        CREATE TABLE IF NOT EXISTS core_schema(
+            key TEXT PRIMARY KEY, version INTEGER NOT NULL CHECK(version > 0)
+        );
+        CREATE TABLE IF NOT EXISTS core_products(
+            id TEXT PRIMARY KEY, position INTEGER NOT NULL,
+            code TEXT NOT NULL, name TEXT NOT NULL, payload TEXT NOT NULL CHECK(json_valid(payload))
+        );
+        CREATE INDEX IF NOT EXISTS idx_core_products_name ON core_products(name);
+        CREATE INDEX IF NOT EXISTS idx_core_products_code ON core_products(code);
+        CREATE TABLE IF NOT EXISTS core_product_prices(
+            product_id TEXT PRIMARY KEY REFERENCES core_products(id) ON DELETE CASCADE,
+            price_record_id TEXT NOT NULL UNIQUE,
+            color TEXT NOT NULL,
+            wholesale INTEGER CHECK(wholesale IS NULL OR wholesale >= 0),
+            semi INTEGER CHECK(semi IS NULL OR semi >= 0),
+            retail INTEGER CHECK(retail IS NULL OR retail >= 0),
+            payload TEXT NOT NULL CHECK(json_valid(payload))
+        );
+        CREATE TABLE IF NOT EXISTS core_clients(
+            id TEXT PRIMARY KEY, position INTEGER NOT NULL, name TEXT NOT NULL,
+            tier TEXT NOT NULL, address TEXT NOT NULL, payload TEXT NOT NULL CHECK(json_valid(payload))
+        );
+        CREATE INDEX IF NOT EXISTS idx_core_clients_name ON core_clients(name);
+        CREATE TABLE IF NOT EXISTS core_orders(
+            id TEXT PRIMARY KEY, position INTEGER NOT NULL, client_id TEXT,
+            created_at TEXT, confirmed_at TEXT, status TEXT,
+            payload TEXT NOT NULL CHECK(json_valid(payload))
+        );
+        CREATE INDEX IF NOT EXISTS idx_core_orders_created ON core_orders(created_at);
+        CREATE INDEX IF NOT EXISTS idx_core_orders_client ON core_orders(client_id);
+        CREATE TABLE IF NOT EXISTS core_recipients(
+            id TEXT PRIMARY KEY, order_id TEXT NOT NULL REFERENCES core_orders(id) ON DELETE CASCADE,
+            position INTEGER NOT NULL, name TEXT NOT NULL, payload TEXT NOT NULL CHECK(json_valid(payload))
+        );
+        CREATE INDEX IF NOT EXISTS idx_core_recipients_order ON core_recipients(order_id,position);
+        CREATE TABLE IF NOT EXISTS core_items(
+            id TEXT PRIMARY KEY, recipient_id TEXT NOT NULL REFERENCES core_recipients(id) ON DELETE CASCADE,
+            position INTEGER NOT NULL, product_id TEXT, variant_id TEXT,
+            payload TEXT NOT NULL CHECK(json_valid(payload))
+        );
+        CREATE INDEX IF NOT EXISTS idx_core_items_recipient ON core_items(recipient_id,position);
+        CREATE INDEX IF NOT EXISTS idx_core_items_product ON core_items(product_id);
+    
+            INSERT INTO core_schema(key,version) VALUES('business-core',2);
+        "#).unwrap();
+        let recipient=json!({"id":"r1","name":"합성 수취인","address":"서울 종로구 10",
+            "phone":"010-0000-0000","mobile":"","actualFreight":null,
+            "items":[{"id":"i1","origin":"FACTORY","quantity":1,"unitPrice":10000}]});
+        let mut state=json!({"revision":7,"products":[],"clients":[],"aliases":[],"queue":[],"exports":[],
+            "factoryReplies":[],"settings":{"accounts":[],"operatorName":"합성 직원",
+                "factoryReplyDirectory":inbox.to_string_lossy(),"excelDirectory":archive.to_string_lossy()},
+            "orders":[{"id":"o1","raw":"합성 원문","recipients":[recipient.clone()]}],
+            "workflow":{"sources":[],"groups":[],"payments":[],"confirmations":[],"deliveries":[],"changeRequests":[],
+                "shipments":[{"id":"s1","orderId":"o1","recipientId":"r1",
+                    "charges":{"FACTORY":3000},"tracking":{},"actualFreight":{}}],
+                "queue":[{"id":"q1","shipmentId":"s1","origin":"FACTORY","status":"EXPORTED",
+                    "snapshot":{"recipient":recipient}}],"events":[]}});
+        let tx=conn.transaction().unwrap();
+        bando_data_access::store_v2_relational(&tx,&state).unwrap();
+        for key in ["products","clients","orders"]{state.as_object_mut().unwrap().remove(key);}
+        tx.execute("INSERT INTO app_state VALUES(1,?1)",[state.to_string()]).unwrap();
+        tx.commit().unwrap();
+        (conn,inbox)
+    }
+    fn reply_bytes(tracking:&str,freight:u32)->Vec<u8>{
+        let mut book=rust_xlsxwriter::Workbook::new();
+        let sheet=book.add_worksheet();
+        sheet.write_string(0,0,"수하인명").unwrap();
+        sheet.write_string(0,16,"운송장번호").unwrap();
+        for (c,v) in [(0,"합성 수취인"),(2,"서울 종로구 10"),(3,"010-0000-0000"),(16,tracking)]{
+            sheet.write_string(1,c,v).unwrap();
+        }
+        sheet.write_number(1,6,f64::from(freight)).unwrap();
+        book.save_to_buffer().unwrap()
+    }
+    fn scan_ready(cache:&mut Scan,conn:&mut Connection,base:&Path)->Outcome{
+        for _ in 0..2{
+            let out=scan_with_db(cache,conn,base).unwrap();
+            assert_eq!(out.files,0);
+            assert!(out.error.is_none(),"{:?}",out.error);
+        }
+        scan_with_db(cache,conn,base).unwrap()
+    }
+
+    #[test]
+    fn factory_binary_scan_persists_exact_waybill_freight_and_audit_across_restart(){
+        let base=Temp::new();
+        let (mut conn,inbox)=synthetic_db(&base.0);
+        let before=snapshot(&mut conn).unwrap();
+        let bytes=reply_bytes("001234567890",4000);
+        let original=inbox.join("reply.xlsx");
+        fs::write(&original,&bytes).unwrap();
+        let result=scan_ready(&mut Scan::default(),&mut conn,&base.0);
+        assert!(result.error.is_none(),"{:?}",result.error);
+        assert_eq!((result.files,result.applied,result.held),(1,1,0));
+        drop(conn);
+        let mut conn=Connection::open(base.0.join("synthetic.sqlite")).unwrap();
+        let stored=snapshot(&mut conn).unwrap();
+        assert_eq!(stored["revision"],8);
+        let ship=&stored["workflow"]["shipments"][0];
+        assert_eq!(ship["tracking"]["FACTORY"],"001234567890");
+        assert_eq!(ship["actualFreight"]["FACTORY"],4000);
+        assert_eq!(ship["charges"]["FACTORY"],3000);
+        assert_eq!(stored["orders"],before["orders"]);
+        assert_eq!(stored["workflow"]["queue"],before["workflow"]["queue"]);
+        let events=stored["workflow"]["events"].as_array().unwrap();
+        assert_eq!(events.len(),2);
+        assert_eq!(events[0]["action"],"실제 출고 운임 입력");
+        assert_eq!(events[1]["action"],"공장 회신 반영");
+        assert_eq!(events[1]["after"]["fileId"],id(&bytes));
+        let replies=stored["factoryReplies"].as_array().unwrap();
+        assert_eq!(replies.len(),1);
+        assert_eq!(replies[0]["id"],id(&bytes));
+        assert_eq!(replies[0]["status"],"APPLIED");
+        assert_eq!(fs::read(replies[0]["archivedPath"].as_str().unwrap()).unwrap(),bytes);
+        assert_eq!(fs::read(&original).unwrap(),bytes);
+        // Both a new file name and a fresh in-memory watcher must still
+        // consult durable content identity rather than repeat the write.
+        fs::write(inbox.join("renamed.xlsx"),&bytes).unwrap();
+        let replay=scan_ready(&mut Scan::default(),&mut conn,&base.0);
+        assert!(replay.error.is_none(),"{:?}",replay.error);
+        assert_eq!((replay.files,replay.applied,replay.held),(0,0,0));
+        assert_eq!(snapshot(&mut conn).unwrap(),stored);
+    }
+
+    #[test]
+    fn factory_binary_failed_sqlite_write_preserves_before_image_and_can_retry(){
+        let base=Temp::new();
+        let (mut conn,inbox)=synthetic_db(&base.0);
+        let before=snapshot(&mut conn).unwrap();
+        let bytes=reply_bytes("001234567890",4000);
+        fs::write(inbox.join("reply.xlsx"),&bytes).unwrap();
+        conn.execute_batch("CREATE TRIGGER reject_reply BEFORE UPDATE ON app_state
+            BEGIN SELECT RAISE(ABORT,'synthetic write failure'); END;").unwrap();
+        let mut cache=Scan::default();
+        let failed=scan_ready(&mut cache,&mut conn,&base.0);
+        assert_eq!(failed.files,0);
+        assert!(failed.error.is_some());
+        assert_eq!(snapshot(&mut conn).unwrap(),before);
+        // Source preservation is intentionally outside the DB transaction.
+        assert_eq!(fs::read_dir(base.0.join("factory-replies")).unwrap().count(),1);
+        conn.execute_batch("DROP TRIGGER reject_reply;").unwrap();
+        let retry=scan_with_db(&mut cache,&mut conn,&base.0).unwrap();
+        assert!(retry.error.is_none(),"{:?}",retry.error);
+        assert_eq!((retry.files,retry.applied,retry.held),(1,1,0));
+        assert_eq!(snapshot(&mut conn).unwrap()["revision"],8);
+        assert_eq!(fs::read_dir(base.0.join("factory-replies")).unwrap().count(),1);
     }
 }
