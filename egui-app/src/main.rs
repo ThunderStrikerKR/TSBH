@@ -8647,8 +8647,11 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
         ));
         let Some((group_id,action,notice_origin,result))=outcome else{return;};
         match result{
-            Ok(Ok(saved))=>{
+            Ok(Ok(mut saved))=>{
                 self.workflow_action=None;
+                let scoped_refresh=saved.as_object_mut()
+                    .and_then(|root|root.remove("_scopedShipmentRefresh"))
+                    .and_then(|flag|flag.as_bool()).unwrap_or(false);
                 if action=="set_shipment_freight"{
                     self.submitted_workflow_freight=None;
                     self.workflow_freight_editor=None;
@@ -8701,10 +8704,12 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                     self.workflow_receiver=Some(receiver);
                     self.workflow_last_fetch=Some(Instant::now());
                     let context=ctx.clone();
-                    let freight_group=(action=="set_shipment_freight").then(||group_id.clone());
-                    let previous=freight_group.as_ref().and_then(|_|self.workflow_snapshot.as_deref().cloned());
+                    let changed_group=(scoped_refresh &&
+                        matches!(action.as_str(),"set_shipment_freight"|"detach_shipment"|"regroup_shipment"))
+                        .then(||group_id.clone());
+                    let previous=changed_group.as_ref().and_then(|_|self.workflow_snapshot.as_deref().cloned());
                     std::thread::spawn(move||{
-                        let result=if let Some(id)=freight_group{
+                        let result=if let Some(id)=changed_group{
                             workflow_board::after_freight_edit(gateway.as_ref(),saved,previous,&id)
                         }else{
                             workflow_board::from_state(gateway.as_ref(),saved)
