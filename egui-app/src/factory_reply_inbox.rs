@@ -147,6 +147,13 @@ pub fn approve(review:Value)->Result<Value,String>{
 }
 #[derive(Clone)]
 struct Seen{stamp:(u64,SystemTime),observations:u8,done:bool}
+impl Seen{
+    fn observe(&mut self,current:(u64,SystemTime))->bool{
+        if self.stamp!=current{*self=Self{stamp:current,observations:0,done:false};}
+        self.observations=self.observations.saturating_add(1);
+        self.observations>=3&&!self.done
+    }
+}
 #[derive(Default)]
 struct Scan{seen:HashMap<PathBuf,Seen>,directory:Option<PathBuf>}
 #[derive(Default)]
@@ -165,9 +172,7 @@ fn scan(cache:&mut Scan)->Result<Outcome,String>{
         let Ok(current)=stamp(&path)else{continue};
         active.insert(path.clone());
         let seen=cache.seen.entry(path.clone()).or_insert(Seen{stamp:current,observations:0,done:false});
-        if seen.stamp!=current{*seen=Seen{stamp:current,observations:0,done:false};}
-        seen.observations=seen.observations.saturating_add(1);
-        if seen.observations<3||seen.done||attempted>=8{continue}
+        if !seen.observe(current)||attempted>=8{continue}
         attempted+=1;
         let bytes=match read_bounded(&path){Ok(b)=>b,Err(e)=>{outcome.error=Some(e);continue}};
         if stamp(&path).ok()!=Some(current)||bytes.len() as u64!=current.0{continue}
@@ -218,5 +223,78 @@ impl Inbox{
             ctx.request_repaint_after(INTERVAL);
         }
         result
+    }
+}
+
+#[cfg(test)]
+mod tests{
+    use super::*;
+
+    struct Temp(PathBuf);
+    impl Temp{
+        fn new()->Self{
+            let path=std::env::temp_dir().join(format!("bando-factory-inbox-{}",Uuid::new_v4()));
+            fs::create_dir(&path).unwrap();
+            Self(path)
+        }
+    }
+    impl Drop for Temp{
+        fn drop(&mut self){let _=fs::remove_dir_all(&self.0);}
+    }
+
+    #[test]
+    fn stable_observations_reset_on_change_and_skip_completed_files(){
+        let first=(10,std::time::UNIX_EPOCH);
+        let second=(10,std::time::UNIX_EPOCH+Duration::from_secs(1));
+        let third=(11,second.1);
+        let mut seen=Seen{stamp:first,observations:0,done:false};
+        assert!(!seen.observe(first));
+        assert!(!seen.observe(first));
+        assert!(!seen.observe(second));
+        assert!(!seen.observe(second));
+        assert!(seen.observe(second));
+        // A failed attempt stays eligible; successful imports stop retrying.
+        assert!(seen.observe(second));
+        seen.done=true;
+        assert!(!seen.observe(second));
+        assert!(!seen.observe(third));
+        assert!(!seen.observe(third));
+        assert!(seen.observe(third));
+    }
+
+    #[test]
+    fn original_archive_is_content_addressed_and_never_overwrites_mismatch(){
+        let base=Temp::new();
+        let mut book=rust_xlsxwriter::Workbook::new();
+        let sheet=book.add_worksheet();
+        sheet.write_string(0,0,"수하인명").unwrap();
+        sheet.write_string(0,16,"운송장번호").unwrap();
+        sheet.write_string(1,0,"합성 수취인").unwrap();
+        sheet.write_string(1,16,"001234567890").unwrap();
+        let bytes=book.save_to_buffer().unwrap();
+        let original=preserve(&base.0,&bytes).unwrap();
+        assert_eq!(read_bounded(&original).unwrap(),bytes);
+        assert_eq!(preserve(&base.0,&bytes).unwrap(),original);
+        assert_eq!(fs::read_dir(original.parent().unwrap()).unwrap().count(),1);
+        fs::write(&original,b"corrupted original").unwrap();
+        assert!(preserve(&base.0,&bytes).is_err());
+        assert_eq!(fs::read(&original).unwrap(),b"corrupted original");
+    }
+
+    #[test]
+    fn inbox_ignores_temporary_names_and_rejects_empty_or_oversized_files(){
+        assert!(valid_name("회신.XLSX"));
+        for name in ["~$회신.xlsx","../회신.xlsx","a\\b.xlsx","reply.xls","reply.tmp",""]{
+            assert!(!valid_name(name));
+        }
+        let base=Temp::new();
+        let path=base.0.join("reply.xlsx");
+        let file=fs::File::create(&path).unwrap();
+        assert!(stamp(&path).is_err());
+        assert!(read_bounded(&path).is_err());
+        file.set_len(MAX_BYTES+1).unwrap();
+        drop(file);
+        assert!(stamp(&path).is_err());
+        assert!(read_bounded(&path).is_err());
     }
 }
