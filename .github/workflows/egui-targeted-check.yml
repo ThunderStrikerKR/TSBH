@@ -315,7 +315,7 @@ jobs:
       - name: Verify egui Logen native XLSX serializer uses the original sixteen text columns
         run: cargo test --manifest-path egui-app/Cargo.toml excel_service::tests -- --nocapture
       - name: Verify existing Tauri app-data DB selection remains mode-isolated
-        run: cargo test --manifest-path egui-app/Cargo.toml auto_database_location_tests -- --nocapture
+        run: cargo test --manifest-path egui-app/Cargo.toml business_state:: -- --nocapture
       - name: Verify unified product Excel V2 import-export roundtrip and review approval
         run: |
           cargo test --manifest-path egui-app/Cargo.toml product_excel::tests -- --nocapture

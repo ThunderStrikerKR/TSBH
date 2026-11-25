@@ -9,6 +9,11 @@ use rusqlite::{Connection, OpenFlags};
 use serde_json::Value;
 use std::path::PathBuf;
 
+#[path="test_workspace_init.rs"]
+mod test_workspace_init;
+#[path="developer_ui_samples.rs"]
+mod developer_ui_samples;
+
 /// The Tauri app-data path is RoamingAppData/{identifier}. Read the identifier
 /// from the exact bundled Tauri configuration rather than making up a second
 /// egui directory. This function is pure, so path precedence can be tested
@@ -113,12 +118,29 @@ fn reject_retired_workspace(path:&std::path::Path)->Result<(),String>{
 pub fn bind_existing_tauri_database() -> Result<Option<PathBuf>,String>{
     if std::env::var("BANDO_EGUI_DEVELOPER_TEST").ok().as_deref()==Some("1"){
         if !test_launch(){return Err("테스트 실행은 Windows 디버그 빌드에서만 허용됩니다.".into());}
+        let roaming=std::env::var_os("APPDATA").ok_or("APPDATA 누락")?;
+        let candidate=test_database_path(std::path::Path::new(&roaming))?;
+        if !candidate.exists(){
+            // Never clone the operating DB. Only a new dedicated test file
+            // from the bundled seed may be created, under a verified root.
+            let operating=tauri_database_path(std::path::Path::new(&roaming))?;
+            let base=operating.parent().ok_or("업무 DB 폴더 오류")?;
+            std::fs::create_dir_all(base).map_err(|e|e.to_string())?;
+            let canonical_base=base.canonicalize().map_err(|e|e.to_string())?;
+            let dir=canonical_base.join("developer-test");
+            std::fs::create_dir_all(&dir).map_err(|e|e.to_string())?;
+            if dir.canonicalize().map_err(|e|e.to_string())?!=dir{
+                return Err("테스트 폴더가 격리 경로와 일치하지 않습니다.".into());
+            }
+            test_workspace_init::initialize_new(&dir.join("bando-hub-test.sqlite"))?;
+        }
         let db=test_path()?;
         // Ignore inherited operational paths, indexes and remote gateways.
         std::env::set_var("BANDO_HUB_GATEWAY","local");
         std::env::remove_var("BANDO_EGUI_CLIENT_INDEX");
         std::env::set_var("BANDO_EGUI_BUSINESS_DB",&db);
         prepare_test_directories(&db)?;
+        developer_ui_samples::seed_if_requested()?;
         return Ok(Some(db));
     }
     if !cfg!(windows) ||

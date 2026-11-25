@@ -19,11 +19,11 @@ set "BANDO_HUB_GATEWAY=local"
 set "BANDO_EGUI_BUSINESS_DB="
 set "BANDO_EGUI_CLIENT_INDEX="
 set "BANDO_EGUI_DEVELOPER_TEST=1"
-if not exist "%APPDATA%\com.bandostand.bandohub.tauri\developer-test\bando-hub-test.sqlite" (
-  echo [ERROR] Existing isolated TEST DB not found. Production DB will NOT be used.
-  pause
-  exit /b 1
-)
+rem New workspaces use only the bundled product seed, not production data.
+rem Samples are opt-in for existing workspaces, automatic for a new workspace.
+set "BANDO_EGUI_UI_SAMPLE_DATA=0"
+if not exist "%APPDATA%\com.bandostand.bandohub.tauri\developer-test\bando-hub-test.sqlite" set "BANDO_EGUI_UI_SAMPLE_DATA=1"
+if /I "%~1"=="samples" set "BANDO_EGUI_UI_SAMPLE_DATA=1"
 set "BANDO_EGUI_ENABLE_CLIENT_WRITE=1"
 set "BANDO_EGUI_ENABLE_PRODUCT_WRITE=1"
 set "BANDO_EGUI_ENABLE_SHIPPING_WRITE=1"
