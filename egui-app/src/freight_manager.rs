@@ -233,7 +233,8 @@ fn freight_assignment_text(
             );
         }
     }
-    if !value.is_empty(){
+    if !value.is_empty() && (value!=full_text || components::text_exceeds_rect(
+        typography::management_table_cell_galley(ui,value,role).size(),clipped.intersect(ui.clip_rect()))){
         let hover_id=ui.make_persistent_id(("freight-cell",id));
         ui.interact(clipped,hover_id,egui::Sense::hover())
             .on_hover_text(full_text);
@@ -304,10 +305,11 @@ fn freight_rate_cell(
     }else{
         cell.left()
     };
+    let overflow=components::text_exceeds_rect(galley.size(),cell.intersect(ui.clip_rect()));
     ui.painter().with_clip_rect(cell).galley(
         egui::pos2(x,cell.center().y-galley.size().y/2.0),galley,color
     );
-    if !value.is_empty(){
+    if overflow&&!value.is_empty(){
         ui.interact(cell,ui.make_persistent_id(("freight-rate-cell",id)),
             egui::Sense::hover()).on_hover_text(full_tooltip.unwrap_or(value));
     }
@@ -1169,7 +1171,7 @@ impl FreightManager {
                                     let response=row.add(
                                         egui::Label::new(typography::body(warning)).truncate()
                                     );
-                                    response.on_hover_text(warning);
+                                    let _=response;
                                 }
                             );
                         });
@@ -1761,7 +1763,7 @@ impl FreightManager {
                                     // secondary to selecting a shipping group.
                                     if theme::action(actions,"기본 운임 설정",
                                         theme::ButtonRole::TableSecondary,editable)
-                                        .on_hover_text("그룹 미지정 상품의 기본 운임 설정")
+                                        
                                         .clicked(){
                                         let initial=effective
                                             .and_then(|entry|entry.get("editableRule"))
@@ -1857,11 +1859,11 @@ impl FreightManager {
                         let visible=region.intersect(header_text_rect);
                         if visible.width()>0.0 && visible.height()>0.0 {
                             let next=FreightSort::next(*sort,column);
-                            let tooltip=components::management_sort_tooltip(next.map(|value|matches!(value.direction,FreightSortDirection::Descending)));
+
                             let response=section.interact(
                                 visible,section.make_persistent_id(("freight-sort-column",i)),
                                 egui::Sense::click()
-                            ).on_hover_text(tooltip);
+                            );
                             if response.clicked(){
                                 *sort=next;
                                 // Header appears after virtual rows in this
@@ -1923,7 +1925,7 @@ impl FreightManager {
                 section,header_cells[0],header_text_rect,
                 &mut all_filtered,enabled&&!filtered.is_empty(),
                 "freight-select-all-filtered"
-            ).on_hover_text("현재 검색·필터 결과 전체 선택 / 해제")
+            )
                 .changed()
             {
                 let current_ids: BTreeSet<&str>=filtered.iter()
@@ -2164,7 +2166,7 @@ impl FreightManager {
                                         let trigger=theme::action(
                                             buttons,"관리",
                                             theme::ButtonRole::TableSecondary,enabled
-                                        ).on_hover_text("운임 수정 · 기준 변경 · 이름 수정 · 삭제");
+                                        );
                                         egui::Popup::menu(&trigger)
                                             .close_behavior(
                                                 egui::PopupCloseBehavior::CloseOnClickOutside
@@ -2264,11 +2266,11 @@ impl FreightManager {
                     let hit=cell.intersect(header_text_rect);
                     if hit.width()>0.0 && hit.height()>0.0{
                         let next=RateSort::next(*sort,column);
-                        let tooltip=components::management_sort_tooltip(next.map(|value|matches!(value.direction,FreightSortDirection::Descending)));
+
                         let response=section.interact(
                             hit,section.make_persistent_id(("freight-rate-sort",index)),
                             egui::Sense::click()
-                        ).on_hover_text(tooltip);
+                        );
                         if response.clicked(){
                             *sort=next;
                             section.ctx().request_repaint();
@@ -2746,10 +2748,11 @@ fn history_cell(
     }else if align==egui::Align2::CENTER_CENTER{
         cell.center().x-galley.size().x/2.0
     }else{cell.left()};
+    let overflow=components::text_exceeds_rect(galley.size(),clip);
     ui.painter().with_clip_rect(clip).galley(
         egui::pos2(x,cell.center().y-galley.size().y/2.0),galley,color
     );
-    if !full.is_empty(){
+    if (overflow||visible!=full)&&!full.is_empty(){
         ui.interact(
             clip,ui.make_persistent_id(("freight-history-cell",id)),
             egui::Sense::hover()
@@ -2894,11 +2897,11 @@ fn freight_history_table<const N:usize>(
             let hit=cell.intersect(header_text_rect);
             if hit.width()>0.0 && hit.height()>0.0{
                 let next=HistorySort::next(current,column);
-                let tooltip=components::management_sort_tooltip(next.map(|value|matches!(value.direction,FreightSortDirection::Descending)));
+
                 let response=ui.interact(
                     hit,ui.make_persistent_id((id,"history-sort",index)),
                     egui::Sense::click()
-                ).on_hover_text(tooltip);
+                );
                 if response.clicked(){
                     **slot=next;
                     ui.ctx().request_repaint();
