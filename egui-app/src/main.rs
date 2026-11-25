@@ -755,8 +755,11 @@ struct BandoEgui {
     inbox_folder_loaded: bool,
     inbox_folder_error: Option<String>,
     inbox_folder_open_error: Option<String>,
-    inbox_folder_receiver: Option<Receiver<Result<Option<String>, String>>>,
-    inbox_folder_last_refresh: Option<Instant>,
+    // One reception-wide revision check owns metadata invalidation.
+    reception_metadata_receiver:Option<Receiver<Result<(Option<u64>,Option<gateway::ReceptionMetadata>),String>>>,
+    reception_metadata_last_probe:Option<Instant>,
+    reception_metadata_revision:Option<u64>,
+    reception_metadata_ready:bool,
     freight_manager: Option<freight_manager::FreightManager>,
     order_history_manager: Option<order_history_manager::OrderHistoryManager>,
     daily_settlement_manager: Option<daily_settlement_manager::DailySettlementManager>,
@@ -816,11 +819,7 @@ struct BandoEgui {
     // master; no operational client data is persisted in preview SQLite.
     client_names: HashMap<String,String>,
     client_summaries: HashMap<String,components::ClientDisplaySummary>,
-    client_names_receiver: Option<Receiver<Result<(
-        HashMap<String,String>,
-        HashMap<String,components::ClientDisplaySummary>
-    ),String>>>,
-    client_names_last_refresh: Option<Instant>,
+
     analysis_request: u64,
     analysis_pending: bool,
     analysis_due_at: Option<Instant>,
@@ -876,8 +875,10 @@ impl BandoEgui {
             inbox_folder_loaded: false,
             inbox_folder_error: None,
             inbox_folder_open_error: None,
-            inbox_folder_receiver: None,
-            inbox_folder_last_refresh: None,
+            reception_metadata_receiver:None,
+            reception_metadata_last_probe:None,
+            reception_metadata_revision:None,
+            reception_metadata_ready:false,
             freight_manager: None,
             order_history_manager: None,
             daily_settlement_manager: None,
@@ -928,8 +929,7 @@ impl BandoEgui {
             workflow_manage_ack: false,
             client_names: HashMap::new(),
             client_summaries: HashMap::new(),
-            client_names_receiver: None,
-            client_names_last_refresh: None,
+
             analysis_request: 0,
             analysis_pending: false,
             analysis_due_at: None,
@@ -998,72 +998,98 @@ impl BandoEgui {
         ));
     }
 
-    /// Project only the saved order-image inbox path into the reception UI.
-    /// The Settings page owns editing/saving; this read-only projection runs
-    /// asynchronously and refreshes immediately on return from other pages.
-    fn poll_inbox_folder(&mut self, ctx: &egui::Context) {
-        if self.page != Page::Reception {
-            // Discard in-flight old reads so a just-saved setting is freshly
-            // fetched as soon as the employee returns to Reception.
-            self.inbox_folder_receiver = None;
-            self.inbox_folder_last_refresh = None;
-            self.inbox_folder_loaded = false;
-            self.inbox_folder_path = None;
-            self.inbox_folder_error = None;
-            self.inbox_folder_open_error = None;
+    /// Shared metadata clock: one native read-only revision probe for the
+    /// board, saved folder path and client presentation cache. Unchanged
+    /// revisions never hydrate product/order or client rows.
+    fn poll_reception_metadata(&mut self,ctx:&egui::Context){
+        if self.page!=Page::Reception{
+            // In-flight reads belong to the old visit. On re-entry compare
+            // the persisted revision immediately; adapters without a native
+            // revision re-read once per visit.
+            self.reception_metadata_receiver=None;
+            self.reception_metadata_last_probe=None;
+            if self.reception_metadata_revision.is_none(){
+                self.reception_metadata_ready=false;
+            }
             return;
         }
-        if let Some(result) = self.inbox_folder_receiver.as_ref().map(|rx| rx.try_recv()) {
-            match result {
-                Ok(Ok(path)) => {
-                    if self.inbox_folder_path != path {
-                        self.inbox_folder_open_error = None;
+        if let Some(result)=self.reception_metadata_receiver.as_ref().map(|rx|rx.try_recv()){
+            match result{
+                Ok(Ok((revision,metadata)))=>{
+                    self.reception_metadata_receiver=None;
+                    self.reception_metadata_revision=revision;
+                    self.reception_metadata_ready=true;
+                    if let Some(metadata)=metadata{
+                        match metadata.inbox{
+                            Ok(path)=>{
+                                if self.inbox_folder_path!=path{
+                                    self.inbox_folder_path=path;
+                                    self.inbox_folder_open_error=None;
+                                }
+                                self.inbox_folder_loaded=true;
+                                self.inbox_folder_error=None;
+                            }
+                            Err(error)=>{
+                                self.inbox_folder_error=Some(error);
+                                self.inbox_folder_loaded=true;
+                            }
+                        }
+                        if let Ok(clients)=metadata.clients{
+                            let mut names=HashMap::new();
+                            let mut summaries=HashMap::new();
+                            for client in clients{
+                                if client.get("deletedAt").is_some_and(|v|!v.is_null()){continue;}
+                                let id=client["id"].as_str().unwrap_or("");
+                                if id.is_empty(){continue;}
+                                let summary=components::ClientDisplaySummary::from_client(&client);
+                                if client["active"]!=serde_json::Value::Bool(false) && !summary.name.is_empty(){
+                                    names.insert(id.to_owned(),summary.name.clone());
+                                }
+                                summaries.insert(id.to_owned(),summary);
+                            }
+                            if self.client_names!=names{self.client_names=names;}
+                            if self.client_summaries!=summaries{self.client_summaries=summaries;}
+                        }
                     }
-                    self.inbox_folder_path = path;
-                    self.inbox_folder_loaded = true;
-                    self.inbox_folder_error = None;
-                    self.inbox_folder_receiver = None;
+                    ctx.request_repaint();
                 }
-                Ok(Err(error)) => {
-                    self.inbox_folder_path = None;
-                    self.inbox_folder_loaded = true;
-                    self.inbox_folder_error = Some(error);
-                    self.inbox_folder_receiver = None;
+                Ok(Err(error))=>{
+                    self.reception_metadata_receiver=None;
+                    // Retain the last known good caches during a transient
+                    // failure. Do not claim a new revision was observed.
+                    if !self.inbox_folder_loaded{self.inbox_folder_error=Some(error);}
                 }
-                Err(mpsc::TryRecvError::Disconnected) => {
-                    self.inbox_folder_path = None;
-                    self.inbox_folder_loaded = true;
-                    self.inbox_folder_error = Some("발주 이미지 수신 폴더 설정을 읽지 못했습니다.".into());
-                    self.inbox_folder_receiver = None;
+                Err(mpsc::TryRecvError::Disconnected)=>{
+                    self.reception_metadata_receiver=None;
+                    if !self.inbox_folder_loaded{
+                        self.inbox_folder_error=Some("접수 설정 조회가 중단되었습니다.".into());
+                    }
                 }
-                Err(mpsc::TryRecvError::Empty) => {}
+                Err(mpsc::TryRecvError::Empty)=>{}
             }
         }
-        if self.inbox_folder_receiver.is_some() ||
-            self.inbox_folder_last_refresh.is_some_and(|time|
-                time.elapsed() < Duration::from_secs(15)
-            ) {
-            return;
-        }
-        self.inbox_folder_last_refresh = Some(Instant::now());
-        let (sender, receiver) = mpsc::channel();
-        self.inbox_folder_receiver = Some(receiver);
-        let gateway = Arc::clone(&self.gateway);
-        let ctx = ctx.clone();
-        std::thread::spawn(move || {
-            let outcome = gateway.load_settings().and_then(|snapshot| {
-                let saved = snapshot.get("settings")
-                    .and_then(serde_json::Value::as_object)
-                    .ok_or("저장된 폴더 설정 형식을 확인할 수 없습니다.")?;
-                Ok(saved.get("orderImageInboxDirectory")
-                    .and_then(serde_json::Value::as_str)
-                    .map(str::trim)
-                    .filter(|path| !path.is_empty())
-                    .map(str::to_owned))
-            });
-            let _ = sender.send(outcome);
-            ctx.request_repaint();
+        if self.reception_metadata_receiver.is_some(){return;}
+        // No local DB revision is available in isolated/HTTP adapters.
+        if self.reception_metadata_ready && self.reception_metadata_revision.is_none(){return;}
+        if self.reception_metadata_last_probe.is_some_and(|at|at.elapsed()<Duration::from_secs(5)){return;}
+        self.reception_metadata_last_probe=Some(Instant::now());
+        let known=self.reception_metadata_revision;
+        let gateway=Arc::clone(&self.gateway);
+        let context=ctx.clone();
+        let (sender,receiver)=mpsc::channel();
+        self.reception_metadata_receiver=Some(receiver);
+        std::thread::spawn(move||{
+            let result=gateway.reception_metadata(known);
+            let _=sender.send(result);
+            context.request_repaint();
         });
+    }
+
+    fn invalidate_reception_metadata(&mut self){
+        self.reception_metadata_receiver=None;
+        self.reception_metadata_last_probe=None;
+        self.reception_metadata_revision=None;
+        self.reception_metadata_ready=false;
     }
 
     // Run parsing outside the egui frame loop. Any changed source invalidates
@@ -1331,98 +1357,7 @@ impl BandoEgui {
         }
     }
 
-    // Every reception has its own source. Selecting an existing one never
-    // replaces the text of a different order or merges their evidence.
-    /// A strictly read-only lookup against an explicitly chosen Tauri v2
-    /// database. Calculations come from Rust preview_workflow/read_shipments,
-    /// never from UI arithmetic or fabricated placeholder workflow groups.
-    /// Name-only master projection for pending-order headings. The worker
-    /// reads the same explicitly configured catalog as client selection.
-    /// Never run IO in egui's frame and never persist names in draft SQLite.
-    fn poll_client_names(&mut self,ctx:&egui::Context){
-        if let Some(result)=self.client_names_receiver.as_ref()
-            .map(|receiver|receiver.try_recv()){
-            match result{
-                Ok(Ok((names,summaries)))=>{
-                    self.client_names=names;
-                    self.client_summaries=summaries;
-                    self.client_names_receiver=None;
-                    ctx.request_repaint();
-                }
-                Ok(Err(_)) | Err(mpsc::TryRecvError::Disconnected)=>{
-                    self.client_names_receiver=None;
-                }
-                Err(mpsc::TryRecvError::Empty)=>{}
-            }
-        }
-        if self.page!=Page::Reception{
-            // Re-check the current customer master on return from its editor.
-            self.client_names_last_refresh=None;
-            return;
-        }
-        if self.client_names_receiver.is_some() ||
-            self.client_names_last_refresh.is_some_and(|time|
-                time.elapsed()<Duration::from_secs(60)){return;}
-        self.client_names_last_refresh=Some(Instant::now());
-        let gateway=Arc::clone(&self.gateway);
-        let context=ctx.clone();
-        let (sender,receiver)=mpsc::channel();
-        self.client_names_receiver=Some(receiver);
-        std::thread::spawn(move||{
-            let result=gateway.load_catalog().map(|catalog|{
-                let mut names=HashMap::new();
-                if let Some(clients)=catalog.get("clients")
-                    .and_then(serde_json::Value::as_array){
-                    for client in clients{
-                        if client.get("deletedAt").is_some_and(|v|!v.is_null())
-                            || client.get("active")==Some(&serde_json::Value::Bool(false)){
-                            continue;
-                        }
-                        let id=client.get("id")
-                            .and_then(serde_json::Value::as_str).unwrap_or("");
-                        let name=client.get("name")
-                            .and_then(serde_json::Value::as_str)
-                            .filter(|name|!name.trim().is_empty())
-                            .or_else(||client.get("displayName")
-                                .and_then(serde_json::Value::as_str))
-                            .unwrap_or("");
-                        if !id.is_empty() && !name.trim().is_empty(){
-                            names.insert(id.to_owned(),name.to_owned());
-                        }
-                    }
-                }
-                // The reception card needs the same tiers and conditions
-                // shown by Client Management. load_catalog() intentionally
-                // omits these, so read the canonical master via its existing
-                // read-only gateway, on this worker only.
-                let mut summaries=HashMap::new();
-                if let Ok(master)=gateway.load_client_master(){
-                    if let Some(clients)=master.get("clients")
-                        .and_then(serde_json::Value::as_array){
-                        for client in clients{
-                            if client.get("deletedAt")
-                                .is_some_and(|value|!value.is_null()){
-                                continue;
-                            }
-                            let id=client.get("id")
-                                .and_then(serde_json::Value::as_str)
-                                .unwrap_or("");
-                            if !id.is_empty(){
-                                summaries.insert(
-                                    id.to_owned(),
-                                    components::ClientDisplaySummary::from_client(client)
-                                );
-                            }
-                        }
-                    }
-                }
-                (names,summaries)
-            });
-            let _=sender.send(result);
-            context.request_repaint();
-        });
-    }
-
+    // The workflow and metadata caches share the same observed native revision.
     fn workflow_mutation_ready(&self)->bool{
         workflow_write_admission(
             self.workflow_snapshot.as_ref().and_then(|board|board.revision),
@@ -1501,25 +1436,25 @@ impl BandoEgui {
             (self.workflow_freight_editor.is_some() && self.workflow_error.is_none()) ||
             !std::env::var_os("BANDO_EGUI_BUSINESS_DB")
                 .is_some_and(|p|!p.is_empty()) {return;}
-        if self.workflow_last_fetch.is_some_and(|at|
-            at.elapsed()<Duration::from_secs(5)){return;}
+        let current=self.workflow_snapshot.as_ref().and_then(|board|board.revision);
+        let observed=self.reception_metadata_revision;
+        let changed=match (current,observed){
+            (Some(current),Some(observed))=>observed>current,
+            (None,_)=>true,
+            // An adapter without native change detection retains the old
+            // conservative board fallback if explicitly connected.
+            (Some(_),None)=>self.reception_metadata_ready,
+        };
+        if !changed && !self.workflow_refresh_required && self.workflow_error.is_none(){return;}
+        if self.workflow_last_fetch.is_some_and(|at|at.elapsed()<Duration::from_secs(5)) &&
+            (self.workflow_error.is_some() || observed.is_none()){return;}
         self.workflow_last_fetch=Some(Instant::now());
         let gateway=Arc::clone(&self.gateway);
         let (sender,receiver)=mpsc::channel();
         self.workflow_receiver=Some(receiver);
-        let known_revision=if self.workflow_refresh_required || self.workflow_error.is_some(){
-            None
-        }else{
-            self.workflow_snapshot.as_ref().and_then(|board|board.revision)
-        };
         let context=ctx.clone();
         std::thread::spawn(move||{
-            let result=(||->Result<Option<workflow_board::BoardSnapshot>,String>{
-                if let Some(known)=known_revision{
-                    if gateway.workflow_revision()?==Some(known){return Ok(None);}
-                }
-                workflow_board::load(gateway.as_ref()).map(Some)
-            })();
+            let result=workflow_board::load(gateway.as_ref()).map(Some);
             let _=sender.send(result);
             context.request_repaint();
         });
@@ -9142,6 +9077,13 @@ impl eframe::App for BandoEgui {
         if self.settings_view.as_mut().is_some_and(|view|view.take_restored()){
             // A restored operational DB invalidates every prior projected
             // price/client/order snapshot. Never keep stale native matches.
+            self.invalidate_reception_metadata();
+            self.inbox_folder_path=None;
+            self.inbox_folder_loaded=false;
+            self.inbox_folder_error=None;
+            self.inbox_folder_open_error=None;
+            self.client_names.clear();
+            self.client_summaries.clear();
             self.workflow_snapshot=None;
             self.workflow_receiver=None;
             self.workflow_refresh_required=false;
@@ -9169,8 +9111,8 @@ impl eframe::App for BandoEgui {
             self.clear_source_analysis();
         }
         self.poll_workflow_action(ctx);
+        self.poll_reception_metadata(ctx);
         self.poll_workflow_board(ctx);
-        self.poll_client_names(ctx);
         self.poll_client_change(ctx);
         self.poll_working_sync(ctx);
         self.poll_inline_change(ctx);
@@ -9188,12 +9130,14 @@ impl eframe::App for BandoEgui {
             ctx.request_repaint_after(Duration::from_millis(350));
         }
         if self.page==Page::Reception &&
-            self.client_manager.as_mut().is_some_and(|manager|manager.take_changed()) &&
-            !self.raw_source.trim().is_empty() {
-            // A registered/edited/deleted client changes the same native
-            // matching index that reception must see on its next frame.
-            self.auto_client_change=None;
-            self.analysis_due_at=Some(Instant::now());
+            self.client_manager.as_mut().is_some_and(|manager|manager.take_changed()) {
+            // An explicit local client change invalidates the metadata cache
+            // immediately, including when the current source is empty.
+            self.invalidate_reception_metadata();
+            if !self.raw_source.trim().is_empty(){
+                self.auto_client_change=None;
+                self.analysis_due_at=Some(Instant::now());
+            }
         }
         if self.page == Page::Reception {
             self.kakao_tracker.refresh();
@@ -9223,7 +9167,6 @@ impl eframe::App for BandoEgui {
             );
         }
         self.top_bar(ctx);
-        self.poll_inbox_folder(ctx);
         if self.page == Page::Reception {
             self.reception(ctx);
         } else {
