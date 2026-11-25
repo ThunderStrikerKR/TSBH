@@ -343,7 +343,19 @@ try {
             return {valid:true};
           }
           if (command === "backup_list") return [];
+          if (command === "backup_create") {
+            // Ordinary export safety backup, not the removed developer drill.
+            window.__storeSafetyBackup = structuredClone(state);
+            window.__storeNativeSteps ??= [];
+            window.__storeNativeSteps.push("backup_create");
+            return "C:\\BANDO_CI_BACKUPS\\before-store-export.sqlite";
+          }
           if (command === "save_store_workbook") {
+            if (!window.__storeSafetyBackup?.workflow.queue.some(
+                q => q.id === "ci-store-queue" && q.status === "QUEUED"))
+              throw Error("STORE export requires a pre-export safety backup");
+            window.__storeNativeSteps ??= [];
+            window.__storeNativeSteps.push("save_store_workbook");
             if (!Array.isArray(args.bytes) || args.bytes.length <= 1000) throw Error("Invalid workbook bytes");
             window.__storeWorkbookSaved = args.bytes.slice(0, 4).join(",") === "80,75,3,4";
             return storePath;
@@ -606,6 +618,11 @@ try {
     .getByRole("button", { name: "확인", exact: true }).click();
   await page.waitForFunction(() => window.__storeCommit?.status === "STORE_SENT");
   const storeSteps=await page.evaluate(() => window.__storeNativeSteps);
+  const backupIndex=storeSteps.indexOf("backup_create");
+  const workbookIndex=storeSteps.indexOf("save_store_workbook");
+  const finalizeIndex=storeSteps.indexOf("finalize_export");
+  assert.ok(backupIndex>=0 && workbookIndex>backupIndex && finalizeIndex>workbookIndex,
+    "STORE must back up before workbook creation and finalize only after file save: "+storeSteps);
   assert.ok(storeSteps.includes("prepare_store_export") &&
     storeSteps.includes("finalize_export") &&
     storeSteps.includes("mark_store_sent") &&
