@@ -434,7 +434,6 @@ pub struct ProductManager {
     brand:String,
     missing:bool,
     selected:Option<Value>,
-    adding:bool,
     original_selected:Option<Value>,
     detail_prices:HashMap<String,String>,
     confirm_discard:bool,
@@ -490,7 +489,7 @@ impl ProductManager {
             brands:BrandManager::default(),category_next_tab:None,
             category:String::new(),
             brand:String::new(),missing:false,selected:None,
-            adding:false,original_selected:None,detail_prices:HashMap::new(),
+            original_selected:None,detail_prices:HashMap::new(),
             confirm_discard:false,confirm_archive:false,
             price_mode:false,price_drafts:HashMap::new(),
             price_write_queue:VecDeque::new(),
@@ -1197,9 +1196,9 @@ impl ProductManager {
                     actions.set_height(actions_rect.height());
                     actions.spacing_mut().item_spacing.x=theme::SPACE_8;
                     if theme::action(actions,"상품 추가",
-                        theme::ButtonRole::Primary,!saving
+                        theme::ButtonRole::Primary,can_edit&&!saving&&!self.has_pending_prices()
                     ).clicked(){
-                        self.adding=!self.adding;
+                        begin_new=true;
                     }
                     if theme::action(actions,
                         if self.price_mode{"가격 수정 모드 종료"}
@@ -1232,38 +1231,22 @@ impl ProductManager {
                 }
             );
             }
-            if self.adding {
-                panel.add_space(theme::SPACE_8);
-                panel.horizontal(|actions|{
-                    if theme::action(
-                        actions,"직접 등록",theme::ButtonRole::Primary,can_edit&&!saving
-                    ).clicked(){begin_new=true;}
-                });
-            }
             // Product list geometry must NOT depend on transient fetch or
             // save state. Inline "loading/saving" strips used to shift the
             // sticky header and virtualized table whenever a filter changed.
             // Loading is represented by existing disabled-action state;
             // completed results and errors use their established channels.
-            // Only the explicitly expanded registration editor changes
-            // the table layout. Excel is a floating popup.
-            let direct_filter_to_header=!self.adding;
-            if !direct_filter_to_header{
-                components::soft_divider(panel);
-            }
+            // Registration and Excel use floating dialogs/menus;
+            // neither inserts a row or moves the table header.
             let original_spacing=components::management_table_container_style(panel);
             // Fixed six-column geometry: editing changes only a cell's
             // contents, never its width, column origin or scroll range.
             let base=product_table_base_widths();
             let min_width=base.iter().sum::<f32>()+5.0*theme::SPACE_8;
             let min_table_width=theme::PRODUCT_TABLE_MIN_WIDTH.max(min_width);
-            let layout=if direct_filter_to_header{
-                components::management_sticky_table_header(
-                    panel,min_table_width
-                )
-            }else{
-                components::management_list_table_header(panel,min_table_width)
-            };
+            let layout=components::management_sticky_table_header(
+                panel,min_table_width
+            );
             let table_width=layout.table_width;
             let widths=product_table_column_widths(table_width);
             let headings=[
@@ -2384,9 +2367,15 @@ mod tests {
         assert!(!list.contains("상품 가격표 조회 중"));
         assert!(!list.contains("상품 변경 저장 중"));
         assert!(!list.contains("if self.result.pending(){\n                theme::management_list_strip_frame()"));
-        assert!(list.contains(
-            "let direct_filter_to_header=!self.adding;"
-        ));
+        assert!(list.contains("components::management_sticky_table_header("));
+        assert!(!list.contains(concat!("self.", "adding")));
+        assert!(!list.contains(concat!("직접", " 등록")));
+        assert!(!list.contains("components::management_list_table_header("));
+        let add=list.split("theme::action(actions,\"상품 추가\"").nth(1).unwrap()
+            .split("if theme::action(actions,").next().unwrap();
+        assert!(add.contains("can_edit&&!saving&&!self.has_pending_prices()"));
+        assert!(add.contains("begin_new=true;"));
+        assert!(list.contains("}else if begin_new {\n            self.new_product();"));
         assert!(list.contains("self.excel.show_menu("));
         assert!(!list.contains("self.excel.show_panel("));
         assert!(!list.contains("self.excel.open()"));
