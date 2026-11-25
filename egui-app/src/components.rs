@@ -1093,32 +1093,6 @@ pub enum WorkflowAuxiliaryAction {
     PreviousStage,
 }
 
-/// A single painted/interactive frame for the three grey workflow controls.
-/// The two glyphs and the text label are drawn only after the same disabled
-/// egui Button has reserved the same 34pt height, 6pt radius and 1pt border.
-pub fn workflow_auxiliary_button(ui: &mut Ui, action: WorkflowAuxiliaryAction) -> Response {
-    let width = match action {
-        WorkflowAuxiliaryAction::Manage => theme::WORKFLOW_MANAGE_WIDTH,
-        WorkflowAuxiliaryAction::Delete => theme::WORKFLOW_TRASH_WIDTH,
-        WorkflowAuxiliaryAction::PreviousStage => theme::WORKFLOW_UNDO_WIDTH,
-    };
-    let response = compact_action_surface(
-            ui,false,egui::Button::new("")
-                .min_size(Vec2::new(width, theme::WORKFLOW_AUX_CONTROL_HEIGHT))
-                // These controls are intentionally disabled; use the
-                // exact disabled Standard/TableSecondary master appearance.
-                .fill(theme::DISABLED_ACTION_BG)
-                .stroke(Stroke::new(
-                    theme::FRAME_STROKE_WIDTH,theme::DISABLED_ACTION_BORDER
-                ))
-                .corner_radius(egui::CornerRadius::same(5)),
-    );
-
-    paint_workflow_auxiliary_content(ui.painter(),response.rect.center(),action,
-        theme::DISABLED_ACTION_TEXT);
-    response
-}
-
 /// Shared label and glyph painting for allocated and fixed-rectangle workflow controls.
 pub fn paint_workflow_auxiliary_content(
     painter:&egui::Painter,center:egui::Pos2,
@@ -3057,23 +3031,6 @@ fn manual_linked_table_cell(
 }
 
 
-/// A field group's label and editor share the same baseline and label width.
-pub fn labeled_field(
-    ui: &mut Ui,
-    label: &str,
-    value: &mut String,
-    kind: FieldKind,
-    enabled: bool,
-) -> Response {
-    ui.horizontal(|ui| {
-        let title=form_field_label_sized(ui,label,LABEL_WIDTH);
-        // The whole field row (including its label) is a single hover
-        // target for exact source linking. No geometry is modified.
-        let input=field(ui, value, kind, enabled);
-        title.union(input)
-    }).inner
-}
-
 /// Clamp the selected recipient and expose navigation availability separately
 /// from header visibility. A single recipient still has a visible 1/1 header;
 /// only its previous/next controls are disabled.
@@ -4108,22 +4065,6 @@ fn calendar_nav_button(
         );
     }
     response.clicked()
-}
-
-/// Compact minus/plus control that deliberately reuses the date-picker's
-/// 28pt button surface. Only the centered glyph and enabled state are caller-owned.
-pub fn date_navigation_step_button(
-    ui:&mut Ui,glyph:&str,enabled:bool
-)->Response{
-    let (response,ink)=date_navigation_button_surface(ui,enabled);
-    ui.painter().with_clip_rect(response.rect).text(
-        response.rect.center(),
-        egui::Align2::CENTER_CENTER,
-        glyph,
-        egui::FontId::proportional(typography::FONT_STANDARD_ACTION+2.0),
-        ink
-    );
-    response
 }
 
 /// A single popup for Order History and Excel export history. The header
@@ -6663,39 +6604,6 @@ pub fn reception_total_footer(
         vat, egui::FontId::proportional(typography::FONT_METADATA),
         theme::SECONDARY,
     );
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum StatusTone {
-    Neutral,
-    Active,
-    Complete,
-    Warning,
-    Error,
-    Linked,
-}
-impl StatusTone {
-    pub fn color(self) -> Color32 {
-        match self {
-            Self::Neutral => theme::BORDER,
-            Self::Active | Self::Warning => theme::SELECTED_ORDER,
-            Self::Complete => theme::SUCCESS,
-            Self::Error => theme::DANGER,
-            Self::Linked => theme::SELECTION,
-        }
-    }
-}
-
-pub fn status_dots(ui: &mut Ui, tones: &[StatusTone]) {
-    ui.horizontal(|ui| {
-        ui.spacing_mut().item_spacing.x = 5.0;
-        for tone in tones {
-            let (rect, _) = ui.allocate_exact_size(
-                Vec2::new(12.0, 18.0), egui::Sense::hover(),
-            );
-            ui.painter().circle_filled(rect.center(), 4.5, tone.color());
-        }
-    });
 }
 
 /// Read-only embedded management table with the shared fixed-header

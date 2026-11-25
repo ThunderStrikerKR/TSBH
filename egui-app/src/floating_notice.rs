@@ -150,24 +150,6 @@ pub fn dispatch_pointer(ctx: &Context, source: &'static str) {
     record(ctx, source, at, AnchorKind::Action);
 }
 
-/// Input fallback (for fields that only expose a Response, not TextEditOutput).
-/// A field's editing point is preferred over the outer card or table center.
-pub fn input(ctx: &Context, source: &'static str, response: &Response) {
-    if response.has_focus() || response.changed() {
-        let position = ctx.input(|i| i.pointer.latest_pos())
-            .filter(|pos| response.rect.contains(*pos))
-            .unwrap_or(response.rect.center_top());
-        if response.changed() {
-            with_state(ctx, |state| {
-                if state.active.as_ref().is_some_and(|n| n.source==source) {
-                    state.active = None;
-                }
-            });
-        }
-        record(ctx, source, position, AnchorKind::Caret);
-    }
-}
-
 /// Caret anchor for existing add_sized(TextEdit) widgets, without changing
 /// their proven 34/36pt geometry. Recover the TextEdit cursor from the widget
 /// id and measure with the exact font used by that input.

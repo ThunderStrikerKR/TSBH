@@ -306,8 +306,6 @@ fn render(text: &str, role: Role) -> RichText {
     }
 }
 
-pub fn brand_heading(text: &str) -> RichText { render(text, Role::Brand) }
-
 /// Layout the wordmark using the same font, tracking and line-height as the
 /// typography role. The header paints this galley in an explicit centered
 /// rect so nested egui row layouts cannot bias its vertical position.
@@ -332,25 +330,6 @@ pub fn page_heading(text: &str) -> RichText { render(text, Role::Page) }
 pub fn modal_title(text: &str) -> RichText { render(text, Role::ModalTitle) }
 pub fn section_heading(text: &str) -> RichText { render(text, Role::Section) }
 
-/// Same bold face, tracking and size as the shared section heading, but
-/// laid out explicitly for the workflow card title. Its painted x-coordinate
-/// is fixed by the caller, never by a centered Label allocation.
-pub fn section_heading_galley(
-    ui: &egui::Ui, text: &str
-) -> std::sync::Arc<egui::Galley> {
-    let role = spec(Role::Section);
-    let format = egui::TextFormat {
-        font_id: FontId::new(
-            role.size, FontFamily::Name(EMPHASIS_FAMILY.into())
-        ),
-        color: role.color,
-        extra_letter_spacing: role.tracking,
-        line_height: Some(role.line),
-        ..Default::default()
-    };
-    let job = egui::text::LayoutJob::single_section(text.to_owned(), format);
-    ui.fonts_mut(|fonts| fonts.layout_job(job))
-}
 pub fn subsection_heading(text: &str) -> RichText { render(text, Role::Subsection) }
 /// Working-order dealer title: approved 14pt emphasized Korean UI face.
 /// Paint into the fixed text slot; never let its natural width reposition the
@@ -374,12 +353,6 @@ pub fn workflow_dealer_galley(
 }
 
 pub fn body(text: &str) -> RichText { render(text, Role::Body) }
-/// Reception source document only: editable/highlighted source, read-only
-/// workflow source and OCR review agree at 16pt without enlarging labels,
-/// client metadata or other master-table content.
-pub fn reception_source_text(text:&str)->RichText {
-    body(text).size(FONT_RECEPTION_SOURCE_TEXT)
-}
 pub fn field_label(text: &str) -> RichText { render(text, Role::FieldLabel) }
 
 /// Shared field-label typography laid out for exact left-edge painting.
@@ -655,26 +628,6 @@ pub fn fit_category_path(
 }
 
 pub fn table_cell(text: &str) -> RichText { render(text, Role::TableCell) }
-pub fn summary_value(text: &str) -> RichText { render(text, Role::SummaryValue) }
-
-/// Freight overview card label and unit use the same 16pt size as
-/// SummaryValue. All three use the shared 23pt line box and a single
-/// centerline; the caller owns numeric right alignment.
-fn summary_card_secondary_galley(
-    ui: &egui::Ui, text: &str
-) -> std::sync::Arc<egui::Galley> {
-    let style = spec(Role::SummaryValue);
-    let format = egui::TextFormat {
-        font_id: FontId::new(style.size, FontFamily::Proportional),
-        color: SECONDARY,
-        extra_letter_spacing: 0.0,
-        line_height: Some(style.line),
-        ..Default::default()
-    };
-    ui.fonts_mut(|fonts| fonts.layout_job(
-        egui::text::LayoutJob::single_section(text.to_owned(), format)
-    ))
-}
 /// Standalone freight metric number (e.g. 358). Keep the named bold
 /// family, independent of the older small one-line SummaryValue role.
 pub fn freight_summary_large_number_galley(
@@ -707,41 +660,6 @@ pub fn freight_summary_small_label_galley(
     ui.fonts_mut(|fonts| fonts.layout_job(
         egui::text::LayoutJob::single_section(text.to_owned(), format)
     ))
-}
-
-pub fn summary_card_label_galley(
-    ui: &egui::Ui, text: &str
-) -> std::sync::Arc<egui::Galley> {
-    summary_card_secondary_galley(ui, text)
-}
-pub fn summary_card_unit_galley(
-    ui: &egui::Ui, text: &str
-) -> std::sync::Arc<egui::Galley> {
-    summary_card_secondary_galley(ui, text)
-}
-
-/// Produce the same summary font as summary_value(), but as measured glyphs
-/// for a fixed-position card row without nested automatic label alignment.
-pub fn summary_value_galley(
-    ui: &egui::Ui, text: &str
-) -> std::sync::Arc<egui::Galley> {
-    let role = spec(Role::SummaryValue);
-    let format = egui::TextFormat {
-        font_id: data_value_font(DataValueKind::Money,DataValueContext::Summary),
-        color: role.color,
-        extra_letter_spacing: role.tracking,
-        line_height: Some(role.line),
-        ..Default::default()
-    };
-    ui.fonts_mut(|fonts| fonts.layout_job(
-        egui::text::LayoutJob::single_section(text.to_owned(), format)
-    ))
-}
-/// Legacy count caption: keep its original 13pt/20pt appearance while
-/// routing the font family through the central quantity policy.
-pub fn quantity(text: &str) -> RichText {
-    data_value_text(text,DataValueKind::Quantity,DataValueContext::CompactCaption)
-        .line_height(Some(20.0))
 }
 
 /// Compatibility shim for existing money/quantity editor call sites.
@@ -777,12 +695,6 @@ pub fn floating_notice_text(text:&str)->RichText{
     RichText::new(text).size(crate::theme::FLOATING_NOTICE_TEXT_SIZE).color(TEXT)
 }
 
-/// Review content deliberately keeps its existing body and caption roles.
-/// Tone changes ink only; it does not change the role's line metrics.
-pub fn review_error_text(text:&str)->RichText{
-    let display=crate::user_error::display("reception.review",text);
-    body(display.as_ref()).color(crate::theme::ReviewTone::Error.text_color())
-}
 pub fn review_title(text:&str,tone:crate::theme::ReviewTone)->RichText{
     body(text).strong().color(tone.text_color())
 }

@@ -999,23 +999,6 @@ pub fn management_table_scroll_style()->egui::style::ScrollStyle{
     style
 }
 
-/// Search toolbar and table belong to a single management list card.
-/// The card provides only its outline; its toolbar owns inner padding,
-/// and rows can span the full width without a second 16pt inset.
-pub fn management_list_frame() -> Frame {
-    bordered_surface(PANEL,BORDER,PANEL_RADIUS)
-        .inner_margin(FRAME_STROKE_WIDTH as i8)
-}
-
-/// Identical inset for a management list's search toolbar and its inline
-/// loading/read-only/error status. Keeps both aligned without adding an
-/// extra bordered card or changing the data table's full-width columns.
-pub fn management_list_strip_frame() -> Frame {
-    Frame::new().inner_margin(egui::Margin::symmetric(
-        SPACE_12 as i8, SPACE_8 as i8
-    ))
-}
-
 /// The same outer gutter for Reception and every management page:
 /// 6pt CANVAS above, right and below; the KakaoTalk reservation stays
 /// flush with the left edge. The content/splitter layout is measured
@@ -1133,10 +1116,6 @@ pub fn preview_surface_frame()->Frame{
 pub fn source_document_frame() -> Frame {
     bordered_surface(INPUT,BORDER,CONTROL_RADIUS)
         .inner_margin(SPACE_4)
-}
-
-pub fn nested_frame() -> Frame {
-    nested_input_surface_frame().inner_margin(NESTED_PADDING)
 }
 
 /// Paint-only hover emphasis for every actionable rectangular control,
@@ -1373,19 +1352,6 @@ pub fn soft_rule(ui:&mut Ui)->egui::Rect{
     );
     paint_soft_rule(ui.painter(),rect);
     rect
-}
-
-pub fn divider(ui: &mut Ui) {
-    ui.add_space(SPACE_4);
-    soft_rule(ui);
-    ui.add_space(SPACE_4);
-}
-
-pub fn label_value(ui: &mut Ui, label: &str, value: &str) {
-    ui.horizontal(|ui| {
-        ui.add_sized([FIELD_LABEL_WIDTH, INPUT_HEIGHT], egui::Label::new(typography::field_label(label)));
-        ui.label(typography::body(value));
-    });
 }
 
 #[cfg(test)]
