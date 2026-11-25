@@ -791,9 +791,21 @@ fn analyze(raw: &str, state: &Value, client: Option<&Value>) -> Result<Value, St
         } else {
         if let Some(c) = person_label.captures(line.text) {
             if let Some(name) = c.get(1) {
-                if is_person(name.as_str()) || is_institution(name.as_str()) {
+                let labeled_name = name.as_str().trim();
+                // Apply the same explicit title rule as standalone recipient
+                // lines, retaining the original source span for evidence.
+                let title_name = Regex::new(r"^([가-힣]{2,5})\s+(?:목사|선생님)$")
+                    .expect("labeled recipient title")
+                    .captures(labeled_name)
+                    .and_then(|c| c.get(1))
+                    .map(|m| m.as_str())
+                    .filter(|value| is_person(value));
+                if let Some(value) = title_name {
                     add_match(&mut events, line, name.start(), name.end(), "name",
-                        name.as_str().trim().to_owned(), "명시적 수취인 이름");
+                        value.to_owned(), "명시적 수취인 이름");
+                } else if is_person(labeled_name) || is_institution(labeled_name) {
+                    add_match(&mut events, line, name.start(), name.end(), "name",
+                        labeled_name.to_owned(), "명시적 수취인 이름");
                 }
             }
         }
@@ -1544,6 +1556,25 @@ mod tests {
         assert_eq!(item["quantity"],Value::Null);
         assert_eq!(item["quantityConfirmed"],false);
         assert_ne!(item["productId"],"p709");
+    }
+    #[test]
+    fn explicitly_labeled_recipient_with_title_preserves_name_and_contacts() {
+        for (label, title) in [("받는 사람", "선생님"), ("수취인:", "목사")] {
+            let raw = format!(
+                "배송지 주소 경기도 의정부시 시민로 100\n{label} 이가상 {title}\n연락처 031-123-4567 / 010-1234-5678\n709 1개"
+            );
+            let output = execute("analyze_order", json!({"raw":raw,"state":state()})).unwrap();
+            let rows = output["recipients"].as_array().unwrap();
+            assert_eq!(rows.len(), 1);
+            assert_eq!(rows[0]["name"], "이가상");
+            assert_eq!(rows[0]["phone"], "031-123-4567");
+            assert_eq!(rows[0]["mobile"], "010-1234-5678");
+            assert_eq!(rows[0]["items"][0]["quantity"], 1);
+            assert!(rows[0]["sources"].as_array().unwrap().iter().any(|source|
+                source["field"] == "name" &&
+                source["text"].as_str().is_some_and(|text| text == format!("이가상 {title}"))
+            ));
+        }
     }
     #[test]
     fn separate_recipients_and_utf16_spans() {
