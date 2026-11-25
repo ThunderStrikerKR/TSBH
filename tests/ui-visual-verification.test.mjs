@@ -130,3 +130,15 @@ test("retired React changes cannot block an egui-only operational visual gate",(
   assert.equal(mixed.pass,false);
   assert.deepEqual(mixed.ui,[source]);
 });
+
+
+test("inserting a test module between adjacent modules includes its blank separator",()=>{
+  const before="pub fn render() {}\n\n#[cfg(test)]\nmod old_tests {\n    #[test]\n    fn old() {}\n}\n";
+  const added="#[cfg(test)]\nmod new_tests {\n    #[test]\n    fn new_test() {}\n}\n\n";
+  const after=before.replace("#[cfg(test)]",added+"#[cfg(test)]");
+  const diff="@@ -2,0 +3,6 @@\n"+added.trimEnd().split("\n").map(line=>"+"+line).join("\n")+"\n+";
+  assert.equal(isRustTestOnlyDiff(before,after,diff),true);
+  const mixed=after.replace("pub fn render() {}","pub fn render() { layout(); }");
+  assert.equal(isRustTestOnlyDiff(before,mixed,
+    "@@ -1 +1 @@\n-pub fn render() {}\n+pub fn render() { layout(); }\n"+diff),false);
+});

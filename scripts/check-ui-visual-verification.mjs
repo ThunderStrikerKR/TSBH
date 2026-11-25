@@ -48,7 +48,16 @@ function rustTestModuleRanges(source) {
     if (!/^\s*(?:(?:pub(?:\([^)]*\))?)\s+)?mod\s+[A-Za-z_]\w*\s*\{/.test(lines[module] || "")) continue;
     let end = module + 1;
     while (end < lines.length && !/^\}\s*(?:\/\/.*)?$/.test(lines[end])) end++;
-    if (end < lines.length) ranges.push({ start: i + 1, end: end + 1 });
+    if (end < lines.length) {
+      // git may attach the blank separator between adjacent test modules
+      // to either insertion. It is safe only when it directly borders
+      // a recognized test module; nonblank production lines stay covered.
+      let start = i;
+      let last = end;
+      while (start > 0 && lines[start - 1].trim() === "") start--;
+      while (last + 1 < lines.length && lines[last + 1].trim() === "") last++;
+      ranges.push({ start: start + 1, end: last + 1 });
+    }
   }
   return ranges;
 }
