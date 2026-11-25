@@ -148,6 +148,8 @@ fn ts_evidence_reason(raw: &str,e:&Evidence) -> String {
                 r"(?:수취인명|수령자)\s*[:：]?\s*[가-힣]{2,10}\s*(?:연락처|전화|휴대)"
             ).expect("explicit name").is_match(line)
             =>"명시적 수취인 이름",
+        ("name","명시적 수취인 이름")=>"명시적 수취인 이름",
+        ("name","수취인 필드 경계에서 원문 전체 보존")=>"수취인 필드 경계에서 원문 전체 보존",
         ("name",_)=>"같은 행의 대안 후보; 직원 확인 필요",
         ("phone","연락처 원문 구간")
           |("mobile","연락처 원문 구간")=>{
@@ -309,12 +311,29 @@ fn recipient_label()->Regex {
 // An explicit field is authoritative. Recognize the next actual field
 // boundary, never impose a character, length, surname, or title constraint.
 fn explicit_recipient_span(line:&str,label:&Regex,phone:&Regex)->Option<(usize,usize)>{
-    let start=label.find(line)?.end();
+    let header=label.find(line)?;
+    let start=header.end();
     let tail=&line[start..];
+    // A compound heading without a separator (e.g. 수취인 주소) is
+    // an address/contact field, not a recipient-name label. A colon
+    // explicitly separating the name permits any following value.
+    if !header.as_str().contains([':', '：']) &&
+        Regex::new(r"^(?:주소|연락처|전화번호|휴대전화)(?:\s|[:：]|$)")
+            .expect("compound field heading").is_match(tail){
+        return None;
+    }
     let mut end=line.len();
     let fields=Regex::new(r"(?i)(?:\s+|\s*[|]\s*)(?:연락처(?:\([^)]*\))?|전화(?:번호)?|휴대(?:전화|폰)?|번호|주소|배송지(?:\s*주소)?|배송주소|받는곳|TEL|phone|address|배송메모|메모|비고)\s*[:：]\s*")
         .expect("explicit next field");
     if let Some(m)=fields.find(tail){end=start+m.start();}
+    let address_field=Regex::new(r"\s+(?:주소|배송지(?:\s*주소)?|배송주소|받는곳)\s+")
+        .expect("address field boundary");
+    for m in address_field.find_iter(tail){
+        if address_begin(&tail[m.end()..]).is_some(){
+            end=end.min(start+m.start());
+            break;
+        }
+    }
     let contact=Regex::new(r"(?i)\s+(?:연락처(?:\([^)]*\))?|전화(?:번호)?|휴대(?:전화|폰)?|번호|TEL|phone)\s*[:：]?\s*$")
         .expect("contact field boundary");
     // A standalone phone-shaped value after an explicit label is still a
@@ -330,7 +349,10 @@ fn explicit_recipient_span(line:&str,label:&Regex,phone:&Regex)->Option<(usize,u
 fn other_recipient_field(text:&str)->bool{
     let text=text.trim();
     let heading=text.trim_end_matches([':', '：']).trim();
-    matches!(heading,"주소"|"배송지"|"배송지 주소"|"배송주소"|"받는곳"|"수취인주소"|
+    // Separator-only tails such as ')' or '>' after a quantity are
+    // structural punctuation, not unlabelled recipients.
+    !heading.chars().any(char::is_alphanumeric)
+    || matches!(heading,"주소"|"배송지"|"배송지 주소"|"배송주소"|"받는곳"|"수취인주소"|
         "수취인 주소"|"배송 주소"|"배송지주소"|"배송메모"|"배송 요청"|"배송 요청사항"|
         "메모"|"비고"|"연락처"|"전화번호"|"품목"|"수량"|"상품명"|"모델명"|"수령정보"|
         "ㅇ수령정보"|"ㅇ품목"|"발주서"|"발 주 서"|"공통"|"모두"|"전부"|"전원"|
@@ -979,11 +1001,14 @@ fn analyze(raw: &str, state: &Value, client: Option<&Value>) -> Result<Value, St
         let p_end = p_end.min(skip_until.len()).max(p_start);
         let p_start = if skip_until.is_char_boundary(p_start) { p_start } else { 0 };
         let p_end = if skip_until.is_char_boundary(p_end) { p_end } else { skip_until.len() };
+        // The matching slice excludes recipient text, but preserve the
+        // historical product raw line for reanalysis and manual identity.
+        let original_product_line=line.text[..address.unwrap_or(line.text.len())].trim();
         let product_evidence = add_match(&mut events,line,offset+p_start,offset+p_end,
-            "product",trimmed.to_owned(),"상품명/모델명/별칭 인식 근거");
+            "product",original_product_line.to_owned(),"상품명/모델명/별칭 인식 근거");
         product_hits.push(ProductHit {
             evidence:product_evidence,source_start:line.start+offset,
-            line:line.number,raw:trimmed.to_owned(),
+            line:line.number,raw:original_product_line.to_owned(),
             decision:matched,quantities:quantity_indexes,
             common:Regex::new(r"공통|모두|전부|전원|각\s*수취인|같은\s*상품")
                 .expect("common item").is_match(trimmed),
@@ -1538,6 +1563,10 @@ mod tests {
             assert_eq!(rows[0]["items"].as_array().unwrap().len(),1);
             assert!(rows[0]["sources"].as_array().unwrap().iter().any(|v|v["field"]=="name"&&v["text"]==name));
         }
+        let raw="709 1개\n수취인: John Smith 주소 서울특별시 마포구 월드컵로 20 연락처: 010-1234-5678";
+        let out=execute("analyze_order",json!({"raw":raw,"state":state()})).unwrap();
+        assert_eq!(out["recipients"][0]["name"],"John Smith");
+        assert_eq!(out["recipients"][0]["mobile"],"010-1234-5678");
         let long="A very long international organization and department name ".repeat(8);
         let raw=format!("수취인: {}\n010-1234-5678",long.trim_end());
         let out=execute("analyze_order",json!({"raw":raw,"state":state()})).unwrap();
