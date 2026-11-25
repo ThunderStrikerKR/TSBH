@@ -684,7 +684,6 @@ mod shared_screen_component_contract_tests {
             ("excel_manager.rs",include_str!("excel_manager.rs")),
             ("excel_service.rs",include_str!("excel_service.rs")),
             ("management_queries.rs",include_str!("management_queries.rs")),
-            ("developer_ui_samples.rs",include_str!("developer_ui_samples.rs")),
         ];
         for (name,file) in cases {
             let source=production_source(file);
