@@ -690,11 +690,8 @@ impl CategoryManager {
                     }
                 );
             }
-            // One explicit 21pt toolbar-to-tree transition: 16/1/4.
-            // No implicit egui gaps or phantom title/help-row spacing.
-            panel.add_space(theme::MANAGEMENT_TOOLBAR_DIVIDER_TOP_GAP);
-            components::soft_divider(panel);
-            panel.add_space(theme::MANAGEMENT_TOOLBAR_DIVIDER_BOTTOM_GAP);
+            // The same structural divider as Reception and management tables.
+            components::section_divider(panel);
             let index=CategoryMapIndex::new(&cats,catalog,&self.query);
             egui::ScrollArea::vertical()
                 .id_salt("category-map-tree")
@@ -1137,14 +1134,11 @@ mod modal_layout_contract_tests{
         assert!(page.contains("management_toolbar_trailing_rect("));
         assert!(page.contains("theme::CATALOG_MAP_TOOLBAR_STACK_WIDTH"));
         assert!(page.contains("self.map_toolbar_actions("));
-        assert!(page.contains("theme::MANAGEMENT_TOOLBAR_DIVIDER_TOP_GAP"));
-        assert!(page.contains("theme::MANAGEMENT_TOOLBAR_DIVIDER_BOTTOM_GAP"));
+        assert!(page.contains("components::section_divider(panel)"));
         assert!(!page.contains("panel.add_space(theme::SPACE_8);\n            panel.horizontal_wrapped"));
         assert_eq!(
-            theme::MANAGEMENT_TOOLBAR_DIVIDER_TOP_GAP
-                +theme::SOFT_DIVIDER_WIDTH
-                +theme::MANAGEMENT_TOOLBAR_DIVIDER_BOTTOM_GAP,
-            21.0
+            theme::SECTION_DIVIDER_HEIGHT,
+            33.0
         );
     }
     #[test]

@@ -2498,7 +2498,7 @@ impl FreightManager {
             if single_list{
                 components::fill_management_primary_card(section,card_min_height);
             }
-            // A missing toolbar is represented by one shared 57pt master
+            // A missing toolbar is represented by one shared 69pt master
             // transition, not an inert 36pt widget plus a second divider.
             let prior_gap=section.spacing().item_spacing.y;
             section.spacing_mut().item_spacing.y=0.0;
@@ -2775,7 +2775,7 @@ fn freight_history_table<const N:usize>(
     let minimum=bases.iter().sum::<f32>()
         +N.saturating_sub(1) as f32*theme::FREIGHT_ASSIGNMENT_COL_GAP;
     let layout=if follows_master_toolbar {
-        // No phantom toolbar widget. The common 57pt reserved transition
+        // No phantom toolbar widget. The common 69pt reserved transition
         // keeps this header exactly level with assignment and rate management.
         components::management_sticky_table_header_without_toolbar(ui,minimum)
     }else{
@@ -3024,12 +3024,12 @@ mod rate_toolbar_tests{
         });
         let (top,header,content)=measured.expect("history header measured");
         let expected_gap=theme::INPUT_HEIGHT+
-            theme::MANAGEMENT_TOOLBAR_DIVIDER_TOP_GAP+
+            theme::SECTION_DIVIDER_GAP+
             theme::SOFT_DIVIDER_WIDTH+
-            theme::MANAGEMENT_TOOLBAR_DIVIDER_BOTTOM_GAP;
-        assert!((expected_gap-57.0).abs()<0.01);
+            theme::SECTION_DIVIDER_GAP;
+        assert!((expected_gap-69.0).abs()<0.01);
         assert!((header.top()-top-expected_gap).abs()<0.01,
-            "history header must stay at master's 36pt + 21pt origin");
+            "history header must stay at master's 36pt + 33pt origin");
         assert!((header.height()-theme::MANAGEMENT_TABLE_HEADER_HEIGHT).abs()<0.01);
         assert!((content.height()-theme::MANAGEMENT_TABLE_HEADER_HEIGHT).abs()<0.01);
     }

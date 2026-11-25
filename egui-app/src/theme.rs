@@ -220,11 +220,9 @@ pub const BRAND_ICON_OPTICAL_CENTER_Y: f32 = 2.0;
 pub const BRAND_WORDMARK_GAP: f32 = 3.0;
 pub const HEADER_DRAG_STRIP: f32 = 8.0;
 pub const SECTION_PADDING: f32 = SPACE_16;
-// Make the toolbar's visible upper/lower breathing room symmetric:
-// 16pt section inset above, 16pt to the divider below the 36pt toolbar.
-// Keep the 4pt space after the 1pt divider separate from this balance.
-pub const MANAGEMENT_TOOLBAR_DIVIDER_TOP_GAP: f32 = SECTION_PADDING;
-pub const MANAGEMENT_TOOLBAR_DIVIDER_BOTTOM_GAP: f32 = SPACE_4;
+// One structural section-divider geometry across Reception, management and modal sections.
+pub const SECTION_DIVIDER_GAP: f32 = SPACE_16;
+pub const SECTION_DIVIDER_HEIGHT: f32 = 2.0 * SECTION_DIVIDER_GAP + SOFT_DIVIDER_WIDTH;
 // Reception card side/bottom inset. The title row has its own top inset
 // so optical header balance does not change the body bottom clearance.
 pub const RECEPTION_PANE_PADDING_Y: f32 = SECTION_PADDING;
@@ -257,11 +255,8 @@ pub const RECEPTION_RECIPIENT_NAV_WIDTH:f32 =
     +RECEPTION_RECIPIENT_NAV_NAME_WIDTH
     +RECEPTION_RECIPIENT_NAV_COUNT_WIDTH
     +2.0*FRAME_STROKE_WIDTH;
-// Redistribute the previous 16pt/8pt header clearances without moving
-// the divider or body: 12pt above and below the 34pt title/control row.
+// Reception card title top inset is independent of the shared section divider.
 pub const RECEPTION_SECTION_HEADER_TOP: f32 = SPACE_12;
-pub const SECTION_CONTENT_GAP: f32 = SPACE_12;
-pub const SECTION_DIVIDER_BOTTOM_GAP: f32 = SPACE_16;
 // Canvas/footer clearance must be counted in the message editor's height.
 pub const RECEPTION_MESSAGE_ACTION_GAP: f32 = SPACE_12;
 // One 13pt shortcut label with 3pt keycap top/bottom padding and border.
@@ -373,8 +368,7 @@ pub const RECEPTION_ITEMS_MIN_TABLE_WIDTH: f32 =
 // Single source of truth for section height budgeting (including the rule).
 pub const RECEPTION_SECTION_CHROME_HEIGHT: f32 =
     RECEPTION_SECTION_HEADER_TOP + RECEPTION_PANE_PADDING_Y
-    + SECTION_HEADER_HEIGHT + SECTION_CONTENT_GAP + SECTION_DIVIDER_BOTTOM_GAP
-    + SOFT_DIVIDER_WIDTH;
+    + SECTION_HEADER_HEIGHT + SECTION_DIVIDER_HEIGHT;
 pub const RECEPTION_RECIPIENT_BODY_HEIGHT: f32 =
     4.0 * INPUT_HEIGHT + 3.0 * RECIPIENT_ROW_GAP;
 pub const RECEPTION_ORDER_TOTAL_SECTION_HEIGHT: f32 =
@@ -463,7 +457,7 @@ pub const MODAL_FOOTER_HEIGHT: f32 = 58.0;
 pub const MODAL_SECTION_PADDING: f32 = SPACE_16;
 // Equal clearance above and below the divider in every modal section.
 // Kept separate from frame padding so the layout role is explicit.
-pub const MODAL_SECTION_HEADER_RULE_GAP: f32 = SPACE_16;
+pub const MODAL_SECTION_HEADER_RULE_GAP: f32 = SECTION_DIVIDER_GAP;
 pub const MODAL_SECTION_RADIUS: u8 = SECTION_RADIUS;
 // Approved compact modal form row: label and editable value share one 36pt
 // line. No product-management-specific vertical label/input layout.

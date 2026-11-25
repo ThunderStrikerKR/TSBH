@@ -472,7 +472,7 @@ impl ClientManager {
         }
 
         // Same FULL master table frame as Freight Assignment: one 16pt
-        // inset on every edge, one 36pt toolbar, one 21pt transition and
+        // inset on every edge, one 36pt toolbar, one 33pt transition and
         // one fixed 36pt header. No extra '등록 거래처' title row/card.
         components::align_management_primary_card(ui,page_origin_y);
         let card_min_height=

@@ -4367,7 +4367,7 @@ mod manual_workspace_layout_tests{
         assert!(!render[body_start..]
             .contains("components::date_navigation_count_control("));
         assert!(!render[body_start..columns_start]
-            .contains("components::reception_section_divider("));
+            .contains("components::section_divider("));
         assert!(render[toolbar_start..body_start]
             .contains("status.set_min_height(theme::MODAL_MASTER_WORKSPACE_TOOLBAR_HEIGHT)"));
         assert!(render.contains("theme::source_document_frame().show(body"));

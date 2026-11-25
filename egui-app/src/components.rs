@@ -2293,9 +2293,7 @@ pub fn modal_master_body<R>(
 fn modal_section_heading_with_rule(ui:&mut Ui,title:&str){
     ui.spacing_mut().item_spacing.y=0.0;
     ui.label(typography::section_heading(title));
-    ui.add_space(theme::MODAL_SECTION_HEADER_RULE_GAP);
-    soft_divider(ui);
-    ui.add_space(theme::MODAL_SECTION_HEADER_RULE_GAP);
+    section_divider(ui);
 }
 
 /// A heading and one divider within the modal master work surface.
@@ -2356,17 +2354,7 @@ pub fn modal_master_controlled_spacing(ui:&mut Ui){
 /// One shared 16pt space / 1pt divider / 16pt space sequence. Call from a
 /// modal_master_controlled_spacing surface to prevent implicit extra gaps.
 pub fn modal_master_spaced_divider(ui:&mut Ui)->Rect{
-    let gap=theme::MODAL_MASTER_WORKSPACE_GAP;
-    let thickness=theme::SOFT_DIVIDER_WIDTH;
-    let (rect,_)=ui.allocate_exact_size(
-        Vec2::new(ui.available_width(),2.0*gap+thickness),Sense::hover()
-    );
-    let y=rect.top()+gap+thickness/2.0;
-    ui.painter().line_segment(
-        [egui::pos2(rect.left(),y),egui::pos2(rect.right(),y)],
-        Stroke::new(thickness,theme::DIVIDER)
-    );
-    rect
+    section_divider(ui)
 }
 
 /// Same nested-section surface for absolute-layout dialogs such as OCR.
@@ -3343,11 +3331,9 @@ pub fn reception_section_with_header_tooltip(
         );
         #[cfg(test)]
         general_screen_geometry_tests::record(reception_geometry_role(title,true),_header.response.rect);
-        ui.add_space(theme::SECTION_CONTENT_GAP);
-        let divider=reception_section_divider(ui);
+        let (_transition,_divider)=section_divider_with_top_gap(ui,theme::SECTION_DIVIDER_GAP);
         #[cfg(test)]
-        general_screen_geometry_tests::record("source divider",divider);
-        ui.add_space(theme::SECTION_DIVIDER_BOTTOM_GAP);
+        general_screen_geometry_tests::record("source divider",_divider);
         let body=ui.scope(|body|{
             body.spacing_mut().item_spacing.y=body_item_spacing;
             content(body);
@@ -3638,12 +3624,26 @@ pub fn paint_reception_client_summary_surface(ui:&Ui,rect:Rect){
     );
 }
 
-/// Reception section titles are NOT fixed table headers. Keep a soft
-/// 1pt DIVIDER under them; the strong 2pt TABLE_HEADER_OUTLINE belongs
-/// exclusively to the management/list column headers.
-/// Preserve the existing one-point slot and all dock splitter coordinates.
-pub fn reception_section_divider(ui:&mut Ui)->Rect{
-    theme::soft_rule(ui)
+/// Structural section divider: one 16/1/16pt allocation, separate from row rules.
+/// Call from a zero-implicit-vertical-spacing layout.
+pub fn section_divider(ui:&mut Ui)->Rect{
+    section_divider_with_top_gap(ui,theme::SECTION_DIVIDER_GAP).0
+}
+
+/// Shared renderer also supports a preceding inset already consumed by the
+/// toolbar, or a reserved missing-toolbar slot. The bottom gap never varies.
+fn section_divider_with_top_gap(ui:&mut Ui,top_gap:f32)->(Rect,Rect){
+    debug_assert!(ui.spacing().item_spacing.y.abs()<0.01);
+    let (strip,_)=ui.allocate_exact_size(
+        Vec2::new(ui.available_width(),top_gap+theme::SOFT_DIVIDER_WIDTH
+            +theme::SECTION_DIVIDER_GAP),Sense::hover()
+    );
+    let rule=Rect::from_min_size(
+        egui::pos2(strip.left(),strip.top()+top_gap),
+        Vec2::new(strip.width(),theme::SOFT_DIVIDER_WIDTH)
+    );
+    ui.painter().rect_filled(rule,0.0,theme::DIVIDER);
+    (strip,rule)
 }
 
 /// Untyped recognition/workflow notices retain informational coloring.
@@ -4552,19 +4552,19 @@ fn management_table_data_width(
     (viewport_width-scrollbar_gutter).max(min_table_width)
 }
 
-/// Standard 21pt transition for a toolbar that touches the card cursor.
+/// Standard 33pt transition for a toolbar that touches the card cursor.
 /// Existing inset panels can consume part of the 16pt pre-divider margin.
 pub fn management_sticky_table_header(
     ui:&mut Ui,min_table_width:f32
 )->ManagementTableHeader{
     management_sticky_table_header_with_top_gap(
-        ui,min_table_width,theme::MANAGEMENT_TOOLBAR_DIVIDER_TOP_GAP
+        ui,min_table_width,theme::SECTION_DIVIDER_GAP
     )
 }
 
 /// CONFLICT-005 (approved): the parent toolbar/strip may already contain an
 /// 8pt bottom inner margin. Subtract that existing inset from the 16pt
-/// pre-divider breathing room instead of adding another full 21pt strip.
+/// pre-divider breathing room instead of adding another full 33pt strip.
 /// Call only for a directly adjacent toolbar and fixed table header.
 pub fn management_sticky_table_header_after_inset(
     ui:&mut Ui,min_table_width:f32,consumed_bottom_inset:f32
@@ -4579,9 +4579,9 @@ pub fn management_sticky_table_header_after_inset(
 /// 16pt pre-divider whitespace, not space to add on top of it.
 fn management_remaining_predivider_gap(consumed_bottom_inset:f32)->f32{
     debug_assert!(consumed_bottom_inset.is_finite()&&consumed_bottom_inset>=0.0
-        && consumed_bottom_inset<=theme::MANAGEMENT_TOOLBAR_DIVIDER_TOP_GAP,
+        && consumed_bottom_inset<=theme::SECTION_DIVIDER_GAP,
         "toolbar bottom inset must fit inside the standard top gap");
-    (theme::MANAGEMENT_TOOLBAR_DIVIDER_TOP_GAP-consumed_bottom_inset).max(0.0)
+    (theme::SECTION_DIVIDER_GAP-consumed_bottom_inset).max(0.0)
 }
 
 fn management_sticky_table_header_with_top_gap(
@@ -4598,20 +4598,9 @@ fn management_sticky_table_header_with_top_gap(
     // One allocation for the full toolbar-to-header separator strip.
     // Keeping it in a single Ui layout operation also avoids a fractional
     // pixel difference between manual add_space and automatic item gaps.
-    let transition_height=top_gap+theme::SOFT_DIVIDER_WIDTH
-        +theme::MANAGEMENT_TOOLBAR_DIVIDER_BOTTOM_GAP;
-    let (transition,_)=ui.allocate_exact_size(
-        Vec2::new(viewport_width,transition_height),Sense::hover()
-    );
-    ui.painter().rect_filled(
-        Rect::from_min_size(
-            egui::pos2(transition.left(),
-                transition.top()+top_gap),
-            Vec2::new(viewport_width,theme::SOFT_DIVIDER_WIDTH)
-        ),0.0,theme::DIVIDER
-    );
+    let (_transition,_rule)=section_divider_with_top_gap(ui,top_gap);
     #[cfg(test)]
-    general_screen_geometry_tests::record("toolbar transition",transition);
+    general_screen_geometry_tests::record("toolbar transition",_transition);
     let (header_rect,_)=ui.allocate_exact_size(
         Vec2::new(viewport_width,theme::MANAGEMENT_TABLE_HEADER_HEIGHT),
         Sense::hover()
@@ -4684,7 +4673,7 @@ pub fn management_list_table_header(
 
 /// A history overview without interactive toolbar controls still has the
 /// same fixed-header origin as the assignment master: 36pt toolbar role plus
-/// the approved 21pt transition. Reserve those 57pt as ONE separator area,
+/// the approved 33pt transition. Reserve those 69pt as ONE separator area,
 /// not a phantom interactive toolbar widget with its own implicit spacing.
 /// This keeps the first row and the 1pt divider on the master coordinates.
 pub fn management_sticky_table_header_without_toolbar(
@@ -4692,7 +4681,7 @@ pub fn management_sticky_table_header_without_toolbar(
 )->ManagementTableHeader {
     management_sticky_table_header_with_top_gap(
         ui,min_table_width,
-        theme::INPUT_HEIGHT+theme::MANAGEMENT_TOOLBAR_DIVIDER_TOP_GAP
+        theme::INPUT_HEIGHT+theme::SECTION_DIVIDER_GAP
     )
 }
 
@@ -4750,7 +4739,7 @@ pub fn management_master_header_sort_hover(ui:&Ui,hit:Rect){
 }
 
 /// Plain management-register header for two-column editor/list pages.
-/// The same master allocates the 21pt toolbar transition, 36pt fixed header,
+/// The same master allocates the 33pt toolbar transition, 36pt fixed header,
 /// native scrollbar gutter and inner 2pt bottom rule. Only the row content
 /// is allowed to be taller than a compact 42pt product row.
 pub fn management_master_register_header(
@@ -7923,7 +7912,7 @@ mod shared_card_scroll_rendering_tests {
                 .map(|(_,r)|*r).collect::<Vec<_>>();
             assert_eq!(transition.len(),1,"one real toolbar divider");
             assert!((transition[0].top()-many.toolbar.bottom()-16.0).abs()<=0.5);
-            assert!((many.header.top()-transition[0].bottom()-4.0).abs()<=0.5);
+            assert!((many.header.top()-transition[0].bottom()-16.0).abs()<=0.5);
             let outlines=rules.iter().filter(|(color,r)|*color==theme::TABLE_HEADER_OUTLINE
                 &&many.header.contains(r.center())).map(|(_,r)|*r).collect::<Vec<_>>();
             assert_eq!(outlines.len(),1,"one painted header outline");
@@ -8314,15 +8303,15 @@ mod management_toolbar_geometry_tests {
     }
 
     #[test]
-    fn toolbar_to_header_transition_remains_21pt_with_preexisting_inset() {
-        let top=theme::MANAGEMENT_TOOLBAR_DIVIDER_TOP_GAP;
+    fn toolbar_to_header_transition_remains_33pt_with_preexisting_inset() {
+        let top=theme::SECTION_DIVIDER_GAP;
         let rule=theme::SOFT_DIVIDER_WIDTH;
-        let bottom=theme::MANAGEMENT_TOOLBAR_DIVIDER_BOTTOM_GAP;
-        assert_eq!(top+rule+bottom,21.0);
+        let bottom=theme::SECTION_DIVIDER_GAP;
+        assert_eq!(top+rule+bottom,33.0);
         let existing_toolbar_inset=theme::SPACE_8;
         let remaining=management_remaining_predivider_gap(existing_toolbar_inset);
         assert_eq!(remaining,8.0);
-        assert_eq!(existing_toolbar_inset+remaining+rule+bottom,21.0);
+        assert_eq!(existing_toolbar_inset+remaining+rule+bottom,33.0);
         assert_eq!(management_remaining_predivider_gap(0.0),16.0);
     }
 
@@ -8924,8 +8913,7 @@ mod modal_section_heading_spacing_tests {
         let helper=source.split("fn modal_section_heading_with_rule(").nth(1).unwrap()
             .split("/// A heading and one divider").next().unwrap();
         assert!(helper.contains("ui.spacing_mut().item_spacing.y=0.0;"));
-        assert_eq!(helper.matches("ui.add_space(theme::MODAL_SECTION_HEADER_RULE_GAP)").count(),2);
-        assert!(helper.contains("soft_divider(ui);"));
+        assert!(helper.contains("section_divider(ui);"));
         let boxed=source.split("pub fn modal_section<R>(").nth(1).unwrap()
             .split("/// Structural spacing").next().unwrap();
         assert!(boxed.contains("modal_section_heading_with_rule(section,title)"));
@@ -9338,10 +9326,13 @@ mod modal_editor_workspace_geometry_tests {
             egui::CentralPanel::default().show(ctx,|ui|{
                 ui.spacing_mut().item_spacing.y=0.0;
                 let first=theme::soft_rule(ui);
-                let second=reception_section_divider(ui);
+                let (strip,second)=section_divider_with_top_gap(ui,theme::SECTION_DIVIDER_GAP);
                 assert_eq!(first.height(),theme::SOFT_DIVIDER_WIDTH);
                 assert_eq!(second.height(),first.height());
-                assert_eq!(second.top(),first.bottom());
+                assert_eq!(strip.top(),first.bottom());
+                assert_eq!(second.top()-strip.top(),16.0);
+                assert_eq!(strip.bottom()-second.bottom(),16.0);
+                assert_eq!(strip.height(),33.0);
                 assert_eq!(first.x_range(),second.x_range());
             });
         });
@@ -10102,8 +10093,8 @@ mod shared_general_screen_audit_tests {
         assert_eq!(theme::MANAGEMENT_MASTER_TABLE_BOTTOM_PADDING,16.0);
         assert_eq!(theme::MANAGEMENT_TABLE_HEADER_HEIGHT,36.0);
         assert_eq!(theme::MANAGEMENT_TABLE_HEADER_OUTLINE_HEIGHT,2.0);
-        assert_eq!(theme::MANAGEMENT_TOOLBAR_DIVIDER_TOP_GAP,16.0);
-        assert_eq!(theme::MANAGEMENT_TOOLBAR_DIVIDER_BOTTOM_GAP,4.0);
+        assert_eq!(theme::SECTION_DIVIDER_GAP,16.0);
+        assert_eq!(theme::SECTION_DIVIDER_HEIGHT,33.0);
         assert_eq!(theme::MANAGEMENT_TABLE_SCROLL_RAIL_EXTENSION,7.0);
         let standard=theme::management_scroll_style();
         let table=theme::management_table_scroll_style();
@@ -10268,8 +10259,8 @@ pub(crate) mod general_screen_geometry_tests {
                 (card.right()-theme::SECTION_PADDING-theme::FRAME_STROKE_WIDTH,header.right())]{
                 assert!((a-b).abs()<=0.5,"{name}: master boundary drift {a} -> {b}");
             }
-            assert!((transition.height()-(theme::MANAGEMENT_TOOLBAR_DIVIDER_TOP_GAP
-                +theme::SOFT_DIVIDER_WIDTH+theme::MANAGEMENT_TOOLBAR_DIVIDER_BOTTOM_GAP)).abs()<=0.5);
+            assert!((transition.height()-(theme::SECTION_DIVIDER_GAP
+                +theme::SOFT_DIVIDER_WIDTH+theme::SECTION_DIVIDER_GAP)).abs()<=0.5);
         }
     }
 
@@ -10896,15 +10887,14 @@ pub(crate) mod general_screen_geometry_tests {
         let document=first(&trace,"visible document frame");
         let top_gap=divider.top()-header.bottom();
         let bottom_gap=document.top()-divider.bottom();
-        assert!((top_gap-12.0).abs()<=0.5,
+        assert!((top_gap-16.0).abs()<=0.5,
             "header-row-to-divider clearance drifted: {top_gap:.2}pt");
         assert!((bottom_gap-16.0).abs()<=0.5,
             "divider-to-visible-document-frame clearance drifted: {bottom_gap:.2}pt");
         let expected_chrome=theme::RECEPTION_SECTION_HEADER_TOP
             +theme::RECEPTION_PANE_PADDING_Y
             +theme::SECTION_HEADER_HEIGHT
-            +12.0+16.0
-            +theme::SOFT_DIVIDER_WIDTH;
+            +33.0;
         assert!((docked_section_body_height(320.0)-(320.0-expected_chrome)).abs()<=0.5,
             "fixed-height body calculator does not reserve both divider gaps");
     }
