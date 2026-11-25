@@ -535,14 +535,32 @@ mod management_async_behavior_regression_tests {
     }
 }
 
+/// Source-contract helper for the repository's top-level test-module style.
+/// Preserve production code both before and after each test module; inline
+/// geometry probes are not module boundaries. This is a lexical convention,
+/// not a Rust parser: a top-level module must close with an unindented brace.
+#[cfg(test)]
+pub(crate) fn production_source_for_contract(file:&str)->String {
+    let mut lines=file.split_inclusive('\n').peekable();
+    let mut result=String::with_capacity(file.len());
+    while let Some(line)=lines.next(){
+        if line.trim_end()=="#[cfg(test)]" &&
+            lines.peek().is_some_and(|next|next.starts_with("mod ")){
+            let declaration=lines.next().unwrap();
+            assert!(declaration.trim_end().ends_with('{'),
+                "unsupported source-contract test module declaration: {declaration}");
+            assert!(lines.by_ref().any(|line|line.trim_end()=="}"),
+                "unterminated source-contract test module: {declaration}");
+            continue;
+        }
+        result.push_str(line);
+    }
+    result
+}
+
 #[cfg(test)]
 mod shared_screen_component_contract_tests {
-    fn production_source(file:&str)->String {
-        // A function can contain a #[cfg(test)] geometry probe before more
-        // production controls. Only stop at a top-level test module, not an
-        // indented test-only statement inside a production function.
-        file.split("\n#[cfg(test)]\nmod ").next().unwrap_or(file).to_owned()
-    }
+    use super::production_source_for_contract as production_source;
 
     #[test]
     fn inline_geometry_probe_does_not_truncate_production_source(){
@@ -550,6 +568,15 @@ mod shared_screen_component_contract_tests {
         let production=production_source(source);
         assert!(production.contains("components::multiline_text_field("));
         assert!(!production.contains("fn test_only("));
+    }
+
+    #[test]
+    fn production_after_multiple_test_modules_remains_visible(){
+        let source="fn before(){}\n#[cfg(test)]\nmod first {\n    fn test_one(){}\n}\nfn between(){}\n#[cfg(test)]\nmod second {\n    fn test_two(){}\n}\nfn after(){}\n";
+        let production=production_source(source);
+        for name in ["fn before(","fn between(","fn after("]{assert!(production.contains(name));}
+        assert!(!production.contains("fn test_one("));
+        assert!(!production.contains("fn test_two("));
     }
 
     #[test]
@@ -6519,7 +6546,7 @@ mod reception_state_layout_invariance_tests{
     #[test]
     fn production_consumers_do_not_reinsert_item_feedback_rows(){
         let manual=include_str!("manual_workspace.rs");
-        let production=manual.split("\n#[cfg(test)]\nmod ").next().unwrap();
+        let production=production_source_for_contract(manual);
         assert!(!production.contains("theme::action(items_ui,\"상품 선택 취소\""));
         assert!(production.contains("components::reception_item_header_action("));
         let main=include_str!("main.rs");
