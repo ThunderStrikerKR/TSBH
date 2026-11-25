@@ -6851,34 +6851,9 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                         |header|{
                             components::reception_item_add_action_editable(header,false);
                         },|ui|{
-                        // Footer slots must consume EXACTLY their reserved
-                        // heights, with no hidden egui spacing added between.
-                        ui.spacing_mut().item_spacing.y=0.0;
-                        // The list inherits the master's 10pt reserved solid
-                        // rail; only the interior data viewport can scroll.
-                        ui.spacing_mut().scroll=theme::management_table_scroll_style();
-                        // React structure: 3-column product grid + freight + actions,
-                        // independently scrolling above a fixed VAT and total footer.
-                        let available = components::docked_section_body_height(
-                            bottom_rect.height()
-                        ).min(ui.available_height().max(0.0));
-                        let list_height=available;
-                        components::reception_goods_viewport(
-                            ui,list_height,|area| {
-                                let table_width=
-                                    components::reception_items_scroll_content_width(area);
-                                egui::ScrollArea::both()
-                                    .scroll_bar_visibility(
-                                        egui::containers::scroll_area::ScrollBarVisibility::VisibleWhenNeeded
-                                    )
-                                    .id_salt(("native-workflow-products",ship.id.as_str()))
-                                    .max_height(list_height)
-                                    .auto_shrink([false,false])
-                                    .show(area,|contents|{
-                                        // A horizontal ScrollArea may report an unbounded
-                                        // available width. Explicitly lock its child width.
-                                        contents.set_width(table_width);
-                                        contents.spacing_mut().item_spacing.y=0.0;
+                        components::reception_docked_goods_scroll(
+                            ui,bottom_rect.height(),("native-workflow-products",ship.id.as_str()),
+                            false,|contents|{
                                         components::reception_items_header(contents);
                                         if let Some(items)=ship.recipient.get("items")
                                             .and_then(serde_json::Value::as_array)
@@ -7019,7 +6994,6 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                         components::reception_item_origin_action_editable(
                                             contents,origin,false
                                         );
-                                    });
                             }
                         );
                         // Whole-order billing is rendered in its own section.
@@ -7195,21 +7169,9 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                         |header|{
                             components::reception_item_add_action_editable(header,false);
                         },|ui|{
-                            ui.spacing_mut().item_spacing.y=0.0;
-                            ui.spacing_mut().scroll=theme::management_table_scroll_style();
-                            let available=components::docked_section_body_height(
-                                bottom_rect.height()
-                            ).min(ui.available_height().max(0.0));
-                            components::reception_goods_viewport(
-                                ui,available,|area|{
-                                    let table_width=
-                                        components::reception_items_scroll_content_width(area);
-                                    egui::ScrollArea::both()
-                                        .id_salt(("pending-hover-products",draft.id.as_str()))
-                                        .max_height(available).auto_shrink([false,false])
-                                        .show(area,|contents|{
-                                            contents.set_width(table_width);
-                                            contents.spacing_mut().item_spacing.y=0.0;
+                            components::reception_docked_goods_scroll(
+                                ui,bottom_rect.height(),("pending-hover-products",draft.id.as_str()),
+                                false,|contents|{
                                             components::reception_items_header(contents);
                                             if let Some(row)=recipient{
                                                 if let Some(items)=row["items"].as_array(){
@@ -7264,7 +7226,6 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                                     contents,origin,false
                                                 );
                                             }
-                                        });
                                 }
                             );
                         }
@@ -7538,8 +7499,6 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                         && self.analysis.is_none() {
                         return;
                     }
-                    ui.spacing_mut().item_spacing.y=0.0;
-                    ui.spacing_mut().scroll=theme::management_table_scroll_style();
                     let preview = self.active_id.as_deref()
                         .and_then(|id|self.drafts.iter().find(|draft|draft.id==id))
                         .and_then(|draft|draft.pricing_preview.as_ref())
@@ -7547,24 +7506,8 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                             .and_then(serde_json::Value::as_str)
                             ==Some(self.raw_source.as_str()));
                     let quote_index=preview.map(indexed_quote);
-                    let available=components::docked_section_body_height(remaining)
-                        .min(ui.available_height().max(0.0));
-                    let list_height=available;
-                    components::reception_goods_viewport(
-                        ui,list_height,|list_area|{
-                            let table_width=
-                                components::reception_items_scroll_content_width(list_area)
-                                .max(theme::RECEPTION_ITEMS_MIN_TABLE_WIDTH+theme::RECEPTION_ITEM_REMOVE_WIDTH);
-                            egui::ScrollArea::both()
-                                .scroll_bar_visibility(
-                                    egui::containers::scroll_area::ScrollBarVisibility::VisibleWhenNeeded
-                                )
-                                .id_salt("recognized-items")
-                                .max_height(list_height)
-                                .auto_shrink([false,false])
-                                .show(list_area,|items_ui|{
-                                    items_ui.set_width(table_width);
-                                    items_ui.spacing_mut().item_spacing.y=0.0;
+                    components::reception_docked_goods_scroll(
+                        ui,remaining,"recognized-items",true,|items_ui|{
                                     components::reception_editable_items_header(items_ui);
                                     if let Some(recipient)=selected {
                                         let recipient_id=reception_service::text(recipient,"id");
@@ -7792,7 +7735,6 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                             Some("거래처 선택 후 운임과 청구금액을 확인합니다.")
                                         );
                                     }
-                                });
                         }
                     );
                     // The goods section does not own the entire-order VAT
