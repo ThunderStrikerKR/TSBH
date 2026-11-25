@@ -6967,6 +6967,213 @@ mod sized_multiline_field_geometry_tests {
 
 
 #[cfg(test)]
+mod shared_selection_interaction_tests {
+    use super::*;
+
+    fn raw(ctx:&egui::Context,events:Vec<egui::Event>)->egui::RawInput{
+        egui::RawInput{
+            screen_rect:Some(Rect::from_min_size(egui::Pos2::ZERO,Vec2::new(900.0,700.0))),
+            time:Some(ctx.input(|i|i.time)+0.05),predicted_dt:0.05,
+            events,..Default::default()
+        }
+    }
+    fn click<R>(pos:egui::Pos2,mut draw:impl FnMut(Vec<egui::Event>)->R)->R{
+        draw(vec![egui::Event::PointerMoved(pos)]);
+        for pressed in [true,false]{
+            draw(vec![egui::Event::PointerButton{
+                pos,button:egui::PointerButton::Primary,pressed,
+                modifiers:egui::Modifiers::NONE
+            }]);
+        }
+        draw(vec![])
+    }
+    #[derive(Clone,Copy,Debug)]
+    enum Selector { Ordinary,Compact,Status }
+    struct SelectFrame {
+        trigger:Rect,
+        next:Rect,
+        outside:Rect,
+        options:Vec<Rect>,
+        enabled:bool,
+    }
+    fn select_frame(ctx:&egui::Context,kind:Selector,selected:&mut usize,
+        enabled:bool,parent_enabled:bool,changes:&mut usize,
+        events:Vec<egui::Event>)->SelectFrame{
+        let mut frame=None;
+        let _=ctx.run(raw(ctx,events),|ctx|{
+            crate::floating_notice::begin_page(ctx,"synthetic selectors");
+            egui::CentralPanel::default().show(ctx,|ui|{
+                ui.set_width(480.0);
+                let labels=match kind{
+                    Selector::Ordinary=>["그룹 A","그룹 B"],
+                    Selector::Compact=>["선불","착불"],
+                    Selector::Status=>["판매중","품절"],
+                };
+                let width=if matches!(kind,Selector::Compact){90.0}else{180.0};
+                let colors=[theme::TEXT,theme::DANGER];
+                let label=labels[*selected];
+                let current_color=colors[*selected];
+                let mut options=Vec::new();
+                let choose=|menu:&mut Ui|{
+                    for (i,label) in labels.into_iter().enumerate(){
+                        let response=match kind{
+                            Selector::Ordinary=>management_dropdown_option(menu,selected,i,label),
+                            Selector::Compact=>management_dropdown_compact_option(
+                                menu,selected,i,label,width),
+                            Selector::Status=>management_status_dropdown_option(
+                                menu,selected,i,label,colors[i]),
+                        };
+                        options.push(response.rect);
+                        if response.changed(){*changes+=1;}
+                    }
+                };
+                let trigger=ui.add_enabled_ui(parent_enabled,|ui|match kind{
+                    Selector::Ordinary=>management_dropdown(ui,label,width,enabled,"",choose),
+                    Selector::Compact=>management_dropdown_compact(ui,label,width,enabled,"",choose),
+                    Selector::Status=>management_status_dropdown(
+                        ui,label,width,enabled,"",current_color,choose),
+                }).inner;
+                let next=ui.allocate_exact_size(Vec2::new(80.0,36.0),Sense::hover()).0;
+                let outside=Rect::from_min_size(egui::pos2(700.0,500.0),Vec2::splat(20.0));
+                frame=Some(SelectFrame{trigger:trigger.rect,next,outside,options,
+                    enabled:trigger.enabled()});
+            });
+        });
+        frame.expect("shared dropdown rendered")
+    }
+    fn same_select_slots(base:&SelectFrame,frame:&SelectFrame){
+        assert_layout_rects_invariant(
+            &[("trigger",base.trigger),("following row",base.next)],
+            &[("trigger",frame.trigger),("following row",frame.next)]
+        );
+    }
+    #[test]
+    fn shared_dropdown_click_selection_escape_outside_and_disabled_keep_fixed_geometry(){
+        for kind in [Selector::Ordinary,Selector::Compact,Selector::Status]{
+            let ctx=test_context();
+            let mut selected=0;
+            let mut changes=0;
+            let mut draw=|enabled,parent,events|select_frame(
+                &ctx,kind,&mut selected,enabled,parent,&mut changes,events
+            );
+            let base=draw(true,true,vec![]);
+            assert_eq!(base.trigger.height(),theme::ACTION_STANDARD_HEIGHT);
+            assert!(base.options.is_empty());
+            let opened=click(base.trigger.center(),|events|draw(true,true,events));
+            same_select_slots(&base,&opened);
+            assert_eq!(opened.options.len(),2,"{kind:?}: popup never opened");
+            for option in &opened.options{
+                assert_eq!(option.height(),theme::MANAGEMENT_DROPDOWN_OPTION_HEIGHT);
+                if matches!(kind,Selector::Compact){assert_eq!(option.width(),90.0);}
+            }
+            assert!(opened.options[1].top()>=opened.options[0].bottom());
+            let closed=click(opened.options[1].center(),|events|draw(true,true,events));
+            assert!(closed.options.is_empty(),"{kind:?}: selecting must close popup");
+            same_select_slots(&base,&closed);
+            let reopened=click(base.trigger.center(),|events|draw(true,true,events));
+            assert_eq!(reopened.options.len(),2);
+            let unchanged=click(reopened.options[1].center(),|events|draw(true,true,events));
+            assert!(unchanged.options.is_empty());
+            let reopened=click(base.trigger.center(),|events|draw(true,true,events));
+            assert_eq!(reopened.options.len(),2);
+            draw(true,true,vec![egui::Event::Key{
+                key:egui::Key::Escape,physical_key:None,pressed:true,repeat:false,
+                modifiers:egui::Modifiers::NONE
+            }]);
+            let escaped=draw(true,true,vec![]);
+            assert!(escaped.options.is_empty(),"{kind:?}: Escape must close popup");
+            same_select_slots(&base,&escaped);
+            let reopened=click(base.trigger.center(),|events|draw(true,true,events));
+            assert_eq!(reopened.options.len(),2);
+            let outside=click(base.outside.center(),|events|draw(true,true,events));
+            assert!(outside.options.is_empty(),"{kind:?}: outside click must close popup");
+            same_select_slots(&base,&outside);
+            for (enabled,parent) in [(false,true),(true,false)]{
+                let disabled=draw(enabled,parent,vec![]);
+                assert!(!disabled.enabled);
+                same_select_slots(&base,&disabled);
+                let blocked=click(base.trigger.center(),|events|draw(enabled,parent,events));
+                assert!(blocked.options.is_empty(),"{kind:?}: disabled trigger opened");
+                same_select_slots(&base,&blocked);
+            }
+            drop(draw);
+            assert_eq!(selected,1,"{kind:?}: selection was not retained");
+            assert_eq!(changes,1,"{kind:?}: exactly one value change expected");
+        }
+    }
+
+    #[derive(Clone,Copy,Debug)]
+    enum CheckKind{Ordinary,List,TableHeader,TableRow}
+    struct CheckFrame{hit:Rect,next:Rect,id:egui::Id,enabled:bool}
+    fn check_frame(ctx:&egui::Context,kind:CheckKind,checked:&mut bool,
+        enabled:bool,parent_enabled:bool,changes:&mut usize,
+        events:Vec<egui::Event>)->CheckFrame{
+        let mut frame=None;
+        let _=ctx.run(raw(ctx,events),|ctx|{
+            egui::CentralPanel::default().show(ctx,|ui|{
+                ui.set_width(480.0);
+                let response=ui.add_enabled_ui(parent_enabled,|ui|match kind{
+                    CheckKind::Ordinary=>checkbox(ui,checked,"도서/산간",enabled),
+                    CheckKind::List=>checkbox_list_row(ui,"recipient-1",checked,
+                        "합성 수취인",enabled,36.0),
+                    CheckKind::TableHeader|CheckKind::TableRow=>{
+                        let height=if matches!(kind,CheckKind::TableHeader){
+                            theme::MANAGEMENT_TABLE_HEADER_HEIGHT
+                        }else{42.0};
+                        let (cell,_)=ui.allocate_exact_size(Vec2::new(48.0,height),Sense::hover());
+                        let area=if matches!(kind,CheckKind::TableHeader){
+                            Rect::from_min_max(cell.min,egui::pos2(cell.right(),cell.bottom()-2.0))
+                        }else{cell};
+                        management_table_checkbox(ui,cell,area,checked,enabled,"select-row")
+                    }
+                }).inner;
+                if response.changed(){*changes+=1;}
+                let next=ui.allocate_exact_size(Vec2::new(80.0,36.0),Sense::hover()).0;
+                frame=Some(CheckFrame{hit:response.rect,next,id:response.id,enabled:response.enabled()});
+            });
+        });
+        frame.expect("shared checkbox rendered")
+    }
+    #[test]
+    fn shared_checkbox_click_toggles_once_and_disabled_clicks_preserve_value(){
+        for kind in [CheckKind::Ordinary,CheckKind::List,CheckKind::TableHeader,CheckKind::TableRow]{
+            let ctx=test_context();
+            let mut checked=false;
+            let mut changes=0;
+            let mut draw=|enabled,parent,events|check_frame(
+                &ctx,kind,&mut checked,enabled,parent,&mut changes,events
+            );
+            let base=draw(true,true,vec![]);
+            let same=|frame:&CheckFrame|{
+                assert_eq!(frame.id,base.id,"{kind:?}: checkbox identity drift");
+                assert_layout_rects_invariant(
+                    &[("checkbox",base.hit),("following row",base.next)],
+                    &[("checkbox",frame.hit),("following row",frame.next)]
+                );
+            };
+            let on=click(base.hit.center(),|events|draw(true,true,events));
+            same(&on);
+            for (enabled,parent) in [(false,true),(true,false)]{
+                let disabled=draw(enabled,parent,vec![]);
+                assert!(!disabled.enabled);
+                same(&disabled);
+                let blocked=click(base.hit.center(),|events|draw(enabled,parent,events));
+                same(&blocked);
+            }
+            drop(draw);
+            assert!(checked,"{kind:?}: disabled click modified selection");
+            assert_eq!(changes,1,"{kind:?}: expected one change");
+            let off=click(base.hit.center(),|events|check_frame(
+                &ctx,kind,&mut checked,true,true,&mut changes,events
+            ));
+            same(&off);
+            assert!(!checked,"{kind:?}: second enabled click must uncheck");
+            assert_eq!(changes,2,"{kind:?}: exactly two changes expected");
+        }
+    }
+}
+
+#[cfg(test)]
 mod shared_checkbox_contract_tests {
     #[test]
     fn vat_dialog_uses_shared_checkbox_and_nested_frame_components(){
