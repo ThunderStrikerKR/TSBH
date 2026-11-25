@@ -6686,22 +6686,6 @@ pub fn reception_item_header_action(ui:&mut Ui,rollback:bool,enabled:bool)->Resp
     )
 }
 
-/// Persistent validation is attached to an existing cell, not an extra row.
-/// The small marker and tooltip consume no parent layout space.
-/// Only construct the tooltip's combined text when it is actually requested.
-pub fn reception_item_issue_values(ui:&Ui,cell:&Response,issues:&[serde_json::Value]){
-    if !issues.iter().filter_map(serde_json::Value::as_str).any(|message|!message.trim().is_empty()){return;}
-    let rect=cell.rect.intersect(ui.clip_rect());
-    if rect.width()>12.0 && rect.height()>12.0{
-        ui.painter().with_clip_rect(rect).circle_filled(
-            egui::pos2(rect.right()-4.0,rect.top()+4.0),2.5,theme::SELECTED_ORDER
-        );
-    }
-    cell.clone().on_hover_ui(|ui|{
-        let message=issues.iter().filter_map(serde_json::Value::as_str).collect::<Vec<_>>().join("\n");
-        ui.label(message);
-    });
-}
 
 #[cfg(test)]
 pub(crate) fn assert_layout_rects_invariant(
@@ -6724,7 +6708,7 @@ pub(crate) fn assert_layout_rects_invariant(
 mod reception_state_layout_invariance_tests{
     use super::*;
 
-    fn render(width:f32,pending:bool,issues:bool,editable:bool)->Vec<(&'static str,Rect)>{
+    fn render(width:f32,pending:bool,editable:bool)->Vec<(&'static str,Rect)>{
         let ctx=test_context();
         let mut rects=Vec::new();
         let _=ctx.run(egui::RawInput{
@@ -6740,12 +6724,6 @@ mod reception_state_layout_invariance_tests{
                 );
                 rects.extend([("product",cells.product.rect),("quantity",cells.quantity.rect),
                     ("amount",cells.amount.rect)]);
-                let values=if issues{
-                    vec![serde_json::json!("수량 확인 필요"),serde_json::json!("금액 확인 필요"),
-                        serde_json::json!("긴 오류 메시지")]
-                }else{Vec::new()};
-                // Exercise the same lazy JSON issue path as live reception.
-                reception_item_issue_values(ui,&cells.product,&values);
                 ui.add_space(theme::SPACE_8);
                 let freight=reception_freight_row_editable(
                     ui,"운임",Some(3000),Some(false),Some(false),true,editable
@@ -6768,11 +6746,9 @@ mod reception_state_layout_invariance_tests{
     #[test]
     fn pending_assignment_and_issue_feedback_do_not_move_reception_controls(){
         for width in [480.0,800.0,1200.0]{
-            let base=render(width,false,false,true);
-            for (pending,issues,editable) in [
-                (true,false,true),(true,true,true),(false,true,true),(true,true,false)
-            ]{
-                assert_layout_rects_invariant(&base,&render(width,pending,issues,editable));
+            let base=render(width,false,true);
+            for (pending,editable) in [(true,true),(true,false),(false,false)]{
+                assert_layout_rects_invariant(&base,&render(width,pending,editable));
             }
         }
     }
@@ -6793,8 +6769,8 @@ mod reception_state_layout_invariance_tests{
         assert!(production.contains("components::reception_item_header_action("));
         let main=include_str!("main.rs");
         assert!(!main.contains("items_ui.label(typography::status("));
-        assert!(main.contains("components::reception_item_issue_values("));
-        assert!(main.contains("item[\"issues\"].as_array().map(Vec::as_slice).unwrap_or(&[])"));
+        assert!(!main.contains("components::reception_item_issue_values("));
+        assert!(main.contains("self.review_panel.show_with_client_actions("));
     }
 }
 
@@ -6840,9 +6816,8 @@ pub fn reception_item_origin_action_editable(
 /// caption or another border: the containing card owns its header and rule.
 pub fn reception_total_footer(
     ui: &mut Ui, total: Option<i64>, count: Option<usize>, vat: &str,
-    note: &str,
 ) {
-    let (rect, response) = ui.allocate_exact_size(
+    let (rect, _response) = ui.allocate_exact_size(
         Vec2::new(ui.available_width(), theme::RECEPTION_TOTAL_HEIGHT),
         Sense::hover(),
     );
@@ -6894,9 +6869,6 @@ pub fn reception_total_footer(
         vat, egui::FontId::proportional(typography::FONT_METADATA),
         theme::SECONDARY,
     );
-    if !note.trim().is_empty() {
-        response.on_hover_text(note);
-    }
 }
 
 pub fn record_card(ui: &mut Ui, content: impl FnOnce(&mut Ui)) {
@@ -8864,7 +8836,7 @@ mod money_live_format_tests{
             let output=ctx.run(egui::RawInput::default(),|ctx|{
                 egui::CentralPanel::default().show(ctx,|ui|{
                     ui.set_width(400.0);
-                    reception_total_footer(ui,total,Some(1),"부가세 별도","");
+                    reception_total_footer(ui,total,Some(1),"부가세 별도");
                 });
             });
             let mut unit=None;
