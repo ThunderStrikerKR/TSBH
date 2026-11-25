@@ -1809,6 +1809,13 @@ impl ProductManager {
         }
         Ok(next)
     }
+    /// egui Window width describes its inner content, not the outer frame.
+    /// Keep the frame and the requested gutter within the Kakao-safe area.
+    fn detail_modal_width(work_width:f32)->f32{
+        let outer_reserve=2.0*(theme::MODAL_VIEWPORT_GUTTER
+            +theme::MODAL_PANEL_PADDING_X+theme::FRAME_STROKE_WIDTH);
+        theme::PRODUCT_DETAIL_MODAL_WIDTH.min((work_width-outer_reserve).max(1.0))
+    }
     /// Keep the fixed image and allocate all remaining space to the overview.
     fn detail_columns(width:f32)->Option<(f32,f32)>{
         let inset=2.0*(theme::MODAL_SECTION_PADDING+theme::FRAME_STROKE_WIDTH);
@@ -2057,14 +2064,17 @@ impl ProductManager {
         let mut request_save=false;
         let mut request_archive=false;
         let mut photo_error=None;
+        let modal_width=Self::detail_modal_width(work_area.width());
         components::modal_backdrop(ctx,"egui-product-detail-backdrop",false);
         components::modal_window(
             if is_new {"상품 등록"} else {"상품 상세 관리"},
             "egui-product-detail",work_area
         ).resizable(false)
-            .default_width(theme::PRODUCT_DETAIL_MODAL_WIDTH.min(
-                (work_area.width()-2.0*theme::MODAL_VIEWPORT_GUTTER).max(1.0)
-            ))
+            // Constrain both limits as well as the default so the previous
+            // 1120pt window memory cannot keep the old three-column width.
+            .default_width(modal_width)
+            .min_width(modal_width)
+            .max_width(modal_width)
             .show(ctx,|modal|{
                 let dialog_title=if is_new{"상품 등록"}else{"상품 상세 관리"};
                 // One shared owner allocates the true header, scrolling
@@ -2435,6 +2445,18 @@ mod tests {
         assert_eq!(theme::MODAL_MASTER_WORKSPACE_GAP,16.0);
         assert_eq!(theme::MODAL_SECTION_PADDING,16.0);
         assert_eq!(theme::MODAL_SECTION_HEADER_RULE_GAP,16.0);
+    }
+    #[test]
+    fn product_detail_modal_width_uses_compact_master_and_safe_frame(){
+        assert_eq!(theme::PRODUCT_DETAIL_MODAL_WIDTH,880.0);
+        assert_eq!(ProductManager::detail_modal_width(1760.0),880.0);
+        let frame=2.0*(theme::MODAL_PANEL_PADDING_X+theme::FRAME_STROKE_WIDTH);
+        let gutters=2.0*theme::MODAL_VIEWPORT_GUTTER;
+        let width=ProductManager::detail_modal_width(800.0);
+        assert!(width+frame+gutters<=800.0);
+        assert_eq!(ProductManager::detail_modal_width(10.0),1.0);
+        let body=880.0-2.0*theme::MODAL_MASTER_CONTENT_INSET;
+        assert!(ProductManager::detail_columns(body).is_some());
     }
     #[test]
     fn product_detail_reacts_to_actual_kakao_safe_modal_width(){
@@ -2929,6 +2951,9 @@ mod tests {
         let geometry=ctx.data(|data|data.get_temp::<components::ModalEditorGeometry>(
             egui::Id::new("test-product-detail-geometry")
         )).expect("actual product detail geometry");
+        let header=geometry.header.expect("actual modal header");
+        assert!((header.width()-theme::PRODUCT_DETAIL_MODAL_WIDTH).abs()<=1.0,
+            "product detail must use the compact modal width: {}",header.width());
         let cards=&geometry.content.cards;
         assert_eq!(cards.len(),2);
         for (card,label) in cards.iter().zip(["상품 이미지","상품 개요"]){
