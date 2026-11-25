@@ -760,9 +760,7 @@ fn group_frame(
                 if in_preview && response.hovered(){
                     *hovered_row=Some(ship.id.clone());
                 }
-                if response.hovered() && !chosen && !previewed {
-                    theme::paint_button_hover(ui,&response,0.0);
-                }
+                components::workflow_shipment_hover(ui,&response,chosen,previewed);
                 if response.clicked(){
                     event=Some(Event::SelectShipment(Selection{
                         group_id:group.id.clone(),order_id:ship.order_id.clone(),
@@ -931,7 +929,7 @@ fn pending_frame(
                 let action=ui.interact(response.rect,
                     Id::new(("pending-reception-row",draft.id.as_str(),0usize,in_preview)),
                     egui::Sense::click());
-                theme::paint_button_hover(ui,&action,0.0);
+                components::workflow_shipment_hover(ui,&action,false,false);
                 if action.hovered() {
                     *hovered_pending=Some(PendingTarget::order(&draft.id));
                 }
@@ -967,7 +965,7 @@ fn pending_frame(
                     let action=ui.interact(response.rect,
                         Id::new(("pending-reception-row",draft.id.as_str(),index,in_preview)),
                         egui::Sense::click());
-                    theme::paint_button_hover(ui,&action,0.0);
+                    components::workflow_shipment_hover(ui,&action,chosen,previewed);
                     if action.hovered(){
                         *hovered_pending=Some(
                             PendingTarget::recipient(&draft.id,recipient_id)
@@ -1718,22 +1716,23 @@ mod linked_highlight_palette_tests {
         assert_eq!(theme::SELECTED_ORDER,Color32::from_rgb(245,158,11));
         assert_eq!(theme::WORKFLOW_SELECTED_BORDER,theme::SELECTED_ORDER);
         assert_eq!(theme::WORKFLOW_SELECTED_STRIPE,2.0);
-        assert_eq!(theme::WORKFLOW_SELECTED_BG,Color32::from_rgb(36,36,36));
+        assert_eq!(theme::WORKFLOW_SELECTED_BG,theme::PANEL);
         assert_eq!(shipment_row_fill(true,false),Color32::from_rgb(48,42,34));
         let selected=theme::workflow_shipment_row_frame(shipment_row_fill(true,false),true);
         let normal=theme::workflow_shipment_row_frame(shipment_row_fill(false,false),false);
         assert_eq!(selected.fill,Color32::from_rgb(48,42,34));
-        assert_eq!(selected.stroke.color,Color32::from_rgb(183,128,56));
+        assert_eq!(selected.stroke.color,Color32::TRANSPARENT);
+        assert_eq!(normal.stroke.color,Color32::TRANSPARENT);
         assert_eq!(selected.stroke.width,normal.stroke.width);
         assert_eq!(selected.inner_margin,normal.inner_margin);
         assert_eq!(selected.corner_radius,normal.corner_radius);
-        assert_eq!(theme::WORKFLOW_SELECTED_ROW_TEXT,theme::TEXT);
+        assert_eq!(theme::WORKFLOW_SELECTED_ROW_TEXT,Color32::from_rgb(244,214,162));
         assert_eq!(shipment_row_fill(true,true),shipment_row_fill(true,false));
         assert_eq!(theme::ReviewTone::Action.palette(),(
-            Color32::from_rgb(46,36,25),Color32::from_rgb(245,158,11),
-            Color32::from_rgb(251,191,36),Color32::from_rgb(217,188,152)
+            theme::PANEL,theme::REQUIRED_REVIEW_BORDER,
+            theme::REQUIRED_REVIEW_TEXT,Color32::from_rgb(217,188,152)
         ));
-        assert_eq!(theme::MANUAL_SOURCE_UNASSIGNED_FILL,Color32::WHITE);
+        assert_eq!(theme::MANUAL_SOURCE_UNASSIGNED_FILL,Color32::from_rgb(214,214,214));
         assert_eq!(theme::BRIGHT,Color32::WHITE);
     }
 }

@@ -1201,7 +1201,7 @@ pub fn workflow_shipment_row(
                 );
                 cols.add_sized(
                     [product_width,theme::WORKFLOW_DETAIL_ROW_CONTENT_HEIGHT],
-                    egui::Label::new(typography::body(summary).color(preview_ink)).truncate()
+                    egui::Label::new(typography::body(summary).color(if chosen{theme::TEXT}else{preview_ink})).truncate()
                 );
                 if let Some(freight)=freight{
                     let (rect,_)=cols.allocate_exact_size(Vec2::new(freight_width,theme::WORKFLOW_DETAIL_ROW_CONTENT_HEIGHT),egui::Sense::hover());
@@ -1215,10 +1215,6 @@ pub fn workflow_shipment_row(
     // is rendered entirely by the row frame above, with no overlaid stripe.
     if previewed && !chosen {
         let rect=response.response.rect;
-        ui.painter().rect_filled(Rect::from_min_max(
-            egui::Pos2::new(rect.left(),rect.top()),
-            egui::Pos2::new(rect.left()+theme::WORKFLOW_SELECTED_STRIPE,rect.bottom())
-        ),0.0,source_highlight::ACTIVE_BORDER);
         ui.painter().rect_stroke(
             rect.shrink(0.5),theme::CONTROL_RADIUS as f32,
             egui::Stroke::new(
@@ -1229,6 +1225,14 @@ pub fn workflow_shipment_row(
         );
     }
     response.response
+}
+
+/// Same state precedence in draft bundles and confirmed orders.
+pub fn workflow_shipment_hover(ui:&Ui,response:&Response,chosen:bool,previewed:bool){
+    crate::floating_notice::remember_response(ui.ctx(),response);
+    if !chosen && !previewed{
+        theme::paint_button_hover(ui,response,theme::CONTROL_RADIUS as f32);
+    }
 }
 
 #[cfg(test)]

@@ -370,11 +370,11 @@ pub fn key(recipient:&str,target:&str,field:&str)->LinkKey {
 /// Shared evidence emphasis for source, recipient input values and item cells.
 /// All three destinations use the same blue fill, text and four-sided inset
 /// border. The source only projects native evidence; never alters ownership.
-pub const ACTIVE_FILL:Color32=Color32::from_rgb(23,67,109);       // #17436d
-pub const ACTIVE_TEXT:Color32=Color32::from_rgb(234,244,255);   // #eaf4ff
-pub const ACTIVE_BORDER:Color32=Color32::from_rgb(117,181,255); // #75b5ff
+pub const ACTIVE_FILL:Color32=theme::LINKED_PREVIEW_BG;
+pub const ACTIVE_TEXT:Color32=theme::LINKED_PREVIEW_TEXT;
+pub const ACTIVE_BORDER:Color32=theme::LINKED_PREVIEW_BORDER;
 pub const ACTIVE_RADIUS:f32=theme::SOURCE_BLOCK_RADIUS;
-pub const ACTIVE_BORDER_WIDTH:f32=2.0;
+pub const ACTIVE_BORDER_WIDTH:f32=theme::LINKED_PREVIEW_BORDER_WIDTH;
 
 pub fn is_active(active:Option<&LinkKey>, key:&LinkKey)->bool {
     active.is_some_and(|selection|same_target(selection,key))
@@ -1235,9 +1235,7 @@ mod tests {
 
     #[test]
     fn manual_assignment_state_changes_only_manual_palette_and_ink() {
-        assert_eq!(theme::PRIMARY_ACTION_FILL,Color32::from_rgb(238,238,238));
-        let gray=((u16::from(theme::PRIMARY_ACTION_FILL.r())*9+5)/10) as u8;
-        assert_eq!(theme::MANUAL_SOURCE_UNASSIGNED_FILL,Color32::from_rgb(gray,gray,gray));
+        assert_eq!(theme::PRIMARY_ACTION_FILL,Color32::WHITE);
         assert_eq!(theme::MANUAL_SOURCE_UNASSIGNED_FILL,Color32::from_rgb(214,214,214));
         assert_eq!(theme::MANUAL_SOURCE_UNASSIGNED_TEXT,theme::BRIGHT_TEXT);
         assert_eq!(theme::MANUAL_SOURCE_UNASSIGNED_BORDER,theme::MANUAL_SOURCE_UNASSIGNED_FILL);

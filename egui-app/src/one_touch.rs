@@ -1,7 +1,7 @@
 //! Paint and one-shot reveal parity with the archived React one-touch hover contract.
 use eframe::egui::{self,Color32,Context,Rect,Stroke,Ui};
 use crate::{theme,typography};
-pub const INK:Color32=Color32::from_rgb(255,228,188);
+pub const INK:Color32=theme::REQUIRED_REVIEW_TEXT;
 #[derive(Clone,Copy,Debug,Default,PartialEq,Eq)]
 pub enum Stage{#[default] None,Review,Freight,PaymentCopy,PaymentConfirm}
 impl Stage{
@@ -68,15 +68,14 @@ pub fn reveal_target(ui:&Ui,expected:Stage,rect:Rect){
     }
 }
 pub fn background(ui:&Ui,rect:Rect){
-    ui.painter().rect_filled(rect,theme::CONTROL_RADIUS,theme::ORANGE_EMPHASIS_BG);
+    ui.painter().rect_filled(rect,theme::CONTROL_RADIUS,theme::PANEL);
 }
 pub fn outline(ui:&Ui,rect:Rect){
     if rect.is_positive(){ui.painter().with_clip_rect(ui.clip_rect().intersect(rect))
-        .rect_stroke(rect,theme::CONTROL_RADIUS,Stroke::new(2.0,theme::SELECTED_ORDER),egui::StrokeKind::Inside);}
+        .rect_stroke(rect,theme::CONTROL_RADIUS,Stroke::new(theme::SOFT_DIVIDER_WIDTH,theme::REQUIRED_REVIEW_BORDER),egui::StrokeKind::Inside);}
 }
 /// Existing widgets with their own fill: tint lightly without covering text.
 pub fn mark(ui:&Ui,rect:Rect){
-    ui.painter().rect_filled(rect,theme::CONTROL_RADIUS,Color32::from_rgba_unmultiplied(245,158,11,18));
     outline(ui,rect);
 }
 /// Byte ranges of the exact printed total, tax label, and native account.

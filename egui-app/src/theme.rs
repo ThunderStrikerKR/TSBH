@@ -15,7 +15,7 @@ pub const HEADER_BG: Color32 = Color32::from_rgb(27, 27, 27);
 // Level-2 / primary section surface. Darker than INPUT (#292929) so
 // repeated order cards remain distinguishable inside the workflow pane.
 // This shared token intentionally updates every egui panel using PANEL.
-pub const PANEL: Color32 = Color32::from_rgb(24, 24, 24);
+pub const PANEL: Color32 = Color32::from_rgb(32, 32, 32);
 // Shared surface level 2.5: subtle alternate rows inside PANEL lists.
 // Never use INPUT/RAISED (fields/buttons) as a table zebra fill.
 pub const TABLE_ROW_ALT_BG: Color32 = Color32::from_rgb(30, 30, 30);
@@ -54,6 +54,19 @@ pub const TEXT: Color32 = Color32::from_rgb(237, 237, 237);
 pub const SECONDARY: Color32 = Color32::from_rgb(185, 185, 185);
 pub const MUTED: Color32 = Color32::from_rgb(153, 153, 153);
 pub const SELECTION: Color32 = Color32::from_rgb(112, 180, 255);
+pub const CARD_BORDER:Color32=DIVIDER;
+pub const NEUTRAL_HOVER:Color32=RAISED;
+pub const LINKED_PREVIEW_BG:Color32=Color32::from_rgb(23,67,109);
+pub const LINKED_PREVIEW_TEXT:Color32=Color32::from_rgb(234,244,255);
+pub const LINKED_PREVIEW_BORDER:Color32=Color32::from_rgb(117,181,255);
+pub const LINKED_PREVIEW_BORDER_WIDTH:f32=2.0;
+pub const REQUIRED_REVIEW_TEXT:Color32=Color32::from_rgb(251,191,36);
+pub const REQUIRED_REVIEW_BORDER:Color32=Color32::from_rgb(201,154,59);
+pub const ERROR_BG:Color32=Color32::from_rgb(51,37,37);
+pub const ERROR_TEXT:Color32=Color32::from_rgb(240,160,160);
+pub const ERROR_BORDER:Color32=Color32::from_rgb(199,107,107);
+pub const DANGER_ACTION_BG:Color32=Color32::from_rgb(53,37,37);
+pub const DANGER_ACTION_BORDER:Color32=Color32::from_rgb(117,68,68);
 // Single-select popup palette, independent of the global widget hover and
 // confirmed-order orange selection. A chosen option stays muted navy while
 // the hovered option is brighter blue; no conflicting highlight roles.
@@ -91,18 +104,18 @@ pub const SELECTED_ORDER: Color32 = Color32::from_rgb(245, 158, 11); // #F59E0B
 pub const ORANGE_EMPHASIS_BG: Color32 = Color32::from_rgb(59, 43, 27); // #3B2B1B
 // Approved selected shipment row: a single rounded surface, not an
 // added left stripe. The enclosing order card retains its own accent.
-pub const WORKFLOW_SELECTED_ROW_TEXT:Color32=TEXT;
+pub const WORKFLOW_SELECTED_ROW_TEXT:Color32=Color32::from_rgb(244,214,162);
 pub const WORKFLOW_SELECTED_ROW_BG:Color32=Color32::from_rgb(48,42,34); // #302A22
-pub const WORKFLOW_SELECTED_ROW_BORDER:Color32=Color32::from_rgb(183,128,56); // #B78038
+pub const WORKFLOW_SELECTED_ROW_BORDER:Color32=Color32::TRANSPARENT;
 pub fn workflow_selected_row_fill() -> Color32 {
     WORKFLOW_SELECTED_ROW_BG
 }
 // Compact working-order cards derive every slot from the actual right pane.
 // The horizontal outer inset, inter-control gaps and vertical insets use
 // the same 6pt rhythm. Long dealer text cannot move any control.
-pub const WORKFLOW_CARD_BG: Color32 = Color32::from_rgb(32, 32, 32);
+pub const WORKFLOW_CARD_BG: Color32 = PANEL;
 pub const WORKFLOW_CARD_LOWER_BG: Color32 = INPUT;
-pub const WORKFLOW_SELECTED_BG: Color32 = Color32::from_rgb(36, 36, 36);
+pub const WORKFLOW_SELECTED_BG: Color32 = PANEL;
 pub const WORKFLOW_CARD_BORDER: Color32 = DIVIDER;
 pub const WORKFLOW_SELECTED_BORDER: Color32 = SELECTED_ORDER;
 pub const WORKFLOW_CARD_PADDING_X: f32 = 6.0;
@@ -158,7 +171,7 @@ pub const WORKFLOW_VAT_FONT_SIZE: f32 = 10.0;
 // All rows use one bottom-tier surface; only real hover/selection tint it.
 // The header, alternating row fills and product-chip surfaces were removed.
 pub const WORKFLOW_DETAIL_ROW_BG: Color32 = PANEL;
-pub const WORKFLOW_DETAIL_ROW_BORDER: Color32 = DIVIDER;
+pub const WORKFLOW_DETAIL_ROW_BORDER: Color32 = Color32::TRANSPARENT;
 pub const WORKFLOW_DETAIL_ROW_PADDING_X: f32 = SPACE_12;
 pub const WORKFLOW_DETAIL_NAME_WIDTH: f32 = 102.0;
 pub const WORKFLOW_DETAIL_ROW_CONTENT_HEIGHT: f32 = 32.0;
@@ -167,8 +180,8 @@ pub const WORKFLOW_DETAIL_ROW_CONTENT_HEIGHT: f32 = 32.0;
 pub const ORDER_HISTORY_RECIPIENT_BLOCK_RADIUS: f32 = 4.0;
 pub const SUCCESS: Color32 = Color32::from_rgb(169, 218, 181);
 pub const DANGER: Color32 = Color32::from_rgb(255, 180, 180);
-pub const REQUIRED_INPUT_BORDER:Color32=Color32::from_rgb(231,122,120);
-pub const REQUIRED_INPUT_TINT:Color32=Color32::from_rgba_unmultiplied_const(231,122,120,18);
+pub const REQUIRED_INPUT_BORDER:Color32=ERROR_BORDER;
+pub const REQUIRED_INPUT_TINT:Color32=Color32::from_rgba_unmultiplied_const(199,107,107,18);
 // Product sales status (management dropdown only): same four values as React.
 pub const SALE_STATUS_SELLING: Color32 = Color32::from_rgb(123, 207, 148);
 pub const SALE_STATUS_SOLD_OUT: Color32 = Color32::from_rgb(231, 122, 120);
@@ -177,8 +190,8 @@ pub const SALE_STATUS_STOPPED: Color32 = Color32::from_rgb(145, 145, 145);
 pub const BRIGHT: Color32 = Color32::WHITE;
 pub const BRIGHT_TEXT: Color32 = Color32::from_rgb(23, 23, 23);
 /// Resting white primary-action palette. Manual unassigned source tokens use 90% of this gray channel.
-const PRIMARY_ACTION_GRAY: u8 = 238;
-pub const PRIMARY_ACTION_FILL: Color32 = Color32::from_rgb(PRIMARY_ACTION_GRAY, PRIMARY_ACTION_GRAY, PRIMARY_ACTION_GRAY);
+const LEGACY_SOURCE_REFERENCE_GRAY: u8 = 238;
+pub const PRIMARY_ACTION_FILL: Color32 = BRIGHT;
 // Compact inline-cell edit inset; shared with the 4pt and 8pt layout tokens.
 pub const SPACE_2: f32 = 2.0;
 pub const SPACE_4: f32 = 4.0;
@@ -725,7 +738,7 @@ pub const SOURCE_BLOCK_ROW_INSET: f32 = 1.0;
 pub const SOURCE_BLOCK_ADJACENT_GAP: f32 = 0.5;
 // Unassigned source tokens are 10% dimmer than the primary white button.
 // Scale the neutral sRGB channel with rounding; never change the button itself.
-const MANUAL_SOURCE_UNASSIGNED_GRAY: u8 = ((PRIMARY_ACTION_GRAY as u16 * 9 + 5) / 10) as u8;
+const MANUAL_SOURCE_UNASSIGNED_GRAY: u8 = ((LEGACY_SOURCE_REFERENCE_GRAY as u16 * 9 + 5) / 10) as u8;
 pub const MANUAL_SOURCE_UNASSIGNED_FILL: Color32 = Color32::from_rgb(MANUAL_SOURCE_UNASSIGNED_GRAY, MANUAL_SOURCE_UNASSIGNED_GRAY, MANUAL_SOURCE_UNASSIGNED_GRAY);
 pub const MANUAL_SOURCE_UNASSIGNED_TEXT: Color32 = BRIGHT_TEXT;
 pub const MANUAL_SOURCE_UNASSIGNED_BORDER: Color32 = MANUAL_SOURCE_UNASSIGNED_FILL;
@@ -774,16 +787,17 @@ pub fn install(ctx: &egui::Context) {
     // Native egui controls, selectables, toggles and pop-up options inherit
     // the same clearly visible hover feedback as our authored buttons.
     // Keep hover blue distinct from committed orange order selection.
-    style.visuals.widgets.hovered.bg_fill = Color32::from_rgb(47, 62, 74);
-    style.visuals.widgets.hovered.weak_bg_fill = Color32::from_rgb(47, 62, 74);
+    style.visuals.widgets.hovered.bg_fill = NEUTRAL_HOVER;
+    style.visuals.widgets.hovered.weak_bg_fill = NEUTRAL_HOVER;
     style.visuals.widgets.hovered.bg_stroke = Stroke::new(
-        SOFT_DIVIDER_WIDTH,SELECTION.linear_multiply(0.72)
+        SOFT_DIVIDER_WIDTH,BORDER
     );
     style.visuals.widgets.hovered.fg_stroke=Stroke::new(
         1.5_f32,TEXT
     );
     style.visuals.widgets.hovered.expansion = 0.0;
-    style.visuals.widgets.active.bg_fill = Color32::from_rgb(61, 61, 61);
+    style.visuals.widgets.active.bg_fill = INPUT;
+    style.visuals.widgets.active.bg_stroke = Stroke::new(SOFT_DIVIDER_WIDTH,SELECTION);
     style.visuals.widgets.noninteractive.bg_stroke = Stroke::new(1.0_f32, BORDER);
     style.visuals.widgets.inactive.bg_stroke = Stroke::new(1.0_f32, BORDER);
     style.visuals.selection.bg_fill = SELECTION.linear_multiply(0.3);
@@ -905,7 +919,7 @@ pub(crate) fn paint_surface_outline(
 }
 
 pub fn section_frame() -> Frame {
-    bordered_surface(PANEL,BORDER,SECTION_RADIUS).inner_margin(SECTION_PADDING)
+    bordered_surface(PANEL,CARD_BORDER,SECTION_RADIUS).inner_margin(SECTION_PADDING)
 }
 
 /// Full-height master table cards keep the same 12pt interior clearance on
@@ -1031,16 +1045,16 @@ impl ReviewTone {
             Self::Action => (
                 // React receipt-layout.css .staff-block: separate notice role,
                 // with the original amber edge, dark surface and two ink colors.
-                Color32::from_rgb(46, 36, 25), Color32::from_rgb(245, 158, 11),
-                Color32::from_rgb(251, 191, 36), Color32::from_rgb(217, 188, 152),
+                PANEL, REQUIRED_REVIEW_BORDER,
+                REQUIRED_REVIEW_TEXT, Color32::from_rgb(217, 188, 152),
             ),
             Self::Info => (
                 Color32::from_rgb(25, 45, 64), Color32::from_rgb(88, 152, 218),
                 Color32::from_rgb(160, 205, 255), Color32::from_rgb(144, 172, 199),
             ),
             Self::Error => (
-                Color32::from_rgb(61, 32, 32), Color32::from_rgb(207, 96, 96),
-                Color32::from_rgb(255, 160, 160), Color32::from_rgb(223, 165, 165),
+                ERROR_BG, ERROR_BORDER,
+                ERROR_TEXT, Color32::from_rgb(223, 165, 165),
             ),
             Self::Complete => (
                 Color32::from_rgb(29, 53, 38), Color32::from_rgb(89, 167, 117),
@@ -1094,21 +1108,17 @@ pub fn paint_button_hover_corners(
     ui:&Ui,response:&Response,corners:egui::CornerRadius
 ){
     crate::floating_notice::remember_response(ui.ctx(),response);
-    if !response.hovered(){return;}
+    if !response.hovered() && !response.has_focus(){return;}
     let rect=response.rect.shrink(0.5);
     if rect.width()<=1.0 || rect.height()<=1.0{return;}
     let paint=ui.painter().with_clip_rect(
         ui.clip_rect().intersect(response.rect)
     );
-    paint.rect_filled(
-        rect,corners,
-        Color32::from_rgba_unmultiplied(112,180,255,20)
-    );
-    paint.rect_stroke(
-        rect,corners,
-        Stroke::new(SOFT_DIVIDER_WIDTH,SELECTION.linear_multiply(0.82)),
-        egui::StrokeKind::Inside
-    );
+    if response.has_focus(){
+        paint.rect_stroke(rect,corners,Stroke::new(SOFT_DIVIDER_WIDTH,SELECTION),egui::StrokeKind::Inside);
+    }else if response.hovered(){
+        paint.rect_filled(rect,corners,Color32::from_rgba_unmultiplied(255,255,255,16));
+    }
 }
 
 /// Existing buttons keep their uniform corner radius. Segmented controls can
@@ -1155,14 +1165,14 @@ pub(crate) fn action_style(
         ButtonRole::Standard => (ACTION_STANDARD_HEIGHT, RAISED, TEXT, Stroke::new(1.0_f32, BORDER)),
         ButtonRole::TableSecondary => (
             ACTION_STANDARD_HEIGHT,
-            Color32::from_rgb(35, 35, 35),
+            PANEL,
             SECONDARY,
             Stroke::new(1.0_f32, DIVIDER),
         ),
         ButtonRole::Emphasized => (ACTION_EMPHASIZED_HEIGHT, BRIGHT, BRIGHT_TEXT, Stroke::NONE),
-        ButtonRole::Quiet => (ACTION_QUIET_HEIGHT, Color32::TRANSPARENT, SECONDARY, Stroke::NONE),
+        ButtonRole::Quiet => (ACTION_QUIET_HEIGHT, PANEL, SECONDARY, Stroke::new(FRAME_STROKE_WIDTH,DIVIDER)),
         ButtonRole::Ghost => (ACTION_PRIMARY_HEIGHT, Color32::TRANSPARENT, SECONDARY, Stroke::NONE),
-        ButtonRole::Danger => (34.0, Color32::from_rgb(84, 44, 48), DANGER, Stroke::NONE),
+        ButtonRole::Danger => (34.0, DANGER_ACTION_BG, ERROR_TEXT, Stroke::new(FRAME_STROKE_WIDTH,DANGER_ACTION_BORDER)),
         ButtonRole::Navigation => (NAV_HEIGHT, Color32::TRANSPARENT, SECONDARY, Stroke::NONE),
         ButtonRole::ActiveNavigation => (NAV_HEIGHT, Color32::from_rgb(41, 72, 92), TEXT, Stroke::NONE),
         ButtonRole::ManagementTab => (MANAGEMENT_TAB_HEIGHT, Color32::TRANSPARENT, SECONDARY, Stroke::NONE),
@@ -1183,7 +1193,7 @@ pub(crate) fn action_style(
         (Color32::TRANSPARENT,DISABLED_ACTION_TEXT,Stroke::NONE)
     }else if !enabled
         && matches!(role,
-            ButtonRole::Standard | ButtonRole::TableSecondary | ButtonRole::Emphasized
+            ButtonRole::Primary | ButtonRole::Standard | ButtonRole::TableSecondary | ButtonRole::Emphasized | ButtonRole::Quiet | ButtonRole::Danger
         )
     {
         (DISABLED_ACTION_BG,DISABLED_ACTION_TEXT,
