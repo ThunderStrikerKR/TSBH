@@ -84,8 +84,10 @@ impl ReviewPanel {
         let (Some(source),Some(analysis))=(source,analysis) else {
             self.clear();return;
         };
-        if source.analysis_raw.as_deref()!=Some(source.raw.as_str())
-            ||source.analysis_evidence.is_none(){
+        let direct=source.raw.trim().is_empty() && source.manual_model.as_ref()
+            .is_some_and(|saved|text(saved,"mode")=="DIRECT");
+        if !direct && (source.analysis_raw.as_deref()!=Some(source.raw.as_str())
+            ||source.analysis_evidence.is_none()){
             self.clear();return;
         }
         if !self.key.as_ref().is_some_and(|key|key.matches(source,analysis)){
@@ -108,11 +110,13 @@ impl ReviewPanel {
             let context=ctx.clone();
             thread::spawn(move||{
                 let result=(||->Result<Vec<Value>,String>{
-                    let evidence=saved.analysis_evidence.as_ref()
-                        .ok_or("발주서 분석 결과를 확인할 수 없습니다.")?;
-                    let mut order=manual_workspace::native_order(
-                        gateway.as_ref(),&saved,evidence
-                    )?;
+                    let mut order=if direct{
+                        manual_workspace::native_direct_order(gateway.as_ref(),&saved)?
+                    }else{
+                        let evidence=saved.analysis_evidence.as_ref()
+                            .ok_or("발주서 분석 결과를 확인할 수 없습니다.")?;
+                        manual_workspace::native_order(gateway.as_ref(),&saved,evidence)?
+                    };
                     order["recipients"]=key.recipients;
                     order["clientMatch"]=key.client_match;
                     // Prices were already calculated by Rust for this exact
@@ -173,46 +177,17 @@ impl ReviewPanel {
         }
     }
     pub fn ready(&self)->bool{self.ready && self.error.is_none()}
-    /// Route only a current native validation failure with an exact linked
-    /// input. A review hint alone must never block order confirmation.
-    pub fn failed_input_targets(&self,source:&WorkingReception,
-        analysis:&ReceptionAnalysis,error:&str)->Vec<(String,Option<String>,&'static str,String)>{
+    /// None means the exact current native projection is not ready.
+    pub fn input_targets(&self,source:&WorkingReception,
+        analysis:&ReceptionAnalysis,error:Option<&str>)->Option<Vec<(String,Option<String>,&'static str,String)>>{
         if !self.ready() || !self.key.as_ref().is_some_and(|key|key.matches(source,analysis)){
-            return Vec::new();
+            return None;
         }
         let recipients=analysis.recognition.get("recipients")
             .and_then(Value::as_array).map(Vec::as_slice).unwrap_or(&[]);
-        let mut result=Vec::new();
-        for recipient in recipients{
-            let rid=text(recipient,"id");
-            if rid.is_empty(){continue;}
-            for &index in &self.action_indices{
-                let issue=&self.issues[index];
-                if text(issue,"recipientId")!=rid{continue;}
-                let item=issue.get("itemId").and_then(Value::as_str).filter(|v|!v.is_empty());
-                let field=issue.get("linkKey").and_then(Value::as_str)
-                    .and_then(|key|key.rsplit_once(':').map(|(_,f)|f))
-                    .or_else(||(text(issue,"kind")=="QUANTITY_MISSING").then_some("quantity"));
-                let field=match (item.is_some(),field){
-                    (false,Some("name"))=>"name",
-                    (false,Some("address"))=>"address",
-                    (false,Some("mobile"))=>"mobile",
-                    (false,Some("phone"))=>"phone",
-                    (true,Some("quantity"))=>"quantity",
-                    (true,Some("unitPrice"|"price"))=>"unitPrice",
-                    _=>continue,
-                };
-                let title=text(issue,"title");
-                let detail=text(issue,"detail");
-                let name=text(recipient,"name");
-                let prefix=if name.is_empty(){"수취인"}else{name};
-                if !failure_matches_issue(error,prefix,title,detail){continue;}
-                result.push((rid.to_owned(),item.map(str::to_owned),field,
-                    if title.is_empty(){detail.to_owned()}else{title.to_owned()}));
-            }
-        }
-        result
+        Some(ordered_input_targets(recipients,&self.issues,error))
     }
+    pub fn refresh_failed(&self)->bool{self.error.is_some()}
     pub fn show_header_summary(&self,ui:&mut Ui,analysis:&ReceptionAnalysis,
         selected_recipient:usize){
         if self.error.is_some() || (self.pending.is_some() && self.issues.is_empty()){
@@ -285,6 +260,52 @@ impl ReviewPanel {
         }
         selected
     }
+}
+/// The native stage and resolution are authoritative; UI only routes exact
+/// existing cells. Do not turn product/customer/account decisions into inputs.
+fn ordered_input_targets(recipients:&[Value],issues:&[Value],error:Option<&str>)
+    ->Vec<(String,Option<String>,&'static str,String)>{
+    let mut result:Vec<(String,Option<String>,&'static str,String)>=Vec::new();
+    for recipient in recipients{
+        let rid=text(recipient,"id");
+        if rid.is_empty(){continue;}
+        let items=recipient["items"].as_array().map(Vec::as_slice).unwrap_or(&[]);
+        let start=result.len();
+        for issue in issues{
+            if text(issue,"recipientId")!=rid || text(issue,"severity")!="ACTION"
+                || issue["blockingStage"].as_i64()!=Some(1){continue;}
+            let item=issue.get("itemId").and_then(Value::as_str).filter(|v|!v.is_empty());
+            let Some((owner,field))=text(issue,"linkKey").rsplit_once(':')else{continue;};
+            if owner!=item.unwrap_or(rid) || item.is_some_and(|id|
+                !items.iter().any(|row|text(row,"id")==id)){continue;}
+            let field=match (text(issue,"kind"),item.is_some(),field){
+                ("NAME",false,"name")=>"name",
+                ("ADDRESS",false,"address")=>"address",
+                ("CONTACT",false,"mobile")=>"mobile",
+                ("CONTACT",false,"phone")=>"phone",
+                ("QUANTITY_MISSING"|"QUANTITY_INVALID",true,"quantity")=>"quantity",
+                ("PRICE",true,"unitPrice"|"price")=>"unitPrice",
+                _=>continue,
+            };
+            let title=text(issue,"title");
+            let detail=text(issue,"detail");
+            let name=text(recipient,"name");
+            let prefix=if name.is_empty(){"수취인"}else{name};
+            if error.is_some_and(|e|!failure_matches_issue(e,prefix,title,detail)){continue;}
+            if !result.iter().any(|(r,i,f,_)|r==rid && i.as_deref()==item && *f==field){
+                result.push((rid.to_owned(),item.map(str::to_owned),field,
+                    if title.is_empty(){detail.to_owned()}else{title.to_owned()}));
+            }
+        }
+        result[start..].sort_by_key(|(_,item,field,_)|{
+            match *field{
+                "name"=>(0,0),"address"=>(0,1),"mobile"=>(0,2),"phone"=>(0,3),
+                _=>(1+item.as_deref().and_then(|id|items.iter().position(|row|text(row,"id")==id))
+                    .unwrap_or(0),usize::from(*field=="unitPrice")),
+            }
+        });
+    }
+    result
 }
 /// Compare complete native message lines, never a loose substring of an
 /// unrelated technical error or a differently named recipient's issue.
@@ -434,6 +455,25 @@ fn issue_card(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn ordered_guidance_excludes_wrong_stage_and_noncell_issues(){
+        let recipients=vec![json!({"id":"a","name":"A","items":[{"id":"i"}]}),
+            json!({"id":"b","name":"B","items":[]})];
+        let issue=|rid:&str,item:Option<&str>,kind:&str,field:&str,stage:i64|json!({
+            "recipientId":rid,"itemId":item,"kind":kind,"linkKey":format!("{}:{field}",item.unwrap_or(rid)),
+            "blockingStage":stage,"severity":"ACTION","title":kind
+        });
+        let issues=vec![issue("b",None,"NAME","name",1),
+            issue("a",Some("i"),"QUANTITY_MISSING","quantity",1),
+            issue("a",None,"ADDRESS","address",1),
+            issue("a",None,"CONTACT","mobile",2),
+            issue("a",Some("i"),"MODEL","product",1)];
+        let targets=ordered_input_targets(&recipients,&issues,None);
+        assert_eq!(targets.iter().map(|(r,_,f,_)|(r.as_str(),*f)).collect::<Vec<_>>(),
+            vec![("a","address"),("a","quantity"),("b","name")]);
+        assert_eq!(ordered_input_targets(&recipients,&issues,Some("A: ADDRESS")).len(),1);
+        assert!(ordered_input_targets(&recipients,&issues,Some("database failure")).is_empty());
+    }
     #[test]
     fn input_failure_matching_rejects_unrelated_recipient_and_technical_error(){
         assert!(failure_matches_issue("김씨: 수량을 입력하세요.","김씨","수량을 입력하세요","김씨 / 수량을 입력하세요"));
