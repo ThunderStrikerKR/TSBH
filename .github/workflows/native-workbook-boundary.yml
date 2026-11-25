@@ -52,3 +52,5 @@ jobs:
         run: cargo test --manifest-path crates/bando-data-access/Cargo.toml --lib client_workbook_ -- --nocapture
       - name: Verify shared Excel review and approval UI
         run: cargo test --manifest-path egui-app/Cargo.toml --bin bando-hub-egui product_excel_ui::tests -- --nocapture
+      - name: Verify native factory inbox stable observations and immutable originals
+        run: cargo test --manifest-path egui-app/Cargo.toml --bin bando-hub-egui factory_reply_inbox::tests -- --nocapture
