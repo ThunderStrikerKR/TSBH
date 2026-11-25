@@ -40,7 +40,7 @@ pub use validation::{
     validate_message_templates, validate_provisional_product_notices,
 };
 pub use relational_write::store_v2_relational;
-pub use storage::{write_v2_snapshot,update_v2_snapshot,update_v2_snapshot_if_changed,update_v2_freight_snapshot,update_v2_factory_reply_snapshot};
+pub use storage::{write_v2_snapshot,update_v2_snapshot,update_v2_snapshot_if_changed,update_v2_freight_snapshot,update_v2_factory_reply_snapshot,update_v2_factory_correction_snapshot};
 pub use client_commands::{mutate_client_v2,preview_client_workbook,commit_client_workbook_v2};
 pub use product_commands::{patch_product_v2,patch_model_groups_v2,apply_product_price,
     preview_unified_product_workbook};

@@ -459,6 +459,24 @@ fn grouped_amount(value:&Value)->String {
 }
 fn conflict_confirmation(payload:&Value)->Result<Value,String>{
     let state=payload.get("state").ok_or("공장 회신 상태 누락")?;
+    conflict_confirmation_for_state(state,payload)
+}
+
+/// Resolve the target using the stored conflict record and shipment only.
+/// The matching reducer still sees the complete queue, tracking ownership
+/// and history, and must return the very same shipment ID.
+pub(crate) fn factory_correction_order_scope(state:&Value,payload:&Value)->Result<Vec<String>,String>{
+    let record=rows(state,"factoryReplies").iter().find(|r|s(r,"id")==s(payload,"id"))
+        .ok_or("원본 회신 누락")?;
+    let source=rows(record,"rows").iter().find(|r|r["row"]==payload["rowNumber"])
+        .ok_or("원본 회신 행 누락")?;
+    let ship=rows(field(state,"workflow"),"shipments").iter()
+        .find(|ship|s(ship,"id")==s(source,"shipmentId"))
+        .ok_or("원본 배송 건을 찾지 못했습니다.")?;
+    Ok(vec![s(ship,"orderId").to_owned()])
+}
+
+fn conflict_confirmation_for_state(state:&Value,payload:&Value)->Result<Value,String>{
     let id=s(payload,"id");
     let row_num=field(payload,"rowNumber").as_i64()
         .ok_or("승인 가능한 회신 충돌 행을 찾지 못했습니다.")?;
@@ -508,8 +526,12 @@ fn review_list(payload:&Value)->Result<Value,String>{
 /// Recheck the actual confirmation text and immutable shipment match.
 fn approve_conflict(payload:&Value)->Result<Value,String>{
     let state=payload.get("state").ok_or("공장 회신 상태 누락")?;
+    approve_factory_conflict_for_state(state,payload)
+}
+
+pub(crate) fn approve_factory_conflict_for_state(state:&Value,payload:&Value)->Result<Value,String>{
     if state["revision"]!=payload["revision"]{return Err("회신 검토 후 DB가 변경됐습니다.".into())}
-    let confirmed=conflict_confirmation(payload)?;
+    let confirmed=conflict_confirmation_for_state(state,payload)?;
     if confirmed["text"]!=payload["confirmedText"]{return Err("회신 충돌 내용이 변경됐습니다.".into())}
     let original=rows(state,"factoryReplies").iter().find(|r|s(r,"id")==s(payload,"id"))
         .ok_or("원본 회신 누락")?;

@@ -152,13 +152,11 @@ fn approve_with_db(conn:&mut Connection,base:&Path,review:Value)->Result<Value,S
     if id(&read_bounded(&path)?)!=reply_id{return Err("보관된 회신 원본이 일치하지 않습니다.".into())}
     let correction=format!("factory-correction-{}",Uuid::new_v4());
     let at=Utc::now().to_rfc3339();
-    bando_data_access::update_v2_snapshot(conn,revision,true,|before|{
-        let mut payload=review.clone();payload["state"]=before.clone();
-        payload["correctionId"]=json!(correction);payload["businessDate"]=json!(today());
-        payload["freightAt"]=json!(at);payload["freightEventIds"]=json!(ids(1));
-        payload["replyEventIds"]=json!(ids(1));
-        rules::execute("approve_factory_conflict",payload)
-    })
+    let mut payload=review;
+    payload["correctionId"]=json!(correction);payload["businessDate"]=json!(today());
+    payload["freightAt"]=json!(at);payload["freightEventIds"]=json!(ids(1));
+    payload["replyEventIds"]=json!(ids(1));
+    bando_data_access::update_v2_factory_correction_snapshot(conn,revision,&payload)
 }
 #[derive(Clone)]
 struct Seen{stamp:(u64,SystemTime),observations:u8,done:bool}
@@ -670,6 +668,16 @@ mod tests{
         assert_eq!(replies[2]["status"],"APPLIED");
         let events=after["workflow"]["events"].as_array().unwrap();
         assert_eq!(events.len(),4);
+        // Differential oracle: identical approval metadata and full legacy
+        // dispatcher must produce precisely the same durable snapshot.
+        let mut expected=rules::execute("approve_factory_conflict",json!({
+            "state":before,"revision":before["revision"],"id":reply_id,"rowNumber":2,
+            "confirmedText":review["confirmedText"],"correctionId":replies[2]["id"],
+            "businessDate":replies[2]["businessDate"],"freightAt":events[2]["at"],
+            "freightEventIds":[events[2]["id"]],"replyEventIds":[events[3]["id"]]
+        })).unwrap();
+        expected["revision"]=after["revision"].clone();
+        assert_eq!(after,expected);
         assert_eq!(events[2]["before"],4000);
         assert_eq!(events[2]["after"]["amount"],5500);
         assert_eq!(events[3]["action"],"공장 송장 / 운임 정정");
