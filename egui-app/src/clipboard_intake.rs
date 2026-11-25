@@ -87,40 +87,246 @@ pub enum ClipboardPayload {
     Image(ClipboardImage),
 }
 
+#[derive(Default)]
 pub struct ClipboardMonitor {
-    last_sequence: Option<u32>,
-    last_probe: Option<Instant>,
-    kind: ClipboardKind,
-}
-impl Default for ClipboardMonitor {
-    fn default() -> Self {
-        Self { last_sequence: None, last_probe: None, kind: ClipboardKind::Empty }
-    }
+    #[cfg(windows)]
+    watcher:Option<clipboard_events::Watcher>,
+    #[cfg(windows)]
+    cleared_sequence:Option<u32>,
+    #[cfg(not(windows))]
+    last_probe:Option<Instant>,
+    kind:ClipboardKind,
 }
 impl ClipboardMonitor {
-    pub fn kind(&self) -> ClipboardKind { self.kind }
-
-    /// No clipboard read on every egui frame. On Windows a change sequence
-    /// guards costly get_image operations, and the 400ms interval bounds the
-    /// fallback cost when the Win32 sequence API cannot be used.
-    pub fn refresh(&mut self) {
-        // Windows exposes a cheap change counter. Check it BEFORE the
-        // 400ms fallback throttle, otherwise clearing the clipboard can
-        // leave the Paste actions enabled with a stale cached kind.
-        let sequence = clipboard_sequence();
-        if sequence.is_some() && sequence == self.last_sequence { return; }
-        // Only non-Windows / unavailable-sequence polling needs a throttle.
-        if sequence.is_none() && self.last_probe.is_some_and(|time|
-            time.elapsed() < Duration::from_millis(400)) {
-            return;
+    pub fn kind(&self)->ClipboardKind{
+        #[cfg(windows)]
+        if let Some(watcher)=self.watcher.as_ref(){
+            if let Some((sequence,kind))=watcher.snapshot(){
+                if self.cleared_sequence.is_some() && sequence==self.cleared_sequence{
+                    return ClipboardKind::Empty;
+                }
+                return kind;
+            }
         }
-        self.last_probe = Some(Instant::now());
-        self.last_sequence = sequence;
-        self.kind = match read() {
-            Ok(ClipboardPayload::Text(_)) => ClipboardKind::Text,
-            Ok(ClipboardPayload::Image(_)) => ClipboardKind::Image,
-            Err(_) => ClipboardKind::Empty,
-        };
+        self.kind
+    }
+    /// Windows events wake egui directly. Only a failed worker launch or
+    /// a non-Windows adapter uses the conservative fallback.
+    pub fn refresh(&mut self,ctx:&eframe::egui::Context){
+        #[cfg(windows)] {
+            if self.watcher.is_none(){
+                self.watcher=clipboard_events::Watcher::start(ctx.clone()).ok();
+                if self.watcher.is_none(){
+                    ctx.request_repaint_after(Duration::from_secs(1));
+                }
+            }
+        }
+        #[cfg(not(windows))] {
+            if self.last_probe.is_none_or(|t|t.elapsed()>=Duration::from_millis(400)){
+                self.last_probe=Some(Instant::now());
+                self.kind=match read(){
+                    Ok(ClipboardPayload::Text(_))=>ClipboardKind::Text,
+                    Ok(ClipboardPayload::Image(_))=>ClipboardKind::Image,
+                    Err(_)=>ClipboardKind::Empty,
+                };
+            }
+            ctx.request_repaint_after(Duration::from_millis(400));
+        }
+    }
+    /// Autosave cleared exactly this imported version under the clipboard
+    /// lock. Suppress a stale worker snapshot until the next publication.
+    pub fn mark_cleared(&mut self,sequence:Option<u32>){
+        self.kind=ClipboardKind::Empty;
+        #[cfg(windows)] {self.cleared_sequence=sequence;}
+        #[cfg(not(windows))] {let _=sequence;}
+    }
+    pub fn shutdown(&mut self){
+        #[cfg(windows)] {self.watcher.take();}
+    }
+}
+
+fn classify_available(text_nonempty:bool,image_available:bool)->ClipboardKind{
+    if text_nonempty{ClipboardKind::Text}
+    else if image_available{ClipboardKind::Image}
+    else{ClipboardKind::Empty}
+}
+
+#[cfg(windows)]
+mod clipboard_events{
+    use super::{clipboard_sequence,classify_available,ClipboardKind,Clipboard};
+    use std::{cell::Cell,ptr,sync::{Arc,Mutex,atomic::{AtomicBool,AtomicU32,Ordering}},
+        time::{Duration,Instant}};
+    type Hwnd=isize;
+    type Handle=isize;
+    type Snapshot=(Option<u32>,ClipboardKind);
+    const WM_CLIPBOARDUPDATE:u32=0x031D;
+    const WM_QUIT:u32=0x0012;
+    const HWND_MESSAGE:Hwnd=-3;
+    const PM_REMOVE:u32=1;
+    const QS_ALLINPUT:u32=0x04FF;
+    const MWMO_INPUTAVAILABLE:u32=4;
+    #[repr(C)]
+    #[derive(Default)]
+    struct Msg{hwnd:Hwnd,message:u32,wparam:usize,lparam:isize,time:u32,
+        x:i32,y:i32,private:u32}
+    #[repr(C)]
+    struct WindowClass{
+        style:u32,procedure:Option<unsafe extern "system" fn(Hwnd,u32,usize,isize)->isize>,
+        class_extra:i32,window_extra:i32,instance:Handle,icon:Handle,cursor:Handle,
+        background:Handle,menu:*const u16,name:*const u16,
+    }
+    #[link(name="user32")]
+    unsafe extern "system"{
+        fn RegisterClassW(class:*const WindowClass)->u16;
+        fn UnregisterClassW(name:*const u16,instance:Handle)->i32;
+        fn CreateWindowExW(ex_style:u32,class:*const u16,name:*const u16,style:u32,
+            x:i32,y:i32,w:i32,h:i32,parent:Hwnd,menu:Handle,instance:Handle,param:isize)->Hwnd;
+        fn DestroyWindow(hwnd:Hwnd)->i32;
+        fn DefWindowProcW(hwnd:Hwnd,msg:u32,wparam:usize,lparam:isize)->isize;
+        fn AddClipboardFormatListener(hwnd:Hwnd)->i32;
+        fn RemoveClipboardFormatListener(hwnd:Hwnd)->i32;
+        fn IsClipboardFormatAvailable(format:u32)->i32;
+        fn RegisterClipboardFormatW(name:*const u16)->u32;
+        fn PeekMessageW(msg:*mut Msg,hwnd:Hwnd,min:u32,max:u32,remove:u32)->i32;
+        fn TranslateMessage(msg:*const Msg)->i32;
+        fn DispatchMessageW(msg:*const Msg)->isize;
+        fn PostThreadMessageW(thread:u32,msg:u32,wparam:usize,lparam:isize)->i32;
+        fn MsgWaitForMultipleObjectsEx(count:u32,handles:*const Handle,ms:u32,mask:u32,flags:u32)->u32;
+    }
+    #[link(name="kernel32")]
+    unsafe extern "system"{
+        fn GetModuleHandleW(name:*const u16)->Handle;
+        fn GetCurrentThreadId()->u32;
+    }
+    thread_local!{static DIRTY:Cell<bool>=const{Cell::new(false)};}
+    unsafe extern "system" fn window_proc(hwnd:Hwnd,msg:u32,wparam:usize,lparam:isize)->isize{
+        if msg==WM_CLIPBOARDUPDATE{DIRTY.with(|d|d.set(true));return 0;}
+        unsafe{DefWindowProcW(hwnd,msg,wparam,lparam)}
+    }
+    struct Listener{hwnd:Hwnd,instance:Handle,class:Vec<u16>,registered:bool}
+    impl Listener{
+        fn new()->Self{
+            let class:Vec<u16>="BandoHubClipboardMonitor".encode_utf16().chain(Some(0)).collect();
+            let instance=unsafe{GetModuleHandleW(ptr::null())};
+            let definition=WindowClass{style:0,procedure:Some(window_proc),class_extra:0,
+                window_extra:0,instance,icon:0,cursor:0,background:0,menu:ptr::null(),name:class.as_ptr()};
+            let registered=instance!=0 && unsafe{RegisterClassW(&definition)}!=0;
+            let hwnd=if registered{unsafe{CreateWindowExW(0,class.as_ptr(),class.as_ptr(),0,
+                0,0,0,0,HWND_MESSAGE,0,instance,0)}}else{0};
+            Self{hwnd,instance,class,registered}
+        }
+    }
+    impl Drop for Listener{
+        fn drop(&mut self){
+            if self.hwnd!=0{unsafe{RemoveClipboardFormatListener(self.hwnd);DestroyWindow(self.hwnd);}}
+            if self.registered{unsafe{UnregisterClassW(self.class.as_ptr(),self.instance);}}
+        }
+    }
+    struct Shared{
+        stop:AtomicBool,thread:AtomicU32,snapshot:Mutex<Option<Snapshot>>,
+    }
+    pub(super) struct Watcher{shared:Arc<Shared>}
+    impl Watcher{
+        pub fn start(ctx:eframe::egui::Context)->std::io::Result<Self>{
+            let shared=Arc::new(Shared{stop:AtomicBool::new(false),thread:AtomicU32::new(0),
+                snapshot:Mutex::new(None)});
+            let worker=Arc::clone(&shared);
+            std::thread::Builder::new().name("bando-clipboard-events".into())
+                .spawn(move||run(worker,ctx))?;
+            Ok(Self{shared})
+        }
+        pub fn snapshot(&self)->Option<Snapshot>{
+            *self.shared.snapshot.lock().unwrap_or_else(|p|p.into_inner())
+        }
+    }
+    impl Drop for Watcher{
+        fn drop(&mut self){
+            self.shared.stop.store(true,Ordering::Release);
+            let thread=self.shared.thread.load(Ordering::Acquire);
+            if thread!=0{unsafe{PostThreadMessageW(thread,WM_QUIT,0,0);}}
+        }
+    }
+    /// Availability metadata only for images. Text is inspected once on
+    /// change to preserve the original non-whitespace/text-first policy.
+    /// No image decoding or OCR occurs in the monitor.
+    fn probe(png:u32)->Option<Snapshot>{
+        let before=clipboard_sequence();
+        let available=|format:u32|format!=0 && unsafe{IsClipboardFormatAvailable(format)}!=0;
+        let image=available(8)||available(17)||available(2)||available(png);
+        let text=if available(13)||available(1)||available(7){
+            let mut clipboard=Clipboard::new().ok()?;
+            match clipboard.get_text(){
+                Ok(text)=>!text.trim().is_empty(),
+                Err(_)=>return None,
+            }
+        }else{false};
+        let after=clipboard_sequence();
+        if before!=after{return None;}
+        Some((after,classify_available(text,image)))
+    }
+    fn run(shared:Arc<Shared>,ctx:eframe::egui::Context){
+        let mut msg=Msg::default();
+        unsafe{PeekMessageW(&mut msg,0,0,0,0);}
+        shared.thread.store(unsafe{GetCurrentThreadId()},Ordering::Release);
+        let listener=Listener::new();
+        let hooked=listener.hwnd!=0 && unsafe{AddClipboardFormatListener(listener.hwnd)}!=0;
+        if !hooked{eprintln!("[BANDO HUB] 클립보드 이벤트 등록 실패: 백그라운드 변경 확인 유지");}
+        let png_name:Vec<u16>="PNG".encode_utf16().chain(Some(0)).collect();
+        let png=unsafe{RegisterClipboardFormatW(png_name.as_ptr())};
+        let fallback=if hooked{Duration::from_secs(5)}else{Duration::from_millis(400)};
+        let mut last=Instant::now()-fallback;
+        let mut dirty=true;
+        let mut retry=false;
+        while !shared.stop.load(Ordering::Acquire){
+            for _ in 0..256{
+                if unsafe{PeekMessageW(&mut msg,0,0,0,PM_REMOVE)}==0{break;}
+                if msg.message==WM_QUIT{shared.stop.store(true,Ordering::Release);break;}
+                unsafe{TranslateMessage(&msg);DispatchMessageW(&msg);}
+            }
+            if shared.stop.load(Ordering::Acquire){break;}
+            dirty|=DIRTY.with(|d|d.replace(false));
+            if dirty || last.elapsed()>=fallback ||
+                (retry && last.elapsed()>=Duration::from_millis(150)){
+                let previous=*shared.snapshot.lock().unwrap_or_else(|p|p.into_inner());
+                let current=clipboard_sequence();
+                if dirty || retry || current.is_none() || previous.is_none_or(|p|p.0!=current){
+                    match probe(png){
+                        Some(next)=>{
+                            *shared.snapshot.lock().unwrap_or_else(|p|p.into_inner())=Some(next);
+                            if previous!=Some(next){ctx.request_repaint();}
+                            retry=false;
+                        }
+                        None=>retry=true,
+                    }
+                }
+                last=Instant::now();dirty=false;
+            }
+            let delay=if retry{Duration::from_millis(150)}else{fallback};
+            let ms=delay.saturating_sub(last.elapsed()).as_millis().max(1) as u32;
+            let result=unsafe{MsgWaitForMultipleObjectsEx(0,ptr::null(),ms,QS_ALLINPUT,MWMO_INPUTAVAILABLE)};
+            if result==u32::MAX{std::thread::sleep(Duration::from_millis(150));}
+        }
+        drop(listener);
+        shared.thread.store(0,Ordering::Release);
+    }
+}
+
+#[cfg(test)]
+mod clipboard_monitor_tests{
+    use super::*;
+    #[test]
+    fn clipboard_format_classification_prefers_nonempty_text(){
+        assert_eq!(classify_available(true,true),ClipboardKind::Text);
+        assert_eq!(classify_available(true,false),ClipboardKind::Text);
+        assert_eq!(classify_available(false,true),ClipboardKind::Image);
+        assert_eq!(classify_available(false,false),ClipboardKind::Empty);
+    }
+    #[test]
+    fn successful_clear_invalidates_cached_intake(){
+        let mut monitor=ClipboardMonitor::default();
+        monitor.kind=ClipboardKind::Image;
+        monitor.mark_cleared(Some(42));
+        assert_eq!(monitor.kind(),ClipboardKind::Empty);
     }
 }
 
