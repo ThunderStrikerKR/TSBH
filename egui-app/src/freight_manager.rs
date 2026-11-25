@@ -898,7 +898,7 @@ impl FreightManager {
                     if SHOW_PREVIOUS_GROUP_FREIGHT_HISTORY {
                         // Only a deliberately restored multi-card report may
                         // scroll the full page. This feature is currently off.
-                        egui::ScrollArea::vertical()
+                        components::scroll_area(components::ScrollAxes::Vertical)
                             .id_salt(("freight-management",self.tab as u8))
                             .auto_shrink([false,false])
                             .show(ui,|scroll|Self::show_history(
@@ -997,7 +997,7 @@ impl FreightManager {
                                             "사용 중인 상품이 있습니다. 상품을 다른 그룹으로 옮기거나 미지정으로 변경한 후 삭제해야 합니다.",
                                             theme::SELECTED_ORDER
                                         ));
-                                        egui::ScrollArea::vertical()
+                                        components::scroll_area(components::ScrollAxes::Vertical)
                                             .id_salt("freight-delete-affected-products")
                                             .max_height((area.height()-310.0).max(70.0)
                                                 .min(theme::MANAGEMENT_MODAL_BODY_MAX_HEIGHT))

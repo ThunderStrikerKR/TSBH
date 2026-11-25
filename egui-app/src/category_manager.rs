@@ -693,7 +693,7 @@ impl CategoryManager {
             // The same structural divider as Reception and management tables.
             components::section_divider(panel);
             let index=CategoryMapIndex::new(&cats,catalog,&self.query);
-            egui::ScrollArea::vertical()
+            components::scroll_area(components::ScrollAxes::Vertical)
                 .id_salt("category-map-tree")
                 .auto_shrink([false,false])
                 .max_height(panel.available_height().max(theme::MANAGEMENT_TABLE_ROW_HEIGHT))

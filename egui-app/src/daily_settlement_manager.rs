@@ -531,7 +531,7 @@ impl DailySettlementManager{
             -ui.spacing().scroll.allocated_width()
             -2.0*theme::SECTION_PADDING
             -2.0*theme::FRAME_STROKE_WIDTH).max(1.0);
-        egui::ScrollArea::vertical()
+        components::scroll_area(components::ScrollAxes::Vertical)
             .id_salt("daily-settlement-sections")
             .max_width(section_viewport_width)
             .auto_shrink([false,false])

@@ -432,7 +432,7 @@ impl AutomaticMessageManager {
             settings_help::icon(heading,"상황별 자동 메시지");
         });
         ui.add_space(theme::SPACE_8);
-        egui::ScrollArea::vertical().id_salt("auto-template-types")
+        components::scroll_area(components::ScrollAxes::Vertical).id_salt("auto-template-types")
             .scroll_bar_visibility(egui::containers::scroll_area::ScrollBarVisibility::VisibleWhenNeeded)
             .max_height(Self::list_height(ui))
             .show(ui,|list|{
@@ -467,7 +467,7 @@ impl AutomaticMessageManager {
         );
         ui.add_space(theme::SPACE_8);
         let visible=self.provisional_visible();
-        egui::ScrollArea::vertical().id_salt("provisional-notice-products")
+        components::scroll_area(components::ScrollAxes::Vertical).id_salt("provisional-notice-products")
             .scroll_bar_visibility(egui::containers::scroll_area::ScrollBarVisibility::VisibleWhenNeeded)
             .max_height((Self::list_height(ui)-theme::INPUT_HEIGHT
                 -theme::SPACE_24).max(1.0))
@@ -650,7 +650,7 @@ impl AutomaticMessageManager {
                     editor.set_width(right_width);
                     components::measured_management_section_card(editor,|body|{
                         components::fill_management_primary_card(body,card_min_height);
-                        egui::ScrollArea::vertical()
+                        components::scroll_area(components::ScrollAxes::Vertical)
                             .id_salt("automatic-message-editor-fields")
                             .max_height((height-theme::INPUT_HEIGHT
                                 -theme::SPACE_24*2.0).max(1.0))

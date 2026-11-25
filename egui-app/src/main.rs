@@ -3601,7 +3601,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                     // then scroll within the same surface for additional orders.
                     theme::modal_nested_role_frame(theme::ModalNestedRole::RecipientChecklist)
                         .show(ui,|panel|{
-                            egui::ScrollArea::vertical()
+                            components::scroll_area(components::ScrollAxes::Vertical)
                                 .max_height(list_height)
                                 .auto_shrink([false,false])
                                 .id_salt("order-vat-select-recipients")
@@ -4843,7 +4843,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                             viewport.set_clip_rect(image_clip);
                             viewport.set_width(image_scroll_rect.width());
                             viewport.set_height(image_scroll_rect.height());
-                            let image_scroll=egui::ScrollArea::both()
+                            let image_scroll=components::scroll_area(components::ScrollAxes::Both)
                                 .id_salt("ocr-original-image-scroll")
                                 .max_width(image_scroll_rect.width())
                                 .max_height(image_scroll_rect.height())
@@ -5593,7 +5593,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                     };
                 if content_width > viewport_width + 0.5 {
                     // Small windows must still be able to reach every pane.
-                    egui::ScrollArea::horizontal()
+                    components::scroll_area(components::ScrollAxes::Horizontal)
                         .drag_to_scroll(false)
                         .id_salt("reception_four_columns")
                         .auto_shrink([false, false])
@@ -5759,7 +5759,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                             canvas.set_clip_rect(inner);
                             canvas.set_width(inner.width());
                             canvas.set_height(inner.height());
-                            egui::ScrollArea::vertical()
+                            components::scroll_area(components::ScrollAxes::Vertical)
                                 .id_salt(("pending-hover-source-scroll",draft.id.as_str()))
                                 .max_height(inner.height())
                                 .auto_shrink([false,false])
@@ -5876,7 +5876,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                             canvas.set_clip_rect(inner);
                             canvas.set_width(inner.width());
                             canvas.set_height(inner.height());
-                            egui::ScrollArea::vertical()
+                            components::scroll_area(components::ScrollAxes::Vertical)
                                 .id_salt(("workflow-source-lines",shipment.order_id.as_str()))
                                 .max_height(inner.height()).auto_shrink([false,false])
                                 .show(canvas,|content|{
@@ -6233,7 +6233,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                             editor_ui.set_width(viewport.width());
                             editor_ui.set_height(viewport.height());
                             theme::source_document_frame().show(editor_ui, |document_ui| {
-                            egui::ScrollArea::vertical()
+                            components::scroll_area(components::ScrollAxes::Vertical)
                             .id_salt("source-editor-vertical-scroll")
                             // The frame border/padding occupies the outer
                             // editor slot; only the text contents scroll.
@@ -6437,7 +6437,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                 let balanced_gap = ((intake_height - clipboard_group_height
                     - manual_group_height - folder_group_height - dividers_height)
                     / 2.0).max(theme::SPACE_8);
-                egui::ScrollArea::vertical()
+                components::scroll_area(components::ScrollAxes::Vertical)
                     .id_salt("source-intake-instructions")
                     .max_height(intake_height)
                     .auto_shrink([false, false])
@@ -6625,7 +6625,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                             canvas.set_clip_rect(inner);
                             canvas.set_width(inner.width());
                             canvas.set_height(inner.height());
-                            egui::ScrollArea::vertical()
+                            components::scroll_area(components::ScrollAxes::Vertical)
                                 .id_salt(("native-workflow-message",group.id.as_str()))
                                 .max_height(inner.height())
                                 .auto_shrink([false,false])
@@ -6843,7 +6843,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                     pane.set_width(review_rect.width());
                     pane.set_height(review_rect.height());
                     Self::section(pane,"확인할 내용",review_height,|ui|{
-                        egui::ScrollArea::vertical()
+                        components::scroll_area(components::ScrollAxes::Vertical)
                             .max_height(components::docked_section_body_height(review_height))
                             .id_salt(("native-workflow-issues",group.id.as_str()))
                             .show(ui,|issues|{
@@ -6896,7 +6896,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                 header,name,index,count,true
                             );
                         },|ui|{
-                        egui::ScrollArea::vertical()
+                        components::scroll_area(components::ScrollAxes::Vertical)
                             .max_height(components::docked_section_body_height(recipient_height))
                             .auto_shrink([false,false])
                             .id_salt(("native-workflow-recipient-readonly",ship.id.as_str()))
@@ -7199,7 +7199,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                     pane.set_width(review_rect.width());
                     pane.set_height(review_rect.height());
                     Self::section(pane,"확인할 내용",review_height,|ui|{
-                        egui::ScrollArea::vertical()
+                        components::scroll_area(components::ScrollAxes::Vertical)
                             .max_height(components::docked_section_body_height(review_height))
                             .show(ui,|issues|{
                                 if let Some(rows)=recognition.get("issues")
@@ -7239,7 +7239,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                             }
                         },|ui|{
                             if let Some(row)=recipient{
-                                egui::ScrollArea::vertical()
+                                components::scroll_area(components::ScrollAxes::Vertical)
                                     .max_height(components::docked_section_body_height(recipient_height))
                                     .id_salt(("pending-hover-recipient",draft.id.as_str()))
                                     .auto_shrink([false,false])
@@ -7397,7 +7397,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                 pane.set_width(review_rect.width());
                 pane.set_height(review_rect.height());
                 Self::section(pane, "확인할 내용", review_height, |ui| {
-                    egui::ScrollArea::vertical()
+                    components::scroll_area(components::ScrollAxes::Vertical)
                         .id_salt("reception-review-content-scroll")
                         .max_height(components::docked_section_body_height(review_height))
                         .auto_shrink([false, false])
@@ -7497,7 +7497,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                             let recipient_id = reception_service::text(recipient, "id");
                             // Match the React contact grid and allow only its
                             // content to scroll when the user narrows this pane.
-                            egui::ScrollArea::vertical()
+                            components::scroll_area(components::ScrollAxes::Vertical)
                                 .id_salt("recognized-recipient-fields")
                                 .max_height(components::docked_section_body_height(recipient_height)
                                     .min(ui.available_height().max(0.0)))
@@ -8616,7 +8616,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                     );
                                 }
                                 ui.add_space(theme::SPACE_8);
-                                egui::ScrollArea::vertical()
+                                components::scroll_area(components::ScrollAxes::Vertical)
                                     .max_height(work_area.height()*0.45)
                                     .show(ui,|list|{
                                         for ship in &group.shipments{
@@ -8816,7 +8816,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
             // A continuous order-card list needs the same 10pt solid
             // scrollbar that management lists use, never a floating thumb.
             ui.spacing_mut().scroll=theme::management_table_scroll_style();
-            egui::ScrollArea::vertical()
+            components::scroll_area(components::ScrollAxes::Vertical)
                 .scroll_bar_visibility(
                     egui::containers::scroll_area::ScrollBarVisibility::VisibleWhenNeeded
                 )
@@ -9253,7 +9253,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                         );
                     };
                 if content_width > viewport_width + 0.5 {
-                    egui::ScrollArea::horizontal()
+                    components::scroll_area(components::ScrollAxes::Horizontal)
                         .id_salt("kakao-management-shell")
                         .auto_shrink([false,false])
                         .show(ui,&mut draw_management);

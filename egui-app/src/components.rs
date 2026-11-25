@@ -14,6 +14,30 @@ pub(crate) fn test_context()->egui::Context {
 }
 
 pub const LABEL_WIDTH: f32 = theme::FIELD_LABEL_WIDTH;
+
+/// Common native scroll construction. Screen-specific IDs, bounds and shrink
+/// behavior are applied by the caller; shared role policies build on this.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ScrollAxes { Vertical, Horizontal, Both }
+
+pub fn scroll_area(axes:ScrollAxes)->egui::ScrollArea{
+    match axes {
+        ScrollAxes::Vertical=>egui::ScrollArea::vertical(),
+        ScrollAxes::Horizontal=>egui::ScrollArea::horizontal(),
+        ScrollAxes::Both=>egui::ScrollArea::both(),
+    }
+}
+
+/// Fixed-header register lists retain a vertical-only rail and fixed viewport.
+/// The caller already installs the management table style and owns the height.
+pub fn management_register_list_scroll_area(ui:&Ui,height:f32)->egui::ScrollArea{
+    scroll_area(ScrollAxes::Vertical)
+        .scroll_bar_rect(management_table_scroll_track_rect(ui,height))
+        .scroll_bar_visibility(egui::containers::scroll_area::ScrollBarVisibility::VisibleWhenNeeded)
+        .max_height(height)
+        .auto_shrink([false,false])
+}
+
 /// Render only the rows intersecting a scroll viewport, while reserving the
 /// full logical height and width of the list. This works with BOTH-axis
 /// scrolling, unlike a paginated list, and preserves the backing row indices.
@@ -76,7 +100,7 @@ pub fn management_fixed_table_scroll_area(ui:&Ui,content_width:f32)->egui::Scrol
     use egui::containers::scroll_area::ScrollBarVisibility;
     let data_width=(ui.available_width()-ui.spacing().scroll.allocated_width()).max(1.0);
     let horizontal=content_width>data_width+0.01;
-    egui::ScrollArea::new([horizontal,true]).scroll_bar_visibility(if horizontal{
+    scroll_area(if horizontal{ScrollAxes::Both}else{ScrollAxes::Vertical}).scroll_bar_visibility(if horizontal{
         ScrollBarVisibility::AlwaysVisible
     }else{
         ScrollBarVisibility::VisibleWhenNeeded
@@ -324,7 +348,7 @@ pub fn fixed_result_viewport<R>(
     let width=ui.available_width();
     fixed_row(ui,Vec2::new(width,height),Layout::top_down(Align::Min),|pane|{
         pane.set_min_height(height);
-        egui::ScrollArea::vertical().id_salt(id)
+        scroll_area(ScrollAxes::Vertical).id_salt(id)
             .max_height(height).auto_shrink([false,false])
             .show(pane,render).inner
     })
@@ -1470,7 +1494,7 @@ pub fn reception_docked_goods_scroll(
         let minimum=theme::RECEPTION_ITEMS_MIN_TABLE_WIDTH+
             if editable_columns{theme::RECEPTION_ITEM_REMOVE_WIDTH}else{0.0};
         let width=reception_items_scroll_content_width(area).max(minimum);
-        egui::ScrollArea::both()
+        scroll_area(ScrollAxes::Both)
             .scroll_bar_visibility(egui::containers::scroll_area::ScrollBarVisibility::VisibleWhenNeeded)
             .id_salt(id_salt).max_height(height).auto_shrink([false,false])
             .show(area,|items|{
@@ -1762,7 +1786,7 @@ impl ModalEditorWorkspace<'_> {
     /// Ordinary single-pane forms use one bounded body scrollbar.
     pub fn scroll_region<R>(&mut self,id:&str,max_height:f32,contents:impl FnOnce(&mut Ui)->R)->R{
         self.body_region(|host|{
-            egui::ScrollArea::vertical().id_salt(id)
+            scroll_area(ScrollAxes::Vertical).id_salt(id)
                 .max_height(max_height.max(1.0))
                 .auto_shrink([false,true])
                 .show(host,contents).inner
@@ -1797,7 +1821,7 @@ impl ModalEditorWorkspace<'_> {
         let cursor_top=self.ui.cursor().top();
         self.ui.add_space((target_top-cursor_top).max(0.0));
         let result=self.ui.scope(|host|{
-            let scroll=egui::ScrollArea::vertical()
+            let scroll=scroll_area(ScrollAxes::Vertical)
                 .id_salt("modal-editor-workspace-body")
                 .max_height(max_height)
                 .auto_shrink([false,true])
@@ -2741,7 +2765,7 @@ pub fn fixed_scroll_panel(
             content.set_clip_rect(scroll_rect.intersect(parent_clip));
             content.set_width(scroll_rect.width());
             content.spacing_mut().item_spacing.y=0.0;
-            egui::ScrollArea::vertical()
+            scroll_area(ScrollAxes::Vertical)
                 .id_salt("fixed-scroll-panel")
                 .max_height(scroll_rect.height().max(1.0))
                 .auto_shrink([false,false])
@@ -3562,7 +3586,7 @@ pub fn reception_recipient_fields(
                 input_budget - theme::RECIPIENT_PHONE_INPUT_WIDTH,
             );
         let phone_width = input_budget - mobile_width;
-        let (mobile_response, phone_response) = egui::ScrollArea::horizontal()
+        let (mobile_response, phone_response) = scroll_area(ScrollAxes::Horizontal)
             .id_salt("recipient-contact-row")
             .drag_to_scroll(false)
             .auto_shrink([false, true])
@@ -5080,7 +5104,7 @@ fn management_dropdown_inner(
             menu.spacing_mut().item_spacing.y=theme::SPACE_4;
             // Horizontal auto-shrink is mandatory: forcing a wide ScrollArea
             // caused 90pt 선불/착불 selectors to open ~600pt-wide menus.
-            let scroll=egui::ScrollArea::vertical()
+            let scroll=scroll_area(ScrollAxes::Vertical)
                 .max_height(theme::MANAGEMENT_DROPDOWN_MENU_MAX_HEIGHT)
                 .auto_shrink([true,true]);
             let scroll=if compact {scroll.max_width(width)}else{scroll};
@@ -5153,7 +5177,7 @@ pub fn management_searchable_dropdown(
             let visible=options.iter()
                 .filter(|choice|management_search_choice_matches(choice,&search))
                 .collect::<Vec<_>>();
-            egui::ScrollArea::vertical()
+            scroll_area(ScrollAxes::Vertical)
                 .id_salt("management-searchable-options")
                 .max_height(theme::MANAGEMENT_DROPDOWN_MENU_MAX_HEIGHT)
                 .auto_shrink([false,true])

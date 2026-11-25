@@ -563,7 +563,7 @@ impl SettingsView{
             self.show_basic(ui,editable,Arc::clone(&gateway));
         }else{
             ui.spacing_mut().scroll=theme::management_scroll_style();
-            egui::ScrollArea::vertical()
+            components::scroll_area(components::ScrollAxes::Vertical)
                 .id_salt(("settings-view",self.tab.label()))
                 .auto_shrink([false,false])
                 .show(ui,|scroll|{
@@ -744,7 +744,7 @@ impl SettingsView{
                         theme::SETTINGS_ACCOUNT_LIST_MAX_HEIGHT
                     );
                     form.spacing_mut().scroll=theme::management_scroll_style();
-                    let _account_viewport=egui::ScrollArea::vertical()
+                    let _account_viewport=components::scroll_area(components::ScrollAxes::Vertical)
                         .id_salt("settings-bank-account-list")
                         .max_height(list_height)
                         .auto_shrink([false,true])
@@ -1071,7 +1071,7 @@ impl SettingsView{
                         let results_height=components::modal_list_max_height(
                             ui,area.height(),area.height()*0.62,false
                         );
-                        egui::ScrollArea::vertical().id_salt("settings-audit-records-scroll")
+                        components::scroll_area(components::ScrollAxes::Vertical).id_salt("settings-audit-records-scroll")
                             .max_height(results_height)
                             .show(ui,|entries|{
                                 for row in matches{

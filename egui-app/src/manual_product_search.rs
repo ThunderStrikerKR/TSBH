@@ -205,7 +205,7 @@ impl ProductSearch{
                             |pane|{
                                 let results_rect=egui::Rect::from_min_size(
                                     pane.cursor().min,egui::vec2(pane.available_width(),results_height));
-                                egui::ScrollArea::vertical()
+                                components::scroll_area(components::ScrollAxes::Vertical)
                                     .id_salt("manual-product-search-results")
                                     .max_height(results_height)
                                     .show(pane,|ui|{

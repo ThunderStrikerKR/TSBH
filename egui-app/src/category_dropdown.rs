@@ -445,7 +445,7 @@ fn menu_body(
     let list_height=theme::CATEGORY_EXPLORER_LIST_MAX_HEIGHT
         .min((menu.ctx().screen_rect().height()-270.0).max(100.0));
     let mut next_path=None;
-    egui::ScrollArea::vertical()
+    components::scroll_area(components::ScrollAxes::Vertical)
         .id_salt(("category-explorer-list",state.path.clone(),state.search.clone()))
         .max_height(list_height)
         // Always reserve all six rows, even if the category list is empty.
@@ -478,7 +478,7 @@ fn menu_body(
                 ancestor_menu.label(typography::caption("생략된 상위 경로"));
                 let path=state.path.clone();
                 let mut next=None;
-                egui::ScrollArea::vertical()
+                components::scroll_area(components::ScrollAxes::Vertical)
                     .id_salt("category-explorer-ancestors")
                     .max_height(theme::CATEGORY_EXPLORER_ANCESTOR_MAX_HEIGHT)
                     .show(ancestor_menu,|rows|{

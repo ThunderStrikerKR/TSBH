@@ -295,17 +295,8 @@ impl ModelGroupManager {
                             left,"모델군","상품 수",104.0
                         );
                         let list_height=left.available_height().max(1.0);
-                        let scroll_track=components::management_table_scroll_track_rect(
-                            left,list_height
-                        );
-                        egui::ScrollArea::vertical()
+                        components::management_register_list_scroll_area(left,list_height)
                             .id_salt("family-list")
-                            .scroll_bar_rect(scroll_track)
-                            .scroll_bar_visibility(
-                                egui::containers::scroll_area::ScrollBarVisibility::VisibleWhenNeeded
-                            )
-                            .max_height(list_height)
-                            .auto_shrink([false,false])
                             .show(left,|list|{
                             list.set_min_width(header.table_width);
                             for (id,g) in &groups{
@@ -342,7 +333,7 @@ impl ModelGroupManager {
                             });
                             let divider=components::section_divider(right);
                             let extra_divider_height=(divider.height()-theme::SOFT_DIVIDER_WIDTH).max(0.0);
-                            egui::ScrollArea::vertical().id_salt("family-editor")
+                            components::scroll_area(components::ScrollAxes::Vertical).id_salt("family-editor")
                                 .auto_shrink([false,false])
                                 .max_height((height-theme::FAMILY_FOOTER_HEIGHT-extra_divider_height).max(
                                     theme::MANAGEMENT_TABLE_ROW_HEIGHT))

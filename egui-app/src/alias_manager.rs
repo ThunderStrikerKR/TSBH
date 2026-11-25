@@ -339,17 +339,8 @@ impl AliasManager {
             let scroll_height=components::management_single_list_scroll_height(
                 card,card_min_height,0.0
             );
-            let scroll_track=components::management_table_scroll_track_rect(
-                card,scroll_height
-            );
-            egui::ScrollArea::vertical()
+            components::management_register_list_scroll_area(card,scroll_height)
                 .id_salt("alias-registered-list")
-                .scroll_bar_rect(scroll_track)
-                .scroll_bar_visibility(
-                    egui::containers::scroll_area::ScrollBarVisibility::VisibleWhenNeeded
-                )
-                .max_height(scroll_height)
-                .auto_shrink([false,false])
                 .show(card,|list|{
                     list.set_min_width(header.table_width);
                     for item in rows(&catalog["aliases"]){
@@ -482,7 +473,7 @@ impl AliasManager {
                             let results_height=components::modal_list_max_height(
                                 modal,work_area.height(),theme::MANAGEMENT_MODAL_BODY_MAX_HEIGHT,false
                             );
-                            egui::ScrollArea::vertical()
+                            components::scroll_area(components::ScrollAxes::Vertical)
                                 .id_salt("alias-product-results")
                                 .max_height(results_height)
                                 .show(modal,|results|{

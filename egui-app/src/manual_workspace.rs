@@ -2158,7 +2158,7 @@ impl ManualWorkspace {
                                             // as the intake source pane.
                                             body.spacing_mut().item_spacing.y=0.0;
                                             theme::source_document_frame().show(body,|document|{
-                                                egui::ScrollArea::vertical()
+                                                components::scroll_area(components::ScrollAxes::Vertical)
                                                     .id_salt("manual-source-blocks")
                                                     .max_height((
                                                         components::docked_section_body_height(height)
@@ -2222,7 +2222,7 @@ impl ManualWorkspace {
                                         // The count control now lives in the fixed
                                         // toolbar; only the recipient/item cards scroll.
                                         let body_height=panel.available_height().max(1.0);
-                                        egui::ScrollArea::vertical()
+                                        components::scroll_area(components::ScrollAxes::Vertical)
                                             .id_salt("manual-reception-style-cards")
                                             .scroll_bar_visibility(
                                                 egui::containers::scroll_area::ScrollBarVisibility::VisibleWhenNeeded
@@ -2574,7 +2574,7 @@ impl ManualWorkspace {
                                 });
                         };
                         if manual_workspace_needs_horizontal_scroll(viewport_width,content_width){
-                            egui::ScrollArea::horizontal()
+                            components::scroll_area(components::ScrollAxes::Horizontal)
                                 .drag_to_scroll(false)
                                 .id_salt("manual-columns-horizontal-scroll")
                                 .max_height(content_height)

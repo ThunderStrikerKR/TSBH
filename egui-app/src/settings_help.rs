@@ -392,7 +392,7 @@ pub fn icon(heading:&mut Ui,title:&str){
                     theme::settings_help_surface_frame()
                         .show(popup,|panel|{
                             panel.set_width(width-theme::SPACE_24);
-                            egui::ScrollArea::vertical()
+                            crate::components::scroll_area(crate::components::ScrollAxes::Vertical)
                                 .max_height(viewport.height().min(500.0)*0.7)
                                 .show(panel,|details|{
                                     details.set_width(width-theme::SPACE_24);

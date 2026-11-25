@@ -530,7 +530,7 @@ pub fn show(ctx: &Context) {
                     |inner| {
                         inner.set_clip_rect(text_rect);
                         inner.set_width(text_rect.width());
-                        egui::ScrollArea::vertical()
+                        crate::components::scroll_area(crate::components::ScrollAxes::Vertical)
                             .id_salt("floating-notice-scroll")
                             .auto_shrink([false,false])
                             .max_height(text_rect.height())
