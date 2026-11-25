@@ -1,0 +1,5676 @@
+{
+  "baseline": "432ca957f7c924fe1f1ef3b5ffe14e2f6cc36ecc",
+  "source": {
+    "head": "838195c4e9dcc8e6f6c3d57094469cff70b737e7",
+    "workflowRun": 45534082787,
+    "jobId": 138936268346,
+    "subtestLines": 821,
+    "uniqueTitles": 808
+  },
+  "method": "Title-only heuristic triage, NOT body-level classification or proof of native coverage. All entries require review before final retirement/coverage judgment.",
+  "counts": {
+    "business_candidate": 393,
+    "unclassified": 351,
+    "legacy_ui_candidate": 34,
+    "migration_candidate": 25,
+    "developer_candidate": 5
+  },
+  "tests": [
+    {
+      "id": 1,
+      "title": "ORDER_SAMPLE_05 표제 품목 / Z-1 건반",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 2
+    },
+    {
+      "id": 2,
+      "title": "ORDER_SAMPLE_16 CONDUCTOR (1ea) / 안심번호",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 2
+    },
+    {
+      "id": 3,
+      "title": "ORDER_SAMPLE_17 배송지 2개 / 비표준 광역시 문자열",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 2
+    },
+    {
+      "id": 4,
+      "title": "address institution stays with the named recipient: 가상교회",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 2
+    },
+    {
+      "id": 5,
+      "title": "explicit standalone institution can still receive a delivery: 가상교회",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 2
+    },
+    {
+      "id": 6,
+      "title": "address institution stays with the named recipient: 가상학교",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 2
+    },
+    {
+      "id": 7,
+      "title": "explicit standalone institution can still receive a delivery: 가상학교",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 2
+    },
+    {
+      "id": 8,
+      "title": "address institution stays with the named recipient: 가상성당",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 2
+    },
+    {
+      "id": 9,
+      "title": "explicit standalone institution can still receive a delivery: 가상성당",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 2
+    },
+    {
+      "id": 10,
+      "title": "address institution stays with the named recipient: 가상병원",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 2
+    },
+    {
+      "id": 11,
+      "title": "explicit standalone institution can still receive a delivery: 가상병원",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 2
+    },
+    {
+      "id": 12,
+      "title": "address institution stays with the named recipient: 가상학원",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 2
+    },
+    {
+      "id": 13,
+      "title": "explicit standalone institution can still receive a delivery: 가상학원",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 2
+    },
+    {
+      "id": 14,
+      "title": "identical 300ms dock polls do not cause App or order panes to repaint",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 15,
+      "title": "App only rerenders HubWorkspace when order inputs or stable event proxies change",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 16,
+      "title": "ORDER_SAMPLE_01 3품목, 2전화번호, 예약 출고",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 17,
+      "title": "ORDER_SAMPLE_02 0504 안심번호 / BD-950",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 18,
+      "title": "ORDER_SAMPLE_03 270 2개 / 금액과 VAT 혼입",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 19,
+      "title": "ORDER_SAMPLE_04 250CC 크롬 / 운임 문의",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 20,
+      "title": "ORDER_SAMPLE_06 지휘용 악보 스탠드 / 수량 없음",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 21,
+      "title": "ORDER_SAMPLE_07 409 / 수취인 주소 연락처 한 줄",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 22,
+      "title": "ORDER_SAMPLE_08 BD 950 / 6개 / 문안 요청",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 23,
+      "title": "ORDER_SAMPLE_09 Boss101 / 송하인 별도",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 24,
+      "title": "ORDER_SAMPLE_10 중복 모델명 / 709 블랙",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 25,
+      "title": "ORDER_SAMPLE_11 BD-LP-WA A타입",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 26,
+      "title": "ORDER_SAMPLE_12 연락처 주소 다음 709 3개",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 27,
+      "title": "ORDER_SAMPLE_13 배송지 2개 / SSB 2개 705 1개",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 28,
+      "title": "ORDER_SAMPLE_14 BC-105 / 수량 단위 생략",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 29,
+      "title": "ORDER_SAMPLE_15 BD 609 Black <3대>",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 30,
+      "title": "ORDER_SAMPLE_18 709 민판 한개 / 수취인 한 줄",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 31,
+      "title": "arrows use explicit row/column coordinates",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 32,
+      "title": "Tab and Enter support forward/reverse order and price-column mode",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 33,
+      "title": "disabled and read-only cells are skipped",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 34,
+      "title": "IME composition blocks navigation keys",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 35,
+      "title": "React cell editors use the shared contract and retain manual quantity gating",
+      "category": "legacy_ui_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 36,
+      "title": "shared React key handler saves before moving and focuses the explicit target",
+      "category": "legacy_ui_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 37,
+      "title": "shared React key handler lets Tab exit at the grid boundary and traps arrow boundaries",
+      "category": "legacy_ui_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 38,
+      "title": "shared React key handler protects IME composition and delegates Escape cancellation",
+      "category": "legacy_ui_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 39,
+      "title": "each domain has an independent real Tauri Windows GUI entry",
+      "category": "legacy_ui_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 40,
+      "title": "domain runs never masquerade as full GUI or window restart checks",
+      "category": "legacy_ui_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 41,
+      "title": "all five independently owned domain modules parse as Node ESM without running Windows",
+      "category": "legacy_ui_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 42,
+      "title": "every pre-batch Rust/TypeScript parity command is retained",
+      "category": "migration_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 43,
+      "title": "single npm install per parity batch and no redundant Windows parser runner",
+      "category": "migration_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 44,
+      "title": "Windows-only harness changes avoid unrelated TS/Rust parity CI",
+      "category": "migration_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 45,
+      "title": "native window-only changes route to focused Windows test",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 46,
+      "title": "business code and mixed source changes require full suite",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 47,
+      "title": "missing source anchors fail closed",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 48,
+      "title": "test-only assertions avoid Windows build",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 49,
+      "title": "Win32 probe still gets real EXE restart",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 50,
+      "title": "unknown, structural and empty changes require full",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 51,
+      "title": "single factory CI probe routes to isolated real Windows factory scenario",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 52,
+      "title": "one domain-owned Windows probe change runs only that real GUI domain",
+      "category": "legacy_ui_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 53,
+      "title": "notification modal contains only dismissible urgent alerts, not factory history",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 54,
+      "title": "routine, historical and factory-watcher messages never create active alerts",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 55,
+      "title": "one-item dismissal is persisted separately from business data",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 56,
+      "title": "DEV CI tests actual native window state across three EXE launches",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 57,
+      "title": "disabled workflow and financial Rust projections never hash whole state",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 58,
+      "title": "opening an unregistered freight rule never counts generated metadata as an edit",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 59,
+      "title": "empty optional client fields and the legacy merged tags render the same form",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 60,
+      "title": "optional product display strings are not fake edits but real price changes are",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 61,
+      "title": "settings compare visible optional values without ignoring real user changes",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 62,
+      "title": "all panel ratios are used and drag actions persist through HubWorkspace settings",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 63,
+      "title": "drag changes adjacent panels only, retaining the 420px single-row workflow minimum",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 64,
+      "title": "other dragged splitters preserve non-adjacent widths",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 65,
+      "title": "external Kakao mode retains the hidden panel ratio after resizing",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 66,
+      "title": "single-line dealer name and fixed stage lights are enforced before allowing right-panel narrowing",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 67,
+      "title": "legacy equal workflow columns migrate to the compact 22 percent default",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 68,
+      "title": "1920px workspace spans all available width using raw fr weights, not fractions smaller than one",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 69,
+      "title": "both historic preset layouts normalize to 20:29:29:22 while custom sizes persist",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 70,
+      "title": "stable event callback reads the latest handler, never a stale order closure",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 71,
+      "title": "memoized reception and detail panes receive stable live handlers and exact preview",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 72,
+      "title": "workflow board and message pane only skip rendering for shallow-equal props",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 73,
+      "title": "approved unchecked legacy marker does not fail the old TS oracle",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 74,
+      "title": "checked, manual, newer and mismatched locality markers remain visible",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 75,
+      "title": "financial changes and pre-existing locality fields are never suppressed",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 76,
+      "title": "Rust-only read-only preview locality marker can be projected",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 77,
+      "title": "highlights complete bank, account number and holder as one span: 부가세 별도",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 78,
+      "title": "highlights complete bank, account number and holder as one span: 부가세 포함",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 79,
+      "title": "highlights complete bank, account number and holder as one span: 부가세 포함/별도",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 80,
+      "title": "custom account separators are included but polite sentence suffix is excluded",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 81,
+      "title": "reordered fields still make one highlight in a custom template",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 82,
+      "title": "missing account or total must not highlight earlier prices, shipping or phone numbers",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 83,
+      "title": "partial or mismatched account must not highlight unrelated or earlier values",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 84,
+      "title": "signature parses all three Rust-selected account fields without reselecting",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 85,
+      "title": "one-touch preview controls the orange emphasis only while the preview shipment exists",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 86,
+      "title": "only the explicitly requested, editable, order-value controls get orange emphasis",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 87,
+      "title": "freight-stage hover highlights only item, quantity, freight input, payment selector and selected origin",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 88,
+      "title": "stage-two preview emphasizes every shipment freight only inside its hovered group",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 89,
+      "title": "payment-copy stage highlights only two copy buttons, exact account, total and VAT in message section",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 90,
+      "title": "payment-confirmation stage highlights only payment text and hovered group total",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 91,
+      "title": "recipient, product, quantity, money, freight, selected origin and VAT use real controls",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 92,
+      "title": "total label reads 총 주문 without highlighting it; only amount and dynamic count are emphasized",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 93,
+      "title": "a saved legacy order must never passively adopt current master prices or freight",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 94,
+      "title": "a saved unconfirmed order and even an orphaned confirmed order are protected",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 95,
+      "title": "new uncommitted reception follows master changes until finalized",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 96,
+      "title": "native Rust pricing/shipping effects protect persisted records and explicit edits",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 97,
+      "title": "preview order is not treated as persisted when backing storage has no such order",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 98,
+      "title": "recipient reveal waits for current Rust line, order, workflow and delivery readiness",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 99,
+      "title": "one completed transition gates recipient, items, freight and financial footer",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 100,
+      "title": "workflow footer fades only its content while retaining panel structure",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 101,
+      "title": "shipping count stays aligned and VAT status has no brackets",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 102,
+      "title": "recipient reveal does not gate in-place edits on a fixed animation timer",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 103,
+      "title": "NAME11_P01 person() legitimate name ending 호",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 104,
+      "title": "NAME11_P01-B ordinary standalone name",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 105,
+      "title": "NAME11_P02 address components must remain in the address, with recipient name on a separate line",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 106,
+      "title": "NAME11_P03 five-syllable library at end of address is not name",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 107,
+      "title": "NAME11_P03-B short church at end of address stays there",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 108,
+      "title": "NAME11_E04 standalone six-character church is recipient",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 109,
+      "title": "NAME11_E04-B standalone four-character church is recipient",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 110,
+      "title": "NAME11_E05 four-character parenthesized name before address",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 111,
+      "title": "NAME11_E06 explicit recipient name ending 호 with inline contact",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 112,
+      "title": "NAME11_E06-B explicit institution name with inline contact",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 113,
+      "title": "NAME11_E07 two-part name with honorific",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 114,
+      "title": "NAME11_E08 personal name on product and quantity row",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 115,
+      "title": "NAME11_E09 name ending 호 with same-line phone",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 116,
+      "title": "NAME11_E09-B institution with same-line phone",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 117,
+      "title": "NAME11_E10 name after phone on mixed line",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 118,
+      "title": "NAME11_E10-B name before phone with trailing memo",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 119,
+      "title": "NAME11_D11 legacy parser bare name ending 호",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 120,
+      "title": "NAME11_D11-B legacy parser explicit institution name",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 121,
+      "title": "NAME11_P03-C two destinations: personal names and institution endings must not split or merge",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 122,
+      "title": "NAME11_E04-C independent institution recipient and person recipient remain two deliveries",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 123,
+      "title": "labelled postal marker is not the address: [63644]",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 124,
+      "title": "labelled postal marker is not the address: (63644)",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 125,
+      "title": "labelled postal marker is not the address: 63644",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 126,
+      "title": "labelled postal marker is not the address: [663644]",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 127,
+      "title": "postal marker alone must not become a confirmed street address",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 128,
+      "title": "reception and details share display product sorting only by immutable catalog identity",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 129,
+      "title": "region dataset has provenance and never blindly converts road names to a whole city",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 130,
+      "title": "Jeju is all-region, but Gunsan is NOT all-region",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 131,
+      "title": "exception villages override generic remote districts",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 132,
+      "title": "address labels from an unrelated district never trigger an island decision",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 133,
+      "title": "Rust operation remains pure, read-only and based on this versioned dataset",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 134,
+      "title": "staff checkbox is the only source of 1x/2x and staff choice survives Rust resolution",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 135,
+      "title": "no charge is pre-doubled or saved as a permanently multiplied tariff",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 136,
+      "title": "all native invoice paths and actual-delivery verification use checked multiplier",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 137,
+      "title": "UI automatically checks Rust-detected area but preserves manual checkbox corrections",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 138,
+      "title": "native egui remote-delivery preview retains review and one-time doubling",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 139,
+      "title": "already billed and dispatched orders do not retroactively acquire a charge",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 140,
+      "title": "StrictMode effect replay coalesces only first read-only status without bypassing failure guard",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 141,
+      "title": "all 358 active catalog names remain findable by registered name",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 142,
+      "title": "model boundaries prefer the longest actual model, not a substring",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 143,
+      "title": "registered independent SKU options are applied in their original positions",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 144,
+      "title": "stand top and color must select independent 708/709 registered SKU",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 145,
+      "title": "isolated color, dimension and pack-size words are not product identities",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 146,
+      "title": "existing data duplicates stay unresolved without modifying IDs",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 147,
+      "title": "whole-document reception resolves catalog model and option evidence",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 148,
+      "title": "Tauri account settings use isolated Rust patch command",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 149,
+      "title": "Client per-account preference is stored and affects outbound billing",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 150,
+      "title": "Required sender information is validated at UI and Rust save boundary",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 151,
+      "title": "history and settlement only reload when Rust-consumed business sections change",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 152,
+      "title": "factory reply status cannot be invalidated by an unrelated order change",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 153,
+      "title": "new client management tab exposes editable situation templates",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 154,
+      "title": "all 20 situations have defaults, example previews and permitted tokens",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 155,
+      "title": "financial variables and unknown variables are protected",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 156,
+      "title": "saved color notice stays declarative and is never a question",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 157,
+      "title": "editing templates does not modify sale prices or historical orders",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 158,
+      "title": "the live copy pipelines resolve templates for payment, request and color",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 159,
+      "title": "GitHub Windows jobs cache Rust compilation and reuse immutable OCR bundle",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 160,
+      "title": "retained OCR bundle fingerprint is checked by helper and explicit CI release",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 161,
+      "title": "Settings displays only executable version and build commit ID",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 162,
+      "title": "Vite embeds the checked-out commit at build time and does not invent an ID",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 163,
+      "title": "client workbook has a stable non-editable key and exports all business fields",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 164,
+      "title": "same-ID update and ID-less addition retain orders, prior prices and IDs",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 165,
+      "title": "omitting an existing client never deletes or deactivates it",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 166,
+      "title": "duplicate phone, unknown ID, and duplicate IDs block the workbook",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 167,
+      "title": "edited download from stale revision is rejected before commit",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 168,
+      "title": "archived clients and optional legacy undefined fields survive round trips",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 169,
+      "title": "blank cells retain existing values; explicit clear marker removes optional fields",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 170,
+      "title": "client Excel is native saved, previewed, backed up, and revision checked",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 171,
+      "title": "address updates remain available for historical shared-phone clients",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 172,
+      "title": "new clients sharing another client's mobile phone are flagged",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 173,
+      "title": "unchanged legacy clients missing newly-required contact fields do not block updates",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 174,
+      "title": "automatic dealer selection stores the Rust match evidence and title count",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 175,
+      "title": "staff review shows both evidence and conflict without a second notification popup",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 176,
+      "title": "stage-one signal hover highlights dealer identity alongside order review",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 177,
+      "title": "user-selected dealer is retained only as provenance, not a review item",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 178,
+      "title": "unmatched dealer generates one required action, not a second blue notice",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 179,
+      "title": "Rust candidate choices live in staff checks and use native dealer edits",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 180,
+      "title": "real XLSX binary roundtrip: unchanged full export means zero DB updates",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 181,
+      "title": "real XLSX: correct ID updates one client, blank ID creates one, missing row is not deleted",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 182,
+      "title": "real XLSX: corrupted existing ID and duplicated phone cannot be applied",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 183,
+      "title": "real XLSX: edited DB revision makes a downloaded workbook stale",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 184,
+      "title": "real XLSX: Excel formula cells are blocked and numeric phone fields rejected",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 185,
+      "title": "V2 workbook keeps 17 columns without a sender-name override",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 186,
+      "title": "freight label, amount and parenthesized freight terms appear in that order",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 187,
+      "title": "carrier collect is 착불, business credit remains 후불",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 188,
+      "title": "native state_save returns the committed snapshot including revision",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 189,
+      "title": "common commit and workflow selection use the authoritative write response",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 190,
+      "title": "direct price and settings updates apply the native response, not a reload",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 191,
+      "title": "bulk saves no longer re-read after the common commit",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 192,
+      "title": "native KakaoTalk width is measured once in the BANDO HUB shell",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 193,
+      "title": "shared modal placement and backdrop exclude the always-on-top KakaoTalk strip",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 194,
+      "title": "product administration dialogs preserve the shared reserved left edge",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 195,
+      "title": "brief modal contents do not inherit the old global 820px blank canvas",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 196,
+      "title": "product fields respond to remaining modal width, not global viewport width",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 197,
+      "title": "order item correction reuses Modal, fixed outer bounds and scrollable search",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 198,
+      "title": "centering stays inside the unoccluded viewport at representative resolutions",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 199,
+      "title": "quantity and amount columns preserve maximum room for product names",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 200,
+      "title": "freight controls spread out without width changes between factory and store",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 201,
+      "title": "message link checkbox is right aligned and VAT is inset",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 202,
+      "title": "error descriptions are not clickable and only their action buttons navigate",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 203,
+      "title": "confirmed order keeps its price, customer freight and payment terms after a new client tariff",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 204,
+      "title": "existing fee waiver remains zero when it is removed for new business",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 205,
+      "title": "unconfirmed new orders use new terms and shipping rates",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 206,
+      "title": "employee's explicit order freight edit still changes that order, without adopting the revised master rate",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 207,
+      "title": "CSS ownership audit includes every imported stylesheet in actual cascade order",
+      "category": "legacy_ui_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 208,
+      "title": "shared management table and empty-state layout have explicit style owners",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 209,
+      "title": "core layout tokens are not overridden from competing legacy files",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 210,
+      "title": "replaced legacy CSS declarations stay removed from their original owners",
+      "category": "legacy_ui_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 211,
+      "title": "Every one of the 360 sale units is its own product, never an internal option selection",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 212,
+      "title": "All original 360 price records, site references, and official IDs remain intact",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 213,
+      "title": "Naming covers perforation, color, wheels, bag and distinct family use",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 214,
+      "title": "No employee-facing automatic cleanup or SKU splitting entry point remains",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 215,
+      "title": "Order line names use the entire independently registered product name",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 216,
+      "title": "cascading category filter exposes a dropdown for every saved depth without a fixed 2-level cap",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 217,
+      "title": "parent categories match every descendant while a deeply selected leaf excludes siblings",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 218,
+      "title": "deleted or unknown selection cannot fabricate a category path and product-sync tab is gone",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 219,
+      "title": "TS and IS Desk specification labels reflect each independently sold length",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 220,
+      "title": "dark-green and wine duplicate listings are retired, not deleted, without losing price or history",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 221,
+      "title": "historical orders can still resolve retired independent IDs and unchanged prices",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 222,
+      "title": "unknown color does not generate a request to verify an option",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 223,
+      "title": "native backup and restore APIs keep pre-restore and validity checks",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 224,
+      "title": "developer workspace can only launch a second process with a separate SQLite root",
+      "category": "developer_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 225,
+      "title": "native commands reject test-only operations on normal database and isolate file exports",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 226,
+      "title": "shared domain helpers must not import or re-export the deprecated TS parser",
+      "category": "legacy_ui_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 227,
+      "title": "shared domain has no old TypeScript issue or message renderer dependencies",
+      "category": "legacy_ui_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 228,
+      "title": "clean draft closes without a prompt and busy draft never closes",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 229,
+      "title": "dirty draft requires deliberate discard; continuing preserves its contents",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 230,
+      "title": "both freight editors refuse a no-op before versioning or history writes",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 231,
+      "title": "both freight editors display Close and disable Save when unchanged",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 232,
+      "title": "price cells autosave on blur and navigate like a spreadsheet without action buttons",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 233,
+      "title": "category change and deletion preserve edits if user declines or save fails",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 234,
+      "title": "committed saves never become failed saves solely because UI refresh failed",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 235,
+      "title": "template and notice record changes ask before switching away from a dirty editor",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 236,
+      "title": "Escape cancels only the current native price draft before blur can commit",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 237,
+      "title": "model-group switching checks the saved editor baseline",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 238,
+      "title": "shared busy guard blocks navigation even when dirty flag clears mid-save",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 239,
+      "title": "the product confirmation wizard and retail settings navigation guard drafted choices",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 240,
+      "title": "native egui Escape cancels the topmost draft before closing the workspace",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 241,
+      "title": "managed editors label Close as Close; saved settings cannot be undone by a stale Cancel button",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 242,
+      "title": "one native Excel archive directory for all five business categories",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 243,
+      "title": "export history opens by ID via Rust, not from a frontend-provided path",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 244,
+      "title": "browser smoke exercises the export history Open command",
+      "category": "legacy_ui_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 245,
+      "title": "factory and store live modules are serializers only, not TypeScript business rule engines",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 246,
+      "title": "factory Excel opens the saved folder only after a committed export",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 247,
+      "title": "native open-folder action accepts only a verified existing export ID",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 248,
+      "title": "order management renders a single stage and no extra dispatch row",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 249,
+      "title": "factory Logen workbook exports exactly 16 expected columns with preserved freight code 010",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 250,
+      "title": "after Save As succeeds, mark queue EXPORTED and freeze audit without marking delivered",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 251,
+      "title": "duplicate IDs, legacy IDs, store rows and stale revision are blocked",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 252,
+      "title": "recipient, agency sender, tracking prerequisites, and ineligible item quantities are enforced",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 253,
+      "title": "020 is preserved as a text freight code while factory postal data remains optional",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 254,
+      "title": "Tauri native Save As wired; canceled dialog does not mark export in UI",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 255,
+      "title": "factory workbook requires explicit bag and wheel configurations on frozen item names",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 256,
+      "title": "factory workbook blocks a legacy multi-configuration item instead of selecting an option",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 257,
+      "title": "Order editor chooses a complete standalone product rather than a variant dropdown",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 258,
+      "title": "Factory export uses the frozen complete product name without a second color label",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 259,
+      "title": "frozen legacy confirmed orders resolve to a precise sale product without rewriting the factory Excel item",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 260,
+      "title": "an unresolved or forged legacy product map blocks factory export, never guesses by model",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 261,
+      "title": "legacy wheel configuration mapping does not invent a missing distinction in the frozen item",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 262,
+      "title": "factory export blocks opposite included/excluded packaging even when both mention the item",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 263,
+      "title": "confirmed frozen factory items must match tabletop construction and type, not just the source ID",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 264,
+      "title": "legacy mapped product refuses missing frozen color rather than inventing an attribute",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 265,
+      "title": "frozen factory queue blocks items with no confirmed product or price-record identity",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 266,
+      "title": "factory workbook prefixes every item including the first with a diamond and no inter-item slash",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 267,
+      "title": "automatic monitor reuses real XLSX matching and saves once",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 268,
+      "title": "automatic monitor accepts factory-modified header labels including Q1",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 269,
+      "title": "address mismatch is recorded as held without editing shipping data",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 270,
+      "title": "invalid workbook is rejected without any SQLite write or audit record",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 271,
+      "title": "automatic parser keeps conflicting values on hold for manual approval",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 272,
+      "title": "startup mounting and native wiring keep TEST and production apart",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 273,
+      "title": "real Logen XLSX Q waybill and G freight are parsed; approved data updates only factory shipment",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 274,
+      "title": "real Logen XLSX: address mismatch is held without mutating an unrelated shipment",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 275,
+      "title": "real Logen XLSX: every row sharing Q tracking number is held",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 276,
+      "title": "real Logen XLSX: changed tracking and actual freight require individual conflict approval",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 277,
+      "title": "a waybill already bound to a different shipment cannot be reused even by conflict approval",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 278,
+      "title": "old DB revisions, duplicate file identity and formula cells are rejected",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 279,
+      "title": "safe numeric tracking is accepted; precision-risk waybills hold only their row",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 280,
+      "title": "unrecognized 15-column export without the Q return column is rejected explicitly",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 281,
+      "title": "native archive and conflict UI are wired with backup and review, not legacy notReady",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 282,
+      "title": "different XLSX files with already-applied identical waybill and postage are idempotent",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 283,
+      "title": "factory reply headers are informational, including Q1 and extra header columns",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 284,
+      "title": "J notes or extra R columns no longer invalidate mapped A/C/D/E/G/Q",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 285,
+      "title": "factory watcher refreshes saved history and never generates routine global alerts",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 286,
+      "title": "global modal contains critical-only persisted alerts; ordinary factory replies remain history",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 287,
+      "title": "native validation holds only untrustworthy rows and still enforces safe matching",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 288,
+      "title": "freight input stays 84px regardless of dispatch origin or inquiry visibility",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 289,
+      "title": "factory-only inquiry remains a hidden layout placeholder for store dispatch",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 290,
+      "title": "factory/store dispatch buttons have compact spacing and padding",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 291,
+      "title": "native freight workspace keeps the current draft while quote projections refresh",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 292,
+      "title": "native freight editing retains local state and delegates remote calculations to Rust",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 293,
+      "title": "frozen parent and price IDs map to one correct independent sale unit",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 294,
+      "title": "current product references resolve directly without changing ID or price",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 295,
+      "title": "unknown and ambiguous identities never select by same code, name or color",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 296,
+      "title": "a direct product ID with an incorrect price ID cannot fall back to a mapping",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 297,
+      "title": "looking up historical references never mutates frozen orders or the catalogue",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 298,
+      "title": "historical references do not appear falsely discontinued in sale-status reviews",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 299,
+      "title": "T01: BD 709 quantity is extracted and resolved only to a valid product",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 300,
+      "title": "T02: wheel-included wording resolves to the included independent product",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 301,
+      "title": "T03: wheel-excluded wording resolves to the excluded independent product",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 302,
+      "title": "T04: bare shared model does not silently pick included or excluded wheels",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 303,
+      "title": "T05: A-type tabletop name resolves to A-type independent product",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 304,
+      "title": "T06: B-type tabletop name resolves to B-type independent product",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 305,
+      "title": "T07: explicit color resolves within multiple BD 700S color products",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 306,
+      "title": "T08: explicit choice of one valid product binds its sole price record",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 307,
+      "title": "T09: replacing an item with another independent product updates ID and price",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 308,
+      "title": "T10: unresolved source configuration cannot be manually linked to a price record",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 309,
+      "title": "T11: a product with zero or two price records is rejected by validation",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 310,
+      "title": "T12: special dealer price uses the sole price-record identifier",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 311,
+      "title": "T13: automatic parse honors the same unresolved-product guard as manual entry",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 312,
+      "title": "T14: ambiguous official-page options are refused before write",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 313,
+      "title": "T15: historical source IDs map without modifying a confirmed order",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 314,
+      "title": "T22: Cart-10 is recognized by its registered name, not Cafe24 code",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 315,
+      "title": "T23: Cart-20 remains a distinct registered product",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 316,
+      "title": "T24: bare cart name never randomly chooses a model",
+      "category": "legacy_ui_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 317,
+      "title": "T25: an unverified 709 민판 never silently selects the perforated 709",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 318,
+      "title": "T26: 민판 709 resolves to the separately registered 709-1 unperforated stand",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 319,
+      "title": "T27: -1 is NOT a perforation flag on non-score GT, SS and Desk stands",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 320,
+      "title": "T28: common hyphen/space variants and text-only model names resolve",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 321,
+      "title": "T29: Bando brand prefix inside a product line must not create a recipient",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 322,
+      "title": "product and freight item rows share compact cell and control dimensions",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 323,
+      "title": "dense table styles are loaded after generic and product styles",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 324,
+      "title": "all explicit Kakao commands are registered in Tauri and the TypeScript bridge",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 325,
+      "title": "native Kakao process authentication, safe original placement and no injection",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 326,
+      "title": "there are precisely two viewing modes and connection is not a view",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 327,
+      "title": "both modes use the original left KakaoTalk pane and never move BANDO HUB",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 328,
+      "title": "all regular KakaoTalk MAIN and CHAT windows are tracked and arranged in relative order",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 329,
+      "title": "failed layout switches are reversible and do not disconnect current KakaoTalk",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 330,
+      "title": "connecting to an invalid HWND does not drop the existing session",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 331,
+      "title": "the synthetic native Windows test covers both chat and main windows",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 332,
+      "title": "Tauri layout still synchronizes region on window movement and monitor scaling",
+      "category": "legacy_ui_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 333,
+      "title": "extend KakaoTalk MAIN footer off physical screen, preserve CHAT composer and reversible placement",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 334,
+      "title": "four Mighty Bright products have consistent BD LED-model-first business names",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 335,
+      "title": "Mighty Bright descriptions are not repeated and source titles remain available",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 336,
+      "title": "customer-facing order item uses new normalized LED title, not raw homepage title",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 337,
+      "title": "unmounted Electron-era workbook and registration API members are removed",
+      "category": "legacy_ui_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 338,
+      "title": "actively used product, dealer and freight workbook paths remain available",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 339,
+      "title": "removed unused settings surface stays absent; unsafe legacy catalog approval remains rejected natively",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 340,
+      "title": "live reception never selects the display/pricing dealer with TS rules",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 341,
+      "title": "shipment queue and actual freight field use a shared native projection",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 342,
+      "title": "all five management screens share nonstretching equal-width tabs",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 343,
+      "title": "freight layout places title then tabs then counters and work content",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 344,
+      "title": "factory and store export tabs show today's folder beside Excel creation, even without selection",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 345,
+      "title": "native opener validates fixed kinds and uses the same dated archive as saver",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 346,
+      "title": "headings, tabs, and searchable tools follow the shared business hierarchy",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 347,
+      "title": "product search belongs only to searchable subtab content",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 348,
+      "title": "all management pages reuse one title component and the same final CSS",
+      "category": "legacy_ui_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 349,
+      "title": "every searchable management screen uses the shared freight-style control",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 350,
+      "title": "client search and client table share a width and scroll owner",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 351,
+      "title": "Excel, product, and client searches belong to their content sections, not page-level chrome",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 352,
+      "title": "tabbed pages put tabs before their search tools",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 353,
+      "title": "Excel listing keeps its data fields inline and both table types receive suitable columns",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 354,
+      "title": "long names and item rows remain visible without reducing the reserved Kakao workspace",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 355,
+      "title": "date controls stay on the same toolbar row instead of changing page heading height",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 356,
+      "title": "manual recipient text is tracked as pending until its latest Rust reply settles",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 357,
+      "title": "a failed name/address/contact/note call cannot silently apply the older model",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 358,
+      "title": "pending native cell operations cannot race structural edits, reset, undo, or product selection",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 359,
+      "title": "manual classification splits shipping fields from products",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 360,
+      "title": "product actions retain behavior but use compact new layout",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 361,
+      "title": "source title, instructions and header dividers match agreed UX",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 362,
+      "title": "every shipment renders its own shipping labels before its delivery data",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 363,
+      "title": "compact fixed columns prioritise address and panel heading is a distinct band",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 364,
+      "title": "manual grid parses edited quantity using native Rust, never TS legacy parser",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 365,
+      "title": "manual draft quantity edits and steppers use Rust result fields, not JS calculations",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 366,
+      "title": "manual quantity Rust implementation has executable original TS differential cases",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 367,
+      "title": "manual identity/contact/note text editing is native-owned with TS parity",
+      "category": "migration_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 368,
+      "title": "optional product link toggle appears next to auto message heading",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 369,
+      "title": "payment preview and clipboard use the optional link flag, default off",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 370,
+      "title": "request drafts exclude optional links when edited and avoid duplicates",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 371,
+      "title": "both specification tables cover 18 physical models in 21 independent sale records",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 372,
+      "title": "all DESK and FLOOR titles/descriptions correspond to their exact cited specification",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 373,
+      "title": "IS-3 height does not overwrite its distinct official bar length",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 374,
+      "title": "JS dual colors remain separate with unchanged IDs and no invented configurations",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 375,
+      "title": "IS uses exact Bar length and JS uses exact gooseneck length in sellable product names",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 376,
+      "title": "dialog inventory covers every native modal owner and custom dialog",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 377,
+      "title": "new editor and decision dialogs inherit one modal token contract",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 378,
+      "title": "all modal title-size declarations are owned by the common modal stylesheet",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 379,
+      "title": "future native dialogs must use Modal or the confirmation/prompt helpers",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 380,
+      "title": "No model code based auto-family groups or prefilled color groups",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 381,
+      "title": "Same price JS-2 colors can form a user-registered representative group",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 382,
+      "title": "709 Black perforated-top is its own model; unlike Gray it costs 59,000",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 383,
+      "title": "Same-color perforated and nonperforated tops must not be mistaken for color variants",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 384,
+      "title": "Unspecified color JS-2 stays unresolved until staff chooses from error dialog",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 385,
+      "title": "Explicit color or unrelated products never receive default-color notification",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 386,
+      "title": "Copy messages notify only after employee action, without dealer choice request",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 387,
+      "title": "explicit Cart-10 and Cart-20 in registered NAMES work without legacy codes",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 388,
+      "title": "709 cannot match 709-1; Cart-10 cannot match Cart-100",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 389,
+      "title": "two distinct products with the exact same name remain ambiguous",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 390,
+      "title": "alias cannot impersonate a different registered product name",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 391,
+      "title": "code-free CSV produces one independent product per sale row",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 392,
+      "title": "obsolete CSV code column is ignored instead of becoming a product identity",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 393,
+      "title": "CI-only trace cannot bypass real native dispatcher or ship in regular release",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 394,
+      "title": "all active product and client management save paths are native without TS fallback",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 395,
+      "title": "reviewed workbook writes remain backed up before single SQLite save",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 396,
+      "title": "live catalog search, native model guidance and official link browsing have no TS business fallback",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 397,
+      "title": "active alias editor, SKU model group save and official HTML preview are native",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 398,
+      "title": "contact validity and inline explanations come exclusively from Rust",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 399,
+      "title": "during pending Rust contact/address assessment, React does not mark unknown fields invalid",
+      "category": "legacy_ui_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 400,
+      "title": "both Save As workflows finalize exported ledger in native Rust",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 401,
+      "title": "clipboard copy writes audit via Rust only after native clipboard succeeds",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 402,
+      "title": "Excel sender-settings guidance uses the Rust export authority",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 403,
+      "title": "sender guidance does not record a stale Rust answer as a current result",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 404,
+      "title": "native factory conflict IPC is wired through both review surfaces",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 405,
+      "title": "user sees before and after values with one-row confirmation",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 406,
+      "title": "Kakao title/client association is saved by native Rust with one SQLite commit",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 407,
+      "title": "clipboard paste combines active KakaoTalk HWND with Rust-only automatic dealer matching",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 408,
+      "title": "production routing and original TypeScript differential scenarios remain available",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 409,
+      "title": "manual grid and apply-button quantity approval are native Rust projections",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 410,
+      "title": "historical TS quantity source remains in original-oracle parity tests",
+      "category": "migration_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 411,
+      "title": "re-notification amount difference is produced in native Rust, not React",
+      "category": "legacy_ui_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 412,
+      "title": "runtime guard preserves missing and invalid earlier amounts as unknown",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 413,
+      "title": "factory delivery confirmation and re-export call Rust before SQLite save",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 414,
+      "title": "post-export correction register, copy and staff approval call Rust",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 415,
+      "title": "native correction bridge injects audit IDs and validates workflow before save",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 416,
+      "title": "direct-entry retail confirm goes through the native reducer and preserves error guard",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 417,
+      "title": "customer-approved product resolution uses native Rust, not TS fallback",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 418,
+      "title": "working raw correction remains explicitly blocked until its native egui editor is ported",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 419,
+      "title": "unconfirmed reception removal uses compiled Rust before atomic SQLite save",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 420,
+      "title": "factory correction clipboard and display use fresh Rust projection without TypeScript fallback",
+      "category": "migration_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 421,
+      "title": "Kakao title-to-client decisions are Rust-owned in both UI entrypoints",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 422,
+      "title": "order edit history is frozen natively at commit without delaying controlled inputs",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 423,
+      "title": "manual classification final approved order is produced by native Rust, never TS applyManual",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 424,
+      "title": "factory history owns native review and correction; critical alert modal never duplicates it",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 425,
+      "title": "freight managers read tariff rule and current status from native Rust",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 426,
+      "title": "OCR, pasted and cleared reception drafts use Rust, never the old TS reducer",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 427,
+      "title": "global badge counts unread critical alerts; pending factory reviews stay in history",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 428,
+      "title": "changing ANY relevant top-level billing, dealer or mode input invalidates stale Rust quote",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 429,
+      "title": "recipient VAT default, actual freight, manual shipping and each line edit invalidate quote",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 430,
+      "title": "persisted order, workflow, customer price and tariff changes invalidate quote",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 431,
+      "title": "unrelated typing and revision updates do not flash an already-settled native price",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 432,
+      "title": "React edits only UI fields; order payment/status/freight transitions belong to Rust",
+      "category": "legacy_ui_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 433,
+      "title": "selected dealer, waiver and pending freight at save are native results",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 434,
+      "title": "dealer change is one native mutation and cannot reapply stale React draft after save",
+      "category": "legacy_ui_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 435,
+      "title": "all changed business behavior has an actual original TS-vs-Rust differential gate",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 436,
+      "title": "unrelated native freight/total/metadata replies never re-request staff issues",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 437,
+      "title": "all actual Rust issue and approval inputs still refresh staff issues",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 438,
+      "title": "late order-issues results cannot override a newer Rust projection",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 439,
+      "title": "complete multi-line Korean address does not become a choice of fragments",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 440,
+      "title": "orphaned price workbook UI and obsolete native adapter are retired",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 441,
+      "title": "product TS-Rust parity: select independent SKU once",
+      "category": "migration_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 442,
+      "title": "product TS-Rust parity: save client-scoped alias",
+      "category": "migration_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 443,
+      "title": "product TS-Rust parity: save common-scoped alias",
+      "category": "migration_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 444,
+      "title": "product TS-Rust parity: hold new alias pending customer confirmation",
+      "category": "migration_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 445,
+      "title": "product TS-Rust parity: customer confirmation requested, without alias",
+      "category": "migration_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 446,
+      "title": "product TS-Rust parity: existing alternate item and quantity approval",
+      "category": "migration_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 447,
+      "title": "product TS-Rust parity: reject unregistered product",
+      "category": "migration_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 448,
+      "title": "product TS-Rust parity: reject unknown variant",
+      "category": "migration_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 449,
+      "title": "product TS-Rust parity: reject conflict with existing alias",
+      "category": "migration_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 450,
+      "title": "product TS-Rust parity: select representative model only with explicit group membership",
+      "category": "migration_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 451,
+      "title": "product TS-Rust parity: reject mismatched representative model",
+      "category": "migration_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 452,
+      "title": "product TS-Rust parity: confirm customer-approved product",
+      "category": "migration_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 453,
+      "title": "product TS-Rust parity: reject confirm without pending customer approval",
+      "category": "migration_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 454,
+      "title": "product TS-Rust parity: reject pending alias conflicting with registered product",
+      "category": "migration_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 455,
+      "title": "product TS-Rust parity: uppercase EA text trims alias like original regex",
+      "category": "migration_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 456,
+      "title": "product TS-Rust parity: NFKC fullwidth model normalized before alias conflict detection",
+      "category": "migration_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 457,
+      "title": "product search asks Rust for both eligible products and allowed detail-page links",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 458,
+      "title": "native enriched search retains the original Rust product filtering contract",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 459,
+      "title": "simultaneous equivalent native Rust reads share one actual IPC",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 460,
+      "title": "workflow reconciliation and order edit actions always execute natively",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 461,
+      "title": "rejecting native reads are not cached and can be retried",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 462,
+      "title": "quantity provisional approval eligibility is native, not re-evaluated in React",
+      "category": "legacy_ui_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 463,
+      "title": "every ordinary app commit filters reception drafts through native Rust before SQLite save",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 464,
+      "title": "native reducer has production Rust routing and executable original TS differential fixtures",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 465,
+      "title": "paste, OCR application and clearing the reception text all use native Rust with no TS parser fallback",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 466,
+      "title": "real direct-entry retail draft and preflight decisions are native-only",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 467,
+      "title": "legacy TypeScript rules remain available only as the parity oracle",
+      "category": "migration_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 468,
+      "title": "manual final application is Rust-owned and failure preserves draft",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 469,
+      "title": "historical billing snapshot uses first edit metadata and native saved original",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 470,
+      "title": "shipping manager reads editable tariff and current combination from Rust",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 471,
+      "title": "factory history reviews and correction copy are native; critical-only modal avoids stale TS status",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 472,
+      "title": "automatic message template validation is native before backup or SQLite patch",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 473,
+      "title": "selected catalog items in reception and correction come from Rust",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 474,
+      "title": "reception no longer runs dead TypeScript shared-color eligibility per render",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 475,
+      "title": "reception demo-product eligibility is Rust-owned before matching",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 476,
+      "title": "transferred or confirmed recipient repricing is Rust-owned",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 477,
+      "title": "employee Python is never used by OCR",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 478,
+      "title": "offline OCR demands local Korean PP-OCRv5 model directories",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 479,
+      "title": "build creates portable private Python runtime and fetches models",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 480,
+      "title": "release and CI never publish standalone EXE without OCR",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 481,
+      "title": "native OCR failures expose Windows exit codes and copyable details",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 482,
+      "title": "Paddle native OCR loads models through ASCII staging when installed under Korean folders",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 483,
+      "title": "blank source canvas groups clipboard, alternative input, and folder guidance without moving client card",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 484,
+      "title": "dedicated image inbox scans stable files and uses existing review dialog",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 485,
+      "title": "OCR result requires user review before replacing a provisional order",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 486,
+      "title": "Windows local PP-OCRv5 uses new clipboard images only",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 487,
+      "title": "OCR progress is shown prominently over the source body and never replaces button text",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 488,
+      "title": "Esc cancellation is silent, restores BANDO window and never starts PaddleOCR",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 489,
+      "title": "recognition starts after screenshot selection and its worker is cancellable",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 490,
+      "title": "bundled official catalog produces distinct usable detail links without claiming freshness",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 491,
+      "title": "duplicates, unrecognized IDs and unsafe URLs are excluded",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 492,
+      "title": "bridge and screen load cached snapshot but fetch live official detail separately",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 493,
+      "title": "Cafe24 P-codes stay technical IDs; BD 700 model is recovered from the title",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 494,
+      "title": "Bag and wheel include/exclude are always spelled out, never inferred",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 495,
+      "title": "Usage notes move to internal description; configuration content never does",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 496,
+      "title": "Price ranges cannot fall back to a misleading base meta price",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 497,
+      "title": "True selectable bag configurations remain review-only and expose both labels",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 498,
+      "title": "Dynamic unfilled select and multi-model titles are not silently approved",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 499,
+      "title": "A complete source product name may register without a separate model code",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 500,
+      "title": "Official product URL backend is restricted to HTTPS official hosts and product IDs",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 501,
+      "title": "Official page read is bounded by size and time",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 502,
+      "title": "Native HTML parser identifies model, options, price and duplicate sources",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 503,
+      "title": "Official import saves only after review, backup and revision validation",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 504,
+      "title": "Tauri preview replaces previous not-ready bridge and leaves non-product methods untouched",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 505,
+      "title": "recipient section keeps its own space before parsing, with internal scrolling",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 506,
+      "title": "dispatch selector follows add-product button with an explicit label",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 507,
+      "title": "order item correction reuses the shared Kakao-aware modal",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 508,
+      "title": "the approved fixed size, layout tokens and collapsed inline search are retained",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 509,
+      "title": "only four approved product fields and existing action buttons remain",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 510,
+      "title": "catalog names, prices, images, identity and existing quantity remain independent",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 511,
+      "title": "factory history alone uses native review and conflict projection",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 512,
+      "title": "product-freight display and reset do not compute current rule in TS",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 513,
+      "title": "catalog item construction in item editor and retail intake is native owned",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 514,
+      "title": "product-specific message notices are validated by Rust before settings patch and backup",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 515,
+      "title": "page guard offers three distinct leave decisions",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 516,
+      "title": "failed saves or active work prevent navigation and do not discard edits",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 517,
+      "title": "clean local editor close bypasses unrelated dirty page guards",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 518,
+      "title": "local dirty editor prompts only for its own edit and preserves cancel",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 519,
+      "title": "receipt autosave skips the three-choice dialog and does not discard on failure",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 520,
+      "title": "receipt editor waits for in-progress save, then navigates automatically",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 521,
+      "title": "notification schema uses dedicated SQLite table and never edits business snapshot",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 522,
+      "title": "native notification operations are typed and serialized across startup reload and watcher activity",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 523,
+      "title": "real Windows verification includes saved read-state, clear, and business revision preservation",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 524,
+      "title": "price cells autosave on blur and expose no per-cell Save/Cancel controls",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 525,
+      "title": "automatic cell commits use expected-value native writes serialized through one queue",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 526,
+      "title": "price draft state distinguishes unsaved input from an in-flight write and guards navigation",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 527,
+      "title": "real XLSX: all 360 independent products and 360 price rows survive export and re-import unchanged",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 528,
+      "title": "real XLSX: modify one official-product retail price but keep option ID, other tiers and catalog IDs",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 529,
+      "title": "real XLSX: two colors create two independent products with one price each",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 530,
+      "title": "real XLSX: second price row for one product is rejected",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 531,
+      "title": "real XLSX: unlisted options remain, and unknown or repeated IDs block saving",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 532,
+      "title": "real XLSX: old DB version, formula and unknown original source fields are rejected",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 533,
+      "title": "real XLSX: archived product and option records remain untouched after full export",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 534,
+      "title": "safe approvals are backed up, revision-checked and wired to Tauri native Save As",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 535,
+      "title": "real XLSX: a new row with a duplicate business model is held, not registered",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 536,
+      "title": "real XLSX: an option without a matching parent key cannot be imported",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 537,
+      "title": "real XLSX: changing an existing product name preserves all original technical IDs",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 538,
+      "title": "Manual images are validated and compressed before entering the product state",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 539,
+      "title": "Image preprocessing cleans up temporary object URLs even on decoding failure",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 540,
+      "title": "Brands are validated for cross-brand aliases and evidence URLs before UI save",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 541,
+      "title": "Rust validates changed brands within the same SQLite save transaction",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 542,
+      "title": "Image and brand fixes keep existing SQLite schema and product references",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 543,
+      "title": "360 independent products retain original historical identity and price data",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 544,
+      "title": "92 exact mapped names have source-grounded change records; no unproven descriptions are fabricated",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 545,
+      "title": "factory diamond never leaks into product names, buyer messages, or store export",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 546,
+      "title": "all 360 curated product names are unbranded while official titles stay traceable",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 547,
+      "title": "real XLSX one new product, duplicate and invalid row are separated without changing prices",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 548,
+      "title": "stale revision and already-created product cannot be committed twice",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 549,
+      "title": "invalid XLSX formulas and unrecognized header block registration",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 550,
+      "title": "Registration UI is connected to the real preview and version-checked state save",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 551,
+      "title": "Workbook registration validates identity and does not overwrite prices",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 552,
+      "title": "Review blocks rows with invalid categories, ambiguous brands, formulas, duplicates",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 553,
+      "title": "Native registration download only accepts the blank template",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 554,
+      "title": "Old price workbook UI is merged into the complete product workbook",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 555,
+      "title": "Excel exports use a native Save As dialog with user-chosen folder and name",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 556,
+      "title": "Cancelling Save As is not an error or a false success notice",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 557,
+      "title": "Excel Save As does not overwrite an existing file or accept another extension",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 558,
+      "title": "product price workbook preserves hidden product and variant identity",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 559,
+      "title": "XLSX previews parse sheet format in TS and validate prices/history in Rust",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 560,
+      "title": "ExcelJS is loaded only for workbook actions, not application startup",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 561,
+      "title": "unused standalone price editor is absent from live ProductManager",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 562,
+      "title": "Tauri uses a controlled native XLSX write instead of opening arbitrary paths",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 563,
+      "title": "Category map is a full-width interactive tree with on-demand editor",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 564,
+      "title": "Category direct product transfer asks for consent only after add begins",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 565,
+      "title": "Product detail is neutral dark and registration button is not duplicated",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 566,
+      "title": "360 independent products export to 360 rows in one sheet with unchanged round-trip",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 567,
+      "title": "editing name and retail price in same row retains stable product and price identities",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 568,
+      "title": "new colors become separate independently priced product rows",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 569,
+      "title": "protected internal IDs, duplicate product rows and formulas reject approval",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 570,
+      "title": "legacy two-sheet upload is rejected rather than silently misinterpreted",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 571,
+      "title": "no preloaded product-specific provisional notices and manual management tab",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 572,
+      "title": "employees add or delete independent product notices with stable product IDs",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 573,
+      "title": "explicit 709 orders must NOT print product-specific notes",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 574,
+      "title": "manually resolving '보면대' as 709 prints note whether or not a link exists",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 575,
+      "title": "709 vs 709-1 are not mistaken for exact code matches",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 576,
+      "title": "copy message orders all finance lines, then provisional note, then links",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 577,
+      "title": "native settings-only patch saves notice map without touching sale products",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 578,
+      "title": "missing quantity issue offers an editor and a gated one-item provisional action",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 579,
+      "title": "one-item approval executes the production Rust issue reducer with actor and handles stale responses",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 580,
+      "title": "Rust and TypeScript require an actual provisional decision before clearing the quantity blocker",
+      "category": "migration_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 581,
+      "title": "ordinary order quantity never confirms a JavaScript-unsafe integer",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 582,
+      "title": "factory corrections cannot mark a null, fractional or unsafe quantity confirmed",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 583,
+      "title": "retail direct-entry quantities permit clearing a field but reject unsafe values",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 584,
+      "title": "quantity boundary values distinguish exact safe integers from rounded values",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 585,
+      "title": "native preview refresh keeps review layout, VAT control and order board stable",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 586,
+      "title": "native egui freight edits retain the local draft until a cell commit action",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 587,
+      "title": "two unconfirmed receipts are not discarded and are previewed independently",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 588,
+      "title": "each workflow receipt uses a separate compact card and a single-line payment summary",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 589,
+      "title": "freight-only edits reuse completed native product pricing",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 590,
+      "title": "explicit unassigned receipt selection is never replaced by the first shipment",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 591,
+      "title": "title selects one group and hover never changes the accordion layout",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 592,
+      "title": "navigation retains every unconfirmed reception without repetitive discard dialogs",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 593,
+      "title": "photograph-only unfinished orders are retained and counted as unsaved",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 594,
+      "title": "dealer-unassigned receptions share the normal workflow group list and order",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 595,
+      "title": "stage signal lights live beside the dealer name without widening the one-touch action row",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 596,
+      "title": "compact workflow cards retain two rows, consistent action geometry and unambiguous mixed VAT counts",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 597,
+      "title": "new draft and its temporary workflow rows are not persisted",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 598,
+      "title": "Rust archive uses transactional collision detection rather than ignore",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 599,
+      "title": "the audit screen distinguishes legacy references and shows the before/after diff",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 600,
+      "title": "Tauri has a single atomic persistence path for receipts and corrections",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 601,
+      "title": "paste uses selected native KakaoTalk conversation and Rust-only dealer authority",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 602,
+      "title": "receiver school and both destination phone numbers cannot trigger dealer auto-assignment",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 603,
+      "title": "rust preview refresh preserves both review cards and processing-order cards",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 604,
+      "title": "normal reception navigation waits for all SQLite work and never asks for save/discard",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 605,
+      "title": "product-line amounts come from the approved Rust preview, never duplicated in React",
+      "category": "legacy_ui_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 606,
+      "title": "separate Rust line quote is not gated by complete workflow reconciliation",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 607,
+      "title": "eliminate the unnecessary delayed-price loading overlay and React quote cache",
+      "category": "legacy_ui_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 608,
+      "title": "unrelated preview loading cannot fabricate missing VAT or hide available Rust order totals",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 609,
+      "title": "native order footer caches only a settled Rust result keyed to billing inputs",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 610,
+      "title": "source help icon overrides heading button padding and stays center-aligned",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 611,
+      "title": "no-recipient instructions use the same empty-state base class as other screens",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 612,
+      "title": "1080p narrow order panes keep the request-message label on one line without changing typography",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 613,
+      "title": "Tauri v0.0.4 versions agree",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 614,
+      "title": "existing v0.0.1 user profile and product prices stay at same location",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 615,
+      "title": "receipt archive is connected end-to-end",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 616,
+      "title": "raw correction is not inserted as an unrequested action in order review",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 617,
+      "title": "recipient form remains compact without collapsing its whole panel",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 618,
+      "title": "issue descriptions and informational messages are static; explicit buttons handle navigation",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 619,
+      "title": "709 and 709-1 form one model group even though both are Black",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 620,
+      "title": "all cable-holder sizes form one group even with no registered color",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 621,
+      "title": "red, black and glow-in-the-dark microphone wall holders are valid despite prices and missing color",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 622,
+      "title": "model groups reject unknown or duplicate members, outside representatives and overlaps",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 623,
+      "title": "old color groups persist without automatically becoming a chosen representative SKU",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 624,
+      "title": "representative-model notices are generated only from employee selection evidence",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 625,
+      "title": "model-group UI, employee resolver, Rust persistence and messages use product IDs",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 626,
+      "title": "model-group editor places group name, add search and members in order with a safe Save / Close flow",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 627,
+      "title": "employee applying a representative model records exact product identity and a declarative notice",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 628,
+      "title": "linked source hover activates at 200ms, clears at 250ms, without committing a shipment",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 629,
+      "title": "default request hover links missing-address/contact, item quantity, model and name to the actual field",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 630,
+      "title": "hovering multiple recipients with identical product labels never highlights the wrong person's row",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 631,
+      "title": "missing recipient name and a custom request text also target the editable input",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 632,
+      "title": "an ambiguous recipient identity is never guessed from a shared name or a generic field label",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 633,
+      "title": "actual message preview passes its phase to the hover mapper, and hover events set the linked field key",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 634,
+      "title": "real React request preview starts as hoverable linked text after async data, not a textarea",
+      "category": "legacy_ui_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 635,
+      "title": "classified source spans remain grey until exact-field selection, with separate recipient context",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 636,
+      "title": "a recognized empty shipping memo label remains a hover target without inventing content",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 637,
+      "title": "order desk links shipping memo without a duplicate header name or grey detail overlay",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 638,
+      "title": "source chips have no permanent border; selected fields use four-sided blue fill and stroke",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 639,
+      "title": "native item product expressions include 민판 and parenthesized color, but not quantity",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 640,
+      "title": "product visual extension must not capture independently linked recipient names",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 641,
+      "title": "neutral source highlights remain filled chips without grey detail-card overlays",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 642,
+      "title": "product and price buttons plus quantity input share the blue selection fill and outline",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 643,
+      "title": "quantity values align to the right without changing quantity stepper controls",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 644,
+      "title": "all test-only legacy TS imports and source reads point to existing files",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 645,
+      "title": "all 4 user-approved architecture and parity directives are checked in",
+      "category": "migration_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 646,
+      "title": "28 function groups are tracked with baseline provenance and separate verification evidence",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 647,
+      "title": "historical TS SHA cannot silently be promoted to latest approved behavior",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 648,
+      "title": "live React reception merges Rust recognition results only through compiled Rust",
+      "category": "legacy_ui_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 649,
+      "title": "manual source and quantity mutations are Rust-owned",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 650,
+      "title": "React order/workflow views do not import historical TypeScript state reducers",
+      "category": "legacy_ui_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 651,
+      "title": "product catalog retained and IDs unique",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 652,
+      "title": "empty fresh user data",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 653,
+      "title": "category hierarchy rooted by catalog",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 654,
+      "title": "no demo product in seed",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 655,
+      "title": "settings equality ignores Rust JSON object key order, not changed values",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 656,
+      "title": "adding and deleting accounts do not produce false conflicts after successful save",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 657,
+      "title": "same settings field changed differently by another actor still conflicts",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 658,
+      "title": "settings expose four tabs and accounts are part of basic settings",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 659,
+      "title": "unsaved settings offer save, discard and cancel on tab change",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 660,
+      "title": "settings render only the active category and retain guarded operations",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 661,
+      "title": "screen-only date and money formatters preserve legacy output",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 662,
+      "title": "Seoul calendar day is stable across UTC offsets, midnight and year boundary",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 663,
+      "title": "order history matches Korean date and excludes unconfirmed reception drafts",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 664,
+      "title": "order management status follows the four approved stages, with real export and reply evidence",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 665,
+      "title": "store-only exports never claim a factory response",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 666,
+      "title": "bill totals include VAT and customer shipping exactly once, never as additional cash",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 667,
+      "title": "payments use paidAt, not order date or recordedAt, including deposits for older orders",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 668,
+      "title": "postpaid billed amount is not considered bank-paid and outstanding is separate",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 669,
+      "title": "approved payment is separate from actual bank cash, and current receivable is capped",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 670,
+      "title": "factory actual freight is current recorded cost, never counted as customer charge or cash-out",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 671,
+      "title": "unknown prices remain unknown instead of silently turning into zero",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 672,
+      "title": "retail orders and legacy paid flags do not fabricate bank payments",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 673,
+      "title": "duplicate payment IDs and over-allocated cash are rejected rather than double-counted",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 674,
+      "title": "actual xlsx roundtrip retains separate dated order billing and account receipts",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 675,
+      "title": "deferred history XLSX cannot silently replace a missing Rust payment verdict",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 676,
+      "title": "real XLSX history export uses current filtered rows and never changes state",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 677,
+      "title": "report screens keep live read-only views while Excel export buttons are deferred",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 678,
+      "title": "real domain workflow totals: mixed factory/store snapshots sum once and cash stays separate",
+      "category": "legacy_ui_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 679,
+      "title": "real domain workflow excludes canceled groups and unconfirmed orders from a day",
+      "category": "legacy_ui_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 680,
+      "title": "both panes reuse only the exact matching parent Rust preview",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 681,
+      "title": "passive price, freight, and prepare edits have exactly one active pane owner",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 682,
+      "title": "native shipping read refreshes only when referenced products or tariffs change",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 683,
+      "title": "product freight read ignores changes unrelated to product and freight tables",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 684,
+      "title": "no false all-clear while native issues have not finished",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 685,
+      "title": "freight editors add intervals on demand, without redundant fields",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 686,
+      "title": "the maximum bundle count is sufficient for packability checks",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 687,
+      "title": "Windows startup acquires the instance guard before Tauri and SQLite",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 688,
+      "title": "production and developer TEST have separate Windows instance identities",
+      "category": "developer_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 689,
+      "title": "single-instance integration does not require a new dependency or change app version",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 690,
+      "title": "The 303 historical site listings become 360 independent products with exact mappings",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 691,
+      "title": "Official price sync links each independent product by exact historical site option identity",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 692,
+      "title": "Official sync refuses changed option identifiers even when model and site match",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 693,
+      "title": "Official sync rejects stale approvals and never overwrites an employee price",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 694,
+      "title": "Duplicated website option identity holds all affected rows",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 695,
+      "title": "Old bulk approval cannot bypass review and backup",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 696,
+      "title": "No staff-facing SKU split or multi-option creation path remains",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 697,
+      "title": "Independent product editor does not show legacy multi-option UI",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 698,
+      "title": "empty reception hides reserved dealer/action rows instead of shrinking the guide",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 699,
+      "title": "empty intake instructions fit available space without an always-on scrollbar",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 700,
+      "title": "order staff list uses the Rust stage issues for unsaved and saved grouped orders",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 701,
+      "title": "cached Rust staff issue rows display steadily but cannot trigger stale actions",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 702,
+      "title": "automatic backups are checked once at startup, never by a midnight or 30-minute timer",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 703,
+      "title": "failed native DB opening keeps Tauri window alive and does not manage a partial database",
+      "category": "legacy_ui_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 704,
+      "title": "React shows native failure status, guards retry and loads saved state only after READY",
+      "category": "legacy_ui_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 705,
+      "title": "startup failure is never interpreted as permission to delete or overwrite DB",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 706,
+      "title": "Tauri can save a store Excel independently of factory and only after preview",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 707,
+      "title": "a printed store workbook stays pending until a separately confirmed shipment",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 708,
+      "title": "real XLSX: store queue produces 15 Logen columns without guessing parcel count or postage",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 709,
+      "title": "store export logs an immutable snapshot without marking shipment as sent",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 710,
+      "title": "store preview refuses factory origin, duplicate selection, incomplete addresses and mixed goods",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 711,
+      "title": "out-of-date or tampered selected snapshots are rejected before any state write",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 712,
+      "title": "TypeScript business retirement audit reads actual app source import graph",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 713,
+      "title": "native reception and issue validation never depend on legacy TS from app",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 714,
+      "title": "strict TS retirement audit follows the actual live dependency count",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 715,
+      "title": "product and unified Excel source only transport/serialize Rust-owned business data",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 716,
+      "title": "live registration workbook remains ExcelJS-only; business preview and apply are Rust-owned",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 717,
+      "title": "the authoritative cross-screen UI contract exists inside app source",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 718,
+      "title": "Kakao settings are three independent pane-local buttons, not a cycle",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 719,
+      "title": "major section frames, inner dividers, information blocks and colors share explicit roles",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 720,
+      "title": "BANDO HUB identity remains independent, balanced and without an extra stripe",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 721,
+      "title": "UI role validator checks live CSS tokens and must pass contract-only mode",
+      "category": "legacy_ui_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 722,
+      "title": "app developer contract points to the persistent design system",
+      "category": "developer_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 723,
+      "title": "unassigned evidence warning uses plain-language title instead of ownership jargon",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 724,
+      "title": "warning shows unassigned original text and whether each candidate is product or quantity",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 725,
+      "title": "existing warning condition and manual classification navigation remain unchanged",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 726,
+      "title": "unrelated workflow saves preserve another order's unsaved draft",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 727,
+      "title": "brand and alias changes guard item-to-item switching",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 728,
+      "title": "actual freight edits survive filtering and are guarded on navigation",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 729,
+      "title": "uncommitted color and freight group names never vanish or auto-create",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 730,
+      "title": "explicit managers retain three-choice dialogs, but reception navigation never opens one",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 731,
+      "title": "confirmed order edits are SQLite working copies, not confirmed ledger writes",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 732,
+      "title": "tab exit, record switch and application close flush edits without browser confirmation",
+      "category": "legacy_ui_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 733,
+      "title": "workflow confirmation and explicit save still use Rust business rules",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 734,
+      "title": "native window state plugin restores main window bounds and maximization",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 735,
+      "title": "developer TEST app never overwrites production placement",
+      "category": "developer_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 736,
+      "title": "window placement is independent of SQLite order data and KakaoTalk docking",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 737,
+      "title": "removed legacy release launchers stay absent",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 738,
+      "title": "daily developer launcher targets isolated Tauri/Vite TEST workspace without release bundling",
+      "category": "developer_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 739,
+      "title": "real Windows release is manual only and stages EXE with offline verified OCR ZIP",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 740,
+      "title": "Node installation skips only unchanged manifest, lockfile and version fingerprints",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 741,
+      "title": "manual release launcher directly builds and verifies portable ZIP without old CMD",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 742,
+      "title": "manual release partial promotion restores old ZIP, folder and OCR cache",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 743,
+      "title": "single archive root for output plus a separately configured monitored inbox",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 744,
+      "title": "workbooks only exposed in product, client, factory/store shipping screens",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 745,
+      "title": "hover on another group's one-touch button shows THAT order, not the first selected order",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 746,
+      "title": "hover retains the current recipient when hovering its own multi-recipient group",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 747,
+      "title": "one-touch hover leaves accordion heights unchanged while preview can show multiple shipments",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 748,
+      "title": "hover selects each actual source and detail and scrolls into stage content",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 749,
+      "title": "new order resets stale preview immediately and second click is idempotent",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 750,
+      "title": "new order always returns to a blank receipt when another temporary or saved receipt is visible",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 751,
+      "title": "redundant group heading and source button are gone, cards remain scrollable",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 752,
+      "title": "pending reception card keeps standard controls without obsolete draft badge",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 753,
+      "title": "payment and VAT stay beside each other to the left of right-fixed stage buttons",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 754,
+      "title": "one-touch preview enters and restores at 250ms without reflow or delayed click",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 755,
+      "title": "late SQLite working-copy recovery cannot steal focus from an explicit new receipt",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 756,
+      "title": "workflow summary uses one line for shipments, deposit and normalized tax status",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 757,
+      "title": "source text remains visually bounded before focus, without unnecessary notice",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 758,
+      "title": "input history suggestions are disabled for future modal input fields too",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 759,
+      "title": "shared beginner help shows purpose, usage steps and results above dialogs",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 760,
+      "title": "client editor separates identity, sender and trade terms with a persistent footer",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 761,
+      "title": "product and shipping managers prioritize operations and retain critical warnings",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 762,
+      "title": "confirmation dialogs stack without closing the editor first",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 763,
+      "title": "freight rows use independent compact columns, without obsolete subtitles",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 764,
+      "title": "source footer keeps the three controls visible without the removed notice",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 765,
+      "title": "recipient section keeps a fixed row when parsing finds no recipients",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 766,
+      "title": "reception retains one dealer-search entry and removes Kakao popup/picker duplicates",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 767,
+      "title": "UI source recognition does not misclassify backend-only files",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 768,
+      "title": "a changed UI source without a changed evidence manifest blocks the gate",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 769,
+      "title": "a changed manifest marked failed must not be reported as UI PASS",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 770,
+      "title": "a PASS label without screenshot, reviewer, checks and matching file hash is rejected",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 771,
+      "title": "approved audit with two screenshots and matching blobs passes the metadata gate",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 772,
+      "title": "fresh UI modifications require their own audit coverage",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 773,
+      "title": "non-UI changes do not create artificial visual approvals",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 774,
+      "title": "Rust-only test module edits do not require visual screenshot review",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 775,
+      "title": "mixed production and test changes remain subject to visual review",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 776,
+      "title": "a newly added cfg(test) module is recognized as test-only",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 777,
+      "title": "native Windows audit measures real React commit actualDuration and IPC-resolved state chronology",
+      "category": "legacy_ui_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 778,
+      "title": "hover renders the actual expanded card markup at the original card coordinates",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 779,
+      "title": "blue temporary display is separate from orange committed selection",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 780,
+      "title": "active workflow preview keeps its stage action blue until the preview ends",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 781,
+      "title": "shipment-list renderer only references its own inPreview argument",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 782,
+      "title": "hovering recipient rows temporarily switches source and details",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 783,
+      "title": "accordion preview preserves the exact card box and heading positions",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 784,
+      "title": "clicking a shipment preview selects it and expands its order card",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 785,
+      "title": "source and detail hover use the actual delayed controller",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 786,
+      "title": "concurrent typing saves the most recent full working copy, in order",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 787,
+      "title": "rejected SQLite write does not silently forget an unfinished receipt",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 788,
+      "title": "native SQLite working receipts never alter confirmed order ledger or history eligibility",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 789,
+      "title": "navigation waits for the second SQLite commit, not a settled previous enqueue",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 790,
+      "title": "SQLite failure rejects all coalesced waiters and retains latest input for retry",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 791,
+      "title": "shared fade begins after readiness and never crosses a content identity",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 792,
+      "title": "checking panel preserves heading, scroll surface and empty guidance",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 793,
+      "title": "copy message header links options buttons and status never fade",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 794,
+      "title": "a transient missing group never starts the auto-message fade-in",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 795,
+      "title": "transient group or raw changes do not repeatedly reset message link options",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 796,
+      "title": "raw-source heading, border and blank intake guidance never fade",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 797,
+      "title": "common content opacity does not affect surrounding panel geometry",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 798,
+      "title": "one workspace gate waits for source, message, checks and financial readiness",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 799,
+      "title": "all five content areas consume the SAME visible phase",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 800,
+      "title": "a new recipient does not reveal until checks and Rust financial previews have finished",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 801,
+      "title": "message readiness is for the current order, group, fingerprint and option only",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 802,
+      "title": "retail and empty orders do not deadlock waiting for a nonexistent auto-message",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 803,
+      "title": "one native calculation error does not leave every data panel permanently hidden",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 804,
+      "title": "no-action confirmation is a calculated result, not a permanent empty hint",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 805,
+      "title": "recipient form must not run an independent opacity animation before unified readiness",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 806,
+      "title": "the five permanent section frames, empty guidance and action buttons never fade",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 807,
+      "title": "actual Rust reception -> missing-field inquiry (halt at first failure)",
+      "category": "unclassified",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    },
+    {
+      "id": 808,
+      "title": "actual Rust freight edit -> bank-account copy preview (halt at first failure)",
+      "category": "business_candidate",
+      "disposition": "REVIEW_REQUIRED",
+      "occurrences": 1
+    }
+  ]
+}
