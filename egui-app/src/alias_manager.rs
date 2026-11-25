@@ -486,7 +486,7 @@ impl AliasManager {
                                                 .filter_map(Value::as_str).take(100)
                                                 .collect::<Vec<_>>();
                                             if ids.is_empty(){
-                                                results.label(typography::body("검색 결과가 없습니다."));
+                                                components::management_body_state_inline(results,"검색 결과가 없습니다.");
                                             }
                                             for id in ids{
                                                 if let Some(p)=product(catalog,id){
