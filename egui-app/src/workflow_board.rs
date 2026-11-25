@@ -22,10 +22,7 @@ pub struct ShipmentRow {
     /// shown by the React workflow freight editor.
     pub display_charges: HashMap<String,Option<i64>>,
     pub freight_editing_blocked: bool,
-    pub freight_code: String,
-    pub freight: Option<i64>,
     pub collect: bool,
-    pub vat_included: Option<bool>,
     pub shipment_count: usize,
     pub order_total: Option<i64>,
 }
@@ -350,10 +347,7 @@ fn project_state(gateway:&dyn BandoGateway,state:&Value,scope:Option<&HashSet<St
                     .unwrap_or_default(),
                 freight_editing_blocked:field(native_ship,"freightEditingBlocked")
                     .as_bool().unwrap_or(false),
-                freight_code:text(native_ship,"freightCode").to_owned(),
-                freight:field(field(native_ship,"totals"),"shipping").as_i64(),
                 collect:text(native_ship,"freightCode")=="020",
-                vat_included: field(native_ship, "vatIncluded").as_bool(),
                 shipment_count: rows(all_shipments).iter().filter(|other|
                     text(other, "orderId") == order_id.as_str() &&
                     field(other, "legacyArchived") != &Value::Bool(true)
@@ -468,8 +462,7 @@ mod linked_recipient_selection_tests{
             transferred:false,recipient_name:"동명이인".into(),products:vec![],
             source_raw:"공통 발주원문".into(),recipient:json!({"id":recipient}),
             remote:None,display_charges:HashMap::new(),
-            freight_editing_blocked:false,freight_code:"010".into(),
-            freight:None,collect:false,vat_included:None,
+            freight_editing_blocked:false,collect:false,
             shipment_count:1,order_total:None,
         }
     }

@@ -10612,8 +10612,8 @@ mod reception_workflow_admission_integration_tests {
             id:"s1".into(),order_id:"draft-1".into(),recipient_id:"r1".into(),
             transferred:false,recipient_name:"synthetic".into(),products:vec![],
             source_raw:"원문".into(),recipient:serde_json::json!({}),remote:None,
-            display_charges:HashMap::new(),freight_editing_blocked:false,freight_code:"010".into(),
-            freight:None,collect:false,vat_included:None,shipment_count:1,order_total:None
+            display_charges:HashMap::new(),freight_editing_blocked:false,
+            collect:false,shipment_count:1,order_total:None
         };
         let board=workflow_board::BoardSnapshot{revision:Some(8),groups:vec![workflow_board::GroupRow{
             id:"group:draft-1".into(),created_at:String::new(),dealer_name:String::new(),

@@ -67,7 +67,7 @@ pub enum Event {
     SelectPendingRecipient(PendingTarget),
     SelectShipment(Selection),
     ToggleGroup(String),
-    TogglePending(String),
+    TogglePending,
     ManageGroup(String),
     DeleteGroup(String),
     AdvanceGroup(String),
@@ -890,7 +890,7 @@ fn pending_frame(
             *hovered_pending=Some(PendingTarget::order(&draft.id));
         }
         if header.title.clicked(){
-            event=Some(if selected{Event::TogglePending(draft.id.clone())}
+            event=Some(if selected{Event::TogglePending}
                 else{Event::SelectPending(draft.id.clone())});
         }
         // A corrected/manual working receipt is the active view. The first
@@ -1134,7 +1134,7 @@ pub fn show(
             &mut hovered_pending
         ){
             match value{
-                Event::TogglePending(_)=>{
+                Event::TogglePending=>{
                     state.folded=if open{Some(key)}else{None};
                 }
                 other=>event=Some(other),
