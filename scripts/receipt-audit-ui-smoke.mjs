@@ -6,6 +6,56 @@ import { chromium } from "playwright";
 import ExcelJS from "exceljs";
 import { auditCSS } from "./audit-css-ownership.mjs";
 
+// Browser-only native transport fixture. Keep the Rust shipment-read contract
+// explicit; actual Rust projection semantics are tested in workflow.rs.
+function installShipmentReadMock() {
+  window.__shipmentReadCalls = [];
+  window.__shipmentReadMock = (operation, payload) => {
+    const {state: input} = payload;
+    window.__shipmentReadCalls.push(operation);
+    const shipments = input.workflow?.shipments ?? [];
+    const findOrder = ship => input.orders.find(o => o.id === ship?.orderId);
+    if (operation === "read_shipments") {
+      if (payload.groupIds !== undefined && !Array.isArray(payload.groupIds))
+        throw Error("배송 조회 묶음 목록 오류");
+      return {shipments: shipments.flatMap(ship => {
+        if (payload.groupIds && !payload.groupIds.includes(ship.groupId)) return [];
+        const order = findOrder(ship);
+        const recipient = order?.recipients.find(row => row.id === ship.recipientId);
+        if (!recipient) return [];
+        const settings = input.settings;
+        const client = order.orderType === "RETAIL"
+          ? order.clientSnapshot ?? {
+              id:"",name:"반도스탠드",postcode:settings.senderPostcode ?? "",
+              address:settings.senderAddress ?? "",phone:settings.senderPhone ?? "",
+              mobile:settings.senderMobile ?? "",contact:"",tier:"retail",
+              payment:"POSTPAID",shippingFeeExcluded:false,active:true,identifiers:"",overrides:{},
+            }
+          : ((order.confirmedAt || order.pricesLocked) && order.clientSnapshot)
+            ? order.clientSnapshot
+            : input.clients.find(client => client.id === order.clientId) ?? order.clientSnapshot ?? null;
+        return [{shipmentId:ship.id,client:structuredClone(client),
+          actualFreight:Object.fromEntries(["FACTORY","STORE"].map(origin =>
+            [origin,Object.hasOwn(ship.actualFreight ?? {},origin)
+              ? ship.actualFreight[origin] : recipient.actualFreight ?? null]))}];
+      })};
+    }
+    if (operation === "review_export_sender") {
+      if (!Array.isArray(payload.ids)) throw Error("선택한 배송 건을 확인하세요.");
+      const nonempty = value => typeof value === "string" && value.trim() !== "";
+      return {companyMissing:payload.ids.some(id => {
+        const entry = input.workflow?.queue.find(q => q.id === id);
+        const order = findOrder(shipments.find(ship => ship.id === entry?.shipmentId));
+        if (!["DEALER","RETAIL"].includes(order?.orderType)) return false;
+        const sender = entry.snapshot?.sender ?? {};
+        return !(nonempty(sender.name) && nonempty(sender.address) &&
+          (nonempty(sender.phone) || nonempty(sender.mobile)));
+      })};
+    }
+    throw Error("Unexpected shipment-read mock operation: " + operation);
+  };
+}
+
 const root = new URL("../", import.meta.url);
 const state = JSON.parse(readFileSync(new URL("../src-tauri/resources/state-seed.json", import.meta.url), "utf8"));
 // Synthetic audit records only. Business data in the repository is not changed.
@@ -123,6 +173,7 @@ try {
   page.setDefaultTimeout(12000);
   const pageErrors = [];
   page.on("pageerror", (err) => pageErrors.push(err.message));
+  await page.addInitScript(installShipmentReadMock);
   await page.addInitScript(
     ({ state, archive, storePath }) => {
       let mode = "ORIGINAL";
@@ -197,6 +248,10 @@ try {
             });
             return undefined;
           }
+          if (command === "business_core_call" &&
+              ((args?.domain === "rules" && args.operation === "read_shipments") ||
+               (args?.domain === "output" && args.operation === "review_export_sender")))
+            return window.__shipmentReadMock(args.operation,args.payload);
           if (command === "state_load") return structuredClone(state);
           if (command === "business_core_call" &&
               args?.domain === "rules" &&
@@ -609,6 +664,9 @@ try {
   console.log("PASS: daily factory and store Excel folder buttons work without selected orders");
   const queuedRow = page.getByRole("row").filter({ hasText: "매장시험수취인" });
   await queuedRow.getByRole("checkbox", { name: "엑셀 선택 매장시험수취인" }).check();
+  assert.ok(await page.evaluate(() => window.__shipmentReadCalls.includes("read_shipments")),
+    "Excel queue must use the native shipment projection");
+  await page.waitForFunction(() => window.__shipmentReadCalls.includes("review_export_sender"));
   await page.getByRole("button", { name: "선택 1건 매장 Excel 작성" }).click();
   await page.getByRole("dialog", { name: "작업 확인" })
     .getByRole("button", { name: "확인", exact: true }).click();
@@ -880,6 +938,7 @@ try {
   navPage.setDefaultTimeout(8000);
   const navErrors = [];
   navPage.on("pageerror", (err) => navErrors.push(err.message));
+  await navPage.addInitScript(installShipmentReadMock);
   await navPage.addInitScript(({ initial }) => {
     let current = structuredClone(initial);
     const saveLog = [];
@@ -934,6 +993,10 @@ try {
         if (command === "startup_metrics")
           return { windowShownMs: null, databaseMs: 1, dataMs: null, readyMs: 1 };
         if (command === "workspace_mode") return false;
+        if (command === "business_core_call" &&
+            ((args?.domain === "rules" && args.operation === "read_shipments") ||
+             (args?.domain === "output" && args.operation === "review_export_sender")))
+          return window.__shipmentReadMock(args.operation,args.payload);
         if (command === "business_core_call" &&
             args?.domain === "catalog_clients" &&
             ["management_products","classified_products"].includes(args.operation)) {
@@ -1776,6 +1839,8 @@ try {
   await navPage.getByRole("button",{name:"매장 발송 대기"}).click();
   const excelRow=navPage.locator(".excel-table-scroll .excel-queue-table tbody tr").filter({hasText:"매장시험수취인"}).first();
   await excelRow.waitFor();
+  assert.ok(await navPage.evaluate(() => window.__shipmentReadCalls.includes("read_shipments")),
+    "Management navigation must use the native shipment projection");
   const excelLayout=await excelRow.evaluate((row)=>{
     const table=row.closest("table"),middle=row.querySelector("td:nth-child(3)");
     const caption=middle?.querySelector("small"),details=row.querySelector("details:not([open])");
