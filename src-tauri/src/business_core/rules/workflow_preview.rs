@@ -343,3 +343,78 @@ mod tests {
         assert!(project(&json!({"state": state})).is_err());
     }
 }
+
+
+#[cfg(test)]
+mod workflow_performance_benchmark{
+    use super::*;
+    use std::time::Instant;
+
+    fn fixture(count:usize)->Value{
+        let mut orders=Vec::new();
+        let mut groups=Vec::new();
+        let mut ships=Vec::new();
+        for n in 0..count{
+            orders.push(json!({
+                "id":format!("o{n}"),"clientId":"c","orderType":"AGENCY",
+                "applyVat":true,"freightCode":"010","confirmedAt":"2026-11-25",
+                "recipients":[{"id":format!("r{n}"),"name":"합성 수취인",
+                    "address":"서울특별시 중구 세종대로 1","phone":"010-1234-5678",
+                    "items":[{"id":format!("i{n}"),"productId":"p","variantId":"v",
+                        "name":"합성 상품","quantity":2,"quantityConfirmed":true,
+                        "unitPrice":10000,"origin":"FACTORY"}]}]
+            }));
+            groups.push(json!({"id":format!("g{n}"),"dealerId":"c","needsNotice":false}));
+            ships.push(json!({"id":format!("s{n}"),"orderId":format!("o{n}"),
+                "recipientId":format!("r{n}"),"groupId":format!("g{n}"),
+                "step":1,"charges":{"FACTORY":3000},"transferred":false}));
+        }
+        json!({"orders":orders,"products":[{"id":"p","variants":[{"id":"v"}]}],
+            "clients":[{"id":"c","name":"합성 거래처","tier":"wholesale",
+                "payment":"POSTPAID","address":"서울특별시 중구 세종대로 1",
+                "phone":"02-1234-5678"}],
+            "settings":{"accounts":[{"id":"a","bank":"가상은행","number":"123",
+                "holder":"합성 계좌"}],"defaultAccountId":"a"},
+            "workflow":{"groups":groups,"shipments":ships,"events":[],
+                "payments":[],"confirmations":[],"queue":[]}})
+    }
+    fn median_ms(values:&mut [f64])->f64{
+        values.sort_by(f64::total_cmp);
+        values[values.len()/2]
+    }
+    #[test]
+    fn synthetic_full_vs_scoped_workflow_projection(){
+        for count in [1,10,30,100]{
+            let state=fixture(count);
+            // Construct both payloads outside the timer: this measures native
+            // projection only, not SQLite IO, JSON cloning or UI response.
+            let full_request=json!({"state":&state});
+            let scoped_request=json!({"state":&state,"groupIds":["g0"]});
+            let full=project(&full_request).unwrap();
+            let scoped=project(&scoped_request).unwrap();
+            assert_eq!(full["groups"].as_array().unwrap().len(),count);
+            assert_eq!(scoped["groups"],json!([full["groups"][0]]));
+            assert_eq!(scoped["groups"][0]["totals"]["total"],25300);
+            let mut full_ms=Vec::new();
+            let mut scoped_ms=Vec::new();
+            for n in 0..11{
+                let measure=|request:&Value| {
+                    let start=Instant::now();
+                    let value=project(std::hint::black_box(request)).unwrap();
+                    std::hint::black_box(value);
+                    start.elapsed().as_secs_f64()*1000.0
+                };
+                if n%2==0{
+                    full_ms.push(measure(&full_request));
+                    scoped_ms.push(measure(&scoped_request));
+                }else{
+                    scoped_ms.push(measure(&scoped_request));
+                    full_ms.push(measure(&full_request));
+                }
+            }
+            let full=median_ms(&mut full_ms);
+            let scoped=median_ms(&mut scoped_ms);
+            println!("[workflow-bench] groups={count} samples=11 full_median_ms={full:.3} scoped_median_ms={scoped:.3}");
+        }
+    }
+}

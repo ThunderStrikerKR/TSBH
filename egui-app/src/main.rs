@@ -8633,15 +8633,16 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                             .or(self.submitted_workflow_freight.as_ref())
                             .map(|editor|editor.group_id.as_str())
                     }else{None};
+                    let writable=self.gateway.workflow_write_enabled() &&
+                        self.workflow_mutation_ready() &&
+                        self.workflow_freight_editor.is_none() &&
+                        self.pending_draft_confirmation.is_none();
                     event=workflow_board_ui::show(
                         ui,self.workflow_snapshot.as_ref(),&self.drafts,
                         self.active_id.as_deref(),
                         &self.client_names,active_selected,
                         &mut self.workflow_ui,
-                        self.gateway.workflow_write_enabled() &&
-                            self.workflow_mutation_ready() &&
-                            self.workflow_freight_editor.is_none() &&
-                            self.pending_draft_confirmation.is_none(),
+                        writable,
                         freight_stage_group,
                         // Hover navigation must never switch the active receipt
                         // while a staff edit, dialog or pending write is open.

@@ -1,0 +1,55 @@
+name: Native workflow performance and regression
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/workflow-performance.yml
+      - src-tauri/src/business_core/**
+      - egui-app/src/main.rs
+      - egui-app/src/gateway.rs
+      - egui-app/src/reception_jobs.rs
+      - egui-app/src/workflow_board.rs
+      - egui-app/src/manual_workspace.rs
+      - crates/bando-data-access/**
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  native-projection:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: tests/rust-migration/output -> target
+      - name: Compare full and scoped projections with synthetic data (release)
+        run: cargo test --manifest-path tests/rust-migration/output/Cargo.toml --release --lib synthetic_full_vs_scoped_workflow_projection -- --nocapture
+      - name: Verify pricing and message caches and freight issues
+        run: |
+          cargo test --manifest-path tests/rust-migration/output/Cargo.toml --release --lib reception_edit_cache_tests -- --nocapture
+          cargo test --manifest-path tests/rust-migration/output/Cargo.toml --release --lib automatic_preview_cache_tests -- --nocapture
+          cargo test --manifest-path tests/rust-migration/output/Cargo.toml --release --lib freight_issue_tests -- --nocapture
+  native-egui:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: egui-app -> target
+      - name: Compile egui and verify admission and scope contracts
+        shell: pwsh
+        run: |
+          cargo test --manifest-path egui-app/Cargo.toml periodic_workflow_read_is_advisory_but_post_commit_refresh_is_mandatory -- --nocapture
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cargo test --manifest-path egui-app/Cargo.toml reception_jobs::tests -- --nocapture
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cargo test --manifest-path egui-app/Cargo.toml freight_refresh_includes_split_groups_and_rejects_stale_or_cross_order_scope -- --nocapture
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cargo test --manifest-path egui-app/Cargo.toml reception_edit_cache_tests -- --nocapture
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cargo test --manifest-path egui-app/Cargo.toml automatic_preview_cache_tests -- --nocapture
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

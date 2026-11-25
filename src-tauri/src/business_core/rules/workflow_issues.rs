@@ -337,7 +337,7 @@ mod freight_issue_tests {
 
     #[test]
     fn missing_prepaid_freight_is_a_structured_stage_two_issue(){
-        let state=json!({
+        let mut state=json!({
             "clients":[{
                 "id":"c","name":"가상 거래처","address":"서울 주소",
                 "phone":"02-1234-5678","payment":"PREPAID",
@@ -367,6 +367,18 @@ mod freight_issue_tests {
                 "payments":[],"confirmations":[],"events":[],"queue":[]
             }
         });
+        // An unresolved product prevents freight calculation. Preserve the
+        // existing root-cause-first issue policy, then verify the independent
+        // missing freight issue once the product and quantity are resolved.
+        let unresolved=workflow_issues(&state,"g").expect("workflow issues");
+        assert!(unresolved.iter().any(|issue|str_field(issue,"kind")=="MODEL"));
+        assert!(!unresolved.iter().any(|issue|str_field(issue,"kind")=="FREIGHT"));
+        state["products"]=json!([{"id":"p","variants":[{"id":"v"}]}]);
+        let item=&mut state["orders"][0]["recipients"][0]["items"][0];
+        item["productId"]=json!("p");
+        item["variantId"]=json!("v");
+        item["unitPrice"]=json!(10000);
+        item["quantityConfirmed"]=json!(true);
         let issues=workflow_issues(&state,"g").expect("workflow issues");
         let freight=issues.iter().find(|issue|str_field(issue,"kind")=="FREIGHT")
             .expect("missing prepaid freight must be visible");
@@ -374,5 +386,12 @@ mod freight_issue_tests {
         assert_eq!(str_field(freight,"detail"),"가상 수취인 / 배송 운임을 확인하세요");
         assert_eq!(field(freight,"blockingStage").as_i64(),Some(2));
         assert_eq!(str_field(freight,"severity"),"ACTION");
+        state["workflow"]["shipments"][0]["charges"]["FACTORY"]=json!(3000);
+        assert!(!workflow_issues(&state,"g").unwrap().iter()
+            .any(|issue|str_field(issue,"kind")=="FREIGHT"));
+        state["workflow"]["shipments"][0]["charges"]["FACTORY"]=Value::Null;
+        state["orders"][0]["recipients"][0]["freightCode"]=json!("020");
+        assert!(!workflow_issues(&state,"g").unwrap().iter()
+            .any(|issue|str_field(issue,"kind")=="FREIGHT"));
     }
 }
