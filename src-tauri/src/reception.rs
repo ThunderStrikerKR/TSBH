@@ -118,17 +118,27 @@ fn valid_new_order(order: &Value, next: &Value) -> Result<(), String> {
     Ok(())
 }
 
+// Shared identity precondition for both full validation and exact-equality
+// writes. Unchanged orders cannot create a new confirmation or correction.
+fn order_ids(state:&Value)->Result<HashSet<&str>,String>{
+    let mut seen=HashSet::new();
+    for order in list(state,"orders"){
+        let id=identifier(order,"주문")?;
+        if !seen.insert(id){return Err("주문 ID가 중복되었습니다.".into());}
+    }
+    Ok(seen)
+}
+
+pub(crate) fn validate_order_ids(state:&Value)->Result<(),String>{
+    order_ids(state).map(|_|())
+}
+
 /// Rejection here aborts the entire SQLite transaction, including index and audit updates.
 pub(crate) fn validate_reception(previous: &Value, next: &Value) -> Result<(), String> {
     let previous_orders: HashMap<&str, &Value> = list(previous, "orders").iter()
         .filter_map(|o| o["id"].as_str().map(|id| (id, o))).collect();
-    // Detect duplicate IDs before any other per-order validation. A malformed
-    // first row must not hide a duplicate ID in the same incoming snapshot.
-    let mut seen = HashSet::new();
-    for order in list(next, "orders") {
-        let id = identifier(order, "주문")?;
-        if !seen.insert(id) { return Err("주문 ID가 중복되었습니다.".into()); }
-    }
+    // Detect duplicate IDs before any other per-order validation.
+    let seen=order_ids(next)?;
     for order in list(next, "orders") {
         let id = identifier(order, "주문")?;
         if let Some(old) = previous_orders.get(id) {
@@ -187,9 +197,9 @@ pub(crate) fn new_archive_entries(previous: &Value, next: &Value) -> Result<Vec<
         .filter_map(|o| o["id"].as_str().map(|id| (id, o))).collect();
     let mut archive = Vec::new();
     let mut new_ids = HashSet::new();
-    let historical_ids: HashSet<&str> = list(previous, "orders").iter()
-        .flat_map(|o| list(o, "rawCorrections"))
-        .filter_map(|c| c["id"].as_str()).collect();
+    // A freight/quantity/status edit cannot add a correction ID by itself.
+    // Build the global history index only if an actual new correction needs it.
+    let mut historical_ids:Option<HashSet<&str>>=None;
     for order in list(next, "orders") {
         let id = identifier(order, "주문")?;
         if is_confirmed(order) && prev.get(id).is_none_or(|old| !is_confirmed(old)) {
@@ -200,7 +210,10 @@ pub(crate) fn new_archive_entries(previous: &Value, next: &Value) -> Result<Vec<
         if !is_confirmed(order) { continue; }
         for correction in list(order, "rawCorrections").iter().skip(previous_len) {
             let cid = identifier(correction, "정정")?;
-            if historical_ids.contains(cid) || !new_ids.insert(cid) {
+            let history=historical_ids.get_or_insert_with(||
+                list(previous,"orders").iter().flat_map(|o|list(o,"rawCorrections"))
+                    .filter_map(|c|c["id"].as_str()).collect());
+            if history.contains(cid) || !new_ids.insert(cid) {
                 return Err("접수 정정 ID가 다른 기록과 중복됩니다.".into());
             }
             archive.push((format!("correction:{cid}"), id.to_owned(), correction.clone()));
@@ -305,6 +318,28 @@ mod tests {
         }
         assert!(new_archive_entries(&before,&after).unwrap_err().contains("중복"));
     }
+    #[test]
+    fn scoped_order_identity_and_lazy_audit_preserve_global_rules(){
+        for orders in [
+            json!([{"id":"old","confirmedAt":"t","rawCorrections":[{"id":"historic"}]}]),
+            json!([{"id":"same"},{"id":"same"}]),
+            json!([{"raw":"missing id"}])
+        ]{
+            let mut state=base();
+            state["orders"]=orders;
+            assert_eq!(validate_order_ids(&state),validate_reception(&state,&state));
+        }
+        let mut before=base();
+        before["orders"]=json!([{"id":"a","confirmedAt":"t","rawCorrections":[{"id":"historic"}]},
+            {"id":"b","confirmedAt":"t","rawCorrections":[]}]);
+        let mut after=before.clone();
+        after["orders"][1]["rawCorrections"]=json!([{"id":"historic"}]);
+        assert!(new_archive_entries(&before,&after).unwrap_err().contains("중복"));
+        after["orders"][1]["rawCorrections"]=json!([]);
+        after["orders"][1]["freightCode"]=json!("020");
+        assert!(new_archive_entries(&before,&after).unwrap().is_empty());
+    }
+
     #[test]
     fn archive_new_correction_only() {
         let mut before=base();

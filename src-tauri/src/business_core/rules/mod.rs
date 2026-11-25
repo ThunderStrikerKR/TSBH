@@ -60,6 +60,12 @@ pub(crate) fn scope_manual_model_ids(
     reception_merge::scope_manual_model_ids(order_id,model)
 }
 
+/// Borrow the authoritative states directly instead of cloning both
+/// complete ledgers into an intermediate JSON command.
+pub(crate) fn validate_workflow_transition(state:&Value,before:&Value)->Result<(),String>{
+    validation::validate(state,Some(before))
+}
+
 pub fn execute(operation: &str, payload: Value) -> Result<Value, String> {
     match operation {
         "list_order_history" => history::list(

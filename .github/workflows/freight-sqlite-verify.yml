@@ -18,6 +18,12 @@ on:
       - src-tauri/src/business_core/rules/reconciliation.rs
       - src-tauri/src/relational_store.rs
       - src-tauri/src/lib.rs
+  pull_request:
+    branches: [main]
+    paths:
+      - .github/workflows/freight-sqlite-verify.yml
+      - crates/bando-data-access/**
+      - src-tauri/src/reception.rs
   workflow_dispatch:
 permissions:
   contents: read
@@ -34,12 +40,34 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: src-tauri -> target
+      - name: Verify borrowed envelope, scoped hydration and validation parity
+        run: |
+          cargo test --manifest-path crates/bando-data-access/Cargo.toml --lib snapshot_cost_tests -- --nocapture
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cargo test --manifest-path crates/bando-data-access/Cargo.toml --lib unchanged_client_validation_matches_full -- --nocapture
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cargo test --manifest-path crates/bando-data-access/Cargo.toml --lib scoped_order_identity_and_lazy_audit_preserve_global_rules -- --nocapture
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Verify immutable history index parity
+        run: cargo test --manifest-path crates/bando-data-access/Cargo.toml --lib immutable_history_index_matches_original_first_match_rule -- --nocapture
+      - name: Verify scoped working reception authority and confirmed ID guards
+        run: cargo test --manifest-path crates/bando-data-access/Cargo.toml --lib working_authority_scope_tests -- --nocapture
       - name: Verify scoped freight reconciliation and transactional snapshot reuse
         run: |
           cargo test --manifest-path src-tauri/Cargo.toml --lib scoped_freight_reconciliation_matches_full_for_target_and_preserves_other_order -- --nocapture
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           cargo test --manifest-path src-tauri/Cargo.toml --lib native_snapshot_update_reuses_authoritative_before_image_and_rolls_back -- --nocapture
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Verify scoped freight before-image and full-ledger parity
+        run: |
+          cargo test --manifest-path src-tauri/Cargo.toml --lib scoped_freight_before_read_matches_full_reducer_and_preserves_ledger -- --nocapture
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cargo test --manifest-path src-tauri/Cargo.toml --lib stable_freight_precommit_global_validation_rolls_back_unrelated_invalid_link -- --nocapture
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Verify explicit event-table migration, backup, append and rollback
+        run: cargo test --manifest-path src-tauri/Cargo.toml --lib relational_workflow_event_migration_and_append_preserve_audit -- --nocapture
+      - name: Verify shipment and group relational migration, freight, link and restore
+        run: cargo test --manifest-path src-tauri/Cargo.toml --lib relational_workflow_state_migration_and_delta_preserve_links -- --nocapture
       - name: Verify freight-only delta does not attempt unchanged core or index SQL
         run: cargo test --manifest-path src-tauri/Cargo.toml --lib freight_delta_skips_unchanged_sql_rows_and_legacy_indexes -- --nocapture
       - name: Verify native v2 freight save and price/history/revision protection

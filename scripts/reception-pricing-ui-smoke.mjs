@@ -1,3 +1,4 @@
+import { installNativeBusinessFixture } from "./native-business-fixture.mjs";
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { readFileSync } from "node:fs";
@@ -100,6 +101,7 @@ try {
   const consoleErrors=[];
   page.on("pageerror",error=>errors.push(error.message));
   page.on("console",msg=>{if(msg.type()==="error")consoleErrors.push(msg.text())});
+  await installNativeBusinessFixture(page);
   await page.addInitScript(({savedState,historyView})=>{
     let backend=structuredClone(savedState);
     let reads=0;
@@ -139,6 +141,7 @@ try {
         if(cmd==="dock_status_native")return {active:false,mode:"ORIGINAL",ratio:0.8};
         if(cmd==="product_image")return null;
         if(cmd==="state_save"){writes++;throw Error("Read-only historical order was unexpectedly saved")}
+        if(cmd==="business_core_call")return window.__nativeBusinessFixture(args);
         throw Error("Unexpected history UI IPC: "+cmd);
       },
     };

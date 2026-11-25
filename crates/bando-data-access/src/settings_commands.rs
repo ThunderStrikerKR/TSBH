@@ -74,12 +74,15 @@ pub fn patch_settings_v2(
         "SELECT version FROM core_schema WHERE key='business-core'",
         [],|row|row.get(0),
     ).map_err(|_|"운영 DB 스키마 버전 확인에 실패했습니다.".to_owned())?;
-    if version!=2{return Err("지원하지 않는 업무 DB 버전입니다.".into());}
-    let state=crate::read_v2_snapshot(conn)?;
+    if !crate::supported_relational_version(version){return Err("지원하지 않는 업무 DB 버전입니다.".into());}
     if changes.as_object().is_some_and(serde_json::Map::is_empty){
-        return Ok(state);
+        return crate::read_v2_snapshot(conn);
     }
-    let revision=state["revision"].as_u64().ok_or("운영 DB revision 오류")?;
-    let updated=apply_settings_changes(state,is_test,changes,expected)?;
-    crate::write_v2_snapshot(conn,updated,revision,true)
+    // Revision discovery needs only the envelope, not the historical
+    // order ledger. The writer reads the full authoritative before-image
+    // once inside its transaction and repeats the revision check there.
+    let revision=crate::read_envelope(conn)?["revision"].as_u64()
+        .ok_or("운영 DB revision 오류")?;
+    crate::update_v2_snapshot(conn,revision,true,|before|
+        apply_settings_changes(before.clone(),is_test,changes,expected))
 }

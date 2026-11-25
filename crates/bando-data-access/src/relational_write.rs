@@ -30,7 +30,7 @@ fn payload(value: &Value, child: Option<&str>) -> Result<String, String> {
     serde_json::to_string(&stripped).map_err(err)
 }
 
-fn sync_prune(tx: &Transaction<'_>, table: &str, retain: &HashSet<String>) -> Result<(), String> {
+fn sync_prune(tx: &Transaction<'_>, table: &str, retain: &HashSet<String>) -> Result<usize, String> {
     // Only called with fixed compile-time table names; no user SQL identifiers.
     let key = if table=="core_product_prices" { "product_id" } else { "id" };
     let select = format!("SELECT {key} FROM {table}");
@@ -39,14 +39,15 @@ fn sync_prune(tx: &Transaction<'_>, table: &str, retain: &HashSet<String>) -> Re
         .collect::<Result<Vec<_>, _>>().map_err(err)?;
     drop(read);
     let sql = format!("DELETE FROM {table} WHERE {key}=?1");
-    for id in old { if !retain.contains(&id) { tx.execute(&sql, [id]).map_err(err)?; } }
-    Ok(())
+    let mut direct=0;
+    for id in old { if !retain.contains(&id) { direct+=tx.execute(&sql, [id]).map_err(err)?; } }
+    Ok(direct)
 }
 
 /// Full sync remains the bootstrap/migration authority: there may not be
 /// an authoritative prior snapshot during schema initialization.
 pub fn store_v2_relational(tx: &Transaction<'_>, state: &Value) -> Result<(), String> {
-    store_relational(tx,state,None)
+    store_relational(tx,state,None,None).map(|_|())
 }
 
 /// Compare the transaction's hydrated before-image, not a UI-provided draft.
@@ -54,8 +55,36 @@ pub fn store_v2_relational(tx: &Transaction<'_>, state: &Value) -> Result<(), St
 /// nor prune scans. Structural changes use the proven full sync for that domain
 /// (preserves ownership, positions, uniqueness and child-before-parent deletes).
 pub(crate) fn store_v2_relational_delta(tx:&Transaction<'_>,before:&Value,state:&Value)
-    ->Result<(),String>{
-    store_relational(tx,state,Some(before))
+    ->Result<usize,String>{
+    store_relational(tx,state,Some(before),None)
+}
+// Only a stable one-order partition may use the real SQLite position.
+// No prune or write outside that partition is permitted by this entry.
+pub(crate) fn store_single_order_delta(tx:&Transaction<'_>,before:&Value,state:&Value,
+    position:i64)->Result<usize,String>{
+    if before["orders"].as_array().map(Vec::len)!=Some(1) ||
+        !stable_orders(&before["orders"],&state["orders"]) ||
+        before["products"]!=state["products"] || before["clients"]!=state["clients"]{
+        return Err("단일 주문 저장 범위 오류".into());
+    }
+    store_relational(tx,state,Some(before),Some(position))
+}
+// Match the full delta writer's global order, recipient and item ID
+// checks even when only one order was submitted to the SQL writer.
+pub(crate) fn validate_order_tree_ids(state:&Value)->Result<(),String>{
+    let mut orders=HashSet::new();
+    let mut recipients=HashSet::new();
+    let mut items=HashSet::new();
+    for order in source_list(state,"orders")?{
+        require_unique(&mut orders,required_id(order,"주문")?,"주문")?;
+        for recipient in source_list(order,"recipients")?{
+            require_unique(&mut recipients,required_id(recipient,"수취인")?,"수취인")?;
+            for item in source_list(recipient,"items")?{
+                require_unique(&mut items,required_id(item,"주문 품목")?,"주문 품목")?;
+            }
+        }
+    }
+    Ok(())
 }
 fn same_ids(old:&[Value],new:&[Value])->bool{
     old.len()==new.len() && old.iter().zip(new).all(|(a,b)|
@@ -68,7 +97,7 @@ fn stable_products(old:&Value,new:&Value)->bool{
             (Some(a),Some(b))=>same_ids(a,b),_=>false
         })
 }
-fn stable_orders(old:&Value,new:&Value)->bool{
+pub(crate) fn stable_orders(old:&Value,new:&Value)->bool{
     let (Some(old),Some(new))=(old.as_array(),new.as_array())else{return false};
     same_ids(old,new) && old.iter().zip(new).all(|(a,b)|
         match (a["recipients"].as_array(),b["recipients"].as_array()){
@@ -84,8 +113,9 @@ fn same_payload(old:&Value,new:&Value,child:&str)->bool{
     old.iter().filter(|(k,_)|k.as_str()!=child)
         .eq(new.iter().filter(|(k,_)|k.as_str()!=child))
 }
-fn store_relational(tx:&Transaction<'_>,state:&Value,before:Option<&Value>)->Result<(),String>{
+fn store_relational(tx:&Transaction<'_>,state:&Value,before:Option<&Value>,order_position:Option<i64>)->Result<usize,String>{
     crate::valid_state(state)?;
+    let mut direct=0;
     let products_changed=before.is_none_or(|old|old["products"]!=state["products"]);
     let clients_changed=before.is_none_or(|old|old["clients"]!=state["clients"]);
     let orders_changed=before.is_none_or(|old|old["orders"]!=state["orders"]);
@@ -115,7 +145,7 @@ fn store_relational(tx:&Transaction<'_>,state:&Value,before:Option<&Value>)->Res
             let name = p["name"].as_str().ok_or("상품명 누락")?;
             if stable_product.is_some_and(|old|
                 same_payload(&old["products"][i],p,"variants")){continue;}
-            statement.execute(params![id,i as i64,code,name,payload(p,Some("variants"))?]).map_err(err)?;
+            direct+=statement.execute(params![id,i as i64,code,name,payload(p,Some("variants"))?]).map_err(err)?;
         }
     }
     if products_changed {
@@ -140,7 +170,7 @@ fn store_relational(tx:&Transaction<'_>,state:&Value,before:Option<&Value>)->Res
             if stable_product.is_some_and(|old|old["products"][pi]["variants"][0]==*v){
                 continue;
             }
-            statement.execute(params![owner,id,v["color"].as_str().unwrap_or(""),
+            direct+=statement.execute(params![owner,id,v["color"].as_str().unwrap_or(""),
                 v["wholesale"].as_i64(),v["semi"].as_i64(),v["retail"].as_i64(),
                 payload(v,None)?]).map_err(err)?;
         }
@@ -156,7 +186,7 @@ fn store_relational(tx:&Transaction<'_>,state:&Value,before:Option<&Value>)->Res
             let id=required_id(c,"거래처")?;
             require_unique(&mut client_ids,id,"거래처")?;
             if stable_client.is_some_and(|old|old["clients"][i]==*c){continue;}
-            statement.execute(params![id,i as i64,c["name"].as_str().unwrap_or(""),
+            direct+=statement.execute(params![id,i as i64,c["name"].as_str().unwrap_or(""),
                 c["tier"].as_str().unwrap_or(""),c["address"].as_str().unwrap_or(""),payload(c,None)?]).map_err(err)?;
         }
     }
@@ -174,7 +204,7 @@ fn store_relational(tx:&Transaction<'_>,state:&Value,before:Option<&Value>)->Res
             require_unique(&mut order_ids,id,"주문")?;
             if stable_order.is_some_and(|old|
                 same_payload(&old["orders"][i],o,"recipients")){continue;}
-            statement.execute(params![id,i as i64,o["clientId"].as_str(),
+            direct+=statement.execute(params![id,order_position.unwrap_or(i as i64),o["clientId"].as_str(),
                 o["createdAt"].as_str(),o["confirmedAt"].as_str(),
                 o["status"].as_str(),payload(o,Some("recipients"))?]).map_err(err)?;
         }
@@ -196,7 +226,7 @@ fn store_relational(tx:&Transaction<'_>,state:&Value,before:Option<&Value>)->Res
                     same_payload(&old["orders"][oi]["recipients"][i],r,"items")){
                     continue;
                 }
-                statement.execute(params![id,owner,i as i64,r["name"].as_str().unwrap_or(""),
+                direct+=statement.execute(params![id,owner,i as i64,r["name"].as_str().unwrap_or(""),
                     payload(r,Some("items"))?]).map_err(err)?;
             }
         }
@@ -219,7 +249,7 @@ fn store_relational(tx:&Transaction<'_>,state:&Value,before:Option<&Value>)->Res
                     require_unique(&mut item_ids,id,"주문 품목")?;
                     if stable_order.is_some_and(|old|
                         old["orders"][oi]["recipients"][ri]["items"][i]==*item){continue;}
-                    statement.execute(params![id,owner,i as i64,
+                    direct+=statement.execute(params![id,owner,i as i64,
                         item["productId"].as_str(),item["variantId"].as_str(),
                         payload(item,None)?]).map_err(err)?;
                 }
@@ -228,17 +258,17 @@ fn store_relational(tx:&Transaction<'_>,state:&Value,before:Option<&Value>)->Res
     }
     // Remove children before parents so the FK check cannot observe orphans.
     if orders_changed && stable_order.is_none(){
-        sync_prune(tx,"core_items",&item_ids)?;
-        sync_prune(tx,"core_recipients",&recipient_ids)?;
-        sync_prune(tx,"core_orders",&order_ids)?;
+        direct+=sync_prune(tx,"core_items",&item_ids)?;
+        direct+=sync_prune(tx,"core_recipients",&recipient_ids)?;
+        direct+=sync_prune(tx,"core_orders",&order_ids)?;
     }
     if products_changed && stable_product.is_none(){
-        sync_prune(tx,"core_product_prices",&product_ids)?;
-        sync_prune(tx,"core_products",&product_ids)?;
+        direct+=sync_prune(tx,"core_product_prices",&product_ids)?;
+        direct+=sync_prune(tx,"core_products",&product_ids)?;
     }
     if clients_changed && stable_client.is_none(){
-        sync_prune(tx,"core_clients",&client_ids)?;
+        direct+=sync_prune(tx,"core_clients",&client_ids)?;
     }
-    Ok(())
+    Ok(direct)
 }
 

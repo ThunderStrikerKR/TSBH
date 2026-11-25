@@ -289,12 +289,12 @@ fn message_account_wire(state:&Value)->Result<Vec<Value>,String>{
 fn read_reception_metadata(conn:&rusqlite::Connection,known:Option<u64>)
     ->Result<(Option<u64>,Option<ReceptionMetadata>),String>{
     let revision:i64=conn.query_row(
-        "SELECT json_extract(payload,'$.revision') FROM app_state WHERE id=1 AND (SELECT version FROM core_schema WHERE key='business-core')=2",
+        "SELECT CASE (SELECT version FROM core_schema WHERE key='business-core') WHEN 3 THEN json_extract(payload,'$[0].revision') WHEN 2 THEN json_extract(payload,'$.revision') END FROM app_state WHERE id=1",
         [],|row|row.get(0)).map_err(|e|format!("업무 DB 리비전 확인 실패: {e}"))?;
     let revision=u64::try_from(revision).map_err(|_|"업무 DB 리비전 범위 오류")?;
     if known==Some(revision){return Ok((Some(revision),None));}
     let path:Option<String>=conn.query_row(
-        "SELECT json_extract(payload,'$.settings.orderImageInboxDirectory') FROM app_state WHERE id=1",
+        "SELECT CASE (SELECT version FROM core_schema WHERE key='business-core') WHEN 3 THEN json_extract(payload,'$[0].settings.orderImageInboxDirectory') WHEN 2 THEN json_extract(payload,'$.settings.orderImageInboxDirectory') END FROM app_state WHERE id=1",
         [],|row|row.get(0)).map_err(|e|e.to_string())?;
     let clients=bando_data_access::read_client_index_rows(conn)?;
     let inbox=Ok(path.map(|p|p.trim().to_owned()).filter(|p|!p.is_empty()));
@@ -585,7 +585,7 @@ impl BandoGateway for LocalGateway {
             "SELECT version FROM core_schema WHERE key='business-core'",
             [],|row|row.get(0),
         ).map_err(|_|"운영 DB 스키마를 확인할 수 없습니다.".to_owned())?;
-        if version!=2{return Err("지원하지 않는 운영 DB 버전입니다.".into());}
+        if !bando_data_access::supported_relational_version(version){return Err("지원하지 않는 운영 DB 버전입니다.".into());}
         let before=bando_data_access::read_v2_snapshot(&conn)?;
         let current=before["revision"].as_u64().ok_or("운영 DB 리비전 오류")?;
         if current!=revision{
@@ -659,8 +659,8 @@ impl BandoGateway for LocalGateway {
             }
             previous=now;
         };
-        let verified=bando_data_access::update_v2_snapshot(
-            &mut conn,expected_revision,true,|before|{
+        let scoped_freight=action=="set_shipment_freight" && args.get("draft").is_none();
+        let mutate=|before:&Value|->Result<Value,String>{
         checkpoint("read_snapshot");
         // An unconfirmed egui draft may enter the operational ledger ONLY
         // through the explicit first-stage approval. The full Order is a
@@ -861,15 +861,26 @@ impl BandoGateway for LocalGateway {
         checkpoint("apply_action");
         let changed=result.get("state")
             .ok_or("업무 처리 결과에 상태가 없습니다.")?.clone();
-        rules::execute("validate_workflow",serde_json::json!({
-            "state":&changed,"before":&before
-        }))?;
-        checkpoint("validate");
-        if &changed==before{
-            return Err("현재 상태에서 수행할 변경이 없습니다.".into());
+        if !scoped_freight{
+            rules::execute("validate_workflow",serde_json::json!({
+                "state":&changed,"before":&before
+            }))?;
+            checkpoint("validate");
+            if &changed==before{
+                return Err("현재 상태에서 수행할 변경이 없습니다.".into());
+            }
         }
         Ok(changed)
-        })?;
+        };
+        let verified=if scoped_freight{
+            let shipment_id=args["shipmentId"].as_str().ok_or("배송 건 ID 누락")?;
+            let group_id=args["groupId"].as_str().ok_or("주문 묶음 ID 누락")?;
+            bando_data_access::update_v2_freight_snapshot(
+                &mut conn,expected_revision,shipment_id,group_id,mutate)?
+        }else{
+            bando_data_access::update_v2_snapshot(
+                &mut conn,expected_revision,true,mutate)?
+        };
         // Same transactional before-image, validation, write, and persisted
         // projection verification. A concurrent update cannot be mistaken
         // for a failed commit after the employee's own write succeeded.

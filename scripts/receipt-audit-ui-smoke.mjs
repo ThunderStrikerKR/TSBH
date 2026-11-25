@@ -1,3 +1,4 @@
+import { installNativeBusinessFixture } from "./native-business-fixture.mjs";
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { readFileSync } from "node:fs";
@@ -174,6 +175,7 @@ try {
   page.setDefaultTimeout(12000);
   const pageErrors = [];
   page.on("pageerror", (err) => pageErrors.push(err.message));
+  await installNativeBusinessFixture(page);
   await page.addInitScript(installShipmentReadMock);
   await page.addInitScript(
     ({ state, archive, storePath }) => {
@@ -220,34 +222,16 @@ try {
                 variants: [{ url: "https://bandostand.com/product/detail.html?product_no=705" }] },
             ],
           };
-          if (command === "workspace_mode") return window.__forceTestWorkspace === true;
+          if (command === "workspace_mode") return false;
           if (command === "startup_status") return {
             phase: "READY", error: null, attempts: 1, databaseMs: 12,
-            readyMs: 18, isTest: window.__forceTestWorkspace === true,
+            readyMs: 18, isTest: false,
           };
           if (command === "startup_metrics") return {
             windowShownMs: null, databaseMs: 12, dataMs: null, readyMs: 18,
           };
           if (command === "retry_startup") {
             throw Error("Healthy mock databases must not be reopened during startup");
-          }
-          if (command === "test_database_preview") {
-            return window.__forceTestWorkspace
-              ? {enabled:true, revision:state.revision ?? 0, orders:0, clients:0,
-                  exports:0, shipments:0, payments:0, replies:0}
-              : {enabled:false};
-          }
-          if (command === "test_reception_boundary") {
-            return { accepted: false, reason: "주문 확인 완료 전에는 정식 주문으로 저장할 수 없습니다." };
-          }
-          if (command === "test_run_history") return window.__developerRuns ?? [];
-          if (command === "test_record_run") {
-            window.__developerRuns ??= [];
-            window.__developerRuns.unshift({
-              id: window.__developerRuns.length + 1, at:"2026-11-08T00:00:00+09:00",
-              scenario:args.report.scenario, passed:args.report.passed, report:args.report,
-            });
-            return undefined;
           }
           if (command === "business_core_call" &&
               ((args?.domain === "rules" && args.operation === "read_shipments") ||
@@ -383,7 +367,13 @@ try {
             return {valid:true};
           }
           if (command === "backup_create") {
-            const name = "C:\\BANDO_TEST\\developer-test\\backups\\manual-ui-" + (++testBackupSequence) + ".sqlite";
+            if (!window.__ciManualBackupScenario) {
+              window.__storeSafetyBackup = structuredClone(state);
+              window.__storeNativeSteps ??= [];
+              window.__storeNativeSteps.push("backup_create");
+              return "C:\\BANDO_CI_BACKUPS\\before-store-export.sqlite";
+            }
+            const name = "C:\\BANDO_CI_BACKUPS\\manual-ui-" + (++testBackupSequence) + ".sqlite";
             testBackups.set(name, { state: structuredClone(state), audit: structuredClone(auditRecords) });
             return name;
           }
@@ -397,13 +387,17 @@ try {
             state = structuredClone(entry.state);
             state.revision = Math.max(previousRevision, state.revision ?? 0) + 1;
             auditRecords = structuredClone(entry.audit);
-            const undo = "C:\\BANDO_TEST\\developer-test\\backups\\pre-restore-ui-" +
+            const undo = "C:\\BANDO_CI_BACKUPS\\pre-restore-ui-" +
               (++testBackupSequence) + ".sqlite";
             testBackups.set(undo, { state: undoState, audit: undoAudit });
             window.__testRestoreCount = (window.__testRestoreCount ?? 0) + 1;
             return undefined;
           }
           if (command === "save_store_workbook") {
+            if (!window.__storeSafetyBackup?.workflow.queue.some(q => q.id === "ci-store-queue" && q.status === "QUEUED"))
+              throw Error("STORE export requires a pre-export safety backup");
+            window.__storeNativeSteps ??= [];
+            window.__storeNativeSteps.push("save_store_workbook");
             if (!Array.isArray(args.bytes) || args.bytes.length <= 1000) throw Error("Invalid workbook bytes");
             window.__storeWorkbookSaved = args.bytes.slice(0, 4).join(",") === "80,75,3,4";
             return storePath;
@@ -484,6 +478,7 @@ try {
             { handle: "456", title: "테스트 대화", processId: 11, kind: "CHAT" },
           ];
           if (command === "dock_select_native") { mode = "OVERLAP"; return response(); }
+          if (command === "business_core_call") return window.__nativeBusinessFixture(args);
           throw Error("Unexpected native IPC in UI smoke test: " + command);
         },
       };
@@ -684,6 +679,11 @@ try {
     .getByRole("button", { name: "확인", exact: true }).click();
   await page.waitForFunction(() => window.__storeCommit?.status === "STORE_SENT");
   const storeSteps=await page.evaluate(() => window.__storeNativeSteps);
+  const backupIndex=storeSteps.indexOf("backup_create");
+  const workbookIndex=storeSteps.indexOf("save_store_workbook");
+  const finalizeIndex=storeSteps.indexOf("finalize_export");
+  assert.ok(backupIndex>=0 && workbookIndex>backupIndex && finalizeIndex>workbookIndex,
+    "STORE must back up before workbook creation and finalize only after file save: "+storeSteps);
   assert.ok(storeSteps.includes("prepare_store_export") &&
     storeSteps.includes("finalize_export") &&
     storeSteps.includes("mark_store_sent") &&
@@ -703,13 +703,10 @@ try {
   await page.getByRole("button", { name: "검증용 보면대 704" }).click();
   assert.equal(await page.locator('input[placeholder^="https://bandostand.com/product/"]').inputValue(),
     "https://bandostand.com/product/detail.html?product_no=704");
-  // The developer settings tab was deliberately removed (73413f34) and
-  // orphaned developer UI archived (ebc21eb3). Exercise the supported data
-  // management UI; independent diagnostic and drill-oracle Node tests retain
-  // the retired developer-screen business coverage.
-  await page.addInitScript(() => { window.__forceTestWorkspace = true; });
+  // Verify the supported data-management UI in the ordinary synthetic workspace.
+  // No retired developer mode, developer UI or real SQLite is involved.
   await page.reload();
-  await page.getByText("TEST / 격리 DB / 외부 발송 금지").waitFor();
+  await page.evaluate(() => { window.__ciManualBackupScenario = true; });
   await nav.getByRole("button", { name: "설정" }).click();
   const settingsTabs = page.getByRole("tablist", { name: "설정 분류" });
   await settingsTabs.getByRole("tab", { name: "기본 설정", exact: true }).waitFor();
@@ -754,6 +751,7 @@ try {
   const settingsErrors = [];
   settingsPage.on("pageerror", (err) => settingsErrors.push(err.message));
   const accountFixture = structuredClone(state);
+  accountFixture.settings.factoryReplyDirectory = "";
   accountFixture.settings.accounts = [
     { bank: "검증은행A", holder: "시험A", id: "ci-account-a", number: "000-0001" },
     { bank: "검증은행B", holder: "시험B", id: "ci-account-b", number: "000-0002" },
@@ -762,8 +760,12 @@ try {
     BANDOMALL: "ci-account-b",
     BANDOSTAND: "ci-account-a",
   };
+  await installNativeBusinessFixture(settingsPage);
   await settingsPage.addInitScript(({ initial }) => {
     let current = structuredClone(initial);
+    let working = [];
+    let notices = [];
+    window.__accountUnexpectedIpc=[];
     const normalized = (value) =>
       Array.isArray(value) ? value.map(normalized) :
       value && typeof value === "object"
@@ -780,14 +782,33 @@ try {
           return { windowShownMs: null, databaseMs: 1, dataMs: null, readyMs: 1 };
         if (command === "workspace_mode") return false;
         if (command === "state_load") return structuredClone(current);
+        if (command === "working_receptions_load") return structuredClone(working);
+        if (command === "working_receptions_replace") {
+          if (!Array.isArray(args.orders) || args.orders.some(o=>!o.id) ||
+              new Set(args.orders.map(o=>o.id)).size!==args.orders.length)
+            throw Error("Invalid working reception payload");
+          working=structuredClone(args.orders);
+          return;
+        }
         if (command === "hub_notifications_list") {
           window.__accountNotificationReads=(window.__accountNotificationReads??0)+1;
-          return [];
+          return structuredClone(notices);
+        }
+        if (command === "hub_notifications_add") {
+          const notice=structuredClone(args.notice);
+          if (!notice || notice.priority !== "critical") throw Error("Invalid critical notification");
+          notices=[notice,...notices].slice(0,100);
+          window.__accountCriticalNotices=structuredClone(notices);
+          return structuredClone(notices);
         }
         if (command === "business_core_call" && args?.domain === "rules" &&
             args.operation === "factory_reply_review_statuses") {
           window.__accountNativeReviewReads=(window.__accountNativeReviewReads??0)+1;
           throw Error("Factory reply history must not run in the background of account settings");
+        }
+        if (command === "factory_reply_watch_scan") {
+          window.__accountWatchScans=(window.__accountWatchScans??0)+1;
+          throw Error("Disabled factory directory must not be scanned");
         }
         if (command === "dock_status_native")
           return { active: false, ratio: 0.8 };
@@ -803,6 +824,8 @@ try {
           window.__accountSave = { changes: structuredClone(args.changes), saved: true };
           return structuredClone(current);
         }
+        if (command === "business_core_call") return window.__nativeBusinessFixture(args);
+        window.__accountUnexpectedIpc.push(command);
         throw Error("Unexpected account reproduction IPC: " + command);
       },
     };
@@ -826,8 +849,22 @@ try {
     "Account add save must not show an error: "+JSON.stringify(accountAddAlerts));
   assert.equal(await settingsPage.getByRole("button", { name: "설정 저장" }).isDisabled(), false);
   await settingsPage.waitForFunction(() => (window.__accountNotificationReads??0)>0);
-  assert.equal(await settingsPage.evaluate(() => window.__accountNativeReviewReads??0),0,
-    "Account settings must not query factory reply history for notifications");
+  assert.deepEqual(await settingsPage.evaluate(() => ({
+    reviewReads:window.__accountNativeReviewReads??0,
+    watchScans:window.__accountWatchScans??0,
+  })), {reviewReads:0,watchScans:0},
+    "Account editing must not query factory history or scan a disabled directory");
+  const notificationButton=settingsPage.locator("button.header-notifications-button");
+  await notificationButton.waitFor({state:"visible"});
+  const notificationState=await notificationButton.evaluate(button=>({
+    title:button.title,label:button.getAttribute("aria-label"),
+    unexpected:window.__accountUnexpectedIpc??[],
+    critical:window.__accountCriticalNotices??[],
+  }));
+  assert.equal(notificationState.title,"알림",
+    "Notification storage must load without a storage-error indicator: "+JSON.stringify(notificationState));
+  assert.equal(notificationState.label,"알림",
+    "Ordinary account editing must not generate critical alerts: "+JSON.stringify(notificationState));
   const addChanges = await settingsPage.evaluate(() => window.__accountSave.changes);
   assert.equal(addChanges.accounts.length, 3);
   console.log("PASS: adding a third account saves with no false conflict");
@@ -924,6 +961,7 @@ try {
   navPage.setDefaultTimeout(8000);
   const navErrors = [];
   navPage.on("pageerror", (err) => navErrors.push(err.message));
+  await installNativeBusinessFixture(navPage);
   await navPage.addInitScript(installShipmentReadMock);
   await navPage.addInitScript(({ initial }) => {
     let current = structuredClone(initial);
@@ -1411,6 +1449,7 @@ try {
         }
         if (command === "backup_create") return "C:\\BANDO_CI\\navigation-backup.sqlite";
         if (command === "product_image") return null;
+        if (command === "business_core_call") return window.__nativeBusinessFixture(args);
         throw Error("Unexpected navigation-test IPC: " + command);
       },
     };
@@ -2516,11 +2555,8 @@ try {
   // Do not submit business saves. Test every listed popup mode, including long
   // content, errors, busy state, and the unique manual-classification surface.
   await navPage.evaluate(()=>{
-    window.bando.isTestWorkspace=true;
     const original=window.__TAURI_INTERNALS__.invoke;
     window.__TAURI_INTERNALS__.invoke=(command,args)=>{
-      if(command==="test_run_history")return Promise.resolve([]);
-      if(command==="test_database_preview")return Promise.resolve({enabled:false});
       if(command==="receipt_archive"){
         window.__navModalArchiveReads=(window.__navModalArchiveReads??0)+1;
         return Promise.resolve([{id:"receipt:ci-modal-audit",orderId:"ci-modal-audit",
@@ -3338,7 +3374,7 @@ try {
   assert.deepEqual(navErrors,[],"Navigation React errors: "+navErrors.join("\n"));
   await navPage.close();
   assert.deepEqual(pageErrors, [], "React runtime errors: " + pageErrors.join("\n"));
-  console.log("PASS: audit UI, docking, STORE, official URL, isolated developer tests and real Modal (mock IPC)");
+  console.log("PASS: audit UI, docking, STORE, official URL, isolated current-component modal tests (mock IPC)");
 } finally {
   if (browser) await browser.close();
   server.kill("SIGTERM");

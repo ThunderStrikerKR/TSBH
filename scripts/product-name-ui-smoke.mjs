@@ -1,3 +1,4 @@
+import { installNativeBusinessFixture } from "./native-business-fixture.mjs";
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { readFileSync } from "node:fs";
@@ -37,6 +38,7 @@ try {
   page.setDefaultTimeout(14000);
   const errors = [];
   page.on("pageerror", e => errors.push(e.message));
+  await installNativeBusinessFixture(page);
   await page.addInitScript(({state}) => {
     window.__ciCalls = [];
     window.__TAURI_INTERNALS__ = { invoke: async (command, args) => {
@@ -71,7 +73,7 @@ try {
             return zero;
           }
           if(domain!=="catalog_clients" || operation!=="management_products")
-            throw Error("Unexpected business core operation: "+domain+"/"+operation);
+            return window.__nativeBusinessFixture(args);
           const {state:input,category="",brand="",query="",missing=false}=payload;
           const needle=String(query).trim().toLocaleLowerCase();
           return (input.products??[]).filter(p=>

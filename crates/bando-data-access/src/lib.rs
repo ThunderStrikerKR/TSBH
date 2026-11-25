@@ -10,12 +10,14 @@
 extern crate self as bando_data_access;
 
 use rusqlite::Connection;
-use serde_json::{json, Value};
+use serde_json::Value;
 use std::collections::HashMap;
 
 mod validation;
 mod relational_write;
 mod storage;
+pub mod workflow_events;
+pub mod workflow_state;
 mod client_commands;
 mod product_commands;
 mod settings_commands;
@@ -38,7 +40,7 @@ pub use validation::{
     validate_message_templates, validate_provisional_product_notices,
 };
 pub use relational_write::store_v2_relational;
-pub use storage::{write_v2_snapshot,update_v2_snapshot};
+pub use storage::{write_v2_snapshot,update_v2_snapshot,update_v2_freight_snapshot};
 pub use client_commands::mutate_client_v2;
 pub use product_commands::{patch_product_v2,patch_model_groups_v2,apply_product_price,
     preview_unified_product_workbook};
@@ -48,9 +50,14 @@ pub use reception_commands::commit_reception_v2;
 
 
 fn read_entities(conn: &Connection, sql: &str) -> Result<Vec<Value>, String> {
+    read_entities_with(conn,sql,[])
+}
+
+fn read_entities_with(conn:&Connection,sql:&str,params:impl rusqlite::Params)
+    ->Result<Vec<Value>,String>{
     let mut stmt = conn.prepare(sql)
         .map_err(|_| "운영 업무자료 조회를 준비하지 못했습니다.".to_owned())?;
-    let rows = stmt.query_map([], |row| row.get::<_, String>(0))
+    let rows = stmt.query_map(params, |row| row.get::<_, String>(0))
         .map_err(|_| "운영 업무자료 조회에 실패했습니다.".to_owned())?;
     rows.map(|row| {
         let raw = row.map_err(|_| "운영 업무자료 행을 읽지 못했습니다.".to_owned())?;
@@ -63,9 +70,14 @@ fn read_children(
     conn: &Connection,
     sql: &str,
 ) -> Result<HashMap<String, Vec<Value>>, String> {
+    read_children_with(conn,sql,[])
+}
+
+fn read_children_with(conn:&Connection,sql:&str,params:impl rusqlite::Params)
+    ->Result<HashMap<String,Vec<Value>>,String>{
     let mut stmt = conn.prepare(sql)
         .map_err(|_| "운영 하위자료 조회를 준비하지 못했습니다.".to_owned())?;
-    let rows = stmt.query_map([], |row| {
+    let rows = stmt.query_map(params, |row| {
         Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
     }).map_err(|_| "운영 하위자료 조회에 실패했습니다.".to_owned())?;
     let mut grouped: HashMap<String, Vec<Value>> = HashMap::new();
@@ -91,7 +103,7 @@ fn attach(
         let nested = children.remove(&id).unwrap_or_default();
         parent.as_object_mut()
             .ok_or("운영 자료 객체 형식이 잘못되었습니다.")?
-            .insert(key.to_owned(), json!(nested));
+            .insert(key.to_owned(), Value::Array(nested));
     }
     if !children.is_empty() {
         return Err("운영 업무자료에 소속되지 않은 하위 기록이 있습니다.".into());
@@ -134,17 +146,48 @@ pub fn read_client_index_rows(conn: &Connection) -> Result<Vec<Value>, String> {
     Ok(clients)
 }
 
+/// The v3 physical root is deliberately not an object: older v2 projectors
+/// cannot mistake a split ledger for an ordinary incomplete snapshot.
+pub fn supported_relational_version(version:i64)->bool{matches!(version,2|3)}
+
+pub(crate) fn decode_physical_envelope(conn:&Connection,raw:&str)->Result<Value,String>{
+    let version=recovery::schema_version(conn)?;
+    if version>3{return Err("이 프로그램보다 새로운 DB 구조입니다.".into());}
+    let split=workflow_events::active(conn)?;
+    if split!=(version==3){return Err("업무 이벤트 테이블과 DB 버전 불일치".into());}
+    let mut stored:Value=serde_json::from_str(raw)
+        .map_err(|_|"운영 업무 상태의 JSON 형식이 잘못되었습니다.".to_owned())?;
+    if version==3{
+        let items=stored.as_array_mut().ok_or("DB v3 저장 형식 불일치")?;
+        if items.len()!=1 || !items[0].is_object(){return Err("DB v3 저장 형식 불일치".into());}
+        return Ok(items.pop().expect("checked single element"));
+    }
+    Ok(stored)
+}
+
+pub(crate) fn encode_physical_envelope(conn:&Connection,state:&Value)->Result<String,String>{
+    if !state.is_object(){return Err("업무 상태는 객체여야 합니다.".into());}
+    let version=recovery::schema_version(conn)?;
+    match version{
+        0|1|2=>serde_json::to_string(state),
+        3=>serde_json::to_string(&[state]),
+        _=>return Err("지원하지 않는 DB 저장 형식입니다.".into()),
+    }.map_err(|e|e.to_string())
+}
+
 fn read_envelope(conn: &Connection) -> Result<Value, String> {
     let raw: String = conn.query_row(
         "SELECT payload FROM app_state WHERE id=1",
         [],
         |row| row.get(0),
     ).map_err(|_| "운영 업무 상태를 읽지 못했습니다.".to_owned())?;
-    serde_json::from_str(&raw)
-        .map_err(|_| "운영 업무 상태의 JSON 형식이 잘못되었습니다.".to_owned())
+    let mut state=decode_physical_envelope(conn,&raw)?;
+    workflow_events::hydrate(conn,&mut state)?;
+    workflow_state::hydrate(conn,&mut state)?;
+    Ok(state)
 }
 
-fn read_catalog_entities(conn: &Connection) -> Result<(Vec<Value>, Vec<Value>), String> {
+fn read_product_entities(conn:&Connection)->Result<Vec<Value>,String>{
     let mut products = read_entities(
         conn,
         "SELECT payload FROM core_products ORDER BY position,id",
@@ -154,8 +197,11 @@ fn read_catalog_entities(conn: &Connection) -> Result<(Vec<Value>, Vec<Value>), 
         "SELECT product_id,payload FROM core_product_prices ORDER BY product_id",
     )?;
     attach(&mut products, "variants", prices)?;
-    let clients = read_entities(conn, CORE_CLIENTS_SQL)?;
-    Ok((products, clients))
+    Ok(products)
+}
+
+fn read_catalog_entities(conn: &Connection) -> Result<(Vec<Value>, Vec<Value>), String> {
+    Ok((read_product_entities(conn)?,read_entities(conn, CORE_CLIENTS_SQL)?))
 }
 
 /// Read the complete v2 business snapshot through the same relational
@@ -176,39 +222,51 @@ pub fn read_v2_catalog_snapshot(conn: &Connection) -> Result<Value, String> {
     let (products, clients) = read_catalog_entities(conn)?;
     let root = state.as_object_mut()
         .ok_or("업무 상태는 객체여야 합니다.")?;
-    root.insert("products".into(), json!(products));
-    root.insert("clients".into(), json!(clients));
+    root.insert("products".into(), Value::Array(products));
+    root.insert("clients".into(), Value::Array(clients));
     // Never leak an older compatibility envelope's core orders to a catalog.
     root.remove("orders");
     Ok(state)
 }
 
-/// Hydrate only an already-verified schema-v2 snapshot.
-///
-/// The caller must hold a consistent read snapshot or a write transaction.
-/// Retains array ordering, nested variants/items/recipients and the legacy
-/// app_state envelope without recomputing or modifying any business values.
-pub fn hydrate_v2(conn: &Connection, state: &mut Value) -> Result<(), String> {
-    let (products, clients) = read_catalog_entities(conn)?;
-    let mut orders = read_entities(
-        conn,
-        "SELECT payload FROM core_orders ORDER BY position,id",
-    )?;
-    let mut recipients = read_entities(
-        conn,
-        "SELECT payload FROM core_recipients ORDER BY position,id",
-    )?;
-    let items = read_children(
-        conn,
-        "SELECT recipient_id,payload FROM core_items ORDER BY recipient_id,position,id",
-    )?;
-    attach(&mut recipients, "items", items)?;
+// Full, single-order and complementary projections share ownership checks.
+fn read_order_entities(conn:&Connection,only:Option<&str>)->Result<Vec<Value>,String>{
+    read_order_partition(conn,only,false)
+}
 
-    let mut stmt = conn.prepare(
-        "SELECT order_id,id FROM core_recipients ORDER BY order_id,position,id",
-    ).map_err(|_| "수취인 소속 조회 준비 실패".to_owned())?;
-    let owners = stmt.query_map([], |row| {
-        Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+fn read_order_partition(conn:&Connection,only:Option<&str>,exclude:bool)
+    ->Result<Vec<Value>,String>{
+    let (mut orders,mut recipients,items,owner_sql)=if exclude{
+        let id=only.ok_or("제외할 주문 ID 누락")?;
+        (
+            read_entities_with(conn,"SELECT payload FROM core_orders WHERE id<>?1 ORDER BY position,id",[id])?,
+            read_entities_with(conn,"SELECT payload FROM core_recipients WHERE order_id<>?1 ORDER BY position,id",[id])?,
+            read_children_with(conn,"SELECT recipient_id,payload FROM core_items
+                WHERE recipient_id NOT IN (SELECT id FROM core_recipients WHERE order_id=?1)
+                ORDER BY recipient_id,position,id",[id])?,
+            "SELECT order_id,id FROM core_recipients WHERE order_id<>?1 ORDER BY order_id,position,id"
+        )
+    }else if let Some(id)=only{
+        (
+            read_entities_with(conn,"SELECT payload FROM core_orders WHERE id=?1 ORDER BY position,id",[id])?,
+            read_entities_with(conn,"SELECT payload FROM core_recipients WHERE order_id=?1 ORDER BY position,id",[id])?,
+            read_children_with(conn,"SELECT recipient_id,payload FROM core_items
+                WHERE recipient_id IN (SELECT id FROM core_recipients WHERE order_id=?1)
+                ORDER BY recipient_id,position,id",[id])?,
+            "SELECT order_id,id FROM core_recipients WHERE order_id=?1 ORDER BY order_id,position,id"
+        )
+    }else{
+        (
+            read_entities(conn,"SELECT payload FROM core_orders ORDER BY position,id")?,
+            read_entities(conn,"SELECT payload FROM core_recipients ORDER BY position,id")?,
+            read_children(conn,"SELECT recipient_id,payload FROM core_items ORDER BY recipient_id,position,id")?,
+            "SELECT order_id,id FROM core_recipients ORDER BY order_id,position,id"
+        )
+    };
+    attach(&mut recipients, "items", items)?;
+    let mut stmt=conn.prepare(owner_sql).map_err(|_|"수취인 소속 조회 준비 실패".to_owned())?;
+    let owners=stmt.query_map(rusqlite::params_from_iter(only),|row|{
+        Ok((row.get::<_,String>(0)?,row.get::<_,String>(1)?))
     }).map_err(|_| "수취인 소속 조회 실패".to_owned())?
         .collect::<rusqlite::Result<Vec<_>>>()
         .map_err(|_| "수취인 소속 결과 오류".to_owned())?;
@@ -234,11 +292,17 @@ pub fn hydrate_v2(conn: &Connection, state: &mut Value) -> Result<(), String> {
         return Err("연결되지 않은 수취인 기록이 있습니다.".into());
     }
     attach(&mut orders, "recipients", grouped)?;
+    Ok(orders)
+}
 
+/// Hydrate a schema-v2 snapshot within a consistent transaction.
+pub fn hydrate_v2(conn: &Connection, state: &mut Value) -> Result<(), String> {
+    let (products,clients)=read_catalog_entities(conn)?;
+    let orders=read_order_entities(conn,None)?;
     let root = state.as_object_mut()
         .ok_or("업무 상태는 객체여야 합니다.")?;
-    root.insert("products".into(), json!(products));
-    root.insert("clients".into(), json!(clients));
-    root.insert("orders".into(), json!(orders));
+    root.insert("products".into(), Value::Array(products));
+    root.insert("clients".into(), Value::Array(clients));
+    root.insert("orders".into(), Value::Array(orders));
     Ok(())
 }

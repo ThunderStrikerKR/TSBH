@@ -1,6 +1,6 @@
 //! Preservation constraints from validateWorkflow / validateReceptionBoundary.
 //! Invalid state is rejected without producing any partial mutation.
-use std::collections::HashSet;
+use std::collections::{HashMap,HashSet};
 use serde_json::Value;
 use super::{checked_sum, field, find_by_id, flag, has_value, rows, safe, str_field};
 
@@ -10,9 +10,21 @@ fn unique_id(values: &Value) -> bool {
 }
 fn array_has(values: &Value, id: &str) -> bool { find_by_id(values,id).is_some() }
 fn unchanged_records(old: &Value, new: &Value) -> bool {
-    rows(old).iter().all(|v| {
-        find_by_id(new,str_field(v,"id")) == Some(v)
-    })
+    let old=rows(old);
+    let new=rows(new);
+    // The normal audit path appends new events without touching the old
+    // prefix. Compare once; no hash allocation or repeated ID lookup.
+    if new.starts_with(old){
+        let mut seen=HashSet::with_capacity(old.len());
+        if old.iter().all(|row|seen.insert(str_field(row,"id"))){return true;}
+    }
+    // Preserve find_by_id's first-match semantics for reordered or malformed
+    // lists, including empty IDs. Global uniqueness is validated separately.
+    let mut index=HashMap::with_capacity(new.len());
+    for row in new{
+        index.entry(str_field(row,"id")).or_insert(row);
+    }
+    old.iter().all(|row|index.get(str_field(row,"id")).copied()==Some(row))
 }
 fn shipment_for<'a>(state: &'a Value, ship: &Value) -> Result<(&'a Value,&'a Value),String> {
     let order = find_by_id(field(state,"orders"),str_field(ship,"orderId"))
@@ -482,4 +494,26 @@ pub(super) fn validate_reception(before: &Value, state: &Value) -> Result<(),Str
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod immutable_history_index_tests{
+    use super::*;
+    use serde_json::json;
+    #[test]
+    fn immutable_history_index_matches_original_first_match_rule(){
+        let old=json!([{"id":"a","value":1},{"id":"b","value":2}]);
+        for next in [
+            json!([{"id":"a","value":1},{"id":"b","value":2},{"id":"c"}]),
+            json!([{"id":"b","value":2},{"id":"a","value":1}]),
+            json!([{"id":"a","value":9},{"id":"a","value":1},{"id":"b","value":2}]),
+            json!([{"id":"a","value":1}]),
+            Value::Null
+        ]{
+            let expected=rows(&old).iter().all(|row|find_by_id(&next,str_field(row,"id"))==Some(row));
+            assert_eq!(unchanged_records(&old,&next),expected);
+        }
+        let duplicate=json!([{"id":"a","value":1},{"id":"a","value":2}]);
+        assert!(!unchanged_records(&duplicate,&duplicate));
+    }
 }

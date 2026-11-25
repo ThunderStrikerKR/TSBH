@@ -92,7 +92,7 @@ pub(crate) fn create_v2_schema_for_tests(conn:&Connection)->Result<(),String>{
     sql_schema(conn)
 }
 
-fn schema_version(conn:&Connection)->Result<i64,String>{
+pub(crate) fn schema_version(conn:&Connection)->Result<i64,String>{
     let exists:bool=conn.query_row(
         "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type='table' AND name='core_schema')",
         [],|r|r.get(0)).map_err(err)?;
@@ -100,7 +100,7 @@ fn schema_version(conn:&Connection)->Result<i64,String>{
     Ok(conn.query_row("SELECT version FROM core_schema WHERE key='business-core'",[],
         |r|r.get::<_,i64>(0)).optional().map_err(err)?.unwrap_or(0))
 }
-pub(super) fn active(conn:&Connection)->Result<bool,String>{Ok(schema_version(conn)?==2)}
+pub(super) fn active(conn:&Connection)->Result<bool,String>{{let version=schema_version(conn)?; if version>3{return Err("이 프로그램보다 새로운 DB 구조입니다.".into());} Ok(matches!(version,2|3))}}
 
 
 pub(super) fn strip_core(state: &mut Value) {
@@ -159,9 +159,11 @@ fn attach(parents:&mut [Value],key:&str,mut children:HashMap<String,Vec<Value>>)
 
 pub fn hydrate(conn:&Connection,state:&mut Value)->Result<(),String>{
     let version=schema_version(conn)?;
+    if version>3{return Err("이 프로그램보다 새로운 DB 구조입니다.".into());}
     if version==0 { return Ok(()); }
     // Schema v2 hydration is shared by the Tauri and egui hosts.
     // Legacy v1 migration remains on the original implementation below.
+    if version==3 { *state=crate::read_v2_snapshot(conn)?; return Ok(()); }
     if version==2 { return crate::hydrate_v2(conn,state); }
     let mut products=read_entities(conn,"SELECT payload FROM core_products ORDER BY position,id")?;
     let variants=read_children(conn,if version==1 {
@@ -241,8 +243,8 @@ fn restore_legacy_receipt_archive(tx:&Transaction<'_>,state:&Value)->Result<(),S
 pub fn migrate(conn:&mut Connection)->Result<(),String>{
     sql_schema(conn)?;
     let prior=schema_version(conn)?;
-    if prior==2{return Ok(());}
-    if prior>2 {return Err("이 프로그램보다 새로운 DB 구조입니다. 자동으로 변경하지 않았습니다.".into());}
+    if matches!(prior,2|3){return Ok(());}
+    if prior>3 {return Err("이 프로그램보다 새로운 DB 구조입니다. 자동으로 변경하지 않았습니다.".into());}
     // Hydrate legacy v1 rows or v0.0.1 full JSON BEFORE converting.
     // A verified SQLite pre-migration backup is created by initialize_database.
     let old=get_snapshot(conn)?;
@@ -317,10 +319,7 @@ pub fn verify(conn:&Connection)->Result<(),String>{
         "SELECT \"table\" || ':' || rowid FROM pragma_foreign_key_check LIMIT 1",
         [],|r|r.get(0)).optional().map_err(err)?;
     if let Some(details)=broken { return Err(format!("SQLite 관계형 참조 무결성 오류: {details}")); }
-    let mut snapshot:Value=serde_json::from_str(&conn.query_row(
-        "SELECT payload FROM app_state WHERE id=1",[],|r|r.get::<_,String>(0)
-    ).map_err(err)?).map_err(err)?;
-    hydrate(conn,&mut snapshot)?;
+    let snapshot=crate::read_v2_snapshot(conn)?;
     valid_state(&snapshot)
 }
 
