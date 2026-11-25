@@ -2672,7 +2672,7 @@ impl FreightManager {
                                     .filter(|date|!date.is_empty())
                                     .unwrap_or("날짜 미확인");
                                 history_cell(
-                                    row,cells[0],display_date,at,
+                                    row,cells[0],display_date,display_date,
                                     egui::Align2::LEFT_CENTER,typography::ManagementTableCellRole::Text,
                                     (group_id,index,0)
                                 );
