@@ -776,7 +776,8 @@ pub fn floating_notice_text(text:&str)->RichText{
 /// Review content deliberately keeps its existing body and caption roles.
 /// Tone changes ink only; it does not change the role's line metrics.
 pub fn review_error_text(text:&str)->RichText{
-    body(text).color(crate::theme::ReviewTone::Error.text_color())
+    let display=crate::user_error::display("reception.review",text);
+    body(display.as_ref()).color(crate::theme::ReviewTone::Error.text_color())
 }
 pub fn review_title(text:&str,tone:crate::theme::ReviewTone)->RichText{
     body(text).strong().color(tone.text_color())
@@ -800,7 +801,10 @@ mod extracted_text_role_tests{
 }
 
 pub fn status(text: &str, color: Color32) -> RichText {
-    render(text, Role::Status).color(color)
+    let display=if color==crate::theme::DANGER{
+        crate::user_error::display("status",text)
+    }else{std::borrow::Cow::Borrowed(text)};
+    render(display.as_ref(), Role::Status).color(color)
 }
 
 /// One button-text policy: selected tabs and high-priority actions are bold;

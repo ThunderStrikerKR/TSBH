@@ -311,6 +311,8 @@ jobs:
 
       - name: Verify floating notice placement at screen edges and caret anchors
         run: cargo test --manifest-path egui-app/Cargo.toml floating_notice::tests -- --nocapture
+      - name: Verify shared user-facing error translation
+        run: cargo test --manifest-path egui-app/Cargo.toml user_error::tests -- --nocapture
       - name: Verify Excel loading and empty-state text does not shift its table
         run: cargo test --manifest-path egui-app/Cargo.toml excel_manager::table_state_tests -- --nocapture
       - name: Verify rate-management toolbar actions occupy one centered row

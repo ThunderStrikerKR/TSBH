@@ -191,9 +191,8 @@ impl ReviewPanel {
         let client_interactive=self.ready() && client_enabled;
         if let Some(error)=self.error.as_deref(){
             theme::review_issue_card(ui,ReviewTone::Error,|cell|{
-                let detail=crate::user_error::display("reception.review",error);
                 cell.add(egui::Label::new(typography::review_error_text(
-                    detail.as_ref()
+                    &format!("확인할 내용을 불러오지 못했습니다: {error}")
                 )).wrap());
             });
             return None;

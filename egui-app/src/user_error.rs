@@ -30,7 +30,7 @@ fn technical(raw:&str)->bool{
     }
     if ["리비전","스냅샷","트랜잭션","마이그레이션","스키마","직렬화","역직렬화",
         "게이트웨이","롤백","개발자 모드","개발용 db","내부 id","배정 id","파일 시스템 오류",
-        "database is locked","database disk image","constraint failed","no such table",
+        "database is locked","database is busy","sqlite_busy","sqlite_locked","database disk image","constraint failed","no such table",
         "no such column","permission denied","access is denied","os error",
         "thread '","failed to","connection refused","unexpected eof","syntax error",
         "src/","src\\",".rs:",".sqlite","\\users\\","/home/"]
@@ -74,7 +74,7 @@ fn translated(context:&str,raw:&str)->&'static str{
     }else{fallback(context)}
 }
 pub fn display<'a>(context:&str,raw:&'a str)->Cow<'a,str>{
-    if !technical(raw){return Cow::Borrowed(raw);}
+    if !technical(raw)&&!raw.lines().any(technical){return Cow::Borrowed(raw);}
     diagnostic(context,raw);
     let lower=raw.to_ascii_lowercase();
     // Do not echo continuation lines from raw structured payloads or traces.
@@ -121,6 +121,7 @@ mod tests{
         assert!(!result.contains("SQLite"));
         assert!(!result.contains("core_orders"));
         assert_eq!(display("status",result.as_ref()).as_ref(),result.as_ref());
+        assert!(!display("status","배송 운임을 확인하세요.\nSomething went wrong").contains("Something"));
     }
     #[test]
     fn raw_debug_and_path_details_are_not_echoed(){
