@@ -514,32 +514,17 @@ fn history_line_height(ui:&Ui,line:HistoryLine,
         .max(DETAIL_BLOCK_HEIGHT);
     block_height+spacing.top+spacing.bottom
 }
-fn paint_detail_products(ui:&Ui,rect:Rect,text:&str){
+fn paint_detail_products(ui:&Ui,rect:Rect,text:&str)->bool{
     let galley=typography::freight_table_wrapped_galley(
         ui,text,(rect.width()-theme::SPACE_12).max(1.0)
     );
     let pos=egui::pos2(rect.left()+6.0,
         rect.center().y-galley.size().y/2.0);
-    ui.painter().with_clip_rect(rect.intersect(ui.clip_rect()))
-        .galley(pos,galley,theme::TEXT);
-}
-fn history_recipient_product_notes(row:&Value,recipient_index:usize)->String{
-    let recipient=&row["recipients"][recipient_index];
-    let notes=rows(&recipient["items"]).iter().filter_map(|item|{
-        let linked=rows(&row["display"]["references"]).iter().find(|reference|
-            field(reference,"recipientId")==field(recipient,"id")
-            && field(reference,"itemId")==field(item,"id"))
-            .map(|ref_row|&ref_row["link"]);
-        match linked{
-            Some(link) if field(link,"via")=="HISTORICAL"=>
-                Some(format!("{}: 현재 연결 상품 {}",
-                    field(item,"name"),field(link,"name"))),
-            Some(Value::Null)|None if !field(item,"productId").is_empty()=>
-                Some(format!("{}: 상품 연결 확인 필요",field(item,"name"))),
-            _=>None
-        }
-    }).collect::<Vec<_>>();
-    notes.join("\n")
+    let clip=rect.intersect(ui.clip_rect());
+    let text_rect=Rect::from_min_size(pos,galley.size());
+    let overflow=!clip.contains_rect(text_rect) || galley.elided;
+    ui.painter().with_clip_rect(clip).galley(pos,galley,theme::TEXT);
+    overflow
 }
 fn history_shipment_logistics(shipment:Option<&Value>)->(String,String){
     // A detail block belongs to exactly one shipment. Never merge freight or
@@ -648,32 +633,13 @@ fn draw_line(ui:&mut Ui,rect:Rect,line:HistoryLine,snapshot:&HistorySnapshot,
             // It comes from the Rust projection of workflow.confirmations.
             let approval=&row["display"]["employeePaymentConfirmation"];
             let approval_day=field(approval,"date");
-            let partial=approval["partial"]==true;
-            // This column is date-only: YYYY-MM-DD maximum. Partial
-            // approvals are distinguished by muted tint and clear tooltip,
-            // never by adding an extra label that widens the date column.
+            // This column displays only the employee payment confirmation date.
             let approval_label=if approval_day.is_empty(){
                 "미확인".to_owned()
             }else{
                 approval_day.to_owned()
             };
             paint_center(ui,columns[5],&approval_label);
-            let approval_help=if approval_day.is_empty(){
-                "직원이 승인한 입금 확인 기록이 없습니다.".to_owned()
-            }else{
-                let actors=rows(&approval["actors"]).iter()
-                    .filter_map(Value::as_str).collect::<Vec<_>>().join(", ");
-                format!("직원 입금 확인일: {approval_day}\n{}\n승인 배송 건: {}/{}{}",
-                    if partial{"일부 배송 건만 승인됨"}else{"전체 배송 건 승인됨"},
-                    approval["approvedShipments"].as_u64().unwrap_or(0),
-                    approval["totalShipments"].as_u64().unwrap_or(0),
-                    if actors.is_empty(){String::new()}
-                    else{format!("\n승인 직원: {actors}")}
-                )
-            };
-            ui.interact(columns[5].intersect(area),
-                ui.make_persistent_id(("history-payment-confirmation",id)),
-                Sense::hover()).on_hover_text(approval_help);
             let message=field(&row["display"],"trackingMessage");
             // Keep two INDEPENDENT controls in this fixed 264pt column.
             // Main-justify expanded the first button to the full cell width,
@@ -722,32 +688,25 @@ fn draw_line(ui:&mut Ui,rect:Rect,line:HistoryLine,snapshot:&HistorySnapshot,
                 else{recipient_name};
             let products=history_detail_products(snapshot,order_index,
                 recipient_index,shipment_index);
-            let product_notes=history_recipient_product_notes(row,recipient_index);
             let (freight,tracking)=history_shipment_logistics(shipment);
             let freight_label=if freight=="운임 미확인"{freight.clone()}
                 else{format!("운임 {freight}")};
             let tracking_label=if tracking=="운송장 미확인"{tracking.clone()}
                 else{format!("송장 {tracking}")};
             paint_text(ui,columns[0],name,typography::ManagementTableCellRole::ClientName,false);
-            paint_detail_products(ui,columns[1],&products);
+            let products_overflow=paint_detail_products(ui,columns[1],&products);
             paint_text(ui,columns[2],&freight_label,typography::ManagementTableCellRole::Description,false);
             paint_text(ui,columns[3],&tracking_label,typography::ManagementTableCellRole::Description,false);
-            let address=field(display_recipient,"address");
-            let address=if address.is_empty(){"배송 주소 확인 필요"}
-                else{address};
-            ui.interact(columns[0].intersect(area),
-                ui.make_persistent_id(("history-recipient",id,recipient_index,shipment_index)),
-                Sense::hover()).on_hover_text(
-                    format!("수취인: {name}\n배송 주소: {address}\n발송건: {}",
-                        shipment.map(|s|field(s,"id")).unwrap_or("발송 대기"))
-                );
-            ui.interact(columns[1].intersect(area),
-                ui.make_persistent_id(("history-recipient-products",id,recipient_index,shipment_index)),
-                Sense::hover()).on_hover_text(if product_notes.is_empty(){
-                    products.clone()
-                }else{
-                    format!("{products}\n\n{product_notes}")
-                });
+            if history_text_overflow(ui,columns[0],name,typography::ManagementTableCellRole::ClientName){
+                ui.interact(columns[0].intersect(area),
+                    ui.make_persistent_id(("history-recipient",id,recipient_index,shipment_index)),
+                    Sense::hover()).on_hover_text(name);
+            }
+            if products_overflow{
+                ui.interact(columns[1].intersect(area),
+                    ui.make_persistent_id(("history-recipient-products",id,recipient_index,shipment_index)),
+                    Sense::hover()).on_hover_text(&products);
+            }
             for (index,display) in [(2,&freight_label),(3,&tracking_label)]{
                 if history_text_overflow(ui,columns[index],display,typography::ManagementTableCellRole::Description){
                     ui.interact(columns[index].intersect(area),
