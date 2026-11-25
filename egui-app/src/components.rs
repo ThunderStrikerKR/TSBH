@@ -1114,6 +1114,47 @@ pub fn reception_goods_viewport(
     content(&mut child);
 }
 
+/// Docked reception goods own their fixed viewport; the manual worksheet
+/// scrolls its complete card stack instead. Both use the same item table
+/// spacing and minimum-width rules without introducing another child ID.
+pub fn reception_items_body(ui:&mut Ui,width:f32,exact_width:bool){
+    if exact_width{ui.set_width(width);}else{ui.set_min_width(width);}
+    ui.spacing_mut().item_spacing.y=0.0;
+}
+
+pub fn reception_worksheet_items_body(ui:&mut Ui){
+    let width=ui.available_width().max(
+        theme::RECEPTION_ITEMS_MIN_TABLE_WIDTH+theme::RECEPTION_ITEM_REMOVE_WIDTH
+    );
+    reception_items_body(ui,width,false);
+}
+
+/// Preserve the established 16pt worksheet stack gap in one semantic rule.
+/// Docked panes retain their independent draggable splitter instead.
+pub const RECEPTION_STACKED_CARD_GAP:f32=theme::SPACE_16;
+
+pub fn reception_docked_goods_scroll(
+    ui:&mut Ui,section_height:f32,id_salt:impl std::hash::Hash,
+    editable_columns:bool,content:impl FnOnce(&mut Ui)
+){
+    ui.spacing_mut().item_spacing.y=0.0;
+    ui.spacing_mut().scroll=theme::management_table_scroll_style();
+    let height=docked_section_body_height(section_height)
+        .min(ui.available_height().max(0.0));
+    reception_goods_viewport(ui,height,|area|{
+        let minimum=theme::RECEPTION_ITEMS_MIN_TABLE_WIDTH+
+            if editable_columns{theme::RECEPTION_ITEM_REMOVE_WIDTH}else{0.0};
+        let width=reception_items_scroll_content_width(area).max(minimum);
+        egui::ScrollArea::both()
+            .scroll_bar_visibility(egui::containers::scroll_area::ScrollBarVisibility::VisibleWhenNeeded)
+            .id_salt(id_salt).max_height(height).auto_shrink([false,false])
+            .show(area,|items|{
+                reception_items_body(items,width,true);
+                content(items);
+            });
+    });
+}
+
 /// Shared forward/inverse height budget for every Reception section.
 pub fn docked_section_chrome_height() -> f32 {
     theme::RECEPTION_SECTION_CHROME_HEIGHT
@@ -9698,6 +9739,30 @@ pub(crate) mod general_screen_geometry_tests {
             assert_layout_rects_invariant(&fields(&second_recipient),&fields(&pending));
         }
     }
+    #[test]
+    fn docked_goods_scroll_keeps_card_and_following_slot_fixed(){
+        let ctx=test_context();
+        let screen=Vec2::new(900.0,700.0);
+        let work=Rect::from_min_max(egui::pos2(24.0,24.0),egui::pos2(876.0,676.0));
+        let draw=|overflow:bool|render(&ctx,screen,work,|ui|{
+            reception_section_with_header(ui,"품목 및 운임",320.0,|_|{},|body|{
+                reception_docked_goods_scroll(body,320.0,"goods-regression",true,|items|{
+                    assert_eq!(items.spacing().item_spacing.y,0.0);
+                    assert!(items.available_width()+0.5>=theme::RECEPTION_ITEMS_MIN_TABLE_WIDTH+theme::RECEPTION_ITEM_REMOVE_WIDTH);
+                    reception_editable_items_header(items);
+                    items.allocate_exact_size(Vec2::new(200.0,if overflow{900.0}else{20.0}),Sense::hover());
+                });
+            });
+            let (rect,_)=ui.allocate_exact_size(Vec2::new(100.0,20.0),Sense::hover());
+            record("after goods",rect);
+        });
+        let short=draw(false);
+        let long=draw(true);
+        assert_layout_rects_invariant(
+            &[("items card",first(&short,"items card")),("after goods",first(&short,"after goods"))],
+            &[("items card",first(&long,"items card")),("after goods",first(&long,"after goods"))]);
+    }
+
     #[test]
     fn goods_viewport_reserves_fixed_parent_height_even_with_oversized_content(){
         let ctx=test_context();
