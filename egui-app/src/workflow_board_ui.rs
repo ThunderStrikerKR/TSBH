@@ -616,8 +616,9 @@ fn workflow_action_line(
         ship_galley,theme::SECONDARY
     );
     if shipping_clipped{
-        ui.interact(shipping,workflow_widget_id("workflow-shipping",id,in_preview),
-            egui::Sense::hover()).on_hover_text(shipping_text);
+        components::overflow_tooltip(ui.interact(shipping,
+            workflow_widget_id("workflow-shipping",id,in_preview),egui::Sense::hover()),
+            shipping_clipped,&shipping_text);
     }
 
     let amount=total.map(components::display_won)
@@ -652,8 +653,9 @@ fn workflow_action_line(
         );
     }
     if money_clipped{
-        ui.interact(price,workflow_widget_id("workflow-money",id,in_preview),
-            egui::Sense::hover()).on_hover_text(&amount);
+        components::overflow_tooltip(ui.interact(price,
+            workflow_widget_id("workflow-money",id,in_preview),egui::Sense::hover()),
+            money_clipped,&amount);
     }
 
     // Pending receptions are NOT a business workflow step. Matching a

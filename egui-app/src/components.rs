@@ -263,8 +263,8 @@ pub fn body_error_overlay(ui:&Ui,viewport:Rect,context:&str,error:&str){
     let clipped=text_exceeds_rect(galley.size(),visible);
     painter.galley(pos,galley,theme::DANGER);
     if clipped{
-        ui.interact(visible,ui.id().with(("body-error-overlay",context)),Sense::hover())
-            .on_hover_text(display.as_ref());
+        overflow_tooltip(ui.interact(visible,ui.id().with(("body-error-overlay",context)),
+            Sense::hover()),clipped,display.as_ref());
     }
 }
 
@@ -1025,11 +1025,8 @@ pub fn workflow_auxiliary_button(ui: &mut Ui, action: WorkflowAuxiliaryAction) -
         WorkflowAuxiliaryAction::Delete => theme::WORKFLOW_TRASH_WIDTH,
         WorkflowAuxiliaryAction::PreviousStage => theme::WORKFLOW_UNDO_WIDTH,
     };
-    let response = ui.scope(|ui| {
-        ui.spacing_mut().button_padding = Vec2::ZERO;
-        ui.add_enabled(
-            false,
-            egui::Button::new("")
+    let response = compact_action_surface(
+            ui,false,egui::Button::new("")
                 .min_size(Vec2::new(width, theme::WORKFLOW_AUX_CONTROL_HEIGHT))
                 // These controls are intentionally disabled; use the
                 // exact disabled Standard/TableSecondary master appearance.
@@ -1038,8 +1035,7 @@ pub fn workflow_auxiliary_button(ui: &mut Ui, action: WorkflowAuxiliaryAction) -
                     theme::FRAME_STROKE_WIDTH,theme::DISABLED_ACTION_BORDER
                 ))
                 .corner_radius(egui::CornerRadius::same(5)),
-        )
-    }).inner;
+    );
 
     paint_workflow_auxiliary_content(ui.painter(),response.rect.center(),action,
         theme::DISABLED_ACTION_TEXT);
@@ -1203,21 +1199,23 @@ pub fn checkbox_list_row(
     ).inner
 }
 
+/// Shared zero-padding allocation for compact action roles.
+fn compact_action_surface(ui:&mut Ui,enabled:bool,button:egui::Button<'_>)->Response{
+    ui.scope(|slot|{
+        slot.spacing_mut().button_padding=Vec2::ZERO;
+        slot.add_enabled(enabled,button)
+    }).inner
+}
+
 /// Shared compact icon-only action. Its 28pt hit target follows the
 /// management date-navigation control; glyph and enabled state are
 /// supplied by the caller while hover paint stays in the common layer.
 pub fn icon_action_button(
     ui:&mut Ui,label:&str,enabled:bool
 )->Response{
-    let response=ui.scope(|button|{
-        button.spacing_mut().button_padding=Vec2::ZERO;
-        button.add_enabled(
-            enabled,
-            egui::Button::new(label)
-                .frame(false)
-                .min_size(Vec2::splat(theme::MANAGEMENT_DATE_NAV_BUTTON_WIDTH))
-        )
-    }).inner;
+    let response=compact_action_surface(ui,enabled,egui::Button::new(label)
+        .frame(false)
+        .min_size(Vec2::splat(theme::MANAGEMENT_DATE_NAV_BUTTON_WIDTH)));
     if enabled{
         theme::paint_button_hover(
             ui,&response,theme::CONTROL_RADIUS as f32
@@ -2357,10 +2355,7 @@ pub fn modal_master_body<R>(
     let inset=theme::MODAL_SECTION_PADDING;
     let width=(ui.available_width()-2.0*inset
         -2.0*theme::FRAME_STROKE_WIDTH).max(1.0);
-    Frame::new()
-        .fill(theme::PANEL)
-        .stroke(Stroke::new(theme::FRAME_STROKE_WIDTH,theme::DIVIDER))
-        .corner_radius(egui::CornerRadius::same(theme::CONTROL_RADIUS))
+    theme::bordered_surface(theme::PANEL,theme::DIVIDER,theme::CONTROL_RADIUS)
         .inner_margin(inset)
         .show(ui,|body|{
             body.set_min_width(width);
@@ -2407,10 +2402,7 @@ pub fn modal_section_measured<R>(
 )->egui::InnerResponse<R>{
     let inner_width=(ui.available_width()-2.0*theme::MODAL_SECTION_PADDING
         -2.0*theme::FRAME_STROKE_WIDTH).max(1.0);
-    Frame::new()
-        .fill(theme::MODAL_SECTION_BG)
-        .stroke(Stroke::new(theme::FRAME_STROKE_WIDTH,theme::DIVIDER))
-        .corner_radius(egui::CornerRadius::same(theme::MODAL_SECTION_RADIUS))
+    theme::bordered_surface(theme::MODAL_SECTION_BG,theme::DIVIDER,theme::MODAL_SECTION_RADIUS)
         .inner_margin(theme::MODAL_SECTION_PADDING)
         .show(ui,|section|{
             section.set_min_width(inner_width);
@@ -6909,10 +6901,7 @@ pub fn reception_total_footer(
 }
 
 pub fn record_card(ui: &mut Ui, content: impl FnOnce(&mut Ui)) {
-    Frame::new()
-        .fill(theme::PANEL)
-        .stroke(Stroke::new(1.0, theme::BORDER))
-        .corner_radius(theme::PANEL_RADIUS)
+    theme::bordered_surface(theme::PANEL,theme::BORDER,theme::PANEL_RADIUS)
         .inner_margin(theme::CARD_PADDING)
         .show(ui, content);
 }

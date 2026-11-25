@@ -853,10 +853,7 @@ pub fn settings_help_surface_frame()->Frame{
 }
 
 pub fn modal_frame() -> Frame {
-    Frame::new()
-        .fill(PANEL)
-        .stroke(Stroke::new(FRAME_STROKE_WIDTH,BORDER))
-        .corner_radius(CornerRadius::same(PANEL_RADIUS))
+    bordered_surface(PANEL,BORDER,PANEL_RADIUS)
         .inner_margin(egui::Margin {
             left: MODAL_PANEL_PADDING_X as i8,
             right: MODAL_PANEL_PADDING_X as i8,
@@ -927,12 +924,16 @@ mod modal_nested_role_tests{
     }
 }
 
+/// Base visual surface shared by cards and modal sections. Role wrappers
+/// retain their approved radius, padding, fill and border color.
+pub(crate) fn bordered_surface(fill:Color32,border:Color32,radius:u8)->Frame{
+    Frame::new().fill(fill)
+        .stroke(Stroke::new(FRAME_STROKE_WIDTH,border))
+        .corner_radius(CornerRadius::same(radius))
+}
+
 pub fn section_frame() -> Frame {
-    Frame::new()
-        .fill(PANEL)
-        .stroke(Stroke::new(FRAME_STROKE_WIDTH, BORDER))
-        .corner_radius(CornerRadius::same(SECTION_RADIUS))
-        .inner_margin(SECTION_PADDING)
+    bordered_surface(PANEL,BORDER,SECTION_RADIUS).inner_margin(SECTION_PADDING)
 }
 
 /// Full-height master table cards keep the same 16pt interior clearance on
@@ -952,10 +953,7 @@ pub fn management_master_table_frame()->Frame{
 /// Overview card keeps the shared frame identity with proportional padding.
 /// Only the freight KPI's vertical inset differs from standard section cards.
 pub fn freight_summary_frame() -> Frame {
-    Frame::new()
-        .fill(PANEL)
-        .stroke(Stroke::new(FRAME_STROKE_WIDTH, BORDER))
-        .corner_radius(CornerRadius::same(PANEL_RADIUS))
+    bordered_surface(PANEL,BORDER,PANEL_RADIUS)
         .inner_margin(egui::Margin::symmetric(
             FREIGHT_SUMMARY_PADDING_X as i8, FREIGHT_SUMMARY_PADDING_Y as i8
         ))
