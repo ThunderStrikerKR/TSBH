@@ -160,6 +160,12 @@ jobs:
         run: cargo test --manifest-path egui-app/Cargo.toml recipient_source_reverse_hover_tests -- --nocapture
       - name: Verify pending workflow card uses the production typography context
         run: cargo test --manifest-path egui-app/Cargo.toml pending_matching_tests -- --nocapture
+      - name: Verify persisted product price history across SQLite reopen
+        run: |
+          cargo test --manifest-path src-tauri/Cargo.toml --lib native_product_price_history_cell_detail_reopen_and_stale_guard -- --nocapture
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cargo test --manifest-path src-tauri/Cargo.toml --lib native_product_excel_backup_commit_reopen_and_stale_revision_guard -- --nocapture
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Verify product Excel review status filter and message fallback
         run: cargo test --manifest-path egui-app/Cargo.toml product_excel_ui::tests -- --nocapture
       - name: Verify category map heading contract distinguishes section and subsection headings
