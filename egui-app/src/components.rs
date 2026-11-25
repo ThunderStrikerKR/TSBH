@@ -9815,7 +9815,7 @@ mod round87_phase5_modal_contract_tests {
                 let code=line.trim_start();
                 if code.starts_with("//") || code.starts_with("/*") || code.starts_with('*'){continue;}
                 for forbidden in [
-                    "components::decision_window(ctx,",
+                    "components::decision_window(",
                     "Window::new(",
                     "Modal::new(",
                     "components::modal_header(",

@@ -4749,7 +4749,6 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
         let dialog_rect=components::modal_ocr_review_rect(work_area);
         let dialog_size=dialog_rect.size();
         if let Some(review)=self.ocr_review.as_mut() {
-            floating_notice::section(ctx,"reception.ocr_learning",dialog_rect);
             components::modal_window(ctx,
                 "OCR 문자 인식 검토","egui-ocr-review",work_area
             )
@@ -4758,6 +4757,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                 .fixed_size(dialog_size)
                 .scroll([false,false])
                 .show(ctx,|ui|{
+                    floating_notice::section(ctx,"reception.ocr_learning",dialog_rect);
                     // Paint clips are NOT layout measurements. During egui's
                     // window sizing pass an empty clip can collapse the body
                     // to 1pt, causing a -26pt image viewport and a panic.
@@ -9110,6 +9110,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                         self.workflow_mutation_ready() &&
                         self.workflow_freight_editor.is_none() &&
                         self.pending_draft_confirmation.is_none();
+                    let reception_modal_open=self.reception_modal_open();
                     event=workflow_board_ui::show(
                         ui,self.workflow_snapshot.as_deref(),&self.drafts,
                         self.active_id.as_deref(),
@@ -9119,7 +9120,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                         freight_stage_group,
                         // Hover navigation must never switch the active receipt
                         // while a staff edit, dialog or pending write is open.
-                        !self.reception_modal_open() && self.inline_editor.is_none() && self.inline_change.is_none() &&
+                        !reception_modal_open && self.inline_editor.is_none() && self.inline_change.is_none() &&
                             self.manual_workspace.is_none() && self.vat_dialog.is_none() &&
                             self.vat_change.is_none() && self.client_chooser.is_none() &&
                             self.client_change.is_none() && self.working_sync.is_none() &&

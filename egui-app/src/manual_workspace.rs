@@ -2665,7 +2665,7 @@ impl ManualWorkspace {
                     }
                 }
             }
-        }else{
+        }else if self.assignment_gesture.dragging.is_some() || drag_released{
             self.assignment_gesture.clear();
         }
         if self.assignment_gesture.dragging.is_some(){
