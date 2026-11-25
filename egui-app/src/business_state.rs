@@ -116,17 +116,27 @@ pub fn authorized_client_write_path() -> Result<PathBuf,String> {
 /// The live catalog requires a real v2 Tauri DB. A seed fallback would mix
 /// unrelated product IDs with prices and freight rules.
 pub fn load() -> Result<Value,String> {
-    load_projection(false)
+    load_projection(ReadScope::Full)
 }
 
 /// The operational catalog does not require order/recipient/item records.
 /// Keep the same path, schema, revision and read-only transaction checks as
 /// the full business snapshot, but avoid loading unrelated customer orders.
 pub fn load_catalog() -> Result<Value,String> {
-    load_projection(true)
+    load_projection(ReadScope::Catalog)
 }
 
-fn load_projection(catalog_only:bool) -> Result<Value,String> {
+pub fn load_settings_metadata()->Result<Value,String>{
+    load_projection(ReadScope::Settings)
+}
+
+pub fn load_export_metadata()->Result<Value,String>{
+    load_projection(ReadScope::Exports)
+}
+
+enum ReadScope{Full,Catalog,Settings,Exports}
+
+fn load_projection(scope:ReadScope) -> Result<Value,String> {
     let path=std::env::var_os("BANDO_EGUI_BUSINESS_DB")
         .filter(|p|!p.is_empty())
         .map(PathBuf::from)
@@ -148,10 +158,11 @@ fn load_projection(catalog_only:bool) -> Result<Value,String> {
     if version!=2 {return Err("지원되지 않는 운영 DB 스키마입니다. 아무 것도 저장하지 않았습니다.".into());}
     // Share the same app_state and catalog-hydration rules with Tauri.
     // Only the full business read needs order, recipient and item tables.
-    let state=if catalog_only {
-        bando_data_access::read_v2_catalog_snapshot(&conn)?
-    }else{
-        bando_data_access::read_v2_snapshot(&conn)?
+    let state=match scope{
+        ReadScope::Full=>bando_data_access::read_v2_snapshot(&conn)?,
+        ReadScope::Catalog=>bando_data_access::read_v2_catalog_snapshot(&conn)?,
+        ReadScope::Settings=>bando_data_access::read_v2_settings_snapshot(&conn)?,
+        ReadScope::Exports=>bando_data_access::read_v2_export_metadata(&conn)?,
     };
     let revision=state.get("revision").and_then(Value::as_u64)
         .ok_or("운영 DB revision을 확인할 수 없습니다.")?;

@@ -105,7 +105,7 @@ pub fn load_local_accounts()->Result<Value,String>{
 
 pub fn load()->Result<Value,String>{
     if using_business(){
-        let state=business_state::load()?;
+        let state=business_state::load_settings_metadata()?;
         let revision=state.get("revision").and_then(Value::as_u64)
             .ok_or("운영 설정 revision 확인 실패")?;
         let settings=state.get("settings").filter(|value|value.is_object())

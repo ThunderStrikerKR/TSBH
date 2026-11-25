@@ -48,10 +48,23 @@ pub fn update_v2_snapshot<F>(
     conn:&mut Connection,expected_revision:u64,validate_orders:bool,mutate:F
 )->Result<Value,String>
 where F:FnOnce(&Value)->Result<Value,String>{
+    update_v2_snapshot_if_changed(conn,expected_revision,validate_orders,
+        |current|mutate(current).map(Some))
+}
+
+/// A no-op decision is made against the authoritative transaction before
+/// image. It never increments revision or executes a write. Changed states
+/// keep the existing full validation and scoped readback contracts.
+pub fn update_v2_snapshot_if_changed<F>(
+    conn:&mut Connection,expected_revision:u64,validate_orders:bool,mutate:F
+)->Result<Value,String>
+where F:FnOnce(&Value)->Result<Option<Value>,String>{
     let tx=conn.transaction().map_err(err)?;
     let current=read_current(&tx,expected_revision)?;
-    let state=mutate(&current)?;
-    let verified=finish_update(&tx,current,state,expected_revision,validate_orders)?;
+    let verified=match mutate(&current)?{
+        Some(state)=>finish_update(&tx,current,state,expected_revision,validate_orders)?,
+        None=>current,
+    };
     tx.commit().map_err(err)?;
     Ok(verified)
 }

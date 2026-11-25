@@ -40,7 +40,7 @@ pub use validation::{
     validate_message_templates, validate_provisional_product_notices,
 };
 pub use relational_write::store_v2_relational;
-pub use storage::{write_v2_snapshot,update_v2_snapshot,update_v2_freight_snapshot,update_v2_factory_reply_snapshot};
+pub use storage::{write_v2_snapshot,update_v2_snapshot,update_v2_snapshot_if_changed,update_v2_freight_snapshot,update_v2_factory_reply_snapshot};
 pub use client_commands::{mutate_client_v2,preview_client_workbook,commit_client_workbook_v2};
 pub use product_commands::{patch_product_v2,patch_model_groups_v2,apply_product_price,
     preview_unified_product_workbook};
@@ -227,6 +227,61 @@ pub fn read_v2_catalog_snapshot(conn: &Connection) -> Result<Value, String> {
     // Never leak an older compatibility envelope's core orders to a catalog.
     root.remove("orders");
     Ok(state)
+}
+
+/// Metadata-only read: settings and export records are owned by the
+/// physical envelope, not the relational order or workflow ledger tables.
+/// The caller must hold the same consistent read transaction as full reads.
+fn read_metadata_fields(conn:&Connection,fields:&[&str])->Result<Value,String>{
+    let raw:String=conn.query_row("SELECT payload FROM app_state WHERE id=1",[],
+        |row|row.get(0)).map_err(|e|e.to_string())?;
+    let mut envelope=decode_physical_envelope(conn,&raw)?;
+    let root=envelope.as_object_mut().ok_or("업무 상태는 객체여야 합니다.")?;
+    let mut projected=serde_json::Map::new();
+    for key in fields{
+        if let Some(value)=root.remove(*key){projected.insert((*key).to_owned(),value);}
+    }
+    Ok(Value::Object(projected))
+}
+
+/// Settings needs the current client account references but no product,
+/// order, recipient, item or historical workflow rows.
+pub fn read_v2_settings_snapshot(conn:&Connection)->Result<Value,String>{
+    let mut state=read_metadata_fields(conn,&["revision","settings"])?;
+    state["clients"]=Value::Array(read_entities(conn,CORE_CLIENTS_SQL)?);
+    Ok(state)
+}
+
+/// Recorded export file/folder opening does not require order hydration.
+pub fn read_v2_export_metadata(conn:&Connection)->Result<Value,String>{
+    read_metadata_fields(conn,&["revision","settings","exports"])
+}
+
+#[cfg(test)]
+mod metadata_projection_tests{
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn settings_and_export_reads_do_not_require_unrelated_relational_tables(){
+        let conn=Connection::open_in_memory().unwrap();
+        conn.execute_batch("CREATE TABLE core_schema(key TEXT,version INTEGER);
+            INSERT INTO core_schema VALUES ('business-core',2);
+            CREATE TABLE app_state(id INTEGER PRIMARY KEY,payload TEXT);
+            CREATE TABLE core_clients(id TEXT PRIMARY KEY,position INTEGER,payload TEXT);").unwrap();
+        let root=json!({"revision":7,"settings":{"excelDirectory":"synthetic","accounts":[]},
+            "exports":[{"id":"x","filename":"test.xlsx"}],
+            "orders":[{"id":"legacy"}],"workflow":{"events":[{"id":"e"}]}});
+        let client=json!({"id":"c","accountId":"a"});
+        conn.execute("INSERT INTO app_state VALUES (1,?1)",[root.to_string()]).unwrap();
+        conn.execute("INSERT INTO core_clients VALUES ('c',0,?1)",[client.to_string()]).unwrap();
+        assert_eq!(read_v2_settings_snapshot(&conn).unwrap(),
+            json!({"revision":7,"settings":root["settings"],"clients":[client]}));
+        conn.execute("DROP TABLE core_clients",[]).unwrap();
+        assert_eq!(read_v2_export_metadata(&conn).unwrap(),
+            json!({"revision":7,"settings":root["settings"],"exports":root["exports"]}));
+        assert!(read_v2_settings_snapshot(&conn).is_err());
+    }
 }
 
 // Full, single-order and complementary projections share ownership checks.

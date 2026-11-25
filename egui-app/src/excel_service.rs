@@ -257,17 +257,17 @@ pub fn workflow_action(
 }
 
 pub fn open_file(id:&str)->Result<(),String>{
-    let state=business_state::load()?;
+    let state=business_state::load_export_metadata()?;
     let path=recorded_export::resolve_export_path(&state,id)?;
     open::that(path).map_err(|_|"저장된 Excel 파일을 열지 못했습니다.".to_owned())
 }
 pub fn open_directory(id:&str)->Result<(),String>{
-    let state=business_state::load()?;
+    let state=business_state::load_export_metadata()?;
     let path=recorded_export::resolve_export_directory(&state,id)?;
     open::that(path).map_err(|_|"Excel 파일 폴더를 열지 못했습니다.".to_owned())
 }
 pub fn open_daily(origin:&str)->Result<(),String>{
-    let state=business_state::load()?;
+    let state=business_state::load_export_metadata()?;
     let root=archive_root(&state)?;
     let path=archive_day(&root,origin)?;
     open::that(path).map_err(|_|"당일 Excel 폴더를 열지 못했습니다.".to_owned())
