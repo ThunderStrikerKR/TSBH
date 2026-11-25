@@ -105,7 +105,7 @@ fn price(value: &Value) -> String {
     value.as_i64().map(components::display_won)
         .unwrap_or_else(|| "—".to_owned())
 }
-fn price_history_description(entry:&Value)->String{
+fn price_history_row(entry:&Value)->Vec<String>{
     let raw_field=field(entry,"field");
     let tier=match raw_field.rsplit('.').next().unwrap_or(raw_field){
         "wholesale"=>"도매가","semi"=>"반도매가","retail"=>"소매가",
@@ -119,7 +119,11 @@ fn price_history_description(entry:&Value)->String{
         value.as_i64().map(components::display_won).unwrap_or_else(||
             value.as_str().map(str::to_owned).unwrap_or_else(||value.to_string()))
     };
-    format!("{at}  /  {tier}  /  {} → {}",amount(&entry["before"]),amount(&entry["after"]))
+    let source=match field(entry,"source"){
+        "MANUAL"=>"직접 수정","MANUAL_EXCEL"|"XLSX"=>"엑셀 수정",
+        "OFFICIAL_URL"|"OFFICIAL"=>"공식 가격 갱신",""=>"—",other=>other,
+    };
+    vec![at,tier.to_owned(),amount(&entry["before"]),amount(&entry["after"]),source.to_owned()]
 }
 fn option_text(product: &Value, variant: &Value) -> String {
     let mut parts = Vec::new();
@@ -1805,29 +1809,21 @@ impl ProductManager {
         }
         Ok(next)
     }
-    /// The section masters ADD 12pt inner padding and 1pt border on BOTH
-    /// edges. Account for that before assigning widths or the image/fields
-    /// will clip, particularly with the approved inline label + editor rows.
-    fn detail_columns(width:f32)->Option<(f32,f32,f32)>{
-        let section_inset=2.0*(theme::MODAL_SECTION_PADDING+
-            theme::FRAME_STROKE_WIDTH);
-        let image=theme::PRODUCT_DETAIL_IMAGE_SIZE+section_inset;
-        // The common horizontal row owns the exact 16pt column gaps.
-        let gap=theme::MODAL_MASTER_WORKSPACE_GAP;
-        let usable=width-image-2.0*gap;
-        if usable<560.0{return None;}
-        let price=(usable*0.36).clamp(240.0,255.0);
-        let overview=usable-price;
+    /// Keep the fixed image and allocate all remaining space to the overview.
+    fn detail_columns(width:f32)->Option<(f32,f32)>{
+        let inset=2.0*(theme::MODAL_SECTION_PADDING+theme::FRAME_STROKE_WIDTH);
+        let image=theme::PRODUCT_DETAIL_IMAGE_SIZE+inset;
+        let overview=width-image-theme::MODAL_MASTER_WORKSPACE_GAP;
         if overview<310.0{return None;}
-        Some((overview,price,image))
+        Some((overview,image))
     }
-    /// Three full-height cards share one image-led body minimum. Inline
-    /// label/editor rows retain their natural heights; spare height is blank.
+    /// Both cards share a minimum large enough for the image and eight rows.
     fn detail_section_body_height()->f32{
-        theme::PRODUCT_DETAIL_IMAGE_SIZE
-            +theme::SPACE_8
-            +theme::ACTION_STANDARD_HEIGHT
-            +2.0*theme::SPACING
+        let image=theme::PRODUCT_DETAIL_IMAGE_SIZE+theme::SPACE_8
+            +theme::ACTION_STANDARD_HEIGHT+2.0*theme::SPACING;
+        let fields=8.0*theme::INPUT_HEIGHT+6.0*theme::SPACING
+            +2.0*theme::MODAL_MASTER_WORKSPACE_GAP+theme::SOFT_DIVIDER_WIDTH;
+        image.max(fields)
     }
     fn detail_wide_text(
         ui:&mut Ui,draft:&mut Value,key:&str,label:&str,enabled:bool
@@ -1885,11 +1881,9 @@ impl ProductManager {
         editable:bool,busy:bool
     ){
         Self::detail_wide_text(ui,draft,"name","상품명",editable&&!busy);
-        ui.add_space(theme::SPACE_16);
         Self::detail_wide_text(
             ui,draft,"subtitle","상품 옵션",editable&&!busy
         );
-        ui.add_space(theme::SPACE_16);
         components::modal_labeled_row(ui,"카테고리",|row|{
             let before=draft["categories"].as_array()
                 .and_then(|ids|ids.last())
@@ -1911,7 +1905,6 @@ impl ProductManager {
                     .unwrap_or(""));
             }
         });
-        ui.add_space(theme::SPACE_16);
         components::modal_labeled_row(ui,"브랜드",|row|{
             let before=field(draft,"brandId").to_owned();
             let mut brand_id=before.clone();
@@ -1954,7 +1947,6 @@ impl ProductManager {
             });
             if selected!=current{set_sale_status(draft,&selected);}
         });
-        ui.add_space(theme::SPACE_16);
         for (label,tier) in [
             ("도매가","wholesale"),("반도매가","semi"),
             ("소매가","retail")
@@ -1977,8 +1969,23 @@ impl ProductManager {
                 );
                 line.label(typography::field_label("원"));
             });
-            if tier!="retail"{ui.add_space(theme::SPACE_16);}
         }
+    }
+    fn detail_information_column(
+        ui:&mut Ui,draft:&mut Value,prices:&mut HashMap<String,String>,
+        brands:&[Value],categories:&[(String,String)],
+        category_nodes:&[category_dropdown::CategoryNode],editable:bool,busy:bool
+    ){
+        Self::detail_overview_column(ui,draft,brands,categories,category_nodes,editable,busy);
+        // Ordinary form spacing is 8pt. The divider allocation already
+        // includes its full 16pt on each side, so compensate for the
+        // automatic row gap rather than adding it a second time.
+        ui.spacing_mut().item_spacing.y=0.0;
+        // The previous row advanced the cursor by the normal row gap.
+        ui.add_space(-theme::SPACING);
+        components::modal_master_spaced_divider(ui);
+        ui.spacing_mut().item_spacing.y=theme::SPACING;
+        Self::detail_price_column(ui,draft,prices,editable,busy);
     }
     pub fn show_detail(&mut self,ctx:&Context,work_area:egui::Rect){
         if self.tab==0 && self.excel.has_modal(){
@@ -2068,26 +2075,19 @@ impl ProductManager {
                             ),|body|{
                         let mut measured=components::ModalEditorBodyGeometry::default();
                         let content_width=body.available_width().max(1.0);
-                        if let Some((overview_width,price_width,image_width))=
+                        if let Some((overview_width,image_width))=
                             Self::detail_columns(content_width)
                         {
-                            // Visual reading order: reference image first,
-                            // editable overview second, and prices last.
-                            // Keep the existing 320pt image and all shared
-                            // modal section and inline form components.
+                            // Image first; all eight editable fields share one overview.
                             body.horizontal(|top|{
-                                top.spacing_mut().item_spacing.x=
-                                    theme::MODAL_MASTER_WORKSPACE_GAP;
+                                top.spacing_mut().item_spacing.x=theme::MODAL_MASTER_WORKSPACE_GAP;
                                 top.vertical(|media|{
                                     media.set_width(image_width);
                                     let section=components::modal_section_measured(
                                         media,"상품 이미지",|photos|{
-                                            photos.set_min_height(
-                                                Self::detail_section_body_height()
-                                            );
+                                            photos.set_min_height(Self::detail_section_body_height());
                                             self.detail_image_column(
-                                                photos,&mut draft,editable,busy,
-                                                &mut photo_error
+                                                photos,&mut draft,editable,busy,&mut photo_error
                                             );
                                         }
                                     );
@@ -2097,27 +2097,10 @@ impl ProductManager {
                                     overview.set_width(overview_width);
                                     let section=components::modal_section_measured(
                                         overview,"상품 개요",|fields|{
-                                            fields.set_min_height(
-                                                Self::detail_section_body_height()
-                                            );
-                                            Self::detail_overview_column(
-                                                fields,&mut draft,&brands,&categories,
+                                            fields.set_min_height(Self::detail_section_body_height());
+                                            Self::detail_information_column(
+                                                fields,&mut draft,&mut prices,&brands,&categories,
                                                 &category_nodes,editable,busy
-                                            );
-                                        }
-                                    );
-                                    measured.cards.push(section.response.rect);
-                                });
-                                top.vertical(|prices_ui|{
-                                    prices_ui.set_width(price_width);
-                                    let section=components::modal_section_measured(
-                                        prices_ui,"판매 · 가격",|fields|{
-                                            fields.set_min_height(
-                                                Self::detail_section_body_height()
-                                            );
-                                            Self::detail_price_column(
-                                                fields,&mut draft,&mut prices,
-                                                editable,busy
                                             );
                                         }
                                     );
@@ -2125,14 +2108,11 @@ impl ProductManager {
                                 });
                             });
                         }else{
-                            // Preserve the same order when the Kakao-safe
-                            // workspace requires vertical stacking.
                             body.vertical(|stack|{
                                 let section=components::modal_section_measured(
                                     stack,"상품 이미지",|photos|{
                                         self.detail_image_column(
-                                            photos,&mut draft,editable,busy,
-                                            &mut photo_error
+                                            photos,&mut draft,editable,busy,&mut photo_error
                                         );
                                     }
                                 );
@@ -2140,18 +2120,9 @@ impl ProductManager {
                                 stack.add_space(theme::SPACE_16);
                                 let section=components::modal_section_measured(
                                     stack,"상품 개요",|fields|{
-                                        Self::detail_overview_column(
-                                            fields,&mut draft,&brands,&categories,
+                                        Self::detail_information_column(
+                                            fields,&mut draft,&mut prices,&brands,&categories,
                                             &category_nodes,editable,busy
-                                        );
-                                    }
-                                );
-                                measured.cards.push(section.response.rect);
-                                stack.add_space(theme::SPACE_16);
-                                let section=components::modal_section_measured(
-                                    stack,"판매 · 가격",|fields|{
-                                        Self::detail_price_column(
-                                            fields,&mut draft,&mut prices,editable,busy
                                         );
                                     }
                                 );
@@ -2230,10 +2201,22 @@ impl ProductManager {
                                     advanced.label(typography::section_heading(
                                         &format!("가격 변경 이력 {}건",history.len())
                                     ));
-                                    for item in history.iter().rev(){
-                                        advanced.label(typography::caption(
-                                            &price_history_description(item)
-                                        ));
+                                    if history.is_empty(){
+                                        advanced.label(typography::caption("가격 변경 이력이 없습니다."));
+                                    }else{
+                                        let entries=history.iter().rev()
+                                            .map(price_history_row).collect::<Vec<_>>();
+                                        let height=entries.len().min(5) as f32*
+                                            (theme::MANAGEMENT_COMPACT_ROW_HEIGHT+theme::SOFT_DIVIDER_WIDTH);
+                                        components::management_readonly_table_aligned(
+                                            advanced,"product-price-history",
+                                            &["변경일시","항목","이전값","변경값","수정 경로"],
+                                            &entries,height,&[2,3],|width|{
+                                                let usable=(width-4.0*theme::SPACE_8).max(500.0);
+                                                vec![usable*0.27,usable*0.13,usable*0.19,
+                                                    usable*0.19,usable*0.22]
+                                            }
+                                        );
                                     }
                                 }
                             });
@@ -2375,10 +2358,9 @@ mod tests {
     fn price_history_uses_korean_tier_and_won_without_internal_id(){
         let entry=json!({"at":"2026-11-26T01:00:00+09:00","field":"v1.semi",
             "before":null,"after":15000});
-        let description=price_history_description(&entry);
-        assert!(description.contains("반도매가"));
-        assert!(description.contains("미등록 → 15,000원"));
-        assert!(!description.contains("v1"));
+        let row=price_history_row(&entry);
+        assert_eq!(&row[1..4],["반도매가","미등록","15,000원"]);
+        assert!(row.iter().all(|value|!value.contains("v1")));
     }
     #[test]
     fn product_list_fetch_does_not_insert_transient_loading_strips(){
@@ -2425,11 +2407,12 @@ mod tests {
         assert!(!rendered.contains("unwrap_or((0,0,0,0))"));
     }
     #[test]
-    fn product_detail_inline_rows_leave_blank_space_under_fixed_320_image(){
+    fn product_detail_inline_rows_fit_with_fixed_320_image(){
         let body=ProductManager::detail_section_body_height();
-        let rows=4.0*theme::INPUT_HEIGHT+3.0*theme::SPACE_16;
+        let rows=8.0*theme::INPUT_HEIGHT+6.0*theme::SPACING
+            +2.0*theme::MODAL_MASTER_WORKSPACE_GAP+theme::SOFT_DIVIDER_WIDTH;
         assert!(body>=theme::PRODUCT_DETAIL_IMAGE_SIZE);
-        assert!(body>rows,"the remaining space must be a blank margin");
+        assert!(body>=rows);
         assert_eq!(theme::PRODUCT_DETAIL_IMAGE_SIZE,320.0);
     }
     #[test]
@@ -2453,19 +2436,18 @@ mod tests {
     }
     #[test]
     fn product_detail_reacts_to_actual_kakao_safe_modal_width(){
-        // All three sections have the SAME approved inset/frame thickness,
-        // so the 320pt image and inline 36pt price fields may not clip.
-        for width in [420.0,893.0,938.0,940.0,945.0]{
+        // Two sections share the same inset and keep the fixed image.
+        for width in [420.0,650.0,679.0]{
             assert!(ProductManager::detail_columns(width).is_none());
         }
         let inset=2.0*(theme::MODAL_SECTION_PADDING+
             theme::FRAME_STROKE_WIDTH);
-        for width in [946.0,970.0,1000.0,1100.0]{
-            let (overview,price,image)=ProductManager::detail_columns(width).unwrap();
+        for width in [680.0,893.0,946.0,1100.0]{
+            let (overview,image)=ProductManager::detail_columns(width).unwrap();
             assert_eq!(image,theme::PRODUCT_DETAIL_IMAGE_SIZE+inset);
-            assert!(overview>=310.0 && price>=240.0 && price<=255.0);
+            assert!(overview>=310.0);
             let gap=theme::MODAL_MASTER_WORKSPACE_GAP;
-            assert!(overview+price+image+2.0*gap<=width+0.01,
+            assert!(overview+image+gap<=width+0.01,
                 "boxed columns overflow {width}pt");
         }
     }
@@ -2481,8 +2463,9 @@ mod tests {
         for section in [horizontal,stacked]{
             let image=section.find("\"상품 이미지\"").unwrap();
             let overview=section.find("\"상품 개요\"").unwrap();
-            let price=section.find("\"판매 · 가격\"").unwrap();
-            assert!(image<overview && overview<price);
+            assert!(image<overview);
+            assert!(section.contains("Self::detail_information_column("));
+            assert!(!section.contains("\"판매 · 가격\""));
         }
         assert_eq!(theme::PRODUCT_DETAIL_IMAGE_SIZE,320.0);
         assert!(horizontal.contains("theme::MODAL_MASTER_WORKSPACE_GAP"));
@@ -2520,13 +2503,13 @@ mod tests {
         assert!(detail.contains("components::modal_labeled_row("));
         assert!(!detail.contains("ui.vertical(|row|"));
         assert!(!detail.contains("● 판매중"));
-        assert!(detail.contains("components::management_dropdown("));
+        assert!(detail.contains("components::management_status_dropdown("));
         for label in ["상품명","상품 옵션","카테고리","브랜드","판매 상태"]{
             assert!(detail.contains(label),"{label} missing from inline form");
         }
         let composition=source.split("    pub fn show_detail(").nth(1).unwrap()
             .split("        self.selected=Some(draft.clone());").next().unwrap();
-        for heading in ["상품 개요","판매 · 가격","상품 이미지"]{
+        for heading in ["상품 개요","상품 이미지"]{
             assert!(composition.contains(&format!(
                 "components::modal_section_measured("
             )) && composition.contains(heading));
@@ -2945,8 +2928,8 @@ mod tests {
             egui::Id::new("test-product-detail-geometry")
         )).expect("actual product detail geometry");
         let cards=&geometry.content.cards;
-        assert_eq!(cards.len(),3);
-        for (card,label) in cards.iter().zip(["상품 이미지","상품 개요","판매 · 가격"]){
+        assert_eq!(cards.len(),2);
+        for (card,label) in cards.iter().zip(["상품 이미지","상품 개요"]){
             assert!(text.iter().any(|(s,rect)|s==label&&card.contains(rect.center())),
                 "heading {label} is not in its measured card");
         }
@@ -2954,7 +2937,7 @@ mod tests {
         assert!(geometry.header.is_some()&&geometry.footer.is_some());
         assert!(geometry.content.divider.is_some()&&geometry.content.advanced_header.is_some());
         let gaps=geometry.gaps();
-        for name in ["header_to_card","card_gap_1","card_gap_2","card_to_rule",
+        for name in ["header_to_card","card_gap_1","card_to_rule",
             "rule_to_advanced","body_to_footer"]{
             assert!(gaps.iter().any(|(label,_)|*label==name),"missing {name}: {gaps:?}");
         }
