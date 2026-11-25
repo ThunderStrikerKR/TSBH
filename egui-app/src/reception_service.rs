@@ -382,16 +382,14 @@ pub fn text<'a>(value: &'a Value, key: &str) -> &'a str {
     value.get(key).and_then(Value::as_str).unwrap_or("")
 }
 
+pub fn item_title_ref(item:&Value)->&str{
+    let title=text(item,"name");
+    if !title.trim().is_empty(){return title;}
+    let original=text(item,"raw");
+    if original.trim().is_empty(){"미확정 상품"}else{original}
+}
 pub fn item_title(item: &Value) -> String {
-    let title = text(item, "name");
-    if title.trim().is_empty() {
-        let original = text(item, "raw");
-        if original.trim().is_empty() {
-            return "미확정 상품".to_owned();
-        }
-        return original.to_owned();
-    }
-    title.to_owned()
+    item_title_ref(item).to_owned()
 }
 
 pub fn item_quantity(item: &Value) -> String {
