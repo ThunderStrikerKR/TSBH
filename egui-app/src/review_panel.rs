@@ -15,6 +15,21 @@ use crate::{
 fn text<'a>(row:&'a Value,key:&str)->&'a str {
     row.get(key).and_then(Value::as_str).unwrap_or("")
 }
+/// Keep the normal empty caption centered in the entire content viewport.
+/// If a splitter makes the panel too short, reserve the count's footprint
+/// and center only within a usable remainder rather than overlap the count.
+fn review_empty_overlay_rect(body:egui::Rect,count_bottom:f32)->Option<egui::Rect>{
+    let minimum=typography::METADATA_LINE_HEIGHT;
+    if !body.is_positive(){return None;}
+    let top=(count_bottom+theme::SPACE_4).max(body.top());
+    if body.center().y-minimum/2.0>=top && body.height()>=minimum{
+        return Some(body);
+    }
+    let remaining=egui::Rect::from_min_max(
+        egui::pos2(body.left(),top),body.right_bottom()
+    );
+    (remaining.width()>0.0 && remaining.height()>=minimum).then_some(remaining)
+}
 #[derive(Clone,Debug,PartialEq)]
 struct ReviewKey {
     id:String,raw:String,order_type:String,client_id:Option<String>,
@@ -192,13 +207,19 @@ impl ReviewPanel {
             .and_then(|row|row.remote.as_ref()).filter(|decision|
                 ["auto","review"].contains(&text(decision,"status")));
         let info_count=facts.len()+inherited.len()+usize::from(remote.is_some());
-        ui.label(typography::caption(&format!(
+        // Capture the visible body BEFORE the count advances the cursor.
+        // The fixed count is an upper-left annotation, not a second table
+        // header: using the remaining rect shifts the empty state downward.
+        let body=ui.available_rect_before_wrap().intersect(ui.clip_rect());
+        let count=ui.label(typography::caption(&format!(
             "조치 {}건 / 안내 {}건",actions.len(),info_count
         )));
         if actions.is_empty() && facts.is_empty() && inherited.is_empty() && remote.is_none(){
-            crate::components::management_body_state_overlay(
-                ui,ui.available_rect_before_wrap(),Some("필수 확인 사항 없음")
-            );
+            if let Some(viewport)=review_empty_overlay_rect(body,count.rect.bottom()){
+                crate::components::management_body_state_overlay(
+                    ui,viewport,Some("필수 확인 사항 없음")
+                );
+            }
         }
         for &index in actions {
             let issue=&self.issues[index];
@@ -372,6 +393,30 @@ fn issue_card(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn empty_review_caption_uses_full_body_center_and_avoids_count_overlap(){
+        let body=egui::Rect::from_min_size(egui::pos2(26.0,76.0),egui::vec2(580.0,152.0));
+        let normal=review_empty_overlay_rect(body,101.0).unwrap();
+        assert_eq!(normal,body);
+        assert_eq!(normal.center(),body.center());
+        let short=egui::Rect::from_min_size(body.min,egui::vec2(580.0,60.0));
+        let fallback=review_empty_overlay_rect(short,101.0).unwrap();
+        assert_eq!(fallback.center().x,short.center().x);
+        assert!(fallback.top()>=101.0+theme::SPACE_4);
+        assert!(fallback.bottom()<=short.bottom());
+        let tiny=egui::Rect::from_min_size(body.min,egui::vec2(580.0,32.0));
+        assert!(review_empty_overlay_rect(tiny,101.0).is_none());
+    }
+    #[test]
+    fn empty_review_caption_keeps_the_shared_overlay_and_metadata_font(){
+        let source=include_str!("review_panel.rs").split("#[cfg(test)]").next().unwrap();
+        assert!(source.contains("management_body_state_overlay("));
+        let shared=include_str!("components.rs").split("pub fn management_body_state_overlay(")
+            .nth(1).unwrap().split("pub fn fixed_row").next().unwrap();
+        assert!(shared.contains("egui::FontId::proportional(typography::FONT_METADATA)"));
+        assert!(shared.contains("egui::Align2::CENTER_CENTER"));
+        assert!(shared.contains("theme::MUTED"));
+    }
     #[test]
     fn review_tones_follow_native_severity_without_changing_actions(){
         assert_eq!(issue_tone(&json!({"severity":"ACTION"})),ReviewTone::Action);
