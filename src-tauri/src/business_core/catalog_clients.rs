@@ -55,7 +55,7 @@ fn normalized_color(value: &str) -> String {
     let trimmed = value.trim();
     let key = trimmed.to_lowercase();
     match key.as_str() {
-        "색상 미표기" | "색상미표기" => "단일".into(),
+        "단일" | "색상 미표기" | "색상미표기" => String::new(),
         "gold" | "골드" => "Gold".into(),
         "rose gold" | "로즈골드" => "Rose Gold".into(),
         "cosmo black" | "cosmoblack" | "코스모블랙" => "Cosmo Black".into(),
@@ -86,10 +86,13 @@ fn validate_client(state: &Value, client: &Value) -> Result<(), String> {
 fn validate_product(state: &Value, product: &Value) -> Result<(), String> {
     // src/domain.ts::productSchema and validateProduct: one sale unit only,
     // valid immutable identity, nonnegative safe prices and trusted links.
-    for key in ["id", "code", "name", "defaultColor", "createdAt", "updatedAt"] {
+    for key in ["id", "code", "name", "createdAt", "updatedAt"] {
         if field(product, key).is_empty() {
             return Err(format!("상품 필수 정보가 없습니다: {key}"));
         }
+    }
+    if !product.get("defaultColor").is_some_and(Value::is_string) {
+        return Err("상품 색상 정보 형식이 올바르지 않습니다.".into());
     }
     if !product.get("category").is_some_and(Value::is_string) {
         return Err("상품 카테고리 정보가 올바르지 않습니다.".into());
@@ -105,7 +108,7 @@ fn validate_product(state: &Value, product: &Value) -> Result<(), String> {
         return Err("상품은 한 가지 판매 구성으로만 등록할 수 있습니다. 기존 복수 구성은 각각 별도 상품으로 전환하세요.".into());
     }
     for variant in variants {
-        if !value_present(variant, "id") || !value_present(variant, "color") ||
+        if !value_present(variant, "id") || !variant.get("color").is_some_and(Value::is_string) ||
             !["DEMO", "MANUAL", "OFFICIAL"].contains(&field(variant, "source")) ||
             !variant.get("url").is_some_and(Value::is_string) ||
             !["wholesale", "semi", "retail"].iter().all(|key|

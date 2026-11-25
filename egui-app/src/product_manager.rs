@@ -911,10 +911,10 @@ impl ProductManager {
         self.begin_edit(json!({
             "id":"","code":"","name":"","subtitle":"",
             "category":"","categories":[],"catalog":"BANDOSTAND",
-            "origin":"FACTORY","defaultColor":"단일",
+            "origin":"FACTORY","defaultColor":"",
             "active":true,"saleStatus":"판매중","saleUnit":true,"colorStatus":"NOT_REQUIRED",
             "variants":[{
-                "id":"","color":"단일","option":"",
+                "id":"","color":"","option":"",
                 "wholesale":null,"semi":null,"retail":null,
                 "url":"","source":"MANUAL"
             }],

@@ -136,7 +136,8 @@ fn update_product(state:&Value,current:&Value,cells:&[String])->Result<Value,Str
             else{p[key]=json!(cell(cells,index));}
         }
     }
-    p["defaultColor"]=json!(optional(cell(cells,11),field(&p,"defaultColor")));
+    p["defaultColor"]=json!(normalized_color(&optional(cell(cells,11),field(&p,"defaultColor"))));
+    p["colorStatus"]=json!(if field(&p,"defaultColor").is_empty(){"NOT_REQUIRED"}else{"KNOWN"});
     p["active"]=json!(yes_no(cell(cells,12),
         p.get("active").and_then(Value::as_bool).unwrap_or(false))?);
     Ok(p)
@@ -146,13 +147,13 @@ fn new_product(state:&Value,cells:&[String],id:&str,now:&str)->Result<Value,Stri
     let origin=if group=="BANDOMALL"{"STORE"}else{"FACTORY"};
     let mut p=json!({
         "id":id,"name":cell(cells,2),"code":id,"catalog":group,
-        "origin":origin,"category":"","defaultColor":cell(cells,11),
+        "origin":origin,"category":"","defaultColor":normalized_color(&optional(cell(cells,11),"")),
         "active":yes_no(cell(cells,12),true)?,"variants":[],
         "createdAt":now,"updatedAt":now,"saleUnit":true,
         "colorStatus":"KNOWN","verificationStatus":"REGISTERED",
     });
     if field(&p,"name").trim().is_empty(){return Err("신규 상품명을 입력하세요.".into())}
-    if field(&p,"defaultColor").is_empty(){return Err("신규 상품의 기본 색상을 입력하세요.".into())}
+    p["colorStatus"]=json!(if field(&p,"defaultColor").is_empty(){"NOT_REQUIRED"}else{"KNOWN"});
     if !cell(cells,6).is_empty()&&cell(cells,6)!=origin_display(&p){
         return Err("상품군과 출고구분이 일치하지 않습니다.".into())
     }
@@ -179,10 +180,7 @@ fn parse_price(raw:&str,previous:&Value)->Result<Value,String>{
     Ok(json!(n))
 }
 fn new_variant(cells:&[String],id:&str)->Result<Value,String>{
-    let color=cell(cells,3);
-    if color.is_empty()||color==EMPTY{
-        return Err("독립 상품의 색상을 입력하세요. 색상 구분이 없으면 단일로 입력하세요.".into())
-    }
+    let color=normalized_color(&optional(cell(cells,3),""));
     if [8,9,4].iter().any(|i|!cell(cells,*i).is_empty()){
         return Err("신규 상품의 가격 기록에는 옵션명이나 외부 식별자를 직접 입력하지 않습니다. 구분 정보는 상품명에 기재하세요.".into())
     }
@@ -200,7 +198,7 @@ fn edit_variant(original:&Value,cells:&[String],product:&mut Value,now:&str)->Re
         return Err("공식 사이트 식별자는 변경할 수 없습니다.".into())
     }
     let mut next=original.clone();
-    next["color"]=json!(optional(cell(cells,3),field(&next,"color")));
+    next["color"]=json!(normalized_color(&optional(cell(cells,3),field(&next,"color"))));
     if !cell(cells,4).is_empty()&&cell(cells,4)!=field(original,"option"){
         return Err("공식 원본 구성 표기는 수정할 수 없습니다. 상품 구분은 상품명에서 수정하세요.".into())
     }
@@ -432,7 +430,7 @@ pub(super) fn preview(payload:&Value)->Result<Value,String>{
                 normalized_color(field(v,"color"))==normalized_color(field(p,"defaultColor"))){
                 return Err("기본 색상에 해당하는 판매 옵션이 없습니다.".into())
             }
-            if variants.iter().any(|v|field(v,"color").is_empty()||
+            if variants.iter().any(|v|!v.get("color").is_some_and(Value::is_string)||
                 ["wholesale","semi","retail"].iter().any(|key|
                     v.get(*key).is_none_or(|n|!(n.is_null()||
                         n.as_u64().is_some_and(|n|n<=9_007_199_254_740_991))))){

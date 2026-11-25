@@ -7,7 +7,10 @@ use serde_json::{json,Value};
 use std::path::Path;
 
 const LEGACY:&str="색상 미표기";
-const NO_COLOR:&str="단일";
+const NO_COLOR:&str="";
+fn placeholder(value:&Value)->bool {
+    matches!(value.as_str().map(str::trim),Some("단일"|"색상 미표기"|"색상미표기"))
+}
 
 fn option_color(option:&str)->&'static str{
     let value=option.to_lowercase();
@@ -27,13 +30,15 @@ fn option_color(option:&str)->&'static str{
     NO_COLOR
 }
 fn normalize_product(product:&mut Value)->usize{
-    let default_legacy=product["defaultColor"].as_str()==Some(LEGACY);
+    let default_legacy=placeholder(&product["defaultColor"]);
     let mut first_fixed=None::<String>;
     let mut changed=0;
     if let Some(variants)=product.get_mut("variants").and_then(Value::as_array_mut){
         for variant in variants{
-            if variant["color"].as_str()!=Some(LEGACY){continue;}
-            let fixed=option_color(variant["option"].as_str().unwrap_or(""));
+            if !placeholder(&variant["color"]){continue;}
+            let fixed=if variant["color"].as_str()==Some(LEGACY) {
+                option_color(variant["option"].as_str().unwrap_or(""))
+            } else { NO_COLOR };
             variant["color"]=json!(fixed);
             if first_fixed.is_none(){first_fixed=Some(fixed.to_owned());}
             changed+=1;
@@ -42,7 +47,7 @@ fn normalize_product(product:&mut Value)->usize{
     if default_legacy{
         // The former default always referenced the placeholder itself.
         // Prefer its just-normalized variant, never another variant's
-        // arbitrary color. '단일' is INTERNAL, never a selectable option.
+        // arbitrary color. An absent color is the empty string.
         let replacement=first_fixed.or_else(||{
             product["variants"].as_array()
                 .and_then(|vs|vs.first())
@@ -57,9 +62,9 @@ fn normalize_product(product:&mut Value)->usize{
 /// Read-only guard for a transaction whose core tables must remain unchanged.
 pub(crate) fn needs_normalization(state:&Value)->Result<bool,String>{
     let products=state["products"].as_array().ok_or("상품 색상 정리 대상 목록이 없습니다.")?;
-    Ok(products.iter().any(|p|p["defaultColor"].as_str()==Some(LEGACY) ||
+    Ok(products.iter().any(|p|placeholder(&p["defaultColor"]) ||
         p["variants"].as_array().is_some_and(|vs|
-            vs.iter().any(|v|v["color"].as_str()==Some(LEGACY)))))
+            vs.iter().any(|v|placeholder(&v["color"])))))
 }
 
 pub fn normalize_products(state:&mut Value)->Result<usize,String>{
@@ -100,8 +105,8 @@ mod tests{
         let mut state=json!({"products":[
             {"id":"p1","defaultColor":LEGACY,"variants":[
                 {"id":"v1","color":LEGACY,"option":"크롬 25cm","retail":40000}]},
-            {"id":"p2","defaultColor":LEGACY,"variants":[
-                {"id":"v2","color":LEGACY,"option":"상판 42x34cm","retail":12000}]},
+            {"id":"p2","defaultColor":"단일","variants":[
+                {"id":"v2","color":"단일","option":"상판 42x34cm","retail":12000}]},
             {"id":"p3","defaultColor":"Black","variants":[
                 {"id":"v3","color":"Black","option":"블랙","retail":10000}]}
         ],"orders":[{"id":"existing","snapshot":{"color":LEGACY}}]});

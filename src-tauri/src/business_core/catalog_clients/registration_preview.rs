@@ -108,7 +108,7 @@ fn product_record(values:&Value,id:&str,variant_id:&str,at:&str,
         "sellingUnit":strval(values,"판매 단위"),
         "saleUnit":true,"registrationIdentity":identity,"verificationStatus":"REGISTERED",
         "familyKey":id,"modelKey":format!("REG|{}",identity),"defaultColor":color,
-        "colorStatus":if color=="단일"{"NOT_REQUIRED"}else{"KNOWN"},"active":true,
+        "colorStatus":if color.is_empty(){"NOT_REQUIRED"}else{"KNOWN"},"active":true,
         "variants":[{"id":variant_id,"color":color,"option":strval(values,"구성 구분"),
             "wholesale":prices[0],"semi":prices[1],"retail":prices[2],
             "url":strval(values,"상품 링크"),"source":"MANUAL"}],
@@ -174,8 +174,7 @@ pub(super) fn preview(payload:&Value)->Result<Value,String>{
         if !url.is_empty()&&!product_url_ok(url){
             errors.push("반도스탠드 / 반도몰 공식 상품 링크만 허용됩니다.".into())
         }
-        let color=normalized_color(if strval(values,"색상").is_empty(){"단일"}
-            else{strval(values,"색상")});
+        let color=normalized_color(strval(values,"색상"));
         let identifier=identity(values,catalog.unwrap_or("UNKNOWN"),&color);
         let ids=generated.get(index).ok_or("상품 등록 ID가 누락됐습니다.")?;
         let at=field(ids,"at");

@@ -261,7 +261,7 @@ pub(super) fn preview(payload:&Value)->Result<Value,String>{
         else if let Some(m)=korean.captures(&name){m[1].to_owned()}
         else if let Some(m)=color_desc.captures(&description){m[1].to_owned()}
         else{String::new()};
-    let color=normalized_color(if detected.is_empty(){"단일"}else{&detected});
+    let color=normalized_color(&detected);
     let catalog=if url.host_str().unwrap_or("").ends_with("bandomall.co.kr"){
         "BANDOMALL"
     }else{"BANDOSTAND"};
@@ -314,7 +314,7 @@ pub(super) fn preview(payload:&Value)->Result<Value,String>{
         "origin":if catalog=="BANDOSTAND"{"FACTORY"}else{"STORE"},
         "category":"","categories":[],"active":true,"siteId":id,"siteRefs":[id],
         "defaultColor":color,
-        "colorStatus":if color=="단일"{"NOT_REQUIRED"}else{"KNOWN"},
+        "colorStatus":if color.is_empty(){"NOT_REQUIRED"}else{"KNOWN"},
         "saleUnit":!selectable&&!unclear,"requiresOption":selectable||unclear,
         "createdAt":now,"updatedAt":now,
         "variants":[{
