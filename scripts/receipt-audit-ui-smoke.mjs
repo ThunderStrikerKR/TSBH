@@ -5,6 +5,57 @@ import { setTimeout as pause } from "node:timers/promises";
 import { chromium } from "playwright";
 import ExcelJS from "exceljs";
 import { auditCSS } from "./audit-css-ownership.mjs";
+import { tsImport } from "tsx/esm/api";
+
+// Browser-only native transport fixture. Keep the Rust shipment-read contract
+// explicit; actual Rust projection semantics are tested in workflow.rs.
+function installShipmentReadMock() {
+  window.__shipmentReadCalls = [];
+  window.__shipmentReadMock = (operation, payload) => {
+    const {state: input} = payload;
+    window.__shipmentReadCalls.push(operation);
+    const shipments = input.workflow?.shipments ?? [];
+    const findOrder = ship => input.orders.find(o => o.id === ship?.orderId);
+    if (operation === "read_shipments") {
+      if (payload.groupIds !== undefined && !Array.isArray(payload.groupIds))
+        throw Error("배송 조회 묶음 목록 오류");
+      return {shipments: shipments.flatMap(ship => {
+        if (payload.groupIds && !payload.groupIds.includes(ship.groupId)) return [];
+        const order = findOrder(ship);
+        const recipient = order?.recipients.find(row => row.id === ship.recipientId);
+        if (!recipient) return [];
+        const settings = input.settings;
+        const client = order.orderType === "RETAIL"
+          ? order.clientSnapshot ?? {
+              id:"",name:"반도스탠드",postcode:settings.senderPostcode ?? "",
+              address:settings.senderAddress ?? "",phone:settings.senderPhone ?? "",
+              mobile:settings.senderMobile ?? "",contact:"",tier:"retail",
+              payment:"POSTPAID",shippingFeeExcluded:false,active:true,identifiers:"",overrides:{},
+            }
+          : ((order.confirmedAt || order.pricesLocked) && order.clientSnapshot)
+            ? order.clientSnapshot
+            : input.clients.find(client => client.id === order.clientId) ?? order.clientSnapshot ?? null;
+        return [{shipmentId:ship.id,client:structuredClone(client),
+          actualFreight:Object.fromEntries(["FACTORY","STORE"].map(origin =>
+            [origin,Object.hasOwn(ship.actualFreight ?? {},origin)
+              ? ship.actualFreight[origin] : recipient.actualFreight ?? null]))}];
+      })};
+    }
+    if (operation === "review_export_sender") {
+      if (!Array.isArray(payload.ids)) throw Error("선택한 배송 건을 확인하세요.");
+      const nonempty = value => typeof value === "string" && value.trim() !== "";
+      return {companyMissing:payload.ids.some(id => {
+        const entry = input.workflow?.queue.find(q => q.id === id);
+        const order = findOrder(shipments.find(ship => ship.id === entry?.shipmentId));
+        if (!["DEALER","RETAIL"].includes(order?.orderType)) return false;
+        const sender = entry.snapshot?.sender ?? {};
+        return !(nonempty(sender.name) && nonempty(sender.address) &&
+          (nonempty(sender.phone) || nonempty(sender.mobile)));
+      })};
+    }
+    throw Error("Unexpected shipment-read mock operation: " + operation);
+  };
+}
 
 const root = new URL("../", import.meta.url);
 const state = JSON.parse(readFileSync(new URL("../src-tauri/resources/state-seed.json", import.meta.url), "utf8"));
@@ -123,6 +174,7 @@ try {
   page.setDefaultTimeout(12000);
   const pageErrors = [];
   page.on("pageerror", (err) => pageErrors.push(err.message));
+  await page.addInitScript(installShipmentReadMock);
   await page.addInitScript(
     ({ state, archive, storePath }) => {
       let mode = "ORIGINAL";
@@ -197,6 +249,11 @@ try {
             });
             return undefined;
           }
+          if (command === "business_core_call" &&
+              ((args?.domain === "rules" && args.operation === "read_shipments") ||
+               (args?.domain === "output" && args.operation === "review_export_sender")))
+            return window.__shipmentReadMock(args.operation,args.payload);
+          if (command === "hub_notifications_list") return [];
           if (command === "state_load") return structuredClone(state);
           if (command === "business_core_call" &&
               args?.domain === "rules" &&
@@ -410,11 +467,18 @@ try {
           if (command === "dock_mode_native") {
             if (mode === "ORIGINAL") throw Error("Kakao must connect before layout selection");
             if (!["OVERLAP", "STACK"].includes(args.mode)) throw Error("Invalid Kakao view mode");
+            window.__kakaoTestCalls.push(["mode",args.mode]);
             mode = args.mode;
             return response();
           }
-          if (command === "dock_stop_native") { mode = "ORIGINAL"; return response(); }
-          if (command === "dock_start_native") { mode = "OVERLAP"; return response(); }
+          if (command === "dock_stop_native") {
+            window.__kakaoTestCalls.push(["stop"]);
+            mode = "ORIGINAL"; return response();
+          }
+          if (command === "dock_start_native") {
+            window.__kakaoTestCalls = [["start",args.handle,args.ratio]];
+            mode = "OVERLAP"; return response();
+          }
           if (command === "dock_windows_native") return [
             { handle: "123", title: "카카오톡", processId: 11, kind: "MAIN" },
             { handle: "456", title: "테스트 대화", processId: 11, kind: "CHAT" },
@@ -458,6 +522,29 @@ try {
   await ocrReview.waitFor();
   await ocrReview.getByRole("button", { name: "닫기", exact: true }).click();
   await ocrReview.waitFor({ state: "detached" });
+  // Cancelling the recognition subprocess is not an OCR failure and must
+  // return to the unchanged receipt without an error modal.
+  await page.evaluate(() => { window.__ocrDelayForTest = true; });
+  await captureButton.click();
+  await ocrProgress.waitFor();
+  await ocrProgress.getByRole("button", { name: "취소", exact: true }).click();
+  await ocrProgress.waitFor({ state: "detached" });
+  if (await page.getByRole("dialog", { name: "OCR 실행 오류" }).count())
+    throw Error("OCR cancellation is a normal action, not a processing error");
+  await page.evaluate(() => { window.__ocrDelayForTest = false; });
+  await page.evaluate(() => { window.__ocrFailureForTest = true; });
+  await captureButton.click();
+  const ocrFailure = page.getByRole("dialog", { name: "OCR 실행 오류" });
+  await ocrFailure.waitFor();
+  await ocrFailure.getByText(/0xC0000135/).waitFor();
+  await ocrFailure.getByRole("button", { name: "닫기", exact: true }).click();
+  await ocrFailure.waitFor({ state: "detached" });
+  await page.evaluate(() => { window.__ocrFailureForTest = false; });
+  // Capture is an intake-only action. Cancel and recognition failure must
+  // preserve the empty draft before the successful application leaves intake.
+  await page.getByLabel("새 발주서 입력 대기", { exact: true }).waitFor();
+  assert.equal(await page.evaluate(() => window.__ocrNativeReplacements ?? 0), 0,
+    "Cancelled or failed OCR must never replace the reception");
   await captureButton.click();
   ocrReview = page.getByRole("dialog", { name: "OCR 문자 인식 검토" });
   await ocrReview.waitFor();
@@ -469,16 +556,7 @@ try {
     "OCR replacement must invoke Rust apply_reception_action, not a legacy TS mutation");
   await page.waitForFunction(() =>
     document.querySelector(".source-document")?.textContent?.includes("709B 2개"));
-  // Cancelling the recognition subprocess is not an OCR failure and must
-  // return to the unchanged receipt without an error modal.
-  await page.evaluate(() => { window.__ocrDelayForTest = true; });
-  await captureButton.click();
-  await ocrProgress.waitFor();
-  await ocrProgress.getByRole("button", { name: "취소", exact: true }).click();
-  await ocrProgress.waitFor({ state: "detached" });
-  if (await page.getByRole("dialog", { name: "OCR 실행 오류" }).count())
-    throw Error("OCR cancellation is a normal action, not a processing error");
-  await page.evaluate(() => { window.__ocrDelayForTest = false; });
+  await captureButton.waitFor({ state: "detached" });
   // At the minimum Windows layout, the three source actions must remain
   // inside the source panel instead of being clipped by the 50:50 split.
   await page.setViewportSize({ width: 1024, height: 700 });
@@ -499,14 +577,6 @@ try {
     assert.ok(inside, "Source action is clipped: " + label);
   }
   await page.setViewportSize({ width: 1520, height: 1000 });
-  await page.evaluate(() => { window.__ocrFailureForTest = true; });
-  await captureButton.click();
-  const ocrFailure = page.getByRole("dialog", { name: "OCR 실행 오류" });
-  await ocrFailure.waitFor();
-  await ocrFailure.getByText(/0xC0000135/).waitFor();
-  await ocrFailure.getByRole("button", { name: "닫기", exact: true }).click();
-  await ocrFailure.waitFor({ state: "detached" });
-  await page.evaluate(() => { window.__ocrFailureForTest = false; });
   await page.reload();
   const nav = page.getByRole("navigation", { name: "업무 메뉴" });
   await nav.getByRole("button", { name: "엑셀 관리" }).click();
@@ -556,8 +626,9 @@ try {
   await page.getByText("3건 조회").waitFor();
   // Two explicit layouts inside one Kakao pane; connection is not a view.
   await page.reload();
-  await page.getByRole("button", { name: "카카오톡 함께 보기" }).click();
-  const modes = page.getByRole("group", { name: "카카오톡 보기 방식" });
+  const connectKakao = page.getByRole("button", { name: "카카오톡 연결", exact: true });
+  await connectKakao.click();
+  const modes = page.getByRole("group", { name: "카카오톡 보기 및 연결 관리", exact: true });
   await modes.waitFor();
   assert.equal(await page.getByRole("dialog", { name: "연결할 카카오톡 창 선택" }).count(), 0,
     "v0.8.10 connects directly without requiring an unnecessary picker");
@@ -573,7 +644,12 @@ try {
   await overlap.click();
   assert.equal(await overlap.getAttribute("aria-pressed"), "true");
   await modes.getByRole("button", { name: "카카오톡 연결 해제" }).click();
-  await page.getByRole("button", { name: "카카오톡 함께 보기" }).waitFor();
+  await connectKakao.waitFor();
+  await modes.waitFor({ state: "detached" });
+  assert.deepEqual(await page.evaluate(() => window.__kakaoTestCalls), [
+    ["start","456",0.8],["mode","STACK"],["mode","OVERLAP"],["stop"]
+  ], "Kakao layout changes must preserve connection and disconnect explicitly");
+  console.log("PASS: Kakao direct connection, two layouts and explicit disconnect");
   // STORE file is a frozen Logen workbook, not proof of shipment.
   await nav.getByRole("button", { name: "엑셀 관리" }).click();
   const factoryFolder = page.getByRole("button", { name: "오늘 공장 Excel 폴더 열기" });
@@ -590,6 +666,9 @@ try {
   console.log("PASS: daily factory and store Excel folder buttons work without selected orders");
   const queuedRow = page.getByRole("row").filter({ hasText: "매장시험수취인" });
   await queuedRow.getByRole("checkbox", { name: "엑셀 선택 매장시험수취인" }).check();
+  assert.ok(await page.evaluate(() => window.__shipmentReadCalls.includes("read_shipments")),
+    "Excel queue must use the native shipment projection");
+  await page.waitForFunction(() => window.__shipmentReadCalls.includes("review_export_sender"));
   await page.getByRole("button", { name: "선택 1건 매장 Excel 작성" }).click();
   await page.getByRole("dialog", { name: "작업 확인" })
     .getByRole("button", { name: "확인", exact: true }).click();
@@ -624,71 +703,52 @@ try {
   await page.getByRole("button", { name: "검증용 보면대 704" }).click();
   assert.equal(await page.locator('input[placeholder^="https://bandostand.com/product/"]').inputValue(),
     "https://bandostand.com/product/detail.html?product_no=704");
-  // Native process isolation is separately tested in Rust. This mock checks
-  // that developer controls actually render and the shared Modal operates.
+  // The developer settings tab was deliberately removed (73413f34) and
+  // orphaned developer UI archived (ebc21eb3). Exercise the supported data
+  // management UI; independent diagnostic and drill-oracle Node tests retain
+  // the retired developer-screen business coverage.
   await page.addInitScript(() => { window.__forceTestWorkspace = true; });
   await page.reload();
-  await nav.getByRole("button", { name: "설정" }).click();
   await page.getByText("TEST / 격리 DB / 외부 발송 금지").waitFor();
-  await page.getByRole("tab", { name: "개발자 모드" }).click();
-  await page.getByRole("heading", { name: "발주서 오류 검증" }).waitFor();
-  await page.getByRole("button", { name: "현재 발주서 검사" }).click();
-  await page.getByRole("heading", { name: /기대 조건/ }).waitFor();
-  await page.getByRole("button", { name: "Rust 저장 차단 검사" }).click();
-  await page.getByRole("heading", { name: /Rust 저장 경계/ }).waitFor();
-  await page.getByRole("button", { name: "선택한 실제 화면 열기" }).click();
-  const modal = page.getByRole("dialog", { name: "UI 상태 시험 / 기본" });
-  await modal.waitFor();
-  await page.waitForFunction(() =>
-    parseFloat(getComputedStyle(document.documentElement)
-      .getPropertyValue("--kakao-reserved-width")) > 0);
-  const geometry = await modal.evaluate((el) => {
-    const bounds = el.getBoundingClientRect();
-    const reserved = parseFloat(getComputedStyle(document.documentElement)
-      .getPropertyValue("--kakao-reserved-width")) || 0;
-    return {
-      left: bounds.left, right: bounds.right, width: bounds.width,
-      height: bounds.height, reserved, viewport: innerWidth,
-      center: bounds.left + bounds.width / 2,
-    };
-  });
-  const visibleCenter = geometry.reserved +
-    (geometry.viewport - geometry.reserved) / 2;
-  assert.ok(geometry.left >= geometry.reserved - 2,
-    "Common modal is hidden behind KakaoTalk: " + JSON.stringify(geometry));
-  assert.ok(geometry.right <= geometry.viewport + 2,
-    "Common modal extends beyond the visible workspace: " + JSON.stringify(geometry));
-  assert.ok(Math.abs(geometry.center - visibleCenter) < 3,
-    "Common modal is not centered in the KakaoTalk-free workspace: " + JSON.stringify(geometry));
-  assert.ok(geometry.height < 600,
-    "Simple modal still uses the former 820px blank layout: " + JSON.stringify(geometry));
-  console.log("COMMON_MODAL_REAL_DOM_GEOMETRY", JSON.stringify(geometry));
-  await modal.getByRole("button", { name: "취소" }).click();
-  await modal.waitFor({ state: "detached" });
-  // Actual ProductSearchDialog, not only a mocked common modal title.
-  await page.locator("#dev-popup").selectOption("product-search");
-  await page.getByRole("button", { name: "선택한 실제 화면 열기" }).click();
-  const productDialog = page.getByRole("dialog", { name: "상품 검색" });
-  await productDialog.waitFor();
-  await productDialog.getByRole("textbox", { name: "추가 상품 검색" }).fill("709");
-  await productDialog.getByRole("button", { name: /닫기/ }).click();
-  await productDialog.waitFor({ state: "detached" });
-  // Exercise the real React TEST workflow through the same backup/create,
-  // save and restore IPC names used by Tauri. The browser mocks IPC only;
-  // native SQLite persistence and rollback are covered by Rust tests.
-  await page.getByRole("heading", { name: "TEST 백업 및 복원 검증" }).waitFor();
-  await page.getByRole("button", { name: "1. TEST 백업 만들기" }).click();
-  await page.getByText(/검증 기준 백업:/).waitFor();
-  await page.getByRole("button", { name: "2. 가상 주문과 가격 변경" }).click();
-  await page.getByRole("dialog", { name: "작업 확인" })
-    .getByRole("button", { name: "TEST 데이터 생성" }).click();
-  await page.getByRole("heading", { name: "가상 데이터 변경 확인" }).waitFor();
-  await page.getByRole("button", { name: "3. 백업 복원 및 비교" }).click();
-  await page.getByRole("dialog", { name: "작업 확인" })
-    .getByRole("button", { name: "TEST DB 복원" }).click();
-  await page.getByRole("heading", { name: "복원 검증 통과" }).waitFor();
+  await nav.getByRole("button", { name: "설정" }).click();
+  const settingsTabs = page.getByRole("tablist", { name: "설정 분류" });
+  await settingsTabs.getByRole("tab", { name: "기본 설정", exact: true }).waitFor();
+  assert.deepEqual(await settingsTabs.getByRole("tab").allTextContents(),
+    ["기본 설정","파일 관리","데이터 관리","시스템"],
+    "The archived developer settings panel must not return to the application");
+  await settingsTabs.getByRole("tab", { name: "데이터 관리", exact: true }).click();
+  await page.getByRole("heading", { name: /데이터 백업 및 복구/ }).waitFor();
+
+  // Same synthetic mutation and full restoration oracle as the standalone
+  // backup regression. All browser IPC is mocked; no actual SQLite is opened.
+  const drill = await tsImport("./../tests/rust-migration/oracles/backup-restore-drill.ts", import.meta.url);
+  const before = await page.evaluate(async () => ({
+    state: await window.bando.load(), archive: await window.bando.receiptArchive(),
+  }));
+  await page.getByRole("button", { name: "지금 백업", exact: true }).click();
+  const backup = page.locator(".history").filter({hasText:"manual-ui-1.sqlite"});
+  await backup.getByRole("button", { name: "이 백업으로 복구", exact: true }).waitFor();
+  const sample = drill.buildDrillMutation(before.state, "ci-browser-backup", "2026-11-07T09:00:00Z");
+  const after = await page.evaluate(async (next) => window.bando.save(next), sample.next);
+  const changedChecks = drill.verifyDrillMutation(after, sample);
+  assert.ok(changedChecks.every(check => check.passed), JSON.stringify(changedChecks));
+  assert.ok(after.revision > (before.state.revision ?? 0));
+  await backup.getByRole("button", { name: "이 백업으로 복구", exact: true }).click();
+  const restoreDialog = page.getByRole("dialog", { name: "작업 확인" });
+  await restoreDialog.waitFor();
+  await restoreDialog.getByText(/현재 데이터는 먼저 안전 백업으로 보관합니다/).waitFor();
+  await restoreDialog.getByRole("button", { name: "확인", exact: true }).click();
+  await restoreDialog.waitFor({state:"detached"});
   await page.waitForFunction(() => window.__testRestoreCount === 1);
-  await page.getByText(/TEST DB 전체 내용 및 접수 감사 기록이 백업 시점과 일치/).waitFor();
+  const restored = await page.evaluate(async () => ({
+    state: await window.bando.load(), archive: await window.bando.receiptArchive(),
+  }));
+  const checks = drill.verifyDrillRestore(before.state, restored.state,
+    before.archive, restored.archive, sample, after.revision);
+  assert.ok(checks.every(check => check.passed), JSON.stringify(checks));
+  const backupNames = await page.evaluate(() => window.bando.backups());
+  assert.ok(backupNames.some(name => name.includes("pre-restore-ui-")));
+  console.log("PASS: four settings tabs and actual data management backup/restore", JSON.stringify(checks));
   // Account add/delete must save without a false conflict after Rust JSON reorders object keys.
   const settingsPage = await browser.newPage({ viewport: { width: 1520, height: 1000 } });
   const settingsErrors = [];
@@ -720,14 +780,14 @@ try {
           return { windowShownMs: null, databaseMs: 1, dataMs: null, readyMs: 1 };
         if (command === "workspace_mode") return false;
         if (command === "state_load") return structuredClone(current);
-        if (command === "business_core_call" && args.domain === "rules" &&
+        if (command === "hub_notifications_list") {
+          window.__accountNotificationReads=(window.__accountNotificationReads??0)+1;
+          return [];
+        }
+        if (command === "business_core_call" && args?.domain === "rules" &&
             args.operation === "factory_reply_review_statuses") {
-          // The account fixture contains no factory replies. Keep unrelated
-          // background Rust reads from polluting account-edit assertions.
-          if ((args.payload?.state?.factoryReplies??[]).length)
-            throw Error("This isolated account mock does not cover factory reply records");
           window.__accountNativeReviewReads=(window.__accountNativeReviewReads??0)+1;
-          return {reviews:[]};
+          throw Error("Factory reply history must not run in the background of account settings");
         }
         if (command === "dock_status_native")
           return { active: false, ratio: 0.8 };
@@ -765,8 +825,9 @@ try {
   assert.deepEqual(accountAddAlerts,[],
     "Account add save must not show an error: "+JSON.stringify(accountAddAlerts));
   assert.equal(await settingsPage.getByRole("button", { name: "설정 저장" }).isDisabled(), false);
-  assert.ok((await settingsPage.evaluate(() => window.__accountNativeReviewReads??0)) > 0,
-    "Account test must not conceal background Rust factory-notification IPC");
+  await settingsPage.waitForFunction(() => (window.__accountNotificationReads??0)>0);
+  assert.equal(await settingsPage.evaluate(() => window.__accountNativeReviewReads??0),0,
+    "Account settings must not query factory reply history for notifications");
   const addChanges = await settingsPage.evaluate(() => window.__accountSave.changes);
   assert.equal(addChanges.accounts.length, 3);
   console.log("PASS: adding a third account saves with no false conflict");
@@ -832,6 +893,8 @@ try {
   const savedOperator = await settingsPage.evaluate(() => window.__accountSave.changes.operatorName);
   assert.equal(savedOperator, "이동 테스트 담당");
   assert.deepEqual(settingsErrors, [], "Settings page errors: " + settingsErrors.join("\\n"));
+  assert.equal(await settingsPage.evaluate(() => window.__accountNativeReviewReads??0),0,
+    "Account navigation must not revive retired background factory review");
   await settingsPage.close();
   // Real React navigation tests with isolated synthetic Tauri data. Each choice
   // is clicked in its real modal; no user data or production SQLite is touched.
@@ -861,13 +924,26 @@ try {
   navPage.setDefaultTimeout(8000);
   const navErrors = [];
   navPage.on("pageerror", (err) => navErrors.push(err.message));
+  await navPage.addInitScript(installShipmentReadMock);
   await navPage.addInitScript(({ initial }) => {
     let current = structuredClone(initial);
     const saveLog = [];
     // An in-browser mock still models the native notification contract.
     // The actual disk durability gate uses real Tauri / SQLite on Windows.
     let storedHubNotices = [];
-    window.__navSaved = () => ({ state: structuredClone(current), saves: structuredClone(saveLog) });
+    // Model the independent working-copy table, not confirmed state_save.
+    // Only the dedicated restart scenario opts into reload persistence.
+    const workingKey="ci-working-receptions";
+    let working=JSON.parse(sessionStorage.getItem(workingKey)??"[]");
+    window.__navWorkingReads=0;
+    window.__navWorkingWrites=0;
+    window.__navSaved = () => ({ state: structuredClone(current), saves: structuredClone(saveLog),
+      working:structuredClone(working) });
+    function assertWorkingPayload(orders) {
+      if(!Array.isArray(orders)||orders.some(o=>!o.id)||
+        new Set(orders.map(o=>o.id)).size!==orders.length)
+        throw Error("Invalid working reception payload");
+    }
     window.__navOcrCalls=[];
     let navOcrPhaseCallback;
     window.__TAURI_EVENT_PLUGIN_INTERNALS__ = {
@@ -891,6 +967,18 @@ try {
           return undefined;
         }
         if (command === "cancel_ocr") return undefined;
+        if (command === "working_receptions_load") {
+          window.__navWorkingReads++;
+          return structuredClone(working);
+        }
+        if (command === "working_receptions_replace") {
+          assertWorkingPayload(args.orders);
+          working=structuredClone(args.orders);
+          window.__navWorkingWrites++;
+          if(sessionStorage.getItem("ci-working-restart")==="1")
+            sessionStorage.setItem(workingKey,JSON.stringify(working));
+          return;
+        }
         if (command === "hub_notifications_list")
           return structuredClone(storedHubNotices);
         if (command === "hub_notifications_add") {
@@ -915,6 +1003,10 @@ try {
         if (command === "startup_metrics")
           return { windowShownMs: null, databaseMs: 1, dataMs: null, readyMs: 1 };
         if (command === "workspace_mode") return false;
+        if (command === "business_core_call" &&
+            ((args?.domain === "rules" && args.operation === "read_shipments") ||
+             (args?.domain === "output" && args.operation === "review_export_sender")))
+          return window.__shipmentReadMock(args.operation,args.payload);
         if (command === "business_core_call" &&
             args?.domain === "catalog_clients" &&
             ["management_products","classified_products"].includes(args.operation)) {
@@ -1094,6 +1186,70 @@ try {
           window.__navNativeHistoryReads=(window.__navNativeHistoryReads??0)+1;
           if (query.includes("__CI_EMPTY_ORDER__")) return [];
           return [];
+        }
+        if (command === "business_core_call" && args?.domain === "output" &&
+            args.operation === "render_correction_summaries") return {records:[]};
+        // Native read fixtures for the explicitly synthetic modal scenarios.
+        if (command === "business_core_call" && args?.domain === "catalog_clients" &&
+            args.operation === "resolution_product_candidates") return [];
+        if (command === "business_core_call" && args?.domain === "catalog_clients" &&
+            args.operation === "suggest_group_representative") return null;
+        if (command === "business_core_call" && args?.domain === "catalog_clients" &&
+            args.operation === "search_products_with_urls") {
+          const {state:catalog,query=""}=args.payload;
+          const needle=query.trim().toLocaleLowerCase();
+          const rows=(catalog.products??[]).filter(p=>p.active!==false&&!p.deletedAt&&
+            !p.supersededBy&&p.catalog!=="DEMO"&&p.variants?.length&&
+            !p.variants.some(v=>v.source==="DEMO")&&
+            (!needle||[p.name,p.subtitle,p.code,p.modelKey].some(v=>String(v??"").toLocaleLowerCase().includes(needle))));
+          return {ids:rows.map(p=>p.id),detailLinkIds:rows.filter(p=>p.variants[0]?.url).map(p=>p.id)};
+        }
+        if (command === "business_core_call" && args?.domain === "rules" &&
+            args.operation === "apply_retail_action" && args.payload?.action === "new_retail_order") {
+          const {orderId,recipientId,now}=args.payload;
+          window.__navRetailDraftId=orderId;
+          return {order:{id:orderId,clientId:"",raw:"",channel:"카카오톡",
+            recipients:[{id:recipientId,name:"",address:"",mobile:"",phone:"",note:"",
+              items:[],dispatchOrigin:"FACTORY"}],shippingFee:null,applyVat:false,vatAmount:null,
+            status:"RECEIVED",notified:false,paid:false,postpaidApproved:false,freightCode:"010",
+            createdAt:now,updatedAt:now,orderType:"RETAIL",receptionVersion:1}};
+        }
+        if (command === "business_core_call" && args?.domain === "rules" &&
+            args.operation === "apply_retail_action" && args.payload?.action === "retail_preflight" &&
+            args.payload.draft?.id===window.__navRetailDraftId) {
+          const row=args.payload.draft.recipients[0];
+          if(row.name||row.address||row.mobile||row.phone||row.items.length)
+            throw Error("Retail modal fixture only covers an empty draft");
+          window.__navRetailPreflight=(window.__navRetailPreflight??0)+1;
+          return {delivery:[{recipientId:row.id,name:false,address:false,contact:false,product:false,quantity:false}],
+            senderIssues:[],issues:["수취인 정보 및 품목 입력 필요"]};
+        }
+        if (command === "business_core_call" && args?.domain === "rules" &&
+            args.operation === "order_issues_with_actions" &&
+            args.payload.order?.id==="ci-modal-manual") {
+          window.__navManualIssueReads=(window.__navManualIssueReads??0)+1;
+          return {issues:[]};
+        }
+        if (command === "business_core_call" && args?.domain === "rules" &&
+            args.operation === "delivery_requirements_with_messages" &&
+            args.payload.rows?.length===1 && args.payload.rows[0].id==="ci-store-recipient") {
+          window.__navManualDeliveryReads=(window.__navManualDeliveryReads??0)+1;
+          return {results:[{recipientId:"ci-store-recipient",name:true,address:false,contact:true,product:false,quantity:true}]};
+        }
+        if (command === "business_core_call" && args?.domain === "rules" &&
+            args.operation === "apply_manual_classification" &&
+            args.payload?.action === "manual_quantity_status") {
+          const rows=args.payload.model?.rows;
+          if(!Array.isArray(rows)||rows.length!==1||rows[0].id!=="ci-store-recipient")
+            throw Error("Manual quantity fixture does not cover this model");
+          const valid=i=>Number.isSafeInteger(i.quantity)&&i.quantity>0&&i.quantityConfirmed!==false;
+          const items=rows.flatMap(row=>row.items.map(item=>({
+            recipientId:row.id,itemId:item.id,valid:valid(item)
+          })));
+          const pending=rows.some(row=>row.items.some(item=>
+            (Boolean(item.productId)||Boolean(item.name?.trim()))&&!valid(item)));
+          window.__navManualQuantityReads=(window.__navManualQuantityReads??0)+1;
+          return {pending,items};
         }
         if (command === "business_core_call" && args?.domain === "rules" &&
             args.operation === "apply_manual_classification" &&
@@ -1757,6 +1913,8 @@ try {
   await navPage.getByRole("button",{name:"매장 발송 대기"}).click();
   const excelRow=navPage.locator(".excel-table-scroll .excel-queue-table tbody tr").filter({hasText:"매장시험수취인"}).first();
   await excelRow.waitFor();
+  assert.ok(await navPage.evaluate(() => window.__shipmentReadCalls.includes("read_shipments")),
+    "Management navigation must use the native shipment projection");
   const excelLayout=await excelRow.evaluate((row)=>{
     const table=row.closest("table"),middle=row.querySelector("td:nth-child(3)");
     const caption=middle?.querySelector("small"),details=row.querySelector("details:not([open])");
@@ -1966,9 +2124,8 @@ try {
   ));
   console.log("PASS: shipping group Save / Discard / Cancel (actual React tabs)");
 
-  // New reception is intentionally not saveable until order confirmation.
-  // Cancel keeps its raw text; Save must explain the restriction and stay put;
-  // Discard may navigate away without creating an unconfirmed order.
+  // Reception navigation autosaves the independent working copy without
+  // presenting a decision dialog or creating a confirmed order.
   await navPage.reload();
   await navPage.getByRole("button",{name:"캡처 범위 지정"}).click();
   const ocr=navPage.getByRole("dialog",{name:"OCR 문자 인식 검토"});
@@ -1988,23 +2145,35 @@ try {
   await navPage.waitForFunction(() => document.querySelector(".source-document")?.textContent?.includes("검증 발주 원문"));
   assert.equal(await navPage.evaluate(() => window.__navNativeOcrReplacements),1,
     "OCR review must use the native replace_reception action, not a TS-only update");
+  const receiptBefore=await mockState();
+  const raw="검증 발주 원문 709B 2개";
   await navMenu.getByRole("button",{name:"상품 관리"}).click();
-  await checkPrompt("unconfirmed reception");
-  await leave.getByRole("button",{name:"취소",exact:true}).click();
-  assert.ok((await navPage.locator(".source-document").textContent()).includes("검증 발주 원문"));
-  await navMenu.getByRole("button",{name:"상품 관리"}).click();
-  await leave.getByRole("button",{name:"저장",exact:true}).click();
-  await navPage.getByRole("button",{name:/^알림(?: \d+건)?$/}).click();
-  const alertCenter=navPage.getByRole("dialog",{name:"알림"});
-  await alertCenter.locator(".notification-center-item").first().click();
-  await alertCenter.getByText(/신규 발주서는 주문 확인 완료 후 저장할 수 있습니다/).waitFor();
-  await alertCenter.getByRole("button",{name:/닫기/}).first().click();
-  assert.ok((await navPage.locator(".source-document").textContent()).includes("검증 발주 원문"));
-  await navMenu.getByRole("button",{name:"상품 관리"}).click();
-  await leave.getByRole("button",{name:"저장 안 함"}).click();
   await navPage.getByRole("heading",{name:/상품 가격표/}).waitFor();
+  assert.equal(await leave.count(),0,"Reception navigation must not ask to save or discard");
+  const receiptAfter=await mockState();
+  const savedWorking=receiptAfter.working.find(o=>o.raw===raw);
+  assert.ok(savedWorking && !savedWorking.confirmedAt,"Navigation must flush unconfirmed working copy");
+  assert.deepEqual(receiptAfter.state.orders,receiptBefore.state.orders,"Working copy must stay out of confirmed order history");
+  assert.equal(receiptAfter.state.revision,receiptBefore.state.revision,"Working copy must not advance business revision");
+  assert.equal(receiptAfter.saves.length,receiptBefore.saves.length,"Working copy must not use state_save");
+  assert.ok(await navPage.evaluate(()=>window.__navWorkingReads>0 && window.__navWorkingWrites>0));
+  await navMenu.getByRole("button",{name:"접수",exact:true}).click();
+  await navPage.waitForFunction(text=>document.querySelector(".source-document")?.textContent?.includes(text),raw);
+  // Preserve only this scenario across reload; other fixtures start clean.
+  await navPage.evaluate(()=>{
+    sessionStorage.setItem("ci-working-restart","1");
+    sessionStorage.setItem("ci-working-receptions",JSON.stringify(window.__navSaved().working));
+  });
+  await navPage.reload();
+  await navPage.waitForFunction(id=>window.__navWorkingReads>0 &&
+    window.__navSaved().working.some(o=>o.id===id),savedWorking.id);
+  await navPage.waitForFunction(text=>document.querySelector(".source-document")?.textContent?.includes(text),raw);
   assert.equal((await mockState()).state.orders.length,navFixture.orders.length);
-  console.log("PASS: unconfirmed reception Cancel / Save-blocked / Discard (actual React UI)");
+  await navPage.evaluate(()=>{
+    sessionStorage.removeItem("ci-working-restart");
+    sessionStorage.removeItem("ci-working-receptions");
+  });
+  console.log("PASS: reception working-copy autosave, navigation and reload preserve unconfirmed order");
 
   // Automatic-message sub-tabs are independent editors. Switching without
   // saving must not silently discard text (the previous unmount bug).
@@ -2341,7 +2510,9 @@ try {
 
 
 
-  // Stage 7: use the actual developer modal workbench with detached mock data.
+  // Stage 7: mount the current production components in a browser-only fixture.
+  // The removed WorkingRawDialog is covered by its native correction tests;
+  // the current CorrectionPanel replaces its retired visual sample.
   // Do not submit business saves. Test every listed popup mode, including long
   // content, errors, busy state, and the unique manual-classification surface.
   await navPage.evaluate(()=>{
@@ -2350,12 +2521,32 @@ try {
     window.__TAURI_INTERNALS__.invoke=(command,args)=>{
       if(command==="test_run_history")return Promise.resolve([]);
       if(command==="test_database_preview")return Promise.resolve({enabled:false});
-      if(command==="receipt_archive")return Promise.resolve([]);
+      if(command==="receipt_archive"){
+        window.__navModalArchiveReads=(window.__navModalArchiveReads??0)+1;
+        return Promise.resolve([{id:"receipt:ci-modal-audit",orderId:"ci-modal-audit",
+          record:{original:"CI 접수 원문 보존 검증",at:"2026-11-07T09:00:00Z",actor:"검증 직원"}}]);
+      }
       return original(command,args);
     };
   });
-  await navMenu.getByRole("button",{name:"설정",exact:true}).click();
-  await navPage.getByRole("tab",{name:"개발자 모드"}).click();
+  const mountModalFixture=async()=>{
+    await navMenu.getByRole("button",{name:"설정",exact:true}).click();
+    await navPage.getByRole("tab",{name:"시스템",exact:true}).click();
+    await navPage.locator("#settings-panel-system").waitFor();
+    await navPage.evaluate(async()=>{
+      const fixture=await import("/tests/browser/modal-workbench.tsx");
+      fixture.mountModalFixture(await window.bando.load());
+    });
+    await navPage.locator("#dev-popup").waitFor();
+  };
+  const unmountModalFixture=async()=>{
+    await navPage.evaluate(async()=>{
+      const fixture=await import("/tests/browser/modal-workbench.tsx");
+      fixture.unmountModalFixture();
+    });
+    await navPage.locator("#ci-modal-fixture").waitFor({state:"detached"});
+  };
+  await mountModalFixture();
   const popupSelect=navPage.locator("#dev-popup");
   await popupSelect.waitFor();
   const popupOpen=navPage.getByRole("button",{name:"선택한 실제 화면 열기"});
@@ -2450,13 +2641,27 @@ try {
     }
     await closeNative(dialog);
   }
-  for(const popup of ["raw","resolver","product-search","category","retail"]){
+  for(const popup of ["correction","resolver","product-search","category","retail"]){
+    console.log("STAGE7_MODAL_BEGIN",popup);
     await popupSelect.selectOption(popup);
     await popupOpen.click();
     const dialog=nativeOpen();
-    await dialog.waitFor();
-    await measureStage7(popup,dialog);
-    await closeNative(dialog);
+    try{
+      await dialog.waitFor();
+      if(popup==="retail"){
+        await dialog.getByRole("textbox",{name:"수취인명",exact:true}).waitFor();
+        await navPage.waitForFunction(()=>window.__navRetailPreflight>0);
+      }
+      assert.equal(await dialog.getByRole("alert").count(),0,
+        "Native initialization error in "+popup+": "+(await dialog.getByRole("alert").allTextContents()).join(" | "));
+      await measureStage7(popup,dialog);
+      await closeNative(dialog);
+    }catch(error){
+      console.error("STAGE7_MODAL_FAILURE",JSON.stringify({popup,navErrors,
+        dialogs:await navPage.locator("[role=dialog],dialog").allTextContents(),
+        fixture:await navPage.locator("#ci-modal-fixture").textContent().catch(()=>null)}));
+      throw error;
+    }
   }
   await popupSelect.selectOption("manual");
   await popupOpen.click();
@@ -2465,6 +2670,12 @@ try {
   // The initial dialog is a Rust IPC loading shell; do not inspect its
   // geometry before the actual manual delivery grid has mounted.
   await manual.locator(".manual-grid-scroll").waitFor({state:"visible"});
+  await navPage.waitForFunction(()=>window.__navManualQuantityReads>0 &&
+    window.__navManualIssueReads>0 && window.__navManualDeliveryReads>0);
+  await navPage.waitForFunction(()=>[...document.querySelectorAll(".manual-workspace .manual-footer button")]
+    .some(button=>button.textContent.trim()==="초안에 적용"&&!button.disabled));
+  assert.equal(await manual.getByRole("alert").count(),0,
+    "Manual geometry is not valid evidence while native initialization is failing");
   const manualResult=await manual.evaluate(el=>{
     const box=el.getBoundingClientRect();
     const scroll=el.querySelector(".manual-grid-scroll");
@@ -2545,11 +2756,14 @@ try {
       await work.getByRole("button",{name:"감사 기록 열기",exact:true}).click();
       const dialog=nativeOpen();
       await dialog.waitFor();
+      await dialog.getByText("ci-modal-audit",{exact:false}).waitFor();
+      assert.ok(await navPage.evaluate(()=>window.__navModalArchiveReads>0));
       await measureStage7(popup+"-dialog",dialog);
       await closeNative(dialog);
     }
     await navPage.getByRole("button",{name:"시험 화면 닫기"}).click();
   }
+  await unmountModalFixture();
   // A second set of real dialogs is reachable from category and freight
   // management, rather than the developer workbench's default previews.
   await navMenu.getByRole("button",{name:"상품 관리",exact:true}).click();
@@ -2573,7 +2787,7 @@ try {
   console.log("STAGE7_MODAL_AUDIT",JSON.stringify(stage7Records));
   assert.equal(stage7Records.length,23,
     "Stage7 modal workbench inventory changed without audit coverage");
-  console.log("PASS: developer workbench common modes and all 12 popup entries audited");
+  console.log("PASS: isolated browser fixture common modes and all 12 popup entries audited");
 
   // Stage 8: exercise the REAL settings control that drives --ui-scale. Check
   // the whole outer frame, semantic list owner, and native modal boundaries.
@@ -2731,14 +2945,14 @@ try {
             stage8Results.push({context,...await stage8Measure(context,selector)});
           }
         }
-        await navMenu.getByRole("button",{name:"설정",exact:true}).click();
-        await navPage.getByRole("tab",{name:"개발자 모드"}).click();
+        await mountModalFixture();
         await navPage.locator("#dev-popup").selectOption("common");
         await navPage.locator("#dev-popup-state").selectOption("LONG");
         await stage8CheckModal("긴 내용 공통 모달",
           async()=>navPage.getByRole("button",{name:"선택한 실제 화면 열기"}).click(),
           async dialog=>{await dialog.getByRole("button",{name:"닫기 ×"}).click();
             await dialog.waitFor({state:"hidden"});});
+        await unmountModalFixture();
       }
     }
   }
@@ -2950,9 +3164,8 @@ try {
         closeFollowupModal);
       followupDialogs.push({kind:"freight",scale,viewport,...freight});
 
-      await navMenu.getByRole("button",{name:"설정",exact:true}).click();
-      await navPage.getByRole("tab",{name:"개발자 모드"}).click();
-      for(const [id,name] of [["raw","원문 정정"],["category","카테고리 선택"]]){
+      await mountModalFixture();
+      for(const [id,name] of [["correction","공장 전달 후 정정 요청"],["category","카테고리 선택"]]){
         await navPage.locator("#dev-popup").selectOption(id);
         const measured=await stage8CheckModal(name,
           async()=>navPage.getByRole("button",{name:"선택한 실제 화면 열기"}).click(),
@@ -2965,6 +3178,7 @@ try {
       await navPage.getByRole("button",{name:"선택한 실제 화면 열기"}).click();
       const manual=navPage.getByRole("dialog",{name:"수동 분류"}).last();
       await manual.waitFor();
+      await manual.locator(".manual-grid-scroll").waitFor({state:"visible"});
       const manualSample=await manual.evaluate(el=>{
         const r=el.getBoundingClientRect();
         const table=el.querySelector(".manual-grid-scroll");
@@ -2986,6 +3200,8 @@ try {
         console.log("STAGE8_FOLLOWUP_MANUAL_RISK",JSON.stringify(risk));
       }
       await manual.getByRole("button",{name:"닫기 ×"}).click();
+      await manual.waitFor({state:"hidden"});
+      await unmountModalFixture();
 
       // The three-choice unsaved edit prompt is a distinct native dialog.
       await navMenu.getByRole("button",{name:"운임 관리",exact:true}).click();
@@ -3058,10 +3274,10 @@ try {
   await navPage.locator(".client-table tbody tr")
     .filter({hasText:"검증악기"}).first().click();
   const clientEdit=navPage.locator("dialog.app-modal-layer[open]").last();
-  const displayName=clientEdit.getByRole("textbox",{name:"송장 표시 상호"});
-  const originalDisplayName=await displayName.inputValue();
-  await displayName.fill(originalDisplayName+" 임시검사");
-  await displayName.fill(originalDisplayName);
+  const clientName=clientEdit.getByRole("textbox",{name:"거래처명",exact:true});
+  const originalClientName=await clientName.inputValue();
+  await clientName.fill(originalClientName+" 임시검사");
+  await clientName.fill(originalClientName);
   await closeCleanDialog("거래처 상세 / 원상복구");
 
   await navMenu.getByRole("button",{name:"운임 관리",exact:true}).click();
