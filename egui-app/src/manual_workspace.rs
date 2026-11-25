@@ -2123,7 +2123,7 @@ impl ManualWorkspace {
                         self.reset_pending || self.confirm_apply || self.confirm_discard {
                         workspace.disable();
                     }
-                    let Some((busy,pending_quantity_active,has_pending_quantity,guidance))=workspace.body_region(|ui|{
+                    let Some((busy,pending_quantity_active,has_pending_quantity))=workspace.body_region(|ui|{
                         let Some(data)=render_data.as_ref() else {return None};
                         let model=&data.model;
                         let quote_index=self.view_quote.as_ref().map(crate::indexed_quote);
@@ -2141,10 +2141,6 @@ impl ManualWorkspace {
                         let has_pending_quantity=pending_quantity_count>0;
                         // The status/count toolbar is part of the shared modal
                         // header. The body begins directly at the card workspace.
-                        let guidance=manual_apply_guidance(
-                            busy,pending_quantity_count,
-                            self.edit_text!=self.current_value()
-                        );
                         ui.spacing_mut().item_spacing.y=0.0;
                         // The source column matches Reception's live pane width.
                         // The right worksheet takes the remaining width; on narrow windows keep
@@ -2619,7 +2615,7 @@ impl ManualWorkspace {
                                 |outer|draw_columns(outer)
                             );
                         }
-                        Some((busy,pending_quantity_active,has_pending_quantity,guidance))
+                        Some((busy,pending_quantity_active,has_pending_quantity))
                     }) else{return;};
                     let input_settled=self.edit_text==self.current_value();
                     workspace.footer(|left|{
@@ -2638,9 +2634,6 @@ impl ManualWorkspace {
                                 ButtonRole::Primary,!busy && input_settled &&
                                     !has_pending_quantity);
                             let apply_clicked=apply_button.clicked();
-                            if let Some(reason)=guidance.as_deref(){
-                                apply_button.on_hover_text(reason);
-                            }
                             if apply_clicked{apply=true;}
                         }
                     );
