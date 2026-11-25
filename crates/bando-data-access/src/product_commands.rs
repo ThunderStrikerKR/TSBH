@@ -14,6 +14,46 @@ pub(crate) fn validate_native_model_groups(state:&Value)->Result<(),String>{
     Ok(())
 }
 
+/// Derive committed history from the authoritative before/after product, not
+/// from the editable draft or workbook preview. The existing history is
+/// append-only; a missing price and explicit null are equivalent.
+fn record_price_changes(
+    before:&Value,after:&mut Value,at:&str,source:&str,
+)->Result<(),String>{
+    let mut entries=Vec::new();
+    if let (Some(old),Some(new))=(before["variants"].as_array(),after["variants"].as_array()){
+        for variant in new{
+            let Some(id)=variant["id"].as_str().filter(|id|!id.is_empty()) else{continue};
+            let Some(prior)=old.iter().find(|v|v["id"].as_str()==Some(id)) else{continue};
+            for tier in ["wholesale","semi","retail"]{
+                let previous=prior.get(tier).unwrap_or(&Value::Null);
+                let current=variant.get(tier).unwrap_or(&Value::Null);
+                if previous!=current{
+                    entries.push(json!({
+                        "at":at,"field":format!("{id}.{tier}"),
+                        "before":previous,"after":current,"source":source
+                    }));
+                }
+            }
+        }
+    }
+    let target=after.as_object_mut().ok_or("상품 정보 형식 오류")?;
+    // Never trust a UI draft to rewrite committed history; workbook preview
+    // entries are replaced by the single authoritative commit-time record.
+    if let Some(history)=before.get("priceHistory"){
+        target.insert("priceHistory".into(),history.clone());
+    }else{
+        target.remove("priceHistory");
+    }
+    if !entries.is_empty(){
+        let history=target.entry("priceHistory".to_owned()).or_insert_with(||json!([]));
+        if history.is_null(){*history=json!([]);}
+        history.as_array_mut().ok_or("상품 가격 이력이 올바르지 않습니다.")?
+            .extend(entries);
+    }
+    Ok(())
+}
+
 pub fn apply_product_price(
     state:&mut Value,product_id:&str,variant_id:&str,tier:&str,
     price:Option<i64>,expected:Option<i64>,
@@ -28,6 +68,7 @@ pub fn apply_product_price(
         .ok_or("상품 목록 오류")?.iter_mut()
         .find(|p|p["id"].as_str()==Some(product_id))
         .ok_or("상품을 찾을 수 없습니다.")?;
+    let before=product.clone();
     let variant=product["variants"].as_array_mut()
         .ok_or("상품 옵션 오류")?.iter_mut()
         .find(|v|v["id"].as_str()==Some(variant_id))
@@ -35,8 +76,9 @@ pub fn apply_product_price(
     if variant[tier].as_i64()!=expected {
         return Err("가격이 다른 곳에서 수정됐습니다. 새로고침 후 다시 시도하세요.".into());
     }
+    if price==expected{return Ok(());}
     variant[tier]=json!(price);
-    Ok(())
+    record_price_changes(&before,product,&chrono::Utc::now().to_rfc3339(),"MANUAL")
 }
 
 
@@ -134,8 +176,18 @@ pub fn patch_product_v2(conn:&mut Connection, request:&Value)->Result<Value,Stri
             // the complete candidate in one optimistic SQLite transaction.
             let result=catalog_clients::execute("apply_product_workbook",
                 json!({"state":&before,"preview":preview}))?;
-            result.get("next").filter(|value|value.is_object()).cloned()
-                .ok_or("상품 Excel Rust 저장 결과 형식 오류")?
+            let mut candidate=result.get("next").filter(|value|value.is_object()).cloned()
+                .ok_or("상품 Excel Rust 저장 결과 형식 오류")?;
+            let old_by_id:std::collections::HashMap<&str,&Value>=before["products"]
+                .as_array().ok_or("상품 목록 오류")?.iter()
+                .filter_map(|p|p["id"].as_str().map(|id|(id,p))).collect();
+            let at=chrono::Utc::now().to_rfc3339();
+            for product in candidate["products"].as_array_mut().ok_or("상품 목록 오류")?{
+                if let Some(prior)=product["id"].as_str().and_then(|id|old_by_id.get(id)){
+                    record_price_changes(prior,product,&at,"MANUAL_EXCEL")?;
+                }
+            }
+            candidate
         }
         "set_price"=>{
             let product_id=required(data,"productId")?;
@@ -172,6 +224,10 @@ pub fn patch_product_v2(conn:&mut Connection, request:&Value)->Result<Value,Stri
             if variants.len()!=1 {return Err("한 상품에는 하나의 판매 구성만 등록합니다.".into());}
             if variants[0]["id"].as_str().unwrap_or("").is_empty(){
                 variants[0]["id"]=json!(unique_id("variant")?);
+            }
+            if let Some(prior)=before["products"].as_array().into_iter().flatten()
+                .find(|p|p["id"]==product["id"]){
+                record_price_changes(prior,&mut product,&at,"MANUAL")?;
             }
             let result=catalog_clients::execute("upsert_product_from_editor",
                 json!({"state":&before,"product":product,"updatedAt":at}),
@@ -281,3 +337,66 @@ pub fn patch_product_v2(conn:&mut Connection, request:&Value)->Result<Value,Stri
     Ok(json!({"revision":saved["revision"]}))
 }
 
+
+#[cfg(test)]
+mod price_history_tests{
+    use super::*;
+
+    fn product()->Value{
+        json!({"id":"p1","variants":[{"id":"v1","wholesale":1000,
+            "semi":null,"retail":3000}],"priceHistory":[{
+                "at":"old","field":"v1.retail","before":2000,"after":3000,
+                "source":"MANUAL"}]})
+    }
+
+    #[test]
+    fn detail_and_workbook_commit_use_actual_changes_and_preserve_history(){
+        for source in ["MANUAL","MANUAL_EXCEL"]{
+            let before=product();
+            let mut after=before.clone();
+            after["variants"][0]["wholesale"]=json!(1200);
+            after["variants"][0]["semi"]=json!(2000);
+            after["variants"][0]["retail"]=Value::Null;
+            // Simulate an untrusted draft or a workbook preview record.
+            after["priceHistory"]=json!([{"field":"preview"}]);
+            record_price_changes(&before,&mut after,"now",source).unwrap();
+            let history=after["priceHistory"].as_array().unwrap();
+            assert_eq!(history.len(),4);
+            assert_eq!(history[0],before["priceHistory"][0]);
+            assert_eq!(history[1],json!({"at":"now","field":"v1.wholesale",
+                "before":1000,"after":1200,"source":source}));
+            assert_eq!(history[2]["before"],Value::Null);
+            assert_eq!(history[3]["after"],Value::Null);
+            let prior=after.clone();
+            record_price_changes(&prior,&mut after,"later",source).unwrap();
+            assert_eq!(after["priceHistory"],prior["priceHistory"]);
+        }
+    }
+
+    #[test]
+    fn cell_save_records_once_and_rejects_stale_price_without_history(){
+        let mut state=json!({"products":[product()]});
+        apply_product_price(&mut state,"p1","v1","wholesale",Some(1200),Some(1000)).unwrap();
+        let saved=state.clone();
+        let history=state["products"][0]["priceHistory"].as_array().unwrap();
+        assert_eq!(history.len(),2);
+        assert_eq!(history[1]["field"],"v1.wholesale");
+        assert_eq!(history[1]["before"],1000);
+        assert_eq!(history[1]["after"],1200);
+        assert!(history[1]["at"].as_str().is_some_and(|at|!at.is_empty()));
+        assert!(apply_product_price(&mut state,"p1","v1","wholesale",Some(1400),Some(1000)).is_err());
+        assert_eq!(state,saved);
+        apply_product_price(&mut state,"p1","v1","wholesale",Some(1200),Some(1200)).unwrap();
+        assert_eq!(state,saved);
+        apply_product_price(&mut state,"p1","v1","wholesale",Some(1000),Some(1200)).unwrap();
+        assert_eq!(state["products"][0]["priceHistory"].as_array().unwrap().len(),3);
+    }
+
+    #[test]
+    fn unchanged_missing_price_and_metadata_edits_do_not_create_history(){
+        let before=json!({"id":"p","variants":[{"id":"v","retail":null}]});
+        let mut after=json!({"id":"p","name":"edited","variants":[{"id":"v"}]});
+        record_price_changes(&before,&mut after,"now","MANUAL").unwrap();
+        assert!(after.get("priceHistory").is_none());
+    }
+}
