@@ -1633,6 +1633,18 @@ fn native_detach_regroup_preserves_shipment_financial_and_audit_records(){
     recipient["name"]=json!("두번째 수취인");
     recipient["items"][0]["id"]=json!("item:second");
     fixture["orders"][0]["recipients"].as_array_mut().unwrap().push(recipient);
+    // Build the two-recipient fixture before its first persisted confirmation.
+    // The immutable receipt snapshot must describe the same original order.
+    let order=&mut fixture["orders"][0];
+    let raw="합성 상품 1개 수취인 김테스트 / 합성 상품 1개 두번째 수취인";
+    order["raw"]=json!(raw);
+    order["receipt"]["original"]=json!(raw);
+    let recipients=order["recipients"].clone();
+    let mut snapshot_data=order.clone();
+    snapshot_data.as_object_mut().unwrap().remove("confirmationSnapshot");
+    order["confirmationSnapshot"]["raw"]=json!(raw);
+    order["confirmationSnapshot"]["recipients"]=recipients;
+    order["confirmationSnapshot"]["data"]=snapshot_data;
     let mut ship=fixture["workflow"]["shipments"][0].clone();
     ship["id"]=json!("shipment:second");
     ship["recipientId"]=json!("recipient:second");
