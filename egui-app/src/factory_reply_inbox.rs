@@ -97,15 +97,24 @@ fn import_metadata(conn:&Connection,file_id:&str)->Result<(u64,bool),String>{
     let revision=revision.and_then(|v|u64::try_from(v).ok()).ok_or("DB 리비전 누락")?;
     Ok((revision,duplicate))
 }
-/// Stable bytes have already been parsed by the scanner. The only hydrated
-/// before-image is the CAS transaction's authoritative state.
-fn import(conn:&mut Connection,base:&Path,dir:&Path,path:&Path,bytes:&[u8],mut source:Value)->Result<Value,String>{
+fn check_source_path(dir:&Path,path:&Path)->Result<(),String>{
     path.file_name().and_then(|n|n.to_str()).filter(|n|valid_name(n)).ok_or("회신 파일명 오류")?;
     if path.canonicalize().map_err(|e|e.to_string())?.parent()!=Some(dir){
         return Err("지정한 수신 폴더 외부의 회신 파일은 허용하지 않습니다.".into());
     }
-    let (rev,duplicate)=import_metadata(conn,text(&source,"id"))?;
-    if duplicate{return Ok(json!({"duplicate":true}))}
+    Ok(())
+}
+/// Check durable content identity before opening or decompressing the XLSX.
+/// Carry the same revision into the authoritative transaction; a concurrent
+/// writer forces a retry rather than accepting stale metadata.
+fn preflight(conn:&Connection,dir:&Path,path:&Path,file_id:&str)->Result<(u64,bool),String>{
+    check_source_path(dir,path)?;
+    import_metadata(conn,file_id)
+}
+/// Stable bytes have already been parsed by the scanner. The only hydrated
+/// before-image is the CAS transaction's authoritative state.
+fn import(conn:&mut Connection,base:&Path,dir:&Path,path:&Path,bytes:&[u8],rev:u64,mut source:Value)->Result<Value,String>{
+    check_source_path(dir,path)?;
     if configured(conn)?.as_deref()!=Some(dir){
         return Err("회신 수신 폴더 설정이 변경됐습니다.".into())
     }
@@ -186,12 +195,21 @@ fn scan_with_db(cache:&mut Scan,conn:&mut Connection,base:&Path)->Result<Outcome
         attempted+=1;
         let bytes=match read_bounded(&path){Ok(b)=>b,Err(e)=>{outcome.error=Some(e);continue}};
         if stamp(&path).ok()!=Some(current)||bytes.len() as u64!=current.0{continue}
+        let file_id=id(&bytes);
+        let rev=match preflight(conn,&dir,&path,&file_id){
+            Ok((_,true))=>{seen.done=true;continue},
+            Ok((rev,false))=>rev,
+            Err(e)=>{outcome.error=Some(e);continue}
+        };
         // Invalid binary files are reported once until the file changes.
         let source=match native_workbooks::read_factory_reply(name.to_str().unwrap_or(""),&bytes){
             Ok(source)=>source,
             Err(e)=>{seen.done=true;outcome.error=Some(format!("회신 파일 검토 필요: {e}"));continue}
         };
-        match import(conn,base,&dir,&path,&bytes,source){
+        if text(&source,"id")!=file_id{
+            outcome.error=Some("회신 원본 ID 불일치".into());continue
+        }
+        match import(conn,base,&dir,&path,&bytes,rev,source){
             Ok(result)=>{
                 seen.done=true;
                 if result["duplicate"]!=true{
@@ -535,6 +553,35 @@ mod tests{
         assert!(replay.error.is_none(),"{:?}",replay.error);
         assert_eq!((replay.files,replay.applied,replay.held),(0,0,0));
         assert_eq!(import_metadata(&conn,&id(&bytes)).unwrap(),(8,true));
+    }
+
+    #[test]
+    fn durable_duplicate_is_skipped_before_binary_parser(){
+        let base=Temp::new();
+        let (mut conn,inbox)=synthetic_db(&base.0);
+        // Deliberately synthetic history entry: these bytes cannot be decoded.
+        // A known content ID must bypass the parser, while unknown malformed
+        // bytes must still be reported by the real scanner.
+        let known=b"synthetic registered non-XLSX bytes";
+        let unknown=b"synthetic unregistered non-XLSX bytes";
+        assert!(native_workbooks::read_factory_reply("known.xlsx",known).is_err());
+        let raw:String=conn.query_row("SELECT payload FROM app_state WHERE id=1",[],|r|r.get(0)).unwrap();
+        let mut envelope:Value=serde_json::from_str(&raw).unwrap();
+        envelope["factoryReplies"]=json!([{"id":id(known),"status":"APPLIED","rows":[]}]);
+        conn.execute("UPDATE app_state SET payload=?1 WHERE id=1",[envelope.to_string()]).unwrap();
+        fs::write(inbox.join("renamed-known.xlsx"),known).unwrap();
+        let mut cache=Scan::default();
+        let skipped=scan_ready(&mut cache,&mut conn,&base.0);
+        assert_eq!((skipped.files,skipped.applied,skipped.held),(0,0,0));
+        assert!(skipped.error.is_none(),"{:?}",skipped.error);
+        assert_eq!(import_metadata(&conn,&id(known)).unwrap(),(7,true));
+        fs::write(inbox.join("unknown.xlsx"),unknown).unwrap();
+        let invalid=scan_ready(&mut cache,&mut conn,&base.0);
+        assert_eq!(invalid.files,0);
+        assert!(invalid.error.as_deref().is_some_and(|e|e.contains("회신 파일 검토 필요")));
+        assert_eq!(import_metadata(&conn,&id(unknown)).unwrap(),(7,false));
+        let after:String=conn.query_row("SELECT payload FROM app_state WHERE id=1",[],|r|r.get(0)).unwrap();
+        assert_eq!(serde_json::from_str::<Value>(&after).unwrap(),envelope);
     }
 
     #[test]
