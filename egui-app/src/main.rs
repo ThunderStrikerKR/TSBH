@@ -3530,7 +3530,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                             Ok(true)=>{
                                 // The just-cleared clipboard must immediately
                                 // disable the two reception intake buttons.
-                                self.clipboard_monitor.refresh();
+                                self.clipboard_monitor.mark_cleared(pending.sequence);
                             }
                             Ok(false)=>{} // The user copied something new.
                             Err(error)=>{self.clipboard_error=Some(error);}
@@ -4111,8 +4111,10 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
         match preview{
             Some(Ok(image))=>{
                 self.ocr_preview_receiver=None;
-                if self.ocr_processing
-                    && !self.clipboard_cancel.load(Ordering::Acquire){
+                if self.clipboard_busy && !self.clipboard_cancel.load(Ordering::Acquire){
+                    // The actual decoded intake, not an advisory clipboard
+                    // format snapshot, owns OCR mode when a copy raced a click.
+                    self.ocr_processing=true;
                     let texture=ctx.load_texture(
                         "source-ocr-processing-thumbnail",
                         egui::ColorImage::from_rgba_unmultiplied(
@@ -9046,6 +9048,7 @@ impl eframe::App for BandoEgui {
         // Kakao must lose its temporary owner BEFORE HUB teardown.
         self.kakao_dock.disconnect();
         self.kakao_tracker.shutdown();
+        self.clipboard_monitor.shutdown();
     }
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         let frame_started=Instant::now();
@@ -9144,11 +9147,9 @@ impl eframe::App for BandoEgui {
             // also serves the shared DB revision probe and dock safety check.
             ctx.request_repaint_after(Duration::from_secs(5));
             if !self.source_editing && self.raw_source.is_empty() {
-                // Clipboard intake actions are visible only in this state.
-                // Poll the cheap Win32 change counter promptly so clearing
-                // text/image disables both buttons without a stale frame.
-                self.clipboard_monitor.refresh();
-                ctx.request_repaint_after(Duration::from_millis(200));
+                // Start the native listener lazily; its events wake egui.
+                // No 200ms repaint loop or clipboard data read in this frame.
+                self.clipboard_monitor.refresh(ctx);
             }
         }
         if !self.direct_source_entry &&
