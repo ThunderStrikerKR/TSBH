@@ -157,9 +157,10 @@ impl ProductSearch{
                                                     typography::CategoryPathFont::Body
                                                 );
                                                 if !id.is_empty(){
-                                                    components::management_dropdown_option(
+                                                    let response=components::management_dropdown_option(
                                                         choices,&mut value,id.to_owned(),&visible
-                                                    ).on_hover_text(full);
+                                                    );
+                                                    components::overflow_tooltip(response,visible!=full,full);
                                                 }
                                             }
                                         });
