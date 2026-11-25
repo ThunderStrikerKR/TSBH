@@ -103,6 +103,13 @@ jobs:
           if ($count -lt 16) { throw "Expected at least 16 general-screen geometry tests; found $count" }
           cargo test --manifest-path egui-app/Cargo.toml general_screen_geometry_tests -- --nocapture
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Verify window placement persistence and workspace split geometry
+        shell: pwsh
+        run: |
+          cargo test --manifest-path egui-app/Cargo.toml window_state:: -- --nocapture
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cargo test --manifest-path egui-app/Cargo.toml layout::geometry_contract -- --nocapture
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Verify actual egui modal boundary rects and 16pt workspace spacing
         shell: pwsh
         if: ${{ !cancelled() }}
