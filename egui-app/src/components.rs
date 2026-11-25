@@ -3219,19 +3219,11 @@ pub fn reception_recipient_navigator(
                     &format!("{}/{}",current+1,total)
                 )).halign(Align::Center)
             );
-            for x in [
+            paint_navigation_vertical_rules(segments,inner,[
                 inner.left()+arrow_width,
                 inner.left()+arrow_width+name_width,
                 inner.left()+2.0*arrow_width+name_width
-            ]{
-                segments.painter().line_segment(
-                    [
-                        egui::pos2(x,inner.top()+4.0),
-                        egui::pos2(x,inner.bottom()-4.0)
-                    ],
-                    Stroke::new(theme::SOFT_DIVIDER_WIDTH,theme::DIVIDER)
-                );
-            }
+            ],theme::DIVIDER);
             selected
         }
     );
@@ -3777,14 +3769,15 @@ pub fn management_date_segment(
         _=>None
     };
     let display=if direction.is_some(){""}else{label};
-    let response=ui.add_sized(
-        Vec2::new(width,theme::ACTION_STANDARD_HEIGHT),
+    let response=navigation_native_button(
+        ui,Vec2::new(width,theme::ACTION_STANDARD_HEIGHT),
         egui::Button::new(typography::action_label(
             display,typography::FONT_STANDARD_ACTION,false,theme::TEXT
         ))
             .fill(theme::INPUT)
             .stroke(Stroke::NONE)
-            .corner_radius(corners)
+            .corner_radius(corners),
+        None
     );
     theme::paint_button_hover_corners(ui,&response,corners);
     if let Some(direction)=direction{
@@ -3812,8 +3805,8 @@ pub fn management_date_group<R>(
 /// count steppers. Geometry, border, fill, radius and hover treatment must not
 /// drift between controls that share the date-picker visual language.
 #[derive(Clone,Copy)]
-enum DateNavigationSegmentGlyph<'a>{
-    Text(&'a str),
+enum DateNavigationSegmentGlyph{
+    CountStep { increase: bool },
     Chevron(ManagementChevronDirection),
     CompactVerticalChevron { up: bool },
 }
@@ -3831,11 +3824,9 @@ fn date_navigation_segmented_surface<R>(
     );
     // The parent has already allocated the complete frame. A scoped UI
     // would advance its cursor again using the children's expanded bounds.
-    let mut segments=ui.new_child(
-        UiBuilder::new().id_salt(id_salt).max_rect(inner)
-            .layout(Layout::left_to_right(Align::Center))
+    let mut segments=navigation_segment_child(
+        ui,id_salt,inner,Layout::left_to_right(Align::Center)
     );
-    segments.set_clip_rect(inner.intersect(ui.clip_rect()));
     segments.set_width(inner.width());
     segments.set_height(inner.height());
     segments.spacing_mut().item_spacing=Vec2::ZERO;
@@ -3863,106 +3854,106 @@ fn paint_count_step_symbol(painter:&egui::Painter,center:egui::Pos2,increase:boo
     }
 }
 
+/// A fixed segment gets its own child ID and clipped rectangle without
+/// advancing the parent layout. The caller retains the appropriate layout.
+fn navigation_segment_child(
+    parent:&mut Ui,id:impl std::hash::Hash,rect:Rect,layout:Layout
+)->Ui{
+    let mut child=parent.new_child(UiBuilder::new().id_salt(id)
+        .max_rect(rect).layout(layout));
+    child.set_clip_rect(rect.intersect(parent.clip_rect()));
+    child
+}
+
+/// Native navigation buttons retain their existing optional permission
+/// scope. Fixed-rectangle step buttons deliberately use interact instead.
+fn navigation_native_button(
+    ui:&mut Ui,size:Vec2,button:egui::Button<'_>,enabled:Option<bool>
+)->Response{
+    let place=|slot:&mut Ui|slot.add_sized(size,button);
+    match enabled{
+        Some(enabled)=>ui.add_enabled_ui(enabled,place).inner,
+        None=>place(ui),
+    }
+}
+
+fn paint_navigation_vertical_rules(
+    ui:&Ui,inner:Rect,positions:impl IntoIterator<Item=f32>,color:Color32
+){
+    for x in positions{
+        ui.painter().line_segment(
+            [egui::pos2(x,inner.top()+4.0),egui::pos2(x,inner.bottom()-4.0)],
+            Stroke::new(theme::SOFT_DIVIDER_WIDTH,color)
+        );
+    }
+}
+
 /// A borderless segment button; its parent owns the only outer border.
-/// Enabled/disabled colors and hover feedback follow the date-selector roles.
+/// The horizontal navigator uses native allocation. The two compact
+/// stepper forms share exact-rect hit testing and hover painting.
 fn date_navigation_segment_button(
     ui:&mut Ui,width:f32,enabled:bool,
-    glyph:DateNavigationSegmentGlyph<'_>
+    glyph:DateNavigationSegmentGlyph
 )->Response{
     let enabled=enabled && ui.is_enabled();
-    // Half-height stepper segments must not inherit the full-sized Button's
-    // minimum height or widget expansion. Use their allocated rectangle.
-    if let DateNavigationSegmentGlyph::CompactVerticalChevron{up}=glyph {
-        let rect=ui.max_rect().intersect(ui.clip_rect());
-        let response=ui.interact(rect,ui.id().with("compact-chevron"),
-            if enabled{Sense::click()}else{Sense::hover()});
-        let corners=egui::CornerRadius{
-            nw:if up{3}else{0},ne:0,
-            sw:if up{0}else{3},se:0,
-        };
-        let painter=ui.painter().with_clip_rect(rect);
-        if !enabled{
-            painter.rect_filled(rect,corners,theme::RECEPTION_RECIPIENT_NAV_DISABLED_BG);
-        }else{
-            theme::paint_button_hover_corners(ui,&response,corners);
-        }
+    if let DateNavigationSegmentGlyph::Chevron(direction)=glyph{
+        let height=ui.available_height();
+        let fill=if enabled{theme::INPUT}else{theme::RECEPTION_RECIPIENT_NAV_DISABLED_BG};
+        let response=navigation_native_button(
+            ui,Vec2::new(width,height),
+            egui::Button::new("").fill(fill).stroke(Stroke::NONE).corner_radius(0),
+            Some(enabled)
+        );
         let ink=if !enabled{theme::RECEPTION_RECIPIENT_NAV_DISABLED_ICON}
             else if response.hovered(){theme::TEXT}else{theme::SECONDARY};
-        let angle=if up{-std::f32::consts::FRAC_PI_2}else{std::f32::consts::FRAC_PI_2};
-        paint_chevron_at_angle_scaled(&painter,rect.center(),angle,0.0,ink,0.72);
+        if enabled{theme::paint_button_hover(ui,&response,0.0);}
+        let painter=ui.painter().with_clip_rect(response.rect);
+        paint_management_chevron_with_color(&painter,response.rect.center(),direction,ink);
         return response;
     }
-    if let DateNavigationSegmentGlyph::Text(text)=glyph{
-        // Compact +/- buttons own an exact segment, not the minimum size of
-        // a standard egui Button. This avoids overflow at 28pt outer height.
-        let rect=ui.max_rect().intersect(ui.clip_rect());
-        let response=ui.interact(rect,ui.id().with("count-step"),
-            if enabled{Sense::click()}else{Sense::hover()});
-        let radius=theme::CONTROL_RADIUS.saturating_sub(2);
-        let left=text=="−";
-        let corners=egui::CornerRadius{
-            nw:if left{radius}else{0},sw:if left{radius}else{0},
-            ne:if left{0}else{radius},se:if left{0}else{radius},
-        };
-        let painter=ui.painter().with_clip_rect(rect);
-        // Keep the editor on INPUT and give its action segments the shared
-        // RAISED button face. The existing disabled and blue hover roles
-        // remain distinct; neither changes the segment's allocated geometry.
-        let (_,fill,ink,_)=theme::action_style(theme::ButtonRole::Standard,enabled,false);
-        painter.rect_filled(rect,corners,fill);
-        if enabled{
-            theme::paint_button_hover_corners(ui,&response,corners);
-        }
-        paint_count_step_symbol(&painter,rect.center(),!left,ink);
-        return response;
-    }
-    let height=ui.available_height();
-    let (disabled_fill,disabled_ink)=match glyph{
-        DateNavigationSegmentGlyph::Chevron(_)|DateNavigationSegmentGlyph::CompactVerticalChevron{..}=>(
-            theme::RECEPTION_RECIPIENT_NAV_DISABLED_BG,
-            theme::RECEPTION_RECIPIENT_NAV_DISABLED_ICON
+    // Preserve the established IDs, exact hit area and separate corner
+    // geometry of the horizontal count and half-height vertical steppers.
+    let rect=ui.max_rect().intersect(ui.clip_rect());
+    let (id,corners)=match glyph{
+        DateNavigationSegmentGlyph::CompactVerticalChevron{up}=>(
+            "compact-chevron",egui::CornerRadius{
+                nw:if up{3}else{0},ne:0,sw:if up{0}else{3},se:0
+            }
         ),
-        DateNavigationSegmentGlyph::Text(_)=>(
-            theme::DISABLED_ACTION_BG,theme::DISABLED_ACTION_TEXT
-        )
+        DateNavigationSegmentGlyph::CountStep{increase}=>{
+            let radius=theme::CONTROL_RADIUS.saturating_sub(2);
+            ("count-step",egui::CornerRadius{
+                nw:if increase{0}else{radius},sw:if increase{0}else{radius},
+                ne:if increase{radius}else{0},se:if increase{radius}else{0},
+            })
+        }
+        DateNavigationSegmentGlyph::Chevron(_)=>unreachable!("handled above"),
     };
-    let fill=if enabled{theme::INPUT}else{disabled_fill};
-    let response=ui.add_enabled_ui(enabled,|button_ui|{
-        button_ui.add_sized(
-            Vec2::new(width,height),
-            egui::Button::new("")
-                .fill(fill)
-                .stroke(Stroke::NONE)
-                .corner_radius(0)
-        )
-    }).inner;
-    let ink=if enabled && response.hovered(){
-        theme::TEXT
-    }else if enabled{
-        theme::SECONDARY
-    }else{
-        disabled_ink
+    let response=ui.interact(rect,ui.id().with(id),
+        if enabled{Sense::click()}else{Sense::hover()});
+    let painter=ui.painter().with_clip_rect(rect);
+    let (fill,ink)=match glyph{
+        DateNavigationSegmentGlyph::CompactVerticalChevron{..}=>{
+            let ink=if !enabled{theme::RECEPTION_RECIPIENT_NAV_DISABLED_ICON}
+                else if response.hovered(){theme::TEXT}else{theme::SECONDARY};
+            (if enabled{None}else{Some(theme::RECEPTION_RECIPIENT_NAV_DISABLED_BG)},ink)
+        }
+        DateNavigationSegmentGlyph::CountStep{..}=>{
+            let (_,fill,ink,_)=theme::action_style(theme::ButtonRole::Standard,enabled,false);
+            (Some(fill),ink)
+        }
+        DateNavigationSegmentGlyph::Chevron(_)=>unreachable!("handled above"),
     };
-    // Paint the translucent hover surface before the glyph so the icon/text
-    // remains crisp and uses the same z-order as the date-picker arrows.
-    if enabled{
-        theme::paint_button_hover(ui,&response,0.0);
-    }
-    let painter=ui.painter().with_clip_rect(response.rect);
+    if let Some(fill)=fill{painter.rect_filled(rect,corners,fill);}
+    if enabled{theme::paint_button_hover_corners(ui,&response,corners);}
     match glyph{
-        DateNavigationSegmentGlyph::Text(text)=>{
-            painter.text(
-                response.rect.center(),egui::Align2::CENTER_CENTER,text,
-                egui::FontId::proportional(typography::FONT_STANDARD_ACTION+2.0),
-                ink
-            );
+        DateNavigationSegmentGlyph::CompactVerticalChevron{up}=>{
+            let angle=if up{-std::f32::consts::FRAC_PI_2}else{std::f32::consts::FRAC_PI_2};
+            paint_chevron_at_angle_scaled(&painter,rect.center(),angle,0.0,ink,0.72);
         }
-        DateNavigationSegmentGlyph::Chevron(direction)=>{
-            paint_management_chevron_with_color(
-                &painter,response.rect.center(),direction,ink
-            );
-        }
-        DateNavigationSegmentGlyph::CompactVerticalChevron{..}=>unreachable!("handled above"),
+        DateNavigationSegmentGlyph::CountStep{increase}=>
+            paint_count_step_symbol(&painter,rect.center(),increase,ink),
+        DateNavigationSegmentGlyph::Chevron(_)=>unreachable!("handled above"),
     }
     response
 }
@@ -4015,16 +4006,12 @@ pub fn date_navigation_count_control(
                 let right=Rect::from_min_max(egui::pos2(x2,inner.top()),inner.max);
                 // Every segment gets its own fixed rectangle and ID. TextEdit
                 // margins or a disabled button cannot shift the next segment.
-                let mut minus=segments.new_child(UiBuilder::new().id_salt("count-minus")
-                    .max_rect(left).layout(Layout::top_down(Align::Center)));
-                minus.set_clip_rect(left.intersect(segments.clip_rect()));
+                let mut minus=navigation_segment_child(segments,"count-minus",left,Layout::top_down(Align::Center));
                 let decrement=date_navigation_segment_button(
                     &mut minus,arrow_width,
-                    decrement_enabled,DateNavigationSegmentGlyph::Text("−")
+                    decrement_enabled,DateNavigationSegmentGlyph::CountStep{increase:false}
                 );
-                let mut entry=segments.new_child(UiBuilder::new().id_salt("count-value")
-                    .max_rect(center).layout(Layout::centered_and_justified(egui::Direction::TopDown)));
-                entry.set_clip_rect(center.intersect(segments.clip_rect()));
+                let mut entry=navigation_segment_child(segments,"count-value",center,Layout::centered_and_justified(egui::Direction::TopDown));
                 entry.spacing_mut().interact_size=Vec2::ZERO;
                 let hint=format!("{minimum}~{maximum}");
                 let input=entry.add_enabled_ui(enabled,|entry|{
@@ -4032,25 +4019,15 @@ pub fn date_navigation_count_control(
                         entry,value,center.width(),center.height(),hint.as_str(),Some(3)
                     )
                 }).inner;
-                let mut plus=segments.new_child(UiBuilder::new().id_salt("count-plus")
-                    .max_rect(right).layout(Layout::top_down(Align::Center)));
-                plus.set_clip_rect(right.intersect(segments.clip_rect()));
+                let mut plus=navigation_segment_child(segments,"count-plus",right,Layout::top_down(Align::Center));
                 let increment=date_navigation_segment_button(
                     &mut plus,arrow_width,
-                    increment_enabled,DateNavigationSegmentGlyph::Text("+")
+                    increment_enabled,DateNavigationSegmentGlyph::CountStep{increase:true}
                 );
-                for x in [
+                paint_navigation_vertical_rules(segments,inner,[
                     inner.left()+arrow_width,
                     inner.left()+arrow_width+input_width
-                ]{
-                    segments.painter().line_segment(
-                        [
-                            egui::pos2(x,inner.top()+4.0),
-                            egui::pos2(x,inner.bottom()-4.0)
-                        ],
-                        Stroke::new(theme::SOFT_DIVIDER_WIDTH,theme::BORDER)
-                    );
-                }
+                ],theme::BORDER);
                 (decrement,input,increment)
             }
         );
@@ -4070,15 +4047,11 @@ fn date_navigation_button_surface(
 )->(Response,Color32){
     let effective_enabled=enabled && ui.is_enabled();
     let (fill,ink,stroke)=theme::field_action_palette(effective_enabled,theme::SECONDARY);
-    let response=ui.add_enabled_ui(effective_enabled,|button_ui|{
-        button_ui.add_sized(
-            Vec2::splat(theme::CALENDAR_NAV_SIZE),
-            egui::Button::new("")
-                .fill(fill)
-                .stroke(stroke)
-                .corner_radius(theme::CONTROL_RADIUS)
-        )
-    }).inner;
+    let response=navigation_native_button(
+        ui,Vec2::splat(theme::CALENDAR_NAV_SIZE),
+        egui::Button::new("").fill(fill).stroke(stroke).corner_radius(theme::CONTROL_RADIUS),
+        Some(effective_enabled)
+    );
     let ink=if effective_enabled && response.hovered(){
         theme::TEXT
     }else{ink};
@@ -5799,11 +5772,9 @@ fn reception_quantity_editor(
     click_at:Option<egui::Pos2>
 )->ReceptionQuantityEditorResponse{
     let rect=cell.shrink2(egui::vec2(theme::SPACE_2,theme::SPACE_2));
-    let mut placed=ui.new_child(
-        UiBuilder::new().id_salt("reception-quantity-editor")
-            .max_rect(rect).layout(Layout::top_down(Align::Min))
+    let mut placed=navigation_segment_child(
+        ui,"reception-quantity-editor",rect,Layout::top_down(Align::Min)
     );
-    placed.set_clip_rect(rect.intersect(ui.clip_rect()));
     let font=typography::data_value_font(
         typography::DataValueKind::Quantity,
         typography::DataValueContext::Reception
@@ -5829,11 +5800,9 @@ fn reception_quantity_editor(
             let input_rect=Rect::from_min_max(
                 egui::pos2(arrow_rect.right()+2.0,inner.top()),
                 egui::pos2(unit_rect.left(),inner.bottom()));
-            let mut input_ui=segments.new_child(
-                UiBuilder::new().id_salt("quantity-value")
-                    .max_rect(input_rect).layout(Layout::top_down(Align::Min))
+            let mut input_ui=navigation_segment_child(
+                segments,"quantity-value",input_rect,Layout::top_down(Align::Min)
             );
-            input_ui.set_clip_rect(input_rect.intersect(segments.clip_rect()));
             let input=reception_text_editor_at_click(
                 &mut input_ui,input_rect,
                 singleline_editor(value,font.clone(),input_rect.width(),
@@ -5853,11 +5822,9 @@ fn reception_quantity_editor(
                     egui::pos2(arrow_rect.left(),arrow_rect.top()+index as f32*half),
                     egui::vec2(arrow_rect.width(),half)
                 );
-                let mut button=segments.new_child(
-                    UiBuilder::new().id_salt(("quantity-arrow",index))
-                        .max_rect(part).layout(Layout::left_to_right(Align::Center))
+                let mut button=navigation_segment_child(
+                    segments,("quantity-arrow",index),part,Layout::left_to_right(Align::Center)
                 );
-                button.set_clip_rect(part.intersect(segments.clip_rect()));
                 button.spacing_mut().item_spacing=Vec2::ZERO;
                 // Do not let the standard button's minimum padding enlarge
                 // the half-height arrow slots.
@@ -9305,6 +9272,34 @@ mod manual_nested_prompt_regression_tests{
 #[cfg(test)]
 mod date_navigation_segmented_control_tests{
     use super::*;
+
+    #[test]
+    fn shared_navigation_child_retains_id_rect_clip_and_parent_cursor(){
+        let ctx=test_context();
+        let mut observed=Vec::new();
+        for shared in [false,true]{
+            let _=ctx.run(egui::RawInput::default(),|ctx|{
+                egui::CentralPanel::default().show(ctx,|ui|{
+                    let (rect,_)=ui.allocate_exact_size(Vec2::new(112.0,36.0),Sense::hover());
+                    let slot=rect.shrink(1.0);
+                    let before=ui.available_rect_before_wrap().min;
+                    let child=if shared{
+                        navigation_segment_child(ui,"geometry",slot,Layout::top_down(Align::Center))
+                    }else{
+                        let mut child=ui.new_child(UiBuilder::new().id_salt("geometry")
+                            .max_rect(slot).layout(Layout::top_down(Align::Center)));
+                        child.set_clip_rect(slot.intersect(ui.clip_rect()));
+                        child
+                    };
+                    observed.push((child.id(),child.max_rect(),child.clip_rect(),before,
+                        ui.available_rect_before_wrap().min));
+                });
+            });
+        }
+        assert_eq!(observed[0],observed[1]);
+        assert_eq!(observed[1].3,observed[1].4);
+    }
+
 
     #[test]
     fn shipment_count_is_one_outer_frame_with_three_adjacent_segments(){
