@@ -208,6 +208,15 @@ pub fn paint_management_text_cell(
     ui:&Ui,content:Rect,text:&str,role:typography::ManagementTableCellRole,
     align:egui::Align2,id:impl std::hash::Hash
 ){
+    paint_management_text_cell_with_full(ui,content,text,text,role,align,id,false);
+}
+
+/// For a deliberately shortened displayed value, preserve the original
+/// text only when clipping or the explicit shortening flag warrants it.
+pub fn paint_management_text_cell_with_full(
+    ui:&Ui,content:Rect,text:&str,full:&str,role:typography::ManagementTableCellRole,
+    align:egui::Align2,id:impl std::hash::Hash,shortened:bool
+){
     let visible=content.intersect(ui.clip_rect());
     if visible.width()<=0.0||visible.height()<=0.0{return;}
     let color=typography::management_table_cell_color(role);
@@ -221,9 +230,9 @@ pub fn paint_management_text_cell(
     ui.painter().with_clip_rect(visible).galley(
         egui::pos2(x,content.center().y-galley.size().y/2.0),galley,color
     );
-    if overflow&&!text.trim().is_empty(){
+    if (overflow||shortened)&&!text.trim().is_empty(){
         let response=ui.interact(visible,ui.make_persistent_id(id),Sense::hover());
-        overflow_tooltip(response,true,text);
+        overflow_tooltip(response,true,full);
     }
 }
 
@@ -974,7 +983,7 @@ pub fn management_table_checkbox(
     }
     ui.scope_builder(builder,|control|{
         control.set_clip_rect(clip);
-        control.checkbox(checked,"")
+        checkbox(control,checked,"",true)
     }).inner
 }
 
@@ -2994,16 +3003,10 @@ pub fn management_date_text_field(
 fn management_date_text_field_impl(
     ui:&mut Ui,value:&mut String,width:f32,height:f32,hint:&str,limit:Option<usize>
 )->Response{
-    let mut edit=egui::TextEdit::singleline(value)
-        .font(typography::data_value_font(
-            typography::DataValueKind::Date,
-            typography::DataValueContext::Form
-        ))
-        .frame(false)
-        .horizontal_align(Align::Center)
-        .vertical_align(Align::Center)
-        .margin(typography::management_date_text_margin())
-        .hint_text(hint);
+    let mut edit=singleline_editor(value,typography::data_value_font(
+            typography::DataValueKind::Date,typography::DataValueContext::Form
+        ),width,Align::Center,typography::management_date_text_margin())
+        .frame(false).hint_text(hint);
     if let Some(limit)=limit{edit=edit.char_limit(limit);}
     ui.add_sized(Vec2::new(width,height),edit)
 }
@@ -3156,16 +3159,11 @@ pub fn manual_linked_table_editor(
     editor_ui.set_clip_rect(inner);
     editor_ui.add_sized(
         inner.size(),
-        egui::TextEdit::singleline(value)
-            .font(egui::FontId::proportional(
+        singleline_editor(value,egui::FontId::proportional(
                 typography::FONT_RECEPTION_RECIPIENT_TEXT
-            ))
+            ),inner.width(),Align::LEFT,egui::Margin::symmetric(2,0))
             .text_color(if linked{source_highlight::ACTIVE_TEXT}else{theme::TEXT})
-            .vertical_align(Align::Center)
-            .margin(egui::Margin::symmetric(2,0))
-            .frame(false)
-            .desired_width(inner.width())
-            .hint_text("미입력")
+            .frame(false).hint_text("미입력")
     )
 }
 
@@ -6133,10 +6131,8 @@ fn reception_quantity_editor(
             input_ui.set_clip_rect(input_rect.intersect(segments.clip_rect()));
             let input=reception_text_editor_at_click(
                 &mut input_ui,input_rect,
-                egui::TextEdit::singleline(value).font(font.clone())
-                    .horizontal_align(Align::RIGHT).vertical_align(Align::Center)
-                    .margin(egui::Margin::ZERO).frame(false)
-                    .desired_width(input_rect.width()),
+                singleline_editor(value,font.clone(),input_rect.width(),
+                    Align::RIGHT,egui::Margin::ZERO).frame(false),
                 request_focus,click_at
             );
             segments.painter().with_clip_rect(unit_rect).text(
@@ -9371,13 +9367,12 @@ mod modal_editor_workspace_geometry_tests {
         let source=include_str!("components.rs");
         let start=source.find("fn reception_recipient_text_edit(")
             .expect("recipient text editor");
-        let tail=&source[start..];
-        let margin=tail.find(".margin(typography::form_input_text_margin())")
-            .expect("shared form input margin");
-        let desired_width=tail.find(".desired_width(width);")
-            .expect("recipient input width");
-        assert!(margin<desired_width,
-            "recipient input must use the shared margin before setting its width");
+        let editor=source[start..].split("\n}\n").next().unwrap();
+        assert!(editor.contains("singleline_editor(value,font,width,Align::LEFT,"));
+        assert!(editor.contains("typography::form_input_text_margin()"));
+        let base=source.split("fn singleline_editor<'a>(").nth(1).unwrap()
+            .split("\n}\n").next().unwrap();
+        assert!(base.contains(".margin(margin).desired_width(width)"));
     }
 }
 

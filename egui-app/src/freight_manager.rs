@@ -194,6 +194,13 @@ fn freight_assignment_text(
     role:typography::ManagementTableCellRole,id:impl std::hash::Hash
 ) {
     let clipped=rect.shrink2(egui::vec2(theme::MANAGEMENT_TABLE_TEXT_LEADING_INSET,0.0));
+    if !matches!(role,typography::ManagementTableCellRole::Category){
+        components::paint_management_text_cell_with_full(
+            ui,clipped,value,full_text,role,egui::Align2::LEFT_CENTER,
+            ("freight-cell",id),value!=full_text
+        );
+        return;
+    }
     let painter=ui.painter().with_clip_rect(clipped);
     match role {
         typography::ManagementTableCellRole::Category=>{
@@ -222,16 +229,7 @@ fn freight_assignment_text(
                 leaf_galley,theme::SECONDARY
             );
         }
-        other=>{
-            let galley=typography::management_table_cell_galley(ui,value,other);
-            let color=typography::management_table_cell_color(other);
-            painter.galley(
-                egui::pos2(
-                    clipped.left(),
-                    clipped.center().y-galley.size().y/2.0
-                ),galley,color
-            );
-        }
+        _=>unreachable!("non-category cells use the common painter"),
     }
     if !value.is_empty() && (value!=full_text || components::text_exceeds_rect(
         typography::management_table_cell_galley(ui,value,role).size(),clipped.intersect(ui.clip_rect()))){
@@ -295,24 +293,10 @@ fn freight_rate_cell(
     role:typography::ManagementTableCellRole,id:impl std::hash::Hash,
     full_tooltip:Option<&str>
 ){
-    let cell=rect.shrink2(egui::vec2(6.0,0.0));
-    let color=typography::management_table_cell_color(role);
-    let galley=typography::management_table_cell_galley(ui,value,role);
-    let x=if align==egui::Align2::RIGHT_CENTER {
-        cell.right()-galley.size().x
-    }else if align==egui::Align2::CENTER_CENTER {
-        cell.center().x-galley.size().x/2.0
-    }else{
-        cell.left()
-    };
-    let overflow=components::text_exceeds_rect(galley.size(),cell.intersect(ui.clip_rect()));
-    ui.painter().with_clip_rect(cell).galley(
-        egui::pos2(x,cell.center().y-galley.size().y/2.0),galley,color
+    components::paint_management_text_cell_with_full(
+        ui,rect.shrink2(egui::vec2(6.0,0.0)),value,full_tooltip.unwrap_or(value),
+        role,align,("freight-rate-cell",id),false
     );
-    if overflow&&!value.is_empty(){
-        ui.interact(cell,ui.make_persistent_id(("freight-rate-cell",id)),
-            egui::Sense::hover()).on_hover_text(full_tooltip.unwrap_or(value));
-    }
 }
 
 fn group_name<'a>(groups: &'a [Value], id: &str) -> &'a str {
