@@ -1029,6 +1029,35 @@ pub fn apply_inline(
     })
 }
 
+// Immutable display snapshot: one model copy per native edit/undo, not
+// per render. The actual reducer and save payload continue to own self.model.
+struct ManualRenderData{
+    model:Value,
+    spans:Vec<source_highlight::LinkedSpan>,
+    assigned_ids:std::collections::HashSet<String>,
+    pending_count:usize,
+    recommendations:std::cell::RefCell<Option<(String,Option<ManualCellTarget>,std::rc::Rc<Vec<ManualCellTarget>>)>>,
+}
+impl ManualRenderData{
+    fn new(raw:&str,model:&Value)->Self{
+        let assignments=model.get("assignments").unwrap_or(&Value::Null);
+        let spans=source_highlight::collect_manual(raw,list(model,"rows"),list(model,"blocks"),assignments);
+        let assigned_ids=assignments.as_object().map(|map|map.iter()
+            .filter(|(_,cell)|cell.is_object()).map(|(id,_)|id.to_owned()).collect()).unwrap_or_default();
+        Self{model:model.clone(),spans,assigned_ids,pending_count:model_pending_quantity_count(model),
+            recommendations:std::cell::RefCell::new(None)}
+    }
+    fn recommendations(&self,source:&str,pending:Option<&ManualCellTarget>)
+        ->std::rc::Rc<Vec<ManualCellTarget>>{
+        let mut cached=self.recommendations.borrow_mut();
+        if let Some((id,target,rows))=cached.as_ref(){
+            if id==source && target.as_ref()==pending{return rows.clone();}
+        }
+        let rows=std::rc::Rc::new(manual_assignment_recommendations(&self.model,source,pending));
+        *cached=Some((source.to_owned(),pending.cloned(),rows.clone()));
+        rows
+    }
+}
 pub struct ManualWorkspace {
     pub order_id:String,
     direct_input:bool,
@@ -1039,6 +1068,7 @@ pub struct ManualWorkspace {
     base_order:Option<Value>,
     cached_quote:Option<Value>,
     model:Option<Value>,
+    render_data:Option<std::rc::Rc<ManualRenderData>>,
     assignment_order:Vec<String>,
     remote_rows:Vec<RemoteRow>,
     view_quote:Option<Value>,
@@ -1206,7 +1236,7 @@ impl ManualWorkspace {
         Self {
             order_id:source.id,direct_input,raw:source.raw,order_type:source.order_type,
             client_id:source.client_id,gateway,base_order:None,
-            cached_quote:source.pricing_preview,model:None,
+            cached_quote:source.pricing_preview,model:None,render_data:None,
             assignment_order:Vec::new(),remote_rows:Vec::new(),view_quote:None,
             selected_recipient:0,selected_item:None,selected_field:"name".into(),
             assignment_gesture:ManualAssignmentGesture::default(),
@@ -1291,6 +1321,7 @@ impl ManualWorkspace {
                 let count=list(&model,"rows").len();
                 self.row_count_text=count.to_string();
                 self.selected_recipient=self.selected_recipient.min(count.saturating_sub(1));
+                self.render_data=None;
                 self.model=Some(model);
                 self.assignment_order=assignment_order;
                 self.receiver=None;
@@ -1316,6 +1347,7 @@ impl ManualWorkspace {
                 }
                 self.remote_rows=remote_rows;
                 self.view_quote=view_quote;
+                self.render_data=None;
                 self.model=Some(model);
                 self.assignment_order=assignment_order;
                 let count=self.model.as_ref().map(|m|list(m,"rows").len()).unwrap_or(0);
@@ -1362,6 +1394,7 @@ impl ManualWorkspace {
             Some(Ok(Ok(Outcome::Applied{
                 order,model,assignment_order,quote,quote_error
             })))=>{
+                self.render_data=None;
                 self.model=Some(model);
                 self.assignment_order=assignment_order;
                 self.applied=Some((order,quote,quote_error));
@@ -1437,6 +1470,7 @@ impl ManualWorkspace {
             self.error=Some("되돌릴 수 있는 변경사항이 없습니다.".into());
             return;
         };
+        self.render_data=None;
         self.model=Some(frame.model);
         self.assignment_order=frame.assignment_order;
         self.remote_rows=frame.remote_rows;
@@ -1922,12 +1956,12 @@ impl ManualWorkspace {
                 EscapeAction::Ignore=>{},
             }
         }
-        let spans=self.model.as_ref().map(|model|{
-            source_highlight::collect_manual(
-                &self.raw,list(model,"rows"),list(model,"blocks"),
-                model.get("assignments").unwrap_or(&Value::Null)
-            )
-        }).unwrap_or_default();
+        if self.render_data.is_none(){
+            self.render_data=self.model.as_ref().map(|model|
+                std::rc::Rc::new(ManualRenderData::new(&self.raw,model)));
+        }
+        let render_data=self.render_data.clone();
+        let spans=render_data.as_ref().map(|data|data.spans.as_slice()).unwrap_or(&[]);
         let selected_recipient_id=self.model.as_ref().and_then(|model|
             list(model,"rows").get(self.selected_recipient)
                 .map(|row|text(row,"id").to_owned())
@@ -2089,31 +2123,19 @@ impl ManualWorkspace {
                         workspace.disable();
                     }
                     let Some((busy,pending_quantity_active,has_pending_quantity,guidance))=workspace.body_region(|ui|{
-                        let Some(model)=self.model.as_ref() else {return None};
-                        // Own the recommendation snapshot so drag-start handling
-                        // inside the nested UI closure does not retain a borrow of self.
-                        let recommendation_model=model.clone();
-                        let rows=list(model,"rows").to_vec();
-                        let visible_shipment=visible_manual_shipment(
-                            self.selected_recipient,rows.len()
-                        );
-                        let blocks=list(model,"blocks").to_vec();
-                        let assignments=model.get("assignments").cloned().unwrap_or_else(||json!({}));
-                        // Exact native block assignment IDs drive the manual palette.
-                        // Recognition/Reception use the unchanged shared default.
-                        let assigned_source_ids=assignments.as_object().map(|map|
-                            map.iter().filter(|(_,cell)|cell.is_object())
-                                .map(|(id,_)|id.to_owned())
-                                .collect::<std::collections::HashSet<String>>()
-                        ).unwrap_or_default();
+                        let Some(data)=render_data.as_ref() else {return None};
+                        let model=&data.model;
+                        let rows=list(model,"rows");
+                        let visible_shipment=visible_manual_shipment(self.selected_recipient,rows.len());
+                        let assignments=model.get("assignments").unwrap_or(&Value::Null);
+                        let assigned_source_ids=&data.assigned_ids;
                         let busy=self.busy();
                         let pending_quantity_cell=self.pending_quantity_cell();
                         let mut drag_recommendations=self.assignment_gesture.dragging.as_deref()
-                            .map(|source|manual_assignment_recommendations(
-                                model,source,pending_quantity_cell.as_ref()
-                            )).unwrap_or_default();
+                            .map(|source|data.recommendations(source,pending_quantity_cell.as_ref()))
+                            .unwrap_or_default();
                         let pending_quantity_active=pending_quantity_cell.is_some();
-                        let pending_quantity_count=model_pending_quantity_count(model);
+                        let pending_quantity_count=data.pending_count;
                         let has_pending_quantity=pending_quantity_count>0;
                         // The status/count toolbar is part of the shared modal
                         // header. The body begins directly at the card workspace.
@@ -2188,8 +2210,8 @@ impl ManualWorkspace {
                                                                 );
                                                                 // Recommend valid cells on the initial press frame,
                                                                 // even while the pointer remains completely still.
-                                                                drag_recommendations=manual_assignment_recommendations(
-                                                                    &recommendation_model,&id,pending_quantity_cell.as_ref()
+                                                                drag_recommendations=data.recommendations(
+                                                                    &id,pending_quantity_cell.as_ref()
                                                                 );
                                                             }
                                                         }
@@ -4245,5 +4267,22 @@ mod manual_workspace_layout_tests{
         assert!(main.contains("editor.show("));
         assert!(main.contains("self.layout.widths(content_width)[1]"));
         assert!(main.contains("reception_source_width,hover,source"));
+    }
+}
+
+#[cfg(test)]
+mod manual_render_cache_tests{
+    use super::*;
+    #[test]
+    fn manual_render_recommendations_reuse_only_same_input(){
+        let model=json!({"rows":[],"blocks":[],"assignments":{}});
+        let first=ManualRenderData::new("",&model);
+        let a=first.recommendations("a",None);
+        let b=first.recommendations("a",None);
+        assert!(std::rc::Rc::ptr_eq(&a,&b));
+        let c=first.recommendations("b",None);
+        assert!(!std::rc::Rc::ptr_eq(&b,&c));
+        let edited=ManualRenderData::new("",&model);
+        assert!(!std::rc::Rc::ptr_eq(&c,&edited.recommendations("b",None)));
     }
 }
