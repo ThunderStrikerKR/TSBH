@@ -444,6 +444,9 @@ pub struct ProductManager {
     price_write_queue:VecDeque<QueuedPriceWrite>,
     price_mode_exit_requested:bool,
     price_focus_target:Option<String>,
+    // Track the actual final focus owner, not just egui's transient
+    // lost_focus flag (which can miss a release between render passes).
+    price_previous_focus:Option<egui::Id>,
     selected_variants:HashMap<String,String>,
     sort:Option<ProductSort>,
     excel:ProductExcelUi,
@@ -493,6 +496,7 @@ impl ProductManager {
             price_write_queue:VecDeque::new(),
             price_mode_exit_requested:false,
             price_focus_target:None,
+            price_previous_focus:None,
             selected_variants:HashMap::new(),sort:None,
             excel:ProductExcelUi::default(),
             photos:ProductImageCache::default(),
@@ -547,6 +551,7 @@ impl ProductManager {
         self.price_write_queue.clear();
         self.price_mode_exit_requested=false;
         self.price_focus_target=None;
+        self.price_previous_focus=None;
         self.confirm_archive=false;
         self.confirm_discard=false;
         self.next_query=None;
@@ -608,6 +613,7 @@ impl ProductManager {
         if !self.has_pending_prices(){
             self.price_mode=false;
             self.price_focus_target=None;
+            self.price_previous_focus=None;
             self.price_drafts.clear();
         }
     }
@@ -1519,7 +1525,10 @@ impl ProductManager {
                                                             // egui can surrender TextEdit focus on Escape
                                                             // before producing the Response. The former
                                                             // focus owner must cancel, not enter blur-save.
-                                                            let escape=escape_pressed&&(response.lost_focus()
+                                                            let was_focused=self.price_previous_focus==Some(response.id);
+                                                            let blurred=response.lost_focus()
+                                                                ||(was_focused&&!response.has_focus());
+                                                            let escape=escape_pressed&&(was_focused||response.lost_focus()
                                                                 ||(response.has_focus()&&!response.gained_focus()));
                                                             let navigation_target=navigation_key
                                                                 .and_then(|navigation|
@@ -1568,7 +1577,7 @@ impl ProductManager {
                                                                 if !entry.dirty(){
                                                                     entry.normalize_if_unchanged();
                                                                 }
-                                                            }else if response.lost_focus(){
+                                                            }else if blurred{
                                                                 if entry.dirty()&&!cell_busy{
                                                                     match entry.parse(){
                                                                     Ok(value)=>{
@@ -1759,6 +1768,12 @@ impl ProductManager {
                 panel,body_rect,empty_state
             );
         });
+        // Capture focus after the entire grid (including a later cell's
+        // click or keyboard handoff) has been rendered. This identifies
+        // exactly one prior owner if focus disappears between passes.
+        self.price_previous_focus=if self.price_mode{
+            ui.memory(|memory|memory.focused())
+        }else{None};
         if let Some((key,data))=price_write {
             self.start_write("set_price",data,Some(key),ui.ctx().clone());
         }
@@ -2960,6 +2975,7 @@ mod tests {
         render_price_grid_frame(&mut manager,&ctx,vec![]);
         render_price_grid_frame(&mut manager,&ctx,vec![egui::Event::Text("22000".into())]);
         assert_eq!(manager.price_drafts[key].parse().unwrap(),Some(22000));
+        assert_eq!(manager.price_previous_focus,Some(editor));
         ctx.memory_mut(|m|m.surrender_focus(editor));
         render_price_grid_frame(&mut manager,&ctx,vec![]);
         let request=next_price_request(&requests);
