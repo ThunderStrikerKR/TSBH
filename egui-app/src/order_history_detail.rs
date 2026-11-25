@@ -130,7 +130,7 @@ fn payment_panel(
     text_kv(ui,"입금 확인일",display_or(field(staff,"date"),"미확인"));
     ui.add_space(theme::SPACE_4);
     if payments.is_empty(){
-        ui.label(typography::caption("해당 주문에 연결된 실제 입금 기록이 없습니다."));
+        components::management_body_state_inline(ui,"해당 주문에 연결된 실제 입금 기록이 없습니다.");
     }
     for (i,payment) in payments.iter().enumerate(){
         if i>0{components::soft_divider(ui);}
@@ -261,7 +261,7 @@ fn shipment_entry(
             card.add(egui::Label::new(job));
         }
         if rows(&recipient["items"]).is_empty(){
-            card.label(typography::caption("품목 정보 없음"));
+            components::management_body_state_inline(card,"품목 정보 없음");
         }
         card.add_space(theme::SPACE_4);
         if let Some(ship)=ship{
@@ -272,7 +272,7 @@ fn shipment_entry(
             text_kv(card,"관리 메모",display_or(note,"없음"));
             text_kv(card,"메모 최종 갱신",&kst(field(ship,"managementMemoUpdatedAt")));
         }else{
-            card.label(typography::caption("현재 연결된 운송장과 발송 건 메모가 없습니다."));
+            components::management_body_state_inline(card,"현재 연결된 운송장과 발송 건 메모가 없습니다.");
         }
     });
 }
@@ -299,7 +299,7 @@ fn shipment_panel(ui:&mut Ui,order:&Value,shipments:&[&Value]){
         }
     }
     if recipients.is_empty(){
-        ui.label(typography::caption("저장된 수취인 및 발송 건 정보가 없습니다."));
+        components::management_body_state_inline(ui,"저장된 수취인 및 발송 건 정보가 없습니다.");
     }
 }
 struct AuditEntry {at:String,title:String,detail:String}
@@ -376,7 +376,7 @@ fn change_entries(order:&Value,state:&Value,shipment_ids:&HashSet<&str>)->Vec<Au
 }
 fn audit_panel(ui:&mut Ui,changes:&[AuditEntry]){
     if changes.is_empty(){
-        ui.label(typography::caption("현재 저장된 관련 변경 기록이 없습니다."));
+        components::management_body_state_inline(ui,"현재 저장된 관련 변경 기록이 없습니다.");
     }
     for change in changes{
         ui.label(typography::subsection_heading(&change.title));
@@ -481,7 +481,7 @@ pub fn show(ctx:&egui::Context,work_area:Rect,row:&Value,state:&Value)->bool{
                     let panes=dashboard_grid(grid_rect);
                     section_panel(ui,panes.raw,raw_title,"raw",order_id,|panel|{
                         if raw.is_empty(){
-                            panel.label(typography::caption("보존된 텍스트 원문이 없습니다."));
+                            components::management_body_state_inline(panel,"보존된 텍스트 원문이 없습니다.");
                         }else{
                             panel.label(typography::body(raw));
                         }
