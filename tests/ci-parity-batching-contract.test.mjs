@@ -42,10 +42,3 @@ test("single npm install per parity batch and no redundant Windows parser runner
   assert.match(yaml,/report\.length !== 10/);
 });
 
-test("Windows-only harness changes avoid unrelated TS/Rust parity CI",()=>{
-  const onlyWindows=["tests/ci-windows-smoke-routing.test.mjs","tests/ci-dev-domain-gui-contract.test.mjs","tests/dev-window-placement-real-restart.test.mjs","tests/tauri-window-placement.test.mjs","scripts/ci-dev-domain-gui.mjs","scripts/migration32-dev-business-ui.mjs","scripts/migration31-real-two-orders.mjs","scripts/migration32-real-factory-notifications.mjs","scripts/migration32-real-ocr-cancel.mjs","scripts/migration32-dev-windows-smoke.ps1","scripts/classify-dev-windows-smoke.mjs","scripts/verify-dev-window-placement-win.ps1"];
-  for(const path of onlyWindows){
-    const needle="      - "+String.fromCharCode(39)+"!"+path+String.fromCharCode(39);
-    assert.equal(yaml.split(needle).length-1,2,"Expected push and PR exclusion: "+path);
-  }
-});

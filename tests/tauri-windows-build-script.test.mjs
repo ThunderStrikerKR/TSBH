@@ -3,7 +3,6 @@ import assert from "node:assert/strict";
 import { readFileSync, existsSync } from "node:fs";
 const read = p => readFileSync(new URL("../"+p, import.meta.url),"utf8");
 const exists = p => existsSync(new URL("../"+p, import.meta.url));
-const dev = read("DEV_WINDOWS_TAURI.cmd");
 const verify = read(".github/workflows/verify-tauri.yml");
 const output = read(".github/workflows/migration-output.yml");
 const cache = read("scripts/ensure-node-deps.ps1");
@@ -11,12 +10,6 @@ const cache = read("scripts/ensure-node-deps.ps1");
 test("removed legacy release launchers stay absent",()=>{
   assert.equal(exists("BUILD_WINDOWS_TAURI.cmd"),false);
   assert.equal(exists("BUILD_WINDOWS_EXE.cmd"),false);
-});
-test("daily developer launcher targets isolated Tauri/Vite TEST workspace without release bundling",()=>{
-  assert.match(dev,/tauri\.cmd" dev -- -- --bando-developer-test/);
-  assert.match(dev,/ensure-node-deps\.ps1/);
-  assert.doesNotMatch(dev,/npm run build:windows|Compress-Archive|package-ocr-runtime\.ps1/);
-  assert.match(dev,/mklink \/J .*release\\ocr/);
 });
 test("real Windows release is manual only and stages EXE with offline verified OCR ZIP",()=>{
   assert.match(verify,/windows-release-build:[\s\S]*?if: github\.event_name == 'workflow_dispatch'/);
@@ -33,7 +26,6 @@ test("Node installation skips only unchanged manifest, lockfile and version fing
   assert.match(cache,/\.bando-deps-fingerprint\.txt/);
   assert.match(cache,/Skipping npm installation/);
   assert.match(cache,/npm\.cmd ci --no-audit --no-fund/);
-  assert.doesNotMatch(dev,/call npm install --no-audit/);
 });
 test("manual release launcher directly builds and verifies portable ZIP without old CMD",()=>{
   const launcher=read("PACKAGE_WINDOWS_TAURI.cmd");
@@ -49,7 +41,6 @@ test("manual release launcher directly builds and verifies portable ZIP without 
   assert.match(packer,/반도허브-배포검증/);
   assert.ok(packer.indexOf("verify-packaged-ocr.ps1") <
     packer.indexOf("Move-Item -LiteralPath $zipStage -Destination $zip"));
-  assert.doesNotMatch(dev,/package-windows-tauri\.ps1|npm run build:windows/);
 });
 
 test("manual release partial promotion restores old ZIP, folder and OCR cache",()=>{

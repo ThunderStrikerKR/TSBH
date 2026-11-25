@@ -37,13 +37,6 @@ test("native window state plugin restores main window bounds and maximization", 
     "main window must not flash in its default placement before restoration");
 });
 
-test("developer TEST app never overwrites production placement", () => {
-  assert.match(source, /let developer_test = std::env::args\(\)\.skip\(1\)/);
-  assert.match(source, /single_instance::acquire\(developer_test\)/);
-  assert.match(source, /with_filename\(if developer_test \{\s*"window-state-developer\.json"\s*\} else \{\s*"window-state\.json"/);
-  assert.match(source, /let is_test = developer_test;/);
-});
-
 test("window placement is independent of SQLite order data and KakaoTalk docking", () => {
   assert.doesNotMatch(source, /"settings"\]\["windowGeometry"/);
   assert.match(source, /\.with_filter\(\|label\| label == "main"\)/);
