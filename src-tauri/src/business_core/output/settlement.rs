@@ -74,7 +74,7 @@ fn freight(state: &Value, row: &Value) -> Result<(i64,bool), String> {
     for id in shipment_ids {
         let id = id.as_str().unwrap_or("");
         let Some(ship) = list(&state["workflow"], "shipments")
-            .iter().find(|ship| s(ship, "id") == id) else { continue };
+            .iter().find(|ship| s(ship, "id") == id) else { complete = false; continue };
         let Some(recipient) = recipients.iter().find(|r| s(r,"id") == s(ship,"recipientId"))
         else { complete = false; continue };
         let origins: HashSet<&str> = list(recipient,"items").iter().map(|item|s(item,"origin")).collect();
@@ -216,4 +216,56 @@ pub(super) fn prepare(state: &Value, date: &str, history_rows: &Value) -> Result
         "approvedPaymentKnown":known(&orders,"paymentApproved")?,
         "warnings":warnings
     }))
+}
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn settlement_with_shipments(shipments: Value, shipment_ids: Value) -> Value {
+        let state = json!({"workflow": {"shipments": shipments}});
+        let history = json!([{
+            "shipmentIds": shipment_ids,
+            "order": {"id": "order-a", "recipients": [
+                {"id": "recipient-a", "items": [{"origin": "factory"}]},
+                {"id": "recipient-b", "items": [{"origin": "factory"}]}
+            ]},
+            "billing": {"shipping": 5000, "total": 15000}
+        }]);
+        prepare(&state, "2026-11-25", &history).unwrap()
+    }
+
+    #[test]
+    fn missing_shipment_does_not_confirm_partial_actual_freight() {
+        let result = settlement_with_shipments(json!([
+            {"id": "shipment-a", "recipientId": "recipient-a", "actualFreight": {"factory": 3000}}
+        ]), json!(["shipment-a", "shipment-b"]));
+        assert_eq!(result["orderRows"][0]["freightComplete"], json!(false));
+        assert!(result["orderRows"][0]["freightCost"].is_null());
+        assert_eq!(result["freightUnknown"], json!(1));
+        assert_eq!(result["actualFreightKnown"], json!(0));
+        assert_eq!(result["shippingKnown"], json!(5000));
+    }
+
+    #[test]
+    fn all_missing_shipments_do_not_confirm_zero_actual_freight() {
+        let result = settlement_with_shipments(json!([]), json!(["shipment-a"]));
+        assert_eq!(result["orderRows"][0]["freightComplete"], json!(false));
+        assert!(result["orderRows"][0]["freightCost"].is_null());
+        assert_eq!(result["freightUnknown"], json!(1));
+    }
+
+    #[test]
+    fn complete_actual_freight_preserves_independent_shipping_charge() {
+        let result = settlement_with_shipments(json!([
+            {"id": "shipment-a", "recipientId": "recipient-a", "actualFreight": {"factory": 3000}},
+            {"id": "shipment-b", "recipientId": "recipient-b", "actualFreight": {"factory": 4000}}
+        ]), json!(["shipment-a", "shipment-b"]));
+        assert_eq!(result["orderRows"][0]["freightComplete"], json!(true));
+        assert_eq!(result["orderRows"][0]["freightCost"], json!(7000));
+        assert_eq!(result["actualFreightKnown"], json!(7000));
+        assert_eq!(result["freightUnknown"], json!(0));
+        assert_eq!(result["shippingKnown"], json!(5000));
+    }
 }
