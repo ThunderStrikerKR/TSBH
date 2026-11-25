@@ -321,11 +321,36 @@ fn analyze(payload:&Value)->Result<Value,String>{
 /// Automatic inbox only: the caller supplies the authoritative transaction
 /// before-image, not an external preview. Parse and match exactly once.
 pub(crate) fn import_automatic_factory_reply(state:&Value,payload:&Value)->Result<Value,String>{
+    let (reply,_) = prepare_automatic_factory_reply(state,payload)?;
+    apply_prepared_factory_reply(state,&reply,payload)
+}
+/// Match against the complete exported queue, even when only a few order
+/// trees will be hydrated. Keep ambiguous candidates in the scope so the
+/// reducer can hold them exactly as it did on a full state.
+pub(crate) fn prepare_automatic_factory_reply(state:&Value,payload:&Value)
+    ->Result<(Value,Vec<String>),String>{
     let reply=parse_reply(payload)?;
-    if is_duplicate(state,s(&reply,"id")){
+    let workflow=field(state,"workflow");
+    let shipments=rows(workflow,"shipments");
+    let mut orders=std::collections::BTreeSet::new();
+    for row in rows(&reply,"rows").iter().filter(|row|s(row,"issue").is_empty()){
+        for queue in rows(workflow,"queue").iter().filter(|q|
+            s(q,"origin")=="FACTORY" && s(q,"status")=="EXPORTED" &&
+            !field(q,"snapshot").is_null() && row_matches(row,q)){
+            if let Some(ship)=shipments.iter().find(|ship|s(ship,"id")==s(queue,"shipmentId")){
+                let order_id=s(ship,"orderId");
+                if !order_id.is_empty(){orders.insert(order_id.to_owned());}
+            }
+        }
+    }
+    Ok((reply,orders.into_iter().collect()))
+}
+pub(crate) fn apply_prepared_factory_reply(state:&Value,reply:&Value,payload:&Value)
+    ->Result<Value,String>{
+    if is_duplicate(state,s(reply,"id")){
         return Err("이미 등록된 동일 회신 파일입니다. 회신 이력에서 확인하세요.".into())
     }
-    let next=connect(state,&reply,false,payload)?;
+    let next=connect(state,reply,false,payload)?;
     let record=rows(&next,"factoryReplies").last().ok_or("회신 저장 결과 누락")?;
     let applied=rows(record,"rows").iter().filter(|row|field(row,"applied")==true).count();
     let held=rows(record,"rows").len()-applied;
