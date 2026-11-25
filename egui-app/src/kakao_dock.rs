@@ -88,7 +88,8 @@ impl Drop for KakaoDock {
 
 #[cfg(windows)]
 mod native {
-    use std::{path::Path,time::{Duration,Instant}};
+    use std::time::{Duration,Instant};
+    use crate::kakao_context::windows::{self,Candidate,process_is_kakao};
     use super::egui;
     type Hwnd=isize;
     type Handle=isize;
@@ -124,7 +125,6 @@ mod native {
     const GWLP_HWNDPARENT:i32=-8; // Top-level window OWNER, not child parent.
     const GW_OWNER:u32=4;
     const WS_CAPTION:isize=0x00C00000;
-    const WS_SYSMENU:isize=0x00080000;
     const WS_EX_TOPMOST:isize=0x00000008;
     const SWP_NOSIZE:u32=0x0001;
     const SWP_NOMOVE:u32=0x0002;
@@ -135,7 +135,6 @@ mod native {
     const HWND_TOP:Hwnd=0;
     const HWND_TOPMOST:Hwnd=-1;
     const HWND_NOTOPMOST:Hwnd=-2;
-    const PROCESS_QUERY_LIMITED_INFORMATION:u32=0x1000;
     const DWMWA_EXTENDED_FRAME_BOUNDS:u32=9;
     const WM_GETMINMAXINFO:u32=0x24;
     const SMTO_ABORTIFHUNG:u32=0x2;
@@ -173,9 +172,6 @@ mod native {
     }
     #[link(name="kernel32")]
     unsafe extern "system" {
-        fn OpenProcess(access:u32,inherit:i32,pid:u32)->Handle;
-        fn QueryFullProcessImageNameW(process:Handle,flags:u32,text:*mut u16,len:*mut u32)->i32;
-        fn CloseHandle(process:Handle)->i32;
         fn GetCurrentProcessId()->u32;
         fn SetLastError(code:u32);
         fn GetLastError()->u32;
@@ -192,48 +188,6 @@ mod native {
         let mut out=0;
         unsafe{GetWindowThreadProcessId(hwnd,&mut out);}
         out
-    }
-    fn kakao_process(process_id:u32)->bool{
-        if process_id==0 || process_id==unsafe{GetCurrentProcessId()}{return false;}
-        unsafe{
-            let process=OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION,0,process_id);
-            if process==0{return false;}
-            let mut buffer=[0u16;2048];
-            let mut len=buffer.len() as u32;
-            let ok=QueryFullProcessImageNameW(
-                process,0,buffer.as_mut_ptr(),&mut len
-            )!=0;
-            CloseHandle(process);
-            ok && Path::new(&String::from_utf16_lossy(&buffer[..len as usize]))
-                .file_name().and_then(|name|name.to_str())
-                .is_some_and(|name|name.eq_ignore_ascii_case("KakaoTalk.exe"))
-        }
-    }
-    #[derive(Clone)]
-    struct Candidate{hwnd:Hwnd,pid:u32,title:String,main:bool}
-    fn candidates()->Vec<Candidate>{
-        unsafe extern "system" fn collect(hwnd:Hwnd,param:isize)->i32{
-            unsafe{
-                if IsWindowVisible(hwnd)==0 {return 1;}
-                if GetWindowLongPtrW(hwnd,GWL_STYLE)&WS_SYSMENU==0{return 1;}
-                let process_id=pid(hwnd);
-                if !kakao_process(process_id){return 1;}
-                if IsIconic(hwnd)==0 {
-                    let mut r=Rect::default();
-                    if GetWindowRect(hwnd,&mut r)==0 ||
-                        r.width()<140 || r.height()<150 {return 1;}
-                }
-                let name=title(hwnd);
-                if name.trim().is_empty(){return 1;}
-                let main=name=="카카오톡" || name.eq_ignore_ascii_case("KakaoTalk");
-                let target=&mut *(param as *mut Vec<Candidate>);
-                target.push(Candidate{hwnd,pid:process_id,title:name,main});
-            }
-            1
-        }
-        let mut list=Vec::new();
-        unsafe{EnumWindows(Some(collect),&mut list as *mut _ as isize);}
-        list
     }
     // Find whether 'window' is behind 'reference' in the current Z-order.
     // Avoid constant SetWindowPos calls if the correct order already holds.
@@ -501,6 +455,11 @@ mod native {
     }
     impl Tracked {
         fn new(c:&Candidate)->Result<Self,String>{
+            // Worker snapshots are advisory. Recheck the actual HWND/PID
+            // before taking ownership or recording a restoration target.
+            if unsafe{IsWindow(c.hwnd)}==0 || pid(c.hwnd)!=c.pid || !process_is_kakao(c.pid){
+                return Err("카카오톡 창이 변경되었습니다.".into());
+            }
             Ok(Self{
                 hwnd:c.hwnd,pid:c.pid,original:original_placement(c.hwnd)?,
                 style:unsafe{GetWindowLongPtrW(c.hwnd,GWL_STYLE)},
@@ -513,7 +472,7 @@ mod native {
         }
         fn alive(self)->bool{
             (unsafe{IsWindow(self.hwnd)}!=0)
-                && pid(self.hwnd)==self.pid && kakao_process(self.pid)
+                && pid(self.hwnd)==self.pid && process_is_kakao(self.pid)
         }
         // Touch only genuinely independent top-level Kakao HWNDs. A Kakao
         // dialog that already has its own owner must retain that relationship.
@@ -634,6 +593,8 @@ mod native {
         hub:Hwnd,pid:u32,windows:Vec<Tracked>,active_chat:Option<Hwnd>,
         pub(super) mode:super::DockMode,
         last_region:Option<Rect>,pub(super) last_sync:Option<Instant>,
+        last_layout_key:Vec<(Hwnd,bool,bool)>,last_layout_epoch:u64,
+        last_foreground:Hwnd,last_placed:Vec<(Hwnd,Rect)>,
         pub(super) overlap_footer:Option<i32>,
     }
     impl Session{
@@ -661,7 +622,9 @@ mod native {
         }
         pub fn connect()->Result<Self,String>{
             let hub=hwnd_of_hub()?;
-            let found=candidates();
+            // Explicit Connect must verify fresh identities even before the
+            // background monitor has published its first snapshot.
+            let found=windows::scan().windows;
             // React useAppModel::docking: CHAT first, then MAIN, then first.
             // Do not put a chat/dealer-selection step between Connect and dock.
             let chosen=found.iter().find(|c|!c.main)
@@ -684,7 +647,8 @@ mod native {
             Ok(Self{
                 hub,pid,windows:tracked,active_chat,
                 mode:super::DockMode::Together,
-                last_region:None,last_sync:None,overlap_footer:None,
+                last_region:None,last_sync:None,last_layout_key:Vec::new(),
+                last_layout_epoch:0,last_foreground:0,last_placed:Vec::new(),overlap_footer:None,
             })
         }
         pub fn foreground_related(&self)->bool {
@@ -711,30 +675,47 @@ mod native {
                 pid(self.hub)!=unsafe{GetCurrentProcessId()} {
                 return Err("반도허브 창 연결이 끊어졌습니다.".into());
             }
-            // Check every frame for geometry changes, but scan/move no faster
-            // than once per 350ms when the viewport hasn't changed.
+            // No EnumWindows on the rendering thread while idle. The common
+            // monitor publishes window membership and native move events.
+            if unsafe{IsIconic(self.hub)}!=0{self.last_sync=None;return Ok(());}
             let region=physical_region(self.hub,rect,scale)?;
-            // Read the HUB monitor, never the already offscreen Kakao MAIN.
-            // If the monitor API is temporarily unavailable, keep existing
-            // best-effort geometry rather than disconnecting Kakao.
-            let screen_bottom=monitor_screen_bottom(self.hub)
-                .unwrap_or(region.bottom);
-            // The dock must not float over other windows while the hub is
-            // minimized. Restore normal positioning when the hub reappears.
-            if unsafe{IsIconic(self.hub)}!=0{return Ok(());}
-            if self.last_region==Some(region) &&
-                self.last_sync.is_some_and(|t|t.elapsed()<Duration::from_millis(350)){
+            let observed=windows::snapshot();
+            let layout_key=observed.layout_key(self.pid);
+            let foreground=unsafe{GetForegroundWindow()};
+            let fallback=self.last_sync.is_some_and(|t|t.elapsed()>=Duration::from_secs(5));
+            let changed=self.last_sync.is_none() || self.last_region!=Some(region) ||
+                self.last_layout_key!=layout_key || self.last_layout_epoch!=observed.layout_epoch;
+            // A slow safety check repairs missed native events, not a full
+            // split layout calculation. Compare actual outer rectangles only.
+            let drift=fallback && self.last_placed.iter().any(|(hwnd,expected)|
+                outer(*hwnd).ok()!=Some(*expected));
+            let lost=fallback && self.windows.iter().any(|w|!w.alive());
+            if !changed && !drift && !lost{
+                if fallback || foreground!=self.last_foreground{
+                    self.last_foreground=foreground;
+                    if fallback{self.last_sync=Some(Instant::now());}
+                    self.restore_relative_z_order()?;
+                }
                 return Ok(());
             }
             self.last_region=Some(region);
             self.last_sync=Some(Instant::now());
-            let discovered=candidates();
+            self.last_layout_key=layout_key;
+            self.last_layout_epoch=observed.layout_epoch;
+            self.last_foreground=foreground;
+            // Read the HUB monitor, never the already offscreen Kakao MAIN.
+            let screen_bottom=monitor_screen_bottom(self.hub).unwrap_or(region.bottom);
+            let discovered=observed.windows;
             self.windows.retain(|w|w.alive());
             for c in discovered.iter().filter(|c|c.pid==self.pid){
                 if !self.windows.iter().any(|w|w.hwnd==c.hwnd) &&
                     self.windows.len()<32 {
-                    self.windows.push(Tracked::new(c)?);
-                    if !c.main {self.active_chat=Some(c.hwnd);}
+                    // A window may close between the worker observation and
+                    // this UI frame. Ignore that stale candidate only.
+                    if let Ok(window)=Tracked::new(c){
+                        self.windows.push(window);
+                        if !c.main {self.active_chat=Some(c.hwnd);}
+                    }
                 }
             }
             if self.windows.is_empty(){
@@ -813,6 +794,8 @@ mod native {
                 }
                 return Err(e);
             }
+            self.last_placed=self.windows.iter().filter_map(|w|
+                outer(w.hwnd).ok().map(|rect|(w.hwnd,rect))).collect();
             self.restore_relative_z_order()
         }
     }
