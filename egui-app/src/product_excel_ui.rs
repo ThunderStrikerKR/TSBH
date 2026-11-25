@@ -210,6 +210,7 @@ impl ProductExcelUi {
             .align(egui::RectAlign::BOTTOM_END)
             .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
             .show(|menu|{
+                crate::components::attach_popup_to_owner(trigger,menu);
                 crate::floating_notice::dropdown_popup_trigger(
                     menu.ctx(),trigger.rect
                 );

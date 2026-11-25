@@ -552,6 +552,7 @@ pub fn category_dropdown(
     egui::Popup::menu(&trigger)
         .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
         .show(|menu|{
+            components::attach_popup_to_owner(&trigger,menu);
             menu_body(
                 menu,nodes,&index,&mut state,selected,enabled,allow_empty,
                 &mut changed,trigger.rect,popup_width

@@ -2099,6 +2099,7 @@ impl FreightManager {
                                                 egui::PopupCloseBehavior::CloseOnClickOutside
                                             )
                                             .show(|menu|{
+                                                components::attach_popup_to_owner(&trigger,menu);
                                                 menu.set_min_width(148.0);
                                                 menu.spacing_mut().item_spacing.y=
                                                     theme::SPACE_4;
@@ -2485,6 +2486,7 @@ impl FreightManager {
                                     egui::PopupCloseBehavior::CloseOnClickOutside
                                 )
                                 .show(|menu|{
+                                    components::attach_popup_to_owner(&trigger,menu);
                                     menu.set_min_width(280.0);
                                     menu.label(typography::field_label("등록일"));
                                     let at=text(record,"at");

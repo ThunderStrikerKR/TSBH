@@ -2452,6 +2452,7 @@ impl ManualWorkspace {
                                                                         && !submit_direct;
                                                                     if actions_enabled {
                                                                         interaction.context_menu(|menu|{
+                                                                            components::attach_popup_to_owner(&interaction,menu);
                                                                             if theme::action(
                                                                                 menu,"상품 상세 수정",ButtonRole::Standard,true
                                                                             ).clicked(){

@@ -2638,6 +2638,22 @@ pub fn modal_foreground_for_window(
     });
 }
 
+/// Bind an open popup to the Foreground window that owns its trigger.
+/// egui 0.33 orders same-order sublayers directly above their parent at
+/// end_pass, even when a modal is raised after its body has been rendered.
+/// Never promote a popup above a different, newer modal or change its
+/// owner's input boundary. Background/Middle triggers already have lower
+/// Order than their Foreground popup and cannot be registered as sublayers.
+pub fn attach_popup_to_owner(owner:&egui::Response,popup:&Ui){
+    let parent=owner.layer_id;
+    let child=popup.layer_id();
+    if parent.order==egui::Order::Foreground
+        && child.order==parent.order && parent!=child
+    {
+        popup.ctx().set_sublayer(parent,child);
+    }
+}
+
 /// Reusable absolute-layout panel with a fixed title band and an
 /// independently scrolling body. The caller supplies approved geometry and
 /// stable IDs; clipping, frame paint, title placement and scroll ownership
@@ -3271,6 +3287,7 @@ pub fn reception_recipient_navigator(
                 egui::Popup::menu(&label)
                     .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
                     .show(|popup|{
+                        attach_popup_to_owner(&label,popup);
                         popup.set_max_width(320.0);
                         popup.add(egui::Label::new(typography::body(display)).wrap());
                     });
@@ -4185,6 +4202,7 @@ pub fn date_calendar(
     egui::Popup::menu(trigger)
         .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
         .show(|calendar|{
+            attach_popup_to_owner(trigger,calendar);
             calendar.spacing_mut().item_spacing=egui::vec2(
                 theme::CALENDAR_GRID_GAP,theme::CALENDAR_GRID_GAP
             );
@@ -4913,6 +4931,7 @@ fn management_dropdown_inner(
     egui::Popup::menu(&trigger)
         .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
         .show(|menu|{
+            attach_popup_to_owner(&trigger,menu);
             // Every selectable row reports its parent trigger, never its
             // popup-row pointer, to the shared action-notice origin.
             crate::floating_notice::dropdown_popup_trigger(menu.ctx(),rect);
@@ -4986,6 +5005,7 @@ pub fn management_searchable_dropdown(
     egui::Popup::menu(&trigger)
         .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
         .show(|menu|{
+            attach_popup_to_owner(&trigger,menu);
             crate::floating_notice::dropdown_popup_trigger(menu.ctx(),rect);
             menu.set_min_width(popup_width);
             menu.set_max_width(popup_width);
@@ -9086,6 +9106,41 @@ mod modal_input_routing_tests {
                 egui::Id::new("manual-nested-modal-backdrop")
             )
         );
+    }
+
+    #[test]
+    fn foreground_modal_popup_stays_above_its_owner_after_each_raise(){
+        let ctx=egui::Context::default();
+        typography::install(&ctx);
+        theme::install(&ctx);
+        let work_area=Rect::from_min_size(egui::Pos2::ZERO,Vec2::new(900.0,700.0));
+        let mut popup_layer=None;
+        let mut popup_rect=Rect::NOTHING;
+        let mut owner_body=Rect::NOTHING;
+        for _ in 0..4 {
+            let mut raw=egui::RawInput::default();
+            raw.screen_rect=Some(work_area);
+            let _=ctx.run(raw,|ctx|{
+                modal_backdrop(ctx,"popup-owner-regression-dim",true);
+                show_decision_window(ctx,"Popup owner","popup-owner-regression",work_area,|ui|{
+                    let trigger=ui.button("Open popup");
+                    let _=egui::Popup::from_response(&trigger).open(true).show(|menu|{
+                        attach_popup_to_owner(&trigger,menu);
+                        let response=menu.button("Select option");
+                        popup_layer=Some(response.layer_id);
+                        popup_rect=response.rect;
+                    });
+                    owner_body=ui.allocate_exact_size(Vec2::new(300.0,180.0),Sense::hover()).0;
+                });
+            });
+        }
+        let popup_layer=popup_layer.expect("popup rendered");
+        assert!(owner_body.intersects(popup_rect),"test must exercise overlapping layers");
+        let hit=owner_body.intersect(popup_rect).center();
+        assert_eq!(ctx.layer_id_at(hit),Some(popup_layer));
+        assert!(ctx.memory(|m|m.allows_interaction(popup_layer)));
+        assert_eq!(ctx.memory(|m|m.top_modal_layer()),
+            Some(modal_window_layer("popup-owner-regression")));
     }
 
     #[test]
