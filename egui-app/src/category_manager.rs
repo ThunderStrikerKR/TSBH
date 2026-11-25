@@ -1154,8 +1154,8 @@ mod modal_layout_contract_tests{
         // Keep this source-level gate confined to the dialog UI, not to the
         // main category tree or the read-only decision/confirmation notices.
         let source=include_str!("category_manager.rs");
-        let dialogs=source.split("    pub fn show_overlays(").nth(1).unwrap()
-            .split("#[cfg(test)]").next().unwrap();
+        let production=components::production_source_for_contract(source);
+        let dialogs=production.split("    pub fn show_overlays(").nth(1).unwrap();
         let count=dialogs.matches("components::modal_labeled_row(").count();
         assert_eq!(count,5,"category modal has a nonstandard field stack");
         assert!(!dialogs.contains("body.label(typography::field_label("));

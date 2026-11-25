@@ -411,7 +411,7 @@ mod tests {
     #[test]
     fn product_excel_review_uses_shared_virtual_management_table(){
         let source=include_str!("product_excel_ui.rs");
-        let production=source.split("#[cfg(test)]").next().unwrap();
+        let production=components::production_source_for_contract(source);
         assert!(production.contains("components::management_readonly_table("));
         assert!(production.contains("components::checkbox("));
         assert!(!production.contains("egui::ScrollArea::both()"));

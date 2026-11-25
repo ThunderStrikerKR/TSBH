@@ -763,6 +763,9 @@ try {
   await installNativeBusinessFixture(settingsPage);
   await settingsPage.addInitScript(({ initial }) => {
     let current = structuredClone(initial);
+    let working = [];
+    let notices = [];
+    window.__accountUnexpectedIpc=[];
     const normalized = (value) =>
       Array.isArray(value) ? value.map(normalized) :
       value && typeof value === "object"
@@ -779,9 +782,24 @@ try {
           return { windowShownMs: null, databaseMs: 1, dataMs: null, readyMs: 1 };
         if (command === "workspace_mode") return false;
         if (command === "state_load") return structuredClone(current);
+        if (command === "working_receptions_load") return structuredClone(working);
+        if (command === "working_receptions_replace") {
+          if (!Array.isArray(args.orders) || args.orders.some(o=>!o.id) ||
+              new Set(args.orders.map(o=>o.id)).size!==args.orders.length)
+            throw Error("Invalid working reception payload");
+          working=structuredClone(args.orders);
+          return;
+        }
         if (command === "hub_notifications_list") {
           window.__accountNotificationReads=(window.__accountNotificationReads??0)+1;
-          return [];
+          return structuredClone(notices);
+        }
+        if (command === "hub_notifications_add") {
+          const notice=structuredClone(args.notice);
+          if (!notice || notice.priority !== "critical") throw Error("Invalid critical notification");
+          notices=[notice,...notices].slice(0,100);
+          window.__accountCriticalNotices=structuredClone(notices);
+          return structuredClone(notices);
         }
         if (command === "business_core_call" && args?.domain === "rules" &&
             args.operation === "factory_reply_review_statuses") {
@@ -807,6 +825,7 @@ try {
           return structuredClone(current);
         }
         if (command === "business_core_call") return window.__nativeBusinessFixture(args);
+        window.__accountUnexpectedIpc.push(command);
         throw Error("Unexpected account reproduction IPC: " + command);
       },
     };
@@ -835,8 +854,17 @@ try {
     watchScans:window.__accountWatchScans??0,
   })), {reviewReads:0,watchScans:0},
     "Account editing must not query factory history or scan a disabled directory");
-  assert.equal(await settingsPage.getByRole("button",{name:"알림",exact:true}).count(),1,
-    "Notification storage must load without a storage-error indicator");
+  const notificationButton=settingsPage.locator("button.header-notifications-button");
+  await notificationButton.waitFor({state:"visible"});
+  const notificationState=await notificationButton.evaluate(button=>({
+    title:button.title,label:button.getAttribute("aria-label"),
+    unexpected:window.__accountUnexpectedIpc??[],
+    critical:window.__accountCriticalNotices??[],
+  }));
+  assert.equal(notificationState.title,"알림",
+    "Notification storage must load without a storage-error indicator: "+JSON.stringify(notificationState));
+  assert.equal(notificationState.label,"알림",
+    "Ordinary account editing must not generate critical alerts: "+JSON.stringify(notificationState));
   const addChanges = await settingsPage.evaluate(() => window.__accountSave.changes);
   assert.equal(addChanges.accounts.length, 3);
   console.log("PASS: adding a third account saves with no false conflict");
