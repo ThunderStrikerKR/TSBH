@@ -16,6 +16,7 @@ use std::collections::HashMap;
 mod validation;
 mod relational_write;
 mod storage;
+pub mod workflow_events;
 mod client_commands;
 mod product_commands;
 mod settings_commands;
@@ -150,8 +151,10 @@ fn read_envelope(conn: &Connection) -> Result<Value, String> {
         [],
         |row| row.get(0),
     ).map_err(|_| "운영 업무 상태를 읽지 못했습니다.".to_owned())?;
-    serde_json::from_str(&raw)
-        .map_err(|_| "운영 업무 상태의 JSON 형식이 잘못되었습니다.".to_owned())
+    let mut state:Value=serde_json::from_str(&raw)
+        .map_err(|_| "운영 업무 상태의 JSON 형식이 잘못되었습니다.".to_owned())?;
+    workflow_events::hydrate(conn,&mut state)?;
+    Ok(state)
 }
 
 fn read_product_entities(conn:&Connection)->Result<Vec<Value>,String>{

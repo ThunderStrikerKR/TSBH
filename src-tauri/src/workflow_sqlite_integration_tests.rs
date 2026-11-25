@@ -1092,3 +1092,48 @@ fn stable_freight_precommit_global_validation_rolls_back_unrelated_invalid_link(
     assert!(rejected.unwrap_err().contains("연결"));
     assert_eq!(get_snapshot(&conn).unwrap(),before);
 }
+
+#[test]
+fn relational_workflow_event_migration_and_append_preserve_audit(){
+    let (isolated,mut conn)=IsolatedDatabase::open();
+    let initial=get_snapshot(&conn).unwrap();
+    let saved=write_snapshot(&mut conn,stage_three(&initial,"POSTPAID"),0,true).unwrap();
+    let backup=bando_data_access::workflow_events::migrate_with_backup(&mut conn,&isolated.root)
+        .unwrap().expect("verified migration backup");
+    let backup_conn=bando_data_access::backup_service::read_backup(std::path::Path::new(&backup)).unwrap();
+    assert_eq!(get_snapshot(&backup_conn).unwrap(),saved);
+    drop(backup_conn);
+    let mut expected=saved.clone();
+    let revision=saved["revision"].as_u64().unwrap()+1;
+    expected["revision"]=json!(revision);
+    assert_eq!(get_snapshot(&conn).unwrap(),expected);
+    let raw:String=conn.query_row("SELECT payload FROM app_state WHERE id=1",[],|r|r.get(0)).unwrap();
+    let envelope:Value=serde_json::from_str(&raw).unwrap();
+    assert!(envelope["workflow"].get("events").is_none());
+    assert_eq!(envelope["_workflowEventsRelational"],1);
+    assert!(bando_data_access::workflow_events::migrate_with_backup(&mut conn,&isolated.root).unwrap().is_none());
+    let committed=bando_data_access::update_v2_freight_snapshot(
+        &mut conn,revision,"shipment:synthetic","group:synthetic",|current|{
+            let result=rust("apply_workflow_action",json!({
+                "state":current,"action":"set_shipment_freight",
+                "groupId":"group:synthetic","shipmentId":"shipment:synthetic",
+                "origin":"FACTORY","appliedCharge":4000,"eventId":"split-audit",
+                "now":"2026-11-25T09:00:00+09:00","actor":"검증 담당자"
+            }))?;
+            Ok(result["state"].clone())
+        }).unwrap();
+    assert_eq!(get_snapshot(&conn).unwrap(),committed);
+    assert_eq!(committed["workflow"]["events"][0],saved["workflow"]["events"][0]);
+    let count:i64=conn.query_row("SELECT COUNT(*) FROM core_workflow_events",[],|r|r.get(0)).unwrap();
+    assert_eq!(count as usize,committed["workflow"]["events"].as_array().unwrap().len());
+    let failed=bando_data_access::update_v2_snapshot(&mut conn,revision+1,true,|state|{
+        let mut next=state.clone();
+        next["workflow"]["events"][0]["action"]=json!("tampered");
+        Ok(next)
+    });
+    assert!(failed.is_err());
+    assert_eq!(get_snapshot(&conn).unwrap(),committed);
+    drop(conn);
+    let reopened=initialize_database(&isolated.root.join("state.sqlite")).unwrap();
+    assert_eq!(get_snapshot(&reopened).unwrap(),committed);
+}

@@ -362,8 +362,12 @@ fn write_validated(tx:&Transaction<'_>,current:&Value,mut state:Value,
     if products_changed || clients_changed || orders_changed {
         scope.direct+=crate::relational_write::store_v2_relational_delta(tx,current,&state)?;
     }
-    scope.direct+=tx.execute("UPDATE app_state SET payload=?1 WHERE id=1",
-        [serialize_envelope(&state)?]).map_err(err)?;
+    scope.direct+=if crate::workflow_events::active(tx)?{
+        crate::workflow_events::write(tx,current,&state)?
+    }else{
+        tx.execute("UPDATE app_state SET payload=?1 WHERE id=1",
+            [serialize_envelope(&state)?]).map_err(err)?
+    };
     // Legacy search indexes are projections of the same before-image.
     // Child-only order edits do not change indexed columns.
     if products_changed {
@@ -442,6 +446,9 @@ fn workflow_envelope_patch(before:&Value,next:&Value)->Option<Vec<(String,String
 // rows and appended events. The caller must compare the full persisted
 // envelope against the intended state before COMMIT (stable freight does).
 fn write_workflow_envelope(tx:&Transaction<'_>,before:&Value,next:&Value)->Result<usize,String>{
+    if crate::workflow_events::active(tx)?{
+        return crate::workflow_events::write(tx,before,next);
+    }
     if let Some(patch)=workflow_envelope_patch(before,next){
         let mut sql="UPDATE app_state SET payload=json_set(payload".to_owned();
         let mut args=Vec::with_capacity(patch.len()*2);

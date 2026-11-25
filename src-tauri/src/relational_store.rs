@@ -320,10 +320,7 @@ pub(super) fn verify(conn:&Connection)->Result<(),String>{
         "SELECT \"table\" || ':' || rowid FROM pragma_foreign_key_check LIMIT 1",
         [],|r|r.get(0)).optional().map_err(err)?;
     if let Some(details)=broken { return Err(format!("SQLite 관계형 참조 무결성 오류: {details}")); }
-    let mut snapshot:Value=serde_json::from_str(&conn.query_row(
-        "SELECT payload FROM app_state WHERE id=1",[],|r|r.get::<_,String>(0)
-    ).map_err(err)?).map_err(err)?;
-    hydrate(conn,&mut snapshot)?;
+    let snapshot=bando_data_access::read_v2_snapshot(conn)?;
     valid_state(&snapshot)
 }
 
