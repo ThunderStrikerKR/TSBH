@@ -8652,6 +8652,176 @@ mod modal_editor_workspace_geometry_tests {
                 "card bottom boundaries differ");
         }
     }
+    // Inspect paint commands emitted by the real shared section/chrome,
+    // not the spacing constants or a second implementation of the renderer.
+    fn collect_modal_paint(shape:&egui::Shape,rules:&mut Vec<Rect>,heading:&mut Vec<Rect>){
+        match shape{
+            egui::Shape::Rect(rect) if rect.fill==theme::DIVIDER
+                &&rect.rect.height()<=2.0&&rect.rect.width()>100.0=>{
+                rules.push(rect.rect);
+            }
+            egui::Shape::Text(text) if text.galley.text()=="검증 섹션"=>{
+                heading.push(Rect::from_min_size(text.pos,text.galley.size()));
+            }
+            egui::Shape::Vec(shapes)=>for shape in shapes{
+                collect_modal_paint(shape,rules,heading);
+            },
+            _=>{}
+        }
+    }
+    fn close_pt(actual:f32,expected:f32,label:&str){
+        assert!((actual-expected).abs()<=1.0,
+            "{label}: expected {expected}pt, actual {actual}pt");
+    }
+
+    #[test]
+    fn actual_section_rule_and_insets_match_the_master(){
+        for width in [360.0,560.0,880.0]{
+            for boxed in [false,true]{
+                let ctx=test_context();
+                let mut outer=Rect::NOTHING;
+                let mut first=Rect::NOTHING;
+                let mut last=Rect::NOTHING;
+                let output=ctx.run(egui::RawInput{
+                    screen_rect:Some(Rect::from_min_size(
+                        egui::Pos2::ZERO,Vec2::new(1200.0,900.0))),
+                    ..Default::default()
+                },|ctx|{
+                    egui::CentralPanel::default().show(ctx,|ui|{
+                        ui.set_width(width);
+                        let body=|content:&mut Ui|{
+                            first=content.allocate_exact_size(
+                                Vec2::new(content.available_width(),36.0),Sense::hover()).0;
+                            last=content.allocate_exact_size(
+                                Vec2::new(content.available_width(),36.0),Sense::hover()).0;
+                        };
+                        outer=if boxed{
+                            modal_section_measured(ui,"검증 섹션",body).response.rect
+                        }else{
+                            ui.scope(|ui|modal_master_body_section(ui,"검증 섹션",body)).response.rect
+                        };
+                    });
+                });
+                let mut rules=Vec::new();
+                let mut headings=Vec::new();
+                for shape in &output.shapes{
+                    collect_modal_paint(&shape.shape,&mut rules,&mut headings);
+                }
+                let rules=rules.into_iter().filter(|rect|
+                    outer.contains(rect.center())).collect::<Vec<_>>();
+                assert_eq!(rules.len(),1,"one actual section rule; boxed={boxed} width={width}");
+                let rule=rules[0];
+                let title=headings.into_iter().find(|rect|outer.contains(rect.center()))
+                    .expect("actual section heading");
+                close_pt(rule.height(),1.0,"rule thickness");
+                close_pt(rule.top()-title.bottom(),16.0,"heading to rule");
+                close_pt(first.top()-rule.bottom(),16.0,"rule to first field");
+                close_pt(first.left(),rule.left(),"rule/field left alignment");
+                close_pt(first.right(),rule.right(),"rule/field right alignment");
+                close_pt(last.top()-first.bottom(),theme::SPACING,"ordinary inner field spacing");
+                if boxed{
+                    let edge=16.0+theme::FRAME_STROKE_WIDTH;
+                    close_pt(first.left()-outer.left(),edge,"boxed left inset");
+                    close_pt(outer.right()-first.right(),edge,"boxed right inset");
+                    close_pt(outer.bottom()-last.bottom(),edge,"boxed bottom inset");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn actual_nested_surface_roles_keep_symmetric_approved_insets(){
+        for (role,x,y) in [
+            (theme::ModalNestedRole::Standard,8.0,8.0),
+            (theme::ModalNestedRole::RecipientChecklist,12.0,8.0),
+            (theme::ModalNestedRole::CompactTag,8.0,2.0),
+        ]{
+            for width in [180.0,320.0]{
+                let ctx=test_context();
+                let mut measured=None;
+                let _=ctx.run(egui::RawInput::default(),|ctx|{
+                    egui::CentralPanel::default().show(ctx,|ui|{
+                        let frame=theme::modal_nested_role_frame(role).show(ui,|inner|{
+                            inner.allocate_exact_size(Vec2::new(width,36.0),Sense::hover()).0
+                        });
+                        measured=Some((frame.response.rect,frame.inner));
+                    });
+                });
+                let (outer,inner)=measured.expect("real nested frame allocation");
+                let stroke=theme::FRAME_STROKE_WIDTH;
+                close_pt(inner.left()-outer.left(),x+stroke,"nested left");
+                close_pt(outer.right()-inner.right(),x+stroke,"nested right");
+                close_pt(inner.top()-outer.top(),y+stroke,"nested top");
+                close_pt(outer.bottom()-inner.bottom(),y+stroke,"nested bottom");
+            }
+        }
+    }
+
+    #[test]
+    fn actual_flow_modal_keeps_chrome_and_action_rects_when_permission_changes(){
+        for width in [440.0,720.0,880.0]{
+            let ctx=test_context();
+            let mut baseline:Option<Vec<(&str,Rect)>>=None;
+            for enabled in [true,false,true]{
+                let mut measured=None;
+                let mut rules=Vec::new();
+                for _ in 0..3{
+                    let output=ctx.run(egui::RawInput{
+                        screen_rect:Some(Rect::from_min_size(
+                            egui::Pos2::ZERO,Vec2::new(1200.0,900.0))),
+                        ..Default::default()
+                    },|ctx|{
+                        egui::CentralPanel::default().show(ctx,|ui|{
+                            ui.set_width(width);
+                            let (field_and_action,geometry)=modal_flow_workspace_measured(ui,|owner|{
+                                owner.header("검증 팝업","취소",enabled);
+                                let field=owner.body_region(|body|{
+                                    let mut text="검증 입력".to_owned();
+                                    field(body,&mut text,FieldKind::Text,enabled).rect
+                                });
+                                let action=owner.footer_single(|footer|{
+                                    let response=theme::action(footer,"저장",
+                                        theme::ButtonRole::Primary,enabled);
+                                    assert_eq!(response.enabled(),enabled);
+                                    response.rect
+                                }).inner;
+                                (field,action)
+                            });
+                            measured=Some((geometry,field_and_action));
+                        });
+                    });
+                    rules.clear();
+                    for shape in &output.shapes{
+                        collect_modal_paint(&shape.shape,&mut rules,&mut Vec::new());
+                    }
+                }
+                let (geometry,(input,action))=measured.expect("real flow workspace");
+                let header=geometry.header.unwrap();
+                let body=geometry.body.unwrap();
+                let footer=geometry.footer.unwrap();
+                close_pt(body.top()-header.bottom(),16.0,"header/body gap");
+                close_pt(footer.top()-body.bottom(),16.0,"body/footer gap");
+                close_pt(input.left()-body.left(),16.0,"body left inset");
+                close_pt(footer.right()-action.right(),16.0,"footer right action inset");
+                let header_rules=rules.iter().filter(|r|header.contains(r.center()))
+                    .collect::<Vec<_>>();
+                let footer_rules=rules.iter().filter(|r|footer.contains(r.center()))
+                    .collect::<Vec<_>>();
+                assert_eq!(header_rules.len(),1,"one painted header rule");
+                assert_eq!(footer_rules.len(),1,"one painted footer rule");
+                for rule in [header_rules[0],footer_rules[0]]{
+                    close_pt(rule.left(),input.left(),"chrome and body left grid");
+                    close_pt(rule.right(),action.right(),"chrome and footer right grid");
+                }
+                let current=[("header",header),("body",body),("footer",footer),
+                    ("field",input),("action",action)];
+                if let Some(previous)=baseline.as_ref(){
+                    assert_layout_rects_invariant(previous,&current);
+                }else{baseline=Some(current.to_vec());}
+            }
+        }
+    }
+
     #[test]
     fn geometry_audit_detects_real_boundary_drift(){
         let mut geometry=render_measured_workspace();
