@@ -579,7 +579,7 @@ impl ClientManager {
                     .max_height(scroll_max_height)
                     .auto_shrink([false,false]),
                 section,table_width,theme::MANAGEMENT_CLIENT_ROW_HEIGHT,
-                rows.len().max(1),
+                rows.len(),
                 |table,visible_rows|{
                     components::management_table_row_body(table,table_width);
                     let first=visible_rows.start;
@@ -627,27 +627,19 @@ impl ClientManager {
                                     ).clicked(){
                                         chosen=Some(client.clone());
                                     }
-                                }else{
-                                    let status=if !self.ready{
-                                        "거래처 명단을 불러오는 중입니다."
-                                    }else if self.searching{
-                                        "거래처 검색 중…"
-                                    }else if self.search.trim().is_empty(){
-                                        "등록된 거래처가 없습니다."
-                                    }else{
-                                        "검색 결과가 없습니다."
-                                    };
-                                    row.add_space(theme::SPACE_12);
-                                    row.horizontal(|empty|{
-                                        empty.add_space(theme::SPACE_12);
-                                        empty.label(typography::caption(status));
-                                    });
                                 }
                             }
                         );
                     }
                 }
             );
+            if rows.is_empty(){
+                let status=if !self.ready{"거래처 명단을 불러오는 중입니다."}
+                    else if self.searching{"거래처 검색 중…"}
+                    else if self.search.trim().is_empty(){"등록된 거래처가 없습니다."}
+                    else{"검색 결과가 없습니다."};
+                components::management_body_state_overlay(section,scroll_output.inner_rect,Some(status));
+            }
             let header_left=first_row_left.unwrap_or(
                 header_rect.left()-scroll_output.state.offset.x
             );
