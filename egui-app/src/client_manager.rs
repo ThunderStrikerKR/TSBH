@@ -212,7 +212,7 @@ impl ClientManager {
                 "state":{"clients":clients},"query":query,"raw":""
             })).and_then(|value|{
                 value.get("ids").and_then(Value::as_array)
-                    .ok_or("Rust 거래처 검색 응답이 잘못되었습니다.".into())
+                    .ok_or("거래처 검색 결과를 확인할 수 없습니다.".into())
                     .and_then(|rows|rows.iter().map(|id|
                         id.as_str().map(str::to_owned)
                           .ok_or_else(||"거래처 검색 ID가 잘못되었습니다.".into())
@@ -272,7 +272,7 @@ impl ClientManager {
                 self.search_rx=None;
             },
             Some(Err(mpsc::TryRecvError::Disconnected))=>{
-                self.error=Some("Rust 거래처 검색 연결이 중단되었습니다.".into());
+                self.error=Some("거래처 검색이 중단되었습니다.".into());
                 self.searching=false;self.search_rx=None;
             },
             _=>{},
@@ -282,7 +282,7 @@ impl ClientManager {
         if self.saving.is_some() || !self.editable(){return;}
         let Some(client)=self.draft.clone() else {return};
         let Some(revision)=self.state.get("revision").and_then(Value::as_u64)
-            else{self.error=Some("거래처 revision을 확인할 수 없습니다.".into());return};
+            else{self.error=Some("최신 거래처 정보를 확인할 수 없습니다.".into());return};
         crate::floating_notice::dispatch_pointer(ctx,"clients.action");
         let (tx,rx)=mpsc::channel();
         self.saving=Some(rx);

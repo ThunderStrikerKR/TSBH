@@ -1291,7 +1291,7 @@ impl ExcelManager{
         if let Some((action,shipment_id,queue_id,origin,value))=workflow_action{
             let Some(revision)=self.result.as_ref()
                 .and_then(|s|s.state["revision"].as_u64()) else{
-                self.error=Some("업무 DB 리비전을 확인할 수 없습니다.".into());
+                self.error=Some("최신 배송 정보를 확인할 수 없습니다.".into());
                 return;
             };
             self.task("workflow",ui.ctx().clone(),move|gateway|{

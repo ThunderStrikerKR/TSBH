@@ -750,7 +750,7 @@ impl FreightManager {
         }
         let Some(revision)=self.state.as_ref()
             .and_then(|s|s["revision"].as_u64()) else {
-                self.error=Some("운영 DB 리비전을 확인하지 못했습니다.".into());
+                self.error=Some("최신 운임 정보를 확인할 수 없습니다.".into());
                 return;
             };
         crate::floating_notice::dispatch_pointer(&ctx,"freight.action");

@@ -42,7 +42,7 @@ pub fn native_order(
 )->Result<Value,String> {
     if row.analysis_raw.as_deref()!=Some(row.raw.as_str()) ||
        !recognition.get("recipients").is_some_and(Value::is_array) {
-        return Err("현재 원문에 대한 Rust 인식이 끝난 뒤 수동 분류를 진행하세요.".into());
+        return Err("발주서 분석이 끝난 뒤 수동 분류를 진행하세요.".into());
     }
     let now=chrono::Utc::now().to_rfc3339();
     let initialized=gateway.execute(ReadOperation::NewReception,json!({
@@ -50,7 +50,7 @@ pub fn native_order(
         "orderType":row.order_type,"now":now
     }))?;
     let mut order=initialized.get("order").filter(|v|v.is_object())
-        .ok_or("Rust 발주 초기화 결과가 올바르지 않습니다.")?.clone();
+        .ok_or("발주서를 준비하지 못했습니다.")?.clone();
     order["raw"]=json!(row.raw);
     order["analysisRaw"]=json!(row.raw);
     let mut candidates=recognition.get("candidates")
@@ -67,7 +67,7 @@ pub fn native_order(
         });
     }
     let recipient_rows=recipients.as_array_mut()
-        .ok_or("Rust 인식 수취인 목록이 올바르지 않습니다.")?;
+        .ok_or("분석한 수취인 정보를 확인할 수 없습니다.")?;
     scope_recognition_rows_for_order(&row.id,recipient_rows,&mut candidates)?;
     order["analysisEvidence"]=candidates;
     order["recipients"]=recipients;
@@ -89,7 +89,7 @@ pub fn native_direct_order(
         "orderType":row.order_type,"now":now
     }))?;
     let mut order=initialized.get("order").filter(|v|v.is_object())
-        .ok_or("Rust 직접 입력 초기화 결과가 올바르지 않습니다.")?.clone();
+        .ok_or("직접 입력을 시작하지 못했습니다.")?.clone();
     order["id"]=json!(row.id);
     order["raw"]=json!("");
     order["orderType"]=json!(row.order_type);
@@ -833,7 +833,7 @@ pub fn apply_inline(
         native_direct_order(gateway,source)?
     }else{
         let evidence=source.analysis_evidence.as_ref()
-            .ok_or("최초 Rust 인식 결과가 없습니다.")?;
+            .ok_or("최초 발주서 분석 결과가 없습니다.")?;
         native_order(gateway,source,evidence)?
     };
     let previous=source.manual_model.as_ref();
@@ -948,7 +948,7 @@ pub fn apply_inline(
                 .into_iter().flatten().find(|row|text(row,"id")==rid)
                 .and_then(|row|row["items"].as_array())
                 .into_iter().flatten().find(|item|text(item,"id")==iid)
-                .ok_or("Rust 수량 승인 결과가 현재 품목과 일치하지 않습니다.")?;
+                .ok_or("확정한 수량이 현재 품목과 일치하지 않습니다.")?;
             *chosen=approved_item.clone();
         }else{
             // React cancels the provisional decision by deleting only its
@@ -973,7 +973,7 @@ pub fn apply_inline(
         rule(gateway,payload)?
     };
     model=response.get("model").filter(|v|v.is_object())
-        .ok_or("Rust 직접 수정 결과가 올바르지 않습니다.")?.clone();
+        .ok_or("수정한 내용을 확인할 수 없습니다.")?.clone();
     let status=rule(gateway,json!({
         "action":"manual_quantity_status","model":&model
     }))?;
@@ -987,7 +987,7 @@ pub fn apply_inline(
         "assignmentOrder":&keys
     }))?;
     let updated=applied.get("order").filter(|v|v.is_object())
-        .ok_or("Rust 수정 적용 결과에 주문 데이터가 없습니다.")?.clone();
+        .ok_or("수정한 주문 정보를 확인할 수 없습니다.")?.clone();
     let (quote,quote_error)=if let Some(id)=source.client_id.as_deref(){
         let result=(||->Result<Value,String>{
             let state=gateway.load_business_state()?;
@@ -1017,7 +1017,7 @@ pub fn apply_inline(
         })();
         match result{
             Ok(quote)=>(Some(quote),None),
-            Err(error)=>(None,Some(format!("Rust 재계산 실패: {error}")))
+            Err(error)=>(None,Some(format!("금액 재계산에 실패했습니다: {error}")))
         }
     }else{(None,None)};
     Ok(Event::Applied{
@@ -1187,10 +1187,10 @@ impl ManualWorkspace {
                             .cloned().unwrap_or_else(||json!([]))
                     }))?;
                     let mut model=initial.get("model").filter(|v|v.is_object())
-                        .ok_or("Rust 직접 입력 초기 결과가 올바르지 않습니다.")?.clone();
+                        .ok_or("직접 입력을 준비하지 못했습니다.")?.clone();
                     let mut keys=initial.get("assignmentOrder").and_then(Value::as_array)
-                        .ok_or("Rust 배정 순서가 없습니다.")?.iter()
-                        .map(|v|v.as_str().map(str::to_owned).ok_or("Rust 배정 ID 오류".to_owned()))
+                        .ok_or("발주원문 분류 순서를 확인할 수 없습니다.")?.iter()
+                        .map(|v|v.as_str().map(str::to_owned).ok_or("발주원문 분류 정보를 확인할 수 없습니다.".to_owned()))
                         .collect::<Result<Vec<_>,_>>()?;
                     if list(&model,"rows").is_empty(){
                         let resized=rule(service.as_ref(),json!({
@@ -1198,16 +1198,16 @@ impl ManualWorkspace {
                             "newRecipientIds":[unique_id()],"assignmentOrder":keys
                         }))?;
                         model=resized.get("model").filter(|v|v.is_object())
-                            .ok_or("Rust 직접 입력 배송 행 초기화 결과가 올바르지 않습니다.")?.clone();
+                            .ok_or("새 배송 건을 준비하지 못했습니다.")?.clone();
                         keys=resized.get("assignmentOrder").and_then(Value::as_array)
-                            .ok_or("Rust 직접 입력 배정 순서가 없습니다.")?.iter()
-                            .map(|v|v.as_str().map(str::to_owned).ok_or("Rust 배정 ID 오류".to_owned()))
+                            .ok_or("직접 입력한 배송 정보의 순서를 확인할 수 없습니다.")?.iter()
+                            .map(|v|v.as_str().map(str::to_owned).ok_or("발주원문 분류 정보를 확인할 수 없습니다.".to_owned()))
                             .collect::<Result<Vec<_>,_>>()?;
                     }
                     (order,model,keys)
                 }else{
                     let recognition=row.analysis_evidence.as_ref()
-                        .ok_or("현재 원문의 Rust 인식 결과가 없습니다.")?;
+                        .ok_or("현재 발주서의 분석 결과가 없습니다.")?;
                     let order=native_order(service.as_ref(),&row,recognition)?;
                     let initial=rule(service.as_ref(),json!({
                         "action":"initial_manual","order":order,
@@ -1216,10 +1216,10 @@ impl ManualWorkspace {
                             .and_then(Value::as_array).cloned().unwrap_or_default()
                     }))?;
                     let model=initial.get("model").filter(|v|v.is_object())
-                        .ok_or("Rust 수동 분류 초기 결과가 올바르지 않습니다.")?.clone();
+                        .ok_or("수동 분류를 준비하지 못했습니다.")?.clone();
                     let keys=initial.get("assignmentOrder").and_then(Value::as_array)
-                        .ok_or("Rust 배정 순서가 없습니다.")?.iter()
-                        .map(|v|v.as_str().map(str::to_owned).ok_or("Rust 배정 ID 오류".to_owned()))
+                        .ok_or("발주원문 분류 순서를 확인할 수 없습니다.")?.iter()
+                        .map(|v|v.as_str().map(str::to_owned).ok_or("발주원문 분류 정보를 확인할 수 없습니다.".to_owned()))
                         .collect::<Result<Vec<_>,_>>()?;
                     (order,model,keys)
                 };
@@ -1414,10 +1414,10 @@ impl ManualWorkspace {
                 self.receiver=None;
             }
             Some(Err(mpsc::TryRecvError::Disconnected))=>{
-                self.error=Some("Rust 수동 분류 처리가 중단되었습니다.".into());
+                self.error=Some("수동 분류 작업이 중단되었습니다.".into());
                 if self.detail_write_pending{
                     if let Some(detail)=self.item_detail.as_mut(){
-                        detail.report_error("Rust 수동 분류 처리가 중단되었습니다.".into());
+                        detail.report_error("수동 분류 작업이 중단되었습니다.".into());
                     }
                     self.detail_write_pending=false;
                 }
@@ -1789,7 +1789,7 @@ impl ManualWorkspace {
                     rule(service.as_ref(),payload)?
                 };
                 let next=result.get("model").filter(|v|v.is_object())
-                    .ok_or("Rust 수동 분류 변경 결과가 올바르지 않습니다.")?.clone();
+                    .ok_or("수동 분류 변경 내용을 확인할 수 없습니다.")?.clone();
                 let assignment_order=result.get("assignmentOrder")
                     .and_then(Value::as_array).map(|v|v.iter().filter_map(|s|s.as_str()
                         .map(str::to_owned)).collect()).unwrap_or_else(||keys.clone());
@@ -1830,7 +1830,7 @@ impl ManualWorkspace {
                     "model":model.clone(),"assignmentOrder":keys.clone()
                 }))?;
                 let updated=applied.get("order").filter(|v|v.is_object())
-                    .ok_or("Rust 수동 분류 적용 결과가 올바르지 않습니다.")?.clone();
+                    .ok_or("수동 분류 적용 결과를 확인할 수 없습니다.")?.clone();
                 let price_inputs_unchanged=
                     price_input_snapshot(&order)==price_input_snapshot(&updated);
                 let order=updated;
@@ -1850,7 +1850,7 @@ impl ManualWorkspace {
                             ){return Ok(reused);}
                         }
                         let revision=state["revision"].as_u64()
-                            .ok_or("Rust 기준 revision이 없습니다.")?;
+                            .ok_or("최신 업무 정보를 확인할 수 없습니다.")?;
                         let mut quote=service.execute(
                             ReadOperation::CalculateReceptionQuote,
                             json!({"order":&order,"state":&state,"client":client})
@@ -1865,7 +1865,7 @@ impl ManualWorkspace {
                     match result{
                         Ok(quote)=>(Some(quote),None),
                         Err(error)=>(None,Some(format!(
-                            "Rust 금액 재계산에 실패했습니다: {error}"
+                            "금액 재계산에 실패했습니다: {error}"
                         )))
                     }
                 }else{(None,None)};
@@ -2023,7 +2023,7 @@ impl ManualWorkspace {
                     });
                     let header_client_notice=(
                         self.client_id.is_some() && self.view_quote.is_none() && !header_busy
-                    ).then_some("금액·운임의 Rust 견적을 확인할 수 없습니다.");
+                    ).then_some("상품 금액과 운임을 확인할 수 없습니다.");
                     let header_error=self.error.clone();
                     let mut count_resize_requested=false;
                     let (close_clicked,())=workspace.header_with_toolbar(
@@ -3015,9 +3015,9 @@ impl ManualWorkspace {
             let mut proceed=false;
             let apply_title=if self.direct_input{"직접 입력 완료"}else{"수동 분류 완료"};
             let apply_message=if self.direct_input{
-                "직접 입력한 배송 정보와 품목을 접수 초안에 반영할까요?"
+                "직접 입력한 배송 정보와 품목을 발주서에 반영할까요?"
             }else{
-                "수동 분류 결과를 접수 초안에 반영할까요?"
+                "수동 분류 결과를 발주서에 반영할까요?"
             };
             components::show_decision_window(ctx,apply_title,"manual-completion-prompt",work_area,|ui|{
                 components::decision_workspace(ui,|decision|{
@@ -3026,19 +3026,11 @@ impl ManualWorkspace {
                     decision.body(|ui|{
                         ui.label(apply_message);
                     });
-                    decision.actions_split(|left|{
-                            if !self.direct_input{
-                                let _=theme::action(
-                                    left,"AI 자동분류 개선",ButtonRole::Standard,false
-                                );
-                            }
-                        },
-                        |right|{
-                            if theme::action(
-                                right,"피드백 없이 진행",ButtonRole::Primary,true
-                            ).clicked(){proceed=true;}
-                        }
-                    );
+                    decision.actions(|right|{
+                        if theme::action(
+                            right,"적용",ButtonRole::Primary,true
+                        ).clicked(){proceed=true;}
+                    });
                 });
             });
             if cancel {
@@ -3809,8 +3801,9 @@ mod manual_workspace_modal_routing_tests {
         assert!(render.contains("modal_foreground_for_window(ctx,window_id)"));
         assert!(!render.contains("modal_backdrop_for_window("));
         assert!(render.contains("if apply_clicked{apply=true;}"));
-        assert!(render.contains("피드백 없이 진행"));
-        assert!(render.contains("AI 자동분류 개선"));
+        assert!(render.contains("right,\"적용\",ButtonRole::Primary,true"));
+        assert!(!render.contains("피드백 없이 진행"));
+        assert!(!render.contains("AI 자동분류 개선"));
         assert!(render.contains("if proceed"));
         assert!(render.contains("self.confirm_apply=false;"));
         assert!(render.contains("self.apply(ctx);"),

@@ -651,7 +651,7 @@ impl ProductManager {
                 self.price_write_queue.clear();
                 self.price_mode_exit_requested=false;
             }
-            self.error=Some("운영 상품 리비전을 확인할 수 없습니다.".into());
+            self.error=Some("최신 상품 정보를 확인할 수 없습니다.".into());
             return;
         };
         if !self.gateway.product_write_enabled(){
@@ -2313,7 +2313,7 @@ impl ProductManager {
                     );
                     decision.body(|dialog|{
                         dialog.label(typography::body(
-                            "등록 상품에서 삭제할까요? 과거 주문과 가격 기록은 보존하며 홈페이지 재수집으로 자동 복원하지 않습니다."
+                            "등록된 상품을 삭제하시겠습니까?\n\n삭제 후에도 기존 주문내역과 가격 기록은 보존됩니다."
                         ));
                     });
                     decision.actions(|actions|{

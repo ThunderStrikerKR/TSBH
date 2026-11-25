@@ -192,7 +192,7 @@ fn fetch(gateway:&dyn BandoGateway,date:&str)->Result<Value,String>{
         report.get("paymentRows").and_then(Value::as_array).is_none() ||
         report.get("warnings").and_then(Value::as_array).is_none() ||
         report["revision"]!=state["revision"]{
-        return Err("Rust 결산 결과의 날짜·리비전·내역 형식을 확인할 수 없습니다.".into());
+        return Err("결산 정보를 불러오지 못했습니다.".into());
     }
     Ok(report)
 }

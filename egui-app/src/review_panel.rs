@@ -114,7 +114,7 @@ impl ReviewPanel {
             thread::spawn(move||{
                 let result=(||->Result<Vec<Value>,String>{
                     let evidence=saved.analysis_evidence.as_ref()
-                        .ok_or("Rust 발주 인식 근거가 없습니다.")?;
+                        .ok_or("발주서 분석 결과를 확인할 수 없습니다.")?;
                     let mut order=manual_workspace::native_order(
                         gateway.as_ref(),&saved,evidence
                     )?;
@@ -156,7 +156,7 @@ impl ReviewPanel {
                     )?;
                     response.get("issues").and_then(Value::as_array)
                         .cloned().ok_or_else(||
-                            "Rust 확인 항목 결과의 형식이 올바르지 않습니다.".into())
+                            "확인할 내용을 불러오지 못했습니다.".into())
                 })();
                 let _=sender.send(result);
                 context.request_repaint();
@@ -172,7 +172,7 @@ impl ReviewPanel {
             }
             Some(Err(mpsc::TryRecvError::Disconnected))=>{
                 self.pending=None;self.replace_issues(Vec::new());self.ready=false;
-                self.error=Some("Rust 확인 항목 작업이 중단됐습니다.".into());
+                self.error=Some("확인할 내용 조회가 중단되었습니다.".into());
             }
             _=>{}
         }
@@ -192,7 +192,7 @@ impl ReviewPanel {
         if let Some(error)=self.error.as_deref(){
             theme::review_issue_card(ui,ReviewTone::Error,|cell|{
                 cell.add(egui::Label::new(typography::review_error_text(
-                    &format!("Rust 확인 항목 조회 실패: {error}")
+                    &format!("확인할 내용을 불러오지 못했습니다: {error}")
                 )).wrap());
             });
             return None;

@@ -1705,7 +1705,7 @@ impl BandoEgui {
                 Err(mpsc::TryRecvError::Disconnected)=>{
                     self.workflow_receiver=None;
                     self.workflow_error=Some(
-                        "발주묶음 Rust 조회 작업이 중단되었습니다.".to_owned()
+                        "발주 묶음 조회가 중단되었습니다.".to_owned()
                     );
                     self.workflow_stage_after_freight=None;
                 }
@@ -1950,7 +1950,7 @@ impl BandoEgui {
                 reception_service::text(candidate, "clientId") == client_id
             ));
         if !allowed {
-            self.source_save_error = Some("Rust 후보 목록에 없는 거래처는 적용할 수 없습니다.".into());
+            self.source_save_error = Some("검색 결과에 없는 거래처는 선택할 수 없습니다.".into());
             return;
         }
         self.apply_manual_client(client_id, ctx);
@@ -2032,7 +2032,7 @@ impl BandoEgui {
         let result=match value {
             Some(Ok(value))=>Some(value),
             Some(Err(mpsc::TryRecvError::Disconnected))=>
-                Some(Err("Rust 주문 변경 계산이 중단되었습니다.".into())),
+                Some(Err("주문 변경에 따른 금액 계산이 중단되었습니다.".into())),
             _=>None,
         };
         if let Some(result)=result {
@@ -2200,7 +2200,7 @@ impl BandoEgui {
         let authority_revision=if manual.is_none(){
             let Some(quote)=source.pricing_preview.as_ref() else{
                 self.working_sync_error=Some(
-                    "거래처 변경 창에서 Rust 금액을 재계산한 뒤 저장하세요.".into()
+                    "거래처 변경 창에서 금액을 다시 계산한 뒤 저장하세요.".into()
                 );
                 return;
             };
@@ -2215,7 +2215,7 @@ impl BandoEgui {
             }
             let Some(revision)=quote.get("authorityRevision")
                 .and_then(serde_json::Value::as_u64) else{
-                self.working_sync_error=Some("Rust 운영 데이터 기준 버전이 누락되었습니다.".into());
+                self.working_sync_error=Some("최신 업무 정보를 확인할 수 없습니다. 금액을 다시 계산해 주세요.".into());
                 return;
             };
             Some(revision)
@@ -2252,7 +2252,7 @@ impl BandoEgui {
                     let state=gateway.load_business_state()?;
                     let revision=state.get("revision").and_then(
                         serde_json::Value::as_u64
-                    ).ok_or("운영 DB revision을 확인하지 못했습니다.")?;
+                    ).ok_or("최신 업무 정보를 확인하지 못했습니다.")?;
                     request["expectedAuthorityRevision"]=serde_json::json!(revision);
                 }
                 gateway.commit_working_reception(request)
@@ -2910,7 +2910,7 @@ impl BandoEgui {
                         return;
                     }
                     let Some(recips)=order.get("recipients").filter(|v|v.is_array()) else {
-                        self.source_save_error=Some("Rust 직접 입력 결과에 배송 정보가 없습니다.".into());
+                        self.source_save_error=Some("직접 입력한 배송 정보를 확인할 수 없습니다.".into());
                         return;
                     };
                     if let Some(row)=self.drafts.iter_mut().find(|row|row.id==order_id){
@@ -3023,7 +3023,7 @@ impl BandoEgui {
                     self.start_remote_recheck(ctx);
                 }else{
                     self.source_save_error=Some(
-                        "Rust 수동 분류 결과에 배송 정보가 없어 적용하지 않았습니다.".into()
+                        "배송 정보가 없어 수동 분류 결과를 적용하지 않았습니다.".into()
                     );
                 }
     }
@@ -3303,7 +3303,7 @@ impl BandoEgui {
         let result=match complete {
             Some(Ok(value))=>Some(value),
             Some(Err(mpsc::TryRecvError::Disconnected))=>
-                Some(Err("Rust 직접 수정 연결이 중단되었습니다.".into())),
+                Some(Err("입력 내용 수정 작업이 중단되었습니다.".into())),
             _=>None
         };
         let Some(result)=result else{
@@ -4042,7 +4042,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
         let result=match received {
             Some(Ok(value))=>Some(value),
             Some(Err(mpsc::TryRecvError::Disconnected))=>
-                Some(Err("Rust 거래처 자동 연결 계산이 중단되었습니다.".into())),
+                Some(Err("거래처 자동 연결이 중단되었습니다.".into())),
             _=>None,
         };
         let Some(result)=result else {
@@ -4121,7 +4121,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
             self.analysis_receiver = None;
             self.analysis_running_key=None;
             self.analysis_pending = false;
-            self.analysis_error = Some("Rust 인식 작업이 중단되었습니다.".to_owned());
+            self.analysis_error = Some("발주서 분석이 중단되었습니다.".to_owned());
             return;
         }
         if let Some(Ok((request, result))) = complete {
@@ -7894,7 +7894,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                             .and_then(serde_json::Value::as_str)
                             ==Some(self.raw_source.as_str()));
                     let note=if preview.is_some(){
-                        "Rust 계산 참고 금액"
+                        "예상 청구 금액"
                     }else{""};
                     let total=preview.and_then(|v|v.get("total"))
                         .and_then(serde_json::Value::as_i64);
@@ -8168,7 +8168,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
         if !confirmable_reception_quote(&source,quote){
             floating_notice::publish(
                 ctx,"reception.workflow",floating_notice::Tone::Error,
-                "현재 발주서와 일치하는 거래처별 Rust 계산 결과가 없습니다. 거래처를 다시 선택해 재계산하세요."
+                "현재 발주서의 금액을 확인할 수 없습니다. 거래처를 다시 선택해 계산하세요."
             );
             return;
         }
@@ -8176,7 +8176,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
             .and_then(serde_json::Value::as_u64) else{
             floating_notice::publish(
                 ctx,"reception.workflow",floating_notice::Tone::Error,
-                "가격 계산 결과의 운영 DB 리비전을 확인하지 못했습니다. 다시 계산하세요."
+                "최신 가격 정보를 확인하지 못했습니다. 다시 계산하세요."
             );
             return;
         };
@@ -8223,7 +8223,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                     return Err("거래처·상품·운임 기준 또는 계산 결과가 변경되었습니다. 거래처를 다시 선택해 최신 금액을 확인하세요.".into());
                 }
                 let order=prepared.order
-                    .ok_or("정식 주문으로 변환할 Rust 주문 데이터가 없습니다.")?;
+                    .ok_or("확정할 주문 정보를 확인할 수 없습니다.")?;
                 if order.get("id").and_then(serde_json::Value::as_str)
                         !=Some(source.id.as_str()) ||
                    order.get("raw").and_then(serde_json::Value::as_str)
@@ -8563,7 +8563,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
             if prior_bridge_copy {floating_notice::Tone::Error}
             else {floating_notice::Tone::Success},
             if prior_bridge_copy {
-                "접수 작업 목록에서 삭제했습니다. 이전 운영 DB 사본은 삭제하지 않았습니다."
+                "접수 목록에서 발주서를 삭제했습니다. 이전 저장 기록은 보존됩니다."
             }else{
                 "미확정 발주서를 삭제했습니다."
             }
@@ -8680,7 +8680,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                     });
                                 if !writable{
                                     ui.label(typography::caption(
-                                        "운영 DB 변경 권한이 없어 조회만 가능합니다."
+                                        "현재 주문은 조회만 가능합니다."
                                     ));
                                 }
                             });

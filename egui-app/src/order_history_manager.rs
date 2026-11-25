@@ -153,7 +153,7 @@ fn fetch(
         "dateBasis":basis.key(),
         "trackingOrder":tracking_metadata(&state)
     }))?;
-    let entries=value.as_array().ok_or("Rust 주문내역 조회 결과가 배열이 아닙니다.")?;
+    let entries=value.as_array().ok_or("주문내역을 불러오지 못했습니다.")?;
     Ok(HistorySnapshot{state,rows:entries.clone()})
 }
 
@@ -1243,7 +1243,7 @@ impl OrderHistoryManager {
                             let mut status_messages=Vec::new();
                             if !writable{
                                 status_messages.push(
-                                    "현재 연결은 운영 메모 저장 권한이 없습니다.".to_owned()
+                                    "현재 관리 메모를 저장할 수 없습니다.".to_owned()
                                 );
                             }
                             if let Some(error)=self.memo_error.as_ref(){

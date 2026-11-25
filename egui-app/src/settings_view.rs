@@ -1142,7 +1142,7 @@ impl SettingsView{
                     ){self.restore_target=None;}
                     decision.body(|ui|{
                         ui.label(typography::body(
-                            "선택한 시점의 전체 데이터베이스로 복원할까요? 현재 데이터는 먼저 안전 백업으로 보관합니다. 주문과 감사 기록도 선택한 시점으로 되돌아갑니다."
+                            "선택한 백업 시점으로 업무 데이터를 복구할까요?\n\n현재 데이터는 자동으로 백업되며, 주문내역과 변경 기록도 해당 시점으로 돌아갑니다."
                         ));
                     });
                     decision.actions(|actions|{
