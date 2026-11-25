@@ -103,9 +103,10 @@ pub fn native_direct_order(
             saved.get("clientId").and_then(Value::as_str)!=row.client_id.as_deref(){
             return Err("직접 입력 작업본과 접수 정보가 일치하지 않습니다.".into());
         }
-        let model=saved.get("model").filter(|v|v.is_object())
+        let mut model=saved.get("model").filter(|v|v.is_object()).cloned()
             .ok_or("저장된 직접 입력 작업본이 올바르지 않습니다.")?;
-        if !list(model,"blocks").is_empty() ||
+        scope_manual_model_ids(&row.id,&mut model)?;
+        if !list(&model,"blocks").is_empty() ||
             model.get("assignments").and_then(Value::as_object)
                 .is_none_or(|assignments|!assignments.is_empty()) ||
             saved.get("assignmentOrder").and_then(Value::as_array)

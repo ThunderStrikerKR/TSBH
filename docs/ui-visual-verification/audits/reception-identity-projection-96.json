@@ -1,0 +1,51 @@
+{
+  "schemaVersion": 1,
+  "id": "reception-identity-projection-96",
+  "screen": "접수 / 인식·복원·처리중 주문·수동 분류",
+  "files": [
+    "egui-app/src/reception_service.rs",
+    "egui-app/src/main.rs",
+    "egui-app/src/native_order_change.rs",
+    "egui-app/src/workflow_board_ui.rs",
+    "egui-app/src/manual_workspace.rs"
+  ],
+  "visualStatus": "FAIL",
+  "reason": "기존 96차 셀 수정 오류의 후속. 화면용 인식/복원/거래처 재인식, 원문 블록과 처리중 주문 선택 ID를 공통 규칙으로 통일. 이전 사용자 실제 오류는 수정 빌드에서 재현 검증 전까지 OPEN.",
+  "defects": [
+    {
+      "id": "UI-96-ID-PROJECTION",
+      "status": "OPEN",
+      "description": "임시·정규화 ID 혼용에 따른 선택, 셀 편집, 하이라이트 연결 실패 가능"
+    }
+  ],
+  "releaseDecision": "NOT_APPROVED",
+  "verification": {
+    "rustTests": "NOT_EXECUTED",
+    "githubCI": "NOT_VERIFIED",
+    "windowsVisual": "NOT_VERIFIED"
+  },
+  "nextVerification": {
+    "requiredViewports": [
+      {
+        "width": 1920,
+        "height": 1080,
+        "scalePercent": 100
+      },
+      {
+        "width": 1366,
+        "height": 768,
+        "scalePercent": 100
+      }
+    ],
+    "checks": [
+      "interaction",
+      "hoverAndFocus"
+    ],
+    "focus": [
+      "최초 인식 및 이전 초안 복원 후 원문↔수취인↔상품 하이라이트",
+      "두 발주서의 동일 임시 ID 분리",
+      "운임 수정 후 주문 확인 완료",
+      "거래처 변경 및 기존 견적 표시"
+    ]
+  }
+}

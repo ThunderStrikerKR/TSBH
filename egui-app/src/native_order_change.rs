@@ -349,6 +349,7 @@ pub fn prepare_cancellable(
         let manual_model=rebind_manual_model(&source.id,saved,target_id,recipients)?;
         let mut selected_recognition=evidence.clone();
         selected_recognition["recipients"]=recipients.clone();
+        crate::reception_service::scope_display_recognition(&source.id,&mut selected_recognition)?;
         let preview=json!({
             "sourceRaw":source.raw,"orderId":source.id,
             "orderType":source.order_type,"clientId":target_id,
@@ -417,12 +418,14 @@ pub fn prepare_cancellable(
         "freightLines":quote.get("freightLines"),
         "pricingBasis":crate::pricing_basis::snapshot(&state,client,order),
     });
+    let mut display=evidence;
+    crate::reception_service::scope_display_recognition(&source.id,&mut display)?;
     Ok(ChangeResult {
         client_id:target_id.to_owned(),
         pricing_preview:Some(price_summary),
         order:Some(order.clone()),
         manual_model:None,
-        recognition:Some(evidence),
+        recognition:Some(display),
     })
 }
 

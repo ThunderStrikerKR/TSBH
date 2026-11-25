@@ -43,7 +43,24 @@ pub struct ReceptionAnalysis {
 /// Persist only display references and the native candidate projection.
 /// The source-bound Rust recognition and client match remain the canonical
 /// copies in WorkingReception, so reopening never calls AnalyzeOrder again.
+/// Normalize a display projection using the native identity rule. Never
+/// mutate the immutable first-analysis evidence or use row position as ID.
+pub fn scope_display_recognition(order_id:&str,recognition:&mut Value)->Result<(),String>{
+    let mut candidates=recognition.get("candidates").cloned().unwrap_or_else(||json!([]));
+    let rows=recognition.get_mut("recipients").and_then(Value::as_array_mut)
+        .ok_or("발주 인식 배송 목록이 없습니다.")?;
+    crate::gateway::rules::scope_recognition_rows_for_order(order_id,rows,&mut candidates)?;
+    if recognition.get("candidates").is_some(){recognition["candidates"]=candidates;}
+    Ok(())
+}
+
 impl ReceptionAnalysis {
+    pub fn scope_display(&mut self,order_id:&str,raw:&str)->Result<(),String>{
+        scope_display_recognition(order_id,&mut self.recognition)?;
+        self.linked_spans=source_highlight::collect(raw,&self.recognition);
+        Ok(())
+    }
+
     pub fn cached_view(&self)->Value {
         let reference=self.reference.iter().map(|row|json!({
             "remote":row.remote,"remoteError":row.remote_error,
@@ -537,5 +554,30 @@ mod persisted_analysis_restore_tests {
         address_change[0]["address"]=json!("제주");
         analysis.apply_edited_recipients(raw,&address_change);
         assert!(analysis.reference[0].remote.is_none());
+    }
+}
+
+#[cfg(test)]
+mod scoped_display_tests {
+    use super::*;
+    #[test]
+    fn display_scope_keeps_original_evidence_and_links_two_orders_separate(){
+        let original=json!({"recipients":[{"id":"recognition:recipient:0",
+            "name":"가","sources":[{"field":"name","targetId":"recognition:recipient:0",
+                "start":0,"end":1,"text":"가"}],"items":[]}],
+            "candidates":[{"id":"block-1","recipientId":"recognition:recipient:0"}]});
+        let mut a=original.clone();
+        let mut b=original.clone();
+        scope_display_recognition("order-a",&mut a).unwrap();
+        scope_display_recognition("order-b",&mut b).unwrap();
+        let spans=source_highlight::collect("가",&a);
+        assert!(spans.iter().any(|span|span.key.recipient_id=="order-a:recognition:recipient:0"
+            && span.key.target_id=="order-a:recognition:recipient:0"));
+        assert_ne!(a["recipients"][0]["id"],b["recipients"][0]["id"]);
+        assert_eq!(original["recipients"][0]["id"],"recognition:recipient:0");
+        assert_eq!(a["candidates"][0]["id"],"block-1");
+        let once=a.clone();
+        scope_display_recognition("order-a",&mut a).unwrap();
+        assert_eq!(a,once);
     }
 }

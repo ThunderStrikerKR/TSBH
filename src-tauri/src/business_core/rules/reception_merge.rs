@@ -78,9 +78,28 @@ pub(super) fn scoped_recognition_id(order_id:&str,id:&str,prefix:&str)->String{
     if id.starts_with(prefix){format!("{order_id}:{id}")}else{id.to_owned()}
 }
 
+fn scope_source_refs(order_id:&str,value:&mut Value)->Result<(),String>{
+    for (key,prefix) in [("recipientId","recognition:recipient:"),
+        ("itemId","recognition:item:")] {
+        if let Some(id)=value.get(key).and_then(Value::as_str).map(str::to_owned){
+            let scoped=scoped_recognition_id(order_id,&id,prefix);
+            if scoped!=id{set(value,key,json!(scoped))?;}
+        }
+    }
+    if let Some(id)=value.get("targetId").and_then(Value::as_str).map(str::to_owned){
+        let scoped=scoped_recognition_id(order_id,&id,"recognition:recipient:");
+        let scoped=scoped_recognition_id(order_id,&scoped,"recognition:item:");
+        if scoped!=id{set(value,"targetId",json!(scoped))?;}
+    }
+    Ok(())
+}
+
 pub(super) fn scope_recognition_ids(order_id:&str, recipients:&mut [Value],
     candidates:&mut Value)->Result<(),String>{
     if order_id.trim().is_empty(){return Err("발주서 ID가 없습니다.".into());}
+    if let Some(entries)=candidates.as_array_mut(){
+        for candidate in entries{scope_source_refs(order_id,candidate)?;}
+    }
     for recipient in recipients {
         let provisional_rid=str_field(recipient,"id").to_string();
         let stable_rid=scoped_recognition_id(order_id,&provisional_rid,"recognition:recipient:");
@@ -90,6 +109,7 @@ pub(super) fn scope_recognition_ids(order_id:&str, recipients:&mut [Value],
         }
         if let Some(sources)=recipient.get_mut("sources").and_then(Value::as_array_mut){
             for span in sources {
+                scope_source_refs(order_id,span)?;
                 if str_field(span,"recipientId")==provisional_rid {
                     set(span,"recipientId",json!(stable_rid))?;
                 }
@@ -108,6 +128,7 @@ pub(super) fn scope_recognition_ids(order_id:&str, recipients:&mut [Value],
                 }
                 if let Some(sources)=item.get_mut("sources").and_then(Value::as_array_mut){
                     for span in sources {
+                        scope_source_refs(order_id,span)?;
                         if str_field(span,"recipientId")==provisional_rid {
                             set(span,"recipientId",json!(stable_rid))?;
                         }
@@ -130,6 +151,9 @@ pub(super) fn scope_manual_model_ids(order_id:&str,model:&mut Value)->Result<(),
             .ok_or("수동 분류 배송 목록이 없습니다.")?;
         let mut no_candidates=Value::Array(Vec::new());
         scope_recognition_ids(order_id,recipients,&mut no_candidates)?;
+    }
+    if let Some(blocks)=model.get_mut("blocks").and_then(Value::as_array_mut){
+        for block in blocks{scope_source_refs(order_id,block)?;}
     }
     if let Some(assignments)=model.get_mut("assignments").and_then(Value::as_object_mut){
         for assignment in assignments.values_mut(){
@@ -395,7 +419,7 @@ mod tests{
                 "items":[{"id":"recognition:item:3:0","sources":[{
                     "recipientId":"recognition:recipient:0",
                     "targetId":"recognition:item:3:0"}]}]}],
-            "blocks":[{"id":"block-1"}],
+            "blocks":[{"id":"block-1","targetId":"recognition:item:3:0"}],
             "assignments":{"block-1":{"recipientId":"recognition:recipient:0",
                 "itemId":"recognition:item:3:0","field":"quantity"}}
         });
@@ -410,6 +434,16 @@ mod tests{
             "order-one:recognition:item:3:0");
         assert_eq!(first["rows"][0]["items"][0]["sources"][0]["recipientId"],
             "order-one:recognition:recipient:0");
+        assert_eq!(first["blocks"][0]["id"],"block-1");
+        assert_eq!(first["blocks"][0]["targetId"],"order-one:recognition:item:3:0");
+        // Mixed older candidate/target references survive even if rows were
+        // already normalized by a previous client calculation.
+        first["rows"][0]["items"][0]["sources"][0]["targetId"]=json!("recognition:item:3:0");
+        let mut candidates=json!([{"recipientId":"recognition:recipient:0","itemId":"recognition:item:3:0"}]);
+        scope_recognition_ids("order-one",first["rows"].as_array_mut().unwrap(),&mut candidates).unwrap();
+        assert_eq!(candidates[0]["recipientId"],"order-one:recognition:recipient:0");
+        assert_eq!(candidates[0]["itemId"],"order-one:recognition:item:3:0");
+        assert_eq!(first["rows"][0]["items"][0]["sources"][0]["targetId"],"order-one:recognition:item:3:0");
         let once=first.clone();
         scope_manual_model_ids("order-one",&mut first).unwrap();
         assert_eq!(first,once,"scoping must be idempotent");

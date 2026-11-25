@@ -1039,8 +1039,10 @@ fn pending_frame(
                                 .filter(|q|*q>0).map_or("?".to_owned(),|q|q.to_string());
                             format!("{name} × {qty}")
                         }).collect::<Vec<_>>();
-                    let recipient_id=recipient.get("id")
-                        .and_then(|value|value.as_str()).unwrap_or("");
+                    let recipient_id=crate::gateway::rules::scope_reception_edit_ids(
+                        &draft.id,recipient.get("id")
+                            .and_then(|value|value.as_str()).unwrap_or(""),None).0;
+                    let recipient_id=recipient_id.as_str();
                     let chosen=selected && !recipient_id.is_empty() &&
                         committed_recipient==Some(recipient_id);
                     let displayed=visible_pending_recipient(

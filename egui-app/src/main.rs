@@ -552,11 +552,15 @@ fn quote_id_matches(
 )->bool{
     let Some(quoted_id)=quoted_id else{return false};
     if quoted_id==source_id{return true;}
-    if !source_id.starts_with(kind){return false;}
+    if !quoted_id.starts_with(kind) && !source_id.starts_with(kind){return false;}
     let Some(order_id)=quote.get("orderId").and_then(serde_json::Value::as_str)
         .filter(|id|!id.is_empty()) else{return false;};
-    quoted_id.strip_prefix(order_id)
-        .and_then(|rest|rest.strip_prefix(':'))==Some(source_id)
+    let canonical=|id:&str| if kind=="recognition:item:" {
+        gateway::rules::scope_reception_edit_ids(order_id,"",Some(id)).1.unwrap_or_default()
+    }else{
+        gateway::rules::scope_reception_edit_ids(order_id,id,None).0
+    };
+    canonical(quoted_id)==canonical(source_id)
 }
 
 fn quoted_item_line<'a>(
@@ -637,6 +641,10 @@ mod quote_identity_tests {
         assert!(!complete_reception_quote(&serde_json::json!({
             "linePrices":[{"itemId":"x","unitPrice":1000}]
         })));
+        let legacy=serde_json::json!({"orderId":"order-42",
+            "linePrices":[{"itemId":"recognition:item:8:0","amount":236000}]});
+        assert!(quoted_item_line(&legacy,"order-42:recognition:item:8:0").is_some());
+        assert!(quoted_item_line(&legacy,"another-order:recognition:item:8:0").is_none());
         assert!(quoted_item_line(&quote,"recognition:item:9:0").is_none());
         assert!(quoted_freight_line(&quote,"recognition:recipient:1",None).is_none());
         assert!(!quote_id_matches(&quote,
@@ -713,6 +721,7 @@ fn kakao_safe_modal_work_area(
 struct PendingDisplay {
     id:String,raw:String,recognition:serde_json::Value,
     pricing_preview:Option<serde_json::Value>,spans:Vec<source_highlight::LinkedSpan>,
+    identity_input:Option<serde_json::Value>,
 }
 struct WorkflowSourceDisplay{
     board:Arc<workflow_board::BoardSnapshot>,order_id:String,raw:String,
@@ -1211,11 +1220,15 @@ impl BandoEgui {
         }
         let Some(rows)=saved.pointer("/model/rows")
             .filter(|rows|rows.is_array()).cloned() else{return false};
-        let count=rows.as_array().map(Vec::len).unwrap_or(0);
+        let mut recognition=serde_json::json!({"recipients":rows,"candidates":[]});
+        if reception_service::scope_display_recognition(&row.id,&mut recognition).is_err(){
+            return false;
+        }
+        let count=recognition["recipients"].as_array().map(Vec::len).unwrap_or(0);
         let chosen_name=row.client_id.as_deref()
             .and_then(|id|self.client_names.get(id)).cloned();
         self.analysis=Some(reception_service::ReceptionAnalysis{
-            recognition:serde_json::json!({"recipients":rows,"candidates":[]}),
+            recognition,
             reference:Vec::new(),client_match:serde_json::Value::Null,
             client_candidates:Vec::new(),matched_client_name:None,
             chosen_client_name:chosen_name,directory_count:0,
@@ -1257,6 +1270,9 @@ impl BandoEgui {
             .and_then(|model|model.pointer("/model/rows"))
             .filter(|rows|rows.is_array()) {
             recognition["recipients"]=rows.clone();
+        }
+        if reception_service::scope_display_recognition(&row.id,&mut recognition).is_err(){
+            return false;
         }
         let Some(restored)=reception_service::ReceptionAnalysis::from_cached_view(
             &self.raw_source,recognition,matched.clone(),view
@@ -1485,7 +1501,8 @@ impl BandoEgui {
         self.select_reception(&target.order_id,ctx);
         if self.active_id.as_deref()!=Some(target.order_id.as_str()){return;}
         self.requested_recipient_focus=target.recipient_id.as_ref()
-            .map(|id|(target.order_id.clone(),id.clone()));
+            .map(|id|(target.order_id.clone(),gateway::rules::scope_reception_edit_ids(
+                &target.order_id,id,None).0));
         self.apply_requested_recipient_focus(ctx);
     }
     fn apply_requested_recipient_focus(&mut self,ctx:&egui::Context){
@@ -1537,23 +1554,29 @@ impl BandoEgui {
         let matches=self.pending_display.as_ref().is_some_and(|cached|
             cached.id==draft.id && cached.raw==draft.raw &&
             cached.pricing_preview.as_ref()==draft.pricing_preview.as_ref() &&
-            if let Some(rows)=manual_rows{
-                cached.recognition.as_object().is_some_and(|obj|obj.len()==1) &&
-                    cached.recognition.get("recipients")==Some(rows)
-            }else if let Some(recognized)=recognized{
-                &cached.recognition==recognized
-            }else{
-                cached.recognition.as_object().is_some_and(|obj|obj.len()==1) &&
-                    cached.recognition.get("recipients").and_then(|v|v.as_array()).is_some_and(Vec::is_empty)
+            {
+                let input=cached.identity_input.as_ref().unwrap_or(&cached.recognition);
+                if let Some(rows)=manual_rows{
+                    input.as_object().is_some_and(|obj|obj.len()==1) &&
+                        input.get("recipients")==Some(rows)
+                }else if let Some(recognized)=recognized{
+                    input==recognized
+                }else{
+                    input.as_object().is_some_and(|obj|obj.len()==1) &&
+                        input.get("recipients").and_then(|v|v.as_array()).is_some_and(Vec::is_empty)
+                }
             });
         if !matches{
-            let recognition=manual_rows.map(|rows|serde_json::json!({"recipients":rows}))
+            let input=manual_rows.map(|rows|serde_json::json!({"recipients":rows}))
                 .or_else(||recognized.cloned())
                 .unwrap_or_else(||serde_json::json!({"recipients":[]}));
+            let mut recognition=input.clone();
+            reception_service::scope_display_recognition(&draft.id,&mut recognition).ok()?;
+            let identity_input=(input!=recognition).then_some(input);
             let spans=source_highlight::collect(&draft.raw,&recognition);
             self.pending_display=Some(Arc::new(PendingDisplay{
                 id:draft.id.clone(),raw:draft.raw.clone(),recognition,
-                pricing_preview:draft.pricing_preview.clone(),spans,
+                pricing_preview:draft.pricing_preview.clone(),spans,identity_input,
             }));
         }
         let display=self.pending_display.as_ref()?.clone();
@@ -3648,9 +3671,10 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                 if let Some(row)=manual_receipt {
                     // Reapply employee-confirmed assignments through Rust,
                     // not a fresh UI parser. The source must still be exact.
-                    let model=row.manual_model.as_ref()
-                        .and_then(|value|value.get("model"))
+                    let mut model=row.manual_model.as_ref()
+                        .and_then(|value|value.get("model")).cloned()
                         .ok_or("저장된 수동 분류 결과를 읽을 수 없습니다.")?;
+                    gateway::rules::scope_manual_model_ids(&row.id,&mut model)?;
                     let keys=row.manual_model.as_ref()
                         .and_then(|value|value.get("assignmentOrder"))
                         .cloned().unwrap_or_else(||serde_json::json!([]));
@@ -3863,7 +3887,15 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
             }
             self.analysis_pending = false;
             match result {
-                Ok(analysis) => {
+                Ok(mut analysis) => {
+                    let original_evidence=analysis.recognition.clone();
+                    if let Some(order_id)=self.active_id.as_deref(){
+                        if let Err(error)=analysis.scope_display(order_id,&self.raw_source){
+                            self.analysis=None;
+                            self.analysis_error=Some(error);
+                            return;
+                        }
+                    }
                     // Attach the exact Rust analysis to ONLY the still-active
                     // reception. A switched/new order invalidates this worker.
                     let mut changed_snapshot = false;
@@ -3879,7 +3911,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                 !=Some(self.raw_source.as_str())
                                 || item.analysis_evidence.is_none();
                             if first_for_source {
-                                item.analysis_evidence=Some(analysis.recognition.clone());
+                                item.analysis_evidence=Some(original_evidence);
                             }
                             item.analysis_raw = Some(self.raw_source.clone());
                             item.client_match = Some(analysis.client_match.clone());
