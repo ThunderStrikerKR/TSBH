@@ -241,15 +241,23 @@ fn verify_factory_envelope(actual:&Value,expected:&Value)->Result<(),String>{
     Ok(())
 }
 
-/// Only for the native set_shipment_freight reducer. Keep the full workflow
-/// envelope and catalog (audit identities, allocations, tariffs, clients).
-/// Stable confirmed-order edits use the scoped relational delta, then
-/// reconstruct the full authoritative before-image from persisted rows and
-/// validate before COMMIT. Structural changes and databases with triggers
-/// retain the conservative full-before-image path.
+/// Compatibility entry point for the existing freight callers.
 pub fn update_v2_freight_snapshot<F>(
     conn:&mut Connection,expected_revision:u64,shipment_id:&str,group_id:&str,mutate:F
 )->Result<Value,String>
+where F:FnOnce(&Value)->Result<Value,String>{
+    update_v2_shipment_snapshot(conn,expected_revision,shipment_id,group_id,mutate)
+        .map(|(state,_)|state)
+}
+
+/// Native shipment freight and group moves share the same single-order
+/// transaction. Keep the full workflow envelope and catalog, including
+/// audit IDs, payment allocations, tariffs and clients. The boolean is
+/// true only when the stable scoped writer proves that unrelated core
+/// rows were not modified; callers must use full projection on fallback.
+pub fn update_v2_shipment_snapshot<F>(
+    conn:&mut Connection,expected_revision:u64,shipment_id:&str,group_id:&str,mutate:F
+)->Result<(Value,bool),String>
 where F:FnOnce(&Value)->Result<Value,String>{
     let tx=conn.transaction().map_err(err)?;
     let mut before=read_current_envelope(&tx,expected_revision)?;
@@ -290,7 +298,7 @@ where F:FnOnce(&Value)->Result<Value,String>{
     if stable_freight_candidate(&tx,&before,&changed)?{
         let verified=finish_stable_freight(&tx,before,changed,expected_revision,&order_id)?;
         tx.commit().map_err(err)?;
-        return Ok(verified);
+        return Ok((verified,true));
     }
     let target_after=changed["orders"].as_array_mut()
         .filter(|rows|rows.len()==1 && rows[0]["id"].as_str()==Some(order_id.as_str()))
@@ -322,7 +330,7 @@ where F:FnOnce(&Value)->Result<Value,String>{
     }
     let verified=finish_update(&tx,before,changed,expected_revision,true)?;
     tx.commit().map_err(err)?;
-    Ok(verified)
+    Ok((verified,false))
 }
 
 fn stable_freight_candidate(tx:&Transaction<'_>,before:&Value,changed:&Value)
