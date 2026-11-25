@@ -181,6 +181,114 @@ mod regression {
         assert!(r["total"].is_null());
         assert_eq!(r["bundles"][0]["source"],"MANUAL");
     }
+    // Explicit business expectations; no TypeScript oracle or external process.
+    #[test]
+    fn operational_price_missing_identity_and_special_fallback(){
+        let p=product();
+        let mut c=client("special");
+        for (overrides,expected) in [
+            (json!({}),json!(30000)),
+            (json!({"v1":null,"old-v1":28000}),json!(28000)),
+            (json!({"v1":27500,"old-v1":28000}),json!(27500)),
+            (json!({"v1":0,"old-v1":28000}),Value::Null),
+        ]{
+            c["overrides"]=overrides;
+            assert_eq!(run("resolve_unit_price",json!({"product":p,"variantId":"v1","client":c}))["unitPrice"],expected);
+        }
+        for (product,variant,customer) in [
+            (p.clone(),"v1",client("unknown")),
+            (p.clone(),"not-found",client("wholesale")),
+            (p.clone(),"v1",json!({"id":"","tier":"wholesale"})),
+        ] {
+            assert_eq!(run("resolve_unit_price",json!({"product":product,"variantId":variant,"client":customer}))["unitPrice"],Value::Null);
+        }
+    }
+
+    #[test]
+    fn operational_invalid_line_values_do_not_create_payable_total(){
+        let c=client("wholesale");
+        for (field,value) in [
+            ("quantity",json!(0)),("quantity",json!(-1)),
+            ("quantity",json!(1.5)),("quantity",Value::Null),
+            ("unitPrice",json!(-1)),("unitPrice",json!(10.5)),
+            ("unitPrice",Value::Null),("variantId",Value::Null),
+            ("productId",json!("")),
+        ]{
+            let mut o=order(2,json!(30000));
+            o["recipients"][0]["items"][0][field]=value.clone();
+            let result=run("calculate_price",json!({"order":o,"client":c}));
+            assert_eq!(result["total"],Value::Null,"invalid {field}={value}");
+        }
+        let mut o=order(2,json!(30000));
+        o["shippingFee"]=Value::Null;
+        assert_eq!(run("calculate_price",json!({"order":o,"client":c})),
+            json!({"subtotal":60000,"shipping":null,"vat":null,"total":null}));
+        // A deliberately entered free line is valid, unlike an unknown price.
+        let o=order(2,json!(0));
+        assert_eq!(run("calculate_price",json!({"order":o,"client":c})),
+            json!({"subtotal":0,"shipping":3000,"vat":300,"total":3300}));
+    }
+
+    #[test]
+    fn operational_won_rounding_and_multi_recipient_totals(){
+        let c=client("wholesale");
+        let mut o=order(2,json!(12));
+        o["shippingFee"]=json!(5);
+        assert_eq!(run("calculate_price",json!({"order":o,"client":c})),
+            json!({"subtotal":24,"shipping":5,"vat":3,"total":32}));
+        let mut o=order(2,json!(30000));
+        let mut r=recipient(3,json!(15000)); r["id"]=json!("r2");
+        o["recipients"].as_array_mut().unwrap().push(r);
+        assert_eq!(run("calculate_price",json!({"order":o,"client":c})),
+            json!({"subtotal":105000,"shipping":3000,"vat":10800,"total":118800}));
+    }
+
+    #[test]
+    fn operational_passive_refresh_never_changes_saved_confirmed_deleted_or_locked_order(){
+        let o=order(1,json!(30000));
+        assert_eq!(run("should_refresh_pricing",json!({"order":o}))["refresh"],true);
+        assert_eq!(run("should_refresh_pricing",json!({"order":o,"persistedOrders":[{"id":"o1"}]}))["refresh"],false);
+        for (field,value) in [("confirmedAt",json!("2026-11-13T09:00:00Z")),
+            ("deletedAt",json!("2026-11-13T09:00:00Z")),("pricesLocked",json!(true))]{
+            let mut changed=o.clone(); changed[field]=value;
+            assert_eq!(run("should_refresh_pricing",json!({"order":changed}))["refresh"],false,"{field}");
+        }
+    }
+
+    #[test]
+    fn operational_confirmed_bundle_limit_and_missing_tariff(){
+        let mut state=shipping_state();
+        for (quantity,expected) in [(1,3000),(2,4000),(3,5000),(4,6000),(5,9000),(8,12000),(9,15000)]{
+            let r=run("calculate_shipping",json!({"order":order(quantity,json!(30000)),"state":state}));
+            assert_eq!(r["total"],expected,"quantity {quantity}");
+        }
+        state["shipping"]["groups"][0]["current"]["fees"]["1"]=Value::Null;
+        let r=run("calculate_shipping",json!({"order":order(5,json!(30000)),"state":state}));
+        assert_eq!(r["total"],Value::Null);
+        assert_eq!(r["bundles"][0]["source"],"MANUAL");
+    }
+
+    #[test]
+    fn operational_shipping_unknown_product_quantity_or_variant_requires_review(){
+        let state=shipping_state();
+        for (field,value) in [
+            ("productId",json!("unknown")),("quantity",Value::Null),
+            ("quantity",json!(0)),("variantId",Value::Null),
+        ]{
+            let mut o=order(2,json!(30000));
+            o["recipients"][0]["items"][0][field]=value.clone();
+            let r=run("calculate_shipping",json!({"order":o,"state":state}));
+            assert_eq!(r["total"],Value::Null,"invalid {field}={value}");
+            assert_eq!(r["bundles"][0]["source"],"MANUAL");
+        }
+        let mut per_item=state.clone();
+        per_item["shipping"]["groups"][0]["current"]["perItem"]=json!(1700);
+        assert_eq!(run("calculate_shipping",json!({"order":order(2,json!(30000)),"state":per_item}))["total"],3400);
+        let mut single=state;
+        single["shipping"]["groups"][0]["current"]["maxBundle"]=json!(1);
+        assert_eq!(run("calculate_shipping",json!({"order":order(2,json!(30000)),"state":single}))["total"],6000);
+    }
+
     #[test]
     fn shipment_total_respects_frozen_client_and_recipient_vat() {
         let s=workflow_state("POSTPAID");
