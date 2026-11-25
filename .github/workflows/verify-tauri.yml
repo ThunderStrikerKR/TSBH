@@ -146,10 +146,13 @@ jobs:
       # The with-deps flag runs apt and can fail on transient Ubuntu mirror DNS
       # failures before any UI test is executed.
       - name: Install headless Chromium
+        id: browser_setup
         run: npx playwright install chromium
       - name: Guard saved order against passive repricing in actual React UI
         run: node scripts/reception-pricing-ui-smoke.mjs
       - name: Run real React UI audit smoke test
+        if: ${{ !cancelled() && steps.browser_setup.outcome == 'success' }}
         run: node scripts/receipt-audit-ui-smoke.mjs
       - name: Verify product manager displays curated names instead of website titles
+        if: ${{ !cancelled() && steps.browser_setup.outcome == 'success' }}
         run: node scripts/product-name-ui-smoke.mjs
