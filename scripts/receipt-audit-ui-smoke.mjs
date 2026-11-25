@@ -1159,6 +1159,8 @@ try {
           if (query.includes("__CI_EMPTY_ORDER__")) return [];
           return [];
         }
+        if (command === "business_core_call" && args?.domain === "output" &&
+            args.operation === "render_correction_summaries") return {records:[]};
         if (command === "business_core_call" && args?.domain === "rules" &&
             args.operation === "apply_manual_classification" &&
             args.payload?.action === "initial_manual") {
@@ -2407,7 +2409,9 @@ try {
 
 
 
-  // Stage 7: use the actual developer modal workbench with detached mock data.
+  // Stage 7: mount the current production components in a browser-only fixture.
+  // The removed WorkingRawDialog is covered by its native correction tests;
+  // the current CorrectionPanel replaces its retired visual sample.
   // Do not submit business saves. Test every listed popup mode, including long
   // content, errors, busy state, and the unique manual-classification surface.
   await navPage.evaluate(()=>{
@@ -2420,8 +2424,24 @@ try {
       return original(command,args);
     };
   });
-  await navMenu.getByRole("button",{name:"설정",exact:true}).click();
-  await navPage.getByRole("tab",{name:"개발자 모드"}).click();
+  const mountModalFixture=async()=>{
+    await navMenu.getByRole("button",{name:"설정",exact:true}).click();
+    await navPage.getByRole("tab",{name:"시스템",exact:true}).click();
+    await navPage.locator("#settings-panel-system").waitFor();
+    await navPage.evaluate(async()=>{
+      const fixture=await import("/tests/browser/modal-workbench.tsx");
+      fixture.mountModalFixture(await window.bando.load());
+    });
+    await navPage.locator("#dev-popup").waitFor();
+  };
+  const unmountModalFixture=async()=>{
+    await navPage.evaluate(async()=>{
+      const fixture=await import("/tests/browser/modal-workbench.tsx");
+      fixture.unmountModalFixture();
+    });
+    await navPage.locator("#ci-modal-fixture").waitFor({state:"detached"});
+  };
+  await mountModalFixture();
   const popupSelect=navPage.locator("#dev-popup");
   await popupSelect.waitFor();
   const popupOpen=navPage.getByRole("button",{name:"선택한 실제 화면 열기"});
@@ -2516,7 +2536,7 @@ try {
     }
     await closeNative(dialog);
   }
-  for(const popup of ["raw","resolver","product-search","category","retail"]){
+  for(const popup of ["correction","resolver","product-search","category","retail"]){
     await popupSelect.selectOption(popup);
     await popupOpen.click();
     const dialog=nativeOpen();
@@ -2616,6 +2636,7 @@ try {
     }
     await navPage.getByRole("button",{name:"시험 화면 닫기"}).click();
   }
+  await unmountModalFixture();
   // A second set of real dialogs is reachable from category and freight
   // management, rather than the developer workbench's default previews.
   await navMenu.getByRole("button",{name:"상품 관리",exact:true}).click();
@@ -2639,7 +2660,7 @@ try {
   console.log("STAGE7_MODAL_AUDIT",JSON.stringify(stage7Records));
   assert.equal(stage7Records.length,23,
     "Stage7 modal workbench inventory changed without audit coverage");
-  console.log("PASS: developer workbench common modes and all 12 popup entries audited");
+  console.log("PASS: isolated browser fixture common modes and all 12 popup entries audited");
 
   // Stage 8: exercise the REAL settings control that drives --ui-scale. Check
   // the whole outer frame, semantic list owner, and native modal boundaries.
@@ -2797,14 +2818,14 @@ try {
             stage8Results.push({context,...await stage8Measure(context,selector)});
           }
         }
-        await navMenu.getByRole("button",{name:"설정",exact:true}).click();
-        await navPage.getByRole("tab",{name:"개발자 모드"}).click();
+        await mountModalFixture();
         await navPage.locator("#dev-popup").selectOption("common");
         await navPage.locator("#dev-popup-state").selectOption("LONG");
         await stage8CheckModal("긴 내용 공통 모달",
           async()=>navPage.getByRole("button",{name:"선택한 실제 화면 열기"}).click(),
           async dialog=>{await dialog.getByRole("button",{name:"닫기 ×"}).click();
             await dialog.waitFor({state:"hidden"});});
+        await unmountModalFixture();
       }
     }
   }
@@ -3016,9 +3037,8 @@ try {
         closeFollowupModal);
       followupDialogs.push({kind:"freight",scale,viewport,...freight});
 
-      await navMenu.getByRole("button",{name:"설정",exact:true}).click();
-      await navPage.getByRole("tab",{name:"개발자 모드"}).click();
-      for(const [id,name] of [["raw","원문 정정"],["category","카테고리 선택"]]){
+      await mountModalFixture();
+      for(const [id,name] of [["correction","공장 전달 후 정정 요청"],["category","카테고리 선택"]]){
         await navPage.locator("#dev-popup").selectOption(id);
         const measured=await stage8CheckModal(name,
           async()=>navPage.getByRole("button",{name:"선택한 실제 화면 열기"}).click(),
@@ -3031,6 +3051,7 @@ try {
       await navPage.getByRole("button",{name:"선택한 실제 화면 열기"}).click();
       const manual=navPage.getByRole("dialog",{name:"수동 분류"}).last();
       await manual.waitFor();
+      await manual.locator(".manual-grid-scroll").waitFor({state:"visible"});
       const manualSample=await manual.evaluate(el=>{
         const r=el.getBoundingClientRect();
         const table=el.querySelector(".manual-grid-scroll");
@@ -3052,6 +3073,8 @@ try {
         console.log("STAGE8_FOLLOWUP_MANUAL_RISK",JSON.stringify(risk));
       }
       await manual.getByRole("button",{name:"닫기 ×"}).click();
+      await manual.waitFor({state:"hidden"});
+      await unmountModalFixture();
 
       // The three-choice unsaved edit prompt is a distinct native dialog.
       await navMenu.getByRole("button",{name:"운임 관리",exact:true}).click();
