@@ -18,6 +18,11 @@ on:
       - src-tauri/src/business_core/rules/reconciliation.rs
       - src-tauri/src/relational_store.rs
       - src-tauri/src/lib.rs
+  pull_request:
+    branches: [main]
+    paths:
+      - .github/workflows/freight-sqlite-verify.yml
+      - crates/bando-data-access/**
   workflow_dispatch:
 permissions:
   contents: read
@@ -34,6 +39,8 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: src-tauri -> target
+      - name: Verify borrowed envelope and stale-revision early rejection
+        run: cargo test --manifest-path crates/bando-data-access/Cargo.toml --lib snapshot_cost_tests -- --nocapture
       - name: Verify scoped freight reconciliation and transactional snapshot reuse
         run: |
           cargo test --manifest-path src-tauri/Cargo.toml --lib scoped_freight_reconciliation_matches_full_for_target_and_preserves_other_order -- --nocapture

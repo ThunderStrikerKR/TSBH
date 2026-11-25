@@ -10,7 +10,7 @@
 extern crate self as bando_data_access;
 
 use rusqlite::Connection;
-use serde_json::{json, Value};
+use serde_json::Value;
 use std::collections::HashMap;
 
 mod validation;
@@ -91,7 +91,7 @@ fn attach(
         let nested = children.remove(&id).unwrap_or_default();
         parent.as_object_mut()
             .ok_or("운영 자료 객체 형식이 잘못되었습니다.")?
-            .insert(key.to_owned(), json!(nested));
+            .insert(key.to_owned(), Value::Array(nested));
     }
     if !children.is_empty() {
         return Err("운영 업무자료에 소속되지 않은 하위 기록이 있습니다.".into());
@@ -176,8 +176,8 @@ pub fn read_v2_catalog_snapshot(conn: &Connection) -> Result<Value, String> {
     let (products, clients) = read_catalog_entities(conn)?;
     let root = state.as_object_mut()
         .ok_or("업무 상태는 객체여야 합니다.")?;
-    root.insert("products".into(), json!(products));
-    root.insert("clients".into(), json!(clients));
+    root.insert("products".into(), Value::Array(products));
+    root.insert("clients".into(), Value::Array(clients));
     // Never leak an older compatibility envelope's core orders to a catalog.
     root.remove("orders");
     Ok(state)
@@ -237,8 +237,8 @@ pub fn hydrate_v2(conn: &Connection, state: &mut Value) -> Result<(), String> {
 
     let root = state.as_object_mut()
         .ok_or("업무 상태는 객체여야 합니다.")?;
-    root.insert("products".into(), json!(products));
-    root.insert("clients".into(), json!(clients));
-    root.insert("orders".into(), json!(orders));
+    root.insert("products".into(), Value::Array(products));
+    root.insert("clients".into(), Value::Array(clients));
+    root.insert("orders".into(), Value::Array(orders));
     Ok(())
 }

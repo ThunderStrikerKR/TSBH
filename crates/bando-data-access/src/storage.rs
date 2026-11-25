@@ -15,10 +15,13 @@ fn read_current(tx:&Transaction<'_>,expected_revision:u64)->Result<Value,String>
         [],|row|row.get(0),
     ).map_err(err)?;
     if version!=2 {return Err("지원하지 않는 운영 DB 버전입니다.".into());}
-    let current=crate::read_v2_snapshot(tx)?;
+    // The envelope owns revision. Reject stale writers before loading any
+    // relational rows, using the same transaction snapshot.
+    let mut current=crate::read_envelope(tx)?;
     if current["revision"].as_u64()!=Some(expected_revision){
         return Err("다른 작업에서 데이터가 수정되었습니다. 새로고침 후 다시 저장하세요.".into());
     }
+    crate::hydrate_v2(tx,&mut current)?;
     Ok(current)
 }
 
@@ -49,8 +52,13 @@ where F:FnOnce(&Value)->Result<Value,String>{
     // Read the persisted relational projection while still holding the
     // transaction. A failed verification must roll back, not report a
     // failure after a successful commit.
+    let written_revision=written["revision"].as_u64()
+        .ok_or("업무 저장 revision 누락")?;
+    // Neither full snapshot is needed while verifying the persisted rows.
+    drop(written);
+    drop(current);
     let verified=crate::read_v2_snapshot(&tx)?;
-    if verified["revision"]!=written["revision"]{
+    if verified["revision"].as_u64()!=Some(written_revision){
         return Err("업무 저장 검증에 실패했습니다.".into());
     }
     tx.commit().map_err(err)?;
@@ -70,15 +78,12 @@ fn write_validated(tx:&Transaction<'_>,current:&Value,mut state:Value,
         .ok_or("운영 DB revision 범위를 초과했습니다.")?);
     // The constrained SQLite tables own products, clients and orders.
     // Keep only non-core data in the compatibility envelope, atomically.
-    let mut envelope = state.clone();
     // Settings-only changes never rewrite unchanged core rows.
     if products_changed || clients_changed || orders_changed {
         crate::relational_write::store_v2_relational_delta(tx,current,&state)?;
     }
-    let root=envelope.as_object_mut().ok_or("업무 상태는 객체여야 합니다.")?;
-    for key in ["products","clients","orders"] {root.remove(key);}
     tx.execute("UPDATE app_state SET payload=?1 WHERE id=1",
-        [serde_json::to_string(&envelope).map_err(err)?]).map_err(err)?;
+        [serialize_envelope(&state)?]).map_err(err)?;
     // Legacy search indexes are projections of the same before-image.
     // Child-only order edits do not change indexed columns.
     if products_changed {
@@ -109,6 +114,17 @@ fn write_validated(tx:&Transaction<'_>,current:&Value,mut state:Value,
     Ok(state)
 }
 
+
+// Serialize borrowed non-core fields only. Core rows have their own tables;
+// do not clone their nested products, variants, orders or items just to
+// discard them. Unknown envelope keys are preserved for compatibility.
+fn serialize_envelope(state:&Value)->Result<String,String>{
+    let root=state.as_object().ok_or("업무 상태는 객체여야 합니다.")?;
+    let envelope:std::collections::BTreeMap<&str,&Value>=root.iter()
+        .filter(|(key,_)| !matches!(key.as_str(),"products"|"clients"|"orders"))
+        .map(|(key,value)|(key.as_str(),value)).collect();
+    serde_json::to_string(&envelope).map_err(err)
+}
 
 fn index_rows<'a>(value:&'a Value,key:&str)->Result<std::collections::HashMap<&'a str,&'a Value>,String>{
     let mut map=std::collections::HashMap::new();
@@ -155,4 +171,50 @@ fn sync_order_index(tx:&Transaction<'_>,before:&Value,state:&Value)->Result<(),S
         if !next.contains_key(id){tx.execute("DELETE FROM order_index WHERE id=?1",[id]).map_err(err)?;}
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod snapshot_cost_tests {
+    use super::*;
+
+    #[test]
+    fn borrowed_envelope_preserves_all_non_core_fields(){
+        let state=json!({
+            "revision":42,"products":[{"variants":[{"id":"v"}]}],
+            "clients":[{"id":"c"}],"orders":[{"recipients":[{"items":[{"id":"i"}]}]}],
+            "workflow":{"events":[{"id":"e","detail":"배송"}]},
+            "settings":{"vat":10},"future_field":{"nested":[null,true,3,"한글"]}
+        });
+        let mut expected=state.clone();
+        for key in ["products","clients","orders"]{
+            expected.as_object_mut().unwrap().remove(key);
+        }
+        let actual:Value=serde_json::from_str(&serialize_envelope(&state).unwrap()).unwrap();
+        assert_eq!(actual,expected);
+        assert_eq!(state["orders"][0]["recipients"][0]["items"][0]["id"],"i");
+        assert!(serialize_envelope(&Value::Null).is_err());
+    }
+
+    #[test]
+    fn stale_revision_is_rejected_before_relational_hydration(){
+        let mut conn=Connection::open_in_memory().unwrap();
+        conn.execute_batch("CREATE TABLE core_schema(key TEXT,version INTEGER);
+            INSERT INTO core_schema VALUES ('business-core',2);
+            CREATE TABLE app_state(id INTEGER PRIMARY KEY,payload TEXT);").unwrap();
+        conn.execute("INSERT INTO app_state VALUES (1,?1)",
+            [json!({"revision":7}).to_string()]).unwrap();
+        // Deliberately omit every relational table: stale requests must
+        // fail on revision, not try to hydrate, and never invoke the reducer.
+        let error=update_v2_snapshot(&mut conn,6,true,|_|{
+            panic!("stale revision must not execute the reducer")
+        }).unwrap_err();
+        assert!(error.contains("다른 작업에서 데이터가 수정되었습니다"));
+        let error=update_v2_snapshot(&mut conn,7,true,|_|{
+            panic!("invalid relational snapshot must not execute the reducer")
+        }).unwrap_err();
+        assert!(!error.contains("다른 작업에서 데이터가 수정되었습니다"));
+        let raw:String=conn.query_row("SELECT payload FROM app_state WHERE id=1",[],
+            |row|row.get(0)).unwrap();
+        assert_eq!(serde_json::from_str::<Value>(&raw).unwrap()["revision"],7);
+    }
 }
