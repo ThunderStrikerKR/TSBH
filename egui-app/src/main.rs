@@ -6845,6 +6845,14 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                 self.workflow_freight_next_selection=None;
             }else if let Some((origin,original,click_at))=workflow_freight_open{
                 self.discard_advisory_workflow_read();
+                // Editing a hover preview commits its exact shipment first.
+                // Pointer movement must not hide the live cell editor.
+                self.workflow_ui.select(workflow_board_ui::Selection{
+                    group_id:group.id.clone(),order_id:ship.order_id.clone(),
+                    shipment_id:ship.id.clone()
+                });
+                self.link_hover.clear();
+                self.source_hover=None;
                 self.workflow_freight_editor=Some(WorkflowFreightEditor{
                     group_id:group.id.clone(),shipment_id:ship.id.clone(),
                     origin,original:original.clone(),text:original,
@@ -8124,6 +8132,26 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
         started
     }
 
+    fn restore_failed_workflow_freight(&mut self){
+        if let Some(mut editor)=self.submitted_workflow_freight.take(){
+            // The user may have navigated while the independent write ran.
+            // Restore the exact failed shipment, not an unrelated visible row.
+            if let Some(order_id)=self.workflow_snapshot.as_ref()
+                .and_then(|board|board.groups.iter().find(|g|g.id==editor.group_id))
+                .and_then(|g|g.shipments.iter().find(|s|s.id==editor.shipment_id))
+                .map(|s|s.order_id.clone()){
+                self.workflow_ui.select(workflow_board_ui::Selection{
+                    group_id:editor.group_id.clone(),order_id,
+                    shipment_id:editor.shipment_id.clone()
+                });
+                self.link_hover.clear();
+                self.source_hover=None;
+            }
+            editor.focus_next=true;
+            self.workflow_freight_editor=Some(editor);
+        }
+    }
+
     fn poll_workflow_action(&mut self,ctx:&egui::Context){
         let outcome=self.workflow_action.as_ref().map(|task|(
             task.group_id.clone(),task.action.clone(),task.receiver.try_recv()
@@ -8233,10 +8261,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                 if action=="set_shipment_freight"{
                     self.workflow_freight_next_selection=None;
                     self.workflow_stage_after_freight=None;
-                    if let Some(mut editor)=self.submitted_workflow_freight.take(){
-                        editor.focus_next=true;
-                        self.workflow_freight_editor=Some(editor);
-                    }
+                    self.restore_failed_workflow_freight();
                 }
                 self.workflow_last_fetch=None;
                 self.workflow_error=Some(error.clone());
@@ -8249,10 +8274,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                 if action=="set_shipment_freight"{
                     self.workflow_freight_next_selection=None;
                     self.workflow_stage_after_freight=None;
-                    if let Some(mut editor)=self.submitted_workflow_freight.take(){
-                        editor.focus_next=true;
-                        self.workflow_freight_editor=Some(editor);
-                    }
+                    self.restore_failed_workflow_freight();
                 }
                 self.workflow_last_fetch=None;
                 self.workflow_error=Some("주문 변경 처리 도중 작업이 중단되었습니다.".into());
