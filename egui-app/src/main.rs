@@ -7,6 +7,7 @@
 mod theme;
 mod typography;
 mod layout;
+mod window_state;
 mod components;
 mod cell_navigation;
 mod floating_notice;
@@ -886,6 +887,7 @@ struct BandoEgui {
     gateway: Arc<dyn gateway::BandoGateway>,
     page: Page,
     layout: layout::LayoutState,
+    window_state: window_state::Tracker,
     dragging_split: Option<HorizontalSplitDrag>,
     dragging_vertical: Option<VerticalSplitDrag>,
     dragging_detail: Option<DetailSplitDrag>,
@@ -1017,6 +1019,7 @@ impl BandoEgui {
             gateway: Arc::new(gateway::LocalGateway),
             page: Page::Reception,
             layout,
+            window_state: window_state::Tracker::default(),
             dragging_split: None,
             dragging_vertical: None,
             dragging_detail: None,
@@ -9285,6 +9288,8 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
 
 impl eframe::App for BandoEgui {
     fn on_exit(&mut self,_gl:Option<&eframe::glow::Context>){
+        self.window_state.finish();
+        if let Err(error)=self.layout.save(){eprintln!("[BANDO HUB] 화면 분할 저장 실패: {error}");}
         // eframe invokes this before the native HUB HWND is destroyed.
         // Kakao must lose its temporary owner BEFORE HUB teardown.
         self.kakao_dock.disconnect();
@@ -9296,6 +9301,7 @@ impl eframe::App for BandoEgui {
     }
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         let frame_started=Instant::now();
+        self.window_state.update(ctx);
         floating_notice::begin_page(ctx,self.page.label());
         if let Some(page)=self.client_pending_page{
             let approved=self.client_manager.as_mut()

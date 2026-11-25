@@ -91,17 +91,23 @@ impl LayoutState {
         })
     }
 
+    fn scoped_layout_path() -> Option<std::path::PathBuf> {
+        crate::window_state::ui_state_path("layout.txt")
+    }
+
     pub fn load() -> Self {
-        let path = Self::preview_layout_path();
-        Self::from_string(path.and_then(|p| std::fs::read_to_string(p).ok()))
+        // The former shared egui preview file is a read-only migration seed.
+        // Once a mode saves, it never reads or overwrites the other mode.
+        let raw = Self::scoped_layout_path()
+            .and_then(|p| std::fs::read_to_string(p).ok())
+            .or_else(|| Self::preview_layout_path()
+                .and_then(|p| std::fs::read_to_string(p).ok()));
+        Self::from_string(raw)
     }
 
     pub fn save(&self) -> std::io::Result<()> {
-        if let Some(path) = Self::preview_layout_path() {
-            if let Some(parent) = path.parent() {
-                std::fs::create_dir_all(parent)?;
-            }
-            std::fs::write(path, self.as_string())?;
+        if let Some(path) = Self::scoped_layout_path() {
+            crate::window_state::write_atomic(&path,self.as_string().as_bytes())?;
         }
         Ok(())
     }
@@ -112,7 +118,9 @@ impl LayoutState {
 
     pub fn from_string(raw: Option<String>) -> Self {
         let Some(raw) = raw else { return Self::default(); };
-        let parts: Vec<f32> = raw.split(',').filter_map(|n| n.parse::<f32>().ok()).collect();
+        let Ok(parts) = raw.split(',').map(str::parse::<f32>).collect::<Result<Vec<_>,_>>() else{
+            return Self::default();
+        };
         if (parts.len() != PANEL_COUNT + 1 && parts.len() != PANEL_COUNT + 3) ||
             parts.iter().any(|n| !n.is_finite() || *n <= 0.0) {
             return Self::default();
@@ -122,7 +130,7 @@ impl LayoutState {
             Err(_) => return Self::default(),
         };
         let ratio_total: f32 = ratios.iter().sum();
-        if ratio_total <= 0.0 {
+        if !ratio_total.is_finite() || ratio_total <= 0.0 {
             return Self::default();
         }
         // Migrate saved unmodified defaults, including the preceding preset.
