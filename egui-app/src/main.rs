@@ -1547,7 +1547,7 @@ impl BandoEgui {
         let preview=self.workflow_ui.pending_preview()?;
         if self.active_id.as_deref()==Some(preview.order_id.as_str()){return None;}
         let draft=self.drafts.iter().find(|row|row.id==preview.order_id)?;
-        let display=Self::pending_projection(&mut self.pending_display,draft);
+        let display=Self::pending_projection(&mut self.pending_display,draft)?;
         let recipients=reception_service::recipients(&display.recognition);
         let linked=self.link_hover.scoped_active()
             .map(|(order,key)|(order,key.recipient_id.as_str()));
@@ -1558,7 +1558,7 @@ impl BandoEgui {
         Some((display,index))
     }
 
-    fn pending_projection(cache:&mut Option<Arc<PendingDisplay>>,draft:&WorkingReception)->Arc<PendingDisplay>{
+    fn pending_projection(cache:&mut Option<Arc<PendingDisplay>>,draft:&WorkingReception)->Option<Arc<PendingDisplay>>{
         let manual_rows=draft.manual_model.as_ref()
             .and_then(|model|model.pointer("/model/rows")).filter(|rows|rows.is_array());
         let recognized=draft.analysis_view.as_ref().and_then(|view|view.get("recognition"))
@@ -1591,7 +1591,7 @@ impl BandoEgui {
                 pricing_preview:draft.pricing_preview.clone(),spans,identity_input,
             }));
         }
-        cache.as_ref().expect("pending display initialized").clone()
+        cache.as_ref().cloned()
     }
 
     fn select_reception(&mut self, id: &str, ctx: &egui::Context) {
@@ -10003,18 +10003,18 @@ mod reception_workflow_admission_integration_tests {
         let mut row=draft("synthetic");
         row.analysis_evidence=Some(serde_json::json!({"recipients":[{"id":"r","name":"가상"}]}));
         let mut cache=None;
-        let first=BandoEgui::pending_projection(&mut cache,&row);
-        let same=BandoEgui::pending_projection(&mut cache,&row);
+        let first=BandoEgui::pending_projection(&mut cache,&row).unwrap();
+        let same=BandoEgui::pending_projection(&mut cache,&row).unwrap();
         assert!(Arc::ptr_eq(&first,&same));
         // Audit history is deliberately excluded from display identity.
         row.edit_history.push(serde_json::json!({"synthetic":true}));
-        assert!(Arc::ptr_eq(&first,&BandoEgui::pending_projection(&mut cache,&row)));
+        assert!(Arc::ptr_eq(&first,&BandoEgui::pending_projection(&mut cache,&row).unwrap()));
         row.analysis_evidence.as_mut().unwrap()["recipients"][0]["name"]=serde_json::json!("수정");
-        let edited=BandoEgui::pending_projection(&mut cache,&row);
+        let edited=BandoEgui::pending_projection(&mut cache,&row).unwrap();
         assert!(!Arc::ptr_eq(&first,&edited));
         assert_eq!(edited.recognition["recipients"][0]["name"],"수정");
         row.pricing_preview=Some(serde_json::json!({"total":3000}));
-        assert!(!Arc::ptr_eq(&edited,&BandoEgui::pending_projection(&mut cache,&row)));
+        assert!(!Arc::ptr_eq(&edited,&BandoEgui::pending_projection(&mut cache,&row).unwrap()));
     }
 
     #[test]
