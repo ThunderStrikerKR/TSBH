@@ -20,6 +20,17 @@ struct ReviewKey {
     id:String,raw:String,order_type:String,client_id:Option<String>,
     recipients:Value,client_match:Value,price:Option<Value>,
 }
+impl ReviewKey {
+    // Compare the actual borrowed inputs before allocating any owned key.
+    // This also catches edits in place and restored snapshots with reused IDs.
+    fn matches(&self,source:&WorkingReception,analysis:&ReceptionAnalysis)->bool{
+        self.id==source.id && self.raw==source.raw &&
+        self.order_type==source.order_type && self.client_id==source.client_id &&
+        &self.recipients==analysis.recognition.get("recipients").unwrap_or(&Value::Null) &&
+        &self.client_match==source.client_match.as_ref().unwrap_or(&analysis.client_match) &&
+        self.price.as_ref()==source.pricing_preview.as_ref()
+    }
+}
 #[derive(Default)]
 pub struct ReviewPanel {
     key:Option<ReviewKey>,
@@ -50,6 +61,7 @@ impl ReviewPanel {
             ||source.analysis_evidence.is_none(){
             self.clear();return;
         }
+        if !self.key.as_ref().is_some_and(|key|key.matches(source,analysis)){
         let key=ReviewKey{
             id:source.id.clone(),raw:source.raw.clone(),
             order_type:source.order_type.clone(),client_id:source.client_id.clone(),
@@ -57,7 +69,6 @@ impl ReviewPanel {
             client_match:source.client_match.clone().unwrap_or_else(||analysis.client_match.clone()),
             price:source.pricing_preview.clone(),
         };
-        if self.key.as_ref()!=Some(&key){
             let same_source=self.key.as_ref().is_some_and(|last|
                 last.id==key.id && last.raw==key.raw);
             if !same_source{self.issues.clear();}
