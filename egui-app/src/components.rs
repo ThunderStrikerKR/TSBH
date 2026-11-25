@@ -360,6 +360,48 @@ mod fixed_layout_slot_contract_tests {
     }
 
     #[test]
+    fn body_errors_preserve_reserved_viewport_and_following_control_geometry(){
+        for width in [300.0,520.0,800.0]{
+            let ctx=test_context();
+            let mut baseline=None;
+            for message in [
+                None,
+                Some("배송 운임을 확인하세요."),
+                Some("SQLite: database is locked"),
+                Some("배송 운임을 확인하세요.\nSQLite: no such table: core_orders\n상품 수량을 확인하세요."),
+                None,
+            ]{
+                let _=ctx.run(egui::RawInput{
+                    screen_rect:Some(Rect::from_min_size(egui::Pos2::ZERO,Vec2::new(width,480.0))),
+                    ..Default::default()
+                },|ctx|{
+                    egui::CentralPanel::default().show(ctx,|ui|{
+                        let size=Vec2::new(ui.available_width(),typography::METADATA_LINE_HEIGHT);
+                        let (body,_)=ui.allocate_exact_size(size,Sense::hover());
+                        let cursor=ui.cursor();
+                        let min_rect=ui.min_rect();
+                        if let Some(error)=message{
+                            body_error_overlay(ui,body,"reception.review",error);
+                        }
+                        assert_eq!(ui.cursor(),cursor,"error overlay must not advance the parent cursor");
+                        assert_eq!(ui.min_rect(),min_rect,"error overlay must not enlarge the parent");
+                        let (next,_)=ui.allocate_exact_size(
+                            Vec2::new(120.0,theme::ACTION_STANDARD_HEIGHT),Sense::hover()
+                        );
+                        let current=[("reserved body",body),("following control",next)];
+                        if let Some(previous)=baseline.as_ref(){
+                            assert_layout_rects_invariant(previous,&current);
+                        }else{
+                            baseline=Some(current);
+                        }
+                    });
+                });
+            }
+            assert!(baseline.is_some());
+        }
+    }
+
+    #[test]
     fn optional_action_keeps_its_row_and_the_next_control_fixed(){
         let mut measured=Vec::new();
         for visible in [false,true]{
