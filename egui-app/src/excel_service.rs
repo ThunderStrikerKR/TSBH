@@ -99,6 +99,11 @@ fn save(root:&Path,origin:&str,bytes:&[u8])->Result<PathBuf,String>{
     }
     Err("당일 Excel 파일 번호가 허용 범위를 초과했습니다.".into())
 }
+#[cfg(test)]
+pub(crate) fn save_factory_test_export(root:&Path,preview:&Value)->Result<PathBuf,String>{
+    // Use the exact production serializer and exclusive archive writer.
+    save(root,"FACTORY",&encode(preview)?)
+}
 fn conn()->Result<Connection,String>{
     let path=business_state::authorized_business_write_path()?;
     let db=Connection::open_with_flags(path,OpenFlags::SQLITE_OPEN_READ_WRITE)

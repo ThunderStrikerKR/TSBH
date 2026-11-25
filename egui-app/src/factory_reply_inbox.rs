@@ -329,6 +329,9 @@ mod tests{
     // Isolated v2 fixture. Schema mirrors recovery::sql_schema; business
     // rows are seeded through the shared production relational writer.
     fn synthetic_db(base:&Path)->(Connection,PathBuf){
+        synthetic_db_with_export(base,false)
+    }
+    fn synthetic_db_with_export(base:&Path,export_ready:bool)->(Connection,PathBuf){
         let inbox=base.join("inbox");
         let archive=base.join("excel");
         fs::create_dir(&inbox).unwrap();
@@ -402,6 +405,30 @@ mod tests{
                     "step":4,"transferred":true,"charges":{"FACTORY":3000},"tracking":{},"actualFreight":{}}],
                 "queue":[{"id":"q1","shipmentId":"s1","origin":"FACTORY","status":"EXPORTED",
                     "snapshot":{"recipient":recipient,"shipping":3000,"subtotal":10000,"total":13000}}],"events":[]}});
+        if export_ready {
+            state["products"]=json!([{"id":"p1","name":"합성 상품","code":"SYNTHETIC",
+                "origin":"FACTORY","active":true,"variants":[{"id":"v1","color":"단일","wholesale":10000}]}]);
+            let client=json!({"id":"c1","name":"합성 거래처","tier":"wholesale",
+                "payment":"POSTPAID","address":"서울 종로구 20","phone":"02-000-0000",
+                "shippingFeeExcluded":false,"overrides":{}});
+            state["clients"]=json!([client]);
+            state["orders"][0]["orderType"]=json!("AGENCY");
+            state["orders"][0]["clientSnapshot"]=client.clone();
+            state["orders"][0]["confirmedAt"]=json!("2026-11-13T09:00:00Z");
+            state["orders"][0]["createdAt"]=json!("2026-11-13T09:00:00Z");
+            let item=&mut state["orders"][0]["recipients"][0]["items"][0];
+            item["name"]=json!("합성 상품");
+            item["productId"]=json!("p1");
+            item["variantId"]=json!("v1");
+            item["color"]=json!("단일");
+            let recipient=state["orders"][0]["recipients"][0].clone();
+            let q=&mut state["workflow"]["queue"][0];
+            q["status"]=json!("QUEUED");
+            q["snapshot"]["recipient"]=recipient;
+            q["snapshot"]["sender"]=client;
+            q["snapshot"]["freightCode"]=json!("010");
+            q["snapshot"]["vat"]=json!(0);
+        }
         let tx=conn.transaction().unwrap();
         bando_data_access::store_v2_relational(&tx,&state).unwrap();
         for key in ["products","clients","orders"]{state.as_object_mut().unwrap().remove(key);}
@@ -466,6 +493,84 @@ mod tests{
         // Both a new file name and a fresh in-memory watcher must still
         // consult durable content identity rather than repeat the write.
         fs::write(inbox.join("renamed.xlsx"),&bytes).unwrap();
+        let replay=scan_ready(&mut Scan::default(),&mut conn,&base.0);
+        assert!(replay.error.is_none(),"{:?}",replay.error);
+        assert_eq!((replay.files,replay.applied,replay.held),(0,0,0));
+        assert_eq!(snapshot(&mut conn).unwrap(),stored);
+    }
+
+    #[test]
+    fn exported_xlsx_to_factory_inbox_and_settlement_roundtrip(){
+        use calamine::{Data,Reader,Xlsx};
+        let base=Temp::new();
+        let (mut conn,inbox)=synthetic_db_with_export(&base.0,true);
+        let initial=snapshot(&mut conn).unwrap();
+        let output=crate::gateway::output::execute;
+        let preview=output("prepare_factory_export",json!({"state":initial,"ids":["q1"]})).unwrap();
+        let archive=base.0.join("excel").canonicalize().unwrap();
+        let exported=excel_service::save_factory_test_export(&archive,&preview).unwrap();
+        assert!(exported.is_file());
+        let original=fs::read(&exported).unwrap();
+        let mut book=Xlsx::new(std::io::Cursor::new(&original)).unwrap();
+        let sheet=book.worksheet_range("로젠택배").unwrap();
+        assert_eq!(sheet.width(),16);
+        assert_eq!(sheet.height(),2);
+        assert_eq!(sheet.get_value((1,7)),Some(&Data::String("010".into())));
+        assert_eq!(sheet.get_value((1,3)),Some(&Data::String("010-0000-0000".into())));
+        let finalized=output("finalize_export",json!({"state":initial,"preview":preview,
+            "origin":"FACTORY","savedPath":exported.to_string_lossy(),
+            "now":"2026-11-13T09:00:00Z","exportId":"export-roundtrip","eventId":"export-event"})).unwrap();
+        let saved=bando_data_access::write_v2_snapshot(&mut conn,finalized["next"].clone(),7,true).unwrap();
+        assert_eq!(saved["workflow"]["queue"][0]["status"],"EXPORTED");
+        assert_eq!(saved["revision"],8);
+
+        // Simulate a factory returning the actual exported row with G and Q filled.
+        let mut reply=rust_xlsxwriter::Workbook::new();
+        let dest=reply.add_worksheet();
+        for r in 0..2_u32 {
+            for c in 0..16_u32 {
+                match sheet.get_value((r,c)){
+                    Some(Data::String(value))=>{dest.write_string(r,c as u16,value).unwrap();},
+                    None|Some(Data::Empty)=>{},
+                    value=>panic!("unexpected non-text export cell {r}/{c}: {value:?}"),
+                }
+            }
+        }
+        dest.write_string(0,16,"운송장번호").unwrap();
+        dest.write_number(1,6,4000.).unwrap();
+        dest.write_string(1,16,"001234567890").unwrap();
+        let bytes=reply.save_to_buffer().unwrap();
+        fs::write(inbox.join("returned-export.xlsx"),&bytes).unwrap();
+        let result=scan_ready(&mut Scan::default(),&mut conn,&base.0);
+        assert!(result.error.is_none(),"{:?}",result.error);
+        assert_eq!((result.files,result.applied,result.held),(1,1,0));
+        drop(conn);
+        let mut conn=Connection::open(base.0.join("synthetic.sqlite")).unwrap();
+        let stored=snapshot(&mut conn).unwrap();
+        assert_eq!(stored["revision"],9);
+        let ship=&stored["workflow"]["shipments"][0];
+        assert_eq!(ship["id"],"s1");
+        assert_eq!(ship["tracking"]["FACTORY"],"001234567890");
+        assert_eq!(ship["charges"]["FACTORY"],3000);
+        assert_eq!(ship["actualFreight"]["FACTORY"],4000);
+        for field in ["orders","exports"]{
+            assert_eq!(stored[field],saved[field]);
+        }
+        for field in ["payments","confirmations","queue"]{
+            assert_eq!(stored["workflow"][field],saved["workflow"][field]);
+        }
+        let history=rules::execute("list_order_history",json!({"state":stored,"query":"","date":"2026-11-13"})).unwrap();
+        assert_eq!(history[0]["shipmentIds"],json!(["s1"]));
+        assert_eq!(history[0]["status"],"공장 회신 완료");
+        let settlement=output("prepare_settlement",json!({"state":stored,"date":"2026-11-13","historyRows":history})).unwrap();
+        assert_eq!(settlement["billedKnown"],13000);
+        assert_eq!(settlement["paidCash"],13000);
+        assert_eq!(settlement["shippingKnown"],3000);
+        assert_eq!(settlement["actualFreightKnown"],4000);
+        assert_eq!(settlement["freightUnknown"],0);
+        assert_eq!(fs::read(&exported).unwrap(),original);
+        assert_eq!(fs::read(stored["factoryReplies"][0]["archivedPath"].as_str().unwrap()).unwrap(),bytes);
+        fs::write(inbox.join("duplicate.xlsx"),&bytes).unwrap();
         let replay=scan_ready(&mut Scan::default(),&mut conn,&base.0);
         assert!(replay.error.is_none(),"{:?}",replay.error);
         assert_eq!((replay.files,replay.applied,replay.held),(0,0,0));
