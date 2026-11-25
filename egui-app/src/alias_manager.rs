@@ -434,9 +434,10 @@ impl AliasManager {
                                                     choice,name,text_width,
                                                     typography::CategoryPathFont::Body
                                                 );
-                                                components::management_dropdown_option(
+                                                let response=components::management_dropdown_option(
                                                     choice,&mut value,id.clone(),&visible
-                                                ).on_hover_text(name.as_str());
+                                                );
+                                                components::overflow_tooltip(response,visible!=name.as_str(),name.as_str());
                                             }
                                         });
                                     if value!=selected{
