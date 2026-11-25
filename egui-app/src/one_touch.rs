@@ -1,4 +1,4 @@
-//! Paint-only parity with the archived React one-touch hover contract.
+//! Paint and one-shot reveal parity with the archived React one-touch hover contract.
 use eframe::egui::{self,Color32,Context,Rect,Stroke,Ui};
 use crate::{theme,typography};
 pub const INK:Color32=Color32::from_rgb(255,228,188);
@@ -21,6 +21,52 @@ pub fn set(ctx:&Context,stage:Stage,remote:bool){
 fn get(ctx:&Context)->Scope{ctx.data(|d|d.get_temp::<Scope>(scope_id()).unwrap_or_default())}
 pub fn stage(ui:&Ui)->Stage{get(ui.ctx()).stage}
 pub fn recipient(ui:&Ui,index:usize)->bool{let s=get(ui.ctx());s.stage.recipient(index,s.remote)}
+/// A hover reveal belongs to a single stage and exact displayed shipment/draft
+/// recipient. Repeated frames and the employee's manual scrolling must not
+/// restart it. Leaving the preview clears the latch.
+#[derive(Clone,Default)]
+struct Reveal {
+    key:Option<(Stage,String,String)>,
+    pending:bool,
+}
+impl Reveal {
+    fn prepare(&mut self,stage:Stage,owner:&str,target:&str){
+        let key=matches!(stage,Stage::Review|Stage::Freight)
+            .then(||(stage,owner.to_owned(),target.to_owned()));
+        if self.key!=key{
+            self.pending=key.is_some();
+            self.key=key;
+        }
+    }
+    fn take(&mut self,stage:Stage)->bool{
+        if self.pending && self.key.as_ref().is_some_and(|key|key.0==stage){
+            self.pending=false;
+            true
+        }else{false}
+    }
+}
+fn reveal_id()->egui::Id{egui::Id::new("reception-one-touch-reveal")}
+pub fn prepare_reveal(ctx:&Context,stage:Stage,owner:&str,target:&str){
+    ctx.data_mut(|d|{
+        let mut reveal=d.get_temp::<Reveal>(reveal_id()).unwrap_or_default();
+        reveal.prepare(stage,owner,target);
+        d.insert_temp(reveal_id(),reveal);
+    });
+}
+/// Called inside the actual target's scroll area, not the fixed pane.
+/// None uses nearest alignment. Never request keyboard focus or selection.
+pub fn reveal_target(ui:&Ui,expected:Stage,rect:Rect){
+    if stage(ui)!=expected || !rect.is_positive() || !ui.clip_rect().is_positive(){return;}
+    let reveal=ui.ctx().data_mut(|d|{
+        let mut state=d.get_temp::<Reveal>(reveal_id()).unwrap_or_default();
+        let requested=state.take(expected);
+        d.insert_temp(reveal_id(),state);
+        requested
+    });
+    if reveal && !ui.clip_rect().contains_rect(rect){
+        ui.scroll_to_rect(rect,None);
+    }
+}
 pub fn background(ui:&Ui,rect:Rect){
     ui.painter().rect_filled(rect,theme::CONTROL_RADIUS,theme::ORANGE_EMPHASIS_BG);
 }
@@ -43,12 +89,11 @@ pub fn payment_ranges(text:&str,signature:&str)->Vec<(usize,usize)>{
         ranges.push((start,end));
         let line_start=text[..start].rfind('\n').map_or(0,|i|i+1);
         let line=&text[line_start..start];
-        if let Some(won)=line.rfind('원'){
-            let digits=&line[..won];
-            let left=digits.trim_end_matches(|c:char|c.is_ascii_digit()||c==',').len();
-            if left<won && digits[left..].chars().any(|c|c.is_ascii_digit()){
-                ranges.push((line_start+left,line_start+won+'원'.len_utf8()));
-            }
+        static AMOUNT:std::sync::OnceLock<regex::Regex>=std::sync::OnceLock::new();
+        let pattern=AMOUNT.get_or_init(||regex::Regex::new(r"[0-9][0-9,]*원")
+            .expect("static payment amount pattern"));
+        if let Some(amount)=pattern.find_iter(line).last(){
+            ranges.push((line_start+amount.start(),line_start+amount.end()));
         }
     }
     if let Ok(value)=serde_json::from_str::<serde_json::Value>(signature){
@@ -93,6 +138,29 @@ mod tests{
         assert!(!Stage::Freight.item(2)&&!Stage::Freight.recipient(0,true));
         assert!(Stage::Freight.recipient(1,true)&&!Stage::Freight.recipient(1,false));
         assert!(!Stage::PaymentCopy.freight()&&!Stage::PaymentConfirm.item(0));
+    }
+    #[test] fn reveal_is_once_per_stage_and_target_and_rearms_after_exit(){
+        let mut state=Reveal::default();
+        state.prepare(Stage::Review,"draft","recipient-a");
+        assert!(!state.take(Stage::Freight));
+        assert!(state.take(Stage::Review));
+        state.prepare(Stage::Review,"draft","recipient-a");
+        assert!(!state.take(Stage::Review));
+        state.prepare(Stage::Review,"draft","recipient-b");
+        assert!(state.take(Stage::Review));
+        state.prepare(Stage::Freight,"group","shipment-a");
+        assert!(state.take(Stage::Freight));
+        state.prepare(Stage::None,"","");
+        state.prepare(Stage::Freight,"group","shipment-a");
+        assert!(state.take(Stage::Freight));
+        state.prepare(Stage::PaymentCopy,"group","shipment-a");
+        assert!(!state.take(Stage::PaymentCopy));
+    }
+    #[test] fn payment_amount_ignores_later_non_currency_won(){
+        let text="상품 7,000원\n합계 8,000원 입금 원하시면 (부가세 일부 포함)";
+        let ranges=payment_ranges(text,"");
+        assert_eq!(ranges.iter().map(|&(a,b)|&text[a..b]).collect::<Vec<_>>(),
+            vec!["8,000원","(부가세 일부 포함)"]);
     }
     #[test] fn exact_payment_ranges_preserve_original_text(){
         let text="상품 7,000원\n합계 8,000원 입니다. (부가세 포함)\n은행 1234 예금주 입니다.";

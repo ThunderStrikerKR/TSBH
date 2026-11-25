@@ -3536,6 +3536,7 @@ pub fn reception_recipient_fields(
     for (name,response) in ["recipient name","recipient address","recipient mobile","recipient phone","recipient note"].into_iter().zip(responses.iter()){
         general_screen_geometry_tests::record(name,response.rect);
     }
+    crate::one_touch::reveal_target(ui,crate::one_touch::Stage::Review,responses[0].rect);
     responses
 }
 
@@ -6427,6 +6428,9 @@ pub fn reception_freight_row_controls(
             draw_price_and_cod(line);
             draw_remote_and_inquiry(line);
         });
+    }
+    if let Some(rect)=amount_rect{
+        crate::one_touch::reveal_target(ui,crate::one_touch::Stage::Freight,rect);
     }
     #[cfg(test)]
     if let Some(rect)=amount_rect{general_screen_geometry_tests::record("freight amount",rect);}

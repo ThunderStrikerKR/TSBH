@@ -5802,8 +5802,15 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                 .and_then(|row|row["id"].as_str()).map(str::to_owned);
             let active=self.link_hover.active_for(&draft.id).cloned()
                 .filter(|key|spans.iter().any(|span|span.key==*key))
-                .or_else(||selected_id.as_ref().map(|id|
-                    source_highlight::key(id,id,"name")));
+                .or_else(||{
+                    // A stage preview is not a recipient-row hover. Only a
+                    // genuine linked field may override its orange emphasis.
+                    if self.workflow_ui.active_pending_stage()==Some(draft.id.as_str()){
+                        None
+                    }else{
+                        selected_id.as_ref().map(|id|source_highlight::key(id,id,"name"))
+                    }
+                });
             let mut hovered_source=None;
             let mut new_clicked=false;
             let mut clicked_source=None;
@@ -6904,6 +6911,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
             let hover_stage=if self.workflow_ui.active_preview()==Some(group.id.as_str()) && self.workflow_freight_editor.is_none(){one_touch::Stage::from_step(group.step)}else{one_touch::Stage::None};
             let remote=ship.remote.as_ref().and_then(|r|r["status"].as_str()).is_some_and(|s|matches!(s,"auto"|"review"));
             one_touch::set(ui.ctx(),hover_stage,remote);
+            one_touch::prepare_reveal(ui.ctx(),hover_stage,&group.id,&ship.id);
             let linked_active=self.link_hover.active_for(&ship.order_id).cloned();
             let mut hovered_detail:Option<source_highlight::LinkKey>=None;
             let mut workflow_freight_open:Option<(String,String,String,Option<egui::Pos2>)>=None;
@@ -7265,9 +7273,10 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
         // pending card may point to another order/recipient; do not swap
         // this projection into the employee's active editable draft.
         if let Some((draft,index))=self.visible_pending_other(){
-            if self.workflow_ui.active_pending_stage()==Some(draft.id.as_str()){
-                one_touch::set(ui.ctx(),one_touch::Stage::Review,false);
-            }
+            let hover_stage=if self.workflow_ui.active_pending_stage()==Some(draft.id.as_str()){
+                one_touch::Stage::Review
+            }else{one_touch::Stage::None};
+            one_touch::set(ui.ctx(),hover_stage,false);
             let recognition=&draft.recognition;
             self.workflow_ui.note_pending_content_hover(
                 &draft.id,ui.ctx().input(|input|input.pointer.hover_pos()
@@ -7279,6 +7288,8 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
             let mut hovered_detail=None;
             let recipients=reception_service::recipients(&recognition);
             let recipient=recipients.get(index);
+            let target=recipient.map(|row|reception_service::text(row,"id")).unwrap_or("");
+            one_touch::prepare_reveal(ui.ctx(),hover_stage,&draft.id,target);
             let preview=draft.pricing_preview.as_ref()
                 .filter(|quote|quote["sourceRaw"].as_str()==Some(draft.raw.as_str()));
             let quote_index=preview.map(indexed_quote);
@@ -7344,7 +7355,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                         let recipient_id=reception_service::text(row,"id");
                                         let fields=["name","address","mobile","phone","note"];
                                         let active_fields=fields.map(|field|
-                                            (linked_active.is_none() && field=="name") ||
+                                            (hover_stage!=one_touch::Stage::Review && linked_active.is_none() && field=="name") ||
                                             source_highlight::is_active_field(linked_active.as_ref(),recipient_id,recipient_id,field)
                                         );
                                         let responses=components::reception_recipient_fields(
@@ -7477,9 +7488,14 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
             }
             return;
         }
-        if self.active_id.as_deref().is_some_and(|id|self.workflow_ui.active_pending_stage()==Some(id)) && self.inline_editor.is_none(){
-            one_touch::set(ui.ctx(),one_touch::Stage::Review,false);
-        }
+        let hover_stage=if self.active_id.as_deref().is_some_and(|id|self.workflow_ui.active_pending_stage()==Some(id)) && self.inline_editor.is_none(){
+            one_touch::Stage::Review
+        }else{one_touch::Stage::None};
+        one_touch::set(ui.ctx(),hover_stage,false);
+        let target=self.analysis.as_ref()
+            .and_then(|analysis|reception_service::recipients(analysis).get(visible_index))
+            .map(|row|reception_service::text(row,"id")).unwrap_or("");
+        one_touch::prepare_reveal(ui.ctx(),hover_stage,self.active_id.as_deref().unwrap_or(""),target);
         let mut review_action:Option<review_panel::Action>=None;
         let mut hovered_detail: Option<source_highlight::LinkKey>=None;
         let linked_active=self.active_id.as_deref()
