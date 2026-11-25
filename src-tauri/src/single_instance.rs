@@ -1,10 +1,7 @@
 //! Windows per-session single-instance guard for BANDO HUB.
 //!
-//! The live app and the isolated developer TEST app must be allowed to run
-//! side-by-side. The standard application-wide single-instance plugin would
-//! reject the TEST child process, so each mode has its own named Windows
-//! mutex and activation event. No production SQLite handle is opened by a
-//! rejected second launch.
+//! One operating namespace, Windows mutex and activation event.
+//! No SQLite handle is opened by a rejected second launch.
 use std::{env, fs::{self, File, OpenOptions}, io, os::windows::fs::OpenOptionsExt, path::PathBuf};
 use tauri::{AppHandle, Manager};
 
@@ -32,13 +29,7 @@ fn wide(value: &str) -> Vec<u16> {
     value.encode_utf16().chain(std::iter::once(0)).collect()
 }
 
-fn mode_namespace(test_workspace: bool) -> &'static str {
-    if test_workspace {
-        "BANDO_HUB_TAURI_DEVELOPER_TEST"
-    } else {
-        "BANDO_HUB_TAURI_PRODUCTION"
-    }
-}
+const OPERATING_NAMESPACE:&str="BANDO_HUB_TAURI_PRODUCTION";
 
 /// Holding both Windows handles and the exclusive file lock keeps this
 /// workspace mode reserved for the entire Tauri process lifetime.
@@ -141,8 +132,8 @@ fn acquire_namespace(namespace: &str) -> Result<Acquisition, String> {
 
 /// Must be called before creating the Tauri builder or opening SQLite.
 /// A duplicate process exits before a second native window or DB connection.
-pub(super) fn acquire(test_workspace: bool) -> Result<Acquisition, String> {
-    acquire_namespace(mode_namespace(test_workspace))
+pub(super) fn acquire() -> Result<Acquisition, String> {
+    acquire_namespace(OPERATING_NAMESPACE)
 }
 
 /// Listen in the first instance for duplicate launch notifications. Never
@@ -219,16 +210,15 @@ mod tests {
     }
 
     #[test]
-    fn production_and_developer_modes_have_independent_namespaces() {
-        assert_ne!(mode_namespace(false), mode_namespace(true));
-        let production = unique_namespace("PRODUCTION");
-        let test = unique_namespace("DEVELOPER");
-        let primary = acquire_namespace(&production).unwrap();
-        let isolated = acquire_namespace(&test).unwrap();
-        assert!(matches!(&primary, Acquisition::First(_)));
-        assert!(matches!(&isolated, Acquisition::First(_)));
-        assert!(matches!(acquire_namespace(&production).unwrap(), Acquisition::Existing));
-        assert!(matches!(acquire_namespace(&test).unwrap(), Acquisition::Existing));
+    fn synthetic_namespaces_remain_independent_without_application_modes() {
+        let first=unique_namespace("FIRST");
+        let second=unique_namespace("SECOND");
+        let a=acquire_namespace(&first).unwrap();
+        let b=acquire_namespace(&second).unwrap();
+        assert!(matches!(&a,Acquisition::First(_)));
+        assert!(matches!(&b,Acquisition::First(_)));
+        assert!(matches!(acquire_namespace(&first).unwrap(),Acquisition::Existing));
+        assert!(matches!(acquire_namespace(&second).unwrap(),Acquisition::Existing));
     }
 
     #[test]

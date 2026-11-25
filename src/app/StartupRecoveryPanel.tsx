@@ -11,7 +11,7 @@ export function StartupRecoveryPanel({
     <main className="startup-recovery" role="alert" aria-live="assertive">
       <section className="startup-recovery-card">
         <div className="startup-recovery-overline">
-          BANDO HUB v0.0.4 / {startup.isTest ? "격리 TEST" : "업무 데이터"}
+          BANDO HUB v0.0.4 / 업무 데이터
         </div>
         <h1>반도허브를 시작하지 못했습니다.</h1>
         <p>

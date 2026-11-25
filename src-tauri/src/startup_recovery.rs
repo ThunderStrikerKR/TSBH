@@ -20,7 +20,6 @@ struct StartupProgress {
     attempts: u32,
 }
 pub(super) struct StartupRecovery {
-    pub(super) is_test: bool,
     started: Instant,
     progress: Mutex<StartupProgress>,
 }
@@ -35,9 +34,8 @@ pub(super) struct StartupStatus {
     is_test: bool,
 }
 impl StartupRecovery {
-    pub(super) fn new(is_test: bool) -> Self {
+    pub(super) fn new() -> Self {
         Self {
-            is_test,
             started: Instant::now(),
             progress: Mutex::new(StartupProgress {
                 phase: Phase::Opening, attempts: 1,
@@ -46,7 +44,7 @@ impl StartupRecovery {
     }
     fn status(&self) -> Result<StartupStatus, String> {
         let value = self.progress.lock().map_err(|_| "초기화 상태 잠금 오류")?;
-        Ok(value_to_status(self.is_test, &value))
+        Ok(value_to_status(&value))
     }
     fn finish(&self, result: Result<u64, String>) -> Result<StartupStatus, String> {
         let mut state = self.progress.lock().map_err(|_| "초기화 상태 잠금 오류")?;
@@ -57,7 +55,7 @@ impl StartupRecovery {
             },
             Err(reason) => Phase::Failed(reason),
         };
-        Ok(value_to_status(self.is_test, &state))
+        Ok(value_to_status(&state))
     }
     fn start_retry(&self) -> Result<(), String> {
         let mut value = self.progress.lock().map_err(|_| "초기화 상태 잠금 오류")?;
@@ -69,7 +67,7 @@ impl StartupRecovery {
         Ok(())
     }
 }
-fn value_to_status(test: bool, state: &StartupProgress) -> StartupStatus {
+fn value_to_status(state: &StartupProgress) -> StartupStatus {
     let (phase, error, database_ms, ready_ms) = match &state.phase {
         Phase::Opening => ("OPENING", None, None, None),
         Phase::Retrying => ("RETRYING", None, None, None),
@@ -79,7 +77,7 @@ fn value_to_status(test: bool, state: &StartupProgress) -> StartupStatus {
     };
     StartupStatus {
         phase, error, attempts: state.attempts,
-        database_ms, ready_ms, is_test: test,
+        database_ms, ready_ms, is_test: false,
     }
 }
 /// Validation only reads the persisted snapshot. Never run VACUUM INTO,
@@ -115,37 +113,20 @@ fn open_checked_sqlite(path: &Path) -> Result<Connection, String> {
     valid_state(&snapshot)?;
     Ok(connection)
 }
-fn open_database(app: &AppHandle, is_test: bool) -> Result<Database, String> {
+fn open_database(app: &AppHandle) -> Result<Database, String> {
     let base = app.path().app_data_dir().map_err(err)?;
     fs::create_dir_all(&base).map_err(err)?;
-    let (active_base, connection) = if is_test {
-        // Never fall back to the live SQLite file when developer TEST fails.
-        // A malformed existing TEST database must also be preserved instead
-        // of silently replaced by a new seed.
-        preflight_existing_sqlite(&base.join("developer-test").join("bando-hub-test.sqlite"))?;
-        let (root, candidate) = developer_workspace::open_isolated(&base)?;
-        let check: String = candidate.query_row("PRAGMA quick_check(1)", [], |row| row.get(0))
-            .map_err(err)?;
-        if check != "ok" {
-            return Err(format!("격리 TEST SQLite 무결성 오류: {check}"));
-        }
-        valid_state(&get_snapshot(&candidate)?)?;
-        (root, candidate)
-    } else {
-        (base.clone(), open_checked_sqlite(&base.join("bando-hub-v001.sqlite"))?)
-    };
-    Ok(Database {
-        connection: Mutex::new(connection),
-        base: active_base,
-        is_test,
-    })
+    let connection = open_checked_sqlite(&base.join("bando-hub-v001.sqlite"))?;
+    // The remaining Database flag is an isolated test-fixture safeguard,
+    // not a selectable runtime workspace.
+    Ok(Database {connection:Mutex::new(connection),base,is_test:false})
 }
 /// The setup handler must return Ok even if the DB cannot be opened, so the
 /// application can paint its recovery screen. Failed startup never manages
 /// a partially initialized Database instance.
 pub(super) fn initial_open(app: &AppHandle, state: &StartupRecovery) {
     let began = Instant::now();
-    match open_database(app, state.is_test) {
+    match open_database(app) {
         Ok(db) => {
             if !app.manage(db) {
                 let _ = state.finish(Err("이미 열린 데이터베이스 상태와 충돌합니다.".into()));
@@ -182,9 +163,8 @@ pub(super) async fn retry_startup(
 ) -> Result<StartupStatus, String> {
     state.start_retry()?;
     let target = app.clone();
-    let test_mode = state.is_test;
     let began = Instant::now();
-    let attempt = tauri::async_runtime::spawn_blocking(move || open_database(&target, test_mode))
+    let attempt = tauri::async_runtime::spawn_blocking(move || open_database(&target))
         .await.map_err(|error| format!("초기화 재시도 작업 실패: {error}"));
     match attempt {
         Ok(Ok(db)) => {
@@ -258,8 +238,8 @@ mod tests {
         fs::remove_dir_all(root).unwrap();
     }
     #[test]
-    fn retry_is_only_allowed_from_failed_state_and_does_not_reset_mode() {
-        let recover = StartupRecovery::new(true);
+    fn retry_is_only_allowed_from_failed_state() {
+        let recover = StartupRecovery::new();
         assert_eq!(recover.status().unwrap().phase, "OPENING");
         assert!(recover.start_retry().is_err());
         recover.finish(Err("database locked".into())).unwrap();
@@ -271,7 +251,7 @@ mod tests {
         assert_eq!(resumed.phase, "READY");
         assert_eq!(resumed.attempts, 2);
         assert_eq!(resumed.database_ms, Some(12));
-        assert!(resumed.is_test);
+        assert!(!resumed.is_test);
         assert!(recover.start_retry().is_err());
     }
     #[test]

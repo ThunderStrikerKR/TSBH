@@ -5,7 +5,6 @@ mod factory_conflict;
 mod factory_reply_watch;
 mod export_file;
 mod kakao_dock;
-mod developer_workspace;
 mod startup_recovery;
 mod backup_manager;
 mod notification_store;
@@ -1004,15 +1003,15 @@ fn start_automatic_backup(app: tauri::AppHandle) {
 }
 
 pub fn run() {
-    // The production app and developer TEST app may run together.
-    // Never let their last window placements overwrite one another.
-    let developer_test = std::env::args().skip(1)
-        .any(|arg| arg == "--bando-developer-test");
-    // Acquire before Tauri constructs any window or connects to SQLite.
-    // The isolated developer TEST process uses a separate named guard so
-    // the production app and its test lab may coexist.
+    // Fail closed for old launchers. Never redirect a retired TEST request
+    // into the real business database.
+    if std::env::args().skip(1).any(|arg|arg=="--bando-developer-test") {
+        eprintln!("폐기된 개발자 모드는 실행할 수 없습니다.");
+        return;
+    }
+    // Acquire before constructing any window or opening SQLite.
     #[cfg(target_os = "windows")]
-    let instance = match single_instance::acquire(developer_test) {
+    let instance = match single_instance::acquire() {
         Ok(single_instance::Acquisition::First(guard)) => guard,
         Ok(single_instance::Acquisition::Existing) => return,
         Err(error) => panic!("반도허브 중복 실행 검사 실패: {error}"),
@@ -1029,11 +1028,7 @@ pub fn run() {
         // after restoration, preventing a default-size flash at launch.
         .plugin(
             tauri_plugin_window_state::Builder::default()
-                .with_filename(if developer_test {
-                    "window-state-developer.json"
-                } else {
-                    "window-state.json"
-                })
+                .with_filename("window-state.json")
                 .with_filter(|label| label == "main")
                 .with_state_flags(
                     StateFlags::SIZE | StateFlags::POSITION |
@@ -1053,11 +1048,7 @@ pub fn run() {
                     }
                     // Use the persisted decision, not transient HWND state
                     // or a cache modified by the move/resize events at launch.
-                    let filename = if developer_test {
-                        "window-state-developer.json"
-                    } else {
-                        "window-state.json"
-                    };
+                    let filename = "window-state.json";
                     let restore_maximized = window.app_handle().path().app_config_dir()
                         .ok()
                         .and_then(|directory| fs::read(directory.join(filename)).ok())
@@ -1108,8 +1099,7 @@ pub fn run() {
             // Keep the native window alive on initialization failures. The
             // managed StartupRecovery owns the diagnosis until a guarded retry
             // successfully registers a Database; no failed database is managed.
-            let is_test = developer_test;
-            let startup = startup_recovery::StartupRecovery::new(is_test);
+            let startup = startup_recovery::StartupRecovery::new();
             startup_recovery::initial_open(app.handle(), &startup);
             app.manage(startup);
             Ok(())
@@ -1138,14 +1128,7 @@ pub fn run() {
             kakao_dock::dock_region_native,
             startup_recovery::startup_status,
             startup_recovery::startup_metrics,
-            startup_recovery::retry_startup,
-            developer_workspace::workspace_mode,
-            developer_workspace::open_test_workspace,
-            developer_workspace::test_database_preview,
-            developer_workspace::reset_test_database,
-            developer_workspace::test_record_run,
-            developer_workspace::test_reception_boundary,
-            developer_workspace::test_run_history
+            startup_recovery::retry_startup
         ])
         .build(tauri::generate_context!())
         .expect("BANDO HUB Tauri runtime build error")
