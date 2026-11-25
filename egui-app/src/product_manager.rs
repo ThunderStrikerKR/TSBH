@@ -1824,10 +1824,10 @@ impl ProductManager {
         if overview<310.0{return None;}
         Some((overview,image))
     }
-    /// Both cards share a minimum large enough for the image and eight rows.
+    /// Both cards share the taller natural body, with each gap counted once.
     fn detail_section_body_height()->f32{
-        let image=theme::PRODUCT_DETAIL_IMAGE_SIZE+theme::SPACE_8
-            +theme::ACTION_STANDARD_HEIGHT+2.0*theme::SPACING;
+        let image=theme::PRODUCT_DETAIL_IMAGE_SIZE+theme::SPACING
+            +theme::ACTION_STANDARD_HEIGHT;
         let fields=8.0*theme::INPUT_HEIGHT+6.0*theme::SPACING
             +2.0*theme::MODAL_MASTER_WORKSPACE_GAP+theme::SOFT_DIVIDER_WIDTH;
         image.max(fields)
@@ -1854,8 +1854,9 @@ impl ProductManager {
         // The caller's shared modal_section owns the title and divider.
         // Never shrink an image to fill a narrower sibling column.
         // The responsive fallback stacks the editor instead.
+        // The section already provides the standard 8pt item gap.
+        // Do not add another spacer between the image and its action row.
         self.photos.photo(ui,draft,theme::PRODUCT_DETAIL_IMAGE_SIZE);
-        ui.add_space(theme::SPACE_8);
         ui.horizontal_wrapped(|actions|{
             if theme::action(
                 actions,"이미지 등록",theme::ButtonRole::Standard,
@@ -2424,7 +2425,8 @@ mod tests {
         let rows=8.0*theme::INPUT_HEIGHT+6.0*theme::SPACING
             +2.0*theme::MODAL_MASTER_WORKSPACE_GAP+theme::SOFT_DIVIDER_WIDTH;
         assert!(body>=theme::PRODUCT_DETAIL_IMAGE_SIZE);
-        assert!(body>=rows);
+        assert_eq!(body,rows.max(theme::PRODUCT_DETAIL_IMAGE_SIZE
+            +theme::SPACING+theme::ACTION_STANDARD_HEIGHT));
         assert_eq!(theme::PRODUCT_DETAIL_IMAGE_SIZE,320.0);
     }
     #[test]
@@ -2961,6 +2963,14 @@ mod tests {
                 "heading {label} is not in its measured card");
         }
         assert!(cards.windows(2).all(|pair|pair[0].right()<pair[1].left()));
+        assert!((cards[0].top()-cards[1].top()).abs()<=1.0,
+            "card tops must align: {cards:?}");
+        assert!((cards[0].bottom()-cards[1].bottom()).abs()<=1.0,
+            "card bottoms must align: {cards:?}");
+        for label in ["상품명","상품 옵션","카테고리","브랜드","판매 상태","도매가","반도매가","소매가"]{
+            assert!(text.iter().any(|(s,rect)|s==label&&cards[1].contains(rect.center())),
+                "field {label} must stay inside the compact overview");
+        }
         assert!(geometry.header.is_some()&&geometry.footer.is_some());
         assert!(geometry.content.divider.is_some()&&geometry.content.advanced_header.is_some());
         let gaps=geometry.gaps();
