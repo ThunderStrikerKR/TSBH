@@ -328,6 +328,7 @@ mod fixed_layout_slot_contract_tests {
             None,
             Some("상태 안내문이 표시됩니다."),
             Some("수량 확인 필요: 123건 / 저장 중인 변경사항과 검증 오류가 있어 적용할 수 없습니다."),
+            Some("SQLite: database is locked"),
         ]{
             let ctx=test_context();
             let _=ctx.run(egui::RawInput::default(),|ctx|{
@@ -363,7 +364,7 @@ mod fixed_layout_slot_contract_tests {
     fn body_errors_preserve_reserved_viewport_and_following_control_geometry(){
         for width in [300.0,520.0,800.0]{
             let ctx=test_context();
-            let mut baseline=None;
+            let mut baseline:Option<[(&str,Rect);2]>=None;
             for message in [
                 None,
                 Some("배송 운임을 확인하세요."),
