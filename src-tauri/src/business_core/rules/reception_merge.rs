@@ -74,14 +74,16 @@ fn rebind(candidates:&mut Value,key:&str,from:&str,to:&str){
 // independently received orders. SQLite core_recipients/core_items use a
 // GLOBAL primary key. Materialize per-order identities only at the merge
 // boundary, leaving the recognition evidence snapshot untouched.
+pub(super) fn scoped_recognition_id(order_id:&str,id:&str,prefix:&str)->String{
+    if id.starts_with(prefix){format!("{order_id}:{id}")}else{id.to_owned()}
+}
+
 pub(super) fn scope_recognition_ids(order_id:&str, recipients:&mut [Value],
     candidates:&mut Value)->Result<(),String>{
     if order_id.trim().is_empty(){return Err("발주서 ID가 없습니다.".into());}
     for recipient in recipients {
         let provisional_rid=str_field(recipient,"id").to_string();
-        let stable_rid=if provisional_rid.starts_with("recognition:recipient:") {
-            format!("{order_id}:{provisional_rid}")
-        } else {provisional_rid.clone()};
+        let stable_rid=scoped_recognition_id(order_id,&provisional_rid,"recognition:recipient:");
         if stable_rid!=provisional_rid {
             rebind(candidates,"recipientId",&provisional_rid,&stable_rid);
             set(recipient,"id",json!(stable_rid))?;
@@ -99,9 +101,7 @@ pub(super) fn scope_recognition_ids(order_id:&str, recipients:&mut [Value],
         if let Some(items)=recipient.get_mut("items").and_then(Value::as_array_mut){
             for item in items {
                 let provisional_iid=str_field(item,"id").to_string();
-                let stable_iid=if provisional_iid.starts_with("recognition:item:") {
-                    format!("{order_id}:{provisional_iid}")
-                } else {provisional_iid.clone()};
+                let stable_iid=scoped_recognition_id(order_id,&provisional_iid,"recognition:item:");
                 if stable_iid!=provisional_iid {
                     rebind(candidates,"itemId",&provisional_iid,&stable_iid);
                     set(item,"id",json!(stable_iid))?;
@@ -139,8 +139,8 @@ pub(super) fn scope_manual_model_ids(order_id:&str,model:&mut Value)->Result<(),
             ]{
                 let id=assignment.get(key).and_then(Value::as_str)
                     .map(str::to_owned);
-                if let Some(id)=id.filter(|id|id.starts_with(prefix)){
-                    assignment[key]=json!(format!("{order_id}:{id}"));
+                if let Some(id)=id{
+                    assignment[key]=json!(scoped_recognition_id(order_id,&id,prefix));
                 }
             }
         }

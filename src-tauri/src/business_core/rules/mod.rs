@@ -47,6 +47,13 @@ pub(crate) fn scope_recognition_rows_for_order(
     reception_merge::scope_recognition_ids(order_id,recipients,candidates)
 }
 
+/// The same identity rule used for model rows, source spans and edit targets.
+pub(crate) fn scope_reception_edit_ids(order_id:&str,recipient_id:&str,item_id:Option<&str>)
+    ->(String,Option<String>){
+    (reception_merge::scoped_recognition_id(order_id,recipient_id,"recognition:recipient:"),
+     item_id.map(|id|reception_merge::scoped_recognition_id(order_id,id,"recognition:item:")))
+}
+
 pub(crate) fn scope_manual_model_ids(
     order_id:&str,model:&mut Value
 )->Result<(),String>{

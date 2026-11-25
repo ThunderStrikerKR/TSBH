@@ -3035,7 +3035,13 @@ impl BandoEgui {
                 if self.source_save_error.is_none() &&
                     self.page==Page::Reception && confirm_order_id.is_none()
                 {
-                    if let Some((target,click_at))=pending.next {
+                    if let Some((mut target,click_at))=pending.next {
+                        // The successful first edit may have upgraded a legacy
+                        // display ID. Resolve the queued destination identically.
+                        let (rid,iid)=gateway::rules::scope_reception_edit_ids(
+                            &pending.order_id,&target.recipient_id,target.item_id.as_deref());
+                        target.recipient_id=rid;
+                        target.item_id=iid;
                         let displayed_recipient=self.analysis.as_ref()
                             .and_then(|analysis|
                                 reception_service::recipients(analysis)

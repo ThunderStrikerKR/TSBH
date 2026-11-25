@@ -11,7 +11,7 @@ use serde_json::{json,Value};
 use crate::{
     cell_navigation::CellNavigationKey,
     gateway::{BandoGateway,ReadOperation,
-        rules::{scope_manual_model_ids,scope_recognition_rows_for_order}},
+        rules::{scope_manual_model_ids,scope_recognition_rows_for_order,scope_reception_edit_ids}},
     preview_store::WorkingReception,
     theme::{self,ButtonRole},
     typography,components,source_highlight,
@@ -817,6 +817,15 @@ fn add_selected_manual_product(
 pub fn apply_inline(
     gateway:&dyn BandoGateway,source:&WorkingReception,change:&InlineRequest
 )->Result<Event,String>{
+    // A visible legacy/initial recognition cell may still carry its
+    // document-local ID. Normalize the request with the SAME native rule
+    // as the worksheet, including top-level add/remove and approval targets.
+    // Already scoped IDs and direct/manual UUIDs remain unchanged.
+    let (recipient_id,item_id)=scope_reception_edit_ids(
+        &source.id,&change.recipient_id,change.item_id.as_deref()
+    );
+    let change=&InlineRequest{recipient_id,item_id,
+        field:change.field.clone(),value:change.value.clone()};
     let direct_input=source.raw.trim().is_empty() &&
         source.manual_model.as_ref().is_some_and(|saved|text(saved,"mode")=="DIRECT");
     let order=if direct_input{
@@ -3956,8 +3965,11 @@ mod inline_recognition_identity_tests{
             working_version:None,working_synced:false,manual_model:None,
             edit_history:Vec::new(),
         };
+        // Initial recognition and old persisted display snapshots use the
+        // provisional ID. Exercise both forms, not only the normalized one.
+        for recipient_id in ["recognition:recipient:0","draft-identity:recognition:recipient:0"] {
         let event=apply_inline(&gateway,&source,&InlineRequest{
-            recipient_id:"draft-identity:recognition:recipient:0".into(),
+            recipient_id:recipient_id.into(),
             item_id:None,field:"note".into(),value:json!("직원 메모")
         }).expect("inline cell edit");
         let Event::Applied{order,model,..}=event else{
@@ -3976,6 +3988,30 @@ mod inline_recognition_identity_tests{
         assert_eq!(order["analysisEvidence"][0]["itemId"],
             "draft-identity:recognition:item:0:0");
         assert_eq!(order["recipients"][0]["note"],"직원 메모");
+        let mut legacy=source.clone();
+        // Legacy model IDs are normalized at the same boundary.
+        let mut saved=model.clone();
+        saved["rows"][0]["id"]=json!("recognition:recipient:0");
+        saved["rows"][0]["items"][0]["id"]=json!("recognition:item:0:0");
+        legacy.manual_model=Some(json!({"model":saved,"assignmentOrder":[]}));
+        let edited=apply_inline(&gateway,&legacy,&InlineRequest{
+            recipient_id:"recognition:recipient:0".into(),
+            item_id:Some("recognition:item:0:0".into()),field:"quantity".into(),value:json!("3")
+        }).expect("legacy quantity edit");
+        let Event::Applied{order,..}=edited else{panic!("quantity edit");};
+        assert_eq!(order["recipients"][0]["items"][0]["quantity"],3);
+        let freight=apply_inline(&gateway,&source,&InlineRequest{
+            recipient_id:"recognition:recipient:0".into(),
+            item_id:None,field:"shippingCharge".into(),value:json!(5000)
+        }).expect("provisional freight target");
+        let Event::Applied{order,..}=freight else{panic!("freight edit");};
+        assert_eq!(order["recipients"][0]["id"],"draft-identity:recognition:recipient:0");
+        // Never guess another order's row, or silently choose the first.
+        assert!(apply_inline(&gateway,&source,&InlineRequest{
+            recipient_id:"another-order:recognition:recipient:0".into(),
+            item_id:None,field:"note".into(),value:json!("wrong order")
+        }).is_err());
+        }
     }
 }
 

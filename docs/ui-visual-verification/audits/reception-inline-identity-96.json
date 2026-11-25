@@ -1,0 +1,46 @@
+{
+  "schemaVersion": 1,
+  "id": "reception-inline-identity-96",
+  "screen": "접수 / 셀 수정 및 주문 확인 완료",
+  "files": [
+    "egui-app/src/manual_workspace.rs",
+    "egui-app/src/main.rs"
+  ],
+  "visualStatus": "FAIL",
+  "reason": "사용자 실제 화면에서 주문 확인 완료 중 셀 수정 실패: 배송 행을 선택하세요. 최초 인식 또는 구형 초안의 임시 ID와 정규화된 작업본 ID 불일치 경로를 수정. Windows 재현 확인 전 FAIL 유지.",
+  "defects": [
+    {
+      "id": "UI-96-INLINE-IDENTITY",
+      "status": "OPEN",
+      "description": "정규화 전 수취인/품목 ID가 정규화된 작업본에서 조회 실패"
+    }
+  ],
+  "releaseDecision": "NOT_APPROVED",
+  "verification": {
+    "rustTests": "NOT_EXECUTED",
+    "githubCI": "NOT_VERIFIED",
+    "windowsVisual": "NOT_VERIFIED"
+  },
+  "nextVerification": {
+    "requiredViewports": [
+      {
+        "width": 1920,
+        "height": 1080,
+        "scalePercent": 100
+      },
+      {
+        "width": 1366,
+        "height": 768,
+        "scalePercent": 100
+      }
+    ],
+    "checks": [
+      "interaction",
+      "hoverAndFocus"
+    ],
+    "focus": [
+      "신규 및 기존 초안에서 운임/수취인/수량 수정 직후 주문 확인 완료",
+      "다음 셀 이동 및 다른 주문 ID 거부"
+    ]
+  }
+}
