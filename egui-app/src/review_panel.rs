@@ -36,6 +36,9 @@ pub struct ReviewPanel {
     key:Option<ReviewKey>,
     pending:Option<Receiver<Result<Vec<Value>,String>>>,
     issues:Vec<Value>,
+    action_indices:Vec<usize>,
+    fact_indices:Vec<usize>,
+    inherited_indices:Vec<usize>,
     ready:bool,
     error:Option<String>,
 }
@@ -50,6 +53,20 @@ pub enum Action {
 }
 impl ReviewPanel {
     pub fn clear(&mut self){*self=Self::default();}
+    fn replace_issues(&mut self,issues:Vec<Value>){
+        self.action_indices.clear();
+        self.fact_indices.clear();
+        self.inherited_indices.clear();
+        for (index,issue) in issues.iter().enumerate(){
+            if text(issue,"severity")!="INFO"{self.action_indices.push(index);}
+            else if text(issue,"kind")=="APPLIED" &&
+                text(issue,"resolutionSource")=="코어" &&
+                text(issue,"title")=="공통 상품 자동 적용"{
+                self.inherited_indices.push(index);
+            }else{self.fact_indices.push(index);}
+        }
+        self.issues=issues;
+    }
     pub fn refresh(
         &mut self,ctx:&egui::Context,gateway:Arc<dyn BandoGateway>,
         source:Option<&WorkingReception>,analysis:Option<&ReceptionAnalysis>,
@@ -71,7 +88,7 @@ impl ReviewPanel {
         };
             let same_source=self.key.as_ref().is_some_and(|last|
                 last.id==key.id && last.raw==key.raw);
-            if !same_source{self.issues.clear();}
+            if !same_source{self.replace_issues(Vec::new());}
             self.error=None;
             self.ready=false;
             self.key=Some(key.clone());
@@ -133,13 +150,13 @@ impl ReviewPanel {
         let done=self.pending.as_ref().map(|rx|rx.try_recv());
         match done{
             Some(Ok(Ok(items)))=>{
-                self.pending=None;self.issues=items;self.ready=true;self.error=None;
+                self.pending=None;self.replace_issues(items);self.ready=true;self.error=None;
             }
             Some(Ok(Err(error)))=>{
-                self.pending=None;self.issues.clear();self.ready=false;self.error=Some(error);
+                self.pending=None;self.replace_issues(Vec::new());self.ready=false;self.error=Some(error);
             }
             Some(Err(mpsc::TryRecvError::Disconnected))=>{
-                self.pending=None;self.issues.clear();self.ready=false;
+                self.pending=None;self.replace_issues(Vec::new());self.ready=false;
                 self.error=Some("Rust 확인 항목 작업이 중단됐습니다.".into());
             }
             _=>{}
@@ -168,23 +185,23 @@ impl ReviewPanel {
         if self.pending.is_some() && self.issues.is_empty(){
             return None;
         }
-        let actions=self.issues.iter().filter(|issue|text(issue,"severity")!="INFO")
-            .collect::<Vec<_>>();
-        let facts=self.issues.iter().filter(|issue|text(issue,"severity")=="INFO")
-            .collect::<Vec<_>>();
+        let actions=&self.action_indices;
+        let facts=&self.fact_indices;
+        let inherited=&self.inherited_indices;
         let remote=analysis.reference.get(selected_recipient)
             .and_then(|row|row.remote.as_ref()).filter(|decision|
                 ["auto","review"].contains(&text(decision,"status")));
-        let info_count=facts.len()+usize::from(remote.is_some());
+        let info_count=facts.len()+inherited.len()+usize::from(remote.is_some());
         ui.label(typography::caption(&format!(
             "조치 {}건 / 안내 {}건",actions.len(),info_count
         )));
-        if actions.is_empty() && facts.is_empty() && remote.is_none(){
+        if actions.is_empty() && facts.is_empty() && inherited.is_empty() && remote.is_none(){
             crate::components::management_body_state_overlay(
                 ui,ui.available_rect_before_wrap(),Some("필수 확인 사항 없음")
             );
         }
-        for issue in actions {
+        for &index in actions {
+            let issue=&self.issues[index];
             let kind=text(issue,"kind");
             let is_client=kind=="CLIENT" || kind.starts_with("CLIENT_MATCH_");
             issue_card(ui,issue,analysis,if is_client{client_interactive}else{interactive},&mut selected);
@@ -203,24 +220,18 @@ impl ReviewPanel {
                     ).color(tone.detail_color())).wrap());
                 });
         }
-        let inherited=facts.iter().copied().filter(|issue|
-            text(issue,"kind")=="APPLIED"
-                &&text(issue,"resolutionSource")=="코어"
-                &&text(issue,"title")=="공통 상품 자동 적용"
-        ).collect::<Vec<_>>();
         if !inherited.is_empty(){
             ui.collapsing(
                 format!("공통 상품 자동 적용 / {}개 항목",inherited.len()),
                 |details|{
-                    for issue in &inherited {
-                        issue_card(details,issue,analysis,interactive,&mut selected);
+                    for &index in inherited {
+                        issue_card(details,&self.issues[index],analysis,interactive,&mut selected);
                     }
                 }
             );
         }
-        for issue in facts {
-            if inherited.contains(&issue){continue;}
-            issue_card(ui,issue,analysis,interactive,&mut selected);
+        for &index in facts {
+            issue_card(ui,&self.issues[index],analysis,interactive,&mut selected);
         }
         selected
     }
@@ -370,6 +381,20 @@ mod tests {
         assert_eq!(issue_tone(&json!({"severity":"INFO","resolution":"PROVISIONALLY_APPROVED"})),ReviewTone::Info);
         assert_eq!(issue_tone(&json!({"severity":"INFO","resolution":"RESOLVED"})),ReviewTone::Complete);
         assert_eq!(issue_tone(&json!({"severity":"ACTION","kind":"CLIENT_MATCH_ERROR"})),ReviewTone::Error);
+    }
+    #[test]
+    fn review_display_partition_is_rebuilt_on_replacement_and_clear(){
+        let mut panel=ReviewPanel::default();
+        panel.replace_issues(vec![json!({"severity":"ACTION"}),json!({"severity":"INFO"}),
+            json!({"severity":"INFO","kind":"APPLIED","resolutionSource":"코어","title":"공통 상품 자동 적용"})]);
+        assert_eq!(panel.action_indices,vec![0]);
+        assert_eq!(panel.fact_indices,vec![1]);
+        assert_eq!(panel.inherited_indices,vec![2]);
+        panel.replace_issues(vec![json!({"severity":"INFO"})]);
+        assert!(panel.action_indices.is_empty() && panel.inherited_indices.is_empty());
+        assert_eq!(panel.fact_indices,vec![0]);
+        panel.clear();
+        assert!(panel.fact_indices.is_empty());
     }
     #[test]
     fn same_source_receipt_key_changes_after_user_edit(){
