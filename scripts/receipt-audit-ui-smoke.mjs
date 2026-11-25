@@ -168,6 +168,7 @@ try {
             ],
           };
           if (command === "workspace_mode") return false;
+          if (command === "hub_notifications_list") return [];
           if (command === "startup_status") return {
             phase: "READY", error: null, attempts: 1, databaseMs: 12,
             readyMs: 18, isTest: false,
@@ -647,6 +648,8 @@ try {
   const settingsErrors = [];
   settingsPage.on("pageerror", (err) => settingsErrors.push(err.message));
   const accountFixture = structuredClone(state);
+  // The account test does not enable the optional factory directory watcher.
+  accountFixture.settings.factoryReplyDirectory = "";
   accountFixture.settings.accounts = [
     { bank: "검증은행A", holder: "시험A", id: "ci-account-a", number: "000-0001" },
     { bank: "검증은행B", holder: "시험B", id: "ci-account-b", number: "000-0002" },
@@ -674,14 +677,18 @@ try {
           return { windowShownMs: null, databaseMs: 1, dataMs: null, readyMs: 1 };
         if (command === "workspace_mode") return false;
         if (command === "state_load") return structuredClone(current);
+        if (command === "hub_notifications_list") {
+          window.__accountNotificationReads=(window.__accountNotificationReads??0)+1;
+          return [];
+        }
         if (command === "business_core_call" && args.domain === "rules" &&
             args.operation === "factory_reply_review_statuses") {
-          // The account fixture contains no factory replies. Keep unrelated
-          // background Rust reads from polluting account-edit assertions.
-          if ((args.payload?.state?.factoryReplies??[]).length)
-            throw Error("This isolated account mock does not cover factory reply records");
           window.__accountNativeReviewReads=(window.__accountNativeReviewReads??0)+1;
-          return {reviews:[]};
+          return window.__nativeBusinessFixture(args);
+        }
+        if (command === "factory_reply_watch_scan") {
+          window.__accountWatchScans=(window.__accountWatchScans??0)+1;
+          throw Error("Disabled factory directory must not be scanned");
         }
         if (command === "dock_status_native")
           return { active: false, ratio: 0.8 };
@@ -720,8 +727,14 @@ try {
   assert.deepEqual(accountAddAlerts,[],
     "Account add save must not show an error: "+JSON.stringify(accountAddAlerts));
   assert.equal(await settingsPage.getByRole("button", { name: "설정 저장" }).isDisabled(), false);
-  assert.ok((await settingsPage.evaluate(() => window.__accountNativeReviewReads??0)) > 0,
-    "Account test must not conceal background Rust factory-notification IPC");
+  await settingsPage.waitForFunction(() => (window.__accountNotificationReads??0)>0);
+  assert.deepEqual(await settingsPage.evaluate(() => ({
+    reviewReads:window.__accountNativeReviewReads??0,
+    watchScans:window.__accountWatchScans??0,
+  })), {reviewReads:0,watchScans:0},
+    "Account editing must not query factory history or scan a disabled directory");
+  assert.equal(await settingsPage.getByRole("button",{name:"알림",exact:true}).count(),1,
+    "Notification storage must load without a storage-error indicator");
   const addChanges = await settingsPage.evaluate(() => window.__accountSave.changes);
   assert.equal(addChanges.accounts.length, 3);
   console.log("PASS: adding a third account saves with no false conflict");
