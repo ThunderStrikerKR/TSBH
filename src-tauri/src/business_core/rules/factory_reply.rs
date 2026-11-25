@@ -375,6 +375,38 @@ fn review_list(payload:&Value)->Result<Value,String>{
     })).collect::<Vec<_>>();
     Ok(json!({"reviews":reviews}))
 }
+/// A correction is an append-only record for exactly one unresolved conflict.
+/// Recheck the actual confirmation text and immutable shipment match.
+fn approve_conflict(payload:&Value)->Result<Value,String>{
+    let state=payload.get("state").ok_or("공장 회신 상태 누락")?;
+    if state["revision"]!=payload["revision"]{return Err("회신 검토 후 DB가 변경됐습니다.".into())}
+    let confirmed=conflict_confirmation(payload)?;
+    if confirmed["text"]!=payload["confirmedText"]{return Err("회신 충돌 내용이 변경됐습니다.".into())}
+    let original=rows(state,"factoryReplies").iter().find(|r|s(r,"id")==s(payload,"id"))
+        .ok_or("원본 회신 누락")?;
+    let source=rows(original,"rows").iter().find(|r|r["row"]==payload["rowNumber"])
+        .ok_or("원본 회신 행 누락")?;
+    if resolved_row(state,original,source){return Err("이미 정정된 회신 행입니다.".into())}
+    let correction=s(payload,"correctionId");
+    if correction.is_empty()||is_duplicate(state,correction){return Err("회신 정정 ID 오류".into())}
+    let target=s(source,"shipmentId").to_owned();
+    let mut clean=source.clone();
+    for k in ["issue","applied","shipmentId","orderId"]{
+        clean.as_object_mut().ok_or("회신 행 형식 오류")?.remove(k);
+    }
+    let reply=json!({"id":correction,"filename":original["filename"],
+        "businessDate":payload["businessDate"],"at":payload["freightAt"],"actor":actor(state),
+        "archivedPath":original["archivedPath"],"resolves":{"id":original["id"],"row":source["row"]},
+        "status":"REVIEW","rows":[clean]});
+    let next=connect(state,&reply,true,payload)?;
+    let appended=rows(&next,"factoryReplies").last().ok_or("정정 기록 누락")?;
+    let applied=rows(appended,"rows").first().ok_or("정정 결과 누락")?;
+    if applied["applied"]!=true||s(applied,"shipmentId")!=target{
+        return Err("회신 정정 대상 또는 연결 결과가 변경됐습니다.".into())
+    }
+    Ok(next)
+}
+
 pub(super) fn execute(operation:&str,payload:&Value)->Result<Value,String>{
     match operation {
         "factory_reply_duplicate"=>{
@@ -385,6 +417,7 @@ pub(super) fn execute(operation:&str,payload:&Value)->Result<Value,String>{
         },
         "factory_reply_review_statuses"=>review_list(payload),
         "factory_conflict_confirmation"=>conflict_confirmation(payload),
+        "approve_factory_conflict"=>approve_conflict(payload),
         "analyze_factory_reply"=>analyze(payload),
         "preview_factory_reply"=>preview(
             payload.get("state").ok_or("공장 회신 상태 누락")?,

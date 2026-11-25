@@ -535,6 +535,13 @@ pub struct ExcelManager{
     freight_drafts:HashMap<String,String>,
     open_order:Option<String>,
     open_settings:bool,
+    reply_review:bool,
+    reply_confirm:Option<Value>,
+    reply_changed:bool,
+    reply_refresh_pending:bool,
+    reply_rows:Vec<Value>,
+    reply_rows_revision:Option<u64>,
+    reply_page:usize,
 }
 impl ExcelManager{
     pub fn new(gateway:Arc<dyn BandoGateway>,ctx:egui::Context)->Self{
@@ -553,6 +560,8 @@ impl ExcelManager{
             export_to_month:components::calendar_month_start(today),
             managed_queue:None,freight_drafts:HashMap::new(),
             open_order:None,open_settings:false,
+            reply_review:false,reply_confirm:None,reply_changed:false,reply_refresh_pending:false,
+            reply_rows:Vec::new(),reply_rows_revision:None,reply_page:0,
         };
         manager.refresh(ctx);manager
     }
@@ -570,6 +579,10 @@ impl ExcelManager{
     pub fn take_open_settings(&mut self)->bool{
         std::mem::take(&mut self.open_settings)
     }
+    pub fn request_reply_refresh(&mut self){self.reply_refresh_pending=true;}
+    pub fn take_reply_changed(&mut self)->bool{std::mem::take(&mut self.reply_changed)}
+    pub fn blocks_reply_navigation(&self)->bool{self.reply_review||self.reply_confirm.is_some()||
+        self.operation_name.as_deref()==Some("reply-correction")}
     pub fn refresh(&mut self,ctx:egui::Context){
         if self.operation.is_some(){return}
         self.error=None;self.result=None;self.preview=None;
@@ -623,6 +636,9 @@ impl ExcelManager{
                         shipments:result["shipmentReads"].clone()
                     });
                     self.selected.clear();
+                }else if operation=="reply-correction"{
+                    self.reply_confirm=None;self.reply_changed=true;self.reply_refresh_pending=true;
+                    self.notice=Some("공장 회신 정정 내용을 저장했습니다. 기존 원본 및 이력은 유지됩니다.".into());
                 }else if operation=="export"{
                     let count=result["count"].as_u64().unwrap_or(0);
                     let origin=text(&result,"origin");
@@ -674,10 +690,112 @@ impl ExcelManager{
             ctx.request_repaint();
         });
     }
+    /// Review only unresolved rows from the authoritative Rust review projector.
+    /// Refresh the projection once per DB revision, never on every painted row.
+    fn update_reply_review(&mut self){
+        let Some(snapshot)=self.result.as_ref() else{return};
+        let revision=snapshot.state["revision"].as_u64();
+        if revision.is_some()&&self.reply_rows_revision==revision{return}
+        let replies=&snapshot.state["factoryReplies"];
+        let result=crate::gateway::rules::execute("factory_reply_review_statuses",
+            json!({"state":{"factoryReplies":replies}}));
+        let Ok(statuses)=result else{return};
+        let mut held=Vec::new();
+        for record in rows(replies){
+            let Some(status)=find(&statuses["reviews"],text(record,"id"))else{continue};
+            for row in rows(&record["rows"]){
+                if row["applied"]==true||rows(&status["resolvedRows"]).iter()
+                    .any(|r|r["row"]==row["row"]&&r["resolved"]==true){continue}
+                held.push(json!({"id":record["id"],"filename":record["filename"],
+                    "row":row["row"],"name":row["name"],"issue":row["issue"],
+                    "tracking":row["tracking"],"actual":row["actual"],"shipmentId":row["shipmentId"]}));
+            }
+        }
+        self.reply_rows=held;
+        self.reply_rows_revision=revision;
+        self.reply_page=self.reply_page.min(self.reply_rows.len().saturating_sub(1)/50);
+    }
+    pub fn show_reply_review(&mut self,ctx:&egui::Context,area:Rect){
+        if !self.reply_review{return}
+        self.update_reply_review();
+        let busy=self.operation.is_some()||self.receiver.is_some();
+        let mut close=false;let mut selected:Option<Value>=None;
+        let count=self.reply_rows.len();
+        components::modal_backdrop(ctx,"factory-reply-review-backdrop",false);
+        components::modal_window("공장 회신 검토","factory-reply-review",area)
+            .default_width(area.width().min(900.0)).show(ctx,|ui|{
+                components::modal_flow_workspace(ui,|workspace|{
+                    close=workspace.header("공장 회신 검토","닫기",!busy&&self.reply_confirm.is_none());
+                    if self.reply_confirm.is_some(){workspace.disable();}
+                    workspace.scroll_region("factory-reply-review-body",
+                        components::modal_editor_body_max_height(area.height()),|ui|{
+                        ui.label(typography::field_label(&format!("미해결 회신 {count}행")));
+                        ui.label(typography::caption("정상 회신은 자동 저장됩니다. 충돌 건은 기존 값과 회신 값을 확인한 후 한 행씩 정정하세요."));
+                        if count==0{ui.label(typography::body(if busy{"조회 중"}else{"검토할 회신이 없습니다."}));}
+                        for row in self.reply_rows.iter().skip(self.reply_page*50).take(50){
+                            components::soft_divider(ui);
+                            ui.horizontal_wrapped(|line|{
+                                line.label(typography::field_label(&format!("{} / {}행 / {}",
+                                    text(row,"filename"),row["row"],text(row,"name"))));
+                                if text(row,"issue").contains("충돌")&&!text(row,"shipmentId").is_empty(){
+                                    if theme::action(line,"충돌 검토",theme::ButtonRole::Standard,
+                                        !busy&&self.gateway.excel_write_enabled()).clicked(){selected=Some(row.clone());}
+                                }
+                            });
+                            ui.label(typography::table_cell(&format!("송장 {} / 실제 운임 {} / {}",
+                                text(row,"tracking"),amount(&row["actual"]),text(row,"issue"))));
+                        }
+                        ui.horizontal(|bar|{
+                            if theme::action(bar,"이전",theme::ButtonRole::Standard,!busy&&self.reply_page>0).clicked(){self.reply_page-=1;}
+                            bar.label(typography::caption(&format!("{}/{}",self.reply_page+1,(count.saturating_add(49)/50).max(1))));
+                            if theme::action(bar,"다음",theme::ButtonRole::Standard,!busy&&(self.reply_page+1)*50<count).clicked(){self.reply_page+=1;}
+                        });
+                        if let Some(error)=self.error.as_deref(){ui.label(typography::status(error,theme::DANGER));}
+                    });
+                    workspace.footer_single(|bar|{if theme::action(bar,"닫기",theme::ButtonRole::Standard,!busy&&self.reply_confirm.is_none()).clicked(){close=true;}});
+                });
+            });
+        if close{self.reply_review=false;self.reply_confirm=None;return}
+        if let (Some(row),Some(snapshot))=(selected,self.result.as_ref()){
+            match crate::gateway::rules::execute("factory_conflict_confirmation",json!({
+                "state":&snapshot.state,"id":row["id"],"rowNumber":row["row"]})){
+                Ok(confirm)=>{self.reply_confirm=Some(json!({"revision":snapshot.state["revision"],
+                    "id":row["id"],"rowNumber":row["row"],"confirmedText":confirm["text"]}));},
+                Err(e)=>self.error=Some(e),
+            }
+        }
+        if let Some(review)=self.reply_confirm.clone(){
+            components::modal_backdrop(ctx,"factory-reply-confirm-backdrop",true);
+            let mut cancel=false;let mut approve=false;
+            components::show_decision_window(ctx,"공장 회신 한 행 정정","factory-reply-confirm",area,|dialog|{
+                components::decision_workspace(dialog,|decision|{
+                    cancel=decision.header("공장 회신 한 행 정정","취소",!busy);
+                    decision.body(|body|{body.label(typography::table_cell(text(&review,"confirmedText")));});
+                    decision.actions(|bar|{
+                        if theme::action(bar,"정정 반영",theme::ButtonRole::Primary,
+                            !busy&&self.gateway.excel_write_enabled()).clicked(){approve=true;}
+                    });
+                });
+            });
+            if cancel{self.reply_confirm=None;}
+            if approve{
+                self.reply_confirm=None;
+                self.task("reply-correction",ctx.clone(),move|gateway|{
+                    if !gateway.excel_write_enabled(){return Err("공장 회신 저장 권한 없음".into())}
+                    crate::factory_reply_inbox::approve(review)?;
+                    Ok(json!({}))
+                });
+            }
+        }
+    }
+
     pub fn show_page(&mut self,ui:&mut Ui){
         let page_origin_y=ui.cursor().top();
         ui.spacing_mut().scroll=theme::management_scroll_style();
         self.poll();
+        if self.reply_refresh_pending&&self.operation.is_none()&&self.receiver.is_none(){
+            self.reply_refresh_pending=false;self.refresh(ui.ctx().clone());
+        }
         crate::floating_notice::sync(
             ui.ctx(),"excel.result","excel.action",
             crate::floating_notice::Tone::Success,self.notice.as_deref()
@@ -691,6 +809,11 @@ impl ExcelManager{
             top.horizontal(|title|{
                 title.label(typography::page_heading("엑셀 관리"));
                 settings_help::icon(title,"발송 Excel 관리");
+                title.with_layout(egui::Layout::right_to_left(egui::Align::Center),|actions|{
+                    if theme::action(actions,"공장 회신 검토",theme::ButtonRole::Standard,
+                        self.result.is_some()&&self.operation.is_none()&&self.preview.is_none()
+                    ).clicked(){self.reply_review=true;self.reply_rows_revision=None;self.reply_page=0;}
+                });
             });
         });
         ui.add_space(theme::SPACE_8);

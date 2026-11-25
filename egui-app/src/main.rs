@@ -32,6 +32,7 @@ mod model_group_manager;
 mod product_manager;
 mod product_excel;
 mod native_workbooks;
+mod factory_reply_inbox;
 mod product_excel_ui;
 mod client_chooser;
 mod business_state;
@@ -934,6 +935,7 @@ struct BandoEgui {
     order_history_manager: Option<order_history_manager::OrderHistoryManager>,
     daily_settlement_manager: Option<daily_settlement_manager::DailySettlementManager>,
     excel_manager: Option<excel_manager::ExcelManager>,
+    factory_reply_inbox:factory_reply_inbox::Inbox,
     freight_pending_page: Option<Page>,
     freight_pending_save: bool,
     product_pending_page: Option<Page>,
@@ -1055,6 +1057,7 @@ impl BandoEgui {
             order_history_manager: None,
             daily_settlement_manager: None,
             excel_manager: None,
+            factory_reply_inbox:factory_reply_inbox::Inbox::default(),
             freight_pending_page: None,
             freight_pending_save: false,
             product_pending_page: None,
@@ -5085,7 +5088,9 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                     if !allowed{self.client_pending_page=Some(page);}
                                     allowed
                                 }else{true};
-                                if product_can_leave && client_can_leave &&
+                                let excel_can_leave=self.page!=Page::Excel||page==Page::Excel||
+                                    !self.excel_manager.as_ref().is_some_and(|m|m.blocks_reply_navigation());
+                                if product_can_leave && client_can_leave && excel_can_leave &&
                                     !self.client_manager.as_ref()
                                     .is_some_and(|manager|manager.has_modal()) &&
                                     !self.freight_manager.as_ref()
@@ -9253,6 +9258,20 @@ impl eframe::App for BandoEgui {
             self.auto_client_change=None;
             self.clear_source_analysis();
         }
+        let corrected=self.excel_manager.as_mut().is_some_and(|excel|excel.take_reply_changed());
+        let reply=self.factory_reply_inbox.poll(ctx);
+        if corrected||reply.as_ref().is_some_and(|r|r.files>0){
+            self.invalidate_reception_metadata();
+            self.workflow_refresh_required=true;
+            if let Some(excel)=self.excel_manager.as_mut(){excel.request_reply_refresh();}
+            if let Some(history)=self.order_history_manager.as_mut(){history.refresh(ctx.clone());}
+            if let Some(settlement)=self.daily_settlement_manager.as_mut(){settlement.refresh(ctx.clone());}
+        }
+        if let Some(reply)=reply{
+            if reply.files>0{floating_notice::publish(ctx,"excel.reply",floating_notice::Tone::Info,
+                format!("공장 회신 {}파일: 반영 {}행, 검토 {}행",reply.files,reply.applied,reply.held));}
+            if let Some(error)=reply.error{floating_notice::publish(ctx,"excel.reply",floating_notice::Tone::Error,error);}
+        }
         self.poll_workflow_action(ctx);
         self.poll_reception_metadata(ctx);
         self.poll_workflow_board(ctx);
@@ -9331,6 +9350,8 @@ impl eframe::App for BandoEgui {
             self.show_vat_settings(ctx,work_area);
             self.show_edit_history(ctx,work_area);
             self.show_workflow_dialog(ctx,work_area);
+        } else if self.page==Page::Excel {
+            if let Some(excel)=self.excel_manager.as_mut(){excel.show_reply_review(ctx,work_area);}
         } else if self.page==Page::History {
             if let Some(history)=self.order_history_manager.as_mut(){
                 history.show_order_detail_modal(ctx,work_area);

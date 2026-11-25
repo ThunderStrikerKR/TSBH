@@ -23,6 +23,7 @@ fn kind(origin:&str)->Result<(&'static str,&'static str,&'static str),String>{
         "STORE"=>Ok(("prepare_store_export","매장 발송","매장")),
         "PRODUCT"=>Ok(("","상품 관리","상품전체")),
         "CLIENT"=>Ok(("","거래처 관리","거래처전체")),
+        "REPLY"=>Ok(("","공장 회신","공장회신")),
         _=>Err("공장 또는 매장 발송만 선택할 수 있습니다.".into())
     }
 }
@@ -123,6 +124,10 @@ pub fn archive_product_workbook(state:&Value,bytes:&[u8])->Result<PathBuf,String
 pub fn archive_client_workbook(state:&Value,bytes:&[u8])->Result<PathBuf,String>{
     if bytes.len()>20*1024*1024{return Err("거래처 Excel 파일은 20MB 이하".into());}
     save(&archive_root(state)?,"CLIENT",bytes)
+}
+
+pub(crate) fn archive_reply_workbook(state:&Value,bytes:&[u8])->Result<PathBuf,String>{
+    save(&archive_root(state)?,"REPLY",bytes)
 }
 
 pub fn writable()->bool{
