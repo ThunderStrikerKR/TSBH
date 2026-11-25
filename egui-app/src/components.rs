@@ -547,8 +547,12 @@ mod management_async_behavior_regression_tests {
         let menu=excel.split("pub fn show_menu(").nth(1).unwrap()
             .split("pub fn show_review(").next().unwrap();
         assert!(menu.contains("let enabled=!self.busy()&&allowed;"));
-        assert!(menu.contains("export_file(native.as_ref())"));
-        assert!(menu.contains("preview_file(native.as_ref())"));
+        // Product and client workbooks share the same asynchronous menu.
+        // Verify the actual dispatch and selected workbook kind, not the
+        // retired single-argument product-only signature.
+        assert_eq!(menu.matches("let client=self.client;").count(),2);
+        assert!(menu.contains("self.start(menu.ctx(),move||export_file(native.as_ref(),client));"));
+        assert!(menu.contains("self.start(menu.ctx(),move||preview_file(native.as_ref(),client));"));
     }
 
     #[test]
