@@ -916,7 +916,7 @@ impl CategoryManager {
                                         let count=direct_count(catalog,&current.id);
                                         if count>0{
                                             modal.add_space(theme::SPACE_12);
-                                            theme::modal_nested_frame().show(modal,|notice|{
+                                            theme::modal_nested_role_frame(theme::ModalNestedRole::Standard).show(modal,|notice|{
                                                 let transfer_label=if children(&cats,&current.id).is_empty(){
                                                     format!("직접 연결된 상품 {count}개를 새 하위 분류로 이전하는 데 동의합니다.")
                                                 }else{

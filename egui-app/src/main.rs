@@ -5464,7 +5464,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
 
     fn reception(&mut self, ctx: &egui::Context) {
         egui::CentralPanel::default()
-            .frame(theme::reception_workspace_frame())
+            .frame(theme::workspace_shell_frame())
             .show(ctx, |ui| {
                 let viewport_width = ui.available_width();
                 let content_width = viewport_width.max(layout::LayoutState::minimum_width());

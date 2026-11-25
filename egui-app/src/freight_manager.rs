@@ -1800,7 +1800,7 @@ impl FreightManager {
             for (i,title) in titles.iter().enumerate(){
                 if !title.is_empty(){
                     let region=header_cells[i];
-                    let label=typography::freight_table_header_galley(section,title);
+                    let label=typography::management_table_header_galley(section,title);
                     let indicator=FreightSort::column_at(i).map(|column|{
                         // Always display a sort affordance, including before
                         // any column is selected. Only one column is active.
@@ -1830,7 +1830,7 @@ impl FreightManager {
                                 );
                             }
                         }
-                        (typography::freight_table_header_galley(section,glyph),color)
+                        (typography::management_table_header_galley(section,glyph),color)
                     });
                     let gap=if indicator.is_some(){theme::SPACE_4}else{0.0};
                     let arrow_width=indicator.as_ref().map_or(0.0,|(g,_)|g.size().x);
@@ -2180,7 +2180,7 @@ impl FreightManager {
             let painter=section.painter().with_clip_rect(header_rect);
             for (index,title) in titles.iter().enumerate(){
                 let cell=header_cells[index];
-                let galley=typography::freight_table_header_galley(section,title);
+                let galley=typography::management_table_header_galley(section,title);
                 let sort_column=RateSort::column_at(index);
                 let indicator=sort_column.map(|column|{
                     let selected=sort.filter(|current|current.column==column);
@@ -2207,7 +2207,7 @@ impl FreightManager {
                             );
                         }
                     }
-                    (typography::freight_table_header_galley(section,label),color)
+                    (typography::management_table_header_galley(section,label),color)
                 });
                 let gap=if indicator.is_some(){theme::SPACE_4}else{0.0};
                 let arrow_width=indicator.as_ref().map_or(0.0,|(g,_)|g.size().x);
@@ -2754,7 +2754,7 @@ fn freight_history_table<const N:usize>(
     let painter=ui.painter().with_clip_rect(header_rect);
     for (index,title) in titles.iter().enumerate(){
         let cell=columns[index];
-        let label=typography::freight_table_header_galley(ui,title);
+        let label=typography::management_table_header_galley(ui,title);
         let mut indicator=None;
         if let (Some(slot),Some(column))=(
             sort.as_mut(),HistorySort::column_at(index)
@@ -2786,7 +2786,7 @@ fn freight_history_table<const N:usize>(
                 }
             }
             indicator=Some((
-                typography::freight_table_header_galley(ui,glyph),color
+                typography::management_table_header_galley(ui,glyph),color
             ));
         }
         let gap=if indicator.is_some(){theme::SPACE_4}else{0.0};

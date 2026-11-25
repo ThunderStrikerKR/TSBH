@@ -426,14 +426,6 @@ pub fn management_table_header_galley(
     client_table_galley(ui,text,Role::Body,true,SECONDARY)
 }
 
-/// Keep the original freight call sites as a compatibility entry point.
-pub fn freight_table_header_galley(
-    ui: &egui::Ui, text: &str
-) -> std::sync::Arc<egui::Galley> {
-    management_table_header_galley(ui,text)
-}
-
-
 /// Semantic contrast for cells of *repeating management-table rows*.
 ///
 /// Every data cell, INCLUDING billed row totals and other row-level totals,

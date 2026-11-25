@@ -287,7 +287,7 @@ impl ItemEditor{
                         let photo_side=item_detail_photo_side(
                             content_width,work_area.height()
                         );
-                        theme::modal_nested_frame().show(ui,|body|{
+                        theme::modal_nested_role_frame(theme::ModalNestedRole::Standard).show(ui,|body|{
                             body.set_min_width(content_width);
                             // Own the display snapshot so search and selection
                             // actions can mutate ItemEditor during this same frame.

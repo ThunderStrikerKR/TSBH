@@ -1106,7 +1106,7 @@ pub struct ManualWorkspace {
 /// Keeping this arithmetic beside the renderer prevents the modal from
 /// reserving a full-screen body after the visible cards have ended.
 fn manual_recipient_card_height()->f32{
-    components::docked_section_chrome_height()+theme::RECEPTION_RECIPIENT_BODY_HEIGHT
+    theme::RECEPTION_SECTION_CHROME_HEIGHT+theme::RECEPTION_RECIPIENT_BODY_HEIGHT
 }
 
 fn manual_workspace_header_height()->f32{
@@ -4337,7 +4337,7 @@ mod manual_workspace_layout_tests{
         assert!(render[toolbar_start..body_start]
             .contains("status.set_min_height(theme::MODAL_MASTER_WORKSPACE_TOOLBAR_HEIGHT)"));
         assert!(render.contains("theme::source_document_frame().show(body"));
-        assert!(!render.contains("theme::modal_nested_frame().show(source_ui"));
+        assert!(!render.contains("theme::modal_nested_role_frame(theme::ModalNestedRole::Standard).show(source_ui"));
         assert!(render.contains("components::docked_section_body_height(height)"));
         assert!(render.contains("sheet.spacing_mut().item_spacing.y=0.0;"));
         assert!(render.contains("ui.spacing_mut().item_spacing.x=if self.direct_input{"));

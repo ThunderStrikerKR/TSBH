@@ -840,11 +840,6 @@ pub fn category_ancestor_frame()->Frame{
         .inner_margin(SPACE_8)
 }
 
-/// Shared inset input/notice surface. Individual roles only choose padding.
-fn nested_input_surface_frame()->Frame{
-    bordered_surface(INPUT,DIVIDER,CONTROL_RADIUS)
-}
-
 /// Nested surface variants describe a content role, not a screen-specific
 /// style override. All variants inherit identical fill, border and rounding.
 #[derive(Clone,Copy,Debug,Eq,PartialEq)]
@@ -860,11 +855,7 @@ pub fn modal_nested_role_frame(role:ModalNestedRole)->Frame{
         ModalNestedRole::RecipientChecklist=>egui::Margin::symmetric(SPACE_12 as i8,SPACE_8 as i8),
         ModalNestedRole::CompactTag=>egui::Margin::symmetric(SPACE_8 as i8,SPACE_2 as i8),
     };
-    nested_input_surface_frame().inner_margin(margin)
-}
-
-pub fn modal_nested_frame() -> Frame {
-    modal_nested_role_frame(ModalNestedRole::Standard)
+    bordered_surface(INPUT,DIVIDER,CONTROL_RADIUS).inner_margin(margin)
 }
 
 #[cfg(test)]
@@ -873,7 +864,7 @@ mod modal_nested_role_tests{
 
     #[test]
     fn nested_roles_preserve_approved_margins_and_shared_surface(){
-        let standard=modal_nested_frame();
+        let standard=modal_nested_role_frame(ModalNestedRole::Standard);
         for (role,x,y) in [
             (ModalNestedRole::Standard,8,8),
             (ModalNestedRole::RecipientChecklist,12,8),
@@ -998,12 +989,6 @@ pub fn workspace_shell_frame() -> Frame {
             top: PANEL_GAP as i8,
             bottom: PANEL_GAP as i8,
         })
-}
-
-/// Existing reception call sites retain their named entry point, but both
-/// reception and management use one shared gutter definition.
-pub fn reception_workspace_frame() -> Frame {
-    workspace_shell_frame()
 }
 
 /// Return reception panes to the Settings-inspired PANEL card tier.

@@ -351,7 +351,7 @@ fn report_table<const N:usize>(
             Some(Direction::Descending)=>"▼",
             None=>"↕"
         };
-        let galley=typography::freight_table_header_galley(
+        let galley=typography::management_table_header_galley(
             ui,&format!("{title} {glyph}")
         );
         let x=if align[column]==Align2::RIGHT_CENTER{

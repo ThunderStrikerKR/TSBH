@@ -1654,7 +1654,7 @@ impl ProductManager {
                 let rect=header_cells[index].intersect(header_text_rect);
                 if rect.width()<=0.0{continue;}
                 let column=ProductSort::column_at(index);
-                let title_galley=typography::freight_table_header_galley(panel,title);
+                let title_galley=typography::management_table_header_galley(panel,title);
                 let arrow=column.map(|column|{
                     let (text,color)=match self.sort
                         .filter(|state|state.column==column).map(|sort|sort.direction){
@@ -1662,7 +1662,7 @@ impl ProductManager {
                         Some(ProductSortDirection::Descending)=>("▼",theme::SELECTION),
                         None=>("↕",theme::MUTED),
                     };
-                    (typography::freight_table_header_galley(panel,text),color)
+                    (typography::management_table_header_galley(panel,text),color)
                 });
                 let arrow_width=arrow.as_ref().map_or(0.0,|(glyph,_)|glyph.size().x);
                 let icon_gap=if arrow.is_some(){theme::SPACE_4}else{0.0};

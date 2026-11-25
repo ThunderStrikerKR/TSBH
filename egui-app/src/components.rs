@@ -1493,7 +1493,7 @@ pub fn reception_capture_shortcut_hint(ui:&mut Ui){
 /// Section widgets must not impose independent minimums that can spill
 /// across the source/message splitter.
 pub fn docked_section_body_height(section_height: f32) -> f32 {
-    (section_height - docked_section_chrome_height()).max(0.0)
+    (section_height - theme::RECEPTION_SECTION_CHROME_HEIGHT).max(0.0)
 }
 
 /// The fixed goods viewport owns its allocated rectangle. Content may
@@ -1557,12 +1557,6 @@ pub fn reception_docked_goods_scroll(
     });
 }
 
-/// Shared forward/inverse height budget for every Reception section.
-pub fn docked_section_chrome_height() -> f32 {
-    theme::RECEPTION_SECTION_CHROME_HEIGHT
-}
-
-
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum FieldKind {
     Text,
@@ -1582,13 +1576,6 @@ impl FieldKind {
             Self::Address => 320.0,
         }
     }
-}
-
-/// A dialog's pivot belongs to the Kakao-safe work rect itself.
-/// Do NOT subtract the top-navigation height a second time: callers have
-/// already removed the 62pt header and the viewport gutters.
-fn modal_pivot_pos(work_area:Rect)->egui::Pos2{
-    work_area.center()
 }
 
 /// OCR review uses the same KakaoTalk-excluded coordinate space as every
@@ -1664,7 +1651,8 @@ pub fn modal_window(
         .id(egui::Id::new(id))
         .order(egui::Order::Foreground)
         .pivot(egui::Align2::CENTER_CENTER)
-        .fixed_pos(modal_pivot_pos(work_area))
+        // The caller already excluded navigation and KakaoTalk.
+        .fixed_pos(work_area.center())
         // Keep both the pivot and the actual window within the SAME safe
         // rectangle. A second header offset pushed tall dialogs upward,
         // where their top edge could be clipped by the viewport.
@@ -2255,23 +2243,6 @@ pub fn modal_master_footer_in_rect(
 }
 
 
-/// Retain the pilot API so older callers can migrate without visual churn.
-#[allow(dead_code)]
-pub fn modal_review_header_in_rect(
-    ui:&mut Ui,rect:Rect,title:&str,description:&str,
-    close_label:&str,enabled:bool
-)->bool {
-    modal_master_header_in_rect(ui,rect,title,description,close_label,enabled)
-}
-
-/// Retain the pilot API while new screens use the master naming.
-#[allow(dead_code)]
-pub fn modal_review_footer_in_rect(
-    ui:&mut Ui,rect:Rect,actions:impl FnOnce(&mut Ui)
-) {
-    modal_master_footer_in_rect(ui,rect,actions);
-}
-
 /// Flow-layout sibling of modal_master_footer_in_rect for compact
 /// confirmations. Shares the OCR master footer appearance and 36pt hitbox
 /// while retaining egui's InnerResponse<R>, so existing confirmation state
@@ -2815,14 +2786,9 @@ fn money_cursor_after_format(raw:&str,formatted:&str,old_index:usize)->usize{
     target
 }
 pub fn money_field(ui:&mut Ui,value:&mut String,enabled:bool)->Response {
-    money_field_with_margin(ui,value,enabled,typography::form_input_text_margin())
-}
-
-fn money_field_with_margin(
-    ui:&mut Ui,value:&mut String,enabled:bool,input_margin:egui::Margin
-)->Response{
     let before=value.clone();
-    let response=field_with_margin(ui,value,FieldKind::Money,enabled,input_margin);
+    let response=field_with_margin(ui,value,FieldKind::Money,enabled,
+        typography::form_input_text_margin());
     normalize_money_edit(ui,value,&before,&response);
     response
 }
@@ -4631,8 +4597,8 @@ pub fn management_master_register_header(
         ui,layout.header_rect,layout.header_content_rect
     );
     let x=(text_rect.right()-action_width).max(text_rect.left());
-    let left=typography::freight_table_header_galley(ui,primary);
-    let right=typography::freight_table_header_galley(ui,action);
+    let left=typography::management_table_header_galley(ui,primary);
+    let right=typography::management_table_header_galley(ui,action);
     let painter=ui.painter().with_clip_rect(text_rect);
     // Long alias/brand titles must not run under the right-hand
     // management column on a narrow workspace.
@@ -5182,15 +5148,6 @@ fn client_tier_colors(tier:&str)->(Color32,Color32) {
     }
 }
 
-/// Paint a measured text line at a literal left boundary. The header and
-/// values call the same helper, so layout alignment never depends on egui's
-/// Label allocation/halign behavior inside a wide subcell.
-fn paint_client_line(
-    ui:&Ui,cell:Rect,x:f32,galley:std::sync::Arc<egui::Galley>,color:Color32
-) {
-    paint_table_galley(ui,cell,x,galley,color);
-}
-
 /// Shared measured badge: the longest label (반도매) controls width.
 /// Both the management table and Reception render through this painter.
 fn paint_client_tier_badge(ui:&Ui,cell:Rect,label:&str,tier:&str)->Rect{
@@ -5207,7 +5164,7 @@ fn paint_client_tier_badge(ui:&Ui,cell:Rect,label:&str,tier:&str)->Rect{
     ui.painter().with_clip_rect(cell).rect_filled(
         badge,theme::CONTROL_RADIUS as f32,fill
     );
-    paint_client_line(
+    paint_table_galley(
         ui,badge,badge.left()+(badge.width()-galley.size().x)/2.0,galley,ink
     );
     badge
@@ -5321,7 +5278,7 @@ pub fn reception_client_summary_card(
                     egui::pos2(x,row.top()),
                     egui::pos2(x+name_width,row.bottom())
                 );
-                paint_client_line(ui,name_cell,x,shown_galley,theme::TEXT);
+                paint_table_galley(ui,name_cell,x,shown_galley,theme::TEXT);
                 overflow_region_tooltip(ui,name_cell,
                     ui.make_persistent_id("source-client-name-overflow"),name_overflow,name);
             }
@@ -5332,7 +5289,7 @@ pub fn reception_client_summary_card(
                         egui::pos2(terms_x,row.top()),row.right_bottom()
                     );
                     let overflow=text_exceeds_rect(terms_galley.size(),terms_cell.intersect(ui.clip_rect()));
-                    paint_client_line(
+                    paint_table_galley(
                         ui,terms_cell,terms_x,terms_galley,theme::MUTED
                     );
                     overflow_region_tooltip(ui,terms_cell,
@@ -5523,7 +5480,7 @@ pub fn management_row(
                 );
                 let galley=typography::client_table_metadata_galley(ui,secondary,theme::MUTED);
                 let overflow=text_exceeds_rect(galley.size(),second.intersect(ui.clip_rect()));
-                paint_client_line(ui,second,second.left(),galley,theme::MUTED);
+                paint_table_galley(ui,second,second.left(),galley,theme::MUTED);
                 overflow_region_tooltip(ui,second,
                     ui.make_persistent_id(("management-row-hover",row_id,i,1)),overflow,secondary);
             }
@@ -5544,7 +5501,7 @@ pub fn management_row(
                     )
                 };
                 let overflow=text_exceeds_rect(galley.size(),cell.intersect(ui.clip_rect()));
-                paint_client_line(
+                paint_table_galley(
                     ui,cell,cell.left(),galley,
                     if metadata{theme::MUTED}else{theme::TEXT}
                 );
@@ -8111,7 +8068,7 @@ mod modal_safe_position_tests {
     fn popup_pivot_uses_exact_safe_area_center_without_double_header_offset(){
         for (width,height) in [(240.0,180.0),(600.0,360.0),(1200.0,860.0)] {
             let safe=Rect::from_min_size(egui::pos2(440.0,80.0),Vec2::new(width,height));
-            let pivot=modal_pivot_pos(safe);
+            let pivot=safe.center();
             assert_eq!(pivot,safe.center());
             assert!(safe.contains(pivot));
             assert_eq!(pivot.y-safe.top(),safe.bottom()-pivot.y);

@@ -1536,7 +1536,7 @@ impl OrderHistoryManager {
                 let heading=if let Some(mark)=indicator{
                     format!("{title} {mark}")
                 }else{(*title).into()};
-                let label=typography::freight_table_header_galley(section,&heading);
+                let label=typography::management_table_header_galley(section,&heading);
                 let x=if index==4{
                     (header_cells[index].right()-theme::SPACE_8-label.size().x)
                         .max(header_cells[index].left()+theme::SPACE_8)

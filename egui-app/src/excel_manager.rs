@@ -373,7 +373,7 @@ fn table<const N:usize>(
     for (i,title) in titles.iter().enumerate(){
         let h=heads[i];
         let title=if i==0&&header_selection.is_some(){""}else{title};
-        let label=typography::freight_table_header_galley(ui,title);
+        let label=typography::management_table_header_galley(ui,title);
         let arrow=if sort_enabled[i]{
             let (glyph,color)=match (*sort).filter(|s|s.column==i)
                 .map(|s|s.direction){
@@ -381,7 +381,7 @@ fn table<const N:usize>(
                 Some(Direction::Down)=>("▼",theme::SELECTION),
                 None=>("↕",theme::MUTED)
             };
-            Some((typography::freight_table_header_galley(ui,glyph),color))
+            Some((typography::management_table_header_galley(ui,glyph),color))
         }else{None};
         let gap=if arrow.is_some(){theme::SPACE_4}else{0.0};
         let arrow_width=arrow.as_ref().map_or(0.0,|(g,_)|g.size().x);

@@ -211,7 +211,7 @@ fn shipment_entry(
     ui:&mut Ui,order:&Value,recipient:&Value,ship:Option<&Value>,index:usize
 ){
     let label=display_or(field(recipient,"name"),"수취인 미확인");
-    theme::modal_nested_frame().show(ui,|card|{
+    theme::modal_nested_role_frame(theme::ModalNestedRole::Standard).show(ui,|card|{
         card.horizontal_wrapped(|header|{
             header.label(typography::subsection_heading(&format!(
                 "발송 건 {} · {}",index+1,label
