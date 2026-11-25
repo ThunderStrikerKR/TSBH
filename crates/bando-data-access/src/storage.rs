@@ -69,6 +69,15 @@ where F:FnOnce(&Value)->Result<String,String>{
     let mut payload=source.clone();
     payload["actor"]=json!(before["settings"]["operatorName"].as_str().unwrap_or(""));
     let (reply,ids)=crate::rules::prepare_automatic_factory_reply(&before,&payload)?;
+    // Partitioned item queries would otherwise hide orphan items in a
+    // pre-existing damaged database. Preserve full-reader failure semantics.
+    let broken:bool=tx.query_row("SELECT EXISTS(
+        SELECT 1 FROM core_orders WHERE json_type(payload,'$.id') IS NOT 'text'
+            OR json_extract(payload,'$.id') IS NOT id
+        UNION ALL SELECT 1 FROM core_items i WHERE NOT EXISTS(
+            SELECT 1 FROM core_recipients r WHERE r.id=i.recipient_id))",
+        [],|r|r.get(0)).map_err(err)?;
+    if broken{return Err("회신 대상 업무자료의 관계형 연결 오류".into());}
     // The relational tables, never a legacy embedded core list, own orders.
     let target=crate::read_factory_order_partition(&tx,&ids,false)?;
     if target.iter().any(|order|!order["id"].as_str()
