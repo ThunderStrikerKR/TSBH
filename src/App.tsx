@@ -96,13 +96,8 @@ export function App() {
   return (
     <NoticeContext.Provider value={model.setNotice}>
       <div className="app-v03" aria-busy={model.busy}>
-        {window.bando?.isTestWorkspace && (
-          <div className="developer-workspace-indicator" role="status">
-            TEST / 격리 DB / 외부 발송 금지
-          </div>
-        )}
         <FactoryReplyWatcher
-          enabled={Boolean(state.settings.factoryReplyDirectory) || Boolean(window.bando?.isTestWorkspace)}
+          enabled={Boolean(state.settings.factoryReplyDirectory)}
           paused={model.dirty || model.busy}
           onRefresh={model.refresh}
         />

@@ -25,7 +25,6 @@ export function AppHeader({
       <button className="wordmark hub-brand" onClick={() => onNavigate("접수")}>
         <img src="./branding/bando-symbol.svg" alt="반도 로고" />
         <span className="hub-brand-title">BANDO HUB</span>
-        {window.bando?.isTestWorkspace && <span className="hub-brand-env">/ 테스트</span>}
       </button>
       <nav data-tauri-drag-region aria-label="업무 메뉴">
         {navigation.map((item) => (

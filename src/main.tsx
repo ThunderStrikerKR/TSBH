@@ -10,17 +10,9 @@ import "./styles/product-admin-redesign.css";
 import "./styles/tauri-stage2-products.css";
 import "./styles/table-density.css";
 import "./styles/management-layout.css";
-// Resolve the native workspace before React paints its first screen.
-void (async () => {
-  try {
-    window.bando!.isTestWorkspace = await window.bando!.workspaceMode!();
-  } catch {
-    if (window.bando) window.bando.isTestWorkspace = false;
-  }
   disableInputHistorySuggestions(document.body);
   createRoot(document.getElementById("root")!).render(
     <React.StrictMode>
       <AuditProfiler id="AppRoot"><App /></AuditProfiler>
     </React.StrictMode>,
   );
-})();

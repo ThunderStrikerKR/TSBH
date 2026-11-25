@@ -62,7 +62,7 @@ export function useAppModel() {
       try {
         const status: StartupStatus = api.startupStatus
           ? await (initialStartupStatus.current ??= api.startupStatus())
-          : { phase: "READY", attempts: 1, isTest: !!api.isTestWorkspace };
+          : { phase: "READY", attempts: 1, isTest: false };
         if (cancelled) return;
         auditStateTransition("useAppModel","startup-status",{ready:status.phase==="READY"});
         setStartup(status);
