@@ -1463,7 +1463,7 @@ impl OrderHistoryManager {
                                         match line {
                                             HistoryLine::Order(_)=>{
                                                 components::paint_management_table_row_background(row_ui.painter(),row_rect,line_index);
-                                                components::paint_management_table_row_rule(row_ui.painter(),row_rect,components::ManagementRowRule::Frame);
+                                                components::paint_management_table_row_rule(row_ui.painter(),row_rect);
                                             },
                                             HistoryLine::Recipient(_,_,_)=>{
                                                 row_ui.painter().rect_filled(

@@ -138,20 +138,13 @@ pub fn paint_management_table_row_background(painter:&egui::Painter,rect:Rect,in
     painter.rect_filled(rect,0.0,management_table_row_fill(index));
 }
 
-/// Retain existing rule roles and paint geometry in one implementation.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum ManagementRowRule { Standard, Muted, Frame, Inset }
-
-pub fn paint_management_table_row_rule(painter:&egui::Painter,rect:Rect,role:ManagementRowRule){
-    if role==ManagementRowRule::Inset{
-        painter.rect_filled(Rect::from_min_max(
-            egui::pos2(rect.left(),rect.bottom()-theme::SOFT_DIVIDER_WIDTH),rect.right_bottom()
-        ),0.0,theme::DIVIDER);
-        return;
-    }
-    let width=if role==ManagementRowRule::Frame{theme::FRAME_STROKE_WIDTH}else{theme::SOFT_DIVIDER_WIDTH};
-    let color=if role==ManagementRowRule::Muted{theme::DIVIDER.linear_multiply(0.70)}else{theme::DIVIDER};
-    painter.line_segment([rect.left_bottom(),rect.right_bottom()],Stroke::new(width,color));
+/// All table rows use the same filled 1pt rule inside the bottom edge.
+/// Do not center a stroke on the boundary: clipping would halve its width.
+pub fn paint_management_table_row_rule(painter:&egui::Painter,rect:Rect){
+    let top=(rect.bottom()-theme::SOFT_DIVIDER_WIDTH).max(rect.top());
+    theme::paint_soft_rule(painter,Rect::from_min_max(
+        egui::pos2(rect.left(),top),rect.right_bottom()
+    ));
 }
 
 /// Preserve the caller's clip, scrolled origin and merged-column exclusions.
@@ -5805,7 +5798,7 @@ fn management_row_impl(
     // Paint the 1pt row rule inside its allocated rect. A centered
     // line_segment on bottom() was half-clipped and looked inconsistent
     // against the master's crisp 2pt header band at fractional DPI.
-    paint_management_table_row_rule(ui.painter(),rect,ManagementRowRule::Inset);
+    paint_management_table_row_rule(ui.painter(),rect);
 
     let mut x=rect.left();
     let column_widths=management_client_column_widths(rect.width());
@@ -6494,11 +6487,7 @@ fn reception_item_row_with_mode(
     );
     let amount=overflow_tooltip(amount_response,item_overflow[2],amount);
     let amount = if editable { amount.on_hover_cursor(egui::CursorIcon::Text) } else { amount };
-    ui.painter().line_segment(
-        [egui::pos2(rect.left(), rect.bottom()),
-         egui::pos2(rect.right(), rect.bottom())],
-        Stroke::new(theme::SOFT_DIVIDER_WIDTH, theme::DIVIDER)
-    );
+    paint_management_table_row_rule(ui.painter(),rect);
     // The renderer owns both fill and border. Do not let reception page
     // branches independently paint an outline: pending board previews
     // otherwise receive blue fills without the matching blue stroke.

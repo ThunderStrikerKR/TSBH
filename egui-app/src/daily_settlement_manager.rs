@@ -332,7 +332,7 @@ fn report_table<const N:usize>(
                                 components::paint_management_table_column_rule(row.painter(),x,rect.top(),rect.bottom());
                             }
                         }
-                        components::paint_management_table_row_rule(row.painter(),rect,components::ManagementRowRule::Muted);
+                        components::paint_management_table_row_rule(row.painter(),rect);
                     }
                 );
             }

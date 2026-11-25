@@ -1628,7 +1628,7 @@ impl ProductManager {
                                         }
                                     }
                                 );
-                                components::paint_management_table_row_rule(row.painter(),row_rect,components::ManagementRowRule::Standard);
+                                components::paint_management_table_row_rule(row.painter(),row_rect);
                             }
                         );
                     }

@@ -1360,13 +1360,18 @@ pub fn window_control(ui: &mut Ui, control: WindowControl) -> Response {
     response
 }
 
+/// Shared horizontal rule surface for allocated separators and table rows.
+pub(crate) fn paint_soft_rule(painter:&egui::Painter,rect:egui::Rect){
+    painter.rect_filled(rect,0.0,DIVIDER);
+}
+
 /// One soft horizontal rule. The reserved rectangle and painted surface
 /// coincide: no centered stroke protrudes into the preceding row.
 pub fn soft_rule(ui:&mut Ui)->egui::Rect{
     let (rect,_)=ui.allocate_exact_size(
         Vec2::new(ui.available_width(),SOFT_DIVIDER_WIDTH),egui::Sense::hover()
     );
-    ui.painter().rect_filled(rect,0.0,DIVIDER);
+    paint_soft_rule(ui.painter(),rect);
     rect
 }
 

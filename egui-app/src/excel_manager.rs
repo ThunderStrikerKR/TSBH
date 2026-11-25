@@ -363,7 +363,7 @@ fn table<const N:usize>(
                         let x=c.right()+GAP/2.0;
                         components::paint_management_table_column_rule(row.painter(),x,r.top(),r.bottom());
                     }
-                    components::paint_management_table_row_rule(row.painter(),r,components::ManagementRowRule::Standard);
+                    components::paint_management_table_row_rule(row.painter(),r);
                 });
             }
         });

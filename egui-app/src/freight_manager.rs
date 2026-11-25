@@ -1774,7 +1774,7 @@ impl FreightManager {
                         components::management_master_column_rules(
                             row,row_rect,&boundaries
                         );
-                        components::paint_management_table_row_rule(row.painter(),row_rect,components::ManagementRowRule::Muted);
+                        components::paint_management_table_row_rule(row.painter(),row_rect);
                             }
                         );
                     }
@@ -2176,7 +2176,7 @@ impl FreightManager {
                                         +theme::FREIGHT_ASSIGNMENT_COL_GAP/2.0;
                                     components::paint_management_table_column_rule(row.painter(),x,row_rect.top(),row_rect.bottom());
                                 }
-                                components::paint_management_table_row_rule(row.painter(),row_rect,components::ManagementRowRule::Muted);
+                                components::paint_management_table_row_rule(row.painter(),row_rect);
                             }
                         );
                     }
@@ -2757,7 +2757,7 @@ fn freight_history_table<const N:usize>(
                                 +theme::FREIGHT_ASSIGNMENT_COL_GAP/2.0;
                             components::paint_management_table_column_rule(row.painter(),boundary,row_rect.top(),row_rect.bottom());
                         }
-                        components::paint_management_table_row_rule(row.painter(),row_rect,components::ManagementRowRule::Muted);
+                        components::paint_management_table_row_rule(row.painter(),row_rect);
                     }
                 );
             }
