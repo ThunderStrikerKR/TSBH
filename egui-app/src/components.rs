@@ -57,7 +57,13 @@ pub fn virtual_fixed_rows<R>(
         ).inner
     });
     #[cfg(test)]
-    general_screen_geometry_tests::record("row viewport",output.inner_rect);
+    {
+        general_screen_geometry_tests::record("row viewport",output.inner_rect);
+        // Retain the measured content extent so transient failures can
+        // distinguish native scrollbar reservation from card/layout drift.
+        general_screen_geometry_tests::record("row content extent",
+            Rect::from_min_size(output.inner_rect.min,output.content_size));
+    }
     output
 }
 
@@ -10169,6 +10175,16 @@ pub(crate) mod general_screen_geometry_tests {
             let requires_table=settled.iter().any(|(role,_)|*role=="table header");
             assert_eq!(requires_table,current.iter().any(|(role,_)|*role=="table header"),
                 "{name}/{phase}: table header appeared/disappeared");
+            if requires_table{
+                let stable=first(settled,"row viewport");
+                let now=first(current,"row viewport");
+                if (stable.bottom()-now.bottom()).abs()>0.5{
+                    let extent=|trace:&[Sample]|trace.iter()
+                        .find(|(role,_)|*role=="row content extent").map(|(_,rect)|rect.size());
+                    eprintln!("TRANSIENT_VIEWPORT_DIAGNOSTIC {name}/{phase}: settled={stable:?} current={now:?} settled_content={:?} current_content={:?} settled_rail={:?} current_rail={:?}",
+                        extent(settled),extent(current),first(settled,"scroll rail"),first(current,"scroll rail"));
+                }
+            }
             compare_data_state_geometry(name,&phase,settled,current,requires_table);
         }
     }
