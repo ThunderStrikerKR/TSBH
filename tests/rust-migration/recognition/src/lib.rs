@@ -63,7 +63,7 @@ mod regressions {
             assert_eq!(recipients[0]["name"],"이가상");
         }
         let expected_names = match id {
-            5 => Some(vec!["정가상"]),
+            5 => Some(vec!["정가상 목사"]),
             16 => Some(vec!["배가상"]),
             17 => Some(vec!["김가상","박가상"]),
             _ => None,

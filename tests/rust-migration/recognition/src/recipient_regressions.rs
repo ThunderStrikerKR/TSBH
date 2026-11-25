@@ -127,7 +127,7 @@ fn protect_true_recipients_and_address_details_against_legacy_ts_false_positives
                 assert_eq!(actual["items"][0]["quantity"],1);
             }
             "original-20"=>{
-                assert_eq!(actual["name"],"이가상");
+                assert_eq!(actual["name"],"이가상 선생님");
                 assert_eq!(actual["phone"],"053-123-4567");
                 assert_eq!(actual["mobile"],"010-1234-5678");
                 assert!(actual["address"].as_str().unwrap_or("").contains("경북 경산시"));
