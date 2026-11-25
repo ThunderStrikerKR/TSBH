@@ -3,7 +3,7 @@
 use eframe::egui::{self, Align, Frame, Id, Layout, Pos2, Rect, Ui, Vec2};
 use std::time::{Duration, Instant};
 use crate::{components, preview_store::WorkingReception, source_highlight, theme, typography};
-use std::collections::HashMap;
+use std::collections::{HashMap,HashSet};
 use crate::workflow_board::{BoardSnapshot, GroupRow, ShipmentRow};
 
 
@@ -1074,6 +1074,23 @@ fn pending_frame(
 }
 /// Render once in the existing fixed pane. The floating expansion uses an egui
 /// foreground Area anchored to the card; it DOES NOT resize/reorder other cards.
+/// Compact cards have an exact fixed extent, including the frame stroke.
+fn compact_card_height()->f32{
+    theme::WORKFLOW_TITLE_HEIGHT+theme::WORKFLOW_BAND_DIVIDER_HEIGHT+
+        theme::WORKFLOW_BOTTOM_HEIGHT+2.0*theme::SOFT_DIVIDER_WIDTH
+}
+fn compact_card_visible(top:f32,clip:Rect)->bool{
+    // Keep one card of overscan on both sides of the viewport.
+    let overscan=compact_card_height()+theme::WORKFLOW_CARD_GAP;
+    top+compact_card_height()>=clip.top()-overscan && top<=clip.bottom()+overscan
+}
+fn reserve_compact_card(ui:&mut Ui){
+    // Reserve the exact same width and height as workflow_card's compact
+    // frame. No buttons, text shaping, recipient projection or hover tests.
+    ui.allocate_space(Vec2::new(ui.available_width(),compact_card_height()));
+    ui.add_space(theme::WORKFLOW_CARD_GAP);
+}
+
 pub fn show(
     ui:&mut Ui,
     snapshot:Option<&BoardSnapshot>,
@@ -1106,6 +1123,13 @@ pub fn show(
             let open=selected && state.folded.as_deref()!=Some(group.id.as_str());
             let width=ui.available_width();
             let pos=ui.cursor().min;
+            // Expanded and hover-owned cards must retain their full geometry
+            // and overlay anchor, even when scrolling past the viewport.
+            if !open && state.active_preview()!=Some(group.id.as_str()) &&
+                !compact_card_visible(pos.y,ui.clip_rect()){
+                reserve_compact_card(ui);
+                continue;
+            }
             let mut ignored_row=None;
             if let Some(value)=group_frame(ui,group,current,open,false,None,
                 writable,freight_stage_group,linked_selection,&mut trigger,&mut ignored_row){
@@ -1122,20 +1146,26 @@ pub fn show(
             ui.add_space(theme::WORKFLOW_CARD_GAP);
         }
     }
+    // Build one borrowed membership index, rather than scanning every
+    // shipment again for every working receipt.
+    let confirmed:HashSet<&str>=snapshot.into_iter().flat_map(|board|board.groups.iter())
+        .flat_map(|group|group.shipments.iter()).map(|ship|ship.order_id.as_str()).collect();
     for draft in drafts.iter().rev(){
-        // Do not duplicate an order that is already in a native group.
-        if snapshot.is_some_and(|snapshot|snapshot.groups.iter().any(|group|
-            group.shipments.iter().any(|ship|ship.order_id==draft.id))){continue;}
+        if confirmed.contains(draft.id.as_str()){continue;}
         let selected=state.selection.is_none() && active_id==Some(draft.id.as_str());
         let key=format!("pending:{}",draft.id);
         let open=selected && state.folded.as_deref()!=Some(key.as_str());
+        let preview_owned=allow_pending_hover_switch && !selected &&
+            state.pending_visible.as_ref().is_some_and(|target|target.order_id==draft.id);
+        if !open && !preview_owned && !compact_card_visible(ui.cursor().min.y,ui.clip_rect()){
+            reserve_compact_card(ui);
+            continue;
+        }
         let name=pending_dealer_title(
             draft,client_names,
             if selected{active_selected_client}else{None}
         );
-        if allow_pending_hover_switch && !selected &&
-            state.pending_visible.as_ref().is_some_and(|target|
-                target.order_id==draft.id){
+        if preview_owned{
             pending_overlay=Some((draft,name.clone(),ui.cursor().min,
                 ui.available_width()));
         }
@@ -1765,5 +1795,36 @@ mod widget_id_tests {
                 );
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod compact_virtualization_tests{
+    use super::*;
+    #[test]
+    fn compact_placeholder_preserves_exact_card_scroll_extent(){
+        let ctx=egui::Context::default();
+        let _=ctx.run(egui::RawInput::default(),|ctx|{
+            egui::CentralPanel::default().show(ctx,|ui|{
+                ui.spacing_mut().item_spacing.y=0.0;
+                let top=ui.cursor().min.y;
+                workflow_card(ui,false,false,|card|{workflow_compact_rows(card);});
+                ui.add_space(theme::WORKFLOW_CARD_GAP);
+                let rendered=ui.cursor().min.y-top;
+                let next=ui.cursor().min.y;
+                reserve_compact_card(ui);
+                let placeholder=ui.cursor().min.y-next;
+                assert!((rendered-placeholder).abs()<=0.5,"rendered {rendered}, placeholder {placeholder}");
+            });
+        });
+    }
+    #[test]
+    fn compact_visibility_keeps_overscan_and_skips_distant_cards(){
+        let clip=Rect::from_min_max(Pos2::new(0.0,1000.0),Pos2::new(400.0,1400.0));
+        assert!(compact_card_visible(1000.0,clip));
+        assert!(compact_card_visible(950.0,clip));
+        assert!(compact_card_visible(1420.0,clip));
+        assert!(!compact_card_visible(0.0,clip));
+        assert!(!compact_card_visible(1700.0,clip));
     }
 }
