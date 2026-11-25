@@ -453,7 +453,7 @@ impl CategoryManager {
             +theme::CATALOG_TREE_INDENT*depth as f32;
         let icon_rect=egui::Rect::from_min_size(
             egui::pos2(icon_x,rect.center().y-theme::SPACE_8),
-            Vec2::splat(theme::SPACE_16)
+            Vec2::splat(theme::SPACE_12)
         );
         let tree_stroke=egui::Stroke::new(
             theme::CATALOG_TREE_GUIDE_WIDTH,theme::CATALOG_TREE_GUIDE_COLOR
@@ -658,7 +658,7 @@ impl CategoryManager {
                 );
                 let actions_width=theme::CATALOG_MAP_TOOLBAR_ACTIONS_WIDTH;
                 let search_width=theme::CATALOG_SEARCH_WIDTH.min(
-                    (toolbar_rect.width()-actions_width-theme::SPACE_16).max(1.0)
+                    (toolbar_rect.width()-actions_width-theme::SPACE_12).max(1.0)
                 );
                 let search_rect=Rect::from_min_size(
                     toolbar_rect.min,Vec2::new(search_width,toolbar_rect.height())
@@ -709,7 +709,7 @@ impl CategoryManager {
                     let legacy=cats.iter().filter(|c|c.parent.is_empty()&&!is_root(&c.id))
                         .cloned().collect::<Vec<_>>();
                     if !legacy.is_empty(){
-                        tree.add_space(theme::SPACE_16);
+                        tree.add_space(theme::SPACE_12);
                         tree.label(typography::subsection_heading(
                             &format!("상위 분류 소속 확인 ({})",legacy.len())
                         ));

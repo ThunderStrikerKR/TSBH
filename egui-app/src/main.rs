@@ -5997,12 +5997,12 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                         let image_size=processing_preview.as_ref().map(
                             |(_,width,height)|{
                                 let max_w=(body_rect.width()
-                                    -2.0*theme::SPACE_16).max(1.0);
+                                    -2.0*theme::SPACE_12).max(1.0);
                                 let max_h=(body_rect.height()
                                     -typography::FONT_OCR_PROGRESS_TITLE*1.4
                                     -theme::ACTION_STANDARD_HEIGHT
                                     -theme::SPACE_12
-                                    -theme::SPACE_16
+                                    -theme::SPACE_12
                                     -2.0*theme::SPACE_8).max(1.0);
                                 let natural=Vec2::new(
                                     *width as f32,*height as f32
@@ -6017,7 +6017,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                             size.y+theme::SPACE_12
                         ).unwrap_or(0.0);
                         let content_height=typography::FONT_OCR_PROGRESS_TITLE*1.4
-                            +image_space+theme::SPACE_16
+                            +image_space+theme::SPACE_12
                             +theme::ACTION_STANDARD_HEIGHT;
                         progress.add_space(
                             ((body_rect.height()-content_height)/2.0).max(0.0)
@@ -6043,7 +6043,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                         progress.label(
                             typography::ocr_progress_title("이미지 분석중...")
                         );
-                        progress.add_space(theme::SPACE_16);
+                        progress.add_space(theme::SPACE_12);
                         if theme::action(
                             progress,"취소",ButtonRole::Standard,true
                         ).clicked(){

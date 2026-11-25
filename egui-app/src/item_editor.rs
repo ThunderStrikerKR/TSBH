@@ -22,7 +22,7 @@ fn field<'a>(v:&'a Value,key:&str)->&'a str{
 // keeping room for the shared title/header, messages and action footer.
 const ITEM_DETAIL_PHOTO_MAX:f32=300.0;
 const ITEM_DETAIL_PHOTO_MIN:f32=176.0;
-const ITEM_DETAIL_PANEL_GAP:f32=theme::SPACE_16;
+const ITEM_DETAIL_PANEL_GAP:f32=theme::SPACE_12;
 const ITEM_DETAIL_STACK_WIDTH:f32=510.0;
 fn item_detail_photo_side(available_width:f32,work_height:f32)->f32{
     (available_width*0.42)
@@ -167,7 +167,7 @@ impl ItemEditor{
             ui.add_space((height-used-theme::ACTION_STANDARD_HEIGHT
                 -theme::SPACE_8).max(theme::SPACE_8));
         }else{
-            ui.add_space(theme::SPACE_16);
+            ui.add_space(theme::SPACE_12);
         }
         ui.horizontal(|controls|{
             if theme::action(
@@ -302,7 +302,7 @@ impl ItemEditor{
                                     Vec2::splat(photo_side),egui::Sense::hover()
                                 );
                                 self.photos.paint(body,&product,photo);
-                                body.add_space(theme::SPACE_16);
+                                body.add_space(theme::SPACE_12);
                                 self.detail_information(
                                     body,name,category,&price,Arc::clone(&gateway),
                                     ctx,busy,edited,None

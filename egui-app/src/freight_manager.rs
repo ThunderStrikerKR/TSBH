@@ -822,7 +822,7 @@ impl FreightManager {
                     }
                 });
             });
-            ui.add_space(theme::SPACE_16);
+            ui.add_space(theme::SPACE_12);
             components::align_management_primary_card(ui,page_origin_y);
             components::management_pending_primary_card(ui);
             return;
@@ -853,7 +853,7 @@ impl FreightManager {
         });
         // One 16pt boundary between the stats strip and the next section.
         // show_groups() must not add a second top margin on top of this.
-        ui.add_space(theme::SPACE_16);
+        ui.add_space(theme::SPACE_12);
         // Keep the approved Freight Assignment as the layout reference,
         // including when the four KPIs wrap in narrower workspaces.
         components::align_management_primary_card(ui,page_origin_y);
@@ -1251,7 +1251,7 @@ impl FreightManager {
         product_views: &Value, enabled:bool,
         action:&mut Option<(String,Value)>,
     ) {
-        // Full-height SINGLE table: preserve 16pt padding on all four sides.
+        // Full-height SINGLE table: preserve 12pt padding on all four sides.
         // The data viewport AND the scrollbar rail stop above the same
         // bottom inset. Neither may reach the card's outer border.
         let card_min_height=components::management_master_table_card_min_inner_height(ui);
@@ -1284,7 +1284,7 @@ impl FreightManager {
             // Keep the same 16pt separation between left and right tools.
             let toolbar_content_width=toolbar_rect.width().max(0.0);
             let bulk_width=500.0_f32.min(toolbar_content_width);
-            let left_width=(toolbar_content_width-bulk_width-theme::SPACE_16).max(0.0);
+            let left_width=(toolbar_content_width-bulk_width-theme::SPACE_12).max(0.0);
             let left_rect=egui::Rect::from_min_size(
                 toolbar_rect.left_top(),
                 egui::vec2(left_width,toolbar_rect.height())
@@ -1915,7 +1915,7 @@ impl FreightManager {
                 )
             }
         ).inner;
-        let room=(create.rect.left()-theme::SPACE_16-toolbar_rect.left())
+        let room=(create.rect.left()-theme::SPACE_12-toolbar_rect.left())
             .max(0.0);
         let search_width=room.min(theme::MANAGEMENT_SEARCH_MIN_WIDTH);
         let search_response=if search_width>=60.0{
@@ -2370,12 +2370,12 @@ impl FreightManager {
             section.add_space(theme::SPACE_12);
             let epoch=shipping["epoch"].as_i64().unwrap_or(1);
             section.label(typography::body(&format!("현재 운임 기준: {epoch}")));
-            section.add_space(theme::SPACE_16);
+            section.add_space(theme::SPACE_12);
             section.label(typography::body(
                 "전체 운임 기준을 변경하면 기존 운임의 자동 추천을 중단합니다. \
                  변경 후 그룹별·상품별 운임을 다시 확인하여 등록해야 합니다."
             ));
-            section.add_space(theme::SPACE_16);
+            section.add_space(theme::SPACE_12);
             // A dedicated, explicitly labeled destructive action. It still
             // opens freight-basis-confirm and does not mutate on click.
             section.horizontal(|row|{
@@ -2980,7 +2980,7 @@ mod rate_toolbar_tests{
         assert!((search.left()-toolbar.left()).abs()<0.01);
         assert!((search.center().y-toolbar.center().y).abs()<0.01);
         assert!((add.center().y-toolbar.center().y).abs()<0.01);
-        assert!(search.right()+theme::SPACE_16<=add.left()+0.01,
+        assert!(search.right()+theme::SPACE_12<=add.left()+0.01,
             "search must not overlap group addition");
         assert!((add.right()-toolbar.right()).abs()<0.01);
     }

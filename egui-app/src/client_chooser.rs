@@ -257,7 +257,7 @@ impl ClientChooser {
                             }
                         }
                     );
-                    workspace.add_space(theme::SPACE_16);
+                    workspace.add_space(theme::SPACE_12);
                     components::modal_master_body_section(
                         workspace,"검색 결과",|results_panel|{
                             components::management_table_container_style(results_panel);

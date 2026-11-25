@@ -216,9 +216,9 @@ pub const BRAND_ICON_OPTICAL_CENTER_Y: f32 = 2.0;
 // This affects only the brand slot, not navigation or header geometry.
 pub const BRAND_WORDMARK_GAP: f32 = 3.0;
 pub const HEADER_DRAG_STRIP: f32 = 8.0;
-pub const SECTION_PADDING: f32 = SPACE_16;
+pub const SECTION_PADDING: f32 = SPACE_12;
 // One structural section-divider geometry across Reception, management and modal sections.
-pub const SECTION_DIVIDER_GAP: f32 = SPACE_16;
+pub const SECTION_DIVIDER_GAP: f32 = SPACE_12;
 pub const SECTION_DIVIDER_HEIGHT: f32 = 2.0 * SECTION_DIVIDER_GAP + SOFT_DIVIDER_WIDTH;
 // Reception card side/bottom inset. The title row has its own top inset
 // so optical header balance does not change the body bottom clearance.
@@ -251,7 +251,7 @@ pub const RECEPTION_RECIPIENT_NAV_WIDTH:f32 =
     +RECEPTION_RECIPIENT_NAV_COUNT_WIDTH
     +2.0*FRAME_STROKE_WIDTH;
 // Reception card title top inset is independent of the shared section divider.
-pub const RECEPTION_SECTION_HEADER_TOP: f32 = SPACE_12;
+pub const RECEPTION_SECTION_HEADER_TOP: f32 = SECTION_PADDING;
 // Canvas/footer clearance must be counted in the message editor's height.
 pub const RECEPTION_MESSAGE_ACTION_GAP: f32 = SPACE_12;
 // One 13pt shortcut label with 3pt keycap top/bottom padding and border.
@@ -336,7 +336,7 @@ pub const FREIGHT_SUMMARY_NUMBER_LINE_HEIGHT: f32 =
 pub const FREIGHT_SUMMARY_LABEL_LINE_HEIGHT: f32 =
     typography::FONT_FREIGHT_SUMMARY_LABEL + 5.0;
 pub const FREIGHT_SUMMARY_TEXT_GAP: f32 = 2.0;
-pub const FREIGHT_SUMMARY_PADDING_X: f32 = 16.0;
+pub const FREIGHT_SUMMARY_PADDING_X: f32 = SPACE_12;
 pub const FREIGHT_SUMMARY_PADDING_Y: f32 = 12.0;
 pub const FREIGHT_SUMMARY_CARD_HEIGHT: f32 =
     FREIGHT_SUMMARY_NUMBER_LINE_HEIGHT + FREIGHT_SUMMARY_LABEL_LINE_HEIGHT
@@ -384,14 +384,14 @@ pub const MANAGEMENT_TAB_HEIGHT: f32 = 38.0;
 // The offset starts at the management page's content origin, not at the
 // window origin, so resizing the Kakao pane never changes its alignment.
 // The approved Freight > Shipping Group Assignment uses the ACTUAL
-// management-page title inset (16pt total including the 6pt workspace
-// gutter), then 8pt title-to-tabs, 12pt tabs-to-KPIs and 16pt KPIs-to-card.
+// management-page title inset (12pt total including the 6pt workspace
+// gutter), then 8pt title-to-tabs, 12pt tabs-to-KPIs and 12pt KPIs-to-card.
 // The three top-content frames also each advance the parent by the default
 // 8pt item spacing. Do not revive the older 12pt/16pt pre-title-inset layout.
 pub const MANAGEMENT_REFERENCE_HEADING_LINE_HEIGHT: f32 =
     typography::FONT_PAGE_HEADING + 8.0;
 pub fn management_primary_card_top_offset(available_width: f32) -> f32 {
-    // KPIs are inset 16pt on each side. Wrapped rows must use this same
+    // KPIs are inset 12pt on each side. Wrapped rows must use this same
     // interior width or the reference card jumps at narrow split widths.
     let card_content_width=(available_width-2.0*SECTION_PADDING).max(0.0);
     let cards_per_row = (((card_content_width + SPACE_8) /
@@ -400,9 +400,9 @@ pub fn management_primary_card_top_offset(available_width: f32) -> f32 {
     let summary_height = rows as f32 * FREIGHT_SUMMARY_CARD_HEIGHT
         + rows.saturating_sub(1) as f32 * SPACE_8;
     MANAGEMENT_REFERENCE_HEADING_LINE_HEIGHT
-        + (SPACE_16-PANEL_GAP) + SPACE_8
+        + (SPACE_12-PANEL_GAP) + SPACE_8
         + MANAGEMENT_TAB_HEIGHT + SPACE_12
-        + summary_height + SPACE_16 + SPACING * 3.0
+        + summary_height + SPACE_12 + SPACING * 3.0
 }
 
 // Manual classification uses the live Reception source-pane width rather
@@ -413,7 +413,7 @@ pub const MANUAL_DIALOG_SIDE_GAP: f32 = 36.0;
 pub const MANUAL_SOURCE_MIN_WIDTH: f32 = 250.0; // Reception source-pane minimum
 pub const MANUAL_SHEET_MIN_WIDTH: f32 = 440.0;
 pub const MANUAL_COLUMN_GAP: f32 = SPACE_12;
-pub const RECEPTION_ITEMS_TO_FREIGHT_GAP: f32 = SPACE_16;
+pub const RECEPTION_ITEMS_TO_FREIGHT_GAP: f32 = SPACE_12;
 pub const MANUAL_ITEMS_CARD_MIN_HEIGHT: f32 = 340.0 + (RECEPTION_ITEMS_TO_FREIGHT_GAP - SPACE_8);
 pub const MANUAL_SEARCH_DIALOG_WIDTH: f32 = MODAL_DEFAULT_MAX_WIDTH;
 pub const MANUAL_SEARCH_RESULTS_HEIGHT: f32 = 420.0;
@@ -427,15 +427,15 @@ pub const MODAL_SECTION_BG: Color32 = TABLE_ROW_ALT_BG;
 // content-specific. Changing one master token updates all adopted dialogs.
 pub const MODAL_MASTER_WORKSPACE_TOOLBAR_HEIGHT: f32 = 40.0;
 // Clearance from the title divider to the status/action row.
-pub const MODAL_MASTER_TOOLBAR_RULE_GAP: f32 = SPACE_16;
+pub const MODAL_MASTER_TOOLBAR_RULE_GAP: f32 = SPACE_12;
 // Rebalance the visible outer-frame-to-control and control-to-rule gaps.
 pub const MODAL_EDGE_ACTION_SHIFT: f32 = SPACE_8;
 pub const MODAL_MASTER_DESCRIPTIVE_HEADER_HEIGHT: f32 = 84.0;
-pub const MODAL_MASTER_WORKSPACE_GAP: f32 = SPACE_16;
-pub const MODAL_MASTER_CONTENT_INSET: f32 = SPACE_16;
+pub const MODAL_MASTER_WORKSPACE_GAP: f32 = SPACE_12;
+pub const MODAL_MASTER_CONTENT_INSET: f32 = SPACE_12;
 pub const MODAL_HEADER_HEIGHT: f32 = 56.0;
 pub const MODAL_FOOTER_HEIGHT: f32 = 58.0;
-pub const MODAL_SECTION_PADDING: f32 = SPACE_16;
+pub const MODAL_SECTION_PADDING: f32 = SPACE_12;
 // Equal clearance above and below the divider in every modal section.
 // Kept separate from frame padding so the layout role is explicit.
 #[cfg(test)]
@@ -444,8 +444,8 @@ pub const MODAL_SECTION_RADIUS: u8 = SECTION_RADIUS;
 // Approved compact modal form row: label and editable value share one 36pt
 // line. No product-management-specific vertical label/input layout.
 pub const MODAL_FORM_LABEL_WIDTH: f32 = 80.0;
-pub const MODAL_PANEL_PADDING_X: f32 = SPACE_16;
-pub const MODAL_PANEL_PADDING_Y: f32 = SPACE_16;
+pub const MODAL_PANEL_PADDING_X: f32 = SPACE_12;
+pub const MODAL_PANEL_PADDING_Y: f32 = SPACE_12;
 pub const MODAL_DECISION_MAX_WIDTH: f32 = 560.0;
 pub const MODAL_DEFAULT_MAX_WIDTH: f32 = 880.0;
 // Product detail uses the standard 880pt two-column editor width while
@@ -477,7 +477,7 @@ pub const CATALOG_SEARCH_WIDTH:f32 = 560.0;
 // operations share the same 36pt toolbar. Below this width only, stack them.
 pub const CATALOG_MAP_TOOLBAR_ACTIONS_WIDTH:f32 = 260.0;
 pub const CATALOG_MAP_TOOLBAR_STACK_WIDTH:f32 =
-    CATALOG_MAP_TOOLBAR_ACTIONS_WIDTH+MANAGEMENT_SEARCH_MIN_WIDTH+SPACE_16;
+    CATALOG_MAP_TOOLBAR_ACTIONS_WIDTH+MANAGEMENT_SEARCH_MIN_WIDTH+SPACE_12;
 // Category breadcrumb selectors must reserve a predictable width so that
 // trailing ancestors are preserved via typography::fit_category_path.
 pub const CATEGORY_PATH_PICKER_WIDTH:f32 = 280.0;
@@ -812,7 +812,7 @@ pub fn workflow_shipment_row_frame(fill:Color32)->Frame{
 }
 pub fn settings_help_surface_frame()->Frame{
     bordered_surface(INPUT,BORDER,CONTROL_RADIUS)
-        .inner_margin(egui::Margin::symmetric(SPACE_16 as i8,SPACE_12 as i8))
+        .inner_margin(egui::Margin::symmetric(SPACE_12 as i8,SPACE_12 as i8))
 }
 
 pub fn modal_frame() -> Frame {
@@ -904,7 +904,7 @@ pub fn section_frame() -> Frame {
     bordered_surface(PANEL,BORDER,SECTION_RADIUS).inner_margin(SECTION_PADDING)
 }
 
-/// Full-height master table cards keep the same 16pt interior clearance on
+/// Full-height master table cards keep the same 12pt interior clearance on
 /// all four sides. Row rendering ends above the bottom inset; the scrollbar
 /// rail is independent and remains visually centered in that inset rather
 /// than touching the outer border. Only the two single-table masters use it.
@@ -936,7 +936,7 @@ pub fn freight_summary_frame() -> Frame {
 /// Keep this zero for all management tables sharing that header role.
 pub const MANAGEMENT_TABLE_SCROLL_TRACK_TOP_INSET:f32=0.0;
 /// Retain a small clearance at the BOTTOM of the rail within the body
-/// viewport. This does not alter row clipping or the card's 16pt padding.
+/// viewport. This does not alter row clipping or the card's 12pt padding.
 pub const MANAGEMENT_TABLE_SCROLL_TRACK_BOTTOM_INSET:f32=3.0;
 
 /// One bottom extension for EVERY management-table scrollbar. The
@@ -1368,17 +1368,17 @@ mod management_primary_card_geometry_tests {
     #[test]
     fn standard_workspace_matches_freight_primary_card_anchor() {
         // Title + tabs + four single-row KPI cards + their shared spacing.
-        assert!((management_primary_card_top_offset(1200.0)-216.0).abs()<0.01);
+        assert!((management_primary_card_top_offset(1200.0)-208.0).abs()<0.01);
     }
 
     #[test]
     fn narrower_workspaces_reserve_space_for_wrapped_freight_kpis() {
-        assert!((management_primary_card_top_offset(650.0)-304.0).abs()<0.01);
-        assert!((management_primary_card_top_offset(250.0)-480.0).abs()<0.01);
-        // A 950pt pane fits four cards before the 16pt + 16pt page inset,
+        assert!((management_primary_card_top_offset(650.0)-296.0).abs()<0.01);
+        assert!((management_primary_card_top_offset(250.0)-472.0).abs()<0.01);
+        // A 950pt pane fits four cards before the 12pt + 12pt page inset,
         // but only three inside it; reserve the wrapped second row.
-        assert!((management_primary_card_top_offset(950.0)-304.0).abs()<0.01);
-        assert!((management_primary_card_top_offset(968.0)-216.0).abs()<0.01);
+        assert!((management_primary_card_top_offset(950.0)-296.0).abs()<0.01);
+        assert!((management_primary_card_top_offset(968.0)-208.0).abs()<0.01);
     }
 }
 

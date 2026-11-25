@@ -1124,7 +1124,7 @@ fn manual_workspace_dialog_size(work_area:egui::Rect)->egui::Vec2{
     let width=(work_area.width()-theme::MANUAL_DIALOG_SIDE_GAP)
         .min(theme::MANUAL_DIALOG_MAX_WIDTH).max(0.0);
     // Status and shipment count sit below the shared title divider.
-    // The card body begins one 16pt master gap below the toolbar.
+    // The card body begins one 12pt master gap below the toolbar.
     let body=manual_workspace_columns_height();
     let frame_chrome=2.0*(theme::MODAL_PANEL_PADDING_Y+theme::FRAME_STROKE_WIDTH);
     let fixed_chrome=frame_chrome+manual_workspace_header_height()
@@ -2151,7 +2151,7 @@ impl ManualWorkspace {
                                         source_ui,"발주 원문",
                                         height,|_|{},|body|{
                                             // Use the same outer Reception card, title row,
-                                            // divider, and 16pt inset on all four sides
+                                            // divider, and 12pt inset on all four sides
                                             // as the intake source pane.
                                             body.spacing_mut().item_spacing.y=0.0;
                                             theme::source_document_frame().show(body,|document|{
@@ -4215,13 +4215,13 @@ mod manual_workspace_layout_tests{
 
     #[test]
     fn popup_height_tracks_the_visible_card_stack_and_fixed_modal_chrome(){
-        assert_eq!(theme::RECEPTION_PANE_PADDING_Y,16.0);
-        assert_eq!(manual_workspace_header_height(),113.0);
-        // Shared section chrome now includes the approved 16pt divider gaps.
+        assert_eq!(theme::RECEPTION_PANE_PADDING_Y,12.0);
+        assert_eq!(manual_workspace_header_height(),109.0);
+        // Shared section chrome now includes the approved 12pt divider gaps.
         // Keep explicit geometry expectations independent of the budget helper.
-        assert_eq!(theme::SECTION_DIVIDER_GAP,16.0);
-        assert_eq!(manual_recipient_card_height(),263.0);
-        assert_eq!(manual_workspace_columns_height(),627.0);
+        assert_eq!(theme::SECTION_DIVIDER_GAP,12.0);
+        assert_eq!(manual_recipient_card_height(),251.0);
+        assert_eq!(manual_workspace_columns_height(),607.0);
         assert_eq!(
             components::docked_section_body_height(manual_recipient_card_height()),
             4.0*theme::INPUT_HEIGHT+3.0*theme::RECIPIENT_ROW_GAP
@@ -4231,7 +4231,7 @@ mod manual_workspace_layout_tests{
         );
         let size=manual_workspace_dialog_size(work_area);
         assert_eq!(size.x,1364.0);
-        assert_eq!(size.y,864.0);
+        assert_eq!(size.y,824.0);
         let short_area=egui::Rect::from_min_size(
             egui::Pos2::ZERO,egui::vec2(1400.0,700.0)
         );

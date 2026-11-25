@@ -545,7 +545,7 @@ impl SettingsView{
         if let Some(tab)=selected_tab {
             self.request_tab(SettingsTab::ALL[tab]);
         }
-        ui.add_space(theme::SPACE_16);
+        ui.add_space(theme::SPACE_12);
         if !self.loaded || self.source.is_null(){
             if self.tab!=SettingsTab::Basic{
                 components::align_management_primary_card(ui,page_origin_y);
@@ -622,7 +622,7 @@ impl SettingsView{
             card.add_enabled_ui(editable,|form|{
                 section(form,"작업 환경",|content|{
                     content.horizontal(|row|{
-                        row.spacing_mut().item_spacing.x=theme::SPACE_16;
+                        row.spacing_mut().item_spacing.x=theme::SPACE_12;
                         row.vertical(|size|{
                             size.set_width(theme::MANAGEMENT_FILTER_DROPDOWN_WIDTH);
                             self.scale_selector(size,Arc::clone(&gateway));

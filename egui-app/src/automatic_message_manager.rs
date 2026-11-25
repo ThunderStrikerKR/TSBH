@@ -606,7 +606,7 @@ impl AutomaticMessageManager {
                 ("잠정 상품 선택 안내",self.section==Section::Provisional,true),
             ])
         );
-        ui.add_space(theme::SPACE_16);
+        ui.add_space(theme::SPACE_12);
         if !self.loaded{
             components::align_management_primary_card(ui,page_origin_y);
             components::management_pending_primary_card(ui);

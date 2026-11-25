@@ -830,7 +830,7 @@ impl ExcelManager{
                 self.managed_queue=None;
             }
         }
-        ui.add_space(theme::SPACE_16);
+        ui.add_space(theme::SPACE_12);
         let mut exported=None;
         let mut open_file=None;
         let mut open_daily=false;
@@ -865,11 +865,11 @@ impl ExcelManager{
             let history_tab=self.tab==Tab::History;
             let history_range_width=order_history_manager::EXCEL_EXPORT_DATE_CONTROLS_WIDTH;
             let history_one_row=history_tab&&toolbar_width>=
-                theme::MANAGEMENT_SEARCH_MIN_WIDTH+theme::SPACE_16
+                theme::MANAGEMENT_SEARCH_MIN_WIDTH+theme::SPACE_12
                     +history_range_width;
             let history_compact=history_tab&&toolbar_width<history_range_width;
             let stacked=has_actions&&toolbar_width
-                <theme::MANAGEMENT_SEARCH_MIN_WIDTH+theme::SPACE_16
+                <theme::MANAGEMENT_SEARCH_MIN_WIDTH+theme::SPACE_12
                     +theme::MANAGEMENT_EXCEL_TOOLBAR_ACTIONS_WIDTH;
             let toolbar_height=if history_tab{
                 if history_one_row{theme::INPUT_HEIGHT}else{
@@ -892,7 +892,7 @@ impl ExcelManager{
                 toolbar_width
             }else{
                 (toolbar_width-theme::MANAGEMENT_EXCEL_TOOLBAR_ACTIONS_WIDTH
-                    -theme::SPACE_16).max(1.0)
+                    -theme::SPACE_12).max(1.0)
             };
             let search_rect=Rect::from_min_size(
                 toolbar_rect.min,Vec2::new(search_width,theme::INPUT_HEIGHT)

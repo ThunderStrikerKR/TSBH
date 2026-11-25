@@ -1241,11 +1241,11 @@ impl OrderHistoryManager {
         });
         // No subtabs or KPIs: the approved common-card anchor owns the blank
         // area below this genuine title, without creating placeholder cards.
-        ui.add_space(theme::SPACE_16);
+        ui.add_space(theme::SPACE_12);
         let mut changed=false;
         components::align_management_primary_card(ui,page_origin_y);
         // Same full-height single-table card as Freight Assignment:
-        // preserve 16pt clearance on all four sides and keep both the
+        // preserve 12pt clearance on all four sides and keep both the
         // scrolling rows and the native rail within the inner card.
         let card_min_height=components::management_master_table_card_min_inner_height(ui);
         components::measured_management_master_card(ui,|section|{
@@ -1263,7 +1263,7 @@ impl OrderHistoryManager {
             let toolbar_content_width=full_width;
             let one_row=toolbar_content_width>=
                 theme::MANAGEMENT_SEARCH_MIN_WIDTH
-                +theme::SPACE_16+RANGE_CONTROLS_WIDTH;
+                +theme::SPACE_12+RANGE_CONTROLS_WIDTH;
             let compact=toolbar_content_width<RANGE_CONTROLS_WIDTH;
             let date_height=if compact{
                 theme::INPUT_HEIGHT*2.0+theme::SPACE_8
@@ -1299,7 +1299,7 @@ impl OrderHistoryManager {
                 .id_salt("history-range-controls")
                 .max_rect(date_rect)
                 // Anchor the actual trailing "전체 날짜" button to the
-                // card's right content boundary (16pt inset). The table's
+                // card's right content boundary (12pt inset). The table's
                 // independent scrollbar gutter is NOT subtracted here.
                 .layout(egui::Layout::left_to_right(Align::Center)
                     .with_main_align(Align::Max)),

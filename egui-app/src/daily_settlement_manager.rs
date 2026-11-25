@@ -480,7 +480,7 @@ impl DailySettlementManager{
                 }
             });
         });
-        ui.add_space(theme::SPACE_16);
+        ui.add_space(theme::SPACE_12);
         components::align_management_primary_card(ui,page_origin_y);
         let missing=Value::Null;
         let mut visible_report=self.report.as_ref();
@@ -527,7 +527,7 @@ impl DailySettlementManager{
                     section.add_space(theme::SPACE_8);
                     section.horizontal_wrapped(|line|{
                         line.spacing_mut().item_spacing=Vec2::new(
-                            theme::SPACE_16,theme::SPACE_8
+                            theme::SPACE_12,theme::SPACE_8
                         );
                         for (title,key) in [
                             ("상품대금 확인분","productKnown"),
@@ -601,7 +601,7 @@ impl DailySettlementManager{
                     components::section_divider(section);
                     section.horizontal_wrapped(|line|{
                         line.spacing_mut().item_spacing=Vec2::new(
-                            theme::SPACE_16,theme::SPACE_8
+                            theme::SPACE_12,theme::SPACE_8
                         );
                         for (title,key) in [
                             ("실제 입금 합계","paidCash"),

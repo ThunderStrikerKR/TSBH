@@ -420,7 +420,7 @@ impl ClientManager {
         if self.show_messages {
             // The automatic-message editor has its own nested tabs, not
             // four client-tier KPIs. Preserve that established workflow.
-            ui.add_space(theme::SPACE_16);
+            ui.add_space(theme::SPACE_12);
             if let Some(manager)=self.messages.as_mut(){
                 manager.show(ui,gateway,page_origin_y);
             }
@@ -441,7 +441,7 @@ impl ClientManager {
                 }
             });
         });
-        ui.add_space(theme::SPACE_16);
+        ui.add_space(theme::SPACE_12);
 
         // A filtered copy keeps Rust's search IDs authoritative.
         // Sorting changes display order only, never the backing master.
@@ -525,7 +525,7 @@ impl ClientManager {
                 let actions_width=theme::MANAGEMENT_TOOLBAR_ACTIONS_WIDTH
                     .min(toolbar_rect.width());
                 let left_width=(toolbar_rect.width()-actions_width
-                    -theme::SPACE_16).max(1.0);
+                    -theme::SPACE_12).max(1.0);
                 let search_rect=egui::Rect::from_min_size(
                     toolbar_rect.min,
                     egui::vec2(left_width,toolbar_rect.height())

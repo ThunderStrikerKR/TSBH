@@ -519,7 +519,7 @@ impl ProductManager {
         &mut self,ctx:&Context,work_area:Rect,window_id:&'static str
     )->(bool,Option<Value>){
         let mut cancelled=false;
-        let width=(work_area.width()-theme::SPACE_16*2.0).clamp(1.0,1120.0);
+        let width=(work_area.width()-theme::SPACE_12*2.0).clamp(1.0,1120.0);
         let height=components::modal_body_height_budget(work_area.height(),false).min(650.0);
         components::modal_window("상품 선택",window_id,work_area)
             .default_width(width).show(ctx,|ui|{
@@ -1020,7 +1020,7 @@ impl ProductManager {
         // The category editor keeps its distinct tree layout. The other
         // product tabs share Freight Assignment's actual four-card KPI strip.
         if self.tab==1{
-            ui.add_space(theme::SPACE_16);
+            ui.add_space(theme::SPACE_12);
         }else{
             ui.add_space(theme::SPACE_12);
             let counts=product_summary_counts(self.catalog.as_ref());
@@ -1041,7 +1041,7 @@ impl ProductManager {
                     }
                 });
             });
-            ui.add_space(theme::SPACE_16);
+            ui.add_space(theme::SPACE_12);
         }
         }
         let can_edit=!selecting && self.gateway.product_write_enabled()
@@ -1953,7 +1953,7 @@ impl ProductManager {
         brands:&[Value],categories:&[(String,String)],
         category_nodes:&[category_dropdown::CategoryNode],editable:bool,busy:bool
     ){
-        // The shared divider owns its full 16pt on each side; group scopes
+        // The shared divider owns its full 12pt on each side; group scopes
         // own only their internal 8pt row gaps, not the structural gap.
         components::modal_master_controlled_spacing(ui);
         ui.scope(|group|{
@@ -2116,7 +2116,7 @@ impl ProductManager {
                                     }
                                 );
                                 measured.cards.push(section.response.rect);
-                                stack.add_space(theme::SPACE_16);
+                                stack.add_space(theme::SPACE_12);
                                 let section=components::modal_section_measured(
                                     stack,"상품 개요",|fields|{
                                         Self::detail_information_column(
@@ -2129,7 +2129,7 @@ impl ProductManager {
                             });
                         }
                         // A single shared structural separator reserves
-                        // exactly 16pt on both sides of its divider.
+                        // exactly 12pt on both sides of its divider.
                         measured.divider=Some(
                             components::section_divider(body)
                         );
@@ -2427,12 +2427,12 @@ mod tests {
         assert!(composition.contains("ModalEditorBodyGeometry::default()"));
         assert!(composition.contains("section_divider(body)"));
         assert!(composition.contains("top.spacing_mut().item_spacing.x="));
-        assert!(!composition.contains("top.add_space(theme::SPACE_16)"));
+        assert!(!composition.contains("top.add_space(theme::SPACE_12)"));
         assert!(!composition.contains("modal.add_space(theme::SPACE_12)"));
         assert!(!composition.contains("components::soft_divider(body)"));
-        assert_eq!(theme::MODAL_MASTER_WORKSPACE_GAP,16.0);
-        assert_eq!(theme::MODAL_SECTION_PADDING,16.0);
-        assert_eq!(theme::MODAL_SECTION_HEADER_RULE_GAP,16.0);
+        assert_eq!(theme::MODAL_MASTER_WORKSPACE_GAP,12.0);
+        assert_eq!(theme::MODAL_SECTION_PADDING,12.0);
+        assert_eq!(theme::MODAL_SECTION_HEADER_RULE_GAP,12.0);
     }
     #[test]
     fn product_detail_narrow_media_and_history_fit_available_width(){
