@@ -158,7 +158,23 @@ fn stable_freight_candidate(tx:&Transaction<'_>,before:&Value,changed:&Value)
         SELECT 1 FROM main.sqlite_master WHERE type='trigger'
         UNION ALL SELECT 1 FROM temp.sqlite_master WHERE type='trigger')",
         [],|row|row.get(0)).map_err(err)?;
-    Ok(!triggers)
+    if triggers{return Ok(false);}
+    // A corrupt payload ID must not direct an UPSERT at another order's
+    // physical row. Verify the target tree's relational ownership first.
+    let order_id=old["id"].as_str().ok_or("주문 ID 누락")?;
+    let mismatched:bool=tx.query_row("SELECT EXISTS(
+        SELECT 1 FROM core_orders WHERE id=?1 AND
+            (json_type(payload,'$.id') IS NOT 'text' OR json_extract(payload,'$.id') IS NOT id)
+        UNION ALL
+        SELECT 1 FROM core_recipients WHERE order_id=?1 AND
+            (json_type(payload,'$.id') IS NOT 'text' OR json_extract(payload,'$.id') IS NOT id)
+        UNION ALL
+        SELECT 1 FROM core_items WHERE recipient_id IN
+            (SELECT id FROM core_recipients WHERE order_id=?1) AND
+            (json_type(payload,'$.id') IS NOT 'text' OR json_extract(payload,'$.id') IS NOT id))",
+        [order_id],|row|row.get(0)).map_err(err)?;
+    if mismatched{return Err("운임 수정 대상 주문의 관계형 ID와 업무 데이터가 일치하지 않습니다.".into());}
+    Ok(true)
 }
 
 fn finish_stable_freight(tx:&Transaction<'_>,mut before:Value,mut changed:Value,
@@ -212,6 +228,9 @@ fn finish_stable_freight(tx:&Transaction<'_>,mut before:Value,mut changed:Value,
     previous_orders[index]=target_before;
     before["orders"]=Value::Array(previous_orders);
     crate::valid_state(&verified)?;
+    if before["orders"]!=verified["orders"]{
+        crate::relational_write::validate_order_tree_ids(&verified)?;
+    }
     reception::validate_reception(&before,&verified)?;
     if !reception::new_archive_entries(&before,&verified)?.is_empty(){
         return Err("운임 수정의 전역 원문 감사 검증에 실패했습니다.".into());

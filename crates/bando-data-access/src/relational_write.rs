@@ -69,6 +69,23 @@ pub(crate) fn store_single_order_delta(tx:&Transaction<'_>,before:&Value,state:&
     }
     store_relational(tx,state,Some(before),Some(position))
 }
+// Match the full delta writer's global order, recipient and item ID
+// checks even when only one order was submitted to the SQL writer.
+pub(crate) fn validate_order_tree_ids(state:&Value)->Result<(),String>{
+    let mut orders=HashSet::new();
+    let mut recipients=HashSet::new();
+    let mut items=HashSet::new();
+    for order in source_list(state,"orders")?{
+        require_unique(&mut orders,required_id(order,"주문")?,"주문")?;
+        for recipient in source_list(order,"recipients")?{
+            require_unique(&mut recipients,required_id(recipient,"수취인")?,"수취인")?;
+            for item in source_list(recipient,"items")?{
+                require_unique(&mut items,required_id(item,"주문 품목")?,"주문 품목")?;
+            }
+        }
+    }
+    Ok(())
+}
 fn same_ids(old:&[Value],new:&[Value])->bool{
     old.len()==new.len() && old.iter().zip(new).all(|(a,b)|
         a["id"].as_str().is_some() && a["id"]==b["id"])
