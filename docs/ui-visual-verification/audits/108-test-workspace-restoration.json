@@ -1,0 +1,11 @@
+{
+  "schemaVersion": 1,
+  "id": "108-test-workspace-restoration",
+  "screen": "108차 개발용 테스트 실행 환경 복구",
+  "files": [
+    "egui-app/src/developer_ui_samples.rs",
+    "egui-app/src/test_workspace_init.rs"
+  ],
+  "visualStatus": "NOT_VERIFIED",
+  "reason": "Test-only database bootstrap and synthetic data restoration; no widget rendering changed. Actual Windows launch and two human-reviewed screenshots have not been verified. No visual PASS claimed."
+}
