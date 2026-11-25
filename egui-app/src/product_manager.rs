@@ -2250,6 +2250,10 @@ impl ProductManager {
                     }
                 );
                 request_close=closed;
+                #[cfg(test)]
+                modal.ctx().data_mut(|data|data.insert_temp(
+                    egui::Id::new("test-product-detail-geometry"),geometry.clone()
+                ));
                 // Capture actual egui allocation geometry each frame.
                 // The common audit is also exercised with a headless Context.
                 #[cfg(debug_assertions)]
@@ -2832,6 +2836,134 @@ mod tests {
         assert!(manager.notice.is_none());
         assert!(manager.error.is_none());
         assert!(!manager.has_modal());
+    }
+
+    fn collect_product_text(shape:&egui::Shape,out:&mut Vec<(String,Rect)>){
+        match shape{
+            egui::Shape::Text(text)=>out.push((
+                text.galley.text().to_owned(),
+                Rect::from_min_size(text.pos,text.galley.size())
+            )),
+            egui::Shape::Vec(shapes)=>for shape in shapes{
+                collect_product_text(shape,out);
+            },
+            _=>{}
+        }
+    }
+    fn product_page_text(manager:&mut ProductManager,ctx:&Context)->Vec<(String,Rect)>{
+        let mut text=Vec::new();
+        for _ in 0..3{
+            let output=ctx.run(egui::RawInput{
+                screen_rect:Some(Rect::from_min_size(egui::Pos2::ZERO,Vec2::new(1760.0,1000.0))),
+                ..Default::default()
+            },|ctx|{
+                egui::CentralPanel::default().show(ctx,|ui|manager.show_page(ui));
+            });
+            text.clear();
+            for shape in &output.shapes{collect_product_text(&shape.shape,&mut text);}
+        }
+        text
+    }
+    #[test]
+    fn rendered_product_kpis_show_unknown_until_catalog_arrives(){
+        let (mut manager,ctx,_requests)=price_test_manager();
+        manager.price_mode=false;
+        manager.catalog=None;
+        manager.products.clear();
+        let pending=product_page_text(&mut manager,&ctx);
+        manager.catalog=Some(json!({"revision":1,"products":[],"categories":[],
+            "brands":[],"aliases":[],"settings":{"colorGuidanceGroups":{}}}));
+        let empty=product_page_text(&mut manager,&ctx);
+        for label in ["등록 상품","모델군","별칭","브랜드"]{
+            let locate=|text:&[(String,Rect)],value:&str|{
+                let caption=text.iter().filter(|(s,_)|s==label)
+                    .map(|(_,rect)|*rect).find(|caption|{
+                        text.iter().any(|(s,rect)|s==value
+                            &&(rect.center().x-caption.center().x).abs()<=1.0
+                            &&rect.bottom()<=caption.top()
+                            &&caption.top()-rect.bottom()<60.0)
+                    }).unwrap_or_else(||panic!("missing KPI {label} value {value}"));
+                caption
+            };
+            let before=locate(&pending,"—");
+            let after=locate(&empty,"0");
+            assert!((before.center()-after.center()).length()<=1.0,
+                "KPI {label} shifted between unloaded and empty");
+        }
+        assert!(!pending.iter().any(|(s,_)|s=="상품 가격표 조회 중"));
+        assert!(!empty.iter().any(|(s,_)|s=="상품 변경 저장 중"));
+    }
+    #[test]
+    fn rendered_product_detail_measures_real_card_order_and_master_gaps(){
+        let (mut manager,ctx,_requests)=price_test_manager();
+        manager.price_mode=false;
+        manager.begin_edit(manager.products[0].clone());
+        let work=Rect::from_min_size(egui::Pos2::ZERO,Vec2::new(1760.0,1000.0));
+        let mut text=Vec::new();
+        for _ in 0..6{
+            let output=ctx.run(egui::RawInput{screen_rect:Some(work),..Default::default()},
+                |ctx|manager.show_detail(ctx,work));
+            text.clear();
+            for shape in &output.shapes{collect_product_text(&shape.shape,&mut text);}
+        }
+        let geometry=ctx.data(|data|data.get_temp::<components::ModalEditorGeometry>(
+            egui::Id::new("test-product-detail-geometry")
+        )).expect("actual product detail geometry");
+        let cards=&geometry.content.cards;
+        assert_eq!(cards.len(),3);
+        for (card,label) in cards.iter().zip(["상품 이미지","상품 개요","판매 · 가격"]){
+            assert!(text.iter().any(|(s,rect)|s==label&&card.contains(rect.center())),
+                "heading {label} is not in its measured card");
+        }
+        assert!(cards.windows(2).all(|pair|pair[0].right()<pair[1].left()));
+        assert!(geometry.header.is_some()&&geometry.footer.is_some());
+        assert!(geometry.content.divider.is_some()&&geometry.content.advanced_header.is_some());
+        let gaps=geometry.gaps();
+        for name in ["header_to_card","card_gap_1","card_gap_2","card_to_rule",
+            "rule_to_advanced","body_to_footer"]{
+            assert!(gaps.iter().any(|(label,_)|*label==name),"missing {name}: {gaps:?}");
+        }
+        assert!(geometry.invalid_gaps(1.0).is_empty(),"actual product modal: {gaps:?}");
+    }
+    #[test]
+    fn rendered_price_grid_escape_cancels_and_blur_saves_only_current_cell(){
+        let (mut manager,ctx,requests)=price_test_manager();
+        let key="p1:v1:semi";
+        render_price_grid_frame(&mut manager,&ctx,vec![]);
+        manager.price_focus_target=Some(key.into());
+        render_price_grid_frame(&mut manager,&ctx,vec![]);
+        let editor=rendered_price_editor_id(&ctx,key);
+        // Allow the real editor to receive focus and select the old amount.
+        render_price_grid_frame(&mut manager,&ctx,vec![]);
+        render_price_grid_frame(&mut manager,&ctx,vec![egui::Event::Text("21000".into())]);
+        assert_eq!(manager.price_drafts[key].parse().unwrap(),Some(21000));
+        render_price_grid_frame(&mut manager,&ctx,vec![egui::Event::Key{
+            key:egui::Key::Escape,physical_key:None,pressed:true,repeat:false,
+            modifiers:egui::Modifiers::NONE
+        }]);
+        assert!(!manager.price_drafts[key].dirty());
+        assert_eq!(manager.price_drafts[key].parse().unwrap(),Some(19000));
+        assert!(!ctx.memory(|m|m.has_focus(editor)));
+        assert!(requests.try_recv().is_err());
+        assert!(manager.error.is_none());
+        manager.price_focus_target=Some(key.into());
+        render_price_grid_frame(&mut manager,&ctx,vec![]);
+        render_price_grid_frame(&mut manager,&ctx,vec![]);
+        render_price_grid_frame(&mut manager,&ctx,vec![egui::Event::Text("22000".into())]);
+        assert_eq!(manager.price_drafts[key].parse().unwrap(),Some(22000));
+        ctx.memory_mut(|m|m.surrender_focus(editor));
+        render_price_grid_frame(&mut manager,&ctx,vec![]);
+        let request=next_price_request(&requests);
+        assert_eq!(request.data["tier"],"semi");
+        assert_eq!(request.data["expected"],19000);
+        assert_eq!(request.data["price"],22000);
+        request.reply.send(Ok(price_test_catalog(2,None,Some(22000)))).unwrap();
+        poll_price_until(&mut manager,&ctx,|m|m.writing.is_none());
+        assert_eq!(manager.products[0]["variants"][0]["semi"],22000);
+        assert_eq!(manager.products[0]["variants"][0]["retail"],26000);
+        assert!(requests.try_recv().is_err());
+        assert!(!manager.has_pending_prices());
+        assert!(manager.notice.is_none());
     }
 
     #[test]
