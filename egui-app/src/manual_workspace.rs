@@ -3720,7 +3720,7 @@ mod manual_workspace_modal_routing_tests {
 
     #[test]
     fn manual_source_palette_cache_reuses_frames_and_refreshes_after_assignment_release_and_undo(){
-        let ctx=Context::default();
+        let ctx=components::test_context();
         let mut workspace=palette_test_workspace();
         let empty=palette_model(json!({}));
         let assigned=palette_model(json!({"source-a":{"recipientId":"r2","field":"name"}}));
