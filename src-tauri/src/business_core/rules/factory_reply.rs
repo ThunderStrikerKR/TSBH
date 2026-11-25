@@ -79,6 +79,36 @@ fn row_matches(row:&Value,queue:&Value)->bool{
         })
     })
 }
+// Shipment positions never change during connect(). Keep the first position
+// for an ID, just like the original find(), and all tracking owners.
+struct ShipmentIndex<'a>{
+    shipments:&'a [Value],
+    first:HashMap<&'a str,usize>,
+    owners:HashMap<String,HashSet<usize>>,
+}
+impl<'a> ShipmentIndex<'a>{
+    fn new(state:&'a Value)->Self{
+        let shipments=rows(field(state,"workflow"),"shipments");
+        let mut first=HashMap::new();
+        let mut owners:HashMap<String,HashSet<usize>>=HashMap::new();
+        for (pos,ship) in shipments.iter().enumerate(){
+            first.entry(s(ship,"id")).or_insert(pos);
+            let tracking=s(field(ship,"tracking"),"FACTORY");
+            if !tracking.is_empty(){owners.entry(tracking.to_owned()).or_default().insert(pos);}
+        }
+        Self{shipments,first,owners}
+    }
+    fn position(&self,id:&str)->Option<usize>{self.first.get(id).copied()}
+    fn conflicts(&self,id:&str,tracking:&str)->bool{
+        self.owners.get(tracking).is_some_and(|positions|
+            positions.iter().any(|&pos|s(&self.shipments[pos],"id")!=id))
+    }
+    fn replace(&mut self,pos:usize,old:&str,new:&str){
+        if old==new{return;}
+        if let Some(positions)=self.owners.get_mut(old){positions.remove(&pos);}
+        if !new.is_empty(){self.owners.entry(new.to_owned()).or_default().insert(pos);}
+    }
+}
 fn actual(ship:&Value,recipient:&Value)->Value {
     match field(ship,"actualFreight").as_object().and_then(|m|m.get("FACTORY")){
         Some(value)=>value.clone(),
@@ -110,6 +140,7 @@ fn connect(input:&Value,source:&Value,approve:bool,context:&Value)->Result<Value
     // The reducer only mutates shipments, events and reply history.
     // Borrow the immutable input queue and preserve its original order.
     let queue_index=queue_match_index(input);
+    let mut shipment_index=ShipmentIndex::new(input);
     for index in 0..count {
         let current=reply["rows"][index].clone();
         if !s(&current,"issue").is_empty(){continue}
@@ -137,9 +168,9 @@ fn connect(input:&Value,source:&Value,approve:bool,context:&Value)->Result<Value
             continue
         }
         let shipment_id=ids[0].clone();
-        let ship=rows(field(&next,"workflow"),"shipments").iter()
-            .find(|v|s(v,"id")==shipment_id)
-            .ok_or("공장 회신과 연결된 배송 건을 찾지 못했습니다.")?.clone();
+        let shipment_pos=shipment_index.position(&shipment_id)
+            .ok_or("공장 회신과 연결된 배송 건을 찾지 못했습니다.")?;
+        let ship=rows(field(&next,"workflow"),"shipments")[shipment_pos].clone();
         let queue=candidates.iter().find(|q|s(q,"shipmentId")==shipment_id)
             .ok_or("회신 목록의 배송 건이 없습니다.")?;
         let recipient=field(field(queue,"snapshot"),"recipient");
@@ -149,8 +180,7 @@ fn connect(input:&Value,source:&Value,approve:bool,context:&Value)->Result<Value
             reply["rows"][index]["issue"]=json!("한 파일에 동일 배송 건 중복 행");
             continue
         }
-        if rows(field(&next,"workflow"),"shipments").iter().any(|v|
-            s(v,"id")!=shipment_id && s(field(v,"tracking"),"FACTORY")==s(&current,"tracking")){
+        if shipment_index.conflicts(&shipment_id,s(&current,"tracking")){
             reply["rows"][index]["issue"]=json!("운송장번호가 다른 배송 건에 이미 연결되어 있습니다.");
             continue
         }
@@ -194,8 +224,7 @@ fn connect(input:&Value,source:&Value,approve:bool,context:&Value)->Result<Value
             }))?;
         }
         let shipment=next["workflow"]["shipments"].as_array_mut()
-            .ok_or("공장 회신 배송 건이 없습니다.")?.iter_mut()
-            .find(|v|s(v,"id")==shipment_id)
+            .ok_or("공장 회신 배송 건이 없습니다.")?.get_mut(shipment_pos)
             .ok_or("회신할 배송 건이 없습니다.")?;
         if changed_freight {
             if !field(shipment,"actualFreight").is_object(){
@@ -207,6 +236,7 @@ fn connect(input:&Value,source:&Value,approve:bool,context:&Value)->Result<Value
             shipment["tracking"]=json!({});
         }
         shipment["tracking"]["FACTORY"]=field(&current,"tracking").clone();
+        shipment_index.replace(shipment_pos,prev_tracking,s(&current,"tracking"));
         let reply_action=if approve || (!prev_tracking.is_empty() && prev_tracking!=s(&current,"tracking")) {
             "공장 송장 / 운임 정정"
         }else{"공장 회신 반영"};
@@ -734,6 +764,60 @@ mod tests {
         assert_eq!(candidate_visits,REPLIES);
         // Deterministic work bound, not a flaky wall-clock threshold.
         eprintln!("factory queue benchmark: {QUEUE} queue / {REPLIES} rows; legacy={legacy:?}, indexed including build={indexed:?}; legacy visits={}, indexed build + candidate visits={}",QUEUE*REPLIES,QUEUE+candidate_visits);
+    }
+
+    #[test]
+    fn indexed_tracking_ownership_matches_linear_scan_after_each_change(){
+        let initial=json!({"workflow":{"shipments":[
+            {"id":"s1","tracking":{"FACTORY":"001234567890"}},
+            {"id":"s2","tracking":{"FACTORY":"009876543210"}},
+            {"id":"s2","tracking":{"FACTORY":"009876543210"}},
+            {"id":"s3","tracking":{"STORE":"001234567890"}},
+            {"id":"s4","tracking":{"FACTORY":"001234567890"}}
+        ]}});
+        let mut current=initial.clone();
+        let mut index=ShipmentIndex::new(&initial);
+        assert_eq!(index.position("s2"),Some(1));
+        assert_eq!(index.position("missing"),None);
+        for change in [None,Some((0,"1234567890")),Some((1,"1111111111")),
+            Some((4,"2222222222")),Some((3,"1234567890"))]{
+            if let Some((pos,new))=change{
+                let ship=&mut current["workflow"]["shipments"][pos];
+                index.replace(pos,s(field(ship,"tracking"),"FACTORY"),new);
+                ship["tracking"]["FACTORY"]=json!(new);
+            }
+            for id in ["s1","s2","s3","s4","missing"]{
+                for tracking in ["001234567890","009876543210","1234567890","1111111111","2222222222","9999999999"]{
+                    let expected=rows(field(&current,"workflow"),"shipments").iter().any(|v|
+                        s(v,"id")!=id && s(field(v,"tracking"),"FACTORY")==tracking);
+                    assert_eq!(index.conflicts(id,tracking),expected,"{id} / {tracking}");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn indexed_tracking_large_synthetic_benchmark(){
+        const SHIPMENTS:usize=10_000;
+        const QUERIES:usize=100;
+        let initial=json!({"workflow":{"shipments":(0..SHIPMENTS).map(|i|json!({
+            "id":format!("s{i}"),"tracking":{"FACTORY":format!("{:012}",i+1)}
+        })).collect::<Vec<_>>()}});
+        let queries=(0..QUERIES).map(|i|(format!("s{}",i*100),
+            format!("{:012}",i*100+1))).collect::<Vec<_>>();
+        let start=std::time::Instant::now();
+        let expected=queries.iter().map(|(id,tracking)|
+            rows(field(&initial,"workflow"),"shipments").iter().any(|v|
+                s(v,"id")!=id.as_str() && s(field(v,"tracking"),"FACTORY")==tracking.as_str()))
+            .collect::<Vec<_>>();
+        let legacy=start.elapsed();
+        let start=std::time::Instant::now();
+        let index=ShipmentIndex::new(&initial);
+        let actual=queries.iter().map(|(id,tracking)|index.conflicts(id,tracking)).collect::<Vec<_>>();
+        let indexed=start.elapsed();
+        assert_eq!(actual,expected);
+        assert!(actual.iter().all(|v|!*v));
+        eprintln!("factory tracking benchmark: {SHIPMENTS} shipments / {QUERIES} queries; legacy={legacy:?}, indexed including build={indexed:?}");
     }
 
     #[test] fn valid_reply_matches_and_audits(){
