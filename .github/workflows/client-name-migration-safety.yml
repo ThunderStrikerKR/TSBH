@@ -3,8 +3,6 @@ on:
   push:
     branches:
       - main
-      - domain/client-name-alias-migration-67
-      - ui/client-search-tag-chips-67
     paths:
       - .github/workflows/client-name-migration-safety.yml
       - crates/bando-data-access/src/client_names.rs
@@ -25,22 +23,7 @@ concurrency:
   group: client-name-safety-${{ github.ref }}
   cancel-in-progress: true
 jobs:
-  client-workbook-and-design:
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '22'
-          cache: npm
-      - run: npm ci
-      - name: Verify V1/V2 client XLSX binary roundtrip, CAS and cell safety
-        run: node --test tests/tauri-client-xlsx-roundtrip.test.mjs
-      - name: Verify TypeScript contracts
-        run: npm run check:types
-      - name: Verify approved UI roles
-        run: npm run check:ui-design
+
   client-name-safety:
     runs-on: windows-latest
     timeout-minutes: 45
@@ -63,10 +46,3 @@ jobs:
             cargo test --manifest-path egui-app/Cargo.toml client_search_tags::tests -- --nocapture
             if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           }
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '22'
-          cache: npm
-      - run: npm ci
-      - name: Check TypeScript and legacy Excel integration build
-        run: npm run build

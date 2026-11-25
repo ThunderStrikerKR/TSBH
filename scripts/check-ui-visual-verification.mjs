@@ -17,7 +17,7 @@ export const REQUIRED_CHECKS = [
 
 export function isUiSource(filename) {
   const f = filename.replaceAll("\\", "/");
-  if (/^src\/.*\.(tsx|jsx|css|scss)$/.test(f)) return true;
+  // Retired React/Tauri screens are not operational egui UI sources.
   // Prefer conservative coverage: a newly named egui control must not evade
   // the gate just because it lacks a known "_manager" or "_view" suffix.
   // Exclude only explicitly reviewed pure data/transport modules.
@@ -98,7 +98,7 @@ export function validateVisualAudit(audit, {
   if (!nonEmpty(audit.id)) bad("id is required");
   if (!nonEmpty(audit.screen)) bad("screen is required");
   if (!Array.isArray(audit.files) || !audit.files.length ||
-      audit.files.some((f) => !isUiSource(f)) ||
+      audit.files.some((f) => !isUiSource(f) && !/^src\/.*\.(tsx|jsx|css|scss)$/.test(f)) ||
       new Set(audit.files).size !== audit.files.length) {
     bad("files must be unique UI source paths");
   }
