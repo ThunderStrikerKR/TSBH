@@ -983,6 +983,7 @@ struct BandoEgui {
     workflow_freight_next_selection:Option<workflow_board_ui::Selection>,
     submitted_workflow_freight:Option<WorkflowFreightEditor>,
     workflow_stage_after_freight:Option<(String,usize,bool)>,
+    workflow_freight_guidance:Option<String>,
     /// Workflow approval requested while this same draft's inline cell is
     /// committing. Resume only after the native edit succeeds.
     pending_draft_confirmation:Option<String>,
@@ -1106,6 +1107,7 @@ impl BandoEgui {
             workflow_freight_next_selection:None,
             submitted_workflow_freight:None,
             workflow_stage_after_freight:None,
+            workflow_freight_guidance:None,
             pending_draft_confirmation:None,
             committed_draft_handoff:None,
             workflow_stage_deadlines: HashMap::new(),
@@ -1694,17 +1696,23 @@ impl BandoEgui {
                                 floating_notice::Tone::Validation,
                                 "운임 저장 후 업무 단계가 변경됐습니다. 현재 단계를 다시 확인하세요.");
                         }
+                    }else if let Some(id)=self.workflow_freight_guidance.take(){
+                        if self.page==Page::Reception && self.workflow_freight_editor.is_none(){
+                            self.focus_first_missing_workflow_freight(&id,ctx);
+                        }
                     }
                     ctx.request_repaint();
                 }
                 Ok(Err(error))=>{
                     self.workflow_receiver=None;
+                    self.workflow_freight_guidance=None;
                     self.workflow_error=Some(error);
                     self.workflow_stage_after_freight=None;
                     ctx.request_repaint();
                 }
                 Err(mpsc::TryRecvError::Disconnected)=>{
                     self.workflow_receiver=None;
+                    self.workflow_freight_guidance=None;
                     self.workflow_error=Some(
                         "발주 묶음 조회가 중단되었습니다.".to_owned()
                     );
@@ -6916,6 +6924,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                         }
                     );
                     if let Some(next_index)=next_ship{
+                        self.workflow_freight_guidance=None;
                         if let Some(target)=group.shipments.get(next_index){
                             let selection=workflow_board_ui::Selection{
                                 group_id:group.id.clone(),
@@ -7072,11 +7081,20 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                                     ),
                                                     freight_actions.amount_rect
                                                 ){
+                                                    let guide_focus=editor.focus_next &&
+                                                        self.workflow_freight_guidance.as_deref()==Some(group.id.as_str());
                                                     let response=components::reception_freight_inline_cell_editor(
                                                         contents,rect,&mut editor.text,
                                                         editor.focus_next,editor.click_at.take()
                                                     );
                                                     editor.focus_next=false;
+                                                    if guide_focus{
+                                                        response.scroll_to_me(Some(Align::Center));
+                                                        floating_notice::action_rect(contents.ctx(),"reception.freight",rect);
+                                                        floating_notice::publish(contents.ctx(),"reception.freight",
+                                                            floating_notice::Tone::Validation,
+                                                            "배송 운임을 입력하세요.");
+                                                    }
                                                     if response.has_focus() && contents.input(|input|
                                                         input.key_pressed(egui::Key::Escape)
                                                     ){
@@ -7133,9 +7151,11 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                 hovered_detail.or_else(||self.source_hover.clone()),ui.ctx()
             );
             if workflow_freight_cancel{
+                self.workflow_freight_guidance=None;
                 self.workflow_freight_editor=None;
                 self.workflow_freight_next_selection=None;
             }else if let Some((target_id,origin,original,click_at))=workflow_freight_open{
+                self.workflow_freight_guidance=None;
                 let Some(target)=group.shipments.iter().find(|s|s.id==target_id)else{return;};
                 self.discard_advisory_workflow_read();
                 // Editing a hover preview commits its exact shipment first.
@@ -8316,7 +8336,10 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
         floating_notice::inherit_origin(ctx,"reception.cell","reception.freight");
         let digits=editor.text.trim().replace(',',"");
         let original_digits=editor.original.trim().replace(',',"");
-        if digits==original_digits{return true;}
+        if digits==original_digits{
+            self.workflow_freight_guidance=None;
+            return true;
+        }
         let amount=if digits.is_empty(){
             serde_json::Value::Null
         }else{
@@ -8788,8 +8811,34 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
         if close{self.workflow_dialog=None;}
     }
 
+    /// Route a known native freight blocker to its exact input instead of
+    /// attempting a guaranteed-to-fail mutation and locking the whole card.
+    fn focus_first_missing_workflow_freight(&mut self,id:&str,ctx:&egui::Context)->bool{
+        if !self.gateway.workflow_write_enabled() || !self.workflow_mutation_ready(){return false;}
+        let target=self.workflow_snapshot.as_ref()
+            .and_then(|board|board.groups.iter().find(|g|g.id==id && g.step==1 && !g.transferred))
+            .and_then(workflow_board::first_missing_freight)
+            .map(|(ship,origin)|(ship.id.clone(),ship.order_id.clone(),origin));
+        let Some((shipment_id,order_id,origin))=target else{return false;};
+        self.discard_advisory_workflow_read();
+        self.workflow_ui.stop_preview();
+        self.workflow_ui.select(workflow_board_ui::Selection{
+            group_id:id.to_owned(),order_id,shipment_id:shipment_id.clone()
+        });
+        self.link_hover.clear();
+        self.source_hover=None;
+        self.workflow_freight_guidance=Some(id.to_owned());
+        self.workflow_freight_editor=Some(WorkflowFreightEditor{
+            group_id:id.to_owned(),shipment_id,origin,original:String::new(),
+            text:String::new(),focus_next:true,click_at:None
+        });
+        ctx.request_repaint();
+        true
+    }
+
     fn advance_workflow_group(&mut self,id:&str,ctx:&egui::Context){
         if !self.workflow_mutation_ready(){return;}
+        if self.focus_first_missing_workflow_freight(id,ctx){return;}
         let Some(group)=self.workflow_snapshot.as_ref()
             .and_then(|board|board.groups.iter().find(|group|group.id==id))
         else{return;};
@@ -8912,6 +8961,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                 self.request_draft_confirmation(&id,ui.ctx());
             }
             Some(workflow_board_ui::Event::SelectPending(id))=>{
+                self.workflow_freight_guidance=None;
                 if self.workflow_freight_editor.as_ref().is_some_and(|editor|
                     editor.text.trim()!=editor.original.trim()
                 ){
@@ -8928,6 +8978,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                 }
             }
             Some(workflow_board_ui::Event::SelectPendingRecipient(target))=>{
+                self.workflow_freight_guidance=None;
                 if self.workflow_freight_editor.as_ref().is_some_and(|editor|
                     editor.text.trim()!=editor.original.trim()
                 ){
@@ -8944,6 +8995,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                 }
             }
             Some(workflow_board_ui::Event::SelectShipment(selection))=>{
+                self.workflow_freight_guidance=None;
                 if self.workflow_freight_editor.as_ref().is_some_and(|editor|
                     editor.text.trim()!=editor.original.trim()
                 ){
@@ -9332,6 +9384,7 @@ impl eframe::App for BandoEgui {
             self.workflow_freight_editor=None;
             self.submitted_workflow_freight=None;
             self.workflow_stage_after_freight=None;
+            self.workflow_freight_guidance=None;
             self.workflow_freight_next_selection=None;
             self.workflow_dialog=None;
             self.client_manager=None;

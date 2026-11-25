@@ -230,6 +230,23 @@ pub fn missing_freight_target<'a>(group:&'a GroupRow,issue:&Value,preferred:&str
         .or_else(||group.shipments.iter().find_map(target))
 }
 
+/// Use the displayed shipment order, then the same item-origin order as
+/// the freight input rows. Only native FREIGHT issues with an editable
+/// missing charge are eligible; do not invent a new validation rule.
+pub fn first_missing_freight(group:&GroupRow)->Option<(&ShipmentRow,String)>{
+    for ship in &group.shipments{
+        for issue in &group.issues{
+            if text(issue,"kind")!="FREIGHT" ||
+                text(issue,"orderId")!=ship.order_id ||
+                text(issue,"recipientId")!=ship.recipient_id{continue;}
+            if let Some((target,origin))=missing_freight_target(group,issue,&ship.id){
+                if target.id==ship.id{return Some((target,origin));}
+            }
+        }
+    }
+    None
+}
+
 /// React's workflow-view::groupShipments is a read-only join.
 /// Business prices, freight code, VAT and stage are ALWAYS Rust projections.
 pub fn load(gateway:&dyn BandoGateway)->Result<BoardSnapshot,String>{
@@ -578,6 +595,27 @@ mod linked_recipient_selection_tests{
         settled.shipments[1].display_charges.insert("FACTORY".into(),None);
         settled.shipments[1].collect=true;
         assert!(missing_freight_target(&settled,&entries[0],"s1").is_none());
+    }
+    #[test]
+    fn freight_guidance_follows_display_order_and_skips_completed_origins(){
+        let mut first=shipment("s1","o1","r1");
+        first.recipient=json!({"items":[{"origin":"STORE"},{"origin":"FACTORY"}]});
+        let mut second=shipment("s2","o1","r2");
+        second.recipient=json!({"items":[{"origin":"FACTORY"}]});
+        let mut g=group("g",vec![first,second]);
+        g.issues=vec![
+            json!({"kind":"FREIGHT","orderId":"o1","recipientId":"r2"}),
+            json!({"kind":"FREIGHT","orderId":"o1","recipientId":"r1"})
+        ];
+        let next=|group:&GroupRow|first_missing_freight(group)
+            .map(|(ship,origin)|(ship.id.clone(),origin));
+        assert_eq!(next(&g),Some(("s1".into(),"STORE".into())));
+        g.shipments[0].display_charges.insert("STORE".into(),Some(0));
+        assert_eq!(next(&g),Some(("s1".into(),"FACTORY".into())));
+        g.shipments[0].display_charges.insert("FACTORY".into(),Some(3000));
+        assert_eq!(next(&g),Some(("s2".into(),"FACTORY".into())));
+        g.shipments[1].collect=true;
+        assert_eq!(next(&g),None);
     }
     #[test]
     fn action_card_owns_duplicate_mutation_and_automatic_message_errors(){
