@@ -259,9 +259,7 @@ fn paint_manual_assignment_recommendation(
     let clip=rect.intersect(ui.clip_rect());
     if clip.width()<=0.0 || clip.height()<=0.0{return;}
     let color=theme::SELECTION;
-    let fill=egui::Color32::from_rgba_unmultiplied(
-        color.r(),color.g(),color.b(),if hovered{42}else{20}
-    );
+    let fill=if hovered{theme::MANUAL_ASSIGNMENT_HOVER_TINT}else{theme::MANUAL_ASSIGNMENT_TINT};
     let painter=ui.painter().with_clip_rect(clip);
     painter.rect_filled(rect,theme::CONTROL_RADIUS,fill);
     painter.rect_stroke(

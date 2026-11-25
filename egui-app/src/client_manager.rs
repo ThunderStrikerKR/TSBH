@@ -869,8 +869,7 @@ impl ClientManager {
             .cloned().unwrap_or_default();
         if !aliases.is_empty() || !history.is_empty() {
             components::section_divider(ui);
-            egui::CollapsingHeader::new("상품 별칭 / 변경 이력")
-                .icon(components::paint_collapsing_header_icon)
+            components::collapsing_header("상품 별칭 / 변경 이력")
                 .show(ui,|ui|{
                 for alias in &aliases {
                     let product_name=self.state.get("products")

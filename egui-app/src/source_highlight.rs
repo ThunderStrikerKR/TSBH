@@ -460,8 +460,8 @@ pub fn hovered_key_at_pointer(
 // The source token palette is intentionally quiet in this dark theme.
 // 16pt SUIT stays unchanged. Normal blocks use the fixed line box with
 // horizontal glyph clearance and a consistent vertical inset.
-const SOURCE_BLOCK:Color32=Color32::from_rgb(66,66,66);        // #424242
-const SOURCE_CONTEXT:Color32=Color32::from_rgb(73,73,73);      // #494949
+const SOURCE_BLOCK:Color32=theme::SOURCE_BLOCK_FILL;        // #424242
+const SOURCE_CONTEXT:Color32=theme::SOURCE_CONTEXT_FILL;      // #494949
 const SOURCE_ACTIVE:Color32=ACTIVE_FILL;
 const SOURCE_ACTIVE_TEXT:Color32=ACTIVE_TEXT;
 const SOURCE_ACTIVE_BORDER:Color32=ACTIVE_BORDER;

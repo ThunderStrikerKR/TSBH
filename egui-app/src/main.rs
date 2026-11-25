@@ -3871,7 +3871,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                 ).selectable(true));
                                 components::section_divider(body);
                                 for (index,event) in receipt.edit_history.iter().enumerate().rev(){
-                                    egui::CollapsingHeader::new(format!(
+                                    components::collapsing_header(format!(
                                         "수정 {} · {}",index+1,
                                         event["at"].as_str().unwrap_or("")
                                     )).show(body,|history|{
@@ -4879,11 +4879,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                             typography::ocr_zoom_label(review.zoom)
                                         )
                                     );
-                                    zoom.add_sized(
-                                        Vec2::new(118.0,24.0),
-                                        egui::Slider::new(&mut review.zoom,0.5..=4.0)
-                                            .show_value(false)
-                                    );
+                                    components::ocr_zoom_slider(zoom,&mut review.zoom);
                                 }
                             );
                         },

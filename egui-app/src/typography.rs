@@ -646,6 +646,12 @@ pub fn product_image_placeholder_font()->FontId{
 
 /// The OCR labels retain the existing inherited egui text style, rather
 /// than adding a line-height or font-family override during extraction.
+/// Invisible native selection text preserves egui's selection semantics;
+/// the shared component paints the visible label using its semantic font.
+pub fn invisible_option_label(text:&str)->RichText{
+    RichText::new(text).color(egui::Color32::TRANSPARENT)
+}
+
 pub fn ocr_zoom_label(zoom:f32)->RichText{
     RichText::new(format!("{:>3.0}%",zoom*100.0))
 }

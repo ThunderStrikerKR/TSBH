@@ -2121,12 +2121,11 @@ impl ProductManager {
                         measured.divider=Some(
                             components::section_divider(body)
                         );
-                        let advanced=egui::CollapsingHeader::new(
+                        let advanced=components::collapsing_header(
                             "고급 정보"
                         )
                             .id_salt("product-detail-advanced")
                             .default_open(false)
-                            .icon(components::paint_collapsing_header_icon)
                             .show(body,|advanced|{
                                 advanced.spacing_mut().item_spacing.y=theme::SPACING;
                                 // Reserve the longest label using the shared font

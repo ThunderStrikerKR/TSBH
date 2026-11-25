@@ -1091,8 +1091,7 @@ impl SettingsView{
                                         if correction{"원문 정정"}else{"최초 접수"},
                                         if unverified{" (과거 자료 / 독립 감사 미확인)"}else{""}
                                     );
-                                    egui::CollapsingHeader::new(title)
-                                        .icon(components::paint_collapsing_header_icon)
+                                    components::collapsing_header(title)
                                         .show(entries,|detail|{
                                         if correction{
                                             detail.label(typography::field_label(

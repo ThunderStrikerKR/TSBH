@@ -2537,10 +2537,9 @@ impl FreightManager {
             for group in rows(&shipping["groups"]).iter().filter(|g|active(g)){
                 let group_id=text(group,"id");
                 let history=rows(&group["history"]);
-                egui::CollapsingHeader::new(format!(
+                components::collapsing_header(format!(
                     "{} / {}개 기준",text(group,"name"),history.len()
                 )).id_salt(("freight-history",group_id))
-                    .icon(components::paint_collapsing_header_icon)
                     .show(section,|body|{
                         if history.is_empty(){
                             components::management_body_state_inline(body,"이전 기준이 없습니다.");

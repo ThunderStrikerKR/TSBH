@@ -136,6 +136,24 @@ const controls = [
   ". text_edit_singleline (",". text_edit_multiline (",
   "ScrollStyle :: solid (","ScrollStyle :: floating ("
 ];
+// Native controls that were previously absent from the shared gate.
+// Every production use must go through its owning constructor; the same
+// rule also applies inside components.rs rather than trusting the file.
+const ownedControls = new Map([
+  ["CollapsingHeader :: new (","components.rs:collapsing_header"],
+  ["Slider :: new (","components.rs:ocr_zoom_slider"],
+  ["DragValue :: new (",null],["RadioButton :: new (",null],
+  ["SelectableLabel :: new (",null],["ProgressBar :: new (",null],
+  ["Spinner :: new (",null],["Separator :: new (",null],
+  ["ImageButton :: new (",null],[". radio (",null],[". radio_value (",null],
+  [". small_button (",null],[". toggle_value (",null],
+  [". selectable_label (",null],[". selectable_value (","components.rs:management_dropdown_option_inner"],
+  [". spinner (",null],[". show_tooltip_ui (",null],[". show_tooltip_text (",null],
+  [". on_hover_ui (",null],[". on_hover_ui_at_pointer (",null],
+]);
+const paletteConstructors = ["from_rgb","from_rgba_unmultiplied",
+  "from_rgba_unmultiplied_const","from_rgba_premultiplied","from_gray",
+  "from_rgb_additive","from_rgba_premultiplied_const"];
 const retired = [
   "components :: table_header (","components :: table_row (",
   "components :: record_card (","components :: summary_strip (",
@@ -198,6 +216,26 @@ export function audit(source,file,checkTableContracts=false){
     for(const pattern of overlayNative)
       if(file!=="overlay.rs"&&is(i,pattern))flag(i,"raw overlay outside shared manager: "+pattern);
     if(retiredTable.has(v[i]))flag(i,"retired table entry: "+v[i]);
+    for(const [pattern,owner] of ownedControls)
+      if(is(i,pattern)&&file+":"+fn!==owner)
+        flag(i,"raw control outside owning component: "+pattern);
+    if(file!=="theme.rs"&&paletteConstructors.some(name=>is(i,"Color32 :: "+name+" (")))
+      flag(i,"local color construction; define a semantic theme token");
+    if(file!=="typography.rs"){
+      if(is(i,"RichText :: new ("))
+        flag(i,"raw text styling outside typography");
+      // Named semantic font-size tokens are valid for custom painting.
+      // Literal font sizes and new monospace faces bypass the font roles.
+      if(["new","proportional","monospace"].some(name=>is(i,"FontId :: "+name+" ("))
+        && /^\d/.test(v[i+4]??""))
+        flag(i,"literal font size outside typography");
+      if(is(i,"FontId :: monospace (")&&!/^\d/.test(v[i+4]??""))
+        flag(i,"local monospace font; use typography data-value roles");
+    }
+    if(is(i,". set_fonts (")&&file!=="typography.rs")
+      flag(i,"global font installation outside typography");
+    if(is(i,". set_style (")&&file!=="typography.rs"&&file!=="theme.rs")
+      flag(i,"global style installation outside shared theme");
     if(is(i,"components ::")&&v[i+3]==="("){
       const key=file+":"+fn+":"+v[i+2];
       sharedCalls.set(key,(sharedCalls.get(key)||0)+1);
@@ -317,6 +355,23 @@ function selfTest(){
     ["main.rs","#[cfg(test)] mod tests {fn t(){egui::ScrollArea::vertical();}} fn render(){egui::ScrollArea::horizontal();}",1],
     ["new_screen.rs","fn render(){egui::Button :: new ( \"x\" );}",1],
     ["new_screen.rs","fn render(){ui.on_hover_text(\"x\");}",1],
+    ["new_screen.rs","fn render(){egui::CollapsingHeader::new(title);}",1],
+    ["components.rs","fn collapsing_header(){egui::CollapsingHeader::new(title);}",0],
+    ["components.rs","fn other(){egui::CollapsingHeader::new(title);}",1],
+    ["new_screen.rs","fn render(){egui::Slider::new(value,range);}",1],
+    ["components.rs","fn ocr_zoom_slider(){egui::Slider::new(value,range);}",0],
+    ["new_screen.rs","fn render(){ui.selectable_value(a,b,c);}",1],
+    ["components.rs","fn management_dropdown_option_inner(){ui.selectable_value(a,b,c);}",0],
+    ["new_screen.rs","fn render(){Color32::from_rgb(1,2,3);}",1],
+    ["theme.rs","const INK:Color32=Color32::from_rgb(1,2,3);",0],
+    ["new_screen.rs","fn render(){FontId::proportional(16.0);}",1],
+    ["new_screen.rs","fn render(){FontId::proportional(typography::FONT_BODY);}",0],
+    ["new_screen.rs","fn render(){FontId::monospace(typography::FONT_BODY);}",1],
+    ["typography.rs","fn render(){FontId::monospace(16.0);}",0],
+    ["new_screen.rs","fn render(){RichText::new(label);}",1],
+    ["typography.rs","fn render(){RichText::new(label);}",0],
+    ["new_screen.rs","fn render(){ctx.set_fonts(fonts);}",1],
+    ["new_screen.rs","fn render(){response.on_hover_ui(|ui|{});}",1],
     ["new_screen.rs","fn render(){egui::Area::new(id);}",1],
     ["overlay.rs","fn area(){egui::Area::new(id);}",0],
     ["new_screen.rs","fn render(){egui::Popup::menu(&response);}",1],

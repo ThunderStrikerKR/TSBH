@@ -4799,7 +4799,7 @@ pub fn management_master_header_sort_hover(ui:&Ui,hit:Rect){
     if hit.width()>0.0 && hit.height()>0.0 {
         let painter=ui.painter().with_clip_rect(hit);
         painter.rect_filled(
-            hit,2.0,egui::Color32::from_rgba_unmultiplied(112,180,255,20)
+            hit,2.0,theme::TABLE_SORT_HOVER_TINT
         );
         painter.rect_stroke(
             hit.shrink(1.0),2.0,
@@ -4908,7 +4908,20 @@ pub(crate) fn paint_management_chevron(
 /// Native CollapsingHeader keeps its original click/keyboard/state/indent
 /// behavior; only its default filled triangle becomes the common line icon.
 /// Rotate smoothly with egui's animated openness (0 = right, 1 = down).
-pub(crate) fn paint_collapsing_header_icon(
+pub fn collapsing_header(title:impl Into<egui::WidgetText>)->egui::CollapsingHeader{
+    egui::CollapsingHeader::new(title).icon(paint_collapsing_header_icon)
+}
+
+/// OCR image zoom uses a fixed control width and a separate formatted label.
+/// Keep the native slider's keyboard and drag behavior.
+pub fn ocr_zoom_slider(ui:&mut Ui,zoom:&mut f32)->Response{
+    ui.add_sized(
+        Vec2::new(118.0,24.0),
+        egui::Slider::new(zoom,0.5..=4.0).show_value(false)
+    )
+}
+
+fn paint_collapsing_header_icon(
     ui:&mut Ui,openness:f32,response:&Response
 ){
     let t=openness.clamp(0.0,1.0);
@@ -5178,7 +5191,7 @@ fn management_dropdown_option_inner<T:PartialEq>(
     ui:&mut Ui,current:&mut T,value:T,label:&str,
     style:ManagementDropdownOptionStyle
 )->Response{
-    let invisible=egui::RichText::new(label).color(Color32::TRANSPARENT);
+    let invisible=typography::invisible_option_label(label);
     let response=match style{
         ManagementDropdownOptionStyle::Compact(width)=>{
             let selected=*current==value;
