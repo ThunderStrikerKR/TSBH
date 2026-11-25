@@ -1115,7 +1115,7 @@ pub fn show(
                 }
             }
             if state.active_preview()==Some(group.id.as_str()) && !open{
-                overlay=Some((group.clone(),pos,width));
+                overlay=Some((group,pos,width));
             }
             ui.add_space(theme::WORKFLOW_CARD_GAP);
         }
@@ -1134,7 +1134,7 @@ pub fn show(
         if allow_pending_hover_switch && !selected &&
             state.pending_visible.as_ref().is_some_and(|target|
                 target.order_id==draft.id){
-            pending_overlay=Some((draft.clone(),name.clone(),ui.cursor().min,
+            pending_overlay=Some((draft,name.clone(),ui.cursor().min,
                 ui.available_width()));
         }
         if let Some(value)=pending_frame(
@@ -1168,7 +1168,7 @@ pub fn show(
             overlay_ui.set_min_width(width);
             overlay_ui.set_max_width(width);
             overlay_event=pending_frame(
-                overlay_ui,&draft,false,true,true,writable,&name,None,
+                overlay_ui,draft,false,true,true,writable,&name,None,
                 state.pending_visible.as_ref(),linked_selection,&mut overlay_hover
             );
         });
@@ -1214,7 +1214,7 @@ pub fn show(
             ui.set_max_width(width);
             let mut ignored_hover=None;
             overlay_event=group_frame(
-                ui,&group,current,true,true,state.preview_shipment.as_deref(),
+                ui,group,current,true,true,state.preview_shipment.as_deref(),
                 writable,freight_stage_group,linked_selection,&mut ignored_hover,&mut hovered_row
             );
         });
