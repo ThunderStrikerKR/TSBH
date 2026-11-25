@@ -587,6 +587,92 @@ fn quoted_freight_line<'a>(
     )
 }
 
+// Native quote display index. Keep the first matching row, including legacy
+// unscoped recognition IDs, using the same identity rule as the editor.
+#[derive(Default)]
+struct QuoteLineIndex{
+    exact:HashMap<(String,String),usize>,
+    canonical:HashMap<(String,String),usize>,
+    unscoped:HashMap<(String,String),usize>,
+}
+fn canonical_quote_id(order:&str,id:&str,kind:&str)->String{
+    if kind=="recognition:item:"{
+        gateway::rules::scope_reception_edit_ids(order,"",Some(id)).1.unwrap_or_default()
+    }else{gateway::rules::scope_reception_edit_ids(order,id,None).0}
+}
+impl QuoteLineIndex{
+    fn new(rows:&serde_json::Value,order:&str,field:&str,kind:&str,freight:bool)->Self{
+        let mut result=Self::default();
+        for (index,line) in rows.as_array().into_iter().flatten().enumerate(){
+            let Some(id)=line[field].as_str() else{continue;};
+            let origin=if freight{let Some(origin)=line["origin"].as_str() else{continue;};origin}else{""};
+            result.exact.entry((id.to_owned(),origin.to_owned())).or_insert(index);
+            if !order.is_empty(){
+                let canonical=canonical_quote_id(order,id,kind);
+                result.canonical.entry((canonical.clone(),origin.to_owned())).or_insert(index);
+                if id.starts_with(kind){
+                    result.unscoped.entry((canonical,origin.to_owned())).or_insert(index);
+                }
+            }
+        }
+        result
+    }
+    fn lookup(&self,order:&str,id:&str,kind:&str,origin:&str)->Option<usize>{
+        let exact=self.exact.get(&(id.to_owned(),origin.to_owned())).copied();
+        if order.is_empty(){return exact;}
+        let aliases=if id.starts_with(kind){&self.canonical}else{&self.unscoped};
+        let alternate=aliases.get(&(canonical_quote_id(order,id,kind),origin.to_owned())).copied();
+        match (exact,alternate){
+            (Some(a),Some(b))=>Some(a.min(b)),
+            (a,b)=>a.or(b),
+        }
+    }
+}
+pub(crate) struct QuoteDisplayIndex{
+    order:String,items:serde_json::Value,freight:serde_json::Value,
+    item_index:QuoteLineIndex,freight_index:QuoteLineIndex,
+}
+impl QuoteDisplayIndex{
+    fn new(quote:&serde_json::Value)->Self{
+        let order=quote["orderId"].as_str().unwrap_or("").to_owned();
+        let items=quote["linePrices"].clone();
+        let freight=quote["freightLines"].clone();
+        Self{item_index:QuoteLineIndex::new(&items,&order,"itemId","recognition:item:",false),
+            freight_index:QuoteLineIndex::new(&freight,&order,"recipientId","recognition:recipient:",true),
+            order,items,freight}
+    }
+    pub(crate) fn item(&self,id:&str)->Option<&serde_json::Value>{
+        self.items.as_array()?.get(self.item_index.lookup(&self.order,id,"recognition:item:","")?)
+    }
+    fn freight(&self,id:&str,origin:Option<&str>)->Option<&serde_json::Value>{
+        let origin=origin.filter(|s|!s.is_empty()).unwrap_or("FACTORY");
+        self.freight.as_array()?.get(self.freight_index.lookup(&self.order,id,"recognition:recipient:",origin)?)
+    }
+}
+thread_local!{
+    static QUOTE_DISPLAY_CACHE:std::cell::RefCell<Vec<Arc<QuoteDisplayIndex>>>=
+        const{std::cell::RefCell::new(Vec::new())};
+}
+pub(crate) fn indexed_quote(quote:&serde_json::Value)->Arc<QuoteDisplayIndex>{
+    QUOTE_DISPLAY_CACHE.with(|cache|{
+        let mut cache=cache.borrow_mut();
+        let result=if let Some(index)=cache.iter().position(|entry|
+            entry.order==quote["orderId"].as_str().unwrap_or("") &&
+            entry.items==quote["linePrices"] && entry.freight==quote["freightLines"]){
+            cache.remove(index)
+        }else{Arc::new(QuoteDisplayIndex::new(quote))};
+        if cache.len()>=3{cache.remove(0);}
+        cache.push(result.clone());result
+    })
+}
+fn clear_quote_display_cache(){QUOTE_DISPLAY_CACHE.with(|cache|cache.borrow_mut().clear());}
+fn indexed_billable_freight(quote:Option<&QuoteDisplayIndex>,recipient:&serde_json::Value)->Option<i64>{
+    if recipient["freightCode"].as_str()==Some("020"){return Some(0);}
+    let line=quote?.freight(recipient["id"].as_str()?,recipient["dispatchOrigin"].as_str())?;
+    if let Some(billable)=line.get("billableCharge"){billable.as_i64()}
+    else{line["appliedCharge"].as_i64()}
+}
+
 /// Display the charged freight, not the retained parcel tariff.
 /// Legacy prepaid snapshots may contain only appliedCharge.
 fn quoted_billable_freight(quote:Option<&serde_json::Value>,recipient:&serde_json::Value)->Option<i64>{
@@ -612,6 +698,35 @@ mod quote_identity_tests {
         assert_eq!(quoted_billable_freight(Some(&quote),&recipient),Some(8000));
         assert_eq!(quoted_billable_freight(None,&recipient),None);
         assert_eq!(quote["freightLines"][0]["appliedCharge"],8000);
+    }
+
+    #[test]
+    fn indexed_quote_matches_legacy_first_row_and_invalidates_changed_amount(){
+        let mut quote=serde_json::json!({"orderId":"o","linePrices":[
+            {"itemId":"o:recognition:item:1:0","amount":10},
+            {"itemId":"recognition:item:1:0","amount":20},
+            {"itemId":"manual","amount":30}
+        ],"freightLines":[
+            {"recipientId":"o:recognition:recipient:0","origin":"FACTORY","appliedCharge":3000},
+            {"recipientId":"recognition:recipient:0","origin":"FACTORY","appliedCharge":4000},
+            {"recipientId":"recognition:recipient:0","origin":"STORE","billableCharge":2500}
+        ]});
+        let index=indexed_quote(&quote);
+        assert!(Arc::ptr_eq(&index,&indexed_quote(&quote)));
+        for id in ["recognition:item:1:0","o:recognition:item:1:0","other:recognition:item:1:0","manual","missing"]{
+            assert_eq!(index.item(id),quoted_item_line(&quote,id));
+        }
+        for id in ["recognition:recipient:0","o:recognition:recipient:0","other:recognition:recipient:0"]{
+            for origin in [None,Some(""),Some("FACTORY"),Some("STORE")]{
+                assert_eq!(index.freight(id,origin),quoted_freight_line(&quote,id,origin));
+            }
+        }
+        let recipient=serde_json::json!({"id":"recognition:recipient:0","freightCode":"020"});
+        assert_eq!(indexed_billable_freight(Some(&index),&recipient),Some(0));
+        quote["linePrices"][0]["amount"]=serde_json::json!(99);
+        let changed=indexed_quote(&quote);
+        assert!(!Arc::ptr_eq(&index,&changed));
+        assert_eq!(changed.item("recognition:item:1:0").unwrap()["amount"],99);
     }
 
     #[test]
@@ -6959,6 +7074,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
             let recipient=recipients.get(index);
             let preview=draft.pricing_preview.as_ref()
                 .filter(|quote|quote["sourceRaw"].as_str()==Some(draft.raw.as_str()));
+            let quote_index=preview.map(indexed_quote);
             let mut next_target=None;
             ui.scope_builder(
                 UiBuilder::new().id_salt("pending-hover-review")
@@ -7075,8 +7191,8 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                                             .filter(|n|*n>0)
                                                             .map(|n|format!("{n}개"))
                                                             .unwrap_or_else(||"—".into());
-                                                        let amount=preview
-                                                            .and_then(|quote|quoted_item_line(quote,item_id))
+                                                        let amount=quote_index.as_deref()
+                                                            .and_then(|quote|quote.item(item_id))
                                                             .and_then(|line|line["amount"].as_i64())
                                                             .map(components::display_won)
                                                             .unwrap_or_else(||"—".into());
@@ -7108,7 +7224,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                                 components::reception_items_to_freight_gap(contents);
                                                 let origin=row["dispatchOrigin"].as_str();
                                                 let recipient_id=reception_service::text(row,"id");
-                                                let fee=quoted_billable_freight(preview,row);
+                                                let fee=indexed_billable_freight(quote_index.as_deref(),row);
                                                 let collect=row["freightCode"].as_str()
                                                     .map(|code|code=="020").unwrap_or(false);
                                                 let remote=row["remoteDelivery"]["checked"].as_bool();
@@ -7419,6 +7535,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                         .filter(|quote|quote.get("sourceRaw")
                             .and_then(serde_json::Value::as_str)
                             ==Some(self.raw_source.as_str()));
+                    let quote_index=preview.map(indexed_quote);
                     let available=components::docked_section_body_height(remaining)
                         .min(ui.available_height().max(0.0));
                     let list_height=available;
@@ -7452,8 +7569,8 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                                     .unwrap_or_else(||"—".into());
                                                 // Native quote owns unit price × quantity.
                                                 // The UI only reads its exact computed amount.
-                                                let amount=preview
-                                                    .and_then(|quote|quoted_item_line(quote,item_id))
+                                                let amount=quote_index.as_deref()
+                                                    .and_then(|quote|quote.item(item_id))
                                                     .and_then(|line|line.get("amount"))
                                                     .and_then(serde_json::Value::as_i64)
                                                     .map(components::display_won)
@@ -7512,8 +7629,8 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                                         "price"=>item.get("manualUnitPrice")
                                                             .or_else(||item.get("unitPrice"))
                                                             .and_then(serde_json::Value::as_i64)
-                                                            .or_else(||preview
-                                                                .and_then(|quote|quoted_item_line(quote,item_id))
+                                                            .or_else(||quote_index.as_deref()
+                                                                .and_then(|quote|quote.item(item_id))
                                                                 .and_then(|line|line["unitPrice"].as_i64()))
                                                             .map(|n|n.to_string()).unwrap_or_default(),
                                                         _=>reception_service::item_title(item)
@@ -7599,7 +7716,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                         );
                                         let origin=recipient.get("dispatchOrigin")
                                             .and_then(serde_json::Value::as_str);
-                                        let line_fee=quoted_billable_freight(preview,recipient);
+                                        let line_fee=indexed_billable_freight(quote_index.as_deref(),recipient);
                                         let cod=recipient.get("freightCode")
                                             .and_then(serde_json::Value::as_str)
                                             .map(|code|code=="020");
@@ -9138,6 +9255,7 @@ impl eframe::App for BandoEgui {
         self.kakao_tracker.shutdown();
         self.clipboard_monitor.shutdown();
         source_highlight::clear_visual_cache();
+            clear_quote_display_cache();
     }
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         let frame_started=Instant::now();
@@ -9184,6 +9302,7 @@ impl eframe::App for BandoEgui {
             self.pending_display=None;
             self.workflow_source_display=None;
             source_highlight::clear_visual_cache();
+            clear_quote_display_cache();
             self.workflow_receiver=None;
             self.workflow_refresh_required=false;
             self.workflow_last_fetch=None;
