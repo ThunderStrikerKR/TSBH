@@ -474,13 +474,45 @@ struct VisualBlock {
 #[derive(Clone,Copy,Debug,PartialEq,Eq)]
 enum ManualBlockState { Unassigned, Classified }
 
-// Bounded, UI-thread-local cache shared by the text layout and block painter.
- // Compare borrowed inputs exactly before allocating; no hash collisions or
- // pointer-address reuse can let a changed source inherit old evidence.
+// Two levels: immutable document geometry, then selected/hovered styling.
+// Exact borrowed comparison protects against reused IDs or hash collisions.
+struct VisualGeometry{
+    intervals:Vec<(usize,usize,usize,usize)>,
+    starts:Vec<usize>,ends:Vec<usize>,
+    characters:std::sync::Arc<[char]>,
+}
+impl VisualGeometry{
+    fn new(raw:&str,spans:&[LinkedSpan])->Self{
+        let mut positions=Vec::with_capacity(spans.len()*2+2);
+        positions.extend([0,raw.len()]);
+        for span in spans{
+            if span.start<span.end && span.end<=raw.len() &&
+                raw.is_char_boundary(span.start) && raw.is_char_boundary(span.end){
+                positions.extend([span.start,span.end]);
+            }
+        }
+        positions.sort_unstable();positions.dedup();
+        let mut char_cursor=0;
+        let intervals=positions.windows(2).map(|window|{
+            let (start,end)=(window[0],window[1]);
+            let start_char=char_cursor;
+            char_cursor+=raw[start..end].chars().count();
+            (start,end,start_char,char_cursor)
+        }).collect();
+        let mut starts:Vec<usize>=(0..spans.len()).filter(|&i|spans[i].start<spans[i].end).collect();
+        let mut ends=starts.clone();
+        starts.sort_unstable_by_key(|&i|spans[i].start);
+        ends.sort_unstable_by_key(|&i|spans[i].end);
+        Self{intervals,starts,ends,characters:raw.chars().collect::<Vec<_>>().into()}
+    }
+}
+struct VisualStyleEntry{
+    selected:Option<String>,active:Option<LinkKey>,assigned:Option<HashSet<String>>,
+    blocks:std::sync::Arc<[VisualBlock]>,
+}
 struct VisualCacheEntry{
-    raw:String,spans:Vec<LinkedSpan>,selected:Option<String>,
-    active:Option<LinkKey>,assigned:Option<HashSet<String>>,
-    blocks:std::sync::Arc<[VisualBlock]>,characters:std::sync::Arc<[char]>,
+    raw:String,spans:Vec<LinkedSpan>,geometry:VisualGeometry,
+    styles:Vec<VisualStyleEntry>,
 }
 thread_local!{
     static VISUAL_CACHE:std::cell::RefCell<Vec<VisualCacheEntry>>=
@@ -491,24 +523,30 @@ fn cached_visual_blocks(raw:&str,spans:&[LinkedSpan],selected:Option<&str>,
     ->(std::sync::Arc<[VisualBlock]>,std::sync::Arc<[char]>){
     VISUAL_CACHE.with(|cache|{
         let mut cache=cache.borrow_mut();
-        if let Some(index)=cache.iter().position(|entry|
-            entry.raw==raw && entry.spans==spans &&
-            entry.selected.as_deref()==selected && entry.active.as_ref()==active &&
-            entry.assigned.as_ref()==assigned){
-            let entry=cache.remove(index);
-            let result=(entry.blocks.clone(),entry.characters.clone());
-            cache.push(entry);
-            return result;
-        }
-        let blocks:std::sync::Arc<[VisualBlock]>=visual_blocks_with_manual_states(
-            raw,spans,selected,active,assigned).into();
-        let characters:std::sync::Arc<[char]>=raw.chars().collect::<Vec<_>>().into();
-        // Bound retained document data; do not keep an unbounded order cache.
+        let mut entry=if let Some(index)=cache.iter().position(|entry|
+            entry.raw==raw && entry.spans==spans){
+            cache.remove(index)
+        }else{
+            VisualCacheEntry{raw:raw.to_owned(),spans:spans.to_vec(),
+                geometry:VisualGeometry::new(raw,spans),styles:Vec::new()}
+        };
+        let style=if let Some(index)=entry.styles.iter().position(|style|
+            style.selected.as_deref()==selected && style.active.as_ref()==active &&
+            style.assigned.as_ref()==assigned){
+            entry.styles.remove(index)
+        }else{
+            VisualStyleEntry{selected:selected.map(str::to_owned),active:active.cloned(),
+                assigned:assigned.cloned(),blocks:style_visual_blocks(
+                    &entry.geometry,spans,selected,active,assigned).into()}
+        };
+        let result=(style.blocks.clone(),entry.geometry.characters.clone());
+        // Bound both retained documents and hover variants. Changing a field
+        // does not duplicate the raw source or rebuild byte/character bounds.
+        if entry.styles.len()>=3{entry.styles.remove(0);}
+        entry.styles.push(style);
         if cache.len()>=3{cache.remove(0);}
-        cache.push(VisualCacheEntry{raw:raw.to_owned(),spans:spans.to_vec(),
-            selected:selected.map(str::to_owned),active:active.cloned(),assigned:assigned.cloned(),
-            blocks:blocks.clone(),characters:characters.clone()});
-        (blocks,characters)
+        cache.push(entry);
+        result
     })
 }
 pub fn clear_visual_cache(){VISUAL_CACHE.with(|cache|cache.borrow_mut().clear());}
@@ -528,23 +566,25 @@ fn visual_blocks_with_manual_states(
     raw:&str,spans:&[LinkedSpan],selected_recipient:Option<&str>,
     active:Option<&LinkKey>,assigned_ids:Option<&HashSet<String>>
 )->Vec<VisualBlock> {
-    let mut positions=Vec::with_capacity(spans.len()*2+2);
-    positions.extend([0,raw.len()]);
-    for span in spans {
-        if span.start<span.end && span.end<=raw.len() &&
-           raw.is_char_boundary(span.start) && raw.is_char_boundary(span.end) {
-            positions.extend([span.start,span.end]);
-        }
-    }
-    positions.sort_unstable();
-    positions.dedup();
+    style_visual_blocks(&VisualGeometry::new(raw,spans),spans,selected_recipient,active,assigned_ids)
+}
+fn style_visual_blocks(
+    geometry:&VisualGeometry,spans:&[LinkedSpan],selected_recipient:Option<&str>,
+    active:Option<&LinkKey>,assigned_ids:Option<&HashSet<String>>
+)->Vec<VisualBlock>{
     let mut result:Vec<VisualBlock>=Vec::new();
-    let mut char_cursor=0;
-    for window in positions.windows(2) {
-        let (start,end)=(window[0],window[1]);
-        let start_char=char_cursor;
-        char_cursor+=raw[start..end].chars().count();
-        let mut visible=spans.iter().filter(|s|s.start<=start && s.end>=end);
+    let mut starts=0;let mut ends=0;
+    // The active set is ordered by original input index: overlapping span
+    // precedence remains EXACTLY the same as the old linear scan.
+    let mut covering=std::collections::BTreeSet::new();
+    for &(start,end,start_char,char_cursor) in &geometry.intervals{
+        while starts<geometry.starts.len() && spans[geometry.starts[starts]].start<=start{
+            covering.insert(geometry.starts[starts]);starts+=1;
+        }
+        while ends<geometry.ends.len() && spans[geometry.ends[ends]].end<end{
+            covering.remove(&geometry.ends[ends]);ends+=1;
+        }
+        let mut visible=covering.iter().map(|&index|&spans[index]);
         let focused=active.and_then(|key|visible.clone().find(|s|
             same_target(&s.key,key)));
         let contextual=visible.clone().find(|s|
@@ -780,9 +820,7 @@ pub fn manual_source_block_visual(
     let target=spans.iter().find(|span|
         span.source_id.as_deref()==Some(source_id)
     )?;
-    let blocks=visual_blocks_with_manual_states(
-        raw,spans,selected_recipient,active,Some(assigned_ids)
-    );
+    let (blocks,characters)=cached_visual_blocks(raw,spans,selected_recipient,active,Some(assigned_ids));
     let target_blocks:Vec<&VisualBlock>=blocks.iter().filter(|block|
         block.key==target.key &&
         block.start_char>=target.start_char &&
@@ -790,7 +828,6 @@ pub fn manual_source_block_visual(
     ).collect();
     let _first=*target_blocks.first()?;
     let style=manual_source_block_style(target,active,assigned_ids);
-    let characters:Vec<char>=raw.chars().collect();
     let mut rects=Vec::new();
     let mut row_start=0usize;
     for (row_index,placed) in galley.rows.iter().enumerate() {
@@ -1440,7 +1477,8 @@ mod visual_cache_tests{
         let (same,same_chars)=cached_visual_blocks(raw,&spans,None,None,None);
         assert!(std::sync::Arc::ptr_eq(&first,&same));
         assert!(std::sync::Arc::ptr_eq(&chars,&same_chars));
-        let (focused,_)=cached_visual_blocks(raw,&spans,None,Some(&spans[0].key),None);
+        let (focused,focused_chars)=cached_visual_blocks(raw,&spans,None,Some(&spans[0].key),None);
+        assert!(std::sync::Arc::ptr_eq(&chars,&focused_chars));
         assert!(!std::sync::Arc::ptr_eq(&first,&focused));
         assert!(focused[0].focused);
         let assigned=HashSet::from(["b".to_owned()]);
