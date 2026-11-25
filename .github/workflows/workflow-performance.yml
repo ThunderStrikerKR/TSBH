@@ -13,6 +13,9 @@ on:
       - egui-app/src/components.rs
       - egui-app/src/reception_jobs.rs
       - egui-app/src/review_panel.rs
+      - egui-app/src/source_highlight.rs
+      - egui-app/src/manual_source_view.rs
+      - egui-app/src/workflow_board_ui.rs
       - egui-app/src/workflow_board.rs
       - egui-app/src/manual_workspace.rs
       - crates/bando-data-access/**
@@ -48,6 +51,16 @@ jobs:
       - name: Compile egui and verify admission and scope contracts
         shell: pwsh
         run: |
+          cargo test --manifest-path egui-app/Cargo.toml source_highlight:: -- --nocapture
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cargo test --manifest-path egui-app/Cargo.toml manual_source_view:: -- --nocapture
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cargo test --manifest-path egui-app/Cargo.toml manual_render_cache_tests -- --nocapture
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cargo test --manifest-path egui-app/Cargo.toml pending_display_cache_reuses_exact_projection_and_rejects_edited_receipt -- --nocapture
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cargo test --manifest-path egui-app/Cargo.toml review_panel:: -- --nocapture
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           cargo test --manifest-path egui-app/Cargo.toml clipboard_intake:: -- --nocapture
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           cargo test --manifest-path egui-app/Cargo.toml kakao_context:: -- --nocapture
