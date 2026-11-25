@@ -2126,6 +2126,7 @@ impl ManualWorkspace {
                     let Some((busy,pending_quantity_active,has_pending_quantity,guidance))=workspace.body_region(|ui|{
                         let Some(data)=render_data.as_ref() else {return None};
                         let model=&data.model;
+                        let quote_index=self.view_quote.as_ref().map(crate::indexed_quote);
                         let rows=list(model,"rows");
                         let visible_shipment=visible_manual_shipment(self.selected_recipient,rows.len());
                         let assignments=model.get("assignments").unwrap_or(&Value::Null);
@@ -2389,8 +2390,8 @@ impl ManualWorkspace {
                                                                     .map(|n|format!("{n}개"))
                                                                     .unwrap_or_else(||"—".to_owned());
                                                                 // Exactly the same native line amount as reception.
-                                                                let price=self.view_quote.as_ref()
-                                                                    .and_then(|quote|crate::quoted_item_line(quote,item_id))
+                                                                let price=quote_index.as_deref()
+                                                                    .and_then(|quote|quote.item(item_id))
                                                                     .and_then(|line|line["amount"].as_i64())
                                                                     .map(components::display_won)
                                                                     .unwrap_or_else(||"—".into());
@@ -2532,7 +2533,7 @@ impl ManualWorkspace {
                                                             let remote_ready=remote_value.is_some();
                                                             let freight=components::reception_freight_row_editable(
                                                                 items_ui,"운임",
-                                                                crate::quoted_billable_freight(self.view_quote.as_ref(),row),
+                                                                crate::indexed_billable_freight(quote_index.as_deref(),row),
                                                                 Some(code=="020"),
                                                                 remote_ready.then_some(remote),
                                                                 true,can_mutate
@@ -3570,8 +3571,12 @@ mod manual_workspace_modal_routing_tests {
         assert!(!render.contains("reception_items_header_with_amount_label("));
         assert!(!render.contains("reception_item_row_editable("));
         assert!(!render.contains("\"step_manual_quantity\""));
-        assert!(render.contains("crate::quoted_item_line("));
-        assert!(render.contains("crate::quoted_billable_freight("));
+        assert!(render.contains("map(crate::indexed_quote)") &&
+            intake.contains("map(indexed_quote)"));
+        assert!(render.contains("quote.item(item_id)") &&
+            intake.contains("quote.item(item_id)"));
+        assert!(render.contains("crate::indexed_billable_freight(") &&
+            intake.contains("indexed_billable_freight("));
         assert!(render.contains("field!=\"product\" && self.cell_editor_open()"));
         assert!(render.contains("item_editor::product_click_intent("));
         assert!(intake.contains("item_editor::product_click_intent("));
