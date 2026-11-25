@@ -366,7 +366,9 @@ fn report_table<const N:usize>(
     let left=first_x.unwrap_or(header.left()-scroll.state.offset.x);
     let header_cells=cells(egui::pos2(left,header.top()),&widths,HEADER_HEIGHT);
     let painter=ui.painter().with_clip_rect(header);
-    painter.rect_filled(header,0.0,theme::RAISED);
+    let header_text_rect=components::management_master_header_begin(
+        ui,header,layout.header_content_rect
+    );
     let mut sort_change=None;
     for (column,title) in headings.iter().enumerate(){
         let cell=header_cells[column];
@@ -385,9 +387,9 @@ fn report_table<const N:usize>(
         }else{
             cell.left()+theme::SPACE_8
         };
-        let clip=cell.intersect(header);
+        let clip=cell.intersect(header_text_rect);
         painter.with_clip_rect(clip).galley(
-            egui::pos2(x,cell.center().y-galley.size().y/2.0),
+            egui::pos2(x,header_text_rect.center().y-galley.size().y/2.0),
             galley,theme::SECONDARY
         );
         if clip.width()>0.0 && clip.height()>0.0{
@@ -404,6 +406,7 @@ fn report_table<const N:usize>(
         }
         if column+1<N{
             let x=cell.right()+COL_GAP/2.0;
+            let painter=painter.with_clip_rect(header_text_rect);
             painter.line_segment(
                 [egui::pos2(x,header.top()),egui::pos2(x,header.bottom())],
                 Stroke::new(theme::SOFT_DIVIDER_WIDTH,theme::DIVIDER)
@@ -411,10 +414,7 @@ fn report_table<const N:usize>(
         }
     }
     if let Some(next)=sort_change{*sort=next;}
-    painter.line_segment(
-        [header.left_bottom(),header.right_bottom()],
-        Stroke::new(theme::SOFT_DIVIDER_WIDTH,theme::DIVIDER)
-    );
+    components::management_master_header_finish(ui,header);
 }
 
 pub struct DailySettlementManager{

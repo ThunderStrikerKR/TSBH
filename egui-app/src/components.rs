@@ -226,14 +226,26 @@ pub fn paint_management_text_cell_with_full(
     }else if align==egui::Align2::CENTER_CENTER{
         content.center().x-galley.size().x/2.0
     }else{content.left()};
-    let overflow=text_exceeds_rect(galley.size(),visible);
-    ui.painter().with_clip_rect(visible).galley(
-        egui::pos2(x,content.center().y-galley.size().y/2.0),galley,color
-    );
+    let overflow=paint_table_galley(ui,content,x,galley,color);
     if (overflow||shortened)&&!text.trim().is_empty(){
         let response=ui.interact(visible,ui.make_persistent_id(id),Sense::hover());
         overflow_tooltip(response,true,full);
     }
+}
+
+/// Shared vertically centered text painting for ordinary and composite cells.
+/// The caller owns the horizontal anchor, semantic font and interaction.
+pub fn paint_table_galley(
+    ui:&Ui,cell:Rect,x:f32,galley:std::sync::Arc<egui::Galley>,color:Color32
+)->bool{
+    let visible=cell.intersect(ui.clip_rect());
+    let overflow=text_exceeds_rect(galley.size(),visible);
+    if visible.width()>0.0&&visible.height()>0.0{
+        ui.painter().with_clip_rect(visible).galley(
+            egui::pos2(x,cell.center().y-galley.size().y/2.0),galley,color
+        );
+    }
+    overflow
 }
 
 pub fn body_error_overlay(ui:&Ui,viewport:Rect,context:&str,error:&str){
@@ -5382,10 +5394,7 @@ fn client_tier_colors(tier:&str)->(Color32,Color32) {
 fn paint_client_line(
     ui:&Ui,cell:Rect,x:f32,galley:std::sync::Arc<egui::Galley>,color:Color32
 ) {
-    let y=cell.center().y-galley.size().y/2.0;
-    ui.painter().with_clip_rect(cell).galley(
-        egui::pos2(x,y),galley,color
-    );
+    paint_table_galley(ui,cell,x,galley,color);
 }
 
 /// Shared measured badge: the longest label (반도매) controls width.
@@ -11004,8 +11013,13 @@ mod shared_ui_base_113_contract_tests {
             include_str!("daily_settlement_manager.rs")]{
             assert!(production_source_for_contract(source).contains("components::paint_management_text_cell("));
         }
+        for source in [include_str!("order_history_manager.rs"),include_str!("excel_manager.rs"),
+            include_str!("daily_settlement_manager.rs")]{
+            let production=production_source_for_contract(source);
+            assert!(production.contains("components::management_master_header_begin("));
+            assert!(production.contains("components::management_master_header_finish("));
+        }
         let history=production_source_for_contract(include_str!("order_history_manager.rs"));
-        assert!(history.contains("components::management_master_header_begin("));
-        assert!(history.contains("components::management_master_header_finish("));
+        assert!(history.contains("components::paint_table_galley("));
     }
 }

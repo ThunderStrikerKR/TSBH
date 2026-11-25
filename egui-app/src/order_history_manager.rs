@@ -442,10 +442,7 @@ fn paint_text(ui:&Ui,rect:Rect,value:&str,
     let x=if right{
         (rect.right()-inset-galley.size().x).max(rect.left()+inset)
     }else{rect.left()+inset};
-    let y=rect.center().y-galley.size().y/2.0;
-    ui.painter().with_clip_rect(rect.intersect(ui.clip_rect())).galley(
-        egui::pos2(x,y),galley,color
-    );
+    components::paint_table_galley(ui,rect,x,galley,color);
 }
 fn paint_center(ui:&Ui,rect:Rect,value:&str){
     let galley=typography::management_table_cell_galley(
@@ -453,16 +450,11 @@ fn paint_center(ui:&Ui,rect:Rect,value:&str){
     );
     let x=(rect.center().x-galley.size().x/2.0)
         .max(rect.left()+6.0);
-    ui.painter().with_clip_rect(rect.intersect(ui.clip_rect())).galley(
-        egui::pos2(x,rect.center().y-galley.size().y/2.0),galley,theme::SECONDARY
-    );
+    components::paint_table_galley(ui,rect,x,galley,theme::SECONDARY);
 }
 fn paint_caption(ui:&Ui,rect:Rect,value:&str){
     let galley=typography::client_table_metadata_galley(ui,value,theme::MUTED);
-    ui.painter().with_clip_rect(rect.intersect(ui.clip_rect())).galley(
-        egui::pos2(rect.left()+6.0,
-            rect.center().y-galley.size().y/2.0),galley,theme::MUTED
-    );
+    components::paint_table_galley(ui,rect,rect.left()+6.0,galley,theme::MUTED);
 }
 // One distinct product per line in EXPANDED shipment detail only.
 // The parent order summary retains its compact single-line formatter.

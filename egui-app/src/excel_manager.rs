@@ -384,16 +384,7 @@ fn table<const N:usize>(
     let left=left.unwrap_or(header.left()-output.state.offset.x);
     let heads=geometry(egui::pos2(left,header.top()),&widths,HEADER);
     let painter=ui.painter().with_clip_rect(header);
-    painter.rect_filled(header,0.0,theme::RAISED);
-    // Same inner 2pt outline and 34pt caption area as Freight Assignment.
-    // The rightmost native scrollbar gutter is NEVER part of header text.
-    let header_text_rect=Rect::from_min_max(
-        header_content.min,
-        egui::pos2(
-            header_content.right(),
-            header_content.bottom()-theme::MANAGEMENT_TABLE_HEADER_OUTLINE_HEIGHT
-        )
-    );
+    let header_text_rect=components::management_master_header_begin(ui,header,header_content);
     let mut clicked=None;
     for (i,title) in titles.iter().enumerate(){
         let h=heads[i];
@@ -457,17 +448,7 @@ fn table<const N:usize>(
             );
         }
     }
-    // Solid outline is painted wholly INSIDE the 36pt header, like Master.
-    painter.rect_filled(
-        Rect::from_min_max(
-            egui::pos2(
-                header.left(),
-                header.bottom()-theme::MANAGEMENT_TABLE_HEADER_OUTLINE_HEIGHT
-            ),
-            header.right_bottom()
-        ),
-        0.0,theme::TABLE_HEADER_OUTLINE
-    );
+    components::management_master_header_finish(ui,header);
     if let Some((all,enabled))=header_selection{
         let mut checked=all;
         if components::management_table_checkbox(
