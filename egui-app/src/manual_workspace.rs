@@ -1990,43 +1990,24 @@ impl ManualWorkspace {
         components::modal_window(workspace_title,"bando-native-manual-classification",work_area)
             .fixed_size(manual_workspace_dialog_size(work_area))
             .show(ctx,|ui|{
+                crate::floating_notice::section(ctx,"reception.manual",ui.available_rect_before_wrap());
 
                 components::modal_flow_workspace(ui,|workspace|{
                     // The status and shipment controls belong to the shared
                     // modal header, not to a separate row above the card body.
                     let header_busy=self.busy();
                     let header_has_model=self.model.is_some();
-                    let (header_row_count,header_unassigned,header_pending_quantity_count)=
+                    let (header_row_count,header_unassigned)=
                         self.model.as_ref().map(|model|{
                             let rows=list(model,"rows");
                             let assignments=model.get("assignments").unwrap_or(&Value::Null);
                             let unassigned=list(model,"blocks").iter()
                                 .filter(|block|assignments.get(text(block,"id")).is_none())
                                 .count();
-                            (rows.len(),unassigned,model_pending_quantity_count(model))
-                        }).unwrap_or((0,0,0));
+                            (rows.len(),unassigned)
+                        }).unwrap_or((0,0));
                     let header_pending_quantity_active=
                         self.pending_quantity_cell().is_some();
-                    let header_guidance=manual_apply_guidance(
-                        header_busy,header_pending_quantity_count,
-                        self.edit_text!=self.current_value()
-                    );
-                    let header_remote_notice=self.model.as_ref().and_then(|model|{
-                        let rows=list(model,"rows");
-                        visible_manual_shipment(self.selected_recipient,rows.len())
-                            .and_then(|index|rows.get(index))
-                            .and_then(|row|remote_for(&self.remote_rows,row))
-                            .and_then(|decision|match decision{
-                                Ok(value)=>crate::reception_service::remote_delivery_notice(value),
-                                Err(error)=>Some(format!("도서/산간 판정 실패 · {}",
-                                    crate::user_error::display("reception.remote",error)))
-                            })
-                    });
-                    let header_client_notice=(
-                        self.client_id.is_some() && self.view_quote.is_none() && !header_busy
-                    ).then_some("상품 금액과 운임을 확인할 수 없습니다.");
-                    let header_error=self.error.as_deref().map(|error|
-                        crate::user_error::display("reception.manual",error).into_owned());
                     let mut count_resize_requested=false;
                     let (close_clicked,())=workspace.header_with_toolbar(
                         workspace_title,"닫기",
@@ -2038,18 +2019,13 @@ impl ManualWorkspace {
                         |status|{
                             status.set_min_height(theme::MODAL_MASTER_WORKSPACE_TOOLBAR_HEIGHT);
                             status.spacing_mut().item_spacing.x=theme::SPACE_8;
-                            let status_label=if self.direct_input{
+                            if self.direct_input{
                                 status.label(typography::caption("직접 입력 · 발주 원문 없음"))
                             }else{
                                 status.label(typography::caption(
                                     &format!("미배정 원문: {header_unassigned}개")
                                 ))
                             };
-                            let notice=[
-                                header_guidance.as_deref(),header_remote_notice.as_deref(),
-                                header_client_notice,header_error.as_deref()
-                            ].into_iter().flatten().collect::<Vec<_>>().join("\n");
-                            if !notice.is_empty(){status_label.on_hover_text(&notice);}
                             status.with_layout(
                                 egui::Layout::right_to_left(egui::Align::Center),|right|{
                                     components::form_field_label(right,"건");
@@ -3051,6 +3027,26 @@ impl ManualWorkspace {
             spans.iter().any(|span|span.key==*key)
         );
         if source_did_scroll {link_hover.scroll_to=None;}
+        // Keep only actual failures in the existing common notice channel.
+        // Routine edit/quantity/remote states remain in their own controls.
+        let error=self.error.as_deref().map(|error|
+            crate::user_error::display("reception.manual",error).into_owned());
+        let remote_error=self.model.as_ref().and_then(|model|{
+            let rows=list(model,"rows");
+            visible_manual_shipment(self.selected_recipient,rows.len())
+                .and_then(|index|rows.get(index))
+                .and_then(|row|remote_for(&self.remote_rows,row))
+                .and_then(|result|result.as_ref().err())
+                .map(|error|format!("도서/산간 판정 실패 · {}",
+                    crate::user_error::display("reception.remote",error)))
+        });
+        let quote_error=(self.model.is_some() && self.client_id.is_some()
+            && self.view_quote.is_none() && !self.busy())
+            .then_some("상품 금액과 운임을 확인할 수 없습니다.");
+        let notice=[error.as_deref(),remote_error.as_deref(),quote_error]
+            .into_iter().flatten().collect::<Vec<_>>().join("\n");
+        crate::floating_notice::sync(ctx,"manual_workspace_error","reception.manual",
+            crate::floating_notice::Tone::Error,(!notice.is_empty()).then_some(notice.as_str()));
         None
     }
 }
@@ -3058,22 +3054,6 @@ impl ManualWorkspace {
 /// Both the source document and destination cells resolve to the same
 /// order-scoped LinkKey. Keep the shared 50/150ms HoverState as the single
 /// owner of bidirectional highlight and source auto-scroll behavior.
-/// Non-authoritative UI guidance for why the single-click draft Apply is
-/// currently unavailable. The final native reducer owns all validation.
-fn manual_apply_guidance(
-    busy:bool,pending_quantity_count:usize,uncommitted:bool
-)->Option<String>{
-    if busy{
-        Some("변경사항 반영 중".into())
-    }else if pending_quantity_count>0{
-        Some(format!("수량 확인 필요: {pending_quantity_count}건"))
-    }else if uncommitted{
-        Some("현재 셀의 입력을 확정하세요".into())
-    }else{
-        None
-    }
-}
-
 fn manual_hover_target(
     hovered_detail:Option<source_highlight::LinkKey>,
     hovered_source:Option<source_highlight::LinkKey>,
@@ -3805,8 +3785,9 @@ mod manual_workspace_modal_routing_tests {
             "the native apply action must be reached from the explicit proceed branch");
         assert!(!render.contains("초안 적용 후 주문 확인 필요"),
             "the generic order-confirmation hint must not occupy a header row");
-        assert!(render.contains("status_label.on_hover_text(&notice)"),
-            "apply blockers remain discoverable without allocating layout space in both modes");
+        assert!(!render.contains("status_label.on_hover_text(&notice)"));
+        assert!(render.contains("crate::floating_notice::sync(ctx,\"manual_workspace_error\""),
+            "actual failures use the common notice instead of a hidden tooltip");
     }
 
     #[test]
@@ -3831,17 +3812,6 @@ mod manual_workspace_modal_routing_tests {
             EscapeAction::RequestClose);
         assert_eq!(escape_action(true,false,false,false,false,false,true),
             EscapeAction::Ignore);
-    }
-
-    #[test]
-    fn apply_guidance_only_exists_for_actual_blockers(){
-        assert_eq!(manual_apply_guidance(true,0,false),
-            Some("변경사항 반영 중".into()));
-        assert_eq!(manual_apply_guidance(false,2,false),
-            Some("수량 확인 필요: 2건".into()));
-        assert_eq!(manual_apply_guidance(false,0,true),
-            Some("현재 셀의 입력을 확정하세요".into()));
-        assert_eq!(manual_apply_guidance(false,0,false),None);
     }
 
     #[test]
