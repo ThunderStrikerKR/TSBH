@@ -238,11 +238,12 @@ fn product_table_text(ui:&mut Ui,rect:Rect,text:&str,
     let content=rect.shrink2(Vec2::new(theme::SPACE_8,0.0));
     let color=typography::management_table_cell_color(role);
     let galley=typography::management_table_cell_galley(ui,text,role);
+    let overflow=components::text_exceeds_rect(galley.size(),content.intersect(ui.clip_rect()));
     ui.painter().with_clip_rect(content.intersect(ui.clip_rect())).galley(
         egui::pos2(content.left(),content.center().y-galley.size().y/2.0),
         galley,color,
     );
-    if !text.is_empty(){
+    if overflow&&!text.is_empty(){
         ui.interact(content.intersect(ui.clip_rect()),
             ui.make_persistent_id(("product-table-text",unique)),
             Sense::hover()).on_hover_text(text);
@@ -1723,7 +1724,7 @@ impl ProductManager {
                     let response=panel.interact(
                         rect,panel.make_persistent_id(("product-price-sort",index)),
                         Sense::click()
-                    ).on_hover_text(components::management_sort_tooltip(ProductSort::next(self.sort,column).map(|value|matches!(value.direction,ProductSortDirection::Descending))));
+                    );
                     if response.hovered(){
                         components::management_master_header_sort_hover(panel,rect);
                     }
