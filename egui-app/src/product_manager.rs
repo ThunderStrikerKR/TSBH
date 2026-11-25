@@ -2777,6 +2777,63 @@ mod tests {
         assert!(accepts_catalog_revision(12,13));
         assert!(!accepts_catalog_revision(13,12));
     }
+    // Exercise the production page and actual egui TextEdit/navigation path,
+    // not a copy of the editor's logic. The transport is fully synthetic.
+    fn render_price_grid_frame(manager:&mut ProductManager,ctx:&Context,events:Vec<egui::Event>){
+        let _=ctx.run(egui::RawInput{
+            screen_rect:Some(Rect::from_min_size(egui::Pos2::ZERO,Vec2::new(1760.0,1000.0))),
+            events,..Default::default()
+        },|ctx|{
+            egui::CentralPanel::default().show(ctx,|ui|manager.show_page(ui));
+        });
+    }
+    fn rendered_price_editor_id(ctx:&Context,key:&str)->egui::Id{
+        ctx.data(|data|data.get_temp::<egui::Id>(
+            egui::Id::new(("product-price-grid-editor",key))
+        )).expect("production price editor must have been rendered")
+    }
+    #[test]
+    fn rendered_price_grid_commits_typed_amount_and_moves_to_adjacent_cell(){
+        let (mut manager,ctx,requests)=price_test_manager();
+        let wholesale="p1:v1:wholesale";
+        let semi="p1:v1:semi";
+        render_price_grid_frame(&mut manager,&ctx,vec![]);
+        manager.price_focus_target=Some(wholesale.into());
+        render_price_grid_frame(&mut manager,&ctx,vec![]);
+        let editor=rendered_price_editor_id(&ctx,wholesale);
+        let next_editor=rendered_price_editor_id(&ctx,semi);
+        assert_ne!(editor,next_editor);
+        assert!(ctx.memory(|m|m.has_focus(editor)));
+        render_price_grid_frame(&mut manager,&ctx,vec![egui::Event::Text("15000".into())]);
+        assert_eq!(manager.price_drafts[wholesale].parse().unwrap(),Some(15000));
+        assert!(manager.price_drafts[wholesale].dirty());
+        assert!(requests.try_recv().is_err(),"typing alone must not write");
+        render_price_grid_frame(&mut manager,&ctx,vec![egui::Event::Key{
+            key:egui::Key::ArrowRight,physical_key:None,pressed:true,repeat:false,
+            modifiers:egui::Modifiers::NONE
+        }]);
+        let request=next_price_request(&requests);
+        assert_eq!(request.revision,1);
+        assert_eq!(request.data["productId"],"p1");
+        assert_eq!(request.data["variantId"],"v1");
+        assert_eq!(request.data["tier"],"wholesale");
+        assert_eq!(request.data["price"],15000);
+        assert_eq!(request.data["expected"],Value::Null);
+        assert!(ctx.memory(|m|m.has_focus(next_editor)),
+            "Right must focus the adjacent price cell, not move the old caret");
+        render_price_grid_frame(&mut manager,&ctx,vec![]);
+        assert!(manager.price_write_queue.is_empty());
+        assert!(requests.try_recv().is_err(),"blur after navigation must not duplicate the write");
+        request.reply.send(Ok(price_test_catalog(2,Some(15000),Some(19000)))).unwrap();
+        poll_price_until(&mut manager,&ctx,|m|m.writing.is_none());
+        assert_eq!(manager.products[0]["variants"][0]["wholesale"],15000);
+        assert_eq!(manager.products[0]["variants"][0]["semi"],19000);
+        assert!(!manager.price_drafts[wholesale].dirty());
+        assert!(manager.notice.is_none());
+        assert!(manager.error.is_none());
+        assert!(!manager.has_modal());
+    }
+
     #[test]
     fn price_cell_commit_contract_is_excel_style_without_action_popup(){
         let source=include_str!("product_manager.rs");
@@ -2905,12 +2962,38 @@ mod tests {
     }
     #[test]
     fn price_write_queue_preserves_order_and_cell_identity(){
-        let mut queue=VecDeque::new();
-        queue.push_back(QueuedPriceWrite{key:"p1:v1:wholesale".into(),data:json!({"price":15000})});
-        queue.push_back(QueuedPriceWrite{key:"p2:v2:retail".into(),data:json!({"price":26000})});
-        assert_eq!(queue.pop_front().unwrap().key,"p1:v1:wholesale");
-        assert_eq!(queue.pop_front().unwrap().key,"p2:v2:retail");
-        assert!(queue.is_empty());
+        let (mut manager,ctx,requests)=price_test_manager();
+        let wholesale="p1:v1:wholesale";
+        let semi="p1:v1:semi";
+        manager.price_drafts.insert(wholesale.into(),PriceDraft{original:None,input:"15000".into()});
+        manager.price_drafts.insert(semi.into(),PriceDraft{original:Some(19000),input:"21000".into()});
+        submit_test_price(&mut manager,&ctx,wholesale);
+        let first=next_price_request(&requests);
+        assert_eq!(first.data["tier"],"wholesale");
+        assert_eq!(first.data["price"],15000);
+        submit_test_price(&mut manager,&ctx,wholesale);
+        submit_test_price(&mut manager,&ctx,semi);
+        submit_test_price(&mut manager,&ctx,semi);
+        assert_eq!(manager.price_write_queue.len(),1);
+        assert!(requests.try_recv().is_err(),"queued writes must remain serialized");
+        first.reply.send(Ok(price_test_catalog(2,Some(15000),Some(19000)))).unwrap();
+        poll_price_until(&mut manager,&ctx,|m|m.catalog.as_ref()
+            .and_then(|c|c["revision"].as_u64())==Some(2));
+        let second=next_price_request(&requests);
+        assert_eq!(second.revision,2);
+        assert_eq!(second.data["productId"],"p1");
+        assert_eq!(second.data["variantId"],"v1");
+        assert_eq!(second.data["tier"],"semi");
+        assert_eq!(second.data["expected"],19000);
+        assert_eq!(second.data["price"],21000);
+        second.reply.send(Ok(price_test_catalog(3,Some(15000),Some(21000)))).unwrap();
+        poll_price_until(&mut manager,&ctx,|m|m.writing.is_none());
+        assert!(manager.price_write_queue.is_empty());
+        assert!(requests.try_recv().is_err(),"each cell must commit exactly once");
+        assert_eq!(manager.products[0]["variants"][0]["wholesale"],15000);
+        assert_eq!(manager.products[0]["variants"][0]["semi"],21000);
+        assert_eq!(manager.products[0]["variants"][0]["retail"],26000);
+        assert!(!manager.has_pending_prices());
     }
     #[test]
     fn catalog_options_do_not_create_mutable_catalog_entries(){
