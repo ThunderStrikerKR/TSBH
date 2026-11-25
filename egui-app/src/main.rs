@@ -1262,6 +1262,33 @@ impl BandoEgui {
         });
     }
 
+    // Hidden management screens already refresh on every entry. Do not
+    // start full history/settlement reads for pages the user is not viewing.
+    fn refresh_after_factory_reply(&mut self,ctx:&egui::Context,corrected:bool,imported:bool){
+        if !corrected && !imported{return;}
+        // Keep the last known revision as the probe baseline, but reject an
+        // in-flight pre-commit result. The native probe detects other edits.
+        self.reception_metadata_receiver=None;
+        self.reception_metadata_last_probe=None;
+        self.workflow_receiver=None;
+        self.workflow_last_fetch=None;
+        self.workflow_refresh_required=true;
+        // Correction already projects the verified committed snapshot.
+        // Only a separate inbox commit needs another Excel read.
+        if imported{
+            if let Some(excel)=self.excel_manager.as_mut(){excel.request_reply_refresh();}
+        }
+        match self.page{
+            Page::History=>if let Some(history)=self.order_history_manager.as_mut(){
+                history.refresh(ctx.clone());
+            },
+            Page::Settlement=>if let Some(settlement)=self.daily_settlement_manager.as_mut(){
+                settlement.refresh(ctx.clone());
+            },
+            _=>{}
+        }
+    }
+
     fn invalidate_reception_metadata(&mut self){
         self.reception_metadata_receiver=None;
         self.reception_metadata_last_probe=None;
@@ -9260,13 +9287,8 @@ impl eframe::App for BandoEgui {
         }
         let corrected=self.excel_manager.as_mut().is_some_and(|excel|excel.take_reply_changed());
         let reply=self.factory_reply_inbox.poll(ctx);
-        if corrected||reply.as_ref().is_some_and(|r|r.files>0){
-            self.invalidate_reception_metadata();
-            self.workflow_refresh_required=true;
-            if let Some(excel)=self.excel_manager.as_mut(){excel.request_reply_refresh();}
-            if let Some(history)=self.order_history_manager.as_mut(){history.refresh(ctx.clone());}
-            if let Some(settlement)=self.daily_settlement_manager.as_mut(){settlement.refresh(ctx.clone());}
-        }
+        self.refresh_after_factory_reply(ctx,corrected,
+            reply.as_ref().is_some_and(|r|r.files>0));
         if let Some(reply)=reply{
             if reply.files>0{floating_notice::publish(ctx,"excel.reply",floating_notice::Tone::Info,
                 format!("공장 회신 {}파일: 반영 {}행, 검토 {}행",reply.files,reply.applied,reply.held));}
@@ -10478,6 +10500,29 @@ mod reception_workflow_admission_integration_tests {
         assert_eq!(app.workflow_snapshot.as_ref().and_then(|board|board.revision),Some(7));
         assert_eq!(app.workflow_ui.selection.as_ref().map(|s|s.shipment_id.as_str()),Some("s1"));
         assert!(app.workflow_mutation_ready());
+    }
+
+    #[test]
+    fn factory_reply_refresh_discards_precommit_reads_without_erasing_revision_baseline(){
+        let ctx=egui::Context::default();
+        let mut app=app();
+        app.page=Page::Products;
+        app.reception_metadata_revision=Some(7);
+        app.reception_metadata_ready=true;
+        let (sender,receiver)=mpsc::channel();
+        app.workflow_receiver=Some(receiver);
+        app.workflow_last_fetch=Some(Instant::now());
+        app.refresh_after_factory_reply(&ctx,false,false);
+        assert!(app.workflow_receiver.is_some());
+        assert!(!app.workflow_refresh_required);
+        app.refresh_after_factory_reply(&ctx,false,true);
+        assert!(sender.send(Ok(None)).is_err());
+        assert!(app.workflow_receiver.is_none());
+        assert!(app.workflow_last_fetch.is_none());
+        assert!(app.workflow_refresh_required);
+        assert_eq!(app.reception_metadata_revision,Some(7));
+        assert!(app.reception_metadata_ready);
+        assert!(app.reception_metadata_last_probe.is_none());
     }
 
     #[test]

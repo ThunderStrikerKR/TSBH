@@ -585,6 +585,9 @@ impl ExcelManager{
         self.operation_name.as_deref()==Some("reply-correction")}
     pub fn refresh(&mut self,ctx:egui::Context){
         if self.operation.is_some(){return}
+        // Any read started after the notification satisfies the pending
+        // inbox refresh, including the existing page-entry read.
+        self.reply_refresh_pending=false;
         self.error=None;self.result=None;self.preview=None;
         let (sender,receiver)=mpsc::channel();
         self.receiver=Some(receiver);
@@ -637,8 +640,7 @@ impl ExcelManager{
                     });
                     self.selected.clear();
                 }else if operation=="reply-correction"{
-                    self.reply_confirm=None;self.reply_changed=true;self.reply_refresh_pending=true;
-                    self.notice=Some("공장 회신 정정 내용을 저장했습니다. 기존 원본 및 이력은 유지됩니다.".into());
+                    self.accept_reply_correction(result);
                 }else if operation=="export"{
                     let count=result["count"].as_u64().unwrap_or(0);
                     let origin=text(&result,"origin");
@@ -676,6 +678,29 @@ impl ExcelManager{
             _=>{}
         }
     }
+    fn accept_reply_correction(&mut self,mut result:Value){
+        self.reply_confirm=None;
+        self.reply_changed=true;
+        self.receiver=None;
+        self.preview=None;
+        self.notice=Some("공장 회신 정정 내용을 저장했습니다. 기존 원본 및 이력은 유지됩니다.".into());
+        if result.get("shipmentReads").is_some() && result["state"]["revision"].as_u64().is_some(){
+            self.result=Some(Snapshot{
+                state:result["state"].take(),
+                shipments:result["shipmentReads"].take(),
+            });
+            self.error=None;
+            // Do not clear an independent inbox notification that arrived
+            // while the correction worker was running.
+        }else{
+            // A projection error cannot undo an already committed reply.
+            // Keep the success notification and fall back to a fresh read.
+            self.result=None;
+            self.reply_refresh_pending=true;
+            self.error=result["projectionError"].as_str().map(str::to_owned);
+        }
+    }
+
     fn task(&mut self,action:&str,ctx:egui::Context,
         work:impl FnOnce(Arc<dyn BandoGateway>)->Result<Value,String>+Send+'static){
         if self.operation.is_some(){return}
@@ -782,8 +807,14 @@ impl ExcelManager{
                 self.reply_confirm=None;
                 self.task("reply-correction",ctx.clone(),move|gateway|{
                     if !gateway.excel_write_enabled(){return Err("공장 회신 저장 권한 없음".into())}
-                    crate::factory_reply_inbox::approve(review)?;
-                    Ok(json!({}))
+                    let state=crate::factory_reply_inbox::approve(review)?;
+                    let projection=gateway.execute(ReadOperation::ReadShipments,json!({"state":&state}));
+                    // The transaction has committed. A failed view projection
+                    // must not be reported as a failed correction mutation.
+                    Ok(match projection{
+                        Ok(shipments)=>json!({"state":state,"shipmentReads":shipments}),
+                        Err(error)=>json!({"projectionError":error}),
+                    })
                 });
             }
         }
@@ -794,7 +825,7 @@ impl ExcelManager{
         ui.spacing_mut().scroll=theme::management_scroll_style();
         self.poll();
         if self.reply_refresh_pending&&self.operation.is_none()&&self.receiver.is_none(){
-            self.reply_refresh_pending=false;self.refresh(ui.ctx().clone());
+            self.refresh(ui.ctx().clone());
         }
         crate::floating_notice::sync(
             ui.ctx(),"excel.result","excel.action",
@@ -1517,6 +1548,34 @@ mod table_state_tests {
         assert_eq!(table_state_message(Tab::History,"",0,false,true),None);
         assert_eq!(table_state_message(Tab::Factory,"",3,true,false),None);
         assert_eq!(table_state_message(Tab::History,"",3,false,false),None);
+    }
+
+    #[test]
+    fn committed_reply_projection_reuses_verified_state_and_preserves_independent_refresh(){
+        let ctx=egui::Context::default();
+        struct NoReadGateway;
+        impl BandoGateway for NoReadGateway{
+            fn label(&self)->&'static str{"synthetic-no-read"}
+            fn load_catalog(&self)->Result<Value,String>{Err("no catalog".into())}
+            fn load_working_source(&self)->Result<crate::preview_store::WorkingSource,String>{Err("no source".into())}
+            fn save_working_source(&self,_:&crate::preview_store::WorkingSource)->Result<u64,String>{Err("no write".into())}
+            fn load_business_state(&self)->Result<Value,String>{Err("no business read".into())}
+            fn execute(&self,_:ReadOperation,_:Value)->Result<Value,String>{Err("no rules".into())}
+        }
+        let mut manager=ExcelManager::geometry_fixture(Arc::new(NoReadGateway),ctx,0,true);
+        let result=json!({"state":{"revision":8},"shipmentReads":{"shipments":[]}});
+        manager.accept_reply_correction(result.clone());
+        assert!(manager.take_reply_changed());
+        assert!(!manager.reply_refresh_pending);
+        assert_eq!(manager.result.as_ref().unwrap().state["revision"],8);
+        manager.request_reply_refresh();
+        manager.accept_reply_correction(result);
+        assert!(manager.reply_refresh_pending);
+        manager.reply_refresh_pending=false;
+        manager.accept_reply_correction(json!({"projectionError":"synthetic"}));
+        assert!(manager.take_reply_changed());
+        assert!(manager.reply_refresh_pending);
+        assert!(manager.result.is_none());
     }
 
     #[test]
