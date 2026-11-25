@@ -123,9 +123,45 @@ pub(super) fn sender_for(state:&Value,order:&Value)->Value {
     // master-client record, independently of the order confirmation stage.
     let base=order.get("clientSnapshot").filter(|c|!c.is_null())
         .or_else(||find_by_id(field(state,"clients"),str_field(order,"clientId")))
-        .cloned().unwrap_or_else(||company_client(state));
+        .cloned().unwrap_or(Value::Null);
     let raw=field(order,"analysisRaw").as_str().unwrap_or_else(||str_field(order,"raw"));
     explicit_sender(raw,&base).unwrap_or(base)
+}
+/// Complete missing label fields at export without rewriting frozen evidence.
+/// AGENCY may only use its own dealer or explicit sender, never house settings.
+pub(crate) fn sender_for_export(state:&Value,order:&Value,frozen:&Value)->Value{
+    let present=|value:&Value,key:&str|!str_field(value,key).trim().is_empty();
+    if present(frozen,"name")&&present(frozen,"address")&&
+        (present(frozen,"phone")||present(frozen,"mobile")){
+        return frozen.clone();
+    }
+    let kind=str_field(order,"orderType");
+    let source=match kind{
+        "DEALER"|"RETAIL"=>company_client(state),
+        "AGENCY"=>{
+            let id=str_field(order,"clientId");
+            let Some(client)=find_by_id(field(state,"clients"),id)
+                .filter(|client|!id.is_empty()&&!has_value(field(client,"deletedAt")))
+                else{return frozen.clone()};
+            let raw=field(order,"analysisRaw").as_str().unwrap_or_else(||str_field(order,"raw"));
+            explicit_sender(raw,client).unwrap_or_else(||client.clone())
+        },
+        _=>return frozen.clone(),
+    };
+    if kind=="AGENCY" && ((present(frozen,"id")&&str_field(frozen,"id")!=str_field(&source,"id"))||
+        (present(frozen,"name")&&str_field(frozen,"name").trim()!=str_field(&source,"name").trim())){
+        return frozen.clone();
+    }
+    let mut result=if frozen.is_object(){frozen.clone()}else{json!({})};
+    for key in ["name","address","postcode"]{
+        if !present(&result,key)&&present(&source,key){result[key]=field(&source,key).clone();}
+    }
+    if !present(&result,"phone")&&!present(&result,"mobile"){
+        for key in ["phone","mobile"]{
+            if present(&source,key){result[key]=field(&source,key).clone();}
+        }
+    }
+    result
 }
 fn signature(order:&Value,recipient:&Value,sender:&Value)->String {
     let sender_data=json!([field(sender,"name"),field(sender,"displayName"),

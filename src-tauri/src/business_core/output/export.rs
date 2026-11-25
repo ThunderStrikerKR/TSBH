@@ -38,7 +38,7 @@ pub(super) fn sender_review(state: &Value, ids: &Value) -> Result<Value, String>
         if !matches!(text(order, "orderType"), "DEALER" | "RETAIL") {
             return false;
         }
-        !sender_complete(&entry["snapshot"]["sender"])
+        !sender_complete(&super::super::rules::sender_for_export(state,order,&entry["snapshot"]["sender"]))
     });
     Ok(json!({"companyMissing": missing}))
 }
@@ -190,7 +190,8 @@ fn export_row(state: &Value, entry: &Value, origin: &str) -> Result<Value, Strin
     let _ = order; // Check that the snapshot's source order still exists.
     let snapshot = &entry["snapshot"];
     let recipient = &snapshot["recipient"];
-    let sender = &snapshot["sender"];
+    let resolved_sender=super::super::rules::sender_for_export(state,order,&snapshot["sender"]);
+    let sender = &resolved_sender;
     if trimmed(recipient, "name").is_empty()
         || trimmed(recipient, "address").is_empty()
         || (trimmed(recipient, "phone").is_empty() && trimmed(recipient, "mobile").is_empty())
@@ -198,7 +199,11 @@ fn export_row(state: &Value, entry: &Value, origin: &str) -> Result<Value, Strin
         return Err("수취인 성함, 주소, 연락처가 누락되었습니다.".into());
     }
     if !sender_complete(sender) {
-        return Err("대리발송 송하인의 상호, 주소, 연락처가 누락되었습니다.".into());
+        return Err(if matches!(text(order,"orderType"),"DEALER"|"RETAIL"){
+            "반도스탠드 송하인 상호, 주소, 연락처를 설정에서 확인하세요."
+        }else{
+            "대리발송 송하인의 상호, 주소, 연락처가 누락되었습니다."
+        }.into());
     }
     let code = text(snapshot, "freightCode");
     if code != "010" && code != "020" {

@@ -355,9 +355,7 @@ pub(super) fn retail_issues(order:&Value,state:&Value)->Vec<String>{
             }
         }
     }
-    // The same native sender requirements are used by retail preflight and
-    // the definitive retail save gate; React does not independently decide.
-    issues.extend(company_sender_missing(state));
+    // Sender contact is checked at output, not at retail intake.
     for row in rows(field(order,"recipients")){
         for item in rows(field(row,"items")){
             let pid=str_field(item,"productId");

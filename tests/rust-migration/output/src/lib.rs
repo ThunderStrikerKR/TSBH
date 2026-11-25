@@ -44,6 +44,42 @@ mod tests {
         })
     }
     #[test]
+    fn agency_export_never_requires_or_uses_company_sender_settings(){
+        let mut s=state("FACTORY");
+        s["orders"][0]["orderType"]=json!("AGENCY");
+        s["orders"][0]["clientId"]=json!("c");
+        s["settings"]=json!({"senderAddress":"","senderPhone":""});
+        let p=output::execute("prepare_factory_export",json!({"state":s,"ids":["queue-1"]})).unwrap();
+        assert_eq!(p["rows"][0]["values"][11],"대리점 송장상호");
+        s["workflow"]["queue"][0]["snapshot"]["sender"]["address"]=json!("");
+        s["workflow"]["queue"][0]["snapshot"]["sender"]["phone"]=json!("");
+        s["settings"]=json!({"senderAddress":"회사 주소","senderPhone":"02-9999-9999"});
+        assert!(output::execute("prepare_factory_export",json!({"state":s,"ids":["queue-1"]})).is_err());
+        assert_eq!(output::execute("review_export_sender",json!({"state":s,"ids":["queue-1"]})).unwrap()["companyMissing"],false);
+        s["clients"]=json!([{"id":"c","name":"대리점","address":"거래처 주소","phone":"02-1111-1111","tier":"retail"}]);
+        let p=output::execute("prepare_factory_export",json!({"state":s,"ids":["queue-1"]})).unwrap();
+        assert_eq!(p["rows"][0]["values"][13],"거래처 주소");
+        assert_eq!(p["rows"][0]["values"][14],"02-1111-1111");
+    }
+    #[test]
+    fn company_sender_can_be_completed_at_export_without_mutating_receipt_or_queue(){
+        let mut s=state("FACTORY");
+        s["orders"][0]["orderType"]=json!("DEALER");
+        s["workflow"]["queue"][0]["snapshot"]["sender"]=json!({"name":"반도스탠드","address":"","phone":""});
+        s["settings"]=json!({});
+        assert!(output::execute("prepare_factory_export",json!({"state":s,"ids":["queue-1"]})).is_err());
+        s["settings"]=json!({"senderAddress":"회사 주소","senderPhone":"02-9999-9999"});
+        let p=output::execute("prepare_factory_export",json!({"state":s,"ids":["queue-1"]})).unwrap();
+        assert_eq!(p["rows"][0]["values"][13],"회사 주소");
+        let result=output::execute("finalize_export",json!({"state":s,"preview":p,
+            "origin":"FACTORY","savedPath":"C:/synthetic/배송.xlsx","now":"2026-11-13T09:00:00Z",
+            "exportId":"late-sender","eventId":"late-sender-event"})).unwrap();
+        let next=&result["next"];
+        assert_eq!(next["orders"],s["orders"]);
+        assert_eq!(next["workflow"]["queue"][0]["snapshot"],s["workflow"]["queue"][0]["snapshot"]);
+        assert_eq!(next["exports"][0]["outputRows"],p["rows"]);
+    }
+    #[test]
     fn factory_preserves_immutable_identifiers_and_logen_columns() {
         let preview = output::execute("prepare_factory_export",
             json!({"state":state("FACTORY"),"ids":["queue-1"]})).unwrap();

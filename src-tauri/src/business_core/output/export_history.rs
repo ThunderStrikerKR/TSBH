@@ -81,7 +81,8 @@ pub(super) fn finalize(payload:&Value)->Result<Value,String>{
     let shipment_ids=unique_rows(rows,"shipmentId");
     next["exports"].as_array_mut().ok_or("Excel 출력 이력 누락")?.push(json!({
         "id":export_id,"at":at,"filename":filename,"savedPath":path,
-        "orderIds":order_ids,"queueEntryIds":ids,"snapshots":snapshots
+        "orderIds":order_ids,"queueEntryIds":ids,"snapshots":snapshots,
+        "outputRows":rows
     }));
     let actor=next.get("settings").and_then(|s|s.get("operatorName"))
         .and_then(Value::as_str).unwrap_or("").trim();

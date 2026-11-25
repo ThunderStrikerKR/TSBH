@@ -67,68 +67,6 @@ pub(super) fn sender_phone(raw:&str)->String{
     }
     String::new()
 }
-fn sender_field<'a>(order:&'a Value,state:&'a Value,key:&str)->String{
-    let snapshot=field(order,"senderSnapshot");
-    if snapshot.is_object(){return str_field(snapshot,key).to_string();}
-    if ["DEALER","RETAIL"].contains(&str_field(order,"orderType")){
-        let settings=field(state,"settings");
-        return if key=="name"{
-            let name=str_field(settings,"senderName").trim();
-            if name.is_empty(){"반도스탠드".into()}else{name.into()}
-        }else{str_field(settings,match key {
-            "address"=>"senderAddress","phone"=>"senderPhone",
-            "mobile"=>"senderMobile",_=>key
-        }).into()};
-    }
-    let base=field(order,"clientSnapshot");
-    let base=if base.is_object(){base}else{
-        find_by_id(field(state,"clients"),str_field(order,"clientId")).unwrap_or(base)
-    };
-    let raw=if let Some(s)=field(order,"analysisRaw").as_str(){s}
-        else{str_field(order,"raw")};
-    let sender=raw.lines().find_map(|line|{
-        let stripped=line.trim_start();
-        for label in ["보내는 분","보내는분","보내는 사람","보내는사람",
-            "송하인명","송하인"]{
-            if let Some(rest)=stripped.strip_prefix(label){
-                let rest=rest.trim_start();
-                if let Some(v)=rest.strip_prefix(':').or_else(||rest.strip_prefix('：')){
-                    return Some(v.trim().to_string());
-                }
-            }
-        }
-        None
-    });
-    if let Some(sender)=sender {
-        if key=="name"{return sender;}
-        if key=="address"{
-            let mut capture=false;
-            let mut address=String::new();
-            for line in raw.lines(){
-                for marker in ["보내는곳","송하인주소","주소"] {
-                    let trimmed=line.trim_start();
-                    if let Some(rest)=trimmed.strip_prefix(marker) {
-                        if let Some(v)=rest.trim_start().strip_prefix(':')
-                            .or_else(||rest.trim_start().strip_prefix('：')){
-                            capture=true;
-                            if !address.is_empty(){address.push(' ');}
-                            address.push_str(v.trim());
-                        }
-                    }
-                }
-                if capture&&!line.contains("보내는곳")&&!line.contains("송하인주소")&&
-                    !line.trim_start().starts_with("주소"){
-                    if !address.is_empty(){address.push(' ');}
-                    address.push_str(line.trim());
-                }
-            }
-            return address;
-        }
-        if key=="mobile"{return String::new();}
-        if key=="phone"{return sender_phone(raw);}
-    }
-    str_field(base,key).to_string()
-}
 fn operational(order:&Value,row:Option<&Value>,group_id:&str,
     kind:&str,title:String,stage:i64,field_name:&str)->Value{
     let base_id=format!("issue:{}:{}:recipient:{kind}",str_field(order,"id"),
@@ -197,21 +135,7 @@ pub(super) fn workflow_issues(state:&Value,group_id:&str)->Result<Vec<Value>,Str
             }
         }
     }
-    let company=["DEALER","RETAIL"].contains(&str_field(order,"orderType"));
-    if sender_field(order,state,"name").trim().is_empty(){
-        issues.push(operational(order,None,group_id,"SENDER_NAME",
-            if company{"설정의 반도스탠드 상호명을 확인하세요"}else{"송하인 거래처명을 확인하세요"}.into(),1,"client"));
-    }
-    if sender_field(order,state,"address").trim().is_empty(){
-        issues.push(operational(order,None,group_id,"SENDER_ADDRESS",
-            if company{"설정의 반도스탠드 주소를 등록하세요"}else{"송하인 거래처 주소를 확인하세요"}.into(),1,"client"));
-    }
-    let phone=sender_field(order,state,"phone");
-    let mobile=sender_field(order,state,"mobile");
-    if (if !phone.is_empty(){phone}else{mobile}).trim().is_empty(){
-        issues.push(operational(order,None,group_id,"SENDER_CONTACT",
-            if company{"설정의 반도스탠드 연락처를 등록하세요"}else{"송하인 거래처 연락처를 확인하세요"}.into(),1,"client"));
-    }
+    // Sender fields are checked at Excel output, not at order confirmation.
     for ship in &shipments{
         let (_o,row)=context(state,ship)?;
         for item in rows(field(row,"items")){
@@ -246,8 +170,7 @@ pub(super) fn workflow_issues(state:&Value,group_id:&str)->Result<Vec<Value>,Str
         }
     }
     if str_field(order,"orderType")=="RETAIL"{
-        issues.retain(|i|!["PRICE","FREIGHT","SENDER_NAME","SENDER_ADDRESS",
-            "SENDER_CONTACT"].contains(&str_field(i,"kind")));
+        issues.retain(|i|!["PRICE","FREIGHT"].contains(&str_field(i,"kind")));
         return Ok(issues);
     }
     let client=w::party(state,order).ok_or("배송 건의 발주서 / 수취인 / 거래처 연결을 확인하세요.")?;
@@ -379,6 +302,17 @@ mod freight_issue_tests {
         item["variantId"]=json!("v");
         item["unitPrice"]=json!(10000);
         item["quantityConfirmed"]=json!(true);
+        state["settings"]["senderAddress"]=json!("");
+        state["settings"]["senderPhone"]=json!("");
+        state["clients"][0]["tier"]=json!("retail");
+        for kind in ["AGENCY","DEALER"]{
+            state["orders"][0]["orderType"]=json!(kind);
+            assert!(!workflow_issues(&state,"g").unwrap().iter()
+                .any(|issue|str_field(issue,"kind").starts_with("SENDER_")));
+            assert!(!stage_issues(&state,"g",1).unwrap().iter()
+                .any(|message|message.contains("송하인")||message.contains("반도스탠드")));
+        }
+        state["orders"][0]["orderType"]=json!("AGENCY");
         let issues=workflow_issues(&state,"g").expect("workflow issues");
         let freight=issues.iter().find(|issue|str_field(issue,"kind")=="FREIGHT")
             .expect("missing prepaid freight must be visible");
