@@ -8647,6 +8647,14 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                 if action=="confirm_reception"{
                     self.committed_draft_handoff=Some(group_id.clone());
                 }
+                // A group-management decision closes only on its own committed write.
+                if matches!(action.as_str(),"detach_shipment"|"regroup_shipment")
+                    && matches!(self.workflow_dialog.as_ref(),
+                        Some(WorkflowDialog::ManageGroup(id)) if id==&group_id){
+                    self.workflow_dialog=None;
+                    self.workflow_manage_target.clear();
+                    self.workflow_manage_ack=false;
+                }
                 self.workflow_ui.stop_preview();
                 // The gateway already verified the committed DB snapshot.
                 // Project it off-frame rather than fetching that DB a third
@@ -8820,71 +8828,70 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                             other.source_id==group.source_id &&
                             other.dealer_id==group.dealer_id
                         ).cloned().collect::<Vec<_>>()).unwrap_or_default();
+                    if !target.is_empty() && !targets.iter().any(|g|g.id==target){
+                        target.clear();ack=false;
+                    }
+                    let applying=self.workflow_action.is_some();
                     components::show_decision_window(ctx,"배송 건 묶음 관리","egui-workflow-group-manage",work_area,|ui|{
                         components::decision_workspace(ui,|decision|{
-                            close=decision.header("배송 건 묶음 관리","닫기",true
-                            );
+                            close=decision.header("배송 건 묶음 관리","닫기",!applying);
                             decision.body(|ui|{
-                                ui.label(format!(
-                                    "{} / 배송 {}건 / {}",
+                                let number=group.source_number.map(|n|format!("{n:03}"))
+                                    .unwrap_or_else(||"—".to_owned());
+                                ui.label(typography::body(&format!(
+                                    "발주 {} / {} / 배송 {}건 / {}",number,
                                     group.dealer_name,group.shipments.len(),
                                     group.total.map(components::display_won)
                                         .unwrap_or_else(||"금액 미확정".to_owned())
-                                ));
+                                )));
+                                components::soft_divider(ui);
+                                ui.add_space(theme::SPACE_8);
                                 if !targets.is_empty(){
-                                    ui.add_space(theme::SPACE_8);
-                                    ui.label("다시 묶을 대상");
+                                    ui.label(typography::body("다시 묶을 대상"));
+                                    let caption=targets.iter().find(|g|g.id==target)
+                                        .map(|g|g.management_target_label())
+                                        .unwrap_or_else(||"같은 최초 발주서의 묶음 선택".to_owned());
+                                    let previous=target.clone();
                                     components::management_dropdown(
-                                        ui,targets.iter().find(|g|g.id==target)
-                                            .map(|g|g.dealer_name.as_str())
-                                            .unwrap_or("같은 최초 발주서의 묶음 선택"),
-                                        theme::MANAGEMENT_SEARCH_MIN_WIDTH,true,|list|{
+                                        ui,&caption,
+                                        ui.available_width().max(1.0),!applying,|list|{
                                             components::management_dropdown_option(
                                                 list,&mut target,String::new(),"대상 선택");
                                             for other in &targets{
                                                 components::management_dropdown_option(
                                                     list,&mut target,other.id.clone(),
-                                                    &format!("{} / 배송 {}건 / {}/4",
-                                                        other.dealer_name,
-                                                        other.shipments.len(),other.step)
+                                                    &other.management_target_label()
                                                 );
                                             }
                                         });
+                                    if target!=previous{ack=false;}
                                     components::checkbox(
                                         ui,&mut ack,
                                         "기존 안내액 / 입금 배분 / 변경 합계를 확인했습니다.",
-                                        true
+                                        !applying
                                     );
+                                    ui.add_space(theme::SPACE_8);
                                 }
-                                ui.add_space(theme::SPACE_8);
                                 components::scroll_area(components::ScrollAxes::Vertical)
                                     .max_height(work_area.height()*0.45)
                                     .show(ui,|list|{
                                         for ship in &group.shipments{
-                                            list.horizontal(|line|{
-                                                line.label(format!(
-                                                    "{} / {}종 / {}/4",
-                                                    if ship.recipient_name.is_empty(){
-                                                        "수취인 확인"
-                                                    }else{ship.recipient_name.as_str()},
-                                                    ship.products.len(),group.step
-                                                ));
-                                                if theme::action(
-                                                    line,"이 배송 건 분리",
-                                                    ButtonRole::Standard,
-                                                    writable&&!busy &&
-                                                        group.shipments.len()>1 &&
-                                                        !group.transferred
-                                                ).clicked(){
-                                                    command=Some((
-                                                        "detach_shipment".to_owned(),
-                                                        group.id.clone(),
-                                                        Some(ship.id.clone()),None,false
-                                                    ));
-                                                }
-                                                if !target.is_empty() && theme::action(
+                                            list.label(typography::body(
+                                                if ship.recipient_name.is_empty(){
+                                                    "수취인 확인"
+                                                }else{ship.recipient_name.as_str()}
+                                            ));
+                                            let step=ship.completed_step.map(|n|format!("{n}/4 완료"))
+                                                .unwrap_or_else(||"단계 미확인".to_owned());
+                                            let paid=ship.paid.map(components::display_won)
+                                                .unwrap_or_else(||"—".to_owned());
+                                            list.label(typography::caption(&format!(
+                                                "{} / 상품 {}종 / 입금 {}",step,ship.products.len(),paid
+                                            )));
+                                            list.with_layout(Layout::right_to_left(Align::Center),|line|{
+                                                if !targets.is_empty() && theme::action(
                                                     line,"다시 묶기",ButtonRole::Standard,
-                                                    writable&&!busy&&!group.transferred
+                                                    writable&&!busy&&!group.transferred&&!ship.transferred&&!target.is_empty()
                                                 ).clicked(){
                                                     command=Some((
                                                         "regroup_shipment".to_owned(),
@@ -8893,14 +8900,33 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                                         Some(target.clone()),ack
                                                     ));
                                                 }
+                                                if theme::action(
+                                                    line,"이 배송 건 분리",ButtonRole::Standard,
+                                                    writable&&!busy &&
+                                                        group.shipments.len()>1 &&
+                                                        !group.transferred && !ship.transferred
+                                                ).clicked(){
+                                                    command=Some((
+                                                        "detach_shipment".to_owned(),
+                                                        group.id.clone(),
+                                                        Some(ship.id.clone()),None,false
+                                                    ));
+                                                }
                                             });
                                             components::soft_divider(list);
                                         }
                                     });
+                                ui.add_space(theme::SPACE_8);
+                                ui.label(typography::caption(
+                                    "배송 건 ID, 완료 이력, 입금 배분은 보존됩니다. 같은 최초 발주서와 거래처의 배송 건만 다시 묶을 수 있으며, 단계나 계좌가 다르거나 엑셀 이관된 배송 건은 합칠 수 없습니다."
+                                ));
                                 if !writable{
-                                    ui.label(typography::caption(
-                                        "현재 주문은 조회만 가능합니다."
-                                    ));
+                                    ui.label(typography::caption("현재 주문은 조회만 가능합니다."));
+                                }
+                                if applying{
+                                    ui.label(typography::caption("배송 묶음 변경 내용을 저장하는 중입니다."));
+                                }else if let Some(error)=self.workflow_error.as_deref(){
+                                    components::reception_review_status(ui,error);
                                 }
                             });
                         });
@@ -9028,7 +9054,8 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
             self.start_workflow_action(
                 &action,&id,shipment.as_deref(),target.as_deref(),ack,ctx
             );
-            close=true;
+            // Keep group management and its selections on admission/write failure.
+            close=!matches!(action.as_str(),"detach_shipment"|"regroup_shipment");
         }
         if close{self.workflow_dialog=None;}
     }
@@ -10902,13 +10929,14 @@ mod reception_workflow_admission_integration_tests {
         let ship=workflow_board::ShipmentRow{
             id:"s1".into(),order_id:"draft-1".into(),recipient_id:"r1".into(),
             transferred:false,recipient_name:"synthetic".into(),products:vec![],
+            completed_step:Some(1),paid:None,
             source_raw:"원문".into(),recipient:serde_json::json!({}),remote:None,
             display_charges:HashMap::new(),freight_editing_blocked:false,
             collect:false,shipment_count:1,order_total:None
         };
         let board=workflow_board::BoardSnapshot{revision:Some(8),groups:vec![workflow_board::GroupRow{
             id:"group:draft-1".into(),created_at:String::new(),dealer_name:String::new(),
-            source_id:String::new(),dealer_id:String::new(),transferred:false,step:1,
+            source_id:String::new(),source_number:None,dealer_id:String::new(),transferred:false,step:1,
             needs_notice:false,total:None,vat_included:0,vat_excluded:0,shipments:vec![ship],
             automatic_text:None,automatic_error:None,automatic_phase:None,automatic_signature:None,
             payment_copied:false,automatic_payment_issues:vec![],issues:vec![]

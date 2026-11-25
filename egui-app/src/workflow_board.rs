@@ -13,6 +13,8 @@ pub struct ShipmentRow {
     pub recipient_id: String,
     pub transferred: bool,
     pub recipient_name: String,
+    pub completed_step: Option<u64>,
+    pub paid: Option<i64>,
     pub products: Vec<String>,
     pub source_raw: String,
     pub recipient: Value,
@@ -32,6 +34,7 @@ pub struct GroupRow {
     pub created_at: String,
     pub dealer_name: String,
     pub source_id: String,
+    pub source_number: Option<u64>,
     pub dealer_id: String,
     pub transferred: bool,
     pub step: usize,
@@ -50,6 +53,17 @@ pub struct GroupRow {
     pub automatic_payment_issues: Vec<String>,
     pub issues: Vec<Value>,
 }
+impl GroupRow {
+    pub fn management_target_label(&self)->String{
+        let names=self.shipments.iter().map(|s|{
+            if s.recipient_name.is_empty(){"수취인 확인"}else{s.recipient_name.as_str()}
+        }).collect::<Vec<_>>().join(", ");
+        let amount=self.total.map(crate::components::display_won)
+            .unwrap_or_else(||"금액 미확정".to_owned());
+        format!("{names} / 배송 {}건 / {}/4 / {amount}",self.shipments.len(),self.step)
+    }
+}
+
 #[derive(Clone, Debug, Default)]
 pub struct BoardSnapshot {
     pub revision: Option<u64>,
@@ -410,6 +424,8 @@ fn project_state(gateway:&dyn BandoGateway,state:&Value,scope:Option<&HashSet<St
                 recipient_id:text(ship,"recipientId").to_owned(),
                 transferred:field(ship,"transferred")==&Value::Bool(true),
                 recipient_name:text(recipient,"name").to_owned(),
+                completed_step:field(ship,"step").as_u64(),
+                paid:field(native_ship,"paid").as_i64(),
                 products,
                 source_raw:text(order,"raw").to_owned(),
                 recipient:display_recipient,
@@ -470,6 +486,8 @@ fn project_state(gateway:&dyn BandoGateway,state:&Value,scope:Option<&HashSet<St
             created_at:text(group,"createdAt").to_owned(),
             dealer_name,
             source_id:text(group,"sourceId").to_owned(),
+            source_number:id_row(field(workflow,"sources"),text(group,"sourceId"))
+                .and_then(|source|field(source,"number").as_u64()),
             dealer_id:text(group,"dealerId").to_owned(),
             transferred:rows(all_shipments).iter().any(|ship|
                 text(ship,"groupId")==group_id &&
@@ -533,6 +551,7 @@ mod linked_recipient_selection_tests{
         ShipmentRow{
             id:id.into(),order_id:order.into(),recipient_id:recipient.into(),
             transferred:false,recipient_name:"동명이인".into(),products:vec![],
+            completed_step:Some(0),paid:None,
             source_raw:"공통 발주원문".into(),recipient:json!({"id":recipient}),
             remote:None,display_charges:HashMap::new(),
             freight_editing_blocked:false,collect:false,
@@ -542,7 +561,7 @@ mod linked_recipient_selection_tests{
     fn group(id:&str,shipments:Vec<ShipmentRow>)->GroupRow{
         GroupRow{
             id:id.into(),created_at:String::new(),dealer_name:String::new(),
-            source_id:String::new(),dealer_id:String::new(),transferred:false,
+            source_id:String::new(),source_number:None,dealer_id:String::new(),transferred:false,
             step:0,needs_notice:false,total:None,vat_included:0,vat_excluded:0,
             shipments,automatic_text:None,automatic_error:None,
             automatic_phase:None,automatic_signature:None,payment_copied:false,
