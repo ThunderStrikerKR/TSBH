@@ -9045,6 +9045,7 @@ impl eframe::App for BandoEgui {
         // eframe invokes this before the native HUB HWND is destroyed.
         // Kakao must lose its temporary owner BEFORE HUB teardown.
         self.kakao_dock.disconnect();
+        self.kakao_tracker.shutdown();
     }
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         let frame_started=Instant::now();
@@ -9127,11 +9128,6 @@ impl eframe::App for BandoEgui {
         }
         self.poll_source_saves();
         self.poll_clipboard_intake(ctx);
-        // HWND ownership now handles HUB activation. Only the 350ms
-        // geometry/new-conversation refresh remains; no 32ms focus polling.
-        if self.kakao_dock.connected() {
-            ctx.request_repaint_after(Duration::from_millis(350));
-        }
         if self.page==Page::Reception &&
             self.client_manager.as_mut().is_some_and(|manager|manager.take_changed()) {
             // An explicit local client change invalidates the metadata cache
@@ -9143,8 +9139,10 @@ impl eframe::App for BandoEgui {
             }
         }
         if self.page == Page::Reception {
-            self.kakao_tracker.refresh();
-            ctx.request_repaint_after(Duration::from_millis(450));
+            self.kakao_tracker.refresh(ctx);
+            // Native window events wake egui directly. The slower deadline
+            // also serves the shared DB revision probe and dock safety check.
+            ctx.request_repaint_after(Duration::from_secs(5));
             if !self.source_editing && self.raw_source.is_empty() {
                 // Clipboard intake actions are visible only in this state.
                 // Poll the cheap Win32 change counter promptly so clearing
