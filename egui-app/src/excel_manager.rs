@@ -517,7 +517,6 @@ pub struct ExcelManager{
     result:Option<Snapshot>,
     operation:Option<Receiver<Result<Value,String>>>,
     operation_name:Option<String>,
-    preview:Option<Value>,
     error:Option<String>,
     notice:Option<String>,
     tab:Tab,
@@ -534,7 +533,6 @@ pub struct ExcelManager{
     managed_queue:Option<String>,
     freight_drafts:HashMap<String,String>,
     open_order:Option<String>,
-    open_settings:bool,
     reply_review:bool,
     reply_confirm:Option<Value>,
     reply_changed:bool,
@@ -551,7 +549,7 @@ impl ExcelManager{
         let (export_from,export_to)=default_export_date_range(today);
         let mut manager=Self{
             gateway,receiver:None,result:None,operation:None,operation_name:None,
-            preview:None,error:None,notice:None,tab:Tab::Factory,
+            error:None,notice:None,tab:Tab::Factory,
             query:String::new(),selected:BTreeSet::new(),
             sort_queue:None,sort_history:None,
             export_from:export_from.clone(),export_to:export_to.clone(),
@@ -559,7 +557,7 @@ impl ExcelManager{
             export_from_month:components::calendar_month_start(today),
             export_to_month:components::calendar_month_start(today),
             managed_queue:None,freight_drafts:HashMap::new(),
-            open_order:None,open_settings:false,
+            open_order:None,
             reply_review:false,reply_confirm:None,reply_changed:false,reply_refresh_pending:false,
             reply_rows:Vec::new(),reply_rows_revision:None,reply_page:0,
         };
@@ -576,9 +574,6 @@ impl ExcelManager{
             }).unwrap_or("").to_owned();
         Some((id,when))
     }
-    pub fn take_open_settings(&mut self)->bool{
-        std::mem::take(&mut self.open_settings)
-    }
     pub fn request_reply_refresh(&mut self){self.reply_refresh_pending=true;}
     pub fn take_reply_changed(&mut self)->bool{std::mem::take(&mut self.reply_changed)}
     pub fn blocks_reply_navigation(&self)->bool{self.reply_review||self.reply_confirm.is_some()||
@@ -588,7 +583,7 @@ impl ExcelManager{
         // Any read started after the notification satisfies the pending
         // inbox refresh, including the existing page-entry read.
         self.reply_refresh_pending=false;
-        self.error=None;self.result=None;self.preview=None;
+        self.error=None;self.result=None;
         let (sender,receiver)=mpsc::channel();
         self.receiver=Some(receiver);
         let gateway=Arc::clone(&self.gateway);
@@ -602,7 +597,7 @@ impl ExcelManager{
             ctx.request_repaint();
         });
     }
-    fn poll(&mut self){
+    pub fn poll(&mut self,ctx:&egui::Context){
         let read=self.receiver.as_ref().map(Receiver::try_recv);
         match read{
             Some(Ok(Ok(value)))=>{
@@ -622,9 +617,7 @@ impl ExcelManager{
             Some(Ok(Ok(result)))=>{
                 self.operation=None;
                 let operation=self.operation_name.take().unwrap_or_default();
-                if operation=="preview"{
-                    self.preview=Some(result);
-                }else if operation=="workflow"{
+                if operation=="workflow"{
                     let action=text(&result,"action");
                     if action=="record_actual_freight"{
                         self.freight_drafts.remove(text(&result,"queueId"));
@@ -663,6 +656,9 @@ impl ExcelManager{
                     });
                     // Never display a stale shipment projection after saving.
                     self.receiver=None;
+                    if result["folderOpened"]==true{
+                        ctx.send_viewport_cmd(egui::ViewportCommand::Minimized(true));
+                    }
                 }else{
                     self.notice=Some("요청한 Excel 작업을 처리했습니다.".into());
                 }
@@ -682,7 +678,6 @@ impl ExcelManager{
         self.reply_confirm=None;
         self.reply_changed=true;
         self.receiver=None;
-        self.preview=None;
         self.notice=Some("공장 회신 정정 내용을 저장했습니다. 기존 원본 및 이력은 유지됩니다.".into());
         if result.get("shipmentReads").is_some() && result["state"]["revision"].as_u64().is_some(){
             self.result=Some(Snapshot{
@@ -716,19 +711,20 @@ impl ExcelManager{
         });
     }
     fn start_export(&mut self,ctx:egui::Context,origin:String,ids:Vec<String>){
-        let folder_after=origin=="FACTORY";
         self.task("export",ctx,move|g|{
             let mut result=g.export_excel(&origin,&ids)?;
             let projection=g.execute(ReadOperation::ReadShipments,
                 json!({"state":&result["state"]}))?;
             result["shipmentReads"]=projection;
-            if folder_after{
-                if let Some(export_id)=result["exportId"].as_str(){
-                    // Explorer failure is NOT an export failure.
-                    if let Err(reason)=g.open_excel_folder(Some(export_id),None){
-                        result["folderWarning"]=json!(reason);
-                    }
-                }
+            // Both origins open the recorded output directory.
+            // Keep the app visible if the folder could not be opened.
+            let folder=match result["exportId"].as_str(){
+                Some(export_id)=>g.open_excel_folder(Some(export_id),None),
+                None=>Err("저장된 Excel 출력 이력 ID가 없습니다.".into()),
+            };
+            match folder{
+                Ok(())=>result["folderOpened"]=json!(true),
+                Err(reason)=>result["folderWarning"]=json!(reason),
             }
             Ok(result)
         });
@@ -841,7 +837,6 @@ impl ExcelManager{
     pub fn show_page(&mut self,ui:&mut Ui){
         let page_origin_y=ui.cursor().top();
         ui.spacing_mut().scroll=theme::management_scroll_style();
-        self.poll();
         if self.reply_refresh_pending&&self.operation.is_none()&&self.receiver.is_none(){
             self.refresh(ui.ctx().clone());
         }
@@ -860,7 +855,7 @@ impl ExcelManager{
                 settings_help::icon(title,"발송 Excel 관리");
                 title.with_layout(egui::Layout::right_to_left(egui::Align::Center),|actions|{
                     if theme::action(actions,"공장 회신 검토",theme::ButtonRole::Standard,
-                        self.result.is_some()&&self.operation.is_none()&&self.preview.is_none()
+                        self.result.is_some()&&self.operation.is_none()
                     ).clicked(){self.reply_review=true;self.reply_rows_revision=None;self.reply_page=0;}
                 });
             });
@@ -891,7 +886,6 @@ impl ExcelManager{
         let mut manage_clicked=None;
         let mut open_order=None;
         let mut copy_path=None;
-        let mut go_settings=false;
         // Resolve the currently selectable queue BEFORE allocating the fixed
         // toolbar: its right-hand action caption and enabled state must use
         // the same visible selection as the table below.
@@ -1292,21 +1286,7 @@ impl ExcelManager{
         }
         if let Some(id)=open_order{self.open_order=Some(id);}
         if let Some(ids)=exported{
-            if self.tab==Tab::Factory{
-                // Factory export needs no second click. The export service
-                // prepares and validates the current DB snapshot itself.
-                self.start_export(ui.ctx().clone(),self.tab.origin().to_owned(),ids);
-            }else{
-                let Some(state)=self.result.as_ref().map(|x|x.state.clone()) else{return};
-                self.task("preview",ui.ctx().clone(),move|g|{
-                    let preview=g.execute(ReadOperation::PrepareStoreExport,
-                        json!({"state":state,"ids":ids}))?;
-                    let sender=g.execute(ReadOperation::ReviewExportSender,json!({
-                        "state":state,"ids":ids
-                    }))?;
-                    Ok(json!({"preview":preview,"sender":sender}))
-                });
-            }
+            self.start_export(ui.ctx().clone(),self.tab.origin().to_owned(),ids);
         }
         if let Some((action,shipment_id,queue_id,origin,value))=workflow_action{
             let Some(revision)=self.result.as_ref()
@@ -1320,62 +1300,6 @@ impl ExcelManager{
                 )
             });
         }
-        if self.preview.is_some(){
-            let response=self.preview.as_ref().unwrap().clone();
-            let missing=response["sender"]["companyMissing"]==true;
-            let count=rows(&response["preview"]["rows"]).len();
-            let ids=rows(&response["preview"]["ids"]).iter()
-                .filter_map(Value::as_str).map(str::to_owned).collect::<Vec<_>>();
-            let origin=self.tab.origin().to_owned();
-            components::modal_backdrop(ui.ctx(),"excel-output-backdrop",false);
-            components::show_decision_window(ui.ctx(),"Excel 작성 확인","excel-export-confirm",ui.max_rect(),|dialog|{
-                components::decision_workspace(dialog,|decision|{
-                    if decision.header("Excel 작성 확인","취소",true
-                    ){self.preview=None;}
-                    decision.body(|dialog|{
-                        dialog.label(typography::body(&format!(
-                            "{} {}건의 로젠택배 Excel을 작성할까요?",
-                            if origin=="FACTORY"{"공장 발송"}else{"매장 발송"},count
-                        )));
-                        dialog.label(typography::caption(
-                            "Excel 파일 작성은 실제 포장 또는 발송 완료가 아닙니다."
-                        ));
-                        let status_row_width=dialog.available_width();
-                        let _=components::fixed_row(
-                            dialog,egui::Vec2::new(
-                                status_row_width,theme::ACTION_STANDARD_HEIGHT
-                            ),egui::Layout::left_to_right(egui::Align::Center),|row|{
-                                if missing{
-                                    let message="송하인 정보가 미완성입니다. 설정을 확인하세요.";
-                                    let button_width=148.0;
-                                    let text_width=(row.available_width()-button_width
-                                        -theme::SPACE_8).max(1.0);
-                                    let response=row.add_sized(
-                                        egui::Vec2::new(text_width,theme::ACTION_STANDARD_HEIGHT),
-                                        egui::Label::new(
-                                            typography::status(message,theme::DANGER)
-                                        ).truncate()
-                                    );
-                                    response.on_hover_text(message);
-                                    if theme::action(row,"반도스탠드 정보 설정",
-                                        theme::ButtonRole::Standard,true).clicked(){
-                                        go_settings=true;
-                                    }
-                                }
-                            }
-                        );
-                    });
-                    decision.actions(|bar|{
-                        if theme::action(bar,"Excel 작성",theme::ButtonRole::Primary,
-                            !busy&&self.gateway.excel_write_enabled()).clicked(){
-                            self.preview=None;
-                            self.start_export(ui.ctx().clone(),origin.clone(),ids.clone());
-                        }
-                    });
-                });
-            });
-        }
-        if go_settings{self.open_settings=true;}
         crate::floating_notice::sync(
             ui.ctx(),"excel.result","excel.action",
             crate::floating_notice::Tone::Success,self.notice.as_deref()
@@ -1392,17 +1316,24 @@ mod table_state_tests {
     use super::*;
 
     #[test]
-    fn factory_export_starts_directly_and_store_keeps_preview(){
+    fn shipment_exports_share_direct_execution_and_success_only_minimize(){
         let source=include_str!("excel_manager.rs");
         let start=source.find("if let Some(ids)=exported{").unwrap();
         let end=start+source[start..].find("if let Some((action,shipment_id").unwrap();
         let branch=&source[start..end];
-        let (factory,store)=branch.split_once("}else{").unwrap();
-        assert!(factory.contains("if self.tab==Tab::Factory"));
-        assert!(factory.contains("self.start_export("));
-        assert!(!factory.contains("self.task(\"preview\""));
-        assert!(store.contains("self.task(\"preview\""));
-        assert!(store.contains("ReadOperation::PrepareStoreExport"));
+        assert!(branch.contains("self.start_export(ui.ctx().clone(),self.tab.origin().to_owned(),ids)"));
+        assert!(!branch.contains("self.tab==Tab::Factory"));
+        assert!(!source.contains(concat!("excel-export-", "confirm")));
+        let start=source.find("fn start_export(").unwrap();
+        let end=start+source[start..].find("/// Review only unresolved").unwrap();
+        let worker=&source[start..end];
+        assert!(worker.find("g.export_excel(").unwrap()<worker.find("g.open_excel_folder(").unwrap());
+        assert!(worker.contains("Ok(())=>result[\"folderOpened\"]=json!(true)"));
+        assert!(worker.contains("Err(reason)=>result[\"folderWarning\"]=json!(reason)"));
+        let start=source.find("}else if operation==\"export\"{").unwrap();
+        let end=start+source[start..].find("요청한 Excel 작업").unwrap();
+        let completion=&source[start..end];
+        assert!(completion.contains("if result[\"folderOpened\"]==true{\n                        ctx.send_viewport_cmd(egui::ViewportCommand::Minimized(true));"));
     }
 
     #[test]
