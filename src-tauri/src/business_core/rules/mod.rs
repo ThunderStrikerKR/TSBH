@@ -27,6 +27,7 @@ mod reply_rules;
 mod shipping_read;
 mod client_change;
 mod factory_reply;
+pub(crate) use factory_reply::import_automatic_factory_reply;
 mod legacy_migration;
 mod shipping;
 mod remote_delivery;
