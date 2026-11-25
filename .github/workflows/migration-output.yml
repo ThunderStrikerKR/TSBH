@@ -60,3 +60,5 @@ jobs:
         run: cargo test --manifest-path tests/rust-migration/rules/Cargo.toml rules::shipping:: -- --nocapture
       - name: Verify native factory reply matching, conflict and row safety
         run: cargo test --manifest-path tests/rust-migration/rules/Cargo.toml rules::factory_reply::tests -- --nocapture
+      - name: Verify native order history dates, tracking and payment evidence
+        run: cargo test --manifest-path tests/rust-migration/rules/Cargo.toml rules::history::tests -- --nocapture

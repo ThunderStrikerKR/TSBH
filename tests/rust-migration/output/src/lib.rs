@@ -412,4 +412,147 @@ mod tests {
         assert_eq!(p["records"][0]["needsReview"],false);
         assert_eq!(p["records"][0]["notificationLabel"],"반영 완료");
     }
+
+    // Use the same native history and settlement operations as the egui
+    // daily settlement manager, passing one immutable state snapshot.
+    fn operational_history_fixture()->Value{
+        let client=json!({"id":"c1","name":"기존 거래처","tier":"wholesale",
+            "payment":"POSTPAID","shippingFeeExcluded":false});
+        let order=json!({"id":"o1","clientId":"c1","clientSnapshot":client,
+            "raw":"합성 발주","orderType":"DEALER","pricesLocked":true,
+            "createdAt":"2026-11-13T14:00:00Z","confirmedAt":"2026-11-13T15:00:00Z",
+            "freightCode":"010","shippingFee":3000,"applyVat":true,"vatAmount":10300,
+            "recipients":[{"id":"r1","name":"합성 수취인","items":[{
+                "id":"i1","productId":"p1","variantId":"v1","name":"BD 709",
+                "origin":"FACTORY","quantity":2,"unitPrice":50000}]}]});
+        json!({"revision":7,"orders":[order],"clients":[
+            {"id":"c1","name":"변경된 거래처","tier":"retail","payment":"PREPAID",
+                "shippingFeeExcluded":true}],
+            "products":[{"id":"p1","name":"BD 709","variants":[{"id":"v1","retail":99999}]}],
+            "workflow":{"groups":[{"id":"g1"}],"shipments":[{
+                "id":"s1","orderId":"o1","recipientId":"r1","groupId":"g1",
+                "transferred":true,"actualFreight":{"FACTORY":2500}}],
+                "queue":[{"shipmentId":"s1","origin":"FACTORY","status":"EXPORTED",
+                    "snapshot":{"subtotal":100000,"shipping":3000,"vat":10300,"total":113300}}],
+                "payments":[],"confirmations":[],"events":[]}})
+    }
+    fn operational_history(s:&Value,date:&str)->Value{
+        super::rules::execute("list_order_history",json!({"state":s,"query":"","date":date})).unwrap()
+    }
+    fn operational_settlement(s:&Value,date:&str)->Value{
+        let history=operational_history(s,date);
+        output::execute("prepare_settlement",json!({"state":s,"date":date,"historyRows":history})).unwrap()
+    }
+    #[test]
+    fn operational_history_uses_seoul_confirmation_date_and_frozen_bill(){
+        let s=operational_history_fixture();
+        assert_eq!(operational_history(&s,"2026-11-13"),json!([]));
+        let h=operational_history(&s,"2026-11-14");
+        assert_eq!(h[0]["client"]["name"],"기존 거래처");
+        assert_eq!(h[0]["billing"],json!({"subtotal":100000,"shipping":3000,"vat":10300,"total":113300}));
+        assert_eq!(h[0]["status"],"엑셀 추출 완료");
+        let r=operational_settlement(&s,"2026-11-14");
+        assert_eq!(r["revision"],7);
+        assert_eq!(r["billedKnown"],113300);
+        assert_eq!(r["postpaidKnown"],113300);
+        assert_eq!(r["actualFreightKnown"],2500);
+        assert_eq!(r["paidCash"],0);
+    }
+    #[test]
+    fn operational_settlement_separates_bank_day_allocation_and_unallocated_cash(){
+        let mut s=operational_history_fixture();
+        s["workflow"]["payments"]=json!([
+            {"id":"p1","paidAt":"2026-11-14T14:59:59Z","amount":40000,"dealerId":"c1",
+                "account":{"bank":"가상은행","holder":"테스트","number":"00123"},
+                "allocations":[{"shipmentId":"s1","amount":30000}]},
+            {"id":"p2","paidAt":"2026-11-14T15:00:00Z","amount":20000,"dealerId":"c1",
+                "allocations":[{"shipmentId":"s1","amount":20000}]}]);
+        let first=operational_settlement(&s,"2026-11-14");
+        assert_eq!(first["billedKnown"],113300);
+        assert_eq!(first["paidCash"],40000);
+        assert_eq!(first["allocatedCash"],30000);
+        assert_eq!(first["unallocatedCash"],10000);
+        assert_eq!(first["orderRows"][0]["paidAllocated"],50000);
+        assert_eq!(first["outstandingKnown"],63300);
+        assert_eq!(first["paymentRows"][0]["account"],"가상은행 / 테스트 / 00123");
+        let next=operational_settlement(&s,"2026-11-15");
+        assert_eq!(next["billedKnown"],0);
+        assert_eq!(next["paidCash"],20000);
+        assert_eq!(next["unallocatedCash"],0);
+    }
+    #[test]
+    fn operational_settlement_approval_and_legacy_paid_flag_are_not_cash(){
+        let mut s=operational_history_fixture();
+        s["orders"][0]["paid"]=json!(true);
+        s["workflow"]["confirmations"]=json!([{"id":"a1","allocations":[
+            {"shipmentId":"s1","amount":20000}]}]);
+        let r=operational_settlement(&s,"2026-11-14");
+        assert_eq!(r["paidCash"],0);
+        assert_eq!(r["approvedPaymentKnown"],20000);
+        assert_eq!(r["outstandingKnown"],93300);
+        assert_eq!(r["orderRows"][0]["cashEvidenceMissing"],true);
+        s["workflow"]["events"]=json!([{"action":"입금 승인 재확인 필요",
+            "before":"a1","shipmentIds":["s1"]}]);
+        let r=operational_settlement(&s,"2026-11-14");
+        assert_eq!(r["approvedPaymentKnown"],0);
+        assert_eq!(r["outstandingKnown"],113300);
+        assert_eq!(r["paidCash"],0);
+    }
+    #[test]
+    fn operational_settlement_rejects_invalid_or_duplicate_bank_evidence(){
+        let mut s=operational_history_fixture();
+        let p=json!({"id":"p1","paidAt":"2026-11-14T00:00:00Z","amount":1000,
+            "allocations":[{"shipmentId":"s1","amount":1001}]});
+        s["workflow"]["payments"]=json!([p]);
+        let run=|state:&Value|output::execute("prepare_settlement",json!({
+            "state":state,"date":"2026-11-14","historyRows":operational_history(state,"2026-11-14")}));
+        assert!(run(&s).is_err());
+        s["workflow"]["payments"][0]["allocations"][0]["amount"]=json!(-1);
+        assert!(run(&s).is_err());
+        s["workflow"]["payments"][0]["allocations"][0]["amount"]=json!(1000);
+        let duplicate=s["workflow"]["payments"][0].clone();
+        s["workflow"]["payments"].as_array_mut().unwrap().push(duplicate);
+        assert!(run(&s).is_err());
+    }
+    #[test]
+    fn operational_settlement_unknown_bill_and_actual_cost_are_not_zero(){
+        let mut s=operational_history_fixture();
+        s["workflow"]["shipments"][0]["actualFreight"]=json!({});
+        let mut h=operational_history(&s,"2026-11-14");
+        h[0]["billing"]["total"]=Value::Null;
+        let r=output::execute("prepare_settlement",json!({"state":s,
+            "date":"2026-11-14","historyRows":h})).unwrap();
+        assert_eq!(r["billedUnknown"],1);
+        assert_eq!(r["orderRows"][0]["total"],Value::Null);
+        assert_eq!(r["orderRows"][0]["outstanding"],Value::Null);
+        assert_eq!(r["freightUnknown"],1);
+        assert_eq!(r["orderRows"][0]["freightCost"],Value::Null);
+    }
+    #[test]
+    fn operational_billing_history_freezes_pre_edit_amount_and_guards_existing_history(){
+        let mut before=operational_history_fixture();
+        before["workflow"]["shipments"]=json!([]);
+        before["workflow"]["queue"]=json!([]);
+        before["orders"][0]["billingHistory"]=json!([{"total":88000,"reason":"기존 이력"}]);
+        let mut proposed=before.clone();
+        proposed["orders"][0]["recipients"][0]["items"][0]["quantity"]=json!(4);
+        proposed["orders"][0]["pricesLocked"]=json!(false);
+        proposed["orders"][0]["pendingBillingSnapshot"]=json!({
+            "at":"2026-11-15T01:00:00Z","reason":"수량 수정","activeGroupId":null});
+        let run=|prior:&Value,draft:&Value|super::rules::execute("finalize_billing_history",
+            json!({"before":prior,"state":draft}));
+        let r=run(&before,&proposed).unwrap();
+        let saved=&r["state"]["orders"][0];
+        assert!(saved.get("pendingBillingSnapshot").is_none());
+        assert_eq!(saved["billingHistory"][0],before["orders"][0]["billingHistory"][0]);
+        assert_eq!(saved["billingHistory"][1]["total"],113300);
+        assert_eq!(saved["billingHistory"][1]["recipients"][0]["items"][0]["quantity"],2);
+        assert_eq!(saved["recipients"][0]["items"][0]["quantity"],4);
+        let mut tampered=proposed.clone();
+        tampered["orders"][0]["billingHistory"][0]["total"]=json!(0);
+        assert!(run(&before,&tampered).is_err());
+        proposed["orders"][0]["pendingBillingSnapshot"]["activeGroupId"]=json!("g1");
+        assert_eq!(run(&before,&proposed).unwrap()["state"]["orders"][0]["billingHistory"],
+            before["orders"][0]["billingHistory"]);
+    }
 }
