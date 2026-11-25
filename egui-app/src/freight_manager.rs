@@ -2103,6 +2103,7 @@ impl FreightManager {
                                     |buttons|{
                                         buttons.set_clip_rect(
                                             cells[3].intersect(row_rect)
+                                                .intersect(buttons.clip_rect())
                                         );
                                         buttons.set_width(rect.width());
                                         buttons.set_height(rect.height());
