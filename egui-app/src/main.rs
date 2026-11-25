@@ -6687,11 +6687,8 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                             bottom_rect.height()
                         ).min(ui.available_height().max(0.0));
                         let list_height=available;
-                        ui.allocate_ui_with_layout(
-                            Vec2::new(ui.available_width(), list_height),
-                            Layout::top_down(Align::Min),
-                            |area| {
-                                area.set_min_height(list_height);
+                        components::reception_goods_viewport(
+                            ui,list_height,|area| {
                                 let table_width=
                                     components::reception_items_scroll_content_width(area);
                                 egui::ScrollArea::both()
@@ -7031,11 +7028,8 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                             let available=components::docked_section_body_height(
                                 bottom_rect.height()
                             ).min(ui.available_height().max(0.0));
-                            ui.allocate_ui_with_layout(
-                                Vec2::new(ui.available_width(),available),
-                                Layout::top_down(Align::Min),
-                                |area|{
-                                    area.set_min_height(available);
+                            components::reception_goods_viewport(
+                                ui,available,|area|{
                                     let table_width=
                                         components::reception_items_scroll_content_width(area);
                                     egui::ScrollArea::both()
@@ -7400,11 +7394,8 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                     let available=components::docked_section_body_height(remaining)
                         .min(ui.available_height().max(0.0));
                     let list_height=available;
-                    ui.allocate_ui_with_layout(
-                        Vec2::new(ui.available_width(),list_height),
-                        Layout::top_down(Align::Min),
-                        |list_area|{
-                            list_area.set_min_height(list_height);
+                    components::reception_goods_viewport(
+                        ui,list_height,|list_area|{
                             let table_width=
                                 components::reception_items_scroll_content_width(list_area)
                                 .max(theme::RECEPTION_ITEMS_MIN_TABLE_WIDTH+theme::RECEPTION_ITEM_REMOVE_WIDTH);

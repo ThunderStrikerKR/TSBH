@@ -45,7 +45,7 @@ test("Required sender information is validated at UI and Rust save boundary", ()
   assert.match(native, /pub fn validate_clients\(/);
   assert.match(native, /client\["address"\]\.as_str\(\)\.unwrap_or\(""/);
   assert.match(native, /\["phone", "mobile"\]\.iter\(\)\.all/);
-  assert.match(storage, /validate_clients\(&current, &state\)\?/);
+  assert.match(storage, /validate_clients\(&?current,\s*&state\)\?/);
   assert.match(settings, /settings_accounts::validate\(&state\)\?/);
   assert.match(settings, /settings_accounts::validate\(&state\)\?/);
 });

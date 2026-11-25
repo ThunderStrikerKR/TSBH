@@ -1056,6 +1056,26 @@ pub fn docked_section_body_height(section_height: f32) -> f32 {
     (section_height - docked_section_chrome_height()).max(0.0)
 }
 
+/// The fixed goods viewport owns its allocated rectangle. Content may
+/// scroll, but an egui child reporting a larger min_rect must not grow
+/// the surrounding card, overlap its footer, or shift sibling sections.
+/// Reserve the parent's slot once and render the scroll area independently.
+pub fn reception_goods_viewport(
+    ui:&mut Ui,height:f32,content:impl FnOnce(&mut Ui)
+){
+    let size=Vec2::new(ui.available_width().max(0.0),height.max(0.0));
+    let (rect,_)=ui.allocate_exact_size(size,Sense::hover());
+    if !rect.is_positive(){return;}
+    let mut child=ui.new_child(UiBuilder::new()
+        .id_salt("reception-goods-viewport")
+        .max_rect(rect).layout(Layout::top_down(Align::Min)));
+    child.set_clip_rect(rect.intersect(ui.clip_rect()));
+    child.set_width(rect.width());
+    child.set_height(rect.height());
+    child.spacing_mut().item_spacing.y=0.0;
+    content(&mut child);
+}
+
 /// Shared forward/inverse height budget for every Reception section.
 pub fn docked_section_chrome_height() -> f32 {
     theme::RECEPTION_SECTION_CHROME_HEIGHT
@@ -9582,6 +9602,27 @@ pub(crate) mod general_screen_geometry_tests {
             assert_layout_rects_invariant(&fields(&first_recipient),&fields(&second_recipient));
             assert_layout_rects_invariant(&fields(&second_recipient),&fields(&pending));
         }
+    }
+    #[test]
+    fn goods_viewport_reserves_fixed_parent_height_even_with_oversized_content(){
+        let ctx=test_context();
+        let screen=Vec2::new(900.0,700.0);
+        let work=Rect::from_min_max(egui::pos2(24.0,24.0),egui::pos2(876.0,676.0));
+        let draw=|overflow:bool|render(&ctx,screen,work,|ui|{
+            reception_section_with_header(ui,"품목 및 운임",320.0,|_|{},|body|{
+                body.spacing_mut().item_spacing.y=0.0;
+                reception_goods_viewport(body,docked_section_body_height(320.0),|child|{
+                    child.allocate_exact_size(Vec2::new(200.0,if overflow{900.0}else{20.0}),Sense::hover());
+                });
+            });
+            let (rect,_)=ui.allocate_exact_size(Vec2::new(100.0,20.0),Sense::hover());
+            record("after goods",rect);
+        });
+        let short=draw(false);
+        let long=draw(true);
+        assert_layout_rects_invariant(
+            &[("items card",first(&short,"items card")),("after goods",first(&short,"after goods"))],
+            &[("items card",first(&long,"items card")),("after goods",first(&long,"after goods"))]);
     }
     #[test]
     fn reception_section_divider_keeps_16pt_to_visible_document_frame(){

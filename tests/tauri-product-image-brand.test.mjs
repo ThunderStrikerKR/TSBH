@@ -44,7 +44,7 @@ test("Rust validates changed brands within the same SQLite save transaction", ()
   const rust = read("crates/bando-data-access/src/validation.rs");
   const storage = read("crates/bando-data-access/src/storage.rs");
   assert.match(rust, /fn validate_brands\(before: &Value, next: &Value\)/);
-  assert.match(storage, /validate_brands\(&current, &state\)\?/);
+  assert.match(storage, /validate_brands\(&?current,\s*&state\)\?/);
   assert.match(rust, /fn brand_terms/);
   assert.match(rust, /link\.scheme\(\) == "https"/);
   assert.match(rust, /old\["id"\]\.as_str\(\) == Some\(id\) && old == brand/);
