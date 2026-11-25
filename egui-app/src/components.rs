@@ -8577,6 +8577,7 @@ mod management_dropdown_unification_tests {
     #[test]
     fn modal_form_dropdown_matches_input_height_without_changing_toolbar(){
         let ctx=egui::Context::default();
+        crate::typography::install(&ctx);
         let mut toolbar=Rect::NOTHING;
         let mut form=Rect::NOTHING;
         let _=ctx.run(egui::RawInput::default(),|ctx|{
