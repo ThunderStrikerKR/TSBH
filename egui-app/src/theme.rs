@@ -60,8 +60,8 @@ pub const LINKED_PREVIEW_BG:Color32=Color32::from_rgb(23,67,109);
 pub const LINKED_PREVIEW_TEXT:Color32=Color32::from_rgb(234,244,255);
 pub const LINKED_PREVIEW_BORDER:Color32=Color32::from_rgb(117,181,255);
 pub const LINKED_PREVIEW_BORDER_WIDTH:f32=2.0;
-pub const REQUIRED_REVIEW_TEXT:Color32=Color32::from_rgb(251,191,36);
-pub const REQUIRED_REVIEW_BORDER:Color32=Color32::from_rgb(201,154,59);
+pub const REQUIRED_REVIEW_TEXT:Color32=ORANGE_EMPHASIS_TEXT;
+pub const REQUIRED_REVIEW_BORDER:Color32=SELECTED_ORDER;
 pub const ERROR_BG:Color32=Color32::from_rgb(51,37,37);
 pub const ERROR_TEXT:Color32=Color32::from_rgb(240,160,160);
 pub const ERROR_BORDER:Color32=Color32::from_rgb(199,107,107);
@@ -102,9 +102,11 @@ pub const CATEGORY_EXPLORER_ANCESTOR_TEXT:Color32=Color32::from_rgb(112,112,112)
 // React workflow.css and receipt-layout.css amber palette; paint only.
 pub const SELECTED_ORDER: Color32 = Color32::from_rgb(245, 158, 11); // #F59E0B
 pub const ORANGE_EMPHASIS_BG: Color32 = Color32::from_rgb(59, 43, 27); // #3B2B1B
-// One-touch preview has a separate visual role from persistent review notices.
+// Orange confirmation surfaces share a single palette regardless of
+// whether the trigger is a persistent review card or a one-touch hover.
+pub const ORANGE_EMPHASIS_TEXT:Color32=Color32::from_rgb(255,228,188);
 pub const ONE_TOUCH_BG:Color32=ORANGE_EMPHASIS_BG;
-pub const ONE_TOUCH_TEXT:Color32=Color32::from_rgb(255,228,188);
+pub const ONE_TOUCH_TEXT:Color32=ORANGE_EMPHASIS_TEXT;
 pub const ONE_TOUCH_BORDER:Color32=SELECTED_ORDER;
 pub const ONE_TOUCH_BORDER_WIDTH:f32=2.0;
 pub const ONE_TOUCH_TINT:Color32=Color32::from_rgba_unmultiplied_const(245,158,11,18);
@@ -1049,10 +1051,8 @@ impl ReviewTone {
         // Background, border, primary text, secondary text.
         match self {
             Self::Action => (
-                // React receipt-layout.css .staff-block: separate notice role,
-                // with the original amber edge, dark surface and two ink colors.
-                PANEL, REQUIRED_REVIEW_BORDER,
-                REQUIRED_REVIEW_TEXT, Color32::from_rgb(217, 188, 152),
+                ORANGE_EMPHASIS_BG, REQUIRED_REVIEW_BORDER,
+                REQUIRED_REVIEW_TEXT, ORANGE_EMPHASIS_TEXT,
             ),
             Self::Info => (
                 Color32::from_rgb(25, 45, 64), Color32::from_rgb(88, 152, 218),
@@ -1071,6 +1071,15 @@ impl ReviewTone {
 
     pub fn text_color(self) -> Color32 { self.palette().2 }
     pub fn detail_color(self) -> Color32 { self.palette().3 }
+}
+
+#[cfg(test)]
+#[test]
+fn review_action_and_one_touch_share_orange_palette(){
+    let (background,border,text,detail)=ReviewTone::Action.palette();
+    assert_eq!((background,border,text),(ONE_TOUCH_BG,ONE_TOUCH_BORDER,ONE_TOUCH_TEXT));
+    assert_eq!(detail,ONE_TOUCH_TEXT);
+    assert_ne!(background,PANEL);
 }
 
 pub fn review_issue_frame(tone: ReviewTone) -> Frame {
