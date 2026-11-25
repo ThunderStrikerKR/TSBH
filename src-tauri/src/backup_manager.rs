@@ -326,6 +326,14 @@ mod tests {
 
         let mut legacy:Value=serde_json::from_str(
             include_str!("../resources/legacy-state-seed-303.json")).unwrap();
+        // Recreate obsolete stored values explicitly even though the
+        // bundled legacy catalog no longer contains them.
+        let obsolete=legacy["products"].as_array_mut().unwrap().iter_mut()
+            .find(|p|p["defaultColor"]=="" && p["variants"].as_array().is_some_and(|vs|
+                vs.len()==1 && vs[0]["color"]=="")).unwrap();
+        let obsolete_id=obsolete["id"].as_str().unwrap().to_owned();
+        obsolete["defaultColor"]=json!("색상 미표기");
+        obsolete["variants"][0]["color"]=json!("단일");
         let idx=legacy["products"].as_array().unwrap().iter()
             .position(|p|p["id"]=="bando-site-351").unwrap();
         let first=legacy["products"][idx]["variants"][0]["id"].as_str().unwrap().to_owned();
@@ -405,6 +413,11 @@ mod tests {
         assert_eq!(restored["revision"],9);
         assert_eq!(restored["clients"],legacy["clients"]);
         assert_eq!(restored["orders"][1],frozen);
+        let cleaned=restored["products"].as_array().unwrap().iter()
+            .find(|p|p["id"]==obsolete_id.as_str()).unwrap();
+        assert_eq!(cleaned["defaultColor"],"");
+        assert_eq!(cleaned["variants"][0]["color"],"");
+        assert_eq!(get_snapshot(&read_backup(&backup_file).unwrap()).unwrap(),legacy);
         let clear=restored["products"].as_array().unwrap().iter()
             .find(|p|p["variants"][0]["id"]==first).unwrap();
         let frost=restored["products"].as_array().unwrap().iter()

@@ -249,6 +249,10 @@ mod operational_backup_tests {
     }
 
     fn fixture(base:&Path)->Connection{
+        fixture_with_colors(base,"Black","Black")
+    }
+
+    fn fixture_with_colors(base:&Path,default_color:&str,variant_color:&str)->Connection{
         let mut conn=Connection::open(base.join("synthetic.sqlite")).unwrap();
         conn.execute_batch(r#"
             PRAGMA journal_mode=WAL;
@@ -267,8 +271,8 @@ mod operational_backup_tests {
             "queue":[],"exports":[],"settings":{"accounts":[],"operatorName":"합성 담당자"},
             "workflow":{"shipments":[{"id":"s","orderId":"o","recipientId":"r"}],
                 "events":[{"id":"event","action":"합성 원문 기록"}],"payments":[]},
-            "products":[{"id":"p","code":"709","name":"합성 상품","defaultColor":"Black",
-                "variants":[{"id":"v","color":"Black","wholesale":10000,"semi":12000,"retail":15000}]}],
+            "products":[{"id":"p","code":"709","name":"합성 상품","defaultColor":default_color,
+                "variants":[{"id":"v","color":variant_color,"wholesale":10000,"semi":12000,"retail":15000}]}],
             "clients":[{"id":"c","name":"합성 거래처","tier":"special","address":"합성 주소",
                 "phone":"010-0000-0000","overrides":{"v":9000}}],
             "orders":[{"id":"o","clientId":"c","raw":"합성 주문 원문","status":"STATEMENT",
@@ -351,6 +355,29 @@ mod operational_backup_tests {
         validate_database(&reopened).unwrap();
         assert_eq!(get_snapshot(&reopened).unwrap()["revision"],9);
         assert_eq!(auxiliary(&reopened),before_aux);
+    }
+
+    #[test]
+    fn restoring_old_v2_color_placeholders_clears_catalog_without_rewriting_backup(){
+        let old_dir=Temp::new();
+        let old=fixture_with_colors(&old_dir.0,"색상 미표기","단일");
+        let historical=get_snapshot(&old).unwrap();
+        let live_dir=Temp::new();
+        let mut live=fixture(&live_dir.0);
+        let backup=manual_backup(&old,&live_dir.0).unwrap();
+        restore_backup(&mut live,&live_dir.0,&backup).unwrap();
+        let restored=get_snapshot(&live).unwrap();
+        assert_eq!(restored["products"][0]["defaultColor"],"");
+        assert_eq!(restored["products"][0]["variants"][0]["color"],"");
+        assert_eq!(restored["products"][0]["variants"][0]["id"],"v");
+        assert_eq!(restored["products"][0]["variants"][0]["retail"],15000);
+        assert_eq!(restored["orders"],historical["orders"]);
+        let index:String=live.query_row("SELECT payload FROM product_index WHERE id='p'",[],|r|r.get(0)).unwrap();
+        let indexed:Value=serde_json::from_str(&index).unwrap();
+        assert_eq!(indexed["defaultColor"],"");
+        assert_eq!(indexed["variants"][0]["color"],"");
+        assert_eq!(get_snapshot(&read_backup(Path::new(&backup)).unwrap()).unwrap(),historical);
+        assert_eq!(crate::product_colors::migrate_v2(&mut live,&live_dir.0).unwrap(),0);
     }
 
     #[test]

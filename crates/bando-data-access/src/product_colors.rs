@@ -6,56 +6,28 @@ use rusqlite::Connection;
 use serde_json::{json,Value};
 use std::path::Path;
 
+#[cfg(test)]
 const LEGACY:&str="색상 미표기";
 const NO_COLOR:&str="";
 fn placeholder(value:&Value)->bool {
     matches!(value.as_str().map(str::trim),Some("단일"|"색상 미표기"|"색상미표기"))
 }
 
-fn option_color(option:&str)->&'static str{
-    let value=option.to_lowercase();
-    // Only recognize color evidence explicitly present in the original
-    // sale option. Size, perforation, packaging and model suffixes are not
-    // colors and retain the internal no-color sentinel.
-    if value.contains("다크 그린")||value.contains("dark green"){return "다크 그린";}
-    if value.contains("와인")||value.contains("wine"){return "와인";}
-    if value.contains("크롬")||value.contains("chrome"){return "Chrome";}
-    if value.contains("블랙")||value.contains("검정")||value.contains("black"){return "Black";}
-    if value.contains("실버")||value.contains("silver"){return "Silver";}
-    if value.contains("그레이")||value.contains("gray")||value.contains("grey"){return "Gray";}
-    if value.contains("화이트")||value.contains("white"){return "White";}
-    if value.contains("브라운")||value.contains("brown"){return "Brown";}
-    if value.contains("클리어")||value.contains("clear"){return "Clear";}
-    if value.contains("프로스트")||value.contains("frost"){return "Frost";}
-    NO_COLOR
-}
+// Clear only obsolete color values. Option text and actual recorded colors
+// are independent evidence and must not be used to invent a replacement.
 fn normalize_product(product:&mut Value)->usize{
-    let default_legacy=placeholder(&product["defaultColor"]);
-    let mut first_fixed=None::<String>;
     let mut changed=0;
+    if placeholder(&product["defaultColor"]){
+        product["defaultColor"]=json!(NO_COLOR);
+        changed+=1;
+    }
     if let Some(variants)=product.get_mut("variants").and_then(Value::as_array_mut){
         for variant in variants{
-            if !placeholder(&variant["color"]){continue;}
-            let fixed=if variant["color"].as_str()==Some(LEGACY) {
-                option_color(variant["option"].as_str().unwrap_or(""))
-            } else { NO_COLOR };
-            variant["color"]=json!(fixed);
-            if first_fixed.is_none(){first_fixed=Some(fixed.to_owned());}
-            changed+=1;
+            if placeholder(&variant["color"]){
+                variant["color"]=json!(NO_COLOR);
+                changed+=1;
+            }
         }
-    }
-    if default_legacy{
-        // The former default always referenced the placeholder itself.
-        // Prefer its just-normalized variant, never another variant's
-        // arbitrary color. An absent color is the empty string.
-        let replacement=first_fixed.or_else(||{
-            product["variants"].as_array()
-                .and_then(|vs|vs.first())
-                .and_then(|v|v["color"].as_str())
-                .map(str::to_owned)
-        }).unwrap_or_else(||NO_COLOR.to_owned());
-        product["defaultColor"]=json!(replacement);
-        changed+=1;
     }
     changed
 }
@@ -112,8 +84,9 @@ mod tests{
         ],"orders":[{"id":"existing","snapshot":{"color":LEGACY}}]});
         let old_orders=state["orders"].clone();
         assert_eq!(normalize_products(&mut state).unwrap(),4);
-        assert_eq!(state["products"][0]["defaultColor"],"Chrome");
-        assert_eq!(state["products"][0]["variants"][0]["color"],"Chrome");
+        assert_eq!(state["products"][0]["defaultColor"],NO_COLOR);
+        assert_eq!(state["products"][0]["variants"][0]["color"],NO_COLOR);
+        assert_eq!(state["products"][0]["variants"][0]["option"],"크롬 25cm");
         assert_eq!(state["products"][1]["defaultColor"],NO_COLOR);
         assert_eq!(state["products"][1]["variants"][0]["color"],NO_COLOR);
         assert_eq!(state["products"][0]["variants"][0]["id"],"v1");
