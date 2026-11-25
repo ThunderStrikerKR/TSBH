@@ -15,11 +15,11 @@ pub const HEADER_BG: Color32 = Color32::from_rgb(27, 27, 27);
 // Level-2 / primary section surface. Darker than INPUT (#292929) so
 // repeated order cards remain distinguishable inside the workflow pane.
 // This shared token intentionally updates every egui panel using PANEL.
-pub const PANEL: Color32 = Color32::from_rgb(32, 32, 32);
+pub const PANEL: Color32 = Color32::from_rgb(24, 24, 24);
 // Shared surface level 2.5: subtle alternate rows inside PANEL lists.
 // Never use INPUT/RAISED (fields/buttons) as a table zebra fill.
 pub const TABLE_ROW_ALT_BG: Color32 = Color32::from_rgb(30, 30, 30);
-pub const INPUT: Color32 = Color32::from_rgb(41, 41, 41);
+pub const INPUT: Color32 = Color32::from_rgb(34, 34, 34);
 // Disabled management dropdowns use a darker field surface while keeping
 // the same height, border and split-chevron geometry as enabled dropdowns.
 pub const MANAGEMENT_DROPDOWN_DISABLED_BG: Color32 = DISABLED_ACTION_BG;
@@ -28,7 +28,7 @@ pub const MANAGEMENT_DROPDOWN_DISABLED_BG: Color32 = DISABLED_ACTION_BG;
 pub const DISABLED_ACTION_BG: Color32 = Color32::from_rgb(30, 30, 30);
 pub const DISABLED_ACTION_TEXT: Color32 = Color32::from_rgb(124, 124, 124);
 pub const DISABLED_ACTION_BORDER: Color32 = Color32::from_rgb(55, 55, 55);
-pub const RAISED: Color32 = Color32::from_rgb(48, 48, 48);
+pub const RAISED: Color32 = Color32::from_rgb(41, 41, 41);
 // One component-wide floating feedback style; management screens never define
 // independent toast backgrounds, dimensions, type sizes or offsets.
 pub const FLOATING_NOTICE_BG: Color32 = RAISED;
@@ -113,9 +113,9 @@ pub fn workflow_selected_row_fill() -> Color32 {
 // Compact working-order cards derive every slot from the actual right pane.
 // The horizontal outer inset, inter-control gaps and vertical insets use
 // the same 6pt rhythm. Long dealer text cannot move any control.
-pub const WORKFLOW_CARD_BG: Color32 = PANEL;
-pub const WORKFLOW_CARD_LOWER_BG: Color32 = INPUT;
-pub const WORKFLOW_SELECTED_BG: Color32 = PANEL;
+// Nested order cards use the internal-content tier; no second lower surface.
+pub const WORKFLOW_CARD_BG: Color32 = INPUT;
+pub const WORKFLOW_SELECTED_BG: Color32 = WORKFLOW_CARD_BG;
 pub const WORKFLOW_CARD_BORDER: Color32 = DIVIDER;
 pub const WORKFLOW_SELECTED_BORDER: Color32 = SELECTED_ORDER;
 pub const WORKFLOW_CARD_PADDING_X: f32 = 6.0;
@@ -170,7 +170,7 @@ pub const WORKFLOW_VAT_FONT_SIZE: f32 = 10.0;
 // Expanded working-order shipments are a plain list, not a table.
 // All rows use one bottom-tier surface; only real hover/selection tint it.
 // The header, alternating row fills and product-chip surfaces were removed.
-pub const WORKFLOW_DETAIL_ROW_BG: Color32 = PANEL;
+pub const WORKFLOW_DETAIL_ROW_BG: Color32 = WORKFLOW_CARD_BG;
 pub const WORKFLOW_DETAIL_ROW_BORDER: Color32 = Color32::TRANSPARENT;
 pub const WORKFLOW_DETAIL_ROW_PADDING_X: f32 = SPACE_12;
 pub const WORKFLOW_DETAIL_NAME_WIDTH: f32 = 102.0;

@@ -366,7 +366,7 @@ fn workflow_compact_rows(ui:&mut Ui)->(Rect,Rect){
     );
     let (upper,divider,lower)=workflow_compact_band_rects(card);
     ui.painter().rect_filled(divider,0.0,theme::WORKFLOW_CARD_BORDER);
-    ui.painter().rect_filled(lower,0.0,theme::WORKFLOW_CARD_LOWER_BG);
+    // The enclosing rounded card owns both bands' background.
     (upper,lower)
 }
 /// All five upper controls occupy stable x positions at every card width.
@@ -1255,7 +1255,7 @@ mod shipment_list_tests {
             assert_eq!(rect.height(),measured[0].height());
             assert!(rect.height()>=40.0 && rect.height()<=46.0);
         }
-        assert_eq!(theme::WORKFLOW_DETAIL_ROW_BG,theme::PANEL);
+        assert_eq!(theme::WORKFLOW_DETAIL_ROW_BG,theme::WORKFLOW_CARD_BG);
     }
 }
 
@@ -1716,7 +1716,13 @@ mod linked_highlight_palette_tests {
         assert_eq!(theme::SELECTED_ORDER,Color32::from_rgb(245,158,11));
         assert_eq!(theme::WORKFLOW_SELECTED_BORDER,theme::SELECTED_ORDER);
         assert_eq!(theme::WORKFLOW_SELECTED_STRIPE,2.0);
-        assert_eq!(theme::WORKFLOW_SELECTED_BG,theme::PANEL);
+        assert_eq!(theme::WORKFLOW_SELECTED_BG,theme::WORKFLOW_CARD_BG);
+        assert_eq!(theme::WORKFLOW_CARD_BG,theme::INPUT);
+        assert_ne!(theme::WORKFLOW_CARD_BG,theme::PANEL);
+        assert_eq!(theme::CANVAS,Color32::from_rgb(16,16,16));
+        assert_eq!(theme::PANEL,Color32::from_rgb(24,24,24));
+        assert_eq!(theme::INPUT,Color32::from_rgb(34,34,34));
+        assert_eq!(theme::RAISED,Color32::from_rgb(41,41,41));
         assert_eq!(shipment_row_fill(true,false),Color32::from_rgb(48,42,34));
         let selected=theme::workflow_shipment_row_frame(shipment_row_fill(true,false),true);
         let normal=theme::workflow_shipment_row_frame(shipment_row_fill(false,false),false);
