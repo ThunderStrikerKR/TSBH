@@ -43,10 +43,57 @@ fn sync_prune(tx: &Transaction<'_>, table: &str, retain: &HashSet<String>) -> Re
     Ok(())
 }
 
-/// Reconcile changed rows only. Unmodified JSON payloads do not cause SQLite
-/// updates; every relation, update and removal belongs to the caller's transaction.
+/// Full sync remains the bootstrap/migration authority: there may not be
+/// an authoritative prior snapshot during schema initialization.
 pub fn store_v2_relational(tx: &Transaction<'_>, state: &Value) -> Result<(), String> {
+    store_relational(tx,state,None)
+}
+
+/// Compare the transaction's hydrated before-image, not a UI-provided draft.
+/// Unchanged domains need no SQL. Stable lists need neither redundant upserts
+/// nor prune scans. Structural changes use the proven full sync for that domain
+/// (preserves ownership, positions, uniqueness and child-before-parent deletes).
+pub(crate) fn store_v2_relational_delta(tx:&Transaction<'_>,before:&Value,state:&Value)
+    ->Result<(),String>{
+    store_relational(tx,state,Some(before))
+}
+fn same_ids(old:&[Value],new:&[Value])->bool{
+    old.len()==new.len() && old.iter().zip(new).all(|(a,b)|
+        a["id"].as_str().is_some() && a["id"]==b["id"])
+}
+fn stable_products(old:&Value,new:&Value)->bool{
+    let (Some(old),Some(new))=(old.as_array(),new.as_array())else{return false};
+    same_ids(old,new) && old.iter().zip(new).all(|(a,b)|
+        match (a["variants"].as_array(),b["variants"].as_array()){
+            (Some(a),Some(b))=>same_ids(a,b),_=>false
+        })
+}
+fn stable_orders(old:&Value,new:&Value)->bool{
+    let (Some(old),Some(new))=(old.as_array(),new.as_array())else{return false};
+    same_ids(old,new) && old.iter().zip(new).all(|(a,b)|
+        match (a["recipients"].as_array(),b["recipients"].as_array()){
+            (Some(a),Some(b))=>same_ids(a,b) && a.iter().zip(b).all(|(r,s)|
+                match (r["items"].as_array(),s["items"].as_array()){
+                    (Some(a),Some(b))=>same_ids(a,b),_=>false
+                }),
+            _=>false
+        })
+}
+fn same_payload(old:&Value,new:&Value,child:&str)->bool{
+    let (Some(old),Some(new))=(old.as_object(),new.as_object())else{return false};
+    old.iter().filter(|(k,_)|k.as_str()!=child)
+        .eq(new.iter().filter(|(k,_)|k.as_str()!=child))
+}
+fn store_relational(tx:&Transaction<'_>,state:&Value,before:Option<&Value>)->Result<(),String>{
     crate::valid_state(state)?;
+    let products_changed=before.is_none_or(|old|old["products"]!=state["products"]);
+    let clients_changed=before.is_none_or(|old|old["clients"]!=state["clients"]);
+    let orders_changed=before.is_none_or(|old|old["orders"]!=state["orders"]);
+    let stable_product=before.filter(|old|stable_products(&old["products"],&state["products"]));
+    let stable_client=before.filter(|old|match (old["clients"].as_array(),state["clients"].as_array()){
+        (Some(a),Some(b))=>same_ids(a,b),_=>false
+    });
+    let stable_order=before.filter(|old|stable_orders(&old["orders"],&state["orders"]));
     let mut product_ids = HashSet::new();
     let mut price_ids = HashSet::new();
     let mut client_ids = HashSet::new();
@@ -54,7 +101,7 @@ pub fn store_v2_relational(tx: &Transaction<'_>, state: &Value) -> Result<(), St
     let mut recipient_ids = HashSet::new();
     let mut item_ids = HashSet::new();
 
-    {
+    if products_changed {
         let mut statement = tx.prepare(
             "INSERT INTO core_products(id,position,code,name,payload) VALUES (?1,?2,?3,?4,?5)
              ON CONFLICT(id) DO UPDATE SET position=excluded.position,code=excluded.code,
@@ -66,10 +113,12 @@ pub fn store_v2_relational(tx: &Transaction<'_>, state: &Value) -> Result<(), St
             require_unique(&mut product_ids,id,"상품")?;
             let code = p["code"].as_str().ok_or("상품 모델코드 누락")?;
             let name = p["name"].as_str().ok_or("상품명 누락")?;
+            if stable_product.is_some_and(|old|
+                same_payload(&old["products"][i],p,"variants")){continue;}
             statement.execute(params![id,i as i64,code,name,payload(p,Some("variants"))?]).map_err(err)?;
         }
     }
-    {
+    if products_changed {
         let mut statement = tx.prepare(
             "INSERT INTO core_product_prices(product_id,price_record_id,color,wholesale,semi,retail,payload)
              VALUES (?1,?2,?3,?4,?5,?6,?7)
@@ -79,7 +128,7 @@ pub fn store_v2_relational(tx: &Transaction<'_>, state: &Value) -> Result<(), St
              WHERE core_product_prices.price_record_id<>excluded.price_record_id OR
              core_product_prices.payload<>excluded.payload"
         ).map_err(err)?;
-        for p in source_list(state,"products")? {
+        for (pi,p) in source_list(state,"products")?.iter().enumerate() {
             let owner=required_id(p,"상품")?;
             let prices=source_list(p,"variants")?;
             if prices.len()!=1 {
@@ -88,12 +137,15 @@ pub fn store_v2_relational(tx: &Transaction<'_>, state: &Value) -> Result<(), St
             let v=&prices[0];
             let id=required_id(v,"기존 가격 식별자")?;
             require_unique(&mut price_ids,id,"가격 기록")?;
+            if stable_product.is_some_and(|old|old["products"][pi]["variants"][0]==*v){
+                continue;
+            }
             statement.execute(params![owner,id,v["color"].as_str().unwrap_or(""),
                 v["wholesale"].as_i64(),v["semi"].as_i64(),v["retail"].as_i64(),
                 payload(v,None)?]).map_err(err)?;
         }
     }
-    {
+    if clients_changed {
         let mut statement=tx.prepare(
             "INSERT INTO core_clients(id,position,name,tier,address,payload) VALUES (?1,?2,?3,?4,?5,?6)
              ON CONFLICT(id) DO UPDATE SET position=excluded.position,name=excluded.name,
@@ -103,11 +155,12 @@ pub fn store_v2_relational(tx: &Transaction<'_>, state: &Value) -> Result<(), St
         for (i,c) in source_list(state,"clients")?.iter().enumerate() {
             let id=required_id(c,"거래처")?;
             require_unique(&mut client_ids,id,"거래처")?;
+            if stable_client.is_some_and(|old|old["clients"][i]==*c){continue;}
             statement.execute(params![id,i as i64,c["name"].as_str().unwrap_or(""),
                 c["tier"].as_str().unwrap_or(""),c["address"].as_str().unwrap_or(""),payload(c,None)?]).map_err(err)?;
         }
     }
-    {
+    if orders_changed {
         let mut statement=tx.prepare(
             "INSERT INTO core_orders(id,position,client_id,created_at,confirmed_at,status,payload)
              VALUES (?1,?2,?3,?4,?5,?6,?7)
@@ -119,12 +172,14 @@ pub fn store_v2_relational(tx: &Transaction<'_>, state: &Value) -> Result<(), St
         for (i,o) in source_list(state,"orders")?.iter().enumerate() {
             let id=required_id(o,"주문")?;
             require_unique(&mut order_ids,id,"주문")?;
+            if stable_order.is_some_and(|old|
+                same_payload(&old["orders"][i],o,"recipients")){continue;}
             statement.execute(params![id,i as i64,o["clientId"].as_str(),
                 o["createdAt"].as_str(),o["confirmedAt"].as_str(),
                 o["status"].as_str(),payload(o,Some("recipients"))?]).map_err(err)?;
         }
     }
-    {
+    if orders_changed {
         let mut statement=tx.prepare(
             "INSERT INTO core_recipients(id,order_id,position,name,payload) VALUES (?1,?2,?3,?4,?5)
              ON CONFLICT(id) DO UPDATE SET order_id=excluded.order_id,position=excluded.position,
@@ -132,17 +187,21 @@ pub fn store_v2_relational(tx: &Transaction<'_>, state: &Value) -> Result<(), St
              WHERE core_recipients.order_id<>excluded.order_id OR
              core_recipients.position<>excluded.position OR core_recipients.payload<>excluded.payload"
         ).map_err(err)?;
-        for o in source_list(state,"orders")? {
+        for (oi,o) in source_list(state,"orders")?.iter().enumerate() {
             let owner=required_id(o,"주문")?;
             for (i,r) in source_list(o,"recipients")?.iter().enumerate() {
                 let id=required_id(r,"수취인")?;
                 require_unique(&mut recipient_ids,id,"수취인")?;
+                if stable_order.is_some_and(|old|
+                    same_payload(&old["orders"][oi]["recipients"][i],r,"items")){
+                    continue;
+                }
                 statement.execute(params![id,owner,i as i64,r["name"].as_str().unwrap_or(""),
                     payload(r,Some("items"))?]).map_err(err)?;
             }
         }
     }
-    {
+    if orders_changed {
         let mut statement=tx.prepare(
             "INSERT INTO core_items(id,recipient_id,position,product_id,variant_id,payload)
              VALUES (?1,?2,?3,?4,?5,?6)
@@ -152,12 +211,14 @@ pub fn store_v2_relational(tx: &Transaction<'_>, state: &Value) -> Result<(), St
              WHERE core_items.recipient_id<>excluded.recipient_id OR
              core_items.position<>excluded.position OR core_items.payload<>excluded.payload"
         ).map_err(err)?;
-        for o in source_list(state,"orders")? {
-            for r in source_list(o,"recipients")? {
+        for (oi,o) in source_list(state,"orders")?.iter().enumerate() {
+            for (ri,r) in source_list(o,"recipients")?.iter().enumerate() {
                 let owner=required_id(r,"수취인")?;
                 for (i,item) in source_list(r,"items")?.iter().enumerate() {
                     let id=required_id(item,"주문 품목")?;
                     require_unique(&mut item_ids,id,"주문 품목")?;
+                    if stable_order.is_some_and(|old|
+                        old["orders"][oi]["recipients"][ri]["items"][i]==*item){continue;}
                     statement.execute(params![id,owner,i as i64,
                         item["productId"].as_str(),item["variantId"].as_str(),
                         payload(item,None)?]).map_err(err)?;
@@ -166,12 +227,18 @@ pub fn store_v2_relational(tx: &Transaction<'_>, state: &Value) -> Result<(), St
         }
     }
     // Remove children before parents so the FK check cannot observe orphans.
-    sync_prune(tx,"core_items",&item_ids)?;
-    sync_prune(tx,"core_recipients",&recipient_ids)?;
-    sync_prune(tx,"core_orders",&order_ids)?;
-    sync_prune(tx,"core_product_prices",&product_ids)?;
-    sync_prune(tx,"core_products",&product_ids)?;
-    sync_prune(tx,"core_clients",&client_ids)?;
+    if orders_changed && stable_order.is_none(){
+        sync_prune(tx,"core_items",&item_ids)?;
+        sync_prune(tx,"core_recipients",&recipient_ids)?;
+        sync_prune(tx,"core_orders",&order_ids)?;
+    }
+    if products_changed && stable_product.is_none(){
+        sync_prune(tx,"core_product_prices",&product_ids)?;
+        sync_prune(tx,"core_products",&product_ids)?;
+    }
+    if clients_changed && stable_client.is_none(){
+        sync_prune(tx,"core_clients",&client_ids)?;
+    }
     Ok(())
 }
 

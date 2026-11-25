@@ -962,3 +962,43 @@ fn native_snapshot_update_reuses_authoritative_before_image_and_rolls_back(){
     let reopened=initialize_database(&isolated.root.join("state.sqlite")).unwrap();
     assert_eq!(get_snapshot(&reopened).unwrap(),committed);
 }
+
+
+#[test]
+fn freight_delta_skips_unchanged_sql_rows_and_legacy_indexes(){
+    let (isolated,mut conn)=IsolatedDatabase::open();
+    let initial=get_snapshot(&conn).unwrap();
+    let fixture=stage_three(&initial,"POSTPAID");
+    let saved=write_snapshot(&mut conn,fixture,0,true).unwrap();
+    let revision=saved["revision"].as_u64().unwrap();
+    // BEFORE INSERT fires even for an UPSERT that subsequently takes the
+    // no-op WHERE branch. Count attempted SQL row writes, not just changes().
+    conn.execute_batch("CREATE TEMP TABLE delta_probe(table_name TEXT,operation TEXT);").unwrap();
+    for table in ["core_products","core_product_prices","core_clients","core_orders",
+        "core_recipients","core_items","product_index","order_index"]{
+        for operation in ["INSERT","UPDATE","DELETE"]{
+            conn.execute_batch(&format!(
+                "CREATE TEMP TRIGGER probe_{table}_{operation} BEFORE {operation} ON main.{table}
+                 BEGIN INSERT INTO delta_probe VALUES ('{table}','{operation}'); END;"
+            )).unwrap();
+        }
+    }
+    let committed=bando_data_access::update_v2_snapshot(&mut conn,revision,true,|current|{
+        let mut next=current.clone();
+        next["orders"][0]["recipients"][0]["shippingCharges"]=json!({"FACTORY":4000});
+        next["workflow"]["shipments"][0]["charges"]["FACTORY"]=json!(4000);
+        Ok(next)
+    }).expect("recipient-only delta");
+    assert_eq!(committed["revision"],revision+1);
+    assert_eq!(committed["orders"][0]["recipients"][0]["shippingCharges"]["FACTORY"],4000);
+    let count:i64=conn.query_row("SELECT COUNT(*) FROM delta_probe WHERE table_name!='core_recipients'",
+        [],|row|row.get(0)).unwrap();
+    assert_eq!(count,0,"freight-only row edit must not attempt unrelated SQL");
+    let count:i64=conn.query_row("SELECT COUNT(*) FROM delta_probe WHERE table_name='core_recipients' AND operation='UPDATE'",
+        [],|row|row.get(0)).unwrap();
+    assert_eq!(count,1);
+    assert_eq!(get_snapshot(&conn).unwrap(),committed);
+    drop(conn);
+    let reopened=initialize_database(&isolated.root.join("state.sqlite")).unwrap();
+    assert_eq!(get_snapshot(&reopened).unwrap(),committed);
+}

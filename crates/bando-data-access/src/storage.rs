@@ -73,40 +73,19 @@ fn write_validated(tx:&Transaction<'_>,current:&Value,mut state:Value,
     let mut envelope = state.clone();
     // Settings-only changes never rewrite unchanged core rows.
     if products_changed || clients_changed || orders_changed {
-        crate::store_v2_relational(tx, &state)?;
+        crate::relational_write::store_v2_relational_delta(tx,current,&state)?;
     }
     let root=envelope.as_object_mut().ok_or("업무 상태는 객체여야 합니다.")?;
     for key in ["products","clients","orders"] {root.remove(key);}
     tx.execute("UPDATE app_state SET payload=?1 WHERE id=1",
         [serde_json::to_string(&envelope).map_err(err)?]).map_err(err)?;
-    // Maintain legacy search indexes only when their actual domain changed.
+    // Legacy search indexes are projections of the same before-image.
+    // Child-only order edits do not change indexed columns.
     if products_changed {
-    tx.execute("DELETE FROM product_index", []).map_err(err)?;
-    {
-        let mut insert = tx.prepare("INSERT INTO product_index(id,code,name,payload) VALUES (?1,?2,?3,?4)").map_err(err)?;
-        for product in state["products"].as_array().ok_or("상품 데이터 오류")? {
-            let id = product["id"].as_str().ok_or("상품 ID 누락")?;
-            let code = product["code"].as_str().ok_or("상품 코드 누락")?;
-            let name = product["name"].as_str().ok_or("상품명 누락")?;
-            insert.execute(params![id, code, name, serde_json::to_string(product).map_err(err)?]).map_err(err)?;
-        }
+        sync_product_index(tx,current,&state)?;
     }
-    }
-    // Order index and the append-only reception archive share the snapshot transaction.
     if orders_changed {
-    tx.execute("DELETE FROM order_index", []).map_err(err)?;
-    {
-        let mut insert = tx.prepare("INSERT INTO order_index(id,client_id,created_at,confirmed_at,status) VALUES (?1,?2,?3,?4,?5)").map_err(err)?;
-        for order in state["orders"].as_array().ok_or("주문 데이터 오류")? {
-            insert.execute(params![
-                order["id"].as_str().ok_or("주문 ID 누락")?,
-                order["clientId"].as_str().unwrap_or(""),
-                order["createdAt"].as_str().unwrap_or(""),
-                order["confirmedAt"].as_str(),
-                order["status"].as_str().unwrap_or("REVIEW")
-            ]).map_err(err)?;
-        }
-    }
+        sync_order_index(tx,current,&state)?;
     }
     for (id, order_id, record) in archive_entries {
         // Never silently discard a colliding audit ID with a different owner or payload.
@@ -128,4 +107,52 @@ fn write_validated(tx:&Transaction<'_>,current:&Value,mut state:Value,
         }
     }
     Ok(state)
+}
+
+
+fn index_rows<'a>(value:&'a Value,key:&str)->Result<std::collections::HashMap<&'a str,&'a Value>,String>{
+    let mut map=std::collections::HashMap::new();
+    for row in value[key].as_array().ok_or("검색 인덱스 목록 오류")?{
+        let id=row["id"].as_str().ok_or("검색 인덱스 ID 누락")?;
+        if map.insert(id,row).is_some(){return Err("검색 인덱스 ID 중복".into());}
+    }
+    Ok(map)
+}
+fn sync_product_index(tx:&Transaction<'_>,before:&Value,state:&Value)->Result<(),String>{
+    let old=index_rows(before,"products")?;
+    let next=index_rows(state,"products")?;
+    let mut insert=tx.prepare("INSERT INTO product_index(id,code,name,payload) VALUES (?1,?2,?3,?4)
+        ON CONFLICT(id) DO UPDATE SET code=excluded.code,name=excluded.name,payload=excluded.payload").map_err(err)?;
+    for (id,product) in &next{
+        if old.get(id)==Some(product){continue;}
+        insert.execute(params![id,product["code"].as_str().ok_or("상품 코드 누락")?,
+            product["name"].as_str().ok_or("상품명 누락")?,
+            serde_json::to_string(product).map_err(err)?]).map_err(err)?;
+    }
+    for id in old.keys(){
+        if !next.contains_key(id){tx.execute("DELETE FROM product_index WHERE id=?1",[id]).map_err(err)?;}
+    }
+    Ok(())
+}
+fn order_index_fields(order:&Value)->(&str,&str,Option<&str>,&str){
+    (order["clientId"].as_str().unwrap_or(""),
+        order["createdAt"].as_str().unwrap_or(""),order["confirmedAt"].as_str(),
+        order["status"].as_str().unwrap_or("REVIEW"))
+}
+fn sync_order_index(tx:&Transaction<'_>,before:&Value,state:&Value)->Result<(),String>{
+    let old=index_rows(before,"orders")?;
+    let next=index_rows(state,"orders")?;
+    let mut insert=tx.prepare("INSERT INTO order_index(id,client_id,created_at,confirmed_at,status)
+        VALUES (?1,?2,?3,?4,?5) ON CONFLICT(id) DO UPDATE SET
+        client_id=excluded.client_id,created_at=excluded.created_at,
+        confirmed_at=excluded.confirmed_at,status=excluded.status").map_err(err)?;
+    for (id,order) in &next{
+        let fields=order_index_fields(order);
+        if old.get(id).is_some_and(|row|order_index_fields(row)==fields){continue;}
+        insert.execute(params![id,fields.0,fields.1,fields.2,fields.3]).map_err(err)?;
+    }
+    for id in old.keys(){
+        if !next.contains_key(id){tx.execute("DELETE FROM order_index WHERE id=?1",[id]).map_err(err)?;}
+    }
+    Ok(())
 }
