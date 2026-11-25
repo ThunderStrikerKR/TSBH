@@ -1,0 +1,11 @@
+{
+  "schemaVersion": 1,
+  "id": "108-workflow-freight-review",
+  "screen": "접수 / 확인할 내용 – 운임 누락",
+  "files": [
+    "egui-app/src/workflow_board.rs",
+    "egui-app/src/main.rs"
+  ],
+  "visualStatus": "NOT_VERIFIED",
+  "reason": "User screenshot shows duplicate blue freight notices and missing action. Patch preserves native severity and routes the shared freight cell. Windows visual and click verification pending."
+}

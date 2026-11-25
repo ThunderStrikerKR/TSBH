@@ -6759,7 +6759,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
             let ship=&group.shipments[ship_index];
             let linked_active=self.link_hover.active_for(&ship.order_id).cloned();
             let mut hovered_detail:Option<source_highlight::LinkKey>=None;
-            let mut workflow_freight_open:Option<(String,String,Option<egui::Pos2>)>=None;
+            let mut workflow_freight_open:Option<(String,String,String,Option<egui::Pos2>)>=None;
             let mut workflow_freight_commit=false;
             let mut workflow_freight_cancel=false;
             let mut workflow_freight_option:Option<(String,serde_json::Value)>=None;
@@ -6779,7 +6779,24 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                             .id_salt(("native-workflow-issues",group.id.as_str()))
                             .show(ui,|issues|{
                                 for issue in &group.issues{
-                                    components::reception_review_status(issues,issue);
+                                    let Some(label)=workflow_board::workflow_issue_label(issue)else{continue};
+                                    let tone=match issue["severity"].as_str(){
+                                        Some("ACTION")=>theme::ReviewTone::Action,
+                                        Some("ERROR")=>theme::ReviewTone::Error,
+                                        _=>theme::ReviewTone::Info,
+                                    };
+                                    theme::review_issue_card(issues,tone,|content|{
+                                        content.add(egui::Label::new(typography::body(&label)
+                                            .color(tone.text_color())).wrap());
+                                        if let Some((target,origin))=workflow_board::missing_freight_target(group,issue,&ship.id){
+                                            let enabled=self.gateway.workflow_write_enabled()
+                                                && self.workflow_mutation_ready()
+                                                && self.workflow_freight_editor.is_none();
+                                            if theme::review_action(content,"운임 입력",theme::ButtonRole::Standard,enabled).clicked(){
+                                                workflow_freight_open=Some((target.id.clone(),origin,String::new(),None));
+                                            }
+                                        }
+                                    });
                                 }
                                 if let Some(error)=self.workflow_error.as_deref(){
                                     components::reception_review_status(issues,error);
@@ -6962,7 +6979,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                             );
                                             if freight_actions.amount_clicked{
                                                 workflow_freight_open=Some((
-                                                    origin.clone(),
+                                                    ship.id.clone(),origin.clone(),
                                                     amount.map(|value|value.to_string()).unwrap_or_default(),
                                                     freight_actions.amount_click_pos
                                                 ));
@@ -7056,18 +7073,19 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
             if workflow_freight_cancel{
                 self.workflow_freight_editor=None;
                 self.workflow_freight_next_selection=None;
-            }else if let Some((origin,original,click_at))=workflow_freight_open{
+            }else if let Some((target_id,origin,original,click_at))=workflow_freight_open{
+                let Some(target)=group.shipments.iter().find(|s|s.id==target_id)else{return;};
                 self.discard_advisory_workflow_read();
                 // Editing a hover preview commits its exact shipment first.
                 // Pointer movement must not hide the live cell editor.
                 self.workflow_ui.select(workflow_board_ui::Selection{
-                    group_id:group.id.clone(),order_id:ship.order_id.clone(),
-                    shipment_id:ship.id.clone()
+                    group_id:group.id.clone(),order_id:target.order_id.clone(),
+                    shipment_id:target.id.clone()
                 });
                 self.link_hover.clear();
                 self.source_hover=None;
                 self.workflow_freight_editor=Some(WorkflowFreightEditor{
-                    group_id:group.id.clone(),shipment_id:ship.id.clone(),
+                    group_id:group.id.clone(),shipment_id:target.id.clone(),
                     origin,original:original.clone(),text:original,
                     focus_next:true,click_at
                 });

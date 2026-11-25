@@ -51,7 +51,7 @@ pub struct GroupRow {
     pub automatic_signature: Option<String>,
     pub payment_copied: bool,
     pub automatic_payment_issues: Vec<String>,
-    pub issues: Vec<String>,
+    pub issues: Vec<Value>,
 }
 #[derive(Clone, Debug, Default)]
 pub struct BoardSnapshot {
@@ -120,7 +120,7 @@ fn projected_remote(ship:&Value)->Option<Value>{
 /// Native workflow issues use detail/title; message is retained only as a
 /// compatibility fallback for older projections. Never silently drop a
 /// valid structured issue because the UI expected the wrong field name.
-fn workflow_issue_label(issue:&Value)->Option<String>{
+pub fn workflow_issue_label(issue:&Value)->Option<String>{
     ["detail","title","message"].iter().find_map(|key|
         issue.get(*key).and_then(Value::as_str)
             .filter(|value|!value.trim().is_empty())
@@ -144,14 +144,58 @@ fn recipient_with_line_amounts(recipient:&Value,preview:&Value)->Value{
     }
     display
 }
-fn workflow_review_labels(native:&Value)->Vec<String>{
-    let mut issues=Vec::new();
-    for label in rows(field(native,"issues")).iter()
-        .chain(rows(field(native,"nextStageBlockers")).iter())
-        .filter_map(workflow_issue_label){
-        if !issues.contains(&label){issues.push(label);}
+/// Keep native issue identity, severity and recipient routing. Stage blockers
+/// are a second projection of the same validation, not additional cards.
+fn workflow_review_entries(native:&Value,shipments:&[ShipmentRow])->Vec<Value>{
+    let mut issues:Vec<Value>=Vec::new();
+    let mut represented=HashSet::new();
+    let mut ids=HashSet::new();
+    for issue in rows(field(native,"issues")){
+        let Some(label)=workflow_issue_label(issue) else{continue};
+        let id=text(issue,"issueId");
+        if !id.is_empty()&&!ids.insert(id.to_owned()){continue;}
+        represented.insert(label.clone());
+        let title=text(issue,"title");
+        if !title.is_empty()&&text(issue,"severity")=="ACTION"{
+            let recipient=shipments.iter().find(|s|
+                s.recipient_id==text(issue,"recipientId") &&
+                (text(issue,"orderId").is_empty()||s.order_id==text(issue,"orderId")))
+                .or_else(||shipments.first());
+            if let Some(s)=recipient{
+                let name=if s.recipient_name.is_empty(){"수취인"}else{&s.recipient_name};
+                represented.insert(format!("{name}: {title}"));
+            }
+        }
+        issues.push(issue.clone());
+    }
+    for label in rows(field(native,"nextStageBlockers")).iter().filter_map(workflow_issue_label){
+        if represented.insert(label.clone()){
+            issues.push(json!({"detail":label,"severity":"ACTION","kind":"STAGE_BLOCKER"}));
+        }
     }
     issues
+}
+
+/// Resolve only an actual editable, missing per-origin charge. Never route
+/// by the display name or an unrelated currently visible shipment.
+pub fn missing_freight_target<'a>(group:&'a GroupRow,issue:&Value,preferred:&str)
+    ->Option<(&'a ShipmentRow,String)>{
+    if text(issue,"kind")!="FREIGHT"{return None;}
+    let rid=text(issue,"recipientId");
+    let oid=text(issue,"orderId");
+    if rid.is_empty()||oid.is_empty(){return None;}
+    let target=|ship:&'a ShipmentRow|{
+        if ship.recipient_id!=rid||ship.order_id!=oid||ship.transferred||
+            ship.collect||ship.freight_editing_blocked{return None;}
+        rows(field(&ship.recipient,"items")).iter().filter_map(|item|{
+            let origin=text(item,"origin");
+            (["FACTORY","STORE"].contains(&origin)&&
+                ship.display_charges.get(origin).copied().flatten().is_none())
+                .then(||origin.to_owned())
+        }).next().map(|origin|(ship,origin))
+    };
+    group.shipments.iter().find(|s|s.id==preferred).and_then(target)
+        .or_else(||group.shipments.iter().find_map(target))
 }
 
 /// React's workflow-view::groupShipments is a read-only join.
@@ -353,7 +397,7 @@ fn project_state(gateway:&dyn BandoGateway,state:&Value,scope:Option<&HashSet<St
                 ),
                 Err(error)=>(None,Some(error),None,Vec::new(),None),
             };
-        let issues=workflow_review_labels(native);
+        let issues=workflow_review_entries(native,&display_shipments);
         groups.push(GroupRow{
             id:group_id.to_owned(),
             created_at:text(group,"createdAt").to_owned(),
@@ -467,7 +511,10 @@ mod linked_recipient_selection_tests{
     #[test]
     fn workflow_review_keeps_next_stage_blockers_and_native_line_amounts(){
         let native=json!({"issues":[],"nextStageBlockers":["수취인: 청구액 미확정"]});
-        assert_eq!(workflow_review_labels(&native),vec!["수취인: 청구액 미확정"]);
+        let issues=workflow_review_entries(&native,&[]);
+        assert_eq!(issues.len(),1);
+        assert_eq!(issues[0]["detail"],"수취인: 청구액 미확정");
+        assert_eq!(issues[0]["severity"],"ACTION");
         let recipient=json!({"id":"r","items":[{"id":"i","quantity":3}]});
         let preview=json!({"lineAmounts":[
             {"recipientId":"other","itemId":"i","amount":999},
@@ -476,6 +523,33 @@ mod linked_recipient_selection_tests{
         let projected=recipient_with_line_amounts(&recipient,&preview);
         assert_eq!(projected["items"][0]["lineAmount"],9000);
         assert!(recipient["items"][0].get("lineAmount").is_none());
+    }
+    #[test]
+    fn freight_issue_deduplicates_stage_blocker_and_routes_exact_recipient(){
+        let mut first=shipment("s1","o1","r1");
+        first.recipient=json!({"items":[{"origin":"STORE"}]});
+        first.display_charges.insert("STORE".into(),Some(2500));
+        let mut second=shipment("s2","o1","r2");
+        second.recipient=json!({"items":[{"origin":"FACTORY"}]});
+        second.display_charges.insert("FACTORY".into(),None);
+        let group=group("g",vec![first,second]);
+        let issue=json!({"issueId":"freight-r2","kind":"FREIGHT","severity":"ACTION",
+            "recipientId":"r2","orderId":"o1","title":"배송 운임을 확인하세요",
+            "detail":"동명이인 / 배송 운임을 확인하세요"});
+        let native=json!({"issues":[issue.clone()],"nextStageBlockers":[
+            "동명이인: 배송 운임을 확인하세요","동명이인: 입금 부족"]});
+        let entries=workflow_review_entries(&native,&group.shipments);
+        assert_eq!(entries.len(),2);
+        assert_eq!(entries[0],issue);
+        let (ship,origin)=missing_freight_target(&group,&entries[0],"s1").unwrap();
+        assert_eq!(ship.id,"s2");
+        assert_eq!(origin,"FACTORY");
+        let mut settled=group.clone();
+        settled.shipments[1].display_charges.insert("FACTORY".into(),Some(3000));
+        assert!(missing_freight_target(&settled,&entries[0],"s1").is_none());
+        settled.shipments[1].display_charges.insert("FACTORY".into(),None);
+        settled.shipments[1].collect=true;
+        assert!(missing_freight_target(&settled,&entries[0],"s1").is_none());
     }
     #[test]
     fn structured_workflow_issues_render_their_detail_and_title(){
