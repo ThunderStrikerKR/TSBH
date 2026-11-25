@@ -5600,6 +5600,30 @@ fn reception_item_columns(rect: Rect) -> [Rect; 3] {
 /// Ellipsize only the displayed product label, using the exact 16pt glyph
 /// width. This does not alter the Rust item title, matching key or hover text.
 /// Unicode char boundaries prevent cutting a Hangul syllable or UTF-8 byte.
+// Cache the exact measured truncation, not the galley: the latter still
+// uses egui's current font atlas and active highlight ink.
+#[derive(Clone)]
+struct ReceptionTextFit{ text:String,width:u32,scale:u32,font:egui::FontId,shown:std::sync::Arc<str> }
+thread_local!{
+    static RECEPTION_TEXT_FIT:std::cell::RefCell<Vec<ReceptionTextFit>>=
+        const{std::cell::RefCell::new(Vec::new())};
+}
+fn cached_reception_product(ui:&Ui,text:&str,width:f32,font:&egui::FontId,color:egui::Color32)->std::sync::Arc<str>{
+    let scale=ui.ctx().pixels_per_point().to_bits();
+    RECEPTION_TEXT_FIT.with(|cache|{
+        let mut cache=cache.borrow_mut();
+        if let Some(index)=cache.iter().position(|entry|entry.text==text &&
+            entry.width==width.to_bits() && entry.scale==scale && &entry.font==font){
+            let entry=cache.remove(index);let shown=entry.shown.clone();cache.push(entry);return shown;
+        }
+        let shown:std::sync::Arc<str>=reception_ellipsized_product(text,width,|candidate|
+            ui.painter().layout_no_wrap(candidate.to_owned(),font.clone(),color).size().x).into();
+        if cache.len()>=128{cache.remove(0);}
+        cache.push(ReceptionTextFit{text:text.to_owned(),width:width.to_bits(),scale,font:font.clone(),shown:shown.clone()});
+        shown
+    })
+}
+pub fn clear_reception_text_fit(){RECEPTION_TEXT_FIT.with(|cache|cache.borrow_mut().clear());}
 fn reception_ellipsized_product(
     full:&str,max_width:f32,mut measure:impl FnMut(&str)->f32
 )->String {
@@ -6035,11 +6059,8 @@ fn reception_item_row_with_mode(
         );
         // Use the same font metrics as Painter::text, not a character-count
         // guess. Only the product column truncates; financial values do not.
-        let visible_product=(index==0).then(||reception_ellipsized_product(
-            text,(value_clip.width()-0.5).max(0.0),
-            |candidate|ui.painter().layout_no_wrap(
-                candidate.to_owned(),font.clone(),color
-            ).size().x,
+        let visible_product=(index==0).then(||cached_reception_product(
+            ui,text,(value_clip.width()-0.5).max(0.0),&font,color
         ));
         let ink=if active[index] {source_highlight::ACTIVE_TEXT} else {color};
         let label=visible_product.as_deref().unwrap_or(row_text);
