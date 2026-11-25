@@ -1,0 +1,11 @@
+{
+  "schemaVersion": 1,
+  "id": "108-confirmation-card-handoff",
+  "screen": "접수 / 처리 중인 주문 – 주문 확인 완료 카드 전환",
+  "files": [
+    "egui-app/src/main.rs",
+    "egui-app/src/workflow_board_ui.rs"
+  ],
+  "visualStatus": "NOT_VERIFIED",
+  "reason": "Defers draft retirement until confirmed projection and preserves list slot. Windows interaction and visual capture pending."
+}

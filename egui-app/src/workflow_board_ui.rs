@@ -43,6 +43,8 @@ impl PendingTarget{
 pub struct BoardUi {
     pub selection:Option<Selection>,
     pub folded:Option<String>,
+    // Canonical slot identity is unchanged when a draft becomes group:<id>.
+    card_order:Vec<String>,
     preview_pending:Option<(String,Instant)>,
     preview_active:Option<String>,
     preview_leave:Option<Instant>,
@@ -74,6 +76,7 @@ pub enum Event {
     DeletePending(String),
 }
 impl BoardUi{
+    pub fn clear_card_order(&mut self){self.card_order.clear();}
     pub fn stop_preview(&mut self){
         self.preview_pending=None;
         self.preview_active=None;
@@ -1090,6 +1093,19 @@ fn reserve_compact_card(ui:&mut Ui){
     ui.add_space(theme::WORKFLOW_CARD_GAP);
 }
 
+/// Keep the relative order of already-visible cards. Insert new keys at
+/// their ordinary neighbors without moving the slot of a confirmed draft.
+fn sync_card_order(order:&mut Vec<String>,normal:&[String]){
+    let valid:HashSet<&str>=normal.iter().map(String::as_str).collect();
+    order.retain(|id|valid.contains(id.as_str()));
+    let mut known:HashSet<String>=order.iter().cloned().collect();
+    for (i,key) in normal.iter().enumerate(){
+        if !known.insert(key.clone()){continue;}
+        let next=normal[i+1..].iter().find_map(|id|order.iter().position(|s|s==id));
+        order.insert(next.unwrap_or(order.len()),key.clone());
+    }
+}
+
 pub fn show(
     ui:&mut Ui,
     snapshot:Option<&BoardSnapshot>,
@@ -1116,8 +1132,21 @@ pub fn show(
             "거래처와 발주 원문을 입력하면 수취인별 배송 건이 생성됩니다."
         ));
     }
-    if let Some(snapshot)=snapshot{
-        for group in &snapshot.groups {
+    let groups:HashMap<&str,&GroupRow>=snapshot.into_iter()
+        .flat_map(|b|b.groups.iter()).map(|g|(g.id.as_str(),g)).collect();
+    let confirmed:HashSet<&str>=groups.values().flat_map(|g|g.shipments.iter())
+        .map(|s|s.order_id.as_str()).collect();
+    let pending:HashMap<String,&WorkingReception>=drafts.iter()
+        .filter(|d|!confirmed.contains(d.id.as_str()))
+        .map(|d|(format!("group:{}",d.id),d)).collect();
+    let normal:Vec<String>=snapshot.into_iter().flat_map(|b|b.groups.iter())
+        .map(|g|g.id.clone()).chain(drafts.iter().rev()
+            .filter(|d|!confirmed.contains(d.id.as_str()))
+            .map(|d|format!("group:{}",d.id))).collect();
+    sync_card_order(&mut state.card_order,&normal);
+    let card_order=state.card_order.clone();
+    for slot in &card_order{
+        if let Some(&group)=groups.get(slot.as_str()){
             let selected=current.is_some_and(|s|s.group_id==group.id);
             let open=selected && state.folded.as_deref()!=Some(group.id.as_str());
             let width=ui.available_width();
@@ -1143,14 +1172,9 @@ pub fn show(
                 overlay=Some((group,pos,width));
             }
             ui.add_space(theme::WORKFLOW_CARD_GAP);
+            continue;
         }
-    }
-    // Build one borrowed membership index, rather than scanning every
-    // shipment again for every working receipt.
-    let confirmed:HashSet<&str>=snapshot.into_iter().flat_map(|board|board.groups.iter())
-        .flat_map(|group|group.shipments.iter()).map(|ship|ship.order_id.as_str()).collect();
-    for draft in drafts.iter().rev(){
-        if confirmed.contains(draft.id.as_str()){continue;}
+        let Some(&draft)=pending.get(slot)else{continue;};
         let selected=state.selection.is_none() && active_id==Some(draft.id.as_str());
         let key=format!("pending:{}",draft.id);
         let open=selected && state.folded.as_deref()!=Some(key.as_str());
@@ -1322,6 +1346,17 @@ mod shipment_list_tests {
 #[cfg(test)]
 mod pending_matching_tests {
     use super::*;
+
+    #[test]
+    fn confirmation_keeps_the_pending_card_slot(){
+        let mut order=Vec::new();
+        sync_card_order(&mut order,&["group:old".into(),"group:d2".into(),"group:d1".into()]);
+        // d1 now belongs to the confirmed board, normally sorted ahead of d2.
+        sync_card_order(&mut order,&["group:d1".into(),"group:old".into(),"group:d2".into()]);
+        assert_eq!(order,vec!["group:old","group:d2","group:d1"]);
+        sync_card_order(&mut order,&["group:d1".into(),"group:d2".into()]);
+        assert_eq!(order,vec!["group:d2","group:d1"]);
+    }
 
     #[test]
     fn pending_receipt_never_emits_a_fake_dealer_confirmation_action(){

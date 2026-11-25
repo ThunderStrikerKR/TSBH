@@ -982,6 +982,8 @@ struct BandoEgui {
     /// Workflow approval requested while this same draft's inline cell is
     /// committing. Resume only after the native edit succeeds.
     pending_draft_confirmation:Option<String>,
+    // SQLite committed; keep the old card until the verified board is ready.
+    committed_draft_handoff:Option<String>,
     // React's original stage safety rule: repeated stage taps within 2s
     // must not silently advance the same group twice.
     workflow_stage_deadlines: HashMap<String, Instant>,
@@ -1100,6 +1102,7 @@ impl BandoEgui {
             submitted_workflow_freight:None,
             workflow_stage_after_freight:None,
             pending_draft_confirmation:None,
+            committed_draft_handoff:None,
             workflow_stage_deadlines: HashMap::new(),
             workflow_dialog: None,
             workflow_manage_target: String::new(),
@@ -1159,9 +1162,26 @@ impl BandoEgui {
         active
     }
 
+    fn confirming_order(&self)->Option<&str>{
+        self.committed_draft_handoff.as_deref()
+            .or_else(||self.workflow_action.as_ref()
+                .filter(|a|a.action=="confirm_reception").map(|a|a.group_id.as_str()))
+            .and_then(|id|id.strip_prefix("group:"))
+    }
+
+    fn active_confirmation_locked(&self)->bool{
+        self.confirming_order().is_some_and(|id|self.active_id.as_deref()==Some(id))
+    }
+
     fn reception_job_admission(
         &self,request:ReceptionJob,same_request:bool
     )->JobAdmission{
+        // Keep this exact draft immutable while its native confirmation or
+        // mandatory projection is pending; unrelated drafts retain admission.
+        if self.active_confirmation_locked() &&
+            !matches!(request,ReceptionJob::NavigateReception){
+            return JobAdmission::Conflict(ReceptionJob::WorkflowAction);
+        }
         reception_jobs::admit(
             request,&self.active_reception_jobs(request),same_request
         )
@@ -1585,6 +1605,49 @@ impl BandoEgui {
         }
     }
 
+    /// Publish the confirmed group and retire the temporary workspace in
+    /// the same UI update. A projection error is not a failed DB commit.
+    fn finish_confirmed_draft_handoff(&mut self,snapshot:&workflow_board::BoardSnapshot,
+        ctx:&egui::Context)->bool{
+        let Some(group_id)=self.committed_draft_handoff.as_deref()else{return true;};
+        let Some(order_id)=group_id.strip_prefix("group:")else{return false;};
+        let Some(group)=snapshot.groups.iter().find(|g|g.id==group_id&&g.step>=1)
+            else{return false;};
+        let was_active=self.active_id.as_deref()==Some(order_id);
+        let preferred=if was_active{
+            self.analysis.as_ref().and_then(|a|reception_service::recipients(a)
+                .get(self.selected_recipient)).and_then(|r|r["id"].as_str())
+        }else{None};
+        let target=group.shipments.iter().find(|s|s.order_id==order_id&&
+            preferred.is_some_and(|id|s.recipient_id==id))
+            .or_else(||group.shipments.iter().find(|s|s.order_id==order_id));
+        let Some(target)=target else{return false;};
+        let selection=workflow_board_ui::Selection{
+            group_id:group.id.clone(),order_id:target.order_id.clone(),shipment_id:target.id.clone()
+        };
+        let order_id=order_id.to_owned();
+        let keep_selected=was_active&&self.workflow_ui.selection.is_none();
+        let was_folded=self.workflow_ui.folded.as_deref()==Some(format!("pending:{order_id}").as_str());
+        self.drafts.retain(|d|d.id!=order_id);
+        self.committed_draft_handoff=None;
+        self.pending_display=None;
+        if was_active{
+            self.active_id=None;
+            self.raw_source.clear();
+            self.source_editing=false;
+            self.direct_source_entry=false;
+            self.requested_recipient_focus=None;
+            self.clear_source_analysis();
+        }
+        if keep_selected{
+            self.workflow_ui.select(selection);
+            if was_folded{self.workflow_ui.folded=Some(group.id.clone());}
+        }
+        self.queue_source_save();
+        ctx.request_repaint();
+        true
+    }
+
     fn poll_workflow_board(&mut self,ctx:&egui::Context){
         if let Some(receiver)=self.workflow_receiver.as_ref(){
             match receiver.try_recv(){
@@ -1594,6 +1657,12 @@ impl BandoEgui {
                 }
                 Ok(Ok(Some(snapshot)))=>{
                     self.workflow_receiver=None;
+                    if !self.finish_confirmed_draft_handoff(&snapshot,ctx){
+                        self.workflow_error=Some("주문은 저장됐지만 확정 화면 갱신을 완료하지 못했습니다.".into());
+                        self.workflow_refresh_required=true;
+                        ctx.request_repaint();
+                        return;
+                    }
                     if self.workflow_ui.selection.as_ref().is_some_and(|selected|
                         !snapshot.groups.iter().any(|group|
                             group.id==selected.group_id &&
@@ -7340,6 +7409,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                             &&self.client_change.is_none()
                             &&self.working_sync.is_none()
                             &&self.workflow_ui.pending_preview().is_none();
+                        let other_ready=other_ready && !self.active_confirmation_locked();
                         let can_act=other_ready && self.inline_change.is_none();
                         let client_can_act=other_ready && (self.inline_change.is_none() ||
                             self.inline_change.as_ref().is_some_and(|p|p.is_delivery_command() &&
@@ -7375,6 +7445,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                     && row.analysis_evidence.is_some())
             })
             && visible_index==self.selected_recipient
+            && !self.active_confirmation_locked()
             && self.workflow_ui.pending_preview().is_none()
             && self.manual_workspace.is_none()
             && self.client_change.is_none()
@@ -7967,6 +8038,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
     /// stale quote: submit the cell, wait for its native reducer result, then
     /// continue through start_draft_confirmation().
     fn request_draft_confirmation(&mut self,order_id:&str,ctx:&egui::Context){
+        if self.confirming_order().is_some(){return;}
         // The pending marker is valid only while its matching native cell
         // reducer is still alive. Recover stale markers for ANY order rather
         // than permanently blocking the confirmation button.
@@ -8345,26 +8417,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                     }
                 }
                 if action=="confirm_reception"{
-                    let order_id=group_id.strip_prefix("group:").unwrap_or("").to_owned();
-                    if !order_id.is_empty(){
-                        let was_active=self.active_id.as_deref()==Some(order_id.as_str());
-                        self.drafts.retain(|draft|draft.id!=order_id);
-                        if was_active{
-                            self.active_id=None;
-                            self.raw_source.clear();
-                            self.source_editing=false;
-                            self.direct_source_entry=false;
-                            self.requested_recipient_focus=None;
-                            self.clear_source_analysis();
-                            if let Some(next)=self.drafts.last().map(|draft|draft.id.clone()){
-                                self.select_reception(&next,ctx);
-                            }else{
-                                self.queue_source_save();
-                            }
-                        }else{
-                            self.queue_source_save();
-                        }
-                    }
+                    self.committed_draft_handoff=Some(group_id.clone());
                 }
                 self.workflow_ui.stop_preview();
                 // The gateway already verified the committed DB snapshot.
@@ -8449,6 +8502,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
     /// A pending receipt is only an isolated unconfirmed workspace record.
     /// Never pretend this deletes an already persisted operational order.
     fn delete_pending_reception(&mut self,id:&str,ctx:&egui::Context)->bool{
+        if self.confirming_order()==Some(id){return false;}
         let Some(draft)=self.drafts.iter().find(|row|row.id==id) else{return false;};
         // Older builds could explicitly write a separate egui bridge copy.
         // Never turn that unrelated metadata into a ban on deleting the
@@ -9284,6 +9338,8 @@ impl eframe::App for BandoEgui {
             self.workflow_ui.selection=None;
             self.workflow_ui.stop_preview();
             self.workflow_action=None;
+            self.committed_draft_handoff=None;
+            self.workflow_ui.clear_card_order();
             self.workflow_stage_deadlines.clear();
             self.workflow_freight_editor=None;
             self.submitted_workflow_freight=None;
@@ -10541,6 +10597,43 @@ mod reception_workflow_admission_integration_tests {
         assert_eq!(app.reception_metadata_revision,Some(7));
         assert!(app.reception_metadata_ready);
         assert!(app.reception_metadata_last_probe.is_none());
+    }
+
+    #[test]
+    fn committed_confirmation_keeps_draft_until_matching_board_is_ready(){
+        let mut app=app();
+        let ctx=egui::Context::default();
+        let (tx,rx)=mpsc::channel();
+        app.workflow_action=Some(PendingWorkflowAction{group_id:"group:draft-1".into(),
+            action:"confirm_reception".into(),receiver:rx});
+        tx.send(Ok(serde_json::json!({}))).unwrap();
+        app.poll_workflow_action(&ctx);
+        assert_eq!(app.drafts.len(),2);
+        assert_eq!(app.active_id.as_deref(),Some("draft-1"));
+        assert_eq!(app.confirming_order(),Some("draft-1"));
+        assert!(!app.workflow_mutation_ready());
+        assert!(!app.delete_pending_reception("draft-1",&ctx));
+        assert!(!app.finish_confirmed_draft_handoff(&workflow_board::BoardSnapshot::default(),&ctx));
+        assert_eq!(app.drafts.len(),2);
+        let ship=workflow_board::ShipmentRow{
+            id:"s1".into(),order_id:"draft-1".into(),recipient_id:"r1".into(),
+            transferred:false,recipient_name:"synthetic".into(),products:vec![],
+            source_raw:"원문".into(),recipient:serde_json::json!({}),remote:None,
+            display_charges:HashMap::new(),freight_editing_blocked:false,freight_code:"010".into(),
+            freight:None,collect:false,vat_included:None,shipment_count:1,order_total:None
+        };
+        let board=workflow_board::BoardSnapshot{revision:Some(8),groups:vec![workflow_board::GroupRow{
+            id:"group:draft-1".into(),created_at:String::new(),dealer_name:String::new(),
+            source_id:String::new(),dealer_id:String::new(),transferred:false,step:1,
+            needs_notice:false,total:None,vat_included:0,vat_excluded:0,shipments:vec![ship],
+            automatic_text:None,automatic_error:None,automatic_phase:None,automatic_signature:None,
+            payment_copied:false,automatic_payment_issues:vec![],issues:vec![]
+        }]};
+        assert!(app.finish_confirmed_draft_handoff(&board,&ctx));
+        assert_eq!(app.drafts.len(),1);
+        assert!(app.active_id.is_none());
+        assert_eq!(app.workflow_ui.selection.as_ref().unwrap().shipment_id,"s1");
+        assert!(app.confirming_order().is_none());
     }
 
     #[test]
