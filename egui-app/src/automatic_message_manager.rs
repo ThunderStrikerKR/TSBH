@@ -480,9 +480,9 @@ impl AutomaticMessageManager {
             .show(ui,|list|{
                 list.spacing_mut().item_spacing.y=theme::SPACE_4;
                 if visible.is_empty(){
-                    list.label(typography::caption(if self.product_search.trim().is_empty(){
+                    components::management_body_state_inline(list,if self.product_search.trim().is_empty(){
                         "아직 등록된 안내문이 없습니다. 상품을 검색해 추가하세요."
-                    }else{"검색 결과가 없습니다."}));
+                    }else{"검색 결과가 없습니다."});
                 }
                 for product in &visible{
                     let id=product_id(product);
