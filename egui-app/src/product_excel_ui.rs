@@ -22,7 +22,7 @@ impl ReviewFilter {
 }
 enum JobResult{
     Cancelled,
-    Exported(PathBuf),
+    Exported { path:PathBuf, folder:Option<Result<(),String>> },
     Previewed { name:String,preview:Value },
     Applied(Value),
 }
@@ -87,8 +87,12 @@ fn export_file(gateway:&dyn BandoGateway,client:bool)->Result<JobResult,String>{
     // The original React action saves in the configured product archive,
     // with a date folder and collision-safe numbered filename. It never
     // prompts for an arbitrary Save As destination.
-    (if client{gateway.archive_client_workbook()}else{gateway.archive_product_workbook()})
-        .map(|path|JobResult::Exported(PathBuf::from(path)))
+    let path=PathBuf::from(if client{gateway.archive_client_workbook()?}
+        else{gateway.archive_product_workbook()?});
+    // Only the requested product download changes its post-save behavior.
+    // Use the exact saved path, not a newly calculated date directory.
+    let folder=if client{None}else{Some(gateway.open_product_export_folder(&path))};
+    Ok(JobResult::Exported{path,folder})
 }
 #[cfg(windows)]
 fn preview_file(gateway:&dyn BandoGateway,client:bool)->Result<JobResult,String>{
@@ -135,14 +139,25 @@ impl ProductExcelUi {
             ctx.request_repaint();
         });
     }
-    pub fn poll(&mut self,_ctx:&Context)->Option<Value>{
+    pub fn poll(&mut self,ctx:&Context)->Option<Value>{
         let received=self.job.as_ref().map(|rx|rx.try_recv());
         match received{
             Some(Ok(Ok(event)))=>{
                 self.job=None;
                 match event{
                     JobResult::Cancelled=>{},
-                    JobResult::Exported(path)=>self.notice=Some(if self.client{format!("거래처 전체 목록을 저장했습니다: {}",path.display())}else{saved_message(&path)}),
+                    JobResult::Exported{path,folder}=>{
+                        self.notice=Some(if self.client{
+                            format!("거래처 전체 목록을 저장했습니다: {}",path.display())
+                        }else{saved_message(&path)});
+                        match folder{
+                            Some(Ok(()))=>ctx.send_viewport_cmd(egui::ViewportCommand::Minimized(true)),
+                            Some(Err(reason))=>self.error=Some(format!(
+                                "상품 Excel은 저장됐지만 폴더를 열지 못했습니다: {reason}"
+                            )),
+                            None=>{}
+                        }
+                    }
                     JobResult::Previewed{name,preview}=>{
                         self.review=Some(Arc::new(preview));
                         self.filename=name;
@@ -400,6 +415,7 @@ mod tests {
     }
     struct ArchiveGateway{
         requests:mpsc::Sender<ArchiveRequest>,
+        folders:mpsc::Sender<PathBuf>,
     }
     impl ArchiveGateway{
         fn archive(&self,client:bool)->Result<String,String>{
@@ -424,6 +440,9 @@ mod tests {
         }
         fn archive_client_workbook(&self)->Result<String,String>{self.archive(true)}
         fn archive_product_workbook(&self)->Result<String,String>{self.archive(false)}
+        fn open_product_export_folder(&self,path:&std::path::Path)->Result<(),String>{
+            self.folders.send(path.to_path_buf()).map_err(|e|e.to_string())
+        }
     }
     fn menu_text(shape:&egui::Shape,out:&mut Vec<(String,egui::Rect)>){
         match shape{
@@ -487,7 +506,8 @@ mod tests {
     fn actual_excel_menu_dispatches_the_selected_workbook_and_retains_result(){
         for client in [false,true]{
             let (tx,rx)=mpsc::channel();
-            let gateway:Arc<dyn BandoGateway>=Arc::new(ArchiveGateway{requests:tx});
+            let (folders,folder_rx)=mpsc::channel();
+            let gateway:Arc<dyn BandoGateway>=Arc::new(ArchiveGateway{requests:tx,folders});
             let ctx=components::test_context();
             let mut ui=if client{ProductExcelUi::for_clients()}else{ProductExcelUi::default()};
             let export=if client{"현재 거래처 전체 Excel 다운로드"}else{"현재 상품 전체 Excel 다운로드"};
@@ -515,6 +535,10 @@ mod tests {
             assert!(notice.contains("synthetic.xlsx"));
             assert!(notice.contains(if client{"거래처"}else{"상품"}));
             assert!(ui.error.is_none()&&!ui.blocks_navigation()&&!ui.has_modal());
+            if !client{
+                assert_eq!(folder_rx.try_recv().unwrap(),PathBuf::from("synthetic.xlsx"));
+            }
+            assert!(folder_rx.try_recv().is_err(),"only the product export opens its folder once");
             assert!(rx.try_recv().is_err());
         }
     }
@@ -522,7 +546,8 @@ mod tests {
     fn actual_excel_menu_denies_unallowed_export_and_surfaces_worker_failure(){
         for client in [false,true]{
             let (tx,rx)=mpsc::channel();
-            let gateway:Arc<dyn BandoGateway>=Arc::new(ArchiveGateway{requests:tx});
+            let (folders,folder_rx)=mpsc::channel();
+            let gateway:Arc<dyn BandoGateway>=Arc::new(ArchiveGateway{requests:tx,folders});
             let export=if client{"현재 거래처 전체 Excel 다운로드"}else{"현재 상품 전체 Excel 다운로드"};
             let mut ui=if client{ProductExcelUi::for_clients()}else{ProductExcelUi::default()};
             let ctx=components::test_context();
@@ -540,7 +565,28 @@ mod tests {
             request.reply.send(Err("synthetic archive failure".into())).unwrap();
             settle_excel(&mut ui,&ctx);
             assert_eq!(ui.error.as_deref(),Some("synthetic archive failure"));
+            assert!(folder_rx.try_recv().is_err(),"failed saves must not open a folder");
             assert!(ui.notice.is_none()&&!ui.has_modal()&&!ui.blocks_navigation());
+        }
+    }
+    #[test]
+    fn product_export_minimizes_only_after_successful_folder_open(){
+        for folder in [Some(Ok(())),Some(Err("synthetic folder failure".into())),None]{
+            let should_minimize=matches!(&folder,Some(Ok(())));
+            let should_warn=matches!(&folder,Some(Err(_)));
+            let ctx=components::test_context();
+            let mut ui=ProductExcelUi::default();
+            let (tx,rx)=mpsc::channel();
+            ui.job=Some(rx);
+            tx.send(Ok(JobResult::Exported{path:PathBuf::from("synthetic.xlsx"),folder})).unwrap();
+            let output=ctx.run(egui::RawInput::default(),|ctx|{
+                assert!(ui.poll(ctx).is_none());
+            });
+            let minimized=output.viewport_output.values().any(|v|v.commands.iter()
+                .any(|command|matches!(command,egui::ViewportCommand::Minimized(true))));
+            assert_eq!(minimized,should_minimize);
+            assert_eq!(ui.error.is_some(),should_warn);
+            assert!(ui.notice.as_deref().unwrap().contains("synthetic.xlsx"));
         }
     }
     #[test]

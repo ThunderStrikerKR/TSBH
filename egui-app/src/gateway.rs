@@ -206,6 +206,9 @@ pub trait BandoGateway: Send + Sync {
     fn archive_product_workbook(&self)->Result<String,String>{
         Err("이 연결에서는 상품 Excel 보관함 저장을 지원하지 않습니다.".into())
     }
+    fn open_product_export_folder(&self,_path:&std::path::Path)->Result<(),String>{
+        Err("이 연결에서는 상품 Excel 폴더 열기를 지원하지 않습니다.".into())
+    }
     /// Preview the parsed product workbook using the original native catalog engine.
     fn preview_product_workbook(&self,_source:Value)->Result<Value,String>{
         Err("상품 Excel 변경 검토를 지원하지 않는 연결입니다.".into())
@@ -511,6 +514,13 @@ impl BandoGateway for LocalGateway {
         let bytes=crate::product_excel::export(&state)?;
         let path=crate::excel_service::archive_product_workbook(&state,&bytes)?;
         Ok(path.to_string_lossy().to_string())
+    }
+    fn open_product_export_folder(&self,path:&std::path::Path)->Result<(),String>{
+        if !path.is_absolute()||!path.is_file(){
+            return Err("저장된 상품 Excel 파일 위치를 확인할 수 없습니다.".into())
+        }
+        let folder=path.parent().ok_or("상품 Excel 저장 폴더를 찾지 못했습니다.")?;
+        open::that(folder).map_err(|e|format!("상품 Excel 폴더 열기 실패: {e}"))
     }
     fn preview_product_workbook(&self,source:Value)->Result<Value,String>{
         if source.to_string().len()>40_000_000{
