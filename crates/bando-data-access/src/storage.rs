@@ -200,8 +200,7 @@ fn finish_stable_freight(tx:&Transaction<'_>,mut before:Value,mut changed:Value,
     }
     changed["revision"]=json!(expected_revision.checked_add(1)
         .ok_or("운영 DB revision 범위를 초과했습니다.")?);
-    direct+=tx.execute("UPDATE app_state SET payload=?1 WHERE id=1",
-        [serialize_envelope(&changed)?]).map_err(err)?;
+    direct+=write_workflow_envelope(tx,&before,&changed)?;
     if total_changes(tx)?.checked_sub(changes_before)!=i64::try_from(direct).ok(){
         return Err("운임 수정 중 예상하지 못한 DB 변경이 발생했습니다.".into());
     }
@@ -396,6 +395,73 @@ fn write_validated(tx:&Transaction<'_>,current:&Value,mut state:Value,
 }
 
 
+// Only patch known workflow arrays whose existing positions are stable.
+// Events are append-only: never replace or delete historical evidence via
+// this optimization. An unknown field or large/structural edit falls back
+// to the existing full serializer. Bounded SQL arguments stay below SQLite
+// JSON function limits even on older bundled versions.
+const MAX_ENVELOPE_PATCHES:usize=24;
+fn workflow_envelope_patch(before:&Value,next:&Value)->Option<Vec<(String,String)>>{
+    let old=before.as_object()?;
+    let new=next.as_object()?;
+    let ignored=|key:&str|matches!(key,"products"|"clients"|"orders"|"revision"|"workflow");
+    if !old.iter().filter(|(k,_)|!ignored(k)).eq(new.iter().filter(|(k,_)|!ignored(k))){
+        return None;
+    }
+    let old=before.get("workflow")?.as_object()?;
+    let new=next.get("workflow")?.as_object()?;
+    if old.keys().ne(new.keys()){return None;}
+    let mut patch=vec![("$.revision".to_owned(),serde_json::to_string(next.get("revision")?).ok()?)];
+    for (key,after) in new{
+        let prior=old.get(key)?;
+        if prior==after{continue;}
+        if !matches!(key.as_str(),"sources"|"groups"|"shipments"|"payments"|"queue"|
+            "events"|"deliveries"|"changeRequests"|"confirmations"){return None;}
+        let a=prior.as_array()?;
+        let b=after.as_array()?;
+        if a.len()>b.len(){return None;}
+        for (i,(x,y)) in a.iter().zip(b).enumerate(){
+            if x==y{continue;}
+            if matches!(key.as_str(),"events"|"sources"|"payments"|"deliveries"|"changeRequests") ||
+                x["id"].as_str().filter(|id|!id.is_empty()).is_none() || x["id"]!=y["id"]{
+                return None;
+            }
+            if patch.len()==MAX_ENVELOPE_PATCHES{return None;}
+            patch.push((format!("$.workflow.{key}[{i}]"),serde_json::to_string(y).ok()?));
+        }
+        for row in &b[a.len()..]{
+            if patch.len()==MAX_ENVELOPE_PATCHES{return None;}
+            patch.push((format!("$.workflow.{key}[#]"),serde_json::to_string(row).ok()?));
+        }
+    }
+    Some(patch)
+}
+
+// Keep the schema-v2 compatibility envelope valid for both hosts. SQLite
+// still rewrites the JSON document internally; Rust serializes only changed
+// rows and appended events. The caller must compare the full persisted
+// envelope against the intended state before COMMIT (stable freight does).
+fn write_workflow_envelope(tx:&Transaction<'_>,before:&Value,next:&Value)->Result<usize,String>{
+    if let Some(patch)=workflow_envelope_patch(before,next){
+        let mut sql="UPDATE app_state SET payload=json_set(payload".to_owned();
+        let mut args=Vec::with_capacity(patch.len()*2);
+        for (path,value) in patch{
+            sql.push_str(",?,json(?)");
+            args.push(path);
+            args.push(value);
+        }
+        sql.push_str(") WHERE id=1 AND json_type(payload)='object'
+            AND json_type(payload,'$.workflow')='object'
+            AND json_type(payload,'$.products') IS NULL
+            AND json_type(payload,'$.clients') IS NULL
+            AND json_type(payload,'$.orders') IS NULL");
+        let count=tx.execute(&sql,rusqlite::params_from_iter(args.iter())).map_err(err)?;
+        if count==1{return Ok(count);}
+    }
+    tx.execute("UPDATE app_state SET payload=?1 WHERE id=1",
+        [serialize_envelope(next)?]).map_err(err)
+}
+
 // Serialize borrowed non-core fields only. Core rows have their own tables;
 // do not clone their nested products, variants, orders or items just to
 // discard them. Unknown envelope keys are preserved for compatibility.
@@ -459,6 +525,52 @@ fn sync_order_index(tx:&Transaction<'_>,before:&Value,state:&Value)->Result<usiz
 #[cfg(test)]
 mod snapshot_cost_tests {
     use super::*;
+
+    #[test]
+    fn workflow_json_patch_serializes_only_changed_rows_and_new_events(){
+        let mut conn=Connection::open_in_memory().unwrap();
+        conn.execute_batch("CREATE TABLE app_state(id INTEGER PRIMARY KEY,payload TEXT);").unwrap();
+        let before=json!({"revision":7,"products":[],"clients":[],"orders":[],
+            "settings":{"future":true},"unknown":{"nested":[1,null]},
+            "workflow":{"shipments":[{"id":"s","charges":{"FACTORY":3000}},
+                {"id":"untouched","charges":{"FACTORY":2500}}],
+                "events":(0..1000).map(|i|json!({"id":format!("old-{i}"),"text":"기존 감사 기록"})).collect::<Vec<_>>(),
+                "groups":[{"id":"g","needsNotice":false}]}});
+        let mut next=before.clone();
+        next["revision"]=json!(8);
+        next["workflow"]["shipments"][0]["charges"]["FACTORY"]=json!(4000);
+        next["workflow"]["groups"][0]["needsNotice"]=json!(true);
+        next["workflow"]["events"].as_array_mut().unwrap().extend([
+            json!({"id":"new-a","before":3000,"after":4000}),
+            json!({"id":"new-b","after":{"notice":true}})]);
+        let patch=workflow_envelope_patch(&before,&next).unwrap();
+        assert_eq!(patch.len(),5);
+        assert!(patch.iter().all(|(_,value)|!value.contains("기존 감사 기록")));
+        let patch_bytes:usize=patch.iter().map(|(p,v)|p.len()+v.len()).sum();
+        assert!(patch_bytes<serialize_envelope(&next).unwrap().len()/10);
+        conn.execute("INSERT INTO app_state VALUES (1,?1)",[serialize_envelope(&before).unwrap()]).unwrap();
+        let tx=conn.transaction().unwrap();
+        assert_eq!(write_workflow_envelope(&tx,&before,&next).unwrap(),1);
+        let actual=crate::read_envelope(&tx).unwrap();
+        let expected:Value=serde_json::from_str(&serialize_envelope(&next).unwrap()).unwrap();
+        assert_eq!(actual,expected);
+        // Immutable history edits and deletions cannot enter the patch path.
+        let mut invalid=next.clone();
+        invalid["workflow"]["events"][0]["text"]=json!("changed");
+        assert!(workflow_envelope_patch(&before,&invalid).is_none());
+        invalid=next.clone();
+        invalid["workflow"]["shipments"].as_array_mut().unwrap().reverse();
+        assert!(workflow_envelope_patch(&before,&invalid).is_none());
+        invalid=next.clone();
+        invalid["settings"]["future"]=json!(false);
+        assert!(workflow_envelope_patch(&before,&invalid).is_none());
+        // Compatibility envelopes with stale embedded core fields fall back
+        // to the full canonical serializer, rather than retaining them.
+        tx.execute("UPDATE app_state SET payload=?1 WHERE id=1",[before.to_string()]).unwrap();
+        assert_eq!(write_workflow_envelope(&tx,&before,&next).unwrap(),1);
+        assert_eq!(crate::read_envelope(&tx).unwrap(),expected);
+        tx.rollback().unwrap();
+    }
 
     #[test]
     fn borrowed_envelope_preserves_all_non_core_fields(){

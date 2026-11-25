@@ -48,6 +48,8 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           cargo test --manifest-path crates/bando-data-access/Cargo.toml --lib scoped_order_identity_and_lazy_audit_preserve_global_rules -- --nocapture
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Verify immutable history index parity
+        run: cargo test --manifest-path crates/bando-data-access/Cargo.toml --lib immutable_history_index_matches_original_first_match_rule -- --nocapture
       - name: Verify scoped working reception authority and confirmed ID guards
         run: cargo test --manifest-path crates/bando-data-access/Cargo.toml --lib working_authority_scope_tests -- --nocapture
       - name: Verify scoped freight reconciliation and transactional snapshot reuse
