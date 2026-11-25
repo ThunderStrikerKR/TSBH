@@ -8590,11 +8590,29 @@ mod management_dropdown_unification_tests {
         for (name,source,minimum) in screens {
             assert!(!source.contains("ComboBox::"),
                 "{name} still contains a screen-local native ComboBox");
-            assert!(source.matches("management_dropdown(").count()>=minimum,
+            let shared=source.matches("management_dropdown(").count()
+                +source.matches("management_status_dropdown(").count();
+            assert!(shared>=minimum,
                 "{name} lost a shared single-select call");
         }
     }
 
+    #[test]
+    fn modal_form_dropdown_matches_input_height_without_changing_toolbar(){
+        let ctx=egui::Context::default();
+        let mut toolbar=Rect::NOTHING;
+        let mut form=Rect::NOTHING;
+        let _=ctx.run(egui::RawInput::default(),|ctx|{
+            egui::CentralPanel::default().show(ctx,|ui|{
+                toolbar=management_dropdown(ui,"toolbar",140.0,true,"",|_|{}).rect;
+                modal_labeled_row_with_width(ui,"홈페이지 상품 연결",150.0,|line|{
+                    form=management_dropdown(line,"form",140.0,true,"",|_|{}).rect;
+                });
+            });
+        });
+        assert_eq!(toolbar.height(),theme::ACTION_STANDARD_HEIGHT);
+        assert_eq!(form.height(),theme::INPUT_HEIGHT);
+    }
     #[test]
     fn suffix_money_field_keeps_money_edit_size_and_does_not_write_unit(){
         let ctx=egui::Context::default();
