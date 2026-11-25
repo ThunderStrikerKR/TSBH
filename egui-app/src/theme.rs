@@ -1087,6 +1087,7 @@ pub fn source_document_frame() -> Frame {
 pub fn paint_button_hover_corners(
     ui:&Ui,response:&Response,corners:egui::CornerRadius
 ){
+    crate::floating_notice::remember_response(ui.ctx(),response);
     if !response.hovered(){return;}
     let rect=response.rect.shrink(0.5);
     if rect.width()<=1.0 || rect.height()<=1.0{return;}

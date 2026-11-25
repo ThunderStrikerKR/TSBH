@@ -1290,7 +1290,9 @@ pub fn kakao_menu_icon(ui:&mut Ui) -> Response {
 pub fn checkbox(
     ui:&mut Ui,checked:&mut bool,label:&str,enabled:bool
 )->Response{
-    ui.add_enabled(enabled,egui::Checkbox::new(checked,label))
+    let response=ui.add_enabled(enabled,egui::Checkbox::new(checked,label));
+    crate::floating_notice::remember_response(ui.ctx(),&response);
+    response
 }
 
 /// One full-width, fixed-height checkbox-list row with stable identity.

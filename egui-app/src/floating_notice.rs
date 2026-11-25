@@ -23,6 +23,7 @@ enum AnchorKind { Caret, Action, Section }
 #[derive(Clone)]
 pub struct Anchor {
     at: Pos2,
+    below: Pos2,
     page: &'static str,
     page_epoch:u64,
     created: Instant,
@@ -35,6 +36,7 @@ struct Notice {
     tone: Tone,
     source: &'static str,
     at: Pos2,
+    below: Pos2,
     kind: AnchorKind,
     created: Instant,
 }
@@ -49,8 +51,9 @@ struct State {
     active: Option<Notice>,
     // Transient option-click origin for the currently open shared dropdown.
     // It is never carried to a later frame or a different user action.
-    dropdown_popup_trigger: Option<Pos2>,
-    dropdown_selected_trigger: Option<Pos2>,
+    dropdown_popup_trigger: Option<Rect>,
+    dropdown_selected_trigger: Option<Rect>,
+    last_element: Option<Rect>,
 }
 
 fn with_state<R>(ctx: &Context, f: impl FnOnce(&mut State) -> R) -> R {
@@ -71,6 +74,7 @@ pub fn begin_page(ctx: &Context, page: &'static str) {
         // An uncommitted filter choice must not relocate a later button notice.
         state.dropdown_popup_trigger = None;
         state.dropdown_selected_trigger = None;
+        state.last_element = None;
         if state.page != page {
             state.page = page;
             state.anchors.clear();
@@ -83,9 +87,13 @@ pub fn begin_page(ctx: &Context, page: &'static str) {
     });
 }
 
+#[cfg(test)]
 fn record(ctx: &Context, source: &'static str, at: Pos2, kind: AnchorKind) {
-    with_state(ctx, |state| {
-        let anchor=Anchor{at,page:state.page,page_epoch:state.page_epoch,created:Instant::now(),kind};
+    record_element(ctx,source,Rect::from_min_max(at,at),kind);
+}
+fn record_element(ctx:&Context,source:&'static str,rect:Rect,kind:AnchorKind){
+    with_state(ctx,|state|{
+        let anchor=Anchor{at:rect.center_top(),below:rect.center_bottom(),page:state.page,page_epoch:state.page_epoch,created:Instant::now(),kind};
         if kind==AnchorKind::Section{state.sections.insert(source,anchor);}
         else{state.anchors.insert(source,anchor);}
         // A new explicit action can replace a prior, persistent failure.
@@ -99,17 +107,20 @@ fn record(ctx: &Context, source: &'static str, at: Pos2, kind: AnchorKind) {
 /// Record the original click *when it happens*, not after async Rust finishes.
 pub fn clicked(ctx: &Context, source: &'static str, response: &Response) {
     if !response.clicked() { return; }
-    let position = ctx.input(|i| i.pointer.latest_pos())
-        .filter(|pos| response.rect.contains(*pos))
-        .unwrap_or(response.rect.center());
-    record(ctx, source, position, AnchorKind::Action);
+    action_rect(ctx,source,response.rect);
 }
 
 /// Custom buttons may use a release hit-test instead of Response::clicked.
 pub fn action_rect(ctx:&Context,source:&'static str,rect:Rect){
-    let at=ctx.input(|i|i.pointer.latest_pos()).filter(|p|rect.contains(*p))
-        .unwrap_or(rect.center());
-    record(ctx,source,at,AnchorKind::Action);
+    remember_element(ctx,rect);
+    record_element(ctx,source,rect,AnchorKind::Action);
+}
+/// Shared widgets register actual interactions, never hover or pointer motion.
+pub fn remember_element(ctx:&Context,rect:Rect){
+    if rect.is_positive(){with_state(ctx,|state|state.last_element=Some(rect));}
+}
+pub fn remember_response(ctx:&Context,response:&Response){
+    if response.clicked() || response.changed(){remember_element(ctx,response.rect);}
 }
 pub fn capture_origin(ctx:&Context,source:&'static str)->Option<Anchor>{
     with_state(ctx,|s|s.anchors.get(source).filter(|a|
@@ -126,7 +137,7 @@ pub fn inherit_origin(ctx:&Context,from:&'static str,to:&'static str){
 /// the shared popup is being rendered, immediately before its options.
 pub fn dropdown_popup_trigger(ctx: &Context, trigger: Rect) {
     with_state(ctx, |state| {
-        state.dropdown_popup_trigger = Some(trigger.center_top());
+        state.dropdown_popup_trigger = Some(trigger);
     });
 }
 
@@ -141,69 +152,43 @@ pub fn dropdown_option_selected(ctx: &Context) {
 
 /// For jobs dispatched by several nested buttons that share an async receiver.
 /// Prefer the initiating dropdown trigger when a shared option was selected;
-/// otherwise retain the original dispatch-time pointer for ordinary actions.
+/// otherwise use the actual shared widget interacted with in this frame.
+/// If no element is known, fall back to the feature section, never the mouse.
 pub fn dispatch_pointer(ctx: &Context, source: &'static str) {
-    let selected = with_state(ctx, |state| state.dropdown_selected_trigger.take());
-    let at = selected.unwrap_or_else(||
-        ctx.input(|i| i.pointer.latest_pos()).unwrap_or_else(|| fallback(ctx))
-    );
-    record(ctx, source, at, AnchorKind::Action);
+    let selected=with_state(ctx,|state|state.dropdown_selected_trigger.take().or(state.last_element));
+    if let Some(rect)=selected{record_element(ctx,source,rect,AnchorKind::Action);}
+    else{with_state(ctx,|state|{state.anchors.remove(source);});}
 }
 
-/// Caret anchor for existing add_sized(TextEdit) widgets, without changing
-/// their proven 34/36pt geometry. Recover the TextEdit cursor from the widget
-/// id and measure with the exact font used by that input.
-/// Clamps long/scrolled text back inside the visible field.
+/// Preserve existing caller API; anchor to the input element, not its caret.
 pub fn sized_text_caret(
-    ui: &egui::Ui, source: &'static str, response: &Response,
-    value: &str, font: egui::FontId, centered: bool, horizontal_padding: f32,
-) {
-    if !response.has_focus() && !response.changed() { return; }
-    let caret = egui::TextEdit::load_state(ui.ctx(), response.id)
-        .and_then(|state| state.cursor.char_range())
-        .map(|range| {
-            let galley = ui.fonts_mut(|f| f.layout_no_wrap(
-                value.to_owned(), font, theme::TEXT
-            ));
-            let offset = galley.pos_from_cursor(range.primary);
-            let text_left = if centered {
-                response.rect.center().x - galley.size().x / 2.0
-            } else {
-                response.rect.left() + horizontal_padding
-            };
-            let x = (text_left + offset.left())
-                .clamp(response.rect.left() + 3.0, response.rect.right() - 3.0);
-            Pos2::new(x, response.rect.center().y - 9.0)
-        })
-        .unwrap_or(response.rect.center_top());
-    if response.changed() {
-        with_state(ui.ctx(), |state| {
-            if state.active.as_ref().is_some_and(|n| n.source==source) {
-                state.active = None;
-            }
+    ui:&egui::Ui,source:&'static str,response:&Response,
+    _value:&str,_font:egui::FontId,_centered:bool,_horizontal_padding:f32,
+){
+    if response.changed() || response.gained_focus() || response.clicked(){
+        remember_element(ui.ctx(),response.rect);
+        record_element(ui.ctx(),source,response.rect,AnchorKind::Caret);
+    }
+    if response.changed(){
+        with_state(ui.ctx(),|state|{
+            if state.active.as_ref().is_some_and(|n|n.source==source){state.active=None;}
         });
     }
-    record(ui.ctx(), source, caret, AnchorKind::Caret);
 }
-
-/// Exact caret location, from TextEditOutput::galley/galley_pos/cursor_range.
 pub fn text_edit_caret(
-    ctx: &Context, source: &'static str, output: &egui::widgets::text_edit::TextEditOutput,
-) {
-    if !output.response.has_focus() { return; }
-    let caret = output.cursor_range.map(|range|
-        output.galley.pos_from_cursor(range.primary)
-            .translate(output.galley_pos.to_vec2())
-    );
-    let at = caret.map(|r| r.center_top())
-        .unwrap_or(output.response.rect.center_top());
-    record(ctx, source, at, AnchorKind::Caret);
+    ctx:&Context,source:&'static str,output:&egui::widgets::text_edit::TextEditOutput,
+){
+    let response=&output.response;
+    if response.changed() || response.gained_focus() || response.clicked(){
+        remember_element(ctx,response.rect);
+        record_element(ctx,source,response.rect,AnchorKind::Caret);
+    }
 }
 
 /// Contextual automatic processing. Never show unrelated background successes
 /// on the current page: the caller must supply a visible functional region.
 pub fn section(ctx: &Context, source: &'static str, region: Rect) {
-    record(ctx, source, region.center_top(), AnchorKind::Section);
+    record_element(ctx,source,region,AnchorKind::Section);
 }
 
 fn fallback(ctx: &Context) -> Pos2 {
@@ -226,11 +211,11 @@ pub fn publish_from(ctx:&Context,source:&'static str,tone:Tone,
             a.page==state.page && a.page_epoch==state.page_epoch &&
             a.created.elapsed()<=ANCHOR_VALID_FOR
         )).or_else(||state.sections.get(source));
-        let (at,kind)=anchor.map(|a|(a.at,a.kind)).unwrap_or((fallback_anchor,AnchorKind::Section));
+        let (at,below,kind)=anchor.map(|a|(a.at,a.below,a.kind)).unwrap_or((fallback_anchor,fallback_anchor,AnchorKind::Section));
         if state.active.as_ref().is_some_and(|n|
             n.source==source && n.tone==tone && n.message==message && n.at==at){return;}
         state.active = Some(Notice {
-            message, tone, source, at, kind, created: Instant::now(),
+            message, tone, source, at, below, kind, created: Instant::now(),
         });
     });
     ctx.request_repaint();
@@ -306,18 +291,21 @@ fn measured_notice(
     (Vec2::new(width, desired_height.min(max_height)), galley, content_height)
 }
 
-fn placement(anchor: Pos2, size: Vec2, screen: Rect, kind: AnchorKind) -> (Pos2, bool) {
+#[cfg(test)]
+fn placement(anchor:Pos2,size:Vec2,screen:Rect,kind:AnchorKind)->(Pos2,bool){
+    placement_element(anchor,anchor,size,screen,kind)
+}
+fn placement_element(anchor:Pos2,below:Pos2,size:Vec2,screen:Rect,_kind:AnchorKind)->(Pos2,bool){
     let min_x = screen.left() + SCREEN_MARGIN;
     let max_x = (screen.right() - SCREEN_MARGIN - size.x).max(min_x);
-    // Caret/buttons keep the pointer near the leading edge; a feature-wide
-    // automatic notice is centered above its relevant section heading.
-    let offset_x = if kind==AnchorKind::Section {size.x/2.0} else {28.0};
+    // Center above or below the manipulated element, never its click point.
+    let offset_x=size.x/2.0;
     let x = (anchor.x - offset_x).clamp(min_x, max_x);
 
     let above_y = anchor.y - ANCHOR_GAP - size.y;
-    let below_y = anchor.y + ANCHOR_GAP;
+    let below_y = below.y + ANCHOR_GAP;
     let room_above = anchor.y - screen.top() - SCREEN_MARGIN;
-    let room_below = screen.bottom() - SCREEN_MARGIN - anchor.y;
+    let room_below = screen.bottom() - SCREEN_MARGIN - below.y;
     let above = above_y >= screen.top() + SCREEN_MARGIN
         || (below_y + size.y > screen.bottom() - SCREEN_MARGIN
             && room_above >= room_below);
@@ -449,7 +437,7 @@ pub fn show(ctx: &Context) {
     let (size, galley, _content_height) = measured_notice(
         ctx, display.as_ref(), active.tone, screen,
     );
-    let (at, above) = placement(active.at, size, screen, active.kind);
+    let (at,above)=placement_element(active.at,active.below,size,screen,active.kind);
     let pad_x = f32::from(theme::FLOATING_NOTICE_PADDING_X);
     let pad_y = f32::from(theme::FLOATING_NOTICE_PADDING_Y);
     let mut close = false;
@@ -471,7 +459,7 @@ pub fn show(ctx: &Context) {
                 ),
             }.as_shape(rect,theme::CONTROL_RADIUS));
             theme::paint_bordered_surface(&painter,rect,theme::CONTROL_RADIUS,theme::FLOATING_NOTICE_BG,theme::BORDER);
-            paint_tail(&painter,rect,active.at,above);
+            paint_tail(&painter,rect,if above{active.at}else{active.below},above);
             // All rows use the same notice font; average laid-out row height
             // is stable even when egui has wrapped a long message.
             let first_row_height = galley.size().y /
@@ -591,6 +579,23 @@ mod tests {
         assert!(with_state(&ctx,|state|state.dropdown_popup_trigger.is_none()));
     }
 
+    #[test]
+    fn element_anchor_ignores_mouse_and_uses_bottom_edge_when_flipped(){
+        let ctx=Context::default();
+        begin_page(&ctx,"Reception");
+        let rect=Rect::from_min_size(Pos2::new(120.0,10.0),Vec2::new(100.0,36.0));
+        remember_element(&ctx,rect);
+        dispatch_pointer(&ctx,"test.action");
+        publish(&ctx,"test.action",Tone::Validation,"input");
+        let n=with_state(&ctx,|s|s.active.clone()).unwrap();
+        assert_eq!(n.at,rect.center_top());
+        assert_eq!(n.below,rect.center_bottom());
+        let screen=Rect::from_min_size(Pos2::ZERO,Vec2::new(500.0,350.0));
+        let (pos,above)=placement_element(n.at,n.below,Vec2::new(160.0,40.0),screen,n.kind);
+        assert!(!above);
+        assert!(pos.y>=rect.bottom()+ANCHOR_GAP);
+        assert_eq!(pos.x+80.0,rect.center().x);
+    }
     #[test]
     fn notice_flips_when_there_is_no_room_above() {
         let screen = Rect::from_min_size(Pos2::ZERO, Vec2::new(500.0, 350.0));
