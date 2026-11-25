@@ -45,6 +45,7 @@ mod reception_jobs;
 mod source_highlight;
 mod workflow_board;
 mod workflow_board_ui;
+mod one_touch;
 mod manual_workspace;
 mod catalog_query_bridge;
 mod manual_product_search;
@@ -5571,7 +5572,11 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                     match index {
                                         0 => self.kakao_pane(pane),
                                         1 => self.source_and_message(pane),
-                                        2 => self.details_and_freight(pane),
+                                        2 => {
+                                            one_touch::set(pane.ctx(),one_touch::Stage::None,false);
+                                            self.details_and_freight(pane);
+                                            one_touch::set(pane.ctx(),one_touch::Stage::None,false);
+                                        },
                                         _ => self.orders_pane(pane),
                                     }
                                 },
@@ -6658,6 +6663,8 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                 && (group.automatic_phase.as_deref()!=Some("payment")
                     ||(group.automatic_payment_issues.is_empty()
                         && group.automatic_signature.as_deref().is_some_and(|value|!value.is_empty())));
+            let hover_stage=if self.workflow_ui.active_preview()==Some(group.id.as_str()) && self.workflow_freight_editor.is_none(){one_touch::Stage::from_step(group.step)}else{one_touch::Stage::None};
+            let payment_emphasis=can_copy && group.automatic_phase.as_deref()==Some("payment") && matches!(hover_stage,one_touch::Stage::PaymentCopy|one_touch::Stage::PaymentConfirm);
             let mut copy_with_greeting=None;
             Self::section_with_header(ui,"복사용 자동 메시지",height,|header|{
                 let mut include_link=false;
@@ -6696,17 +6703,20 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                 .auto_shrink([false,false])
                                 .show(canvas,|content|{
                                     if let Some(message)=group.automatic_text.as_deref(){
-                                        content.add(egui::Label::new(typography::body(message))
-                                            .selectable(true));
+                                        if payment_emphasis{
+                                            content.add(egui::Label::new(one_touch::payment_job(message,group.automatic_signature.as_deref().unwrap_or(""))).selectable(true));
+                                        }else{
+                                            content.add(egui::Label::new(typography::body(message)).selectable(true));
+                                        }
                                     }
                                 });
                         },
                     );
                 }
                 components::reception_message_footer_gap(body);
-                copy_with_greeting=components::reception_message_copy_actions(
-                    body,can_copy
-                );
+                one_touch::set(body.ctx(),if payment_emphasis{hover_stage}else{one_touch::Stage::None},false);
+                copy_with_greeting=components::reception_message_copy_actions(body,can_copy);
+                one_touch::set(body.ctx(),one_touch::Stage::None,false);
             });
             if let Some(include_greeting)=copy_with_greeting{
                 floating_notice::dispatch_pointer(
@@ -6891,6 +6901,9 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
         if let Some((board,group_index,ship_index))=self.visible_workflow_group(){
             let group=&board.groups[group_index];
             let ship=&group.shipments[ship_index];
+            let hover_stage=if self.workflow_ui.active_preview()==Some(group.id.as_str()) && self.workflow_freight_editor.is_none(){one_touch::Stage::from_step(group.step)}else{one_touch::Stage::None};
+            let remote=ship.remote.as_ref().and_then(|r|r["status"].as_str()).is_some_and(|s|matches!(s,"auto"|"review"));
+            one_touch::set(ui.ctx(),hover_stage,remote);
             let linked_active=self.link_hover.active_for(&ship.order_id).cloned();
             let mut hovered_detail:Option<source_highlight::LinkKey>=None;
             let mut workflow_freight_open:Option<(String,String,String,Option<egui::Pos2>)>=None;
@@ -7194,9 +7207,9 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                     pane.set_height(summary_rect.height());
                     Self::section_with_header(
                         pane,"발주서 합계",summary_rect.height(),
-                        |header|{theme::action(
+                        |header|{let response=theme::action(
                             header,"부가세 설정",ButtonRole::Standard,false
-                        );},
+                        );if one_touch::stage(header)==one_touch::Stage::Review{one_touch::mark(header,response.rect);}},
                         |body|{
                             let vat=if group.vat_included>0 && group.vat_excluded>0{
                                 "부가세 일부 포함"
@@ -7252,6 +7265,9 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
         // pending card may point to another order/recipient; do not swap
         // this projection into the employee's active editable draft.
         if let Some((draft,index))=self.visible_pending_other(){
+            if self.workflow_ui.active_pending_stage()==Some(draft.id.as_str()){
+                one_touch::set(ui.ctx(),one_touch::Stage::Review,false);
+            }
             let recognition=&draft.recognition;
             self.workflow_ui.note_pending_content_hover(
                 &draft.id,ui.ctx().input(|input|input.pointer.hover_pos()
@@ -7429,7 +7445,8 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                     Self::section_with_header(
                         pane,"발주서 합계",summary_rect.height(),
                         |header|{
-                            theme::action(header,"부가세 설정",ButtonRole::Standard,false);
+                            let response=theme::action(header,"부가세 설정",ButtonRole::Standard,false);
+                            if one_touch::stage(header)==one_touch::Stage::Review{one_touch::mark(header,response.rect);}
                         },|body|{
                             let inclusive=recipients.iter().filter(|r|
                                 r["vatOverride"].as_bool()==Some(true)).count();
@@ -7459,6 +7476,9 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                 self.link_hover.update_for(&draft.id,hovered,ui.ctx());
             }
             return;
+        }
+        if self.active_id.as_deref().is_some_and(|id|self.workflow_ui.active_pending_stage()==Some(id)) && self.inline_editor.is_none(){
+            one_touch::set(ui.ctx(),one_touch::Stage::Review,false);
         }
         let mut review_action:Option<review_panel::Action>=None;
         let mut hovered_detail: Option<source_highlight::LinkKey>=None;
@@ -7955,11 +7975,12 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                 let mut edit_vat=false;
                 Self::section_with_header(pane,"발주서 합계",summary_rect.height(),
                     |header|{
-                        if theme::action(header,"부가세 설정",ButtonRole::Standard,
+                        let response=theme::action(header,"부가세 설정",ButtonRole::Standard,
                             editable && self.analysis.is_some()
                                 && self.inline_editor.is_none()
-                                && self.vat_change.is_none()
-                        ).clicked(){edit_vat=true;}
+                                && self.vat_change.is_none());
+                        if one_touch::stage(header)==one_touch::Stage::Review{one_touch::mark(header,response.rect);}
+                        if response.clicked(){edit_vat=true;}
                     },|body|{
                     let preview=self.active_id.as_deref()
                         .and_then(|id|self.drafts.iter().find(|draft|draft.id==id))

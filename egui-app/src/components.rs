@@ -3377,28 +3377,32 @@ pub fn reception_recipient_fields(
         response
     }
 
-    fn row(ui: &mut Ui, label: &str, value: &mut String, active: bool) -> Response {
+    fn row(ui: &mut Ui, label: &str, value: &mut String, active: bool,index:usize) -> Response {
         ui.horizontal(|line| {
             line.spacing_mut().item_spacing.x = theme::RECIPIENT_LABEL_GAP;
             label_cell(line, label, theme::RECIPIENT_LABEL_WIDTH);
             let width = line.available_width().max(1.0);
             reception_recipient_linked_background(line,width,active);
+            let orange=!active && crate::one_touch::recipient(line,index);
+            if orange{crate::one_touch::background(line,Rect::from_min_size(line.cursor().min,Vec2::new(width,theme::INPUT_HEIGHT)));}
             // The response belongs to the input, NOT the combined row.
             // This is read-only while retaining hover and native text layout.
+            let edit=reception_recipient_text_edit(value,width,active,false);
+            let edit=if orange{edit.frame(false).text_color(crate::one_touch::INK)}else{edit};
             let display=allocate_singleline_field(
-                line,Vec2::new(width, theme::INPUT_HEIGHT),
-                reception_recipient_text_edit(value, width, active, false).interactive(false),None,
+                line,Vec2::new(width, theme::INPUT_HEIGHT),edit.interactive(false),None,
             );
             let hit=reception_recipient_value_hit(line,&display);
             source_highlight::paint_active_if(line,&hit,active);
+            if orange{crate::one_touch::outline(line,hit.rect);}
             hit
         }).inner
     }
 
     let responses=ui.scope(|fields| {
         fields.spacing_mut().item_spacing.y = theme::RECIPIENT_ROW_GAP;
-        let name_response = row(fields, "이름", name, active[0]);
-        let address_response = row(fields, "주소", address, active[1]);
+        let name_response = row(fields, "이름", name, active[0],0);
+        let address_response = row(fields, "주소", address, active[1],1);
 
         let row_width = fields.available_width()
             .max(theme::RECIPIENT_PHONE_ROW_MIN_WIDTH);
@@ -3429,12 +3433,16 @@ pub fn reception_recipient_fields(
                     reception_recipient_linked_background(
                         line,mobile_width,active[2]
                     );
-                    let mobile_display = allocate_singleline_field(
-                        line,Vec2::new(mobile_width, theme::INPUT_HEIGHT),
-                        reception_recipient_text_edit(mobile, mobile_width, active[2], true).interactive(false),None,
+                    let orange=!active[2] && crate::one_touch::recipient(line,2);
+                    if orange{crate::one_touch::background(line,Rect::from_min_size(line.cursor().min,Vec2::new(mobile_width,theme::INPUT_HEIGHT)));}
+                    let edit=reception_recipient_text_edit(mobile,mobile_width,active[2],true);
+                    let edit=if orange{edit.frame(false).text_color(crate::one_touch::INK)}else{edit};
+                    let mobile_display=allocate_singleline_field(
+                        line,Vec2::new(mobile_width,theme::INPUT_HEIGHT),edit.interactive(false),None,
                     );
                     let mobile_input=reception_recipient_value_hit(line,&mobile_display);
                     source_highlight::paint_active_if(line,&mobile_input,active[2]);
+                    if orange{crate::one_touch::outline(line,mobile_input.rect);}
                     // Only the gap between the TWO contact groups is 8pt.
                     line.spacing_mut().item_spacing.x =
                         theme::RECIPIENT_PHONE_COLUMN_GAP;
@@ -3444,16 +3452,20 @@ pub fn reception_recipient_fields(
                     reception_recipient_linked_background(
                         line,phone_width,active[3]
                     );
-                    let phone_display = allocate_singleline_field(
-                        line,Vec2::new(phone_width, theme::INPUT_HEIGHT),
-                        reception_recipient_text_edit(phone, phone_width, active[3], true).interactive(false),None,
+                    let orange=!active[3] && crate::one_touch::recipient(line,3);
+                    if orange{crate::one_touch::background(line,Rect::from_min_size(line.cursor().min,Vec2::new(phone_width,theme::INPUT_HEIGHT)));}
+                    let edit=reception_recipient_text_edit(phone,phone_width,active[3],true);
+                    let edit=if orange{edit.frame(false).text_color(crate::one_touch::INK)}else{edit};
+                    let phone_display=allocate_singleline_field(
+                        line,Vec2::new(phone_width,theme::INPUT_HEIGHT),edit.interactive(false),None,
                     );
                     let phone_input=reception_recipient_value_hit(line,&phone_display);
                     source_highlight::paint_active_if(line,&phone_input,active[3]);
+                    if orange{crate::one_touch::outline(line,phone_input.rect);}
                     (mobile_input,phone_input)
                 }).inner
             }).inner;
-        let note_response = row(fields, "메시지", note, active[4]);
+        let note_response = row(fields, "메시지", note, active[4],4);
         [
             name_response, address_response,
             mobile_response, phone_response, note_response,
@@ -3602,21 +3614,24 @@ pub fn reception_message_footer_gap(ui:&mut Ui){
 /// the caller alone owns clipboard writes and workflow-safe enablement.
 pub fn reception_message_copy_actions(ui:&mut Ui,enabled:bool)->Option<bool>{
     let mut greeting=None;
+    let button=|actions:&mut Ui,label:&str|{
+        let response=theme::action(actions,label,theme::ButtonRole::Standard,enabled);
+        if enabled && crate::one_touch::stage(actions)==crate::one_touch::Stage::PaymentCopy{
+            crate::one_touch::mark(actions,response.rect);
+        }
+        response.clicked()
+    };
     if ui.available_width()<280.0 {
         ui.with_layout(Layout::top_down(Align::Max),|actions|{
             actions.spacing_mut().item_spacing.y=theme::SPACE_8;
-            if theme::action(actions,"그대로 복사",theme::ButtonRole::Standard,enabled)
-                .clicked(){greeting=Some(false);}
-            if theme::action(actions,"인사말 포함 복사",
-                theme::ButtonRole::Standard,enabled).clicked(){greeting=Some(true);}
+            if button(actions,"그대로 복사"){greeting=Some(false);}
+            if button(actions,"인사말 포함 복사"){greeting=Some(true);}
         });
     }else{
         ui.with_layout(Layout::right_to_left(Align::Center),|actions|{
             actions.spacing_mut().item_spacing.x=theme::SPACE_8;
-            if theme::action(actions,"인사말 포함 복사",
-                theme::ButtonRole::Standard,enabled).clicked(){greeting=Some(true);}
-            if theme::action(actions,"그대로 복사",theme::ButtonRole::Standard,enabled)
-                .clicked(){greeting=Some(false);}
+            if button(actions,"인사말 포함 복사"){greeting=Some(true);}
+            if button(actions,"그대로 복사"){greeting=Some(false);}
         });
     }
     greeting
@@ -6084,9 +6099,9 @@ fn reception_item_row_with_mode(
         let row_text=if index==1 {compact_quantity} else {text};
         // Draw the same blue fill as recipient TextEdit, before value glyphs.
         // No header, label, surrounding table row or column divider is filled.
-        if active[index] {
-            source_highlight::paint_active_background(ui,cell);
-        }
+        let orange=!active[index] && crate::one_touch::stage(ui).item(index);
+        if active[index] {source_highlight::paint_active_background(ui,cell);}
+        else if orange{crate::one_touch::background(ui,cell);}
         // Text must stay clear of the 2pt inset outline. Keeping the
         // value clip and its anchor inside the highlighted cell also stops
         // the last digit / descender from touching a blue edge.
@@ -6098,7 +6113,7 @@ fn reception_item_row_with_mode(
         let visible_product=(index==0).then(||cached_reception_product(
             ui,text,(value_clip.width()-0.5).max(0.0),&font,color
         ));
-        let ink=if active[index] {source_highlight::ACTIVE_TEXT} else {color};
+        let ink=if active[index] {source_highlight::ACTIVE_TEXT} else if orange{crate::one_touch::INK}else{color};
         let label=visible_product.as_deref().unwrap_or(row_text);
         let galley=ui.painter().layout_no_wrap(label.to_owned(),font,ink);
         item_overflow[index]=label!=text || text_exceeds_rect(galley.size(),value_clip.intersect(ui.clip_rect()));
@@ -6137,9 +6152,10 @@ fn reception_item_row_with_mode(
     // The renderer owns both fill and border. Do not let reception page
     // branches independently paint an outline: pending board previews
     // otherwise receive blue fills without the matching blue stroke.
-    for (response,on) in [(&product,active[0]),(&quantity,active[1]),
-        (&amount,active[2])]{
+    for (index,(response,on)) in [(&product,active[0]),(&quantity,active[1]),
+        (&amount,active[2])].into_iter().enumerate(){
         source_highlight::paint_active_if(ui,response,on);
+        if !on && crate::one_touch::stage(ui).item(index){crate::one_touch::outline(ui,response.rect);}
     }
     let mut remove_clicked=false;
     if remove_slot {
@@ -6299,6 +6315,8 @@ pub fn reception_freight_row_controls(
                 // amount. The disabled parent Ui was dimming valid freight.
                 let displayed=reception_freight_money_readonly(price,&mut amount_text);
                 amount_rect=Some(displayed.rect);
+                if crate::one_touch::stage(price).freight(){crate::one_touch::mark(price,displayed.rect);}
+                if crate::one_touch::stage(price)==crate::one_touch::Stage::Review{crate::one_touch::mark(price,label_rect);}
                 if amount_editable && collect!=Some(true){
                     let hit=price.interact(
                         displayed.rect,
@@ -6317,7 +6335,8 @@ pub fn reception_freight_row_controls(
         );
         // A checkbox/VAT edit temporarily disables interactions while Rust
         // saves. Keep the SAME common dropdown instead of flashing "(선불)".
-        let (changed,_response)=reception_cod_dropdown(line,collect,collect_editable);
+        let (changed,response)=reception_cod_dropdown(line,collect,collect_editable);
+        if crate::one_touch::stage(line).freight(){crate::one_touch::mark(line,response.rect);}
         collect_clicked=changed;
     };
     let mut draw_remote_and_inquiry=|line:&mut Ui|{
@@ -6523,6 +6542,7 @@ pub fn reception_item_origin_action_editable(
                 theme::paint_button_hover(
                     right,&response,theme::CONTROL_RADIUS as f32
                 );
+                if selected && crate::one_touch::stage(right).freight(){crate::one_touch::mark(right,response.rect);}
                 response.clicked()
             };
             if button(right,"매장",dispatch_origin==Some("STORE")){
@@ -6565,6 +6585,7 @@ pub fn reception_total_footer(
     );
     // The currency unit is always present and has a fixed right anchor.
     // Pending, zero and calculated amounts only change the numeric galley.
+    if crate::one_touch::stage(ui)==crate::one_touch::Stage::Review{crate::one_touch::background(ui,first_amount);crate::one_touch::outline(ui,first_amount);}
     let painter=ui.painter().with_clip_rect(first_amount.intersect(ui.clip_rect()));
     let unit=painter.layout_no_wrap("원".to_owned(),font.clone(),theme::TEXT);
     let unit_left=money_unit_left(right,0.0,unit.size().x);
@@ -6581,6 +6602,15 @@ pub fn reception_total_footer(
         egui::pos2(left, rect.top() + 30.0),
         egui::pos2(right_start, rect.bottom()),
     );
+    if crate::one_touch::stage(ui)==crate::one_touch::Stage::Review{
+        let font=egui::FontId::proportional(typography::FONT_METADATA);
+        let prefix=ui.painter().layout_no_wrap("배송 ".into(),font.clone(),theme::SECONDARY).size().x;
+        if let Some(n)=count{
+            let width=ui.painter().layout_no_wrap(format!("{n}건"),font,theme::TEXT).size().x;
+            let value=Rect::from_min_size(egui::pos2(left+prefix-2.0,rect.top()+33.0),Vec2::new(width+4.0,20.0)).intersect(second_left);
+            crate::one_touch::background(ui,value);crate::one_touch::outline(ui,value);
+        }
+    }
     ui.painter().with_clip_rect(second_left).text(
         egui::pos2(left, rect.top() + 43.0), egui::Align2::LEFT_CENTER,
         count_text, egui::FontId::proportional(typography::FONT_METADATA),

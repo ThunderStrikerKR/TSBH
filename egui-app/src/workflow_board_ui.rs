@@ -60,6 +60,7 @@ pub struct BoardUi {
     // Source, recipient and goods panes can temporarily retain a pending
     // card's read-only foreground preview without committing selection.
     pending_content_hovered:Option<String>,
+    pending_stage_target:Option<PendingTarget>,
 }
 pub enum Event {
     SelectPending(String),
@@ -89,6 +90,7 @@ impl BoardUi{
         self.pending_visible=None;
         self.pending_release=None;
         self.pending_content_hovered=None;
+        self.pending_stage_target=None;
     }
     pub fn note_pending_content_hover(&mut self,order_id:&str,hovered:bool){
         if hovered && self.pending_visible.as_ref()
@@ -102,10 +104,13 @@ impl BoardUi{
         self.stop_preview();
     }
     pub fn active_preview(&self)->Option<&str>{
-        self.preview_active.as_deref()
+        self.preview_active.as_deref().filter(|id|!id.starts_with("pending-stage:"))
+    }
+    pub fn active_pending_stage(&self)->Option<&str>{
+        self.preview_active.as_deref()?.strip_prefix("pending-stage:")
     }
     pub fn pending_preview(&self)->Option<&PendingTarget>{
-        self.pending_visible.as_ref()
+        self.pending_stage_target.as_ref().or(self.pending_visible.as_ref())
     }
     fn update_row_hover(&mut self,incoming:Option<String>,ctx:&egui::Context){
         let now=Instant::now();
@@ -529,7 +534,7 @@ fn workflow_primary_at(
 fn workflow_action_line(
     ui:&mut Ui,lower:Rect,id:&str,shipments:usize,total:Option<i64>,
     vat:Option<&str>,button_text:Option<&str>,enabled:bool,
-    undo_enabled:bool,in_preview:bool
+    undo_enabled:bool,in_preview:bool,payment_emphasis:bool
 )->(bool,bool,bool){
     let content=workflow_row_content(lower);
     let gap=theme::WORKFLOW_CARD_SLOT_GAP;
@@ -578,6 +583,10 @@ fn workflow_action_line(
         price.min,Pos2::new((price.right()-theme::SPACE_4).max(price.left()),
             price.bottom())
     );
+    if payment_emphasis{
+        let amount_rect=Rect::from_min_size(Pos2::new((price_ink.right()-money_galley.size().x-2.0).max(price_ink.left()),bottom_y-money_galley.size().y-2.0),Vec2::new((money_galley.size().x+4.0).min(price_ink.width()),money_galley.size().y+4.0)).intersect(price_ink);
+        crate::one_touch::background(ui,amount_rect);crate::one_touch::outline(ui,amount_rect);
+    }
     let money_clipped=components::text_exceeds_rect(money_galley.size(),price_ink.intersect(ui.clip_rect()));
     ui.painter().with_clip_rect(price_ink).galley(
         Pos2::new(price_ink.right()-money_galley.size().x,
@@ -664,6 +673,11 @@ fn shipment_row_fill(chosen:bool,previewed:bool)->egui::Color32{
 fn shipment_line(
     ui:&mut Ui,name:&str,products:&[String],chosen:bool,previewed:bool
 )->egui::Response{
+    shipment_line_with_freight(ui,name,products,chosen,previewed,None)
+}
+fn shipment_line_with_freight(
+    ui:&mut Ui,name:&str,products:&[String],chosen:bool,previewed:bool,freight:Option<&str>
+)->egui::Response{
     let fill=shipment_row_fill(chosen,previewed);
     let outer=ui.available_width();
     let summary=shipment_product_summary(products);
@@ -684,7 +698,8 @@ fn shipment_line(
                 cols.spacing_mut().item_spacing.x=theme::SPACE_8;
                 let name_width=theme::WORKFLOW_DETAIL_NAME_WIDTH
                     .min((inside*0.36).max(0.0));
-                let product_width=(inside-name_width-theme::SPACE_8).max(0.0);
+                let freight_width=freight.map_or(0.0,|text|cols.painter().layout_no_wrap(text.to_owned(),egui::FontId::proportional(typography::FONT_BODY),theme::TEXT).size().x+12.0).min(inside*0.42);
+                let product_width=(inside-name_width-theme::SPACE_8-if freight.is_some(){freight_width+theme::SPACE_8}else{0.0}).max(0.0);
                 cols.add_sized(
                     [name_width,theme::WORKFLOW_DETAIL_ROW_CONTENT_HEIGHT],
                     egui::Label::new(typography::body(name).color(preview_ink)).truncate()
@@ -693,6 +708,12 @@ fn shipment_line(
                     [product_width,theme::WORKFLOW_DETAIL_ROW_CONTENT_HEIGHT],
                     egui::Label::new(typography::body(&summary).color(preview_ink)).truncate()
                 );
+                if let Some(freight)=freight{
+                    let (rect,_)=cols.allocate_exact_size(Vec2::new(freight_width,theme::WORKFLOW_DETAIL_ROW_CONTENT_HEIGHT),egui::Sense::hover());
+                    crate::one_touch::background(cols,rect);crate::one_touch::outline(cols,rect);
+                    let galley=cols.painter().layout_no_wrap(freight.to_owned(),egui::FontId::proportional(typography::FONT_BODY),crate::one_touch::INK);
+                    cols.painter().with_clip_rect(rect.intersect(cols.clip_rect())).galley(Pos2::new(rect.left()+6.0,rect.center().y-galley.size().y/2.0),galley,crate::one_touch::INK);
+                }
             });
         });
     if chosen || previewed{
@@ -719,18 +740,23 @@ fn shipment_line(
     response.response
 }
 fn row(
-    ui:&mut Ui,ship:&ShipmentRow,chosen:bool,previewed:bool
+    ui:&mut Ui,ship:&ShipmentRow,chosen:bool,previewed:bool,freight_emphasis:bool
 )->egui::Response{
     let name=if ship.recipient_name.is_empty(){
         "수취인 확인"
     }else{ship.recipient_name.as_str()};
-    shipment_line(ui,name,&ship.products,chosen,previewed)
+    let freight=freight_emphasis.then(||{
+        if ship.collect{return "착불".to_owned();}
+        let values=["FACTORY","STORE"].into_iter().filter_map(|origin|ship.display_charges.get(origin)).map(|amount|amount.map(components::display_won).unwrap_or_else(||"—".into())).collect::<Vec<_>>();
+        if values.is_empty(){"—".to_owned()}else{values.join(" / ")}
+    });
+    shipment_line_with_freight(ui,name,&ship.products,chosen,previewed,freight.as_deref())
 }
 fn group_frame(
     ui:&mut Ui,group:&GroupRow,selected:Option<&Selection>,
     open:bool,in_preview:bool,previewed_id:Option<&str>,writable:bool,
     freight_stage_group:Option<&str>,linked_selection:Option<(&str,&str)>,
-    trigger:&mut Option<String>,hovered_row:&mut Option<String>
+    trigger:&mut Option<String>,hovered_row:&mut Option<String>,stage_emphasis:bool
 )->Option<Event>{
     let mut event=None;
     let active=selected.is_some_and(|s|s.group_id==group.id);
@@ -763,7 +789,7 @@ fn group_frame(
             if group.vat_included>0{Some(vat)}else{None},
             Some(stage_name(group.step,group.needs_notice)),
             (writable || freight_stage_group==Some(group.id.as_str())) && !group.transferred,
-            writable && group.step>0 && !group.transferred,in_preview
+            writable && group.step>0 && !group.transferred,in_preview,stage_emphasis && group.step>=3
         );
         if advance_clicked{event=Some(Event::AdvanceGroup(group.id.clone()));}
         if undo_clicked{event=Some(Event::UndoGroup(group.id.clone()));}
@@ -781,7 +807,7 @@ fn group_frame(
                 let previewed=(!chosen && linked_selection
                     ==Some((ship.order_id.as_str(),ship.recipient_id.as_str()))) ||
                     (in_preview && previewed_id==Some(ship.id.as_str()));
-                let label=row(ui,ship,chosen,previewed);
+                let label=row(ui,ship,chosen,previewed,stage_emphasis && group.step==1);
                 let response=ui.interact(
                     label.rect,Id::new(("workflow-shipment",ship.id.as_str(),in_preview)),
                     egui::Sense::click()
@@ -876,7 +902,7 @@ fn pending_frame(
     ui:&mut Ui,draft:&WorkingReception,selected:bool,open:bool,in_preview:bool,
     writable:bool,dealer_name:&str,committed_recipient:Option<&str>,
     preview:Option<&PendingTarget>,linked_selection:Option<(&str,&str)>,
-    hovered_pending:&mut Option<PendingTarget>
+    hovered_pending:&mut Option<PendingTarget>,stage_trigger:&mut Option<String>
 )->Option<Event>{
     let mut event=None;
     workflow_card(ui,selected && !in_preview,in_preview,|ui|{
@@ -936,11 +962,15 @@ fn pending_frame(
         // A valid selected-client quote exposes the explicit first stage even
         // when freight/total is pending. Rust blocks only the issues assigned
         // to this stage; freight and payment remain later workflow steps.
-        let (confirm_clicked,_,_)=workflow_action_line(
+        let (confirm_clicked,stage_hovered,_)=workflow_action_line(
             ui,bottom,&draft.id,recipients.len(),total,None,
             button_text,quote_ready && writable && draft.order_type!="RETAIL",
-            false,in_preview
+            false,in_preview,false
         );
+        if stage_hovered && quote_ready && draft.order_type!="RETAIL"{
+            *stage_trigger=Some(format!("pending-stage:{}",draft.id));
+            *hovered_pending=Some(PendingTarget::order(&draft.id));
+        }
         if confirm_clicked{
             event=Some(Event::ConfirmDraft(draft.id.clone()));
         }
@@ -1096,7 +1126,8 @@ pub fn show(
             }
             let mut ignored_row=None;
             if let Some(value)=group_frame(ui,group,current,open,false,None,
-                writable,freight_stage_group,linked_selection,&mut trigger,&mut ignored_row){
+                writable,freight_stage_group,linked_selection,&mut trigger,&mut ignored_row,
+                state.active_preview()==Some(group.id.as_str())){
                 match value{
                     Event::ToggleGroup(id)=>{
                         state.folded=if open{Some(id)}else{None};
@@ -1133,7 +1164,7 @@ pub fn show(
             if selected{active_recipient_id}else{None},
             state.pending_visible.as_ref(),
             linked_selection,
-            &mut hovered_pending
+            &mut hovered_pending,&mut trigger
         ){
             match value{
                 Event::TogglePending=>{
@@ -1160,7 +1191,7 @@ pub fn show(
             overlay_ui.set_max_width(width);
             overlay_event=pending_frame(
                 overlay_ui,draft,false,true,true,writable,name,None,
-                state.pending_visible.as_ref(),linked_selection,&mut overlay_hover
+                state.pending_visible.as_ref(),linked_selection,&mut overlay_hover,&mut trigger
             );
         });
         if overlay_hover.is_some(){
@@ -1189,6 +1220,7 @@ pub fn show(
     }
     let hovered=trigger.clone();
     state.update_hover(hovered,ui.ctx());
+    state.pending_stage_target=state.active_pending_stage().map(PendingTarget::order);
     if let Some((group,pos,width))=overlay{
         let pane_clip=ui.clip_rect();
         let mut overlay_event=None;
@@ -1206,7 +1238,8 @@ pub fn show(
             let mut ignored_hover=None;
             overlay_event=group_frame(
                 ui,group,current,true,true,state.preview_shipment.as_deref(),
-                writable,freight_stage_group,linked_selection,&mut ignored_hover,&mut hovered_row
+                writable,freight_stage_group,linked_selection,&mut ignored_hover,&mut hovered_row,
+                state.active_preview()==Some(group.id.as_str())
             );
         });
         state.preview_rect=Some(response.response.rect);
@@ -1337,7 +1370,7 @@ mod pending_matching_tests {
                 let mut hovered=None;
                 tapped=pending_frame(
                     ui,&draft,false,false,false,false,"확인된 거래처",None,None,
-                    None,&mut hovered
+                    None,&mut hovered,&mut None
                 );
             });
         });
