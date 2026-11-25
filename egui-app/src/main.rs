@@ -1439,15 +1439,18 @@ impl BandoEgui {
         let current=self.workflow_snapshot.as_ref().and_then(|board|board.revision);
         let observed=self.reception_metadata_revision;
         let changed=match (current,observed){
-            (Some(current),Some(observed))=>observed>current,
+            (Some(current),Some(observed))=>observed!=current,
             (None,_)=>true,
             // An adapter without native change detection retains the old
             // conservative board fallback if explicitly connected.
             (Some(_),None)=>self.reception_metadata_ready,
         };
         if !changed && !self.workflow_refresh_required && self.workflow_error.is_none(){return;}
-        if self.workflow_last_fetch.is_some_and(|at|at.elapsed()<Duration::from_secs(5)) &&
-            (self.workflow_error.is_some() || observed.is_none()){return;}
+        if !self.workflow_refresh_required && self.workflow_last_fetch.is_some_and(|at|
+            at.elapsed()<Duration::from_secs(5)){return;}
+        // A failed mandatory refresh is also bounded, not retried per frame.
+        if self.workflow_error.is_some() && self.workflow_last_fetch.is_some_and(|at|
+            at.elapsed()<Duration::from_secs(5)){return;}
         self.workflow_last_fetch=Some(Instant::now());
         let gateway=Arc::clone(&self.gateway);
         let (sender,receiver)=mpsc::channel();
@@ -10264,6 +10267,29 @@ mod reception_workflow_admission_integration_tests {
             assert!(app.source_save_error.is_some());
             assert_eq!(app.reception_job_admission(ReceptionJob::ManualClient,false),JobAdmission::Start);
         }
+    }
+
+    #[test]
+    fn shared_reception_metadata_keeps_cached_values_on_unchanged_revision(){
+        let ctx=egui::Context::default();
+        let mut app=app();
+        app.page=Page::Reception;
+        app.reception_metadata_revision=Some(7);
+        app.reception_metadata_ready=true;
+        app.reception_metadata_last_probe=Some(Instant::now());
+        app.inbox_folder_path=Some("saved folder".into());
+        app.inbox_folder_loaded=true;
+        app.client_names.insert("c".into(),"거래처".into());
+        let (tx,receiver)=mpsc::channel();
+        app.reception_metadata_receiver=Some(receiver);
+        tx.send(Ok((Some(7),None))).unwrap();
+        app.poll_reception_metadata(&ctx);
+        assert_eq!(app.inbox_folder_path.as_deref(),Some("saved folder"));
+        assert_eq!(app.client_names.get("c").map(String::as_str),Some("거래처"));
+        assert!(app.reception_metadata_receiver.is_none());
+        app.invalidate_reception_metadata();
+        assert!(app.reception_metadata_revision.is_none());
+        assert!(!app.reception_metadata_ready);
     }
 
     #[test]
