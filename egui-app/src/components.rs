@@ -1126,14 +1126,8 @@ pub fn workflow_fixed_action(
         rect,id,if enabled{Sense::click()}else{Sense::hover()}
     );
     let stage=matches!(action,WorkflowFixedAction::Stage(_));
-    let (fill,ink,stroke)=if enabled{
-        if stage{(theme::BRIGHT,theme::BRIGHT_TEXT,Stroke::NONE)}
-        else{(theme::RAISED,theme::TEXT,Stroke::new(theme::FRAME_STROKE_WIDTH,theme::BORDER))}
-    }else{
-        (theme::DISABLED_ACTION_BG,theme::DISABLED_ACTION_TEXT,
-         Stroke::new(if stage{theme::SOFT_DIVIDER_WIDTH}else{theme::FRAME_STROKE_WIDTH},
-            theme::DISABLED_ACTION_BORDER))
-    };
+    let role=if stage{theme::ButtonRole::Emphasized}else{theme::ButtonRole::Standard};
+    let (_,fill,ink,stroke)=theme::action_style(role,enabled,false);
     let radius=5.0;
     let painter=ui.painter();
     painter.rect_filled(rect,radius,fill);
@@ -3830,12 +3824,6 @@ fn paint_count_step_symbol(painter:&egui::Painter,center:egui::Pos2,increase:boo
     }
 }
 
-/// Count buttons use the existing action/field contrast, not a local color.
-fn count_step_palette(enabled:bool)->(Color32,Color32){
-    if enabled{(theme::RAISED,theme::TEXT)}
-    else{(theme::DISABLED_ACTION_BG,theme::DISABLED_ACTION_TEXT)}
-}
-
 /// A borderless segment button; its parent owns the only outer border.
 /// Enabled/disabled colors and hover feedback follow the date-selector roles.
 fn date_navigation_segment_button(
@@ -3881,7 +3869,7 @@ fn date_navigation_segment_button(
         // Keep the editor on INPUT and give its action segments the shared
         // RAISED button face. The existing disabled and blue hover roles
         // remain distinct; neither changes the segment's allocated geometry.
-        let (fill,ink)=count_step_palette(enabled);
+        let (_,fill,ink,_)=theme::action_style(theme::ButtonRole::Standard,enabled,false);
         painter.rect_filled(rect,corners,fill);
         if enabled{
             theme::paint_button_hover_corners(ui,&response,corners);
@@ -4042,18 +4030,13 @@ fn date_navigation_button_surface(
     ui:&mut Ui,enabled:bool
 )->(Response,Color32){
     let effective_enabled=enabled && ui.is_enabled();
-    let (fill,border,ink)=if effective_enabled{
-        (theme::INPUT,theme::BORDER,theme::SECONDARY)
-    }else{
-        (theme::DISABLED_ACTION_BG,theme::DISABLED_ACTION_BORDER,
-         theme::DISABLED_ACTION_TEXT)
-    };
+    let (fill,ink,stroke)=theme::field_action_palette(effective_enabled,theme::SECONDARY);
     let response=ui.add_enabled_ui(effective_enabled,|button_ui|{
         button_ui.add_sized(
             Vec2::splat(theme::CALENDAR_NAV_SIZE),
             egui::Button::new("")
                 .fill(fill)
-                .stroke(Stroke::new(theme::SOFT_DIVIDER_WIDTH,border))
+                .stroke(stroke)
                 .corner_radius(theme::CONTROL_RADIUS)
         )
     }).inner;
@@ -4756,14 +4739,8 @@ pub(crate) fn management_dropdown_trigger(
     let width=width.min(ui.available_width()).max(1.0);
     // Parent Ui may be disabled independently of the explicit enabled flag.
     let interactive=enabled && ui.is_enabled();
-    let fill=if interactive{theme::INPUT}
-        else{theme::MANAGEMENT_DROPDOWN_DISABLED_BG};
-    let border=if interactive{theme::BORDER}
-        else{theme::DISABLED_ACTION_BORDER};
-    let ink=if interactive{theme::TEXT}
-        else{theme::DISABLED_ACTION_TEXT};
-    let arrow_ink=if interactive{theme::SECONDARY}
-        else{theme::DISABLED_ACTION_TEXT};
+    let (fill,ink,stroke)=theme::field_action_palette(interactive,theme::TEXT);
+    let arrow_ink=if interactive{theme::SECONDARY}else{ink};
     // Inline modal rows opt into the 36pt form interaction height;
     // standard management toolbars retain their 34pt minimum.
     let height=theme::ACTION_STANDARD_HEIGHT.max(ui.spacing().interact_size.y);
@@ -4772,7 +4749,7 @@ pub(crate) fn management_dropdown_trigger(
         egui::Button::new("")
             .min_size(Vec2::new(width,height))
             .fill(fill)
-            .stroke(Stroke::new(theme::SOFT_DIVIDER_WIDTH,border))
+            .stroke(stroke)
             .corner_radius(egui::CornerRadius::same(theme::CONTROL_RADIUS))
     );
     let rect=trigger.rect;
@@ -9401,8 +9378,10 @@ mod date_navigation_segmented_control_tests{
 
     #[test]
     fn count_stepper_palette_distinguishes_actions_from_editor_and_disabled_end_stops(){
-        assert_eq!(count_step_palette(true),(theme::RAISED,theme::TEXT));
-        assert_eq!(count_step_palette(false),(theme::DISABLED_ACTION_BG,theme::DISABLED_ACTION_TEXT));
+        let (_,fill,ink,_)=theme::action_style(theme::ButtonRole::Standard,true,false);
+        assert_eq!((fill,ink),(theme::RAISED,theme::TEXT));
+        let (_,fill,ink,_)=theme::action_style(theme::ButtonRole::Standard,false,false);
+        assert_eq!((fill,ink),(theme::DISABLED_ACTION_BG,theme::DISABLED_ACTION_TEXT));
         assert!(theme::RAISED.r()>theme::INPUT.r());
         assert!(theme::INPUT.r()>theme::DISABLED_ACTION_BG.r());
         assert!(theme::TEXT.r()>theme::DISABLED_ACTION_TEXT.r());

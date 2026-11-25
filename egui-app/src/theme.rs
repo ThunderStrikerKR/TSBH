@@ -22,7 +22,7 @@ pub const TABLE_ROW_ALT_BG: Color32 = Color32::from_rgb(30, 30, 30);
 pub const INPUT: Color32 = Color32::from_rgb(41, 41, 41);
 // Disabled management dropdowns use a darker field surface while keeping
 // the same height, border and split-chevron geometry as enabled dropdowns.
-pub const MANAGEMENT_DROPDOWN_DISABLED_BG: Color32 = Color32::from_rgb(30, 30, 30);
+pub const MANAGEMENT_DROPDOWN_DISABLED_BG: Color32 = DISABLED_ACTION_BG;
 // Strong disabled styling shared by management select and action controls.
 // Avoid changing the approved enabled #292929 field / #303030 button roles.
 pub const DISABLED_ACTION_BG: Color32 = Color32::from_rgb(30, 30, 30);
@@ -1148,10 +1148,11 @@ pub fn review_action(ui: &mut Ui, label: &str, role: ButtonRole, enabled: bool) 
     action_with_palette(ui, label, role, enabled, 0.0, true)
 }
 
-fn action_with_palette(
-    ui: &mut Ui, label: &str, role: ButtonRole, enabled: bool, min_width: f32,
-    review_white: bool,
-) -> Response {
+/// One visual role/state contract for standard widgets and fixed-rect actions.
+/// Geometry and interaction remain owned by the respective components.
+pub(crate) fn action_style(
+    role:ButtonRole,enabled:bool,review_white:bool
+)->(f32,Color32,Color32,Stroke){
     let (height, fill, color, stroke): (f32, Color32, Color32, Stroke) = match role {
         ButtonRole::Primary => (ACTION_PRIMARY_HEIGHT, PRIMARY_ACTION_FILL, BRIGHT_TEXT, Stroke::NONE),
         ButtonRole::Standard => (ACTION_STANDARD_HEIGHT, RAISED, TEXT, Stroke::new(1.0_f32, BORDER)),
@@ -1174,24 +1175,44 @@ fn action_with_palette(
     };
     // Standard management actions have an explicit disabled appearance.
     // egui's generic disabled tint alone was too close to the enabled state.
-    // Respect disabled parent Ui scopes as well as the local enabled flag.
-    let effective_enabled=enabled && ui.is_enabled();
+    // Callers resolve the parent scope before selecting the visual state.
     let (fill,color,stroke)=if review_white {
-        if effective_enabled {
+        if enabled {
             (BRIGHT, BRIGHT_TEXT, stroke)
         } else {
             (DISABLED_ACTION_BG, DISABLED_ACTION_TEXT, stroke)
         }
-    }else if !effective_enabled && matches!(role,ButtonRole::Ghost) {
+    }else if !enabled && matches!(role,ButtonRole::Ghost) {
         (Color32::TRANSPARENT,DISABLED_ACTION_TEXT,Stroke::NONE)
-    }else if !effective_enabled
+    }else if !enabled
         && matches!(role,
             ButtonRole::Standard | ButtonRole::TableSecondary | ButtonRole::Emphasized
         )
     {
         (DISABLED_ACTION_BG,DISABLED_ACTION_TEXT,
-         Stroke::new(1.0,DISABLED_ACTION_BORDER))
+         Stroke::new(FRAME_STROKE_WIDTH,DISABLED_ACTION_BORDER))
     }else{(fill,color,stroke)};
+    (height,fill,color,stroke)
+}
+
+/// Field-like actions (calendar and dropdown) share the disabled action
+/// palette but retain the approved enabled input surface and semantic ink.
+pub(crate) fn field_action_palette(enabled:bool,enabled_ink:Color32)
+    ->(Color32,Color32,Stroke){
+    if enabled{
+        (INPUT,enabled_ink,Stroke::new(SOFT_DIVIDER_WIDTH,BORDER))
+    }else{
+        let (_,_,ink,stroke)=action_style(ButtonRole::Standard,false,false);
+        (MANAGEMENT_DROPDOWN_DISABLED_BG,ink,stroke)
+    }
+}
+
+fn action_with_palette(
+    ui: &mut Ui, label: &str, role: ButtonRole, enabled: bool, min_width: f32,
+    review_white: bool,
+) -> Response {
+    let effective_enabled=enabled && ui.is_enabled();
+    let (height,fill,color,stroke)=action_style(role,effective_enabled,review_white);
     let font_size = match role {
         ButtonRole::Navigation | ButtonRole::ActiveNavigation => typography::FONT_MAIN_NAV,
         ButtonRole::ManagementTab | ButtonRole::ActiveManagementTab =>
@@ -1366,5 +1387,38 @@ mod management_primary_card_geometry_tests {
         // but only three inside it; reserve the wrapped second row.
         assert!((management_primary_card_top_offset(950.0)-304.0).abs()<0.01);
         assert!((management_primary_card_top_offset(968.0)-216.0).abs()<0.01);
+    }
+}
+
+#[cfg(test)]
+mod shared_action_style_tests{
+    use super::*;
+
+    #[test]
+    fn fixed_and_native_actions_use_the_same_standard_and_emphasized_palette(){
+        let (_,fill,ink,stroke)=action_style(ButtonRole::Standard,true,false);
+        assert_eq!((fill,ink,stroke),(RAISED,TEXT,Stroke::new(FRAME_STROKE_WIDTH,BORDER)));
+        let (_,fill,ink,stroke)=action_style(ButtonRole::Emphasized,true,false);
+        assert_eq!((fill,ink,stroke),(BRIGHT,BRIGHT_TEXT,Stroke::NONE));
+        for role in [ButtonRole::Standard,ButtonRole::Emphasized,ButtonRole::TableSecondary]{
+            let (_,fill,ink,stroke)=action_style(role,false,false);
+            assert_eq!((fill,ink,stroke),(DISABLED_ACTION_BG,DISABLED_ACTION_TEXT,
+                Stroke::new(FRAME_STROKE_WIDTH,DISABLED_ACTION_BORDER)));
+        }
+    }
+
+    #[test]
+    fn special_review_and_field_roles_retain_their_own_appearance(){
+        let (_,fill,ink,stroke)=action_style(ButtonRole::Standard,true,true);
+        assert_eq!((fill,ink,stroke),(BRIGHT,BRIGHT_TEXT,Stroke::new(1.0,BORDER)));
+        let (_,fill,ink,stroke)=action_style(ButtonRole::Standard,false,true);
+        assert_eq!((fill,ink,stroke),(DISABLED_ACTION_BG,DISABLED_ACTION_TEXT,Stroke::new(1.0,BORDER)));
+        let (_,fill,ink,stroke)=action_style(ButtonRole::Ghost,false,false);
+        assert_eq!((fill,ink,stroke),(Color32::TRANSPARENT,DISABLED_ACTION_TEXT,Stroke::NONE));
+        for ink in [TEXT,SECONDARY]{
+            assert_eq!(field_action_palette(true,ink),(INPUT,ink,Stroke::new(SOFT_DIVIDER_WIDTH,BORDER)));
+            assert_eq!(field_action_palette(false,ink),(DISABLED_ACTION_BG,DISABLED_ACTION_TEXT,
+                Stroke::new(FRAME_STROKE_WIDTH,DISABLED_ACTION_BORDER)));
+        }
     }
 }
