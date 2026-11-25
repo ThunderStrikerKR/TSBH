@@ -2239,9 +2239,39 @@ wfActionCase("undo stage two","undo_group",s=>{s.workflow.shipments[0].step=2;},
 wfActionCase("undo transferred blocked","undo_group",
   s=>{s.workflow.shipments[0].transferred=true;},
   actionProps,s=>undoGroup(s,WFG,WFA),false);
+// The historical amount-only oracle still calculates the entire state,
+// including the approval rollback. Independently assert the newer
+// employee freight audit contract: capture the input fields before editing
+// and the effective output fields after editing, without omitting any
+// field from the full-state comparison.
+function expectedFreightAudit(s:WfState,value:number){
+  const beforeShip=s.workflow.shipments.find((row:any)=>row.id===WFS);
+  const beforeRow=s.orders.find((order:any)=>order.id===beforeShip.orderId)
+    .recipients.find((row:any)=>row.id===beforeShip.recipientId);
+  const next=setShipmentFreight(s,WFS,"FACTORY",value,WFA);
+  const afterShip=next.workflow!.shipments.find(row=>row.id===WFS)!;
+  const afterRow=next.orders.find(order=>order.id===afterShip.orderId)!
+    .recipients.find(row=>row.id===afterShip.recipientId)!;
+  const events=next.workflow!.events;
+  const oldCount=s.workflow.events.length;
+  const edit=events.slice(oldCount).find(event=>event.action==="배송 건 운임 수정")!;
+  if(!edit)throw Error("운임 감사 기록 누락");
+  edit.before={...(edit.before as object),
+    freightCode:beforeRow.freightCode??null,remoteDelivery:beforeRow.remoteDelivery??null,
+    shippingCharges:beforeRow.shippingCharges??null,chargeMode:beforeShip.chargeMode??null};
+  edit.after={...(edit.after as object),
+    freightCode:afterRow.freightCode??null,remoteDelivery:afterRow.remoteDelivery??null};
+  for(const event of events.slice(oldCount)){
+    if(event.reason==="직원이 운임 변경")event.reason="직원이 운임 설정 변경";
+  }
+  for(const recheck of (afterShip.rechecks??[]).slice((beforeShip.rechecks??[]).length)){
+    if(recheck.reason==="직원이 운임 변경")recheck.reason="직원이 운임 설정 변경";
+  }
+  return next;
+}
 wfActionCase("change shipment freight","set_shipment_freight",()=>{},
   ids=>({...actionProps(ids),origin:"FACTORY",value:4500}),
-  s=>setShipmentFreight(s,WFS,"FACTORY",4500,WFA),true);
+  s=>expectedFreightAudit(s,4500),true);
 wfActionCase("change shipment freight after transfer blocked","set_shipment_freight",
   s=>{s.workflow.shipments[0].transferred=true;},
   ids=>({...actionProps(ids),origin:"FACTORY",value:5000}),
@@ -2399,7 +2429,7 @@ wfActionCase("freight edit from previously notified stage","set_shipment_freight
   s=>preparedWorkflowStage(s,3),
   ids=>({...actionProps(ids),origin:"FACTORY",value:4500,
     eventId:ids[1],auditEventIds:[ids[0]]}),
-  s=>setShipmentFreight(s,WFS,"FACTORY",4500,WFA),true);
+  s=>expectedFreightAudit(s,4500),true);
 wfActionCase("change account after completed notice","set_group_account",
   s=>preparedWorkflowStage(s,3),
   ids=>({...actionProps(ids),accountId:"account-1",

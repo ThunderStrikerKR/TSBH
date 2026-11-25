@@ -147,8 +147,12 @@ export function setManualValue(
     old.issues = old.issues.filter((s) => !s.includes("수량"));
   } else if (cell.field === "product") {
     const client = state.clients.find((c) => c.id === order.clientId) ?? unassignedClient;
+    // A staff selection of an independently registered sale configuration
+    // selects its sole price record explicitly, not an inferred default.
+    const variant = product?.variants.length === 1 && !product.requiresOption
+      ? product.variants[0] : undefined;
     const parsed = product
-      ? [itemFromProduct(product, client, undefined, null)]
+      ? [itemFromProduct(product, client, variant?.color, null, variant?.id)]
       : parseOrder(value, client, state).flatMap((r) => r.items);
     if (parsed.length > 1) throw Error("상품 셀에는 상품 하나를 입력하세요.");
     const item = parsed[0] ?? { ...emptyManualItem(), raw: value, name: value };
