@@ -6,7 +6,7 @@
 use eframe::egui::{self, Color32, FontId};
 use serde_json::Value;
 use std::{collections::HashSet,time::{Duration, Instant}};
-use crate::theme;
+use crate::{theme,typography};
 
 // Source-document linkage: 50ms enter / 150ms release.
 // This is distinct from the 250ms working-order foreground preview.
@@ -458,8 +458,8 @@ pub fn hovered_key_at_pointer(
 }
 
 // The source token palette is intentionally quiet in this dark theme.
-// 16pt SUIT stays unchanged. Blocks reserve the inside stroke in addition
-// to the approved 1.5pt horizontal and 0.5pt vertical visible clearance.
+// 16pt SUIT stays unchanged. Normal blocks use the fixed line box with
+// horizontal glyph clearance and a consistent vertical inset.
 const SOURCE_BLOCK:Color32=Color32::from_rgb(66,66,66);        // #424242
 const SOURCE_CONTEXT:Color32=Color32::from_rgb(73,73,73);      // #494949
 const SOURCE_ACTIVE:Color32=ACTIVE_FILL;
@@ -668,16 +668,19 @@ fn layout_with_states(
 )->egui::text::LayoutJob {
     let mut job=egui::text::LayoutJob::default();
     job.wrap.max_width=width;
+    job.first_row_min_height=typography::RECEPTION_SOURCE_LINE_HEIGHT;
     let mut cursor=0;
     let (blocks,_)=cached_visual_blocks(raw,spans,selected_recipient,active,assigned_ids);
     for block in blocks.iter() {
         if cursor<block.start {
             job.append(&raw[cursor..block.start],0.0,egui::TextFormat {
-                font_id:font.clone(),color,..Default::default()
+                font_id:font.clone(),color,
+                line_height:Some(typography::RECEPTION_SOURCE_LINE_HEIGHT),..Default::default()
             });
         }
         job.append(&raw[block.start..block.end],0.0,egui::TextFormat {
             font_id:font.clone(),
+            line_height:Some(typography::RECEPTION_SOURCE_LINE_HEIGHT),
             color:if block.focused {SOURCE_ACTIVE_TEXT} else {
                 match block.manual_state {
                     Some(ManualBlockState::Unassigned)=>theme::MANUAL_SOURCE_UNASSIGNED_TEXT,
@@ -691,33 +694,30 @@ fn layout_with_states(
     }
     if cursor<raw.len() {
         job.append(&raw[cursor..],0.0,egui::TextFormat {
-            font_id:font,color,..Default::default()
+            font_id:font,color,line_height:Some(typography::RECEPTION_SOURCE_LINE_HEIGHT),
+            ..Default::default()
         });
     }
     job
 }
 
-/// Build a source chip around glyph ink. Padding measures the EMPTY space
-/// between ink and the inner edge of the outline, not the outer rect edge.
-/// The 1pt inside stroke must be reserved in addition to this padding.
+/// Fixed row-based chip geometry: digit-only, Hangul and mixed blocks
+/// share vertical edges and height. Horizontal clearance still reserves
+/// the inside stroke in addition to the approved text padding.
 fn compact_block_rect(
-    text_left:f32,text_right:f32,ink_top:f32,ink_bottom:f32
+    text_left:f32,text_right:f32,row_top:f32,row_height:f32
 )->Option<egui::Rect> {
     if !text_left.is_finite() || !text_right.is_finite()
-        || !ink_top.is_finite() || !ink_bottom.is_finite()
-        || text_right<=text_left || ink_bottom<=ink_top {
+        || !row_top.is_finite() || !row_height.is_finite()
+        || text_right<=text_left || row_height<=2.0*theme::SOURCE_BLOCK_ROW_INSET {
         return None;
     }
     let horizontal=theme::SOURCE_BLOCK_HORIZONTAL_PADDING
         +theme::SOURCE_RECOGNIZED_BORDER_WIDTH;
-    let vertical=theme::SOURCE_BLOCK_VERTICAL_PADDING
-        +theme::SOURCE_RECOGNIZED_BORDER_WIDTH;
-    let left=text_left-horizontal;
-    let right=text_right+horizontal;
-    let top=ink_top-vertical;
-    let bottom=ink_bottom+vertical;
-    (right>left && bottom>top).then(||egui::Rect::from_min_max(
-        egui::pos2(left,top),egui::pos2(right,bottom)
+    let top=row_top+theme::SOURCE_BLOCK_ROW_INSET;
+    let bottom=row_top+row_height-theme::SOURCE_BLOCK_ROW_INSET;
+    Some(egui::Rect::from_min_max(
+        egui::pos2(text_left-horizontal,top),egui::pos2(text_right+horizontal,bottom)
     ))
 }
 
@@ -859,17 +859,9 @@ pub fn manual_source_block_visual(
             };
             let text_left=galley_pos.x+placed.pos.x+glyphs[first_glyph].pos.x;
             let text_right=galley_pos.x+placed.pos.x+end_x;
-            let mut ink_top=f32::INFINITY;
-            let mut ink_bottom=f32::NEG_INFINITY;
-            for glyph in &glyphs[first_glyph..=last_glyph] {
-                if glyph.uv_rect.is_nothing(){continue;}
-                let glyph_top=y+glyph.pos.y+glyph.uv_rect.offset.y;
-                let glyph_bottom=glyph_top+glyph.uv_rect.size.y;
-                ink_top=ink_top.min(glyph_top);
-                ink_bottom=ink_bottom.max(glyph_bottom);
-            }
+            if !glyphs[first_glyph..=last_glyph].iter().any(|g|!g.uv_rect.is_nothing()){continue;}
             let Some(mut rect)=compact_block_rect(
-                text_left,text_right,ink_top,ink_bottom
+                text_left,text_right,y,placed.row.size.y
             ) else {continue};
             if !block.focused {
                 let left=blocks.iter().any(|other|
@@ -929,17 +921,9 @@ fn block_shapes_with_states(
                 };
                 let text_left=galley_pos.x+placed.pos.x+glyphs[first].pos.x;
                 let text_right=galley_pos.x+placed.pos.x+end_x;
-                let mut ink_top=f32::INFINITY;
-                let mut ink_bottom=f32::NEG_INFINITY;
-                for glyph in &glyphs[first..=last] {
-                    if glyph.uv_rect.is_nothing(){continue;}
-                    let glyph_top=y+glyph.pos.y+glyph.uv_rect.offset.y;
-                    let glyph_bottom=glyph_top+glyph.uv_rect.size.y;
-                    ink_top=ink_top.min(glyph_top);
-                    ink_bottom=ink_bottom.max(glyph_bottom);
-                }
+                if !glyphs[first..=last].iter().any(|g|!g.uv_rect.is_nothing()){continue;}
                 let Some(mut rect)=compact_block_rect(
-                    text_left,text_right,ink_top,ink_bottom
+                    text_left,text_right,y,placed.row.size.y
                 ) else {continue};
                 if !block.focused {
                     let left_index=blocks.partition_point(|other|other.end_char<start);
@@ -1162,19 +1146,19 @@ mod tests {
     fn gray_source_blocks_keep_a_gap_between_adjacent_fields_and_lines() {
         // Adjacent recognized fields share glyph boundaries. Even then their
         // quiet gray rectangles must never touch or intrude into the next row.
-        let a=compact_block_rect(5.0,15.0,10.0,20.0).unwrap();
-        let b=compact_block_rect(15.0,25.0,10.0,20.0).unwrap();
-        let next=compact_block_rect(5.0,15.0,30.0,40.0).unwrap();
-        // Verify clearance at the INNER edge of the actual painted stroke.
+        let pitch=typography::RECEPTION_SOURCE_LINE_HEIGHT;
+        let a=compact_block_rect(5.0,15.0,10.0,pitch).unwrap();
+        let b=compact_block_rect(15.0,25.0,10.0,pitch).unwrap();
+        let next=compact_block_rect(5.0,15.0,10.0+pitch,pitch).unwrap();
         assert_eq!(a.left(),2.5);
         assert_eq!(a.right(),17.5);
-        assert_eq!(a.top(),8.5);
-        assert_eq!(a.bottom(),21.5);
+        assert_eq!(a.top(),11.0);
+        assert_eq!(a.bottom(),31.0);
+        assert_eq!(a.height(),20.0);
+        assert_eq!(next.height(),a.height());
         let inner=a.shrink(theme::SOURCE_RECOGNIZED_BORDER_WIDTH);
         assert_eq!(5.0-inner.left(),1.5);
         assert_eq!(inner.right()-15.0,1.5);
-        assert_eq!(10.0-inner.top(),0.5);
-        assert_eq!(inner.bottom()-20.0,0.5);
         let first=separate_touching_blocks(a,false,true);
         let second=separate_touching_blocks(b,true,false);
         assert_eq!(first.right(),14.75);
@@ -1186,7 +1170,46 @@ mod tests {
         let active=source_focused_block_rect(a);
         assert_eq!(active.shrink(ACTIVE_BORDER_WIDTH),inner);
         assert_eq!(theme::SOURCE_BLOCK_HORIZONTAL_PADDING,1.5);
-        assert_eq!(theme::SOURCE_BLOCK_VERTICAL_PADDING,0.5);
+        assert_eq!(theme::SOURCE_BLOCK_ROW_INSET,1.0);
+    }
+
+    #[test]
+    fn mixed_script_source_rows_and_blocks_keep_fixed_vertical_geometry(){
+        let raw="가나다\n0504-1234-5678\nBD-950\n가나다 2개";
+        let recognition=json!({"recipients":[{"id":"r1","sources":[
+            source(raw,"가나다","name","r1"),
+            source(raw,"0504-1234-5678","phone","r1"),
+            source(raw,"BD-950","product","r1"),
+            source(raw,"가나다 2개","address","r1")
+        ]}]});
+        let spans=collect(raw,&recognition);
+        let ctx=crate::components::test_context();
+        let _=ctx.run(egui::RawInput::default(),|ctx|{
+            let font=FontId::proportional(typography::FONT_RECEPTION_SOURCE_TEXT);
+            let assigned=HashSet::new();
+            let jobs=[
+                layout(raw,&spans,None,None,600.0,font.clone(),theme::TEXT),
+                layout_manual(raw,&spans,None,None,&assigned,600.0,font,theme::TEXT)
+            ];
+            for job in jobs{
+                assert!(job.sections.iter().all(|s|s.format.line_height==
+                    Some(typography::RECEPTION_SOURCE_LINE_HEIGHT)));
+                let galley=ctx.fonts_mut(|fonts|fonts.layout_job(job.clone()));
+                assert_eq!(galley.rows.len(),4);
+                for pair in galley.rows.windows(2){
+                    let pitch=pair[1].pos.y-pair[0].pos.y;
+                    assert!((pitch-typography::RECEPTION_SOURCE_LINE_HEIGHT).abs()<=0.5,
+                        "source row pitch: {pitch}");
+                }
+                let clip=egui::Rect::from_min_size(egui::Pos2::ZERO,egui::vec2(700.0,300.0));
+                let (fills,_)=block_shapes(raw,&galley,egui::Pos2::ZERO,&spans,None,None,clip);
+                assert!(fills.len()>=3);
+                for shape in fills{
+                    let egui::Shape::Rect(rect)=shape else{panic!("expected source chip");};
+                    assert!((rect.rect.height()-20.0).abs()<=0.5);
+                }
+            }
+        });
     }
 
     #[test]

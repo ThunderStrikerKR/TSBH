@@ -25,6 +25,8 @@ pub const FONT_OCR_PROGRESS_TITLE: f32 = 28.0;
 // documents use this same 16pt size; general body text remains 14pt.
 pub const FONT_OCR_REVIEW_TEXT: f32 = 16.0;
 pub const FONT_RECEPTION_SOURCE_TEXT: f32 = FONT_OCR_REVIEW_TEXT;
+/// Explicit source-document row pitch, independent of glyph/fallback metrics.
+pub const RECEPTION_SOURCE_LINE_HEIGHT: f32 = 22.0;
 // Recipient detail INPUT values share the 16pt reception source/OCR size.
 // Field labels and other 14pt body content retain their existing hierarchy.
 pub const FONT_RECEPTION_RECIPIENT_TEXT: f32 = FONT_OCR_REVIEW_TEXT;

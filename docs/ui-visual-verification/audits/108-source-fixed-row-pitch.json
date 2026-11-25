@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "id": "108-source-fixed-row-pitch",
+  "screen": "접수 / 수동분류 공통 발주원문 행 높이",
+  "files": [
+    "egui-app/src/source_highlight.rs",
+    "egui-app/src/typography.rs",
+    "egui-app/src/theme.rs"
+  ],
+  "visualStatus": "NOT_VERIFIED",
+  "reason": "Fixed 22pt layout and row-based 20pt chip; existing horizontal clearance preserved. Human Windows screenshot verification pending."
+}

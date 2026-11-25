@@ -747,10 +747,14 @@ pub const SOURCE_RECOGNIZED_BORDER_WIDTH: f32 = 1.0;
 pub const MANUAL_SOURCE_PENDING_BG: Color32 = Color32::from_rgb(63, 63, 63);
 pub const MANUAL_SOURCE_ASSIGNED_BG: Color32 = Color32::from_rgb(42, 60, 74);
 // All source blocks (Reception, manual classification, and linked focus)
-// use one geometry regardless of state. Padding wraps actual glyph ink.
+// use one geometry regardless of state. Horizontal padding follows text;
+// vertical geometry follows the fixed source-document row.
 pub const SOURCE_BLOCK_RADIUS: f32 = 4.0;
 pub const SOURCE_BLOCK_HORIZONTAL_PADDING: f32 = 1.5;
 pub const SOURCE_BLOCK_VERTICAL_PADDING: f32 = 0.5;
+/// Normal chip leaves 1pt above and below its 22pt row; the focus stroke
+/// can extend into this clearance without shifting any text or adjacent row.
+pub const SOURCE_BLOCK_ROW_INSET: f32 = 1.0;
 pub const SOURCE_BLOCK_ADJACENT_GAP: f32 = 0.5;
 // Unassigned source tokens are 10% dimmer than the primary white button.
 // Scale the neutral sRGB channel with rounding; never change the button itself.
