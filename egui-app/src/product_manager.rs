@@ -2396,7 +2396,8 @@ mod tests {
             .split("if theme::action(actions,").next().unwrap();
         assert!(add.contains("can_edit&&!saving&&!self.has_pending_prices()"));
         assert!(add.contains("begin_new=true;"));
-        assert!(list.contains("}else if begin_new {\n            self.new_product();"));
+        let registration=list.split_whitespace().collect::<String>();
+        assert!(registration.contains("}elseifbegin_new{self.new_product();"));
         assert!(list.contains("self.excel.show_menu("));
         assert!(!list.contains("self.excel.show_panel("));
         assert!(!list.contains("self.excel.open()"));

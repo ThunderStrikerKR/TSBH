@@ -835,6 +835,8 @@ impl ExcelManager{
     }
 
     pub fn show_page(&mut self,ui:&mut Ui){
+        // Also consume worker results when this page is hosted independently.
+        self.poll(ui.ctx());
         let page_origin_y=ui.cursor().top();
         ui.spacing_mut().scroll=theme::management_scroll_style();
         if self.reply_refresh_pending&&self.operation.is_none()&&self.receiver.is_none(){
@@ -1333,7 +1335,8 @@ mod table_state_tests {
         let start=source.find("}else if operation==\"export\"{").unwrap();
         let end=start+source[start..].find("요청한 Excel 작업").unwrap();
         let completion=&source[start..end];
-        assert!(completion.contains("if result[\"folderOpened\"]==true{\n                        ctx.send_viewport_cmd(egui::ViewportCommand::Minimized(true));"));
+        let completion=completion.split_whitespace().collect::<String>();
+        assert!(completion.contains("ifresult[\"folderOpened\"]==true{ctx.send_viewport_cmd(egui::ViewportCommand::Minimized(true));"));
     }
 
     #[test]
