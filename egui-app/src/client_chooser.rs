@@ -318,7 +318,7 @@ impl ClientChooser {
                                     .auto_shrink([false,false]),
                                 results_panel,table_width,
                                 theme::MANAGEMENT_CLIENT_ROW_HEIGHT,
-                                clients.len().max(1),
+                                clients.len(),
                                 |table,visible_rows|{
                                     components::management_table_row_body(table,table_width);
                                     let first=visible_rows.start;
@@ -372,28 +372,19 @@ impl ClientChooser {
                                                         floating_notice::action_rect(row_ui.ctx(),"reception.client_change",response.rect.intersect(clip));
                                                         chosen=Some(client_id.to_owned());
                                                     }
-                                                } else {
-                                                    row_ui.add_space(theme::SPACE_12);
-                                                    row_ui.horizontal(|empty|{
-                                                        empty.add_space(theme::SPACE_12);
-                                                        empty.label(typography::caption(
-                                                            if !self.loaded {
-                                                                "거래처 명단을 불러오는 중…"
-                                                            } else if self.searching {
-                                                                "검색 중…"
-                                                            } else if self.clients.is_empty(){
-                                                                "등록된 거래처가 없습니다."
-                                                            } else {
-                                                                "검색 결과가 없습니다."
-                                                            }
-                                                        ));
-                                                    });
                                                 }
                                             }
                                         );
                                     }
                                 }
                             );
+                            if clients.is_empty(){
+                                let status=if !self.loaded{"거래처 명단을 불러오는 중…"}
+                                    else if self.searching{"검색 중…"}
+                                    else if self.clients.is_empty(){"등록된 거래처가 없습니다."}
+                                    else{"검색 결과가 없습니다."};
+                                components::management_body_state_overlay(results_panel,output.inner_rect,Some(status));
+                            }
                             let header_left=first_row_left.unwrap_or(
                                 header_rect.left()-output.state.offset.x
                             );
