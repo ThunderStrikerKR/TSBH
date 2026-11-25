@@ -679,6 +679,79 @@ fn native_model_group_sqlite_roundtrip_and_stale_editor_conflict() {
 }
 
 
+/// Persist price history through real SQLite and rehydrate the same catalog
+/// projection used by egui after a restart. No operating DB is accessed.
+#[test]
+fn native_product_price_history_cell_detail_reopen_and_stale_guard(){
+    fn find<'a>(state:&'a Value,id:&str)->&'a Value{
+        state["products"].as_array().unwrap().iter()
+            .find(|p|p["id"].as_str()==Some(id)).unwrap()
+    }
+    let (isolated,mut conn)=IsolatedDatabase::open();
+    let before=get_snapshot(&conn).unwrap();
+    let product=before["products"].as_array().unwrap().iter()
+        .find(|p|p["active"]!=false&&p.get("deletedAt").is_none_or(Value::is_null)
+            &&p.get("supersededBy").is_none_or(Value::is_null)&&p["catalog"]!="DEMO"
+            &&p["variants"].as_array().is_some_and(|v|v.len()==1))
+        .expect("editable independent product");
+    let id=product["id"].as_str().unwrap();
+    let vid=product["variants"][0]["id"].as_str().unwrap();
+    let old=product["variants"][0]["wholesale"].clone();
+    let first=old.as_i64().unwrap_or(0)+137;
+    let previous=product["priceHistory"].as_array().cloned().unwrap_or_default();
+    let request=json!({"expectedRevision":before["revision"],"action":"set_price",
+        "data":{"productId":id,"variantId":vid,"tier":"wholesale",
+            "price":first,"expected":old}});
+    bando_data_access::patch_product_v2(&mut conn,&request).expect("cell price save");
+    let cell=get_snapshot(&conn).unwrap();
+    let history=find(&cell,id)["priceHistory"].as_array().unwrap();
+    assert_eq!(history.len(),previous.len()+1);
+    assert_eq!(&history[..previous.len()],previous.as_slice());
+    let entry=history.last().unwrap();
+    assert_eq!(entry["field"],format!("{vid}.wholesale"));
+    assert_eq!(entry["before"],old);
+    assert_eq!(entry["after"],first);
+    assert_eq!(entry["source"],"MANUAL");
+    assert!(chrono::DateTime::parse_from_rfc3339(entry["at"].as_str().unwrap()).is_ok());
+
+    let mut draft=find(&cell,id).clone();
+    draft["variants"][0]["wholesale"]=json!(first+137);
+    let old_retail=draft["variants"][0]["retail"].clone();
+    let retail=old_retail.as_i64().unwrap_or(0)+139;
+    draft["variants"][0]["retail"]=json!(retail);
+    let detail=json!({"expectedRevision":cell["revision"],"action":"upsert_product",
+        "data":{"product":draft}});
+    bando_data_access::patch_product_v2(&mut conn,&detail).expect("detail price save");
+    let saved=get_snapshot(&conn).unwrap();
+    let history=find(&saved,id)["priceHistory"].as_array().unwrap();
+    assert_eq!(history.len(),previous.len()+3);
+    assert_eq!(&history[..previous.len()+1],
+        find(&cell,id)["priceHistory"].as_array().unwrap().as_slice());
+    assert_eq!(history[previous.len()+1]["before"],first);
+    assert_eq!(history[previous.len()+1]["after"],first+137);
+    assert_eq!(history[previous.len()+2]["field"],format!("{vid}.retail"));
+    assert_eq!(history[previous.len()+2]["before"],old_retail);
+    assert_eq!(history[previous.len()+2]["after"],retail);
+    assert!(bando_data_access::patch_product_v2(&mut conn,&request).is_err());
+    assert_eq!(get_snapshot(&conn).unwrap(),saved);
+
+    let same=json!({"expectedRevision":saved["revision"],"action":"set_price",
+        "data":{"productId":id,"variantId":vid,"tier":"wholesale",
+            "price":first+137,"expected":first+137}});
+    bando_data_access::patch_product_v2(&mut conn,&same).expect("same price save");
+    let unchanged=get_snapshot(&conn).unwrap();
+    assert_eq!(find(&unchanged,id)["priceHistory"],find(&saved,id)["priceHistory"]);
+    for key in ["orders","clients","workflow","aliases","shipping"]{
+        assert_eq!(unchanged[key],before[key],"unrelated {key} must stay unchanged");
+    }
+    drop(conn);
+    let reopened=initialize_database(&isolated.root.join("state.sqlite")).unwrap();
+    assert_eq!(get_snapshot(&reopened).unwrap(),unchanged);
+    let catalog=bando_data_access::read_v2_catalog_snapshot(&reopened).unwrap();
+    assert_eq!(find(&catalog,id)["priceHistory"],find(&saved,id)["priceHistory"]);
+    assert_eq!(find(&catalog,id)["variants"],find(&saved,id)["variants"]);
+}
+
 /// Product Excel UI -> native workbook preview -> manual SQLite backup ->
 /// direct Rust CAS writer. Uses ONLY a fresh isolated on-disk v2 database.
 #[test]
@@ -757,6 +830,16 @@ fn native_product_excel_backup_commit_reopen_and_stale_revision_guard() {
         .find(|p|p["id"]==id).unwrap();
     assert_eq!(edited["variants"][0]["id"],vid);
     assert_eq!(edited["variants"][0]["wholesale"],revised_price);
+    let previous=product["priceHistory"].as_array().cloned().unwrap_or_default();
+    let history=edited["priceHistory"].as_array().expect("Excel price history");
+    assert_eq!(history.len(),previous.len()+1,"no duplicate preview entry");
+    assert_eq!(&history[..previous.len()],previous.as_slice());
+    let entry=history.last().unwrap();
+    assert_eq!(entry["field"],format!("{vid}.wholesale"));
+    assert_eq!(entry["before"],variant["wholesale"]);
+    assert_eq!(entry["after"],revised_price);
+    assert_eq!(entry["source"],"MANUAL_EXCEL");
+    assert!(chrono::DateTime::parse_from_rfc3339(entry["at"].as_str().unwrap()).is_ok());
     let stale=bando_data_access::patch_product_v2(&mut conn,&req)
         .expect_err("stale XLSX approval must not overwrite latest database");
     assert!(stale.contains("리비전")||stale.contains("새로고침"),
@@ -766,6 +849,10 @@ fn native_product_excel_backup_commit_reopen_and_stale_revision_guard() {
     let reopened=initialize_database(&isolated.root.join("state.sqlite"))
         .expect("open the same isolated v2 SQLite after commit");
     assert_eq!(get_snapshot(&reopened).unwrap(),after);
+    let catalog=bando_data_access::read_v2_catalog_snapshot(&reopened).unwrap();
+    let restored=catalog["products"].as_array().unwrap().iter()
+        .find(|p|p["id"]==id).unwrap();
+    assert_eq!(restored["priceHistory"],edited["priceHistory"]);
 }
 
 /// Alias UI -> shared Rust patch_product_v2 -> original catalog_clients::save_alias
