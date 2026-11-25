@@ -195,12 +195,13 @@ pub(crate) mod windows {
     static MONITOR:OnceLock<Monitor>=OnceLock::new();
     thread_local!{
         static DIRTY:Cell<bool>=const{Cell::new(false)};
+        static FOCUS:Cell<bool>=const{Cell::new(false)};
         static GEOMETRY:Cell<bool>=const{Cell::new(false)};
         static KNOWN:RefCell<HashSet<Hwnd>>=RefCell::new(HashSet::new());
     }
     unsafe extern "system" fn event(_:Handle,event:u32,hwnd:Hwnd,object:i32,
         child:i32,_thread:u32,_time:u32){
-        if event==FOREGROUND{DIRTY.with(|d|d.set(true));return;}
+        if event==FOREGROUND{FOCUS.with(|d|d.set(true));return;}
         if hwnd==0 || object!=0 || child!=0{return;}
         let known=KNOWN.with(|set|set.borrow().contains(&hwnd));
         if matches!(event,MOVE_END|MINIMIZE_START|MINIMIZE_END){
@@ -243,6 +244,17 @@ pub(crate) mod windows {
             }
             if m.stop.load(Ordering::Acquire){break;}
             dirty|=DIRTY.with(|d|d.replace(false));
+            if FOCUS.with(|f|f.replace(false)){
+                let foreground=unsafe{GetForegroundWindow()};
+                let known=KNOWN.with(|set|set.borrow().contains(&foreground));
+                // Ordinary app activation only changes focus. A newly
+                // foregrounded Kakao window also requests discovery.
+                if !known && process_is_kakao(pid(foreground)){dirty=true;}
+                let mut current=m.snapshot.lock().unwrap_or_else(|p|p.into_inner());
+                if current.foreground!=foreground{
+                    current.foreground=foreground;drop(current);ctx.request_repaint();
+                }
+            }
             if last.elapsed()>=FALLBACK || (dirty && last.elapsed()>=COALESCE){
                 let mut next=scan();
                 if GEOMETRY.with(|d|d.replace(false)){epoch=epoch.wrapping_add(1);}
@@ -260,7 +272,11 @@ pub(crate) mod windows {
             let delay=if dirty{COALESCE.saturating_sub(last.elapsed())}
                 else{FALLBACK.saturating_sub(last.elapsed())};
             let ms=delay.as_millis().max(1).min(5000) as u32;
-            unsafe{MsgWaitForMultipleObjectsEx(0,std::ptr::null(),ms,QS_ALLINPUT,MWMO_INPUTAVAILABLE);}
+            let waited=unsafe{MsgWaitForMultipleObjectsEx(0,std::ptr::null(),ms,QS_ALLINPUT,MWMO_INPUTAVAILABLE)};
+            if waited==u32::MAX{
+                // A broken wait must never spin the background CPU.
+                std::thread::sleep(COALESCE);
+            }
         }
         for hook in hooks.into_iter().filter(|h|*h!=0){unsafe{UnhookWinEvent(hook);}}
         m.thread.store(0,Ordering::Release);
@@ -276,6 +292,27 @@ pub(crate) mod windows {
     pub(crate) fn snapshot()->Snapshot{
         MONITOR.get().map(|m|m.snapshot.lock().unwrap_or_else(|p|p.into_inner()).clone())
             .unwrap_or_default()
+    }
+    #[cfg(test)]
+    mod window_event_tests{
+        use super::*;
+        fn candidate(hwnd:Hwnd,pid:u32,main:bool,iconic:bool)->Candidate{
+            Candidate{hwnd,pid,title:"synthetic".into(),main,iconic}
+        }
+        #[test]
+        fn layout_key_ignores_focus_title_and_enumeration_order(){
+            let mut snapshot=Snapshot{windows:vec![candidate(1,7,true,false),candidate(2,7,false,false),candidate(3,8,false,false)],foreground:1,layout_epoch:0};
+            let initial=snapshot.layout_key(7);
+            snapshot.windows.reverse();
+            snapshot.windows[1].title="renamed".into();
+            snapshot.foreground=2;
+            assert_eq!(initial,snapshot.layout_key(7));
+            snapshot.windows[1].iconic=true;
+            assert_ne!(initial,snapshot.layout_key(7));
+            snapshot.windows[1].iconic=false;
+            snapshot.windows.retain(|w|w.hwnd!=2);
+            assert_ne!(initial,snapshot.layout_key(7));
+        }
     }
     pub(crate) fn shutdown(){
         if let Some(m)=MONITOR.get(){
