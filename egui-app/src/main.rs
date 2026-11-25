@@ -6983,6 +6983,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
         if let Some((board,group_index,ship_index))=self.visible_workflow_group(){
             let group=&board.groups[group_index];
             let ship=&group.shipments[ship_index];
+            let required=review_panel::RequiredFields::from_issues(&group.issues,&ship.order_id,&ship.recipient_id);
             let hover_stage=if self.workflow_ui.active_preview()==Some(group.id.as_str()) && self.workflow_freight_editor.is_none(){one_touch::Stage::from_step(group.step)}else{one_touch::Stage::None};
             let remote=ship.remote.as_ref().and_then(|r|r["status"].as_str()).is_some_and(|s|matches!(s,"auto"|"review"));
             one_touch::set(ui.ctx(),hover_stage,remote);
@@ -7074,6 +7075,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                     &mut phone,&mut note,highlighted
                                 );
                                 for (response,field) in responses.iter().zip(fields){
+                                    if required.contains(id,field){components::paint_required_input(contents,response.rect);}
                                     let key=source_highlight::key(id,id,field);
                                     if response.hovered(){
                                         hovered_detail=Some(key);
@@ -7157,6 +7159,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                                     (&cells.quantity,"quantity"),
                                                     (&cells.amount,"price")
                                                 ] {
+                                                    if required.contains(item_id,field){components::paint_required_input(contents,response.rect);}
                                                     let key=source_highlight::key(
                                                         &ship.recipient_id,item_id,field
                                                     );
@@ -7262,6 +7265,11 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                                     }else if response.lost_focus(){
                                                         workflow_freight_commit=true;
                                                     }
+                                                }
+                                            }
+                                            if workflow_board::missing_freight_origin(group,ship,origin){
+                                                if let Some(rect)=freight_actions.amount_rect{
+                                                    components::paint_required_input(contents,rect);
                                                 }
                                             }
                                             contents.add_space(theme::SPACE_8);
@@ -7568,6 +7576,11 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
             .and_then(|analysis|reception_service::recipients(analysis).get(visible_index))
             .map(|row|reception_service::text(row,"id")).unwrap_or("");
         one_touch::prepare_reveal(ui.ctx(),hover_stage,self.active_id.as_deref().unwrap_or(""),target);
+        let required=self.active_id.as_deref()
+            .and_then(|id|self.drafts.iter().find(|row|row.id==id))
+            .zip(self.analysis.as_ref())
+            .map(|(source,analysis)|self.review_panel.required_fields(source,analysis,target))
+            .unwrap_or_default();
         let mut review_action:Option<review_panel::Action>=None;
         let mut hovered_detail: Option<source_highlight::LinkKey>=None;
         let linked_active=self.active_id.as_deref()
@@ -7762,6 +7775,9 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                                 inline_commit=true;
                                             }
                                         }
+                                        if required.contains(recipient_id,field){
+                                            components::paint_required_input(fields,response.rect);
+                                        }
                                     }
                                 });
                         }
@@ -7791,9 +7807,12 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                 let mut header_add_item=false;
                 Self::section_with_header(pane,"품목 및 운임",remaining,
                     |header|{
-                        header_add_item=components::reception_item_add_action_editable(
-                            header,editable && selected.is_some()
-                        );
+                        let response=components::reception_item_header_action(
+                            header,false,editable && selected.is_some());
+                        if required.contains(target,"addItem"){
+                            components::paint_required_input(header,response.rect);
+                        }
+                        header_add_item=response.clicked();
                     },|ui| {
                     // In intake standby, do not draw empty table headings,
                     // freight controls, VAT text or a fictitious zero total.
@@ -7924,6 +7943,9 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                                         }else if components::reception_numeric_edit_finished(&result,step_interaction){
                                                             inline_commit=true;
                                                         }
+                                                    }
+                                                    if required.contains(item_id,field){
+                                                        components::paint_required_input(items_ui,response.rect);
                                                     }
                                                 }
                                             }

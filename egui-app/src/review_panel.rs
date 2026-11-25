@@ -188,6 +188,14 @@ impl ReviewPanel {
         Some(ordered_input_targets(recipients,&self.issues,error))
     }
     pub fn refresh_failed(&self)->bool{self.error.is_some()}
+    /// The same authoritative issue snapshot drives persistent field accents
+    /// independently of the single pending focus/balloon.
+    pub fn required_fields(&self,source:&WorkingReception,analysis:&ReceptionAnalysis,recipient:&str)->RequiredFields{
+        if !self.ready() || !self.key.as_ref().is_some_and(|key|key.matches(source,analysis)){
+            return RequiredFields::default();
+        }
+        RequiredFields::from_issues(&self.issues,&source.id,recipient)
+    }
     pub fn show_header_summary(&self,ui:&mut Ui,analysis:&ReceptionAnalysis,
         selected_recipient:usize){
         if self.error.is_some() || (self.pending.is_some() && self.issues.is_empty()){
@@ -259,6 +267,40 @@ impl ReviewPanel {
             issue_card(ui,&self.issues[index],analysis,interactive,&mut selected);
         }
         selected
+    }
+}
+/// Paint targets only; no new validation or approval criteria.
+#[derive(Default)]
+pub struct RequiredFields {
+    fields:std::collections::HashSet<(String,String)>,
+}
+impl RequiredFields {
+    pub fn from_issues(issues:&[Value],order:&str,recipient:&str)->Self{
+        let mut result=Self::default();
+        if recipient.is_empty(){return result;}
+        for issue in issues{
+            if text(issue,"severity")!="ACTION" || text(issue,"recipientId")!=recipient
+                || (!text(issue,"orderId").is_empty() && text(issue,"orderId")!=order){continue;}
+            let item=text(issue,"itemId");
+            let owner=if item.is_empty(){recipient}else{item};
+            let linked=text(issue,"linkKey").rsplit_once(':');
+            let field=match (text(issue,"kind"),item.is_empty(),linked){
+                ("NAME",true,Some((id,"name"))) if id==owner=>"name",
+                ("ADDRESS",true,Some((id,"address"))) if id==owner=>"address",
+                ("CONTACT",true,Some((id,"mobile"))) if id==owner=>"mobile",
+                ("CONTACT",true,Some((id,"phone"))) if id==owner=>"phone",
+                ("QUANTITY_MISSING"|"QUANTITY_INVALID",false,Some((id,"quantity"))) if id==owner=>"quantity",
+                ("PRICE",false,Some((id,"price"|"unitPrice"))) if id==owner=>"price",
+                ("MODEL"|"MODEL_CHOICE"|"ALIAS_CONFLICT"|"CATEGORY_CONFLICT"|"QUANTITY_LINK",false,Some((id,"product"))) if id==owner=>"product",
+                ("ITEM",true,Some((id,"product"))) if id==owner=>"addItem",
+                _=>continue,
+            };
+            result.fields.insert((owner.to_owned(),field.to_owned()));
+        }
+        result
+    }
+    pub fn contains(&self,owner:&str,field:&str)->bool{
+        self.fields.iter().any(|(id,key)|id==owner && key==field)
     }
 }
 /// The native stage and resolution are authoritative; UI only routes exact
@@ -455,6 +497,26 @@ fn issue_card(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn required_fields_preserve_all_actionable_cells_and_exact_recipient_identity(){
+        let issue=|r:&str,i:&str,k:&str,f:&str,severity:&str|json!({
+            "orderId":"o","recipientId":r,"itemId":i,"kind":k,"severity":severity,
+            "linkKey":format!("{}:{f}",if i.is_empty(){r}else{i})
+        });
+        let issues=vec![issue("r","","NAME","name","ACTION"),
+            issue("r","","CONTACT","mobile","ACTION"),
+            issue("r","i","QUANTITY_MISSING","quantity","ACTION"),
+            issue("r","i","PRICE","price","ACTION"),
+            issue("r","i","MODEL","product","INFO"),
+            issue("other","","ADDRESS","address","ACTION")];
+        let fields=RequiredFields::from_issues(&issues,"o","r");
+        for (id,field) in [("r","name"),("r","mobile"),("i","quantity"),("i","price")]{
+            assert!(fields.contains(id,field));
+        }
+        assert!(!fields.contains("r","address")&&!fields.contains("r","phone"));
+        assert!(!fields.contains("i","product"));
+        assert!(!RequiredFields::from_issues(&issues,"different","r").contains("r","name"));
+    }
     #[test]
     fn ordered_guidance_excludes_wrong_stage_and_noncell_issues(){
         let recipients=vec![json!({"id":"a","name":"A","items":[{"id":"i"}]}),

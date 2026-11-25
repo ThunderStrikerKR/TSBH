@@ -218,6 +218,17 @@ pub fn workflow_review_extra_messages(group:&GroupRow,workflow_error:Option<&str
     extra
 }
 
+/// The persistent accent and the sequential focus use the same native
+/// freight issue and the exact per-origin projected amount.
+pub fn missing_freight_origin(group:&GroupRow,ship:&ShipmentRow,origin:&str)->bool{
+    !ship.transferred && !ship.collect && !ship.freight_editing_blocked &&
+        ["FACTORY","STORE"].contains(&origin) &&
+        ship.display_charges.get(origin).copied().flatten().is_none() &&
+        rows(field(&ship.recipient,"items")).iter().any(|item|text(item,"origin")==origin) &&
+        group.issues.iter().any(|issue|text(issue,"kind")=="FREIGHT" &&
+            text(issue,"severity")=="ACTION" && text(issue,"recipientId")==ship.recipient_id &&
+            text(issue,"orderId")==ship.order_id)
+}
 /// Resolve only an actual editable, missing per-origin charge. Never route
 /// by the display name or an unrelated currently visible shipment.
 pub fn missing_freight_target<'a>(group:&'a GroupRow,issue:&Value,preferred:&str)

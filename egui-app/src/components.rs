@@ -6519,6 +6519,15 @@ mod reception_cod_selector_tests {
     }
 }
 
+/// Persistent required-input accent. Paint on the already allocated cell,
+/// after any inline editor and blue/orange hover decoration. No layout space.
+pub fn paint_required_input(ui:&Ui,rect:Rect){
+    if !rect.is_positive() || !rect.intersects(ui.clip_rect()){return;}
+    let painter=ui.painter().with_clip_rect(ui.clip_rect().intersect(rect));
+    painter.rect_filled(rect,theme::CONTROL_RADIUS,egui::Color32::from_rgba_unmultiplied(231,122,120,18));
+    painter.rect_stroke(rect,theme::CONTROL_RADIUS,
+        Stroke::new(2.0,theme::SALE_STATUS_SOLD_OUT),egui::StrokeKind::Inside);
+}
 /// Shared add-product action; the reception title row owns its placement.
 pub fn reception_item_add_action_editable(ui:&mut Ui,editable:bool)->bool{
     reception_item_header_action(ui,false,editable).clicked()
