@@ -379,6 +379,13 @@ pub const ACTIVE_BORDER_WIDTH:f32=2.0;
 pub fn is_active(active:Option<&LinkKey>, key:&LinkKey)->bool {
     active.is_some_and(|selection|same_target(selection,key))
 }
+/// Borrowed comparison for render-only fields; allocate an owned LinkKey
+/// only when a hover/click needs to persist an actual target.
+pub fn is_active_field(active:Option<&LinkKey>,recipient:&str,target:&str,field:&str)->bool{
+    active.is_some_and(|selection|selection.recipient_id==recipient &&
+        selection.target_id==target && selection.field==field)
+}
+
 
 /// Fill must be painted before the value text. For TextEdit use its
 /// background_color() instead, so the native editor paints behind glyphs.
