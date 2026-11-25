@@ -22,11 +22,17 @@ export function isUiSource(filename) {
   // the gate just because it lacks a known "_manager" or "_view" suffix.
   // Exclude only explicitly reviewed pure data/transport modules.
   if (!/^egui-app\/src\/(?:[^/]+\/)*[^/]+\.rs$/.test(f)) return false;
+  // Exact paths only. These reviewed modules perform storage, workbook
+  // processing or background orchestration, not widget rendering.
+  // factory_reply_inbox uses Context solely to request repaint.
   const transportOnly = new Set([
-    "gateway.rs", "pricing_basis.rs", "preview_store.rs",
-    "reception_service.rs",
+    "egui-app/src/gateway.rs", "egui-app/src/pricing_basis.rs",
+    "egui-app/src/preview_store.rs", "egui-app/src/reception_service.rs",
+    "egui-app/src/business_state.rs", "egui-app/src/excel_service.rs",
+    "egui-app/src/order_history_memo.rs", "egui-app/src/settings_store.rs",
+    "egui-app/src/factory_reply_inbox.rs",
   ]);
-  return !transportOnly.has(f.split("/").at(-1));
+  return !transportOnly.has(f);
 }
 export function isAuditFile(filename) {
   return /^docs\/ui-visual-verification\/audits\/[a-z0-9][a-z0-9-]*\.json$/.test(filename.replaceAll("\\", "/"));

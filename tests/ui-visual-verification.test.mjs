@@ -43,6 +43,18 @@ test("UI source recognition does not misclassify backend-only files",()=>{
   assert.equal(isUiSource("egui-app/src/gateway.rs"),false);
   assert.equal(isUiSource("crates/bando-data-access/src/lib.rs"),false);
 });
+test("reviewed storage and background modules are not visual renderers",()=>{
+  const backend=["business_state.rs","excel_service.rs","order_history_memo.rs",
+    "settings_store.rs","factory_reply_inbox.rs"].map(f=>"egui-app/src/"+f);
+  for(const f of backend) assert.equal(isUiSource(f),false,f);
+  assert.equal(checkVisualChanges(backend,()=>{throw Error("unreachable");},proof).pass,true);
+  for(const f of ["egui-app/src/excel_manager.rs","egui-app/src/settings_view.rs",
+    "egui-app/src/order_history_manager.rs","egui-app/src/main.rs",
+    "egui-app/src/components.rs","egui-app/src/widgets/factory_reply_inbox.rs"]){
+    assert.equal(isUiSource(f),true,f);
+    assert.equal(checkVisualChanges([...backend,f],()=>{},proof).pass,false);
+  }
+});
 test("a changed UI source without a changed evidence manifest blocks the gate",()=>{
   const result=checkVisualChanges([source],()=>{throw Error("unreachable");},proof);
   assert.equal(result.pass,false);
