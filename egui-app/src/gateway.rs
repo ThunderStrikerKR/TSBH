@@ -676,6 +676,7 @@ impl BandoGateway for LocalGateway {
             previous=now;
         };
         let scoped_freight=action=="set_shipment_freight" && args.get("draft").is_none();
+        let scoped_group_move=matches!(action,"detach_shipment"|"regroup_shipment");
         let mutate=|before:&Value|->Result<Value,String>{
         checkpoint("read_snapshot");
         // An unconfirmed egui draft may enter the operational ledger ONLY
@@ -769,7 +770,7 @@ impl BandoGateway for LocalGateway {
             // Reconcile changes to prices, tariff signatures and late
             // corrections before attempting the transition. The native
             // reducer produces all immutable audit entries and validations.
-            let reconciled=if action=="set_shipment_freight"{
+            let reconciled=if scoped_freight || scoped_group_move{
                 // The native engine resolves the order from the shipment,
                 // not from a UI-provided order ID. Reconcile only that order
                 // and its split groups; global validation and CAS remain.
@@ -843,6 +844,10 @@ impl BandoGateway for LocalGateway {
                                 ids.iter().any(|id|id.as_str()==shipment_id))
                         ).count()).unwrap_or(0)
                 }else{0}
+            }else if scoped_group_move{
+                // Both group moves append their single event using eventId.
+                // Reconciliation already emits any necessary scoped audit events.
+                0
             }else{2048};
             let audit_ids=(0..audit_count).map(|_|
                 uuid::Uuid::new_v4().to_string()).collect::<Vec<_>>();
