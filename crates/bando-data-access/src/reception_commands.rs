@@ -36,6 +36,39 @@ fn same_id(order: &Value, order_id: &str) -> bool {
     order.get("id").and_then(Value::as_str) == Some(order_id)
 }
 
+// Working reception is not a ledger mutation. Its native recognition,
+// pricing and manual replay consume the catalog and workflow/settings
+// envelope, not unrelated historical orders. The canonical relational
+// primary key and the legacy index still guard against confirmed IDs.
+// This helper is private: never pass its projection to a snapshot writer.
+fn read_working_authority(conn:&Connection,expected_revision:u64,order_id:&str)
+    ->Result<Value,String>{
+    let mut state=crate::read_envelope(conn)?;
+    if state.get("revision").and_then(Value::as_u64)!=Some(expected_revision){
+        return Err("운영 거래처·가격·운임 기준이 변경됐습니다. 다시 조회한 후 저장하세요.".into());
+    }
+    let confirmed:bool=conn.query_row(
+        "SELECT EXISTS(SELECT 1 FROM core_orders WHERE id=?1)",
+        params![order_id],|row|row.get(0)).map_err(err)?;
+    if confirmed{
+        return Err("이미 주문 확인 완료된 발주서는 미확정 접수로 덮어쓸 수 없습니다.".into());
+    }
+    let indexed:bool=conn.query_row(
+        "SELECT EXISTS(SELECT 1 FROM order_index WHERE id=?1)",
+        params![order_id],|row|row.get(0)).map_err(err)?;
+    if indexed{
+        return Err("운영 주문 인덱스에 있는 주문은 미확정 접수로 저장할 수 없습니다.".into());
+    }
+    let (products,clients)=crate::read_catalog_entities(conn)?;
+    let root=state.as_object_mut().ok_or("업무 상태는 객체여야 합니다.")?;
+    root.insert("products".into(),Value::Array(products));
+    root.insert("clients".into(),Value::Array(clients));
+    // A compatibility envelope may still carry legacy core rows. Never
+    // treat them as authoritative or fabricate an empty ledger array.
+    root.remove("orders");
+    Ok(state)
+}
+
 pub fn commit_reception_v2(conn: &mut Connection, request: &Value) -> Result<Value, String> {
     let order_id = field(request, "orderId")?;
     let raw = request.get("sourceRaw").and_then(Value::as_str)
@@ -80,22 +113,7 @@ pub fn commit_reception_v2(conn: &mut Connection, request: &Value) -> Result<Val
     if version != 2 {
         return Err("운영 DB 관계형 버전 2만 지원합니다.".into());
     }
-    let state = crate::read_v2_snapshot(&tx)?;
-    if state.get("revision").and_then(Value::as_u64) != Some(expected_revision) {
-        return Err("운영 거래처·가격·운임 기준이 변경됐습니다. 다시 조회한 후 저장하세요.".into());
-    }
-    if state.get("orders").and_then(Value::as_array).is_some_and(|orders|
-        orders.iter().any(|order| same_id(order, order_id))
-    ) {
-        return Err("이미 주문 확인 완료된 발주서는 미확정 접수로 덮어쓸 수 없습니다.".into());
-    }
-    let indexed:bool=tx.query_row(
-        "SELECT EXISTS(SELECT 1 FROM order_index WHERE id=?1)",
-        params![order_id],|row|row.get(0),
-    ).map_err(err)?;
-    if indexed {
-        return Err("운영 주문 인덱스에 있는 주문은 미확정 접수로 저장할 수 없습니다.".into());
-    }
+    let state=read_working_authority(&tx,expected_revision,order_id)?;
     let selected_client = state.get("clients").and_then(Value::as_array)
         .and_then(|clients| clients.iter().find(|client|
             client.get("id").and_then(Value::as_str) == Some(client_id) &&
@@ -317,3 +335,59 @@ pub fn commit_reception_v2(conn: &mut Connection, request: &Value) -> Result<Val
     Ok(acknowledgement)
 }
 
+
+#[cfg(test)]
+mod working_authority_scope_tests{
+    use super::*;
+
+    fn fixture()->Connection{
+        let conn=Connection::open_in_memory().unwrap();
+        conn.execute_batch("CREATE TABLE app_state(id INTEGER PRIMARY KEY,payload TEXT);
+            CREATE TABLE core_products(id TEXT PRIMARY KEY,position INTEGER,payload TEXT);
+            CREATE TABLE core_product_prices(product_id TEXT,payload TEXT);
+            CREATE TABLE core_clients(id TEXT PRIMARY KEY,position INTEGER,payload TEXT);
+            CREATE TABLE core_orders(id TEXT PRIMARY KEY,position INTEGER,payload TEXT);
+            CREATE TABLE order_index(id TEXT PRIMARY KEY);
+            INSERT INTO core_orders VALUES ('confirmed',0,'not JSON');
+            INSERT INTO order_index VALUES ('legacy-index');").unwrap();
+        conn.execute("INSERT INTO app_state VALUES (1,?1)",
+            [json!({"revision":7,"orders":[{"id":"legacy-envelope"}],
+                "settings":{"accounts":[]},"workflow":{"shipments":[]},"aliases":[],
+                "shipping":{"rules":[]}}).to_string()]).unwrap();
+        conn.execute("INSERT INTO core_products VALUES ('p',0,?1)",
+            [json!({"id":"p","code":"709","name":"보면대"}).to_string()]).unwrap();
+        conn.execute("INSERT INTO core_product_prices VALUES ('p',?1)",
+            [json!({"id":"v","retail":10000}).to_string()]).unwrap();
+        conn.execute("INSERT INTO core_clients VALUES ('c',0,?1)",
+            [json!({"id":"c","name":"가상 거래처"}).to_string()]).unwrap();
+        conn
+    }
+
+    #[test]
+    fn working_authority_skips_historical_payloads_but_guards_ids_and_revision(){
+        let conn=fixture();
+        // No historical recipient/item tables exist and the unrelated
+        // confirmed payload is malformed. They are never hydrated here.
+        let state=read_working_authority(&conn,7,"egui-new").unwrap();
+        assert!(state.get("orders").is_none());
+        assert_eq!(state["products"][0]["variants"][0]["retail"],10000);
+        assert_eq!(state["clients"][0]["id"],"c");
+        assert_eq!(state["workflow"]["shipments"],json!([]));
+        assert!(read_working_authority(&conn,7,"confirmed").unwrap_err().contains("주문 확인 완료"));
+        assert!(read_working_authority(&conn,7,"legacy-index").unwrap_err().contains("주문 인덱스"));
+        assert!(read_working_authority(&conn,6,"egui-new").unwrap_err().contains("기준이 변경"));
+    }
+
+    #[test]
+    fn working_authority_matches_full_projection_on_valid_schema(){
+        let conn=fixture();
+        conn.execute_batch("CREATE TABLE core_recipients(id TEXT PRIMARY KEY,order_id TEXT,position INTEGER,payload TEXT);
+            CREATE TABLE core_items(id TEXT PRIMARY KEY,recipient_id TEXT,position INTEGER,payload TEXT);").unwrap();
+        conn.execute("UPDATE core_orders SET payload=?1 WHERE id='confirmed'",
+            [json!({"id":"confirmed"}).to_string()]).unwrap();
+        let mut full=crate::read_v2_snapshot(&conn).unwrap();
+        full.as_object_mut().unwrap().remove("orders");
+        let scoped=read_working_authority(&conn,7,"egui-new").unwrap();
+        assert_eq!(scoped,full);
+    }
+}
