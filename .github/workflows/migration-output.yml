@@ -53,11 +53,11 @@ jobs:
       - name: Verify ten native institution and recipient boundary cases
         run: cargo test --manifest-path tests/rust-migration/recognition/Cargo.toml regressions::institution_ -- --nocapture
       - name: Verify independent native price, freight, VAT and workflow contracts
-        run: cargo test --manifest-path tests/rust-migration/rules/Cargo.toml regression:: -- --nocapture
+        run: 'cargo test --manifest-path tests/rust-migration/rules/Cargo.toml regression:: -- --nocapture'
       - name: Verify live recipient-level reception quote and VAT calculations
         run: cargo test --manifest-path tests/rust-migration/rules/Cargo.toml rules::pricing::migration_tests -- --nocapture
       - name: Verify live native tariff and remote-area rules
-        run: cargo test --manifest-path tests/rust-migration/rules/Cargo.toml rules::shipping:: -- --nocapture
+        run: 'cargo test --manifest-path tests/rust-migration/rules/Cargo.toml rules::shipping:: -- --nocapture'
       - name: Verify native factory reply matching, conflict and row safety
         run: cargo test --manifest-path tests/rust-migration/rules/Cargo.toml rules::factory_reply::tests -- --nocapture
       - name: Verify native order history dates, tracking and payment evidence
