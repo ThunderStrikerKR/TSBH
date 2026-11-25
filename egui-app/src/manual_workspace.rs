@@ -2413,7 +2413,7 @@ impl ManualWorkspace {
                                                                     )
                                                                 );
                                                                 let cells=components::reception_item_row_with_remove(
-                                                                    items_ui,&crate::reception_service::item_title(item),
+                                                                    items_ui,crate::reception_service::item_title_ref(item),
                                                                     &quantity,&price,active_fields,can_switch
                                                                 );
                                                                 if cells.remove_clicked && can_mutate{
@@ -2753,7 +2753,7 @@ impl ManualWorkspace {
                 .and_then(|row|list(row,"items").iter().find(|item|text(item,"id")==iid));
             if let Some(item)=item{
                 let (cancel,remove)=components::reception_item_delete_confirmation(
-                    ctx,work_area,&crate::reception_service::item_title(item),None,self.busy()
+                    ctx,work_area,crate::reception_service::item_title_ref(item),None,self.busy()
                 );
                 if cancel || remove{self.item_remove_confirmation=None;}
                 if remove && !cancel{
