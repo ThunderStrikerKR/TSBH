@@ -2194,7 +2194,7 @@ impl ProductManager {
                                         &format!("가격 변경 이력 {}건",history.len())
                                     ));
                                     if history.is_empty(){
-                                        advanced.label(typography::caption("가격 변경 이력이 없습니다."));
+                                        components::management_body_state_inline(advanced,"가격 변경 이력이 없습니다.");
                                     }else{
                                         let entries=history.iter().rev()
                                             .map(price_history_row).collect::<Vec<_>>();
