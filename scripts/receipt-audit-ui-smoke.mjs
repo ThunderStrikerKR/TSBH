@@ -458,6 +458,29 @@ try {
   await ocrReview.waitFor();
   await ocrReview.getByRole("button", { name: "닫기", exact: true }).click();
   await ocrReview.waitFor({ state: "detached" });
+  // Cancelling the recognition subprocess is not an OCR failure and must
+  // return to the unchanged receipt without an error modal.
+  await page.evaluate(() => { window.__ocrDelayForTest = true; });
+  await captureButton.click();
+  await ocrProgress.waitFor();
+  await ocrProgress.getByRole("button", { name: "취소", exact: true }).click();
+  await ocrProgress.waitFor({ state: "detached" });
+  if (await page.getByRole("dialog", { name: "OCR 실행 오류" }).count())
+    throw Error("OCR cancellation is a normal action, not a processing error");
+  await page.evaluate(() => { window.__ocrDelayForTest = false; });
+  await page.evaluate(() => { window.__ocrFailureForTest = true; });
+  await captureButton.click();
+  const ocrFailure = page.getByRole("dialog", { name: "OCR 실행 오류" });
+  await ocrFailure.waitFor();
+  await ocrFailure.getByText(/0xC0000135/).waitFor();
+  await ocrFailure.getByRole("button", { name: "닫기", exact: true }).click();
+  await ocrFailure.waitFor({ state: "detached" });
+  await page.evaluate(() => { window.__ocrFailureForTest = false; });
+  // Capture is an intake-only action. Cancel and recognition failure must
+  // preserve the empty draft before the successful application leaves intake.
+  await page.getByLabel("새 발주서 입력 대기", { exact: true }).waitFor();
+  assert.equal(await page.evaluate(() => window.__ocrNativeReplacements ?? 0), 0,
+    "Cancelled or failed OCR must never replace the reception");
   await captureButton.click();
   ocrReview = page.getByRole("dialog", { name: "OCR 문자 인식 검토" });
   await ocrReview.waitFor();
@@ -469,16 +492,7 @@ try {
     "OCR replacement must invoke Rust apply_reception_action, not a legacy TS mutation");
   await page.waitForFunction(() =>
     document.querySelector(".source-document")?.textContent?.includes("709B 2개"));
-  // Cancelling the recognition subprocess is not an OCR failure and must
-  // return to the unchanged receipt without an error modal.
-  await page.evaluate(() => { window.__ocrDelayForTest = true; });
-  await captureButton.click();
-  await ocrProgress.waitFor();
-  await ocrProgress.getByRole("button", { name: "취소", exact: true }).click();
-  await ocrProgress.waitFor({ state: "detached" });
-  if (await page.getByRole("dialog", { name: "OCR 실행 오류" }).count())
-    throw Error("OCR cancellation is a normal action, not a processing error");
-  await page.evaluate(() => { window.__ocrDelayForTest = false; });
+  await captureButton.waitFor({ state: "detached" });
   // At the minimum Windows layout, the three source actions must remain
   // inside the source panel instead of being clipped by the 50:50 split.
   await page.setViewportSize({ width: 1024, height: 700 });
@@ -499,14 +513,6 @@ try {
     assert.ok(inside, "Source action is clipped: " + label);
   }
   await page.setViewportSize({ width: 1520, height: 1000 });
-  await page.evaluate(() => { window.__ocrFailureForTest = true; });
-  await captureButton.click();
-  const ocrFailure = page.getByRole("dialog", { name: "OCR 실행 오류" });
-  await ocrFailure.waitFor();
-  await ocrFailure.getByText(/0xC0000135/).waitFor();
-  await ocrFailure.getByRole("button", { name: "닫기", exact: true }).click();
-  await ocrFailure.waitFor({ state: "detached" });
-  await page.evaluate(() => { window.__ocrFailureForTest = false; });
   await page.reload();
   const nav = page.getByRole("navigation", { name: "업무 메뉴" });
   await nav.getByRole("button", { name: "엑셀 관리" }).click();
