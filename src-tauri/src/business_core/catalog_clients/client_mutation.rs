@@ -62,7 +62,7 @@ pub fn apply_client_workbook(state: &Value, preview: &Value) -> Result<Value, St
     if revision != preview.get("revision").and_then(Value::as_i64).unwrap_or(-1) {
         return Err("검토 후 거래처 데이터가 변경되었습니다. Excel을 다시 검증하세요.".into());
     }
-    if preview["rows"].as_array().into_iter().flatten().iter().any(|row|
+    if preview["rows"].as_array().into_iter().flatten().any(|row|
         ["ERROR", "HOLD"].contains(&field(row, "status")))
     {
         return Err("중복 또는 오류 항목이 남아 있어 Excel 변경사항을 저장할 수 없습니다.".into());
