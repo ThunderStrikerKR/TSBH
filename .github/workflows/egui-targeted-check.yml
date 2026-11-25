@@ -116,6 +116,21 @@ jobs:
           if ($count -lt 1) { throw "No modal geometry regression tests were discovered" }
           cargo test --manifest-path egui-app/Cargo.toml modal_editor_workspace_geometry_tests -- --nocapture
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Verify actual price write failure, retry and silent completion
+        shell: pwsh
+        if: ${{ !cancelled() }}
+        run: |
+          $names = @(
+            'product_manager::tests::failed_price_write_keeps_dirty_draft_available_for_retry',
+            'product_manager::tests::spreadsheet_price_commits_do_not_show_per_cell_success_popup'
+          )
+          foreach ($name in $names) {
+            $listed = cargo test --manifest-path egui-app/Cargo.toml $name -- --exact --list
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+            if (-not ($listed | Where-Object { $_ -eq "${name}: test" })) { throw "Missing regression test: $name" }
+            cargo test --manifest-path egui-app/Cargo.toml $name -- --exact --nocapture
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          }
   native-data-access-windows-check:
     if: github.event_name != 'pull_request'
     runs-on: windows-latest
