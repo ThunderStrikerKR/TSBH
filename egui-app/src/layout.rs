@@ -308,24 +308,45 @@ mod geometry_contract {
     use super::*;
 
     #[test]
-    fn reference_1920p_columns_do_not_trigger_min_width_clamping() {
-        // The 1920px Windows reference is approximately 1637 egui points
-        // inside the 6pt margins at its capture scaling. Confirm the same
-        // proportions at unscaled 1920px too.
+    fn reference_1920p_columns_preserve_ratios_after_min_width_clamping() {
+        // At unscaled 1920px all default shares fit; at the scaled 1637pt
+        // reference the 392pt Kakao and 350pt order minimums take priority.
         for width in [1637.0, 1908.0] {
             let columns = LayoutState::default().widths(width);
             let total: f32 = columns.iter().sum();
             let target = width - SPLITTER * (PANEL_COUNT - 1) as f32;
             assert!((total - target).abs() < 0.01);
+            let expected = if width == 1637.0 {
+                let remaining = target - MIN_WIDTHS[0] - MIN_WIDTHS[3];
+                let weight = DEFAULT_RATIOS[1] + DEFAULT_RATIOS[2];
+                [MIN_WIDTHS[0], remaining * DEFAULT_RATIOS[1] / weight,
+                    remaining * DEFAULT_RATIOS[2] / weight, MIN_WIDTHS[3]]
+            } else {
+                DEFAULT_RATIOS.map(|ratio| target * ratio / 100.0)
+            };
             for i in 0..PANEL_COUNT {
-                let actual_percent = columns[i] / total * 100.0;
-                assert!(
-                    (actual_percent - DEFAULT_RATIOS[i]).abs() < 0.05,
-                    "column {i}: actual={actual_percent}, reference={}",
-                    DEFAULT_RATIOS[i]
-                );
+                assert!((columns[i] - expected[i]).abs() < 0.02,
+                    "width={width}, column {i}: actual={}, expected={}", columns[i], expected[i]);
                 assert!(columns[i] >= MIN_WIDTHS[i]);
             }
+        }
+    }
+
+    #[test]
+    fn custom_saved_split_ratios_roundtrip_without_geometry_drift() {
+        let state = LayoutState {
+            ratios: [420.0, 410.0, 530.0, 390.0],
+            source_ratio: 0.63,
+            detail_review_ratio: 0.30,
+            detail_second_ratio: 0.58,
+        };
+        let restored = LayoutState::from_string(Some(state.as_string()));
+        for width in [1260.0, 1637.0, 1908.0] {
+            assert_eq!(state.widths(width), restored.widths(width));
+        }
+        for height in [720.0, 900.0, 1080.0] {
+            assert_eq!(state.vertical_heights(height), restored.vertical_heights(height));
+            assert_eq!(state.detail_heights(height), restored.detail_heights(height));
         }
     }
 
