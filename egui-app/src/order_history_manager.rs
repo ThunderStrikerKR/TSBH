@@ -1368,13 +1368,13 @@ impl OrderHistoryManager {
             // Empty, loading and no-result states remain in the table body.
             // Input/server errors are floating notices anchored to the toolbar.
             let notice=if self.receiver.is_some(){
-                Some(("주문 이력을 확인 중입니다.",theme::MUTED))
+                Some("주문 이력을 확인 중입니다.")
             }else if snapshot.is_some_and(|data|data.rows.is_empty()){
-                Some((if self.query.is_empty()
+                Some(if self.query.is_empty()
                     && self.date_from.is_empty()&&self.date_to.is_empty()
                     && self.date_basis==HistoryDateBasis::Reception{
                     "저장된 주문이 없습니다."
-                }else{"조건에 맞는 주문이 없습니다."},theme::MUTED))
+                }else{"조건에 맞는 주문이 없습니다."})
             }else{None};
             // Keep the body 16pt above the card's lower border. Only the
             // rail extends 4pt into the inset, leaving 12pt below it;
@@ -1489,7 +1489,7 @@ impl OrderHistoryManager {
                             }
                         });
                 });
-            if let Some((message,color))=notice{
+            if notice.is_some(){
                 let notice_rect=Rect::from_min_size(
                     scroll_bounds.min,
                     Vec2::new(
@@ -1498,13 +1498,7 @@ impl OrderHistoryManager {
                             .max(ROW_HEIGHT)
                     )
                 );
-                let galley=typography::management_control_text_galley(
-                    section,message,color
-                );
-                let origin=notice_rect.center()-galley.size()/2.0;
-                section.painter()
-                    .with_clip_rect(notice_rect.intersect(section.clip_rect()))
-                    .galley(origin,galley,color);
+                components::management_body_state_overlay(section,notice_rect,notice);
             }
             #[cfg(test)]
             components::general_screen_geometry_tests::record("row viewport",output.inner_rect);
