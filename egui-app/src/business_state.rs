@@ -209,6 +209,19 @@ pub fn authorized_business_write_path() -> Result<PathBuf,String> {
     Ok(path)
 }
 
+/// Explicit startup maintenance, separate from read-only DB binding.
+/// Existing DB only, with verified backup and revision-CAS in the shared
+/// data-access migration. Never run for an ordinary debug or HTTP session.
+pub fn migrate_bound_product_colors() -> Result<usize,String> {
+    let path=authorized_business_write_path()?;
+    let root=path.parent().ok_or("상품 색상 정리 백업 경로를 확인할 수 없습니다.")?;
+    let mut conn=Connection::open_with_flags(&path,OpenFlags::SQLITE_OPEN_READ_WRITE)
+        .map_err(|e|e.to_string())?;
+    conn.busy_timeout(std::time::Duration::from_secs(5)).map_err(|e|e.to_string())?;
+    conn.execute_batch("PRAGMA foreign_keys=ON").map_err(|e|e.to_string())?;
+    bando_data_access::product_colors::migrate_v2(&mut conn,root)
+}
+
 /// Backward-compatible client adapter; all direct writers use the same guard.
 pub fn authorized_client_write_path() -> Result<PathBuf,String> {
     authorized_business_write_path()

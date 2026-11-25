@@ -9848,7 +9848,14 @@ fn main() -> eframe::Result<()> {
     // Connect to an existing operating v2 DB before starting workers.
     // Debug builds do not auto-discover it. No DB is created here.
     match business_state::bind_existing_tauri_database() {
-        Ok(Some(_)) => {},
+        Ok(Some(_)) => {
+            if !cfg!(debug_assertions) || business_state::test_launch() {
+                if let Err(error)=business_state::migrate_bound_product_colors() {
+                    eprintln!("[BANDO HUB] 상품 색상 데이터 정리 실패: {error}");
+                    std::process::exit(2);
+                }
+            }
+        },
         Ok(None) => {},
         Err(error) => {
             eprintln!("[BANDO HUB] 기존 Tauri 업무 DB 자동 연결 실패: {error}");
