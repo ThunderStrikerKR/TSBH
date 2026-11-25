@@ -296,7 +296,8 @@ impl ModelGroupManager {
                             left,"모델군","상품 수",104.0
                         );
                         let list_height=left.available_height().max(1.0);
-                        components::management_register_list_scroll_area(left,list_height)
+                        let mut has_visible=false;
+                        let output=components::management_register_list_scroll_area(left,list_height)
                             .id_salt("family-list")
                             .show(left,|list|{
                             list.set_min_width(header.table_width);
@@ -306,12 +307,15 @@ impl ModelGroupManager {
                                     .map(|p|text(p,"name")).collect::<Vec<_>>().join(" ");
                                 if !format!("{} {names}",text(g,"name")).to_lowercase()
                                     .contains(&self.query.trim().to_lowercase()){continue;}
+                                has_visible=true;
                                 self.row(list,id,g,catalog);
                             }
-                            if groups.is_empty(){
-                                list.label(typography::body("등록된 모델군이 없습니다."));
-                            }
                         });
+                        if !has_visible{
+                            let caption=if groups.is_empty(){"등록된 모델군이 없습니다."}
+                                else{"검색 결과가 없습니다."};
+                            components::management_body_state_overlay(left,output.inner_rect,Some(caption));
+                        }
                     }
                 );
                 // React .family-list-panel has a single border-right;
