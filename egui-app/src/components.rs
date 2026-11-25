@@ -3482,11 +3482,15 @@ fn reception_text_editor_at_click(
             let cursor=output.galley.cursor_from_pos(
                 pointer-output.galley_pos
             );
-            output.state.cursor.set_char_range(Some(
-                egui::text::CCursorRange::one(cursor)
-            ));
+            let range=egui::text::CCursorRange::one(cursor);
+            output.state.cursor.set_char_range(Some(range));
+            // The TextEditOutput still owns its state here. Capture the
+            // newly resolved click caret BEFORE store consumes TextEditState.
+            output.cursor_range=Some(range);
+            crate::floating_notice::text_edit_caret(ui.ctx(),"reception.cell",&output);
             output.state.store(ui.ctx(),output.response.id);
             ui.ctx().request_repaint();
+            return output.response;
         }
     }
     crate::floating_notice::text_edit_caret(ui.ctx(),"reception.cell",&output);
