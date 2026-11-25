@@ -49,18 +49,25 @@ pub(crate) fn hydrate(conn:&Connection,state:&mut Value)->Result<(),String>{
     Ok(())
 }
 
-fn envelope(state:&Value)->Result<String,String>{
+pub(crate) fn envelope(state:&Value,split_state:bool)->Result<String,String>{
     // Stream borrowed fields with serde_json's normal escaping, without
     // introducing another serde dependency or cloning old event payloads.
     let root=state.as_object().ok_or("업무 상태는 객체여야 합니다.")?;
     let workflow=state["workflow"].as_object().ok_or("업무 상태 목록 누락")?;
-    let workflow:BTreeMap<&str,&Value>=workflow.iter().filter(|(k,_)|k.as_str()!="events")
+    let workflow:BTreeMap<&str,&Value>=workflow.iter().filter(|(k,_)|
+        k.as_str()!="events" && !(split_state && matches!(k.as_str(),"groups"|"shipments")))
         .map(|(k,v)|(k.as_str(),v)).collect();
     let mut bytes=vec![b'{'];
     serde_json::to_writer(&mut bytes,MARKER).map_err(err)?;
     bytes.extend_from_slice(b":1");
+    if split_state{
+        bytes.push(b',');
+        serde_json::to_writer(&mut bytes,crate::workflow_state::MARKER).map_err(err)?;
+        bytes.push(b':');
+        serde_json::to_writer(&mut bytes,&crate::workflow_state::marker(state)?).map_err(err)?;
+    }
     for (key,value) in root{
-        if matches!(key.as_str(),"products"|"clients"|"orders"|"workflow") || key==MARKER{continue;}
+        if matches!(key.as_str(),"products"|"clients"|"orders"|"workflow") || key==MARKER || key==crate::workflow_state::MARKER{continue;}
         bytes.push(b',');
         serde_json::to_writer(&mut bytes,key).map_err(err)?;
         bytes.push(b':');
@@ -88,8 +95,12 @@ pub(crate) fn write(tx:&Transaction<'_>,before:&Value,next:&Value)->Result<usize
     if !new.starts_with(old){return Err("기존 업무 이벤트는 수정하거나 삭제할 수 없습니다.".into());}
     let count:i64=tx.query_row("SELECT COUNT(*) FROM core_workflow_events",[],|row|row.get(0)).map_err(err)?;
     if usize::try_from(count).ok()!=Some(old.len()){return Err("업무 이벤트 저장 개수 불일치".into());}
+    let split_state=crate::workflow_state::active(tx)?;
     let mut direct=insert_events(tx,old.len(),&new[old.len()..])?;
-    direct+=tx.execute("UPDATE app_state SET payload=?1 WHERE id=1",[envelope(next)?]).map_err(err)?;
+    if split_state{
+        direct+=crate::workflow_state::write(tx,before,next)?;
+    }
+    direct+=tx.execute("UPDATE app_state SET payload=?1 WHERE id=1",[envelope(next,split_state)?]).map_err(err)?;
     Ok(direct)
 }
 
@@ -123,7 +134,7 @@ pub fn migrate_with_backup(conn:&mut Connection,base:&Path)->Result<Option<Strin
     let revision=before["revision"].as_u64().and_then(|r|r.checked_add(1))
         .ok_or("업무 이벤트 이관 revision 오류")?;
     before["revision"]=json!(revision);
-    tx.execute("UPDATE app_state SET payload=?1 WHERE id=1",[envelope(&before)?]).map_err(err)?;
+    tx.execute("UPDATE app_state SET payload=?1 WHERE id=1",[envelope(&before,false)?]).map_err(err)?;
     if crate::read_v2_snapshot(&tx)?!=before{return Err("업무 이벤트 이관 결과 검증에 실패했습니다.".into());}
     tx.commit().map_err(err)?;
     Ok(Some(backup))

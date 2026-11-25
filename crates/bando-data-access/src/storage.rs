@@ -337,6 +337,12 @@ fn write_validated(tx:&Transaction<'_>,current:&Value,mut state:Value,
         crate::validation::validate_unchanged_clients(&state)?;
     }
     validate_brands(current, &state)?;
+    if crate::workflow_state::active(tx)?{
+        // The generic writer has a full authoritative before-image. The
+        // stable freight writer instead performs this same full validation
+        // after its scoped DML and before COMMIT.
+        crate::rules::validate_workflow_transition(&state,current)?;
+    }
     if validate_orders {
         if orders_changed {
             reception::validate_reception(current, &state)?;

@@ -17,6 +17,7 @@ mod validation;
 mod relational_write;
 mod storage;
 pub mod workflow_events;
+pub mod workflow_state;
 mod client_commands;
 mod product_commands;
 mod settings_commands;
@@ -154,6 +155,7 @@ fn read_envelope(conn: &Connection) -> Result<Value, String> {
     let mut state:Value=serde_json::from_str(&raw)
         .map_err(|_| "운영 업무 상태의 JSON 형식이 잘못되었습니다.".to_owned())?;
     workflow_events::hydrate(conn,&mut state)?;
+    workflow_state::hydrate(conn,&mut state)?;
     Ok(state)
 }
 

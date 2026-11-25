@@ -66,6 +66,8 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Verify explicit event-table migration, backup, append and rollback
         run: cargo test --manifest-path src-tauri/Cargo.toml --lib relational_workflow_event_migration_and_append_preserve_audit -- --nocapture
+      - name: Verify shipment and group relational migration, freight, link and restore
+        run: cargo test --manifest-path src-tauri/Cargo.toml --lib relational_workflow_state_migration_and_delta_preserve_links -- --nocapture
       - name: Verify freight-only delta does not attempt unchanged core or index SQL
         run: cargo test --manifest-path src-tauri/Cargo.toml --lib freight_delta_skips_unchanged_sql_rows_and_legacy_indexes -- --nocapture
       - name: Verify native v2 freight save and price/history/revision protection

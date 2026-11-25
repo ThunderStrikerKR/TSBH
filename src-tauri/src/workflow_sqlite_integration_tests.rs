@@ -1144,3 +1144,65 @@ fn relational_workflow_event_migration_and_append_preserve_audit(){
     restored["revision"]=json!(committed["revision"].as_u64().unwrap()+1);
     assert_eq!(get_snapshot(&reopened).unwrap(),restored);
 }
+
+#[test]
+fn relational_workflow_state_migration_and_delta_preserve_links(){
+    let (isolated,mut conn)=IsolatedDatabase::open();
+    let initial=get_snapshot(&conn).unwrap();
+    let saved=write_snapshot(&mut conn,stage_three(&initial,"POSTPAID"),0,true).unwrap();
+    assert!(bando_data_access::workflow_state::migrate_with_backup(&mut conn,&isolated.root).is_err());
+    bando_data_access::workflow_events::migrate_with_backup(&mut conn,&isolated.root).unwrap();
+    let event_split=get_snapshot(&conn).unwrap();
+    let backup=bando_data_access::workflow_state::migrate_with_backup(&mut conn,&isolated.root).unwrap().unwrap();
+    let backup_conn=bando_data_access::backup_service::read_backup(std::path::Path::new(&backup)).unwrap();
+    assert_eq!(get_snapshot(&backup_conn).unwrap(),event_split);
+    drop(backup_conn);
+    let before=get_snapshot(&conn).unwrap();
+    let revision=before["revision"].as_u64().unwrap();
+    assert_eq!(before["workflow"],saved["workflow"]);
+    let raw:String=conn.query_row("SELECT payload FROM app_state WHERE id=1",[],|r|r.get(0)).unwrap();
+    let envelope:Value=serde_json::from_str(&raw).unwrap();
+    for key in ["groups","shipments","events"]{assert!(envelope["workflow"].get(key).is_none());}
+    assert_eq!(envelope["_workflowStateRelational"]["shipments"],1);
+    assert!(bando_data_access::workflow_state::migrate_with_backup(&mut conn,&isolated.root).unwrap().is_none());
+    let committed=bando_data_access::update_v2_freight_snapshot(
+        &mut conn,revision,"shipment:synthetic","group:synthetic",|current|{
+            let result=rust("apply_workflow_action",json!({
+                "state":current,"action":"set_shipment_freight",
+                "groupId":"group:synthetic","shipmentId":"shipment:synthetic",
+                "origin":"FACTORY","appliedCharge":4000,"eventId":"split-state-freight",
+                "now":"2026-11-25T09:00:00+09:00","actor":"검증 담당자"
+            }))?;
+            Ok(result["state"].clone())
+        }).unwrap();
+    assert_eq!(get_snapshot(&conn).unwrap(),committed);
+    assert_eq!(committed["workflow"]["shipments"][0]["charges"]["FACTORY"],4000);
+    let payload:String=conn.query_row("SELECT payload FROM core_workflow_shipments WHERE id='shipment:synthetic'",[],|r|r.get(0)).unwrap();
+    assert_eq!(serde_json::from_str::<Value>(&payload).unwrap(),committed["workflow"]["shipments"][0]);
+    // Reassign to a new group using the normal shared writer; the original
+    // order/recipient/source identity and old group notices stay intact.
+    let moved=bando_data_access::update_v2_snapshot(&mut conn,revision+1,true,|current|{
+        let mut next=current.clone();
+        let mut group=next["workflow"]["groups"][0].clone();
+        group["id"]=json!("group:split-test");
+        group["notices"]=json!([]);
+        next["workflow"]["groups"].as_array_mut().unwrap().push(group);
+        next["workflow"]["shipments"][0]["groupId"]=json!("group:split-test");
+        Ok(next)
+    }).unwrap();
+    assert_eq!(get_snapshot(&conn).unwrap(),moved);
+    assert_eq!(moved["workflow"]["shipments"][0]["orderId"],"order:synthetic");
+    let failed=bando_data_access::update_v2_snapshot(&mut conn,revision+2,true,|current|{
+        let mut next=current.clone();
+        next["workflow"]["shipments"][0]["groupId"]=json!("group:missing");
+        Ok(next)
+    });
+    assert!(failed.is_err());
+    assert_eq!(get_snapshot(&conn).unwrap(),moved);
+    let split_backup=bando_data_access::backup_service::manual_backup(&conn,&isolated.root).unwrap();
+    let name=std::path::Path::new(&split_backup).file_name().unwrap().to_str().unwrap();
+    bando_data_access::backup_service::restore_backup(&mut conn,&isolated.root,name).unwrap();
+    let mut restored=moved;
+    restored["revision"]=json!(revision+3);
+    assert_eq!(get_snapshot(&conn).unwrap(),restored);
+}
