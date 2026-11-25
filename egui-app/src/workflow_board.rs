@@ -151,7 +151,7 @@ fn workflow_review_entries(native:&Value,shipments:&[ShipmentRow])->Vec<Value>{
         let Some(label)=workflow_issue_label(issue) else{continue};
         let id=text(issue,"issueId");
         if !id.is_empty()&&!ids.insert(id.to_owned()){continue;}
-        represented.insert(label.clone());
+        represented.insert(review_message_key(&label));
         let title=text(issue,"title");
         if !title.is_empty()&&text(issue,"severity")=="ACTION"{
             let recipient=shipments.iter().find(|s|
@@ -160,13 +160,13 @@ fn workflow_review_entries(native:&Value,shipments:&[ShipmentRow])->Vec<Value>{
                 .or_else(||shipments.first());
             if let Some(s)=recipient{
                 let name=if s.recipient_name.is_empty(){"수취인"}else{&s.recipient_name};
-                represented.insert(format!("{name}: {title}"));
+                represented.insert(review_message_key(&format!("{name}: {title}")));
             }
         }
         issues.push(issue.clone());
     }
     for label in rows(field(native,"nextStageBlockers")).iter().filter_map(workflow_issue_label){
-        if represented.insert(label.clone()){
+        if represented.insert(review_message_key(&label)){
             issues.push(json!({"detail":label,"severity":"ACTION","kind":"STAGE_BLOCKER"}));
         }
     }
@@ -189,7 +189,17 @@ pub fn workflow_review_extra_messages(group:&GroupRow,workflow_error:Option<&str
             represented.insert(review_message_key(&label));
         }
         let title=text(issue,"title");
-        if title.is_empty() || text(issue,"recipientId").is_empty(){continue;}
+        if title.is_empty(){continue;}
+        if text(issue,"recipientId").is_empty(){
+            represented.insert(review_message_key(title));
+            // Native stage messages prefix group-wide actions with its first
+            // shipment name. Match that exact projection, not arbitrary names.
+            if let Some(ship)=group.shipments.first(){
+                let name=if ship.recipient_name.is_empty(){"수취인"}else{&ship.recipient_name};
+                represented.insert(review_message_key(&format!("{name}: {title}")));
+            }
+            continue;
+        }
         if let Some(ship)=group.shipments.iter().find(|s|
             s.recipient_id==text(issue,"recipientId") &&
             (text(issue,"orderId").is_empty() || s.order_id==text(issue,"orderId"))
@@ -635,6 +645,20 @@ mod linked_recipient_selection_tests{
         group.issues.clear();
         assert_eq!(workflow_review_extra_messages(&group,
             Some("동명이인: 배송 운임을 확인하세요")).len(),2);
+    }
+    #[test]
+    fn stage_and_group_wide_errors_do_not_duplicate_action_cards(){
+        let mut group=group("g",vec![shipment("s1","o1","r1")]);
+        let issue=json!({"issueId":"account","kind":"ACCOUNT","severity":"ACTION",
+            "title":"입금 계좌를 등록 / 선택하세요","detail":"입금 계좌를 등록 / 선택하세요",
+            "recipientId":""});
+        group.issues=workflow_review_entries(&json!({"issues":[issue],
+            "nextStageBlockers":["동명이인: 입금 계좌를 등록 / 선택하세요."]}),&group.shipments);
+        assert_eq!(group.issues.len(),1);
+        group.automatic_error=Some("동명이인: 입금 계좌를 등록 / 선택하세요.".into());
+        assert!(workflow_review_extra_messages(&group,None).is_empty());
+        assert_eq!(workflow_review_extra_messages(&group,
+            Some("다른 수취인: 입금 계좌를 등록 / 선택하세요.")),vec!["다른 수취인: 입금 계좌를 등록 / 선택하세요.".to_owned()]);
     }
     #[test]
     fn structured_workflow_issues_render_their_detail_and_title(){

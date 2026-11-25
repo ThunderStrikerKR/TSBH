@@ -954,7 +954,7 @@ struct BandoEgui {
     inline_editor:Option<InlineReceptionEditor>,
     inline_validation_focus:Option<(InlineTarget,String)>,
     guided_inline_target:Option<InlineTarget>,
-    pending_input_guidance:Option<(String,String,Option<String>)>,
+    pending_input_guidance:Option<(String,String,Option<String>,Option<floating_notice::Anchor>)>,
     inline_change:Option<PendingInlineChange>,
     vat_dialog:Option<VatDialog>,
     vat_change:Option<PendingVatChange>,
@@ -977,6 +977,8 @@ struct BandoEgui {
     pending_display:Option<Arc<PendingDisplay>>,
     workflow_source_display:Option<WorkflowSourceDisplay>,
     workflow_error: Option<String>,
+    // Refresh failures belong to the board, not to whichever group is visible.
+    workflow_read_error: Option<String>,
     workflow_receiver: Option<Receiver<Result<Option<workflow_board::BoardSnapshot>,String>>>,
     /// A committed write must publish its new revision before another
     /// operational write; an ordinary periodic read is advisory.
@@ -1106,6 +1108,7 @@ impl BandoEgui {
             pending_display:None,
             workflow_source_display:None,
             workflow_error: None,
+            workflow_read_error: None,
             workflow_receiver: None,
             workflow_refresh_required:false,
             workflow_last_fetch: None,
@@ -1674,6 +1677,7 @@ impl BandoEgui {
                     self.workflow_receiver=None;
                     if !self.finish_confirmed_draft_handoff(&snapshot,ctx){
                         self.workflow_error=Some("주문은 저장됐지만 확정 화면 갱신을 완료하지 못했습니다.".into());
+                        self.workflow_read_error=self.workflow_error.clone();
                         self.workflow_refresh_required=true;
                         ctx.request_repaint();
                         return;
@@ -1693,6 +1697,7 @@ impl BandoEgui {
                     self.workflow_source_display=None;
                     self.workflow_refresh_required=false;
                     self.workflow_error=None;
+                    self.workflow_read_error=None;
                     if let Some((id,step,notice))=self.workflow_stage_after_freight.take(){
                         if self.workflow_snapshot.as_ref().is_some_and(|board|
                             board.groups.iter().any(|group|
@@ -1715,6 +1720,7 @@ impl BandoEgui {
                     self.workflow_receiver=None;
                     self.workflow_freight_guidance=None;
                     self.workflow_error=Some(error);
+                    self.workflow_read_error=self.workflow_error.clone();
                     self.workflow_stage_after_freight=None;
                     ctx.request_repaint();
                 }
@@ -1724,6 +1730,7 @@ impl BandoEgui {
                     self.workflow_error=Some(
                         "발주 묶음 조회가 중단되었습니다.".to_owned()
                     );
+                    self.workflow_read_error=self.workflow_error.clone();
                     self.workflow_stage_after_freight=None;
                 }
                 Err(mpsc::TryRecvError::Empty)=>{}
@@ -2697,19 +2704,20 @@ impl BandoEgui {
         floating_notice::publish(ctx,channel,floating_notice::Tone::Validation,message);
     }
     /// Start only after a real failed native confirmation; never auto-approve.
-    fn focus_failed_draft_input(&mut self,order_id:&str,error:&str,ctx:&egui::Context)->bool{
+    fn focus_failed_draft_input(&mut self,order_id:&str,error:&str,ctx:&egui::Context,
+        origin:Option<floating_notice::Anchor>)->bool{
         if self.page!=Page::Reception || self.inline_editor.is_some(){return false;}
         // Do not change the selected receipt for an unrelated technical error.
         if self.active_id.as_deref()!=Some(order_id){return false;}
         self.workflow_ui.selection=None;
         self.workflow_ui.stop_preview();
-        self.pending_input_guidance=Some((order_id.to_owned(),self.raw_source.clone(),Some(error.to_owned())));
+        self.pending_input_guidance=Some((order_id.to_owned(),self.raw_source.clone(),Some(error.to_owned()),origin));
         ctx.request_repaint();
         true
     }
     /// Reuse regular review refresh; no additional DB query or UI validation.
     fn poll_input_guidance(&mut self,ctx:&egui::Context){
-        let Some((order_id,raw,error))=self.pending_input_guidance.clone()else{return;};
+        let Some((order_id,raw,error,origin))=self.pending_input_guidance.clone()else{return;};
         if self.page!=Page::Reception || self.active_id.as_deref()!=Some(order_id.as_str())
             || self.raw_source!=raw || self.inline_editor.is_some() || self.inline_change.is_some()
             || self.workflow_ui.selection.is_some() || self.manual_workspace.is_some()
@@ -2725,7 +2733,7 @@ impl BandoEgui {
             if self.review_panel.refresh_failed() || self.analysis.is_none(){
                 self.pending_input_guidance=None;
                 if let Some(error)=error{
-                    floating_notice::publish(ctx,"reception.workflow",floating_notice::Tone::Error,error);
+                    floating_notice::publish_from(ctx,"reception.workflow",floating_notice::Tone::Error,error,origin.as_ref());
                 }
             }
             return;
@@ -2743,7 +2751,7 @@ impl BandoEgui {
         });
         let Some((index,target,original,message))=target else{
             if let Some(error)=error{
-                floating_notice::publish(ctx,"reception.workflow",floating_notice::Tone::Error,error);
+                floating_notice::publish_from(ctx,"reception.workflow",floating_notice::Tone::Error,error,origin.as_ref());
             }
             return;
         };
@@ -2757,7 +2765,7 @@ impl BandoEgui {
             self.inline_validation_focus=Some((target,message));
             ctx.request_repaint();
         }else if let Some(error)=error{
-            floating_notice::publish(ctx,"reception.workflow",floating_notice::Tone::Error,error);
+            floating_notice::publish_from(ctx,"reception.workflow",floating_notice::Tone::Error,error,origin.as_ref());
         }
     }
 
@@ -3367,9 +3375,15 @@ impl BandoEgui {
                         (field!="quantity"||*n>0)
                     );
                     let Some(number)=valid else{
-                        self.source_save_error=Some(
-                            "수량은 1 이상, 단가·운임은 0 이상의 안전한 정수여야 합니다.".into()
-                        );
+                        let message=match field{
+                            "quantity"=>"수량은 1 이상의 정수로 입력하세요.",
+                            "unitPrice"=>"단가는 0 이상의 정수로 입력하세요.",
+                            _=>"운임은 0 이상의 정수로 입력하세요.",
+                        };
+                        self.source_save_error=Some(message.into());
+                        self.inline_validation_focus=Some((editor.target.clone(),message.into()));
+                        let mut editor=editor;
+                        editor.focus_next=true;
                         self.inline_editor=Some(editor);
                         return;
                     };
@@ -3453,7 +3467,7 @@ impl BandoEgui {
                 self.source_save_error=None;
                 self.apply_manual_event(event,ctx);
                 if continue_guidance && self.source_save_error.is_none() && self.page==Page::Reception{
-                    self.pending_input_guidance=Some((pending.order_id.clone(),pending.raw.clone(),None));
+                    self.pending_input_guidance=Some((pending.order_id.clone(),pending.raw.clone(),None,None));
                 }
                 if self.source_save_error.is_none()
                     && matches!(pending.target.field,"product"|"removeItem")
@@ -3532,11 +3546,12 @@ impl BandoEgui {
                         dialog.report_error(error);
                     }
                 }else if let Some(mut editor)=pending.editor{
-                    if guided{
-                        self.guided_inline_target=Some(editor.target.clone());
-                        self.inline_validation_focus=Some((editor.target.clone(),format!("셀 수정 실패: {error}")));
-                        editor.focus_next=true;
-                    }
+                    if guided{self.guided_inline_target=Some(editor.target.clone());}
+                    let message=if confirm_order_id.is_some(){
+                        format!("셀 수정에 실패해 주문 확정을 중단했습니다. {error}")
+                    }else{format!("셀 수정 실패: {error}")};
+                    self.inline_validation_focus=Some((editor.target.clone(),message));
+                    editor.focus_next=true;
                     self.inline_editor=Some(editor);
                 }else{
                     // A non-text command has no editor to restore. The last
@@ -3550,13 +3565,14 @@ impl BandoEgui {
             let error=self.source_save_error.clone();
             self.pending_draft_confirmation=None;
             if let Some(error)=error{
-                // Previously this failure was only stored in source_save_error,
-                // which is not rendered on the reception card. The employee
-                // saw the initial "saving" notice and then nothing.
-                floating_notice::publish(
-                    ctx,"reception.workflow",floating_notice::Tone::Error,
-                    format!("셀 수정에 실패해 주문 확정을 중단했습니다. {error}")
-                );
+                // A restored editor owns the same failure; do not publish
+                // a competing workflow-button notice.
+                if self.inline_validation_focus.is_none(){
+                    floating_notice::publish(
+                        ctx,"reception.workflow",floating_notice::Tone::Error,
+                        format!("셀 수정에 실패해 주문 확정을 중단했습니다. {error}")
+                    );
+                }
             }else{
                 self.start_draft_confirmation(&order_id,ctx);
             }
@@ -7013,7 +7029,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                     });
                                 }
                                 for message in workflow_board::workflow_review_extra_messages(
-                                    group,self.workflow_error.as_deref()
+                                    group,None
                                 ){
                                     components::reception_review_status(issues,&message);
                                 }
@@ -7991,6 +8007,8 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                                 result.id
                                             );
                                             editor.focus_next=false;
+                                            Self::show_inline_validation_focus(
+                                                &mut self.inline_validation_focus,&freight_target,&result,items_ui.ctx());
 
                                             if result.has_focus() && items_ui.input(|input|
                                                 input.key_pressed(egui::Key::Escape)){
@@ -8254,10 +8272,12 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
             // the actual reason; never leave the employee with a silent no-op.
             if let Some(error)=self.source_save_error.clone(){
                 self.pending_draft_confirmation=None;
-                floating_notice::publish(
-                    ctx,"reception.workflow",floating_notice::Tone::Error,
-                    format!("셀 저장에 실패해 주문 확정을 중단했습니다. {error}")
-                );
+                if self.inline_validation_focus.is_none(){
+                    floating_notice::publish(
+                        ctx,"reception.workflow",floating_notice::Tone::Error,
+                        format!("셀 저장에 실패해 주문 확정을 중단했습니다. {error}")
+                    );
+                }
                 ctx.request_repaint();
                 return;
             }
@@ -8602,6 +8622,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                 self.workflow_refresh_required=true;
                 self.workflow_last_fetch=None;
                 self.workflow_error=None;
+                self.workflow_read_error=None;
                 if saved["revision"].as_u64().is_some() && saved["workflow"].is_object(){
                     let gateway=Arc::clone(&self.gateway);
                     let (sender,receiver)=mpsc::channel();
@@ -8652,7 +8673,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                 self.workflow_last_fetch=None;
                 self.workflow_error=Some(error.clone());
                 let routed=action=="confirm_reception" && group_id.strip_prefix("group:")
-                    .is_some_and(|order_id|self.focus_failed_draft_input(order_id,&error,ctx));
+                    .is_some_and(|order_id|self.focus_failed_draft_input(order_id,&error,ctx,notice_origin.clone()));
                 if !routed{
                     floating_notice::publish_from(
                         ctx,"reception.workflow",floating_notice::Tone::Error,error,notice_origin.as_ref()
@@ -9024,6 +9045,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
         let height=ui.available_height();
         let mut event=None;
         Self::section(ui,"처리 중인 주문",height,|ui|{
+            floating_notice::section(ui.ctx(),"reception.workflow.read",ui.clip_rect());
             // A continuous order-card list needs the same 10pt solid
             // scrollbar that management lists use, never a floating thumb.
             ui.spacing_mut().scroll=theme::management_table_scroll_style();
@@ -9121,10 +9143,6 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
             }
             Some(workflow_board_ui::Event::ConfirmDraft(id))=>{
                 self.workflow_ui.stop_preview();
-                floating_notice::publish(
-                    ui.ctx(),"reception.workflow",floating_notice::Tone::Info,
-                    "주문 확인 요청을 접수했습니다."
-                );
                 self.request_draft_confirmation(&id,ui.ctx());
             }
             Some(workflow_board_ui::Event::SelectPending(id))=>{
@@ -9718,6 +9736,9 @@ impl eframe::App for BandoEgui {
             floating_notice::sync(ctx,"manual_workspace_error","reception.manual",
                 floating_notice::Tone::Error,None);
         }
+        floating_notice::sync(ctx,"workflow_board_read_error","reception.workflow.read",
+            floating_notice::Tone::Error,
+            if self.page==Page::Reception{self.workflow_read_error.as_deref()}else{None});
         floating_notice::show(ctx);
         // Developer console only; never expose performance diagnostics as
         // product notifications or include any order/customer data.
