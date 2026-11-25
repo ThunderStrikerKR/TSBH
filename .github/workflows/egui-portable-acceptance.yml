@@ -1,0 +1,77 @@
+name: Windows egui portable OCR acceptance
+# Heavy release candidate verification only; never publish or install automatically.
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: egui-portable-acceptance-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  windows-egui-portable:
+    if: github.ref == 'refs/heads/main'
+    runs-on: windows-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: egui-app -> target
+      - name: Build the actual native egui Windows executable
+        shell: pwsh
+        run: |
+          cargo build --release --manifest-path egui-app/Cargo.toml --target-dir egui-app/target --bin bando-hub-egui
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          if (!(Test-Path "egui-app/target/release/bando-hub-egui.exe" -PathType Leaf)) { throw "Native egui executable missing" }
+      - name: Build independent native OCR acceptance harness
+        shell: pwsh
+        run: |
+          $records = cargo test --manifest-path egui-app/Cargo.toml --target-dir egui-app/target --test portable_ocr --release --no-run --message-format=json
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $harness = @($records | ForEach-Object { $_ | ConvertFrom-Json } | Where-Object {
+            $_.reason -eq "compiler-artifact" -and $_.target.name -eq "portable_ocr" -and $_.executable
+          })
+          if ($harness.Count -ne 1) { throw "Expected exactly one OCR test executable" }
+          "BANDO_CI_OCR_HARNESS=$($harness[0].executable)" >> $env:GITHUB_ENV
+      - name: Restore versioned private OCR runtime
+        id: ocr-cache
+        uses: actions/cache@v4
+        with:
+          path: ocr-build-cache
+          key: bando-egui-ocr-win-x64-v1-${{ hashFiles('scripts/package-ocr-runtime.ps1','scripts/prepare-ocr-bundle.py','src-tauri/resources/ocr/recognize.py') }}
+      - name: Bundle embedded Python and Korean PP-OCRv5 models
+        if: steps.ocr-cache.outputs.cache-hit != 'true'
+        shell: pwsh
+        run: ./scripts/package-ocr-runtime.ps1 -TargetDir "ocr-build-cache"
+      - name: Package the actual egui executable and OCR folder
+        shell: pwsh
+        run: |
+          $root = Join-Path $env:RUNNER_TEMP "bando-egui-portable-stage"
+          $zip = Join-Path $env:RUNNER_TEMP "BANDO-HUB-egui-Windows-x64-portable.zip"
+          if ((Test-Path $root) -or (Test-Path $zip)) { throw "Unexpected existing package stage" }
+          New-Item -ItemType Directory -Path $root | Out-Null
+          Copy-Item "egui-app/target/release/bando-hub-egui.exe" (Join-Path $root "bando-hub-egui.exe")
+          Copy-Item "ocr-build-cache" (Join-Path $root "ocr") -Recurse
+          foreach ($model in @("PP-OCRv5_mobile_det","korean_PP-OCRv5_mobile_rec")) {
+            foreach ($name in @("inference.json","inference.pdiparams","inference.yml")) {
+              $file = Join-Path $root "ocr/models/$model/$name"
+              if (!(Test-Path -LiteralPath $file -PathType Leaf) -or (Get-Item -LiteralPath $file).Length -eq 0) { throw "Missing or empty $file" }
+            }
+          }
+          if (!(Test-Path (Join-Path $root "ocr/runtime/python.exe"))) { throw "Bundled Python missing" }
+          if (!(Test-Path (Join-Path $root "ocr/bundle-info.json"))) { throw "Bundle metadata missing" }
+          $info = [ordered]@{ commit = $env:GITHUB_SHA; executableSha256 = (Get-FileHash (Join-Path $root "bando-hub-egui.exe")).Hash; architecture = "Windows x64" }
+          $info | ConvertTo-Json | Set-Content -Encoding utf8 (Join-Path $root "build-info.json")
+          Compress-Archive -Path (Join-Path $root "*") -DestinationPath $zip
+          "BANDO_CI_PORTABLE_ZIP=$zip" >> $env:GITHUB_ENV
+      - name: Verify relocated native OCR with outbound network blocked
+        shell: pwsh
+        run: ./scripts/verify-egui-portable-ocr.ps1 -ZipPath $env:BANDO_CI_PORTABLE_ZIP -HarnessPath $env:BANDO_CI_OCR_HARNESS
+      - name: Upload verified portable test distribution
+        uses: actions/upload-artifact@v4
+        with:
+          name: BANDO-HUB-egui-Windows-x64-portable-OCR
+          path: ${{ runner.temp }}/BANDO-HUB-egui-Windows-x64-portable.zip
+          if-no-files-found: error
+          retention-days: 7
