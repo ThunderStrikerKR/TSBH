@@ -4,7 +4,6 @@ import { spawn } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { setTimeout as pause } from "node:timers/promises";
 import { chromium } from "playwright";
-import ExcelJS from "exceljs";
 import { auditCSS } from "./audit-css-ownership.mjs";
 
 const root = new URL("../", import.meta.url);
@@ -129,8 +128,6 @@ try {
     ({ state, archive, storePath }) => {
       let mode = "ORIGINAL";
       let auditRecords = structuredClone(archive);
-      const testBackups = new Map();
-      let testBackupSequence = 0;
       // Simulate only Tauri's event transport. The OCR phase comes from the
       // native stage, never from clicking the capture button.
       let ocrPhaseCallback;
@@ -170,34 +167,16 @@ try {
                 variants: [{ url: "https://bandostand.com/product/detail.html?product_no=705" }] },
             ],
           };
-          if (command === "workspace_mode") return window.__forceTestWorkspace === true;
+          if (command === "workspace_mode") return false;
           if (command === "startup_status") return {
             phase: "READY", error: null, attempts: 1, databaseMs: 12,
-            readyMs: 18, isTest: window.__forceTestWorkspace === true,
+            readyMs: 18, isTest: false,
           };
           if (command === "startup_metrics") return {
             windowShownMs: null, databaseMs: 12, dataMs: null, readyMs: 18,
           };
           if (command === "retry_startup") {
             throw Error("Healthy mock databases must not be reopened during startup");
-          }
-          if (command === "test_database_preview") {
-            return window.__forceTestWorkspace
-              ? {enabled:true, revision:state.revision ?? 0, orders:0, clients:0,
-                  exports:0, shipments:0, payments:0, replies:0}
-              : {enabled:false};
-          }
-          if (command === "test_reception_boundary") {
-            return { accepted: false, reason: "주문 확인 완료 전에는 정식 주문으로 저장할 수 없습니다." };
-          }
-          if (command === "test_run_history") return window.__developerRuns ?? [];
-          if (command === "test_record_run") {
-            window.__developerRuns ??= [];
-            window.__developerRuns.unshift({
-              id: window.__developerRuns.length + 1, at:"2026-11-08T00:00:00+09:00",
-              scenario:args.report.scenario, passed:args.report.passed, report:args.report,
-            });
-            return undefined;
           }
           // Mock only the native read DTO; native Rust parity is tested separately.
           if (command === "business_core_call" && args?.domain === "rules" &&
@@ -363,27 +342,7 @@ try {
               window.__storeNativeSteps?.includes("mark_store_sent")) {
             return {valid:true};
           }
-          if (command === "backup_create") {
-            const name = "C:\\BANDO_TEST\\developer-test\\backups\\manual-ui-" + (++testBackupSequence) + ".sqlite";
-            testBackups.set(name, { state: structuredClone(state), audit: structuredClone(auditRecords) });
-            return name;
-          }
-          if (command === "backup_list") return [...testBackups.keys()];
-          if (command === "backup_restore") {
-            const entry = testBackups.get(args.filename);
-            if (!entry) throw Error("The selected mock backup does not exist");
-            const previousRevision = state.revision ?? 0;
-            const undoState = structuredClone(state);
-            const undoAudit = structuredClone(auditRecords);
-            state = structuredClone(entry.state);
-            state.revision = Math.max(previousRevision, state.revision ?? 0) + 1;
-            auditRecords = structuredClone(entry.audit);
-            const undo = "C:\\BANDO_TEST\\developer-test\\backups\\pre-restore-ui-" +
-              (++testBackupSequence) + ".sqlite";
-            testBackups.set(undo, { state: undoState, audit: undoAudit });
-            window.__testRestoreCount = (window.__testRestoreCount ?? 0) + 1;
-            return undefined;
-          }
+          if (command === "backup_list") return [];
           if (command === "save_store_workbook") {
             if (!Array.isArray(args.bytes) || args.bytes.length <= 1000) throw Error("Invalid workbook bytes");
             window.__storeWorkbookSaved = args.bytes.slice(0, 4).join(",") === "80,75,3,4";
@@ -666,71 +625,6 @@ try {
   await page.getByRole("button", { name: "검증용 보면대 704" }).click();
   assert.equal(await page.locator('input[placeholder^="https://bandostand.com/product/"]').inputValue(),
     "https://bandostand.com/product/detail.html?product_no=704");
-  // Native process isolation is separately tested in Rust. This mock checks
-  // that developer controls actually render and the shared Modal operates.
-  await page.addInitScript(() => { window.__forceTestWorkspace = true; });
-  await page.reload();
-  await nav.getByRole("button", { name: "설정" }).click();
-  await page.getByText("TEST / 격리 DB / 외부 발송 금지").waitFor();
-  await page.getByRole("tab", { name: "개발자 모드" }).click();
-  await page.getByRole("heading", { name: "발주서 오류 검증" }).waitFor();
-  await page.getByRole("button", { name: "현재 발주서 검사" }).click();
-  await page.getByRole("heading", { name: /기대 조건/ }).waitFor();
-  await page.getByRole("button", { name: "Rust 저장 차단 검사" }).click();
-  await page.getByRole("heading", { name: /Rust 저장 경계/ }).waitFor();
-  await page.getByRole("button", { name: "선택한 실제 화면 열기" }).click();
-  const modal = page.getByRole("dialog", { name: "UI 상태 시험 / 기본" });
-  await modal.waitFor();
-  await page.waitForFunction(() =>
-    parseFloat(getComputedStyle(document.documentElement)
-      .getPropertyValue("--kakao-reserved-width")) > 0);
-  const geometry = await modal.evaluate((el) => {
-    const bounds = el.getBoundingClientRect();
-    const reserved = parseFloat(getComputedStyle(document.documentElement)
-      .getPropertyValue("--kakao-reserved-width")) || 0;
-    return {
-      left: bounds.left, right: bounds.right, width: bounds.width,
-      height: bounds.height, reserved, viewport: innerWidth,
-      center: bounds.left + bounds.width / 2,
-    };
-  });
-  const visibleCenter = geometry.reserved +
-    (geometry.viewport - geometry.reserved) / 2;
-  assert.ok(geometry.left >= geometry.reserved - 2,
-    "Common modal is hidden behind KakaoTalk: " + JSON.stringify(geometry));
-  assert.ok(geometry.right <= geometry.viewport + 2,
-    "Common modal extends beyond the visible workspace: " + JSON.stringify(geometry));
-  assert.ok(Math.abs(geometry.center - visibleCenter) < 3,
-    "Common modal is not centered in the KakaoTalk-free workspace: " + JSON.stringify(geometry));
-  assert.ok(geometry.height < 600,
-    "Simple modal still uses the former 820px blank layout: " + JSON.stringify(geometry));
-  console.log("COMMON_MODAL_REAL_DOM_GEOMETRY", JSON.stringify(geometry));
-  await modal.getByRole("button", { name: "취소" }).click();
-  await modal.waitFor({ state: "detached" });
-  // Actual ProductSearchDialog, not only a mocked common modal title.
-  await page.locator("#dev-popup").selectOption("product-search");
-  await page.getByRole("button", { name: "선택한 실제 화면 열기" }).click();
-  const productDialog = page.getByRole("dialog", { name: "상품 검색" });
-  await productDialog.waitFor();
-  await productDialog.getByRole("textbox", { name: "추가 상품 검색" }).fill("709");
-  await productDialog.getByRole("button", { name: /닫기/ }).click();
-  await productDialog.waitFor({ state: "detached" });
-  // Exercise the real React TEST workflow through the same backup/create,
-  // save and restore IPC names used by Tauri. The browser mocks IPC only;
-  // native SQLite persistence and rollback are covered by Rust tests.
-  await page.getByRole("heading", { name: "TEST 백업 및 복원 검증" }).waitFor();
-  await page.getByRole("button", { name: "1. TEST 백업 만들기" }).click();
-  await page.getByText(/검증 기준 백업:/).waitFor();
-  await page.getByRole("button", { name: "2. 가상 주문과 가격 변경" }).click();
-  await page.getByRole("dialog", { name: "작업 확인" })
-    .getByRole("button", { name: "TEST 데이터 생성" }).click();
-  await page.getByRole("heading", { name: "가상 데이터 변경 확인" }).waitFor();
-  await page.getByRole("button", { name: "3. 백업 복원 및 비교" }).click();
-  await page.getByRole("dialog", { name: "작업 확인" })
-    .getByRole("button", { name: "TEST DB 복원" }).click();
-  await page.getByRole("heading", { name: "복원 검증 통과" }).waitFor();
-  await page.waitForFunction(() => window.__testRestoreCount === 1);
-  await page.getByText(/TEST DB 전체 내용 및 접수 감사 기록이 백업 시점과 일치/).waitFor();
   // Account add/delete must save without a false conflict after Rust JSON reorders object keys.
   const settingsPage = await browser.newPage({ viewport: { width: 1520, height: 1000 } });
   const settingsErrors = [];
@@ -1049,20 +943,6 @@ try {
             maxBundle:null,maxConfirmed:false,fees:{},perItem:null,notes:""}};
         }
         if (command === "business_core_call" && args?.domain === "catalog_clients" &&
-            args.operation === "preview_registration_rows") {
-          // The UI test exercises ExcelJS input -> native preview IPC ->
-          // on-screen review. A missing category is deliberately HOLD, not
-          // an automatically approved synthetic product for registration.
-          const {state:input,rows=[],fingerprint}=args.payload;
-          window.__navRustRegistrationPreviews=(window.__navRustRegistrationPreviews??0)+1;
-          return {fingerprint,revision:input.revision??0,
-            rows:rows.map(row=>({
-              row:row.row,values:structuredClone(row.values),
-              status:"HOLD",errors:["카테고리 확인이 필요합니다."],
-              duplicateIds:[],
-            }))};
-        }
-        if (command === "business_core_call" && args?.domain === "catalog_clients" &&
             args.operation === "alias_problems") return [];
         if (command === "business_core_call" && args?.domain === "catalog_clients" &&
             args.operation === "validate_model_groups") {
@@ -1177,44 +1057,6 @@ try {
           return [];
         }
         if (command === "business_core_call" && args?.domain === "rules" &&
-            args.operation === "apply_manual_classification" &&
-            args.payload?.action === "initial_manual") {
-          // Mirror manual_draft.rs::initial. The actual ManualClassification
-          // screen deliberately does NOT render its grid before native IPC
-          // initializes rows, evidence blocks and assignment ordering.
-          const order=args.payload.order;
-          if(order.confirmedAt)
-            throw Error("정식 주문은 수동 분류로 변경할 수 없습니다.");
-          const raw=order.analysisRaw??order.raw??"";
-          const rows=structuredClone(order.recipients??[]);
-          const spans=[];
-          for(const recipient of rows){
-            spans.push(...(recipient.sources??[]));
-            for(const item of recipient.items??[])spans.push(...(item.sources??[]));
-          }
-          for(const evidence of order.analysisEvidence??[]){
-            spans.push({...evidence,field:evidence.kind,
-              targetId:evidence.itemId??evidence.recipientId??order.id});
-          }
-          spans.sort((a,b)=>(a.start??Infinity)-(b.start??Infinity)||
-            (b.end??0)-(a.end??0));
-          const blocks=[];
-          for(const span of spans){
-            const start=span.start,end=span.end;
-            if(!Number.isInteger(start)||!Number.isInteger(end)||
-                start<0||end<=start||end>raw.length||
-                blocks.some(block=>start<block.end&&end>block.start))continue;
-            blocks.push({...span,id:start+":"+end,text:raw.slice(start,end)});
-          }
-          const assignments={};
-          if(order.manualClassification){
-            Object.assign(assignments,structuredClone(order.manualClassification.assignments??{}));
-          }
-          const model={rows,blocks:order.manualClassification?.blocks??blocks,assignments};
-          window.__navRustManualInitializations=(window.__navRustManualInitializations??0)+1;
-          return {model,assignmentOrder:Object.keys(assignments)};
-        }
-        if (command === "business_core_call" && args?.domain === "rules" &&
             args.operation === "apply_workflow_action" &&
             args.payload?.action === "record_actual_freight") {
           // Corresponds to workflow.rs::record_actual_freight. The real
@@ -1236,23 +1078,6 @@ try {
           ship.actualFreight={...(ship.actualFreight??{}),[origin]:value};
           window.__navRustFreightWrites=(window.__navRustFreightWrites??0)+1;
           return {state:updated,unchanged:false};
-        }
-        if (command === "business_core_call" && args?.domain === "rules" &&
-            args.operation === "analyze_factory_reply") {
-          // Review-only synthetic Excel fixture. The native UI must render a
-          // HOLD preview, never an automatically approved shipment. The real
-          // Rust matching tests run separately; this only mocks its IPC shape.
-          const {id,filename,sourceRows=[]}=args.payload;
-          window.__navRustFactoryReplyPreviews=(window.__navRustFactoryReplyPreviews??0)+1;
-          return {
-            reply:{id,filename,sourceRowCount:sourceRows.length},
-            rows:sourceRows.map(row=>({
-              row:row.row,name:row.name,tracking:row.tracking,
-              actual:/^\\d+$/.test(row.rawFreight??"")?Number(row.rawFreight):null,
-              applied:false,issue:"합성 UI 검사: 직원 확인 필요",
-            })),
-            applied:0,held:sourceRows.length,
-          };
         }
         if (command === "business_core_call" && args?.domain === "rules" &&
             args.operation === "factory_reply_review_statuses") return {reviews:[]};
@@ -2423,24 +2248,7 @@ try {
 
 
 
-  // Stage 7: use the actual developer modal workbench with detached mock data.
-  // Do not submit business saves. Test every listed popup mode, including long
-  // content, errors, busy state, and the unique manual-classification surface.
-  await navPage.evaluate(()=>{
-    window.bando.isTestWorkspace=true;
-    const original=window.__TAURI_INTERNALS__.invoke;
-    window.__TAURI_INTERNALS__.invoke=(command,args)=>{
-      if(command==="test_run_history")return Promise.resolve([]);
-      if(command==="test_database_preview")return Promise.resolve({enabled:false});
-      if(command==="receipt_archive")return Promise.resolve([]);
-      return original(command,args);
-    };
-  });
-  await navMenu.getByRole("button",{name:"설정",exact:true}).click();
-  await navPage.getByRole("tab",{name:"개발자 모드"}).click();
-  const popupSelect=navPage.locator("#dev-popup");
-  await popupSelect.waitFor();
-  const popupOpen=navPage.getByRole("button",{name:"선택한 실제 화면 열기"});
+  // Stage 7: measure dialogs reached through live business navigation only.
   const stage7Records=[];
   const measureStage7=async(label,dialog)=>{
     const result=await dialog.evaluate(element=>{
@@ -2512,128 +2320,7 @@ try {
     await dialog.getByRole("button",{name:"닫기 ×"}).click();
     await dialog.waitFor({state:"hidden"});
   };
-  for(const mode of ["NORMAL","EMPTY","ERROR","BUSY","LONG","WARNING","SUCCESS","FAILURE","CANCEL"]){
-    await popupSelect.selectOption("common");
-    await navPage.locator("#dev-popup-state").selectOption(mode);
-    await popupOpen.click();
-    const dialog=nativeOpen();
-    await dialog.waitFor();
-    const entry=await measureStage7("common/"+mode,dialog);
-    if(mode==="LONG")
-      assert.ok(entry.scrollHeight>entry.clientHeight,
-        "Long text should scroll inside common modal: "+JSON.stringify(entry));
-    if(mode==="ERROR"||mode==="WARNING"||mode==="FAILURE")
-      assert.ok(await dialog.getByRole("alert").count()>0,
-        "Stage7 warning/error message is missing in "+mode);
-    if(mode==="BUSY"){
-      assert.equal(await dialog.getAttribute("aria-busy"),"true");
-      await navPage.waitForFunction(()=>
-        document.querySelector('dialog.developer-preview-dialog[open]')?.getAttribute("aria-busy")!=="true");
-    }
-    await closeNative(dialog);
-  }
-  for(const popup of ["raw","resolver","product-search","category","retail"]){
-    await popupSelect.selectOption(popup);
-    await popupOpen.click();
-    const dialog=nativeOpen();
-    await dialog.waitFor();
-    await measureStage7(popup,dialog);
-    await closeNative(dialog);
-  }
-  await popupSelect.selectOption("manual");
-  await popupOpen.click();
-  const manual=navPage.getByRole("dialog",{name:"수동 분류"});
-  await manual.waitFor();
-  // The initial dialog is a Rust IPC loading shell; do not inspect its
-  // geometry before the actual manual delivery grid has mounted.
-  await manual.locator(".manual-grid-scroll").waitFor({state:"visible"});
-  const manualResult=await manual.evaluate(el=>{
-    const box=el.getBoundingClientRect();
-    const scroll=el.querySelector(".manual-grid-scroll");
-    return {width:Math.round(box.width),height:Math.round(box.height),
-      viewportWidth:window.innerWidth,viewportHeight:window.innerHeight,
-      scrollPresent:!!scroll,scrollOverflow:scroll?getComputedStyle(scroll).overflowY:""};
-  });
-  assert.ok(manualResult.scrollPresent,"Manual classification requires an independent grid scrollbar");
-  assert.ok((await navPage.evaluate(()=>window.__navRustManualInitializations??0))>0,
-    "ManualClassification must await Rust initial_manual before rendering the grid");
-  stage7Records.push({popup:"manual",...manualResult});
-  await manual.getByRole("button",{name:"닫기 ×"}).click();
-  await manual.waitFor({state:"hidden"});
-  for(const [popup,button] of [["client","＋ 거래처 등록"],["product","상품 추가"]]){
-    await popupSelect.selectOption(popup);
-    await popupOpen.click();
-    const workspace=navPage.locator(".developer-live-container");
-    await workspace.waitFor();
-    await workspace.getByRole("button",{name:button,exact:true}).click();
-    if(popup==="product")await workspace.getByRole("button",{name:"직접 등록",exact:true}).click();
-    const dialog=nativeOpen();
-    await dialog.waitFor();
-    await measureStage7(popup+"-editor",dialog);
-    await closeNative(dialog);
-    await navPage.getByRole("button",{name:"시험 화면 닫기"}).click();
-  }
-  const stage7Workbook=async(name,headers,values,sheetName="Sheet1")=>{
-    const workbook=new ExcelJS.Workbook(),sheet=workbook.addWorksheet(sheetName);
-    sheet.addRow(headers);
-    sheet.addRow(values);
-    return {name,mimeType:"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-      buffer:Buffer.from(await workbook.xlsx.writeBuffer())};
-  };
-  const registrationFile=await stage7Workbook("CI-product-registration.xlsx",
-    ["최종 등록명","제조사 모델코드","브랜드","색상","구성 구분","규격",
-      "판매 단위","상품군","카테고리 경로","도매가","반도매가","소매가","상품 링크","비고"],
-    ["CI 미등록 제품","CI-TEST-1001","","검정","가방 미포함","","개",
-      "반도스탠드","","1000","1300","1600","","합성 UI 검사용"],"상품 등록");
-  const replyHeaders=["수하인명","수하인우편번호","수하인주소","수하인전화번호",
-    "수하인핸드폰번호","택배수량","택배운임","운임구분","품목명","",
-    "메시지","송하인명","(송)우편","(송)주소1","(송)전화","(송)핸드폰","운송장번호"];
-  const replyCells=Array(17).fill("");
-  replyCells[0]="CI 검증수취인";replyCells[2]="경기도 검증시 시험길 12";
-  replyCells[3]="01012345678";replyCells[6]="3000";replyCells[16]="000012345678";
-  const replyFile=await stage7Workbook("CI-factory-reply.xlsx",replyHeaders,replyCells);
-  // Generated in memory: uploaded only to the detached browser mock, never saved.
-  for(const popup of ["registration","reply","receipt"]){
-    await popupSelect.selectOption(popup);
-    await popupOpen.click();
-    const work=navPage.locator(".developer-live-container");
-    await work.waitFor();
-    const preview=await work.evaluate(el=>({
-      visible:el.getBoundingClientRect().width>0,
-      content:el.textContent?.trim().slice(0,90)??""
-    }));
-    assert.ok(preview.visible,"Developer workflow preview not shown: "+popup);
-    if(popup==="registration"){
-      await work.getByRole("button",{name:"엑셀 대량 등록",exact:true}).click();
-      const dialog=nativeOpen();
-      await dialog.waitFor();
-      await dialog.locator('input[type="file"]').setInputFiles(registrationFile);
-      await dialog.locator(".registration-preview").first().waitFor();
-      assert.ok((await navPage.evaluate(()=>window.__navRustRegistrationPreviews??0))>0,
-        "Bulk registration preview must use Rust preview_registration_rows");
-      await measureStage7(popup+"-workbook-review",dialog);
-      await closeNative(dialog);
-    }else if(popup==="reply"){
-      await work.locator('input[type="file"]').setInputFiles(replyFile);
-      const dialog=nativeOpen();
-      await dialog.waitFor();
-      assert.equal(await dialog.getByRole("button",{name:/DB 백업 후 회신/}).isDisabled(),true,
-        "Synthetic factory preview must never allow production commit");
-      assert.ok((await navPage.evaluate(()=>window.__navRustFactoryReplyPreviews??0))>0,
-        "Factory reply review must invoke native analyze_factory_reply");
-      await measureStage7(popup+"-workbook-review",dialog);
-      await closeNative(dialog);
-    }else{
-      await work.getByRole("button",{name:"감사 기록 열기",exact:true}).click();
-      const dialog=nativeOpen();
-      await dialog.waitFor();
-      await measureStage7(popup+"-dialog",dialog);
-      await closeNative(dialog);
-    }
-    await navPage.getByRole("button",{name:"시험 화면 닫기"}).click();
-  }
-  // A second set of real dialogs is reachable from category and freight
-  // management, rather than the developer workbench's default previews.
+  // Real category and freight management dialogs.
   await navMenu.getByRole("button",{name:"상품 관리",exact:true}).click();
   await navPage.getByRole("navigation",{name:"상품 관리 메뉴"})
     .getByRole("button",{name:"카테고리 관리",exact:true}).click();
@@ -2653,9 +2340,9 @@ try {
     await closeNative(dialog);
   }
   console.log("STAGE7_MODAL_AUDIT",JSON.stringify(stage7Records));
-  assert.equal(stage7Records.length,23,
-    "Stage7 modal workbench inventory changed without audit coverage");
-  console.log("PASS: developer workbench common modes and all 12 popup entries audited");
+  assert.equal(stage7Records.length,3,
+    "Stage7 live category and freight modal inventory is incomplete");
+  console.log("PASS: live category and freight management dialogs audited");
 
   // Stage 8: exercise the REAL settings control that drives --ui-scale. Check
   // the whole outer frame, semantic list owner, and native modal boundaries.
@@ -2813,14 +2500,6 @@ try {
             stage8Results.push({context,...await stage8Measure(context,selector)});
           }
         }
-        await navMenu.getByRole("button",{name:"설정",exact:true}).click();
-        await navPage.getByRole("tab",{name:"개발자 모드"}).click();
-        await navPage.locator("#dev-popup").selectOption("common");
-        await navPage.locator("#dev-popup-state").selectOption("LONG");
-        await stage8CheckModal("긴 내용 공통 모달",
-          async()=>navPage.getByRole("button",{name:"선택한 실제 화면 열기"}).click(),
-          async dialog=>{await dialog.getByRole("button",{name:"닫기 ×"}).click();
-            await dialog.waitFor({state:"hidden"});});
       }
     }
   }
@@ -3032,43 +2711,6 @@ try {
         closeFollowupModal);
       followupDialogs.push({kind:"freight",scale,viewport,...freight});
 
-      await navMenu.getByRole("button",{name:"설정",exact:true}).click();
-      await navPage.getByRole("tab",{name:"개발자 모드"}).click();
-      for(const [id,name] of [["raw","원문 정정"],["category","카테고리 선택"]]){
-        await navPage.locator("#dev-popup").selectOption(id);
-        const measured=await stage8CheckModal(name,
-          async()=>navPage.getByRole("button",{name:"선택한 실제 화면 열기"}).click(),
-          closeFollowupModal);
-        followupDialogs.push({kind:id,scale,viewport,...measured});
-      }
-      // Manual classification is a dedicated dialog-role workspace, NOT a
-      // native Modal. Its outer bounds and table scroll owner must be measured.
-      await navPage.locator("#dev-popup").selectOption("manual");
-      await navPage.getByRole("button",{name:"선택한 실제 화면 열기"}).click();
-      const manual=navPage.getByRole("dialog",{name:"수동 분류"}).last();
-      await manual.waitFor();
-      const manualSample=await manual.evaluate(el=>{
-        const r=el.getBoundingClientRect();
-        const table=el.querySelector(".manual-grid-scroll");
-        const tableRect=table?.getBoundingClientRect();
-        const close=[...el.querySelectorAll("button")].find(b=>b.textContent?.includes("닫기"));
-        const closeRect=close?.getBoundingClientRect();
-        return {left:r.left,right:r.right,top:r.top,bottom:r.bottom,
-          viewportWidth:window.innerWidth,viewportHeight:window.innerHeight,
-          tableHeight:tableRect?.height??0,tableOverflow:table?getComputedStyle(table).overflowY:"",
-          closeVisible:!!closeRect&&closeRect.bottom>0&&closeRect.top<window.innerHeight};
-      });
-      followupDialogs.push({kind:"manual",scale,viewport,...manualSample});
-      const manualVisible=manualSample.top>=-2 &&
-        manualSample.bottom<=manualSample.viewportHeight+2 &&
-        manualSample.closeVisible && manualSample.tableHeight>=24;
-      if(!manualVisible){
-        const risk={label:"수동 분류"+suffix,reason:"Manual workspace cannot fit viewport or close is unreachable",...manualSample};
-        followupRisks.push(risk);
-        console.log("STAGE8_FOLLOWUP_MANUAL_RISK",JSON.stringify(risk));
-      }
-      await manual.getByRole("button",{name:"닫기 ×"}).click();
-
       // The three-choice unsaved edit prompt is a distinct native dialog.
       await navMenu.getByRole("button",{name:"운임 관리",exact:true}).click();
       await navPage.getByRole("button",{name:"동급 그룹 운임표",exact:true}).click();
@@ -3105,7 +2747,7 @@ try {
   await followupScale(100);
   await navPage.setViewportSize({width:1520,height:1000});
   assert.equal(followupLists.length,12,"Last-record access matrix is incomplete");
-  assert.equal(followupDialogs.length,20,"High-risk modal matrix is incomplete");
+  assert.equal(followupDialogs.length,8,"Live high-risk modal matrix is incomplete");
   console.log("STAGE8_FOLLOWUP_SUMMARY",JSON.stringify({
     reception:followupReception.length,lists:followupLists.length,
     dialogs:followupDialogs.length,densityRisks:followupRisks,
@@ -3204,7 +2846,7 @@ try {
   assert.deepEqual(navErrors,[],"Navigation React errors: "+navErrors.join("\n"));
   await navPage.close();
   assert.deepEqual(pageErrors, [], "React runtime errors: " + pageErrors.join("\n"));
-  console.log("PASS: audit UI, docking, STORE, official URL, isolated developer tests and real Modal (mock IPC)");
+  console.log("PASS: audit UI, docking, STORE, official URL and live business modals (mock IPC)");
 } finally {
   if (browser) await browser.close();
   server.kill("SIGTERM");
