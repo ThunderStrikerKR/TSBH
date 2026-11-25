@@ -1979,7 +1979,6 @@ impl ManualWorkspace {
         let drag_pointer=ctx.input(|i|i.pointer.interact_pos());
         let drag_released=ctx.input(|i|i.pointer.button_released(egui::PointerButton::Primary));
         let mut apply=false;
-        let mut discard=false;
         let mut discard_confirmed=false;
         let mut submit_direct=false;
         let mut blur_commit=false;
@@ -2937,7 +2936,7 @@ impl ManualWorkspace {
                 }),ctx);
             }
         }
-        if discard || !open {
+        if !open {
             // Dirty typed text is just as important as a completed Rust edit.
             // A parent close cannot destroy an active modal/async operation.
             if self.busy() || self.product_dialog_open() ||

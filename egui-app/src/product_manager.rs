@@ -16,7 +16,7 @@ use crate::{
     product_images::{self,ProductImageCache},
     theme, typography,
 };
-use eframe::egui::{self, Align, Context, Layout, Sense, Ui, UiBuilder, Rect, Pos2, Vec2};
+use eframe::egui::{self, Align, Context, Layout, Sense, Ui, UiBuilder, Rect, Vec2};
 use serde_json::{json, Value};
 use std::{
     cmp::Ordering,
