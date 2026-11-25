@@ -27,6 +27,8 @@ pub enum Kind {
     SourceEntry,
     /// Native operational group write (revision-checked in SQLite).
     WorkflowAction,
+    /// A confirmed shipment freight write, independent of the draft store.
+    WorkflowFreightWrite,
     /// Deleting a draft must never race any running reception job.
     DeleteReception,
     /// Navigation may abandon advisory reads, but not employee writes.
@@ -63,6 +65,7 @@ impl Kind {
             Self::SourceReplace=>"발주원문 교체",
             Self::SourceEntry=>"발주원문 직접 입력",
             Self::WorkflowAction=>"주문 업무 변경",
+            Self::WorkflowFreightWrite=>"정식 주문 운임 저장",
             Self::DeleteReception=>"발주서 삭제",
             Self::NavigateReception=>"발주서 전환",
             Self::ClientChooser=>"거래처 선택 창",
@@ -123,6 +126,15 @@ pub fn admit(request:Kind, active:&[Kind], same_request:bool)->Admission{
                 Kind::RemoteRecheck | Kind::SourceIntake)
             | (Kind::AutomaticClient | Kind::PricingBasis |
                 Kind::Analysis | Kind::RemoteRecheck,Kind::WorkflowAction)
+            // A confirmed freight write does not own the separate unconfirmed
+            // reception workspace. Only local draft editing/advisory reads
+            // can overlap; operational commits remain serialized.
+            | (Kind::ManualClient | Kind::AutomaticClient | Kind::PricingBasis |
+                Kind::InlineEdit | Kind::VatEdit | Kind::InlineEditor |
+                Kind::ManualWorkspace | Kind::Analysis | Kind::RemoteRecheck |
+                Kind::NavigateReception | Kind::SourceIntake | Kind::SourceReplace |
+                Kind::SourceEntry | Kind::DeleteReception | Kind::ClientChooser |
+                Kind::ItemDialog | Kind::VatDialog, Kind::WorkflowFreightWrite)
             | (Kind::SourceReplace | Kind::DeleteReception,
                 Kind::WorkflowAction)
             // The matching modal is still visible on the employee's
@@ -241,6 +253,20 @@ mod tests {
             assert_eq!(admit(K::WorkflowAction,&[committed],false),
                 A::Conflict(committed));
         }
+    }
+
+    #[test]
+    fn confirmed_freight_save_allows_local_draft_edits_but_serializes_operational_writes(){
+        for local in [K::InlineEdit,K::InlineEditor,K::VatEdit,K::ManualWorkspace,
+            K::ManualClient,K::NavigateReception,K::SourceReplace,K::DeleteReception]{
+            assert_eq!(admit(local,&[K::WorkflowFreightWrite],false),A::Start);
+        }
+        for write in [K::WorkflowAction,K::WorkflowFreightWrite,K::WorkingSync]{
+            assert_eq!(admit(write,&[K::WorkflowFreightWrite],false),
+                A::Conflict(K::WorkflowFreightWrite));
+        }
+        assert_eq!(admit(K::InlineEdit,&[K::WorkflowAction],false),
+            A::Conflict(K::WorkflowAction));
     }
 
     #[test]

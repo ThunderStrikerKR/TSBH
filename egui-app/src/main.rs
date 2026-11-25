@@ -241,6 +241,11 @@ impl Drop for PendingAutomaticClient {
     }
 }
 
+fn workflow_write_admission(revision:Option<u64>,writing:bool,
+    refresh_required:bool,failed:bool)->bool{
+    revision.is_some() && !writing && !refresh_required && !failed
+}
+
 struct PendingWorkflowAction {
     group_id: String,
     action: String,
@@ -779,6 +784,9 @@ struct BandoEgui {
     workflow_snapshot: Option<workflow_board::BoardSnapshot>,
     workflow_error: Option<String>,
     workflow_receiver: Option<Receiver<Result<workflow_board::BoardSnapshot,String>>>,
+    /// A committed write must publish its new revision before another
+    /// operational write; an ordinary periodic read is advisory.
+    workflow_refresh_required: bool,
     workflow_last_fetch: Option<Instant>,
     workflow_ui: workflow_board_ui::BoardUi,
     workflow_action: Option<PendingWorkflowAction>,
@@ -897,6 +905,7 @@ impl BandoEgui {
             workflow_snapshot: None,
             workflow_error: None,
             workflow_receiver: None,
+            workflow_refresh_required:false,
             workflow_last_fetch: None,
             workflow_ui: workflow_board_ui::BoardUi::default(),
             workflow_action: None,
@@ -954,7 +963,11 @@ impl BandoEgui {
             active.push(ReceptionJob::SourceReview);
         }
         if self.direct_source_entry{active.push(ReceptionJob::SourceEntry);}
-        if self.workflow_action.is_some(){active.push(ReceptionJob::WorkflowAction);}
+        if let Some(action)=self.workflow_action.as_ref(){
+            active.push(if action.action=="set_shipment_freight"{
+                ReceptionJob::WorkflowFreightWrite
+            }else{ReceptionJob::WorkflowAction});
+        }
         if self.client_chooser.is_some(){active.push(ReceptionJob::ClientChooser);}
         if self.vat_dialog.is_some(){active.push(ReceptionJob::VatDialog);}
         if self.workflow_dialog.is_some(){active.push(ReceptionJob::WorkflowDialog);}
@@ -1402,6 +1415,22 @@ impl BandoEgui {
         });
     }
 
+    fn workflow_mutation_ready(&self)->bool{
+        workflow_write_admission(
+            self.workflow_snapshot.as_ref().and_then(|board|board.revision),
+            self.workflow_action.is_some(),self.workflow_refresh_required,
+            self.workflow_error.is_some()
+        )
+    }
+
+    fn discard_advisory_workflow_read(&mut self){
+        if !self.workflow_refresh_required && self.workflow_receiver.take().is_some(){
+            // A dropped receiver cannot replace the editor's before-image.
+            // A fresh poll will run when the editor/action is released.
+            self.workflow_last_fetch=None;
+        }
+    }
+
     fn poll_workflow_board(&mut self,ctx:&egui::Context){
         if let Some(receiver)=self.workflow_receiver.as_ref(){
             match receiver.try_recv(){
@@ -1419,6 +1448,7 @@ impl BandoEgui {
                         self.workflow_ui.stop_preview();
                     }
                     self.workflow_snapshot=Some(snapshot);
+                    self.workflow_refresh_required=false;
                     self.workflow_error=None;
                     if let Some((id,step,notice))=self.workflow_stage_after_freight.take(){
                         if self.workflow_snapshot.as_ref().is_some_and(|board|
@@ -5336,15 +5366,16 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
     fn visible_workflow_group(&self)->Option<(
         workflow_board::GroupRow,workflow_board::ShipmentRow
     )>{
-        let stage=self.workflow_ui.active_preview();
-        if stage.is_none() && self.workflow_ui.pending_preview().is_some(){
+        let editing=self.workflow_freight_editor.is_some();
+        let stage=if editing{None}else{self.workflow_ui.active_preview()};
+        if !editing && stage.is_none() && self.workflow_ui.pending_preview().is_some(){
             return None;
         }
         let board=self.workflow_snapshot.as_ref()?;
         let committed=self.workflow_ui.selection.as_ref();
         // Linked recipient evidence can identify a shipment in ANOTHER
         // workflow group of the same confirmed order. Never match on name.
-        let linked=if stage.is_none(){
+        let linked=if stage.is_none() && !editing{
             committed.and_then(|selected|
                 self.link_hover.active_for(&selected.order_id).and_then(|key|
                     workflow_board::find_recipient_shipment(
@@ -6235,9 +6266,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
             // React also blocks payment copies with actionable Rust issues.
             // Do not enable controls just because the preview has text.
             let can_copy=self.gateway.workflow_write_enabled()
-                && self.workflow_action.is_none()
-                && self.workflow_receiver.is_none()
-                && self.workflow_error.is_none()
+                && self.workflow_mutation_ready()
                 && self.workflow_freight_editor.is_none()
                 && !group.transferred
                 && group.automatic_text.as_deref()
@@ -6697,9 +6726,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                             .and_then(|decision|decision["checked"].as_bool())
                                             .unwrap_or(false);
                                         let controls_editable=self.gateway.workflow_write_enabled()
-                                            && self.workflow_action.is_none()
-                                            && self.workflow_receiver.is_none()
-                                            && self.workflow_error.is_none()
+                                            && self.workflow_mutation_ready()
                                             && !ship.transferred
                                             && self.workflow_freight_editor.is_none();
                                         for origin in &origins{
@@ -6743,7 +6770,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                                 ));
                                             }
                                             if self.workflow_action.is_none() &&
-                                                self.workflow_receiver.is_none(){
+                                                !self.workflow_refresh_required{
                                                 if let (Some(editor),Some(rect))=(
                                                     self.workflow_freight_editor.as_mut().filter(|editor|
                                                         editor.group_id.as_str()==group.id.as_str() &&
@@ -6817,6 +6844,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                 self.workflow_freight_editor=None;
                 self.workflow_freight_next_selection=None;
             }else if let Some((origin,original,click_at))=workflow_freight_open{
+                self.discard_advisory_workflow_read();
                 self.workflow_freight_editor=Some(WorkflowFreightEditor{
                     group_id:group.id.clone(),shipment_id:ship.id.clone(),
                     origin,original:original.clone(),text:original,
@@ -7916,7 +7944,13 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
             );
             return;
         }
+        if self.workflow_refresh_required{
+            floating_notice::publish(ctx,"reception.workflow",floating_notice::Tone::Info,
+                "저장된 주문 상태를 갱신하고 있습니다. 갱신 후 주문을 확정하세요.");
+            return;
+        }
         let expected_quote=quote.clone();
+        self.discard_advisory_workflow_read();
         let gateway=Arc::clone(&self.gateway);
         let target_id=client_id.clone();
         let worker_group_id=group_id.clone();
@@ -8018,6 +8052,12 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
             );
             return;
         };
+        if !self.workflow_mutation_ready(){
+            floating_notice::publish(ctx,"reception.workflow",floating_notice::Tone::Validation,
+                "저장된 주문 상태를 다시 확인한 뒤 진행하세요.");
+            return;
+        }
+        self.discard_advisory_workflow_read();
         let mut args=serde_json::json!({"groupId":group_id});
         if let Some(shipment_id)=shipment_id{
             args["shipmentId"]=serde_json::json!(shipment_id);
@@ -8145,6 +8185,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                 // time. Keep dependent actions locked until projection ends.
                 // External changes are still detected by periodic polling/CAS.
                 self.workflow_receiver=None;
+                self.workflow_refresh_required=true;
                 self.workflow_last_fetch=None;
                 self.workflow_error=None;
                 if saved["revision"].as_u64().is_some() && saved["workflow"].is_object(){
@@ -8292,7 +8333,8 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
         let mut command:Option<(
             String,String,Option<String>,Option<String>,bool
         )>=None;
-        let busy=self.workflow_action.is_some();
+        let busy=self.workflow_action.is_some() || self.workflow_refresh_required ||
+            self.workflow_error.is_some();
         let writable=self.gateway.workflow_write_enabled();
         let mut target=self.workflow_manage_target.clone();
         let mut ack=self.workflow_manage_ack;
@@ -8524,7 +8566,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
     }
 
     fn advance_workflow_group(&mut self,id:&str,ctx:&egui::Context){
-        if self.workflow_action.is_some() || self.workflow_receiver.is_some(){return;}
+        if !self.workflow_mutation_ready(){return;}
         let Some(group)=self.workflow_snapshot.as_ref()
             .and_then(|board|board.groups.iter().find(|group|group.id==id))
         else{return;};
@@ -8563,7 +8605,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                             .get(self.selected_recipient))
                         .and_then(|row|row["id"].as_str());
                     let freight_stage_group=if self.gateway.workflow_write_enabled() &&
-                        self.workflow_receiver.is_none() && self.workflow_error.is_none() &&
+                        !self.workflow_refresh_required && self.workflow_error.is_none() &&
                         self.workflow_stage_after_freight.is_none(){
                         self.workflow_freight_editor.as_ref()
                             .or(self.submitted_workflow_freight.as_ref())
@@ -8575,11 +8617,9 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                         &self.client_names,active_selected,
                         &mut self.workflow_ui,
                         self.gateway.workflow_write_enabled() &&
-                            self.workflow_action.is_none() &&
+                            self.workflow_mutation_ready() &&
                             self.workflow_freight_editor.is_none() &&
-                            self.pending_draft_confirmation.is_none() &&
-                            self.workflow_receiver.is_none() &&
-                            self.workflow_error.is_none(),
+                            self.pending_draft_confirmation.is_none(),
                         freight_stage_group,
                         // Hover navigation must never switch the active receipt
                         // while a staff edit, dialog or pending write is open.
@@ -9039,6 +9079,8 @@ impl eframe::App for BandoEgui {
             // A restored operational DB invalidates every prior projected
             // price/client/order snapshot. Never keep stale native matches.
             self.workflow_snapshot=None;
+            self.workflow_receiver=None;
+            self.workflow_refresh_required=false;
             self.workflow_last_fetch=None;
             self.workflow_ui.selection=None;
             self.workflow_ui.stop_preview();
@@ -10195,6 +10237,28 @@ mod reception_workflow_admission_integration_tests {
         assert_eq!(app.active_id.as_deref(),Some("draft-1"));
         assert!(app.source_save_error.as_deref()
             .is_some_and(|s|s.contains("부가세 변경")));
+    }
+
+    #[test]
+    fn periodic_workflow_read_is_advisory_but_post_commit_refresh_is_mandatory(){
+        let mut app=app();
+        app.workflow_snapshot=Some(workflow_board::BoardSnapshot{
+            revision:Some(7),groups:vec![]
+        });
+        let (_sender,receiver)=mpsc::channel();
+        app.workflow_receiver=Some(receiver);
+        assert!(app.workflow_mutation_ready());
+        app.discard_advisory_workflow_read();
+        assert!(app.workflow_receiver.is_none());
+        let (_sender,receiver)=mpsc::channel();
+        app.workflow_receiver=Some(receiver);
+        app.workflow_refresh_required=true;
+        assert!(!app.workflow_mutation_ready());
+        app.discard_advisory_workflow_read();
+        assert!(app.workflow_receiver.is_some());
+        assert!(!workflow_write_admission(None,false,false,false));
+        assert!(!workflow_write_admission(Some(7),true,false,false));
+        assert!(!workflow_write_admission(Some(7),false,false,true));
     }
 
     #[test]
