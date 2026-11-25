@@ -233,7 +233,7 @@ impl ClientChooser {
             theme::CLIENT_CHOOSER_DIALOG_HEIGHT
                 .min((work_area.height()-gutter).max(1.0))
         );
-        components::modal_window("거래처 찾기","egui-reception-client-chooser",work_area)
+        components::modal_window(ctx,"거래처 찾기","egui-reception-client-chooser",work_area)
             .fixed_size(dialog_size)
             .show(ctx,|ui|{
                 components::modal_flow_workspace(ui,|master|{

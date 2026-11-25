@@ -386,7 +386,7 @@ impl AliasManager {
             let mut close=false;
             let mut chosen=None;
             components::modal_backdrop(ctx,"alias-product-search-dim",false);
-            components::modal_window("상품 검색","alias-product-search",work_area)
+            components::modal_window(ctx,"상품 검색","alias-product-search",work_area)
                 .default_width(theme::MODAL_DEFAULT_MAX_WIDTH.min(work_area.width()))
                 .show(ctx,|modal|{
 

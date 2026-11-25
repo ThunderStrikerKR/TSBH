@@ -1724,8 +1724,9 @@ pub fn modal_master_ocr_body_is_usable(body:Vec2)->bool{
 /// Native modal geometry belongs here, not to individual screens.
 /// `work_area` excludes the externally foregrounded KakaoTalk dock.
 pub fn modal_window(
-    title:&str,id:&'static str,work_area:egui::Rect
+    ctx:&egui::Context,title:&str,id:&'static str,work_area:egui::Rect
 ) -> egui::Window<'static> {
+    crate::overlay::register_modal(ctx,modal_window_layer(id));
     egui::Window::new(typography::modal_title(title))
         .title_bar(false)
         .id(egui::Id::new(id))
@@ -2493,9 +2494,9 @@ pub fn modal_master_controlled_spacing(ui:&mut Ui){
 /// Tooltip order is reserved for transient overlays and is not a reliable
 /// interaction surface for modal actions in egui 0.33.
 pub fn nested_modal_window(
-    title:&str,id:&'static str,work_area:egui::Rect
+    ctx:&egui::Context,title:&str,id:&'static str,work_area:egui::Rect
 )->egui::Window<'static>{
-    modal_window(title,id,work_area).order(egui::Order::Foreground)
+    modal_window(ctx,title,id,work_area).order(egui::Order::Foreground)
 }
 
 /// Shared decision layout. The owner allocates header, body and action
@@ -2574,9 +2575,9 @@ pub fn decision_content<R>(
 }
 
 fn decision_window(
-    title:&str,id:&'static str,work_area:egui::Rect
+    ctx:&egui::Context,title:&str,id:&'static str,work_area:egui::Rect
 ) -> egui::Window<'static> {
-    nested_modal_window(title,id,work_area)
+    nested_modal_window(ctx,title,id,work_area)
         // Decisions are short, blocking actions: show their controls
         // immediately rather than fading an input surface in over the parent.
         .fade_in(false)
@@ -2595,7 +2596,7 @@ pub fn show_decision_window<R>(
     ctx:&egui::Context,title:&str,id:&'static str,work_area:Rect,
     contents:impl FnOnce(&mut Ui)->R,
 ){
-    if decision_window(title,id,work_area).show(ctx,contents).is_some(){
+    if decision_window(ctx,title,id,work_area).show(ctx,contents).is_some(){
         modal_foreground_for_window(ctx,id);
     }
 }
@@ -2622,6 +2623,7 @@ pub fn modal_backdrop(
         .sense(egui::Sense::hover());
     // The modal layer prevents background input; visual coverage is full-screen.
     let layer=area.layer();
+    crate::overlay::register_modal(ctx,layer);
     ctx.memory_mut(|memory|memory.set_modal_layer(layer));
     area.show(ctx,|ui|{
         let (rect,_)=ui.allocate_exact_size(
@@ -2649,6 +2651,7 @@ pub fn modal_foreground_for_window(
     ctx:&egui::Context,window_id:&'static str
 ){
     let dialog_layer=modal_window_layer(window_id);
+    crate::overlay::register_modal(ctx,dialog_layer);
     ctx.memory_mut(|memory|{
         memory.areas_mut().move_to_top(dialog_layer);
         memory.set_modal_layer(dialog_layer);
@@ -2662,13 +2665,7 @@ pub fn modal_foreground_for_window(
 /// owner's input boundary. Background/Middle triggers already have lower
 /// Order than their Foreground popup and cannot be registered as sublayers.
 pub fn attach_popup_to_owner(owner:&egui::Response,popup:&Ui){
-    let parent=owner.layer_id;
-    let child=popup.layer_id();
-    if parent.order==egui::Order::Foreground
-        && child.order==parent.order && parent!=child
-    {
-        popup.ctx().set_sublayer(parent,child);
-    }
+    crate::overlay::attach_popup(popup.ctx(),owner.layer_id,popup.layer_id());
 }
 
 /// Reusable absolute-layout panel with a fixed title band and an
@@ -9184,7 +9181,7 @@ mod modal_input_routing_tests {
             let mut action_rect=Rect::NOTHING;
             let mut plain_rect=Rect::NOTHING;
             let _=ctx.run(raw,|ctx|{
-                modal_window("수동 분류","manual-parent-workspace",work_area)
+                modal_window(ctx,"수동 분류","manual-parent-workspace",work_area)
                     .show(ctx,|ui|{
                         ui.disable();
                         ui.label("parent worksheet");
@@ -9286,15 +9283,14 @@ mod modal_input_routing_tests {
             raw.screen_rect=Some(work_area);
             let mut parent_rect=Rect::NOTHING;
             let _=ctx.run(raw,|ctx|{
-                modal_window("수동 분류","manual-parent-workspace",work_area)
+                modal_window(ctx,"수동 분류","manual-parent-workspace",work_area)
                     .show(ctx,|ui|{
                         ui.disable();
                         let response=ui.button("parent action");
                         parent_rect=response.rect;
                         if response.clicked(){parent_clicked=true;}
                     });
-                decision_window(
-                    "수동 분류 변경 취소","manual-discard-prompt",work_area
+                decision_window(ctx,"수동 분류 변경 취소","manual-discard-prompt",work_area
                 ).show(ctx,|ui|{
                     ui.label("discard?");
                     modal_action_row(ui,|actions|{
@@ -9354,7 +9350,7 @@ mod manual_nested_prompt_regression_tests{
             let mut discard_rect=Rect::NOTHING;
             let _=ctx.run(raw,|ctx|{
                 modal_backdrop(ctx,"manual-regression-main-backdrop",false);
-                modal_window("수동 분류","manual-regression-parent",work_area)
+                modal_window(ctx,"수동 분류","manual-regression-parent",work_area)
                     .default_width(900.0)
                     .default_height(650.0)
                     .show(ctx,|parent|{
@@ -9363,7 +9359,7 @@ mod manual_nested_prompt_regression_tests{
                         parent_rect=response.rect;
                         if response.clicked(){*parent_clicked=true;}
                     });
-                decision_window("수동 분류 나가기","manual-regression-child",work_area)
+                decision_window(ctx,"수동 분류 나가기","manual-regression-child",work_area)
                     .show(ctx,|decision|{
                         decision.label("초안에 반영하지 않은 변경사항이 있습니다.");
                         decision.horizontal(|row|{
@@ -9773,7 +9769,7 @@ mod round87_phase4_modal_safety_tests {
                     screen_rect:Some(Rect::from_min_size(egui::Pos2::ZERO,Vec2::new(1280.0,1080.0))),
                     ..Default::default()
                 },|ctx|{
-                    modal_window("좁은 작업 영역","phase4-compact-editor",safe)
+                    modal_window(ctx,"좁은 작업 영역","phase4-compact-editor",safe)
                         .default_width(380.0).show(ctx,|ui|{
                             let (_,geometry)=modal_flow_workspace_measured(ui,|workspace|{
                                 workspace.header("아주 긴 제목을 갖는 상품 상세 편집 화면","취소",true);
@@ -9819,7 +9815,7 @@ mod round87_phase5_modal_contract_tests {
                 let code=line.trim_start();
                 if code.starts_with("//") || code.starts_with("/*") || code.starts_with('*'){continue;}
                 for forbidden in [
-                    "components::decision_window(",
+                    "components::decision_window(ctx,",
                     "Window::new(",
                     "Modal::new(",
                     "components::modal_header(",

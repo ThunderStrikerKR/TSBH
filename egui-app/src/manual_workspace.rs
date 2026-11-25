@@ -1910,15 +1910,16 @@ impl ManualWorkspace {
             }
         }
         let mut open=true;
-        if ctx.input(|input|input.key_pressed(egui::Key::Escape)) && self.item_detail.is_some(){
+        let escape_pressed=crate::overlay::take_modal_escape(ctx);
+        if escape_pressed && self.item_detail.is_some(){
             let busy=self.busy();
             if matches!(self.item_detail.as_mut().and_then(|detail|detail.escape(busy)),Some(item_editor::Event::Closed)){
                 self.item_detail=None;
             }
-        }else if ctx.input(|input|input.key_pressed(egui::Key::Escape)) &&
+        }else if escape_pressed &&
             (self.assignment_gesture.source.is_some() || self.assignment_gesture.dragging.is_some()){
             self.assignment_gesture.clear();
-        }else if ctx.input(|input|input.key_pressed(egui::Key::Escape)) {
+        }else if escape_pressed {
             match escape_action(
                 self.busy(),
                 self.product_dialog_open(),
@@ -1985,7 +1986,7 @@ impl ManualWorkspace {
         let mut add_product:Option<String>=None;
         let mut remove_item:Option<(String,String)>=None;
         let workspace_title=if self.direct_input{"직접 입력"}else{"수동 분류"};
-        components::modal_window(workspace_title,"bando-native-manual-classification",work_area)
+        components::modal_window(ctx,workspace_title,"bando-native-manual-classification",work_area)
             .fixed_size(manual_workspace_dialog_size(work_area))
             .show(ctx,|ui|{
                 crate::floating_notice::section(ctx,"reception.manual",ui.available_rect_before_wrap());
@@ -2621,7 +2622,8 @@ impl ManualWorkspace {
         // the native assignment action or overwrite an uncommitted editor.
         let gesture_allowed=!self.busy() && self.nested_modal_window_id().is_none()
             && !submit_direct && self.edit_text==self.current_value()
-            && chosen.is_none() && lookup.is_none() && add_product.is_none() && remove_item.is_none();
+            && chosen.is_none() && lookup.is_none() && add_product.is_none() && remove_item.is_none()
+            && open && !apply;
         if gesture_allowed{
             let mut assignment=None;
             // A press without crossing egui's drag threshold is a click.
@@ -2663,7 +2665,7 @@ impl ManualWorkspace {
                     }
                 }
             }
-        }else if drag_released{
+        }else{
             self.assignment_gesture.clear();
         }
         if self.assignment_gesture.dragging.is_some(){

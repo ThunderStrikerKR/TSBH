@@ -9,6 +9,7 @@ mod typography;
 mod layout;
 mod window_state;
 mod components;
+mod overlay;
 mod cell_navigation;
 mod floating_notice;
 mod user_error;
@@ -3817,7 +3818,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
             .and_then(|m|m.pointer("/model/rows"))
             .cloned().unwrap_or_else(||original.clone());
         let mut close=false;
-        components::modal_window("최초 분석 및 수정 이력",
+        components::modal_window(ctx,"최초 분석 및 수정 이력",
             "reception-correction-history",work_area)
             .default_width(work_area.width().min(860.0))
             .show(ctx,|ui|{
@@ -4749,7 +4750,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
         let dialog_size=dialog_rect.size();
         if let Some(review)=self.ocr_review.as_mut() {
             floating_notice::section(ctx,"reception.ocr_learning",dialog_rect);
-            components::modal_window(
+            components::modal_window(ctx,
                 "OCR 문자 인식 검토","egui-ocr-review",work_area
             )
                 .pivot(egui::Align2::LEFT_TOP)
@@ -5609,7 +5610,18 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
         }
     }
 
+    fn reception_modal_open(&self)->bool{
+        self.ocr_review.is_some() || self.pending_replace.is_some() ||
+            self.client_chooser.is_some() || self.manual_workspace.is_some() ||
+            self.edit_history_open || self.workflow_dialog.is_some() ||
+            self.vat_dialog.is_some() || self.item_editor.is_some() ||
+            self.product_picker.is_some()
+    }
+
     fn reception(&mut self, ctx: &egui::Context) {
+        if self.reception_modal_open() || !overlay::background_preview_allowed(ctx){
+            self.workflow_ui.stop_preview();
+        }
         egui::CentralPanel::default()
             .frame(theme::workspace_shell_frame())
             .show(ctx, |ui| {
@@ -9107,7 +9119,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                         freight_stage_group,
                         // Hover navigation must never switch the active receipt
                         // while a staff edit, dialog or pending write is open.
-                        self.inline_editor.is_none() && self.inline_change.is_none() &&
+                        !self.reception_modal_open() && self.inline_editor.is_none() && self.inline_change.is_none() &&
                             self.manual_workspace.is_none() && self.vat_dialog.is_none() &&
                             self.vat_change.is_none() && self.client_chooser.is_none() &&
                             self.client_change.is_none() && self.working_sync.is_none() &&
@@ -9534,6 +9546,7 @@ impl eframe::App for BandoEgui {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         let frame_started=Instant::now();
         self.window_state.update(ctx);
+        overlay::begin_frame(ctx);
         floating_notice::begin_page(ctx,self.page.label());
         if let Some(page)=self.client_pending_page{
             let approved=self.client_manager.as_mut()

@@ -1049,7 +1049,7 @@ impl SettingsView{
         }
         if self.archive_open{
             components::modal_backdrop(ctx,"settings-audit-backdrop",false);
-            components::modal_window(
+            components::modal_window(ctx,
                 "접수 원문 감사 보관함","settings-audit-records",area
             ).default_width(720.0).show(ctx,|ui|{
 

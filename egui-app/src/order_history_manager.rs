@@ -1148,7 +1148,7 @@ impl OrderHistoryManager {
         let writable=self.gateway.shipment_memo_write_enabled();
         let mut cancel=false;
         let mut save=false;
-        components::modal_window("관리 메모","history-shipment-memo",work_area)
+        components::modal_window(ctx,"관리 메모","history-shipment-memo",work_area)
             .default_width(520.0_f32.min(work_area.width()))
             .show(ctx,|ui|{
 

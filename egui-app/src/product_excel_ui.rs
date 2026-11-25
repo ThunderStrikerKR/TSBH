@@ -279,7 +279,7 @@ impl ProductExcelUi {
         let errors=review_count(&review,"ERROR");
         let mut close=false;
         let mut request_commit=false;
-        components::modal_window(title,
+        components::modal_window(ctx,title,
             if self.client{"egui-client-excel-review"}else{"egui-product-excel-review"},work_area)
             .default_width(work_area.width().min(1070.0))
             .show(ctx,|ui|{

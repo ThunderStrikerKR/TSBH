@@ -22,6 +22,7 @@ enum AnchorKind { Caret, Action, Section }
 
 #[derive(Clone)]
 pub struct Anchor {
+    owner:Option<egui::LayerId>,
     at: Pos2,
     below: Pos2,
     page: &'static str,
@@ -32,6 +33,7 @@ pub struct Anchor {
 
 #[derive(Clone)]
 struct Notice {
+    owner:Option<egui::LayerId>,
     message: String,
     tone: Tone,
     source: &'static str,
@@ -40,6 +42,9 @@ struct Notice {
     kind: AnchorKind,
     created: Instant,
 }
+
+#[derive(Clone,Copy)]
+struct ElementOrigin{rect:Rect,owner:Option<egui::LayerId>}
 
 #[derive(Default, Clone)]
 struct State {
@@ -51,9 +56,9 @@ struct State {
     active: Option<Notice>,
     // Transient option-click origin for the currently open shared dropdown.
     // It is never carried to a later frame or a different user action.
-    dropdown_popup_trigger: Option<Rect>,
-    dropdown_selected_trigger: Option<Rect>,
-    last_element: Option<Rect>,
+    dropdown_popup_trigger: Option<ElementOrigin>,
+    dropdown_selected_trigger: Option<ElementOrigin>,
+    last_element: Option<ElementOrigin>,
 }
 
 fn with_state<R>(ctx: &Context, f: impl FnOnce(&mut State) -> R) -> R {
@@ -92,8 +97,12 @@ fn record(ctx: &Context, source: &'static str, at: Pos2, kind: AnchorKind) {
     record_element(ctx,source,Rect::from_min_max(at,at),kind);
 }
 fn record_element(ctx:&Context,source:&'static str,rect:Rect,kind:AnchorKind){
+    record_origin(ctx,source,ElementOrigin{rect,owner:crate::overlay::modal_scope(ctx)},kind);
+}
+fn record_origin(ctx:&Context,source:&'static str,origin:ElementOrigin,kind:AnchorKind){
+    let rect=origin.rect;
     with_state(ctx,|state|{
-        let anchor=Anchor{at:rect.center_top(),below:rect.center_bottom(),page:state.page,page_epoch:state.page_epoch,created:Instant::now(),kind};
+        let anchor=Anchor{owner:origin.owner,at:rect.center_top(),below:rect.center_bottom(),page:state.page,page_epoch:state.page_epoch,created:Instant::now(),kind};
         if kind==AnchorKind::Section{state.sections.insert(source,anchor);}
         else{state.anchors.insert(source,anchor);}
         // A new explicit action can replace a prior, persistent failure.
@@ -117,7 +126,10 @@ pub fn action_rect(ctx:&Context,source:&'static str,rect:Rect){
 }
 /// Shared widgets register actual interactions, never hover or pointer motion.
 pub fn remember_element(ctx:&Context,rect:Rect){
-    if rect.is_positive(){with_state(ctx,|state|state.last_element=Some(rect));}
+    if rect.is_positive(){
+        let owner=crate::overlay::modal_scope(ctx);
+        with_state(ctx,|state|state.last_element=Some(ElementOrigin{rect,owner}));
+    }
 }
 pub fn remember_response(ctx:&Context,response:&Response){
     if response.clicked() || response.changed(){remember_element(ctx,response.rect);}
@@ -136,8 +148,9 @@ pub fn inherit_origin(ctx:&Context,from:&'static str,to:&'static str){
 /// operation feedback triggered by the selected option. Set this only while
 /// the shared popup is being rendered, immediately before its options.
 pub fn dropdown_popup_trigger(ctx: &Context, trigger: Rect) {
+    let owner=crate::overlay::modal_scope(ctx);
     with_state(ctx, |state| {
-        state.dropdown_popup_trigger = Some(trigger);
+        state.dropdown_popup_trigger = Some(ElementOrigin{rect:trigger,owner});
     });
 }
 
@@ -156,7 +169,7 @@ pub fn dropdown_option_selected(ctx: &Context) {
 /// If no element is known, fall back to the feature section, never the mouse.
 pub fn dispatch_pointer(ctx: &Context, source: &'static str) {
     let selected=with_state(ctx,|state|state.dropdown_selected_trigger.take().or(state.last_element));
-    if let Some(rect)=selected{record_element(ctx,source,rect,AnchorKind::Action);}
+    if let Some(origin)=selected{record_origin(ctx,source,origin,AnchorKind::Action);}
     else{with_state(ctx,|state|{state.anchors.remove(source);});}
 }
 
@@ -211,11 +224,12 @@ pub fn publish_from(ctx:&Context,source:&'static str,tone:Tone,
             a.page==state.page && a.page_epoch==state.page_epoch &&
             a.created.elapsed()<=ANCHOR_VALID_FOR
         )).or_else(||state.sections.get(source));
+        let owner=anchor.and_then(|a|a.owner);
         let (at,below,kind)=anchor.map(|a|(a.at,a.below,a.kind)).unwrap_or((fallback_anchor,fallback_anchor,AnchorKind::Section));
         if state.active.as_ref().is_some_and(|n|
-            n.source==source && n.tone==tone && n.message==message && n.at==at){return;}
+            n.source==source && n.tone==tone && n.message==message && n.at==at && n.owner==owner){return;}
         state.active = Some(Notice {
-            message, tone, source, at, below, kind, created: Instant::now(),
+            owner,message, tone, source, at, below, kind, created: Instant::now(),
         });
     });
     ctx.request_repaint();
@@ -429,6 +443,8 @@ pub fn show(ctx: &Context) {
         Tone::Error => {},
     }
 
+    if !crate::overlay::notice_visible(ctx,active.owner){return;}
+
     // Preserve original notice identity for sync/clear and deduplication.
     let display=if matches!(active.tone,Tone::Error|Tone::Validation){
         crate::user_error::display(active.source,&active.message)
@@ -445,6 +461,7 @@ pub fn show(ctx: &Context) {
         .order(egui::Order::Tooltip)
         .fixed_pos(at)
         .movable(false)
+        .interactable(active.tone==Tone::Error || galley.size().y > size.y-2.0*pad_y)
         .show(ctx, |ui| {
             let (rect, _) = ui.allocate_exact_size(size,Sense::hover());
             let painter = ui.painter().clone();

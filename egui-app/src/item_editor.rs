@@ -262,7 +262,7 @@ impl ItemEditor{
         let mut apply_clicked=false;
         let needs_customer=self.initial["modelProposal"]["required"]==true;
         let safe_width=work_area.width()-theme::MANUAL_DIALOG_SIDE_GAP;
-        components::modal_window(
+        components::modal_window(ctx,
             "상품 상세 수정","reception-item-detail",work_area
         )
             .default_width(740.0_f32.min(safe_width).max(0.0))

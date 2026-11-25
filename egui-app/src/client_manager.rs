@@ -916,7 +916,7 @@ impl ClientManager {
         let mut close=false;
         let editable=self.editable();
         let busy=self.saving.is_some();
-        components::modal_window(title,"native-client-manager-editor",work_area)
+        components::modal_window(ctx,title,"native-client-manager-editor",work_area)
             .default_width(theme::MODAL_DEFAULT_MAX_WIDTH.min(work_area.width()))
             .show(ctx,|ui|{
 
@@ -949,7 +949,7 @@ impl ClientManager {
                     );
                 });
             });
-        if ctx.input(|input|input.key_pressed(egui::Key::Escape)) {
+        if crate::overlay::take_modal_escape(ctx) {
             if self.confirm_delete || self.confirm_discard {
                 self.confirm_delete=false;
                 self.confirm_discard=false;

@@ -729,7 +729,7 @@ impl CategoryManager {
             components::modal_backdrop(ctx,"category-editor-dim",false);
             // The category editor uses the same centered, Kakao-safe modal
             // geometry as other native dialogs, not a right-side drawer.
-            components::modal_window(
+            components::modal_window(ctx,
                 "선택 분류 편집","native-category-editor",work_area
             )
                 .default_width(theme::MODAL_DECISION_MAX_WIDTH.min(work_area.width()))

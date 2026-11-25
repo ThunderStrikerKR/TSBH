@@ -704,7 +704,7 @@ impl ExcelManager{
         let mut close=false;let mut selected:Option<Value>=None;
         let count=self.reply_rows.len();
         components::modal_backdrop(ctx,"factory-reply-review-backdrop",false);
-        components::modal_window("공장 회신 검토","factory-reply-review",area)
+        components::modal_window(ctx,"공장 회신 검토","factory-reply-review",area)
             .default_width(area.width().min(900.0)).show(ctx,|ui|{
                 components::modal_flow_workspace(ui,|workspace|{
                     close=workspace.header("공장 회신 검토","닫기",!busy&&self.reply_confirm.is_none());

@@ -510,7 +510,7 @@ impl ProductManager {
         let mut cancelled=false;
         let width=(work_area.width()-theme::SPACE_12*2.0).clamp(1.0,1120.0);
         let height=components::modal_body_height_budget(work_area.height(),false).min(650.0);
-        components::modal_window("상품 선택",window_id,work_area)
+        components::modal_window(ctx,"상품 선택",window_id,work_area)
             .default_width(width).show(ctx,|ui|{
 
                 ui.set_width(width);
@@ -524,7 +524,7 @@ impl ProductManager {
                     });
                 });
             });
-        (cancelled || ctx.input(|input|input.key_pressed(egui::Key::Escape)),
+        (cancelled || crate::overlay::take_modal_escape(ctx),
             self.take_selection())
     }
     pub fn take_selection(&mut self)->Option<Value>{
@@ -2025,7 +2025,7 @@ impl ProductManager {
         let mut photo_error=None;
         let modal_width=Self::detail_modal_width(work_area.width());
         components::modal_backdrop(ctx,"egui-product-detail-backdrop",false);
-        components::modal_window(
+        components::modal_window(ctx,
             if is_new {"상품 등록"} else {"상품 상세 관리"},
             "egui-product-detail",work_area
         ).resizable(false)

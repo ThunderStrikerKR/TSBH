@@ -1031,6 +1031,9 @@ pub fn show(
     // WORKFLOW_CARD_GAP between order bundles. This is scoped to the list
     // inside its own ScrollArea; workflow_card restores internal spacing.
     ui.spacing_mut().item_spacing.y=0.0;
+    let previews_allowed=allow_pending_hover_switch
+        && crate::overlay::background_preview_allowed(ui.ctx());
+    if !previews_allowed{state.stop_preview();}
     let mut event=None;
     let mut trigger=None;
     let mut hovered_pending=None;
@@ -1090,7 +1093,7 @@ pub fn show(
         let selected=state.selection.is_none() && active_id==Some(draft.id.as_str());
         let key=format!("pending:{}",draft.id);
         let open=selected && state.folded.as_deref()!=Some(key.as_str());
-        let preview_owned=allow_pending_hover_switch && !selected &&
+        let preview_owned=previews_allowed && !selected &&
             state.pending_visible.as_ref().is_some_and(|target|target.order_id==draft.id);
         if !open && !preview_owned && !compact_card_visible(ui.cursor().min.y,ui.clip_rect()){
             reserve_compact_card(ui);
@@ -1149,7 +1152,7 @@ pub fn show(
         if let Some(value)=overlay_event{event=Some(value);}
     }
     // Hover changes display only. Only actual clicks emit SelectPending.
-    if allow_pending_hover_switch && event.is_none(){
+    if previews_allowed && event.is_none(){
         let committed=if state.selection.is_none(){
             active_id.map(|id|PendingTarget{
                 order_id:id.to_owned(),
@@ -1164,7 +1167,8 @@ pub fn show(
         state.pending_content_hovered=None;
     }
     let hovered=trigger.clone();
-    state.update_hover(hovered,ui.ctx());
+    if previews_allowed{state.update_hover(hovered,ui.ctx());}
+    else{state.stop_preview();}
     state.pending_stage_target=state.active_pending_stage().map(PendingTarget::order);
     if let Some((group,pos,width))=overlay{
         let pane_clip=ui.clip_rect();

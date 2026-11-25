@@ -1042,7 +1042,7 @@ impl FreightManager {
             let mut close_basis=false;
             if let Some(editor)=self.rate_editor.as_mut(){
                 components::modal_backdrop(ctx,"freight-rate-backdrop",false);
-                components::modal_window(if editor.product{"기본 운임 설정"}else{"배송 그룹 운임 수정"},"freight-rate-modal",area)
+                components::modal_window(ctx,if editor.product{"기본 운임 설정"}else{"배송 그룹 운임 수정"},"freight-rate-modal",area)
                     .resizable(false).show(ctx,|modal|{
 
                         let title=if editor.product{

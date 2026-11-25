@@ -454,7 +454,7 @@ pub fn show(ctx:&egui::Context,work_area:Rect,row:&Value,state:&Value)->bool{
     );
     let mut close=false;
     components::modal_backdrop(ctx,"history-order-detail-backdrop",false);
-    components::modal_window("발주서 상세","history-order-detail",work_area)
+    components::modal_window(ctx,"발주서 상세","history-order-detail",work_area)
         .fixed_size(modal_size)
         .show(ctx,|ui|{
 

@@ -375,6 +375,9 @@ pub fn icon(heading:&mut Ui,title:&str){
                 }else{ctx.request_repaint_after(Duration::from_millis(180));}
             }else if inside_popup{state.leave=None;}
         }
+        if state.shown && !ctx.memory(|m|m.allows_interaction(response.layer_id)){
+            state=TooltipState::default();
+        }
         if state.shown{
             let viewport=ctx.content_rect();
             let width=(viewport.width()-24.0).min(360.0).max(220.0);
@@ -389,6 +392,7 @@ pub fn icon(heading:&mut Ui,title:&str){
                 .fixed_pos(Pos2::new(left,top))
                 .movable(false)
                 .show(&ctx,|popup|{
+                    crate::components::attach_popup_to_owner(&response,popup);
                     theme::settings_help_surface_frame()
                         .show(popup,|panel|{
                             panel.set_width(width-theme::SPACE_24);
