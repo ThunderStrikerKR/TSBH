@@ -2958,6 +2958,14 @@ fn management_date_text_field_impl(
     ui.add_sized(Vec2::new(width,height),edit)
 }
 
+/// Single native multiline constructor. Each caller keeps its existing
+/// sizing, frame, input permissions and layout options.
+fn multiline_editor<'a>(
+    value:&'a mut dyn egui::TextBuffer,width:f32
+)->egui::TextEdit<'a>{
+    egui::TextEdit::multiline(value).desired_width(width)
+}
+
 /// Shared multiline editor for long-form messages and management memos.
 /// Screens provide only the existing width, row count and optional hint; the
 /// native TextEdit retains its standard click, selection and keyboard behavior.
@@ -2965,8 +2973,7 @@ pub fn multiline_text_field(
     ui:&mut Ui,value:&mut String,enabled:bool,
     desired_width:f32,desired_rows:usize,hint:Option<&str>
 )->Response{
-    let mut editor=egui::TextEdit::multiline(value)
-        .desired_width(desired_width)
+    let mut editor=multiline_editor(value,desired_width)
         .desired_rows(desired_rows);
     if let Some(hint)=hint{
         editor=editor.hint_text(hint);
@@ -2981,12 +2988,11 @@ pub fn multiline_text_field_sized(
     ui:&mut Ui,value:&mut String,enabled:bool,size:Vec2,
     font:egui::FontId,frame:bool,margin:egui::Margin,desired_rows:usize
 )->Response{
-    let editor=egui::TextEdit::multiline(value)
+    let editor=multiline_editor(value,size.x)
         .interactive(enabled)
         .font(font)
         .frame(frame)
         .margin(margin)
-        .desired_width(size.x)
         .desired_rows(desired_rows);
     ui.add_sized(size,editor)
 }
@@ -2996,10 +3002,9 @@ pub fn multiline_text_field_sized(
 pub fn reception_source_text_edit<'a>(
     buffer:&'a mut dyn egui::TextBuffer,width:f32
 )->egui::TextEdit<'a>{
-    egui::TextEdit::multiline(buffer).frame(false)
+    multiline_editor(buffer,width).frame(false)
         .margin(egui::Margin::same(theme::SOURCE_DOCUMENT_TEXT_MARGIN))
         .font(egui::FontId::proportional(typography::FONT_RECEPTION_SOURCE_TEXT))
-        .desired_width(width)
 }
 
 /// Search inputs are append-first: a normal pointer click to resume an
@@ -4969,24 +4974,54 @@ pub fn management_searchable_dropdown(
     trigger
 }
 
-/// Paint only the option glyphs using the shared -1pt optical correction.
-/// Native widgets still own row sizing, selection fill, hover, focus and clicks.
-/// Normal options stay left-aligned; short two-choice menus stay centered.
-fn management_dropdown_option_glyph(
-    ui:&Ui,response:&Response,label:&str,compact:bool
-){
+/// All menu options share native selection, optical text alignment and
+/// notification/close behavior. Compact rows retain exact-width allocation;
+/// status rows retain their indicator dot and label inset.
+#[derive(Clone,Copy)]
+enum ManagementDropdownOptionStyle {
+    Standard,
+    Status(Color32),
+    Compact(f32),
+}
+
+fn management_dropdown_option_inner<T:PartialEq>(
+    ui:&mut Ui,current:&mut T,value:T,label:&str,
+    style:ManagementDropdownOptionStyle
+)->Response{
+    let invisible=egui::RichText::new(label).color(Color32::TRANSPARENT);
+    let response=match style{
+        ManagementDropdownOptionStyle::Compact(width)=>{
+            let selected=*current==value;
+            let mut response=ui.add_sized(
+                Vec2::new(width,theme::MANAGEMENT_DROPDOWN_OPTION_HEIGHT),
+                egui::Button::selectable(selected,invisible)
+            );
+            if response.clicked() && *current!=value{
+                *current=value;
+                response.mark_changed();
+            }
+            response
+        }
+        _=>ui.selectable_value(current,value,invisible),
+    };
+    let row=response.rect;
+    let painter=ui.painter().with_clip_rect(row.shrink(2.0));
     let galley=ui.painter().layout_no_wrap(
         label.to_owned(),
         egui::FontId::proportional(typography::FONT_STANDARD_ACTION),
         theme::TEXT,
     );
-    let row=response.rect;
-    let x=if compact{
-        row.center().x-galley.size().x*0.5
-    }else{
-        row.left()+theme::SPACE_8
+    let x=match style{
+        ManagementDropdownOptionStyle::Standard=>row.left()+theme::SPACE_8,
+        ManagementDropdownOptionStyle::Compact(_)=>row.center().x-galley.size().x*0.5,
+        ManagementDropdownOptionStyle::Status(color)=>{
+            painter.circle_filled(
+                egui::pos2(row.left()+theme::SPACE_12,row.center().y),4.0,color
+            );
+            row.left()+theme::SPACE_24
+        }
     };
-    ui.painter().with_clip_rect(row.shrink(2.0)).galley(
+    painter.galley(
         egui::pos2(
             x,row.top()+typography::management_dropdown_option_text_y(
                 row.height(),galley.size().y
@@ -4994,81 +5029,32 @@ fn management_dropdown_option_glyph(
         ),
         galley,theme::TEXT,
     );
+    if response.clicked(){
+        crate::floating_notice::dropdown_option_selected(ui.ctx());
+        ui.close();
+    }
+    response
 }
 
-/// Long-name options retain native selectable_value sizing and selection
-/// semantics. Invisible native text reserves its original width while our
-/// shared painter controls the glyph baseline.
 pub fn management_dropdown_option<T:PartialEq>(
     ui:&mut Ui,current:&mut T,value:T,label:&str
 )->Response {
-    let response=ui.selectable_value(
-        current,value,egui::RichText::new(label).color(Color32::TRANSPARENT)
-    );
-    management_dropdown_option_glyph(ui,&response,label,false);
-    if response.clicked(){
-        crate::floating_notice::dropdown_option_selected(ui.ctx());
-        ui.close();
-    }
-    response
+    management_dropdown_option_inner(ui,current,value,label,
+        ManagementDropdownOptionStyle::Standard)
 }
 
-/// A colored state row inside the SAME standard management menu.
 pub fn management_status_dropdown_option<T:PartialEq>(
     ui:&mut Ui,current:&mut T,value:T,label:&str,color:Color32
 )->Response {
-    let response=ui.selectable_value(
-        current,value,egui::RichText::new(label).color(Color32::TRANSPARENT)
-    );
-    let row=response.rect;
-    let painter=ui.painter().with_clip_rect(row.shrink(2.0));
-    painter.circle_filled(
-        egui::pos2(row.left()+theme::SPACE_12,row.center().y),
-        4.0,color
-    );
-    let galley=ui.painter().layout_no_wrap(
-        label.to_owned(),
-        egui::FontId::proportional(typography::FONT_STANDARD_ACTION),
-        theme::TEXT
-    );
-    painter.galley(
-        egui::pos2(
-            row.left()+theme::SPACE_24,
-            row.top()+typography::management_dropdown_option_text_y(
-                row.height(),galley.size().y
-            )
-        ),
-        galley,theme::TEXT
-    );
-    if response.clicked(){
-        crate::floating_notice::dropdown_option_selected(ui.ctx());
-        ui.close();
-    }
-    response
+    management_dropdown_option_inner(ui,current,value,label,
+        ManagementDropdownOptionStyle::Status(color))
 }
 
-/// Compact options use the same glyph baseline, but preserve their fixed
-/// width and centered caption independently of long-name management menus.
 pub fn management_dropdown_compact_option<T:PartialEq>(
     ui:&mut Ui,current:&mut T,value:T,label:&str,width:f32
 )->Response {
-    let selected=*current==value;
-    let mut response=ui.add_sized(
-        Vec2::new(width,theme::MANAGEMENT_DROPDOWN_OPTION_HEIGHT),
-        egui::Button::selectable(
-            selected,egui::RichText::new(label).color(Color32::TRANSPARENT)
-        )
-    );
-    management_dropdown_option_glyph(ui,&response,label,true);
-    if response.clicked(){
-        if *current!=value {
-            *current=value;
-            response.mark_changed();
-        }
-        crate::floating_notice::dropdown_option_selected(ui.ctx());
-        ui.close();
-    }
-    response
+    management_dropdown_option_inner(ui,current,value,label,
+        ManagementDropdownOptionStyle::Compact(width))
 }
 
 /// Shared management tab roles (content width, no full-page stretching).
@@ -8373,18 +8359,19 @@ mod management_dropdown_unification_tests {
     }
 
     #[test]
-    fn normal_and_compact_dropdowns_share_the_same_selection_notice_bridge(){
-        // The common trigger registers the position; both option variants
+    fn all_dropdown_options_share_the_same_selection_notice_bridge(){
+        // The common trigger registers the position; all option variants
         // notify the same bridge. No individual screen should capture a
         // popup item's pointer for a result bubble.
         let source=include_str!("components.rs");
+        let inner=source.find("fn management_dropdown_option_inner<T:PartialEq>").unwrap();
         let first=source.find("pub fn management_dropdown_option<T:PartialEq>").unwrap();
-        let second=source.find("pub fn management_dropdown_compact_option<T:PartialEq>").unwrap();
-        let end=source[second..].find("pub fn management_tabs(").unwrap()+second;
-        assert!(source[first..second].contains("dropdown_option_selected(ui.ctx())"));
-        assert!(source[second..end].contains("dropdown_option_selected(ui.ctx())"));
+        let end=source[first..].find("pub fn management_tabs(").unwrap()+first;
+        assert_eq!(source[inner..first].matches("dropdown_option_selected(ui.ctx())").count(),1);
+        assert_eq!(source[first..end].matches("management_dropdown_option_inner(").count(),3);
+        assert!(!source[first..end].contains("dropdown_option_selected(ui.ctx())"));
         let popup=source.find("fn management_dropdown_inner(").unwrap();
-        assert!(source[popup..first].contains("dropdown_popup_trigger(menu.ctx(),rect)"));
+        assert!(source[popup..inner].contains("dropdown_popup_trigger(menu.ctx(),rect)"));
     }
 
     #[test]

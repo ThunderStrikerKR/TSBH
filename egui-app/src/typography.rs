@@ -361,18 +361,7 @@ pub fn field_label(text: &str) -> RichText { render(text, Role::FieldLabel) }
 pub fn field_label_galley(
     ui: &egui::Ui, text: &str
 ) -> std::sync::Arc<egui::Galley> {
-    let role = spec(Role::FieldLabel);
-    let format = egui::TextFormat {
-        font_id: FontId::new(
-            role.size, FontFamily::Name(EMPHASIS_FAMILY.into())
-        ),
-        color: role.color,
-        extra_letter_spacing: role.tracking,
-        line_height: Some(role.line),
-        ..Default::default()
-    };
-    let job = egui::text::LayoutJob::single_section(text.to_owned(), format);
-    ui.fonts_mut(|fonts| fonts.layout_job(job))
+    client_table_galley(ui,text,Role::FieldLabel,true,spec(Role::FieldLabel).color)
 }
 pub fn caption(text: &str) -> RichText { render(text, Role::Metadata) }
 pub fn table_header(text: &str) -> RichText { render(text, Role::TableHeader) }
@@ -383,19 +372,21 @@ pub fn table_header(text: &str) -> RichText { render(text, Role::TableHeader) }
 pub fn table_header_galley(
     ui: &egui::Ui, text: &str
 ) -> std::sync::Arc<egui::Galley> {
-    let role = spec(Role::TableHeader);
-    let format = egui::TextFormat {
-        font_id: FontId::new(
-            role.size, FontFamily::Name(EMPHASIS_FAMILY.into())
-        ),
-        color: role.color,
-        extra_letter_spacing: role.tracking,
-        line_height: Some(role.line),
-        ..Default::default()
-    };
-    let job = egui::text::LayoutJob::single_section(text.to_owned(), format);
-    ui.fonts_mut(|fonts| fonts.layout_job(job))
+    client_table_galley(ui,text,Role::TableHeader,true,spec(Role::TableHeader).color)
 }
+/// Measured role text shares the same tracking and line box for regular,
+/// emphasized, wrapped and numeric galleys. Font family and color remain
+/// explicit semantic choices at each caller.
+fn measured_role_format(role:Role,font_id:FontId,color:Color32)->egui::TextFormat{
+    let style=spec(role);
+    egui::TextFormat{
+        font_id,color,
+        extra_letter_spacing:style.tracking,
+        line_height:Some(style.line),
+        ..Default::default()
+    }
+}
+
 /// Measured text for tightly packed client directory rows. Unlike egui
 /// labels inside fixed subcells, a galley can be painted at the exact same
 /// left coordinate as the column header without implicit centering.
@@ -408,13 +399,7 @@ fn client_table_galley(
     } else {
         FontFamily::Proportional
     };
-    let format=egui::TextFormat {
-        font_id: FontId::new(style.size,font_family),
-        color,
-        extra_letter_spacing: style.tracking,
-        line_height: Some(style.line),
-        ..Default::default()
-    };
+    let format=measured_role_format(role,FontId::new(style.size,font_family),color);
     ui.fonts_mut(|fonts|fonts.layout_job(
         egui::text::LayoutJob::single_section(text.to_owned(),format)
     ))
@@ -502,14 +487,8 @@ pub fn management_table_cell_galley(
         _=>None,
     };
     if let Some(kind)=numeric {
-        let body=spec(Role::Body);
-        let format=egui::TextFormat {
-            font_id:data_value_font(kind,DataValueContext::Table),
-            color:management_table_cell_color(role),
-            extra_letter_spacing:body.tracking,
-            line_height:Some(body.line),
-            ..Default::default()
-        };
+        let format=measured_role_format(Role::Body,
+            data_value_font(kind,DataValueContext::Table),management_table_cell_color(role));
         ui.fonts_mut(|fonts|fonts.layout_job(
             egui::text::LayoutJob::single_section(text.to_owned(),format)
         ))
@@ -534,13 +513,8 @@ pub fn freight_table_wrapped_galley(
     ui:&egui::Ui,text:&str,max_width:f32,
 )->std::sync::Arc<egui::Galley>{
     let style=spec(Role::Body);
-    let format=egui::TextFormat{
-        font_id:FontId::new(style.size,FontFamily::Proportional),
-        color:TEXT,
-        extra_letter_spacing:style.tracking,
-        line_height:Some(style.line),
-        ..Default::default()
-    };
+    let format=measured_role_format(Role::Body,
+        FontId::new(style.size,FontFamily::Proportional),TEXT);
     let mut job=egui::text::LayoutJob::single_section(text.to_owned(),format);
     job.wrap.max_width=max_width.max(1.0);
     job.wrap.break_anywhere=true;
