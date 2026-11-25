@@ -1,0 +1,114 @@
+# React UI retirement — 2026-11-26
+
+- Exact pre-retirement revision: `869de27b942928cd0474ef065ee5b91b3a273c3f` (Git history; no new branch).
+- Existing backup: `backup/main-before-egui-20261119` at `5c2d4dacee7a0be401b08ed765169f1409a696f2`.
+- Current operating entry: `DEV_WINDOWS_EGUI.cmd`, `cargo check --manifest-path egui-app/Cargo.toml`.
+- Scope: remove 69 React TSX and 27 CSS source files, retire the Vite entry and config, remove React-only main cell-navigation CI job and frontend npm entry commands. Keep the Rust cell-navigation job unchanged.
+- Keep all 106 remaining src TypeScript modules for dependency closure review of historical differential oracles; do not treat these as operational code or claim they remain individually needed. Retain existing npm dependencies and lockfile for the historical oracle phase. Existing old UI tests are archival and require the exact pre-retirement revision; they are not the current npm test command. Remaining legacy workflow/script/test cleanup and Tauri-only executable retirement are separate work, not complete in this change.
+- Keep both src JSON files, shared Rust, all Rust tests, product assets, SQLite schema/data, OCR and isolated test boundaries. No operating database changes.
+- Audited 164 Rust sources for literal React/TS/CSS dependency paths; only egui product image JSON direct src asset reference was found. This is static inspection, not actual compilation or screen evidence. Main CI and real Windows verification are independent.
+
+## Removed frontend paths
+
+- `src/ActualFreightField.tsx`
+- `src/AliasManager.tsx`
+- `src/App.tsx`
+- `src/AutomaticMessageTemplateManager.tsx`
+- `src/CategoryManager.tsx`
+- `src/Classification.tsx`
+- `src/ClientChooser.tsx`
+- `src/ClientManager.tsx`
+- `src/ClientWorkbookTools.tsx`
+- `src/ColorGuidanceManager.tsx`
+- `src/CorrectionPanel.tsx`
+- `src/FactoryNotifications.tsx`
+- `src/FactoryReplyHistory.tsx`
+- `src/FactoryReplyImport.tsx`
+- `src/FactoryReplyWatcher.tsx`
+- `src/HubPanels.tsx`
+- `src/HubShell.tsx`
+- `src/HubWorkspace.tsx`
+- `src/IssueResolver.tsx`
+- `src/KakaoClients.tsx`
+- `src/KakaoDockPicker.tsx`
+- `src/LinkedText.tsx`
+- `src/ManagementUI.tsx`
+- `src/MessageWorkspace.tsx`
+- `src/OcrReviewDialog.tsx`
+- `src/OrderDesk.tsx`
+- `src/OrderItemEditor.tsx`
+- `src/PriceCell.tsx`
+- `src/ProductDetailComponents.tsx`
+- `src/ProductFreightPanel.tsx`
+- `src/ProductImports.tsx`
+- `src/ProductManager.tsx`
+- `src/ProductSearchDialog.tsx`
+- `src/ProductSyncWorkbookTools.tsx`
+- `src/ProvisionalProductNoticeManager.tsx`
+- `src/ReceiptArchive.tsx`
+- `src/RegistrationManager.tsx`
+- `src/SettingsPanel.tsx`
+- `src/ShippingFeeRanges.tsx`
+- `src/ShippingManager.tsx`
+- `src/SourceDocument.tsx`
+- `src/StaffChecks.tsx`
+- `src/WorkflowBoard.tsx`
+- `src/WorkflowFooter.tsx`
+- `src/WorkflowQueue.tsx`
+- `src/app/AppHeader.tsx`
+- `src/app/DailySettlement.tsx`
+- `src/app/DateNavigator.tsx`
+- `src/app/OrderHistory.tsx`
+- `src/app/SettingsView.tsx`
+- `src/app/StartupRecoveryPanel.tsx`
+- `src/main.tsx`
+- `src/orders/ManualClassification.tsx`
+- `src/orders/ManualPrompt.tsx`
+- `src/orders/RetailOrderDialog.tsx`
+- `src/orders/useOrderDesk.tsx`
+- `src/perf-audit-profiler.tsx`
+- `src/shared/NoticeContext.tsx`
+- `src/styles/application.css`
+- `src/styles/client-editor.css`
+- `src/styles/components.css`
+- `src/styles/dialogs.css`
+- `src/styles/fonts.css`
+- `src/styles/foundation.css`
+- `src/styles/help-tooltip.css`
+- `src/styles/index.css`
+- `src/styles/management-layout.css`
+- `src/styles/modals.css`
+- `src/styles/order-item-editor.css`
+- `src/styles/patch-v0808.css`
+- `src/styles/product-admin-redesign.css`
+- `src/styles/receipt-document.css`
+- `src/styles/receipt-layout.css`
+- `src/styles/reception-manual.css`
+- `src/styles/shell.css`
+- `src/styles/shipping.css`
+- `src/styles/startup-recovery.css`
+- `src/styles/table-density.css`
+- `src/styles/tauri-stage2-products.css`
+- `src/styles/theme.css`
+- `src/styles/tokens.css`
+- `src/styles/typography.css`
+- `src/styles/v0809.css`
+- `src/styles/workflow-states.css`
+- `src/styles/workflow.css`
+- `src/ui.tsx`
+- `src/ui/AccountPicker.tsx`
+- `src/ui/Button.tsx`
+- `src/ui/Field.tsx`
+- `src/ui/HelpTooltip.tsx`
+- `src/ui/ManagementSearch.tsx`
+- `src/ui/ManagementTable.tsx`
+- `src/ui/Modal.tsx`
+- `src/ui/MoneyInput.tsx`
+- `src/ui/PageHeading.tsx`
+- `src/ui/ScreenBoundary.tsx`
+- `index.html`
+- `vite.config.ts`
+
+## Historical reproduction
+
+Use an explicitly separate checkout of the pinned pre-retirement revision if an original frontend build or historical TS comparison requires missing React files. Do not restore those files to main or use the old build as current app verification.
