@@ -7033,6 +7033,12 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
             let mut workflow_freight_commit=false;
             let mut workflow_freight_cancel=false;
             let mut workflow_freight_option:Option<(String,serde_json::Value)>=None;
+            let mut workflow_origin_change:Option<&'static str>=None;
+            let origin_editable=self.gateway.workflow_write_enabled()
+                && self.workflow_mutation_ready()
+                && self.workflow_freight_editor.is_none()
+                && !board.groups.iter().flat_map(|g|g.shipments.iter())
+                    .any(|other|other.order_id==ship.order_id && other.transferred);
             // The same preallocated review/recipient/items rectangles are
             // used for real workflow rows. No source replacement, false
             // editing actions or section boundary changes on hover.
@@ -7314,9 +7320,9 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                         }
                                         let origin=ship.recipient.get("dispatchOrigin")
                                             .and_then(serde_json::Value::as_str);
-                                        components::reception_item_origin_action_editable(
-                                            contents,origin,false
-                                        );
+                                        workflow_origin_change=components::reception_item_origin_action_editable(
+                                            contents,origin,origin_editable
+                                        ).filter(|selected|Some(*selected)!=origin);
                             }
                         );
                         // Whole-order billing is rendered in its own section.
@@ -7378,6 +7384,11 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                 ui.ctx().request_repaint();
             }else if workflow_freight_commit{
                 self.submit_workflow_freight_edit(ui.ctx());
+            }else if let Some(origin)=workflow_origin_change{
+                self.start_workflow_action_with_args(
+                    "change_confirmed_dispatch_origin",&group.id,Some(&ship.id),
+                    None,false,serde_json::json!({"origin":origin}),ui.ctx()
+                );
             }else if let Some((origin,mut extra))=workflow_freight_option{
                 floating_notice::dispatch_pointer(ui.ctx(),"reception.freight");
                 if !extra.is_object(){extra=serde_json::json!({});}

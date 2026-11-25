@@ -223,6 +223,69 @@ fn change_client(payload:&Value)->Result<Value,String>{
     set(&mut changed,"shippingVersion",field(&freight,"version").clone())?;
     Ok(json!({"order":changed}))
 }
+/// Apply an explicitly addressed edit to an existing operational order.
+/// Never turn a confirmed order into a draft or rewrite its first receipt.
+/// Existing shipment reconciliation owns stage rechecks and immutable audit.
+fn change_confirmed_dispatch_origin(payload:&Value)->Result<Value,String>{
+    let before=req(payload,"state")?;
+    let shipment_id=required_str(payload,"shipmentId")?;
+    let group_id=required_str(payload,"groupId")?;
+    let origin=required_str(payload,"origin")?;
+    let now=required_str(payload,"now")?;
+    let seed=required_str(payload,"eventSeed")?;
+    if !matches!(origin,"FACTORY"|"STORE"){
+        return Err("발송지는 공장 또는 매장만 선택할 수 있습니다.".into());
+    }
+    let ship=rows(field(field(before,"workflow"),"shipments")).iter()
+        .find(|ship|str_field(ship,"id")==shipment_id &&
+            str_field(ship,"groupId")==group_id &&
+            !flag(ship,"transferred") && !flag(ship,"legacyArchived"))
+        .ok_or("수정할 배송 건을 확인하세요.")?;
+    let oi=rows(field(before,"orders")).iter()
+        .position(|order|str_field(order,"id")==str_field(ship,"orderId"))
+        .ok_or("배송 건의 주문을 찾을 수 없습니다.")?;
+    let order=&before["orders"][oi];
+    editable(order,before)?;
+    if !has_value(field(order,"confirmedAt")){
+        return Err("확정된 주문을 선택하세요.".into());
+    }
+    let ri=rows(field(order,"recipients")).iter()
+        .position(|row|str_field(row,"id")==str_field(ship,"recipientId"))
+        .ok_or("배송 건의 수취인을 찾을 수 없습니다.")?;
+    let previous=&order["recipients"][ri];
+    if str_field(previous,"dispatchOrigin")==origin &&
+        rows(field(previous,"items")).iter().all(|item|str_field(item,"origin")==origin){
+        return Ok(json!({"state":before,"unchanged":true}));
+    }
+    let mut state=before.clone();
+    let mut recipient=previous.clone();
+    set(&mut recipient,"dispatchOrigin",json!(origin))?;
+    for item in recipient["items"].as_array_mut().ok_or("상품 목록 오류")?{
+        set(item,"origin",json!(origin))?;
+    }
+    // Freight is origin-specific. Keep a known charge for the selected
+    // origin only when it was already in this shipment; never copy a factory
+    // charge to the store (or vice versa). A new origin needs verification.
+    let existing=if rows(field(previous,"items")).iter().any(|item|str_field(item,"origin")==origin){
+        field(field(ship,"charges"),origin).clone()
+    }else{Value::Null};
+    let mut charges=serde_json::Map::new();
+    charges.insert(origin.to_owned(),existing);
+    set(&mut recipient,"shippingCharges",Value::Object(charges))?;
+    state["orders"][oi]["recipients"][ri]=recipient;
+    set(&mut state["orders"][oi],"updatedAt",json!(now))?;
+    // Scoped reconciliation changes only this source order and its split
+    // groups; validation below still sees the full operational before-image.
+    let result=super::reconciliation::reconcile_shipment(&json!({
+        "state":state,"shipmentId":shipment_id,"groupId":group_id,
+        "now":now,"eventSeed":seed
+    }))?;
+    let changed=req(&result,"state")?;
+    super::validation::validate_reception(before,changed)?;
+    super::validate_workflow_transition(changed,before)?;
+    Ok(result)
+}
+
 pub(super) fn execute(payload:&Value)->Result<Value,String>{
     match required_str(payload,"action")? {
         "resolve_order_client" => Ok(json!({"client":client(req(payload,"order")?,
@@ -232,6 +295,7 @@ pub(super) fn execute(payload:&Value)->Result<Value,String>{
             let state=req(payload,"state")?;
             Ok(json!({"client":client(order,state),"liveClient":live_client(order,state)}))
         },
+        "change_confirmed_dispatch_origin" => change_confirmed_dispatch_origin(payload),
         "prepare_order_edit" => prepare_edit(payload),
         "calculate_order_shipping" => effective_shipping(req(payload,"order")?,
             req(payload,"state")?),
