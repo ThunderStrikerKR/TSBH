@@ -177,7 +177,7 @@ fn connect(input:&Value,source:&Value,approve:bool,context:&Value)->Result<Value
             shipment["tracking"]=json!({});
         }
         shipment["tracking"]["FACTORY"]=field(&current,"tracking").clone();
-        let reply_action=if !prev_tracking.is_empty() && prev_tracking!=s(&current,"tracking") {
+        let reply_action=if approve || (!prev_tracking.is_empty() && prev_tracking!=s(&current,"tracking")) {
             "공장 송장 / 운임 정정"
         }else{"공장 회신 반영"};
         add_event(&mut next,json!({
@@ -596,6 +596,44 @@ mod tests {
             assert!(import_automatic_factory_reply(&new["next"],&payload).is_err());
         }
     }
+    #[test]
+    fn approved_freight_only_conflict_is_audited_as_correction_without_changing_payment(){
+        let mut state=fixture();
+        state["workflow"]["shipments"][0]["tracking"]["FACTORY"]=json!("001234567890");
+        state["workflow"]["shipments"][0]["actualFreight"]["FACTORY"]=json!(4000);
+        state["workflow"]["shipments"][0]["charges"]=json!({"FACTORY":3000});
+        state["workflow"]["payments"]=json!([{"id":"p1","amount":13000}]);
+        state["workflow"]["confirmations"]=json!([{"id":"c1","amount":13000}]);
+        let payload=input(state.clone(),"001234567890","5500");
+        let held=import_automatic_factory_reply(&state,&payload).unwrap();
+        assert_eq!(held["held"],1);
+        assert_eq!(held["applied"],0);
+        let before=held["next"].clone();
+        assert_eq!(before["workflow"],state["workflow"]);
+        let mut approval=json!({
+            "state":before,"revision":before["revision"],"id":"factory-reply-test",
+            "rowNumber":2,"correctionId":"factory-correction-test",
+            "businessDate":"2026-11-13","freightAt":"2026-11-13T10:00:00Z",
+            "freightEventIds":["f1"],"replyEventIds":["r1"]
+        });
+        approval["confirmedText"]=conflict_confirmation(&approval).unwrap()["text"].clone();
+        let next=approve_conflict(&approval).unwrap();
+        let ship=&next["workflow"]["shipments"][0];
+        assert_eq!(ship["tracking"]["FACTORY"],"001234567890");
+        assert_eq!(ship["actualFreight"]["FACTORY"],5500);
+        assert_eq!(ship["charges"]["FACTORY"],3000);
+        for key in ["payments","confirmations","queue"]{
+            assert_eq!(next["workflow"][key],state["workflow"][key],"{key}");
+        }
+        let events=rows(&next["workflow"],"events");
+        assert_eq!(events.len(),2);
+        assert_eq!(events[0]["before"],4000);
+        assert_eq!(events[0]["after"]["amount"],5500);
+        assert_eq!(events[1]["action"],"공장 송장 / 운임 정정");
+        assert_eq!(next["factoryReplies"][0],before["factoryReplies"][0]);
+        assert_eq!(next["factoryReplies"][1]["resolves"],json!({"id":"factory-reply-test","row":2}));
+    }
+
     #[test] fn valid_reply_matches_and_audits(){
         let s=fixture();
         let preview=analyze(&input(s.clone(),"001234567890","4,000")).unwrap();
