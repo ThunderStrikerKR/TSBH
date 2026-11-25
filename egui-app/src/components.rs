@@ -2681,6 +2681,24 @@ fn singleline_editor<'a>(
         .margin(margin).desired_width(width)
 }
 
+/// Allocate a native single-line input in the current layout. A permission
+/// scope is opt-in: direct/read-only slots must not gain a child UI ID or
+/// a different cursor advance merely by sharing the allocator.
+fn allocate_singleline_field(
+    ui:&mut Ui,size:Vec2,edit:egui::TextEdit<'_>,enabled:Option<bool>
+)->Response{
+    let place=|slot:&mut Ui|slot.add_sized(size,edit);
+    match enabled{
+        Some(enabled)=>ui.add_enabled_ui(enabled,place).inner,
+        None=>place(ui),
+    }
+}
+
+/// Standard form width policy; compact rate fields retain their 1pt floor.
+fn form_field_width(ui:&Ui,preferred:f32)->f32{
+    preferred.min(ui.available_width().max(60.0))
+}
+
 /// Short body-text input (for rates and percentages): same caret, selection,
 /// margins and row height as every form editor. Font remains proportional,
 /// so the independent Consolas +2.5pt data-value tweak is not involved.
@@ -2690,24 +2708,13 @@ pub fn compact_text_field(
     let width=width.min(ui.available_width().max(1.0)).max(1.0);
     let edit=singleline_editor(value,egui::TextStyle::Body,width,Align::LEFT,
         typography::form_input_text_margin());
-    ui.add_enabled_ui(enabled,|entry|
-        entry.add_sized(Vec2::new(width,theme::INPUT_HEIGHT),edit)
-    ).inner
+    allocate_singleline_field(ui,Vec2::new(width,theme::INPUT_HEIGHT),edit,Some(enabled))
 }
 
 /// Uses the same height, font and focus styling for every single-line field.
 /// Disabled preview controls cannot edit business data.
 pub fn field(ui: &mut Ui, value: &mut String, kind: FieldKind, enabled: bool) -> Response {
-    field_with_margin(ui,value,kind,enabled,typography::form_input_text_margin())
-}
-
-/// Keep the shared font, focus, validation and fixed 36pt geometry while
-/// allowing unit-bearing money fields to reserve part of their inner margin.
-fn field_with_margin(
-    ui:&mut Ui,value:&mut String,kind:FieldKind,enabled:bool,
-    input_margin:egui::Margin
-)->Response{
-    let width = kind.preferred_width().min(ui.available_width().max(60.0));
+    let width=form_field_width(ui,kind.preferred_width());
     let semantic=match kind {
         FieldKind::Money=>Some(typography::DataValueKind::Money),
         FieldKind::Quantity=>Some(typography::DataValueKind::Quantity),
@@ -2721,10 +2728,9 @@ fn field_with_margin(
         )
     );
     let field=singleline_editor(value,editor_font,width,
-        semantic.map_or(Align::LEFT,typography::data_value_align),input_margin);
-    ui.add_enabled_ui(enabled, |ui| {
-        ui.add_sized(Vec2::new(width, theme::INPUT_HEIGHT), field)
-    }).inner
+        semantic.map_or(Align::LEFT,typography::data_value_align),
+        typography::form_input_text_margin());
+    allocate_singleline_field(ui,Vec2::new(width,theme::INPUT_HEIGHT),field,Some(enabled))
 }
 
 /// UI-only money input: keep the 36pt shared money field and semantic font.
@@ -2781,8 +2787,7 @@ fn money_cursor_after_format(raw:&str,formatted:&str,old_index:usize)->usize{
 }
 pub fn money_field(ui:&mut Ui,value:&mut String,enabled:bool)->Response {
     let before=value.clone();
-    let response=field_with_margin(ui,value,FieldKind::Money,enabled,
-        typography::form_input_text_margin());
+    let response=field(ui,value,FieldKind::Money,enabled);
     normalize_money_edit(ui,value,&before,&response);
     response
 }
@@ -2873,14 +2878,12 @@ pub fn money_field_with_unit(
     unit:&str,unit_right_inset:f32
 )->Response{
     let before=value.clone();
-    let width=FieldKind::Money.preferred_width().min(ui.available_width().max(60.0));
+    let width=form_field_width(ui,FieldKind::Money.preferred_width());
     let (edit,unit_galley)=money_text_edit_with_unit(
         ui,value,typography::numeric_editor_font(),width,unit,unit_right_inset,
         0.0,typography::form_input_text_margin()
     );
-    let response=ui.add_enabled_ui(enabled,|ui|{
-        ui.add_sized(Vec2::new(width,theme::INPUT_HEIGHT),edit)
-    }).inner;
+    let response=allocate_singleline_field(ui,Vec2::new(width,theme::INPUT_HEIGHT),edit,Some(enabled));
     normalize_money_edit(ui,value,&before,&response);
     paint_money_unit(ui,response.rect,unit_galley,unit_right_inset);
     response
@@ -2891,10 +2894,10 @@ pub fn money_field_with_unit(
 pub fn flexible_text_field(
     ui:&mut Ui, value:&mut String, width:f32, placeholder:&str
 )->Response {
-    let width=width.min(ui.available_width().max(60.0));
+    let width=form_field_width(ui,width);
     let edit=singleline_editor(value,egui::TextStyle::Body,width,Align::LEFT,
         typography::form_input_text_margin()).hint_text(placeholder);
-    ui.add_sized(Vec2::new(width,theme::INPUT_HEIGHT),edit)
+    allocate_singleline_field(ui,Vec2::new(width,theme::INPUT_HEIGHT),edit,None)
 }
 
 /// Shared date text field used inside the management date-group master.
@@ -2914,7 +2917,43 @@ fn management_date_text_field_impl(
         ),width,Align::Center,typography::management_date_text_margin())
         .frame(false).hint_text(hint);
     if let Some(limit)=limit{edit=edit.char_limit(limit);}
-    ui.add_sized(Vec2::new(width,height),edit)
+    allocate_singleline_field(ui,Vec2::new(width,height),edit,None)
+}
+
+#[cfg(test)]
+mod shared_singleline_allocation_tests{
+    use super::*;
+
+    #[test]
+    fn shared_allocation_preserves_native_id_geometry_and_permission_scope(){
+        for permission in [None,Some(true),Some(false)]{
+            let ctx=test_context();
+            let mut value="12,345".to_owned();
+            let mut results=Vec::new();
+            for shared in [false,true]{
+                let _=ctx.run(egui::RawInput::default(),|ctx|{
+                    egui::CentralPanel::default().show(ctx,|ui|{
+                        let size=Vec2::new(112.0,theme::INPUT_HEIGHT);
+                        let edit=singleline_editor(&mut value,typography::numeric_editor_font(),
+                            size.x,Align::RIGHT,typography::form_input_text_margin());
+                        let response=if shared{
+                            allocate_singleline_field(ui,size,edit,permission)
+                        }else if let Some(enabled)=permission{
+                            ui.add_enabled_ui(enabled,|slot|slot.add_sized(size,edit)).inner
+                        }else{
+                            ui.add_sized(size,edit)
+                        };
+                        results.push((response.id,response.rect,response.enabled(),
+                            ui.available_rect_before_wrap().min));
+                    });
+                });
+            }
+            assert_eq!(results[0],results[1]);
+            assert_eq!(results[1].1.height(),theme::INPUT_HEIGHT);
+            assert_eq!(results[1].2,permission.unwrap_or(true));
+            assert_eq!(value,"12,345");
+        }
+    }
 }
 
 /// Single native multiline constructor. Each caller keeps its existing
@@ -3344,9 +3383,9 @@ pub fn reception_recipient_fields(
             reception_recipient_linked_background(line,width,active);
             // The response belongs to the input, NOT the combined row.
             // This is read-only while retaining hover and native text layout.
-            let display=line.add_sized(
-                Vec2::new(width, theme::INPUT_HEIGHT),
-                reception_recipient_text_edit(value, width, active, false).interactive(false),
+            let display=allocate_singleline_field(
+                line,Vec2::new(width, theme::INPUT_HEIGHT),
+                reception_recipient_text_edit(value, width, active, false).interactive(false),None,
             );
             let hit=reception_recipient_value_hit(line,&display);
             source_highlight::paint_active_if(line,&hit,active);
@@ -3388,9 +3427,9 @@ pub fn reception_recipient_fields(
                     reception_recipient_linked_background(
                         line,mobile_width,active[2]
                     );
-                    let mobile_display = line.add_sized(
-                        Vec2::new(mobile_width, theme::INPUT_HEIGHT),
-                        reception_recipient_text_edit(mobile, mobile_width, active[2], true).interactive(false),
+                    let mobile_display = allocate_singleline_field(
+                        line,Vec2::new(mobile_width, theme::INPUT_HEIGHT),
+                        reception_recipient_text_edit(mobile, mobile_width, active[2], true).interactive(false),None,
                     );
                     let mobile_input=reception_recipient_value_hit(line,&mobile_display);
                     source_highlight::paint_active_if(line,&mobile_input,active[2]);
@@ -3403,9 +3442,9 @@ pub fn reception_recipient_fields(
                     reception_recipient_linked_background(
                         line,phone_width,active[3]
                     );
-                    let phone_display = line.add_sized(
-                        Vec2::new(phone_width, theme::INPUT_HEIGHT),
-                        reception_recipient_text_edit(phone, phone_width, active[3], true).interactive(false),
+                    let phone_display = allocate_singleline_field(
+                        line,Vec2::new(phone_width, theme::INPUT_HEIGHT),
+                        reception_recipient_text_edit(phone, phone_width, active[3], true).interactive(false),None,
                     );
                     let phone_input=reception_recipient_value_hit(line,&phone_display);
                     source_highlight::paint_active_if(line,&phone_input,active[3]);
@@ -6171,9 +6210,9 @@ fn reception_freight_money_readonly(ui:&mut Ui,value:&mut String)->Response{
         ui,value,reception_money_font(),RECEPTION_FREIGHT_MONEY_WIDTH,
         "원",inset,RECEPTION_MONEY_UNIT_GAP,typography::reception_cell_text_margin()
     );
-    let response=ui.add_sized(
-        Vec2::new(RECEPTION_FREIGHT_MONEY_WIDTH,theme::INPUT_HEIGHT),
-        edit.interactive(false)
+    let response=allocate_singleline_field(
+        ui,Vec2::new(RECEPTION_FREIGHT_MONEY_WIDTH,theme::INPUT_HEIGHT),
+        edit.interactive(false),None
     );
     paint_money_unit(ui,response.rect,unit_galley,inset);
     response
