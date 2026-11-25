@@ -128,6 +128,10 @@ fn import(conn:&mut Connection,base:&Path,dir:&Path,path:&Path,bytes:&[u8])->Res
 }
 pub fn approve(review:Value)->Result<Value,String>{
     let (mut conn,base)=open_db()?;
+    approve_with_db(&mut conn,&base,review)
+}
+// The authorized live entry point and isolated tests share this transaction.
+fn approve_with_db(conn:&mut Connection,base:&Path,review:Value)->Result<Value,String>{
     let revision=review["revision"].as_u64().ok_or("검토 리비전 누락")?;
     let reply_id=text(&review,"id");
     let original_id=reply_id.strip_prefix("factory-reply-").filter(|v|v.len()==64&&v.bytes().all(|c|c.is_ascii_hexdigit()))
@@ -137,7 +141,7 @@ pub fn approve(review:Value)->Result<Value,String>{
     if id(&read_bounded(&path)?)!=reply_id{return Err("보관된 회신 원본이 일치하지 않습니다.".into())}
     let correction=format!("factory-correction-{}",Uuid::new_v4());
     let at=Utc::now().to_rfc3339();
-    bando_data_access::update_v2_snapshot(&mut conn,revision,true,|before|{
+    bando_data_access::update_v2_snapshot(conn,revision,true,|before|{
         let mut payload=review.clone();payload["state"]=before.clone();
         payload["correctionId"]=json!(correction);payload["businessDate"]=json!(today());
         payload["freightAt"]=json!(at);payload["freightEventIds"]=json!(ids(1));
@@ -365,12 +369,19 @@ mod tests{
         let mut state=json!({"revision":7,"products":[],"clients":[],"aliases":[],"queue":[],"exports":[],
             "factoryReplies":[],"settings":{"accounts":[],"operatorName":"합성 직원",
                 "factoryReplyDirectory":inbox.to_string_lossy(),"excelDirectory":archive.to_string_lossy()},
-            "orders":[{"id":"o1","raw":"합성 원문","recipients":[recipient.clone()]}],
-            "workflow":{"sources":[],"groups":[],"payments":[],"confirmations":[],"deliveries":[],"changeRequests":[],
-                "shipments":[{"id":"s1","orderId":"o1","recipientId":"r1",
-                    "charges":{"FACTORY":3000},"tracking":{},"actualFreight":{}}],
+            "orders":[{"id":"o1","clientId":"c1","raw":"합성 원문","recipients":[recipient.clone()]}],
+            "workflow":{"sources":[{"id":"src1","orderId":"o1"}],
+                "groups":[{"id":"g1","sourceId":"src1","dealerId":"c1","notices":[]}],
+                "payments":[{"id":"pay1","dealerId":"c1","amount":13000,
+                    "paidAt":"2026-11-13T09:00:00Z","allocations":[{"id":"a1","shipmentId":"s1","amount":13000}]}],
+                "confirmations":[{"id":"conf1","groupId":"g1","dealerId":"c1",
+                    "shipmentIds":["s1"],"amount":13000,"amounts":{"s1":13000},
+                    "allocations":[{"id":"ca1","shipmentId":"s1","amount":13000}]}],
+                "deliveries":[],"changeRequests":[],
+                "shipments":[{"id":"s1","orderId":"o1","recipientId":"r1","sourceId":"src1","groupId":"g1",
+                    "step":4,"transferred":true,"charges":{"FACTORY":3000},"tracking":{},"actualFreight":{}}],
                 "queue":[{"id":"q1","shipmentId":"s1","origin":"FACTORY","status":"EXPORTED",
-                    "snapshot":{"recipient":recipient}}],"events":[]}});
+                    "snapshot":{"recipient":recipient,"shipping":3000,"subtotal":10000,"total":13000}}],"events":[]}});
         let tx=conn.transaction().unwrap();
         bando_data_access::store_v2_relational(&tx,&state).unwrap();
         for key in ["products","clients","orders"]{state.as_object_mut().unwrap().remove(key);}
@@ -419,6 +430,8 @@ mod tests{
         assert_eq!(ship["charges"]["FACTORY"],3000);
         assert_eq!(stored["orders"],before["orders"]);
         assert_eq!(stored["workflow"]["queue"],before["workflow"]["queue"]);
+        assert_eq!(stored["workflow"]["payments"],before["workflow"]["payments"]);
+        assert_eq!(stored["workflow"]["confirmations"],before["workflow"]["confirmations"]);
         let events=stored["workflow"]["events"].as_array().unwrap();
         assert_eq!(events.len(),2);
         assert_eq!(events[0]["action"],"실제 출고 운임 입력");
@@ -461,5 +474,84 @@ mod tests{
         assert_eq!((retry.files,retry.applied,retry.held),(1,1,0));
         assert_eq!(snapshot(&mut conn).unwrap()["revision"],8);
         assert_eq!(fs::read_dir(base.0.join("factory-replies")).unwrap().count(),1);
+    }
+
+    #[test]
+    fn approved_factory_conflict_updates_only_cost_and_preserves_paid_amounts_and_history(){
+        let base=Temp::new();
+        let (mut conn,inbox)=synthetic_db(&base.0);
+        let initial=snapshot(&mut conn).unwrap();
+        let first=reply_bytes("001234567890",4000);
+        let conflict=reply_bytes("009876543210",5500);
+        fs::write(inbox.join("first.xlsx"),&first).unwrap();
+        let mut cache=Scan::default();
+        let imported=scan_ready(&mut cache,&mut conn,&base.0);
+        assert!(imported.error.is_none(),"{:?}",imported.error);
+        assert_eq!((imported.files,imported.applied,imported.held),(1,1,0));
+        let first_saved=snapshot(&mut conn).unwrap();
+        fs::write(inbox.join("conflict.xlsx"),&conflict).unwrap();
+        let held=scan_ready(&mut cache,&mut conn,&base.0);
+        assert!(held.error.is_none(),"{:?}",held.error);
+        assert_eq!((held.files,held.applied,held.held),(1,0,1));
+        let before=snapshot(&mut conn).unwrap();
+        assert_eq!(before["workflow"]["shipments"],first_saved["workflow"]["shipments"]);
+        assert_eq!(before["workflow"]["events"],first_saved["workflow"]["events"]);
+        assert_eq!(before["factoryReplies"][0],first_saved["factoryReplies"][0]);
+        let reply_id=id(&conflict);
+        let confirm=rules::execute("factory_conflict_confirmation",json!({
+            "state":before,"id":reply_id,"rowNumber":2
+        })).unwrap();
+        let review=json!({"revision":before["revision"],"id":reply_id,"rowNumber":2,
+            "confirmedText":confirm["text"]});
+        let mut stale=review.clone();
+        stale["revision"]=json!(before["revision"].as_u64().unwrap()-1);
+        assert!(approve_with_db(&mut conn,&base.0,stale).is_err());
+        let mut tampered=review.clone();
+        tampered["confirmedText"]=json!("변조된 승인 내용");
+        assert!(approve_with_db(&mut conn,&base.0,tampered).is_err());
+        let original=PathBuf::from(before["factoryReplies"][1]["archivedPath"].as_str().unwrap());
+        fs::write(&original,b"tampered archive").unwrap();
+        assert!(approve_with_db(&mut conn,&base.0,review.clone()).is_err());
+        assert_eq!(snapshot(&mut conn).unwrap(),before);
+        fs::write(&original,&conflict).unwrap();
+        approve_with_db(&mut conn,&base.0,review.clone()).unwrap();
+        drop(conn);
+        let mut conn=Connection::open(base.0.join("synthetic.sqlite")).unwrap();
+        let after=snapshot(&mut conn).unwrap();
+        assert_eq!(after["revision"].as_u64().unwrap(),before["revision"].as_u64().unwrap()+1);
+        let ship=&after["workflow"]["shipments"][0];
+        assert_eq!(ship["actualFreight"]["FACTORY"],5500);
+        assert_eq!(ship["tracking"]["FACTORY"],"009876543210");
+        assert_eq!(ship["charges"]["FACTORY"],3000);
+        for key in ["payments","confirmations","queue"]{
+            assert_eq!(after["workflow"][key],initial["workflow"][key],"{key}");
+        }
+        assert_eq!(after["orders"],initial["orders"]);
+        assert_eq!(after["workflow"]["payments"][0]["amount"],13000);
+        let replies=after["factoryReplies"].as_array().unwrap();
+        assert_eq!(replies.len(),3);
+        assert_eq!(replies[0],before["factoryReplies"][0]);
+        assert_eq!(replies[1],before["factoryReplies"][1]);
+        assert_eq!(replies[2]["resolves"],json!({"id":reply_id,"row":2}));
+        assert_eq!(replies[2]["rows"].as_array().unwrap().len(),1);
+        assert_eq!(replies[2]["rows"][0]["shipmentId"],"s1");
+        assert_eq!(replies[2]["status"],"APPLIED");
+        let events=after["workflow"]["events"].as_array().unwrap();
+        assert_eq!(events.len(),4);
+        assert_eq!(events[2]["before"],4000);
+        assert_eq!(events[2]["after"]["amount"],5500);
+        assert_eq!(events[3]["action"],"공장 송장 / 운임 정정");
+        let mut replay=review;
+        replay["revision"]=after["revision"].clone();
+        replay["confirmedText"]=rules::execute("factory_conflict_confirmation",json!({
+            "state":after,"id":reply_id,"rowNumber":2
+        })).unwrap()["text"].clone();
+        assert!(approve_with_db(&mut conn,&base.0,replay).is_err());
+        assert_eq!(snapshot(&mut conn).unwrap(),after);
+        let repeated=scan_ready(&mut Scan::default(),&mut conn,&base.0);
+        assert!(repeated.error.is_none(),"{:?}",repeated.error);
+        assert_eq!(repeated.files,0);
+        assert_eq!(snapshot(&mut conn).unwrap(),after);
+        assert_eq!(fs::read(&original).unwrap(),conflict);
     }
 }
