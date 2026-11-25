@@ -275,4 +275,74 @@ mod client_name_excel_compat_tests {
         assert_eq!(columns[14],"내부코드");
         assert_eq!(columns[16],"사용");
     }
+    // Test native row validation, not the retired ExcelJS reader. File-level
+    // formula/numeric-cell checks still require a current Rust XLSX adapter.
+    fn fixture()->Value {
+        json!({"revision":19,"clients":[
+            {"id":"client-1","name":"테스트 거래처","address":"서울 종로구 10",
+             "postcode":"03123","phone":"02-1234-5678","mobile":"010-0000-0000",
+             "tier":"wholesale","payment":"PREPAID","active":true,
+             "shippingFeeExcluded":false,"overrides":{"variant-1":14000}},
+            {"id":"client-2","name":"다른 거래처","address":"서울 종로구 1",
+             "phone":"02-9876-5432","tier":"semi","payment":"POSTPAID",
+             "active":true,"shippingFeeExcluded":false,"overrides":{}}
+        ],"orders":[{"id":"order-1","recipients":[]}],"settings":{"accounts":[]}})
+    }
+    fn row(id:&str,name:&str,address:&str,phone:&str)->Value {
+        let mut cells=vec!["";17];
+        cells[0]=id; cells[1]=name; cells[2]=address; cells[4]=phone;
+        json!({"row":2,"cells":cells})
+    }
+    fn run(state:&Value,input:Vec<Value>,new_ids:Vec<&str>,revision:i64)->Result<Value,String>{
+        preview(&json!({"state":state,"sourceRevision":revision,"input":input,"newIds":new_ids}))
+    }
+    #[test]
+    fn unchanged_rows_preserve_ids_postcode_and_special_prices(){
+        let state=fixture();
+        let result=run(&state,vec![row("client-1","테스트 거래처","서울 종로구 10","02-1234-5678"),
+            row("client-2","다른 거래처","서울 종로구 1","02-9876-5432")],vec![],19).unwrap();
+        assert_eq!(result["missing"],0);
+        assert_eq!(result["rows"][0]["status"],"UNCHANGED");
+        assert_eq!(result["rows"][1]["status"],"UNCHANGED");
+        assert_eq!(result["rows"][0]["client"]["postcode"],"03123");
+        assert_eq!(result["rows"][0]["client"]["overrides"],state["clients"][0]["overrides"]);
+    }
+    #[test]
+    fn edited_id_and_new_row_preserve_existing_prices_and_omitted_client(){
+        let state=fixture(); let before=state.clone();
+        let mut added=row("","신규 지점","경기 성남시 1","031-500-6000");
+        added["row"]=json!(3); added["cells"][8]=json!("소매"); added["cells"][9]=json!("후불");
+        let result=run(&state,vec![row("client-1","테스트 거래처","서울 종로구 45","02-1234-5678"),added],
+            vec!["","client-new"],19).unwrap();
+        assert_eq!(result["missing"],1);
+        assert_eq!(result["rows"][0]["status"],"UPDATE");
+        assert_eq!(result["rows"][0]["client"]["id"],"client-1");
+        assert_eq!(result["rows"][0]["client"]["address"],"서울 종로구 45");
+        assert_eq!(result["rows"][0]["client"]["overrides"],state["clients"][0]["overrides"]);
+        assert_eq!(result["rows"][1]["status"],"ADD");
+        assert_eq!(result["rows"][1]["client"]["id"],"client-new");
+        assert_eq!(result["rows"][1]["client"]["tier"],"retail");
+        assert_eq!(result["rows"][1]["client"]["payment"],"POSTPAID");
+        assert_eq!(state,before,"preview must not mutate the authoritative state");
+    }
+    #[test]
+    fn corrupt_existing_id_duplicate_id_and_phone_are_not_approvable(){
+        let state=fixture();
+        let result=run(&state,vec![
+            row("corrupt-id","테스트 거래처","서울 종로구 10","02-1234-5678"),
+            row("client-1","테스트 거래처","서울 종로구 10","02-1234-5678"),
+            row("client-1","테스트 거래처","서울 종로구 10","02-1234-5678"),
+            row("","가짜 중복","서울 강남구 3","02-1234-5678")],
+            vec!["","","","client-new"],19).unwrap();
+        let statuses:Vec<_>=result["rows"].as_array().unwrap().iter()
+            .map(|r|r["status"].as_str().unwrap()).collect();
+        assert_eq!(statuses,vec!["ERROR","UNCHANGED","ERROR","HOLD"]);
+    }
+    #[test]
+    fn stale_workbook_revision_is_rejected_before_row_preview(){
+        let mut state=fixture(); state["revision"]=json!(20);
+        let error=run(&state,vec![row("client-1","테스트 거래처","서울 종로구 45","02-1234-5678")],
+            vec![],19).unwrap_err();
+        assert!(error.contains("데이터가 바뀌었습니다"));
+    }
 }

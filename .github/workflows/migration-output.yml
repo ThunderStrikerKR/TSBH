@@ -4,6 +4,7 @@ on:
     branches: [main]
     paths:
       - 'src-tauri/src/business_core/**'
+      - 'src-tauri/resources/state-seed.json'
       - 'crates/bando-data-access/**'
       - 'tests/rust-migration/**'
       - '.github/workflows/migration-output.yml'
@@ -11,6 +12,7 @@ on:
     branches: [main]
     paths:
       - 'src-tauri/src/business_core/**'
+      - 'src-tauri/resources/state-seed.json'
       - 'crates/bando-data-access/**'
       - 'tests/rust-migration/**'
       - '.github/workflows/migration-output.yml'
@@ -38,9 +40,14 @@ jobs:
           workspaces: |
             tests/rust-migration/output -> ../../../.cargo-target
             tests/rust-migration/integration -> ../../../.cargo-target
+            tests/rust-migration/recognition -> ../../../.cargo-target
       - name: Compile and run independent Rust output tests
         run: cargo test --manifest-path tests/rust-migration/output/Cargo.toml
       - name: Execute actual three-domain Rust dispatcher tests
         run: cargo test --manifest-path tests/rust-migration/integration/Cargo.toml -- --nocapture
       - name: Verify supplied Hongcheon school order through native recognition
         run: cargo test --manifest-path tests/rust-migration/recognition/Cargo.toml hongcheon_school_reception_keeps_two_phones_and_three_order_quantities -- --nocapture
+      - name: Verify 20 native reception documents and exact recipient ownership
+        run: cargo test --manifest-path tests/rust-migration/recognition/Cargo.toml regressions::order_ -- --nocapture
+      - name: Verify ten native institution and recipient boundary cases
+        run: cargo test --manifest-path tests/rust-migration/recognition/Cargo.toml regressions::institution_ -- --nocapture
