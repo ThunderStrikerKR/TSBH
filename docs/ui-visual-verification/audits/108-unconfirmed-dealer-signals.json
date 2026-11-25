@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "id": "108-unconfirmed-dealer-signals",
+  "screen": "처리 중인 주문 – 거래처 확인 전 신호등",
+  "files": [
+    "egui-app/src/workflow_board_ui.rs"
+  ],
+  "visualStatus": "NOT_VERIFIED",
+  "reason": "Use existing inactive gray palette for all four lamps when no client is selected. Windows visual verification pending."
+}

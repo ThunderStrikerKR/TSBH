@@ -413,9 +413,18 @@ struct HeaderActions {
     manage: bool,
     delete: bool,
 }
+/// No stage is active while the dealer is still unconfirmed.
+fn workflow_signal_palette(step:Option<usize>,index:usize)->(egui::Color32,egui::Color32){
+    match step{
+        Some(step) if index<step=>(theme::WORKFLOW_SIGNAL_DONE,theme::WORKFLOW_SIGNAL_DONE_BORDER),
+        Some(step) if index==step=>(theme::WORKFLOW_SIGNAL_CURRENT,theme::WORKFLOW_SIGNAL_CURRENT_BORDER),
+        _=>(theme::WORKFLOW_SIGNAL_PENDING,theme::WORKFLOW_SIGNAL_PENDING_BORDER),
+    }
+}
+
 fn workflow_header(
-    ui:&mut Ui,row:Rect,id:&str,title:&str,open:bool,step:usize,
-    notice:bool,in_preview:bool,can_manage:bool,can_delete:bool
+    ui:&mut Ui,row:Rect,id:&str,title:&str,open:bool,step:Option<usize>,
+    in_preview:bool,can_manage:bool,can_delete:bool
 )->HeaderActions{
     let content=workflow_row_content(row);
     let gap=theme::WORKFLOW_CARD_SLOT_GAP;
@@ -479,13 +488,7 @@ fn workflow_header(
             block.center().y
         );
         let lamp=Rect::from_center_size(center,Vec2::new(lamp_width,lamp_height));
-        let (fill,border)=if index<step{
-            (theme::WORKFLOW_SIGNAL_DONE,theme::WORKFLOW_SIGNAL_DONE_BORDER)
-        }else if index==step || (index==step && notice){
-            (theme::WORKFLOW_SIGNAL_CURRENT,theme::WORKFLOW_SIGNAL_CURRENT_BORDER)
-        }else{
-            (theme::WORKFLOW_SIGNAL_PENDING,theme::WORKFLOW_SIGNAL_PENDING_BORDER)
-        };
+        let (fill,border)=workflow_signal_palette(step,index);
         ui.painter().rect_filled(lamp,theme::WORKFLOW_SIGNAL_RADIUS,fill);
         ui.painter().rect_stroke(
             lamp,theme::WORKFLOW_SIGNAL_RADIUS,
@@ -802,7 +805,7 @@ fn group_frame(
         let (top,bottom)=workflow_compact_rows(ui);
         let btn=workflow_header(
             ui,top,&group.id,&group.dealer_name,open || in_preview,
-            group.step,group.needs_notice,in_preview,
+            Some(group.step),in_preview,
             true,writable && !group.transferred
         );
         if btn.manage{event=Some(Event::ManageGroup(group.id.clone()));}
@@ -945,8 +948,10 @@ fn pending_frame(
     let mut event=None;
     workflow_card(ui,selected && !in_preview,in_preview,|ui|{
         let (top,bottom)=workflow_compact_rows(ui);
+        let has_client=draft.client_id.as_deref()
+            .is_some_and(|id|!id.trim().is_empty());
         let header=workflow_header(
-            ui,top,&draft.id,dealer_name,open,0,false,in_preview,true,true
+            ui,top,&draft.id,dealer_name,open,has_client.then_some(0),in_preview,true,true
         );
         if header.manage{event=Some(Event::ManagePending(draft.id.clone()));}
         if header.delete{event=Some(Event::DeletePending(draft.id.clone()));}
@@ -980,8 +985,6 @@ fn pending_frame(
                     .and_then(|value|value.as_array()))
                 .map(Vec::as_slice).unwrap_or(&[])
         }else{&[]};
-        let has_client=draft.client_id.as_deref()
-            .is_some_and(|id|!id.trim().is_empty());
         let quote_ready=pending_quote_ready(draft);
         let quote=draft.pricing_preview.as_ref();
         let total=if quote_ready{
@@ -1346,6 +1349,20 @@ mod shipment_list_tests {
 #[cfg(test)]
 mod pending_matching_tests {
     use super::*;
+
+    #[test]
+    fn unconfirmed_dealer_has_four_gray_lamps(){
+        let pending=(theme::WORKFLOW_SIGNAL_PENDING,theme::WORKFLOW_SIGNAL_PENDING_BORDER);
+        let current=(theme::WORKFLOW_SIGNAL_CURRENT,theme::WORKFLOW_SIGNAL_CURRENT_BORDER);
+        let done=(theme::WORKFLOW_SIGNAL_DONE,theme::WORKFLOW_SIGNAL_DONE_BORDER);
+        for index in 0..STEP_NAMES.len(){
+            assert_eq!(workflow_signal_palette(None,index),pending);
+            assert_eq!(workflow_signal_palette(Some(0),index),
+                if index==0{current}else{pending});
+            assert_eq!(workflow_signal_palette(Some(1),index),
+                if index==0{done}else if index==1{current}else{pending});
+        }
+    }
 
     #[test]
     fn confirmation_keeps_the_pending_card_slot(){
