@@ -137,7 +137,10 @@ impl ClipboardMonitor {
     /// lock. Suppress a stale worker snapshot until the next publication.
     pub fn mark_cleared(&mut self,sequence:Option<u32>){
         self.kind=ClipboardKind::Empty;
-        #[cfg(windows)] {self.cleared_sequence=sequence;}
+        #[cfg(windows)] {
+            self.cleared_sequence=sequence;
+            if let Some(watcher)=self.watcher.as_ref(){watcher.invalidate_after_clear(sequence);}
+        }
         #[cfg(not(windows))] {let _=sequence;}
     }
     pub fn shutdown(&mut self){
@@ -238,6 +241,13 @@ mod clipboard_events{
         pub fn snapshot(&self)->Option<Snapshot>{
             *self.shared.snapshot.lock().unwrap_or_else(|p|p.into_inner())
         }
+        pub fn invalidate_after_clear(&self,imported:Option<u32>){
+            let mut snapshot=self.shared.snapshot.lock().unwrap_or_else(|p|p.into_inner());
+            let live=clipboard_sequence();
+            if live.is_none() || snapshot.is_some_and(|s|s.0==imported || s.0!=live){
+                *snapshot=None;
+            }
+        }
     }
     impl Drop for Watcher{
         fn drop(&mut self){
@@ -257,6 +267,7 @@ mod clipboard_events{
             let mut clipboard=Clipboard::new().ok()?;
             match clipboard.get_text(){
                 Ok(text)=>!text.trim().is_empty(),
+                Err(arboard::Error::ContentNotAvailable)=>false,
                 Err(_)=>return None,
             }
         }else{false};
@@ -277,6 +288,7 @@ mod clipboard_events{
         let mut last=Instant::now()-fallback;
         let mut dirty=true;
         let mut retry=false;
+        let mut retry_delay=Duration::from_millis(150);
         while !shared.stop.load(Ordering::Acquire){
             for _ in 0..256{
                 if unsafe{PeekMessageW(&mut msg,0,0,0,PM_REMOVE)}==0{break;}
@@ -285,23 +297,34 @@ mod clipboard_events{
             }
             if shared.stop.load(Ordering::Acquire){break;}
             dirty|=DIRTY.with(|d|d.replace(false));
+            if dirty{retry_delay=Duration::from_millis(150);}
             if dirty || last.elapsed()>=fallback ||
-                (retry && last.elapsed()>=Duration::from_millis(150)){
+                (retry && last.elapsed()>=retry_delay){
                 let previous=*shared.snapshot.lock().unwrap_or_else(|p|p.into_inner());
                 let current=clipboard_sequence();
                 if dirty || retry || current.is_none() || previous.is_none_or(|p|p.0!=current){
                     match probe(png){
                         Some(next)=>{
-                            *shared.snapshot.lock().unwrap_or_else(|p|p.into_inner())=Some(next);
-                            if previous!=Some(next){ctx.request_repaint();}
-                            retry=false;
+                            let mut snapshot=shared.snapshot.lock().unwrap_or_else(|p|p.into_inner());
+                            // Do not publish a probe superseded by autosave
+                            // clearing or by another application copying.
+                            if clipboard_sequence()==next.0{
+                                let changed=*snapshot!=Some(next);
+                                *snapshot=Some(next);drop(snapshot);
+                                if changed{ctx.request_repaint();}
+                                retry=false;
+                                retry_delay=Duration::from_millis(150);
+                            }else{retry=true;}
                         }
-                        None=>retry=true,
+                        None=>{
+                            retry=true;
+                            retry_delay=(retry_delay*2).min(Duration::from_secs(2));
+                        }
                     }
                 }
                 last=Instant::now();dirty=false;
             }
-            let delay=if retry{Duration::from_millis(150)}else{fallback};
+            let delay=if retry{retry_delay.min(fallback)}else{fallback};
             let ms=delay.saturating_sub(last.elapsed()).as_millis().max(1) as u32;
             let result=unsafe{MsgWaitForMultipleObjectsEx(0,ptr::null(),ms,QS_ALLINPUT,MWMO_INPUTAVAILABLE)};
             if result==u32::MAX{std::thread::sleep(Duration::from_millis(150));}
