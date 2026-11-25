@@ -862,6 +862,32 @@ fn pending_vat_label(rows:&[serde_json::Value],quote_ready:bool)->Option<&'stati
         else{"부가세 별도"})
 }
 
+pub(crate) fn pending_recipients(draft:&WorkingReception)->&[serde_json::Value]{
+    // A corrected/manual working receipt is the active view. The first
+    // OCR recognition remains immutable audit evidence, not the display
+    // source for recipient IDs or product quantities.
+    if draft.raw.trim().is_empty() &&
+        draft.manual_model.as_ref().is_some_and(|model|
+            model.get("mode").and_then(serde_json::Value::as_str)==Some("DIRECT")
+        ){
+        draft.manual_model.as_ref()
+            .and_then(|model|model.pointer("/model/rows"))
+            .and_then(|value|value.as_array())
+            .map(Vec::as_slice).unwrap_or(&[])
+    }else if draft.analysis_raw.as_deref()==Some(draft.raw.as_str()){
+        draft.manual_model.as_ref()
+            .and_then(|model|model.pointer("/model/rows"))
+            .and_then(|value|value.as_array())
+            .or_else(||draft.analysis_view.as_ref()
+                .and_then(|view|view.pointer("/recognition/recipients"))
+                .and_then(|value|value.as_array()))
+            .or_else(||draft.analysis_evidence.as_ref()
+                .and_then(|value|value.get("recipients"))
+                .and_then(|value|value.as_array()))
+            .map(Vec::as_slice).unwrap_or(&[])
+    }else{&[]}
+}
+
 fn pending_frame(
     ui:&mut Ui,draft:&WorkingReception,selected:bool,open:bool,in_preview:bool,
     writable:bool,dealer_name:&str,committed_recipient:Option<&str>,
@@ -885,29 +911,7 @@ fn pending_frame(
             event=Some(if selected{Event::TogglePending}
                 else{Event::SelectPending(draft.id.clone())});
         }
-        // A corrected/manual working receipt is the active view. The first
-        // OCR recognition remains immutable audit evidence, not the display
-        // source for recipient IDs or product quantities.
-        let recipients=if draft.raw.trim().is_empty() &&
-            draft.manual_model.as_ref().is_some_and(|model|
-                model.get("mode").and_then(serde_json::Value::as_str)==Some("DIRECT")
-            ){
-            draft.manual_model.as_ref()
-                .and_then(|model|model.pointer("/model/rows"))
-                .and_then(|value|value.as_array())
-                .map(Vec::as_slice).unwrap_or(&[])
-        }else if draft.analysis_raw.as_deref()==Some(draft.raw.as_str()){
-            draft.manual_model.as_ref()
-                .and_then(|model|model.pointer("/model/rows"))
-                .and_then(|value|value.as_array())
-                .or_else(||draft.analysis_view.as_ref()
-                    .and_then(|view|view.pointer("/recognition/recipients"))
-                    .and_then(|value|value.as_array()))
-                .or_else(||draft.analysis_evidence.as_ref()
-                    .and_then(|value|value.get("recipients"))
-                    .and_then(|value|value.as_array()))
-                .map(Vec::as_slice).unwrap_or(&[])
-        }else{&[]};
+        let recipients=pending_recipients(draft);
         let quote_ready=pending_quote_ready(draft);
         let quote=draft.pricing_preview.as_ref();
         let total=if quote_ready{
@@ -1367,6 +1371,17 @@ mod pending_matching_tests {
             });
         });
         assert!(tapped.is_none());
+        // Card and management dialog must never display stale recognition.
+        let mut changed=draft.clone();
+        changed.analysis_raw=Some("이전 원문".to_owned());
+        changed.analysis_evidence=Some(serde_json::json!({"recipients":[{"name":"이전 수취인"}]}));
+        assert!(pending_recipients(&changed).is_empty());
+        changed.analysis_raw=Some(changed.raw.clone());
+        changed.manual_model=Some(serde_json::json!({"model":{"rows":[{"name":"수정한 수취인"}]}}));
+        assert_eq!(pending_recipients(&changed)[0]["name"].as_str(),Some("수정한 수취인"));
+        changed.raw.clear();
+        changed.manual_model=Some(serde_json::json!({"mode":"DIRECT","model":{"rows":[{"name":"직접 입력"}]}}));
+        assert_eq!(pending_recipients(&changed)[0]["name"].as_str(),Some("직접 입력"));
     }
 
     #[test]
