@@ -240,6 +240,12 @@ pub fn management_body_state_overlay(
     );
 }
 
+/// Shared state caption for content-sized lists and menus with no reserved body.
+/// Fixed viewports use management_body_state_overlay instead.
+pub fn management_body_state_inline(ui:&mut Ui,caption:&str){
+    ui.label(typography::caption(caption));
+}
+
 /// Draw an error within an existing body rectangle without advancing its
 /// layout cursor. The full translated text is also available on hover when
 /// the visible rectangle is too short to contain the wrapped text.
@@ -601,6 +607,17 @@ mod management_async_layout_contract_tests {
             });
         });
         assert!(checked);
+    }
+
+    #[test]
+    fn fixed_list_states_use_shared_overlay(){
+        for source in [include_str!("order_history_manager.rs"),include_str!("excel_manager.rs"),
+            include_str!("client_manager.rs"),include_str!("client_chooser.rs"),
+            include_str!("manual_product_search.rs"),include_str!("model_group_manager.rs")]{
+            assert!(source.contains("components::management_body_state_overlay("));
+        }
+        let history=include_str!("order_history_manager.rs");
+        assert!(!history.contains("let galley=typography::management_control_text_galley("));
     }
 
     #[test]
@@ -5026,7 +5043,7 @@ pub fn management_searchable_dropdown(
                     list.spacing_mut().interact_size.y=
                         theme::MANAGEMENT_DROPDOWN_OPTION_HEIGHT;
                     if visible.is_empty(){
-                        list.label(typography::caption("검색 결과가 없습니다."));
+                        management_body_state_inline(list,"검색 결과가 없습니다.");
                     }else{
                         for choice in visible{
                             management_dropdown_option(
