@@ -1516,7 +1516,11 @@ impl ProductManager {
                                                             if response.clicked(){
                                                                 self.price_focus_target=None;
                                                             }
-                                                            let escape=response.has_focus()&&escape_pressed;
+                                                            // egui can surrender TextEdit focus on Escape
+                                                            // before producing the Response. The former
+                                                            // focus owner must cancel, not enter blur-save.
+                                                            let escape=escape_pressed&&(response.lost_focus()
+                                                                ||(response.has_focus()&&!response.gained_focus()));
                                                             let navigation_target=navigation_key
                                                                 .and_then(|navigation|
                                                                     price_navigation_target(
@@ -1537,6 +1541,7 @@ impl ProductManager {
                                                             if escape{
                                                                 entry.reset_to_original();
                                                                 response.surrender_focus();
+                                                                self.price_focus_target=None;
                                                                 self.error=None;
                                                             }else if keyboard_commit{
                                                                 match entry.parse(){
@@ -2968,6 +2973,32 @@ mod tests {
         assert!(requests.try_recv().is_err());
         assert!(!manager.has_pending_prices());
         assert!(manager.notice.is_none());
+    }
+
+    #[test]
+    fn rendered_price_grid_escape_does_not_cancel_unfocused_dirty_cell(){
+        let (mut manager,ctx,requests)=price_test_manager();
+        let focused="p1:v1:semi";
+        let other="p1:v1:retail";
+        render_price_grid_frame(&mut manager,&ctx,vec![]);
+        manager.price_focus_target=Some(focused.into());
+        render_price_grid_frame(&mut manager,&ctx,vec![]);
+        render_price_grid_frame(&mut manager,&ctx,vec![]);
+        render_price_grid_frame(&mut manager,&ctx,vec![egui::Event::Text("21000".into())]);
+        assert_eq!(manager.price_drafts[focused].parse().unwrap(),Some(21000));
+        // An unrelated pending draft (for example, a failed earlier write)
+        // must not be reset or committed by Escape in the focused cell.
+        manager.price_drafts.get_mut(other).unwrap().input="27000".into();
+        render_price_grid_frame(&mut manager,&ctx,vec![egui::Event::Key{
+            key:egui::Key::Escape,physical_key:None,pressed:true,repeat:false,
+            modifiers:egui::Modifiers::NONE
+        }]);
+        assert_eq!(manager.price_drafts[focused].parse().unwrap(),Some(19000));
+        assert!(!manager.price_drafts[focused].dirty());
+        assert_eq!(manager.price_drafts[other].parse().unwrap(),Some(27000));
+        assert!(manager.price_drafts[other].dirty());
+        assert!(requests.try_recv().is_err());
+        assert!(manager.price_write_queue.is_empty());
     }
 
     #[test]
