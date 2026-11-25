@@ -314,7 +314,15 @@ mod tests{
         let sheet=book.worksheet_range("로젠택배").unwrap();
         assert_eq!(sheet.width(),16);
         for (column,header) in HEADERS.iter().enumerate(){
-            assert_eq!(sheet.get_value((0,column as u32)),Some(&Data::String((*header).to_string())));
+            let cell=sheet.get_value((0,column as u32));
+            if header.is_empty(){
+                // The intentionally blank spacer header can reopen as an empty cell.
+                assert!(matches!(cell,Some(Data::Empty)) ||
+                    cell==Some(&Data::String(String::new())),"blank header column {column}: {cell:?}");
+            }else{
+                assert_eq!(cell,Some(&Data::String((*header).to_string())),
+                    "text header at column {column}");
+            }
         }
         for (column,expected) in values.iter().enumerate(){
             let cell=sheet.get_value((1,column as u32));
