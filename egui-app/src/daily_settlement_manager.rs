@@ -70,7 +70,7 @@ fn settlement_date_toolbar(
         }
         let trigger=theme::action(
             controls,"달력",theme::ButtonRole::Standard,true
-        ).on_hover_text("결산 날짜를 달력에서 선택");
+        );
         if trigger.clicked(){
             let open=NaiveDate::parse_from_str(date,"%Y-%m-%d")
                 .unwrap_or_else(|_|NaiveDate::parse_from_str(
@@ -225,6 +225,7 @@ fn kpi(ui:&mut Ui,label:&str,value:&str){
                 let label_galley=typography::freight_summary_small_label_galley(
                     cell,label
                 );
+                let overflow=components::text_exceeds_rect(value_galley.size(),number_rect.intersect(cell.clip_rect()));
                 cell.painter().with_clip_rect(number_rect).galley(
                     egui::pos2(
                         number_rect.center().x-value_galley.size().x/2.0,
@@ -237,7 +238,7 @@ fn kpi(ui:&mut Ui,label:&str,value:&str){
                         label_rect.center().y-label_galley.size().y/2.0,
                     ),label_galley,theme::SECONDARY
                 );
-                number_response.on_hover_text(value);
+                components::overflow_tooltip(number_response,overflow,value);
             });
         }
     );
@@ -280,10 +281,11 @@ fn paint_cell(
     }else if align==Align2::CENTER_CENTER{
         padded.center().x-text.size().x/2.0
     }else{padded.left()};
+    let overflow=components::text_exceeds_rect(text.size(),visible);
     ui.painter().with_clip_rect(visible).galley(
         egui::pos2(x,padded.center().y-text.size().y/2.0),text,color
     );
-    if !content.is_empty(){
+    if overflow&&!content.is_empty(){
         ui.interact(
             visible,ui.make_persistent_id(("settlement-cell",id)),
             Sense::hover()
