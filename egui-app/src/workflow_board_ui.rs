@@ -365,6 +365,7 @@ fn workflow_compact_rows(ui:&mut Ui)->(Rect,Rect){
         Vec2::new(ui.available_width(),total),egui::Sense::hover()
     );
     let (upper,divider,lower)=workflow_compact_band_rects(card);
+    let divider=workflow_row_content(divider);
     ui.painter().rect_filled(divider,0.0,theme::WORKFLOW_CARD_BORDER);
     // The enclosing rounded card owns both bands' background.
     (upper,lower)
@@ -417,12 +418,9 @@ fn workflow_header(
         Pos2::new((title_rect.right()-4.0).max(title_rect.left()+2.0),
             title_rect.bottom()),
     );
-    // The agreed dealer caption needs roughly eight Hangul characters.
-    // Keep the whole reserved slot for geometry, but limit the readable
-    // caption to ~8 characters so unusually long names do not crowd the
-    // status group. Full text remains available on hover.
-    let title_ink_width=text_rect.width()
-        .min(typography::FONT_SUBSECTION_HEADING*9.0);
+    // Fit the actual allocated title slot; never limit by character count.
+    // Full text is available only when the measured glyphs overflow.
+    let title_ink_width=text_rect.width();
     let visible=workflow_title_fit(ui,title,title_ink_width);
     let galley=typography::workflow_dealer_galley(ui,&visible);
     ui.painter().with_clip_rect(text_rect).galley(
@@ -534,7 +532,7 @@ fn workflow_primary_at(
 fn workflow_action_line(
     ui:&mut Ui,lower:Rect,id:&str,shipments:usize,total:Option<i64>,
     vat:Option<&str>,button_text:Option<&str>,enabled:bool,
-    undo_enabled:bool,in_preview:bool,payment_emphasis:bool
+    undo_enabled:bool,in_preview:bool,payment_emphasis:bool,idle_caption:Option<&str>
 )->(bool,bool,bool){
     let content=workflow_row_content(lower);
     let gap=theme::WORKFLOW_CARD_SLOT_GAP;
@@ -608,9 +606,8 @@ fn workflow_action_line(
     components::overflow_region_tooltip(ui,price,
         workflow_widget_id("workflow-money",id,in_preview),money_clipped,&amount);
 
-    // Pending receptions are NOT a business workflow step. Matching a
-    // dealer happens asynchronously through native Rust automatically;
-    // no "confirm dealer" stage/button or undo slot is rendered for them.
+    // A pending dealer match is automatic. The existing disabled controls
+    // show the next action without creating a new business transition.
     if let Some(text)=button_text {
         let (response,clicked)=workflow_primary_at(
             ui,id,workflow_control_rect(action),text,enabled,in_preview
@@ -625,6 +622,9 @@ fn workflow_action_line(
         if undo_clicked{crate::floating_notice::clicked(ui.ctx(),"reception.workflow",&undo_response);}
         (clicked,response.hovered(),undo_clicked)
     }else{
+        if let Some(caption)=idle_caption{
+            components::workflow_idle_caption(ui,action,caption);
+        }
         (false,false,false)
     }
 }
@@ -734,7 +734,7 @@ fn group_frame(
             if group.vat_included>0{Some(vat)}else{None},
             Some(stage_name(group.step,group.needs_notice)),
             (writable || freight_stage_group==Some(group.id.as_str())) && !group.transferred,
-            writable && group.step>0 && !group.transferred,in_preview,stage_emphasis && group.step>=3
+            writable && group.step>0 && !group.transferred,in_preview,stage_emphasis && group.step>=3,None
         );
         if advance_clicked{event=Some(Event::AdvanceGroup(group.id.clone()));}
         if undo_clicked{event=Some(Event::UndoGroup(group.id.clone()));}
@@ -841,6 +841,26 @@ pub fn visible_pending_recipient<'a>(
         .and_then(|target|target.recipient_id.as_deref()))
 }
 
+/// Render the stable action label independently of calculation readiness.
+fn pending_button_text(has_client:bool,retail:bool)->Option<&'static str>{
+    if !has_client{Some("거래처 확인")}
+    else if retail{None}
+    else{Some("주문 확인 완료")}
+}
+
+/// Show only explicit recipient VAT settings in a current native quote.
+/// Missing/null override is not evidence that VAT is included or excluded.
+fn pending_vat_label(rows:&[serde_json::Value],quote_ready:bool)->Option<&'static str>{
+    if !quote_ready || rows.is_empty(){return None;}
+    let mut included=0;
+    for row in rows{
+        if row.get("vatOverride")?.as_bool()?{included+=1;}
+    }
+    Some(if included==rows.len(){"부가세 포함"}
+        else if included>0{"부가세 일부 포함"}
+        else{"부가세 별도"})
+}
+
 fn pending_frame(
     ui:&mut Ui,draft:&WorkingReception,selected:bool,open:bool,in_preview:bool,
     writable:bool,dealer_name:&str,committed_recipient:Option<&str>,
@@ -893,22 +913,16 @@ fn pending_frame(
             quote.and_then(|value|value.get("total"))
                 .and_then(serde_json::Value::as_i64)
         }else{None};
-        let button_text=if !has_client{
-            Some("거래처 확인")
-        }else if draft.order_type=="RETAIL"{
-            None
-        }else if quote_ready{
-            Some("주문 확인 완료")
-        }else{
-            Some("금액 미확정")
-        };
+        let retail=draft.order_type=="RETAIL";
+        let button_text=pending_button_text(has_client,retail);
+        let vat=pending_vat_label(recipients,quote_ready);
         // A valid selected-client quote exposes the explicit first stage even
         // when freight/total is pending. Rust blocks only the issues assigned
         // to this stage; freight and payment remain later workflow steps.
         let (confirm_clicked,stage_hovered,_)=workflow_action_line(
-            ui,bottom,&draft.id,recipients.len(),total,None,
-            button_text,quote_ready && writable && draft.order_type!="RETAIL",
-            false,in_preview,false
+            ui,bottom,&draft.id,recipients.len(),total,vat,
+            button_text,quote_ready && writable && !retail,
+            false,in_preview,false,(has_client && retail).then_some("소매 발주서")
         );
         if stage_hovered && quote_ready && draft.order_type!="RETAIL"{
             *stage_trigger=Some(format!("pending-stage:{}",draft.id));
@@ -924,8 +938,11 @@ fn pending_frame(
             if recipients.is_empty(){
                 let excerpt=draft.raw.lines().find(|s|!s.trim().is_empty())
                     .unwrap_or("새 발주서");
-                let response=shipment_line(ui,"수취인 확인",
-                    &[excerpt.chars().take(60).collect()],false,false);
+                let summary=format!("원문: {excerpt}");
+                let response=components::workflow_shipment_row(
+                    ui,"수취인 확인",&summary,shipment_row_fill(false,false),
+                    false,false,None
+                );
                 let action=ui.interact(response.rect,
                     Id::new(("pending-reception-row",draft.id.as_str(),0usize,in_preview)),
                     egui::Sense::click());
@@ -941,15 +958,8 @@ fn pending_frame(
                     let name=recipient.get("name").and_then(|v|v.as_str())
                         .filter(|s|!s.is_empty()).unwrap_or("수취인 확인");
                     let products=recipient.get("items").and_then(|items|items.as_array())
-                        .into_iter().flatten().map(|item|{
-                            let name=item.get("name").and_then(|x|x.as_str())
-                                .filter(|n|!n.trim().is_empty()).or_else(||
-                                    item.get("raw").and_then(|x|x.as_str())
-                                ).unwrap_or("미확정 상품");
-                            let qty=item.get("quantity").and_then(|x|x.as_i64())
-                                .filter(|q|*q>0).map_or("?".to_owned(),|q|q.to_string());
-                            format!("{name} × {qty}")
-                        }).collect::<Vec<_>>();
+                        .into_iter().flatten().map(crate::workflow_board::product_label)
+                        .collect::<Vec<_>>();
                     let recipient_id=crate::gateway::rules::scope_reception_edit_ids(
                         &draft.id,recipient.get("id")
                             .and_then(|value|value.as_str()).unwrap_or(""),None).0;
@@ -1262,6 +1272,23 @@ mod shipment_list_tests {
 #[cfg(test)]
 mod pending_matching_tests {
     use super::*;
+
+    #[test]
+    fn pending_labels_are_stable_and_vat_is_never_inferred_from_amount(){
+        use serde_json::json;
+        assert_eq!(pending_button_text(false,false),Some("거래처 확인"));
+        assert_eq!(pending_button_text(true,false),Some("주문 확인 완료"));
+        assert_eq!(pending_button_text(true,true),None);
+        let yes=json!({"vatOverride":true});
+        let no=json!({"vatOverride":false});
+        let unknown=json!({"vatOverride":null});
+        assert_eq!(pending_vat_label(&[yes.clone()],false),None);
+        assert_eq!(pending_vat_label(&[],true),None);
+        assert_eq!(pending_vat_label(&[yes.clone()],true),Some("부가세 포함"));
+        assert_eq!(pending_vat_label(&[yes.clone(),no.clone()],true),Some("부가세 일부 포함"));
+        assert_eq!(pending_vat_label(&[no],true),Some("부가세 별도"));
+        assert_eq!(pending_vat_label(&[yes,unknown],true),None);
+    }
 
     #[test]
     fn unconfirmed_dealer_has_four_gray_lamps(){

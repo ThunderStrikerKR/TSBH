@@ -1170,6 +1170,14 @@ pub fn workflow_fixed_action(
     response
 }
 
+/// Noninteractive retail marker occupies the existing unused action slot.
+pub fn workflow_idle_caption(ui:&Ui,rect:Rect,caption:&str){
+    let galley=ui.painter().layout_no_wrap(caption.to_owned(),
+        egui::FontId::proportional(typography::FONT_METADATA),theme::SECONDARY);
+    let x=rect.right()-galley.size().x;
+    let _=paint_table_galley(ui,rect,x,galley,theme::SECONDARY);
+}
+
 /// Shared shipment row renderer. Selection changes only its own surface;
 /// content widths, label positions and one-touch freight emphasis are stable.
 pub fn workflow_shipment_row(
@@ -1191,18 +1199,26 @@ pub fn workflow_shipment_row(
             row.set_min_width(inside);
             row.horizontal(|cols|{
                 cols.spacing_mut().item_spacing.x=theme::SPACE_8;
-                let name_width=theme::WORKFLOW_DETAIL_NAME_WIDTH
+                let name_natural=cols.painter().layout_no_wrap(name.to_owned(),
+                    egui::FontId::proportional(typography::FONT_BODY),preview_ink).size().x;
+                let name_width=theme::WORKFLOW_DETAIL_NAME_WIDTH.max(name_natural)
                     .min((inside*0.36).max(0.0));
                 let freight_width=freight.map_or(0.0,|text|cols.painter().layout_no_wrap(text.to_owned(),egui::FontId::proportional(typography::FONT_BODY),theme::TEXT).size().x+12.0).min(inside*0.42);
                 let product_width=(inside-name_width-theme::SPACE_8-if freight.is_some(){freight_width+theme::SPACE_8}else{0.0}).max(0.0);
-                cols.add_sized(
+                let name_response=cols.add_sized(
                     [name_width,theme::WORKFLOW_DETAIL_ROW_CONTENT_HEIGHT],
                     egui::Label::new(typography::body(name).color(preview_ink)).truncate()
                 );
-                cols.add_sized(
+                let name_overflow=name_natural>name_width+0.5;
+                let _=overflow_tooltip(name_response,name_overflow,name);
+                let summary_ink=if chosen{theme::TEXT}else{preview_ink};
+                let summary_natural=cols.painter().layout_no_wrap(summary.to_owned(),
+                    egui::FontId::proportional(typography::FONT_BODY),summary_ink).size().x;
+                let summary_response=cols.add_sized(
                     [product_width,theme::WORKFLOW_DETAIL_ROW_CONTENT_HEIGHT],
-                    egui::Label::new(typography::body(summary).color(if chosen{theme::TEXT}else{preview_ink})).truncate()
+                    egui::Label::new(typography::body(summary).color(summary_ink)).truncate()
                 );
+                let _=overflow_tooltip(summary_response,summary_natural>product_width+0.5,summary);
                 if let Some(freight)=freight{
                     let (rect,_)=cols.allocate_exact_size(Vec2::new(freight_width,theme::WORKFLOW_DETAIL_ROW_CONTENT_HEIGHT),egui::Sense::hover());
                     crate::one_touch::background(cols,rect);crate::one_touch::outline(cols,rect);

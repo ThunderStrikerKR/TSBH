@@ -99,10 +99,10 @@ fn company_name(value:&Value)->Option<String>{
         .map(|field_name|text(value,field_name).trim())
         .find(|name|!name.is_empty()).map(str::to_owned)
 }
-fn product_label(item:&Value)->String{
+pub(crate) fn product_label(item:&Value)->String{
     let name=text(item,"name").trim();
     let raw=text(item,"raw").trim();
-    let label=if name.is_empty(){raw}else{name};
+    let label=if !name.is_empty(){name}else if !raw.is_empty(){raw}else{"미확정 상품"};
     match field(item,"quantity").as_i64().filter(|n|*n>0){
         Some(quantity)=>format!("{label} × {quantity}"),
         None=>format!("{label} × ?"),
