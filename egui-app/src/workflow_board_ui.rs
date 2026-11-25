@@ -333,7 +333,7 @@ fn workflow_auxiliary_at(
     let response=ui.interact(
         rect,Id::new(("workflow-aux",id,kind,in_preview)),
         if effective{egui::Sense::click()}else{egui::Sense::hover()}
-    ).on_hover_text(components::workflow_auxiliary_tooltip(action));
+    );
     let painter=ui.painter();
     let (fill,stroke,ink)=if effective{
         (theme::RAISED,theme::BORDER,theme::TEXT)
@@ -444,7 +444,8 @@ fn workflow_header(
     let title_response=ui.interact(
         arrow.union(title_rect),
         workflow_widget_id("workflow-header",id,in_preview),egui::Sense::click()
-    ).on_hover_text(title);
+    );
+    let title_response=components::overflow_tooltip(title_response,visible!=title,title);
 
     let block=workflow_control_rect(signal);
     ui.painter().rect_filled(
@@ -546,7 +547,7 @@ fn workflow_primary_at(
     let response=ui.interact(
         rect,workflow_widget_id("workflow-stage-button",id,in_preview),
         if enabled{egui::Sense::click()}else{egui::Sense::hover()}
-    ).on_hover_text(text);
+    );
     let clicked=enabled && (response.clicked() || primary_release_inside(ui,rect));
     let fill=if enabled{theme::BRIGHT}else{theme::DISABLED_ACTION_BG};
     let ink=if enabled{theme::BRIGHT_TEXT}else{theme::DISABLED_ACTION_TEXT};
@@ -609,12 +610,15 @@ fn workflow_action_line(
         egui::FontId::proportional(theme::WORKFLOW_VAT_FONT_SIZE),
         theme::SECONDARY
     );
+    let shipping_clipped=components::text_exceeds_rect(ship_galley.size(),shipping);
     ui.painter().with_clip_rect(shipping).galley(
         Pos2::new(shipping.left(),bottom_y-ship_galley.size().y),
         ship_galley,theme::SECONDARY
     );
-    ui.interact(shipping,workflow_widget_id("workflow-shipping",id,in_preview),
-        egui::Sense::hover()).on_hover_text(shipping_text);
+    if shipping_clipped{
+        ui.interact(shipping,workflow_widget_id("workflow-shipping",id,in_preview),
+            egui::Sense::hover()).on_hover_text(shipping_text);
+    }
 
     let amount=total.map(components::display_won)
         .unwrap_or_else(||"금액 미확정".to_owned());
@@ -629,6 +633,7 @@ fn workflow_action_line(
         price.min,Pos2::new((price.right()-theme::SPACE_4).max(price.left()),
             price.bottom())
     );
+    let money_clipped=components::text_exceeds_rect(money_galley.size(),price_ink);
     ui.painter().with_clip_rect(price_ink).galley(
         Pos2::new(price_ink.right()-money_galley.size().x,
             bottom_y-money_galley.size().y),
@@ -646,8 +651,10 @@ fn workflow_action_line(
             vat_galley,theme::WORKFLOW_VAT_TEXT
         );
     }
-    ui.interact(price,workflow_widget_id("workflow-money",id,in_preview),
-        egui::Sense::hover()).on_hover_text(&amount);
+    if money_clipped{
+        ui.interact(price,workflow_widget_id("workflow-money",id,in_preview),
+            egui::Sense::hover()).on_hover_text(&amount);
+    }
 
     // Pending receptions are NOT a business workflow step. Matching a
     // dealer happens asynchronously through native Rust automatically;
@@ -736,11 +743,11 @@ fn shipment_line(
                 cols.add_sized(
                     [name_width,theme::WORKFLOW_DETAIL_ROW_CONTENT_HEIGHT],
                     egui::Label::new(typography::body(name).color(preview_ink)).truncate()
-                ).on_hover_text(name);
+                );
                 cols.add_sized(
                     [product_width,theme::WORKFLOW_DETAIL_ROW_CONTENT_HEIGHT],
                     egui::Label::new(typography::body(&summary).color(preview_ink)).truncate()
-                ).on_hover_text(&summary);
+                );
             });
         });
     if chosen || previewed{
