@@ -388,10 +388,17 @@ struct PendingInlineChange {
     target:InlineTarget,
     /// Only a real text cell can be restored after a failed write.
     editor:Option<InlineReceptionEditor>,
+    /// A client choice made during a delivery command is replayed after its result.
+    next_client_review:Option<review_panel::Action>,
     /// Captured from the SAME click that blurs the previous field.
     /// Never discard this intent merely because native saving is async.
     next:Option<(InlineTarget,Option<egui::Pos2>)>,
     receiver:Receiver<Result<manual_workspace::Event,String>>,
+}
+impl PendingInlineChange{
+    fn is_delivery_command(&self)->bool{
+        self.editor.is_none() && matches!(self.target.field,"remoteDelivery"|"freightCode"|"dispatchOrigin")
+    }
 }
 
 /// One scope and rate update for the entire order.
@@ -2383,7 +2390,7 @@ impl BandoEgui {
         let (tx,receiver)=mpsc::channel();
         self.inline_change=Some(PendingInlineChange{
             order_id:source.id.clone(),raw:source.raw.clone(),
-            target:target.clone(),editor:None,next:None,receiver
+            target:target.clone(),editor:None,next_client_review:None,next:None,receiver
         });
         let gateway=Arc::clone(&self.gateway);
         let context=ctx.clone();
@@ -2407,6 +2414,19 @@ impl BandoEgui {
         &mut self,action:review_panel::Action,ctx:&egui::Context
     ){
         if !self.review_panel.ready(){return;}
+        let client_action=match &action{
+            review_panel::Action::ChooseClient(_)=>true,
+            review_panel::Action::Navigate{kind,recipient_id,..}=>recipient_id.is_empty() &&
+                (kind=="CLIENT" || kind.starts_with("CLIENT_MATCH_")),
+            _=>false
+        };
+        if client_action{
+            if let Some(pending)=self.inline_change.as_mut().filter(|p|p.is_delivery_command()){
+                // Keep the click, but never run two writes against the same draft.
+                pending.next_client_review=Some(action);
+                return;
+            }
+        }
         match action{
             review_panel::Action::ChooseClient(id)=>{
                 self.select_client_candidate(&id,ctx);
@@ -3012,7 +3032,7 @@ impl BandoEgui {
         let (tx,receiver)=mpsc::channel();
         let gateway=Arc::clone(&self.gateway);
         self.inline_change=Some(PendingInlineChange{
-            order_id,raw,target:editor.target.clone(),editor:Some(editor),next:None,receiver
+            order_id,raw,target:editor.target.clone(),editor:Some(editor),next_client_review:None,next:None,receiver
         });
         let context=ctx.clone();
         std::thread::spawn(move||{
@@ -3152,6 +3172,10 @@ impl BandoEgui {
             }else{
                 self.start_draft_confirmation(&order_id,ctx);
             }
+        }else if let Some(action)=pending.next_client_review{
+            // The completed delivery command no longer owns the draft. On
+            // failure the previous state is intact; client selection is safe.
+            self.handle_review_action(action,ctx);
         }
         ctx.request_repaint();
     }
@@ -7143,16 +7167,19 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                         .auto_shrink([false, false])
                         .show(ui, |ui| {
                     if let Some(analysis)=&self.analysis {
-                        let can_act=self.inline_change.is_none()
-                            &&self.inline_editor.is_none()
+                        let other_ready=self.inline_editor.is_none()
                             &&self.manual_workspace.is_none()
                             &&self.vat_change.is_none()
                             &&self.vat_dialog.is_none()
                             &&self.client_change.is_none()
                             &&self.working_sync.is_none()
                             &&self.workflow_ui.pending_preview().is_none();
-                        review_action=self.review_panel.show(
-                            ui,analysis,visible_index,can_act
+                        let can_act=other_ready && self.inline_change.is_none();
+                        let client_can_act=other_ready && (self.inline_change.is_none() ||
+                            self.inline_change.as_ref().is_some_and(|p|p.is_delivery_command() &&
+                                p.next_client_review.is_none()));
+                        review_action=self.review_panel.show_with_client_actions(
+                            ui,analysis,visible_index,can_act,client_can_act
                         );
                     }
                         });
@@ -9928,7 +9955,7 @@ mod reception_workflow_admission_integration_tests {
                 original:"A".into(),text:"B".into(),
                 focus_next:false,click_at:None
             }),
-            next:None,receiver:rx
+            next_client_review:None,next:None,receiver:rx
         });
     }
     fn remote_analysis()->reception_service::ReceptionAnalysis{
@@ -10082,7 +10109,7 @@ mod reception_workflow_admission_integration_tests {
                 source_id:"draft-1".into(),target,original:String::new(),
                 text:"저장할 메모".into(),focus_next:false,click_at:None
             }),
-            next:None,receiver
+            next_client_review:None,next:None,receiver
         });
         app.pending_draft_confirmation=Some("draft-1".into());
         // A stale error from an earlier attempt must not block this successful
@@ -10294,7 +10321,7 @@ mod reception_workflow_admission_integration_tests {
             app.inline_change=Some(PendingInlineChange{
                 order_id:app.active_id.clone().unwrap(),raw:app.raw_source.clone(),
                 target:InlineTarget{recipient_id:"r1".into(),item_id:None,field},
-                editor:None,next:None,receiver
+                editor:None,next_client_review:None,next:None,receiver
             });
             tx.send(Err("synthetic delivery failure".into())).unwrap();
             app.poll_inline_change(&ctx);
@@ -10310,6 +10337,9 @@ mod reception_workflow_admission_integration_tests {
         let ctx=egui::Context::default();
         let mut app=app();
         app.workflow_snapshot=Some(workflow_board::BoardSnapshot{revision:Some(7),groups:vec![]});
+        app.workflow_ui.selection=Some(workflow_board_ui::Selection{
+            group_id:"g1".into(),order_id:"o1".into(),shipment_id:"s1".into()
+        });
         let (tx,receiver)=mpsc::channel();
         app.workflow_receiver=Some(receiver);
         app.workflow_last_fetch=Some(Instant::now());
@@ -10317,6 +10347,7 @@ mod reception_workflow_admission_integration_tests {
         app.poll_workflow_board(&ctx);
         assert!(app.workflow_receiver.is_none());
         assert_eq!(app.workflow_snapshot.as_ref().and_then(|board|board.revision),Some(7));
+        assert_eq!(app.workflow_ui.selection.as_ref().map(|s|s.shipment_id.as_str()),Some("s1"));
         assert!(app.workflow_mutation_ready());
     }
 
