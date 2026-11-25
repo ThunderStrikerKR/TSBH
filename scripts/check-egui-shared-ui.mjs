@@ -27,9 +27,7 @@ const compact = new Map(Object.entries({
   "manual_product_search.rs:show:ui":1,
   "category_dropdown.rs:menu_body:menu":2
 }));
-const managedTables = new Set(["product_manager.rs","client_manager.rs",
-  "client_chooser.rs","excel_manager.rs","daily_settlement_manager.rs",
-  "order_history_manager.rs","freight_manager.rs"]);
+const scrollConstructors = ["vertical","horizontal","both","new","neither"];
 const headerScreens = new Set(["product_manager.rs","excel_manager.rs",
   "daily_settlement_manager.rs","order_history_manager.rs","freight_manager.rs"]);
 const controls = [
@@ -89,13 +87,12 @@ export function audit(source,file){
         const count=(used.get(key)||0)+1;used.set(key,count);
         if(count>(compact.get(key)||0))flag(i,"unreviewed compact divider: "+key);
       }
-      if(managedTables.has(file)){
-        if(is(i,"ScrollArea :: both (")||is(i,"ScrollArea :: new ("))
-          flag(i,"local managed-table scroll constructor");
-      }
       if(headerScreens.has(file)&&is(i,"theme :: TABLE_HEADER_OUTLINE"))
         flag(i,"local managed header outline");
     }
+    if(scrollConstructors.some(name=>is(i,"ScrollArea :: "+name+" (")) &&
+       !(file==="components.rs"&&fn==="scroll_area"))
+      flag(i,"raw scroll constructor outside shared scroll_area");
     if(file==="components.rs"){
       if(is(i,"TextEdit :: singleline (")&&fn!=="singleline_editor")
         flag(i,"single-line editor outside shared constructor");
@@ -109,7 +106,16 @@ export function audit(source,file){
 function selfTest(){
   const cases=[
     ["product_manager.rs","fn render(){egui::ScrollArea :: both ( );}",1],
-    ["main.rs","fn render(){egui::ScrollArea::both();}",0],
+    ["main.rs","fn render(){egui::ScrollArea::both();}",1],
+    ["alias_manager.rs","fn show_page(){egui::ScrollArea::vertical();}",1],
+    ["new_screen.rs","fn render(){ScrollArea::horizontal();}",1],
+    ["theme.rs","fn wrong(){ScrollArea::new([true,true]);}",1],
+    ["new_screen.rs","fn render(){ScrollArea::neither();}",1],
+    ["components.rs","fn wrong(){egui::ScrollArea::vertical();}",1],
+    ["components.rs","fn scroll_area(){egui::ScrollArea::vertical();egui::ScrollArea::horizontal();egui::ScrollArea::both();}",0],
+    ["new_screen.rs","fn render(){components::scroll_area(components::ScrollAxes::Vertical);}",0],
+    ["alias_manager.rs","fn render(){components::management_register_list_scroll_area(ui,height);}",0],
+    ["main.rs","#[cfg(test)] mod tests {fn t(){egui::ScrollArea::vertical();}} fn render(){egui::ScrollArea::horizontal();}",1],
     ["new_screen.rs","fn render(){egui::Button :: new ( \"x\" );}",1],
     ["new_screen.rs","fn render(){ui.on_hover_text(\"x\");}",1],
     ["new_screen.rs","fn render(){components::section_divider(ui);}",0],
