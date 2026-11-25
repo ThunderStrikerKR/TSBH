@@ -112,7 +112,7 @@ mod native{
             let maximized=if minimized{
                 p.flags&WPF_RESTORETOMAXIMIZED!=0
                     ||previous.is_some_and(|old|old.maximized)
-            }else{unsafe{IsZoomed(hwnd)}!=0||p.show_cmd==SW_SHOWMAXIMIZED};
+            }else{(unsafe{IsZoomed(hwnd)})!=0||p.show_cmd==SW_SHOWMAXIMIZED};
             Some(Self{normal:p.normal,maximized})
         }
         fn restore(self,hwnd:Hwnd)->io::Result<()>{
