@@ -197,6 +197,42 @@ try {
             });
             return undefined;
           }
+          // Mock only the native read DTO; native Rust parity is tested separately.
+          if (command === "business_core_call" && args?.domain === "rules" &&
+              args.operation === "read_shipments") {
+            const {state:input,groupIds}=args.payload;
+            return {shipments:(input.workflow?.shipments??[]).flatMap(ship=>{
+              if(groupIds&&!groupIds.includes(ship.groupId))return [];
+              const order=input.orders.find(o=>o.id===ship.orderId);
+              const row=order?.recipients.find(r=>r.id===ship.recipientId);
+              if(!order||!row)return [];
+              const settings=input.settings;
+              const company={id:"",name:"반도스탠드",postcode:settings.senderPostcode??"",
+                address:settings.senderAddress??"",phone:settings.senderPhone??"",
+                mobile:settings.senderMobile??"",contact:"",tier:"retail",payment:"POSTPAID",
+                shippingFeeExcluded:false,active:true,identifiers:"",overrides:{}};
+              const client=order.orderType==="RETAIL"?order.clientSnapshot??company:
+                ((order.confirmedAt!=null||order.pricesLocked===true)&&order.clientSnapshot!=null
+                  ?order.clientSnapshot:input.clients.find(c=>c.id===order.clientId)??order.clientSnapshot??null);
+              const actualFreight=Object.fromEntries(["FACTORY","STORE"].map(origin=>[
+                origin,Object.hasOwn(ship.actualFreight??{},origin)?ship.actualFreight[origin]:row.actualFreight??null]));
+              return [{shipmentId:ship.id,client,actualFreight}];
+            })};
+          }
+          if (command === "business_core_call" && args?.domain === "output" &&
+              args.operation === "review_export_sender") {
+            const {state:input,ids}=args.payload;
+            const companyMissing=ids.some(id=>{
+              const entry=input.workflow?.queue.find(q=>q.id===id);
+              const ship=input.workflow?.shipments.find(s=>s.id===entry?.shipmentId);
+              const order=input.orders.find(o=>o.id===ship?.orderId);
+              if(!["DEALER","RETAIL"].includes(order?.orderType))return false;
+              const sender=entry?.snapshot?.sender;
+              return !sender?.name?.trim()||!sender?.address?.trim()||
+                !(sender?.phone?.trim()||sender?.mobile?.trim());
+            });
+            return {companyMissing};
+          }
           if (command === "state_load") return structuredClone(state);
           if (command === "business_core_call" &&
               args?.domain === "rules" &&
@@ -936,6 +972,42 @@ try {
             (!missing||p.variants.some(v=>
               v.wholesale==null||v.semi==null||v.retail==null))
           ).map(p=>p.id);
+        }
+        // Mock only the native read DTO; native Rust parity is tested separately.
+        if (command === "business_core_call" && args?.domain === "rules" &&
+            args.operation === "read_shipments") {
+          const {state:input,groupIds}=args.payload;
+          return {shipments:(input.workflow?.shipments??[]).flatMap(ship=>{
+            if(groupIds&&!groupIds.includes(ship.groupId))return [];
+            const order=input.orders.find(o=>o.id===ship.orderId);
+            const row=order?.recipients.find(r=>r.id===ship.recipientId);
+            if(!order||!row)return [];
+            const settings=input.settings;
+            const company={id:"",name:"반도스탠드",postcode:settings.senderPostcode??"",
+              address:settings.senderAddress??"",phone:settings.senderPhone??"",
+              mobile:settings.senderMobile??"",contact:"",tier:"retail",payment:"POSTPAID",
+              shippingFeeExcluded:false,active:true,identifiers:"",overrides:{}};
+            const client=order.orderType==="RETAIL"?order.clientSnapshot??company:
+              ((order.confirmedAt!=null||order.pricesLocked===true)&&order.clientSnapshot!=null
+                ?order.clientSnapshot:input.clients.find(c=>c.id===order.clientId)??order.clientSnapshot??null);
+            const actualFreight=Object.fromEntries(["FACTORY","STORE"].map(origin=>[
+              origin,Object.hasOwn(ship.actualFreight??{},origin)?ship.actualFreight[origin]:row.actualFreight??null]));
+            return [{shipmentId:ship.id,client,actualFreight}];
+          })};
+        }
+        if (command === "business_core_call" && args?.domain === "output" &&
+            args.operation === "review_export_sender") {
+          const {state:input,ids}=args.payload;
+          const companyMissing=ids.some(id=>{
+            const entry=input.workflow?.queue.find(q=>q.id===id);
+            const ship=input.workflow?.shipments.find(s=>s.id===entry?.shipmentId);
+            const order=input.orders.find(o=>o.id===ship?.orderId);
+            if(!["DEALER","RETAIL"].includes(order?.orderType))return false;
+            const sender=entry?.snapshot?.sender;
+            return !sender?.name?.trim()||!sender?.address?.trim()||
+              !(sender?.phone?.trim()||sender?.mobile?.trim());
+          });
+          return {companyMissing};
         }
         if (command === "business_core_call" && args?.domain === "rules" &&
             args.operation === "shipping_read") {
