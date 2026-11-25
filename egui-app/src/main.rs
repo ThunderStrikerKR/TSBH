@@ -709,6 +709,15 @@ fn kakao_safe_modal_work_area(
     Rect::from_min_max(egui::pos2(left,top),egui::pos2(right,bottom))
 }
 
+// Read-only render projection; do not duplicate receipt audit history.
+struct PendingDisplay {
+    id:String,raw:String,recognition:serde_json::Value,
+    pricing_preview:Option<serde_json::Value>,spans:Vec<source_highlight::LinkedSpan>,
+}
+struct WorkflowSourceDisplay{
+    board:Arc<workflow_board::BoardSnapshot>,order_id:String,raw:String,
+    spans:Arc<[source_highlight::LinkedSpan]>,
+}
 struct BandoEgui {
     brand_texture: Option<egui::TextureHandle>,
     gateway: Arc<dyn gateway::BandoGateway>,
@@ -792,7 +801,9 @@ struct BandoEgui {
     requested_recipient_focus:Option<(String,String)>,
     source_hover: Option<source_highlight::LinkKey>,
     link_hover: source_highlight::HoverState,
-    workflow_snapshot: Option<workflow_board::BoardSnapshot>,
+    workflow_snapshot: Option<Arc<workflow_board::BoardSnapshot>>,
+    pending_display:Option<Arc<PendingDisplay>>,
+    workflow_source_display:Option<WorkflowSourceDisplay>,
     workflow_error: Option<String>,
     workflow_receiver: Option<Receiver<Result<Option<workflow_board::BoardSnapshot>,String>>>,
     /// A committed write must publish its new revision before another
@@ -912,6 +923,8 @@ impl BandoEgui {
             source_hover: None,
             link_hover: source_highlight::HoverState::default(),
             workflow_snapshot: None,
+            pending_display:None,
+            workflow_source_display:None,
             workflow_error: None,
             workflow_receiver: None,
             workflow_refresh_required:false,
@@ -1394,7 +1407,8 @@ impl BandoEgui {
                         self.workflow_ui.folded=None;
                         self.workflow_ui.stop_preview();
                     }
-                    self.workflow_snapshot=Some(snapshot);
+                    self.workflow_snapshot=Some(Arc::new(snapshot));
+                    self.workflow_source_display=None;
                     self.workflow_refresh_required=false;
                     self.workflow_error=None;
                     if let Some((id,step,notice))=self.workflow_stage_after_freight.take(){
@@ -1509,29 +1523,48 @@ impl BandoEgui {
     }
     /// Read-only projection of another unsaved receipt. Never replace the
     /// employee's active source, analysis, inline editor or autosave owner.
-    fn visible_pending_other(&self)->Option<(preview_store::WorkingReception,serde_json::Value,usize)>{
+    fn visible_pending_other(&mut self)->Option<(Arc<PendingDisplay>,usize)>{
         // React precedence: a hovered native stage is above pending-card
         // preview, while the committed selection remains below both.
         if self.workflow_ui.active_preview().is_some(){return None;}
         let preview=self.workflow_ui.pending_preview()?;
         if self.active_id.as_deref()==Some(preview.order_id.as_str()){return None;}
         let draft=self.drafts.iter().find(|row|row.id==preview.order_id)?;
-        let recognition=draft.manual_model.as_ref()
-            .and_then(|model|model.pointer("/model/rows"))
-            .filter(|rows|rows.is_array())
-            .map(|rows|serde_json::json!({"recipients":rows}))
-            .or_else(||draft.analysis_view.as_ref()
-                .and_then(|view|view.get("recognition")).cloned())
-            .or_else(||draft.analysis_evidence.clone())
-            .unwrap_or_else(||serde_json::json!({"recipients":[]}));
-        let recipients=reception_service::recipients(&recognition);
+        let manual_rows=draft.manual_model.as_ref()
+            .and_then(|model|model.pointer("/model/rows")).filter(|rows|rows.is_array());
+        let recognized=draft.analysis_view.as_ref().and_then(|view|view.get("recognition"))
+            .or(draft.analysis_evidence.as_ref());
+        let matches=self.pending_display.as_ref().is_some_and(|cached|
+            cached.id==draft.id && cached.raw==draft.raw &&
+            cached.pricing_preview.as_ref()==draft.pricing_preview.as_ref() &&
+            if let Some(rows)=manual_rows{
+                cached.recognition.as_object().is_some_and(|obj|obj.len()==1) &&
+                    cached.recognition.get("recipients")==Some(rows)
+            }else if let Some(recognized)=recognized{
+                &cached.recognition==recognized
+            }else{
+                cached.recognition.as_object().is_some_and(|obj|obj.len()==1) &&
+                    cached.recognition.get("recipients").and_then(|v|v.as_array()).is_some_and(Vec::is_empty)
+            });
+        if !matches{
+            let recognition=manual_rows.map(|rows|serde_json::json!({"recipients":rows}))
+                .or_else(||recognized.cloned())
+                .unwrap_or_else(||serde_json::json!({"recipients":[]}));
+            let spans=source_highlight::collect(&draft.raw,&recognition);
+            self.pending_display=Some(Arc::new(PendingDisplay{
+                id:draft.id.clone(),raw:draft.raw.clone(),recognition,
+                pricing_preview:draft.pricing_preview.clone(),spans,
+            }));
+        }
+        let display=self.pending_display.as_ref()?.clone();
+        let recipients=reception_service::recipients(&display.recognition);
         let linked=self.link_hover.scoped_active()
             .map(|(order,key)|(order,key.recipient_id.as_str()));
         let index=workflow_board_ui::visible_pending_recipient(
             &draft.id,Some(preview),linked
         ).and_then(|id|recipients.iter().position(|row|
                 reception_service::text(row,"id")==id)).unwrap_or(0);
-        Some((draft.clone(),recognition,index))
+        Some((display,index))
     }
 
     fn select_reception(&mut self, id: &str, ctx: &egui::Context) {
@@ -5356,9 +5389,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
     /// Selected/hovered workflow content is a transient read-only view.
     /// Never swap it into the editable egui working_source, autosave worker,
     /// or the active employee-selected draft.
-    fn visible_workflow_group(&self)->Option<(
-        workflow_board::GroupRow,workflow_board::ShipmentRow
-    )>{
+    fn visible_workflow_group(&self)->Option<(Arc<workflow_board::BoardSnapshot>,usize,usize)>{
         let editing=self.workflow_freight_editor.is_some();
         let stage=if editing{None}else{self.workflow_ui.active_preview()};
         if !editing && stage.is_none() && self.workflow_ui.pending_preview().is_some(){
@@ -5393,18 +5424,21 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                 ship.order_id==selection.order_id));
         let ship=previewed.or(linked_ship).or(selected)
             .or_else(||group.shipments.first())?;
-        Some((group.clone(),ship.clone()))
+        let group_index=board.groups.iter().position(|candidate|std::ptr::eq(candidate,group))?;
+        let ship_index=group.shipments.iter().position(|candidate|std::ptr::eq(candidate,ship))?;
+        Some((Arc::clone(board),group_index,ship_index))
     }
 
     fn source_section(&mut self, ui: &mut Ui, height: f32) {
         // React visibleSelection: another pending order may be previewed
         // without replacing the employee's editable reception or autosave.
-        if let Some((draft,recognition,index))=self.visible_pending_other(){
+        if let Some((draft,index))=self.visible_pending_other(){
+            let recognition=&draft.recognition;
             self.workflow_ui.note_pending_content_hover(
                 &draft.id,ui.ctx().input(|input|input.pointer.hover_pos()
                     .is_some_and(|point|ui.clip_rect().contains(point)))
             );
-            let spans=source_highlight::collect(&draft.raw,&recognition);
+            let spans=&draft.spans;
             let selected_id=reception_service::recipients(&recognition).get(index)
                 .and_then(|row|row["id"].as_str()).map(str::to_owned);
             let active=self.link_hover.active_for(&draft.id).cloned()
@@ -5504,19 +5538,27 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
             }
             return;
         }
-        if let Some((group,shipment))=self.visible_workflow_group(){
+        if let Some((board,group_index,ship_index))=self.visible_workflow_group(){
+            let group=&board.groups[group_index];
+            let shipment=&group.shipments[ship_index];
             // Source and workflow shipment rows share the same authoritative
             // recipient/item spans. Do not identify recipients by name text:
             // duplicate names in one document must remain independent.
             let raw=&shipment.source_raw;
-            let recognition=serde_json::json!({"recipients":
-                self.workflow_snapshot.as_ref().into_iter()
-                .flat_map(|snapshot|snapshot.groups.iter())
-                .flat_map(|g|g.shipments.iter())
-                .filter(|row|row.order_id==shipment.order_id &&
-                    row.source_raw==shipment.source_raw)
-                .map(|row|row.recipient.clone()).collect::<Vec<_>>()});
-            let spans=source_highlight::collect(raw,&recognition);
+            if !self.workflow_source_display.as_ref().is_some_and(|cached|
+                Arc::ptr_eq(&cached.board,&board) && cached.order_id==shipment.order_id &&
+                cached.raw==shipment.source_raw){
+                let recognition=serde_json::json!({"recipients":
+                    board.groups.iter().flat_map(|g|g.shipments.iter())
+                    .filter(|row|row.order_id==shipment.order_id && row.source_raw==shipment.source_raw)
+                    .map(|row|&row.recipient).collect::<Vec<_>>()});
+                self.workflow_source_display=Some(WorkflowSourceDisplay{
+                    board:Arc::clone(&board),order_id:shipment.order_id.clone(),
+                    raw:shipment.source_raw.clone(),
+                    spans:source_highlight::collect(raw,&recognition).into(),
+                });
+            }
+            let spans=self.workflow_source_display.as_ref().unwrap().spans.clone();
             let selected_id=Some(shipment.recipient_id.as_str());
             let active=self.link_hover.active_for(&shipment.order_id).cloned()
                 .filter(|key|spans.iter().any(|span|span.key==*key));
@@ -6255,7 +6297,8 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
     }
 
     fn message_section(&mut self, ui: &mut Ui, height: f32) {
-        if let Some((group,_shipment))=self.visible_workflow_group(){
+        if let Some((board,group_index,_ship_index))=self.visible_workflow_group(){
+            let group=&board.groups[group_index];
             // React also blocks payment copies with actionable Rust issues.
             // Do not enable controls just because the preview has text.
             let can_copy=self.gateway.workflow_write_enabled()
@@ -6499,7 +6542,9 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
             }
         }
 
-        if let Some((group,ship))=self.visible_workflow_group(){
+        if let Some((board,group_index,ship_index))=self.visible_workflow_group(){
+            let group=&board.groups[group_index];
+            let ship=&group.shipments[ship_index];
             let linked_active=self.link_hover.active_for(&ship.order_id).cloned();
             let mut hovered_detail:Option<source_highlight::LinkKey>=None;
             let mut workflow_freight_open:Option<(String,String,Option<egui::Pos2>)>=None;
@@ -6864,12 +6909,13 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
         // Same display target as the read-only source pane above. The
         // pending card may point to another order/recipient; do not swap
         // this projection into the employee's active editable draft.
-        if let Some((draft,recognition,index))=self.visible_pending_other(){
+        if let Some((draft,index))=self.visible_pending_other(){
+            let recognition=&draft.recognition;
             self.workflow_ui.note_pending_content_hover(
                 &draft.id,ui.ctx().input(|input|input.pointer.hover_pos()
                     .is_some_and(|point|ui.clip_rect().contains(point)))
             );
-            let spans=source_highlight::collect(&draft.raw,&recognition);
+            let spans=&draft.spans;
             let linked_active=self.link_hover.active_for(&draft.id).cloned()
                 .filter(|key|spans.iter().any(|span|span.key==*key));
             let mut hovered_detail=None;
@@ -8210,7 +8256,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                     self.workflow_last_fetch=Some(Instant::now());
                     let context=ctx.clone();
                     let freight_group=(action=="set_shipment_freight").then(||group_id.clone());
-                    let previous=freight_group.as_ref().and_then(|_|self.workflow_snapshot.clone());
+                    let previous=freight_group.as_ref().and_then(|_|self.workflow_snapshot.as_deref().cloned());
                     std::thread::spawn(move||{
                         let result=if let Some(id)=freight_group{
                             workflow_board::after_freight_edit(gateway.as_ref(),saved,previous,&id)
@@ -8625,7 +8671,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                         self.workflow_freight_editor.is_none() &&
                         self.pending_draft_confirmation.is_none();
                     event=workflow_board_ui::show(
-                        ui,self.workflow_snapshot.as_ref(),&self.drafts,
+                        ui,self.workflow_snapshot.as_deref(),&self.drafts,
                         self.active_id.as_deref(),
                         &self.client_names,active_selected,
                         &mut self.workflow_ui,
@@ -9098,6 +9144,9 @@ impl eframe::App for BandoEgui {
             self.client_names.clear();
             self.client_summaries.clear();
             self.workflow_snapshot=None;
+            self.pending_display=None;
+            self.workflow_source_display=None;
+            source_highlight::clear_visual_cache();
             self.workflow_receiver=None;
             self.workflow_refresh_required=false;
             self.workflow_last_fetch=None;
@@ -10301,7 +10350,7 @@ mod reception_workflow_admission_integration_tests {
     fn unchanged_workflow_revision_keeps_current_snapshot_and_selection(){
         let ctx=egui::Context::default();
         let mut app=app();
-        app.workflow_snapshot=Some(workflow_board::BoardSnapshot{revision:Some(7),groups:vec![]});
+        app.workflow_snapshot=Some(Arc::new(workflow_board::BoardSnapshot{revision:Some(7),groups:vec![]}));
         app.workflow_ui.selection=Some(workflow_board_ui::Selection{
             group_id:"g1".into(),order_id:"o1".into(),shipment_id:"s1".into()
         });
@@ -10319,9 +10368,9 @@ mod reception_workflow_admission_integration_tests {
     #[test]
     fn periodic_workflow_read_is_advisory_but_post_commit_refresh_is_mandatory(){
         let mut app=app();
-        app.workflow_snapshot=Some(workflow_board::BoardSnapshot{
+        app.workflow_snapshot=Some(Arc::new(workflow_board::BoardSnapshot{
             revision:Some(7),groups:vec![]
-        });
+        }));
         let (_sender,receiver)=mpsc::channel();
         app.workflow_receiver=Some(receiver);
         assert!(app.workflow_mutation_ready());
