@@ -169,10 +169,16 @@ fn native_unconfirmed_draft_first_stage_confirmation_commits_as_one_order() {
     // The seed is intentionally catalog-only. Give this isolated fixture one
     // valid priced variant and one existing operational client.
     initial["products"][0]["variants"][0]["wholesale"]=json!(30000);
+    initial["products"][0]["variants"][0]["retail"]=json!(30000);
+    // Reproduce a retail-price dealer requesting AGENCY shipment, with
+    // no house sender information registered anywhere in settings.
+    for key in ["senderAddress","senderPhone","senderMobile","senderPostcode"]{
+        initial["settings"][key]=json!("");
+    }
     let client=json!({
         "id":"client:unconfirmed-draft",
         "name":"합성 미확정 거래처",
-        "tier":"wholesale",
+        "tier":"retail",
         "payment":"POSTPAID",
         "shippingFeeExcluded":false,
         "defaultApplyVat":false,
@@ -269,6 +275,10 @@ fn native_unconfirmed_draft_first_stage_confirmation_commits_as_one_order() {
     assert_eq!(confirmed["orders"][0]["confirmedAt"],at);
     assert_eq!(confirmed["orders"][0]["pricesLocked"],true);
     assert_eq!(confirmed["orders"][0]["clientSnapshot"]["id"],client["id"]);
+    assert_eq!(confirmed["orders"][0]["orderType"],"AGENCY");
+    assert_eq!(confirmed["orders"][0]["senderSnapshot"]["id"],client["id"]);
+    assert_eq!(confirmed["orders"][0]["senderSnapshot"]["address"],client["address"]);
+    assert_eq!(confirmed["orders"][0]["senderSnapshot"]["phone"],client["phone"]);
     assert_eq!(confirmed["orders"][0]["receipt"]["original"],raw);
     assert_eq!(confirmed["workflow"]["shipments"][0]["step"],1);
     assert_eq!(confirmed["workflow"]["shipments"][0]["transferred"],false,
@@ -354,6 +364,9 @@ fn native_unconfirmed_draft_first_stage_confirmation_commits_as_one_order() {
     let queue_id=queued["entries"][0]["id"].clone();
     saved=persist(&mut reopened,&saved,queued["state"].clone());
     let preview=output("prepare_factory_export",json!({"state":saved,"ids":[queue_id]}));
+    assert_eq!(preview["rows"][0]["values"][11],client["name"]);
+    assert_eq!(preview["rows"][0]["values"][13],client["address"]);
+    assert_eq!(preview["rows"][0]["values"][14],client["phone"]);
     assert_eq!(get_snapshot(&reopened).unwrap(),saved);
     // This tests the native export ledger boundary, not XLSX file bytes.
     let exported=output("finalize_export",json!({"state":saved,"preview":preview,
