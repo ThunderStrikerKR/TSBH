@@ -1678,15 +1678,18 @@ fn native_detach_regroup_preserves_shipment_financial_and_audit_records(){
         assert_eq!(events.len(),old_events.len()+event_count);
         assert_eq!(&events[..old_events.len()],old_events.as_slice());
     };
-    let split=bando_data_access::update_v2_snapshot(&mut conn,revision,true,
+    let (split,scoped)=bando_data_access::update_v2_shipment_snapshot(
+        &mut conn,revision,"shipment:second","group:synthetic",
         |state|change(state,"detach_shipment",false,"event:detach")).unwrap();
+    assert!(scoped,"stable split must use the scoped writer");
     assert_preserved(&split,"group:detached",1);
     assert_eq!(split["workflow"]["groups"][0]["needsNotice"],true);
     assert_eq!(split["workflow"]["groups"][1]["needsNotice"],true);
     assert_eq!(split["workflow"]["groups"][1]["accountId"],"synthetic-account");
     assert_eq!(split["workflow"]["groups"][1]["notices"],json!([]));
     // Invalid regroup must not advance the revision or alter persisted data.
-    assert!(bando_data_access::update_v2_snapshot(&mut conn,revision+1,true,
+    assert!(bando_data_access::update_v2_shipment_snapshot(
+        &mut conn,revision+1,"shipment:second","group:detached",
         |state|change(state,"regroup_shipment",false,"event:unapproved")).is_err());
     assert_eq!(get_snapshot(&conn).unwrap(),split);
     for (field,value) in [("step",json!(2)),("transferred",json!(true))]{
@@ -1707,8 +1710,10 @@ fn native_detach_regroup_preserves_shipment_financial_and_audit_records(){
     different["workflow"]["groups"][0]["accountMode"]=json!("MANUAL");
     different["workflow"]["groups"][0]["accountId"]=json!("other-account");
     assert!(change(&different,"regroup_shipment",true,"event:account").is_err());
-    let merged=bando_data_access::update_v2_snapshot(&mut conn,revision+1,true,
+    let (merged,scoped)=bando_data_access::update_v2_shipment_snapshot(
+        &mut conn,revision+1,"shipment:second","group:detached",
         |state|change(state,"regroup_shipment",true,"event:regroup")).unwrap();
+    assert!(scoped,"stable regroup must use the scoped writer");
     assert_preserved(&merged,"group:synthetic",2);
     assert_eq!(merged["workflow"]["groups"][0]["needsNotice"],true);
     assert_eq!(get_snapshot(&conn).unwrap(),merged);
