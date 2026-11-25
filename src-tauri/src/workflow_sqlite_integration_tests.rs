@@ -1002,3 +1002,65 @@ fn freight_delta_skips_unchanged_sql_rows_and_legacy_indexes(){
     let reopened=initialize_database(&isolated.root.join("state.sqlite")).unwrap();
     assert_eq!(get_snapshot(&reopened).unwrap(),committed);
 }
+
+#[test]
+fn scoped_freight_before_read_matches_full_reducer_and_preserves_ledger(){
+    let (_isolated,mut conn)=IsolatedDatabase::open();
+    let initial=get_snapshot(&conn).unwrap();
+    let mut fixture=stage_three(&initial,"POSTPAID");
+    // Clone all evidence IDs consistently, not only the mutable order ID.
+    let mut other:Value=serde_json::from_str(&fixture.to_string()
+        .replace("order:synthetic","order:other")
+        .replace("recipient:synthetic","recipient:other")
+        .replace("item:synthetic","item:other")
+        .replace("source:synthetic","source:other")
+        .replace("group:synthetic","group:other")
+        .replace("shipment:synthetic","shipment:other")
+        .replace("event:confirmation","event:other-confirmation")).unwrap();
+    // Put the edited order LAST to exercise restoration of SQL ordering.
+    fixture["orders"].as_array_mut().unwrap().insert(0,other["orders"].as_array_mut().unwrap().pop().unwrap());
+    for key in ["sources","groups","shipments","events"]{
+        let mut row=other["workflow"][key].as_array_mut().unwrap().pop().unwrap();
+        if key=="sources"{row["number"]=json!(2);}
+        fixture["workflow"][key].as_array_mut().unwrap().push(row);
+    }
+    let saved=write_snapshot(&mut conn,fixture,0,true).unwrap();
+    let revision=saved["revision"].as_u64().unwrap();
+    let reduce=|state:&Value|->Result<Value,String>{
+        let reconciled=rust("reconcile_shipment_workflow",json!({
+            "state":state,"shipmentId":"shipment:synthetic","groupId":"group:synthetic",
+            "eventSeed":"before-read-reconcile","now":"2026-11-25T09:00:00+09:00"
+        }))?;
+        let result=rust("apply_workflow_action",json!({
+            "state":reconciled["state"],"action":"set_shipment_freight",
+            "shipmentId":"shipment:synthetic","groupId":"group:synthetic",
+            "origin":"FACTORY","appliedCharge":4000,
+            "eventId":"before-read-edit","now":"2026-11-25T09:00:00+09:00",
+            "actor":"검증 담당자"
+        }))?;
+        Ok(result["state"].clone())
+    };
+    let mut expected=reduce(&saved).unwrap();
+    rust("validate_workflow",json!({"state":&expected,"before":&saved})).unwrap();
+    expected["revision"]=json!(revision+1);
+    let committed=bando_data_access::update_v2_freight_snapshot(
+        &mut conn,revision,"shipment:synthetic","group:synthetic",|projected|{
+            assert_eq!(projected["orders"].as_array().unwrap().len(),1);
+            assert_eq!(projected["orders"][0]["id"],"order:synthetic");
+            assert_eq!(projected["workflow"],saved["workflow"]);
+            reduce(projected)
+        }).unwrap();
+    assert_eq!(committed,expected);
+    assert_eq!(committed["orders"][0],saved["orders"][0]);
+    assert_eq!(get_snapshot(&conn).unwrap(),committed);
+    // Reject stale revision and out-of-scope writes without touching SQLite.
+    assert!(bando_data_access::update_v2_freight_snapshot(
+        &mut conn,revision,"shipment:synthetic","group:synthetic",|_|panic!("stale reducer")).is_err());
+    assert!(bando_data_access::update_v2_freight_snapshot(
+        &mut conn,revision+1,"shipment:synthetic","group:synthetic",|projected|{
+            let mut next=projected.clone();
+            next["settings"]["operatorName"]=json!("invalid scoped mutation");
+            Ok(next)
+        }).is_err());
+    assert_eq!(get_snapshot(&conn).unwrap(),committed);
+}

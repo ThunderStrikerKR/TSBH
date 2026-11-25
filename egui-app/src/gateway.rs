@@ -659,8 +659,8 @@ impl BandoGateway for LocalGateway {
             }
             previous=now;
         };
-        let verified=bando_data_access::update_v2_snapshot(
-            &mut conn,expected_revision,true,|before|{
+        let scoped_freight=action=="set_shipment_freight" && args.get("draft").is_none();
+        let mutate=|before:&Value|->Result<Value,String>{
         checkpoint("read_snapshot");
         // An unconfirmed egui draft may enter the operational ledger ONLY
         // through the explicit first-stage approval. The full Order is a
@@ -861,15 +861,26 @@ impl BandoGateway for LocalGateway {
         checkpoint("apply_action");
         let changed=result.get("state")
             .ok_or("업무 처리 결과에 상태가 없습니다.")?.clone();
-        rules::execute("validate_workflow",serde_json::json!({
-            "state":&changed,"before":&before
-        }))?;
-        checkpoint("validate");
-        if &changed==before{
-            return Err("현재 상태에서 수행할 변경이 없습니다.".into());
+        if !scoped_freight{
+            rules::execute("validate_workflow",serde_json::json!({
+                "state":&changed,"before":&before
+            }))?;
+            checkpoint("validate");
+            if &changed==before{
+                return Err("현재 상태에서 수행할 변경이 없습니다.".into());
+            }
         }
         Ok(changed)
-        })?;
+        };
+        let verified=if scoped_freight{
+            let shipment_id=args["shipmentId"].as_str().ok_or("배송 건 ID 누락")?;
+            let group_id=args["groupId"].as_str().ok_or("주문 묶음 ID 누락")?;
+            bando_data_access::update_v2_freight_snapshot(
+                &mut conn,expected_revision,shipment_id,group_id,mutate)?
+        }else{
+            bando_data_access::update_v2_snapshot(
+                &mut conn,expected_revision,true,mutate)?
+        };
         // Same transactional before-image, validation, write, and persisted
         // projection verification. A concurrent update cannot be mistaken
         // for a failed commit after the employee's own write succeeded.

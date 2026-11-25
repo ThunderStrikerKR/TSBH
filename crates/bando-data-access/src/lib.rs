@@ -38,7 +38,7 @@ pub use validation::{
     validate_message_templates, validate_provisional_product_notices,
 };
 pub use relational_write::store_v2_relational;
-pub use storage::{write_v2_snapshot,update_v2_snapshot};
+pub use storage::{write_v2_snapshot,update_v2_snapshot,update_v2_freight_snapshot};
 pub use client_commands::mutate_client_v2;
 pub use product_commands::{patch_product_v2,patch_model_groups_v2,apply_product_price,
     preview_unified_product_workbook};
@@ -196,9 +196,24 @@ pub fn read_v2_catalog_snapshot(conn: &Connection) -> Result<Value, String> {
     Ok(state)
 }
 
-// The full and single-order paths use the same ownership checks.
+// Full, single-order and complementary projections share ownership checks.
 fn read_order_entities(conn:&Connection,only:Option<&str>)->Result<Vec<Value>,String>{
-    let (mut orders,mut recipients,items,owner_sql)=if let Some(id)=only{
+    read_order_partition(conn,only,false)
+}
+
+fn read_order_partition(conn:&Connection,only:Option<&str>,exclude:bool)
+    ->Result<Vec<Value>,String>{
+    let (mut orders,mut recipients,items,owner_sql)=if exclude{
+        let id=only.ok_or("제외할 주문 ID 누락")?;
+        (
+            read_entities_with(conn,"SELECT payload FROM core_orders WHERE id<>?1 ORDER BY position,id",[id])?,
+            read_entities_with(conn,"SELECT payload FROM core_recipients WHERE order_id<>?1 ORDER BY position,id",[id])?,
+            read_children_with(conn,"SELECT recipient_id,payload FROM core_items
+                WHERE recipient_id NOT IN (SELECT id FROM core_recipients WHERE order_id=?1)
+                ORDER BY recipient_id,position,id",[id])?,
+            "SELECT order_id,id FROM core_recipients WHERE order_id<>?1 ORDER BY order_id,position,id"
+        )
+    }else if let Some(id)=only{
         (
             read_entities_with(conn,"SELECT payload FROM core_orders WHERE id=?1 ORDER BY position,id",[id])?,
             read_entities_with(conn,"SELECT payload FROM core_recipients WHERE order_id=?1 ORDER BY position,id",[id])?,

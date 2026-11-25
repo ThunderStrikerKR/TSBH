@@ -9,7 +9,7 @@ fn err<E:std::fmt::Display>(e:E)->String{e.to_string()}
 #[path = "../../../src-tauri/src/reception.rs"]
 mod reception;
 
-fn read_current(tx:&Transaction<'_>,expected_revision:u64)->Result<Value,String>{
+fn read_current_envelope(tx:&Transaction<'_>,expected_revision:u64)->Result<Value,String>{
     let version:i64=tx.query_row(
         "SELECT version FROM core_schema WHERE key='business-core'",
         [],|row|row.get(0),
@@ -17,10 +17,15 @@ fn read_current(tx:&Transaction<'_>,expected_revision:u64)->Result<Value,String>
     if version!=2 {return Err("지원하지 않는 운영 DB 버전입니다.".into());}
     // The envelope owns revision. Reject stale writers before loading any
     // relational rows, using the same transaction snapshot.
-    let mut current=crate::read_envelope(tx)?;
+    let current=crate::read_envelope(tx)?;
     if current["revision"].as_u64()!=Some(expected_revision){
         return Err("다른 작업에서 데이터가 수정되었습니다. 새로고침 후 다시 저장하세요.".into());
     }
+    Ok(current)
+}
+
+fn read_current(tx:&Transaction<'_>,expected_revision:u64)->Result<Value,String>{
+    let mut current=read_current_envelope(tx,expected_revision)?;
     crate::hydrate_v2(tx,&mut current)?;
     Ok(current)
 }
@@ -45,14 +50,92 @@ pub fn update_v2_snapshot<F>(
 where F:FnOnce(&Value)->Result<Value,String>{
     let tx=conn.transaction().map_err(err)?;
     let current=read_current(&tx,expected_revision)?;
-    let mut state=mutate(&current)?;
-    crate::product_colors::normalize_products(&mut state)?;
-    crate::valid_state(&state)?;
-    let changes_before=total_changes(&tx)?;
-    let (written,scope)=write_validated(&tx,&current,state,expected_revision,validate_orders)?;
-    let verified=verify_written(&tx,current,written,scope,changes_before)?;
+    let state=mutate(&current)?;
+    let verified=finish_update(&tx,current,state,expected_revision,validate_orders)?;
     tx.commit().map_err(err)?;
     Ok(verified)
+}
+
+/// Only for the native set_shipment_freight reducer. Keep the full workflow
+/// envelope and catalog (audit identities, allocations, tariffs, clients).
+/// Read the target order first, then the complementary partition exactly
+/// once before the unchanged global validation and atomic writer. The
+/// reducer never receives unrelated order payloads. No projected snapshot
+/// can reach the persistent writer.
+pub fn update_v2_freight_snapshot<F>(
+    conn:&mut Connection,expected_revision:u64,shipment_id:&str,group_id:&str,mutate:F
+)->Result<Value,String>
+where F:FnOnce(&Value)->Result<Value,String>{
+    let tx=conn.transaction().map_err(err)?;
+    let mut before=read_current_envelope(&tx,expected_revision)?;
+    let ship=before["workflow"]["shipments"].as_array()
+        .and_then(|rows|rows.iter().find(|s|s["id"].as_str()==Some(shipment_id)))
+        .ok_or("수정할 배송 건을 확인하세요.")?;
+    if ship["groupId"].as_str()!=Some(group_id) ||
+        ship["transferred"]==true || ship["legacyArchived"]==true{
+        return Err("현재 묶음의 수정 가능한 배송 건을 확인하세요.".into());
+    }
+    let order_id=ship["orderId"].as_str().filter(|id|!id.trim().is_empty())
+        .ok_or("배송 건의 발주서를 찾을 수 없습니다.")?.to_owned();
+    let (products,clients)=crate::read_catalog_entities(&tx)?;
+    let target=crate::read_order_entities(&tx,Some(&order_id))?;
+    if target.len()!=1 || target[0]["id"].as_str()!=Some(order_id.as_str()){
+        return Err("배송 건의 발주서를 찾을 수 없습니다.".into());
+    }
+    let root=before.as_object_mut().ok_or("업무 상태는 객체여야 합니다.")?;
+    root.insert("products".into(),Value::Array(products));
+    root.insert("clients".into(),Value::Array(clients));
+    root.insert("orders".into(),Value::Array(target));
+
+    let mut changed=mutate(&before)?;
+    // A freight reducer may change only the target order and workflow.
+    // In particular, never accept a projected catalog mutation or insertion.
+    let old_root=before.as_object().ok_or("기존 업무 상태 오류")?;
+    let new_root=changed.as_object().ok_or("업무 처리 결과 오류")?;
+    if !old_root.iter().filter(|(k,_)|k.as_str()!="orders" && k.as_str()!="workflow")
+        .eq(new_root.iter().filter(|(k,_)|k.as_str()!="orders" && k.as_str()!="workflow")){
+        return Err("운임 수정 범위를 벗어난 업무 데이터 변경입니다.".into());
+    }
+    let target_after=changed["orders"].as_array_mut()
+        .filter(|rows|rows.len()==1 && rows[0]["id"].as_str()==Some(order_id.as_str()))
+        .and_then(Vec::pop).ok_or("운임 수정 대상 주문이 변경되었습니다.")?;
+    let target_before=before["orders"].as_array_mut()
+        .and_then(Vec::pop).ok_or("기존 대상 주문 누락")?;
+
+    // Reconstruct the original full order sequence using the SQL position
+    // and ID ordering, not a reducer-provided position or a new append.
+    let position:i64=tx.query_row("SELECT COUNT(*) FROM core_orders
+        WHERE position<(SELECT position FROM core_orders WHERE id=?1)
+        OR (position=(SELECT position FROM core_orders WHERE id=?1) AND id<?1)",
+        [&order_id],|row|row.get(0)).map_err(err)?;
+    let position=usize::try_from(position).map_err(err)?;
+    let mut other=crate::read_order_partition(&tx,Some(&order_id),true)?;
+    if position>other.len() || other.iter().any(|o|o["id"].as_str()==Some(order_id.as_str())){
+        return Err("운임 수정 주문의 전체 목록 연결 오류".into());
+    }
+    other.insert(position,target_before);
+    before["orders"]=Value::Array(other);
+    let mut all=before["orders"].clone();
+    all[position]=target_after;
+    changed["orders"]=all;
+    // The exact old full-workflow validator still checks unrelated
+    // shipments, payment links and immutable evidence before any SQL write.
+    crate::rules::execute("validate_workflow",json!({"state":&changed,"before":&before}))?;
+    if changed==before{
+        return Err("현재 상태에서 수행할 변경이 없습니다.".into());
+    }
+    let verified=finish_update(&tx,before,changed,expected_revision,true)?;
+    tx.commit().map_err(err)?;
+    Ok(verified)
+}
+
+fn finish_update(tx:&Transaction<'_>,current:Value,mut state:Value,
+    expected_revision:u64,validate_orders:bool)->Result<Value,String>{
+    crate::product_colors::normalize_products(&mut state)?;
+    crate::valid_state(&state)?;
+    let changes_before=total_changes(tx)?;
+    let (written,scope)=write_validated(tx,&current,state,expected_revision,validate_orders)?;
+    verify_written(tx,current,written,scope,changes_before)
 }
 
 // Compare the actual SQLite change counter with all direct DML results.
