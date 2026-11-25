@@ -4878,13 +4878,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                         ));
                                         // The stroke belongs to the actual
                                         // source boundary and moves with it.
-                                        line.painter().rect_stroke(
-                                            image.rect,0.0,
-                                            egui::Stroke::new(
-                                                theme::SOFT_DIVIDER_WIDTH,edge
-                                            ),
-                                            egui::StrokeKind::Inside
-                                        );
+                                        theme::paint_surface_outline(line.painter(),image.rect,0.0,edge);
                                     });
                                 });
                             let wheel=viewport.input(|input|{

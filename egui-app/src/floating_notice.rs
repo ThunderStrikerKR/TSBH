@@ -488,11 +488,7 @@ pub fn show(ctx: &Context) {
                     theme::FLOATING_NOTICE_SHADOW_ALPHA
                 ),
             }.as_shape(rect,theme::CONTROL_RADIUS));
-            painter.rect(
-                rect,theme::CONTROL_RADIUS,theme::FLOATING_NOTICE_BG,
-                Stroke::new(theme::FRAME_STROKE_WIDTH,theme::BORDER),
-                egui::StrokeKind::Inside,
-            );
+            theme::paint_bordered_surface(&painter,rect,theme::CONTROL_RADIUS,theme::FLOATING_NOTICE_BG,theme::BORDER);
             paint_tail(&painter,rect,active.at,above);
             // All rows use the same notice font; average laid-out row height
             // is stable even when egui has wrapped a long message.

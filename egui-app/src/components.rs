@@ -3521,26 +3521,15 @@ pub fn reception_recipient_inline_cell_editor(
 /// tokens. Painting a reserved rect avoids Frame::show shrinking an empty
 /// message body and moving the fixed copy-action row.
 pub fn paint_source_document_surface(ui: &Ui, rect: Rect) {
-    ui.painter().rect(
-        rect,
-        theme::CONTROL_RADIUS as f32,
-        theme::INPUT,
-        Stroke::new(theme::FRAME_STROKE_WIDTH, theme::BORDER),
-        egui::StrokeKind::Inside,
-    );
+    theme::paint_bordered_surface(ui.painter(),rect,theme::CONTROL_RADIUS,theme::INPUT,theme::BORDER);
 }
 
 /// The 70pt client identification band is INFORMATION, not an editable
 /// source document. Keep its exact reserved Rect and use the management
 /// master's muted inner-row colors to establish a quieter visual tier.
 pub fn paint_reception_client_summary_surface(ui:&Ui,rect:Rect){
-    ui.painter().rect(
-        rect,theme::CONTROL_RADIUS as f32,
-        theme::RECEPTION_CLIENT_SUMMARY_BG,
-        Stroke::new(theme::SOFT_DIVIDER_WIDTH,
-            theme::RECEPTION_CLIENT_SUMMARY_BORDER),
-        egui::StrokeKind::Inside,
-    );
+    theme::paint_bordered_surface(ui.painter(),rect,theme::CONTROL_RADIUS,
+        theme::RECEPTION_CLIENT_SUMMARY_BG,theme::RECEPTION_CLIENT_SUMMARY_BORDER);
 }
 
 /// Structural section divider: one 16/1/16pt allocation, separate from row rules.

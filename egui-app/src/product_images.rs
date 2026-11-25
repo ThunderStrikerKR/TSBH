@@ -184,6 +184,8 @@ impl ProductImageCache {
             ui.painter().text(rect.center(),egui::Align2::CENTER_CENTER,
                 "상품 사진 없음",typography::product_image_placeholder_font(),theme::SECONDARY);
         }
+        // Draw the inside border last, including the missing-photo surface.
+        theme::paint_surface_outline(ui.painter(),rect,theme::CONTROL_RADIUS,theme::BORDER);
     }
     pub fn photo(&mut self,ui:&mut Ui,product:&Value,size:f32){
         let (rect,_)=ui.allocate_exact_size(Vec2::splat(size),egui::Sense::hover());

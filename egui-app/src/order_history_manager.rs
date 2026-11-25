@@ -1457,13 +1457,8 @@ impl OrderHistoryManager {
                                                     row_rect,0.0,theme::CANVAS);
                                                 let block_rect=history_detail_block_rect(
                                                     row_rect,&widths,spacing);
-                                                row_ui.painter().rect(
-                                                    block_rect,
-                                                    theme::ORDER_HISTORY_RECIPIENT_BLOCK_RADIUS,
-                                                    theme::PANEL,
-                                                    Stroke::new(1.0,theme::DIVIDER),
-                                                    egui::StrokeKind::Inside
-                                                );
+                                                theme::paint_bordered_surface(row_ui.painter(),block_rect,
+                                                    theme::ORDER_HISTORY_RECIPIENT_BLOCK_RADIUS,theme::PANEL,theme::DIVIDER);
                                             }
                                         }
                                         if let Some(snapshot)=snapshot {

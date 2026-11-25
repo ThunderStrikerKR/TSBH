@@ -61,7 +61,7 @@ const paintExceptions = [
   ["order_history_manager.rs","show_page",1,
     "rect_filled(row_rect,0.0,theme::CANVAS)"],
   ["order_history_manager.rs","show_page",1,
-    "rect(block_rect,theme::ORDER_HISTORY_RECIPIENT_BLOCK_RADIUS,theme::PANEL,Stroke::new(1.0,theme::DIVIDER),egui::StrokeKind::Inside)"],
+    "paint_bordered_surface(row_ui.painter(),block_rect,theme::ORDER_HISTORY_RECIPIENT_BLOCK_RADIUS,theme::PANEL,theme::DIVIDER)"],
   ["client_chooser.rs","show",1,
     "rect_stroke(response.rect.shrink(1.0),0.0,egui::Stroke::new(theme::SOFT_DIVIDER_WIDTH,theme::SELECTION),egui::StrokeKind::Inside)"],
 ];
@@ -159,12 +159,16 @@ export function audit(source,file,checkTableContracts=false){
     if(managed){
       if(is(i,"theme :: TABLE_ROW_ALT_BG"))
         flag(i,"local table stripe color; use shared row fill");
-      if(v[i]==="."&&tablePaintMethods.has(v[i+1])&&v[i+2]==="("){
-        const fingerprint=v.slice(i+1,callEnd(i+2)+1).join(" ");
+      const localPaint=v[i]==="."&&tablePaintMethods.has(v[i+1])&&v[i+2]==="(";
+      const genericPaint=is(i,"theme ::")&&
+        ["paint_bordered_surface","paint_surface_outline","paint_soft_rule"].includes(v[i+2])&&v[i+3]==="(";
+      if(localPaint||genericPaint){
+        const start=localPaint?i+1:i+2;
+        const fingerprint=v.slice(start,callEnd(start+1)+1).join(" ");
         const key=file+":"+fn+":"+fingerprint;
         const count=(paintUsed.get(key)||0)+1;paintUsed.set(key,count);
         if(count>(paintAllowance.get(key)||0))
-          flag(i,"raw table painter: "+v[i+1]+"; use shared table rendering");
+          flag(i,"raw table painter: "+v[start]+"; use shared table rendering");
       }
       if(is(i,"from_fn (")){
         const body=v.slice(i+2,callEnd(i+1)).join(" ");
@@ -238,6 +242,9 @@ function selfTest(){
     ["excel_manager.rs","fn render(){painter.rect_filled(r,0.0,theme::TABLE_HEADER_OUTLINE);}",2],
     ["new_screen.rs","fn render(){components::table_header(ui,x);}",1],
     ["product_manager.rs","fn render(){painter.line_segment([r.left_bottom(),r.right_bottom()],stroke);}",1],
+    ["product_manager.rs","fn render(){theme::paint_bordered_surface(p,r,0,c,b);}",1],
+    ["product_manager.rs","fn render(){theme::paint_soft_rule(p,r);}",1],
+    ["order_history_manager.rs","fn show_page(){theme::paint_bordered_surface(row_ui.painter(),block_rect,theme::ORDER_HISTORY_RECIPIENT_BLOCK_RADIUS,theme::PANEL,theme::DIVIDER);}",0],
     ["excel_manager.rs","fn render(){painter.rect_filled(r,0.0,theme::DIVIDER);}",1],
     ["product_manager.rs","fn render(){let c=theme::TABLE_ROW_ALT_BG;}",1],
     ["product_manager.rs","fn render(){let c=std::array::from_fn(|i|Rect::from_min_size(p,w));}",1],

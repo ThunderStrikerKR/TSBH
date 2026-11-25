@@ -303,11 +303,6 @@ impl ItemEditor{
                                     Vec2::splat(photo_side),egui::Sense::hover()
                                 );
                                 self.photos.paint(body,&product,photo);
-                                body.painter().rect_stroke(
-                                    photo,theme::CONTROL_RADIUS as f32,
-                                    egui::Stroke::new(1.0,theme::BORDER),
-                                    egui::StrokeKind::Inside
-                                );
                                 body.add_space(theme::SPACE_16);
                                 self.detail_information(
                                     body,name,category,&price,Arc::clone(&gateway),
@@ -322,11 +317,6 @@ impl ItemEditor{
                                         Vec2::splat(photo_side),egui::Sense::hover()
                                     );
                                     self.photos.paint(line,&product,photo);
-                                    line.painter().rect_stroke(
-                                        photo,theme::CONTROL_RADIUS as f32,
-                                        egui::Stroke::new(1.0,theme::BORDER),
-                                        egui::StrokeKind::Inside
-                                    );
                                     line.add_space(ITEM_DETAIL_PANEL_GAP);
                                     let detail_width=(content_width-photo_side
                                         -ITEM_DETAIL_PANEL_GAP).max(1.0);

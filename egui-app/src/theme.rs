@@ -824,24 +824,17 @@ pub fn management_page_host_frame()->Frame{
     Frame::new().inner_margin(0)
 }
 pub fn workflow_group_card_frame(highlighted:bool)->Frame{
-    Frame::new()
-        .fill(if highlighted{WORKFLOW_SELECTED_BG}else{WORKFLOW_CARD_BG})
-        .stroke(Stroke::new(SOFT_DIVIDER_WIDTH,WORKFLOW_CARD_BORDER))
-        .corner_radius(CornerRadius::same(WORKFLOW_CARD_RADIUS))
+    bordered_surface(if highlighted{WORKFLOW_SELECTED_BG}else{WORKFLOW_CARD_BG},WORKFLOW_CARD_BORDER,WORKFLOW_CARD_RADIUS)
         .inner_margin(0)
 }
 pub fn workflow_shipment_row_frame(fill:Color32)->Frame{
-    Frame::new().fill(fill)
-        .stroke(Stroke::new(SOFT_DIVIDER_WIDTH,WORKFLOW_DETAIL_ROW_BORDER))
-        .corner_radius(CONTROL_RADIUS)
+    bordered_surface(fill,WORKFLOW_DETAIL_ROW_BORDER,CONTROL_RADIUS)
         .inner_margin(egui::Margin::symmetric(
             WORKFLOW_DETAIL_ROW_PADDING_X as i8,SPACE_4 as i8
         ))
 }
 pub fn settings_help_surface_frame()->Frame{
-    Frame::new().fill(INPUT)
-        .stroke(Stroke::new(SOFT_DIVIDER_WIDTH,BORDER))
-        .corner_radius(CornerRadius::same(CONTROL_RADIUS))
+    bordered_surface(INPUT,BORDER,CONTROL_RADIUS)
         .inner_margin(egui::Margin::symmetric(SPACE_16 as i8,SPACE_12 as i8))
 }
 
@@ -859,10 +852,7 @@ pub fn modal_frame() -> Frame {
 /// BORDER outline is intentional; do not replace it with the softer modal
 /// nested-frame stroke.
 pub fn category_ancestor_frame()->Frame{
-    Frame::new()
-        .fill(INPUT)
-        .stroke(Stroke::new(SOFT_DIVIDER_WIDTH,BORDER))
-        .corner_radius(CornerRadius::same(CONTROL_RADIUS))
+    bordered_surface(INPUT,BORDER,CONTROL_RADIUS)
         .inner_margin(SPACE_8)
 }
 
@@ -918,8 +908,28 @@ mod modal_nested_role_tests{
 /// retain their approved radius, padding, fill and border color.
 pub(crate) fn bordered_surface(fill:Color32,border:Color32,radius:u8)->Frame{
     Frame::new().fill(fill)
-        .stroke(Stroke::new(FRAME_STROKE_WIDTH,border))
+        .stroke(surface_stroke(border))
         .corner_radius(CornerRadius::same(radius))
+}
+
+fn surface_stroke(border:Color32)->Stroke{
+    Stroke::new(FRAME_STROKE_WIDTH,border)
+}
+
+/// Fixed-rectangle surface: keep layout and hit geometry with the caller,
+/// while the common surface owns the 1pt inside stroke.
+pub(crate) fn paint_bordered_surface(
+    painter:&egui::Painter,rect:egui::Rect,radius:impl Into<CornerRadius>,
+    fill:Color32,border:Color32
+){
+    painter.rect(rect,radius,fill,surface_stroke(border),egui::StrokeKind::Inside);
+}
+
+/// Finish a surface after painting its image or composite content.
+pub(crate) fn paint_surface_outline(
+    painter:&egui::Painter,rect:egui::Rect,radius:impl Into<CornerRadius>,border:Color32
+){
+    painter.rect_stroke(rect,radius,surface_stroke(border),egui::StrokeKind::Inside);
 }
 
 pub fn section_frame() -> Frame {
@@ -993,10 +1003,7 @@ pub fn management_table_scroll_style()->egui::style::ScrollStyle{
 /// The card provides only its outline; its toolbar owns inner padding,
 /// and rows can span the full width without a second 16pt inset.
 pub fn management_list_frame() -> Frame {
-    Frame::new()
-        .fill(PANEL)
-        .stroke(Stroke::new(FRAME_STROKE_WIDTH, BORDER))
-        .corner_radius(CornerRadius::same(PANEL_RADIUS))
+    bordered_surface(PANEL,BORDER,PANEL_RADIUS)
         .inner_margin(FRAME_STROKE_WIDTH as i8)
 }
 

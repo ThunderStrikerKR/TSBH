@@ -448,14 +448,8 @@ fn workflow_header(
     let title_response=components::shortened_text_tooltip(title_response,&visible,title);
 
     let block=workflow_control_rect(signal);
-    ui.painter().rect_filled(
-        block,5.0,theme::WORKFLOW_SIGNAL_BLOCK_BG
-    );
-    ui.painter().rect_stroke(
-        block,5.0,
-        egui::Stroke::new(theme::SOFT_DIVIDER_WIDTH,theme::WORKFLOW_SIGNAL_BLOCK_BORDER),
-        egui::StrokeKind::Inside
-    );
+    theme::paint_bordered_surface(ui.painter(),block,5.0,
+        theme::WORKFLOW_SIGNAL_BLOCK_BG,theme::WORKFLOW_SIGNAL_BLOCK_BORDER);
     let lamp_width=theme::WORKFLOW_SIGNAL_SIZE;
     let lamp_height=theme::WORKFLOW_SIGNAL_HEIGHT;
     let lamp_span=lamp_width*STEP_NAMES.len() as f32
@@ -468,12 +462,7 @@ fn workflow_header(
         );
         let lamp=Rect::from_center_size(center,Vec2::new(lamp_width,lamp_height));
         let (fill,border)=workflow_signal_palette(step,index);
-        ui.painter().rect_filled(lamp,theme::WORKFLOW_SIGNAL_RADIUS,fill);
-        ui.painter().rect_stroke(
-            lamp,theme::WORKFLOW_SIGNAL_RADIUS,
-            egui::Stroke::new(theme::SOFT_DIVIDER_WIDTH,border),
-            egui::StrokeKind::Inside
-        );
+        theme::paint_bordered_surface(ui.painter(),lamp,theme::WORKFLOW_SIGNAL_RADIUS,fill,border);
     }
     let manage_clicked=workflow_auxiliary_at(
         ui,id,workflow_control_rect(manage),
