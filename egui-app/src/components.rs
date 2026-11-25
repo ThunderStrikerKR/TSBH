@@ -14,7 +14,6 @@ pub(crate) fn test_context()->egui::Context {
 }
 
 pub const LABEL_WIDTH: f32 = theme::FIELD_LABEL_WIDTH;
-pub const TABLE_ROW_HEIGHT: f32 = theme::MANAGEMENT_COMPACT_ROW_HEIGHT;
 /// Render only the rows intersecting a scroll viewport, while reserving the
 /// full logical height and width of the list. This works with BOTH-axis
 /// scrolling, unlike a paginated list, and preserves the backing row indices.
@@ -168,7 +167,6 @@ mod management_table_container_style_tests{
     }
 }
 
-pub const TABLE_HEADER_HEIGHT: f32 = theme::MANAGEMENT_TABLE_HEADER_HEIGHT;
 
 /// Zero-layout feedback for fixed management table/scroll viewports.
 ///
@@ -2422,12 +2420,6 @@ pub fn modal_section_measured<R>(
 /// Keep normal 8pt spacing *inside* ordinary modal_section field content.
 pub fn modal_master_controlled_spacing(ui:&mut Ui){
     ui.spacing_mut().item_spacing.y=0.0;
-}
-
-/// One shared 16pt space / 1pt divider / 16pt space sequence. Call from a
-/// modal_master_controlled_spacing surface to prevent implicit extra gaps.
-pub fn modal_master_spaced_divider(ui:&mut Ui)->Rect{
-    section_divider(ui)
 }
 
 /// Same nested-section surface for absolute-layout dialogs such as OCR.
@@ -5521,8 +5513,8 @@ pub fn reception_client_summary_card(
                 );
                 paint_client_line(ui,name_cell,x,shown_galley,theme::TEXT);
                 if name_overflow{
-                    ui.interact(name_cell,ui.make_persistent_id("source-client-name-overflow"),Sense::hover())
-                        .on_hover_text(name);
+                    overflow_tooltip(ui.interact(name_cell,
+                        ui.make_persistent_id("source-client-name-overflow"),Sense::hover()),name_overflow,name);
                 }
             }
             if !terms.is_empty(){
@@ -5536,8 +5528,8 @@ pub fn reception_client_summary_card(
                         ui,terms_cell,terms_x,terms_galley,theme::MUTED
                     );
                     if overflow{
-                        ui.interact(terms_cell,ui.make_persistent_id("source-client-terms-overflow"),Sense::hover())
-                            .on_hover_text(terms);
+                        overflow_tooltip(ui.interact(terms_cell,
+                            ui.make_persistent_id("source-client-terms-overflow"),Sense::hover()),overflow,terms);
                     }
                 }
             }
@@ -5743,8 +5735,8 @@ fn management_row_impl(
             let (_,ink)=client_tier_colors(tier.unwrap_or(""));
             let badge_size=typography::client_table_metadata_galley(ui,primary,ink).size();
             if !primary.is_empty()&&text_exceeds_rect(badge_size,badge.intersect(ui.clip_rect())){
-                ui.interact(badge,ui.make_persistent_id(("management-row-hover",row_id,i,0)),Sense::hover())
-                    .on_hover_text(*primary);
+                overflow_tooltip(ui.interact(badge,
+                    ui.make_persistent_id(("management-row-hover",row_id,i,0)),Sense::hover()),true,primary);
             }
             if !secondary.is_empty(){
                 let second=Rect::from_min_max(
@@ -5755,8 +5747,8 @@ fn management_row_impl(
                 let overflow=text_exceeds_rect(galley.size(),second.intersect(ui.clip_rect()));
                 paint_client_line(ui,second,second.left(),galley,theme::MUTED);
                 if overflow{
-                    ui.interact(second,ui.make_persistent_id(("management-row-hover",row_id,i,1)),Sense::hover())
-                        .on_hover_text(*secondary);
+                    overflow_tooltip(ui.interact(second,
+                        ui.make_persistent_id(("management-row-hover",row_id,i,1)),Sense::hover()),overflow,secondary);
                 }
             }
         }else{
@@ -5781,8 +5773,8 @@ fn management_row_impl(
                     if metadata{theme::MUTED}else{theme::TEXT}
                 );
                 if overflow{
-                    ui.interact(cell,ui.make_persistent_id(("management-row-hover",row_id,i,0)),Sense::hover())
-                        .on_hover_text(*visible);
+                    overflow_tooltip(ui.interact(cell,
+                        ui.make_persistent_id(("management-row-hover",row_id,i,0)),Sense::hover()),overflow,visible);
                 }
             }
         }
@@ -5878,25 +5870,6 @@ fn display_money_number(amount:i64)->String{
         groups.push(character);
     }
     format!("{sign}{groups}")
-}
-
-pub fn summary_strip(ui: &mut Ui, label: &str, value: &str, footnote: &str) {
-    ui.vertical(|ui| {
-        soft_divider(ui);
-        ui.add_space(theme::SPACE_8);
-        ui.horizontal(|ui| {
-            ui.label(typography::field_label(label));
-            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                ui.label(typography::summary_value(value));
-            });
-        });
-        let footnote_width=ui.available_width();
-        fixed_status_slot(
-            ui,footnote_width,typography::METADATA_LINE_HEIGHT,
-            (!footnote.trim().is_empty()).then_some(footnote),
-            (!footnote.trim().is_empty()).then_some(footnote),theme::MUTED
-        );
-    });
 }
 
 /// Geometry shared by recognized working orders and native workflow rows.
@@ -6900,12 +6873,6 @@ pub fn reception_total_footer(
     );
 }
 
-pub fn record_card(ui: &mut Ui, content: impl FnOnce(&mut Ui)) {
-    theme::bordered_surface(theme::PANEL,theme::BORDER,theme::PANEL_RADIUS)
-        .inner_margin(theme::CARD_PADDING)
-        .show(ui, content);
-}
-
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum StatusTone {
     Neutral,
@@ -7439,34 +7406,6 @@ mod management_readonly_table_contract_tests {
             theme::MANAGEMENT_COMPACT_ROW_HEIGHT+theme::SOFT_DIVIDER_WIDTH
         );
     }
-}
-
-pub fn table_header(ui: &mut Ui, columns: &[(&str, f32)]) {
-    Frame::new().fill(theme::RAISED).inner_margin(egui::Margin::symmetric(theme::SPACE_8 as i8, theme::SPACE_4 as i8))
-        .show(ui, |ui| {
-            ui.horizontal(|ui| {
-                for (title, width) in columns {
-                    ui.add_sized(
-                        Vec2::new(*width, TABLE_HEADER_HEIGHT - 8.0),
-                        egui::Label::new(
-                            typography::table_header(title),
-                        ),
-                    );
-                }
-            });
-        });
-}
-
-pub fn table_row(ui: &mut Ui, columns: &[(&str, f32)]) {
-    ui.horizontal(|ui| {
-        for (value, width) in columns {
-            ui.add_sized(
-                Vec2::new(*width, TABLE_ROW_HEIGHT),
-                egui::Label::new(typography::table_cell(value)),
-            );
-        }
-    });
-    soft_divider(ui);
 }
 
 // Narrow geometry contract check only, not a business-data regression suite.
@@ -8967,7 +8906,7 @@ mod modal_editor_workspace_geometry_tests {
                                         });
                                     }
                                 });
-                                seen.divider=Some(modal_master_spaced_divider(body));
+                                seen.divider=Some(section_divider(body));
                                 let advanced=egui::CollapsingHeader::new("고급 정보")
                                     .default_open(false)
                                     .show(body,|_|{});

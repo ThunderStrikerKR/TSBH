@@ -1986,7 +1986,7 @@ impl ProductManager {
             group.spacing_mut().item_spacing.y=theme::SPACING;
             Self::detail_overview_column(group,draft,brands,categories,category_nodes,editable,busy);
         });
-        components::modal_master_spaced_divider(ui);
+        components::section_divider(ui);
         ui.scope(|group|{
             group.spacing_mut().item_spacing.y=theme::SPACING;
             Self::detail_price_column(group,draft,prices,editable,busy);
@@ -2157,7 +2157,7 @@ impl ProductManager {
                         // A single shared structural separator reserves
                         // exactly 16pt on both sides of its divider.
                         measured.divider=Some(
-                            components::modal_master_spaced_divider(body)
+                            components::section_divider(body)
                         );
                         let advanced=egui::CollapsingHeader::new(
                             "고급 정보"
@@ -2451,7 +2451,7 @@ mod tests {
         assert!(composition.contains("workspace.body("));
         assert!(composition.contains("workspace.footer("));
         assert!(composition.contains("ModalEditorBodyGeometry::default()"));
-        assert!(composition.contains("modal_master_spaced_divider(body)"));
+        assert!(composition.contains("section_divider(body)"));
         assert!(composition.contains("top.spacing_mut().item_spacing.x="));
         assert!(!composition.contains("top.add_space(theme::SPACE_16)"));
         assert!(!composition.contains("modal.add_space(theme::SPACE_12)"));

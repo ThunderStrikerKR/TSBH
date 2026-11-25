@@ -555,9 +555,9 @@ fn draw_line(ui:&mut Ui,rect:Rect,line:HistoryLine,snapshot:&HistorySnapshot,
                 typography::ManagementTableCellRole::ClientName,false);
             if display_client_name(order_client(row))!=order_client(row) ||
                 history_text_overflow(ui,columns[1],order_client(row),typography::ManagementTableCellRole::ClientName){
-                ui.interact(columns[1].intersect(area),
-                    ui.make_persistent_id(("history-client-name",id)),Sense::hover())
-                    .on_hover_text(order_client(row));
+                components::overflow_tooltip(ui.interact(columns[1].intersect(area),
+                    ui.make_persistent_id(("history-client-name",id)),Sense::hover()),
+                    true,order_client(row));
             }
             // Main list: ONLY product name × quantity, all items in one line.
             // Click anywhere except the action button to expand all details.
@@ -616,9 +616,9 @@ fn draw_line(ui:&mut Ui,rect:Rect,line:HistoryLine,snapshot:&HistorySnapshot,
                 );
                 paint_caption(ui,lower,&warning);
                 if overflow{
-                    ui.interact(lower.intersect(area),
+                    components::overflow_tooltip(ui.interact(lower.intersect(area),
                         ui.make_persistent_id(("history-billing-caution",id)),
-                        Sense::hover()).on_hover_text(&warning);
+                        Sense::hover()),overflow,&warning);
                 }
             }
             // Staff confirmation is NOT the bank transfer's paidAt date.
@@ -690,20 +690,20 @@ fn draw_line(ui:&mut Ui,rect:Rect,line:HistoryLine,snapshot:&HistorySnapshot,
             paint_text(ui,columns[2],&freight_label,typography::ManagementTableCellRole::Description,false);
             paint_text(ui,columns[3],&tracking_label,typography::ManagementTableCellRole::Description,false);
             if history_text_overflow(ui,columns[0],name,typography::ManagementTableCellRole::ClientName){
-                ui.interact(columns[0].intersect(area),
+                components::overflow_tooltip(ui.interact(columns[0].intersect(area),
                     ui.make_persistent_id(("history-recipient",id,recipient_index,shipment_index)),
-                    Sense::hover()).on_hover_text(name);
+                    Sense::hover()),true,name);
             }
             if products_overflow{
-                ui.interact(columns[1].intersect(area),
+                components::overflow_tooltip(ui.interact(columns[1].intersect(area),
                     ui.make_persistent_id(("history-recipient-products",id,recipient_index,shipment_index)),
-                    Sense::hover()).on_hover_text(&products);
+                    Sense::hover()),products_overflow,&products);
             }
             for (index,display) in [(2,&freight_label),(3,&tracking_label)]{
                 if history_text_overflow(ui,columns[index],display,typography::ManagementTableCellRole::Description){
-                    ui.interact(columns[index].intersect(area),
+                    components::overflow_tooltip(ui.interact(columns[index].intersect(area),
                         ui.make_persistent_id(("history-recipient-value",id,recipient_index,shipment_index,index)),
-                        Sense::hover()).on_hover_text(display);
+                        Sense::hover()),true,display);
                 }
             }
             // Actions live OUTSIDE the compact shipment card. Both actions

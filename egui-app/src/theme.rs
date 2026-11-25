@@ -875,10 +875,7 @@ pub fn category_ancestor_frame()->Frame{
 
 /// Shared inset input/notice surface. Individual roles only choose padding.
 fn nested_input_surface_frame()->Frame{
-    Frame::new()
-        .fill(INPUT)
-        .stroke(Stroke::new(FRAME_STROKE_WIDTH,DIVIDER))
-        .corner_radius(CornerRadius::same(CONTROL_RADIUS))
+    bordered_surface(INPUT,DIVIDER,CONTROL_RADIUS)
 }
 
 /// Nested surface variants describe a content role, not a screen-specific
@@ -1109,10 +1106,7 @@ impl ReviewTone {
 
 pub fn review_issue_frame(tone: ReviewTone) -> Frame {
     let (background, border, _, _) = tone.palette();
-    Frame::new()
-        .fill(background)
-        .stroke(Stroke::new(FRAME_STROKE_WIDTH, border))
-        .corner_radius(CornerRadius::same(CONTROL_RADIUS))
+    bordered_surface(background,border,CONTROL_RADIUS)
         .inner_margin(egui::Margin::symmetric(
             SPACE_8 as i8, SPACE_8 as i8
         ))
@@ -1137,10 +1131,7 @@ pub fn preview_surface_frame()->Frame{
 /// The editor's own frame is disabled so its square corners cannot cover
 /// the approved rounded rect below the dealer card.
 pub fn source_document_frame() -> Frame {
-    Frame::new()
-        .fill(INPUT)
-        .stroke(Stroke::new(FRAME_STROKE_WIDTH, BORDER))
-        .corner_radius(CornerRadius::same(CONTROL_RADIUS))
+    bordered_surface(INPUT,BORDER,CONTROL_RADIUS)
         .inner_margin(SPACE_4)
 }
 

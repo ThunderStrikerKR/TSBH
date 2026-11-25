@@ -234,8 +234,8 @@ fn freight_assignment_text(
     if !value.is_empty() && (value!=full_text || components::text_exceeds_rect(
         typography::management_table_cell_galley(ui,value,role).size(),clipped.intersect(ui.clip_rect()))){
         let hover_id=ui.make_persistent_id(("freight-cell",id));
-        ui.interact(clipped,hover_id,egui::Sense::hover())
-            .on_hover_text(full_text);
+        components::overflow_tooltip(
+            ui.interact(clipped,hover_id,egui::Sense::hover()),true,full_text);
     }
 }
 
@@ -2727,15 +2727,12 @@ fn history_cell(
     }else if align==egui::Align2::CENTER_CENTER{
         cell.center().x-galley.size().x/2.0
     }else{cell.left()};
-    let overflow=components::text_exceeds_rect(galley.size(),clip);
-    ui.painter().with_clip_rect(clip).galley(
-        egui::pos2(x,cell.center().y-galley.size().y/2.0),galley,color
-    );
+    let overflow=components::paint_table_galley(ui,cell,x,galley,color);
     if (overflow||visible!=full)&&!full.is_empty(){
-        ui.interact(
+        components::overflow_tooltip(ui.interact(
             clip,ui.make_persistent_id(("freight-history-cell",id)),
             egui::Sense::hover()
-        ).on_hover_text(full);
+        ),true,full);
     }
 }
 
