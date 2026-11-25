@@ -815,13 +815,13 @@ fn group_frame(
                 }
             }
         let vat=if group.vat_included>0 && group.vat_excluded>0{
-            "부가세 일부 포함".to_owned()
+            "부가세 일부 포함"
         }else if group.vat_included>0{
-            "부가세 포함".to_owned()
-        }else{"부가세 별도".to_owned()};
+            "부가세 포함"
+        }else{"부가세 별도"};
         let (advance_clicked,stage_hovered,undo_clicked)=workflow_action_line(
             ui,bottom,&group.id,group.shipments.len(),group.total,
-            if group.vat_included>0{Some(vat.as_str())}else{None},
+            if group.vat_included>0{Some(vat)}else{None},
             Some(stage_name(group.step,group.needs_notice)),
             (writable || freight_stage_group==Some(group.id.as_str())) && !group.transferred,
             writable && group.step>0 && !group.transferred,in_preview
@@ -869,12 +869,12 @@ fn group_frame(
 /// projection may be cleared after a MANUAL native client change, so never
 /// derive the card title solely from client_match.name. Name lookup is a
 /// transient read-only directory projection and never affects billing.
-fn pending_dealer_title(
-    draft:&WorkingReception,names:&HashMap<String,String>,
-    active_selection:Option<(&str,&str)>
-)->String{
+fn pending_dealer_title<'a>(
+    draft:&'a WorkingReception,names:&'a HashMap<String,String>,
+    active_selection:Option<(&str,&'a str)>
+)->&'a str{
     let Some(client_id)=draft.client_id.as_deref() else{
-        return "미확인 거래처".to_owned();
+        return "미확인 거래처";
     };
     // For the active order prefer its already verified Rust analysis, which
     // is the same selected name rendered in the source document band.
@@ -892,7 +892,6 @@ fn pending_dealer_title(
         }))
         .filter(|name|!name.trim().is_empty())
         .unwrap_or("거래처 이름 확인 필요")
-        .to_owned()
 }
 
 /// A selected dealer is not enough to approve an order. The quote must belong
@@ -1166,11 +1165,11 @@ pub fn show(
             if selected{active_selected_client}else{None}
         );
         if preview_owned{
-            pending_overlay=Some((draft,name.clone(),ui.cursor().min,
+            pending_overlay=Some((draft,name,ui.cursor().min,
                 ui.available_width()));
         }
         if let Some(value)=pending_frame(
-            ui,draft,selected,open,false,writable,&name,
+            ui,draft,selected,open,false,writable,name,
             if selected{active_recipient_id}else{None},
             state.pending_visible.as_ref(),
             linked_selection,
@@ -1200,7 +1199,7 @@ pub fn show(
             overlay_ui.set_min_width(width);
             overlay_ui.set_max_width(width);
             overlay_event=pending_frame(
-                overlay_ui,draft,false,true,true,writable,&name,None,
+                overlay_ui,draft,false,true,true,writable,name,None,
                 state.pending_visible.as_ref(),linked_selection,&mut overlay_hover
             );
         });
