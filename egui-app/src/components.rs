@@ -67,6 +67,23 @@ pub fn virtual_fixed_rows<R>(
     output
 }
 
+/// Fixed-width management tables must reserve horizontal scrollbar space
+/// from the first frame whenever the approved columns exceed the available
+/// width after the vertical gutter. Otherwise the native scrollbar's
+/// previous-frame visibility can change the row viewport height by 10pt.
+/// A narrow table reserves both rails deterministically; a fitting table
+/// remains vertical-only with its existing conditional scrollbar.
+pub fn management_fixed_table_scroll_area(ui:&Ui,content_width:f32)->egui::ScrollArea{
+    use egui::containers::scroll_area::ScrollBarVisibility;
+    let data_width=(ui.available_width()-ui.spacing().scroll.allocated_width()).max(1.0);
+    let horizontal=content_width>data_width+0.01;
+    egui::ScrollArea::new([horizontal,true]).scroll_bar_visibility(if horizontal{
+        ScrollBarVisibility::AlwaysVisible
+    }else{
+        ScrollBarVisibility::VisibleWhenNeeded
+    })
+}
+
 /// Shared management table container policy. The caller owns its layout
 /// scope; return the preceding vertical gap for existing explicit restores.
 /// Column widths, row heights, table IDs and header positions stay unchanged.
@@ -87,6 +104,44 @@ pub fn management_table_row_body(ui:&mut Ui,width:f32){
 #[cfg(test)]
 mod management_table_container_style_tests{
     use super::*;
+    #[test]
+    fn narrow_fixed_table_reserves_horizontal_rail_on_every_frame(){
+        for (width,content_width) in [(450.0,700.0),(450.0,440.0)]{
+            let ctx=test_context();
+            let mut baseline:Option<Rect>=None;
+            for count in [0,0,1,1,65,65,0,0]{
+                let _=ctx.run(egui::RawInput{
+                    screen_rect:Some(Rect::from_min_size(egui::Pos2::ZERO,Vec2::new(900.0,700.0))),
+                    ..Default::default()
+                },|ctx|{
+                    egui::CentralPanel::default().show(ctx,|root|{
+                        root.allocate_ui_with_layout(Vec2::new(width,240.0),
+                            Layout::top_down(Align::Min),|ui|{
+                            ui.set_max_width(width);
+                            management_table_container_style(ui);
+                            let scroll=management_fixed_table_scroll_area(ui,content_width)
+                                .id_salt("fixed-management-rail-test")
+                                .max_height(240.0).auto_shrink([false,false]);
+                            let output=virtual_fixed_rows(scroll,ui,content_width,42.0,count,
+                                |rows,visible|{
+                                    for _ in visible{
+                                        rows.allocate_exact_size(Vec2::new(content_width,42.0),Sense::hover());
+                                    }
+                                });
+                            assert!(output.inner_rect.is_positive());
+                            if let Some(rect)=baseline{
+                                assert!((rect.top()-output.inner_rect.top()).abs()<=0.5);
+                                assert!((rect.bottom()-output.inner_rect.bottom()).abs()<=0.5,
+                                    "row count {count}: {rect:?} -> {:?}",output.inner_rect);
+                            }else{baseline=Some(output.inner_rect);}
+                            if count==0{assert_eq!(output.content_size.y,0.0);}
+                        });
+                    });
+                });
+            }
+        }
+    }
+
     #[test]
     fn container_and_row_body_preserve_reference_metrics(){
         let ctx=test_context();
@@ -10023,8 +10078,14 @@ pub(crate) mod general_screen_geometry_tests {
     fn verify_rects(name:&str,tab:usize,work:Rect,trace:&[Sample]){
         assert!(trace.iter().any(|(kind,_)|*kind=="top content"),"{name}/{tab}: missing title/top content");
         for (kind,rect) in trace{
+            // Content extent measures logical data, not an allocated widget.
+            // A truly empty table has zero content height; its actual viewport
+            // and every protected layout rectangle must still be positive.
+            let valid_size=if *kind=="row content extent"{
+                rect.width()>0.0 && rect.height()>=0.0
+            }else{rect.is_positive()};
             assert!([rect.left(),rect.top(),rect.right(),rect.bottom()].iter().all(|v|v.is_finite())
-                && rect.is_positive(),"{name}/{tab}/{kind}: invalid {rect:?}");
+                && valid_size,"{name}/{tab}/{kind}: invalid {rect:?}");
             if *kind=="table header"{
                 assert!((rect.height()-theme::MANAGEMENT_TABLE_HEADER_HEIGHT).abs()<=0.5,
                     "{name}/{tab}: header height {rect:?}");

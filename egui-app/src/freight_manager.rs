@@ -1528,14 +1528,11 @@ impl FreightManager {
             );
             let mut first_row_left=None;
             let scroll_output=components::virtual_fixed_rows(
-                egui::ScrollArea::both()
+                components::management_fixed_table_scroll_area(section,table_width)
                     .scroll_bar_rect(scroll_track)
                     .id_salt("freight-assignment-rows")
                     // The solid track stays visible without hovering and
                     // takes its own space rather than covering row controls.
-                    .scroll_bar_visibility(
-                        egui::containers::scroll_area::ScrollBarVisibility::VisibleWhenNeeded
-                    )
                     .max_height(scroll_max_height)
                     .auto_shrink([false,false]),
                 section,table_width,theme::FREIGHT_ASSIGNMENT_ROW_HEIGHT,
@@ -1819,13 +1816,12 @@ impl FreightManager {
                             }
                         );
                     }
-                    if filtered.is_empty(){
-                        table.label(typography::caption(
-                            if products.is_empty(){"등록된 상품이 없습니다."}
-                            else{"검색 조건에 맞는 상품이 없습니다."}
-                        ));
-                    }
                 });
+            if filtered.is_empty(){
+                components::management_body_state_overlay(section,scroll_output.inner_rect,
+                    Some(if products.is_empty(){"등록된 상품이 없습니다."}
+                    else{"검색 조건에 맞는 상품이 없습니다."}));
+            }
             // Limit the zero-gap setting to the header+rows block.
             section.spacing_mut().item_spacing.y=previous_table_spacing_y;
             // Header and body use freight_table_cells() AND the body
@@ -2073,12 +2069,9 @@ impl FreightManager {
             let by_group=group_product_labels(products);
             let mut first_row_left=None;
             let scroll_output=components::virtual_fixed_rows(
-                egui::ScrollArea::both()
+                components::management_fixed_table_scroll_area(section,table_width)
                     .scroll_bar_rect(scroll_track)
                     .id_salt("freight-group-rates-rows")
-                    .scroll_bar_visibility(
-                        egui::containers::scroll_area::ScrollBarVisibility::VisibleWhenNeeded
-                    )
                     .max_height(scroll_max_height)
                     .auto_shrink([false,false]),
                 section,table_width,theme::FREIGHT_ASSIGNMENT_ROW_HEIGHT,
@@ -2813,12 +2806,9 @@ fn freight_history_table<const N:usize>(
     );
     let mut first_row_left=None;
     let scroll=components::virtual_fixed_rows(
-        egui::ScrollArea::both()
+        components::management_fixed_table_scroll_area(ui,width)
             .scroll_bar_rect(scroll_track)
             .id_salt(id)
-            .scroll_bar_visibility(
-                egui::containers::scroll_area::ScrollBarVisibility::VisibleWhenNeeded
-            )
             .max_height(scroll_max_height)
             .auto_shrink([false,false]),
         ui,width,theme::FREIGHT_ASSIGNMENT_ROW_HEIGHT,total_rows,
