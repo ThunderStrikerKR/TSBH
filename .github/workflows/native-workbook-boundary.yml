@@ -1,0 +1,34 @@
+name: Native client and factory XLSX boundary
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'egui-app/src/native_workbooks.rs'
+      - 'egui-app/tests/native_workbooks.rs'
+      - 'egui-app/Cargo.toml'
+      - 'src-tauri/src/business_core/catalog_clients/**'
+      - 'src-tauri/src/business_core/rules/factory_reply.rs'
+      - '.github/workflows/native-workbook-boundary.yml'
+  pull_request:
+    paths:
+      - 'egui-app/src/native_workbooks.rs'
+      - 'egui-app/tests/native_workbooks.rs'
+      - 'egui-app/Cargo.toml'
+      - 'src-tauri/src/business_core/catalog_clients/**'
+      - 'src-tauri/src/business_core/rules/factory_reply.rs'
+      - '.github/workflows/native-workbook-boundary.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  native-xlsx:
+    runs-on: windows-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: egui-app -> target
+      - name: Verify actual binary XLSX and native business rules
+        run: cargo test --manifest-path egui-app/Cargo.toml --test native_workbooks -- --nocapture

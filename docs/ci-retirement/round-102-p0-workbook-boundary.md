@@ -1,0 +1,7 @@
+# Round 102 P0: client and factory workbook boundary
+
+Base b2cbeacdacb38b53008ea0f97b656491b2c07a8a. Confirmed current egui client_manager lacks client workbook actions; excel_manager/excel_service implement outbound exports but no incoming factory XLSX route; settings_view exposes factoryReplyDirectory, not a watcher. Shared pure Rust preview and apply exist; old React ExcelJS decoder and Tauri watcher are historical reference only.
+
+Added native byte-level client V2 export, V1/V2 read, metadata/revision, text identity guard, formula/merge rejection, account and special-price reference sheets. V1 row normalization remains in existing native preview. Added Logen A/C/D/E/G/Q extraction, SHA-256 identity, row-level formula issue, bounds and conservative numeric tracking hold (raw value alone cannot verify number format; this is stricter than legacy safe numeric acceptance). Added binary integration tests using synthetic XLSX and native business rule modules. New CI dedicated to these boundaries, no legacy Node. No actual business data or operational database touched.
+
+Important: this is a library/test foundation, NOT a completed egui feature. No UI wiring, file picker, approved client DB write/backup, automatic watcher, archive/CAS commit, conflict-resolution UI, numeric Q format fidelity, or actual Windows run has been completed. No automatic scanning/application enabled. Need next phase to finish native service and then connect shared UI; CI not verified. Existing production workflows remain unchanged.
