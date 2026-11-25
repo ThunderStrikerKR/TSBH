@@ -35,7 +35,7 @@ pub fn write_v2_snapshot(conn: &mut Connection, mut state: Value, expected_revis
     crate::valid_state(&state)?;
     let tx=conn.transaction().map_err(err)?;
     let current=read_current(&tx,expected_revision)?;
-    let (written,_)=write_validated(&tx,&current,state,expected_revision,validate_orders)?;
+    let (written,_)=write_validated(&tx,&current,state,expected_revision,validate_orders,false)?;
     tx.commit().map_err(err)?;
     Ok(written)
 }
@@ -140,7 +140,7 @@ where F:FnOnce(&Value)->Result<String,String>{
     before["products"]=Value::Array(products);
     before["clients"]=Value::Array(clients);
     for key in ["orders","products","clients"]{next[key]=before[key].clone();}
-    let verified=finish_update(&tx,before,next,expected_revision,true)?;
+    let verified=finish_update_with_patch(&tx,before,next,expected_revision,true,true)?;
     tx.commit().map_err(err)?;
     result["next"]=verified;
     Ok(result)
@@ -328,12 +328,17 @@ fn finish_stable_freight(tx:&Transaction<'_>,mut before:Value,mut changed:Value,
     Ok(verified)
 }
 
-fn finish_update(tx:&Transaction<'_>,current:Value,mut state:Value,
+fn finish_update(tx:&Transaction<'_>,current:Value,state:Value,
     expected_revision:u64,validate_orders:bool)->Result<Value,String>{
+    finish_update_with_patch(tx,current,state,expected_revision,validate_orders,false)
+}
+
+fn finish_update_with_patch(tx:&Transaction<'_>,current:Value,mut state:Value,
+    expected_revision:u64,validate_orders:bool,prefer_workflow_patch:bool)->Result<Value,String>{
     crate::product_colors::normalize_products(&mut state)?;
     crate::valid_state(&state)?;
     let changes_before=total_changes(tx)?;
-    let (written,scope)=write_validated(tx,&current,state,expected_revision,validate_orders)?;
+    let (written,scope)=write_validated(tx,&current,state,expected_revision,validate_orders,prefer_workflow_patch)?;
     verify_written(tx,current,written,scope,changes_before)
 }
 
@@ -349,6 +354,7 @@ struct WriteScope{
     clients:bool,
     orders:bool,
     direct:usize,
+    verify_envelope:bool,
 }
 
 fn verify_written(tx:&Transaction<'_>,current:Value,written:Value,
@@ -360,8 +366,11 @@ fn verify_written(tx:&Transaction<'_>,current:Value,written:Value,
         verify_scoped(tx,current,&written,scope)?
     }else{
         drop(current);
-        drop(written);
-        crate::read_v2_snapshot(tx)?
+        let actual=crate::read_v2_snapshot(tx)?;
+        if scope.verify_envelope && actual!=written{
+            return Err("공장 회신 저장 결과가 요청과 일치하지 않습니다.".into());
+        }
+        actual
     };
     if verified["revision"].as_u64()!=Some(revision){
         return Err("업무 저장 검증에 실패했습니다.".into());
@@ -373,6 +382,14 @@ fn verify_scoped(tx:&Transaction<'_>,mut current:Value,written:&Value,
     scope:WriteScope)->Result<Value,String>{
     let mut envelope=crate::read_envelope(tx)?;
     let root=envelope.as_object_mut().ok_or("업무 상태는 객체여야 합니다.")?;
+    if scope.verify_envelope{
+        let expected=written.as_object().ok_or("업무 처리 결과 오류")?;
+        let non_core=|key:&str|!matches!(key,"products"|"clients"|"orders");
+        if !root.iter().filter(|(k,_)|non_core(k)).eq(
+            expected.iter().filter(|(k,_)|non_core(k))){
+            return Err("공장 회신 저장 결과가 요청과 일치하지 않습니다.".into());
+        }
+    }
     let prior=current.as_object_mut().ok_or("기존 업무 상태 오류")?;
     for (key,changed) in [("products",scope.products),("clients",scope.clients),("orders",scope.orders)]{
         let old=prior.remove(key).ok_or("기존 업무자료 누락")?;
@@ -417,7 +434,7 @@ fn verify_order_domain(tx:&Transaction<'_>,old:Value,next:&Value)
 }
 
 fn write_validated(tx:&Transaction<'_>,current:&Value,mut state:Value,
-    current_revision:u64,validate_orders:bool)->Result<(Value,WriteScope),String>{
+    current_revision:u64,validate_orders:bool,prefer_workflow_patch:bool)->Result<(Value,WriteScope),String>{
     let products_changed = current["products"] != state["products"];
     let clients_changed = current["clients"] != state["clients"];
     let orders_changed = current["orders"] != state["orders"];
@@ -449,7 +466,7 @@ fn write_validated(tx:&Transaction<'_>,current:&Value,mut state:Value,
         reception::new_archive_entries(current,&state)?
     };
     let mut scope=WriteScope{products:products_changed,clients:clients_changed,
-        orders:orders_changed,direct:0};
+        orders:orders_changed,direct:0,verify_envelope:false};
     state["revision"] = json!(current_revision.checked_add(1)
         .ok_or("운영 DB revision 범위를 초과했습니다.")?);
     // The constrained SQLite tables own products, clients and orders.
@@ -460,6 +477,12 @@ fn write_validated(tx:&Transaction<'_>,current:&Value,mut state:Value,
     }
     scope.direct+=if crate::workflow_events::active(tx)?{
         crate::workflow_events::write(tx,current,&state)?
+    }else if prefer_workflow_patch && !products_changed && !clients_changed && !orders_changed{
+        // Automatic factory replies are append-only history plus workflow
+        // deltas. Preserve the original full validation above and verify
+        // the exact persisted envelope before committing the bounded patch.
+        scope.verify_envelope=true;
+        write_workflow_envelope(tx,current,&state)?
     }else{
         tx.execute("UPDATE app_state SET payload=?1 WHERE id=1",
             [serialize_envelope(&state)?]).map_err(err)?
@@ -504,14 +527,25 @@ const MAX_ENVELOPE_PATCHES:usize=24;
 fn workflow_envelope_patch(before:&Value,next:&Value)->Option<Vec<(String,String)>>{
     let old=before.as_object()?;
     let new=next.as_object()?;
-    let ignored=|key:&str|matches!(key,"products"|"clients"|"orders"|"revision"|"workflow");
+    let ignored=|key:&str|matches!(key,"products"|"clients"|"orders"|"revision"|"workflow"|"factoryReplies");
     if !old.iter().filter(|(k,_)|!ignored(k)).eq(new.iter().filter(|(k,_)|!ignored(k))){
         return None;
+    }
+    let mut patch=vec![("$.revision".to_owned(),serde_json::to_string(next.get("revision")?).ok()?)];
+    // Factory reply history is immutable. Only append new records to an
+    // existing array; absent/legacy shapes or edits use the full writer.
+    if before.get("factoryReplies")!=next.get("factoryReplies"){
+        let prior=before.get("factoryReplies")?.as_array()?;
+        let after=next.get("factoryReplies")?.as_array()?;
+        if !after.starts_with(prior){return None;}
+        for record in &after[prior.len()..]{
+            if patch.len()==MAX_ENVELOPE_PATCHES{return None;}
+            patch.push(("$.factoryReplies[#]".to_owned(),serde_json::to_string(record).ok()?));
+        }
     }
     let old=before.get("workflow")?.as_object()?;
     let new=next.get("workflow")?.as_object()?;
     if old.keys().ne(new.keys()){return None;}
-    let mut patch=vec![("$.revision".to_owned(),serde_json::to_string(next.get("revision")?).ok()?)];
     for (key,after) in new{
         let prior=old.get(key)?;
         if prior==after{continue;}
@@ -558,6 +592,11 @@ fn write_workflow_envelope(tx:&Transaction<'_>,before:&Value,next:&Value)->Resul
             AND json_type(payload,'$.products') IS NULL
             AND json_type(payload,'$.clients') IS NULL
             AND json_type(payload,'$.orders') IS NULL");
+        // SQLite silently ignores [#] on a missing/non-array path. Require
+        // the physical history array before applying append operations.
+        if sql.contains("json_set") && before.get("factoryReplies")!=next.get("factoryReplies"){
+            sql.push_str(" AND json_type(payload,'$.factoryReplies')='array'");
+        }
         let count=tx.execute(&sql,rusqlite::params_from_iter(args.iter())).map_err(err)?;
         if count==1{return Ok(count);}
     }
@@ -672,6 +711,61 @@ mod snapshot_cost_tests {
         tx.execute("UPDATE app_state SET payload=?1 WHERE id=1",[before.to_string()]).unwrap();
         assert_eq!(write_workflow_envelope(&tx,&before,&next).unwrap(),1);
         assert_eq!(crate::read_envelope(&tx).unwrap(),expected);
+        tx.rollback().unwrap();
+    }
+
+    #[test]
+    fn factory_reply_patch_preserves_history_and_serializes_only_new_record(){
+        let mut conn=Connection::open_in_memory().unwrap();
+        conn.execute_batch("CREATE TABLE app_state(id INTEGER PRIMARY KEY,payload TEXT);").unwrap();
+        let before=json!({"revision":7,"products":[],"clients":[],"orders":[],
+            "settings":{"operatorName":"합성"},
+            "factoryReplies":(0..2000).map(|i|json!({"id":format!("old-{i}"),
+                "rows":[{"name":"기존 회신","tracking":"000000000001","actual":3000}]}))
+                .collect::<Vec<_>>(),
+            "workflow":{"shipments":[{"id":"s","charges":{"FACTORY":3000},
+                "actualFreight":{},"tracking":{}}],
+                "payments":[{"id":"p","amount":13000}],"events":[]}});
+        let mut next=before.clone();
+        next["revision"]=json!(8);
+        next["workflow"]["shipments"][0]["actualFreight"]["FACTORY"]=json!(4000);
+        next["workflow"]["shipments"][0]["tracking"]["FACTORY"]=json!("001234567890");
+        next["workflow"]["events"].as_array_mut().unwrap().push(json!({"id":"e"}));
+        next["factoryReplies"].as_array_mut().unwrap().push(json!({"id":"new","rows":[{"applied":true}]}));
+        let patch=workflow_envelope_patch(&before,&next).unwrap();
+        assert_eq!(patch.len(),4);
+        assert!(patch.iter().any(|(path,_)|path=="$.factoryReplies[#]"));
+        assert!(patch.iter().all(|(_,value)|!value.contains("기존 회신")));
+        let bytes:usize=patch.iter().map(|(path,value)|path.len()+value.len()).sum();
+        let full=serialize_envelope(&next).unwrap();
+        assert!(bytes<full.len()/100);
+        eprintln!("FACTORY_REPLY_PATCH_BYTES full={} patch={}",full.len(),bytes);
+        conn.execute("INSERT INTO app_state VALUES (1,?1)",[serialize_envelope(&before).unwrap()]).unwrap();
+        let tx=conn.transaction().unwrap();
+        let changes=total_changes(&tx).unwrap();
+        let direct=write_workflow_envelope(&tx,&before,&next).unwrap();
+        assert_eq!(direct,1);
+        assert_eq!(verify_written(&tx,before.clone(),next.clone(),
+            WriteScope{direct,verify_envelope:true,..Default::default()},changes).unwrap(),next);
+        let mut altered=next.clone();
+        altered["factoryReplies"][0]["rows"][0]["actual"]=json!(1);
+        assert!(workflow_envelope_patch(&before,&altered).is_none());
+        altered=next.clone();
+        altered["factoryReplies"].as_array_mut().unwrap().remove(0);
+        assert!(workflow_envelope_patch(&before,&altered).is_none());
+        altered=next.clone();
+        altered["workflow"]["payments"][0]["amount"]=json!(1);
+        assert!(workflow_envelope_patch(&before,&altered).is_none());
+        altered=next.clone();
+        for i in 0..MAX_ENVELOPE_PATCHES{
+            altered["factoryReplies"].as_array_mut().unwrap().push(json!({"id":format!("more-{i}")}));
+        }
+        assert!(workflow_envelope_patch(&before,&altered).is_none());
+        // The readback gate rejects silent or unintended envelope differences.
+        let mut mismatch=next.clone();
+        mismatch["factoryReplies"][0]["id"]=json!("wrong");
+        assert!(verify_written(&tx,before,mismatch,
+            WriteScope{direct,verify_envelope:true,..Default::default()},changes).is_err());
         tx.rollback().unwrap();
     }
 
