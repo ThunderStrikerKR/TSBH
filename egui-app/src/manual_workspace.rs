@@ -3629,9 +3629,17 @@ mod manual_workspace_modal_routing_tests {
         let source=include_str!("manual_workspace.rs");
         let render=source.split("pub fn show(").nth(1).unwrap()
             .split("fn manual_hover_target(").next().unwrap();
-        assert!(render.contains("let assigned_source_ids=assignments.as_object()"));
-        assert!(render.contains("map.iter().filter(|(_,cell)|cell.is_object())"),
+        let model=json!({"rows":[],"blocks":[],"assignments":{
+            "native:source:one":{"recipientId":"r","field":"name"},
+            "native:source:two":{"recipientId":"r","field":"address"},
+            "not-assigned":null,"invalid-string":"r","invalid-array":[{}]
+        }});
+        let data=ManualRenderData::new("",&model);
+        let expected:std::collections::HashSet<String>=
+            ["native:source:one","native:source:two"].iter().map(|id|id.to_string()).collect();
+        assert_eq!(data.assigned_ids,expected,
             "only actual native assignment objects count as classified");
+        assert!(render.contains("let assigned_source_ids=&data.assigned_ids;"));
         assert!(render.contains("ui,&self.raw,&spans,&assigned_source_ids,"),
             "manual-only status must flow into its source renderer");
     }
