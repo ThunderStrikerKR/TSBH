@@ -31,4 +31,5 @@ jobs:
         run: node scripts/check-egui-state-layout.mjs --base "$UI_DIFF_BASE" --require-base
 
       - name: Reject shared UI bypasses in all production screens
+        if: ${{ !cancelled() }}
         run: node scripts/check-egui-shared-ui.mjs
