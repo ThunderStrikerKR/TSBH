@@ -147,14 +147,6 @@ pub fn paint_management_table_row_rule(painter:&egui::Painter,rect:Rect){
     ));
 }
 
-/// One solid 1pt strip centered on the shared column boundary.
-fn paint_management_table_column_rule(painter:&egui::Painter,x:f32,top:f32,bottom:f32){
-    let half=theme::SOFT_DIVIDER_WIDTH/2.0;
-    theme::paint_soft_rule(painter,Rect::from_min_max(
-        egui::pos2(x-half,top),egui::pos2(x+half,bottom)
-    ));
-}
-
 /// Fixed and variable row viewports share the minimum-width and zero-gap
 /// rules. Retain the caller's existing width and height calculations.
 pub fn management_table_row_body(ui:&mut Ui,width:f32){
@@ -3198,7 +3190,8 @@ pub fn management_search_field(
 /// Manual worksheet value cells use the same blue evidence fill, text ink
 /// and 2pt outline as reception. Selection (amber) remains a separate state;
 /// an active source link takes visual precedence over selection.
-pub fn manual_linked_table_cell(
+#[cfg(test)]
+fn manual_linked_table_cell(
     ui:&mut Ui,value:&str,width:f32,selected:bool,linked:bool
 )->Response {
     let label=if value.trim().is_empty(){"미입력"}else{value};
@@ -3232,51 +3225,6 @@ pub fn manual_linked_table_cell(
     response
 }
 
-/// Inline editor variant of the manual worksheet cell. The text editor stays
-/// inside the selected cell, while the same linked-evidence fill and selection
-/// border used by the read-only cell remain visible.
-pub fn manual_linked_table_editor(
-    ui:&mut Ui,value:&mut String,width:f32,linked:bool
-)->Response{
-    let (rect,_)=ui.allocate_exact_size(
-        Vec2::new(width,theme::MANUAL_TABLE_ROW_HEIGHT),egui::Sense::hover()
-    );
-    let fill=if linked{source_highlight::ACTIVE_FILL}else{theme::RAISED};
-    let stroke=if linked{
-        Stroke::new(theme::SOFT_DIVIDER_WIDTH/2.0,theme::DIVIDER)
-    }else{
-        Stroke::new(theme::DOCK_SPLITTER_HOVER_LINE,theme::SELECTED_ORDER)
-    };
-    ui.painter().rect(
-        rect,0.0,fill,stroke,egui::StrokeKind::Inside
-    );
-    let inner=rect.shrink2(Vec2::new(5.0,2.0));
-    let mut editor_ui=ui.new_child(
-        egui::UiBuilder::new()
-            .max_rect(inner)
-            .layout(egui::Layout::left_to_right(Align::Center))
-    );
-    editor_ui.set_clip_rect(inner);
-    editor_ui.add_sized(
-        inner.size(),
-        singleline_editor(value,egui::FontId::proportional(
-                typography::FONT_RECEPTION_RECIPIENT_TEXT
-            ),inner.width(),Align::LEFT,egui::Margin::symmetric(2,0))
-            .text_color(if linked{source_highlight::ACTIVE_TEXT}else{theme::TEXT})
-            .frame(false).hint_text("미입력")
-    )
-}
-
-/// Unlinked shipment/header cells retain their existing selected styling.
-pub fn manual_table_cell(ui:&mut Ui,value:&str,width:f32,selected:bool)->Response {
-    manual_linked_table_cell(ui,value,width,selected,false)
-}
-pub fn manual_table_heading(ui:&mut Ui,label:&str,width:f32){
-    ui.add_sized(
-        Vec2::new(width,theme::MANUAL_TABLE_HEADER_HEIGHT),
-        egui::Label::new(typography::field_label(label)),
-    );
-}
 
 /// A field group's label and editor share the same baseline and label width.
 pub fn labeled_field(
@@ -4733,17 +4681,31 @@ fn management_sticky_table_header_with_top_gap(
     debug_assert!(ui.spacing().item_spacing.y.abs()<0.01,
         "table toolbar and header must use zero implicit vertical spacing");
     let viewport_width=ui.available_width().max(1.0);
+    // One allocation for the full toolbar-to-header separator strip.
+    let (_transition,_rule)=section_divider_with_top_gap(ui,top_gap);
+    #[cfg(test)]
+    general_screen_geometry_tests::record("toolbar transition",_transition);
+    allocate_management_table_header(ui,viewport_width,min_table_width)
+}
+
+/// Bare-header variant for nested or independent lists. The data body can
+/// exceed the viewport, but the header itself must remain inside its clip.
+pub fn management_list_table_header(
+    ui:&mut Ui,min_table_width:f32
+)->ManagementTableHeader{
+    let viewport_width=ui.available_rect_before_wrap()
+        .intersect(ui.clip_rect()).width().max(1.0);
+    allocate_management_table_header(ui,viewport_width,min_table_width)
+}
+
+/// Both fixed-header variants share the allocation, data width and rail.
+fn allocate_management_table_header(
+    ui:&mut Ui,viewport_width:f32,min_table_width:f32
+)->ManagementTableHeader{
     let scrollbar_gutter=ui.spacing().scroll.allocated_width();
     let table_width=management_table_data_width(
         viewport_width,scrollbar_gutter,min_table_width
     );
-
-    // One allocation for the full toolbar-to-header separator strip.
-    // Keeping it in a single Ui layout operation also avoids a fractional
-    // pixel difference between manual add_space and automatic item gaps.
-    let (_transition,_rule)=section_divider_with_top_gap(ui,top_gap);
-    #[cfg(test)]
-    general_screen_geometry_tests::record("toolbar transition",_transition);
     let (header_rect,_)=ui.allocate_exact_size(
         Vec2::new(viewport_width,theme::MANAGEMENT_TABLE_HEADER_HEIGHT),
         Sense::hover()
@@ -4767,45 +4729,6 @@ fn management_sticky_table_header_with_top_gap(
             -header_rect.right()).abs()<0.01,
             "header's data right edge must exclude the table scrollbar gutter");
     }
-    #[cfg(test)]
-    general_screen_geometry_tests::record("table header",header_rect);
-    ManagementTableHeader{
-        header_rect,header_content_rect,viewport_width,
-        scrollbar_gutter,table_width
-    }
-}
-
-/// CONFLICT-003=A: list-table data width reserves only the native
-/// scrollbar allocation. CONFLICT-005: this *bare-header* variant is still
-/// required when status messages, nested editor controls, or independent
-/// section headings intervene between a toolbar and its table. For adjacent
-/// toolbars use management_sticky_table_header[_after_inset] instead.
-pub fn management_list_table_header(
-    ui:&mut Ui,min_table_width:f32
-)->ManagementTableHeader{
-    // A nested vertical ScrollArea can retain a content width wider than
-    // the visible work area when a report table has large minimum columns.
-    // The fixed header itself must remain inside the actual clipped viewport;
-    // only its data rows may extend and scroll horizontally.
-    let viewport_width=ui.available_rect_before_wrap()
-        .intersect(ui.clip_rect()).width().max(1.0);
-    let scrollbar_gutter=ui.spacing().scroll.allocated_width();
-    let table_width=management_table_data_width(
-        viewport_width,scrollbar_gutter,min_table_width
-    );
-    let (header_rect,_)=ui.allocate_exact_size(
-        Vec2::new(viewport_width,theme::MANAGEMENT_TABLE_HEADER_HEIGHT),
-        Sense::hover()
-    );
-    let header_content_rect=Rect::from_min_max(
-        header_rect.min,
-        egui::pos2((header_rect.right()-scrollbar_gutter)
-            .max(header_rect.left()+1.0),header_rect.bottom())
-    );
-    debug_assert!(
-        (header_rect.height()-theme::MANAGEMENT_TABLE_HEADER_HEIGHT).abs()<0.01,
-        "management list header must use the shared 36pt height"
-    );
     #[cfg(test)]
     general_screen_geometry_tests::record("table header",header_rect);
     ManagementTableHeader{
@@ -5670,7 +5593,10 @@ fn management_master_column_rules(
     let painter=ui.painter().with_clip_rect(clip);
     for x in boundaries{
         if x>clip.left() && x<clip.right() {
-            paint_management_table_column_rule(&painter,x,region.top(),region.bottom());
+            let half=theme::SOFT_DIVIDER_WIDTH/2.0;
+            theme::paint_soft_rule(&painter,Rect::from_min_max(
+                egui::pos2(x-half,region.top()),egui::pos2(x+half,region.bottom())
+            ));
         }
     }
 }
@@ -5768,37 +5694,17 @@ pub fn management_client_header(
     selected
 }
 
-/// Four client columns, each a single line. Complete values stay available
-/// on hover while address space grows with the table width.
+/// Four client data columns. The visible index determines the alternating
+/// background; the dedicated management_client_header owns header rendering.
 pub fn management_row(
-    ui:&mut Ui,row_id:&str,columns:[(&str,&str);4],heading:bool,tier:Option<&str>
-) -> Response {
-    management_row_impl(ui,row_id,columns,heading,tier,None)
-}
-
-/// Draw a client record with the shared low-contrast alternate-row surface.
-/// The index is the visible row position after filtering, not a persistent
-/// customer ID, so the stripes remain consistent during search.
-pub fn management_row_striped(
-    ui:&mut Ui,row_id:&str,columns:[(&str,&str);4],tier:Option<&str>,
-    visible_index:usize
-) -> Response {
-    management_row_impl(ui,row_id,columns,false,tier,Some(visible_index))
-}
-
-fn management_row_impl(
-    ui:&mut Ui,row_id:&str,columns:[(&str,&str);4],heading:bool,
-    tier:Option<&str>,visible_index:Option<usize>
+    ui:&mut Ui,row_id:&str,columns:[(&str,&str);4],tier:&str,visible_index:usize
 ) -> Response {
     let width=ui.available_width().max(theme::MANAGEMENT_CLIENT_TABLE_MIN_WIDTH);
-    let height=if heading {theme::MANAGEMENT_TABLE_HEADER_HEIGHT}
-        else {theme::MANAGEMENT_CLIENT_ROW_HEIGHT};
     let (rect,response)=ui.allocate_exact_size(
-        Vec2::new(width,height),if heading {Sense::hover()} else {Sense::click()}
+        Vec2::new(width,theme::MANAGEMENT_CLIENT_ROW_HEIGHT),Sense::click()
     );
-    let bg=if heading {theme::RAISED}
-        else if response.hovered() {theme::INPUT}
-        else {management_table_row_fill(visible_index.unwrap_or(0))};
+    let bg=if response.hovered() {theme::INPUT}
+        else {management_table_row_fill(visible_index)};
     ui.painter().rect_filled(rect,0.0,bg);
     // Paint the 1pt row rule inside its allocated rect. A centered
     // line_segment on bottom() was half-clipped and looked inconsistent
@@ -5815,16 +5721,11 @@ fn management_row_impl(
         );
         // Every header and value shares the column's leading inset.
         // Only the exact field that exceeds its painted rectangle gets a tooltip.
-        if heading {
-            paint_client_line(
-                ui,cell,cell.left(),typography::table_header_galley(ui,primary),
-                theme::SECONDARY
-            );
-        }else if i==3 {
+        if i==3 {
             let badge=paint_client_tier_badge(
-                ui,cell,primary,tier.unwrap_or("")
+                ui,cell,primary,tier
             );
-            let (_,ink)=client_tier_colors(tier.unwrap_or(""));
+            let (_,ink)=client_tier_colors(tier);
             let badge_size=typography::client_table_metadata_galley(ui,primary,ink).size();
             overflow_region_tooltip(ui,badge,
                 ui.make_persistent_id(("management-row-hover",row_id,i,0)),
@@ -5871,9 +5772,7 @@ fn management_row_impl(
         ui,rect,
         management_client_column_edges(rect.left(),rect.width())
     );
-    if !heading {
-        theme::paint_button_hover(ui,&response,0.0);
-    }
+    theme::paint_button_hover(ui,&response,0.0);
     response
 }
 
@@ -6993,19 +6892,6 @@ pub fn status_dots(ui: &mut Ui, tones: &[StatusTone]) {
 /// geometry, scrollbar gutter and virtual fixed-row viewport. Screens provide
 /// only their column labels, width policy and already formatted cell values.
 pub fn management_readonly_table(
-    ui:&mut Ui,
-    id:&str,
-    headings:&[&str],
-    rows:&[Vec<String>],
-    max_height:f32,
-    widths_for_available:impl FnOnce(f32)->Vec<f32>,
-){
-    management_readonly_table_aligned(ui,id,headings,rows,max_height,&[],widths_for_available);
-}
-
-/// Optional right alignment for numeric columns, retaining the same shared
-/// table header, row geometry, virtualization and scrolling.
-pub fn management_readonly_table_aligned(
     ui:&mut Ui,id:&str,headings:&[&str],rows:&[Vec<String>],max_height:f32,
     right_aligned:&[usize],widths_for_available:impl FnOnce(f32)->Vec<f32>,
 ){

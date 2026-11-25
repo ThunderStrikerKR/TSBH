@@ -617,13 +617,13 @@ impl ClientManager {
                                     }else{phone};
                                     let extra_mobile=display.secondary_mobile();
                                     let conditions=display.conditions.as_str();
-                                    if components::management_row_striped(
+                                    if components::management_row(
                                         row,field(client,"id"),[
                                             (name,description),
                                             (address,""),
                                             (shown_phone,extra_mobile),
                                             (components::client_tier_label(&display.tier),conditions)
-                                        ],Some(field(client,"tier")),index
+                                        ],field(client,"tier"),index
                                     ).clicked(){
                                         chosen=Some(client.clone());
                                     }

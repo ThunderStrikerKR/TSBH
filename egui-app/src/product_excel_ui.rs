@@ -328,7 +328,7 @@ impl ProductExcelUi {
                         let headings=["시트","행",if self.client{"거래처"}else{"독립 상품"},"판정","변경 및 사유"];
                         components::management_readonly_table(
                             ui,"product-excel-review-rows",&headings,&visible,
-                            work_area.height()*0.40,
+                            work_area.height()*0.40,&[],
                             |available|{
                                 let name=available*0.24;
                                 let message=(available-86.0-52.0-name-70.0

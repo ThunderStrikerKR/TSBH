@@ -394,16 +394,6 @@ fn history_scrolled_header_row(
         Vec2::new(table_width,header_viewport.height())
     )
 }
-fn paint_column_dividers(
-    ui:&Ui,rect:Rect,widths:&[f32;7],detail:bool,content_clip:Rect
-){
-    let columns=components::management_table_cells(rect.min,widths,rect.height(),COL_GAP);
-    // Expanded rows retain only the boundaries outside merged content.
-    let visible_columns=if detail{3}else{7};
-    components::management_table_column_rules(
-        ui,rect.intersect(content_clip),&columns[..visible_columns],COL_GAP
-    );
-}
 fn history_text_overflow(ui:&Ui,rect:Rect,value:&str,role:typography::ManagementTableCellRole)->bool{
     let content=Rect::from_min_max(egui::pos2(rect.left()+6.0,rect.top()),rect.right_bottom());
     components::text_exceeds_rect(typography::management_table_cell_galley(ui,value,role).size(),
@@ -1483,9 +1473,8 @@ impl OrderHistoryManager {
                                                 &mut pending_detail);
                                         }
                                         if matches!(line,HistoryLine::Order(_)) {
-                                            paint_column_dividers(
-                                                row_ui,row_rect,&widths,false,row_rect
-                                            );
+                                            let columns=components::management_table_cells(row_rect.min,&widths,row_rect.height(),COL_GAP);
+                                            components::management_table_column_rules(row_ui,row_rect,&columns,COL_GAP);
                                         }
                                         if snapshot.is_some() {
                                             if let Some(branch)=history_branch(&lines,line_index){
@@ -1790,7 +1779,7 @@ mod tests{
             assert_eq!(row.width(),MIN_WIDTH);
             assert!((text_cells[0].left()-(viewport.left()-offset)).abs()<0.01);
             for index in 0..6{
-                // paint_column_dividers() gets the SAME scrolled row rect.
+                // Both column consumers get the SAME scrolled row rect.
                 let divider=divider_cells[index].right()+COL_GAP/2.0;
                 let heading_boundary=text_cells[index].right()+COL_GAP/2.0;
                 assert!((divider-heading_boundary).abs()<0.01);

@@ -349,14 +349,14 @@ impl ClientChooser {
                                                         "연락처 미등록"
                                                     }else{phone};
                                                     let selected=current_id==Some(client_id);
-                                                    let response=components::management_row_striped(
+                                                    let response=components::management_row(
                                                         row_ui,client_id,[
                                                             (&data.name,""),
                                                             (&data.address,""),
                                                             (shown_phone,data.secondary_mobile()),
                                                             (components::client_tier_label(&data.tier),
                                                                 &data.conditions),
-                                                        ],Some(&data.tier),index
+                                                        ],&data.tier,index
                                                     );
                                                     if selected {
                                                         row_ui.painter().with_clip_rect(clip)
