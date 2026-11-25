@@ -194,9 +194,38 @@ pub fn text_exceeds_rect(size:Vec2,rect:Rect)->bool{
     size.x>rect.width()+0.5 || size.y>rect.height()+0.5
 }
 
-/// Attach a tooltip only for text whose rendered content is not fully visible.
+/// One eligibility rule for all explicit overflow tooltips.
+fn overflow_tooltip_needed(overflow:bool,full:&str)->bool{
+    overflow&&!full.trim().is_empty()
+}
+
+/// Attach a tooltip to an existing interactive widget without changing its sense.
 pub fn overflow_tooltip(response:Response,overflow:bool,full:&str)->Response{
-    if overflow&&!full.trim().is_empty(){response.on_hover_text(full)}else{response}
+    if overflow_tooltip_needed(overflow,full)
+        && response.rect.width()>0.0 && response.rect.height()>0.0{
+        response.on_hover_text(full)
+    }else{response}
+}
+
+/// Deliberately shortened text is also overflow, even if its ellipsis fits.
+pub fn shortened_text_tooltip(response:Response,visible:&str,full:&str)->Response{
+    overflow_tooltip(response,visible!=full,full)
+}
+
+/// Only create a hover widget for a nonempty, visible overflowing region.
+/// Existing click responses should instead use overflow_tooltip.
+pub fn overflow_region_tooltip(
+    ui:&Ui,rect:Rect,id:egui::Id,overflow:bool,full:&str
+){
+    if !overflow_tooltip_needed(overflow,full){return;}
+    let visible=rect.intersect(ui.clip_rect());
+    if visible.width()<=0.0||visible.height()<=0.0{return;}
+    overflow_tooltip(ui.interact(visible,id,Sense::hover()),overflow,full);
+}
+
+/// Compare the actual positioned text rectangle, including native elision.
+pub fn positioned_text_overflow(text:Rect,visible:Rect,elided:bool)->bool{
+    elided || !visible.expand(0.5).contains_rect(text)
 }
 
 /// Shared clipped single-line management cell. Callers choose semantic role,
@@ -225,10 +254,8 @@ pub fn paint_management_text_cell_with_full(
         content.center().x-galley.size().x/2.0
     }else{content.left()};
     let overflow=paint_table_galley(ui,content,x,galley,color);
-    if (overflow||shortened)&&!text.trim().is_empty(){
-        let response=ui.interact(visible,ui.make_persistent_id(id),Sense::hover());
-        overflow_tooltip(response,true,full);
-    }
+    overflow_region_tooltip(ui,visible,ui.make_persistent_id(id),
+        overflow||shortened,full);
 }
 
 /// Shared vertically centered text painting for ordinary and composite cells.
@@ -260,10 +287,8 @@ pub fn body_error_overlay(ui:&Ui,viewport:Rect,context:&str,error:&str){
     );
     let clipped=text_exceeds_rect(galley.size(),visible);
     painter.galley(pos,galley,theme::DANGER);
-    if clipped{
-        overflow_tooltip(ui.interact(visible,ui.id().with(("body-error-overlay",context)),
-            Sense::hover()),clipped,display.as_ref());
-    }
+    overflow_region_tooltip(ui,visible,ui.id().with(("body-error-overlay",context)),
+        clipped,display.as_ref());
 }
 
 /// Allocate a row with an immutable parent footprint. The child can
@@ -1070,6 +1095,23 @@ mod common_action_tooltip_tests{
     }
 
     #[test]
+    fn overflow_tooltip_policy_rejects_blank_and_fitting_text(){
+        assert!(!overflow_tooltip_needed(false,"상품명"));
+        assert!(!overflow_tooltip_needed(true,""));
+        assert!(!overflow_tooltip_needed(true,"  "));
+        assert!(overflow_tooltip_needed(true,"상품명 전체"));
+    }
+
+    #[test]
+    fn positioned_overflow_detects_clipping_and_elision(){
+        let visible=Rect::from_min_size(egui::Pos2::ZERO,Vec2::new(100.0,20.0));
+        let fitting=Rect::from_min_size(egui::pos2(4.0,2.0),Vec2::new(90.0,16.0));
+        assert!(!positioned_text_overflow(fitting,visible,false));
+        assert!(positioned_text_overflow(fitting,visible,true));
+        assert!(positioned_text_overflow(fitting.translate(egui::vec2(10.0,0.0)),visible,false));
+    }
+
+    #[test]
     fn native_label_elision_uses_actual_width_for_reviewed_text_roles(){
         let ctx=test_context();
         let text="반도스탠드 대형 오케스트라 보면대";
@@ -1233,7 +1275,7 @@ pub fn removable_tag_chip(ui:&mut Ui,tag:&str)->Response{
             chip.horizontal(|line|{
                 line.spacing_mut().item_spacing.x=theme::SPACE_4;
                 let label=line.label(typography::body(&visible));
-                overflow_tooltip(label,visible!=tag,tag);
+                shortened_text_tooltip(label,&visible,tag);
                 icon_action_button(
                     line,"×",true
                 )
@@ -5512,10 +5554,8 @@ pub fn reception_client_summary_card(
                     egui::pos2(x+name_width,row.bottom())
                 );
                 paint_client_line(ui,name_cell,x,shown_galley,theme::TEXT);
-                if name_overflow{
-                    overflow_tooltip(ui.interact(name_cell,
-                        ui.make_persistent_id("source-client-name-overflow"),Sense::hover()),name_overflow,name);
-                }
+                overflow_region_tooltip(ui,name_cell,
+                    ui.make_persistent_id("source-client-name-overflow"),name_overflow,name);
             }
             if !terms.is_empty(){
                 let terms_x=x+name_width+theme::SPACE_8;
@@ -5527,10 +5567,8 @@ pub fn reception_client_summary_card(
                     paint_client_line(
                         ui,terms_cell,terms_x,terms_galley,theme::MUTED
                     );
-                    if overflow{
-                        overflow_tooltip(ui.interact(terms_cell,
-                            ui.make_persistent_id("source-client-terms-overflow"),Sense::hover()),overflow,terms);
-                    }
+                    overflow_region_tooltip(ui,terms_cell,
+                        ui.make_persistent_id("source-client-terms-overflow"),overflow,terms);
                 }
             }
         }
@@ -5734,10 +5772,9 @@ fn management_row_impl(
             );
             let (_,ink)=client_tier_colors(tier.unwrap_or(""));
             let badge_size=typography::client_table_metadata_galley(ui,primary,ink).size();
-            if !primary.is_empty()&&text_exceeds_rect(badge_size,badge.intersect(ui.clip_rect())){
-                overflow_tooltip(ui.interact(badge,
-                    ui.make_persistent_id(("management-row-hover",row_id,i,0)),Sense::hover()),true,primary);
-            }
+            overflow_region_tooltip(ui,badge,
+                ui.make_persistent_id(("management-row-hover",row_id,i,0)),
+                text_exceeds_rect(badge_size,badge.intersect(ui.clip_rect())),primary);
             if !secondary.is_empty(){
                 let second=Rect::from_min_max(
                     egui::pos2((badge.right()+theme::SPACE_8).min(cell.right()),cell.top()),
@@ -5746,10 +5783,8 @@ fn management_row_impl(
                 let galley=typography::client_table_metadata_galley(ui,secondary,theme::MUTED);
                 let overflow=text_exceeds_rect(galley.size(),second.intersect(ui.clip_rect()));
                 paint_client_line(ui,second,second.left(),galley,theme::MUTED);
-                if overflow{
-                    overflow_tooltip(ui.interact(second,
-                        ui.make_persistent_id(("management-row-hover",row_id,i,1)),Sense::hover()),overflow,secondary);
-                }
+                overflow_region_tooltip(ui,second,
+                    ui.make_persistent_id(("management-row-hover",row_id,i,1)),overflow,secondary);
             }
         }else{
             // A secondary contact is a separate field, not clipped primary text.
@@ -5772,10 +5807,8 @@ fn management_row_impl(
                     ui,cell,cell.left(),galley,
                     if metadata{theme::MUTED}else{theme::TEXT}
                 );
-                if overflow{
-                    overflow_tooltip(ui.interact(cell,
-                        ui.make_persistent_id(("management-row-hover",row_id,i,0)),Sense::hover()),overflow,visible);
-                }
+                overflow_region_tooltip(ui,cell,
+                    ui.make_persistent_id(("management-row-hover",row_id,i,0)),overflow,visible);
             }
         }
         x+=col_width;

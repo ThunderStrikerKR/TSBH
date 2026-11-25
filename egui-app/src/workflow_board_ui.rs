@@ -445,7 +445,7 @@ fn workflow_header(
         arrow.union(title_rect),
         workflow_widget_id("workflow-header",id,in_preview),egui::Sense::click()
     );
-    let title_response=components::overflow_tooltip(title_response,visible!=title,title);
+    let title_response=components::shortened_text_tooltip(title_response,&visible,title);
 
     let block=workflow_control_rect(signal);
     ui.painter().rect_filled(
@@ -610,16 +610,13 @@ fn workflow_action_line(
         egui::FontId::proportional(theme::WORKFLOW_VAT_FONT_SIZE),
         theme::SECONDARY
     );
-    let shipping_clipped=components::text_exceeds_rect(ship_galley.size(),shipping);
+    let shipping_clipped=components::text_exceeds_rect(ship_galley.size(),shipping.intersect(ui.clip_rect()));
     ui.painter().with_clip_rect(shipping).galley(
         Pos2::new(shipping.left(),bottom_y-ship_galley.size().y),
         ship_galley,theme::SECONDARY
     );
-    if shipping_clipped{
-        components::overflow_tooltip(ui.interact(shipping,
-            workflow_widget_id("workflow-shipping",id,in_preview),egui::Sense::hover()),
-            shipping_clipped,&shipping_text);
-    }
+    components::overflow_region_tooltip(ui,shipping,
+        workflow_widget_id("workflow-shipping",id,in_preview),shipping_clipped,&shipping_text);
 
     let amount=total.map(components::display_won)
         .unwrap_or_else(||"금액 미확정".to_owned());
@@ -634,7 +631,7 @@ fn workflow_action_line(
         price.min,Pos2::new((price.right()-theme::SPACE_4).max(price.left()),
             price.bottom())
     );
-    let money_clipped=components::text_exceeds_rect(money_galley.size(),price_ink);
+    let money_clipped=components::text_exceeds_rect(money_galley.size(),price_ink.intersect(ui.clip_rect()));
     ui.painter().with_clip_rect(price_ink).galley(
         Pos2::new(price_ink.right()-money_galley.size().x,
             bottom_y-money_galley.size().y),
@@ -652,11 +649,8 @@ fn workflow_action_line(
             vat_galley,theme::WORKFLOW_VAT_TEXT
         );
     }
-    if money_clipped{
-        components::overflow_tooltip(ui.interact(price,
-            workflow_widget_id("workflow-money",id,in_preview),egui::Sense::hover()),
-            money_clipped,&amount);
-    }
+    components::overflow_region_tooltip(ui,price,
+        workflow_widget_id("workflow-money",id,in_preview),money_clipped,&amount);
 
     // Pending receptions are NOT a business workflow step. Matching a
     // dealer happens asynchronously through native Rust automatically;

@@ -437,10 +437,10 @@ impl AliasManager {
                                                 let response=components::management_dropdown_option(
                                                     choice,&mut value,id.clone(),&visible
                                                 );
-                                                components::overflow_tooltip(response,visible!=name.as_str(),name.as_str());
+                                                components::shortened_text_tooltip(response,&visible,name.as_str());
                                             }
                                         });
-                                    components::overflow_tooltip(response,visible!=label,label);
+                                    components::shortened_text_tooltip(response,&visible,label);
                                     if value!=selected{
                                         self.category=if value.is_empty(){
                                             parent.unwrap_or_default()

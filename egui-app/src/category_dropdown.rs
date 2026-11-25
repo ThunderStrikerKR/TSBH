@@ -237,7 +237,7 @@ fn crumb(
         rect.center(),Align2::CENTER_CENTER,&visible,
         egui::FontId::proportional(typography::FONT_STANDARD_ACTION),ink
     );
-    components::overflow_tooltip(response,visible!=label,label)
+    components::shortened_text_tooltip(response,&visible,label)
 }
 /// The separator has the exact same vertical center as the footer controls.
 /// A drawn chevron is independent of font metrics, caption baselines, or text
@@ -532,7 +532,7 @@ pub fn category_dropdown(
     let mut trigger=components::management_dropdown_trigger(
         ui,&visible,width,enabled,None
     );
-    trigger=components::overflow_tooltip(trigger,visible!=full,&full);
+    trigger=components::shortened_text_tooltip(trigger,&visible,&full);
     let state_id:Id=trigger.id.with("hierarchical-category-explorer");
     let ctx:Context=ui.ctx().clone();
     let mut state=ctx.data_mut(|data|

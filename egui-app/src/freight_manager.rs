@@ -231,12 +231,10 @@ fn freight_assignment_text(
         }
         _=>unreachable!("non-category cells use the common painter"),
     }
-    if !value.is_empty() && (value!=full_text || components::text_exceeds_rect(
-        typography::management_table_cell_galley(ui,value,role).size(),clipped.intersect(ui.clip_rect()))){
-        let hover_id=ui.make_persistent_id(("freight-cell",id));
-        components::overflow_tooltip(
-            ui.interact(clipped,hover_id,egui::Sense::hover()),true,full_text);
-    }
+    let overflow=value!=full_text || components::text_exceeds_rect(
+        typography::management_table_cell_galley(ui,value,role).size(),clipped.intersect(ui.clip_rect()));
+    components::overflow_region_tooltip(ui,clipped,ui.make_persistent_id(("freight-cell",id)),
+        overflow,full_text);
 }
 
 fn rows(value: &Value) -> &[Value] {
@@ -2717,23 +2715,10 @@ fn history_cell(
     align:egui::Align2,role:typography::ManagementTableCellRole,
     id:impl std::hash::Hash
 ){
-    let cell=rect.shrink2(egui::vec2(6.0,0.0));
-    let clip=cell.intersect(ui.clip_rect());
-    if clip.width()<=0.0 || clip.height()<=0.0{return;}
-    let color=typography::management_table_cell_color(role);
-    let galley=typography::management_table_cell_galley(ui,visible,role);
-    let x=if align==egui::Align2::RIGHT_CENTER{
-        cell.right()-galley.size().x
-    }else if align==egui::Align2::CENTER_CENTER{
-        cell.center().x-galley.size().x/2.0
-    }else{cell.left()};
-    let overflow=components::paint_table_galley(ui,cell,x,galley,color);
-    if (overflow||visible!=full)&&!full.is_empty(){
-        components::overflow_tooltip(ui.interact(
-            clip,ui.make_persistent_id(("freight-history-cell",id)),
-            egui::Sense::hover()
-        ),true,full);
-    }
+    components::paint_management_text_cell_with_full(
+        ui,rect.shrink2(egui::vec2(6.0,0.0)),visible,full,role,align,
+        ("freight-history-cell",id),visible!=full
+    );
 }
 
 /// Common freight history table geometry, shared between combination history

@@ -160,11 +160,11 @@ impl ProductSearch{
                                                     let response=components::management_dropdown_option(
                                                         choices,&mut value,id.to_owned(),&visible
                                                     );
-                                                    components::overflow_tooltip(response,visible!=full,full);
+                                                    components::shortened_text_tooltip(response,&visible,full);
                                                 }
                                             }
                                         });
-                                    components::overflow_tooltip(response,visible!=label,label);
+                                    components::shortened_text_tooltip(response,&visible,label);
                                     if value!=selected {
                                         self.major=if value.is_empty(){parent}else{value};
                                         changed=true;

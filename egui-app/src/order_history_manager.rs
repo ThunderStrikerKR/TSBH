@@ -514,7 +514,7 @@ fn paint_detail_products(ui:&Ui,rect:Rect,text:&str)->bool{
         rect.center().y-galley.size().y/2.0);
     let clip=rect.intersect(ui.clip_rect());
     let text_rect=Rect::from_min_size(pos,galley.size());
-    let overflow=!clip.contains_rect(text_rect) || galley.elided;
+    let overflow=components::positioned_text_overflow(text_rect,clip,galley.elided);
     ui.painter().with_clip_rect(clip).galley(pos,galley,theme::TEXT);
     overflow
 }
@@ -553,12 +553,11 @@ fn draw_line(ui:&mut Ui,rect:Rect,line:HistoryLine,snapshot:&HistorySnapshot,
             paint_text(ui,columns[0],&order_date(row),typography::ManagementTableCellRole::Description,false);
             paint_text(ui,columns[1],&display_client_name(order_client(row)),
                 typography::ManagementTableCellRole::ClientName,false);
-            if display_client_name(order_client(row))!=order_client(row) ||
-                history_text_overflow(ui,columns[1],order_client(row),typography::ManagementTableCellRole::ClientName){
-                components::overflow_tooltip(ui.interact(columns[1].intersect(area),
-                    ui.make_persistent_id(("history-client-name",id)),Sense::hover()),
-                    true,order_client(row));
-            }
+            components::overflow_region_tooltip(ui,columns[1].intersect(area),
+                ui.make_persistent_id(("history-client-name",id)),
+                display_client_name(order_client(row))!=order_client(row) ||
+                    history_text_overflow(ui,columns[1],order_client(row),typography::ManagementTableCellRole::ClientName),
+                order_client(row));
             // Main list: ONLY product name × quantity, all items in one line.
             // Click anywhere except the action button to expand all details.
             let summary=order_items_single_line(row);
@@ -615,11 +614,8 @@ fn draw_line(ui:&mut Ui,rect:Rect,line:HistoryLine,snapshot:&HistorySnapshot,
                     warning_rect
                 );
                 paint_caption(ui,lower,&warning);
-                if overflow{
-                    components::overflow_tooltip(ui.interact(lower.intersect(area),
-                        ui.make_persistent_id(("history-billing-caution",id)),
-                        Sense::hover()),overflow,&warning);
-                }
+                components::overflow_region_tooltip(ui,lower.intersect(area),
+                    ui.make_persistent_id(("history-billing-caution",id)),overflow,&warning);
             }
             // Staff confirmation is NOT the bank transfer's paidAt date.
             // It comes from the Rust projection of workflow.confirmations.
@@ -689,22 +685,17 @@ fn draw_line(ui:&mut Ui,rect:Rect,line:HistoryLine,snapshot:&HistorySnapshot,
             let products_overflow=paint_detail_products(ui,columns[1],&products);
             paint_text(ui,columns[2],&freight_label,typography::ManagementTableCellRole::Description,false);
             paint_text(ui,columns[3],&tracking_label,typography::ManagementTableCellRole::Description,false);
-            if history_text_overflow(ui,columns[0],name,typography::ManagementTableCellRole::ClientName){
-                components::overflow_tooltip(ui.interact(columns[0].intersect(area),
-                    ui.make_persistent_id(("history-recipient",id,recipient_index,shipment_index)),
-                    Sense::hover()),true,name);
-            }
-            if products_overflow{
-                components::overflow_tooltip(ui.interact(columns[1].intersect(area),
-                    ui.make_persistent_id(("history-recipient-products",id,recipient_index,shipment_index)),
-                    Sense::hover()),products_overflow,&products);
-            }
+            components::overflow_region_tooltip(ui,columns[0].intersect(area),
+                ui.make_persistent_id(("history-recipient",id,recipient_index,shipment_index)),
+                history_text_overflow(ui,columns[0],name,typography::ManagementTableCellRole::ClientName),name);
+            components::overflow_region_tooltip(ui,columns[1].intersect(area),
+                ui.make_persistent_id(("history-recipient-products",id,recipient_index,shipment_index)),
+                products_overflow,&products);
             for (index,display) in [(2,&freight_label),(3,&tracking_label)]{
-                if history_text_overflow(ui,columns[index],display,typography::ManagementTableCellRole::Description){
-                    components::overflow_tooltip(ui.interact(columns[index].intersect(area),
-                        ui.make_persistent_id(("history-recipient-value",id,recipient_index,shipment_index,index)),
-                        Sense::hover()),true,display);
-                }
+                components::overflow_region_tooltip(ui,columns[index].intersect(area),
+                    ui.make_persistent_id(("history-recipient-value",id,recipient_index,shipment_index,index)),
+                    history_text_overflow(ui,columns[index],display,typography::ManagementTableCellRole::Description),
+                    display);
             }
             // Actions live OUTSIDE the compact shipment card. Both actions
             // target this one shipment; the order-level copy remains separate.
