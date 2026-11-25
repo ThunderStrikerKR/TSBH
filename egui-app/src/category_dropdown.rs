@@ -232,10 +232,10 @@ fn crumb(
     // produced by fit_category_path's category-leaf algorithm.
     let visible=fit_breadcrumb_label(ui,label,(width-theme::SPACE_8).max(1.0));
     painter.text(
-        rect.center(),Align2::CENTER_CENTER,visible,
+        rect.center(),Align2::CENTER_CENTER,&visible,
         egui::FontId::proportional(typography::FONT_STANDARD_ACTION),ink
     );
-    response.on_hover_text(label)
+    components::overflow_tooltip(response,visible!=label,label)
 }
 /// The separator has the exact same vertical center as the footer controls.
 /// A drawn chevron is independent of font metrics, caption baselines, or text
