@@ -125,18 +125,7 @@ fn price_history_row(entry:&Value)->Vec<String>{
     };
     vec![at,tier.to_owned(),amount(&entry["before"]),amount(&entry["after"]),source.to_owned()]
 }
-fn option_text(product: &Value, variant: &Value) -> String {
-    let mut parts = Vec::new();
-    if field(product, "colorStatus") != "NOT_REQUIRED" {
-        let color = field(variant, "color");
-        if !color.is_empty() && color != "단일" && color != "색상 미표기" {
-            parts.push(color);
-        }
-    }
-    let option = field(variant, "option");
-    if !option.trim().is_empty() { parts.push(option); }
-    parts.join(" / ")
-}
+use crate::product_option_display::variant_label as option_text;
 
 fn category_choices(catalog: &Value) -> Vec<(String,String)> {
     // These two virtual roots are also supplied by the original native
@@ -1401,10 +1390,10 @@ impl ProductManager {
                                 }else if let Some(variant)=variants.first(){
                                     let label=option_text(product,variant);
                                     product_table_text(row,cells[1],
-                                        if label.is_empty(){"—"}else{&label},
+                                        &label,
                                         typography::ManagementTableCellRole::Option,(product_id,1));
                                 }else{
-                                    product_table_text(row,cells[1],"—",typography::ManagementTableCellRole::Option,(product_id,1));
+                                    product_table_text(row,cells[1],"",typography::ManagementTableCellRole::Option,(product_id,1));
                                 }
                                 self.selected_variants.insert(
                                     product_id.to_owned(),selected_id.clone()

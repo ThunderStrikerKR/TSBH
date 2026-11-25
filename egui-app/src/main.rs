@@ -32,6 +32,7 @@ mod latest_job;
 mod brand_manager;
 mod model_group_manager;
 mod product_manager;
+mod product_option_display;
 mod product_excel;
 mod native_workbooks;
 mod factory_reply_inbox;

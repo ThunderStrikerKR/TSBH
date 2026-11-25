@@ -252,24 +252,7 @@ fn model_label(name:&str)->&str {
     }
     name
 }
-fn color_label(color:&str)->String {
-    match color.trim().to_lowercase().as_str() {
-        "gold"=>"골드","rose gold"=>"로즈골드","cosmo black"=>"코스모블랙",
-        "black"|"검정"|"블랙"=>"블랙","gray"|"grey"|"회색"|"그레이"=>"그레이",
-        "brown"|"브라운"=>"브라운","white"|"흰색"|"화이트"=>"화이트",
-        "clear"|"클리어"=>"클리어","frost"|"frosted"|"프로스트"=>"프로스트",
-        "silver"=>"실버","blue"=>"블루","red"=>"레드","단일"|"색상 미표기"=>"",
-        _=>color.trim()
-    }.to_owned()
-}
-fn variant_colors(product:&Value)->String {
-    let mut labels=Vec::new();
-    for variant in rows(&product["variants"]){
-        let value=color_label(text(variant,"color"));
-        if !value.is_empty() && !labels.contains(&value){labels.push(value);}
-    }
-    labels.join(" / ")
-}
+use crate::product_option_display::{product_label as variant_colors, variant_label};
 fn as_fee(value: &Value) -> String {
     value.as_i64().map(components::display_won)
         .unwrap_or_else(|| "미등록".to_owned())
@@ -993,7 +976,7 @@ impl FreightManager {
                                             .show(details,|list|{
                                                 for product in &affected {
                                                     let first=rows(&product["variants"]).first();
-                                                    let color=first.map(|v|color_label(text(v,"color")))
+                                                    let color=first.map(|v|variant_label(product,v))
                                                         .unwrap_or_default();
                                                     let label=if color.is_empty(){
                                                         model_label(text(product,"name")).to_owned()
@@ -2865,17 +2848,6 @@ fn summary(ui:&mut Ui,label:&str,count:usize){
 #[cfg(test)]
 mod rate_toolbar_tests{
     use super::*;
-
-    #[test]
-    fn freight_color_option_hides_single_option_placeholder(){
-        assert_eq!(color_label("단일"), "");
-        assert_eq!(color_label("색상 미표기"), "");
-        assert_eq!(color_label("Chrome"), "Chrome");
-        let single=serde_json::json!({"variants":[{"color":"단일"}]});
-        assert_eq!(variant_colors(&single), "");
-        let mixed=serde_json::json!({"variants":[{"color":"단일"},{"color":"Black"},{"color":"Chrome"}]});
-        assert_eq!(variant_colors(&mixed), "블랙 / Chrome");
-    }
 
     #[test]
     fn history_header_matches_master_toolbar_origin_without_fake_toolbar(){
