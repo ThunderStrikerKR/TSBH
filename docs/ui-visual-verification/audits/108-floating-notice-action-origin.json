@@ -1,0 +1,13 @@
+{
+  "schemaVersion": 1,
+  "id": "108-floating-notice-action-origin",
+  "screen": "공통 말풍선 / 접수 조작 위치",
+  "files": [
+    "egui-app/src/floating_notice.rs",
+    "egui-app/src/main.rs",
+    "egui-app/src/workflow_board_ui.rs",
+    "egui-app/src/components.rs"
+  ],
+  "visualStatus": "NOT_VERIFIED",
+  "reason": "Shared explicit origin and section separation; reception workflow and cell origin wiring. Actual Windows interaction pending."
+}

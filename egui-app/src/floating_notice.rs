@@ -21,9 +21,10 @@ pub enum Tone { Success, Info, Validation, Error }
 enum AnchorKind { Caret, Action, Section }
 
 #[derive(Clone)]
-struct Anchor {
+pub struct Anchor {
     at: Pos2,
     page: &'static str,
+    page_epoch:u64,
     created: Instant,
     kind: AnchorKind,
 }
@@ -42,6 +43,8 @@ struct Notice {
 struct State {
     page: &'static str,
     anchors: HashMap<&'static str, Anchor>,
+    sections: HashMap<&'static str, Anchor>,
+    page_epoch:u64,
     seen: HashMap<&'static str, String>,
     active: Option<Notice>,
     // Transient option-click origin for the currently open shared dropdown.
@@ -71,6 +74,8 @@ pub fn begin_page(ctx: &Context, page: &'static str) {
         if state.page != page {
             state.page = page;
             state.anchors.clear();
+            state.sections.clear();
+            state.page_epoch=state.page_epoch.wrapping_add(1);
             // Keep per-signal dedupe state when navigating. Managers may retain
             // their last success String; revisiting a page must not replay it.
             state.active = None;
@@ -80,9 +85,9 @@ pub fn begin_page(ctx: &Context, page: &'static str) {
 
 fn record(ctx: &Context, source: &'static str, at: Pos2, kind: AnchorKind) {
     with_state(ctx, |state| {
-        state.anchors.insert(source, Anchor {
-            at, page: state.page, created: Instant::now(), kind,
-        });
+        let anchor=Anchor{at,page:state.page,page_epoch:state.page_epoch,created:Instant::now(),kind};
+        if kind==AnchorKind::Section{state.sections.insert(source,anchor);}
+        else{state.anchors.insert(source,anchor);}
         // A new explicit action can replace a prior, persistent failure.
         if kind == AnchorKind::Action &&
             state.active.as_ref().is_some_and(|n| n.source == source) {
@@ -98,6 +103,22 @@ pub fn clicked(ctx: &Context, source: &'static str, response: &Response) {
         .filter(|pos| response.rect.contains(*pos))
         .unwrap_or(response.rect.center());
     record(ctx, source, position, AnchorKind::Action);
+}
+
+/// Custom buttons may use a release hit-test instead of Response::clicked.
+pub fn action_rect(ctx:&Context,source:&'static str,rect:Rect){
+    let at=ctx.input(|i|i.pointer.latest_pos()).filter(|p|rect.contains(*p))
+        .unwrap_or(rect.center());
+    record(ctx,source,at,AnchorKind::Action);
+}
+pub fn capture_origin(ctx:&Context,source:&'static str)->Option<Anchor>{
+    with_state(ctx,|s|s.anchors.get(source).filter(|a|
+        a.page_epoch==s.page_epoch && a.created.elapsed()<=ANCHOR_VALID_FOR).cloned())
+}
+pub fn inherit_origin(ctx:&Context,from:&'static str,to:&'static str){
+    let origin=capture_origin(ctx,from);
+    with_state(ctx,|s|{if let Some(a)=origin{s.anchors.insert(to,a);}
+        else{s.anchors.remove(to);}});
 }
 
 /// The visible dropdown button, rather than a row in its popup, owns any
@@ -209,20 +230,23 @@ fn fallback(ctx: &Context) -> Pos2 {
 }
 
 pub fn publish(ctx: &Context, source: &'static str, tone: Tone, message: impl Into<String>) {
+    publish_from(ctx,source,tone,message,None);
+}
+/// A captured operation origin is immutable, even if later clicks occur.
+pub fn publish_from(ctx:&Context,source:&'static str,tone:Tone,
+    message:impl Into<String>,origin:Option<&Anchor>){
     let message = message.into();
     if message.trim().is_empty() { return; }
     let fallback_anchor = fallback(ctx);
     with_state(ctx, |state| {
+        if origin.is_some_and(|a|a.page!=state.page||a.page_epoch!=state.page_epoch){return;}
+        let anchor=origin.or_else(||state.anchors.get(source).filter(|a|
+            a.page==state.page && a.page_epoch==state.page_epoch &&
+            a.created.elapsed()<=ANCHOR_VALID_FOR
+        )).or_else(||state.sections.get(source));
+        let (at,kind)=anchor.map(|a|(a.at,a.kind)).unwrap_or((fallback_anchor,AnchorKind::Section));
         if state.active.as_ref().is_some_and(|n|
-            n.source == source && n.tone == tone && n.message == message
-        ) {
-            return;
-        }
-        let anchor = state.anchors.get(source).filter(|a|
-            a.page == state.page && a.created.elapsed() <= ANCHOR_VALID_FOR
-        );
-        let (at, kind) = anchor.map(|a| (a.at, a.kind))
-            .unwrap_or((fallback_anchor, AnchorKind::Section));
+            n.source==source && n.tone==tone && n.message==message && n.at==at){return;}
         state.active = Some(Notice {
             message, tone, source, at, kind, created: Instant::now(),
         });
@@ -538,6 +562,24 @@ pub fn show(ctx: &Context) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn explicit_origin_survives_section_repaint_and_later_action(){
+        let ctx=Context::default();
+        begin_page(&ctx,"Reception");
+        let first=Pos2::new(300.0,220.0);
+        record(&ctx,"test.action",first,AnchorKind::Action);
+        section(&ctx,"test.action",Rect::from_center_size(Pos2::new(30.0,50.0),Vec2::splat(20.0)));
+        publish(&ctx,"test.action",Tone::Success,"saved");
+        assert_eq!(with_state(&ctx,|s|s.active.as_ref().unwrap().at),first);
+        let origin=capture_origin(&ctx,"test.action").unwrap();
+        record(&ctx,"test.action",Pos2::new(600.0,400.0),AnchorKind::Action);
+        publish_from(&ctx,"test.action",Tone::Success,"first saved",Some(&origin));
+        assert_eq!(with_state(&ctx,|s|s.active.as_ref().unwrap().at),first);
+        begin_page(&ctx,"History");
+        begin_page(&ctx,"Reception");
+        publish_from(&ctx,"test.action",Tone::Success,"old saved",Some(&origin));
+        assert!(with_state(&ctx,|s|s.active.is_none()));
+    }
     #[test]
     fn dropdown_selection_feedback_is_anchored_to_trigger_not_menu_row(){
         let ctx=Context::default();

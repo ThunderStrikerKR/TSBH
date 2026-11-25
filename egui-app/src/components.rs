@@ -3489,6 +3489,7 @@ fn reception_text_editor_at_click(
             ui.ctx().request_repaint();
         }
     }
+    crate::floating_notice::text_edit_caret(ui.ctx(),"reception.cell",&output);
     output.response
 }
 

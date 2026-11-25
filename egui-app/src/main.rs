@@ -250,6 +250,7 @@ fn workflow_write_admission(revision:Option<u64>,writing:bool,
 struct PendingWorkflowAction {
     group_id: String,
     action: String,
+    notice_origin:Option<floating_notice::Anchor>,
     receiver: Receiver<Result<serde_json::Value,String>>,
 }
 
@@ -3767,6 +3768,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
         );
         match event {
             Some(Choice::Selected(id)) => {
+                floating_notice::dispatch_pointer(ctx,"reception.client_change");
                 let verified=self.client_chooser.as_ref()
                     .is_some_and(|chooser|chooser.contains(&id));
                 self.accept_client_chooser_selection(&id,verified,ctx);
@@ -7161,6 +7163,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
             }else if workflow_freight_commit{
                 self.submit_workflow_freight_edit(ui.ctx());
             }else if let Some((origin,mut extra))=workflow_freight_option{
+                floating_notice::dispatch_pointer(ui.ctx(),"reception.freight");
                 if !extra.is_object(){extra=serde_json::json!({});}
                 extra["origin"]=serde_json::json!(origin);
                 self.start_workflow_action_with_args(
@@ -8198,6 +8201,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
         self.workflow_action=Some(PendingWorkflowAction{
             group_id:group_id.clone(),
             action:"confirm_reception".into(),
+            notice_origin:floating_notice::capture_origin(ctx,"reception.workflow"),
             receiver
         });
         std::thread::spawn(move||{
@@ -8315,7 +8319,12 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
         let context=ctx.clone();
         let operation=action.to_owned();
         self.workflow_action=Some(PendingWorkflowAction{
-            group_id:group_id.to_owned(),action:operation.clone(),receiver
+            group_id:group_id.to_owned(),action:operation.clone(),
+            notice_origin:floating_notice::capture_origin(ctx,match action{
+                "set_shipment_freight"=>"reception.freight",
+                "record_message_copy"=>"reception.automatic.copy",
+                _=>"reception.workflow",
+            }),receiver
         });
         std::thread::spawn(move||{
             let result=gateway.mutate_workflow(revision,&operation,args);
@@ -8326,6 +8335,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
 
     fn submit_workflow_freight_edit(&mut self,ctx:&egui::Context)->bool{
         let Some(editor)=self.workflow_freight_editor.take() else{return true;};
+        floating_notice::inherit_origin(ctx,"reception.cell","reception.freight");
         let digits=editor.text.trim().replace(',',"");
         let original_digits=editor.original.trim().replace(',',"");
         if digits==original_digits{return true;}
@@ -8335,7 +8345,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
             let parsed=digits.parse::<i64>();
             let Some(value)=parsed.ok().filter(|value|(0..=99_999).contains(value)) else{
                 floating_notice::publish(
-                    ctx,"reception.workflow",floating_notice::Tone::Error,
+                    ctx,"reception.freight",floating_notice::Tone::Error,
                     "운임은 0~99,999원 사이의 정수로 입력하세요."
                 );
                 self.workflow_freight_editor=Some(editor);
@@ -8385,9 +8395,9 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
 
     fn poll_workflow_action(&mut self,ctx:&egui::Context){
         let outcome=self.workflow_action.as_ref().map(|task|(
-            task.group_id.clone(),task.action.clone(),task.receiver.try_recv()
+            task.group_id.clone(),task.action.clone(),task.notice_origin.clone(),task.receiver.try_recv()
         ));
-        let Some((group_id,action,result))=outcome else{return;};
+        let Some((group_id,action,notice_origin,result))=outcome else{return;};
         match result{
             Ok(Ok(saved))=>{
                 self.workflow_action=None;
@@ -8451,7 +8461,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                         excel.refresh(ctx.clone());
                     }
                 }
-                floating_notice::publish(
+                floating_notice::publish_from(
                     ctx,"reception.workflow",floating_notice::Tone::Success,
                     match action.as_str(){
                         "record_message_copy"=>"클립보드 복사 및 업무 이력 저장 완료.",
@@ -8464,7 +8474,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                         "detach_shipment"=>"선택한 배송 건을 분리했습니다.",
                         "regroup_shipment"=>"선택한 배송 건을 다시 묶었습니다.",
                         _=>"주문 변경 내용을 저장했습니다."
-                    }
+                    },notice_origin.as_ref()
                 );
                 ctx.request_repaint();
             }
@@ -8477,8 +8487,8 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                 }
                 self.workflow_last_fetch=None;
                 self.workflow_error=Some(error.clone());
-                floating_notice::publish(
-                    ctx,"reception.workflow",floating_notice::Tone::Error,error
+                floating_notice::publish_from(
+                    ctx,"reception.workflow",floating_notice::Tone::Error,error,notice_origin.as_ref()
                 );
             }
             Err(mpsc::TryRecvError::Disconnected)=>{
@@ -8490,9 +8500,9 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                 }
                 self.workflow_last_fetch=None;
                 self.workflow_error=Some("주문 변경 처리 도중 작업이 중단되었습니다.".into());
-                floating_notice::publish(
+                floating_notice::publish_from(
                     ctx,"reception.workflow",floating_notice::Tone::Error,
-                    "주문 변경 처리 도중 작업이 중단되었습니다."
+                    "주문 변경 처리 도중 작업이 중단되었습니다.",notice_origin.as_ref()
                 );
             }
             Err(mpsc::TryRecvError::Empty)=>{}
@@ -8787,11 +8797,13 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
         self.workflow_manage_target=target;
         self.workflow_manage_ack=ack;
         if let Some(id)=delete_pending{
+            floating_notice::dispatch_pointer(ctx,"reception.workflow");
             // A conflict is not a dismissal: keep the employee's
             // confirmation context available for a retry.
             close=self.delete_pending_reception(&id,ctx);
         }
         if let Some((action,id,shipment,target,ack))=command{
+            floating_notice::dispatch_pointer(ctx,"reception.workflow");
             self.start_workflow_action(
                 &action,&id,shipment.as_deref(),target.as_deref(),ack,ctx
             );
@@ -10605,7 +10617,7 @@ mod reception_workflow_admission_integration_tests {
         let ctx=egui::Context::default();
         let (tx,rx)=mpsc::channel();
         app.workflow_action=Some(PendingWorkflowAction{group_id:"group:draft-1".into(),
-            action:"confirm_reception".into(),receiver:rx});
+            action:"confirm_reception".into(),notice_origin:None,receiver:rx});
         tx.send(Ok(serde_json::json!({}))).unwrap();
         app.poll_workflow_action(&ctx);
         assert_eq!(app.drafts.len(),2);
@@ -10738,7 +10750,7 @@ mod reception_workflow_admission_integration_tests {
         });
         let (_wtx,wrx)=mpsc::channel();
         app.workflow_action=Some(PendingWorkflowAction{
-            group_id:"group".into(),action:"advance_group".into(),
+            group_id:"group".into(),action:"advance_group".into(),notice_origin:None,
             receiver:wrx
         });
         app.vat_dialog=Some(VatDialog::new(

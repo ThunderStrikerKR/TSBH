@@ -678,11 +678,14 @@ fn workflow_action_line(
         let (response,clicked)=workflow_primary_at(
             ui,id,workflow_control_rect(action),text,enabled,in_preview
         );
-        let undo_clicked=workflow_auxiliary_at(
+        let undo_response=workflow_auxiliary_at(
             ui,id,workflow_control_rect(undo),
             components::WorkflowAuxiliaryAction::PreviousStage,
             undo_enabled,in_preview
-        ).clicked();
+        );
+        let undo_clicked=undo_response.clicked();
+        if clicked{crate::floating_notice::action_rect(ui.ctx(),"reception.workflow",response.rect);}
+        if undo_clicked{crate::floating_notice::clicked(ui.ctx(),"reception.workflow",&undo_response);}
         (clicked,response.hovered(),undo_clicked)
     }else{
         (false,false,false)
