@@ -1374,11 +1374,7 @@ pub fn window_control(ui: &mut Ui, control: WindowControl) -> Response {
             );
         }
     }
-    response.on_hover_text(match control{
-        WindowControl::Minimize=>"최소화",
-        WindowControl::Maximize=>"창 최대화 또는 복원",
-        WindowControl::Close=>"닫기",
-    })
+    response
 }
 
 /// One soft horizontal rule. The reserved rectangle and painted surface
