@@ -1226,11 +1226,30 @@ try {
         }
         if (command === "business_core_call" && args?.domain === "rules" &&
             args.operation === "order_issues_with_actions" &&
-            args.payload.order?.id==="ci-modal-manual") return {issues:[]};
+            args.payload.order?.id==="ci-modal-manual") {
+          window.__navManualIssueReads=(window.__navManualIssueReads??0)+1;
+          return {issues:[]};
+        }
         if (command === "business_core_call" && args?.domain === "rules" &&
             args.operation === "delivery_requirements_with_messages" &&
             args.payload.rows?.length===1 && args.payload.rows[0].id==="ci-store-recipient") {
+          window.__navManualDeliveryReads=(window.__navManualDeliveryReads??0)+1;
           return {results:[{recipientId:"ci-store-recipient",name:true,address:false,contact:true,product:false,quantity:true}]};
+        }
+        if (command === "business_core_call" && args?.domain === "rules" &&
+            args.operation === "apply_manual_classification" &&
+            args.payload?.action === "manual_quantity_status") {
+          const rows=args.payload.model?.rows;
+          if(!Array.isArray(rows)||rows.length!==1||rows[0].id!=="ci-store-recipient")
+            throw Error("Manual quantity fixture does not cover this model");
+          const valid=i=>Number.isSafeInteger(i.quantity)&&i.quantity>0&&i.quantityConfirmed!==false;
+          const items=rows.flatMap(row=>row.items.map(item=>({
+            recipientId:row.id,itemId:item.id,valid:valid(item)
+          })));
+          const pending=rows.some(row=>row.items.some(item=>
+            (Boolean(item.productId)||Boolean(item.name?.trim()))&&!valid(item)));
+          window.__navManualQuantityReads=(window.__navManualQuantityReads??0)+1;
+          return {pending,items};
         }
         if (command === "business_core_call" && args?.domain === "rules" &&
             args.operation === "apply_manual_classification" &&
@@ -2502,7 +2521,11 @@ try {
     window.__TAURI_INTERNALS__.invoke=(command,args)=>{
       if(command==="test_run_history")return Promise.resolve([]);
       if(command==="test_database_preview")return Promise.resolve({enabled:false});
-      if(command==="receipt_archive")return Promise.resolve([]);
+      if(command==="receipt_archive"){
+        window.__navModalArchiveReads=(window.__navModalArchiveReads??0)+1;
+        return Promise.resolve([{id:"receipt:ci-modal-audit",orderId:"ci-modal-audit",
+          record:{original:"CI 접수 원문 보존 검증",at:"2026-11-07T09:00:00Z",actor:"검증 직원"}}]);
+      }
       return original(command,args);
     };
   });
@@ -2629,6 +2652,8 @@ try {
         await dialog.getByRole("textbox",{name:"수취인명",exact:true}).waitFor();
         await navPage.waitForFunction(()=>window.__navRetailPreflight>0);
       }
+      assert.equal(await dialog.getByRole("alert").count(),0,
+        "Native initialization error in "+popup+": "+(await dialog.getByRole("alert").allTextContents()).join(" | "));
       await measureStage7(popup,dialog);
       await closeNative(dialog);
     }catch(error){
@@ -2645,6 +2670,12 @@ try {
   // The initial dialog is a Rust IPC loading shell; do not inspect its
   // geometry before the actual manual delivery grid has mounted.
   await manual.locator(".manual-grid-scroll").waitFor({state:"visible"});
+  await navPage.waitForFunction(()=>window.__navManualQuantityReads>0 &&
+    window.__navManualIssueReads>0 && window.__navManualDeliveryReads>0);
+  await navPage.waitForFunction(()=>[...document.querySelectorAll(".manual-workspace .manual-footer button")]
+    .some(button=>button.textContent.trim()==="초안에 적용"&&!button.disabled));
+  assert.equal(await manual.getByRole("alert").count(),0,
+    "Manual geometry is not valid evidence while native initialization is failing");
   const manualResult=await manual.evaluate(el=>{
     const box=el.getBoundingClientRect();
     const scroll=el.querySelector(".manual-grid-scroll");
@@ -2725,6 +2756,8 @@ try {
       await work.getByRole("button",{name:"감사 기록 열기",exact:true}).click();
       const dialog=nativeOpen();
       await dialog.waitFor();
+      await dialog.getByText("ci-modal-audit",{exact:false}).waitFor();
+      assert.ok(await navPage.evaluate(()=>window.__navModalArchiveReads>0));
       await measureStage7(popup+"-dialog",dialog);
       await closeNative(dialog);
     }
