@@ -472,9 +472,9 @@ pub const MODAL_PANEL_PADDING_X: f32 = SPACE_16;
 pub const MODAL_PANEL_PADDING_Y: f32 = SPACE_16;
 pub const MODAL_DECISION_MAX_WIDTH: f32 = 560.0;
 pub const MODAL_DEFAULT_MAX_WIDTH: f32 = 880.0;
-// Product detail uses its own fixed three-column editor while sharing
-// the same centered Kakao-safe modal master and content insets.
-pub const PRODUCT_DETAIL_MODAL_WIDTH: f32 = 1120.0;
+// Product detail uses the standard 880pt two-column editor width while
+// preserving the fixed 320pt image and the shared Kakao-safe modal master.
+pub const PRODUCT_DETAIL_MODAL_WIDTH: f32 = MODAL_DEFAULT_MAX_WIDTH;
 pub const PRODUCT_DETAIL_IMAGE_SIZE: f32 = 320.0;
 pub const MODAL_VIEWPORT_GUTTER: f32 = 18.0;
 // One shared dim role for the modal stack; a stacked confirmation is lighter.
