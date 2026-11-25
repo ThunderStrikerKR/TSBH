@@ -1578,3 +1578,97 @@ fn relational_workflow_state_migration_and_delta_preserve_links(){
     restored["revision"]=json!(revision+3);
     assert_eq!(get_snapshot(&conn).unwrap(),restored);
 }
+
+#[test]
+fn native_detach_regroup_preserves_shipment_financial_and_audit_records(){
+    let (isolated,mut conn)=IsolatedDatabase::open();
+    let mut fixture=stage_three(&get_snapshot(&conn).unwrap(),"POSTPAID");
+    let at="2026-11-26T08:00:00+09:00";
+    let mut recipient=fixture["orders"][0]["recipients"][0].clone();
+    recipient["id"]=json!("recipient:second");
+    recipient["name"]=json!("두번째 수취인");
+    recipient["items"][0]["id"]=json!("item:second");
+    fixture["orders"][0]["recipients"].as_array_mut().unwrap().push(recipient);
+    let mut ship=fixture["workflow"]["shipments"][0].clone();
+    ship["id"]=json!("shipment:second");
+    ship["recipientId"]=json!("recipient:second");
+    ship["charges"]["FACTORY"]=json!(4000);
+    fixture["workflow"]["shipments"].as_array_mut().unwrap().push(ship);
+    let account=fixture["settings"]["accounts"][0].clone();
+    fixture["workflow"]["groups"][0]["notices"]=json!([{
+        "id":"notice:split","at":at,"actor":"검증 담당자",
+        "shipmentIds":["shipment:synthetic","shipment:second"],
+        "amounts":{"shipment:synthetic":36300,"shipment:second":37400},
+        "total":73700,"account":account,"message":"기존 합계 안내"
+    }]);
+    fixture["workflow"]["payments"]=json!([{
+        "id":"payment:split","dealerId":"synthetic-workflow-client",
+        "account":account,"amount":10000,"paidAt":at,"recordedAt":at,
+        "actor":"검증 담당자","memo":"",
+        "allocations":[{"id":"allocation:split","shipmentId":"shipment:second","amount":10000}]
+    }]);
+    let saved=write_snapshot(&mut conn,fixture,0,true).unwrap();
+    let revision=saved["revision"].as_u64().unwrap();
+    let change=|state:&Value,action:&str,ack:bool,event:&str|{
+        let result=rust("apply_workflow_action",json!({
+            "state":state,"action":action,"shipmentId":"shipment:second",
+            "groupId":if action=="detach_shipment"{"group:synthetic"}else{"group:detached"},
+            "newGroupId":"group:detached","targetGroupId":"group:synthetic",
+            "ack":ack,"eventId":event,"now":at,"actor":"검증 담당자"
+        }))?;
+        let next=result["state"].clone();
+        rust("validate_workflow",json!({"state":&next,"before":state}))?;
+        Ok::<Value,String>(next)
+    };
+    let assert_preserved=|next:&Value,group:&str,event_count:usize|{
+        assert_eq!(next["orders"],saved["orders"]);
+        for key in ["sources","payments","confirmations","queue","deliveries","changeRequests"]{
+            assert_eq!(next["workflow"][key],saved["workflow"][key],"{key}");
+        }
+        let mut expected=saved["workflow"]["shipments"].clone();
+        expected[1]["groupId"]=json!(group);
+        assert_eq!(next["workflow"]["shipments"],expected);
+        assert_eq!(next["workflow"]["groups"][0]["notices"],saved["workflow"]["groups"][0]["notices"]);
+        let old_events=saved["workflow"]["events"].as_array().unwrap();
+        let events=next["workflow"]["events"].as_array().unwrap();
+        assert_eq!(events.len(),old_events.len()+event_count);
+        assert_eq!(&events[..old_events.len()],old_events.as_slice());
+    };
+    let split=bando_data_access::update_v2_snapshot(&mut conn,revision,true,
+        |state|change(state,"detach_shipment",false,"event:detach")).unwrap();
+    assert_preserved(&split,"group:detached",1);
+    assert_eq!(split["workflow"]["groups"][0]["needsNotice"],true);
+    assert_eq!(split["workflow"]["groups"][1]["needsNotice"],true);
+    assert_eq!(split["workflow"]["groups"][1]["accountId"],"synthetic-account");
+    assert_eq!(split["workflow"]["groups"][1]["notices"],json!([]));
+    // Invalid regroup must not advance the revision or alter persisted data.
+    assert!(bando_data_access::update_v2_snapshot(&mut conn,revision+1,true,
+        |state|change(state,"regroup_shipment",false,"event:unapproved")).is_err());
+    assert_eq!(get_snapshot(&conn).unwrap(),split);
+    for (field,value) in [("step",json!(2)),("transferred",json!(true))]{
+        let mut invalid=split.clone();
+        invalid["workflow"]["shipments"][0][field]=value;
+        assert!(change(&invalid,"regroup_shipment",true,"event:invalid").is_err());
+    }
+    let mut different=split.clone();
+    different["workflow"]["groups"][0]["sourceId"]=json!("source:other");
+    assert!(change(&different,"regroup_shipment",true,"event:source").is_err());
+    let mut different=split.clone();
+    different["workflow"]["groups"][0]["dealerId"]=json!("dealer:other");
+    assert!(change(&different,"regroup_shipment",true,"event:dealer").is_err());
+    let mut different=split.clone();
+    different["settings"]["accounts"].as_array_mut().unwrap().push(json!({
+        "id":"other-account","bank":"가상은행","number":"999","holder":"합성 계좌"
+    }));
+    different["workflow"]["groups"][0]["accountMode"]=json!("MANUAL");
+    different["workflow"]["groups"][0]["accountId"]=json!("other-account");
+    assert!(change(&different,"regroup_shipment",true,"event:account").is_err());
+    let merged=bando_data_access::update_v2_snapshot(&mut conn,revision+1,true,
+        |state|change(state,"regroup_shipment",true,"event:regroup")).unwrap();
+    assert_preserved(&merged,"group:synthetic",2);
+    assert_eq!(merged["workflow"]["groups"][0]["needsNotice"],true);
+    assert_eq!(get_snapshot(&conn).unwrap(),merged);
+    drop(conn);
+    let reopened=initialize_database(&isolated.root.join("state.sqlite")).unwrap();
+    assert_eq!(get_snapshot(&reopened).unwrap(),merged);
+}
