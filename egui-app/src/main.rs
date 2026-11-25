@@ -2698,7 +2698,7 @@ impl BandoEgui {
     }
 
     fn publish_validation_focus(response:&egui::Response,ctx:&egui::Context,
-        channel:&str,message:&str){
+        channel:&'static str,message:&str){
         response.scroll_to_me(Some(Align::Center));
         floating_notice::action_rect(ctx,channel,response.rect);
         floating_notice::publish(ctx,channel,floating_notice::Tone::Validation,message);
