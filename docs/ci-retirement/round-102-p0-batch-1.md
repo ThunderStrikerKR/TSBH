@@ -1,0 +1,7 @@
+# Round 102 P0 repair — batch 1
+
+Base: 0bb4b770dc4f74413171da6f179f7ddc8134dfb9. Remove egui developer workspace selection, UI sample injection and dedicated developer launcher/module. Keep the existing operating DB name, explicit path and permission guards, read-only schema validation, and isolated test harness DBs. Debug binaries do not auto-discover operating DBs and cannot write them; unit test harnesses with explicit isolated fixtures retain test capability. Reject retired developer DB paths (lexical/canonical). No existing SQLite files are deleted. Excel archives now use only the configured operational directory; no synthetic developer directory is created. Existing settings CAS preserved. Use Release for normal operation; prior developer CMD is removed rather than silently enabling production writes. Legacy React/Tauri developer commands still exist in retired sources and mixed library suite, not claimed fully removed. Historical docs may mention them. No UI layout/appearance change; main.rs is startup-only changed, and the existing visual gate may still demand proof; do not manufacture PASS.
+
+Add actual post-copy restore fault injection using a trigger in a valid synthetic selected backup. Verify rollback, safety snapshot, auxiliary rows and reopened DB. No production backup code modified. Tests not run here.
+
+P0 remaining: actual current CI evidence, PR #61 synchronization/verification, client workbook and incoming factory XLSX actual route/approved scope, further retired legacy-source cleanup. No new branch.

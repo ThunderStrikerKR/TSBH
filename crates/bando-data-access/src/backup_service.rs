@@ -435,4 +435,43 @@ mod operational_backup_tests {
         assert_eq!(auxiliary(&conn),before_aux);
         validate_database(&conn).unwrap();
     }
+
+    #[test]
+    fn failure_after_selected_copy_restores_exact_pre_restore_database(){
+        let temp=Temp::new();
+        let mut conn=fixture(&temp.0);
+        let selected=manual_backup(&conn,&temp.0).unwrap();
+        // A valid SQLite backup whose trigger fails only when restoration
+        // attempts to write its new revision, AFTER copying the selected DB.
+        {
+            let selected_db=Connection::open(&selected).unwrap();
+            selected_db.execute_batch("CREATE TRIGGER synthetic_restore_failure BEFORE UPDATE ON app_state
+                BEGIN SELECT RAISE(ABORT,'synthetic post-copy failure'); END;").unwrap();
+            validate_database(&selected_db).unwrap();
+        }
+        let active=crate::update_v2_snapshot(&mut conn,7,false,|state|{
+            let mut next=state.clone();
+            next["products"][0]["variants"][0]["retail"]=json!(18000);
+            next["settings"]["operatorName"]=json!("복원 직전 담당자");
+            Ok(next)
+        }).unwrap();
+        conn.execute("UPDATE reception_working_orders SET payload=?1 WHERE id='draft'",
+            [json!({"id":"draft","raw":"복원 직전 작업본"}).to_string()]).unwrap();
+        let before_aux=auxiliary(&conn);
+        let error=restore_backup(&mut conn,&temp.0,&selected).unwrap_err();
+        assert!(error.contains("복원을 취소하고 직전 상태로 되돌렸습니다"),"{error}");
+        assert!(error.contains("synthetic post-copy failure"),"{error}");
+        assert_eq!(get_snapshot(&conn).unwrap(),active);
+        assert_eq!(auxiliary(&conn),before_aux);
+        assert_eq!(conn.query_row("SELECT COUNT(*) FROM sqlite_master WHERE name='synthetic_restore_failure'",
+            [],|r|r.get::<_,i64>(0)).unwrap(),0);
+        let safety=list_backups(&temp.0).unwrap().into_iter().find(|p|
+            Path::new(p).file_name().unwrap().to_string_lossy().starts_with("pre-restore-")).unwrap();
+        assert_eq!(get_snapshot(&read_backup(Path::new(&safety)).unwrap()).unwrap(),active);
+        drop(conn);
+        let reopened=Connection::open(temp.0.join("synthetic.sqlite")).unwrap();
+        validate_database(&reopened).unwrap();
+        assert_eq!(get_snapshot(&reopened).unwrap(),active);
+        assert_eq!(auxiliary(&reopened),before_aux);
+    }
 }

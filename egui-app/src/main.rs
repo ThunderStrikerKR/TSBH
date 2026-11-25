@@ -59,7 +59,6 @@ mod daily_settlement_manager;
 mod excel_manager;
 mod excel_service;
 mod management_queries;
-mod developer_ui_samples;
 
 use eframe::egui::{self, Align, Layout, Rect, Sense, Ui, UiBuilder, Vec2};
 use theme::{ButtonRole, WindowControl};
@@ -9605,9 +9604,8 @@ mod inline_single_click_handoff_tests {
 }
 
 fn main() -> eframe::Result<()> {
-    // Connect to the EXISTING Tauri v2 database before creating any gateway
-    // or background worker. Debug uses only the developer-test DB, release
-    // uses only the production DB. This never creates an operating DB.
+    // Connect to an existing operating v2 DB before starting workers.
+    // Debug builds do not auto-discover it. No DB is created here.
     match business_state::bind_existing_tauri_database() {
         Ok(Some(_)) => {},
         Ok(None) => {},
@@ -9615,13 +9613,6 @@ fn main() -> eframe::Result<()> {
             eprintln!("[BANDO HUB] 기존 Tauri 업무 DB 자동 연결 실패: {error}");
             std::process::exit(2);
         }
-    }
-    // Only the explicitly opted-in Windows developer launcher appends
-    // synthetic UI-density fixtures to the existing isolated TEST DB.
-    // It never touches an operating DB or launches a save-helper process.
-    if let Err(error) = developer_ui_samples::seed_if_requested() {
-        eprintln!("[BANDO HUB TEST] 가상 UI 데이터 준비 실패: {error}");
-        std::process::exit(2);
     }
     let backend = match gateway::from_environment() {
         Ok(backend) => backend,

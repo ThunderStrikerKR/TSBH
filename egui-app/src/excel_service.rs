@@ -25,26 +25,12 @@ fn kind(origin:&str)->Result<(&'static str,&'static str,&'static str),String>{
         _=>Err("공장 또는 매장 발송만 선택할 수 있습니다.".into())
     }
 }
-fn dev()->bool{
-    cfg!(debug_assertions) ||
-        std::env::var("BANDO_EGUI_DEVELOPER_TEST").ok().as_deref()==Some("1")
-}
 fn archive_root(state:&Value)->Result<PathBuf,String>{
-    let path=if dev(){
-        // Same app-data test root as Tauri; never use a production path
-        // imported from Settings while running in developer mode.
-        let db=business_state::authorized_business_write_path()?;
-        db.parent().ok_or("개발 Excel 보관함 위치를 찾지 못했습니다.")?
-            .join("Excel")
-    }else{
-        let configured=state["settings"]["excelDirectory"].as_str()
-            .map(str::trim).filter(|s|!s.is_empty())
-            .ok_or("설정에서 Excel 보관함 위치를 먼저 지정하고 저장하세요.")?;
-        let path=PathBuf::from(configured);
-        if !path.is_absolute(){return Err("Excel 보관함은 절대 경로여야 합니다.".into())}
-        path
-    };
-    if dev(){fs::create_dir_all(&path).map_err(|_|"테스트 Excel 폴더 생성 실패")?}
+    let configured=state["settings"]["excelDirectory"].as_str()
+        .map(str::trim).filter(|s|!s.is_empty())
+        .ok_or("설정에서 Excel 보관함 위치를 먼저 지정하고 저장하세요.")?;
+    let path=PathBuf::from(configured);
+    if !path.is_absolute(){return Err("Excel 보관함은 절대 경로여야 합니다.".into())}
     let root=path.canonicalize().map_err(|_|"Excel 보관함 경로를 확인할 수 없습니다.")?;
     if !root.is_dir(){return Err("Excel 보관함이 폴더가 아닙니다.".into())}
     Ok(root)

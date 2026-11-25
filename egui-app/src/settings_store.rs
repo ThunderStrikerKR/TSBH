@@ -245,12 +245,10 @@ fn patch_business(changes:Value,expected:Value)->Result<Value,String>{
         .map_err(|e|e.to_string())?;
     conn.execute_batch("PRAGMA foreign_keys=ON;")
         .map_err(|e|e.to_string())?;
-    // Debug and developer-test workspaces must not edit protected Excel paths.
-    // Tauri React and egui use the SAME original settings CAS validator.
-    let developer_test=cfg!(debug_assertions) ||
-        std::env::var("BANDO_EGUI_DEVELOPER_TEST").ok().as_deref()==Some("1");
+    // Only the authorized operating path reaches this shared CAS validator.
+    // The retired developer workspace is not an application setting.
     let committed=bando_data_access::patch_settings_v2(
-        &mut conn,developer_test,&changes,&expected
+        &mut conn,false,&changes,&expected
     )?;
     let saved_revision=committed["revision"].as_u64()
         .ok_or("운영 설정 저장 결과 revision 오류")?;

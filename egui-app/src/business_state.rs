@@ -1,9 +1,9 @@
 //! Consistent read-only reconstruction of the Tauri v2 business snapshot.
 //! This adapter is not an order writer. It cannot change app_state, relational
 //! rows, receipts or the revision. On Windows, the existing Tauri app-data
-//! path is discovered without creating any operational file. Debug/DEV binds
-//! only to the isolated Tauri developer-test database; release binds to the
-//! existing production database. The real mutation rules remain in Rust.
+//! path is discovered without creating any operational file. Release uses
+//! the existing operating DB; debug builds never auto-discover it. Explicit
+//! isolated unit/integration fixtures remain available to the test harness.
 
 use rusqlite::{Connection, OpenFlags};
 use serde_json::Value;
@@ -13,7 +13,7 @@ use std::path::PathBuf;
 /// from the exact bundled Tauri configuration rather than making up a second
 /// egui directory. This function is pure, so path precedence can be tested
 /// without touching the actual employee files.
-fn tauri_database_path(roaming:&std::path::Path, developer_test:bool)->Result<PathBuf,String>{
+fn tauri_database_path(roaming:&std::path::Path)->Result<PathBuf,String>{
     let config:Value=serde_json::from_str(include_str!("../../src-tauri/tauri.conf.json"))
         .map_err(|_|"Tauri 프로그램 식별자 설정을 읽지 못했습니다.".to_owned())?;
     if config.pointer("/app/appDirectoriesOverride").is_some_and(|v|!v.is_null()){
@@ -22,17 +22,29 @@ fn tauri_database_path(roaming:&std::path::Path, developer_test:bool)->Result<Pa
     let identifier=config.get("identifier").and_then(Value::as_str)
         .filter(|id|!id.is_empty() && !id.contains('/') && !id.contains('\\'))
         .ok_or("Tauri 프로그램 식별자가 올바르지 않습니다.")?;
-    let root=roaming.join(identifier);
-    Ok(if developer_test {
-        root.join("developer-test").join("bando-hub-test.sqlite")
-    }else{
-        root.join("bando-hub-v001.sqlite")
+    Ok(roaming.join(identifier).join("bando-hub-v001.sqlite"))
+}
+
+/// A retired developer workspace is not a valid operating database.
+/// Check both lexical and canonical paths (including aliases/junctions).
+fn retired_workspace_path(path:&std::path::Path)->bool{
+    path.components().any(|part|{
+        let name=part.as_os_str().to_string_lossy();
+        name.eq_ignore_ascii_case("developer-test") ||
+        name.eq_ignore_ascii_case("bando-hub-test.sqlite")
     })
+}
+fn reject_retired_workspace(path:&std::path::Path)->Result<(),String>{
+    if retired_workspace_path(path) ||
+        path.canonicalize().ok().is_some_and(|p|retired_workspace_path(&p)){
+        return Err("폐기된 개발자 DB는 운영 DB로 사용할 수 없습니다.".into());
+    }
+    Ok(())
 }
 
 /// Existing DB read-only auto-binding happens once at the app entrypoint,
 /// before any workers start. Explicit configured DB/index or HTTP gateway wins.
-/// The developer build can NEVER silently fall back to the production DB.
+/// Debug builds cannot silently bind the production database.
 /// No schema creation, copies, migrations or edits are performed here.
 pub fn bind_existing_tauri_database() -> Result<Option<PathBuf>,String>{
     if !cfg!(windows) ||
@@ -42,7 +54,9 @@ pub fn bind_existing_tauri_database() -> Result<Option<PathBuf>,String>{
     }
     if let Some(path)=std::env::var_os("BANDO_EGUI_BUSINESS_DB")
         .filter(|v|!v.is_empty()){
-        return Ok(Some(PathBuf::from(path)));
+        let path=PathBuf::from(path);
+        reject_retired_workspace(&path)?;
+        return Ok(Some(path));
     }
     if std::env::var_os("BANDO_EGUI_CLIENT_INDEX")
         .is_some_and(|v|!v.is_empty()){
@@ -51,10 +65,8 @@ pub fn bind_existing_tauri_database() -> Result<Option<PathBuf>,String>{
     let Some(roaming)=std::env::var_os("APPDATA").filter(|v|!v.is_empty()) else{
         return Ok(None);
     };
-    let test=cfg!(debug_assertions) ||
-        std::env::var("BANDO_EGUI_DEVELOPER_TEST")
-            .ok().as_deref()==Some("1");
-    let path=tauri_database_path(std::path::Path::new(&roaming),test)?;
+    if cfg!(debug_assertions){return Ok(None);}
+    let path=tauri_database_path(std::path::Path::new(&roaming))?;
     if !path.is_file(){
         return Ok(None);
     }
@@ -77,8 +89,8 @@ pub fn bind_existing_tauri_database() -> Result<Option<PathBuf>,String>{
 }
 
 /// Client writes require a pre-existing explicitly bound business database.
-/// A debug or developer-test process is additionally restricted to the EXACT
-/// Tauri developer-test file; it cannot be redirected to the production file.
+/// Debug application builds are read-only; compiled test harnesses retain
+/// explicitly supplied isolated fixtures. No retired developer workspace.
 pub fn authorized_business_write_path() -> Result<PathBuf,String> {
     let path=std::env::var_os("BANDO_EGUI_BUSINESS_DB")
         .filter(|v|!v.is_empty()).map(PathBuf::from)
@@ -89,17 +101,9 @@ pub fn authorized_business_write_path() -> Result<PathBuf,String> {
     if !path.is_file(){
         return Err("지정한 업무 DB 파일이 없습니다. 새 DB를 만들지 않았습니다.".into());
     }
-    if cfg!(windows) && (cfg!(debug_assertions) ||
-        std::env::var("BANDO_EGUI_DEVELOPER_TEST").ok().as_deref()==Some("1")){
-        let roaming=std::env::var_os("APPDATA")
-            .filter(|v|!v.is_empty()).ok_or("개발 DB 보관 위치를 확인할 수 없습니다.")?;
-        let allowed=tauri_database_path(std::path::Path::new(&roaming),true)?;
-        let actual=path.canonicalize().map_err(|_|"업무 저장 DB 경로가 올바르지 않습니다.")?;
-        let expected=allowed.canonicalize()
-            .map_err(|_|"Tauri 개발용 테스트 DB가 없습니다.".to_owned())?;
-        if actual!=expected{
-            return Err("개발 모드에서는 Tauri 개발용 테스트 DB에만 저장할 수 있습니다.".into());
-        }
+    reject_retired_workspace(&path)?;
+    if cfg!(debug_assertions) && !cfg!(test){
+        return Err("디버그 빌드에서는 운영 DB에 저장할 수 없습니다. Release 실행파일을 사용하세요.".into());
     }
     Ok(path)
 }
@@ -126,14 +130,8 @@ fn load_projection(catalog_only:bool) -> Result<Value,String> {
     let path=std::env::var_os("BANDO_EGUI_BUSINESS_DB")
         .filter(|p|!p.is_empty())
         .map(PathBuf::from)
-        .ok_or_else(||{
-            if cfg!(debug_assertions) ||
-                std::env::var("BANDO_EGUI_DEVELOPER_TEST").ok().as_deref()==Some("1") {
-                "개발용 Tauri 테스트 DB가 없습니다. DEV_WINDOWS_TAURI에서 테스트 DB를 만든 뒤 다시 실행하세요. 운영 DB로 자동 전환하지 않습니다.".to_owned()
-            }else{
-                "기존 Tauri 운영 DB를 찾지 못했습니다. 원본 DB를 새로 생성하거나 초기화하지 않았습니다.".to_owned()
-            }
-        })?;
+        .ok_or("기존 운영 DB를 찾지 못했습니다. 원본 DB를 새로 생성하거나 초기화하지 않았습니다.")?;
+    reject_retired_workspace(&path)?;
     if std::env::var_os("BANDO_EGUI_CLIENT_INDEX").is_some_and(|p|!p.is_empty()) {
         return Err("JSON 거래처 인덱스는 실제 주문 가격 변경의 근거가 될 수 없습니다. 운영 DB 읽기 전용 연결을 사용하세요.".into());
     }
@@ -168,18 +166,19 @@ fn load_projection(catalog_only:bool) -> Result<Value,String> {
 mod auto_database_location_tests {
     use super::*;
     #[test]
-    fn resolves_tauri_production_and_developer_test_as_distinct_paths(){
+    fn resolves_only_the_existing_operating_database(){
         let root=std::path::Path::new("roaming-root");
-        let production=tauri_database_path(root,false).unwrap();
-        let developer=tauri_database_path(root,true).unwrap();
+        let production=tauri_database_path(root).unwrap();
         assert!(production.ends_with(
             std::path::Path::new("com.bandostand.bandohub.tauri")
-                .join("bando-hub-v001.sqlite")
-        ));
-        assert!(developer.ends_with(
-            std::path::Path::new("com.bandostand.bandohub.tauri")
-                .join("developer-test").join("bando-hub-test.sqlite")
-        ));
-        assert_ne!(developer,production);
+                .join("bando-hub-v001.sqlite")));
+        assert!(!retired_workspace_path(&production));
+    }
+    #[test]
+    fn retired_workspace_cannot_be_selected_as_operating_database(){
+        let root=std::path::Path::new("roaming-root");
+        assert!(reject_retired_workspace(&root.join("developer-test").join("other.sqlite")).is_err());
+        assert!(reject_retired_workspace(&root.join("BANDO-HUB-TEST.SQLITE")).is_err());
+        assert!(reject_retired_workspace(&root.join("bando-freight-gateway-e2e.sqlite")).is_ok());
     }
 }
