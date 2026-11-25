@@ -199,7 +199,28 @@ fn connect(input:&Value,source:&Value,approve:bool,context:&Value)->Result<Value
     }else{"APPLIED"});
     if !field(&next,"factoryReplies").is_array(){next["factoryReplies"]=json!([])}
     next["factoryReplies"].as_array_mut().ok_or("공장 회신 이력 오류")?.push(reply);
+    // Factory invoices are cost-side evidence, never a customer payment edit.
+    // Protect the confirmed customer freight and payment ledger for both
+    // automatic imports and explicitly approved single-row corrections.
+    ensure_customer_payment_unchanged(input,&next)?;
     Ok(next)
+}
+fn ensure_customer_payment_unchanged(before:&Value,next:&Value)->Result<(),String>{
+    let old=field(before,"workflow");
+    let new=field(next,"workflow");
+    let old_ships=rows(old,"shipments");
+    let new_ships=rows(new,"shipments");
+    if field(old,"payments")!=field(new,"payments") ||
+        field(old,"confirmations")!=field(new,"confirmations") ||
+        old_ships.len()!=new_ships.len() ||
+        old_ships.iter().zip(new_ships).any(|(a,b)|
+            field(a,"id")!=field(b,"id") ||
+            field(a,"charges")!=field(b,"charges") ||
+            field(field(a,"actualFreight"),"STORE")!=field(field(b,"actualFreight"),"STORE") ||
+            field(field(a,"tracking"),"STORE")!=field(field(b,"tracking"),"STORE")) {
+        return Err("공장 회신으로 고객 청구 운임, 입금 기록 또는 매장 출고 기록을 변경할 수 없습니다.".into());
+    }
+    Ok(())
 }
 fn preview(state:&Value,reply:&Value)->Result<Value,String>{
     if is_duplicate(state,s(reply,"id")){
@@ -431,6 +452,29 @@ pub(super) fn execute(operation:&str,payload:&Value)->Result<Value,String>{
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn factory_payment_boundary_rejects_customer_or_store_mutations(){
+        let before=json!({"workflow":{"payments":[{"id":"p","amount":13000}],
+            "confirmations":[{"id":"c","amount":13000}],
+            "shipments":[{"id":"s","charges":{"FACTORY":3000,"STORE":2500},
+                "actualFreight":{"FACTORY":4000,"STORE":2600},"tracking":{"STORE":"1234567890"}}]}});
+        let mut legitimate=before.clone();
+        legitimate["workflow"]["shipments"][0]["actualFreight"]["FACTORY"]=json!(5500);
+        legitimate["workflow"]["shipments"][0]["tracking"]["FACTORY"]=json!("001234567890");
+        assert!(ensure_customer_payment_unchanged(&before,&legitimate).is_ok());
+        for (pointer,value) in [
+            ("/workflow/payments/0/amount",json!(15500)),
+            ("/workflow/confirmations/0/amount",json!(15500)),
+            ("/workflow/shipments/0/charges/FACTORY",json!(5500)),
+            ("/workflow/shipments/0/actualFreight/STORE",json!(5500)),
+            ("/workflow/shipments/0/tracking/STORE",json!("9999999999"))
+        ]{
+            let mut altered=legitimate.clone();
+            *altered.pointer_mut(pointer).unwrap()=value;
+            assert!(ensure_customer_payment_unchanged(&before,&altered).is_err(),"{pointer}");
+        }
+    }
+
     #[test] fn native_duplicate_preflight_and_preview_share_identity() {
         let state=json!({"factoryReplies":[{"id":"factory-reply-a"}]});
         assert_eq!(execute("factory_reply_duplicate",&json!({
