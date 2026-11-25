@@ -1155,11 +1155,6 @@ impl ExcelManager{
                             if checked{self.selected.insert(id.clone());}
                             else{self.selected.remove(&id);}
                         }
-                        if entry.legacy {
-                            checked_response.on_disabled_hover_text(
-                                "기존 주문은 출고 이관 후 출력할 수 있습니다."
-                            );
-                        }
                         cell(row,cells[1],&entry.customer(),
                             Align2::LEFT_CENTER,typography::ManagementTableCellRole::ClientName,(id.clone(),1));
                         cell(row,cells[2],&entry.recipient_summary(),
