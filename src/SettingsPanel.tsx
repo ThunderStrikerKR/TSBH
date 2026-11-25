@@ -188,27 +188,24 @@ export const SettingsPanel = forwardRef<SettingsPanelHandle, {
         </button>
       )}
 
-      <h2 className="settings-help-heading">공장 회신 자동 수신 폴더 <HelpTooltip title="공장 회신 자동 수신 폴더" purpose="공장에서 보내온 운송장번호와 실제 배송비가 적힌 Excel 파일을 자동으로 찾아 반영합니다." when="공장 회신 파일을 정해진 폴더에 모아둘 때 사용합니다." steps={["수신 폴더 선택을 눌러 공장 회신용 폴더를 지정합니다.", "설정 저장을 누릅니다.", "공장이 작성한 회신 Excel 파일을 지정한 폴더에 넣습니다.", "일치하지 않는 내용은 공장 회신 이력에서 확인합니다."]} result="반도허브 실행 중 새 파일을 확인하고 수취인 정보가 일치하는 배송 건의 운송장번호와 실제 운임을 반영합니다." caution="업무 Excel 보관함과 별도의 폴더를 지정합니다. 개발자 시험 환경에서는 실사용 폴더를 감시하지 않습니다." /></h2>
-      <p>{window.bando?.isTestWorkspace ? "격리 TEST / Excel / 공장 회신 수신" :
-        (s.factoryReplyDirectory || "미설정: 수동 Excel 업로드만 사용")}</p>
-      {!window.bando?.isTestWorkspace && (
-        <div className="settings-actions">
-          <button type="button" disabled={saving}
-            onClick={() => void run(async () => {
-              if (!window.bando?.chooseFactoryReplyDirectory) {
-                throw Error("공장 회신 수신 폴더 선택 기능을 사용할 수 없습니다.");
-              }
-              const folder = await window.bando.chooseFactoryReplyDirectory();
-              if (folder) setS((current) => ({ ...current, factoryReplyDirectory: folder }));
-            })}>
-            수신 폴더 선택
-          </button>
-          <button type="button" disabled={saving || !s.factoryReplyDirectory}
-            onClick={() => setS((current) => ({ ...current, factoryReplyDirectory: "" }))}>
-            자동 수신 중지
-          </button>
-        </div>
-      )}
+      <h2 className="settings-help-heading">공장 회신 자동 수신 폴더 <HelpTooltip title="공장 회신 자동 수신 폴더" purpose="공장에서 보내온 운송장번호와 실제 배송비가 적힌 Excel 파일을 자동으로 찾아 반영합니다." when="공장 회신 파일을 정해진 폴더에 모아둘 때 사용합니다." steps={["수신 폴더 선택을 눌러 공장 회신용 폴더를 지정합니다.", "설정 저장을 누릅니다.", "공장이 작성한 회신 Excel 파일을 지정한 폴더에 넣습니다.", "일치하지 않는 내용은 공장 회신 이력에서 확인합니다."]} result="반도허브 실행 중 새 파일을 확인하고 수취인 정보가 일치하는 배송 건의 운송장번호와 실제 운임을 반영합니다." caution="업무 Excel 보관함과 별도의 폴더를 지정합니다." /></h2>
+      <p>{s.factoryReplyDirectory || "미설정: 수동 Excel 업로드만 사용"}</p>
+      <div className="settings-actions">
+        <button type="button" disabled={saving}
+          onClick={() => void run(async () => {
+            if (!window.bando?.chooseFactoryReplyDirectory) {
+              throw Error("공장 회신 수신 폴더 선택 기능을 사용할 수 없습니다.");
+            }
+            const folder = await window.bando.chooseFactoryReplyDirectory();
+            if (folder) setS((current) => ({ ...current, factoryReplyDirectory: folder }));
+          })}>
+          수신 폴더 선택
+        </button>
+        <button type="button" disabled={saving || !s.factoryReplyDirectory}
+          onClick={() => setS((current) => ({ ...current, factoryReplyDirectory: "" }))}>
+          자동 수신 중지
+        </button>
+      </div>
 
 
       <h2 className="settings-help-heading">발주 이미지 자동 수신 폴더
@@ -217,22 +214,19 @@ export const SettingsPanel = forwardRef<SettingsPanelHandle, {
           steps={["이미지 전용 폴더를 선택합니다.", "설정 저장을 누릅니다.", "프로그램 실행 중 PNG·JPG·BMP 이미지를 폴더에 저장합니다.", "OCR 검토창에서 인식 내용을 확인하고 반영합니다."]}
           caution="공장 회신 폴더와 별도로 지정하며, 자동 인식 결과는 검토 전 주문에 저장되지 않습니다." />
       </h2>
-      <p>{window.bando?.isTestWorkspace ? "격리 TEST / Excel / 발주 이미지 수신" :
-        (s.orderImageInboxDirectory || "미설정: 이미지 폴더 자동 수신 중지")}</p>
-      {!window.bando?.isTestWorkspace && (
-        <div className="settings-actions">
-          <button type="button" data-ui-role="action-standard" disabled={saving}
-            onClick={() => void run(async () => {
-              if (!window.bando?.chooseOrderImageInboxDirectory)
-                throw Error("발주 이미지 폴더 선택 기능을 사용할 수 없습니다.");
-              const folder = await window.bando.chooseOrderImageInboxDirectory();
-              if (folder) setS((current) => ({ ...current, orderImageInboxDirectory: folder }));
-            })}>수신 폴더 선택</button>
-          <button type="button" data-ui-role="action-quiet"
-            disabled={saving || !s.orderImageInboxDirectory}
-            onClick={() => setS((current) => ({ ...current, orderImageInboxDirectory: "" }))}>자동 수신 중지</button>
-        </div>
-      )}
+      <p>{s.orderImageInboxDirectory || "미설정: 이미지 폴더 자동 수신 중지"}</p>
+      <div className="settings-actions">
+        <button type="button" data-ui-role="action-standard" disabled={saving}
+          onClick={() => void run(async () => {
+            if (!window.bando?.chooseOrderImageInboxDirectory)
+              throw Error("발주 이미지 폴더 선택 기능을 사용할 수 없습니다.");
+            const folder = await window.bando.chooseOrderImageInboxDirectory();
+            if (folder) setS((current) => ({ ...current, orderImageInboxDirectory: folder }));
+          })}>수신 폴더 선택</button>
+        <button type="button" data-ui-role="action-quiet"
+          disabled={saving || !s.orderImageInboxDirectory}
+          onClick={() => setS((current) => ({ ...current, orderImageInboxDirectory: "" }))}>자동 수신 중지</button>
+      </div>
 
       </div>
       <div hidden={section !== "basic"}>

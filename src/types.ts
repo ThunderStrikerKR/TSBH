@@ -631,26 +631,6 @@ export interface Api {
   openFactoryFile?: (id: string) => Promise<void>;
   productImage?: (id: string) => Promise<{ data: string; source: string } | null>;
   approveFactoryConflict?: (id: string, row: number, expectedRevision: number) => Promise<void>;
-  isTestWorkspace?: boolean;
-  workspaceMode?: () => Promise<boolean>;
-  testRecordRun?: (report: DeveloperTestReport) => Promise<void>;
-  testRunHistory?: () => Promise<DeveloperRunHistory[]>;
-  testReceptionBoundary?: (candidate: Order) => Promise<{ accepted: boolean; reason: string | null }>;
-  openTestWorkspace?: () => Promise<void>;
-  testDatabasePreview?: () => Promise<
-    | { enabled: false }
-    | {
-        enabled: true;
-        revision: number;
-        orders: number;
-        clients: number;
-        exports: number;
-        shipments: number;
-        payments: number;
-        replies: number;
-      }
-  >;
-  resetTestDatabase?: (revision: number) => Promise<{ backup: string }>;
   receiptArchive: () => Promise<{ id: string; orderId: string; record: Record<string, unknown> }[]>;
   openProduct: (url: string) => Promise<void>;
   dockRegion: (region: { x: number; y: number; width: number; height: number }) => Promise<void>;
