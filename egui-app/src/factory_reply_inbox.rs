@@ -116,24 +116,17 @@ fn import(conn:&mut Connection,base:&Path,dir:&Path,path:&Path,bytes:&[u8],mut s
     source["freightAt"]=json!(at);
     source["freightEventIds"]=json!(ids(n));
     source["replyEventIds"]=json!(ids(n));
-    let mut counts=(Value::Null,Value::Null);
-    let result=bando_data_access::update_v2_snapshot(conn,rev,true,|before|{
+    let result=bando_data_access::update_v2_factory_reply_snapshot(conn,rev,&source,|before|{
         if directory(text(&before["settings"],"factoryReplyDirectory"))?.as_deref()!=Some(dir){
             return Err("회신 폴더 설정 변경".into())
         }
-        source["actor"]=json!(text(&before["settings"],"operatorName"));
-        let mut next=rules::import_automatic_factory_reply(before,&source)?;
-        counts=(next["applied"].clone(),next["held"].clone());
         // Only a semantically valid candidate is archived. Check the live
         // source bytes again before preserving and committing the candidate.
         if read_bounded(path)?!=bytes{return Err("회신 파일이 변경됐습니다.".into())}
-        let archived=preserve(base,bytes)?;
-        let record=next["next"]["factoryReplies"].as_array_mut().and_then(|r|r.last_mut()).ok_or("회신 이력 누락")?;
-        record["archivedPath"]=json!(archived.to_string_lossy());
-        next.as_object_mut().and_then(|m|m.remove("next")).ok_or("회신 저장 결과 누락".into())
+        Ok(preserve(base,bytes)?.to_string_lossy().into_owned())
     })?;
-    let warning=excel_service::archive_reply_workbook(&result,bytes).err();
-    Ok(json!({"duplicate":false,"applied":counts.0,"held":counts.1,"archiveWarning":warning}))
+    let warning=excel_service::archive_reply_workbook(&result["next"],bytes).err();
+    Ok(json!({"duplicate":false,"applied":result["applied"],"held":result["held"],"archiveWarning":warning}))
 }
 pub fn approve(review:Value)->Result<Value,String>{
     let (mut conn,base)=open_db()?;
