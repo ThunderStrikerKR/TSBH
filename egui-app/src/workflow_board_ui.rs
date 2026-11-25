@@ -333,11 +333,7 @@ fn workflow_auxiliary_at(
     let response=ui.interact(
         rect,Id::new(("workflow-aux",id,kind,in_preview)),
         if effective{egui::Sense::click()}else{egui::Sense::hover()}
-    ).on_hover_text(match action{
-        components::WorkflowAuxiliaryAction::Manage=>"배송 건 묶음 관리",
-        components::WorkflowAuxiliaryAction::Delete=>"주문 묶음 삭제",
-        components::WorkflowAuxiliaryAction::PreviousStage=>"이전 단계 취소",
-    });
+    ).on_hover_text(components::workflow_auxiliary_tooltip(action));
     let painter=ui.painter();
     let (fill,stroke,ink)=if effective{
         (theme::RAISED,theme::BORDER,theme::TEXT)
@@ -351,25 +347,7 @@ fn workflow_auxiliary_at(
         egui::Stroke::new(theme::FRAME_STROKE_WIDTH,stroke),
         egui::StrokeKind::Inside
     );
-    match action{
-        components::WorkflowAuxiliaryAction::Manage=>{
-            painter.text(
-                rect.center(),egui::Align2::CENTER_CENTER,"관리",
-                egui::FontId::proportional(typography::FONT_STANDARD_ACTION),
-                ink
-            );
-        }
-        components::WorkflowAuxiliaryAction::Delete=>{
-            components::paint_workflow_icon(
-                painter,rect.center(),components::WorkflowIcon::Trash,ink
-            );
-        }
-        components::WorkflowAuxiliaryAction::PreviousStage=>{
-            components::paint_workflow_icon(
-                painter,rect.center(),components::WorkflowIcon::PreviousStage,ink
-            );
-        }
-    };
+    components::paint_workflow_auxiliary_content(painter,rect.center(),action,ink);
     if effective{theme::paint_button_hover(ui,&response,5.0);}
     response
 }
