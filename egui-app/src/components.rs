@@ -979,26 +979,61 @@ pub fn workflow_auxiliary_button(ui: &mut Ui, action: WorkflowAuxiliaryAction) -
         )
     }).inner;
 
-    match action {
-        WorkflowAuxiliaryAction::Manage => {
-            ui.painter().text(
-                response.rect.center(),
-                egui::Align2::CENTER_CENTER,
-                "관리",
-                egui::FontId::proportional(typography::FONT_STANDARD_ACTION),
-                theme::DISABLED_ACTION_TEXT,
-            );
+    paint_workflow_auxiliary_content(ui.painter(),response.rect.center(),action,
+        theme::DISABLED_ACTION_TEXT);
+    response.on_hover_text(workflow_auxiliary_tooltip(action))
+}
+
+/// Shared label and glyph painting for allocated and fixed-rectangle workflow controls.
+pub fn paint_workflow_auxiliary_content(
+    painter:&egui::Painter,center:egui::Pos2,
+    action:WorkflowAuxiliaryAction,ink:Color32
+){
+    match action{
+        WorkflowAuxiliaryAction::Manage=>{
+            painter.text(center,egui::Align2::CENTER_CENTER,"관리",
+                egui::FontId::proportional(typography::FONT_STANDARD_ACTION),ink);
         }
-        WorkflowAuxiliaryAction::Delete => paint_workflow_icon(
-            ui.painter(), response.rect.center(), WorkflowIcon::Trash,
-            theme::DISABLED_ACTION_TEXT,
-        ),
-        WorkflowAuxiliaryAction::PreviousStage => paint_workflow_icon(
-            ui.painter(), response.rect.center(), WorkflowIcon::PreviousStage,
-            theme::DISABLED_ACTION_TEXT,
-        ),
+        WorkflowAuxiliaryAction::Delete=>
+            paint_workflow_icon(painter,center,WorkflowIcon::Trash,ink),
+        WorkflowAuxiliaryAction::PreviousStage=>
+            paint_workflow_icon(painter,center,WorkflowIcon::PreviousStage,ink),
     }
-    response
+}
+
+pub fn workflow_auxiliary_tooltip(action:WorkflowAuxiliaryAction)->&'static str{
+    match action{
+        WorkflowAuxiliaryAction::Manage=>"배송 건 묶음 관리",
+        WorkflowAuxiliaryAction::Delete=>"주문 묶음 삭제",
+        WorkflowAuxiliaryAction::PreviousStage=>"이전 단계로 돌아가기",
+    }
+}
+
+/// Tooltip describes the next sort action, not the currently selected order.
+/// Some(false) = ascending, Some(true) = descending, None = original order.
+pub fn management_sort_tooltip(next_descending:Option<bool>)->&'static str{
+    match next_descending{
+        Some(false)=>"오름차순 정렬",
+        Some(true)=>"내림차순 정렬",
+        None=>"기본 순서로 복귀",
+    }
+}
+
+#[cfg(test)]
+mod common_action_tooltip_tests{
+    use super::*;
+    #[test]
+    fn sort_tooltips_describe_the_next_action(){
+        assert_eq!(management_sort_tooltip(Some(false)),"오름차순 정렬");
+        assert_eq!(management_sort_tooltip(Some(true)),"내림차순 정렬");
+        assert_eq!(management_sort_tooltip(None),"기본 순서로 복귀");
+    }
+    #[test]
+    fn workflow_tooltips_match_their_operations(){
+        assert_eq!(workflow_auxiliary_tooltip(WorkflowAuxiliaryAction::Manage),"배송 건 묶음 관리");
+        assert_eq!(workflow_auxiliary_tooltip(WorkflowAuxiliaryAction::Delete),"주문 묶음 삭제");
+        assert_eq!(workflow_auxiliary_tooltip(WorkflowAuxiliaryAction::PreviousStage),"이전 단계로 돌아가기");
+    }
 }
 
 /// Draw workflow glyphs as stable vectors; the UI font may not contain
@@ -5569,11 +5604,11 @@ pub fn management_client_header(
                 visible,ui.make_persistent_id(("client-management-sort",i)),
                 Sense::click()
             ).on_hover_text(format!(
-                "{} · {}",sort_keys[i],match current_sort{
-                    Some((col,false)) if col==i=>"내림차순 정렬",
-                    Some((col,true)) if col==i=>"기본 순서로 복귀",
-                    _=>"오름차순 정렬"
-                }
+                "{} · {}",sort_keys[i],management_sort_tooltip(match current_sort{
+                    Some((col,false)) if col==i=>Some(true),
+                    Some((col,true)) if col==i=>None,
+                    _=>Some(false)
+                })
             ));
             if response.clicked(){selected=Some(i);}
             if response.hovered(){
