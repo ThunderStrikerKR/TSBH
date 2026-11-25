@@ -7208,6 +7208,164 @@ mod management_search_caret_tests {
 }
 
 #[cfg(test)]
+mod shared_input_rendering_tests{
+    use super::*;
+    use typography::{DataValueContext,DataValueKind};
+
+    #[derive(Debug)]
+    struct PaintedInput{
+        rect:Rect,
+        fonts:Vec<egui::FontId>,
+    }
+    fn collect_input(shape:&egui::Shape,value:&str,found:&mut Vec<PaintedInput>){
+        match shape{
+            egui::Shape::Text(text) if text.galley.text()==value=>{
+                found.push(PaintedInput{
+                    rect:text.galley.rect.translate(text.pos.to_vec2()),
+                    fonts:text.galley.job.sections.iter()
+                        .map(|section|section.format.font_id.clone()).collect(),
+                });
+            }
+            egui::Shape::Vec(shapes)=>for shape in shapes{collect_input(shape,value,found);},
+            _=>{}
+        }
+    }
+    fn draw_input(ctx:&egui::Context,value:&str,
+        mut draw:impl FnMut(&mut Ui)->Response)->(Response,PaintedInput,Rect){
+        let mut response=None;
+        let mut next=Rect::NOTHING;
+        let output=ctx.run(egui::RawInput{
+            screen_rect:Some(Rect::from_min_size(egui::Pos2::ZERO,Vec2::new(900.0,700.0))),
+            ..Default::default()
+        },|ctx|{
+            egui::CentralPanel::default().show(ctx,|ui|{
+                ui.set_width(480.0);
+                response=Some(draw(ui));
+                next=ui.allocate_exact_size(Vec2::new(80.0,theme::INPUT_HEIGHT),Sense::hover()).0;
+            });
+        });
+        let mut found=Vec::new();
+        for shape in &output.shapes{collect_input(&shape.shape,value,&mut found);}
+        let response=response.expect("real input response");
+        let ink=found.into_iter().find(|ink|response.rect.contains(ink.rect.center()))
+            .unwrap_or_else(||panic!("missing rendered input value {value}"));
+        (response,ink,next)
+    }
+    fn check_font(ink:&PaintedInput,font:&egui::FontId){
+        assert!(!ink.fonts.is_empty());
+        assert!(ink.fonts.iter().all(|actual|actual==font),
+            "rendered font runs {:?} differ from {font:?}",ink.fonts);
+    }
+    fn check_stable(before:&(Response,PaintedInput,Rect),
+        after:&(Response,PaintedInput,Rect)){
+        assert_layout_rects_invariant(
+            &[("input",before.0.rect),("following row",before.2)],
+            &[("input",after.0.rect),("following row",after.2)]
+        );
+        // Galley layout can round to device pixels; the control allocation
+        // retains the separate, stricter 0.5pt geometry contract.
+        assert!((before.1.rect.min-after.1.rect.min).length()<=1.0,
+            "input text moved: {:?} -> {:?}",before.1.rect,after.1.rect);
+        assert!((before.1.rect.max-after.1.rect.max).length()<=1.0,
+            "input text metrics changed across focus/permission state");
+    }
+    #[test]
+    fn shared_form_fields_keep_rendered_font_alignment_and_geometry_across_focus(){
+        for (kind,value,role) in [
+            (FieldKind::Text,"BD 709",None),
+            (FieldKind::Address,"서울 종로구",None),
+            (FieldKind::Telephone,"010-1234-5678",Some(DataValueKind::Phone)),
+            (FieldKind::Quantity,"123",Some(DataValueKind::Quantity)),
+            (FieldKind::Money,"12,345",Some(DataValueKind::Money)),
+        ]{
+            let ctx=test_context();
+            let mut draft=value.to_owned();
+            let mut render=|enabled|draw_input(&ctx,value,|ui|field(ui,&mut draft,kind,enabled));
+            let normal=render(true);
+            let expected=role.map_or(egui::FontId::proportional(14.0),
+                |role|typography::data_value_font(role,DataValueContext::Form));
+            assert_eq!(expected.size,14.0);
+            check_font(&normal.1,&expected);
+            assert_eq!(normal.0.rect.height(),theme::INPUT_HEIGHT);
+            let margin=typography::form_input_text_margin();
+            let right=matches!(kind,FieldKind::Quantity|FieldKind::Money);
+            let inset=if right{normal.0.rect.right()-normal.1.rect.right()}
+                else{normal.1.rect.left()-normal.0.rect.left()};
+            let expected_inset=f32::from(if right{margin.right}else{margin.left});
+            assert!((inset-expected_inset).abs()<=1.0,
+                "{kind:?} alignment inset {inset} != {expected_inset}");
+            let expected_y=normal.0.rect.center().y+f32::from(margin.top-margin.bottom)/2.0;
+            assert!((normal.1.rect.center().y-expected_y).abs()<=1.0,
+                "{kind:?} baseline does not honor shared vertical margin");
+            ctx.memory_mut(|memory|memory.request_focus(normal.0.id));
+            let focused=render(true);
+            assert!(focused.0.has_focus());
+            check_font(&focused.1,&expected);
+            check_stable(&normal,&focused);
+            ctx.memory_mut(|memory|memory.surrender_focus(focused.0.id));
+            let blurred=render(true);
+            assert!(!blurred.0.has_focus());
+            check_stable(&normal,&blurred);
+            let disabled=render(false);
+            assert!(!disabled.0.enabled());
+            check_font(&disabled.1,&expected);
+            check_stable(&normal,&disabled);
+            assert_eq!(draft,value,"focus/permission changes must not edit data");
+        }
+    }
+    #[test]
+    fn shared_recipient_editor_preserves_actual_text_when_linked_or_focused(){
+        for (phone,value) in [(false,"김수취"),(true,"010-1234-5678")]{
+            let ctx=test_context();
+            let mut draft=value.to_owned();
+            let expected=if phone{
+                typography::data_value_font(DataValueKind::Phone,DataValueContext::Reception)
+            }else{egui::FontId::proportional(16.0)};
+            assert_eq!(expected,egui::FontId::proportional(16.0));
+            let normal=draw_input(&ctx,value,|ui|{
+                ui.add_sized(Vec2::new(260.0,theme::INPUT_HEIGHT),
+                    reception_recipient_text_edit(&mut draft,260.0,false,phone).interactive(false))
+            });
+            check_font(&normal.1,&expected);
+            for active in [false,true]{
+                let edited=draw_input(&ctx,value,|ui|{
+                    let (cell,_)=ui.allocate_exact_size(
+                        Vec2::new(260.0,theme::INPUT_HEIGHT),Sense::hover()
+                    );
+                    reception_recipient_inline_cell_editor(
+                        ui,cell,&mut draft,true,Some(cell.center()),phone,active
+                    )
+                });
+                check_font(&edited.1,&expected);
+                check_stable(&normal,&edited);
+            }
+            assert_eq!(draft,value);
+        }
+    }
+    #[test]
+    fn shared_date_editor_renders_proportional_font_and_centered_value(){
+        let ctx=test_context();
+        let mut date="2026-11-25".to_owned();
+        let initial=date.clone();
+        let normal=draw_input(&ctx,&initial,|ui|
+            management_date_text_field(ui,&mut date,180.0,theme::INPUT_HEIGHT,"날짜")
+        );
+        check_font(&normal.1,&egui::FontId::proportional(14.0));
+        assert!((normal.1.rect.center().x-normal.0.rect.center().x).abs()<=1.0);
+        let margin=typography::management_date_text_margin();
+        let y=normal.0.rect.center().y+f32::from(margin.top-margin.bottom)/2.0;
+        assert!((normal.1.rect.center().y-y).abs()<=1.0);
+        ctx.memory_mut(|memory|memory.request_focus(normal.0.id));
+        let focused=draw_input(&ctx,&initial,|ui|
+            management_date_text_field(ui,&mut date,180.0,theme::INPUT_HEIGHT,"날짜")
+        );
+        assert!(focused.0.has_focus());
+        check_stable(&normal,&focused);
+        assert_eq!(date,initial);
+    }
+}
+
+#[cfg(test)]
 mod inline_first_click_caret_tests {
     use super::*;
     #[test]
