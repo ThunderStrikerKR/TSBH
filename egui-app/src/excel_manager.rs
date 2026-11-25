@@ -715,6 +715,24 @@ impl ExcelManager{
             ctx.request_repaint();
         });
     }
+    fn start_export(&mut self,ctx:egui::Context,origin:String,ids:Vec<String>){
+        let folder_after=origin=="FACTORY";
+        self.task("export",ctx,move|g|{
+            let mut result=g.export_excel(&origin,&ids)?;
+            let projection=g.execute(ReadOperation::ReadShipments,
+                json!({"state":&result["state"]}))?;
+            result["shipmentReads"]=projection;
+            if folder_after{
+                if let Some(export_id)=result["exportId"].as_str(){
+                    // Explorer failure is NOT an export failure.
+                    if let Err(reason)=g.open_excel_folder(Some(export_id),None){
+                        result["folderWarning"]=json!(reason);
+                    }
+                }
+            }
+            Ok(result)
+        });
+    }
     /// Review only unresolved rows from the authoritative Rust review projector.
     /// Refresh the projection once per DB revision, never on every painted row.
     fn update_reply_review(&mut self){
@@ -1274,18 +1292,21 @@ impl ExcelManager{
         }
         if let Some(id)=open_order{self.open_order=Some(id);}
         if let Some(ids)=exported{
-            let Some(state)=self.result.as_ref().map(|x|x.state.clone()) else{return};
-            let origin=self.tab.origin().to_owned();
-            self.task("preview",ui.ctx().clone(),move|g|{
-                let operation=if origin=="FACTORY"{
-                    ReadOperation::PrepareFactoryExport
-                }else{ReadOperation::PrepareStoreExport};
-                let preview=g.execute(operation,json!({"state":state,"ids":ids}))?;
-                let sender=g.execute(ReadOperation::ReviewExportSender,json!({
-                    "state":state,"ids":ids
-                }))?;
-                Ok(json!({"preview":preview,"sender":sender}))
-            });
+            if self.tab==Tab::Factory{
+                // Factory export needs no second click. The export service
+                // prepares and validates the current DB snapshot itself.
+                self.start_export(ui.ctx().clone(),self.tab.origin().to_owned(),ids);
+            }else{
+                let Some(state)=self.result.as_ref().map(|x|x.state.clone()) else{return};
+                self.task("preview",ui.ctx().clone(),move|g|{
+                    let preview=g.execute(ReadOperation::PrepareStoreExport,
+                        json!({"state":state,"ids":ids}))?;
+                    let sender=g.execute(ReadOperation::ReviewExportSender,json!({
+                        "state":state,"ids":ids
+                    }))?;
+                    Ok(json!({"preview":preview,"sender":sender}))
+                });
+            }
         }
         if let Some((action,shipment_id,queue_id,origin,value))=workflow_action{
             let Some(revision)=self.result.as_ref()
@@ -1348,22 +1369,7 @@ impl ExcelManager{
                         if theme::action(bar,"Excel 작성",theme::ButtonRole::Primary,
                             !busy&&self.gateway.excel_write_enabled()).clicked(){
                             self.preview=None;
-                            let folder_after=origin=="FACTORY";
-                            self.task("export",ui.ctx().clone(),move|g|{
-                                let mut result=g.export_excel(&origin,&ids)?;
-                                let projection=g.execute(ReadOperation::ReadShipments,
-                                    json!({"state":&result["state"]}))?;
-                                result["shipmentReads"]=projection;
-                                if folder_after{
-                                    if let Some(export_id)=result["exportId"].as_str(){
-                                        // Explorer failure is NOT an export failure.
-                                        if let Err(reason)=g.open_excel_folder(Some(export_id),None){
-                                            result["folderWarning"]=json!(reason);
-                                        }
-                                    }
-                                }
-                                Ok(result)
-                            });
+                            self.start_export(ui.ctx().clone(),origin.clone(),ids.clone());
                         }
                     });
                 });
@@ -1384,6 +1390,20 @@ impl ExcelManager{
 #[cfg(test)]
 mod table_state_tests {
     use super::*;
+
+    #[test]
+    fn factory_export_starts_directly_and_store_keeps_preview(){
+        let source=include_str!("excel_manager.rs");
+        let start=source.find("if let Some(ids)=exported{").unwrap();
+        let end=start+source[start..].find("if let Some((action,shipment_id").unwrap();
+        let branch=&source[start..end];
+        let (factory,store)=branch.split_once("}else{").unwrap();
+        assert!(factory.contains("if self.tab==Tab::Factory"));
+        assert!(factory.contains("self.start_export("));
+        assert!(!factory.contains("self.task(\"preview\""));
+        assert!(store.contains("self.task(\"preview\""));
+        assert!(store.contains("ReadOperation::PrepareStoreExport"));
+    }
 
     #[test]
     fn history_table_has_only_file_actions_and_no_related_order_panel() {
