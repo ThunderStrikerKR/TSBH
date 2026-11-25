@@ -2832,7 +2832,7 @@ impl BandoEgui {
     /// Use the exact asymmetric inner rect of workspace_shell_frame rather
     /// than approximating it with equal left/right PANEL_GAP values.
     fn modal_work_area(&self,ctx:&egui::Context)->Rect {
-        kakao_safe_modal_work_area(ctx.screen_rect(),&self.layout)
+        kakao_safe_modal_work_area(ctx.content_rect(),&self.layout)
     }
 
     fn show_manual_workspace(&mut self,ctx:&egui::Context,work_area:Rect) {
@@ -2848,7 +2848,7 @@ impl BandoEgui {
         // Use the same live source-column calculation as Reception, including
         // any user-resized pane ratio. The manual worksheet must not invent a
         // second source width or percentage-based layout policy.
-        let viewport=ctx.screen_rect();
+        let viewport=ctx.content_rect();
         let content_width=(viewport.width()-2.0*theme::PANEL_GAP)
             .max(layout::LayoutState::minimum_width());
         let reception_source_width=self.layout.widths(content_width)[1];
@@ -5588,7 +5588,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                 if content_width > viewport_width + 0.5 {
                     // Small windows must still be able to reach every pane.
                     components::scroll_area(components::ScrollAxes::Horizontal)
-                        .drag_to_scroll(false)
+                        .scroll_source(egui::scroll_area::ScrollSource::SCROLL_BAR | egui::scroll_area::ScrollSource::MOUSE_WHEEL)
                         .id_salt("reception_four_columns")
                         .auto_shrink([false, false])
                         .show(ui, &mut draw_columns);

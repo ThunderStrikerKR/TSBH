@@ -376,7 +376,7 @@ pub fn icon(heading:&mut Ui,title:&str){
             }else if inside_popup{state.leave=None;}
         }
         if state.shown{
-            let viewport=ctx.screen_rect();
+            let viewport=ctx.content_rect();
             let width=(viewport.width()-24.0).min(360.0).max(220.0);
             let height=state.popup.map(|r|r.height()).unwrap_or(320.0);
             let left=rect.left().max(viewport.left()+12.0)

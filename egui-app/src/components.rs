@@ -2521,7 +2521,7 @@ pub fn show_decision_window<R>(
 pub fn modal_backdrop(
     ctx:&egui::Context,id:&'static str,nested:bool
 ) {
-    let viewport=ctx.screen_rect();
+    let viewport=ctx.content_rect();
     let alpha=if nested {
         theme::MODAL_NESTED_BACKDROP_ALPHA
     } else {
@@ -3407,7 +3407,7 @@ pub fn reception_recipient_fields(
         let phone_width = input_budget - mobile_width;
         let (mobile_response, phone_response) = scroll_area(ScrollAxes::Horizontal)
             .id_salt("recipient-contact-row")
-            .drag_to_scroll(false)
+            .scroll_source(egui::scroll_area::ScrollSource::SCROLL_BAR | egui::scroll_area::ScrollSource::MOUSE_WHEEL)
             .auto_shrink([false, true])
             .show(fields, |contacts| {
                 contacts.set_min_width(row_width);
@@ -4893,7 +4893,7 @@ pub fn management_searchable_dropdown(
     // The search field needs room even on a 148pt toolbar trigger, but
     // long brand names must never stretch the popup or surrounding toolbar.
     let popup_width=width.max(theme::MANAGEMENT_SEARCHABLE_POPUP_MIN_WIDTH)
-        .min((ctx.screen_rect().width()-theme::SPACE_24).max(1.0));
+        .min((ctx.content_rect().width()-theme::SPACE_24).max(1.0));
     egui::Popup::menu(&trigger)
         .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
         .show(|menu|{

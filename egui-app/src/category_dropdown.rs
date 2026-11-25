@@ -443,7 +443,7 @@ fn menu_body(
     // Stable six-row viewport in search, navigation and empty states.
     // Reduce it only if the OS viewport cannot physically fit the popup.
     let list_height=theme::CATEGORY_EXPLORER_LIST_MAX_HEIGHT
-        .min((menu.ctx().screen_rect().height()-270.0).max(100.0));
+        .min((menu.ctx().content_rect().height()-270.0).max(100.0));
     let mut next_path=None;
     components::scroll_area(components::ScrollAxes::Vertical)
         .id_salt(("category-explorer-list",state.path.clone(),state.search.clone()))
@@ -548,7 +548,7 @@ pub fn category_dropdown(
     // manager. Never grow with the trigger width or breadcrumb text.
     // Only shrink to the actual viewport on a genuinely narrow screen.
     let popup_width=theme::CATEGORY_EXPLORER_POPUP_WIDTH
-        .min((ui.ctx().screen_rect().width()-theme::SPACE_24).max(1.0));
+        .min((ui.ctx().content_rect().width()-theme::SPACE_24).max(1.0));
     egui::Popup::menu(&trigger)
         .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
         .show(|menu|{

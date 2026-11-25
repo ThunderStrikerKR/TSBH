@@ -2572,7 +2572,7 @@ impl ManualWorkspace {
                         };
                         if manual_workspace_needs_horizontal_scroll(viewport_width,content_width){
                             components::scroll_area(components::ScrollAxes::Horizontal)
-                                .drag_to_scroll(false)
+                                .scroll_source(egui::scroll_area::ScrollSource::SCROLL_BAR | egui::scroll_area::ScrollSource::MOUSE_WHEEL)
                                 .id_salt("manual-columns-horizontal-scroll")
                                 .max_height(content_height)
                                 .auto_shrink([false,false])
@@ -4346,7 +4346,7 @@ mod manual_workspace_layout_tests{
         assert!(render.contains("if !self.direct_input{"));
         assert!(render.contains("manual_workspace_content_width_for_mode("));
         assert!(render.contains("manual_workspace_needs_horizontal_scroll(viewport_width,content_width)"));
-        assert!(render.contains(".drag_to_scroll(false)"));
+        assert!(render.contains(".scroll_source(egui::scroll_area::ScrollSource::SCROLL_BAR | egui::scroll_area::ScrollSource::MOUSE_WHEEL)"));
         assert!(render.contains(".show(ui,&mut draw_columns)"));
         assert!(render.contains("|outer|draw_columns(outer)"));
         assert!(render.contains("manual_workspace_columns_height()"));

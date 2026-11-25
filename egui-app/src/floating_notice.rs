@@ -207,7 +207,7 @@ pub fn section(ctx: &Context, source: &'static str, region: Rect) {
 }
 
 fn fallback(ctx: &Context) -> Pos2 {
-    let bounds = ctx.screen_rect();
+    let bounds = ctx.content_rect();
     Pos2::new((bounds.right() - 180.0).max(bounds.left() + 16.0), bounds.top() + 100.0)
 }
 
@@ -445,7 +445,7 @@ pub fn show(ctx: &Context) {
     let display=if matches!(active.tone,Tone::Error|Tone::Validation){
         crate::user_error::display(active.source,&active.message)
     }else{std::borrow::Cow::Borrowed(active.message.as_str())};
-    let screen = ctx.screen_rect();
+    let screen = ctx.content_rect();
     let (size, galley, _content_height) = measured_notice(
         ctx, display.as_ref(), active.tone, screen,
     );

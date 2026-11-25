@@ -214,7 +214,7 @@ impl ProductExcelUi {
                     menu.ctx(),trigger.rect
                 );
                 let width=300.0_f32.min(
-                    (menu.ctx().screen_rect().width()-theme::SPACE_24).max(1.0)
+                    (menu.ctx().content_rect().width()-theme::SPACE_24).max(1.0)
                 );
                 menu.set_min_width(width);
                 menu.set_max_width(width);
