@@ -1554,9 +1554,12 @@ pub fn reception_docked_goods_scroll(
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum FieldKind {
     Text,
+    #[cfg(test)]
     Telephone,
+    #[cfg(test)]
     Quantity,
     Money,
+    #[cfg(test)]
     Address,
 }
 
@@ -1564,9 +1567,12 @@ impl FieldKind {
     pub fn preferred_width(self) -> f32 {
         match self {
             Self::Text => 180.0,
+            #[cfg(test)]
             Self::Telephone => 142.0,
+            #[cfg(test)]
             Self::Quantity => 68.0,
             Self::Money => 112.0,
+            #[cfg(test)]
             Self::Address => 320.0,
         }
     }
@@ -2717,7 +2723,9 @@ pub fn field(ui: &mut Ui, value: &mut String, kind: FieldKind, enabled: bool) ->
     let width=form_field_width(ui,kind.preferred_width());
     let semantic=match kind {
         FieldKind::Money=>Some(typography::DataValueKind::Money),
+        #[cfg(test)]
         FieldKind::Quantity=>Some(typography::DataValueKind::Quantity),
+        #[cfg(test)]
         FieldKind::Telephone=>Some(typography::DataValueKind::Phone),
         _=>None,
     };
@@ -4436,6 +4444,7 @@ pub fn management_sticky_table_header(
 /// 8pt bottom inner margin. Subtract that existing inset from the 16pt
 /// pre-divider breathing room instead of adding another full 33pt strip.
 /// Call only for a directly adjacent toolbar and fixed table header.
+#[cfg(test)]
 pub fn management_sticky_table_header_after_inset(
     ui:&mut Ui,min_table_width:f32,consumed_bottom_inset:f32
 )->ManagementTableHeader{
@@ -4447,6 +4456,7 @@ pub fn management_sticky_table_header_after_inset(
 
 /// Pure SSOT conversion: the frame's existing bottom inset is part of the
 /// 16pt pre-divider whitespace, not space to add on top of it.
+#[cfg(test)]
 fn management_remaining_predivider_gap(consumed_bottom_inset:f32)->f32{
     debug_assert!(consumed_bottom_inset.is_finite()&&consumed_bottom_inset>=0.0
         && consumed_bottom_inset<=theme::SECTION_DIVIDER_GAP,
@@ -5599,6 +5609,7 @@ fn display_money_number(amount:i64)->String{
 /// The product column uses remaining viewport space, but the numeric columns
 /// retain exactly 76pt and 136pt regardless of content or window dimensions.
 /// Below the minimum, the entire grid scrolls instead of compressing columns.
+#[cfg(test)]
 fn reception_item_table_width(available:f32)->f32 {
     available.max(theme::RECEPTION_ITEMS_MIN_TABLE_WIDTH)
 }

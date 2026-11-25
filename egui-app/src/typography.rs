@@ -57,7 +57,10 @@ pub const FONT_STANDARD_ACTION: f32 = 13.0;
 pub enum DataValueKind { Money, Quantity, Date, Phone }
 #[derive(Clone,Copy,Debug,Eq,PartialEq)]
 pub enum DataValueContext {
-    Table, Form, Reception, CompactCard, Summary, CompactCaption, ReceptionTotal
+    Table, Form, Reception, CompactCard, Summary,
+    #[cfg(test)]
+    CompactCaption,
+    ReceptionTotal
 }
 
 /// Pixel-level optical correction for Consolas against Korean unit glyphs.
@@ -74,6 +77,7 @@ pub fn data_value_font(kind:DataValueKind,context:DataValueContext)->FontId {
         |DataValueContext::CompactCard=>FONT_BODY,
         DataValueContext::Reception=>FONT_RECEPTION_ITEM_TEXT,
         DataValueContext::Summary=>FONT_SECTION_HEADING,
+        #[cfg(test)]
         DataValueContext::CompactCaption=>FONT_FIELD_LABEL,
         DataValueContext::ReceptionTotal=>18.0,
     };
@@ -194,6 +198,7 @@ const BRAND_FAMILY: &str = "bando-brand-display";
 enum Weight {
     Regular,
     Emphasis,
+    #[cfg(test)]
     Monospace,
 }
 
@@ -223,6 +228,7 @@ enum Role {
     Metadata,
     TableHeader,
     TableCell,
+    #[cfg(test)]
     SummaryValue,
     Status,
 }
@@ -277,6 +283,7 @@ fn spec(role: Role) -> TypeSpec {
             size: FONT_FIELD_LABEL, line: 20.0, tracking: 0.0,
             color: TEXT, weight: Weight::Regular,
         },
+        #[cfg(test)]
         Role::SummaryValue => TypeSpec {
             size: FONT_SECTION_HEADING, line: 23.0, tracking: 0.0,
             color: TEXT, weight: Weight::Monospace,
@@ -302,6 +309,7 @@ fn render(text: &str, role: Role) -> RichText {
             let family = if is_brand { BRAND_FAMILY } else { EMPHASIS_FAMILY };
             rich.family(FontFamily::Name(family.into())).strong()
         },
+        #[cfg(test)]
         Weight::Monospace => rich.family(FontFamily::Monospace),
     }
 }
@@ -364,7 +372,6 @@ pub fn field_label_galley(
     client_table_galley(ui,text,Role::FieldLabel,true,spec(Role::FieldLabel).color)
 }
 pub fn caption(text: &str) -> RichText { render(text, Role::Metadata) }
-pub fn table_header(text: &str) -> RichText { render(text, Role::TableHeader) }
 
 /// Measured header glyphs for the fixed three-column receipt table.
 /// Unlike Label::halign in Ui::put, this galley is painted at each column's
@@ -531,7 +538,7 @@ pub fn category_tree_name_galley(
 /// Prefer keeping whole trailing category names and the final leaf intact.
 /// If the leaf alone is wider than the cell, keep its trailing glyphs.
 #[derive(Clone,Copy)]
-pub enum CategoryPathFont { Body, Metadata, TableCell, FreightTableCell, Subsection }
+pub enum CategoryPathFont { Body, Metadata, FreightTableCell, Subsection }
 
 fn category_path_text_width(ui:&egui::Ui,text:&str,font:CategoryPathFont)->f32{
     // Freight paints muted ancestors and a regular secondary leaf.
@@ -552,7 +559,6 @@ fn category_path_text_width(ui:&egui::Ui,text:&str,font:CategoryPathFont)->f32{
     let (role,emphasized,color)=match font{
         CategoryPathFont::Body=>(Role::Body,false,TEXT),
         CategoryPathFont::Metadata=>(Role::Metadata,false,MUTED),
-        CategoryPathFont::TableCell=>(Role::TableCell,false,TEXT),
         CategoryPathFont::FreightTableCell=>unreachable!(),
         CategoryPathFont::Subsection=>(Role::Subsection,true,TEXT),
     };

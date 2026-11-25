@@ -529,8 +529,10 @@ pub const CLIENT_CHOOSER_RESULTS_MAX_HEIGHT: f32 = 460.0;
 // here; neither master screen may redefine them in its view implementation.
 // The identical HEADER (36pt) and compact parent ROW (42pt) are shared roles,
 // while expandable details and toolbar wrapping are EXPLICIT exceptions.
+#[cfg(test)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ManagementMasterRowPolicy { Fixed, ExpandableDetails }
+#[cfg(test)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ManagementMasterToolbarPolicy { SingleLine, ResponsiveDateWrap }
 
@@ -539,7 +541,9 @@ pub struct ManagementMasterTableSpec<const N: usize> {
     pub base_columns: [f32; N],
     pub growth_shares: [f32; N],
     pub min_width: f32,
+    #[cfg(test)]
     pub row_policy: ManagementMasterRowPolicy,
+    #[cfg(test)]
     pub toolbar_policy: ManagementMasterToolbarPolicy,
 }
 
@@ -597,7 +601,9 @@ pub const FREIGHT_ASSIGNMENT_MASTER_TABLE: ManagementMasterTableSpec<6> =
         base_columns: [44.0, 202.0, 104.0, 258.0, 150.0, 144.0],
         growth_shares: [0.0, 0.64, 0.0, 0.36, 0.0, 0.0],
         min_width: 942.0,
+        #[cfg(test)]
         row_policy: ManagementMasterRowPolicy::Fixed,
+        #[cfg(test)]
         toolbar_policy: ManagementMasterToolbarPolicy::SingleLine,
     };
 
@@ -609,21 +615,19 @@ pub const ORDER_HISTORY_MASTER_TABLE: ManagementMasterTableSpec<7> =
         base_columns: [112.0, 156.0, 300.0, 126.0, 124.0, 112.0, 264.0],
         growth_shares: [0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0],
         min_width: 1242.0,
+        #[cfg(test)]
         row_policy: ManagementMasterRowPolicy::ExpandableDetails,
+        #[cfg(test)]
         toolbar_policy: ManagementMasterToolbarPolicy::ResponsiveDateWrap,
     };
 
 // Compatibility aliases: existing consumers continue to receive the
 // SAME approved dimensions, never a second independently edited set.
-pub const FREIGHT_ASSIGNMENT_COL_WIDTHS: [f32; 6] =
-    FREIGHT_ASSIGNMENT_MASTER_TABLE.base_columns;
 pub const FREIGHT_ASSIGNMENT_COL_GAP: f32 = SPACE_8;
 pub const FREIGHT_BULK_GROUP_WIDTH: f32 = 200.0;
 pub const FREIGHT_ASSIGNMENT_ROW_HEIGHT: f32 = MANAGEMENT_COMPACT_ROW_HEIGHT;
 pub const FREIGHT_ASSIGNMENT_TABLE_MIN_WIDTH: f32 =
     FREIGHT_ASSIGNMENT_MASTER_TABLE.min_width;
-pub const ORDER_HISTORY_COL_WIDTHS: [f32; 7] =
-    ORDER_HISTORY_MASTER_TABLE.base_columns;
 pub const ORDER_HISTORY_TABLE_MIN_WIDTH: f32 =
     ORDER_HISTORY_MASTER_TABLE.min_width;
 // Shipping-group management: four-column grid. The group name gets twice
@@ -654,7 +658,6 @@ pub const SETTLEMENT_PAYMENT_COL_WIDTHS:[f32;7] =
     [172.0,180.0,254.0,141.0,126.0,126.0,260.0];
 pub const SETTLEMENT_KPI_CARD_WIDTH:f32 = 278.0;
 pub const SETTLEMENT_DATE_FIELD_WIDTH:f32 = 132.0;
-pub const MANAGEMENT_TABLE_MIN_WIDTH: f32 = 1320.0;
 // Client name, phone and terms stay compact; the address takes remaining
 // width. Do not force freight/product's 1320pt grid on the client list.
 pub const MANAGEMENT_CLIENT_TABLE_MIN_WIDTH: f32 = 900.0;
@@ -702,19 +705,8 @@ pub const MANAGEMENT_MODAL_BODY_MAX_HEIGHT: f32 = 670.0;
 pub const MANAGEMENT_CLIENT_NAME_COLUMN_WIDTH:f32 = 172.0;
 pub const MANAGEMENT_CLIENT_PHONE_COLUMN_WIDTH:f32 = 154.0;
 pub const MANAGEMENT_CLIENT_TERMS_COLUMN_WIDTH:f32 = 350.0;
-pub const MANUAL_TABLE_MIN_WIDTH: f32 = 560.0;
-pub const MANUAL_TABLE_HEADER_HEIGHT: f32 = 36.0;
+#[cfg(test)]
 pub const MANUAL_TABLE_ROW_HEIGHT: f32 = 42.0;
-pub const MANUAL_TABLE_DELIVERY_COL: f32 = 82.0;
-pub const MANUAL_TABLE_NAME_COL: f32 = 150.0;
-pub const MANUAL_TABLE_ADDRESS_COL: f32 = 360.0;
-pub const MANUAL_TABLE_PHONE_COL: f32 = 160.0;
-pub const MANUAL_TABLE_NOTE_COL: f32 = 260.0;
-// Keep the existing table width while adding an editable unit-price column.
-pub const MANUAL_TABLE_PRODUCT_COL: f32 = 660.0;
-pub const MANUAL_TABLE_QUANTITY_COL: f32 = 96.0;
-pub const MANUAL_TABLE_UNIT_PRICE_COL: f32 = 120.0;
-pub const MANUAL_TABLE_ACTION_COL: f32 = 120.0;
 // Recognized source tokens in Reception and classified manual blocks share
 // the same subdued gray 1pt outline. Focused blue evidence keeps its own 2pt stroke.
 pub const SOURCE_RECOGNIZED_BORDER: Color32 = Color32::from_rgb(96, 96, 96);

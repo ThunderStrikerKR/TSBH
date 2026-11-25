@@ -46,7 +46,8 @@ const COL_GAP: f32 = theme::SPACE_8;
 // status is one of four known values; invoice is at most 10M KRW.
 // All seven approved widths and the 1242pt minimum are owned by theme.rs.
 // Local names stay as aliases for the existing cell-layout helpers and tests.
-const COLS: [f32;7] = theme::ORDER_HISTORY_COL_WIDTHS;
+#[cfg(test)]
+const COLS: [f32;7] = theme::ORDER_HISTORY_MASTER_TABLE.base_columns;
 const MIN_WIDTH: f32 = theme::ORDER_HISTORY_TABLE_MIN_WIDTH;
 // Natural width of [date basis, previous, start date/calendar, end
 // date/calendar, next, all dates]. The search stays outside this right slot.
