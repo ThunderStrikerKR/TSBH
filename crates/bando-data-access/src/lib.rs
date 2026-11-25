@@ -258,7 +258,7 @@ pub fn read_v2_export_metadata(conn:&Connection)->Result<Value,String>{
 }
 
 #[cfg(test)]
-mod metadata_projection_tests{
+mod metadata_snapshot_cost_tests{
     use super::*;
     use serde_json::json;
 
@@ -281,6 +281,34 @@ mod metadata_projection_tests{
         assert_eq!(read_v2_export_metadata(&conn).unwrap(),
             json!({"revision":7,"settings":root["settings"],"exports":root["exports"]}));
         assert!(read_v2_settings_snapshot(&conn).is_err());
+    }
+
+    #[test]
+    fn conditional_update_noop_preserves_revision_and_executes_no_dml(){
+        let mut conn=Connection::open_in_memory().unwrap();
+        conn.execute_batch("CREATE TABLE core_schema(key TEXT,version INTEGER);
+            INSERT INTO core_schema VALUES ('business-core',2);
+            CREATE TABLE app_state(id INTEGER PRIMARY KEY,payload TEXT);
+            CREATE TABLE core_products(id TEXT PRIMARY KEY,position INTEGER,payload TEXT);
+            CREATE TABLE core_product_prices(product_id TEXT,payload TEXT);
+            CREATE TABLE core_clients(id TEXT PRIMARY KEY,position INTEGER,payload TEXT);
+            CREATE TABLE core_orders(id TEXT PRIMARY KEY,position INTEGER,payload TEXT);
+            CREATE TABLE core_recipients(id TEXT PRIMARY KEY,order_id TEXT,position INTEGER,payload TEXT);
+            CREATE TABLE core_items(id TEXT PRIMARY KEY,recipient_id TEXT,position INTEGER,payload TEXT);").unwrap();
+        let root=json!({"revision":7,"settings":{},"workflow":{"shipments":[]}});
+        conn.execute("INSERT INTO app_state VALUES (1,?1)",[root.to_string()]).unwrap();
+        let before=read_v2_snapshot(&conn).unwrap();
+        let count:i64=conn.query_row("SELECT total_changes()",[],|row|row.get(0)).unwrap();
+        let result=update_v2_snapshot_if_changed(&mut conn,7,true,|current|{
+            assert_eq!(current,&before);
+            Ok(None)
+        }).unwrap();
+        assert_eq!(result,before);
+        assert_eq!(conn.query_row("SELECT total_changes()",[],|row|row.get::<_,i64>(0)).unwrap(),count);
+        assert!(update_v2_snapshot_if_changed(&mut conn,6,true,|_|{
+            panic!("stale revision must not run the no-op reducer")
+        }).is_err());
+        assert_eq!(read_v2_snapshot(&conn).unwrap(),before);
     }
 }
 
