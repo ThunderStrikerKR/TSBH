@@ -44,7 +44,7 @@ function Workbench({state}: {state: State}) {
   if(!recipient || !recipient.items.length) throw Error("Missing synthetic recipient/item");
   const draft: Order = {...structuredClone(order),id:"ci-modal-manual",confirmedAt:undefined,
     raw:"매장시험수취인\n서울 테스트구 확인로 3\n기타줄 2개",analysisRaw:undefined,
-    recipients:[{...structuredClone(recipient),items:recipient.items.map(i=>({...i,raw:"기타줄 2개"}))}]};
+    recipients:[{...structuredClone(recipient),items:recipient.items.map(i=>({...i,raw:"기타줄 2개",issues:["CI 상품 확인 필요"],sources:[],productCandidates:[]}))}]};
   const preview = () => {
     if(popup==="common") return <Modal title={"UI 상태 시험 / "+mode}
       className="developer-preview-dialog" busy={mode==="BUSY"}
