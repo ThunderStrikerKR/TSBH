@@ -5,6 +5,7 @@ import { setTimeout as pause } from "node:timers/promises";
 import { chromium } from "playwright";
 import ExcelJS from "exceljs";
 import { auditCSS } from "./audit-css-ownership.mjs";
+import { tsImport } from "tsx/esm/api";
 
 // Browser-only native transport fixture. Keep the Rust shipment-read contract
 // explicit; actual Rust projection semantics are tested in workflow.rs.
@@ -701,71 +702,52 @@ try {
   await page.getByRole("button", { name: "검증용 보면대 704" }).click();
   assert.equal(await page.locator('input[placeholder^="https://bandostand.com/product/"]').inputValue(),
     "https://bandostand.com/product/detail.html?product_no=704");
-  // Native process isolation is separately tested in Rust. This mock checks
-  // that developer controls actually render and the shared Modal operates.
+  // The developer settings tab was deliberately removed (73413f34) and
+  // orphaned developer UI archived (ebc21eb3). Exercise the supported data
+  // management UI; independent diagnostic and drill-oracle Node tests retain
+  // the retired developer-screen business coverage.
   await page.addInitScript(() => { window.__forceTestWorkspace = true; });
   await page.reload();
-  await nav.getByRole("button", { name: "설정" }).click();
   await page.getByText("TEST / 격리 DB / 외부 발송 금지").waitFor();
-  await page.getByRole("tab", { name: "개발자 모드" }).click();
-  await page.getByRole("heading", { name: "발주서 오류 검증" }).waitFor();
-  await page.getByRole("button", { name: "현재 발주서 검사" }).click();
-  await page.getByRole("heading", { name: /기대 조건/ }).waitFor();
-  await page.getByRole("button", { name: "Rust 저장 차단 검사" }).click();
-  await page.getByRole("heading", { name: /Rust 저장 경계/ }).waitFor();
-  await page.getByRole("button", { name: "선택한 실제 화면 열기" }).click();
-  const modal = page.getByRole("dialog", { name: "UI 상태 시험 / 기본" });
-  await modal.waitFor();
-  await page.waitForFunction(() =>
-    parseFloat(getComputedStyle(document.documentElement)
-      .getPropertyValue("--kakao-reserved-width")) > 0);
-  const geometry = await modal.evaluate((el) => {
-    const bounds = el.getBoundingClientRect();
-    const reserved = parseFloat(getComputedStyle(document.documentElement)
-      .getPropertyValue("--kakao-reserved-width")) || 0;
-    return {
-      left: bounds.left, right: bounds.right, width: bounds.width,
-      height: bounds.height, reserved, viewport: innerWidth,
-      center: bounds.left + bounds.width / 2,
-    };
-  });
-  const visibleCenter = geometry.reserved +
-    (geometry.viewport - geometry.reserved) / 2;
-  assert.ok(geometry.left >= geometry.reserved - 2,
-    "Common modal is hidden behind KakaoTalk: " + JSON.stringify(geometry));
-  assert.ok(geometry.right <= geometry.viewport + 2,
-    "Common modal extends beyond the visible workspace: " + JSON.stringify(geometry));
-  assert.ok(Math.abs(geometry.center - visibleCenter) < 3,
-    "Common modal is not centered in the KakaoTalk-free workspace: " + JSON.stringify(geometry));
-  assert.ok(geometry.height < 600,
-    "Simple modal still uses the former 820px blank layout: " + JSON.stringify(geometry));
-  console.log("COMMON_MODAL_REAL_DOM_GEOMETRY", JSON.stringify(geometry));
-  await modal.getByRole("button", { name: "취소" }).click();
-  await modal.waitFor({ state: "detached" });
-  // Actual ProductSearchDialog, not only a mocked common modal title.
-  await page.locator("#dev-popup").selectOption("product-search");
-  await page.getByRole("button", { name: "선택한 실제 화면 열기" }).click();
-  const productDialog = page.getByRole("dialog", { name: "상품 검색" });
-  await productDialog.waitFor();
-  await productDialog.getByRole("textbox", { name: "추가 상품 검색" }).fill("709");
-  await productDialog.getByRole("button", { name: /닫기/ }).click();
-  await productDialog.waitFor({ state: "detached" });
-  // Exercise the real React TEST workflow through the same backup/create,
-  // save and restore IPC names used by Tauri. The browser mocks IPC only;
-  // native SQLite persistence and rollback are covered by Rust tests.
-  await page.getByRole("heading", { name: "TEST 백업 및 복원 검증" }).waitFor();
-  await page.getByRole("button", { name: "1. TEST 백업 만들기" }).click();
-  await page.getByText(/검증 기준 백업:/).waitFor();
-  await page.getByRole("button", { name: "2. 가상 주문과 가격 변경" }).click();
-  await page.getByRole("dialog", { name: "작업 확인" })
-    .getByRole("button", { name: "TEST 데이터 생성" }).click();
-  await page.getByRole("heading", { name: "가상 데이터 변경 확인" }).waitFor();
-  await page.getByRole("button", { name: "3. 백업 복원 및 비교" }).click();
-  await page.getByRole("dialog", { name: "작업 확인" })
-    .getByRole("button", { name: "TEST DB 복원" }).click();
-  await page.getByRole("heading", { name: "복원 검증 통과" }).waitFor();
+  await nav.getByRole("button", { name: "설정" }).click();
+  const settingsTabs = page.getByRole("tablist", { name: "설정 분류" });
+  await settingsTabs.getByRole("tab", { name: "기본 설정", exact: true }).waitFor();
+  assert.deepEqual(await settingsTabs.getByRole("tab").allTextContents(),
+    ["기본 설정","파일 관리","데이터 관리","시스템"],
+    "The archived developer settings panel must not return to the application");
+  await settingsTabs.getByRole("tab", { name: "데이터 관리", exact: true }).click();
+  await page.getByRole("heading", { name: /데이터 백업 및 복구/ }).waitFor();
+
+  // Same synthetic mutation and full restoration oracle as the standalone
+  // backup regression. All browser IPC is mocked; no actual SQLite is opened.
+  const drill = await tsImport("./../tests/rust-migration/oracles/backup-restore-drill.ts", import.meta.url);
+  const before = await page.evaluate(async () => ({
+    state: await window.bando.load(), archive: await window.bando.receiptArchive(),
+  }));
+  await page.getByRole("button", { name: "지금 백업", exact: true }).click();
+  const backup = page.locator(".history").filter({hasText:"manual-ui-1.sqlite"});
+  await backup.getByRole("button", { name: "이 백업으로 복구", exact: true }).waitFor();
+  const sample = drill.buildDrillMutation(before.state, "ci-browser-backup", "2026-11-07T09:00:00Z");
+  const after = await page.evaluate(async (next) => window.bando.save(next), sample.next);
+  const changedChecks = drill.verifyDrillMutation(after, sample);
+  assert.ok(changedChecks.every(check => check.passed), JSON.stringify(changedChecks));
+  assert.ok(after.revision > (before.state.revision ?? 0));
+  await backup.getByRole("button", { name: "이 백업으로 복구", exact: true }).click();
+  const restoreDialog = page.getByRole("dialog", { name: "작업 확인" });
+  await restoreDialog.waitFor();
+  await restoreDialog.getByText(/현재 데이터는 먼저 안전 백업으로 보관합니다/).waitFor();
+  await restoreDialog.getByRole("button", { name: "확인", exact: true }).click();
+  await restoreDialog.waitFor({state:"detached"});
   await page.waitForFunction(() => window.__testRestoreCount === 1);
-  await page.getByText(/TEST DB 전체 내용 및 접수 감사 기록이 백업 시점과 일치/).waitFor();
+  const restored = await page.evaluate(async () => ({
+    state: await window.bando.load(), archive: await window.bando.receiptArchive(),
+  }));
+  const checks = drill.verifyDrillRestore(before.state, restored.state,
+    before.archive, restored.archive, sample, after.revision);
+  assert.ok(checks.every(check => check.passed), JSON.stringify(checks));
+  const backupNames = await page.evaluate(() => window.bando.backups());
+  assert.ok(backupNames.some(name => name.includes("pre-restore-ui-")));
+  console.log("PASS: four settings tabs and actual data management backup/restore", JSON.stringify(checks));
   // Account add/delete must save without a false conflict after Rust JSON reorders object keys.
   const settingsPage = await browser.newPage({ viewport: { width: 1520, height: 1000 } });
   const settingsErrors = [];
