@@ -6903,7 +6903,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                                 );
                                                 let cells=components::reception_item_row(
                                                     contents,
-                                                    &reception_service::item_title(item),
+                                                    reception_service::item_title_ref(item),
                                                     &quantity,&amount,highlighted
                                                 );
                                                 for (response,field) in [
@@ -7231,7 +7231,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                                         );
                                                         let cells=components::reception_item_row(
                                                             contents,
-                                                            &reception_service::item_title(item),
+                                                            reception_service::item_title_ref(item),
                                                             &quantity,&amount,active_fields
                                                         );
                                                         for (response,field) in [
@@ -7596,7 +7596,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                                 ].map(|field|(board_preview && field=="product") ||
                                                     source_highlight::is_active_field(linked_active.as_ref(),recipient_id,item_id,field));
                                                 let cells=components::reception_item_row_with_remove(
-                                                    items_ui,&reception_service::item_title(item),
+                                                    items_ui,reception_service::item_title_ref(item),
                                                     &quantity,&amount,active_fields,editable
                                                 );
                                                 if cells.remove_clicked{
