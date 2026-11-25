@@ -47,7 +47,7 @@ fn sync_prune(tx: &Transaction<'_>, table: &str, retain: &HashSet<String>) -> Re
 /// Full sync remains the bootstrap/migration authority: there may not be
 /// an authoritative prior snapshot during schema initialization.
 pub fn store_v2_relational(tx: &Transaction<'_>, state: &Value) -> Result<(), String> {
-    store_relational(tx,state,None).map(|_|())
+    store_relational(tx,state,None,None).map(|_|())
 }
 
 /// Compare the transaction's hydrated before-image, not a UI-provided draft.
@@ -56,7 +56,18 @@ pub fn store_v2_relational(tx: &Transaction<'_>, state: &Value) -> Result<(), St
 /// (preserves ownership, positions, uniqueness and child-before-parent deletes).
 pub(crate) fn store_v2_relational_delta(tx:&Transaction<'_>,before:&Value,state:&Value)
     ->Result<usize,String>{
-    store_relational(tx,state,Some(before))
+    store_relational(tx,state,Some(before),None)
+}
+// Only a stable one-order partition may use the real SQLite position.
+// No prune or write outside that partition is permitted by this entry.
+pub(crate) fn store_single_order_delta(tx:&Transaction<'_>,before:&Value,state:&Value,
+    position:i64)->Result<usize,String>{
+    if before["orders"].as_array().map(Vec::len)!=Some(1) ||
+        !stable_orders(&before["orders"],&state["orders"]) ||
+        before["products"]!=state["products"] || before["clients"]!=state["clients"]{
+        return Err("단일 주문 저장 범위 오류".into());
+    }
+    store_relational(tx,state,Some(before),Some(position))
 }
 fn same_ids(old:&[Value],new:&[Value])->bool{
     old.len()==new.len() && old.iter().zip(new).all(|(a,b)|
@@ -85,7 +96,7 @@ fn same_payload(old:&Value,new:&Value,child:&str)->bool{
     old.iter().filter(|(k,_)|k.as_str()!=child)
         .eq(new.iter().filter(|(k,_)|k.as_str()!=child))
 }
-fn store_relational(tx:&Transaction<'_>,state:&Value,before:Option<&Value>)->Result<usize,String>{
+fn store_relational(tx:&Transaction<'_>,state:&Value,before:Option<&Value>,order_position:Option<i64>)->Result<usize,String>{
     crate::valid_state(state)?;
     let mut direct=0;
     let products_changed=before.is_none_or(|old|old["products"]!=state["products"]);
@@ -176,7 +187,7 @@ fn store_relational(tx:&Transaction<'_>,state:&Value,before:Option<&Value>)->Res
             require_unique(&mut order_ids,id,"주문")?;
             if stable_order.is_some_and(|old|
                 same_payload(&old["orders"][i],o,"recipients")){continue;}
-            direct+=statement.execute(params![id,i as i64,o["clientId"].as_str(),
+            direct+=statement.execute(params![id,order_position.unwrap_or(i as i64),o["clientId"].as_str(),
                 o["createdAt"].as_str(),o["confirmedAt"].as_str(),
                 o["status"].as_str(),payload(o,Some("recipients"))?]).map_err(err)?;
         }

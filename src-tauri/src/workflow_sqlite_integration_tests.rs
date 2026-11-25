@@ -1064,3 +1064,31 @@ fn scoped_freight_before_read_matches_full_reducer_and_preserves_ledger(){
         }).is_err());
     assert_eq!(get_snapshot(&conn).unwrap(),committed);
 }
+
+#[test]
+fn stable_freight_precommit_global_validation_rolls_back_unrelated_invalid_link(){
+    let (_isolated,mut conn)=IsolatedDatabase::open();
+    let initial=get_snapshot(&conn).unwrap();
+    let saved=write_snapshot(&mut conn,stage_three(&initial,"POSTPAID"),0,true).unwrap();
+    let revision=saved["revision"].as_u64().unwrap();
+    // Inject an unrelated broken shipment link in the envelope only. The
+    // existing global validator must reject this even though the freight
+    // reducer only sees the selected order. No real operational DB is used.
+    let raw:String=conn.query_row("SELECT payload FROM app_state WHERE id=1",[],|row|row.get(0)).unwrap();
+    let mut envelope:Value=serde_json::from_str(&raw).unwrap();
+    let mut broken=envelope["workflow"]["shipments"][0].clone();
+    broken["id"]=json!("shipment:broken");
+    broken["orderId"]=json!("order:missing");
+    envelope["workflow"]["shipments"].as_array_mut().unwrap().push(broken);
+    conn.execute("UPDATE app_state SET payload=?1 WHERE id=1",[envelope.to_string()]).unwrap();
+    let before=get_snapshot(&conn).unwrap();
+    let rejected=bando_data_access::update_v2_freight_snapshot(
+        &mut conn,revision,"shipment:synthetic","group:synthetic",|current|{
+            let mut next=current.clone();
+            next["orders"][0]["recipients"][0]["shippingCharges"]=json!({"FACTORY":4000});
+            next["workflow"]["shipments"][0]["charges"]["FACTORY"]=json!(4000);
+            Ok(next)
+        });
+    assert!(rejected.unwrap_err().contains("연결"));
+    assert_eq!(get_snapshot(&conn).unwrap(),before);
+}

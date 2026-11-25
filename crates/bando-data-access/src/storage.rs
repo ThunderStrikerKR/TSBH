@@ -58,10 +58,10 @@ where F:FnOnce(&Value)->Result<Value,String>{
 
 /// Only for the native set_shipment_freight reducer. Keep the full workflow
 /// envelope and catalog (audit identities, allocations, tariffs, clients).
-/// Read the target order first, then the complementary partition exactly
-/// once before the unchanged global validation and atomic writer. The
-/// reducer never receives unrelated order payloads. No projected snapshot
-/// can reach the persistent writer.
+/// Stable confirmed-order edits use the scoped relational delta, then
+/// reconstruct the full authoritative before-image from persisted rows and
+/// validate before COMMIT. Structural changes and databases with triggers
+/// retain the conservative full-before-image path.
 pub fn update_v2_freight_snapshot<F>(
     conn:&mut Connection,expected_revision:u64,shipment_id:&str,group_id:&str,mutate:F
 )->Result<Value,String>
@@ -96,6 +96,17 @@ where F:FnOnce(&Value)->Result<Value,String>{
         .eq(new_root.iter().filter(|(k,_)|k.as_str()!="orders" && k.as_str()!="workflow")){
         return Err("운임 수정 범위를 벗어난 업무 데이터 변경입니다.".into());
     }
+    if changed==before{
+        return Err("현재 상태에서 수행할 변경이 없습니다.".into());
+    }
+    // The fast path is intentionally narrow. No triggers (including TEMP
+    // triggers), no structural changes, no new correction or confirmation,
+    // and no product migration. The fallback retains the old full writer.
+    if stable_freight_candidate(&tx,&before,&changed)?{
+        let verified=finish_stable_freight(&tx,before,changed,expected_revision,&order_id)?;
+        tx.commit().map_err(err)?;
+        return Ok(verified);
+    }
     let target_after=changed["orders"].as_array_mut()
         .filter(|rows|rows.len()==1 && rows[0]["id"].as_str()==Some(order_id.as_str()))
         .and_then(Vec::pop).ok_or("운임 수정 대상 주문이 변경되었습니다.")?;
@@ -120,12 +131,92 @@ where F:FnOnce(&Value)->Result<Value,String>{
     changed["orders"]=all;
     // The exact old full-workflow validator still checks unrelated
     // shipments, payment links and immutable evidence before any SQL write.
-    crate::rules::execute("validate_workflow",json!({"state":&changed,"before":&before}))?;
+    crate::rules::validate_workflow_transition(&changed,&before)?;
     if changed==before{
         return Err("현재 상태에서 수행할 변경이 없습니다.".into());
     }
     let verified=finish_update(&tx,before,changed,expected_revision,true)?;
     tx.commit().map_err(err)?;
+    Ok(verified)
+}
+
+fn stable_freight_candidate(tx:&Transaction<'_>,before:&Value,changed:&Value)
+    ->Result<bool,String>{
+    let old=&before["orders"][0];
+    let new=&changed["orders"][0];
+    if !crate::relational_write::stable_orders(&before["orders"],&changed["orders"]) ||
+        !old["confirmedAt"].as_str().is_some_and(|s|!s.is_empty()) ||
+        old["confirmedAt"]!=new["confirmedAt"] ||
+        old["rawCorrections"]!=new["rawCorrections"]{
+        return Ok(false);
+    }
+    // Existing v2 normalization is still applied on the fallback path.
+    // Do not silently omit a pending legacy catalog migration.
+    let mut catalog=json!({"products":&changed["products"]});
+    if crate::product_colors::normalize_products(&mut catalog)?!=0{return Ok(false);}
+    let triggers:bool=tx.query_row("SELECT EXISTS(
+        SELECT 1 FROM main.sqlite_master WHERE type='trigger'
+        UNION ALL SELECT 1 FROM temp.sqlite_master WHERE type='trigger')",
+        [],|row|row.get(0)).map_err(err)?;
+    Ok(!triggers)
+}
+
+fn finish_stable_freight(tx:&Transaction<'_>,mut before:Value,mut changed:Value,
+    expected_revision:u64,order_id:&str)->Result<Value,String>{
+    // Local invariants checked before DML. Global invariants checked on the
+    // full, persisted projection before commit. A failure rolls back all DML.
+    crate::valid_state(&changed)?;
+    crate::validation::validate_unchanged_clients(&changed)?;
+    validate_brands(&before,&changed)?;
+    reception::validate_reception(&before,&changed)?;
+    if !reception::new_archive_entries(&before,&changed)?.is_empty(){
+        return Err("단일 운임 수정은 새 원문 감사 기록을 생성할 수 없습니다.".into());
+    }
+    let position:i64=tx.query_row("SELECT position FROM core_orders WHERE id=?1",
+        [order_id],|row|row.get(0)).map_err(err)?;
+    let rank:i64=tx.query_row("SELECT COUNT(*) FROM core_orders
+        WHERE position<?1 OR (position=?1 AND id<?2)",
+        params![position,order_id],|row|row.get(0)).map_err(err)?;
+    let changes_before=total_changes(tx)?;
+    let mut direct=crate::relational_write::store_single_order_delta(tx,&before,&changed,position)?;
+    if before["orders"]!=changed["orders"]{
+        direct+=sync_order_index(tx,&before,&changed)?;
+    }
+    changed["revision"]=json!(expected_revision.checked_add(1)
+        .ok_or("운영 DB revision 범위를 초과했습니다.")?);
+    direct+=tx.execute("UPDATE app_state SET payload=?1 WHERE id=1",
+        [serialize_envelope(&changed)?]).map_err(err)?;
+    if total_changes(tx)?.checked_sub(changes_before)!=i64::try_from(direct).ok(){
+        return Err("운임 수정 중 예상하지 못한 DB 변경이 발생했습니다.".into());
+    }
+    // The single-order writer never prunes or writes other orders. With
+    // stable ownership, no triggers and matching direct-write accounting,
+    // all non-target order rows are unchanged. Hydrate once, after DML,
+    // to return the full contract and run the exact global validation.
+    let verified=crate::read_v2_snapshot(tx)?;
+    let actual=verified["orders"].as_array().ok_or("저장 주문 목록 누락")?;
+    let index=usize::try_from(rank).map_err(err)?;
+    if actual.get(index)!=Some(&changed["orders"][0]) ||
+        actual.get(index).and_then(|o|o["id"].as_str())!=Some(order_id){
+        return Err("운임 수정 결과 또는 주문 순서 검증에 실패했습니다.".into());
+    }
+    let expected_root=changed.as_object().ok_or("업무 처리 결과 오류")?;
+    let actual_root=verified.as_object().ok_or("저장 업무 상태 오류")?;
+    if !expected_root.iter().filter(|(k,_)|k.as_str()!="orders")
+        .eq(actual_root.iter().filter(|(k,_)|k.as_str()!="orders")){
+        return Err("운임 수정 저장 결과가 요청과 일치하지 않습니다.".into());
+    }
+    let target_before=before["orders"].as_array_mut().and_then(Vec::pop)
+        .ok_or("기존 대상 주문 누락")?;
+    let mut previous_orders=actual.clone();
+    previous_orders[index]=target_before;
+    before["orders"]=Value::Array(previous_orders);
+    crate::valid_state(&verified)?;
+    reception::validate_reception(&before,&verified)?;
+    if !reception::new_archive_entries(&before,&verified)?.is_empty(){
+        return Err("운임 수정의 전역 원문 감사 검증에 실패했습니다.".into());
+    }
+    crate::rules::validate_workflow_transition(&verified,&before)?;
     Ok(verified)
 }
 
