@@ -3624,16 +3624,145 @@ mod manual_workspace_modal_routing_tests {
         assert!(workspace.contains("paint_manual_source_drag_preview("));
     }
 
+    const PALETTE_RAW:&str="김준희 김준희 서울";
+
+    fn palette_model(assignments:Value)->Value{
+        json!({
+            "rows":[{"id":"r1","name":"","items":[]},{"id":"r2","name":"","items":[]}],
+            "blocks":[
+                {"id":"source-a","start":0,"end":3,"text":"김준희","targetId":"r1","field":"name"},
+                {"id":"source-b","start":4,"end":7,"text":"김준희","targetId":"r1","field":"name"},
+                {"id":"source-c","start":8,"end":10,"text":"서울","targetId":"r1","field":"address"}
+            ],
+            "assignments":assignments
+        })
+    }
+
+    fn assert_palette_source(data:&ManualRenderData,id:&str,owner:&str,field:&str,classified:bool){
+        let span=data.spans.iter().find(|span|span.source_id.as_deref()==Some(id))
+            .expect("exact native source ID must survive projection");
+        assert_eq!(span.key,source_highlight::key(owner,owner,field));
+        assert_eq!(data.assigned_ids.contains(id),classified);
+        let style=source_highlight::manual_source_block_style(span,None,&data.assigned_ids);
+        let (fill,ink,border)=if classified{
+            (theme::MANUAL_SOURCE_CLASSIFIED_FILL,theme::MANUAL_SOURCE_CLASSIFIED_TEXT,
+                theme::MANUAL_SOURCE_CLASSIFIED_BORDER)
+        }else{
+            (theme::MANUAL_SOURCE_UNASSIGNED_FILL,theme::MANUAL_SOURCE_UNASSIGNED_TEXT,
+                theme::MANUAL_SOURCE_UNASSIGNED_BORDER)
+        };
+        assert_eq!((style.fill,style.text,style.border),(fill,ink,border));
+    }
+
     #[test]
     fn manual_source_palette_reads_exact_native_assignment_ids(){
-        let source=include_str!("manual_workspace.rs");
-        let render=source.split("pub fn show(").nth(1).unwrap()
-            .split("fn manual_hover_target(").next().unwrap();
-        assert!(render.contains("let assigned_source_ids=assignments.as_object()"));
-        assert!(render.contains("map.iter().filter(|(_,cell)|cell.is_object())"),
-            "only actual native assignment objects count as classified");
-        assert!(render.contains("ui,&self.raw,&spans,&assigned_source_ids,"),
-            "manual-only status must flow into its source renderer");
+        let model=palette_model(json!({
+            "source-a":{"recipientId":"r2","field":"name"},
+            "source-b":null,"source-c":[],
+            "not-an-object":"r2","also-not-an-object":true,"number":1
+        }));
+        let data=ManualRenderData::new(PALETTE_RAW,&model);
+        assert_eq!(data.assigned_ids,std::collections::HashSet::from(["source-a".to_owned()]));
+        assert_eq!(data.spans.len(),3);
+        assert_palette_source(&data,"source-a","r2","name",true);
+        assert_palette_source(&data,"source-b","r1","name",false);
+        assert_palette_source(&data,"source-c","r1","address",false);
+
+        // Even identical text linked to the same destination must not
+        // cause another source block to be marked classified.
+        let same_target=ManualRenderData::new(PALETTE_RAW,&palette_model(json!({
+            "source-a":{"recipientId":"r1","field":"name"}
+        })));
+        assert_palette_source(&same_target,"source-a","r1","name",true);
+        assert_palette_source(&same_target,"source-b","r1","name",false);
+    }
+
+    // No native worker or operational DB: deliver synthetic native outcomes
+    // through the real receiver and render the actual workspace headlessly.
+    fn palette_test_workspace()->ManualWorkspace{
+        ManualWorkspace{
+            order_id:"synthetic-palette-order".into(),direct_input:false,
+            raw:PALETTE_RAW.into(),order_type:"".into(),
+            client_id:None,gateway:Arc::new(crate::gateway::LocalGateway),base_order:None,
+            cached_quote:None,model:None,render_data:None,
+            assignment_order:Vec::new(),remote_rows:Vec::new(),view_quote:None,
+            selected_recipient:0,selected_item:None,selected_field:"name".into(),
+            assignment_gesture:ManualAssignmentGesture::default(),
+            edit_text:String::new(),focus_editor:false,active_editor_id:None,
+            ime_preedit_active:false,row_count_text:"1".into(),
+            history:Vec::new(),pending_select_after_apply:None,
+            advance_after_apply:None,last_action:None,action_pending:false,
+            confirm_discard:false,confirm_apply:false,
+            item_detail:None,pending_item_detail:None,detail_write_pending:false,
+            add_product_picker:None,item_remove_confirmation:None,
+            remove_recipient_pending:None,remove_recipient_target:None,reset_pending:false,
+            receiver:None,error:None,dirty:false,applied:None,
+        }
+    }
+
+    fn deliver_palette_outcome(workspace:&mut ManualWorkspace,outcome:Outcome){
+        let (tx,rx)=mpsc::channel();
+        assert!(tx.send(Ok(outcome)).is_ok());
+        workspace.receiver=Some(rx);
+    }
+
+    fn palette_frame(workspace:&mut ManualWorkspace,ctx:&Context)
+        ->std::rc::Rc<ManualRenderData>{
+        let area=egui::Rect::from_min_size(egui::Pos2::ZERO,egui::vec2(1600.0,1000.0));
+        let mut hover=source_highlight::HoverState::default();
+        let mut source_hover=None;
+        let _=ctx.run(egui::RawInput{screen_rect:Some(area),..Default::default()},|ctx|{
+            assert!(workspace.show(ctx,area,360.0,&mut hover,&mut source_hover).is_none());
+        });
+        assert!(!workspace.busy(),"headless frame must not dispatch a business request");
+        workspace.render_data.as_ref().expect("workspace must render its native model").clone()
+    }
+
+    #[test]
+    fn manual_source_palette_cache_reuses_frames_and_refreshes_after_assignment_release_and_undo(){
+        let ctx=Context::default();
+        let mut workspace=palette_test_workspace();
+        let empty=palette_model(json!({}));
+        let assigned=palette_model(json!({"source-a":{"recipientId":"r2","field":"name"}}));
+        deliver_palette_outcome(&mut workspace,Outcome::Initial{
+            order:json!({}),model:empty.clone(),assignment_order:Vec::new(),
+            remote_rows:Vec::new(),view_quote:None
+        });
+        let initial=palette_frame(&mut workspace,&ctx);
+        assert_palette_source(&initial,"source-a","r1","name",false);
+        assert!(std::rc::Rc::ptr_eq(&initial,&palette_frame(&mut workspace,&ctx)));
+
+        deliver_palette_outcome(&mut workspace,Outcome::Updated{
+            model:assigned,assignment_order:vec!["source-a".into()],
+            remote_rows:Vec::new(),view_quote:None
+        });
+        let after_assign=palette_frame(&mut workspace,&ctx);
+        assert!(!std::rc::Rc::ptr_eq(&initial,&after_assign));
+        assert_palette_source(&after_assign,"source-a","r2","name",true);
+        assert_palette_source(&after_assign,"source-b","r1","name",false);
+        assert!(std::rc::Rc::ptr_eq(&after_assign,&palette_frame(&mut workspace,&ctx)));
+
+        deliver_palette_outcome(&mut workspace,Outcome::Updated{
+            model:empty,assignment_order:Vec::new(),remote_rows:Vec::new(),view_quote:None
+        });
+        let after_release=palette_frame(&mut workspace,&ctx);
+        assert!(!std::rc::Rc::ptr_eq(&after_assign,&after_release));
+        assert_palette_source(&after_release,"source-a","r1","name",false);
+
+        workspace.undo();
+        let undo_release=palette_frame(&mut workspace,&ctx);
+        assert!(!std::rc::Rc::ptr_eq(&after_release,&undo_release));
+        assert_palette_source(&undo_release,"source-a","r2","name",true);
+        assert_eq!(workspace.assignment_order,vec!["source-a".to_owned()]);
+
+        workspace.undo();
+        let undo_assign=palette_frame(&mut workspace,&ctx);
+        assert!(!std::rc::Rc::ptr_eq(&undo_release,&undo_assign));
+        assert_palette_source(&undo_assign,"source-a","r1","name",false);
+        assert_palette_source(&undo_assign,"source-b","r1","name",false);
+        assert!(workspace.assignment_order.is_empty());
+        // Held snapshots remain immutable through subsequent model updates.
+        assert_palette_source(&after_assign,"source-a","r2","name",true);
     }
 
     #[test]
