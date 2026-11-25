@@ -1731,14 +1731,14 @@ mod linked_highlight_palette_tests {
     }
 
     #[test]
-    fn gold_selection_palette_preserves_selection_geometry_and_white_buttons() {
+    fn shared_selection_palette_preserves_selection_geometry_and_white_buttons() {
         use egui::Color32;
         assert_eq!(theme::SELECTED_ORDER,Color32::from_rgb(245,158,11));
         assert_eq!(theme::WORKFLOW_SELECTED_BORDER,theme::SELECTED_ORDER);
         assert_eq!(theme::WORKFLOW_SELECTED_STRIPE,2.0);
         assert_eq!(theme::WORKFLOW_SELECTED_BG,Color32::from_rgb(36,36,36));
-        assert_eq!(shipment_row_fill(true,false),Color32::from_rgb(128,90,25));
-        assert_eq!(theme::WORKFLOW_SELECTED_ROW_TEXT,Color32::from_rgb(255,243,213));
+        assert_eq!(shipment_row_fill(true,false),theme::ORANGE_EMPHASIS_BG);
+        assert_eq!(theme::WORKFLOW_SELECTED_ROW_TEXT,theme::TEXT);
         assert_eq!(shipment_row_fill(true,true),shipment_row_fill(true,false));
         assert_eq!(theme::ReviewTone::Action.palette(),(
             Color32::from_rgb(46,36,25),Color32::from_rgb(245,158,11),

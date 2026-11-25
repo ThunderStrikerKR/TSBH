@@ -89,10 +89,10 @@ pub const CATEGORY_EXPLORER_ANCESTOR_TEXT:Color32=Color32::from_rgb(112,112,112)
 // React workflow.css and receipt-layout.css amber palette; paint only.
 pub const SELECTED_ORDER: Color32 = Color32::from_rgb(245, 158, 11); // #F59E0B
 pub const ORANGE_EMPHASIS_BG: Color32 = Color32::from_rgb(59, 43, 27); // #3B2B1B
-// Selected shipment rows use an opaque gold surface; hover stays blue.
-pub const WORKFLOW_SELECTED_ROW_TEXT:Color32=Color32::from_rgb(255,243,213);
+// Selected shipment rows reuse the shared orange emphasis surface; hover stays blue.
+pub const WORKFLOW_SELECTED_ROW_TEXT:Color32=TEXT;
 pub fn workflow_selected_row_fill() -> Color32 {
-    Color32::from_rgb(128,90,25)
+    ORANGE_EMPHASIS_BG
 }
 // Compact working-order cards derive every slot from the actual right pane.
 // The horizontal outer inset, inter-control gaps and vertical insets use
