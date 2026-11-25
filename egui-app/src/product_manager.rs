@@ -2627,19 +2627,152 @@ mod tests {
         assert_eq!(products[0]["variants"][0]["semi"],Value::Null);
         assert_eq!(products[0]["variants"][0]["retail"],json!(26000));
     }
+    // A controlled, in-memory transport for the real product manager.
+    // No LocalGateway, files, SQLite, or operational credentials.
+    struct PriceTestRequest{
+        revision:u64,
+        action:String,
+        data:Value,
+        reply:mpsc::Sender<Result<Value,String>>,
+    }
+    struct PriceTestGateway{
+        requests:mpsc::Sender<PriceTestRequest>,
+    }
+    fn price_test_catalog(revision:u64,wholesale:Option<i64>,semi:Option<i64>)->Value{
+        json!({
+            "revision":revision,"products":[{"id":"p1","name":"Synthetic",
+                "variants":[{"id":"v1","wholesale":wholesale,"semi":semi,"retail":26000}]}],
+            "aliases":[],"brands":[],"categories":[],"settings":{"colorGuidanceGroups":{}}
+        })
+    }
+    impl BandoGateway for PriceTestGateway{
+        fn label(&self)->&'static str{"synthetic-price-test"}
+        fn load_catalog(&self)->Result<Value,String>{
+            Ok(price_test_catalog(1,None,Some(19000)))
+        }
+        fn load_working_source(&self)->Result<crate::preview_store::WorkingSource,String>{
+            Err("working source not allowed in price test".into())
+        }
+        fn save_working_source(&self,_:&crate::preview_store::WorkingSource)->Result<u64,String>{
+            Err("working source not allowed in price test".into())
+        }
+        fn execute(&self,operation:crate::gateway::ReadOperation,_:Value)->Result<Value,String>{
+            match operation{
+                crate::gateway::ReadOperation::ManagementProducts=>Ok(json!(["p1"])),
+                _=>Err(format!("unexpected price-test read: {operation:?}"))
+            }
+        }
+        fn product_write_enabled(&self)->bool{true}
+        fn mutate_product(&self,revision:u64,action:&str,data:Value)->Result<Value,String>{
+            let (reply,receiver)=mpsc::channel();
+            self.requests.send(PriceTestRequest{revision,action:action.into(),data,reply})
+                .map_err(|_|"price-test request channel closed".to_owned())?;
+            receiver.recv_timeout(Duration::from_secs(10))
+                .map_err(|_|"price-test reply timed out".to_owned())?
+        }
+    }
+    fn poll_price_until(manager:&mut ProductManager,ctx:&Context,
+        condition:impl Fn(&ProductManager)->bool){
+        let deadline=Instant::now()+Duration::from_secs(10);
+        loop{
+            manager.poll(ctx);
+            if condition(manager){return;}
+            assert!(Instant::now()<deadline,"product manager did not settle");
+            std::thread::sleep(Duration::from_millis(1));
+        }
+    }
+    fn price_test_manager()->(ProductManager,Context,Receiver<PriceTestRequest>){
+        let (requests,receiver)=mpsc::channel();
+        let ctx=components::test_context();
+        let mut manager=ProductManager::new(Arc::new(PriceTestGateway{requests}),ctx.clone());
+        poll_price_until(&mut manager,&ctx,|m|m.catalog.is_some()&&!m.result.pending());
+        assert_eq!(manager.products.len(),1);
+        manager.price_mode=true;
+        (manager,ctx,receiver)
+    }
+    fn submit_test_price(manager:&mut ProductManager,ctx:&Context,key:&str){
+        let write=QueuedPriceWrite::from_draft(key,&manager.price_drafts[key]).unwrap();
+        manager.start_write("set_price",write.data,Some(write.key),ctx.clone());
+    }
+    fn next_price_request(receiver:&Receiver<PriceTestRequest>)->PriceTestRequest{
+        let request=receiver.recv_timeout(Duration::from_secs(10)).expect("price request");
+        assert_eq!(request.action,"set_price");
+        request
+    }
+
     #[test]
     fn failed_price_write_keeps_dirty_draft_available_for_retry(){
-        let source=include_str!("product_manager.rs");
-        let poll=source.split("fn poll(").nth(1).unwrap()
-            .split("fn changed(").next().unwrap_or("");
-        assert!(poll.contains("self.price_write_queue.clear();"));
-        assert!(!poll.contains("active_price_editor"));
-        let mut draft=PriceDraft{original:None,input:"15,000".into()};
-        assert!(draft.dirty());
-        // Failed writes retain the value; retry is triggered by the next
-        // Enter, Tab, focus change, or explicit mode-exit action.
-        assert_eq!(draft.parse().unwrap(),Some(15000));
-        assert!(draft.dirty());
+        let (mut manager,ctx,requests)=price_test_manager();
+        let wholesale="p1:v1:wholesale";
+        let semi="p1:v1:semi";
+        manager.price_drafts.insert(wholesale.into(),PriceDraft{original:None,input:"15,000".into()});
+        manager.price_drafts.insert(semi.into(),PriceDraft{original:Some(19000),input:String::new()});
+        submit_test_price(&mut manager,&ctx,wholesale);
+        let first=next_price_request(&requests);
+        assert_eq!(first.revision,1);
+        assert_eq!(first.data["price"],15000);
+        assert_eq!(first.data["expected"],Value::Null);
+        submit_test_price(&mut manager,&ctx,semi);
+        assert!(manager.price_cell_busy(semi));
+        assert_eq!(manager.price_write_queue.len(),1);
+        assert!(requests.try_recv().is_err(),"queued cell must not write concurrently");
+        manager.price_mode_exit_requested=true;
+
+        first.reply.send(Err("synthetic save failure".into())).unwrap();
+        poll_price_until(&mut manager,&ctx,|m|m.writing.is_none());
+        assert_eq!(manager.error.as_deref(),Some("synthetic save failure"));
+        assert!(manager.price_write_queue.is_empty());
+        assert!(manager.price_mode);
+        assert!(!manager.price_mode_exit_requested);
+        assert!(manager.blocks_navigation());
+        assert!(manager.price_drafts[wholesale].dirty());
+        assert_eq!(manager.price_drafts[wholesale].input,"15,000");
+        assert_eq!(manager.price_drafts[wholesale].original,None);
+        assert!(manager.price_drafts[semi].dirty());
+        assert_eq!(manager.price_drafts[semi].input,"");
+        assert_eq!(manager.price_drafts[semi].original,Some(19000));
+        assert_eq!(manager.products[0]["variants"][0]["wholesale"],Value::Null);
+        assert_eq!(manager.products[0]["variants"][0]["semi"],19000);
+        assert!(requests.try_recv().is_err(),"failure must discard stale queued payloads");
+
+        // Retry uses the current draft, not the stale queued payload.
+        manager.price_drafts.get_mut(wholesale).unwrap().input="16,000".into();
+        manager.price_drafts.get_mut(semi).unwrap().input="20,000".into();
+        manager.queue_dirty_price_writes(ctx.clone()).unwrap();
+        let mut w=None;
+        let mut s=Some(19000);
+        let mut seen=std::collections::HashSet::new();
+        for revision in 1..=2{
+            let request=next_price_request(&requests);
+            assert_eq!(request.revision,revision);
+            assert_eq!(request.data["productId"],"p1");
+            assert_eq!(request.data["variantId"],"v1");
+            let tier=request.data["tier"].as_str().unwrap().to_owned();
+            assert!(seen.insert(tier.clone()),"retry must save each cell once");
+            match tier.as_str(){
+                "wholesale"=>{
+                    assert_eq!(request.data["price"],16000);
+                    assert_eq!(request.data["expected"],Value::Null);
+                    w=Some(16000);
+                }
+                "semi"=>{
+                    assert_eq!(request.data["price"],20000);
+                    assert_eq!(request.data["expected"],19000);
+                    s=Some(20000);
+                }
+                _=>panic!("unexpected retry tier {tier}")
+            }
+            request.reply.send(Ok(price_test_catalog(revision+1,w,s))).unwrap();
+            poll_price_until(&mut manager,&ctx,|m|m.catalog.as_ref()
+                .and_then(|c|c["revision"].as_u64())==Some(revision+1));
+            assert!(manager.notice.is_none());
+        }
+        assert!(!manager.has_pending_prices());
+        assert!(!manager.blocks_navigation());
+        assert!(manager.price_mode);
+        assert!(manager.error.is_none());
+        assert_eq!(manager.products[0]["variants"][0]["wholesale"],16000);
+        assert_eq!(manager.products[0]["variants"][0]["semi"],20000);
     }
     #[test]
     fn stale_catalog_queries_cannot_overwrite_newer_price_revisions(){
@@ -2697,12 +2830,42 @@ mod tests {
     }
     #[test]
     fn spreadsheet_price_commits_do_not_show_per_cell_success_popup(){
-        let source=include_str!("product_manager.rs");
-        let success=source.split("self.notice=if price_job{").nth(1).unwrap()
-            .split("self.model_groups.set_catalog").next().unwrap_or("");
-        assert!(success.trim_start().starts_with("None"));
-        assert!(!success.contains("가격 변경을 저장했습니다."));
-        assert!(source.contains("||self.price_mode_exit_requested"));
+        let (mut manager,ctx,requests)=price_test_manager();
+        let wholesale="p1:v1:wholesale";
+        let semi="p1:v1:semi";
+        manager.price_drafts.insert(wholesale.into(),PriceDraft{original:None,input:"15000".into()});
+        manager.price_drafts.insert(semi.into(),PriceDraft{original:Some(19000),input:String::new()});
+        submit_test_price(&mut manager,&ctx,wholesale);
+        let first=next_price_request(&requests);
+        submit_test_price(&mut manager,&ctx,semi);
+        manager.price_mode_exit_requested=true;
+        manager.finish_price_mode_exit_if_ready();
+        assert!(manager.price_mode,"do not leave price mode while writes are pending");
+        first.reply.send(Ok(price_test_catalog(2,Some(15000),Some(19000)))).unwrap();
+        poll_price_until(&mut manager,&ctx,|m|m.catalog.as_ref()
+            .and_then(|c|c["revision"].as_u64())==Some(2));
+        let second=next_price_request(&requests);
+        assert_eq!(second.revision,2);
+        assert_eq!(second.data["price"],Value::Null);
+        assert_eq!(second.data["expected"],19000);
+        assert!(manager.price_mode);
+        assert!(manager.price_mode_exit_requested);
+        assert!(manager.notice.is_none());
+        assert!(!manager.has_modal());
+        assert!(!manager.price_drafts[wholesale].dirty());
+        assert!(manager.price_drafts[semi].dirty());
+        second.reply.send(Ok(price_test_catalog(3,Some(15000),None))).unwrap();
+        poll_price_until(&mut manager,&ctx,|m|m.writing.is_none());
+        assert_eq!(manager.catalog.as_ref().unwrap()["revision"],3);
+        assert!(manager.notice.is_none());
+        assert!(manager.error.is_none());
+        assert!(!manager.has_modal());
+        assert!(!manager.price_mode);
+        assert!(!manager.price_mode_exit_requested);
+        assert!(!manager.blocks_navigation());
+        assert!(manager.price_drafts.is_empty());
+        assert_eq!(manager.products[0]["variants"][0]["wholesale"],15000);
+        assert_eq!(manager.products[0]["variants"][0]["semi"],Value::Null);
     }
     #[test]
     fn spreadsheet_navigation_keys_match_enter_tab_and_arrow_semantics(){

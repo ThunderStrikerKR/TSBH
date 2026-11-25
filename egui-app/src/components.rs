@@ -538,7 +538,18 @@ mod management_async_behavior_regression_tests {
 #[cfg(test)]
 mod shared_screen_component_contract_tests {
     fn production_source(file:&str)->String {
-        file.split("#[cfg(test)]").next().unwrap_or(file).to_owned()
+        // A function can contain a #[cfg(test)] geometry probe before more
+        // production controls. Only stop at a top-level test module, not an
+        // indented test-only statement inside a production function.
+        file.split("\n#[cfg(test)]\nmod ").next().unwrap_or(file).to_owned()
+    }
+
+    #[test]
+    fn inline_geometry_probe_does_not_truncate_production_source(){
+        let source="fn screen(){\n    #[cfg(test)]\n    record_geometry();\n    components::multiline_text_field();\n}\n#[cfg(test)]\nmod tests {\n    fn test_only(){}\n}";
+        let production=production_source(source);
+        assert!(production.contains("components::multiline_text_field("));
+        assert!(!production.contains("fn test_only("));
     }
 
     #[test]
@@ -6460,10 +6471,12 @@ mod reception_state_layout_invariance_tests{
                 );
                 rects.extend([("product",cells.product.rect),("quantity",cells.quantity.rect),
                     ("amount",cells.amount.rect)]);
-                if issues{
-                    reception_item_issue_feedback(ui,&cells.product,
-                        "수량 확인 필요 / 금액 확인 필요 / 긴 오류 메시지");
-                }
+                let values=if issues{
+                    vec![serde_json::json!("수량 확인 필요"),serde_json::json!("금액 확인 필요"),
+                        serde_json::json!("긴 오류 메시지")]
+                }else{Vec::new()};
+                // Exercise the same lazy JSON issue path as live reception.
+                reception_item_issue_values(ui,&cells.product,&values);
                 ui.add_space(theme::SPACE_8);
                 let freight=reception_freight_row_editable(
                     ui,"운임",Some(3000),Some(false),Some(false),true,editable
@@ -6506,12 +6519,13 @@ mod reception_state_layout_invariance_tests{
     #[test]
     fn production_consumers_do_not_reinsert_item_feedback_rows(){
         let manual=include_str!("manual_workspace.rs");
-        let production=manual.split("#[cfg(test)]").next().unwrap();
+        let production=manual.split("\n#[cfg(test)]\nmod ").next().unwrap();
         assert!(!production.contains("theme::action(items_ui,\"상품 선택 취소\""));
         assert!(production.contains("components::reception_item_header_action("));
         let main=include_str!("main.rs");
         assert!(!main.contains("items_ui.label(typography::status("));
-        assert!(main.contains("components::reception_item_issue_feedback("));
+        assert!(main.contains("components::reception_item_issue_values("));
+        assert!(main.contains("item[\"issues\"].as_array().map(Vec::as_slice).unwrap_or(&[])"));
     }
 }
 
