@@ -257,7 +257,7 @@ fn phone_regex() -> Regex {
 fn address_begin(line: &str) -> Option<usize> {
     // A bare prefix is not enough: "배송지메모: 상호" is NOT an address.
     // Require a boundary (colon/space) after the complete address label.
-    let prefix = Regex::new(r"^\s*(?:주소|배송지(?:\s*주소)?|배송주소|받는곳|수취인주소)(?:\s*[:：]\s*|\s+)")
+    let prefix = Regex::new(r"^\s*(?:주소|배송지(?:\s*주소)?|배송주소|받는곳|수취인\s*주소)(?:\s*[:：]\s*|\s+)")
         .expect("address prefix");
     if let Some(m)=prefix.find(line) {
         // parseLegacy.ts detects the province after an optional five-digit
@@ -369,11 +369,10 @@ fn composite_name_before_address(prefix: &str) -> Option<(usize,usize)> {
         r"(?:\s+(?:\d{5}|\(\d{5,6}\)|\[\d{5,6}\])|(?:\(\d{5,6}\)|\[\d{5,6}\]))\s*$"
     ).expect("trailing postal marker");
     let end=postal.find(prefix).map_or(prefix.len(),|m|m.start());
-    let label=recipient_label();
-    let start=label.find(&prefix[..end]).map_or(0,|m|m.end());
-    let (start,end)=trim_span(prefix,start,end)?;
+    // Explicit recipient fields were already handled by the caller.
+    // Do not reinterpret rejected compound labels as name values here.
+    let (start,end)=trim_span(prefix,0,end)?;
     let candidate=&prefix[start..end];
-    if label.is_match(prefix){return Some((start,end));}
     if other_recipient_field(candidate) ||
         !quantity::extract(candidate).is_empty() ||
         candidate.contains('|') {return None;}
@@ -1998,7 +1997,7 @@ mod tests {
     fn address_headings_cannot_become_whole_recipient_names() {
         let state=state();
         for header in ["배송지 주소","배송지","배송주소","받는곳",
-            "받는곳 :","수취인주소","주소:","배송지 주소:","주소"] {
+            "받는곳 :","수취인주소","수취인 주소","주소:","배송지 주소:","주소"] {
             let raw=format!(
                 "709 1개\\n{header} 경기도 가평군 가평읍 문화로 120 010-1234-5678"
             );
@@ -2151,6 +2150,17 @@ mod tests {
         assert!(item["quantity"].is_null());
         assert_eq!(item["quantityConfirmed"],false);
         assert!(result["unassigned"].as_array().unwrap().is_empty());
+    }
+    #[test]
+    fn manually_confirmed_recipient_value_survives_reanalysis(){
+        let raw="수취인: John Smith\n010-1234-5678\n서울특별시 마포구 월드컵로 20";
+        let analysis=execute("analyze_order",json!({"raw":raw,"state":state()})).unwrap();
+        let mut order=json!({"raw":raw,"clientId":"c","recipients":analysis["recipients"],"status":"RECEIVED"});
+        order["recipients"][0]["name"]=json!("(주) International Music & Sound / A/S 담당자님");
+        order["recipients"][0]["confirmedFields"]=json!(["name"]);
+        let out=execute("reanalyze_order",json!({"order":order,"state":state()})).unwrap();
+        assert_eq!(out["recipients"][0]["name"],order["recipients"][0]["name"]);
+        assert_eq!(out["recipients"][0]["id"],order["recipients"][0]["id"]);
     }
     #[test]
     fn manual_confirmations_survive_identical_order() {

@@ -246,7 +246,7 @@ fn export_row(state: &Value, entry: &Value, origin: &str) -> Result<Value, Strin
         trimmed(sender, "displayName")
     };
     let values = vec![
-        trimmed(recipient, "name"), String::new(), trimmed(recipient, "address"),
+        text(recipient, "name").to_owned(), String::new(), trimmed(recipient, "address"),
         trimmed(recipient, "phone"), trimmed(recipient, "mobile"),
         String::new(), String::new(), code.to_owned(),
         goods, String::new(), trimmed(recipient, "note"), sender_name,
