@@ -360,6 +360,7 @@ fn model_pending_quantity_count(model:&Value)->usize{
     ).sum()
 }
 
+#[cfg(test)]
 fn model_has_pending_quantity(model:&Value)->bool{
     model_pending_quantity_count(model)>0
 }

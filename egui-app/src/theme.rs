@@ -438,6 +438,7 @@ pub const MODAL_FOOTER_HEIGHT: f32 = 58.0;
 pub const MODAL_SECTION_PADDING: f32 = SPACE_16;
 // Equal clearance above and below the divider in every modal section.
 // Kept separate from frame padding so the layout role is explicit.
+#[cfg(test)]
 pub const MODAL_SECTION_HEADER_RULE_GAP: f32 = SECTION_DIVIDER_GAP;
 pub const MODAL_SECTION_RADIUS: u8 = SECTION_RADIUS;
 // Approved compact modal form row: label and editable value share one 36pt

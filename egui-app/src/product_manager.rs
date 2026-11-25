@@ -586,6 +586,7 @@ impl ProductManager {
     fn has_pending_prices(&self)->bool{
         self.price_drafts.values().any(PriceDraft::dirty)
     }
+    #[cfg(test)]
     pub fn blocks_navigation(&self)->bool{
         self.selected.is_some() || self.has_pending_prices()
             || !self.price_write_queue.is_empty()

@@ -3956,6 +3956,7 @@ pub struct DateNavigationCountControlResponse{
     pub decrement_clicked:bool,
     pub increment_clicked:bool,
     pub input:Response,
+    #[cfg(test)]
     pub rect:Rect,
     #[cfg(test)]
     decrement_rect:Rect,
@@ -3977,7 +3978,7 @@ pub fn date_navigation_count_control(
     // master: 36pt outer height and 34pt interior.
     let height=theme::INPUT_HEIGHT;
     let width=2.0*arrow_width+input_width+2.0*theme::FRAME_STROKE_WIDTH;
-    let (rect,(decrement,input,increment))=
+    let (_rect,(decrement,input,increment))=
         date_navigation_segmented_surface(
             ui,id_salt,Vec2::new(width,height),|segments,inner|{
                 let x1=inner.left()+arrow_width;
@@ -4027,7 +4028,9 @@ pub fn date_navigation_count_control(
             }
         );
     DateNavigationCountControlResponse{
-        decrement_clicked:decrement.clicked(),input,increment_clicked:increment.clicked(),rect,
+        decrement_clicked:decrement.clicked(),input,increment_clicked:increment.clicked(),
+        #[cfg(test)]
+        rect:_rect,
         #[cfg(test)]
         decrement_rect:decrement.rect,
         #[cfg(test)]

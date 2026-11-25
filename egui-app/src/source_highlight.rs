@@ -560,6 +560,7 @@ pub fn clear_visual_cache(){VISUAL_CACHE.with(|cache|cache.borrow_mut().clear())
 
 // Resolve overlapping evidence once per character interval, so two
 // classifiers cannot paint competing fills over the same source text.
+#[cfg(test)]
 fn visual_blocks(
     raw:&str,spans:&[LinkedSpan],selected_recipient:Option<&str>,
     active:Option<&LinkKey>
@@ -569,6 +570,7 @@ fn visual_blocks(
 
 /// Shared geometry with a manual-only classification palette. When states
 /// are omitted (Reception), preserve the original evidence rendering.
+#[cfg(test)]
 fn visual_blocks_with_manual_states(
     raw:&str,spans:&[LinkedSpan],selected_recipient:Option<&str>,
     active:Option<&LinkKey>,assigned_ids:Option<&HashSet<String>>

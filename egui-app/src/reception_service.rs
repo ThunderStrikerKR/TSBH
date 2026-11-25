@@ -301,6 +301,7 @@ pub fn refresh_remote_references(
 
 /// Display wording only; status, match path, checked state and reason are
 /// always those returned by the Rust remote-area engine.
+#[cfg(test)]
 pub fn remote_delivery_notice(decision:&Value)->Option<String>{
     let status=decision.get("status").and_then(Value::as_str).unwrap_or("unknown");
     let checked=decision.get("checked").and_then(Value::as_bool).unwrap_or(false);
