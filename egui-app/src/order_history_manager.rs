@@ -426,6 +426,11 @@ fn paint_column_dividers(
         );
     }
 }
+fn history_text_overflow(ui:&Ui,rect:Rect,value:&str,role:typography::ManagementTableCellRole)->bool{
+    let content=Rect::from_min_max(egui::pos2(rect.left()+6.0,rect.top()),rect.right_bottom());
+    components::text_exceeds_rect(typography::management_table_cell_galley(ui,value,role).size(),
+        content.intersect(ui.clip_rect()))
+}
 fn paint_text(ui:&Ui,rect:Rect,value:&str,
     role:typography::ManagementTableCellRole,right:bool){
     if rect.width()<=0.0{return}
@@ -571,9 +576,12 @@ fn draw_line(ui:&mut Ui,rect:Rect,line:HistoryLine,snapshot:&HistorySnapshot,
             paint_text(ui,columns[0],&order_date(row),typography::ManagementTableCellRole::Description,false);
             paint_text(ui,columns[1],&display_client_name(order_client(row)),
                 typography::ManagementTableCellRole::ClientName,false);
-            ui.interact(columns[1].intersect(area),
-                ui.make_persistent_id(("history-client-name",id)),Sense::hover())
-                .on_hover_text(order_client(row));
+            if display_client_name(order_client(row))!=order_client(row) ||
+                history_text_overflow(ui,columns[1],order_client(row),typography::ManagementTableCellRole::ClientName){
+                ui.interact(columns[1].intersect(area),
+                    ui.make_persistent_id(("history-client-name",id)),Sense::hover())
+                    .on_hover_text(order_client(row));
+            }
             // Main list: ONLY product name × quantity, all items in one line.
             // Click anywhere except the action button to expand all details.
             let summary=order_items_single_line(row);
@@ -599,8 +607,9 @@ fn draw_line(ui:&mut Ui,rect:Rect,line:HistoryLine,snapshot:&HistorySnapshot,
                 rect.left_top(),egui::pos2(columns[6].left(),rect.bottom())
             ).intersect(area);
             let response=ui.interact(open_area,
-                ui.make_persistent_id(("order-history-toggle",id)),Sense::click())
-                .on_hover_text(format!("{summary}\n클릭하여 수취인·품목·운임 상세보기"));
+                ui.make_persistent_id(("order-history-toggle",id)),Sense::click());
+            let response=components::overflow_tooltip(response,
+                history_text_overflow(ui,summary_rect,&summary,typography::ManagementTableCellRole::ProductName),&summary);
             theme::paint_button_hover(ui,&response,0.0);
             if response.clicked(){*pending_toggle=Some(id.to_owned());}
             paint_center(ui,columns[3],field(row,"status"));
@@ -729,12 +738,13 @@ fn draw_line(ui:&mut Ui,rect:Rect,line:HistoryLine,snapshot:&HistorySnapshot,
                 }else{
                     format!("{products}\n\n{product_notes}")
                 });
-            ui.interact(columns[2].intersect(area),
-                ui.make_persistent_id(("history-recipient-freight",id,recipient_index,shipment_index)),
-                Sense::hover()).on_hover_text(format!("실제 운임: {freight}"));
-            ui.interact(columns[3].intersect(area),
-                ui.make_persistent_id(("history-recipient-tracking",id,recipient_index,shipment_index)),
-                Sense::hover()).on_hover_text(format!("운송장 번호: {tracking}"));
+            for (index,display) in [(2,&freight_label),(3,&tracking_label)]{
+                if history_text_overflow(ui,columns[index],display,typography::ManagementTableCellRole::Description){
+                    ui.interact(columns[index].intersect(area),
+                        ui.make_persistent_id(("history-recipient-value",id,recipient_index,shipment_index,index)),
+                        Sense::hover()).on_hover_text(display);
+                }
+            }
             // Actions live OUTSIDE the compact shipment card. Both actions
             // target this one shipment; the order-level copy remains separate.
             let block=history_detail_block_rect(rect,widths,spacing);
@@ -748,9 +758,7 @@ fn draw_line(ui:&mut Ui,rect:Rect,line:HistoryLine,snapshot:&HistorySnapshot,
                     actions.spacing_mut().item_spacing.x=theme::SPACE_8;
                     let memo_button=theme::action(actions,"관리 메모",
                         theme::ButtonRole::TableSecondary,shipment.is_some());
-                    if memo_button.on_hover_text(if memo_text.is_empty(){
-                        "이 발송 건의 관리 메모를 작성하거나 수정합니다."
-                    }else{memo_text}).clicked(){
+                    if memo_button.clicked(){
                         if let Some(ship)=shipment{
                             *pending_memo=Some(MemoEditor{
                                 shipment_id:field(ship,"id").to_owned(),
@@ -807,7 +815,7 @@ fn range_date_picker_rtl(
             let prev=components::management_date_segment(
                 row,"‹",PREV,components::ManagementDateSegmentEdge::Leading
             )
-                .on_hover_text(&format!("{label} 하루 전"));
+                ;
             if prev.clicked(){
                 *date=move_date(date,-1);
                 changed=true;
@@ -815,7 +823,7 @@ fn range_date_picker_rtl(
             let edit=components::management_date_text_field(
                 row,date,HISTORY_DATE_FIELD_WIDTH,INNER_HEIGHT,
                 if all_dates{"전체"}else{"YYYY-MM-DD"}
-            ).on_hover_text(&format!("{label} 직접 입력"));
+            );
             crate::floating_notice::sized_text_caret(
                 row,"history.date",&edit,date,
                 typography::data_value_font(
@@ -828,7 +836,7 @@ fn range_date_picker_rtl(
             let next=components::management_date_segment(
                 row,"›",NEXT,components::ManagementDateSegmentEdge::Middle
             )
-                .on_hover_text(&format!("{label} 하루 뒤"));
+                ;
             debug_assert!((prev.rect.width()-next.rect.width()).abs()<0.01);
             if next.clicked(){
                 *date=move_date(date,1);
@@ -837,7 +845,7 @@ fn range_date_picker_rtl(
             let trigger=components::management_date_segment(
                 row,"📅",CALENDAR,components::ManagementDateSegmentEdge::Trailing
             )
-                .on_hover_text(&format!("{label}을 달력에서 선택"));
+                ;
             if trigger.clicked(){
                 let day=NaiveDate::parse_from_str(date,"%Y-%m-%d")
                     .unwrap_or_else(|_|NaiveDate::parse_from_str(
