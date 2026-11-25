@@ -28,6 +28,7 @@ fn kind(origin:&str)->Result<(&'static str,&'static str,&'static str),String>{
     }
 }
 fn archive_root(state:&Value)->Result<PathBuf,String>{
+    if business_state::test_launch(){return business_state::test_directory("Excel");}
     let configured=state["settings"]["excelDirectory"].as_str()
         .map(str::trim).filter(|s|!s.is_empty())
         .ok_or("설정에서 Excel 보관함 위치를 먼저 지정하고 저장하세요.")?;

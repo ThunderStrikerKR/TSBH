@@ -51,3 +51,7 @@
 2. [사용자 행동 시나리오](docs/rust-migration/user-action-e2e-contract.md)의 중간 상태·응답 역전 조건을 실제 Rust/WebView2에 대조한다.
 3. 수정 후 변경한 기능 ID의 기준 소스, Rust, React, 비교 케이스 및 6개 검증 게이트를 **별도** 업데이트한다.
 4. 기존 [35차 감사 인덱스](docs/rust-migration/35-full-functional-parity-index.md), [34차 기록](docs/rust-migration/34-behavior-parity-ledger.md)은 과거 발견·검증 출처로 참조하되 예전 `OPEN`/문구를 현행 최종 판정으로 재사용하지 않는다.
+
+## 108차 정정 — 설정 개발자모드와 테스트 실행 환경 분리
+
+- 설정의 개발자모드 UI는 폐지 상태를 유지한다. 개발·검증용 Windows egui CMD, 디버그 빌드, 격리 테스트 SQLite 및 테스트 쓰기 경로는 폐기 대상이 아니다. 운영 DB로 자동 대체 금지. 테스트 전용 Excel/회신/OCR 폴더와 preview SQLite를 운영 경로로 공유하지 않는다. 기존 테스트 DB는 삭제·초기화하지 않는다.

@@ -27,6 +27,7 @@ fn open_db()->Result<(Connection,PathBuf),String>{
     Ok((conn,base))
 }
 fn directory(raw:&str)->Result<Option<PathBuf>,String>{
+    if business_state::test_launch(){return business_state::test_directory("factory-inbox").map(Some);}
     if raw.trim().is_empty(){return Ok(None)}
     let path=Path::new(raw.trim());
     if !path.is_absolute(){return Err("공장 회신 폴더는 절대 경로여야 합니다.".into())}

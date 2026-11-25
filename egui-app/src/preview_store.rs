@@ -255,7 +255,9 @@ impl PreviewStore {
         } else {
             return Err("egui 전용 DB 저장 폴더를 찾지 못했습니다.".into());
         };
-        let directory = root.join("BANDO-HUB-egui-preview");
+        let directory = if crate::business_state::test_launch(){
+            crate::business_state::test_directory("preview")?
+        }else{root.join("BANDO-HUB-egui-preview")};
         fs::create_dir_all(&directory)
             .map_err(|e| format!("egui 전용 DB 폴더를 만들지 못했습니다: {e}"))?;
         let path = directory.join("egui-preview.sqlite3");

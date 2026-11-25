@@ -300,7 +300,10 @@ fn read_reception_metadata(conn:&rusqlite::Connection,known:Option<u64>)
         "SELECT CASE (SELECT version FROM core_schema WHERE key='business-core') WHEN 3 THEN json_extract(payload,'$[0].settings.orderImageInboxDirectory') WHEN 2 THEN json_extract(payload,'$.settings.orderImageInboxDirectory') END FROM app_state WHERE id=1",
         [],|row|row.get(0)).map_err(|e|e.to_string())?;
     let clients=bando_data_access::read_client_index_rows(conn)?;
-    let inbox=Ok(path.map(|p|p.trim().to_owned()).filter(|p|!p.is_empty()));
+    let inbox=if crate::business_state::test_launch(){
+        crate::business_state::test_directory("order-image-inbox")
+            .map(|p|Some(p.to_string_lossy().into_owned()))
+    }else{Ok(path.map(|p|p.trim().to_owned()).filter(|p|!p.is_empty()))};
     Ok((Some(revision),Some(ReceptionMetadata{inbox,clients:Ok(clients)})))
 }
 
@@ -557,8 +560,7 @@ impl BandoGateway for LocalGateway {
     fn shipping_write_enabled(&self) -> bool {
         std::env::var("BANDO_EGUI_ENABLE_SHIPPING_WRITE")
             .ok().as_deref()==Some("1") &&
-        std::env::var_os("BANDO_EGUI_BUSINESS_DB")
-            .is_some_and(|v|!v.is_empty())
+        crate::business_state::authorized_business_write_path().is_ok()
     }
     fn mutate_shipping(&self,revision:u64,action:&str,data:Value)
         -> Result<Value,String> {
@@ -566,9 +568,7 @@ impl BandoGateway for LocalGateway {
         if !self.shipping_write_enabled() {
             return Err("운영 운임을 변경할 수 있는 연결이 아닙니다.".into());
         }
-        let path=std::env::var_os("BANDO_EGUI_BUSINESS_DB")
-            .filter(|value|!value.is_empty()).map(std::path::PathBuf::from)
-            .ok_or("운영 DB 경로가 지정되지 않았습니다.")?;
+        let path=crate::business_state::authorized_business_write_path()?;
         if !path.is_file(){
             return Err("운영 DB 파일이 없습니다.".into());
         }

@@ -248,7 +248,7 @@ fn patch_business(changes:Value,expected:Value)->Result<Value,String>{
     // Only the authorized operating path reaches this shared CAS validator.
     // The retired developer workspace is not an application setting.
     let committed=bando_data_access::patch_settings_v2(
-        &mut conn,false,&changes,&expected
+        &mut conn,business_state::test_launch(),&changes,&expected
     )?;
     let saved_revision=committed["revision"].as_u64()
         .ok_or("운영 설정 저장 결과 revision 오류")?;
