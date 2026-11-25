@@ -2553,7 +2553,7 @@ impl FreightManager {
                     .icon(components::paint_collapsing_header_icon)
                     .show(section,|body|{
                         if history.is_empty(){
-                            body.label(typography::caption("이전 기준이 없습니다."));
+                            components::management_body_state_inline(body,"이전 기준이 없습니다.");
                             return;
                         }
                         let table_id=format!("freight-history-group-{group_id}");
