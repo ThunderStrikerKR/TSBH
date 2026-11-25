@@ -1,7 +1,7 @@
 //! Paint and one-shot reveal parity with the archived React one-touch hover contract.
 use eframe::egui::{self,Color32,Context,Rect,Stroke,Ui};
 use crate::{theme,typography};
-pub const INK:Color32=theme::REQUIRED_REVIEW_TEXT;
+pub const INK:Color32=theme::ONE_TOUCH_TEXT;
 #[derive(Clone,Copy,Debug,Default,PartialEq,Eq)]
 pub enum Stage{#[default] None,Review,Freight,PaymentCopy,PaymentConfirm}
 impl Stage{
@@ -68,14 +68,17 @@ pub fn reveal_target(ui:&Ui,expected:Stage,rect:Rect){
     }
 }
 pub fn background(ui:&Ui,rect:Rect){
-    ui.painter().rect_filled(rect,theme::CONTROL_RADIUS,theme::PANEL);
+    if rect.is_positive(){ui.painter().with_clip_rect(ui.clip_rect().intersect(rect))
+        .rect_filled(rect,theme::CONTROL_RADIUS,theme::ONE_TOUCH_BG);}
 }
 pub fn outline(ui:&Ui,rect:Rect){
     if rect.is_positive(){ui.painter().with_clip_rect(ui.clip_rect().intersect(rect))
-        .rect_stroke(rect,theme::CONTROL_RADIUS,Stroke::new(theme::SOFT_DIVIDER_WIDTH,theme::REQUIRED_REVIEW_BORDER),egui::StrokeKind::Inside);}
+        .rect_stroke(rect,theme::CONTROL_RADIUS,Stroke::new(theme::ONE_TOUCH_BORDER_WIDTH,theme::ONE_TOUCH_BORDER),egui::StrokeKind::Inside);}
 }
 /// Existing widgets with their own fill: tint lightly without covering text.
 pub fn mark(ui:&Ui,rect:Rect){
+    if rect.is_positive(){ui.painter().with_clip_rect(ui.clip_rect().intersect(rect))
+        .rect_filled(rect,theme::CONTROL_RADIUS,theme::ONE_TOUCH_TINT);}
     outline(ui,rect);
 }
 /// Byte ranges of the exact printed total, tax label, and native account.
@@ -117,7 +120,7 @@ pub fn payment_job(text:&str,signature:&str)->egui::text::LayoutJob{
     let mut job=egui::text::LayoutJob::default();
     let format=|active|egui::TextFormat{font_id:egui::FontId::proportional(typography::FONT_BODY),
         color:if active{INK}else{theme::TEXT},
-        background:if active{theme::ORANGE_EMPHASIS_BG}else{Color32::TRANSPARENT},
+        background:if active{theme::ONE_TOUCH_BG}else{Color32::TRANSPARENT},
         ..Default::default()};
     let mut start=0;
     for (a,b) in payment_ranges(text,signature){
@@ -132,6 +135,29 @@ pub fn payment_job(text:&str,signature:&str)->egui::text::LayoutJob{
 #[cfg(test)]
 mod tests{
     use super::*;
+    #[test] fn one_touch_palette_keeps_orange_fill_and_tint(){
+        assert_eq!(theme::ONE_TOUCH_BG,Color32::from_rgb(59,43,27));
+        assert_ne!(theme::ONE_TOUCH_BG,theme::PANEL);
+        assert_ne!(theme::ONE_TOUCH_BG,theme::INPUT);
+        assert_eq!(theme::ONE_TOUCH_TEXT,Color32::from_rgb(255,228,188));
+        assert_eq!(theme::ONE_TOUCH_BORDER,Color32::from_rgb(245,158,11));
+        assert_eq!(theme::ONE_TOUCH_BORDER_WIDTH,2.0);
+        assert!(theme::ONE_TOUCH_TINT.a()>0 && theme::ONE_TOUCH_TINT.a()<255);
+        let ctx=egui::Context::default();
+        let output=ctx.run(egui::RawInput::default(),|ctx|{
+            egui::CentralPanel::default().show(ctx,|ui|{
+                let (r,_)=ui.allocate_exact_size(egui::vec2(100.0,30.0),egui::Sense::hover());
+                background(ui,r);outline(ui,r);
+                let (r,_)=ui.allocate_exact_size(egui::vec2(100.0,30.0),egui::Sense::hover());
+                mark(ui,r);
+            });
+        });
+        assert!(output.shapes.iter().any(|shape|matches!(&shape.shape,egui::Shape::Rect(r) if r.fill==theme::ONE_TOUCH_BG)));
+        assert!(output.shapes.iter().any(|shape|matches!(&shape.shape,egui::Shape::Rect(r) if r.fill==theme::ONE_TOUCH_TINT)));
+        assert!(output.shapes.iter().any(|shape|matches!(&shape.shape,egui::Shape::Rect(r) if r.stroke.color==theme::ONE_TOUCH_BORDER && r.stroke.width==theme::ONE_TOUCH_BORDER_WIDTH)));
+        let job=payment_job("합계 8,000원 (부가세 포함)","");
+        assert!(job.sections.iter().any(|s|s.format.background==theme::ONE_TOUCH_BG));
+    }
     #[test] fn freight_scope_excludes_price_and_non_remote_address(){
         assert!(Stage::Freight.item(0)&&Stage::Freight.item(1));
         assert!(!Stage::Freight.item(2)&&!Stage::Freight.recipient(0,true));

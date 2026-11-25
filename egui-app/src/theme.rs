@@ -102,6 +102,12 @@ pub const CATEGORY_EXPLORER_ANCESTOR_TEXT:Color32=Color32::from_rgb(112,112,112)
 // React workflow.css and receipt-layout.css amber palette; paint only.
 pub const SELECTED_ORDER: Color32 = Color32::from_rgb(245, 158, 11); // #F59E0B
 pub const ORANGE_EMPHASIS_BG: Color32 = Color32::from_rgb(59, 43, 27); // #3B2B1B
+// One-touch preview has a separate visual role from persistent review notices.
+pub const ONE_TOUCH_BG:Color32=ORANGE_EMPHASIS_BG;
+pub const ONE_TOUCH_TEXT:Color32=Color32::from_rgb(255,228,188);
+pub const ONE_TOUCH_BORDER:Color32=SELECTED_ORDER;
+pub const ONE_TOUCH_BORDER_WIDTH:f32=2.0;
+pub const ONE_TOUCH_TINT:Color32=Color32::from_rgba_unmultiplied_const(245,158,11,18);
 // Approved selected shipment row: a single rounded surface, not an
 // added left stripe. The enclosing order card retains its own accent.
 pub const WORKFLOW_SELECTED_ROW_TEXT:Color32=Color32::from_rgb(244,214,162);
