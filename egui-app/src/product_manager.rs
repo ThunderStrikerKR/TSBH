@@ -1585,6 +1585,10 @@ impl ProductManager {
                                                             if self.price_focus_target.as_deref()
                                                                 ==Some(key.as_str()){
                                                                 response.request_focus();
+                                                                // Programmatic worksheet navigation must select the
+                                                                // existing amount immediately, including a target
+                                                                // rendered later in the same frame.
+                                                                select_all_price_text(inputs,&response,&entry.input);
                                                                 self.price_focus_target=None;
                                                             }
                                                             if response.changed(){self.error=None;}
