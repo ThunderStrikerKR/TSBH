@@ -242,6 +242,16 @@ mod tests {
                     "url":"https://www.bandostand.com/product/709"}]}]})
     }
     #[test]
+    fn payment_recipient_uses_exact_value_without_suffix(){
+        for name in ["John Smith","(주)대한악기","이가상 선생님","홍길동님"]{
+            let mut p=payment_fixture();
+            p["recipients"][0]["name"]=json!(name);
+            let text=render_payment(&p);
+            assert!(text.lines().any(|line|line==name),"{text}");
+            assert!(!text.contains(&format!("{name}님")),"{text}");
+        }
+    }
+    #[test]
     fn operational_payment_preserves_calculated_amount_and_vat_mode(){
         let mut p=payment_fixture();
         let text=render_payment(&p);
@@ -309,7 +319,10 @@ mod tests {
         let result=output::execute("render_automatic_request",p.clone()).unwrap();
         assert_eq!(result["phase"],"request");
         assert_eq!(result["requiresCustomerResponse"],true);
-        assert_eq!(result["requestText"],"김가상님 연락처 확인 요청\n\n회신 부탁드립니다.");
+        assert_eq!(result["requestText"],"김가상 연락처 확인 요청\n\n회신 부탁드립니다.");
+        p["order"]["recipients"][0]["name"]=json!("이가상 선생님");
+        let result=output::execute("render_automatic_request",p.clone()).unwrap();
+        assert_eq!(result["requestText"],"이가상 선생님 연락처 확인 요청\n\n회신 부탁드립니다.");
         p["issues"]=json!([]);
         let result=output::execute("render_automatic_request",p.clone()).unwrap();
         assert_eq!(result["phase"],"payment");

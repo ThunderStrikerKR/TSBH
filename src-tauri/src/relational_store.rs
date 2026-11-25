@@ -666,6 +666,14 @@ mod tests {
         let path=folder.join("business.sqlite");
         let mut old:Value=serde_json::from_str(
             include_str!("../resources/legacy-state-seed-303.json")).unwrap();
+        // Recreate a historical placeholder explicitly: the bundled legacy
+        // catalog itself has been cleaned. Exercise the actual migration.
+        let obsolete=old["products"].as_array_mut().unwrap().iter_mut()
+            .find(|p|p["defaultColor"]=="" && p["variants"].as_array().is_some_and(|vs|
+                vs.len()==1 && vs[0]["color"]=="")).unwrap();
+        let obsolete_id=obsolete["id"].as_str().unwrap().to_owned();
+        obsolete["defaultColor"]=json!("색상 미표기");
+        obsolete["variants"][0]["color"]=json!("단일");
         let product=old["products"].as_array().unwrap().iter()
             .position(|p|p["id"]=="bando-site-351").unwrap();
         let a=old["products"][product]["variants"][0]["id"].as_str().unwrap().to_owned();
@@ -715,9 +723,12 @@ mod tests {
 
         let conn=super::super::initialize_database(&path).unwrap();
         let state=super::super::get_snapshot(&conn).unwrap();
-        // The 267 legacy color placeholders are normalized in one
-        // additional CAS write after the relational migration.
+        // The obsolete fields are normalized in one additional CAS write.
         assert_eq!(state["revision"],json!(before_revision.as_u64().unwrap()+1));
+        let cleaned=state["products"].as_array().unwrap().iter()
+            .find(|p|p["id"]==obsolete_id.as_str()).unwrap();
+        assert_eq!(cleaned["defaultColor"],"");
+        assert_eq!(cleaned["variants"][0]["color"],"");
         assert_eq!(state["products"].as_array().unwrap().len(),360);
         assert_eq!(state["clients"],before_clients);
         assert_eq!(state["orders"][1],confirmed_before);

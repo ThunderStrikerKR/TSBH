@@ -28,17 +28,17 @@ const TEMPLATES:&[TemplateDef]=&[
         sample:&[] },
     TemplateDef{ id:"addressMissing", label:"배송지 주소 누락",
         category:"확인 안내", description:"배송지가 없는 발주서",
-        body:"{수취인}님 배송지 주소 확인 부탁드려요.", variables:&["수취인"],
+        body:"{수취인} 배송지 주소 확인 부탁드려요.", variables:&["수취인"],
         required:&["수취인"],
         sample:&[("수취인","김민수")] },
     TemplateDef{ id:"addressDetail", label:"상세주소 부족",
         category:"확인 안내", description:"기재된 주소가 불완전한 경우",
-        body:"{수취인}님 상세주소 확인 부탁드려요.", variables:&["수취인"],
+        body:"{수취인} 상세주소 확인 부탁드려요.", variables:&["수취인"],
         required:&["수취인"],
         sample:&[("수취인","김민수")] },
     TemplateDef{ id:"contactMissing", label:"수취인 연락처 누락",
         category:"확인 안내", description:"수취인 연락처가 없거나 올바르지 않을 때",
-        body:"{수취인}님 연락처 확인 부탁드려요.", variables:&["수취인"],
+        body:"{수취인} 연락처 확인 부탁드려요.", variables:&["수취인"],
         required:&["수취인"],
         sample:&[("수취인","김민수")] },
     TemplateDef{ id:"quantityMissing", label:"주문 수량 확인",
@@ -58,7 +58,7 @@ const TEMPLATES:&[TemplateDef]=&[
         sample:&[("상품명","BD 709")] },
     TemplateDef{ id:"requestRecipient", label:"확인 항목 묶음",
         category:"확인 안내", description:"여러 누락 항목을 묶어 수취인에게 안내",
-        body:"{번호}. {수취인}님: {확인항목}", variables:&["번호","수취인","확인항목"],
+        body:"{번호}. {수취인}: {확인항목}", variables:&["번호","수취인","확인항목"],
         required:&["수취인","확인항목"],
         sample:&[("번호","1"),("수취인","김민수"),("확인항목","배송지 주소, 연락처")] },
     TemplateDef{ id:"requestClosing", label:"확인 요청 마무리",
@@ -78,7 +78,7 @@ const TEMPLATES:&[TemplateDef]=&[
         sample:&[("상품명","BD 709 / 블랙 / 타공 상판")] },
     TemplateDef{ id:"quantityOne", label:"수량 1개 잠정 안내",
         category:"색상 및 수량", description:"수량이 없고 1개로 안내한 경우",
-        body:"{수취인}님 {상품명} 상품은 수량을 1개로 보내드리겠습니다.", variables:&["수취인","상품명"],
+        body:"{수취인} {상품명} 상품은 수량을 1개로 보내드리겠습니다.", variables:&["수취인","상품명"],
         required:&["수취인","상품명"],
         sample:&[("수취인","김민수"),("상품명","BD 709")] },
     TemplateDef{ id:"paymentGreeting", label:"입금 안내 인사말",
@@ -293,7 +293,7 @@ impl AutomaticMessageManager {
     }
     fn template_value(map:&Map<String,Value>,def:TemplateDef)->String{
         map.get(def.id).and_then(Value::as_str)
-            .unwrap_or(def.body).to_owned()
+            .unwrap_or(def.body).replace("{수취인}님","{수취인}")
     }
     pub fn dirty(&self)->bool{
         if !self.loaded{return false;}
@@ -356,7 +356,13 @@ impl AutomaticMessageManager {
             Section::Provisional=>"provisionalProductNotices"
         };
         let draft=if self.section==Section::General{
-            Value::Object(self.draft_templates.clone())
+            let mut templates=self.draft_templates.clone();
+            for body in templates.values_mut(){
+                if let Some(value)=body.as_str(){
+                    *body=json!(value.replace("{수취인}님","{수취인}"));
+                }
+            }
+            Value::Object(templates)
         }else{Value::Object(self.draft_notices.clone())};
         let original=self.settings["settings"].get(field)
             .cloned().unwrap_or(Value::Null);

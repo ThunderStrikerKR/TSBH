@@ -395,7 +395,7 @@ fn unlabelled_recipient_span(
     let end=address.into_iter().chain(contact).min().unwrap_or(line.len());
     let prefix=&line[..end];
     // The contact label and table's slash separator are field boundaries.
-    let contact_label=Regex::new(r"(?i)\s+(?:연락처(?:\([^)]*\))?|전화(?:번호)?|휴대(?:전화|폰)?|번호|TEL)\s*[:：]?\s*$")
+    let contact_label=Regex::new(r"(?i)(?:^|\s+)(?:연락처(?:\s*\([^)]*\))?|전화(?:번호)?|휴대(?:전화|폰)?|번호|TEL)\s*[:：]?\s*$")
         .expect("contact label before phone");
     let end=if contact==Some(end){
         contact_label.find(prefix).map_or(end,|m|m.start())
@@ -2150,6 +2150,17 @@ mod tests {
         assert!(item["quantity"].is_null());
         assert_eq!(item["quantityConfirmed"],false);
         assert!(result["unassigned"].as_array().unwrap().is_empty());
+    }
+    #[test]
+    fn contact_heading_with_parenthetical_qualifier_is_not_a_recipient(){
+        for heading in ["연락처(안심번호)","연락처 (안심번호)","연락처(안심번호):","TEL","휴대전화"] {
+            let raw=format!("709 1개\nJohn Smith\n{heading} 0502-1234-5678\n서울특별시 마포구 월드컵로 20");
+            let out=execute("analyze_order",json!({"raw":raw,"state":state()})).unwrap();
+            let rows=out["recipients"].as_array().unwrap();
+            assert_eq!(rows.len(),1,"{heading}: {out}");
+            assert_eq!(rows[0]["name"],"John Smith");
+            assert_eq!(rows[0]["phone"],"0502-1234-5678");
+        }
     }
     #[test]
     fn manually_confirmed_recipient_value_survives_reanalysis(){

@@ -21,17 +21,17 @@ fn money(value: &Value) -> String {
 fn template_default(key: &str) -> Option<(&'static str, &'static [&'static str])> {
     match key {
         "recipientName" => Some(("받으실 분의 성함을 알려주세요.", &[])),
-        "addressMissing" => Some(("{수취인}님 배송지 주소 확인 부탁드려요.", &["수취인"])),
-        "addressDetail" => Some(("{수취인}님 상세주소 확인 부탁드려요.", &["수취인"])),
-        "contactMissing" => Some(("{수취인}님 연락처 확인 부탁드려요.", &["수취인"])),
+        "addressMissing" => Some(("{수취인} 배송지 주소 확인 부탁드려요.", &["수취인"])),
+        "addressDetail" => Some(("{수취인} 상세주소 확인 부탁드려요.", &["수취인"])),
+        "contactMissing" => Some(("{수취인} 연락처 확인 부탁드려요.", &["수취인"])),
         "quantityMissing" => Some(("{상품명} 수량을 확인 부탁드립니다.", &["상품명"])),
         "modelMissing" => Some(("{상품명}: 정확한 모델명을 확인해 주세요.", &["상품명"])),
         "modelConfirm" => Some(("{상품명} 상품으로 보내드리면 될까요?", &["상품명"])),
-        "requestRecipient" => Some(("{번호}. {수취인}님: {확인항목}", &["수취인", "확인항목"])),
+        "requestRecipient" => Some(("{번호}. {수취인}: {확인항목}", &["수취인", "확인항목"])),
         "requestClosing" => Some(("위 내용 확인 부탁드립니다.", &[])),
         "colorDefault" => Some(("{색상}으로 보내드릴게요.", &["색상"])),
         "modelRepresentative" => Some(("{상품명} 모델로 보내드릴게요.", &["상품명"])),
-        "quantityOne" => Some(("{수취인}님 {상품명} 상품은 수량을 1개로 보내드리겠습니다.", &["수취인", "상품명"])),
+        "quantityOne" => Some(("{수취인} {상품명} 상품은 수량을 1개로 보내드리겠습니다.", &["수취인", "상품명"])),
         "paymentGreeting" => Some(("안녕하세요.", &[])),
         "paymentItem" => Some(("{상품명} * {수량}개 : {금액}", &["상품명", "수량", "금액"])),
         "paymentFreight" => Some(("운임 : {운임}", &["운임"])),
@@ -121,7 +121,10 @@ pub(super) fn render(settings: &Value, key: &str, values: &Value) -> Result<Stri
     let body = settings.get("automaticMessageTemplates")
         .and_then(|v| v.get(key)).and_then(Value::as_str).unwrap_or(default);
     let re = regex::Regex::new(r"\{([^{}]+)\}").unwrap();
-    Ok(re.replace_all(body, |captures: &regex::Captures<'_>| {
+    // Normalize the template before substitution, never the recipient value.
+    // This also fixes old saved templates without touching historical messages.
+    let body=body.replace("{수취인}님","{수취인}");
+    Ok(re.replace_all(&body, |captures: &regex::Captures<'_>| {
         values.get(&captures[1]).and_then(Value::as_str).unwrap_or("").to_owned()
     }).into_owned())
 }
@@ -195,8 +198,8 @@ pub(super) fn payment(payload: &Value, settings: &Value) -> Result<Value, String
     let mut official_links = Vec::new();
     let mut quantity_messages = Vec::new();
     for recipient in recipients {
-        let name = s(recipient, "name").trim();
-        if !name.is_empty() { parts.push(format!("{}님", name)); }
+        let name = s(recipient, "name");
+        if !name.trim().is_empty() { parts.push(name.to_owned()); }
         for item in list(recipient, "items") {
             let original = s(item, "name");
             let mut name_label = customer_model(original);
