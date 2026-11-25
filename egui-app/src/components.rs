@@ -189,6 +189,26 @@ pub fn management_body_state_overlay(
     );
 }
 
+/// Draw an error within an existing body rectangle without advancing its
+/// layout cursor. The full translated text is also available on hover when
+/// the visible rectangle is too short to contain the wrapped text.
+pub fn body_error_overlay(ui:&Ui,viewport:Rect,context:&str,error:&str){
+    let visible=viewport.intersect(ui.clip_rect());
+    if visible.width()<=0.0||visible.height()<=0.0{return;}
+    let display=crate::user_error::display(context,error);
+    let painter=ui.painter().with_clip_rect(visible);
+    let galley=painter.layout(display.as_ref().to_owned(),
+        egui::FontId::proportional(typography::FONT_METADATA),
+        theme::DANGER,(visible.width()-2.0*theme::SPACE_8).max(1.0));
+    let pos=egui::pos2(
+        visible.center().x-galley.size().x/2.0,
+        (visible.center().y-galley.size().y/2.0).max(visible.top())
+    );
+    painter.galley(pos,galley,theme::DANGER);
+    ui.interact(visible,ui.id().with(("body-error-overlay",context)),Sense::hover())
+        .on_hover_text(display.as_ref());
+}
+
 /// Allocate a row with an immutable parent footprint. The child can
 /// render optional labels, validation messages or actions without changing
 /// the next sibling's Rect when its contents appear or disappear.
@@ -6984,7 +7004,8 @@ mod shared_review_card_contract_tests {
     #[test]
     fn reception_review_cards_use_shared_surface_frame(){
         let source=include_str!("review_panel.rs");
-        assert_eq!(source.matches("theme::review_issue_card(").count(),3);
+        assert_eq!(source.matches("theme::review_issue_card(").count(),2);
+        assert!(source.contains("crate::components::body_error_overlay("));
         assert!(!source.contains("egui::Frame::new()"));
         let fallback=include_str!("components.rs").split("pub fn reception_review_status(")
             .nth(1).unwrap().split("\n///").next().unwrap();

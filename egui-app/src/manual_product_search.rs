@@ -202,12 +202,14 @@ impl ProductSearch{
                             egui::vec2(ui.available_width(),results_height),
                             egui::Layout::top_down(egui::Align::Min),
                             |pane|{
+                                let results_rect=egui::Rect::from_min_size(
+                                    pane.cursor().min,egui::vec2(pane.available_width(),results_height));
                                 egui::ScrollArea::vertical()
                                     .id_salt("manual-product-search-results")
                                     .max_height(results_height)
                                     .show(pane,|ui|{
-                                        if let Some(error)=&self.error {
-                                            ui.label(typography::status(error,theme::DANGER));
+                                        if self.error.is_some() {
+                                            // Error uses the reserved outer result viewport below.
                                         } else if self.receiver.is_some() {
                                             ui.label(typography::caption("상품 검색 중"));
                                         } else {
@@ -256,6 +258,9 @@ impl ProductSearch{
                                             }
                                         }
                                     });
+                                if let Some(error)=self.error.as_deref(){
+                                    components::body_error_overlay(pane,results_rect,"reception.product",error);
+                                }
                             },
                         );
                     });
