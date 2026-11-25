@@ -5,6 +5,7 @@ mod export_history;
 mod messages;
 mod automatic_request;
 mod automatic_full;
+pub(crate) use automatic_full::AutomaticPreviewCache;
 mod settlement;
 mod corrections;
 mod factory_review;

@@ -327,7 +327,7 @@ fn project_state(gateway:&dyn BandoGateway,state:&Value,scope:Option<&HashSet<St
                 "json":serde_json::to_string(account).map_err(|e|e.to_string())?
             })))
             .collect::<Result<Vec<Value>,String>>()?;
-        let automatic=gateway.execute(ReadOperation::RenderAutomaticMessage,json!({
+        let automatic=gateway.render_automatic_preview(json!({
             "state":&state,"groupId":group_id,"includeLinks":false,
             "accountWire":&wire,"includeCopyStatus":true,
         }));

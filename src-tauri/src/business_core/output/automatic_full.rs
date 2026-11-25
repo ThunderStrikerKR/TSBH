@@ -305,11 +305,15 @@ pub(super) fn execute(payload:&Value)->Result<Value,String>{
     let request=automatic_request::execute(&json!({
         "settings":state["settings"],"order":view,"issues":wf["issues"],"step":step
     }))?;
-    let payment_with_links=payment(&payment_input(state,&view,&amounts,account,true)?,
-        &state["settings"])?;
+    // The link toggle changes formatting, not recipient calculations or
+    // provisional product detection. Build the native payment input once.
+    let mut payment_data=payment_input(state,&view,&amounts,account,true)?;
+    let payment_with_links=payment(&payment_data,&state["settings"])?;
     let rendered=if include_links{payment_with_links.clone()}
-        else{payment(&payment_input(state,&view,&amounts,account,false)?,
-            &state["settings"])?};
+        else{
+            payment_data["includeLinks"]=json!(false);
+            payment(&payment_data,&state["settings"])?
+        };
     let issues=price_issues(state,&view,&client,account,&amounts)?;
     let greeting=render(&state["settings"],"paymentGreeting",&Value::Null)?;
     let pay=string(&rendered,"payment");
@@ -323,10 +327,7 @@ pub(super) fn execute(payload:&Value)->Result<Value,String>{
         .map(|i|format!("{}\n{}",string(i,"name"),string(i,"url"))));
     let signature=payment_signature(&view,string(&payment_with_links,"payment"),
         account,rows(payload,"accountWire"))?;
-    let copied=||rows(&state["workflow"],"events").iter().any(|e|
-        string(e,"groupId")==gid&&string(e,"action")=="메시지 복사"&&
-        string(&e["after"],"type")=="PAYMENT"&&
-        string(&e["after"],"signature")==signature);
+    let copied=||payment_was_copied(state,gid,&signature);
     if string(payload,"mode")=="payment_copy_status"{
         return Ok(json!({"copied":copied()}));
     }
@@ -339,4 +340,149 @@ pub(super) fn execute(payload:&Value)->Result<Value,String>{
         result["copied"]=json!(copied());
     }
     Ok(result)
+}
+
+
+fn payment_was_copied(state:&Value,gid:&str,signature:&str)->bool{
+    rows(&state["workflow"],"events").iter().any(|e|
+        string(e,"groupId")==gid&&string(e,"action")=="메시지 복사"&&
+        string(&e["after"],"type")=="PAYMENT"&&
+        string(&e["after"],"signature")==signature)
+}
+
+/// Only a local read-only board preview uses this cache. Mutations, copy
+/// authorization, payment notices and remote adapters still call execute.
+/// Global masters are intentionally conservative; unknown future fields
+/// within an order, shipment, group or master invalidate its entry.
+#[derive(Default)]
+pub(crate) struct AutomaticPreviewCache{
+    master:Option<Value>,
+    entries:std::collections::HashMap<String,(Value,Value)>,
+    #[cfg(test)]
+    renders:usize,
+}
+impl AutomaticPreviewCache{
+    pub(crate) fn preview(&mut self,payload:&Value)->Result<Value,String>{
+        let state=payload.get("state").ok_or("메시지 생성 상태가 없습니다.")?;
+        let gid=string(payload,"groupId");
+        if gid.is_empty() || string(payload,"mode")=="payment_copy_status"{
+            return execute(payload);
+        }
+        let workflow=&state["workflow"];
+        let groups=rows(workflow,"groups");
+        let all_ships=rows(workflow,"shipments");
+        let Some(group)=by_id(groups,gid) else{return execute(payload);};
+        let ships=all_ships.iter().filter(|s|string(s,"groupId")==gid)
+            .collect::<Vec<_>>();
+        if ships.is_empty() || groups.iter().filter(|g|string(g,"id")==gid).count()!=1{
+            return execute(payload);
+        }
+        let ids=ships.iter().map(|ship|string(ship,"id")).collect::<HashSet<_>>();
+        let order_ids=ships.iter().map(|ship|string(ship,"orderId")).collect::<HashSet<_>>();
+        if ids.contains("") || order_ids.contains("") || ids.len()!=ships.len() ||
+            all_ships.iter().filter(|s|ids.contains(string(s,"id"))).count()!=ships.len(){
+            return execute(payload);
+        }
+        let orders=rows(state,"orders").iter().filter(|o|order_ids.contains(string(o,"id")))
+            .collect::<Vec<_>>();
+        if orders.len()!=order_ids.len(){return execute(payload);}
+        let queue=rows(workflow,"queue").iter().filter(|q|
+            ids.contains(string(q,"shipmentId"))).collect::<Vec<_>>();
+        // Keep the complete source orders: workflow_issues also inspects
+        // recipients detached into other groups of the same source order.
+        // Shipment totals may read the frozen queue snapshot.
+        let key=json!({"group":group,"shipments":ships,"orders":orders,
+            "queue":queue,"includeLinks":is_true(payload,"includeLinks"),
+            "accountWire":payload["accountWire"]});
+        let master_keys=["settings","products","productMappings","clients"];
+        if !self.master.as_ref().is_some_and(|master|
+            master_keys.iter().all(|k|master[*k]==state[*k])){
+            self.entries.clear();
+            self.master=Some(json!({"settings":state["settings"],
+                "products":state["products"],"productMappings":state["productMappings"],
+                "clients":state["clients"]}));
+        }
+        // Bound retained orders and never cache errors. Entries are process
+        // memory only and are removed when their groups disappear.
+        self.entries.retain(|id,_|by_id(groups,id).is_some());
+        if !self.entries.contains_key(gid) && self.entries.len()>=128{
+            self.entries.clear();
+        }
+        if !self.entries.get(gid).is_some_and(|(old,_)|old==&key){
+            let mut request=payload.clone();
+            request["includeCopyStatus"]=json!(false);
+            let result=execute(&request)?;
+            #[cfg(test)]
+            {self.renders+=1;}
+            self.entries.insert(gid.to_owned(),(key,result));
+        }
+        let mut result=self.entries.get(gid).ok_or("메시지 캐시 누락")?.1.clone();
+        if is_true(payload,"includeCopyStatus"){
+            // Copy evidence is not part of the cached presentation.
+            // Always check the exact current payment signature in the
+            // current authoritative snapshot, including on cache hits.
+            let copied=payment_was_copied(state,gid,string(&result,"signature"));
+            result["copied"]=json!(copied);
+        }
+        Ok(result)
+    }
+}
+
+#[cfg(test)]
+mod automatic_preview_cache_tests{
+    use super::*;
+    fn fixture()->Value{
+        json!({
+            "groupId":"g","includeLinks":false,"includeCopyStatus":true,
+            "state":{
+                "settings":{"accounts":[{"id":"a","bank":"가상은행","number":"123","holder":"테스트"}],
+                    "defaultAccountId":"a","senderAddress":"서울특별시 중구 세종대로 1","senderPhone":"02-1234-5678"},
+                "clients":[{"id":"c","name":"거래처","address":"서울특별시 중구 세종대로 1",
+                    "phone":"02-1234-5678","tier":"wholesale","payment":"POSTPAID"}],
+                "products":[{"id":"p","name":"709","variants":[{"id":"v","wholesale":10000}]}],
+                "orders":[{"id":"o","clientId":"c","orderType":"AGENCY","applyVat":true,
+                    "freightCode":"010","recipients":[{"id":"r","name":"테스트",
+                        "address":"서울특별시 중구 세종대로 1","phone":"010-1234-5678",
+                        "items":[{"id":"i","productId":"p","variantId":"v","name":"709",
+                            "quantity":1,"quantityConfirmed":true,"unitPrice":10000,"origin":"FACTORY"}]}]}],
+                "workflow":{"groups":[{"id":"g","dealerId":"c","needsNotice":false}],
+                    "shipments":[{"id":"s","orderId":"o","recipientId":"r","groupId":"g",
+                        "step":2,"charges":{"FACTORY":3000},"transferred":false}],
+                    "queue":[],"events":[]}
+            }
+        })
+    }
+    #[test]
+    fn automatic_preview_cache_reuses_body_but_checks_copy_evidence_and_invalidates_money(){
+        let mut p=fixture();
+        let mut cache=AutomaticPreviewCache::default();
+        let first=cache.preview(&p).unwrap();
+        assert_eq!(first,execute(&p).unwrap());
+        assert_eq!(cache.renders,1);
+        p["state"]["revision"]=json!(2);
+        p["state"]["orders"].as_array_mut().unwrap().push(json!({"id":"unrelated"}));
+        assert_eq!(cache.preview(&p).unwrap(),first);
+        assert_eq!(cache.renders,1);
+        p["state"]["workflow"]["events"]=json!([{"groupId":"g","action":"메시지 복사",
+            "after":{"type":"PAYMENT","signature":first["signature"]}}]);
+        let copied=cache.preview(&p).unwrap();
+        assert_eq!(copied,execute(&p).unwrap());
+        assert_eq!(copied["copied"],true);
+        assert_eq!(cache.renders,1);
+        p["state"]["workflow"]["shipments"][0]["charges"]["FACTORY"]=json!(4000);
+        let changed=cache.preview(&p).unwrap();
+        assert_eq!(changed,execute(&p).unwrap());
+        assert_ne!(changed["signature"],first["signature"]);
+        assert_eq!(changed["copied"],false);
+        assert_eq!(cache.renders,2);
+        p["state"]["settings"]["accounts"][0]["number"]=json!("456");
+        assert_eq!(cache.preview(&p).unwrap(),execute(&p).unwrap());
+        assert_eq!(cache.renders,3);
+        p["state"]["workflow"]["shipments"][0]["step"]=json!(1);
+        assert_eq!(cache.preview(&p).unwrap(),execute(&p).unwrap());
+        assert_eq!(cache.renders,4);
+        p["includeLinks"]=json!(true);
+        assert_eq!(cache.preview(&p).unwrap(),execute(&p).unwrap());
+        assert_eq!(cache.renders,5);
+    }
 }

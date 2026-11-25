@@ -245,6 +245,10 @@ pub trait BandoGateway: Send + Sync {
     fn calculate_reception_edit_quote(&self,payload:Value)->Result<Value,String>{
         self.execute(ReadOperation::CalculateReceptionQuote,payload)
     }
+    /// Display only; copy authorization must use execute directly.
+    fn render_automatic_preview(&self,payload:Value)->Result<Value,String>{
+        self.execute(ReadOperation::RenderAutomaticMessage,payload)
+    }
     /// Execute one of the explicitly allowed read-only business operations.
     fn execute(&self, operation: ReadOperation, payload: Value) -> Result<Value, String>;
 }
@@ -825,6 +829,17 @@ impl BandoGateway for LocalGateway {
 
     fn save_working_source(&self, source: &WorkingSource) -> Result<u64, String> {
         PreviewStore::initialize()?.save_source(source)
+    }
+
+    fn render_automatic_preview(&self,payload:Value)->Result<Value,String>{
+        static CACHE:std::sync::OnceLock<std::sync::Mutex<output::AutomaticPreviewCache>>=
+            std::sync::OnceLock::new();
+        let cache=CACHE.get_or_init(||std::sync::Mutex::new(
+            output::AutomaticPreviewCache::default()));
+        match cache.try_lock(){
+            Ok(mut cache)=>cache.preview(&payload),
+            Err(_)=>self.execute(ReadOperation::RenderAutomaticMessage,payload)
+        }
     }
 
     fn calculate_reception_edit_quote(&self,payload:Value)->Result<Value,String>{
