@@ -8848,8 +8848,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                     group.total.map(components::display_won)
                                         .unwrap_or_else(||"금액 미확정".to_owned())
                                 )));
-                                components::soft_divider(ui);
-                                ui.add_space(theme::SPACE_8);
+                                components::section_divider(ui);
                                 if !targets.is_empty(){
                                     ui.label(typography::body("다시 묶을 대상"));
                                     let caption=targets.iter().find(|g|g.id==target)
