@@ -647,15 +647,18 @@ impl ExcelManager{
                             "Excel과 출력 이력은 저장됐지만 폴더를 열지 못했습니다: {warning}"
                         ));
                     }
-                    self.result=None;
-                    // A saved file must be reflected via a fresh DB read,
-                    // not through an optimistic local snapshot.
-                    self.result=Some(Snapshot{
-                        state:result["state"].clone(),
-                        shipments:result["shipmentReads"].clone()
-                    });
-                    // Never display a stale shipment projection after saving.
+                    // A committed export must not be reported as failed due to a later read.
                     self.receiver=None;
+                    if result.get("shipmentReads").is_some() && result["state"]["revision"].as_u64().is_some(){
+                        self.result=Some(Snapshot{
+                            state:result["state"].clone(),
+                            shipments:result["shipmentReads"].clone()
+                        });
+                    }else{
+                        self.result=None;
+                        self.reply_refresh_pending=true;
+                        self.error=result["projectionError"].as_str().map(str::to_owned);
+                    }
                     if result["folderOpened"]==true{
                         ctx.send_viewport_cmd(egui::ViewportCommand::Minimized(true));
                     }
@@ -713,9 +716,11 @@ impl ExcelManager{
     fn start_export(&mut self,ctx:egui::Context,origin:String,ids:Vec<String>){
         self.task("export",ctx,move|g|{
             let mut result=g.export_excel(&origin,&ids)?;
-            let projection=g.execute(ReadOperation::ReadShipments,
-                json!({"state":&result["state"]}))?;
-            result["shipmentReads"]=projection;
+            // A failed follow-up read cannot undo a committed file and history.
+            match g.execute(ReadOperation::ReadShipments,json!({"state":&result["state"]})){
+                Ok(projection)=>result["shipmentReads"]=projection,
+                Err(reason)=>result["projectionError"]=json!(reason),
+            }
             // Both origins open the recorded output directory.
             // Keep the app visible if the folder could not be opened.
             let folder=match result["exportId"].as_str(){
@@ -1335,6 +1340,8 @@ mod table_state_tests {
         assert!(worker.find("g.export_excel(").unwrap()<worker.find("g.open_excel_folder(").unwrap());
         assert!(worker.contains("Ok(())=>result[\"folderOpened\"]=json!(true)"));
         assert!(worker.contains("Err(reason)=>result[\"folderWarning\"]=json!(reason)"));
+        assert!(worker.contains("Err(reason)=>result[\"projectionError\"]=json!(reason)"));
+        assert!(!worker.contains("json!({\"state\":&result[\"state\"]}))?;"));
         let start=source.find("}else if operation==\"export\"{").unwrap();
         let end=start+source[start..].find("요청한 Excel 작업").unwrap();
         let completion=&source[start..end];
@@ -1533,6 +1540,34 @@ mod table_state_tests {
         assert!(manager.take_reply_changed());
         assert!(manager.reply_refresh_pending);
         assert!(manager.result.is_none());
+    }
+
+    #[test]
+    fn committed_export_projection_error_keeps_success_and_requests_refresh(){
+        let ctx=egui::Context::default();
+        struct NoReadGateway;
+        impl BandoGateway for NoReadGateway{
+            fn label(&self)->&'static str{"synthetic-no-read"}
+            fn load_catalog(&self)->Result<Value,String>{Err("no catalog".into())}
+            fn load_working_source(&self)->Result<crate::preview_store::WorkingSource,String>{Err("no source".into())}
+            fn save_working_source(&self,_:&crate::preview_store::WorkingSource)->Result<u64,String>{Err("no write".into())}
+            fn load_business_state(&self)->Result<Value,String>{Err("no business read".into())}
+            fn execute(&self,_:ReadOperation,_:Value)->Result<Value,String>{Err("no rules".into())}
+        }
+        for origin in ["FACTORY","STORE"]{
+            let mut manager=ExcelManager::geometry_fixture(Arc::new(NoReadGateway),ctx.clone(),0,true);
+            let (sender,receiver)=mpsc::channel();
+            manager.operation=Some(receiver);
+            manager.operation_name=Some("export".into());
+            sender.send(Ok(json!({"origin":origin,"count":1,"state":{"revision":8},
+                "projectionError":"synthetic","folderOpened":true}))).unwrap();
+            let _=ctx.run(Default::default(),|ctx|manager.poll(ctx));
+            assert!(manager.operation.is_none());
+            assert!(manager.notice.as_deref().unwrap().contains("Excel 저장과 출력 이력을 기록했습니다."));
+            assert!(manager.result.is_none());
+            assert!(manager.reply_refresh_pending);
+            assert_eq!(manager.error.as_deref(),Some("synthetic"));
+        }
     }
 
     #[test]
