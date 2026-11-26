@@ -54,7 +54,7 @@ pub struct GroupRow {
     pub issues: Vec<Value>,
 }
 impl GroupRow {
-    pub fn management_target_label(&self)->egui::text::LayoutJob{
+    pub fn management_target_label(&self)->eframe::egui::text::LayoutJob{
         use crate::typography::{inline_body_values,DataValueKind};
         let names=self.shipments.iter().map(|s|{
             if s.recipient_name.is_empty(){"수취인 확인"}else{s.recipient_name.as_str()}
