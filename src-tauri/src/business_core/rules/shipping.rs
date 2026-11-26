@@ -342,6 +342,30 @@ pub(super) fn base_recommendation(quote:&Value,origin:&str)->Value{
         .cloned().unwrap_or(Value::Null)
 }
 
+/// Billing is independent of the available underlying tariff.
+pub(super) fn billing_charge(applied:Option<i64>,exempt:bool,code:&str)->(Option<i64>,&'static str){
+    if exempt{(Some(0),"EXEMPT")}
+    else if code=="020"{(Some(0),"COLLECT")}
+    else if applied.is_none(){(None,"UNREGISTERED")}
+    else{(applied,"CHARGED")}
+}
+
+pub(super) fn reception_recommend_for_client(order:&Value,state:&Value,client:&Value)->Result<Value,String>{
+    let mut quote=reception_recommend(order,state)?;
+    let exempt=flag(client,"shippingFeeExcluded");
+    let bundles=quote["bundles"].as_array_mut().ok_or("배송 운임 목록 오류")?;
+    let mut charges=Vec::new();
+    for bundle in bundles{
+        let (amount,reason)=billing_charge(safe(field(bundle,"appliedCharge")),exempt,str_field(bundle,"freightCode"));
+        bundle["billableCharge"]=json!(amount);
+        bundle["billingReason"]=json!(reason);
+        charges.push(amount);
+    }
+    quote["total"]=json!(if exempt{Some(0)}else if charges.is_empty(){None}
+        else{charges.into_iter().collect::<Option<Vec<_>>>().and_then(checked_sum)});
+    Ok(quote)
+}
+
 pub(super) fn reception_recommend(order:&Value,state:&Value)->Result<Value,String>{
     let mut quote=recommend(order,state)?;
     let bundles=quote["bundles"].as_array_mut().ok_or("배송 운임 목록 오류")?;
@@ -364,10 +388,11 @@ pub(super) fn reception_recommend(order:&Value,state:&Value)->Result<Value,Strin
         bundle["source"]=json!(if from_staff{"MANUAL"}else{
             str_field(bundle,"source")
         });
-        let cod=str_field(recipient,"freightCode")=="020";
-        bundle["freightCode"]=json!(if cod{"020"}else{"010"});
-        let billable=if cod{Some(0)}else{applied};
+        let code=super::workflow::shipment_freight_code(order,recipient);
+        bundle["freightCode"]=json!(if code=="020"{"020"}else{"010"});
+        let (billable,reason)=billing_charge(applied,false,code);
         bundle["billableCharge"]=json!(billable);
+        bundle["billingReason"]=json!(reason);
         billed.push(billable);
     }
     let total=if billed.is_empty(){None}else{
