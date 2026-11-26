@@ -28,12 +28,6 @@ fn notice_delta(group: &Value, current: &Value) -> Value {
     }
 }
 
-fn vat_applies(order: &Value, recipient: &Value) -> bool {
-    field(recipient, "vatOverride").as_bool()
-        .or_else(|| field(recipient, "vatDefault").as_bool())
-        .unwrap_or_else(|| flag(order, "applyVat"))
-}
-
 /// Returns a pure projection of all active workflow groups, with no state
 /// mutation. All amounts and action blockers are calculated in compiled Rust.
 /// React remains responsible only for presenting this result.
@@ -98,7 +92,7 @@ pub(super) fn project(payload: &Value) -> Result<Value, String> {
                 .ok_or("배송 건의 발주서 / 수취인 / 거래처 연결을 확인하세요.")?;
             let recipient = find_by_id(field(order, "recipients"), str_field(ship, "recipientId"))
                 .ok_or("배송 건의 발주서 / 수취인 / 거래처 연결을 확인하세요.")?;
-            let vat = vat_applies(order, recipient);
+            let vat = super::pricing::vat_applies(order, recipient);
             let freight_code = workflow::shipment_freight_code(order, recipient);
             let excluded = workflow::party(state, order)
                 .is_some_and(|client| flag(client, "shippingFeeExcluded"));
@@ -249,8 +243,8 @@ pub(super) fn project_order(payload: &Value) -> Result<Value, String> {
         .collect::<Result<Vec<_>, _>>()?;
     let recipients = rows(field(order, "recipients"));
     let line_amounts = line_amounts(recipients);
-    let has_vat = recipients.iter().any(|row| vat_applies(order, row));
-    let has_excluded = recipients.iter().any(|row| !vat_applies(order, row));
+    let has_vat = recipients.iter().any(|row| super::pricing::vat_applies(order, row));
+    let has_excluded = recipients.iter().any(|row| !super::pricing::vat_applies(order, row));
     Ok(json!({
         "orderId": order_id,
         "shipmentCount": ships.len(),
