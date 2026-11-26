@@ -383,15 +383,13 @@ pub(super) fn billing(state:&Value,index:usize)->Result<String,String> {
             str_field(a,"bank").trim(),str_field(a,"number").trim(),
             str_field(a,"holder").trim()])).map_err(|e|e.to_string())?
     } else {String::new()};
-    let vat=field(recipient,"vatOverride").as_bool()
-        .or_else(||field(recipient,"vatDefault").as_bool())
-        .unwrap_or(flag(order,"applyVat"));
+    let vat=super::pricing::vat_applies(order,recipient);
     let collect=if has_value(field(recipient,"freightCode")) {
         str_field(recipient,"freightCode")=="020"
     } else {str_field(order,"freightCode")=="020"};
     let str_json=|s:&str|serde_json::to_string(s).unwrap_or_else(|_|"null".to_string());
     let suffix=if collect {",\"collect\":true"} else {""};
-    let rate=field(recipient,"vatRateBps").as_i64().unwrap_or(1000);
+    let rate=super::pricing::vat_rate(recipient)?;
     let rate_suffix=if vat && rate!=1000{format!(",\"vatRateBps\":{rate}")}else{String::new()};
     Ok(format!("{{\"info\":{},\"fees\":{},\"vat\":{},\"account\":{}{suffix}{rate_suffix}}}",
         field(ship,"infoSignature"),field(ship,"charges"),vat,str_json(&account_key)))
