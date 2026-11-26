@@ -7,7 +7,7 @@ use eframe::egui::{self,Context,Vec2};
 use serde_json::Value;
 use crate::{
     gateway::BandoGateway,
-    manual_product_search::{Event as SearchEvent, ProductSearch},
+    product_manager::ProductManager,
     product_images::ProductImageCache,
     theme::{self, ButtonRole},
     typography,
@@ -57,7 +57,7 @@ pub struct ItemEditor{
     initial_price:Option<i64>,
     manual_draft:bool,
     replacement:Option<Value>,
-    search:Option<ProductSearch>,
+    search:Option<ProductManager>,
     original_catalog_product:Option<Value>,
     photo_read:crate::screen_refresh::ReadRefresh<Option<Value>>,
     photo_requested:bool,
@@ -132,8 +132,8 @@ impl ItemEditor{
     fn open_search(&mut self,gateway:Arc<dyn BandoGateway>,ctx:&Context){
         let raw_name=field(&self.initial,"name");
         let query=raw_name.split(" / ").next().unwrap_or(raw_name).to_owned();
-        self.search=Some(ProductSearch::with_query(
-            self.client_id.clone(),query,gateway,ctx.clone()
+        self.search=Some(ProductManager::new_selection_with_query(
+            gateway,ctx.clone(),self.client_id.clone(),query
         ));
     }
     /// Existing field names and mutations are retained; each label/value
@@ -366,17 +366,21 @@ impl ItemEditor{
         if self.search.is_some() || self.confirm_delete || self.confirm_discard{
             crate::popup::modal_backdrop(ctx,"reception-item-nested-backdrop",true);
         }
-        if let Some(event)=self.search.as_mut().and_then(|search|
-            search.show(ctx,Arc::clone(&gateway),work_area)
-        ){
-            match event{
-                SearchEvent::Cancelled=>{},
-                SearchEvent::Chosen(product)=>{
+        if let Some(search)=self.search.as_mut(){
+            let (cancelled,chosen)=search.show_selection_modal(
+                ctx,work_area,"native-manual-product-search"
+            );
+            if cancelled{
+                self.search=None;
+            }else if let Some(selection)=chosen{
+                if let Some(product)=search.selection_product(&selection){
                     self.replacement=Some(product);
                     self.error=None;
+                    self.search=None;
+                }else{
+                    self.error=Some("선택한 상품 정보를 확인할 수 없습니다.".into());
                 }
             }
-            self.search=None;
         }
         if self.confirm_delete{
             let (cancel,remove)=self.show_delete_confirmation(ctx,work_area,busy);
