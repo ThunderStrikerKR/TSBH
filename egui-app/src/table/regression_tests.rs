@@ -157,10 +157,10 @@ mod management_readonly_table_contract_tests {
     }
 
     #[test]
-    fn read_only_table_row_advance_includes_one_shared_divider(){
+    fn read_only_table_row_advance_includes_divider_inside_compact_row(){
         assert_eq!(
             management_readonly_table_row_advance(),
-            theme::MANAGEMENT_COMPACT_ROW_HEIGHT+theme::SOFT_DIVIDER_WIDTH
+            theme::MANAGEMENT_COMPACT_ROW_HEIGHT
         );
     }
 }
