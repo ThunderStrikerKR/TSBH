@@ -732,7 +732,7 @@ impl CategoryManager {
                     else{(current.clone(),(t-0.5)*2.0,-dir*(1.0-t)*16.0)}
                 }else{(current.clone(),1.0,0.0)};
                 if let Some(target)=category_dropdown::crumbs_row(panel,&mut self.crumbs,&node_index,
-                    &nav_path,!busy,alpha,slide,0.0){
+                    &nav_path,!busy&&self.nav_motion.is_none(),alpha,slide){
                     let depth=current.len().saturating_sub(target.len());
                     let branch=current.get(target.len()).cloned();
                     self.select_map(&cats,target.last().map(String::as_str).unwrap_or(""),now);

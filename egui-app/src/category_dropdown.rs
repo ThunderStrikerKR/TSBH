@@ -118,10 +118,7 @@ fn category_option_row(ui:&mut Ui,name:&str,depth:usize,is_last:bool,
     })
 }
 fn category_back_button(ui:&mut Ui,enabled:bool)->Response{
-    crate::button::action_with_min_width(
-        ui,"← 상위로",theme::ButtonRole::Ghost,enabled,
-        theme::CATEGORY_EXPLORER_BACK_WIDTH
-    )
+    crate::button::icon_action_button(ui,"←",enabled)
 }
 pub(crate) fn motion_ms(depth:usize)->f64{
     (450+depth.saturating_sub(1).min(4)*150).min(1000) as f64
@@ -223,16 +220,27 @@ fn crumb_text(ui:&mut Ui,name:&str,width:f32,current:bool,enabled:bool)->Respons
     let galley=typography::category_tree_name_galley(ui,&visible,false);
     let pos=egui::pos2(rect.left()+theme::CATEGORY_EXPLORER_CRUMB_TEXT_INSET,rect.center().y-galley.size().y/2.0);
     ui.painter().with_clip_rect(rect).galley_with_override_text_color(pos,galley,
-        if current{theme::CATALOG_TREE_SELECTED_INK}else{theme::TEXT});
+        if current{theme::CATALOG_TREE_SELECTED_INK}else{theme::CATEGORY_EXPLORER_ANCESTOR_INK});
     crate::ui_primitives::overflow_tooltip(response,visible!=name,name)
 }
 pub(crate) fn crumbs_row(ui:&mut Ui,state:&mut ExplorerState,index:&HashMap<&str,&CategoryNode>,
-    path:&[String],enabled:bool,alpha:f32,slide:f32,rail:f32)->Option<Vec<String>>{
+    path:&[String],enabled:bool,alpha:f32,slide:f32)->Option<Vec<String>>{
     let mut next=None;
-    let width=(ui.available_width()-rail).max(1.0);
     let height=theme::CATEGORY_EXPLORER_CRUMB_HEIGHT;
-    let (rect,_)=ui.allocate_exact_size(Vec2::new(ui.available_width().max(1.0),height),egui::Sense::hover());
-    let rect=egui::Rect::from_min_max(rect.min+egui::vec2(rail,0.0),rect.max);
+    let (nav_rect,_)=ui.allocate_exact_size(Vec2::new(ui.available_width().max(1.0),height),egui::Sense::hover());
+    // The back action remains in a fixed slot, outside the moving/fading path.
+    // Root and busy states disable it without shifting the breadcrumb or tree.
+    let back_width=theme::CATEGORY_EXPLORER_BACK_WIDTH.min(nav_rect.width());
+    let back_rect=egui::Rect::from_min_size(nav_rect.min,Vec2::new(back_width,height));
+    let mut back=ui.new_child(egui::UiBuilder::new().id_salt("category-back")
+        .max_rect(back_rect).layout(egui::Layout::left_to_right(egui::Align::Center)));
+    back.set_clip_rect(back_rect.intersect(ui.clip_rect()));
+    if category_back_button(&mut back,enabled&&!path.is_empty()).clicked(){
+        next=Some(path[..path.len().saturating_sub(1)].to_vec());
+    }
+    let rail=(back_width+theme::SPACE_8).min((nav_rect.width()-1.0).max(0.0));
+    let rect=egui::Rect::from_min_max(nav_rect.min+egui::vec2(rail,0.0),nav_rect.max);
+    let width=rect.width().max(1.0);
     let mut bar=ui.new_child(egui::UiBuilder::new().max_rect(rect.translate(egui::vec2(slide,0.0)))
         .layout(egui::Layout::left_to_right(egui::Align::Center)));
     bar.set_clip_rect(rect.intersect(ui.clip_rect()));
@@ -246,9 +254,9 @@ pub(crate) fn crumbs_row(ui:&mut Ui,state:&mut ExplorerState,index:&HashMap<&str
     let omitted=omitted_count(width,&widths[..last],widths[last],dots,sep);
     let separator=|bar:&mut Ui|{let (r,_)=bar.allocate_exact_size(Vec2::new(sep,height),egui::Sense::hover());
         let galley=typography::category_tree_name_galley(bar,"›",false);
-        bar.painter().galley_with_override_text_color(r.center()-galley.size()/2.0,galley,theme::SECONDARY);};
+        bar.painter().galley_with_override_text_color(r.center()-galley.size()/2.0,galley,theme::CATEGORY_EXPLORER_SEPARATOR_INK);};
     if omitted>0{
-        if crate::button::action_with_min_width(&mut bar,"…",theme::ButtonRole::Standard,enabled,dots).clicked(){
+        if crumb_text(&mut bar,"…",dots,false,enabled).clicked(){
             state.ancestors_open=!state.ancestors_open;
         }
         separator(&mut bar);
@@ -344,7 +352,7 @@ pub(crate) fn explorer_body(menu:&mut Ui,nodes:&[CategoryNode],index:&HashMap<&s
     }).unwrap_or(1.0);
     let nav_slide=motion.as_ref().map(|m|if final_phase{(1.0-alpha)*if m.reverse{-8.0}else{8.0}}
         else{(1.0-alpha)*if m.reverse{8.0}else{-8.0}}).unwrap_or(0.0);
-    if let Some(p)=crumbs_row(menu,state,index,&visual_path,enabled&&!busy,alpha,nav_slide,theme::CATEGORY_EXPLORER_BACK_WIDTH+theme::SPACE_8){next_path=Some(p);}
+    if let Some(p)=crumbs_row(menu,state,index,&visual_path,enabled&&!busy,alpha,nav_slide){next_path=Some(p);}
     if totals.is_some(){crate::ui_primitives::section_divider(menu);}
     else{crate::ui_primitives::soft_divider(menu);}
     let searching=!state.search.trim().is_empty();
@@ -361,12 +369,8 @@ pub(crate) fn explorer_body(menu:&mut Ui,nodes:&[CategoryNode],index:&HashMap<&s
         state.rendered_context=Some(current.to_owned());
     }
     if query_changed{state.rendered_query.clone_from(&state.search);}
-    menu.horizontal_top(|body|{
-        body.spacing_mut().item_spacing.x=theme::SPACE_8;
-        if category_back_button(body,enabled&&!busy&&!state.path.is_empty()).clicked(){
-            let mut p=state.path.clone();p.pop();next_path=Some(p);
-        }
-        body.vertical(|tree_ui|{
+    // Navigation owns the back button; the tree uses the full viewport width.
+    menu.vertical(|tree_ui|{
             let mut scroll=crate::scrollbar::scroll_area(crate::scrollbar::ScrollAxes::Vertical)
                 .id_salt(("category-explorer-list",state.scroll_epoch,searching,busy))
                 .max_height(list_height).auto_shrink([false,false]);
@@ -437,7 +441,6 @@ pub(crate) fn explorer_body(menu:&mut Ui,nodes:&[CategoryNode],index:&HashMap<&s
                 ghost.set_opacity(if m.reverse&&final_phase{1.0-alpha}else{1.0});
                 category_option_row(&mut ghost,&m.ghost_name,0,true,true,!m.reverse&&final_phase,true);
             }
-        });
     });
     if let Some(path)=next_path{
         begin_move(state,path,nodes,index,now,source,list_height);
@@ -677,6 +680,16 @@ mod tests{
         assert_eq!(theme::CATEGORY_EXPLORER_POPUP_WIDTH,655.0);
         assert_eq!(theme::CATEGORY_EXPLORER_VISIBLE_ROWS,6);
         assert_eq!(theme::CATEGORY_EXPLORER_LIST_MAX_HEIGHT,252.0);
+    }
+    #[test]
+    fn breadcrumb_palette_keeps_only_current_folder_prominent(){
+        assert_eq!(theme::CATEGORY_EXPLORER_BACK_WIDTH,theme::CATEGORY_EXPLORER_CRUMB_HEIGHT);
+        assert_eq!(theme::CATEGORY_EXPLORER_ANCESTOR_INK,theme::MUTED);
+        assert!(theme::CATEGORY_EXPLORER_SEPARATOR_INK.r()<theme::CATEGORY_EXPLORER_ANCESTOR_INK.r());
+        assert!(theme::CATALOG_TREE_SELECTED_INK.r()>theme::CATEGORY_EXPLORER_ANCESTOR_INK.r());
+        let source=include_str!("category_dropdown.rs");
+        let row=source.split("fn crumb_text(").nth(1).unwrap().split("fn crumbs_row(").next().unwrap();
+        assert!(row.contains("if current{theme::CATALOG_TREE_SELECTED_INK}else{theme::CATEGORY_EXPLORER_ANCESTOR_INK}"));
     }
     #[test]
     fn shared_rows_and_single_motion_are_used(){

@@ -35,19 +35,22 @@ use crate::button::{management_date_segment_corners,ManagementDateSegmentEdge};
 #[cfg(test)]
 mod shared_ghost_action_contract_tests {
     #[test]
-    fn category_explorer_back_uses_shared_ghost_action(){
+    fn category_explorer_back_uses_shared_icon_action_in_header(){
         let source=include_str!("../category_dropdown.rs");
         let back=source.split("fn category_back_button(").nth(1).unwrap()
-            .split("fn crumbs_row(").next().unwrap();
-        assert!(back.contains("theme::ButtonRole::Ghost"));
-        assert!(back.contains("crate::button::action_with_min_width("));
+            .split("fn motion_ms(").next().unwrap();
+        assert!(back.contains("crate::button::icon_action_button("));
         assert!(!back.contains("egui::Button::new("));
 
-        let explorer=source.split("if state.ancestors_open && state.path.len()>1")
-            .nth(1).unwrap().split("crate::ui_primitives::soft_divider(menu);")
-            .next().unwrap();
-        assert!(explorer.contains("crate::card::category_ancestor_frame()"));
-        assert!(!explorer.contains("egui::Frame::new()"));
+        let nav=source.split("fn crumbs_row(").nth(1).unwrap()
+            .split("impl ExplorerState").next().unwrap();
+        assert!(nav.contains("category_back_button(&mut back,enabled&&!path.is_empty())"));
+        assert!(nav.contains("crate::card::category_ancestor_frame()"));
+        assert!(!nav.contains("egui::Frame::new()"));
+        let tree=source.split("fn explorer_body(").nth(1).unwrap()
+            .split("type PopupStates").next().unwrap();
+        assert!(!tree.contains("category_back_button("));
+        assert!(tree.contains("menu.vertical(|tree_ui|"));
     }
 }
 
