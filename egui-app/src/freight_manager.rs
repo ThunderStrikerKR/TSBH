@@ -479,7 +479,8 @@ impl FreightManager {
         refresh.submit_required(ctx,move||management_queries::load_freight(gateway.as_ref()));
     }
     pub fn refresh(&mut self,ctx:egui::Context) {
-        if !self.refresh_job.pending() && !self.busy() && !self.dirty() {
+        if !self.refresh_job.pending() && !self.busy() && !self.dirty()
+            && !self.has_other_modal() && !self.has_rate_modal() {
             self.error=None;
             self.notice=None;
             Self::fetch(&mut self.refresh_job,Arc::clone(&self.gateway),ctx);
@@ -632,8 +633,12 @@ impl FreightManager {
     fn poll(&mut self,ctx:egui::Context) {
         match self.refresh_job.poll(){
             Some(Ok((state,projection)))=>{
-                self.state=Some(state);self.display_cache.invalidate();self.assignment_cache.invalidate();
-                self.projection=Some(projection);
+                // A delayed refresh must not replace the baseline of an
+                // open editor or a pending assignment draft.
+                if self.state.is_none() || (!self.dirty() && !self.has_other_modal() && !self.has_rate_modal()){
+                    self.state=Some(state);self.display_cache.invalidate();self.assignment_cache.invalidate();
+                    self.projection=Some(projection);
+                }
                 self.refresh_job.verified();
             }
             Some(Err(error))=>self.error=Some(error),
@@ -715,7 +720,7 @@ impl FreightManager {
         }
     }
 
-    fn write(&mut self, action: String, data: Value, ctx:egui::Context) {
+    fn write(&mut self, action: String, mut data: Value, ctx:egui::Context) {
         if self.refresh_job.required() || self.write_receiver.is_some() || !self.gateway.shipping_write_enabled(){
             return;
         }
@@ -725,6 +730,9 @@ impl FreightManager {
                 self.error=Some("최신 운임 정보를 확인할 수 없습니다.".into());
                 return;
             };
+        if let Some(state)=self.state.as_ref(){
+            data["expectedScope"]=json!(bando_data_access::management_scope_token(state,"shipping"));
+        }
         let gateway=Arc::clone(&self.gateway);
         let requested=action.clone();
         let (sender,receiver)=mpsc::channel();
