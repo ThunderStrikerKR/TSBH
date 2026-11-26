@@ -1912,6 +1912,10 @@ impl ProductManager {
             });
             if selected!=current{set_sale_status(draft,&selected);}
         });
+        let mut navigation=cell_navigation::WorksheetFocus::new(
+            ui.make_persistent_id("product-detail-price-cells"),
+            cell_navigation::vertical_worksheet_cells(["wholesale","semi","retail"],editable&&!busy)
+        );
         for (label,tier) in [
             ("도매가","wholesale"),("반도매가","semi"),
             ("소매가","retail")
@@ -1928,13 +1932,16 @@ impl ProductManager {
                     Layout::left_to_right(Align::Center),
                     |input|{
                         input.add_enabled_ui(editable&&!busy,|editor|{
-                            components::money_field(editor,value,true);
+                            navigation.before(editor.ctx(),tier);
+                            let response=components::money_field(editor,value,true);
+                            navigation.record(tier,response);
                         });
                     }
                 );
                 line.label(typography::field_label("원"));
             });
         }
+        navigation.finish(ui.ctx());
     }
     fn detail_information_column(
         ui:&mut Ui,draft:&mut Value,prices:&mut HashMap<String,String>,
