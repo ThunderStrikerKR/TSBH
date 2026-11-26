@@ -6259,7 +6259,7 @@ pub enum ReceptionNumericCell{Quantity,Money}
 /// A stepper click may temporarily move the text focus. Both consumers
 /// must retain the draft until that click resolves.
 pub fn reception_numeric_edit_finished(response:&Response,step_interaction:bool)->bool{
-    response.lost_focus() && !step_interaction
+    crate::cell_navigation::worksheet_blur_finished(response,step_interaction)
 }
 
 pub fn reception_item_numeric_editor(
