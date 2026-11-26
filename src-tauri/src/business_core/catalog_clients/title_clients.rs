@@ -74,6 +74,10 @@ fn unique_title_client_id(state:&Value,title:&str)->Option<String>{
     if hits.len()==1{Some(s(hits[0],"id").to_owned())} else{None}
 }
 fn confirmed_title_count(state:&Value,title:&str,client_id:&str)->usize{
+    if let Some(counts)=state.get("confirmedTitleCounts"){
+        return counts.get(key(title)).and_then(|v|v.get(client_id))
+            .and_then(Value::as_u64).and_then(|n|usize::try_from(n).ok()).unwrap_or(0);
+    }
     list(state,"orders").iter().filter(|order|{
         !s(order,"confirmedAt").is_empty() && !truthy(order.get("deletedAt")) &&
         s(order,"clientId")==client_id &&
@@ -131,7 +135,9 @@ fn reception_client(payload:&Value)->Result<Value,String>{
                         s(chat,"title").to_owned()));
                 }
             }
-            if chat_match.is_none(){
+            // A recorded ambiguous title is not permission to guess again
+            // by substring. Explicit ordering-business evidence may still win.
+            if chat_match.is_none() && !stored.is_some_and(|entry|truthy(entry.get("ambiguous"))){
                 if let Some(id)=unique_title_client_id(state,s(chat,"title")){
                     chat_match=Some((id,"KAKAO_TITLE",s(chat,"title").to_owned()));
                 }
@@ -459,5 +465,22 @@ mod tests {
             "handle":"1","clientId":"c1","actor":"직원",
             "now":"2026-11-15T00:00:00Z"})).unwrap();
         assert_eq!(result["state"]["settings"]["kakaoTitleMappings"]["악기사"]["ambiguous"],true);
+    }
+}
+
+#[cfg(test)]
+mod title_ambiguity_regressions{
+    use super::*;
+    #[test]
+    fn remembered_ambiguity_blocks_name_fallback_but_not_explicit_sender(){
+        let state=json!({"clients":[{"id":"a","name":"가상악기"}],
+            "settings":{"kakaoTitleMappings":{"가상악기":{"clientId":"a","ambiguous":true}}}});
+        let mut input=json!({"state":state,"windows":[{"kind":"CHAT","title":"가상악기","handle":"1"}]});
+        assert_eq!(reception_client(&input).unwrap()["clientId"],Value::Null);
+        input["raw"]=json!("발주처: 가상악기");
+        assert_eq!(reception_client(&input).unwrap()["source"],"RAW_EXPLICIT");
+        input["state"]["settings"]["kakaoTitleMappings"]["가상악기"]["ambiguous"]=json!(false);
+        input["state"]["confirmedTitleCounts"]=json!({"가상악기":{"a":3}});
+        assert_eq!(reception_client(&input).unwrap()["confirmedMatchCount"],3);
     }
 }
