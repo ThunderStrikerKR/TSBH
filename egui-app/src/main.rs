@@ -1094,6 +1094,8 @@ struct BandoEgui {
     pending_draft_confirmation:Option<String>,
     // SQLite committed; keep the old card until the verified board is ready.
     committed_draft_handoff:Option<String>,
+    // Explicit stage click is independent of transient pointer preview.
+    pending_stage_display:Option<workflow_board_ui::PendingTarget>,
     // React's original stage safety rule: repeated stage taps within 2s
     // must not silently advance the same group twice.
     workflow_stage_deadlines: HashMap<String, Instant>,
@@ -1224,6 +1226,7 @@ impl BandoEgui {
             workflow_freight_guidance:None,
             pending_draft_confirmation:None,
             committed_draft_handoff:None,
+            pending_stage_display:None,
             workflow_stage_deadlines: HashMap::new(),
             workflow_dialog: None,
             workflow_manage_target: String::new(),
@@ -1289,6 +1292,12 @@ impl BandoEgui {
             .or_else(||self.workflow_action.as_ref()
                 .filter(|a|a.action=="confirm_reception").map(|a|a.group_id.as_str()))
             .and_then(|id|id.strip_prefix("group:"))
+    }
+
+    fn pending_stage_target(&self)->Option<&workflow_board_ui::PendingTarget>{
+        self.pending_stage_display.as_ref().filter(|target|
+            self.confirming_order()==Some(target.order_id.as_str()) ||
+            self.pending_draft_confirmation.as_deref()==Some(target.order_id.as_str()))
     }
 
     fn active_confirmation_locked(&self)->bool{
@@ -1736,10 +1745,12 @@ impl BandoEgui {
         let Some(group)=snapshot.groups.iter().find(|g|g.id==group_id&&g.step>=1)
             else{return false;};
         let was_active=self.active_id.as_deref()==Some(order_id);
-        let preferred=if was_active{
-            self.analysis.as_ref().and_then(|a|reception_service::recipients(a)
-                .get(self.selected_recipient)).and_then(|r|r["id"].as_str())
-        }else{None};
+        let clicked=self.pending_stage_target().filter(|target|target.order_id==order_id);
+        let preferred=clicked.and_then(|target|target.recipient_id.as_deref())
+            .or_else(||if was_active{
+                self.analysis.as_ref().and_then(|a|reception_service::recipients(a)
+                    .get(self.selected_recipient)).and_then(|r|r["id"].as_str())
+            }else{None});
         let target=group.shipments.iter().find(|s|s.order_id==order_id&&
             preferred.is_some_and(|id|s.recipient_id==id))
             .or_else(||group.shipments.iter().find(|s|s.order_id==order_id));
@@ -1748,10 +1759,11 @@ impl BandoEgui {
             group_id:group.id.clone(),order_id:target.order_id.clone(),shipment_id:target.id.clone()
         };
         let order_id=order_id.to_owned();
-        let keep_selected=was_active&&self.workflow_ui.selection.is_none();
+        let keep_selected=clicked.is_some() || (was_active&&self.workflow_ui.selection.is_none());
         let was_folded=self.workflow_ui.folded.as_deref()==Some(format!("pending:{order_id}").as_str());
         self.drafts.retain(|d|d.id!=order_id);
         self.committed_draft_handoff=None;
+        self.pending_stage_display=None;
         self.pending_display=None;
         if was_active{
             self.active_id=None;
@@ -1770,6 +1782,42 @@ impl BandoEgui {
         true
     }
 
+    // Never fall back to an unrelated order when a refreshed projection
+    // moves the same shipment to another group (e.g. regrouping).
+    fn reconcile_workflow_selection(&mut self,snapshot:&workflow_board::BoardSnapshot){
+        let Some(selected)=self.workflow_ui.selection.clone()else{return;};
+        if snapshot.groups.iter().any(|group|group.id==selected.group_id &&
+            group.shipments.iter().any(|ship|
+                ship.id==selected.shipment_id && ship.order_id==selected.order_id)){
+            return;
+        }
+        let old_recipient=self.workflow_snapshot.as_ref().and_then(|board|
+            board.groups.iter().find(|group|group.id==selected.group_id))
+            .and_then(|group|group.shipments.iter().find(|ship|
+                ship.id==selected.shipment_id && ship.order_id==selected.order_id))
+            .map(|ship|ship.recipient_id.as_str());
+        let mut candidates=snapshot.groups.iter().flat_map(|group|
+            group.shipments.iter().map(move |ship|(group,ship)))
+            .filter(|(_,ship)|ship.order_id==selected.order_id);
+        let replacement=candidates.clone().find(|(_,ship)|ship.id==selected.shipment_id)
+            .or_else(||candidates.find(|(_,ship)|
+                old_recipient.is_some_and(|id|ship.recipient_id==id)))
+            .map(|(group,ship)|workflow_board_ui::Selection{
+                group_id:group.id.clone(),order_id:ship.order_id.clone(),shipment_id:ship.id.clone()
+            });
+        let was_folded=self.workflow_ui.folded.as_deref()==Some(selected.group_id.as_str());
+        self.confirmed_cell=None;
+        if let Some(target)=replacement{
+            let group=target.group_id.clone();
+            self.workflow_ui.select(target);
+            if was_folded{self.workflow_ui.folded=Some(group);}
+        }else{
+            self.workflow_ui.selection=None;
+            self.workflow_ui.folded=None;
+            self.workflow_ui.stop_preview();
+        }
+    }
+
     fn poll_workflow_board(&mut self,ctx:&egui::Context){
         if let Some(receiver)=self.workflow_receiver.as_ref(){
             match receiver.try_recv(){
@@ -1786,18 +1834,7 @@ impl BandoEgui {
                         ctx.request_repaint();
                         return;
                     }
-                    if self.workflow_ui.selection.as_ref().is_some_and(|selected|
-                        !snapshot.groups.iter().any(|group|
-                            group.id==selected.group_id &&
-                            group.shipments.iter().any(|ship|
-                                ship.id==selected.shipment_id &&
-                                ship.order_id==selected.order_id)))
-                    {
-                        self.confirmed_cell=None;
-                        self.workflow_ui.selection=None;
-                        self.workflow_ui.folded=None;
-                        self.workflow_ui.stop_preview();
-                    }
+                    self.reconcile_workflow_selection(&snapshot);
                     self.workflow_snapshot=Some(Arc::new(snapshot));
                     self.workflow_source_display=None;
                     self.workflow_refresh_required=false;
@@ -1916,7 +1953,7 @@ impl BandoEgui {
             .map(|(order,key)|(order,key.recipient_id.as_str()));
         let visible=self.active_id.as_deref().and_then(|order|
             workflow_board_ui::visible_pending_recipient(
-                order,self.workflow_ui.pending_preview(),linked
+                order,self.pending_stage_target().or_else(||self.workflow_ui.pending_preview()),linked
             )
         );
         visible.and_then(|id|rows.iter().position(|row|
@@ -1928,8 +1965,9 @@ impl BandoEgui {
     fn visible_pending_other(&mut self)->Option<(Arc<PendingDisplay>,usize)>{
         // React precedence: a hovered native stage is above pending-card
         // preview, while the committed selection remains below both.
-        if self.workflow_ui.active_preview().is_some(){return None;}
-        let preview=self.workflow_ui.pending_preview()?;
+        let pinned=self.pending_stage_target();
+        if pinned.is_none() && self.workflow_ui.active_preview().is_some(){return None;}
+        let preview=pinned.or_else(||self.workflow_ui.pending_preview())?;
         if self.active_id.as_deref()==Some(preview.order_id.as_str()){return None;}
         let draft=self.drafts.iter().find(|row|row.id==preview.order_id)?;
         let display=Self::pending_projection(&mut self.pending_display,draft)?;
@@ -2001,6 +2039,7 @@ impl BandoEgui {
         if !self.drafts.iter().any(|draft|draft.id==id){return false;}
         self.workflow_freight_editor=None;
         self.workflow_freight_next_selection=None;
+        self.pending_stage_display=None;
         self.workflow_ui.selection=None;
         self.workflow_ui.folded=None;
         self.workflow_ui.stop_preview();
@@ -4302,6 +4341,24 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
             self.reception_job_conflict(ReceptionJob::NavigateReception,blocker);
             return;
         }
+        // Do not clear the visible order on a rejected new-order request.
+        if self.workflow_refresh_required && self.workflow_error.is_none(){
+            floating_notice::publish(ctx,"reception.workflow",floating_notice::Tone::Info,
+                "주문 상태를 갱신하고 있습니다. 갱신 후 새 주문을 열어 주세요.");
+            return;
+        }
+        if self.drafts.len()>=1000 && !self.active_id.as_deref().and_then(|id|
+            self.drafts.iter().find(|item|item.id==id))
+            .is_some_and(|item|item.raw.trim().is_empty() && item.manual_model.is_none()){
+            self.source_save_error=Some("미확정 접수 1,000건을 초과할 수 없습니다.".into());
+            return;
+        }
+        self.pending_stage_display=None;
+        self.workflow_ui.selection=None;
+        self.workflow_ui.folded=None;
+        self.workflow_ui.stop_preview();
+        self.link_hover.clear();
+        self.source_hover=None;
         // An already-open empty receipt is the new order. Do not multiply
         // empty records when the user clicks "+ 새 주문" repeatedly.
         if self.active_id.as_deref().and_then(|id|
@@ -4311,10 +4368,6 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
             // returns to intake mode; it must not strand SourceEntry forever.
             self.direct_source_entry=false;
             self.source_editing = false;
-            return;
-        }
-        if self.drafts.len() >= 1000 {
-            self.source_save_error = Some("미확정 접수 1,000건을 초과할 수 없습니다.".into());
             return;
         }
         use std::sync::atomic::AtomicU64;
@@ -5614,6 +5667,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                 self.workflow_ui.stop_preview();
                 self.workflow_ui.folded=None;
                 if self.active_id.is_none()&&self.workflow_action.is_none()
+                    &&!self.workflow_refresh_required&&self.confirming_order().is_none()
                     &&self.confirmed_cell.is_none()&&self.confirmed_modal_target.is_none()
                     &&self.workflow_freight_editor.is_none(){
                     self.workflow_ui.selection=None;
@@ -6237,6 +6291,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
     /// Never swap it into the editable egui working_source, autosave worker,
     /// or the active employee-selected draft.
     fn visible_workflow_group(&self)->Option<(Arc<workflow_board::BoardSnapshot>,usize,usize)>{
+        if self.pending_stage_target().is_some(){return None;}
         let editing=self.workflow_freight_editor.is_some() || self.confirmed_cell.is_some()
             || self.confirmed_modal_target.is_some();
         let stage=if editing{None}else{self.workflow_ui.active_preview()};
@@ -6399,9 +6454,6 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                 },ui.ctx());
             }
             if new_clicked{
-                self.workflow_ui.selection=None;
-                self.workflow_ui.folded=None;
-                self.workflow_ui.stop_preview();
                 self.new_reception(ui.ctx());
             }
             return;
@@ -6542,11 +6594,6 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                 }
             }
             if new_clicked{
-                self.workflow_ui.selection=None;
-                self.workflow_ui.folded=None;
-                self.workflow_ui.stop_preview();
-                self.link_hover.clear();
-                self.source_hover=None;
                 self.new_reception(ui.ctx());
             }
             return;
@@ -9069,6 +9116,12 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                 args[key.as_str()]=value.clone();
             }
         }
+        // A successful admission for an explicit stage/copy/undo action
+        // commits the displayed recipient before the asynchronous write.
+        if matches!(action,"advance_group"|"confirm_group_payment"|"process_group"|
+            "undo_group"|"record_message_copy"){
+            self.retain_workflow_stage_target(group_id);
+        }
         let gateway=Arc::clone(&self.gateway);
         let (sender,receiver)=mpsc::channel();
         let context=ctx.clone();
@@ -9181,15 +9234,8 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                     );
                     ctx.request_repaint_after(Duration::from_secs(2));
                 }
-                if action=="delete_group" ||
-                    matches!(action.as_str(),"detach_shipment"|"regroup_shipment")
-                {
-                    if self.workflow_ui.selection.as_ref()
-                        .is_some_and(|s|s.group_id==group_id){
-                        self.workflow_ui.selection=None;
-                        self.workflow_ui.folded=None;
-                    }
-                }
+                // Keep the previous selection until the verified projection
+                // arrives, even for deletion/regrouping. Reconcile by stable ID.
                 if action=="confirm_reception"{
                     self.committed_draft_handoff=Some(group_id.clone());
                 }
@@ -9271,6 +9317,9 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                 }
                 self.workflow_last_fetch=None;
                 self.workflow_error=Some(error.clone());
+                if action=="confirm_reception"{
+                    self.restore_failed_stage_target(&group_id,ctx);
+                }
                 let routed=action=="confirm_reception" && group_id.strip_prefix("group:")
                     .is_some_and(|order_id|self.focus_failed_draft_input(order_id,&error,ctx,notice_origin.clone()));
                 if !routed{
@@ -9297,6 +9346,9 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                 }
                 self.workflow_last_fetch=None;
                 self.workflow_error=Some("주문 변경 처리 도중 작업이 중단되었습니다.".into());
+                if action=="confirm_reception"{
+                    self.restore_failed_stage_target(&group_id,ctx);
+                }
                 floating_notice::publish_from(
                     ctx,"reception.workflow",floating_notice::Tone::Error,
                     "주문 변경 처리 도중 작업이 중단되었습니다.",notice_origin.as_ref()
@@ -9679,6 +9731,44 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
         true
     }
 
+    // A pointer preview is not a selection, but clicking the action is an
+    // explicit intent. Preserve its recipient and the base card geometry.
+    fn retain_workflow_stage_target(&mut self,id:&str){
+        let target=self.visible_workflow_group()
+            .filter(|(board,g,_)|board.groups[*g].id==id)
+            .map(|(board,g,s)|{
+                let ship=&board.groups[g].shipments[s];
+                workflow_board_ui::Selection{group_id:id.to_owned(),
+                    order_id:ship.order_id.clone(),shipment_id:ship.id.clone()}
+            })
+            .or_else(||self.workflow_ui.selection.as_ref()
+                .filter(|selected|selected.group_id==id).cloned())
+            .or_else(||self.workflow_snapshot.as_ref()
+                .and_then(|board|board.groups.iter().find(|group|group.id==id))
+                .and_then(|group|group.shipments.first())
+                .map(|ship|workflow_board_ui::Selection{group_id:id.to_owned(),
+                    order_id:ship.order_id.clone(),shipment_id:ship.id.clone()}));
+        let Some(target)=target else{return;};
+        let keep_folded=self.workflow_ui.selection.as_ref()
+            .is_none_or(|selected|selected.group_id!=id)
+            || self.workflow_ui.folded.as_deref()==Some(id);
+        self.pending_stage_display=None;
+        self.workflow_ui.select(target);
+        if keep_folded{self.workflow_ui.folded=Some(id.to_owned());}
+        self.link_hover.clear();
+        self.source_hover=None;
+    }
+
+    fn restore_failed_stage_target(&mut self,group_id:&str,ctx:&egui::Context){
+        let target=self.pending_stage_display.take().filter(|target|
+            group_id.strip_prefix("group:")==Some(target.order_id.as_str()));
+        if let Some(target)=target.filter(|_|self.page==Page::Reception){
+            if self.select_pending_workflow_card(&target.order_id,ctx){
+                self.focus_pending_recipient(&target,ctx);
+            }
+        }
+    }
+
     fn advance_workflow_group(&mut self,id:&str,ctx:&egui::Context){
         if !self.workflow_mutation_ready(){return;}
         if self.focus_first_missing_workflow_freight(id,ctx){return;}
@@ -9742,7 +9832,9 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                         freight_stage_group,
                         // Hover navigation must never switch the active receipt
                         // while a staff edit, dialog or pending write is open.
-                        !reception_modal_open && self.inline_editor.is_none() && self.inline_change.is_none() &&
+                        !reception_modal_open && self.workflow_action.is_none() &&
+                        !self.workflow_refresh_required && self.pending_draft_confirmation.is_none() &&
+                        self.inline_editor.is_none() && self.inline_change.is_none() &&
                             self.manual_workspace.is_none() && self.vat_dialog.is_none() &&
                             self.vat_change.is_none() && self.client_chooser.is_none() &&
                             self.client_change.is_none() && self.working_sync.is_none() &&
@@ -9767,7 +9859,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                 self.workflow_dialog=Some(WorkflowDialog::DeleteGroup(id));
             }
             Some(workflow_board_ui::Event::AdvanceGroup(id))=>{
-                self.workflow_ui.stop_preview();
+                self.retain_workflow_stage_target(&id);
                 let editing=self.workflow_freight_editor.as_ref()
                     .or(self.submitted_workflow_freight.as_ref())
                     .is_some_and(|editor|editor.group_id==id);
@@ -9790,7 +9882,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                 }
             }
             Some(workflow_board_ui::Event::UndoGroup(id))=>{
-                self.workflow_ui.stop_preview();
+                self.retain_workflow_stage_target(&id);
                 self.start_workflow_action("undo_group",&id,None,None,false,ui.ctx());
             }
             Some(workflow_board_ui::Event::ManagePending(id))=>{
@@ -9800,8 +9892,22 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                 self.workflow_dialog=Some(WorkflowDialog::DeletePending(id));
             }
             Some(workflow_board_ui::Event::ConfirmDraft(id))=>{
+                let recipient_id=self.workflow_ui.pending_preview()
+                    .filter(|target|target.order_id==id)
+                    .and_then(|target|target.recipient_id.clone())
+                    .or_else(||if self.active_id.as_deref()==Some(id.as_str()){
+                        self.analysis.as_ref().and_then(|analysis|
+                            reception_service::recipients(analysis).get(self.visible_recipient_index()))
+                            .and_then(|row|row["id"].as_str()).map(str::to_owned)
+                    }else{None});
+                self.pending_stage_display=Some(workflow_board_ui::PendingTarget{
+                    order_id:id.clone(),recipient_id
+                });
                 self.workflow_ui.stop_preview();
                 self.request_draft_confirmation(&id,ui.ctx());
+                if self.pending_stage_target().is_none(){
+                    self.restore_failed_stage_target(&format!("group:{id}"),ui.ctx());
+                }
             }
             Some(workflow_board_ui::Event::SelectPending(id))=>{
                 self.select_pending_workflow_card(&id,ui.ctx());
@@ -9815,6 +9921,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                 }else{
                     self.workflow_freight_editor=None;
                     self.workflow_freight_next_selection=None;
+                    self.pending_stage_display=None;
                     self.workflow_ui.selection=None;
                     self.workflow_ui.folded=None;
                     self.workflow_ui.stop_preview();
@@ -9835,6 +9942,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                 }else{
                     self.workflow_freight_editor=None;
                     self.workflow_freight_next_selection=None;
+                    self.pending_stage_display=None;
                     self.workflow_ui.select(selection);
                 }
                 self.link_hover.clear();
@@ -10217,6 +10325,7 @@ impl eframe::App for BandoEgui {
             self.workflow_ui.stop_preview();
             self.workflow_action=None;
             self.committed_draft_handoff=None;
+            self.pending_stage_display=None;
             self.workflow_ui.clear_card_order();
             self.workflow_stage_deadlines.clear();
             self.workflow_freight_editor=None;
