@@ -88,3 +88,47 @@ fn factory_binary_duplicate_and_unverified_numeric_tracking_are_held(){
     assert!(read_factory_reply("../bad.xlsx",&factory_bytes(false,false)).is_err());
     assert!(read_factory_reply("bad.xlsx",b"invalid").is_err());
 }
+
+fn factory_reply_columns(g:Option<f64>,q:Option<&str>)->Vec<u8>{
+    let mut book=Workbook::new();
+    let sheet=book.add_worksheet();
+    for (c,v) in [(0,"수하인명"),(2,"수하인주소"),(3,"수하인전화번호"),
+        (6,"택배운임"),(16,"운송장번호"),(17,"별도 운임")]{
+        sheet.write_string(0,c,v).unwrap();
+    }
+    for (c,v) in [(0,"김수취"),(2,"서울 종로구 10"),(3,"010-1234-5678")]{
+        sheet.write_string(1,c,v).unwrap();
+    }
+    if let Some(value)=g{sheet.write_number(1,6,value).unwrap();}
+    if let Some(value)=q{sheet.write_string(1,16,value).unwrap();}
+    sheet.write_number(1,17,9999.).unwrap();
+    book.save_to_buffer().unwrap()
+}
+
+#[test]
+fn factory_reply_requires_actual_g_and_tracking_q_without_substituting_r(){
+    let missing_g=factory_reply_columns(None,Some("001234567890"));
+    let parsed=read_factory_reply("합성.xlsx",&missing_g).unwrap();
+    assert_eq!(parsed["sourceRows"][0]["rawFreight"],"");
+    let held=analyze(&missing_g);
+    assert_eq!(held["applied"],0);
+    assert_eq!(held["held"],1);
+    assert!(held["rows"][0]["issue"].as_str().unwrap().contains("G열"));
+    for invalid in [-1.,0.5]{
+        let held=analyze(&factory_reply_columns(Some(invalid),Some("001234567890")));
+        assert_eq!(held["applied"],0);
+        assert_eq!(held["held"],1);
+    }
+    for actual in [0.,4000.]{
+        let valid=analyze(&factory_reply_columns(Some(actual),Some("001234567890")));
+        assert_eq!(valid["applied"],1);
+        assert_eq!(valid["held"],0);
+        assert_eq!(valid["rows"][0]["actual"].as_i64(),Some(actual as i64));
+    }
+    let mut missing_q=read_factory_reply("합성.xlsx",&factory_reply_columns(Some(4000.),None)).unwrap();
+    missing_q["state"]=factory_state();
+    missing_q["businessDate"]=json!("2026-11-13");
+    missing_q["at"]=json!("2026-11-13T10:00:00Z");
+    missing_q["actor"]=json!("합성");
+    assert!(factory_reply::execute("analyze_factory_reply",&missing_q).unwrap_err().contains("Q열"));
+}

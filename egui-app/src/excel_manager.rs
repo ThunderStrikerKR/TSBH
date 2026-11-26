@@ -722,6 +722,7 @@ impl ExcelManager{
                     workspace.scroll_region("factory-reply-review-body",
                         crate::popup::modal_editor_body_max_height(area.height()),|ui|{
                         ui.label(typography::field_label(&format!("미해결 회신 {count}행")));
+                        ui.label(typography::caption(crate::native_workbooks::FACTORY_REPLY_FORMAT_GUIDANCE));
                         ui.label(typography::caption("정상 회신은 자동 저장됩니다. 충돌 건은 기존 값과 회신 값을 확인한 후 한 행씩 정정하세요."));
                         if count==0{crate::ui_primitives::management_body_state_inline(ui,if busy{"조회 중"}else{"검토할 회신이 없습니다."});}
                         for row in self.reply_rows.iter().skip(self.reply_page*50).take(50){

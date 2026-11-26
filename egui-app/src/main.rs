@@ -9190,7 +9190,13 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                 if action=="confirm_reception"{
                     self.committed_draft_handoff=Some(group_id.clone());
                 }
-                // A group-management decision closes only on its own committed write.
+                // A confirmation closes only on its own committed write.
+                if (action=="delete_group" && matches!(self.workflow_dialog.as_ref(),
+                    Some(WorkflowDialog::DeleteGroup(id)) if id==&group_id)) ||
+                    (action=="advance_group" && matches!(self.workflow_dialog.as_ref(),
+                    Some(WorkflowDialog::PaymentNotice(id)) if id==&group_id)){
+                    self.workflow_dialog=None;
+                }
                 if matches!(action.as_str(),"detach_shipment"|"regroup_shipment")
                     && matches!(self.workflow_dialog.as_ref(),
                         Some(WorkflowDialog::ManageGroup(id)) if id==&group_id){
@@ -9565,7 +9571,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                 if let Some(group)=group{
                     crate::popup::show_decision_window(ctx,"주문 묶음 삭제","egui-workflow-delete-group",work_area,|ui|{
                         crate::popup::decision_workspace(ui,|decision|{
-                            close=decision.header("주문 묶음 삭제","취소",true
+                            close=decision.header("주문 묶음 삭제","취소",self.workflow_action.is_none()
                             );
                             decision.body(|ui|{
                                 ui.label(format!(
@@ -9613,7 +9619,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
             WorkflowDialog::PaymentNotice(id)=>{
                 crate::popup::show_decision_window(ctx,"계좌 안내 완료 확인","egui-workflow-payment-confirm",work_area,|ui|{
                     crate::popup::decision_workspace(ui,|decision|{
-                        close=decision.header("계좌 안내 완료 확인","돌아가기",true
+                        close=decision.header("계좌 안내 완료 확인","돌아가기",self.workflow_action.is_none()
                         );
                         decision.body(|ui|{
                             ui.label(
@@ -9659,8 +9665,9 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
             self.start_workflow_action(
                 &action,&id,shipment.as_deref(),target.as_deref(),ack,ctx
             );
-            // Keep group management and its selections on admission/write failure.
-            close=!matches!(action.as_str(),"detach_shipment"|"regroup_shipment");
+            // Keep the approved target and decision on admission/write failure.
+            // The matching committed response owns dismissal, not this click.
+            close=false;
         }
         if close{self.workflow_dialog=None;}
     }
@@ -11747,6 +11754,55 @@ mod reception_workflow_admission_integration_tests {
             automatic_text:None,automatic_text_with_links:None,automatic_error:None,automatic_phase:None,automatic_signature:None,
             payment_copied:false,automatic_payment_issues:vec![],issues:vec![]
         }]}
+    }
+
+    #[test]
+    fn group_delete_confirmation_survives_failed_save_and_closes_on_matching_commit(){
+        let mut app=app();
+        let ctx=egui::Context::default();
+        let id="group:draft-1";
+        app.workflow_snapshot=Some(Arc::new(stage_test_board()));
+        app.retain_workflow_stage_target(id);
+        app.workflow_dialog=Some(WorkflowDialog::DeleteGroup(id.into()));
+        let (tx,rx)=mpsc::channel();
+        app.workflow_action=Some(PendingWorkflowAction{
+            group_id:id.into(),action:"delete_group".into(),notice_origin:None,receiver:rx
+        });
+        tx.send(Err("synthetic deletion failure".into())).unwrap();
+        app.poll_workflow_action(&ctx);
+        assert!(matches!(app.workflow_dialog.as_ref(),Some(WorkflowDialog::DeleteGroup(target)) if target==id));
+        assert_eq!(app.workflow_snapshot.as_ref().unwrap().groups.len(),1);
+        assert_eq!(app.workflow_ui.selection.as_ref().unwrap().shipment_id,"s1");
+        let (tx,rx)=mpsc::channel();
+        app.workflow_action=Some(PendingWorkflowAction{
+            group_id:id.into(),action:"delete_group".into(),notice_origin:None,receiver:rx
+        });
+        tx.send(Ok(serde_json::json!({}))).unwrap();
+        app.poll_workflow_action(&ctx);
+        assert!(app.workflow_dialog.is_none());
+        assert!(app.workflow_read.required());
+    }
+
+    #[test]
+    fn payment_notice_failure_keeps_confirmation_for_retry(){
+        let mut app=app();
+        let ctx=egui::Context::default();
+        let id="group:draft-1";
+        app.workflow_dialog=Some(WorkflowDialog::PaymentNotice(id.into()));
+        let (tx,rx)=mpsc::channel();
+        app.workflow_action=Some(PendingWorkflowAction{
+            group_id:id.into(),action:"advance_group".into(),notice_origin:None,receiver:rx
+        });
+        drop(tx);
+        app.poll_workflow_action(&ctx);
+        assert!(matches!(app.workflow_dialog.as_ref(),Some(WorkflowDialog::PaymentNotice(target)) if target==id));
+        let (tx,rx)=mpsc::channel();
+        app.workflow_action=Some(PendingWorkflowAction{
+            group_id:id.into(),action:"advance_group".into(),notice_origin:None,receiver:rx
+        });
+        tx.send(Ok(serde_json::json!({}))).unwrap();
+        app.poll_workflow_action(&ctx);
+        assert!(app.workflow_dialog.is_none());
     }
 
     #[test]

@@ -472,6 +472,22 @@ mod tests {
 mod title_ambiguity_regressions{
     use super::*;
     #[test]
+    fn registered_chat_matches_and_unknown_chat_never_guesses_from_recipient(){
+        let state=json!({"clients":[
+            {"id":"dealer","name":"가상악기","active":true},
+            {"id":"recipient","name":"가상학교","active":true}
+        ],"settings":{}});
+        let raw="받으실 분: 가상학교\n서울 종로구 10\n708 2개";
+        let known=json!({"state":state,"raw":raw,"windows":[
+            {"kind":"CHAT","title":"가상악기","handle":"1"}],"activeChatHandle":"1"});
+        let match_result=reception_client(&known).unwrap();
+        assert_eq!(match_result["clientId"],"dealer");
+        assert_eq!(match_result["source"],"KAKAO_TITLE");
+        let unknown=json!({"state":state,"raw":raw,"windows":[
+            {"kind":"CHAT","title":"등록되지 않은 대화","handle":"2"}],"activeChatHandle":"2"});
+        assert_eq!(reception_client(&unknown).unwrap()["clientId"],Value::Null);
+    }
+    #[test]
     fn remembered_ambiguity_blocks_name_fallback_but_not_explicit_sender(){
         let state=json!({"clients":[{"id":"a","name":"가상악기"}],
             "settings":{"kakaoTitleMappings":{"가상악기":{"clientId":"a","ambiguous":true}}}});

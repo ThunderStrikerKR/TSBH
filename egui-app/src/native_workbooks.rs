@@ -174,6 +174,9 @@ pub fn read_clients(bytes:&[u8])->Result<Value,String>{
     Ok(json!({"sourceRevision":revision,"input":input}))
 }
 
+/// Shared instructions for reply review and contextual help.
+pub const FACTORY_REPLY_FORMAT_GUIDANCE:&str="회신 Excel: G열에 실제 택배운임(0 이상의 정수), Q열에 운송장번호(텍스트 8~30자리)를 입력하세요. A/C/D·E열의 수하인 정보는 유지하세요. R열 등 다른 열의 운임은 반영되지 않습니다.";
+
 pub fn read_factory_reply(filename:&str,bytes:&[u8])->Result<Value,String>{
     if !filename.to_ascii_lowercase().ends_with(".xlsx")||
         filename.contains('/')||filename.contains('\\')||filename.contains('\0'){
