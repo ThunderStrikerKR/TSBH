@@ -359,6 +359,16 @@ fn issue_tone(issue:&Value)->ReviewTone {
     }
 }
 
+/// Shared reception/workflow guidance. The existing direct input remains
+/// available for a one-off amount; registered prices/rates are reusable.
+pub(crate) fn pricing_registration_hint(kind:&str)->Option<&'static str>{
+    match kind{
+        "PRICE"=>Some("상품 관리에서 해당 상품·옵션의 거래처 등급별 판매가를 등록하세요. 이번 주문만 변경하려면 단가를 직접 입력하세요."),
+        "FREIGHT"=>Some("운임 관리에서 배송 그룹 및 수량별 운임을 확인·등록하세요. 이번 주문만 변경하려면 운임을 직접 입력하세요."),
+        _=>None
+    }
+}
+
 fn issue_card(
     ui:&mut Ui,issue:&Value,analysis:&ReceptionAnalysis,
     enabled:bool,selected:&mut Option<Action>,
@@ -467,6 +477,8 @@ fn issue_card(
                 // React's informational client-match evidence has no action.
                 if kind=="CLIENT_MATCH_EVIDENCE" && severity=="INFO"{return;}
                 let caption=if kind=="QUANTITY_MISSING" {"수량 수정"}
+                    else if kind=="PRICE" {"단가 입력"}
+                    else if kind=="FREIGHT" {"운임 입력"}
                     else if kind=="UNASSIGNED_EVIDENCE" {"수동 분류에서 확인"}
                     else if is_client {"거래처 확인"}
                     else if ["MODEL","MODEL_CHOICE","ALIAS_CONFLICT",
@@ -481,11 +493,28 @@ fn issue_card(
                     });
                 }
             });
+            // Keep the immediate action ahead of the secondary reference
+            // guidance so a narrow panel does not hide the input button.
+            if severity!="INFO"{
+                if let Some(hint)=pricing_registration_hint(kind){
+                    cell.add(egui::Label::new(typography::review_detail(hint,tone)).wrap());
+                }
+            }
         });
 }
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn registration_guidance_names_the_management_path_and_keeps_manual_input(){
+        let price=pricing_registration_hint("PRICE").unwrap();
+        assert!(price.contains("상품 관리")&&price.contains("거래처 등급별 판매가")&&price.contains("단가를 직접 입력"));
+        let freight=pricing_registration_hint("FREIGHT").unwrap();
+        assert!(freight.contains("운임 관리")&&freight.contains("수량별 운임")&&freight.contains("운임을 직접 입력"));
+        for kind in ["MODEL","CLIENT","QUANTITY_MISSING","NOTICE","ACCOUNT"]{
+            assert!(pricing_registration_hint(kind).is_none());
+        }
+    }
     #[test]
     fn required_fields_preserve_all_actionable_cells_and_exact_recipient_identity(){
         let issue=|r:&str,i:&str,k:&str,f:&str,severity:&str|json!({

@@ -7491,6 +7491,13 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                                 workflow_freight_open=Some((target.id.clone(),origin,String::new(),None,true));
                                             }
                                         }
+                                        if issue["severity"].as_str()!=Some("INFO"){
+                                            if let Some(hint)=review_panel::pricing_registration_hint(
+                                                issue["kind"].as_str().unwrap_or("")
+                                            ){
+                                                content.add(egui::Label::new(typography::review_detail(hint,tone)).wrap());
+                                            }
+                                        }
                                     });
                                 }
                                 for message in workflow_board::workflow_review_extra_messages(
