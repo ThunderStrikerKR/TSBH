@@ -46,7 +46,7 @@ pub(super) fn migrate(payload:&Value)->Result<Value,String>{
             return Err("배송 건의 발주서 / 수취인 / 거래처 연결을 확인하세요.".into());
         }
         let step=legacy_step(&order);
-        set(&mut state["workflow"]["shipments"][si],"step",json!(step))?;
+        super::workflow_stages::reset(&mut state["workflow"]["shipments"][si],step)?;
         set(&mut state["workflow"]["shipments"][si],"legacyApproval",json!(step==4))?;
         let sender=reconciliation::sender_for(&state,&order);
         set(&mut state["workflow"]["shipments"][si],"sender",sender.clone())?;

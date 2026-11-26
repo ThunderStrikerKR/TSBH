@@ -2,7 +2,7 @@
 //! IDs and timestamps for newly emitted events are caller-supplied.
 use serde_json::{json,Value};
 use super::{field, find_by_id, flag, has_value, req, required_str, rows, set, str_field};
-use super::shipping;
+use super::{shipping,workflow_stages as stages};
 
 fn workflow_empty() -> Value {
     json!({"sources":[],"groups":[],"shipments":[],"payments":[],
@@ -261,15 +261,42 @@ fn same_billing_effect(state:&Value,index:usize,old:&str,new:&str)->Result<bool,
         .zip(super::safe(field(&actual,"total"))).is_some_and(|(a,b)|a==b))
 }
 
-fn downgrade(state:&mut Value,audit:&mut Audit<'_>,index:usize,to:i64,reason:&str)
-    ->Result<(),String> {
+/// Physical delivery inputs are independent of recipient name, contact,
+/// sender metadata and unit price. Unknown history must recheck freight.
+fn freight_review_basis(raw:&str)->Option<Value>{
+    let info:Value=serde_json::from_str(raw).ok()?;
+    let recipient=field(&info,"recipient").as_array()?;
+    if !(6..=7).contains(&recipient.len()){return None;}
+    let items=field(&info,"items").as_array()?;
+    let mut physical=Vec::new();
+    for item in items{
+        let values=item.as_array()?;
+        if values.len()!=9{return None;}
+        physical.push(json!([values[1],values[2],values[3],values[4],values[7]]));
+    }
+    Some(json!([field(&info,"dealer"),recipient[1],
+        recipient.get(6).and_then(Value::as_bool).unwrap_or(false),physical]))
+}
+fn same_freight_review_basis(before:&str,after:&str)->bool{
+    freight_review_basis(before).zip(freight_review_basis(after))
+        .is_some_and(|(old,new)|old==new)
+}
+
+fn downgrade(state:&mut Value,audit:&mut Audit<'_>,index:usize,to:i64,reason:&str,
+    preserve_financial:bool,invalidate_freight:bool)->Result<(),String> {
     let ship=state["workflow"]["shipments"][index].clone();
-    let before=field(&ship,"step").as_i64().unwrap_or(0);
-    if before<=to {return Ok(());}
+    let old=stages::read(&ship);
+    let before=old.iter().rposition(|done|*done).map_or(0,|i|i as i64+1);
+    let mut next=old;
+    if to==0{next[0]=false;}
+    if invalidate_freight{next[1]=false;}
+    if !preserve_financial || to>=2{next[2]=false;next[3]=false;}
+    if next==old{return Ok(());}
     let ship_id=str_field(&ship,"id").to_string();
     let group_id=str_field(&ship,"groupId").to_string();
-    set(&mut state["workflow"]["shipments"][index],"step",json!(to))?;
-    if to<4 {
+    stages::write(&mut state["workflow"]["shipments"][index],next)?;
+    let to=stages::prefix(next);
+    if (old[3]&&!next[3])||(old[2]&&!next[2]) {
         let confirmed=rows(field(&state["workflow"],"confirmations")).iter()
             .filter(|c|rows(field(c,"shipmentIds")).iter()
                 .any(|id|id.as_str()==Some(&ship_id)))
@@ -292,8 +319,10 @@ fn downgrade(state:&mut Value,audit:&mut Audit<'_>,index:usize,to:i64,reason:&st
             "at":required_str(audit.payload,"now")?,"reason":reason,
             "fromStage":before,"toStage":to
         }));
-    set(&mut state["workflow"]["shipments"][index],"legacyApproval",json!(false))?;
-    if before>=3 {
+    if !next[3]{
+        set(&mut state["workflow"]["shipments"][index],"legacyApproval",json!(false))?;
+    }
+    if old[2]&&!next[2] {
         let gi=rows(field(&state["workflow"],"groups")).iter()
             .position(|g|str_field(g,"id")==group_id)
             .ok_or("현재 주문 묶음을 찾지 못했습니다.")?;
@@ -302,6 +331,42 @@ fn downgrade(state:&mut Value,audit:&mut Audit<'_>,index:usize,to:i64,reason:&st
     audit.emit(state,"재검증 필요",&[ship_id],&group_id,
         Some(json!(before)),Some(json!(to)),Some(reason),"시스템")
 }
+
+/// A group re-notice invalidates financial approval even if its numeric
+/// compatibility step is lower due to an independent review.
+pub(super) fn invalidate_notice_approvals(state:&mut Value,payload:&Value,ships:&[usize])->Result<(),String>{
+    let seed=format!("{}:notice",required_str(payload,"eventId")?);
+    let mut audit=Audit{payload,position:0,scoped_seed:Some(&seed)};
+    for &si in ships{downgrade(state,&mut audit,si,2,"청구 / 계좌 재안내",false,false)?;}
+    Ok(())
+}
+
+/// Preserve downstream approvals only when the immutable group notice,
+/// shipment allocation amount, payer and account still match. Unknown
+/// legacy history or insufficient payment must take the conservative path.
+pub(super) fn proven_financial_preservation(state:&Value,index:usize)->Result<bool,String>{
+    let ship=&state["workflow"]["shipments"][index];
+    let gid=str_field(ship,"groupId");
+    let group=find_by_id(field(&state["workflow"],"groups"),gid)
+        .ok_or("현재 주문 묶음을 찾지 못했습니다.")?;
+    if rows(field(group,"notices")).is_empty() ||
+        super::workflow_issues::notice_pending(state,gid)?{return Ok(false);}
+    let old=serde_json::from_str::<Value>(str_field(ship,"billingSignature")).ok();
+    let Some(old)=old else{return Ok(false);};
+    let old_info=serde_json::from_str::<Value>(str_field(&old,"info")).ok();
+    let Some(old_info)=old_info else{return Ok(false);};
+    let order=find_by_id(field(state,"orders"),str_field(ship,"orderId"))
+        .ok_or("배송 건의 발주서를 찾을 수 없습니다.")?;
+    if str_field(&old_info,"dealer")!=str_field(order,"clientId"){return Ok(false);}
+    let client=party(state,order).ok_or("거래처 정보를 확인하세요.")?;
+    let new=billing(state,index)?;
+    if !same_billing_effect(state,index,str_field(ship,"billingSignature"),&new)?{return Ok(false);}
+    if stages::read(ship)[3] && str_field(client,"payment")=="PREPAID" &&
+        super::workflow::payment_due(state,ship,order,client)?!=Some(0){return Ok(false);}
+    // An unknown payment policy is not sufficient approval evidence.
+    Ok(matches!(str_field(client,"payment"),"PREPAID"|"POSTPAID"))
+}
+
 pub(super) fn billing(state:&Value,index:usize)->Result<String,String> {
     let ship=&state["workflow"]["shipments"][index];
     let group_id=str_field(ship,"groupId");
@@ -373,6 +438,9 @@ fn reconcile_inner(payload:&Value,order_scope:Option<&str>,scoped_seed:Option<&s
     let input=req(payload,"state")?;
     let mut state=input.clone();
     let mut audit=Audit{payload,position:0,scoped_seed};
+    // Re-evaluate after all recipient/freight updates, not halfway through
+    // a change that could transiently miscalculate the group bill.
+    let mut pending_rechecks=std::collections::BTreeMap::<usize,(i64,bool,&'static str)>::new();
     if let Some(draft)=payload.get("draft").filter(|d|d.is_object() &&
         !has_value(field(d,"deletedAt")) &&
         (!str_field(d,"clientId").is_empty() || str_field(d,"orderType")=="RETAIL") &&
@@ -446,7 +514,7 @@ fn reconcile_inner(payload:&Value,order_scope:Option<&str>,scoped_seed:Option<&s
                     .is_some_and(|g|str_field(g,"dealerId")!=dealer_id))
             .collect::<Vec<_>>();
         if affected.iter().any(|s|flag(s,"transferred") ||
-            field(s,"step").as_i64().unwrap_or(0)>=4 ||
+            stages::read(s)[3] ||
             has_value(field(s,"delivery")) ||
             rows(field(&state["workflow"],"payments")).iter().any(|p|
                 rows(field(p,"allocations")).iter().any(|a|
@@ -554,7 +622,7 @@ fn reconcile_inner(payload:&Value,order_scope:Option<&str>,scoped_seed:Option<&s
                 let ship=json!({"recipientSnapshot":recipient,
                     "id":ship_id,"sourceId":actual_source_id,"orderId":order_id,
                     "recipientId":field(&recipient,"id"),"groupId":root_id,
-                    "step":0,"completedAt":{},"charges":{},"chargeMode":"AUTO",
+                    "step":0,"stageValidity":[false,false,false,false],"completedAt":{},"charges":{},"chargeMode":"AUTO",
                     "freightVersion":field(&reco,"version"),"infoSignature":info,
                     "transferred":false});
                 state["workflow"]["shipments"].as_array_mut()
@@ -577,16 +645,16 @@ fn reconcile_inner(payload:&Value,order_scope:Option<&str>,scoped_seed:Option<&s
                         (str_field(issue,"recipientId").is_empty()||str_field(issue,"recipientId")==rid))
                 }else{false};
                 if !review_valid{
-                    downgrade(&mut state,&mut audit,si,0,
-                        "수취인 / 상품 / 수량 / 가격 / 출고지 / 송하인 변경")?;
+                    let freight_changed=!same_freight_review_basis(previous_info,&info);
+                    pending_rechecks.insert(si,(0,freight_changed,"수취인 / 상품 / 수량 / 가격 / 출고지 / 송하인 변경"));
                 }
                 set(&mut state["workflow"]["shipments"][si],"infoSignature",json!(info))?;
             }
             let old_version=field(&state["workflow"]["shipments"][si],"freightVersion");
-            let step=field(&state["workflow"]["shipments"][si],"step").as_i64().unwrap_or(0);
+            let freight_confirmed=stages::read(&state["workflow"]["shipments"][si])[1];
             if !frozen && old_version!=field(&reco,"version") &&
-                !(step>=2 && str_field(&state["workflow"]["shipments"][si],"chargeMode")=="MANUAL") {
-                downgrade(&mut state,&mut audit,si,1,"적용 운임 기준 변경")?;
+                !(freight_confirmed && str_field(&state["workflow"]["shipments"][si],"chargeMode")=="MANUAL") {
+                pending_rechecks.entry(si).and_modify(|entry|entry.1=true).or_insert((1,true,"적용 운임 기준 변경"));
                 set(&mut state["workflow"]["shipments"][si],"freightVersion",
                     field(&reco,"version").clone())?;
             }
@@ -597,7 +665,7 @@ fn reconcile_inner(payload:&Value,order_scope:Option<&str>,scoped_seed:Option<&s
             let new_code=field(&recipient,"freightCode");
             let new_code=if new_code.is_null(){field(&order,"freightCode")}else{new_code};
             if old_snapshot.is_object() && old_code!=new_code {
-                downgrade(&mut state,&mut audit,si,1,"운임 구분 변경")?;
+                pending_rechecks.entry(si).and_modify(|entry|entry.1=true).or_insert((1,true,"운임 구분 변경"));
             }
             set(&mut state["workflow"]["shipments"][si],"recipientSnapshot",recipient.clone())?;
             let previous_charges=field(&state["workflow"]["shipments"][si],"charges").clone();
@@ -631,7 +699,7 @@ fn reconcile_inner(payload:&Value,order_scope:Option<&str>,scoped_seed:Option<&s
             }
             set(&mut state["workflow"]["shipments"][si],"charges",charges.clone())?;
             if previous_charges!=charges {
-                downgrade(&mut state,&mut audit,si,1,"추천 운임 변경")?;
+                pending_rechecks.entry(si).and_modify(|entry|entry.1=true).or_insert((1,true,"추천 운임 변경"));
             }
         }
     }
@@ -655,10 +723,16 @@ fn reconcile_inner(payload:&Value,order_scope:Option<&str>,scoped_seed:Option<&s
                 None,None,None,"직원")?;
         }
     }
+    for (si,(to,freight_changed,reason)) in pending_rechecks {
+        if flag(&state["workflow"]["shipments"][si],"legacyArchived"){continue;}
+        let old=stages::read(&state["workflow"]["shipments"][si]);
+        let preserve=old[2]&&proven_financial_preservation(&state,si)?;
+        downgrade(&mut state,&mut audit,si,to,reason,preserve,freight_changed)?;
+    }
     for si in 0..count {
         let ship=state["workflow"]["shipments"][si].clone();
         if order_scope.is_some_and(|id|id!=str_field(&ship,"orderId")){continue;}
-        if field(&ship,"step").as_i64().unwrap_or(0)<3 ||
+        if !stages::read(&ship)[2] ||
             flag(&ship,"transferred") || flag(&ship,"legacyArchived") ||
             !has_value(field(&ship,"billingSignature")) {continue;}
         let current_billing=billing(&state,si)?;
@@ -669,7 +743,7 @@ fn reconcile_inner(payload:&Value,order_scope:Option<&str>,scoped_seed:Option<&s
                 // or altering the frozen notice, payment and audit history.
                 set(&mut state["workflow"]["shipments"][si],"billingSignature",json!(current_billing))?;
             }else{
-                downgrade(&mut state,&mut audit,si,2,"계좌 / 청구 금액 변경")?;
+                downgrade(&mut state,&mut audit,si,2,"계좌 / 청구 금액 변경",false,false)?;
             }
         }
     }
@@ -742,5 +816,43 @@ mod stage_impact_tests{
             "vat":true,"account":account}).to_string();
         assert!(same_billing_effect(&Value::Null,0,&bill(&old,"a"),&bill(&new,"a")).unwrap());
         assert!(!same_billing_effect(&Value::Null,0,&bill(&old,"a"),&bill(&new,"b")).unwrap());
+    }
+}
+
+#[cfg(test)]
+mod independent_stage_reconciliation_tests{
+    use super::*;
+    #[test]
+    fn name_edit_is_not_a_physical_freight_change(){
+        let order=json!({"clientId":"c"});
+        let sender=json!({"name":"발송인"});
+        let mut row=json!({"name":"수취인","address":"서울 주소","items":[
+            {"id":"i","productId":"p","variantId":"v","quantity":1,"unitPrice":30000,"origin":"FACTORY"}
+        ]});
+        let before=signature(&order,&row,&sender);
+        row["name"]=json!("수정된 수취인");
+        assert!(same_freight_review_basis(&before,&signature(&order,&row,&sender)));
+        row["items"][0]["quantity"]=json!(2);
+        assert!(!same_freight_review_basis(&before,&signature(&order,&row,&sender)));
+    }
+    #[test]
+    fn invalidating_review_only_keeps_proven_financial_approvals(){
+        let mut state=json!({"workflow":{"shipments":[{"id":"s","groupId":"g","step":4}],
+            "groups":[{"id":"g","needsNotice":false}],"events":[],
+            "confirmations":[{"id":"confirmation","shipmentIds":["s"]}]}});
+        let payload=json!({"now":"2026-11-26T10:00:00+09:00"});
+        let mut audit=Audit{payload:&payload,position:0,scoped_seed:Some("independent")};
+        downgrade(&mut state,&mut audit,0,0,"수취인 이름 변경",true,false).unwrap();
+        assert_eq!(state["workflow"]["shipments"][0]["stageValidity"],json!([false,true,true,true]));
+        assert_eq!(state["workflow"]["shipments"][0]["step"],0);
+        assert_eq!(state["workflow"]["groups"][0]["needsNotice"],false);
+        assert!(!rows(field(&state["workflow"],"events")).iter().any(|event|
+            str_field(event,"action")=="입금 승인 재확인 필요"));
+        stages::complete(&mut state["workflow"]["shipments"][0],1).unwrap();
+        assert_eq!(state["workflow"]["shipments"][0]["step"],4);
+        downgrade(&mut state,&mut audit,0,2,"금액 변경",false,false).unwrap();
+        assert_eq!(state["workflow"]["shipments"][0]["stageValidity"],json!([true,true,false,false]));
+        assert!(rows(field(&state["workflow"],"events")).iter().any(|event|
+            str_field(event,"action")=="입금 승인 재확인 필요"));
     }
 }

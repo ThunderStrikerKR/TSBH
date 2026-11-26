@@ -2,7 +2,7 @@
 //! Integration must persist the returned state using the existing SQLite transaction.
 use serde_json::{json, Value};
 use super::{checked_sum, field, find_by_id, flag, has_value, req, required_str, rows, safe, set, str_field};
-use super::pricing;
+use super::{pricing,workflow_stages as stages};
 
 pub(super) fn dispatch_state(state: &Value, order_id: &str) -> Result<Value,String> {
     let shipments=rows(field(field(state,"workflow"),"shipments")).iter()
@@ -51,8 +51,7 @@ fn group_indices(state: &Value, id: &str) -> Result<(usize,Vec<usize>),String> {
 }
 fn group_step(state: &Value, group_id: &str) -> Result<i64,String> {
     let (_,ids)=group_indices(state,group_id)?;
-    Ok(ids.iter().filter_map(|i|field(&state["workflow"]["shipments"][*i],"step").as_i64())
-        .min().unwrap_or(0))
+    Ok(stages::prefix(stages::aggregate(ids.iter().map(|i|&state["workflow"]["shipments"][*i]))))
 }
 pub(super) fn party<'a>(state: &'a Value, order: &'a Value) -> Option<&'a Value> {
     if (has_value(field(order,"confirmedAt")) || flag(order,"pricesLocked") ||
@@ -389,6 +388,9 @@ pub(super) fn apply(payload:&Value)->Result<Value,String> {
             let client=party(&state,&state["orders"][oi])
                 .ok_or_else(||"거래처 정보를 확인하세요.".to_string())?.clone();
             let mut notices:Option<Value>=None;
+            if next==3 && notice{
+                super::reconciliation::invalidate_notice_approvals(&mut state,payload,&ships)?;
+            }
             if next==3 {
                 let group=&state["workflow"]["groups"][gi];
                 let account=account_for(&state,group,&state["orders"][oi],&client)
@@ -451,6 +453,11 @@ pub(super) fn apply(payload:&Value)->Result<Value,String> {
             }
             let ship_ids=ships.iter().map(|i|str_field(&state["workflow"]["shipments"][*i],"id").to_string()).collect::<Vec<_>>();
             for si in &ships {
+                // Only repeat a stage whose own approval is missing. Notice
+                // renewal is a group-level operation and always refreshes 3.
+                if stages::read(&state["workflow"]["shipments"][*si])[(next-1) as usize] && next!=3{
+                    continue;
+                }
                 // advanceGroup resolves rechecks when the new step reaches
                 // their original fromStage. It does not erase audit history.
                 if let Some(rechecks)=state["workflow"]["shipments"][*si].get_mut("rechecks")
@@ -499,17 +506,26 @@ pub(super) fn apply(payload:&Value)->Result<Value,String> {
                     set(&mut state["workflow"]["shipments"][*si],
                         "billingSignature",json!(signature))?;
                 }
-                if field(&state["workflow"]["shipments"][*si],"step").as_i64().unwrap_or(0)<next {
-                    set(&mut state["workflow"]["shipments"][*si],"step",json!(next))?;
+                if stages::complete(&mut state["workflow"]["shipments"][*si],next)? || next==3 {
                     set(&mut state["workflow"]["shipments"][*si]["completedAt"],
                         &next.to_string(),json!(now))?;
+                }
+                let effective=field(&state["workflow"]["shipments"][*si],"step").as_i64().unwrap_or(0);
+                if let Some(rechecks)=state["workflow"]["shipments"][*si].get_mut("rechecks").and_then(Value::as_array_mut){
+                    for record in rechecks{
+                        if !has_value(field(record,"resolvedAt"))&&
+                            field(record,"fromStage").as_i64().is_some_and(|n|effective>=n){
+                            set(record,"resolvedAt",json!(now))?;
+                        }
+                    }
                 }
             }
             let label=match next {1=>"주문 확인 완료",2=>"운임 적용",
                 3=>"계좌 안내 완료",4=>if str_field(&client,"payment")=="POSTPAID" {"후불 출고 승인"}
                     else {"입금 확인 완료"}, _=>return Err("잘못된 진행 단계".into())};
             append_event(&mut state,payload,label,&ship_ids,json!(step),json!(next),id)?;
-            Ok(json!({"state":state,"step":next}))
+            let effective=group_step(&state,id)?;
+            Ok(json!({"state":state,"step":effective}))
         }
         "undo_group" => {
             let id=required_str(payload,"groupId")?;
@@ -563,12 +579,18 @@ pub(super) fn apply(payload:&Value)->Result<Value,String> {
                 }
                 set(&mut state["workflow"],"confirmations",json!(next_confirmations))?;
             }
-            for si in &ships {
-                let current=field(&state["workflow"]["shipments"][*si],"step").as_i64().unwrap_or(0);
-                set(&mut state["workflow"]["shipments"][*si],"step",json!(if step==4 {3} else {current.min(step-1)}))?;
-                set(&mut state["workflow"]["shipments"][*si],"legacyApproval",json!(false))?;
+            if step==3{
+                super::reconciliation::invalidate_notice_approvals(&mut state,payload,&ships)?;
+            }else{
+                for si in &ships{
+                    let ship=&mut state["workflow"]["shipments"][*si];
+                    let mut validity=stages::read(ship);
+                    validity[(step-1) as usize]=false;
+                    stages::write(ship,validity)?;
+                    if step==4{set(ship,"legacyApproval",json!(false))?;}
+                }
             }
-            if step<=3 && !rows(field(&state["workflow"]["groups"][gi],"notices")).is_empty() {
+            if step==3 && !rows(field(&state["workflow"]["groups"][gi],"notices")).is_empty() {
                 set(&mut state["workflow"]["groups"][gi],"needsNotice",json!(true))?;
             }
             if step!=4 {
@@ -617,8 +639,8 @@ pub(super) fn apply(payload:&Value)->Result<Value,String> {
                 return Err("이 배송 건의 출고지가 아닙니다.".into());
             }
             let group_id=str_field(&state["workflow"]["shipments"][si],"groupId").to_string();
-            let old_step=field(&state["workflow"]["shipments"][si],"step")
-                .as_i64().unwrap_or(0);
+            let old_stages=stages::read(&state["workflow"]["shipments"][si]);
+            let old_step=old_stages.iter().rposition(|done|*done).map_or(0,|i|i as i64+1);
             let previous=json!({
                 "origin":origin,
                 "value":field(&state["workflow"]["shipments"][si]["charges"],origin),
@@ -688,7 +710,8 @@ pub(super) fn apply(payload:&Value)->Result<Value,String> {
             if old_step>1 && !same_freight {
                 let gi=index_by_id(field(&state["workflow"],"groups"),&group_id)
                     .ok_or("현재 주문 묶음을 찾지 못했습니다.")?;
-                set(&mut state["workflow"]["shipments"][si],"step",json!(1))?;
+                stages::write(&mut state["workflow"]["shipments"][si],
+                    [old_stages[0],false,false,false])?;
                 if old_step>=3 {
                     set(&mut state["workflow"]["groups"][gi],"needsNotice",json!(true))?;
                 }
@@ -856,7 +879,8 @@ pub(super) fn apply(payload:&Value)->Result<Value,String> {
                 set(&mut request,"action",json!("advance_group"))?;
                 return apply(&request);
             }
-            if ships.iter().all(|i|field(&state["workflow"]["shipments"][*i],"step").as_i64()==Some(4)) {
+            if ships.iter().all(|i|stages::read(&state["workflow"]["shipments"][*i]).iter().all(|done|*done)) &&
+                !super::workflow_issues::notice_pending(&state,group_id)? {
                 return Ok(json!({"state":state,"unchanged":true}));
             }
             if group_step(&state,group_id)?!=3 ||
@@ -868,23 +892,29 @@ pub(super) fn apply(payload:&Value)->Result<Value,String> {
             let group=&state["workflow"]["groups"][gi];
             let notice=rows(field(group,"notices")).last()
                 .ok_or("확정 청구액과 안내 계좌가 필요합니다.")?;
-            let total=ships.iter().map(|i|{
+            let pending=ships.iter().copied().filter(|i|
+                !stages::read(&state["workflow"]["shipments"][*i])[3]).collect::<Vec<_>>();
+            let total=pending.iter().map(|i|{
                 let sid=str_field(&state["workflow"]["shipments"][*i],"id");
                 shipment_totals(&state,sid).ok()
                     .and_then(|t|safe(field(&t,"total")))
             }).collect::<Option<Vec<i64>>>()
               .and_then(checked_sum).ok_or("확정 청구액과 안내 계좌가 필요합니다.")?;
-            let shipment_ids=ships.iter().map(|i|
+            let shipment_ids=pending.iter().map(|i|
                 str_field(&state["workflow"]["shipments"][*i],"id").to_string()).collect::<Vec<_>>();
             for confirmation in rows(field(&state["workflow"],"confirmations")) {
                 if str_field(confirmation,"groupId")==group_id &&
                     rows(field(confirmation,"shipmentIds")).iter().any(|sid|
-                        shipment_ids.iter().any(|id|sid.as_str()==Some(id.as_str()))) {
+                        shipment_ids.iter().any(|id|sid.as_str()==Some(id.as_str())) &&
+                        !rows(field(&state["workflow"],"events")).iter().any(|event|
+                            str_field(event,"action")=="입금 승인 재확인 필요" &&
+                            field(event,"before")==field(confirmation,"id") &&
+                            rows(field(event,"shipmentIds")).contains(sid))) {
                     return Err("이미 입금 확인한 묶음입니다.".into());
                 }
             }
             let mut allocations=Vec::new();
-            for si in &ships {
+            for si in &pending {
                 let ship=&state["workflow"]["shipments"][*si];
                 let (_x,oi,_r)=shipment_indices(&state,str_field(ship,"id"))?;
                 let order=&state["orders"][oi];
@@ -897,6 +927,9 @@ pub(super) fn apply(payload:&Value)->Result<Value,String> {
             if find_by_id(field(&state["workflow"],"confirmations"),confirmation_id).is_some() {
                 return Err("입금 확인 기록 중복".into());
             }
+            let notice_amounts=shipment_ids.iter().map(|sid|
+                (sid.clone(),field(field(notice,"amounts"),sid).clone()))
+                .collect::<serde_json::Map<String,Value>>();
             let confirmation=json!({
                 "id":confirmation_id,"groupId":group_id,
                 "dealerId":field(group,"dealerId"),"shipmentIds":shipment_ids,
@@ -904,7 +937,7 @@ pub(super) fn apply(payload:&Value)->Result<Value,String> {
                 "actor":if str_field(payload,"actor").is_empty() {"직원(이름 미설정)"}
                     else {str_field(payload,"actor")},
                 "announcedAccount":field(notice,"account"),
-                "amounts":field(notice,"amounts"),"allocations":allocations
+                "amounts":notice_amounts,"allocations":allocations
             });
             if !state["workflow"]["confirmations"].is_array() {
                 set(&mut state["workflow"],"confirmations",json!([]))?;
@@ -1095,7 +1128,8 @@ pub(super) fn apply(payload:&Value)->Result<Value,String> {
             let audit_ids=rows(field(payload,"auditEventIds"));
             let mut audit_cursor=0usize;
             for si in &ships {
-                let old_step=field(&state["workflow"]["shipments"][*si],"step").as_i64().unwrap_or(0);
+                let old_stages=stages::read(&state["workflow"]["shipments"][*si]);
+                let old_step=old_stages.iter().rposition(|done|*done).map_or(0,|i|i as i64+1);
                 if old_step < 3 || same_account {continue;}
                 let ship_id=str_field(&state["workflow"]["shipments"][*si],"id").to_string();
                 let active_confirms=rows(field(&state["workflow"],"confirmations")).iter()
@@ -1108,7 +1142,8 @@ pub(super) fn apply(payload:&Value)->Result<Value,String> {
                     })
                     .map(|c|str_field(c,"id").to_string())
                     .collect::<Vec<_>>();
-                set(&mut state["workflow"]["shipments"][*si],"step",json!(2))?;
+                stages::write(&mut state["workflow"]["shipments"][*si],
+                    [old_stages[0],old_stages[1],false,false])?;
                 set(&mut state["workflow"]["shipments"][*si],"legacyApproval",json!(false))?;
                 set(&mut state["workflow"]["groups"][gi],"needsNotice",json!(true))?;
                 if !state["workflow"]["shipments"][*si]["rechecks"].is_array() {
@@ -1207,7 +1242,8 @@ pub(super) fn apply(payload:&Value)->Result<Value,String> {
             }
             let step=field(&state["workflow"]["shipments"][si],"step");
             if target_ships.iter().any(|i|flag(&state["workflow"]["shipments"][*i],"transferred") ||
-                field(&state["workflow"]["shipments"][*i],"step")!=step) {
+                field(&state["workflow"]["shipments"][*i],"step")!=step ||
+                stages::read(&state["workflow"]["shipments"][*i])!=stages::read(&state["workflow"]["shipments"][si])) {
                 return Err("진행 단계가 같고 이관되지 않은 배송 건만 다시 묶을 수 있습니다.".into());
             }
             let order=&state["orders"][oi];

@@ -153,10 +153,10 @@ pub(super) fn project(payload: &Value) -> Result<Value, String> {
             shipment_projections.push(shipment_projection);
             totals.push(amount);
         }
-        let step = ships.iter()
-            .filter_map(|ship| field(ship, "step").as_i64())
-            .min().unwrap_or(0);
+        let mut stage_validity=super::workflow_stages::aggregate(ships.iter().copied());
+        let step=super::workflow_stages::prefix(stage_validity);
         let needs_notice = workflow_issues::notice_pending(state, group_id)?;
+        if needs_notice{stage_validity[2]=false;stage_validity[3]=false;}
         let next_step = if needs_notice && step >= 2 { 3 } else { step + 1 };
         let blockers = if next_step <= 4 {
             workflow_issues::stage_issues(state, group_id, next_step)?
@@ -176,6 +176,7 @@ pub(super) fn project(payload: &Value) -> Result<Value, String> {
         projected.push(json!({
             "groupId": group_id,
             "step": step,
+            "stageValidity": stage_validity,
             "nextStep": next_step,
             "needsNotice": needs_notice,
             "transferred": ships.iter().any(|s| flag(s, "transferred")),

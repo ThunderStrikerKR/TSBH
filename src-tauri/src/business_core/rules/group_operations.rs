@@ -21,7 +21,7 @@ pub(super) fn mutate(payload:&Value)->Result<Value,String>{
             let ship_ids=shipments.iter().map(|s|str_field(s,"id").to_string())
                 .collect::<Vec<_>>();
             let blocked=shipments.iter().any(|s|flag(s,"transferred")||
-                field(s,"step").as_i64().unwrap_or(0)>=4||
+                super::workflow_stages::read(s)[3]||
                 has_value(field(s,"delivery")))
                 ||rows(field(&state["workflow"],"payments")).iter().any(|p|
                     rows(field(p,"allocations")).iter().any(|a|

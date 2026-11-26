@@ -94,7 +94,7 @@ pub(super) fn apply(payload:&Value)->Result<Value,String>{
             for ship in state["workflow"]["shipments"].as_array_mut()
                 .ok_or("배송건 목록 누락")?{
                 if str_field(ship,"orderId")!=oid{continue;}
-                set(ship,"step",json!(4))?;
+                super::workflow_stages::reset(ship,4)?;
                 set(ship,"completedAt",json!({"1":at}))?;
                 set(ship,"sender",sender.clone())?;
             }

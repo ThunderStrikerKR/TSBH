@@ -47,7 +47,7 @@ pub(super) fn delete_order(payload:&Value)->Result<Value,String>{
         .map(|s|str_field(s,"id").to_string()).collect::<Vec<_>>();
     let has_blocker=rows(field(w,"shipments")).iter().any(|s|
         str_field(s,"orderId")==order_id &&
-        (flag(s,"transferred")||field(s,"step").as_i64().unwrap_or(0)>=4||
+        (flag(s,"transferred")||super::workflow_stages::read(s)[3]||
             has_value(field(s,"delivery"))))
         || rows(field(w,"payments")).iter().any(|p|
             rows(field(p,"allocations")).iter().any(|a|
@@ -80,11 +80,12 @@ pub(super) fn delete_order(payload:&Value)->Result<Value,String>{
             str_field(q,"shipmentId")==ship_id &&
             ["EXPORTED","STORE_SENT"].contains(&str_field(q,"status")));
         if exported||has_value(field(ship,"delivery")){continue;}
-        let old_step=field(ship,"step").as_i64().unwrap_or(0);
+        let old_step=super::workflow_stages::read(ship).iter().rposition(|done|*done)
+            .map_or(0,|i|i as i64+1);
         let group_id=str_field(ship,"groupId").to_string();
         set(&mut state["workflow"]["shipments"][si],"transferred",json!(false))?;
         if old_step<=0{continue;}
-        set(&mut state["workflow"]["shipments"][si],"step",json!(0))?;
+        super::workflow_stages::reset(&mut state["workflow"]["shipments"][si],0)?;
         let confirmations=rows(field(&state["workflow"],"confirmations")).to_vec();
         for c in confirmations {
             let cid=str_field(&c,"id");
@@ -169,12 +170,13 @@ fn merge_parsed_item(incoming:&Value,previous:&Value)->Result<Value,String>{
 fn raw_downgrade(state:&mut Value,payload:&Value,ship_index:usize,
     event_cursor:&mut usize)->Result<(),String>{
     let ship=state["workflow"]["shipments"][ship_index].clone();
-    let before=field(&ship,"step").as_i64().unwrap_or(0);
+    let before=super::workflow_stages::read(&ship).iter().rposition(|done|*done)
+        .map_or(0,|i|i as i64+1);
     if before<=0{return Ok(());}
     let sid=str_field(&ship,"id").to_string();
     let gid=str_field(&ship,"groupId").to_string();
     let now=required_str(payload,"now")?;
-    set(&mut state["workflow"]["shipments"][ship_index],"step",json!(0))?;
+    super::workflow_stages::reset(&mut state["workflow"]["shipments"][ship_index],0)?;
     // Exact downgrade() event order: each un-invalidated confirmation first.
     let confirmations=rows(field(&state["workflow"],"confirmations")).to_vec();
     for confirmation in confirmations{

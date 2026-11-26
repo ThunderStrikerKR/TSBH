@@ -86,6 +86,12 @@ pub(super) fn validate_with_prior_core(state:&Value,before:Option<&Value>,
         if step.is_none_or(|n| !(0..=4).contains(&n)) {
             return Err("잘못된 진행 단계".into());
         }
+        if s.get("stageValidity").is_some(){
+            let stages=super::workflow_stages::explicit(s).ok_or("업무 단계 상태 형식 오류")?;
+            if Some(super::workflow_stages::prefix(stages))!=step || (stages[3]&&!stages[2]){
+                return Err("업무 단계 상태 불일치".into());
+            }
+        }
         for v in field(s,"actualFreight").as_object().into_iter().flat_map(|m|m.values()) {
             if !v.is_null() && safe(v).is_none() {return Err("실제 출고 운임 금액 오류".into());}
         }
@@ -187,7 +193,7 @@ pub(super) fn validate_with_prior_core(state:&Value,before:Option<&Value>,
                     let allowed=!removed.is_empty() && current==&expected &&
                         removed.iter().all(|id|find_by_id(field(w,"shipments"),id)
                             .is_some_and(|s|!flag(s,"transferred") &&
-                                field(s,"step").as_i64().unwrap_or(0)<4));
+                                !super::workflow_stages::read(s)[3]));
                     if !allowed {
                         return Err("확인 기록은 입금 확인 취소에서만 삭제할 수 있습니다.".into());
                     }
@@ -195,7 +201,7 @@ pub(super) fn validate_with_prior_core(state:&Value,before:Option<&Value>,
                     let allowed=old_ids.iter().all(|id|
                         find_by_id(field(w,"shipments"),id)
                             .is_some_and(|s|!flag(s,"transferred") &&
-                                field(s,"step").as_i64().unwrap_or(0)<4));
+                                !super::workflow_stages::read(s)[3]));
                     if !allowed {
                         return Err("이관 전 입금 확인 취소에서만 기록을 삭제할 수 있습니다.".into());
                     }

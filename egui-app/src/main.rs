@@ -11495,7 +11495,7 @@ mod reception_workflow_admission_integration_tests {
         let board=workflow_board::BoardSnapshot{revision:Some(8),groups:vec![workflow_board::GroupRow{
             id:"group:draft-1".into(),created_at:String::new(),dealer_name:String::new(),
             source_id:String::new(),source_number:None,dealer_id:String::new(),transferred:false,step:1,
-            needs_notice:false,total:None,vat_included:0,vat_excluded:0,shipments:vec![ship],
+            stage_validity:[true,false,false,false],needs_notice:false,total:None,vat_included:0,vat_excluded:0,shipments:vec![ship],
             automatic_text:None,automatic_text_with_links:None,automatic_error:None,automatic_phase:None,automatic_signature:None,
             payment_copied:false,automatic_payment_issues:vec![],issues:vec![]
         }]};

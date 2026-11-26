@@ -337,7 +337,7 @@ pub(super) fn apply(payload:&Value)->Result<Value,String>{
                 set(&mut state["workflow"]["queue"][i],"status",json!("CANCELLED"))?;
             }
             set(&mut state["workflow"]["shipments"][si],"transferred",json!(false))?;
-            set(&mut state["workflow"]["shipments"][si],"step",json!(0))?;
+            super::workflow_stages::reset(&mut state["workflow"]["shipments"][si],0)?;
             push_event(&mut state,payload,0,"전달 전 출력본 폐기 / 재작성",sid,
                 Some(json!(ids)),None)?;
         }

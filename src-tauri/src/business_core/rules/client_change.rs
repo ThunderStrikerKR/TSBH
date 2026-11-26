@@ -27,7 +27,7 @@ pub(super) fn check(payload:&Value)->Result<Value,String>{
             str_field(entry,"shipmentId")==sid &&
             str_field(entry,"status")!="CANCELLED");
         flag(ship,"transferred") ||
-        field(ship,"step").as_i64().is_some_and(|step|step>=4) ||
+        super::workflow_stages::read(ship)[3] ||
         !field(ship,"delivery").is_null() &&
             field(ship,"delivery")!=&json!(false) &&
             field(ship,"delivery")!=&json!("") ||

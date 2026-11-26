@@ -38,6 +38,7 @@ pub struct GroupRow {
     pub dealer_id: String,
     pub transferred: bool,
     pub step: usize,
+    pub stage_validity: [bool;4],
     pub needs_notice: bool,
     pub total: Option<i64>,
     pub vat_included: usize,
@@ -508,6 +509,8 @@ fn project_state(gateway:&dyn BandoGateway,state:&Value,scope:Option<&HashSet<St
                 text(ship,"groupId")==group_id &&
                 field(ship,"transferred")==&Value::Bool(true)),
             step,
+            stage_validity:std::array::from_fn(|i|
+                native["stageValidity"].get(i).and_then(Value::as_bool).unwrap_or(i<step)),
             needs_notice:field(native,"needsNotice")==&Value::Bool(true),
             total:field(field(native,"totals"),"total").as_i64(),
             vat_included,vat_excluded,
@@ -577,7 +580,7 @@ mod linked_recipient_selection_tests{
         GroupRow{
             id:id.into(),created_at:String::new(),dealer_name:String::new(),
             source_id:String::new(),source_number:None,dealer_id:String::new(),transferred:false,
-            step:0,needs_notice:false,total:None,vat_included:0,vat_excluded:0,
+            step:0,stage_validity:[false;4],needs_notice:false,total:None,vat_included:0,vat_excluded:0,
             shipments,automatic_text:None,automatic_text_with_links:None,automatic_error:None,
             automatic_phase:None,automatic_signature:None,payment_copied:false,
             automatic_payment_issues:vec![],issues:vec![],

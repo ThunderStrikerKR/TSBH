@@ -330,12 +330,12 @@ pub(super) fn stage_issues(state:&Value,group_id:&str,next:i64)->Result<Vec<Stri
                 &&messages.is_empty(){
                 messages.push(format!("{prefix}청구액 미확정"));
             }
-            if next>=3&&field(ship,"step").as_i64().unwrap_or(0)<2&&
+            if next>=3&&!super::workflow_stages::read(ship)[1]&&
                 w::shipment_freight_code(order,row)!="020"{
                 messages.push(format!("{prefix}운임 적용 필요"));
             }
             if next>=4{
-                if field(ship,"step").as_i64().unwrap_or(0)<3{
+                if !super::workflow_stages::read(ship)[2]{
                     messages.push(format!("{prefix}계좌 안내 완료 필요"));
                 }
                 if str_field(client,"payment")=="PREPAID"&&!flag(ship,"legacyApproval"){

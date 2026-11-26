@@ -358,7 +358,7 @@ fn edit_confirmed_recipient(payload:&Value)->Result<Value,String>{
             // signature; seed their old value before the explicit tax edit.
             for (si,old_ship) in rows(field(field(before,"workflow"),"shipments")).iter().enumerate(){
                 if str_field(old_ship,"orderId")==str_field(order,"id") &&
-                    !flag(old_ship,"legacyArchived") && field(old_ship,"step").as_i64().unwrap_or(0)>=3 &&
+                    !flag(old_ship,"legacyArchived") && super::workflow_stages::read(old_ship)[2] &&
                     !has_value(field(old_ship,"billingSignature")){
                     set(&mut state["workflow"]["shipments"][si],"billingSignature",
                         json!(super::reconciliation::billing(before,si)?))?;

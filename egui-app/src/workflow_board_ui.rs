@@ -381,16 +381,17 @@ struct HeaderActions {
     delete: bool,
 }
 /// No stage is active while the dealer is still unconfirmed.
-fn workflow_signal_palette(step:Option<usize>,index:usize)->(egui::Color32,egui::Color32){
-    match step{
-        Some(step) if index<step=>(theme::WORKFLOW_SIGNAL_DONE,theme::WORKFLOW_SIGNAL_DONE_BORDER),
-        Some(step) if index==step=>(theme::WORKFLOW_SIGNAL_CURRENT,theme::WORKFLOW_SIGNAL_CURRENT_BORDER),
+fn workflow_signal_palette(stages:Option<[bool;4]>,index:usize)->(egui::Color32,egui::Color32){
+    match stages{
+        Some(stages) if stages[index]=>(theme::WORKFLOW_SIGNAL_DONE,theme::WORKFLOW_SIGNAL_DONE_BORDER),
+        Some(stages) if stages.iter().position(|done|!*done)==Some(index)=>
+            (theme::WORKFLOW_SIGNAL_CURRENT,theme::WORKFLOW_SIGNAL_CURRENT_BORDER),
         _=>(theme::WORKFLOW_SIGNAL_PENDING,theme::WORKFLOW_SIGNAL_PENDING_BORDER),
     }
 }
 
 fn workflow_header(
-    ui:&mut Ui,row:Rect,id:&str,title:&str,open:bool,step:Option<usize>,
+    ui:&mut Ui,row:Rect,id:&str,title:&str,open:bool,stages:Option<[bool;4]>,
     in_preview:bool,can_manage:bool,can_delete:bool
 )->HeaderActions{
     let content=workflow_row_content(row);
@@ -447,7 +448,7 @@ fn workflow_header(
             block.center().y
         );
         let lamp=Rect::from_center_size(center,Vec2::new(lamp_width,lamp_height));
-        let (fill,border)=workflow_signal_palette(step,index);
+        let (fill,border)=workflow_signal_palette(stages,index);
         theme::paint_bordered_surface(ui.painter(),lamp,theme::WORKFLOW_SIGNAL_RADIUS,fill,border);
     }
     let manage_clicked=workflow_auxiliary_at(
@@ -693,7 +694,7 @@ fn group_frame(
         let (top,bottom)=workflow_compact_rows(ui);
         let btn=workflow_header(
             ui,top,&group.id,&group.dealer_name,open || in_preview,
-            Some(group.step),in_preview,
+            Some(group.stage_validity),in_preview,
             true,writable && !group.transferred
         );
         if btn.manage{event=Some(Event::ManageGroup(group.id.clone()));}
@@ -885,7 +886,7 @@ fn pending_frame(
         let has_client=draft.client_id.as_deref()
             .is_some_and(|id|!id.trim().is_empty());
         let header=workflow_header(
-            ui,top,&draft.id,dealer_name,open,has_client.then_some(0),in_preview,true,true
+            ui,top,&draft.id,dealer_name,open,has_client.then_some([false;4]),in_preview,true,true
         );
         if header.manage{event=Some(Event::ManagePending(draft.id.clone()));}
         if header.delete{event=Some(Event::DeletePending(draft.id.clone()));}
@@ -1356,11 +1357,21 @@ mod pending_matching_tests {
         let done=(theme::WORKFLOW_SIGNAL_DONE,theme::WORKFLOW_SIGNAL_DONE_BORDER);
         for index in 0..STEP_NAMES.len(){
             assert_eq!(workflow_signal_palette(None,index),pending);
-            assert_eq!(workflow_signal_palette(Some(0),index),
+            assert_eq!(workflow_signal_palette(Some([false;4]),index),
                 if index==0{current}else{pending});
-            assert_eq!(workflow_signal_palette(Some(1),index),
+            assert_eq!(workflow_signal_palette(Some([true,false,false,false]),index),
                 if index==0{done}else if index==1{current}else{pending});
         }
+    }
+
+    #[test]
+    fn independent_approved_stages_keep_their_green_lamps(){
+        let done=(theme::WORKFLOW_SIGNAL_DONE,theme::WORKFLOW_SIGNAL_DONE_BORDER);
+        let current=(theme::WORKFLOW_SIGNAL_CURRENT,theme::WORKFLOW_SIGNAL_CURRENT_BORDER);
+        let stages=Some([false,false,true,true]);
+        assert_eq!(workflow_signal_palette(stages,0),current);
+        assert_eq!(workflow_signal_palette(stages,2),done);
+        assert_eq!(workflow_signal_palette(stages,3),done);
     }
 
     #[test]
