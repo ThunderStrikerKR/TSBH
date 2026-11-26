@@ -441,7 +441,7 @@ impl RateEditor {
 
 pub struct FreightManager {
     tab: FreightTab,
-    tab_snapshots:crate::navigation::NavigationSnapshots<4>,
+    tab_snapshots:crate::view_state::NavigationSnapshots<4>,
     gateway: Arc<dyn BandoGateway>,
     write_receiver: Option<Receiver<Result<Value,String>>>,
     write_action: Option<String>,
@@ -497,7 +497,7 @@ impl FreightManager {
         Self::fetch(&mut refresh_job,Arc::clone(&gateway),ctx);
         Self {
             tab: FreightTab::Groups,
-            tab_snapshots:crate::navigation::NavigationSnapshots::new(0),
+            tab_snapshots:crate::view_state::NavigationSnapshots::new(0),
             gateway,
             write_receiver: None,
             write_action: None,
@@ -578,7 +578,7 @@ impl FreightManager {
     }
     pub(crate) fn reset_navigation(&mut self){
         if self.dirty()||self.blocks_navigation(){return;}
-        self.tab=FreightTab::Groups;self.tab_snapshots=crate::navigation::NavigationSnapshots::new(0);
+        self.tab=FreightTab::Groups;self.tab_snapshots=crate::view_state::NavigationSnapshots::new(0);
         self.search.clear();self.group_filter.clear();
         self.sort=None;self.rate_sort=None;self.rate_search.clear();self.history_sort=None;
         self.selected.clear();self.bulk_group=None;self.bulk_feedback=None;
