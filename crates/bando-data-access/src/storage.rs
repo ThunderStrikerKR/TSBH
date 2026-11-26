@@ -73,7 +73,7 @@ where F:FnOnce(&Value)->Result<Option<Value>,String>{
 /// entity before-image, rather than a stale global UI revision. Acquire the
 /// write reservation before reading, so unrelated commits cannot race the
 /// comparison or overwrite the validated state.
-pub(crate) fn update_v2_entity_if_changed<F>(
+pub fn update_v2_entity_if_changed<F>(
     conn:&mut Connection,validate_orders:bool,mutate:F
 )->Result<Value,String>
 where F:FnOnce(&Value)->Result<Option<Value>,String>{
