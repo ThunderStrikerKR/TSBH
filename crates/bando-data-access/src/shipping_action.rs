@@ -15,14 +15,17 @@ fn unique(tag: &str, index: usize) -> Result<String, String> {
         .map_err(err)?.as_nanos();
     Ok(format!("egui-freight-{tag}-{}-{nanos}-{index}",std::process::id()))
 }
+/// Explicit safety ceiling for editable freight worksheets; shared by UI and command validation.
+pub const MAX_BUNDLE_QUANTITY:i64=1000;
+
 fn validate_rate_input(rule:&Value)->Result<(),String>{
     if !rule["maxBundle"].is_null() &&
-        !rule["maxBundle"].as_i64().is_some_and(|v|(1..=6).contains(&v)){
-        return Err("최대 묶음 수량은 1~6개 중에서 선택하세요.".into());
+        !rule["maxBundle"].as_i64().is_some_and(|v|(1..=MAX_BUNDLE_QUANTITY).contains(&v)){
+        return Err(format!("최대 묶음 수량은 1~{MAX_BUNDLE_QUANTITY}개까지 입력할 수 있습니다."));
     }
     let fees=rule["fees"].as_object().ok_or("수량별 운임표 형식 오류")?;
     for (quantity,amount) in fees {
-        if quantity.parse::<i64>().ok().is_none_or(|n|!(1..=6).contains(&n)){
+        if quantity.parse::<i64>().ok().is_none_or(|n|!(1..=MAX_BUNDLE_QUANTITY).contains(&n)){
             return Err("운임 구간 수량이 올바르지 않습니다.".into());
         }
         if !amount.is_null() &&
@@ -178,3 +181,11 @@ pub fn action_payload(action: &str, data: &Value, before: &Value) -> Result<Valu
     Ok(payload)
 }
 
+
+#[cfg(test)]
+#[test]
+fn rate_input_supports_more_than_ten_quantities_and_rejects_out_of_bounds(){
+    assert!(validate_rate_input(&json!({"maxBundle":12,"fees":{"1":2900,"11":null,"12":9000}})).is_ok());
+    assert!(validate_rate_input(&json!({"maxBundle":MAX_BUNDLE_QUANTITY+1,"fees":{}})).is_err());
+    assert!(validate_rate_input(&json!({"maxBundle":12,"fees":{"0":3000}})).is_err());
+}

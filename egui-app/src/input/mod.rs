@@ -608,7 +608,7 @@ pub(crate) struct ReceptionQuantityEditorResponse{
 
 fn reception_quantity_editor(
     ui:&mut Ui,cell:Rect,value:&mut String,request_focus:bool,
-    click_at:Option<egui::Pos2>
+    click_at:Option<egui::Pos2>,maximum:i64
 )->ReceptionQuantityEditorResponse{
     let rect=cell.shrink2(egui::vec2(theme::SPACE_2,theme::SPACE_2));
     let mut placed=navigation_segment_child(
@@ -619,7 +619,8 @@ fn reception_quantity_editor(
         typography::DataValueContext::Reception
     );
     let decrease=reception_quantity_step(value,-1);
-    let increase=reception_quantity_step(value,1);
+    let increase=reception_quantity_step(value,1)
+        .filter(|next|next.parse::<i64>().is_ok_and(|n|n<=maximum));
     let (_, (input,step_interaction))=date_navigation_segmented_surface(
         &mut placed,"quantity-stepper",rect.size(),|segments,inner|{
             // Left arrow pair; right-aligned value and permanent unit.
@@ -715,6 +716,22 @@ fn reception_quantity_step_keeps_unit_out_of_native_draft_and_respects_bounds(){
     assert_eq!(reception_quantity_step(&RECEPTION_QUANTITY_MAX.to_string(),1),None);
 }
 
+/// Form wrapper for the same numeric stepper used by reception cells.
+pub(crate) fn bounded_quantity_field(
+    ui:&mut Ui,value:&mut String,enabled:bool,maximum:i64
+){
+    let previous=value.clone();
+    ui.add_enabled_ui(enabled,|input|{
+        let (rect,_)=input.allocate_exact_size(
+            Vec2::new(112.0,theme::INPUT_HEIGHT),egui::Sense::hover()
+        );
+        reception_quantity_editor(input,rect,value,false,None,maximum);
+    });
+    if !value.is_empty() && !value.parse::<i64>().is_ok_and(|n|(1..=maximum).contains(&n)){
+        *value=previous;
+    }
+}
+
 #[derive(Clone,Copy)]
 pub(crate) enum ReceptionNumericCell{Quantity,Money}
 
@@ -730,7 +747,7 @@ pub(crate) fn reception_item_numeric_editor(
 )->(Response,bool){
     match kind{
         ReceptionNumericCell::Quantity=>{
-            let editor=reception_quantity_editor(ui,rect,value,focus,click_at);
+            let editor=reception_quantity_editor(ui,rect,value,focus,click_at,RECEPTION_QUANTITY_MAX);
             (editor.input,editor.step_interaction)
         }
         ReceptionNumericCell::Money=>(

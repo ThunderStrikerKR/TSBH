@@ -276,14 +276,7 @@ fn group_name<'a>(groups: &'a [Value], id: &str) -> &'a str {
 
 /// The read-only tariff summary is derived from the group's effective Rust
 /// record, never independently recomputed at the product level.
-/// Both quantity selectors in the freight editor share one semantic label.
-fn bundle_quantity_label(count:&str)->egui::text::LayoutJob{
-    typography::inline_body_values(&[
-        (count,Some(typography::DataValueKind::Quantity)),("개",None)
-    ])
-}
-
-fn group_bundle_summary(rule: &Value) -> String {
+ fn group_bundle_summary(rule: &Value) -> String {
     if rule["maxConfirmed"] == true {
         rule["maxBundle"].as_i64()
             .map(|n| format!("{n}개"))
@@ -366,42 +359,62 @@ struct RateEditor {
     name: String,
     original: Value,
     max_bundle: Option<i64>,
+    max_bundle_text: String,
     fees: BTreeMap<i64, String>,
     notes: String,
-    add_count: Option<i64>,
     error: Option<String>,
     ask_discard: bool,
     product: bool,
 }
 impl RateEditor {
     fn new(id:&str,name:&str,rule:&Value)->Self {
-        let fees=(1..=6).filter_map(|count|{
-            rule["fees"].get(count.to_string()).and_then(Value::as_i64)
-                .map(|value|(count,value.to_string()))
-        }).collect();
-        Self{
+        let fees=Self::confirmed_fees(rule).into_iter()
+            .map(|(count,amount)|(count,amount.to_string())).collect();
+        let max_bundle=rule["maxBundle"].as_i64();
+        let mut editor=Self{
             id:id.to_owned(),name:name.to_owned(),original:rule.clone(),
-            max_bundle:rule["maxBundle"].as_i64(),
+            max_bundle,max_bundle_text:max_bundle.map(|n|n.to_string()).unwrap_or_default(),
             fees,notes:text(rule,"notes").to_owned(),
-            add_count:None,error:None,ask_discard:false,
-            product:false
-        }
+            error:None,ask_discard:false,product:false
+        };
+        editor.ensure_fee_rows();
+        editor
     }
     fn new_product(id:&str,name:&str,rule:&Value)->Self {
         let mut editor=Self::new(id,name,rule);
         editor.product=true;
         editor
     }
+    fn confirmed_fees(rule:&Value)->BTreeMap<i64,i64>{
+        rule["fees"].as_object().into_iter().flatten().filter_map(|(key,value)|{
+            Some((key.parse::<i64>().ok()?,value.as_i64()?))
+        }).collect()
+    }
+    fn visible_count(&self)->usize{
+        self.max_bundle.unwrap_or(0)
+            .clamp(0,bando_data_access::shipping_action::MAX_BUNDLE_QUANTITY) as usize
+    }
+    fn ensure_fee_rows(&mut self){
+        for count in 1..=self.visible_count() as i64{
+            self.fees.entry(count).or_default();
+        }
+    }
+    fn sync_max_bundle(&mut self){
+        self.max_bundle=self.max_bundle_text.trim().parse::<i64>().ok();
+        // Keep hidden drafts until save, so decreasing and increasing the
+        // quantity again during the same edit never destroys entered fees.
+        self.ensure_fee_rows();
+    }
+    fn active_fee(&self,count:i64)->bool{
+        self.max_bundle.is_none_or(|max|count<=max)
+    }
     fn dirty(&self)->bool{
         if self.original["maxBundle"].as_i64()!=self.max_bundle
             || text(&self.original,"notes")!=self.notes {return true;}
-        let old=(1..=6).filter_map(|count|{
-            self.original["fees"].get(count.to_string()).and_then(Value::as_i64)
-                .map(|value|(count,Some(value)))
-        }).collect::<BTreeMap<_,_>>();
-        let new=self.fees.iter().map(|(key,value)|{
-            (*key,crate::input::parse_money_input(value))
-        }).collect::<BTreeMap<_,_>>();
+        let old=Self::confirmed_fees(&self.original);
+        let new=self.fees.iter().filter(|(count,_)|self.active_fee(**count))
+            .filter_map(|(count,value)|crate::input::parse_money_input(value)
+                .map(|amount|(*count,amount))).collect::<BTreeMap<_,_>>();
         old!=new
     }
     fn write_action(&self)->Result<(String,Value),String>{
@@ -418,10 +431,11 @@ impl RateEditor {
         let mut rule=self.original.clone();
         rule["maxBundle"]=self.max_bundle.map_or(Value::Null,|v|json!(v));
         rule["notes"]=json!(self.notes);
-        let mut fees=rule["fees"].as_object().cloned().unwrap_or_default();
-        for count in 1..=6 {fees.remove(&count.to_string());}
+        let mut fees=serde_json::Map::new();
         for (count,amount) in &self.fees {
+            if !self.active_fee(*count){continue;}
             let raw=amount.trim();
+            if self.max_bundle.is_none() && raw.is_empty(){continue;}
             let value=if raw.is_empty() {
                 Value::Null
             }else{
@@ -437,6 +451,32 @@ impl RateEditor {
         rule["fees"]=Value::Object(fees);
         Ok(rule)
     }
+}
+
+#[cfg(test)]
+#[test]
+fn rate_editor_generates_ranges_preserves_drafts_and_saves_only_active_counts(){
+    let rule=json!({"maxBundle":4,"fees":{"1":2900,"2":3600,"4":4750},"notes":""});
+    let mut editor=RateEditor::new("g","test",&rule);
+    assert_eq!(editor.visible_count(),4);
+    assert_eq!(editor.fees[&3],"");
+    assert!(!editor.dirty());
+    editor.max_bundle_text="12".into();
+    editor.sync_max_bundle();
+    assert_eq!(editor.visible_count(),12);
+    assert_eq!(editor.fees[&4],"4750");
+    assert_eq!(editor.draft().unwrap()["fees"]["12"],Value::Null);
+    editor.fees.insert(12,"9000".into());
+    editor.max_bundle_text="2".into();
+    editor.sync_max_bundle();
+    let draft=editor.draft().unwrap();
+    assert_eq!(draft["fees"]["2"],3600);
+    assert!(draft["fees"].get("4").is_none());
+    assert!(draft["fees"].get("12").is_none());
+    editor.max_bundle_text="12".into();
+    editor.sync_max_bundle();
+    assert_eq!(editor.fees[&12],"9000");
+    assert_eq!(editor.draft().unwrap()["fees"]["12"],9000);
 }
 
 pub struct FreightManager {
@@ -2153,89 +2193,48 @@ impl FreightManager {
                 "배송 그룹 운임 수정"
             });
         });
-        let group_note=(!editor.product).then_some(
-            "이 기준을 변경하면 같은 동급 그룹에 지정한 모든 모델에 적용됩니다."
-        );
-        let note_width=ui.available_width();
-        crate::ui_layout::fixed_status_slot(
-            ui,note_width,typography::METADATA_LINE_HEIGHT,
-            group_note,group_note,theme::SELECTED_ORDER
-        );
         ui.add_space(theme::SPACE_8);
         ui.horizontal(|line|{
             crate::ui_primitives::form_field_label(line,"최대 묶음포장 수량");
-            line.add_enabled_ui(enabled,|input|{
-                let caption=editor.max_bundle.map(|n|bundle_quantity_label(&n.to_string()))
-                    .unwrap_or_else(||typography::inline_body_values(&[("미확정",None)]));
-                crate::dropdown::management_dropdown_values(
-                    input,&caption,
-                    theme::MANAGEMENT_FILTER_DROPDOWN_WIDTH,true,|choice|{
-                        crate::dropdown::management_dropdown_option(
-                            choice,&mut editor.max_bundle,None,"미확정");
-                        for n in 1..=6 {
-                            crate::dropdown::management_dropdown_option_values(
-                                choice,&mut editor.max_bundle,Some(n),&bundle_quantity_label(&n.to_string()));
-                        }
-                    });
-            });
+            let before=editor.max_bundle_text.clone();
+            crate::input::bounded_quantity_field(
+                line,&mut editor.max_bundle_text,enabled,
+                bando_data_access::shipping_action::MAX_BUNDLE_QUANTITY
+            );
+            if editor.max_bundle_text!=before{editor.sync_max_bundle();}
         });
         ui.add_space(theme::SPACE_12);
         ui.label(typography::subsection_heading("수량별 운임"));
-        ui.label(typography::caption("확인한 묶음 수량의 운임만 추가하세요."));
-        let mut removed=None;
-        let fee_ids=editor.fees.keys().map(|count|count.to_string()).collect::<Vec<_>>();
+        let count=editor.visible_count();
+        let fee_ids=(1..=count).map(|count|count.to_string()).collect::<Vec<_>>();
         let mut navigation=cell_navigation::WorksheetFocus::new(
             ui.make_persistent_id(("freight-rate-cells",editor.id.as_str(),editor.product)),
             cell_navigation::vertical_worksheet_cells(fee_ids.iter().map(String::as_str),enabled)
         );
-        for (count,amount) in editor.fees.iter_mut(){
-            ui.horizontal(|line|{
-                crate::ui_primitives::form_field_label(line,&format!("{count}개 묶음"));
-                let id=count.to_string();
-                navigation.before(line.ctx(),&id,amount);
-                let response=crate::input::money_field(line,amount,enabled);
-                navigation.record(&id,response,amount);
-                if crate::button::action(line,"삭제",theme::ButtonRole::Standard,enabled).clicked(){
-                    removed=Some(*count);
+        // The common compact table owns header, row rules, clipping and
+        // scroll geometry. Ten rows is a viewport limit, not a fee limit.
+        if count>0{
+            crate::table::registry_table(
+                ui,("freight-rate-worksheet",editor.id.as_str(),editor.product),
+                ["묶음 수량","운임 (원)"],[92.0,140.0],
+                count.min(10) as f32*theme::MANAGEMENT_COMPACT_ROW_HEIGHT,
+                count,|_|false,|row,cells,index,_|{
+                    let quantity=index as i64+1;
+                    crate::table::registry_cell(
+                        row,cells[0],&format!("{quantity}개"),
+                        typography::ManagementTableCellRole::Quantity,true,
+                        ("freight-rate-quantity",quantity)
+                    );
+                    let id=&fee_ids[index];
+                    let amount=editor.fees.entry(quantity).or_default();
+                    crate::table::registry_actions(row,cells[1],|input|{
+                        navigation.before(input.ctx(),id,amount);
+                        let response=crate::input::money_field(input,amount,enabled);
+                        navigation.record(id,response,amount);
+                    });
                 }
-                let over_limit=editor.max_bundle.is_some_and(|max|*count>max);
-                crate::ui_layout::fixed_status_slot(
-                    line,24.0,theme::ACTION_STANDARD_HEIGHT,
-                    over_limit.then_some("!"),
-                    over_limit.then_some("최대 묶음 수량 초과"),theme::DANGER
-                );
-            });
-        }
-        if let Some(count)=removed{editor.fees.remove(&count);}
-        else{navigation.finish(ui.ctx());}
-        let available=(1..=6).filter(|n|
-            editor.max_bundle.is_some_and(|max|*n<=max)
-            && !editor.fees.contains_key(n)
-        ).collect::<Vec<_>>();
-        if !available.is_empty(){
-            ui.horizontal(|line|{
-                line.add_enabled_ui(enabled,|input|{
-                    let caption=editor.add_count.map(|n|bundle_quantity_label(&n.to_string()))
-                        .unwrap_or_else(||typography::inline_body_values(&[("묶음 수량 선택",None)]));
-                    crate::dropdown::management_dropdown_values(
-                        input,&caption,
-                        theme::MANAGEMENT_FILTER_DROPDOWN_WIDTH,true,|choice|{
-                            for count in &available{
-                                crate::dropdown::management_dropdown_option_values(
-                                    choice,&mut editor.add_count,
-                                    Some(*count),&bundle_quantity_label(&count.to_string())
-                                );
-                            }
-                        });
-                });
-                if crate::button::action(line,"운임 구간 추가",
-                    theme::ButtonRole::Standard,enabled&&editor.add_count.is_some()
-                ).clicked(){
-                    if let Some(n)=editor.add_count.take(){
-                        if available.contains(&n){editor.fees.insert(n,String::new());}
-                    }
-                }
-            });
+            );
+            navigation.finish(ui.ctx());
         }
         ui.add_space(theme::SPACE_12);
         ui.label(typography::field_label("사용자 참고 메모"));
@@ -2523,13 +2522,14 @@ impl FreightManager {
 fn group_history_fee_summary(rule:&Value)->String{
     // A historic null means "unconfirmed", not "missing". Zero is a
     // confirmed amount and must remain visible in the archived record.
-    let fees=(1..=6).filter_map(|count|{
-        rule["fees"].get(count.to_string()).map(|fee|
-            format!("{count}개 {}",if fee.is_null(){
-                "미확정".to_owned()
-            }else{as_fee(fee)})
-        )
-    }).collect::<Vec<_>>();
+    let ordered=rule["fees"].as_object().into_iter().flatten()
+        .filter_map(|(key,fee)|Some((key.parse::<i64>().ok()?,fee)))
+        .collect::<BTreeMap<_,_>>();
+    let fees=ordered.into_iter().map(|(count,fee)|
+        format!("{count}개 {}",if fee.is_null(){
+            "미확정".to_owned()
+        }else{as_fee(fee)})
+    ).collect::<Vec<_>>();
     if fees.is_empty(){"운임 미등록".to_owned()}else{fees.join(" · ")}
 }
 
