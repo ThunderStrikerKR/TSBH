@@ -313,7 +313,7 @@ pub(crate) fn explorer_body(menu:&mut Ui,nodes:&[CategoryNode],index:&HashMap<&s
     totals:Option<&HashMap<String,usize>>){
     let now=menu.input(|i|i.time);
     if let Some(m)=state.motion.clone(){
-        if m.elapsed(now)>=450.0{navigate(state,m.to);}
+        if m.elapsed(now)>=450.0{navigate(state,m.to);menu.ctx().request_repaint();}
         else{menu.ctx().request_repaint();}
     }
     let motion=state.motion.clone();
@@ -334,7 +334,8 @@ pub(crate) fn explorer_body(menu:&mut Ui,nodes:&[CategoryNode],index:&HashMap<&s
     let nav_slide=motion.as_ref().map(|m|if final_phase{(1.0-alpha)*if m.reverse{-8.0}else{8.0}}
         else{(1.0-alpha)*if m.reverse{8.0}else{-8.0}}).unwrap_or(0.0);
     if let Some(p)=crumbs_row(menu,state,index,&visual_path,enabled&&!busy,alpha,nav_slide,theme::CATEGORY_EXPLORER_BACK_WIDTH+theme::SPACE_8){next_path=Some(p);}
-    crate::ui_primitives::soft_divider(menu);
+    if totals.is_some(){crate::ui_primitives::section_divider(menu);}
+    else{crate::ui_primitives::soft_divider(menu);}
     let searching=!state.search.trim().is_empty();
     let context=context_path(nodes,&visual_path);
     let current=context.last().map(String::as_str).unwrap_or("");
