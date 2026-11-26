@@ -9102,43 +9102,53 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                             decision.body(|ui|{
                                 let number=group.source_number.map(|n|format!("{n:03}"))
                                     .unwrap_or_else(||"—".to_owned());
-                                ui.label(typography::body(&format!(
-                                    "발주 {} / {} / 배송 {}건 / {}",number,
-                                    group.dealer_name,group.shipments.len(),
-                                    group.total.map(components::display_won)
-                                        .unwrap_or_else(||"금액 미확정".to_owned())
-                                )));
+                                let prefix=format!("발주 {number} / {} / 배송 ",group.dealer_name);
+                                let count=group.shipments.len().to_string();
+                                let amount=group.total.map(components::display_won);
+                                let (amount_text,amount_kind,unit)=match amount.as_deref(){
+                                    Some(value)=>(value.strip_suffix("원").unwrap_or(value),
+                                        Some(typography::DataValueKind::Money),"원"),
+                                    None=>("금액 미확정",None,""),
+                                };
+                                ui.label(typography::inline_body_values(&[
+                                    (&prefix,None),(&count,Some(typography::DataValueKind::Quantity)),
+                                    ("건 / ",None),(amount_text,amount_kind),(unit,None)
+                                ]));
                                 components::section_divider(ui);
                                 if !targets.is_empty(){
-                                    ui.label(typography::body("다시 묶을 대상"));
                                     let caption=targets.iter().find(|g|g.id==target)
                                         .map(|g|g.management_target_label())
                                         .unwrap_or_else(||"같은 최초 발주서의 묶음 선택".to_owned());
                                     let previous=target.clone();
-                                    components::management_dropdown(
-                                        ui,&caption,
-                                        ui.available_width().max(1.0),!applying,|list|{
-                                            components::management_dropdown_option(
-                                                list,&mut target,String::new(),"대상 선택");
-                                            for other in &targets{
+                                    components::modal_labeled_row_with_width(ui,"다시 묶을 대상",112.0,|line|{
+                                        components::management_dropdown(
+                                            line,&caption,
+                                            line.available_width().max(1.0),!applying,|list|{
                                                 components::management_dropdown_option(
-                                                    list,&mut target,other.id.clone(),
-                                                    &other.management_target_label()
-                                                );
-                                            }
-                                        });
+                                                    list,&mut target,String::new(),"대상 선택");
+                                                for other in &targets{
+                                                    components::management_dropdown_option(
+                                                        list,&mut target,other.id.clone(),
+                                                        &other.management_target_label()
+                                                    );
+                                                }
+                                            })
+                                    });
                                     if target!=previous{ack=false;}
                                     components::checkbox(
                                         ui,&mut ack,
                                         "기존 안내액 / 입금 배분 / 변경 합계를 확인했습니다.",
                                         !applying
                                     );
-                                    ui.add_space(theme::SPACE_8);
                                 }
                                 components::scroll_area(components::ScrollAxes::Vertical)
-                                    .max_height(work_area.height()*0.45)
+                                    .id_salt("workflow-manage-confirmed-shipments")
+                                    .max_height((work_area.height()*0.45).max(1.0))
+                                    .auto_shrink([false,true])
                                     .show(ui,|list|{
-                                        for ship in &group.shipments{
+                                        for (index,ship) in group.shipments.iter().enumerate(){
+                                            if index>0{components::soft_divider(list);}
+                                            list.push_id(&ship.id,|list|{
                                             list.label(typography::body(
                                                 if ship.recipient_name.is_empty(){
                                                     "수취인 확인"
@@ -9146,11 +9156,18 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                             ));
                                             let step=ship.completed_step.map(|n|format!("{n}/4 완료"))
                                                 .unwrap_or_else(||"단계 미확인".to_owned());
-                                            let paid=ship.paid.map(components::display_won)
-                                                .unwrap_or_else(||"—".to_owned());
-                                            list.label(typography::caption(&format!(
-                                                "{} / 상품 {}종 / 입금 {}",step,ship.products.len(),paid
-                                            )));
+                                            let prefix=format!("{step} / 상품 ");
+                                            let count=ship.products.len().to_string();
+                                            let paid=ship.paid.map(components::display_won);
+                                            let (paid_text,paid_kind,unit)=match paid.as_deref(){
+                                                Some(value)=>(value.strip_suffix("원").unwrap_or(value),
+                                                    Some(typography::DataValueKind::Money),"원"),
+                                                None=>("—",None,""),
+                                            };
+                                            list.label(typography::inline_body_values(&[
+                                                (&prefix,None),(&count,Some(typography::DataValueKind::Quantity)),
+                                                ("종 / 입금 ",None),(paid_text,paid_kind),(unit,None)
+                                            ]));
                                             list.with_layout(Layout::right_to_left(Align::Center),|line|{
                                                 if !targets.is_empty() && theme::action(
                                                     line,"다시 묶기",ButtonRole::Standard,
@@ -9176,10 +9193,9 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                                     ));
                                                 }
                                             });
-                                            components::soft_divider(list);
+                                            });
                                         }
                                     });
-                                ui.add_space(theme::SPACE_8);
                                 ui.label(typography::caption(
                                     "배송 건 ID, 완료 이력, 입금 배분은 보존됩니다. 같은 최초 발주서와 거래처의 배송 건만 다시 묶을 수 있으며, 단계나 계좌가 다르거나 엑셀 이관된 배송 건은 합칠 수 없습니다."
                                 ));
@@ -9210,16 +9226,26 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                 if rows.is_empty(){
                                     ui.label(typography::body("수취인 확인"));
                                 }
-                                for recipient in rows{
-                                    let name=recipient.get("name")
-                                        .and_then(serde_json::Value::as_str)
-                                        .filter(|s|!s.is_empty())
-                                        .unwrap_or("수취인 확인");
-                                    let count=recipient.get("items")
-                                        .and_then(serde_json::Value::as_array)
-                                        .map(Vec::len).unwrap_or(0);
-                                    ui.label(typography::body(&format!("{name} / 상품 {count}종")));
-                                }
+                                components::scroll_area(components::ScrollAxes::Vertical)
+                                    .id_salt("workflow-manage-pending-recipients")
+                                    .max_height((work_area.height()*0.45).max(1.0))
+                                    .auto_shrink([false,true])
+                                    .show(ui,|list|{
+                                        for (index,recipient) in rows.iter().enumerate(){
+                                            if index>0{components::soft_divider(list);}
+                                            let name=recipient.get("name")
+                                                .and_then(serde_json::Value::as_str)
+                                                .filter(|s|!s.is_empty())
+                                                .unwrap_or("수취인 확인");
+                                            let prefix=format!("{name} / 상품 ");
+                                            let count=recipient.get("items")
+                                                .and_then(serde_json::Value::as_array)
+                                                .map(Vec::len).unwrap_or(0).to_string();
+                                            list.label(typography::inline_body_values(&[
+                                                (&prefix,None),(&count,Some(typography::DataValueKind::Quantity)),("종",None)
+                                            ]));
+                                        }
+                                    });
                             });
                             decision.actions(|buttons|{
                                 if theme::action(buttons,"거래처 확인하기",
