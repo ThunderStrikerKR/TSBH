@@ -708,6 +708,9 @@ impl CategoryManager {
                     }
                 );
             }
+            // The search/actions toolbar and navigation each own one fixed row.
+            // Use the same symmetric structural divider on both sides of navigation.
+            crate::ui_primitives::section_divider(panel);
             // The mode switch and path both use the existing shared controls.
             let nodes=&projection.1;
             let node_index=category_dropdown::tree_index(&nodes);
@@ -735,7 +738,7 @@ impl CategoryManager {
                     if self.focus.path!=current{category_dropdown::navigate(&mut self.focus,current);}
                     self.focus.search=self.query.clone();
                 }
-                let height=(panel.available_height()-theme::CATEGORY_EXPLORER_CRUMB_HEIGHT-theme::SPACE_24)
+                let height=(panel.available_height()-theme::CATEGORY_EXPLORER_CRUMB_HEIGHT-theme::SECTION_DIVIDER_HEIGHT)
                     .max(theme::MANAGEMENT_TABLE_ROW_HEIGHT);
                 let search_focused=panel.ctx().memory(|mem|mem.focused().is_some());
                 category_dropdown::explorer_body(panel,&nodes,&node_index,&mut self.focus,
@@ -1260,7 +1263,11 @@ mod modal_layout_contract_tests{
         assert!(page.contains("management_toolbar_trailing_rect("));
         assert!(page.contains("theme::CATALOG_MAP_TOOLBAR_STACK_WIDTH"));
         assert!(page.contains("self.map_toolbar_actions("));
-        assert!(page.contains("crate::ui_primitives::section_divider(panel)"));
+        assert_eq!(page.matches("crate::ui_primitives::section_divider(panel)").count(),2);
+        let toolbar_end=page.find("// The search/actions toolbar").unwrap();
+        let mode_start=page.find("if self.focused{").unwrap();
+        assert!(page[toolbar_end..mode_start].contains("crate::ui_primitives::section_divider(panel);"));
+        assert!(page.contains("theme::CATEGORY_EXPLORER_CRUMB_HEIGHT-theme::SECTION_DIVIDER_HEIGHT"));
         assert!(!page.contains("panel.add_space(theme::SPACE_8);\n            panel.horizontal_wrapped"));
         assert_eq!(
             theme::SECTION_DIVIDER_HEIGHT,
