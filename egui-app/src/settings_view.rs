@@ -28,7 +28,7 @@ pub struct SettingsView{
     source:Value,
     draft:Value,
     loaded:bool,
-    loading:Option<Pending>,
+    loading:crate::screen_refresh::ReadRefresh<Value>,
     saving:Option<(SaveKind,Pending)>,
     folder_picker:Option<(String,Receiver<Result<Option<String>,String>>)>,
     data_request:Option<(String,Pending)>,
@@ -201,15 +201,11 @@ fn settings_title_row(
 
 impl SettingsView{
     pub fn new(gateway:Arc<dyn BandoGateway>,ctx:Context)->Self{
-        let (sender,receiver)=mpsc::channel();
-        thread::spawn(move||{
-            let result=gateway.load_settings();
-            let _=sender.send(result);
-            ctx.request_repaint();
-        });
+        let mut loading=crate::screen_refresh::ReadRefresh::default();
+        loading.submit_required(ctx,move||gateway.load_settings());
         Self{
             tab:SettingsTab::Basic,tab_snapshots:crate::navigation::NavigationSnapshots::new(0),source:Value::Null,draft:Value::Null,
-            loaded:false,loading:Some(receiver),saving:None,
+            loaded:false,loading,saving:None,
             folder_picker:None,data_request:None,
             archive:None,archive_query:String::new(),archive_open:false,
             backups:Vec::new(),backup_refresh_after_create:false,
@@ -236,11 +232,11 @@ impl SettingsView{
         self.loaded && changed(settings(&self.source),&self.draft)
     }
     pub fn busy(&self)->bool{
-        self.loading.is_some()||self.saving.is_some()||
+        self.loading.pending()||self.saving.is_some()||
             self.folder_picker.is_some()||self.data_request.is_some()
     }
     pub fn read_only(&self)->bool {
-        self.source.get("readOnly").and_then(Value::as_bool).unwrap_or(true)
+        self.loading.required() || self.source.get("readOnly").and_then(Value::as_bool).unwrap_or(true)
     }
     fn data_available(&self)->bool {
         self.source.get("dataAvailable").and_then(Value::as_bool)
@@ -269,33 +265,20 @@ impl SettingsView{
         });
     }
     fn reload(&mut self,gateway:Arc<dyn BandoGateway>,ctx:Context){
-        let (tx,rx)=mpsc::channel();
-        self.loading=Some(rx);
-        self.loaded=false;
-        thread::spawn(move||{
-            let result=gateway.load_settings();
-            let _=tx.send(result);
-            ctx.request_repaint();
-        });
+        // Keep the previous view until the requested reload is verified.
+        self.loading.submit_required(ctx,move||gateway.load_settings());
     }
     pub fn poll(&mut self,ctx:&Context,gateway:Arc<dyn BandoGateway>){
-        if let Some(rx)=self.loading.as_ref(){
-            match rx.try_recv(){
-                Ok(Ok(state))=>{
-                    self.draft=settings(&state).clone();
-                    self.source=state;
-                    self.loading=None;self.loaded=true;self.error=None;
-                    self.apply_scale(ctx);
-                }
-                Ok(Err(error))=>{
-                    self.error=Some(error);self.loading=None;self.loaded=true;
-                }
-                Err(mpsc::TryRecvError::Disconnected)=>{
-                    self.error=Some("설정 조회가 중단되었습니다.".into());
-                    self.loading=None;self.loaded=true;
-                }
-                Err(mpsc::TryRecvError::Empty)=>{}
+        match self.loading.poll(){
+            Some(Ok(state))=>{
+                self.draft=settings(&state).clone();
+                self.source=state;
+                self.loading.verified();
+                self.loaded=true;self.error=None;
+                self.apply_scale(ctx);
             }
+            Some(Err(error))=>{self.error=Some(error);self.loaded=true;}
+            None=>{}
         }
         if let Some((kind,rx))=self.saving.as_ref(){
             match rx.try_recv(){
@@ -972,7 +955,7 @@ impl SettingsView{
     }
     fn show_data(&mut self,ui:&mut Ui,gateway:Arc<dyn BandoGateway>){
         let business=self.source.get("mode").and_then(Value::as_str)==Some("business");
-        let reading=self.data_request.is_some()||self.loading.is_some();
+        let reading=self.data_request.is_some()||self.loading.pending();
         card(ui,"접수 원문 감사 보관함",|panel|{
             if crate::button::action(panel,
                 "감사 기록 열기",ButtonRole::Standard,
@@ -1250,13 +1233,12 @@ mod management_async_layout_tests{
 impl SettingsView {
     pub(crate) fn geometry_fixture(gateway:Arc<dyn BandoGateway>,ctx:egui::Context,tab:usize,loaded:bool)->Self{
         let mut page=Self::new(gateway,ctx);
-        page.loading=None;page.tab=SettingsTab::ALL[tab];page.loaded=loaded;if loaded{page.source=serde_json::json!({"settings":{},"readOnly":true,"dataAvailable":false});page.draft=serde_json::json!({});}
+        page.loading.reset();page.tab=SettingsTab::ALL[tab];page.loaded=loaded;if loaded{page.source=serde_json::json!({"settings":{},"readOnly":true,"dataAvailable":false});page.draft=serde_json::json!({});}
         page
     }
 
     pub(crate) fn geometry_begin_read(&mut self)->Box<dyn FnOnce(Result<usize,String>)>{
-        let (tx,rx)=std::sync::mpsc::channel();
-        self.loading=Some(rx);
+        let finish=self.loading.geometry_begin_read();
         self.error=None;
         Box::new(move |answer|{
             let result=answer.map(|count|{
@@ -1267,7 +1249,7 @@ impl SettingsView {
                     "excelDirectory":folder.clone(),"factoryReplyDirectory":folder.clone(),
                     "orderImageInboxDirectory":folder},"readOnly":true,"dataAvailable":false})
             });
-            assert!(tx.send(result).is_ok());
+            finish(result);
         })
     }
     pub(crate) fn geometry_read_failed(&self)->bool{self.error.is_some()}
