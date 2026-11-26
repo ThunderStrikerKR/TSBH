@@ -428,6 +428,8 @@ pub struct ExcelManager{
     error:Option<String>,
     notice:Option<String>,
     tab:Tab,
+    tab_snapshots:crate::navigation::NavigationSnapshots<3>,
+    tab_filters:[(String,Option<Sort>);3],
     query:String,
     selected:BTreeSet<String>,
     sort_queue:Option<Sort>,
@@ -458,6 +460,7 @@ impl ExcelManager{
         let mut manager=Self{
             gateway,receiver:None,result:None,operation:None,operation_name:None,
             error:None,notice:None,tab:Tab::Factory,
+            tab_snapshots:crate::navigation::NavigationSnapshots::new(0),tab_filters:Default::default(),
             query:String::new(),selected:BTreeSet::new(),
             sort_queue:None,sort_history:None,
             export_from:export_from.clone(),export_to:export_to.clone(),
@@ -471,12 +474,32 @@ impl ExcelManager{
         };
         manager.refresh(ctx);manager
     }
+    pub(crate) fn suspend_navigation(&mut self,now:std::time::Instant){self.tab_snapshots.suspend(now);}
+    fn sync_tab_navigation(&mut self){
+        let next=self.tab as usize;
+        let previous=self.tab_snapshots.active();
+        if next!=previous{
+            self.tab_filters[previous]=(std::mem::take(&mut self.query),self.sort_queue.take());
+            (self.query,self.sort_queue)=std::mem::take(&mut self.tab_filters[next]);
+        }
+        if !self.tab_snapshots.visit(next,std::time::Instant::now()){return;}
+        self.query.clear();self.sort_queue=None;
+        if self.tab==Tab::History{
+            let today=Utc::now().with_timezone(&FixedOffset::east_opt(9*3600).expect("Seoul offset")).date_naive();
+            let (from,to)=default_export_date_range(today);
+            self.export_from=from.clone();self.export_to=to.clone();
+            self.export_from_input=from;self.export_to_input=to;
+            self.export_from_month=crate::navigation::calendar_month_start(today);
+            self.export_to_month=self.export_from_month;self.sort_history=None;
+        }
+    }
     pub(crate) fn reset_navigation(&mut self){
         if self.operation.is_some()||self.blocks_reply_navigation(){return;}
         // Unsaved freight inputs are not a navigation snapshot.
         let today=Utc::now().with_timezone(&FixedOffset::east_opt(9*3600).expect("Seoul offset")).date_naive();
         let (from,to)=default_export_date_range(today);
-        self.tab=Tab::Factory;self.query.clear();self.selected.clear();self.sort_queue=None;self.sort_history=None;
+        self.tab=Tab::Factory;self.tab_snapshots=crate::navigation::NavigationSnapshots::new(0);self.tab_filters=Default::default();
+        self.query.clear();self.selected.clear();self.sort_queue=None;self.sort_history=None;
         self.export_from=from.clone();self.export_to=to.clone();
         self.export_from_input=from;self.export_to_input=to;
         self.export_from_month=crate::navigation::calendar_month_start(today);
@@ -803,12 +826,13 @@ impl ExcelManager{
             let selected=Tab::ALL[next];
             if selected!=self.tab{
                 self.tab=selected;
-                self.selected.clear();self.query.clear();
-                self.sort_history=None;self.sort_queue=None;
+                self.selected.clear();
                 self.managed_queue=None;
             }
         }
         ui.add_space(theme::SPACE_12);
+        self.sync_tab_navigation();
+        ui.push_id(("excel-navigation",self.tab as usize,self.tab_snapshots.epoch(self.tab as usize)),|ui|{
         let mut exported=None;
         let mut open_file=None;
         let mut open_daily=false;
@@ -1234,6 +1258,7 @@ impl ExcelManager{
             ui.ctx(),"excel.error","excel.action",
             crate::floating_notice::Tone::Error,self.error.as_deref()
         );
+        });
     }
 }
 

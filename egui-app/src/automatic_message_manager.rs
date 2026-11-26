@@ -138,6 +138,7 @@ type Saved=Receiver<Result<Value,String>>;
 
 pub struct AutomaticMessageManager {
     pub section:Section,
+    tab_snapshots:crate::navigation::NavigationSnapshots<2>,
     selected:usize,
     selected_product:String,
     product_search:String,
@@ -229,7 +230,7 @@ impl AutomaticMessageManager {
             ctx.request_repaint();
         });
         Self{
-            section:Section::General,selected:TEMPLATES.iter()
+            section:Section::General,tab_snapshots:crate::navigation::NavigationSnapshots::new(0),selected:TEMPLATES.iter()
                 .position(|def|def.id=="colorDefault").unwrap_or(0),
             selected_product:String::new(),product_search:String::new(),
             settings:Value::Null,products:Vec::new(),loading:Some(rx),
@@ -295,9 +296,17 @@ impl AutomaticMessageManager {
         map.get(def.id).and_then(Value::as_str)
             .unwrap_or(def.body).replace("{수취인}님","{수취인}")
     }
+    pub(crate) fn suspend_navigation(&mut self,now:std::time::Instant){self.tab_snapshots.suspend(now);}
+    fn sync_tab_navigation(&mut self){
+        if !self.tab_snapshots.visit(self.section as usize,std::time::Instant::now()){return;}
+        match self.section{
+            Section::General=>self.selected=TEMPLATES.iter().position(|def|def.id=="colorDefault").unwrap_or(0),
+            Section::Provisional=>{self.selected_product.clear();self.product_search.clear();}
+        }
+    }
     pub(crate) fn reset_navigation(&mut self){
         if self.dirty()||self.busy(){return;}
-        self.section=Section::General;
+        self.section=Section::General;self.tab_snapshots=crate::navigation::NavigationSnapshots::new(0);
         self.selected=TEMPLATES.iter().position(|def|def.id=="colorDefault").unwrap_or(0);
         self.selected_product.clear();self.product_search.clear();
     }
@@ -601,6 +610,7 @@ impl AutomaticMessageManager {
     }
     pub fn show(&mut self,ui:&mut Ui,gateway:Arc<dyn BandoGateway>,page_origin_y:f32){
         self.poll();
+        self.sync_tab_navigation();
         crate::floating_notice::sync(
             ui.ctx(),"clients.auto.result","clients.automatic.message",
             crate::floating_notice::Tone::Success,self.notice.as_deref()
@@ -618,6 +628,7 @@ impl AutomaticMessageManager {
                 ("잠정 상품 선택 안내",self.section==Section::Provisional,true),
             ])
         );
+        ui.push_id(("automatic-message-navigation",self.section as usize,self.tab_snapshots.epoch(self.section as usize)),|ui|{
         ui.add_space(theme::SPACE_12);
         if !self.loaded{
             crate::card::align_management_primary_card(ui,page_origin_y);
@@ -699,6 +710,7 @@ impl AutomaticMessageManager {
             };
             if !same{self.request(destination);}
         }
+        });
     }
     pub fn show_confirmation(
         &mut self,ctx:&Context,area:egui::Rect,gateway:Arc<dyn BandoGateway>

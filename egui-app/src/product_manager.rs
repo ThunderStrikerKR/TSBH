@@ -399,6 +399,7 @@ pub struct ProductManager {
     products:Vec<Value>,
     query:String,
     tab:usize,
+    tab_snapshots:crate::navigation::NavigationSnapshots<5>,
     category_manager:CategoryManager,
     model_groups:ModelGroupManager,
     aliases:AliasManager,
@@ -456,7 +457,7 @@ impl ProductManager {
         let mut page=Self {
             gateway,selection_client:None,selection_result:None,focus_search:false,
             catalog:None,products:Vec::new(),
-            query:String::new(),tab:0,
+            query:String::new(),tab:0,tab_snapshots:crate::navigation::NavigationSnapshots::new(0),
             category_manager:CategoryManager::default(),
             model_groups:ModelGroupManager::default(),
             aliases:AliasManager::default(),
@@ -512,9 +513,28 @@ impl ProductManager {
     pub fn take_selection(&mut self)->Option<Value>{
         self.selection_result.take()
     }
+    pub(crate) fn suspend_navigation(&mut self,now:Instant){
+        self.tab_snapshots.suspend(now);
+    }
+    fn sync_tab_navigation(&mut self,ctx:Context){
+        if !self.tab_snapshots.visit(self.tab,Instant::now()){return;}
+        match self.tab{
+            0=>{
+                self.query.clear();self.category.clear();self.brand.clear();self.missing=false;
+                self.sort=None;self.selected_variants.clear();self.price_mode=false;
+                self.reload(ctx);
+            }
+            1=>self.category_manager.reset_navigation(),
+            2=>self.model_groups.reset_navigation(),
+            3=>self.aliases.reset_navigation(),
+            4=>self.brands.reset_navigation(),
+            _=>{}
+        }
+    }
     pub(crate) fn reset_navigation(&mut self,ctx:Context){
         if self.writing.is_some()||self.has_pending_prices()||self.excel.blocks_navigation()||self.selected.is_some(){return;}
-        self.tab=0;self.query.clear();self.category.clear();self.brand.clear();self.missing=false;
+        self.tab=0;self.tab_snapshots=crate::navigation::NavigationSnapshots::new(0);
+        self.query.clear();self.category.clear();self.brand.clear();self.missing=false;
         self.sort=None;self.selected_variants.clear();self.price_mode=false;
         self.category_manager.reset_navigation();
         self.model_groups.reset_navigation();self.aliases.reset_navigation();self.brands.reset_navigation();
@@ -1013,6 +1033,8 @@ impl ProductManager {
             ui.add_space(theme::SPACE_12);
         }
         }
+        if !selecting{self.sync_tab_navigation(ui.ctx().clone());}
+        ui.push_id(("product-navigation",self.tab,self.tab_snapshots.epoch(self.tab)),|ui|{
         let can_edit=!selecting && self.gateway.product_write_enabled()
             && self.catalog.as_ref().is_some_and(|c|c["revision"].as_u64().is_some());
         let saving=self.writing.is_some()||self.excel.busy();
@@ -1661,6 +1683,7 @@ impl ProductManager {
         }else if begin_new {
             self.new_product();
         }
+        });
     }
     fn product_price_candidate(
         draft:&Value,inputs:&HashMap<String,String>,

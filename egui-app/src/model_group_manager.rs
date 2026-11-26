@@ -84,12 +84,12 @@ impl ModelGroupManager {
     pub fn request_tab_leave(&mut self,index:usize)->bool{
         if self.busy(){return false;}
         if self.unsaved(){self.confirm=Some(Exit::Tab(index));false}
-        else{self.reset_navigation();true}
+        else{true}
     }
     pub fn request_global_leave(&mut self)->bool{
         if self.busy(){return false;}
         if self.unsaved(){self.confirm=Some(Exit::Global);false}
-        else{self.reset_navigation();true}
+        else{true}
     }
     pub fn global_leave_in_progress(&self)->bool{
         self.confirm==Some(Exit::Global)||self.after_save==Some(Exit::Global)
@@ -112,8 +112,8 @@ impl ModelGroupManager {
         match next{
             Exit::Select(id)=>{self.selected=id;self.search.clear();self.status.clear();}
             Exit::Close=>{self.selected.clear();self.search.clear();self.status.clear();}
-            Exit::Tab(index)=>{self.reset_navigation();self.leave_tab=Some(index);}
-            Exit::Global=>{self.reset_navigation();self.global_approved=true;}
+            Exit::Tab(index)=>{self.leave_tab=Some(index);}
+            Exit::Global=>{self.global_approved=true;}
         }
     }
     fn request_exit(&mut self,next:Exit){

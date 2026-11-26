@@ -54,12 +54,12 @@ impl BrandManager {
     pub fn request_tab_leave(&mut self,next:usize)->bool{
         if self.pending.is_some(){return false;}
         if self.dirty(){self.pending=Some(Exit::Tab(next));false}
-        else{self.reset_navigation();true}
+        else{true}
     }
     pub fn request_global_leave(&mut self)->bool{
         if self.pending.is_some(){return false;}
         if self.dirty(){self.pending=Some(Exit::Global);false}
-        else{self.reset_navigation();true}
+        else{true}
     }
     fn apply_exit(&mut self,exit:Exit,catalog:&Value){
         match exit {
@@ -79,8 +79,8 @@ impl BrandManager {
                     self.notice=None;
                 }
             }
-            Exit::Tab(tab)=>{self.reset_navigation();self.next_tab=Some(tab);}
-            Exit::Global=>{self.reset_navigation();self.global_approved=true;}
+            Exit::Tab(tab)=>{self.next_tab=Some(tab);}
+            Exit::Global=>{self.global_approved=true;}
         }
     }
     fn choose(&mut self,id:String,catalog:&Value){

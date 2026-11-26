@@ -107,6 +107,7 @@ pub struct ClientManager {
     tag_input:String,
     tag_notice:Option<String>,
     show_messages:bool,
+    tab_snapshots:crate::navigation::NavigationSnapshots<2>,
     messages:Option<AutomaticMessageManager>,
     excel:crate::product_excel_ui::ProductExcelUi,
 }
@@ -134,12 +135,29 @@ impl ClientManager {
             draft:None,original:None,confirm_delete:false,confirm_discard:false,
             exception_id:String::new(),exception_price:String::new(),
             tag_input:String::new(),tag_notice:None,
-            show_messages:false,messages:None,excel:crate::product_excel_ui::ProductExcelUi::for_clients(),
+            show_messages:false,tab_snapshots:crate::navigation::NavigationSnapshots::new(0),messages:None,excel:crate::product_excel_ui::ProductExcelUi::for_clients(),
         }
+    }
+    pub(crate) fn suspend_navigation(&mut self,now:std::time::Instant){
+        self.tab_snapshots.suspend(now);
+        if self.tab_snapshots.active()==1{
+            if let Some(m)=self.messages.as_mut(){m.suspend_navigation(now);}
+        }
+    }
+    fn sync_tab_navigation(&mut self,gateway:Arc<dyn BandoGateway>,ctx:Context){
+        let now=std::time::Instant::now();
+        let next=usize::from(self.show_messages);
+        if next==0&&self.tab_snapshots.active()==1{
+            if let Some(m)=self.messages.as_mut(){m.suspend_navigation(now);}
+        }
+        if !self.tab_snapshots.visit(next,now){return;}
+        if next==0{self.search.clear();self.sort=None;self.query(gateway,ctx);}
+        else if let Some(m)=self.messages.as_mut(){m.reset_navigation();}
     }
     pub(crate) fn reset_navigation(&mut self,gateway:Arc<dyn BandoGateway>,ctx:Context){
         if self.has_modal()||self.saving.is_some()||self.messages.as_ref().is_some_and(|m|m.dirty()||m.busy()){return;}
         self.search.clear();self.sort=None;self.show_messages=false;
+        self.tab_snapshots=crate::navigation::NavigationSnapshots::new(0);
         if let Some(m)=self.messages.as_mut(){m.reset_navigation();}
         self.query(gateway,ctx);
     }
@@ -423,6 +441,8 @@ impl ClientManager {
                 }
             }
         }
+        self.sync_tab_navigation(Arc::clone(&gateway),ui.ctx().clone());
+        ui.push_id(("client-navigation",usize::from(self.show_messages),self.tab_snapshots.epoch(usize::from(self.show_messages))),|ui|{
         if self.show_messages {
             // The automatic-message editor has its own nested tabs, not
             // four client-tier KPIs. Preserve that established workflow.
@@ -643,6 +663,7 @@ impl ClientManager {
             if !self.excel.blocks_navigation(){if let Some(client)=chosen{self.begin(client);}}
 
             (scroll_output.inner_rect,())
+        });
         });
         });
     }

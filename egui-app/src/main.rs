@@ -5596,6 +5596,17 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
     }
 
     fn sync_navigation_snapshot(&mut self,ctx:&egui::Context,now:Instant){
+        let previous=self.navigation_snapshots.active();
+        if previous!=self.page as usize{
+            match Page::ALL[previous]{
+                Page::Products=>if let Some(m)=self.product_manager.as_mut(){m.suspend_navigation(now);},
+                Page::Freight=>if let Some(m)=self.freight_manager.as_mut(){m.suspend_navigation(now);},
+                Page::Excel=>if let Some(m)=self.excel_manager.as_mut(){m.suspend_navigation(now);},
+                Page::Clients=>if let Some(m)=self.client_manager.as_mut(){m.suspend_navigation(now);},
+                Page::Settings=>if let Some(m)=self.settings_view.as_mut(){m.suspend_navigation(now);},
+                _=>{}
+            }
+        }
         if !self.navigation_snapshots.visit(self.page as usize,now){return;}
         match self.page{
             Page::Reception=>{

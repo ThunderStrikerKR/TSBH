@@ -441,6 +441,7 @@ impl RateEditor {
 
 pub struct FreightManager {
     tab: FreightTab,
+    tab_snapshots:crate::navigation::NavigationSnapshots<4>,
     gateway: Arc<dyn BandoGateway>,
     write_receiver: Option<Receiver<Result<Value,String>>>,
     write_action: Option<String>,
@@ -499,6 +500,7 @@ impl FreightManager {
         let receiver=Self::fetch(Arc::clone(&gateway),ctx);
         Self {
             tab: FreightTab::Groups,
+            tab_snapshots:crate::navigation::NavigationSnapshots::new(0),
             gateway,
             write_receiver: None,
             write_action: None,
@@ -566,9 +568,20 @@ impl FreightManager {
     pub fn has_rate_modal(&self)->bool{self.rate_editor.is_some()}
     pub fn last_error(&self)->Option<&str>{self.error.as_deref()}
 
+    pub(crate) fn suspend_navigation(&mut self,now:std::time::Instant){self.tab_snapshots.suspend(now);}
+    fn sync_tab_navigation(&mut self){
+        if !self.tab_snapshots.visit(self.tab as usize,std::time::Instant::now()){return;}
+        match self.tab{
+            FreightTab::Groups=>{self.search.clear();self.group_filter.clear();self.sort=None;}
+            FreightTab::Rates=>{self.rate_search.clear();self.rate_sort=None;}
+            FreightTab::History=>{self.history_sort=None;}
+            FreightTab::Basis=>{}
+        }
+    }
     pub(crate) fn reset_navigation(&mut self){
         if self.dirty()||self.blocks_navigation(){return;}
-        self.tab=FreightTab::Groups;self.search.clear();self.group_filter.clear();
+        self.tab=FreightTab::Groups;self.tab_snapshots=crate::navigation::NavigationSnapshots::new(0);
+        self.search.clear();self.group_filter.clear();
         self.sort=None;self.rate_sort=None;self.rate_search.clear();self.history_sort=None;
         self.selected.clear();self.bulk_group=None;self.bulk_feedback=None;
     }
@@ -801,6 +814,8 @@ impl FreightManager {
             }
         }
         ui.add_space(theme::SPACE_12);
+        self.sync_tab_navigation();
+        ui.push_id(("freight-navigation",self.tab as usize,self.tab_snapshots.epoch(self.tab as usize)),|ui|{
         let (Some(state), Some(projection)) = (self.state.as_ref(), self.projection.as_ref())
         else {
             // Initial loading/error state gets the SAME four KPI footprints
@@ -1229,6 +1244,7 @@ impl FreightManager {
             ui.ctx(),"freight.bulk.feedback","freight.action",
             crate::floating_notice::Tone::Info,self.bulk_feedback.as_deref()
         );
+        });
     }
 
     #[allow(clippy::too_many_arguments)]

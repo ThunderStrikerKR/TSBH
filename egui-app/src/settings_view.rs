@@ -24,6 +24,7 @@ type Pending=Receiver<Result<Value,String>>;
 
 pub struct SettingsView{
     tab:SettingsTab,
+    tab_snapshots:crate::navigation::NavigationSnapshots<4>,
     source:Value,
     draft:Value,
     loaded:bool,
@@ -207,7 +208,7 @@ impl SettingsView{
             ctx.request_repaint();
         });
         Self{
-            tab:SettingsTab::Basic,source:Value::Null,draft:Value::Null,
+            tab:SettingsTab::Basic,tab_snapshots:crate::navigation::NavigationSnapshots::new(0),source:Value::Null,draft:Value::Null,
             loaded:false,loading:Some(receiver),saving:None,
             folder_picker:None,data_request:None,
             archive:None,archive_query:String::new(),archive_open:false,
@@ -218,9 +219,15 @@ impl SettingsView{
             error:None,notice:None
         }
     }
+    pub(crate) fn suspend_navigation(&mut self,now:std::time::Instant){self.tab_snapshots.suspend(now);}
+    fn sync_tab_navigation(&mut self){
+        if self.tab_snapshots.visit(self.tab as usize,std::time::Instant::now())&&self.tab==SettingsTab::Data{
+            self.archive_query.clear();self.archive_open=false;
+        }
+    }
     pub(crate) fn reset_navigation(&mut self){
         if self.dirty()||self.busy(){return;}
-        self.tab=SettingsTab::Basic;self.archive_query.clear();self.archive_open=false;
+        self.tab=SettingsTab::Basic;self.tab_snapshots=crate::navigation::NavigationSnapshots::new(0);self.archive_query.clear();self.archive_open=false;
     }
     pub fn take_restored(&mut self)->bool{
         std::mem::take(&mut self.restored)
@@ -551,6 +558,8 @@ impl SettingsView{
             self.request_tab(SettingsTab::ALL[tab]);
         }
         ui.add_space(theme::SPACE_12);
+        self.sync_tab_navigation();
+        ui.push_id(("settings-navigation",self.tab as usize,self.tab_snapshots.epoch(self.tab as usize)),|ui|{
         if !self.loaded || self.source.is_null(){
             if self.tab!=SettingsTab::Basic{
                 crate::card::align_management_primary_card(ui,page_origin_y);
@@ -584,6 +593,7 @@ impl SettingsView{
                     }
                 });
         }
+        });
     }
     /// A compact two-pane basic page: work/sender information on the left,
     /// scalable bank accounts on the right. No outer scrolling is introduced.
