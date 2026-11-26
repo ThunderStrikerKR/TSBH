@@ -24,7 +24,7 @@ type Pending=Receiver<Result<Value,String>>;
 
 pub struct SettingsView{
     tab:SettingsTab,
-    tab_snapshots:crate::navigation::NavigationSnapshots<4>,
+    tab_snapshots:crate::view_state::NavigationSnapshots<4>,
     source:Value,
     draft:Value,
     loaded:bool,
@@ -205,7 +205,7 @@ impl SettingsView{
         let mut loading=crate::screen_refresh::ReadRefresh::default();
         loading.submit_required(ctx,move||gateway.load_settings());
         Self{
-            tab:SettingsTab::Basic,tab_snapshots:crate::navigation::NavigationSnapshots::new(0),source:Value::Null,draft:Value::Null,
+            tab:SettingsTab::Basic,tab_snapshots:crate::view_state::NavigationSnapshots::new(0),source:Value::Null,draft:Value::Null,
             loaded:false,loading,saving:None,
             folder_picker:None,data_request:None,
             archive:None,archive_cache:Default::default(),archive_query:String::new(),archive_open:false,
@@ -224,7 +224,7 @@ impl SettingsView{
     }
     pub(crate) fn reset_navigation(&mut self){
         if self.dirty()||self.busy(){return;}
-        self.tab=SettingsTab::Basic;self.tab_snapshots=crate::navigation::NavigationSnapshots::new(0);self.archive_query.clear();self.archive_open=false;
+        self.tab=SettingsTab::Basic;self.tab_snapshots=crate::view_state::NavigationSnapshots::new(0);self.archive_query.clear();self.archive_open=false;
     }
     pub fn take_restored(&mut self)->bool{
         std::mem::take(&mut self.restored)
