@@ -564,7 +564,7 @@ fn parse_vat_rate(text:&str)->Result<i64,String>{
 impl VatDialog {
     fn new(order_id:String,source_raw:String,rows:&[serde_json::Value])->Self{
         let recipients=rows.iter().filter(|row|
-            row["vatOverride"].as_bool()==Some(true)
+            gateway::rules::vat_applies(&serde_json::Value::Null,row)
         ).filter_map(|row|row["id"].as_str().map(str::to_owned))
             .collect::<std::collections::HashSet<_>>();
         let bps=rows.iter().filter_map(|row|row["vatRateBps"].as_i64())
@@ -7782,7 +7782,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                             let mut excluded=false;
                             for row in board.groups.iter().flat_map(|g|g.shipments.iter())
                                 .filter(|row|row.order_id==ship.order_id){
-                                if row.recipient["vatOverride"].as_bool().unwrap_or(false){included=true;}else{excluded=true;}
+                                if gateway::rules::vat_applies(&serde_json::Value::Null,&row.recipient){included=true;}else{excluded=true;}
                             }
                             let vat=if included && excluded{"부가세 일부 포함"}
                             else if included{"부가세 포함"}else{"부가세 별도"};
@@ -8078,7 +8078,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                             if one_touch::stage(header)==one_touch::Stage::Review{one_touch::mark(header,response.rect);}
                         },|body|{
                             let inclusive=recipients.iter().filter(|r|
-                                r["vatOverride"].as_bool()==Some(true)).count();
+                                gateway::rules::vat_applies(&serde_json::Value::Null,r)).count();
                             let vat=if inclusive==recipients.len() && !recipients.is_empty(){
                                 "부가세 포함"
                             }else if inclusive>0{"부가세 일부 포함"}
@@ -8644,7 +8644,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                     let vat_label=recipients.and_then(|rows|{
                         if rows.is_empty(){return None;}
                         let inclusive=rows.iter().filter(|row|
-                            row["vatOverride"].as_bool()==Some(true)
+                            gateway::rules::vat_applies(&serde_json::Value::Null,row)
                         ).count();
                         Some(if inclusive==rows.len(){"부가세 포함"}
                             else if inclusive>0{"부가세 일부 포함"}
