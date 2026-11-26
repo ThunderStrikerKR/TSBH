@@ -6214,11 +6214,24 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                 body.spacing_mut().item_spacing.y=0.0;
                 let available=components::docked_section_body_height(height)
                     .min(body.available_height().max(0.0));
-                let (document_rect,_)=body.allocate_exact_size(
+                let (body_rect,_)=body.allocate_exact_size(
                     Vec2::new(body.available_width(),available),Sense::hover()
                 );
+                let card_rect=components::reception_source_client_rect(body_rect);
+                let linked_id=self.drafts.iter().find(|row|row.id==draft.id)
+                    .and_then(|row|row.client_id.as_deref());
+                let display=linked_id.and_then(|id|self.client_summaries.get(id));
+                let name=linked_id.and_then(|id|self.client_names.get(id).map(String::as_str))
+                    .unwrap_or(if linked_id.is_some(){"거래처 확인 중"}else{"거래처 확인 필요"});
+                components::reception_client_summary_card_editable(
+                    body,card_rect,linked_id.is_some(),display,name,false
+                );
+                let document_top=(card_rect.bottom()+theme::SPACE_8).min(body_rect.bottom());
+                let document_rect=Rect::from_min_max(
+                    egui::pos2(body_rect.left(),document_top),body_rect.max
+                );
                 components::paint_source_document_surface(body,document_rect);
-                if available>0.0{
+                if document_rect.height()>0.0{
                     let inner=document_rect.shrink(theme::SPACE_4);
                     body.scope_builder(
                         UiBuilder::new()
@@ -6332,7 +6345,6 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                 && !board.groups.iter().flat_map(|g|g.shipments.iter()).any(|s|
                     s.order_id==shipment.order_id && (s.transferred || s.completed_step.unwrap_or(0)>=4));
             Self::section_with_header(ui,"발주 원문",height,|header|{
-                change_client_clicked=theme::action(header,"거래처 변경",ButtonRole::Standard,client_editable).clicked();
                 if theme::action(header,"+ 새 주문",ButtonRole::Emphasized,no_edit).clicked(){
                     new_clicked=true;
                 }
@@ -6340,11 +6352,22 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                 body.spacing_mut().item_spacing.y=0.0;
                 let available=components::docked_section_body_height(height)
                     .min(body.available_height().max(0.0));
-                let (document_rect,_)=body.allocate_exact_size(
+                let (body_rect,_)=body.allocate_exact_size(
                     Vec2::new(body.available_width(),available),Sense::hover()
                 );
+                let card_rect=components::reception_source_client_rect(body_rect);
+                let display=self.client_summaries.get(&group.dealer_id);
+                floating_notice::section(body.ctx(),"reception.client_change",card_rect);
+                change_client_clicked=components::reception_client_summary_card_editable(
+                    body,card_rect,!group.dealer_id.is_empty(),display,&group.dealer_name,
+                    client_editable
+                );
+                let document_top=(card_rect.bottom()+theme::SPACE_8).min(body_rect.bottom());
+                let document_rect=Rect::from_min_max(
+                    egui::pos2(body_rect.left(),document_top),body_rect.max
+                );
                 components::paint_source_document_surface(body,document_rect);
-                if available>0.0{
+                if document_rect.height()>0.0{
                     let inner=document_rect.shrink(theme::SPACE_4);
                     body.scope_builder(
                         UiBuilder::new()
@@ -6612,15 +6635,10 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                 // never overlap adjacent cards or change the dock splitter.
                 let gap = theme::SPACE_8;
                 let client_card_height = if has_source {
-                    (available_body - 4.0 * gap - theme::ACTION_STANDARD_HEIGHT)
-                        .max(0.0)
-                        .min(theme::ACTION_STANDARD_HEIGHT + 2.0*theme::SPACE_8)
+                    components::reception_source_client_rect(body_rect).height()
                 } else { 0.0 };
                 if has_source {
-                    let card_rect = Rect::from_min_size(
-                        egui::pos2(body_rect.left(), body_rect.top() + gap),
-                        Vec2::new(body_rect.width(), client_card_height),
-                    );
+                    let card_rect = components::reception_source_client_rect(body_rect);
                     // Render a compact single-line reference. An advisory
                     // Rust match is not a confirmed dealer until it has passed
                     // the existing native order-client mutation.
