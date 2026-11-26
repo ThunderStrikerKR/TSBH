@@ -47,7 +47,7 @@ pub fn remember_worksheet_editor(
 
 /// Extract only worksheet keys; callers choose the Enter mapping. IME
 /// preedit ownership persists across frames, unlike a one-frame Ime check.
-fn worksheet_key_from_events(
+pub(crate) fn worksheet_key_from_events(
     events:&[eframe::egui::Event],ime_active:&mut bool,
     enter:CellNavigationKey,shift_enter:CellNavigationKey
 )->Option<(eframe::egui::Key,eframe::egui::Modifiers,CellNavigationKey)>{
@@ -113,6 +113,51 @@ pub fn consume_worksheet_navigation_before_editor(
         });
         consumed.then_some(direction)
     })
+}
+
+/// Navigation for explicitly opted-in, locally staged form cells. Render
+/// all controls first, then request the destination focus by its real ID.
+/// This does not save data or alter a form's existing save/cancel contract.
+pub struct WorksheetFocus {
+    scope:eframe::egui::Id,
+    cells:Vec<CellNavigationCell>,
+    responses:Vec<(String,eframe::egui::Response)>,
+    request:Option<(String,CellNavigationKey)>,
+}
+impl WorksheetFocus {
+    pub fn new(scope:eframe::egui::Id,cells:Vec<CellNavigationCell>)->Self{
+        Self{scope,cells,responses:Vec::new(),request:None}
+    }
+    pub fn before(&mut self,ctx:&eframe::egui::Context,id:&str){
+        if self.request.is_some() || crate::overlay::popup_blocks_shortcuts(ctx)
+            || !self.cells.iter().any(|cell|cell.id==id && cell.enabled){return;}
+        if let Some(key)=consume_worksheet_navigation_before_editor(
+            ctx,self.scope.with(id),CellNavigationKey::Next,CellNavigationKey::Previous
+        ){
+            self.request=Some((id.to_owned(),key));
+        }
+    }
+    pub fn record(&mut self,id:&str,response:eframe::egui::Response){
+        remember_worksheet_editor(&response.ctx,self.scope.with(id),response.id);
+        self.responses.push((id.to_owned(),response));
+    }
+    pub fn finish(self,ctx:&eframe::egui::Context){
+        let Some((current,key))=self.request else{return;};
+        let Some(next)=resolve_cell_navigation_target(&self.cells,&current,key)else{return;};
+        if let Some((_,response))=self.responses.iter().find(|(id,_)|id==&next){
+            response.request_focus();
+            response.scroll_to_me(Some(eframe::egui::Align::Center));
+            ctx.request_repaint();
+        }
+    }
+}
+/// Metadata for a vertical run of editable cells in a staged form.
+pub fn vertical_worksheet_cells<'a>(
+    ids:impl IntoIterator<Item=&'a str>,enabled:bool
+)->Vec<CellNavigationCell>{
+    ids.into_iter().enumerate().map(|(row,id)|CellNavigationCell{
+        id:id.to_owned(),row,column:0,order:row,enabled
+    }).collect()
 }
 
 #[cfg(test)]
