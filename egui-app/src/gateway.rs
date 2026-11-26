@@ -148,7 +148,7 @@ pub trait BandoGateway: Send + Sync {
     fn load_client_master(&self) -> Result<Value, String> {
         Err("거래처 관리 조회를 지원하지 않는 연결입니다.".into())
     }
-    fn mutate_client_master(&self,_revision:u64,_action:&str,_client:Value)
+    fn mutate_client_master(&self,_expected:Value,_action:&str,_client:Value)
         -> Result<Value,String> {
         Err("이 연결은 거래처 변경 저장을 지원하지 않습니다.".into())
     }
@@ -374,9 +374,9 @@ impl BandoGateway for LocalGateway {
     fn load_client_master(&self) -> Result<Value,String> {
         crate::client_master::load()
     }
-    fn mutate_client_master(&self,revision:u64,action:&str,client:Value)
+    fn mutate_client_master(&self,expected:Value,action:&str,client:Value)
         -> Result<Value,String> {
-        crate::client_master::mutate(revision,action,client)
+        crate::client_master::mutate(expected,action,client)
     }
     fn archive_client_workbook(&self)->Result<String,String>{crate::client_master::archive_workbook()}
     fn preview_client_workbook(&self,source:Value)->Result<Value,String>{crate::client_master::preview_workbook(source)}
