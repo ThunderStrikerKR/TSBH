@@ -524,6 +524,8 @@ fn reconcile_inner(payload:&Value,order_scope:Option<&str>,scoped_seed:Option<&s
                 str_field(q,"status")!="CANCELLED")) {
             return Err("입금 / 출고 이력이 있는 주문은 거래처를 바로 변경할 수 없습니다. 기존 건을 확인한 뒤 새 주문으로 접수하세요.".into());
         }
+        let reassigned_shipments=affected.iter().map(|ship|str_field(ship,"id").to_owned())
+            .collect::<std::collections::HashSet<_>>();
         for gid in group_ids {
             let gi=rows(field(&state["workflow"],"groups")).iter()
                 .position(|g|str_field(g,"id")==gid)
@@ -569,6 +571,10 @@ fn reconcile_inner(payload:&Value,order_scope:Option<&str>,scoped_seed:Option<&s
             let order_before=state["orders"][oi].clone();
             let frozen=index.is_some() && (has_value(field(&order_before,"confirmedAt")) ||
                 flag(&order_before,"pricesLocked"));
+            // Explicit, validated dealer reassignment is not a passive
+            // tariff refresh. Requote automatic origins only.
+            let reassigned=index.is_some_and(|si|reassigned_shipments.contains(
+                str_field(&state["workflow"]["shipments"][si],"id")));
             // Migrate only when a decision is absent/stale. Old previously
             // billed or dispatched orders must NOT silently acquire a 2x
             // charge after a new remote-area dataset is deployed.
@@ -652,7 +658,7 @@ fn reconcile_inner(payload:&Value,order_scope:Option<&str>,scoped_seed:Option<&s
             }
             let old_version=field(&state["workflow"]["shipments"][si],"freightVersion");
             let freight_confirmed=stages::read(&state["workflow"]["shipments"][si])[1];
-            if !frozen && old_version!=field(&reco,"version") &&
+            if (!frozen || reassigned) && old_version!=field(&reco,"version") &&
                 !(freight_confirmed && str_field(&state["workflow"]["shipments"][si],"chargeMode")=="MANUAL") {
                 pending_rechecks.entry(si).and_modify(|entry|entry.1=true).or_insert((1,true,"적용 운임 기준 변경"));
                 set(&mut state["workflow"]["shipments"][si],"freightVersion",
@@ -691,7 +697,32 @@ fn reconcile_inner(payload:&Value,order_scope:Option<&str>,scoped_seed:Option<&s
                 set(&mut state["workflow"]["shipments"][si],"chargeMode",json!("AUTO"))?;
             }
             let automatic=str_field(&state["workflow"]["shipments"][si],"chargeMode")=="AUTO";
-            if has_value(overrides) && !(cleared_override && automatic) {
+            if reassigned {
+                // A legacy MANUAL shipment may predate recipient overrides.
+                // Preserve its explicit amounts when no override map exists.
+                let legacy_manual=!automatic && !has_value(overrides);
+                let mut manual=false;
+                for origin in &origins {
+                    let explicit=field(overrides,origin);
+                    let prior=field(&previous_charges,origin);
+                    let retained=if super::safe(explicit).is_some(){Some(explicit)}
+                        else if legacy_manual && super::safe(prior).is_some(){Some(prior)}
+                        else{None};
+                    let value=if let Some(value)=retained{
+                        manual=true;
+                        value
+                    }else{
+                        rows(field(&reco,"bundles")).iter()
+                            .find(|b|str_field(b,"origin")==origin)
+                            .map(|b|b.get("baseRecommendation")
+                                .unwrap_or_else(||field(b,"recommendation")))
+                            .unwrap_or(&Value::Null)
+                    };
+                    set(&mut charges,origin,value.clone())?;
+                }
+                set(&mut state["workflow"]["shipments"][si],"chargeMode",
+                    json!(if manual{"MANUAL"}else{"AUTO"}))?;
+            } else if has_value(overrides) && !(cleared_override && automatic) {
                 set(&mut state["workflow"]["shipments"][si],"chargeMode",json!("MANUAL"))?;
                 for origin in &origins {
                     let v=field(overrides,origin);
