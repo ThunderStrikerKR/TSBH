@@ -116,16 +116,21 @@ const tableOwnerContracts = {
     shipment_detail_cells:1,paint_table_galley:1,management_table_column_rules:1,
     header_finish:1
   },
-  "table/mod.rs:show":{finish:1},
+  "table/mod.rs:show":{"TableGeometry::new":1,".paint":1},
   "table/mod.rs:inline":{finish_inline:1},
   "table/mod.rs:finish_inline":{finish:1},
-  "table/mod.rs:finish":{outline_bounds:1,".rect_stroke":1},
+  "table/mod.rs:finish":{outline_bounds:1,paint_frame:1},
+  "table/mod.rs:new":{outline_bounds:1},
+  "table/mod.rs:paint":{paint_frame:1,".rect_filled":1},
+  "table/mod.rs:paint_frame":{".rect_stroke":1,".with_clip_rect":1},
+  "table/mod.rs:strict_viewport_clip":{".intersect":1},
+  "table/mod.rs:virtual_fixed_rows":{strict_viewport_clip:1,".set_clip_rect":1},
   "table/mod.rs:header_begin":{".rect_filled":1},
   "table/mod.rs:header_finish":{".rect_filled":1},
   "table/mod.rs:master_header_begin":{header_begin:1},
   "table/mod.rs:fixed_row":{row_scope:1,management_table_cells:1,
     paint_management_table_row_background:1,management_table_column_rules:1,
-    paint_management_table_row_rule:1},
+    paint_management_table_row_rule:1,".set_clip_rect":1},
   "table/mod.rs:history_row":{row_scope:1,management_table_cells:1,
     paint_management_table_row_background:1,management_table_column_rules:1,
     paint_management_table_row_rule:1,paint_shipment_detail_surface:1},
@@ -135,9 +140,9 @@ const tableOwnerContracts = {
   "table/mod.rs:paint_management_table_row_rule":{"theme::paint_soft_rule":1},
   "table/mod.rs:management_master_column_rules":{"theme::paint_soft_rule":1},
   "table/mod.rs:fixed_rows":{viewport_scroll:1,virtual_fixed_rows:1},
-  "table/mod.rs:variable_rows":{viewport_scroll:1,management_table_row_body:1},
+  "table/mod.rs:variable_rows":{viewport_scroll:1,management_table_row_body:1,strict_viewport_clip:1,".set_clip_rect":1},
   "table/mod.rs:viewport_scroll":{management_fixed_table_scroll_area:1},
-  "table/mod.rs:register_rows":{management_register_list_scroll_area:1},
+  "table/mod.rs:register_rows":{management_register_list_scroll_area:1,strict_viewport_clip:1,".set_clip_rect":1},
 };
 const tableOnlyCalls = new Set(["show","fixed_rows","fixed_row","fixed_row_rect",
   "variable_rows","history_row","header_columns","heading","sort_clicked","row_scope",
@@ -758,20 +763,29 @@ function selfTest(){
   assert.equal(missing("fn shipment_detail_cells(){let c=shipment_detail_content(b);management_table_cells(p,w,h,g);}","table/mod.rs",commonScope).length,0);
   assert.equal(missing("fn shipment_detail_cells(){shipment_detail_content(b);} fn management_table_cells(){}","table/mod.rs",commonScope).length,1);
   const tableScope="table/mod.rs:fixed_row";
-  const fixed="fn fixed_row(){row_scope();management_table_cells();paint_management_table_row_background();management_table_column_rules();paint_management_table_row_rule();}";
+  const fixed="fn fixed_row(){row_scope();row.set_clip_rect(r);management_table_cells();paint_management_table_row_background();management_table_column_rules();paint_management_table_row_rule();}";
   assert.equal(missing(fixed,"table/mod.rs",tableScope).length,0);
   assert.equal(missing(fixed.replace("paint_management_table_row_rule();",""),"table/mod.rs",tableScope).length,1);
   assert.equal(missing(fixed.replace("management_table_cells();","fake::management_table_cells();"),"table/mod.rs",tableScope).length,1);
-  assert.equal(missing("fn show(){finish(ui,header,body);}","table/mod.rs","table/mod.rs:show").length,0);
-  assert.equal(missing("fn show(){} fn unrelated(){finish(ui,header,body);}","table/mod.rs","table/mod.rs:show").length,1);
-  assert.equal(missing("fn finish(){outline_bounds(h,b);painter.rect_stroke(r,x,s,k);}","table/mod.rs","table/mod.rs:finish").length,0);
+  assert.equal(missing("fn show(){TableGeometry::new(l,b,c).paint(ui);}","table/mod.rs","table/mod.rs:show").length,0);
+  assert.equal(missing("fn show(){} fn unrelated(){TableGeometry::new(l,b,c).paint(ui);}","table/mod.rs","table/mod.rs:show").length,2);
+  assert.equal(missing("fn show(){TableGeometry::new(l,b,c);}","table/mod.rs","table/mod.rs:show").length,1);
+  assert.equal(missing("fn finish(){paint_frame(ui,outline_bounds(h,b));}","table/mod.rs","table/mod.rs:finish").length,0);
   assert.equal(missing("fn finish(){outline_bounds(h,b);}","table/mod.rs","table/mod.rs:finish").length,1);
+  assert.equal(missing("fn new(){outline_bounds(h,b);}","table/mod.rs","table/mod.rs:new").length,0);
+  assert.equal(missing("fn paint(){painter.rect_filled(r,x,c);paint_frame(ui,r);}","table/mod.rs","table/mod.rs:paint").length,0);
+  assert.equal(missing("fn paint(){paint_frame(ui,r);}","table/mod.rs","table/mod.rs:paint").length,1);
+  assert.equal(missing("fn paint_frame(){painter.with_clip_rect(r).rect_stroke(r,x,s,k);}","table/mod.rs","table/mod.rs:paint_frame").length,0);
+  assert.equal(missing("fn paint_frame(){painter.with_clip_rect(r);}","table/mod.rs","table/mod.rs:paint_frame").length,1);
+  assert.equal(missing("fn virtual_fixed_rows(){strict_viewport_clip(b,v);row.set_clip_rect(r);}","table/mod.rs","table/mod.rs:virtual_fixed_rows").length,0);
+  assert.equal(missing("fn virtual_fixed_rows(){row.set_clip_rect(r);}","table/mod.rs","table/mod.rs:virtual_fixed_rows").length,1);
+  assert.equal(missing(fixed.replace("row.set_clip_rect(r);",""),"table/mod.rs",tableScope).length,1);
   assert.equal(missing("fn show_page(){components::show();}","product_manager.rs","product_manager.rs:show_page").length,8);
   assert.deepEqual([...sharedDependencies("use crate::{theme, typography}; fn a(){crate::overlay::x();}","button")],["theme","typography","overlay"]);
   assert.equal(sharedDependencies("// crate::components::x();\nfn a(){let s=\"components::x()\";}","button").size,0);
   assert.equal(dependencyCycles(new Map([["button",new Set(["theme"])],["theme",new Set()]])).length,0);
   assert.equal(dependencyCycles(new Map([["button",new Set(["components"])],["components",new Set(["button"])]] )).length,1);
-  console.log("EGUI_SHARED_UI_SELFTEST_PASS",cases.length+22);
+  console.log("EGUI_SHARED_UI_SELFTEST_PASS",cases.length+30);
 }
 
 // The shared UI dependency graph excludes business screens and test-only support.
