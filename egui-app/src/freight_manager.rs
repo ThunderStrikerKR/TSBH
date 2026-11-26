@@ -4,6 +4,7 @@
 //! operational freight. Write actions are a separate migration step.
 use crate::{
     category_manager::ProductCategoryPaths,
+    cell_navigation,
     components,
     gateway::{BandoGateway, ReadOperation},
     management_queries,
@@ -2286,10 +2287,18 @@ impl FreightManager {
         ui.label(typography::subsection_heading("수량별 운임"));
         ui.label(typography::caption("확인한 묶음 수량의 운임만 추가하세요."));
         let mut removed=None;
+        let fee_ids=editor.fees.keys().map(|count|count.to_string()).collect::<Vec<_>>();
+        let mut navigation=cell_navigation::WorksheetFocus::new(
+            ui.make_persistent_id(("freight-rate-cells",editor.id.as_str(),editor.product)),
+            cell_navigation::vertical_worksheet_cells(fee_ids.iter().map(String::as_str),enabled)
+        );
         for (count,amount) in editor.fees.iter_mut(){
             ui.horizontal(|line|{
                 components::form_field_label(line,&format!("{count}개 묶음"));
-                components::money_field(line,amount,enabled);
+                let id=count.to_string();
+                navigation.before(line.ctx(),&id);
+                let response=components::money_field(line,amount,enabled);
+                navigation.record(&id,response);
                 if theme::action(line,"삭제",theme::ButtonRole::Standard,enabled).clicked(){
                     removed=Some(*count);
                 }
@@ -2302,6 +2311,7 @@ impl FreightManager {
             });
         }
         if let Some(count)=removed{editor.fees.remove(&count);}
+        else{navigation.finish(ui.ctx());}
         let available=(1..=6).filter(|n|
             editor.max_bundle.is_some_and(|max|*n<=max)
             && !editor.fees.contains_key(n)
