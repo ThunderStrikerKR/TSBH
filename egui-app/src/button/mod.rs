@@ -18,7 +18,7 @@ pub(crate) fn paint_button_hover(ui:&Ui,response:&Response,radius:f32){
 }
 
 /// Fixed-rectangle remove action for compact rows.
-pub(crate) fn remove_at(ui:&Ui,hit:Rect,id:egui::Id,enabled:bool)->Response{
+pub(crate) fn remove_at(ui:&Ui,hit:Rect,id:egui::Id,enabled:bool)->bool{
     let enabled=enabled && ui.is_enabled();
     let response=ui.interact(hit,id,if enabled{Sense::click()}else{Sense::hover()});
     let ink=if enabled{theme::SECONDARY}else{theme::DISABLED_ACTION_TEXT};
@@ -31,7 +31,7 @@ pub(crate) fn remove_at(ui:&Ui,hit:Rect,id:egui::Id,enabled:bool)->Response{
             center+egui::vec2(4.0,4.0*sign)
         ],stroke);
     }
-    response
+    enabled && response.clicked()
 }
 
 /// Shared disclosure chevron, overflow tooltip and hover policy.

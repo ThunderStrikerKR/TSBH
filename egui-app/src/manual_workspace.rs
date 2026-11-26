@@ -1532,7 +1532,7 @@ impl ManualWorkspace {
             input
         }else{
             crate::input::reception_inline_cell_editor(
-                ui,rect,&mut self.edit_text,focus,click_at,false
+                ui,rect,&mut self.edit_text,focus,click_at
             )
         };
         cell_navigation::remember_worksheet_editor(ui.ctx(),slot,response.id);

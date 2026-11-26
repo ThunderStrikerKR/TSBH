@@ -375,14 +375,18 @@ mod inline_first_click_caret_tests {
                         cell.center().y
                     );
                     let mut editing=value.to_owned();
-                    let response=reception_inline_cell_editor(
-                        ui,cell,&mut editing,true,Some(click),numeric
-                    );
+                    let response=if numeric{
+                        crate::input::reception_item_numeric_editor(
+                            ui,cell,&mut editing,true,Some(click),crate::input::ReceptionNumericCell::Money
+                        ).0
+                    }else{
+                        reception_inline_cell_editor(ui,cell,&mut editing,true,Some(click))
+                    };
                     let state=egui::TextEdit::load_state(ui.ctx(),response.id)
                         .expect("native caret state");
                     let range=state.cursor.char_range().expect("first caret");
                     assert_eq!(range.primary.index,range.secondary.index);
-                    assert!(range.primary.index<=value.chars().count());
+                    assert!(range.primary.index<=editing.chars().count());
                     selections.push(range.primary.index);
                 }
             });

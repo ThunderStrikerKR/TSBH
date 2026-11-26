@@ -499,21 +499,14 @@ pub(crate) fn reception_recipient_inline_cell_editor(
 /// detached form, or second layout row. Focus and response are owned by egui.
 pub(crate) fn reception_inline_cell_editor(
     ui:&mut Ui,cell:Rect,value:&mut String,request_focus:bool,
-    click_at:Option<egui::Pos2>,numeric:bool
+    click_at:Option<egui::Pos2>
 )->Response{
     let rect=cell.shrink2(egui::vec2(theme::SPACE_4,theme::SPACE_2));
-    let font=if numeric{
-        typography::data_value_font(
-            typography::DataValueKind::Money,
-            typography::DataValueContext::Reception
-        )
-    }else{
-        egui::FontId::proportional(typography::FONT_RECEPTION_RECIPIENT_TEXT)
-    };
+    let font=egui::FontId::proportional(typography::FONT_RECEPTION_RECIPIENT_TEXT);
     reception_text_editor_at_click(
         ui,rect,
         singleline_editor(value,font,rect.width(),
-            if numeric{Align::RIGHT}else{Align::LEFT},typography::reception_cell_text_margin()),
+            Align::LEFT,typography::reception_cell_text_margin()),
         request_focus,click_at
     )
 }

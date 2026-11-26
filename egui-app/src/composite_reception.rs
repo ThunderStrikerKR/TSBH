@@ -428,9 +428,8 @@ pub fn reception_item_row(
             egui::pos2(rect.right()-action_width/2.0,rect.center().y),
             egui::vec2(action_width,28.0)
         );
-        let enabled=editable && ui.is_enabled();
-        let action=crate::button::remove_at(ui,hit,ui.make_persistent_id(("item-remove",row_id)),enabled);
-        remove_clicked=enabled && action.clicked();
+        remove_clicked=crate::button::remove_at(
+            ui,hit,ui.make_persistent_id(("item-remove",row_id)),editable);
     }
     #[cfg(test)]
     for (name,response) in [("item product",&product),("item quantity",&quantity),("item amount",&amount)]{

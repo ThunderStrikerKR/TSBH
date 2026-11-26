@@ -322,7 +322,7 @@ mod management_toolbar_geometry_tests {
                 let before=ui.available_rect_before_wrap().min;
                 let mut text="바로 편집".to_owned();
                 let response=reception_inline_cell_editor(
-                    ui,cell,&mut text,false,None,false
+                    ui,cell,&mut text,false,None
                 );
                 let after=ui.available_rect_before_wrap().min;
                 measured=Some((cell,response.rect,before,after));
