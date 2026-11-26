@@ -82,19 +82,16 @@ fn empty_client()->Value {
         "overrides":{}})
 }
 type AsyncState=Receiver<Result<Value,String>>;
-type SearchState=Receiver<(u64,Result<Vec<String>,String>)>;
 
 pub struct ClientManager {
     state:Value,
     ready:bool,
-    loading:Option<AsyncState>,
+    loading:crate::screen_refresh::ReadRefresh<Value>,
     saving:Option<AsyncState>,
-    search_rx:Option<SearchState>,
-    generation:u64,
+    search_job:crate::screen_refresh::ReadRefresh<Vec<String>>,
     matches:Vec<String>,
     matches_query:String,
     search:String,
-    searching:bool,
     // None = Rust/source order; false = ascending; true = descending.
     sort:Option<(usize,bool)>,
     error:Option<String>,
@@ -123,16 +120,12 @@ fn client_tier_kpi_values(available:bool,counts:[usize;4])->[String;4]{
 
 impl ClientManager {
     pub fn new(gateway:Arc<dyn BandoGateway>,ctx:Context)->Self {
-        let (tx,rx)=mpsc::channel();
-        thread::spawn(move||{
-            let result=gateway.load_client_master();
-            let _=tx.send(result);
-            ctx.request_repaint();
-        });
+        let mut loading=crate::screen_refresh::ReadRefresh::default();
+        loading.submit_required(ctx,move||gateway.load_client_master());
         Self {
-            state:Value::Null,ready:false,loading:Some(rx),saving:None,
-            search_rx:None,generation:0,matches:Vec::new(),matches_query:String::new(),search:String::new(),
-            searching:false,sort:None,error:None,changed:false,
+            state:Value::Null,ready:false,loading,saving:None,
+            search_job:Default::default(),matches:Vec::new(),matches_query:String::new(),search:String::new(),
+            sort:None,error:None,changed:false,
             draft:None,original:None,confirm_delete:false,confirm_discard:false,
             exception_id:String::new(),exception_price:String::new(),
             tag_input:String::new(),tag_notice:None,
@@ -195,7 +188,7 @@ impl ClientManager {
         std::mem::take(&mut self.changed)
     }
     fn editable(&self)->bool {
-        self.state.is_object() &&
+        !self.loading.required() && self.state.is_object() &&
         self.state.get("readOnly")!=Some(&Value::Bool(true))
     }
     fn dirty(&self)->bool {
@@ -219,25 +212,18 @@ impl ClientManager {
         self.tag_notice=None;
     }
     fn query(&mut self,gateway:Arc<dyn BandoGateway>,ctx:Context) {
-        self.generation=self.generation.wrapping_add(1);
-        self.search_rx=None;
-        // Retain the same-query result during master refresh, never across a changed search.
-        if self.matches_query!=self.search{
-            self.matches.clear();
-            self.matches_query=self.search.clone();
-        }
+        self.search_job.cancel();
+        // Retain same-query results, never across a changed search.
+        crate::screen_refresh::retain_scope(&mut self.matches,self.matches_query==self.search);
+        self.matches_query=self.search.clone();
         if self.search.trim().is_empty() {
-            self.searching=false;
+            self.search_job.reset();
             return;
         }
-        self.searching=true;
-        let generation=self.generation;
         let query=self.search.clone();
         let clients=self.clients().to_vec();
-        let (tx,rx)=mpsc::channel();
-        self.search_rx=Some(rx);
-        thread::spawn(move||{
-            let result=gateway.execute(ReadOperation::ClientCandidates,json!({
+        self.search_job.submit_required(ctx,move||{
+            gateway.execute(ReadOperation::ClientCandidates,json!({
                 "state":{"clients":clients},"query":query,"raw":""
             })).and_then(|value|{
                 value.get("ids").and_then(Value::as_array)
@@ -246,27 +232,18 @@ impl ClientManager {
                         id.as_str().map(str::to_owned)
                           .ok_or_else(||"거래처 검색 ID가 잘못되었습니다.".into())
                     ).collect())
-            });
-            let _=tx.send((generation,result));
-            ctx.request_repaint();
+            })
         });
     }
     fn poll(&mut self,gateway:Arc<dyn BandoGateway>,ctx:&Context) {
-        let loaded=self.loading.as_ref().map(|rx|rx.try_recv());
-        match loaded {
-            Some(Ok(Ok(state)))=>{
-                self.state=state;self.ready=true;self.loading=None;
+        match self.loading.poll(){
+            Some(Ok(state))=>{
+                self.state=state;self.ready=true;self.loading.verified();
                 self.error=None;
                 self.query(Arc::clone(&gateway),ctx.clone());
             },
-            Some(Ok(Err(error)))=>{
-                self.ready=true;self.loading=None;self.error=Some(error);
-            },
-            Some(Err(mpsc::TryRecvError::Disconnected))=>{
-                self.ready=true;self.loading=None;
-                self.error=Some("거래처 명단을 불러오지 못했습니다.".into());
-            },
-            _=>{},
+            Some(Err(error))=>{self.ready=true;self.error=Some(error);},
+            None=>{},
         }
         let saved=self.saving.as_ref().map(|rx|rx.try_recv());
         match saved {
@@ -291,20 +268,10 @@ impl ClientManager {
             },
             _=>{},
         }
-        let search=self.search_rx.as_ref().map(|rx|rx.try_recv());
-        match search {
-            Some(Ok((generation,result))) if generation==self.generation=>{
-                match result {
-                    Ok(ids)=>{self.matches=ids;self.searching=false;},
-                    Err(error)=>{self.error=Some(error);self.searching=false;}
-                }
-                self.search_rx=None;
-            },
-            Some(Err(mpsc::TryRecvError::Disconnected))=>{
-                self.error=Some("거래처 검색이 중단되었습니다.".into());
-                self.searching=false;self.search_rx=None;
-            },
-            _=>{},
+        match self.search_job.poll(){
+            Some(Ok(ids))=>{self.matches=ids;self.search_job.verified();},
+            Some(Err(error))=>self.error=Some(error),
+            None=>{},
         }
     }
     fn mutate(&mut self,gateway:Arc<dyn BandoGateway>,ctx:&Context,action:&str) {
@@ -401,7 +368,7 @@ impl ClientManager {
             "불러오는 중".to_owned()
         }else if !self.state.is_object(){
             "조회 실패".to_owned()
-        }else if self.searching{
+        }else if self.search_job.pending(){
             "검색 중".to_owned()
         }else{
             format!("{}개",filtered_count)
@@ -605,7 +572,7 @@ impl ClientManager {
             let scroll_output=crate::table::fixed_rows_snapshot(
                 section,crate::table::Viewport{width:table_width,height:scroll_max_height,rail:Some(scroll_track)},
                 "client-management-table-rows",theme::MANAGEMENT_CLIENT_ROW_HEIGHT,rows.len(),
-                self.ready&&!self.searching&&self.state.is_object(),Some(&scroll_keys),
+                self.ready&&!self.search_job.pending()&&self.state.is_object(),Some(&scroll_keys),
                 |table,visible_rows|{
                     crate::table::management_table_row_body(table,table_width);
                     let first=visible_rows.start;
@@ -636,7 +603,7 @@ impl ClientManager {
                                             (shown_phone,extra_mobile),
                                             (crate::composite_client::client_tier_label(&display.tier),conditions)
                                         ],field(client,"tier"),index
-                                    ).clicked() && !self.searching{
+                                    ).clicked() && !self.search_job.required(){
                                         chosen=Some(client.clone());
                                     }
                                 }
@@ -647,7 +614,7 @@ impl ClientManager {
             );
             if rows.is_empty(){
                 let status=if !self.ready{"거래처 명단을 불러오는 중입니다."}
-                    else if self.searching{"거래처 검색 중…"}
+                    else if self.search_job.pending(){"거래처 검색 중…"}
                     else if self.search.trim().is_empty(){"등록된 거래처가 없습니다."}
                     else{"검색 결과가 없습니다."};
                 crate::status_notice::management_body_state_overlay(section,scroll_output.inner_rect,Some(status));
@@ -1153,20 +1120,19 @@ mod client_account_picker_tests{
 impl ClientManager {
     pub(crate) fn geometry_fixture(gateway:Arc<dyn BandoGateway>,ctx:egui::Context,tab:usize,loaded:bool)->Self{
         let mut page=Self::new(Arc::clone(&gateway),ctx.clone());
-        page.loading=None; page.ready=loaded; if loaded{page.state=serde_json::json!({"revision":1,"clients":[],"readOnly":true});} if tab>0{page.show_messages=true;page.messages=Some(AutomaticMessageManager::geometry_fixture(gateway,ctx,tab-1,loaded));}
+        page.loading.reset(); page.ready=loaded; if loaded{page.state=serde_json::json!({"revision":1,"clients":[],"readOnly":true});} if tab>0{page.show_messages=true;page.messages=Some(AutomaticMessageManager::geometry_fixture(gateway,ctx,tab-1,loaded));}
         page
     }
 
     pub(crate) fn geometry_begin_read(&mut self)->Box<dyn FnOnce(Result<usize,String>)>{
-        let (tx,rx)=std::sync::mpsc::channel();
-        self.loading=Some(rx);
+        let finish=self.loading.geometry_begin_read();
         self.error=None;
         Box::new(move |answer|{
             let result=answer.map(|count|{
                 let clients=(0..count).map(|i|serde_json::json!({"id":format!("geometry-c-{i}"),"name":format!("검증 거래처 {i:03}"),"tier":(["WHOLESALE","SEMI","RETAIL","SPECIAL"][i%4]),"address":"합성 주소 — 실제 고객 정보 아님","active":true})).collect::<Vec<_>>();
                 serde_json::json!({"revision":1,"clients":clients,"readOnly":true})
             });
-            assert!(tx.send(result).is_ok());
+            finish(result);
         })
     }
     pub(crate) fn geometry_read_failed(&self)->bool{self.error.is_some()}
