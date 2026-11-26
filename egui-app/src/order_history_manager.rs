@@ -271,14 +271,14 @@ fn history_detail_actions_rect(row_rect:Rect,block:Rect)->Rect{
     )
 }
 fn history_detail_cells(block:Rect)->[Rect;4]{
-    let content=block.shrink2(Vec2::new(theme::SPACE_12,0.0));
+    let content=components::shipment_detail_content(block);
     let recipient=96.0;
     let freight=116.0;
     let tracking=156.0;
     let product=(content.width()-recipient-freight-tracking
         -3.0*theme::SPACE_8).max(1.0);
     let sizes=[recipient,product,freight,tracking];
-    components::management_table_cells(content.min,&sizes,content.height(),theme::SPACE_8)
+    components::shipment_detail_cells(block,&sizes,theme::SPACE_8)
 }
 fn paint_history_branch(ui:&Ui,row_rect:Rect,widths:&[f32;7],
     branch:HistoryBranch,spacing:DetailSpacing){
@@ -465,27 +465,19 @@ fn history_line_height(ui:&Ui,line:HistoryLine,
     );
     let card=history_detail_block_rect(placeholder,widths,spacing);
     let product_cell=history_detail_cells(card)[1];
-    let galley=typography::freight_table_wrapped_galley(
-        ui,&product,(product_cell.width()-theme::SPACE_12).max(1.0)
+    let galley=components::shipment_detail_product_galley(
+        ui,product_cell.width(),&product,theme::TEXT
     );
     // Only the inner text padding belongs to the card's content height.
     // Group spacing is accounted for independently, so first/middle/last
     // rows all have identical visible gaps even for multiline products.
-    let block_height=(galley.size().y+2.0*theme::SPACE_4).ceil()
-        .max(DETAIL_BLOCK_HEIGHT);
+    let block_height=components::shipment_detail_block_height(galley.size().y);
     block_height+spacing.top+spacing.bottom
 }
 fn paint_detail_products(ui:&Ui,rect:Rect,text:&str)->bool{
-    let galley=typography::freight_table_wrapped_galley(
-        ui,text,(rect.width()-theme::SPACE_12).max(1.0)
-    );
-    let pos=egui::pos2(rect.left()+6.0,
-        rect.center().y-galley.size().y/2.0);
-    let clip=rect.intersect(ui.clip_rect());
-    let text_rect=Rect::from_min_size(pos,galley.size());
-    let overflow=components::positioned_text_overflow(text_rect,clip,galley.elided);
-    ui.painter().with_clip_rect(clip).galley(pos,galley,theme::TEXT);
-    overflow
+    let galley=components::shipment_detail_product_galley(
+        ui,rect.width(),text,theme::TEXT);
+    components::paint_shipment_detail_products(ui,rect,galley,theme::TEXT)
 }
 fn history_shipment_logistics(shipment:Option<&Value>)->(String,String){
     // A detail block belongs to exactly one shipment. Never merge freight or
@@ -1464,8 +1456,8 @@ impl OrderHistoryManager {
                                                     row_rect,0.0,theme::CANVAS);
                                                 let block_rect=history_detail_block_rect(
                                                     row_rect,&widths,spacing);
-                                                theme::paint_bordered_surface(row_ui.painter(),block_rect,
-                                                    theme::ORDER_HISTORY_RECIPIENT_BLOCK_RADIUS,theme::PANEL,theme::DIVIDER);
+                                                components::paint_shipment_detail_surface(
+                                                    row_ui,block_rect,theme::PANEL,false);
                                             }
                                         }
                                         if let Some(snapshot)=snapshot {
