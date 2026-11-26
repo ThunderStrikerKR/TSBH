@@ -391,9 +391,9 @@ mod management_async_layout_contract_tests {
         let model_groups=include_str!("model_group_manager.rs");
         assert!(!model_groups.contains("if self.dirty(){\n                                crate::ui_primitives::soft_divider(right);"));
         let aliases=include_str!("alias_manager.rs");
-        assert!(aliases.contains("fn alias_diagnostic_slot("));
-        assert!(aliases.contains("alias_diagnostic_slot(info,item,&warnings);"));
-        assert!(aliases.contains("crate::ui_layout::fixed_status_slot("));
+        assert!(aliases.contains("fn alias_diagnostic("));
+        assert!(aliases.contains("let diagnostic=alias_diagnostic(item,&warnings);"));
+        assert!(aliases.contains("crate::table::registry_table("));
         assert!(!aliases.contains("hit.on_hover_text(detail);"));
         let settings=include_str!("settings_view.rs");
         assert!(settings.contains("if conflict{"));
@@ -456,10 +456,10 @@ mod management_async_behavior_regression_tests {
         assert!(model_groups.contains("crate::button::action(buttons,\"닫기\""));
 
         let aliases=include_str!("alias_manager.rs");
-        assert!(aliases.contains("fn alias_diagnostic_slot("));
-        assert!(aliases.contains("alias_diagnostic_slot(info,item,&warnings);"));
-        assert!(aliases.contains("crate::ui_layout::fixed_status_slot("));
-        assert!(aliases.contains("detail.as_deref(),detail.as_deref(),theme::MUTED"));
+        assert!(aliases.contains("fn alias_diagnostic("));
+        assert!(aliases.contains("let diagnostic=alias_diagnostic(item,&warnings);"));
+        assert!(aliases.contains("crate::table::registry_table("));
+        assert!(aliases.contains("Role::Status,false,(id,3)"));
 
         let main=include_str!("main.rs");
         assert!(main.contains("crate::composite_client::reception_client_summary_card_editable("));
@@ -1923,8 +1923,6 @@ mod structural_divider_contract_tests {
         let allowed:&[(&str,usize)]=&[
             ("main.rs",1), // repeated shipment rows
             ("settings_view.rs",2), // repeated account and backup records
-            ("alias_manager.rs",2), // repeated list/result rows
-            ("brand_manager.rs",1), // repeated list rows
             ("model_group_manager.rs",1), // fixed footer; table rows own their rules
             ("automatic_message_manager.rs",1), // fixed footer
             ("order_history_detail.rs",1), // repeated payment records
@@ -1969,8 +1967,8 @@ mod shared_composite_control_contract_tests{
         assert!(reception.contains("crate::table::paint_editable_cell_text("));
         assert!(!reception.contains("let action=ui.interact(hit,ui.make_persistent_id((\"item-remove\""));
         let models=include_str!("model_group_manager.rs");
-        assert!(models.contains("crate::table::fixed_row("));
-        assert!(models.contains("crate::table::RowTone::SelectedIf("));
+        assert!(models.contains("crate::table::registry_table("));
+        assert!(models.contains("crate::table::registry_cell("));
         assert!(!models.contains("crate::card::selectable_list_row("));
         assert!(include_str!("workflow_board_ui.rs").contains("crate::button::disclosure_at("));
         assert!(include_str!("order_history_manager.rs").contains("crate::button::disclosure_at("));
