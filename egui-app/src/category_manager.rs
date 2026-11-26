@@ -1,7 +1,7 @@
 //! Native CategoryManager: tree presentation is owned by category_tree::category_tree_row.
 //! Category selection, search, expansion and operations remain in this manager.
 //! All add/rename/move/delete decisions are delegated to catalog_clients.
-use crate::{category_dropdown,category_tree,components,theme,typography};
+use crate::{category_dropdown,category_tree,theme,typography};
 use eframe::egui::{self,Align,Context,Layout,Rect,Sense,Ui,Vec2};
 use serde_json::{json,Value};
 use std::collections::{HashMap,HashSet};
@@ -1014,7 +1014,7 @@ mod modal_layout_contract_tests{
         // Keep this source-level gate confined to the dialog UI, not to the
         // main category tree or the read-only decision/confirmation notices.
         let source=include_str!("category_manager.rs");
-        let production=components::production_source_for_contract(source);
+        let production=crate::ui_test_support::production_source_for_contract(source);
         let dialogs=production.split("    pub fn show_overlays(").nth(1).unwrap();
         let count=dialogs.matches("crate::popup::modal_labeled_row(").count();
         assert_eq!(count,5,"category modal has a nonstandard field stack");

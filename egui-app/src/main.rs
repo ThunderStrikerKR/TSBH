@@ -14,6 +14,7 @@ mod composite_client;
 mod composite_reception;
 mod text_fit;
 mod window_state;
+#[cfg(test)]
 mod components;
 mod category_tree;
 mod status_notice;

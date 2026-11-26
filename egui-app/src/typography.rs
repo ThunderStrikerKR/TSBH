@@ -1089,7 +1089,10 @@ mod management_table_type_roles_tests {
             ("excel",include_str!("excel_manager.rs")),
             ("client",include_str!("client_manager.rs")),
             ("daily-settlement",include_str!("daily_settlement_manager.rs")),
-            ("common-components",include_str!("components.rs")),
+            ("common-table",include_str!("table/mod.rs")),
+            ("shared-reception",include_str!("composite_reception.rs")),
+            ("shared-client",include_str!("composite_client.rs")),
+            ("shared-workflow",include_str!("composite_workflow.rs")),
         ] {
             assert!(!source.contains("freight_table_cell_galley("),
                 "{name}: old bool-emphasis rendering has returned");

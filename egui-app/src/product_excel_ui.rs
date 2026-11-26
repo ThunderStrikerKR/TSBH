@@ -1,6 +1,6 @@
 //! Excel 관리 UI for ProductManager. File I/O stays on native worker threads;
 //! authoritative price/catalog changes belong to the existing Rust reducer.
-use crate::{components,gateway::BandoGateway,product_excel,theme,typography};
+use crate::{gateway::BandoGateway,product_excel,theme,typography};
 use eframe::egui::{self,Context,Ui};
 use serde_json::Value;
 use std::{path::PathBuf,sync::{Arc,mpsc::{self,Receiver,TryRecvError}}};
@@ -641,7 +641,7 @@ mod tests {
     #[test]
     fn product_excel_review_uses_shared_virtual_management_table(){
         let source=include_str!("product_excel_ui.rs");
-        let production=components::production_source_for_contract(source);
+        let production=crate::ui_test_support::production_source_for_contract(source);
         assert!(production.contains("crate::table::management_readonly_table("));
         assert!(production.contains("crate::checkbox::checkbox("));
         assert!(!production.contains("egui::ScrollArea::both()"));

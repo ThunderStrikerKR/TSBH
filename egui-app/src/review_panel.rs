@@ -555,8 +555,8 @@ mod tests {
     fn empty_review_caption_keeps_the_shared_overlay_and_metadata_font(){
         let source=include_str!("review_panel.rs").split("#[cfg(test)]").next().unwrap();
         assert!(source.contains("management_body_state_overlay("));
-        let shared=include_str!("components.rs").split("pub fn management_body_state_overlay(")
-            .nth(1).unwrap().split("pub fn fixed_row").next().unwrap();
+        let shared=include_str!("status_notice/mod.rs").split("pub fn management_body_state_overlay(")
+            .nth(1).unwrap().split("pub fn body_error_overlay(").next().unwrap();
         assert!(shared.contains("egui::FontId::proportional(typography::FONT_METADATA)"));
         assert!(shared.contains("egui::Align2::CENTER_CENTER"));
         assert!(shared.contains("theme::MUTED"));
