@@ -651,3 +651,25 @@ mod tests {
             "UI catalog roots must never mutate stored categories");
     }
 }
+
+#[cfg(test)]
+mod modal_lifecycle_tests{
+    use super::*;
+    #[test]
+    fn correction_and_close_preserve_catalog_and_clear_editor(){
+        let catalog=json!({"aliases":[{"id":"a","text":"709","productId":"p","clientId":"c"}]});
+        let mut manager=AliasManager::default();
+        manager.choose("a".into(),&catalog);
+        assert!(manager.has_overlay());assert!(!manager.dirty());
+        manager.form.target="other".into();
+        manager.on_failed("test error".into());
+        assert!(manager.has_overlay());assert!(manager.dirty());
+        manager.apply_exit(Exit::Close,&catalog);
+        assert!(!manager.has_overlay());assert!(!manager.dirty());
+        assert_eq!(catalog["aliases"][0]["productId"],"p");
+        manager.choose("a".into(),&catalog);
+        manager.on_saved(&catalog);
+        assert!(!manager.has_overlay());assert!(!manager.dirty());
+        assert_eq!(manager.form.scope,"c");
+    }
+}
