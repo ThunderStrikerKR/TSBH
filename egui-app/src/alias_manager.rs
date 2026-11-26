@@ -46,7 +46,7 @@ fn alias_diagnostic_slot(ui:&mut Ui,item:&Value,warnings:&Warnings)->Rect{
                 "모든 거래처의 이후 주문"
             }else{"해당 거래처의 이후 주문"}
         ));
-    components::fixed_status_slot(
+    crate::ui_layout::fixed_status_slot(
         ui,slot_width,typography::FONT_METADATA+theme::SPACE_4,
         detail.as_deref(),detail.as_deref(),theme::MUTED
     )

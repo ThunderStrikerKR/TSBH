@@ -753,7 +753,7 @@ impl FreightManager {
         // The workspace shell already provides 6pt above this page.
         // Add only the missing amount: heading top is 16pt below the
         // global navigation, not 16pt ON TOP of the shell's existing 6pt.
-        components::management_page_title_top_gap(ui);
+        crate::ui_layout::management_page_title_top_gap(ui);
         freight_top_content(ui,|top|{
             top.horizontal(|heading|{
                 heading.label(typography::page_heading("운임 관리"));
@@ -1126,7 +1126,7 @@ impl FreightManager {
                                 Some(_)=>"선택한 그룹의 이전 운임 추천을 중단하고 새 운임 기준으로 변경합니다."
                             };
                             let warning_width=dialog.available_width();
-                            let _=components::fixed_row(
+                            let _=crate::ui_layout::fixed_row(
                                 dialog,egui::Vec2::new(
                                     warning_width,typography::METADATA_LINE_HEIGHT
                                 ),egui::Layout::left_to_right(egui::Align::Center),|row|{
@@ -1280,7 +1280,7 @@ impl FreightManager {
                 toolbar_rect.left_top(),
                 egui::vec2(left_width,toolbar_rect.height())
             );
-            let right_rect=components::management_toolbar_trailing_rect(
+            let right_rect=crate::ui_layout::management_toolbar_trailing_rect(
                 toolbar_rect,bulk_width,0.0,toolbar_rect.height()
             );
             // The right controls (including optional help) own the full
@@ -2130,7 +2130,7 @@ impl FreightManager {
             "이 기준을 변경하면 같은 동급 그룹에 지정한 모든 모델에 적용됩니다."
         );
         let note_width=ui.available_width();
-        components::fixed_status_slot(
+        crate::ui_layout::fixed_status_slot(
             ui,note_width,typography::METADATA_LINE_HEIGHT,
             group_note,group_note,theme::SELECTED_ORDER
         );
@@ -2172,7 +2172,7 @@ impl FreightManager {
                     removed=Some(*count);
                 }
                 let over_limit=editor.max_bundle.is_some_and(|max|*count>max);
-                components::fixed_status_slot(
+                crate::ui_layout::fixed_status_slot(
                     line,24.0,theme::ACTION_STANDARD_HEIGHT,
                     over_limit.then_some("!"),
                     over_limit.then_some("최대 묶음 수량 초과"),theme::DANGER
@@ -2653,7 +2653,7 @@ fn freight_history_table<const N:usize>(
 /// leaves the section frame's OUTER border at the shared 59th-round anchor.
 /// Keeping the inset local avoids moving Reception or other management pages.
 fn freight_top_content<R>(ui:&mut Ui,add:impl FnOnce(&mut Ui)->R)->R{
-    components::management_top_content(ui,add)
+    crate::ui_layout::management_top_content(ui,add)
 }
 
 /// Render one of four independent KPI cards. Visual hierarchy is deliberately

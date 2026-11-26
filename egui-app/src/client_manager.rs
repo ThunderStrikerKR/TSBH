@@ -347,7 +347,7 @@ impl ClientManager {
         // The client directory uses the same always-readable 10pt solid
         // scrollbar track as the approved Freight Assignment screen.
         ui.spacing_mut().scroll=crate::scrollbar::management_scroll_style();
-        components::management_page_title_top_gap(ui);
+        crate::ui_layout::management_page_title_top_gap(ui);
         // The four actual client tiers fill the same four KPI slots as
         // Freight > Shipping Group Assignment. These counts intentionally
         // include every non-deleted client, not just filtered search rows.
@@ -377,7 +377,7 @@ impl ClientManager {
         }else{
             format!("{}개",filtered_count)
         };
-        components::management_top_content(ui,|top|{
+        crate::ui_layout::management_top_content(ui,|top|{
             top.horizontal(|heading|{
                 heading.label(typography::page_heading("거래처 관리"));
                 if !self.show_messages {
@@ -396,7 +396,7 @@ impl ClientManager {
             manager.poll();
             if manager.take_clients_approved(){self.show_messages=false;}
         }
-        let chosen_tab=components::management_top_content(ui,|top|
+        let chosen_tab=crate::ui_layout::management_top_content(ui,|top|
             crate::button::management_tabs(top,&[
                 ("거래처 목록",!self.show_messages,true),
                 ("자동 메시지 편집",self.show_messages,true),
@@ -428,7 +428,7 @@ impl ClientManager {
         }
         // Match Freight's 12pt tabs-to-KPI and 16pt KPI-to-card rhythm.
         ui.add_space(theme::SPACE_12);
-        components::management_top_content(ui,|top|{
+        crate::ui_layout::management_top_content(ui,|top|{
             top.horizontal_wrapped(|strip|{
                 strip.spacing_mut().item_spacing=egui::vec2(
                     theme::SPACE_8,theme::SPACE_8
@@ -530,7 +530,7 @@ impl ClientManager {
                     toolbar_rect.min,
                     egui::vec2(left_width,toolbar_rect.height())
                 );
-                let action_rect=components::management_toolbar_trailing_rect(
+                let action_rect=crate::ui_layout::management_toolbar_trailing_rect(
                     toolbar_rect,actions_width,0.0,toolbar_rect.height()
                 );
                 section.scope_builder(
@@ -697,7 +697,7 @@ impl ClientManager {
                 self.accept_tag_text(draft,&entered);
             }
             let status_width=panel.available_width();
-            components::fixed_status_slot(
+            crate::ui_layout::fixed_status_slot(
                 panel,status_width,typography::METADATA_LINE_HEIGHT,
                 self.tag_notice.as_deref(),self.tag_notice.as_deref(),theme::MUTED
             );

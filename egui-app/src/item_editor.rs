@@ -354,7 +354,7 @@ impl ItemEditor{
                             theme::DANGER
                         }else{theme::SECONDARY};
                         let status_width=ui.available_width();
-                        components::fixed_status_slot(
+                        crate::ui_layout::fixed_status_slot(
                             ui,status_width,typography::METADATA_LINE_HEIGHT,
                             (!status_text.is_empty()).then_some(status_text.as_str()),
                             (!status_text.is_empty()).then_some(status_text.as_str()),

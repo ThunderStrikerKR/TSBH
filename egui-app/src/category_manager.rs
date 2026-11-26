@@ -534,7 +534,7 @@ impl CategoryManager {
                 let search_rect=Rect::from_min_size(
                     toolbar_rect.min,Vec2::new(search_width,toolbar_rect.height())
                 );
-                let actions_rect=components::management_toolbar_trailing_rect(
+                let actions_rect=crate::ui_layout::management_toolbar_trailing_rect(
                     toolbar_rect,actions_width,0.0,toolbar_rect.height()
                 );
                 panel.scope_builder(
@@ -695,7 +695,7 @@ impl CategoryManager {
                                         "현재 최상위로 남아 있는 기존 분류입니다. 반도스탠드 또는 반도몰에 직접 소속을 지정하면 기존 분류 ID와 상품 연결은 유지됩니다."
                                     );
                                     let notice_width=body.available_width();
-                                    components::fixed_status_slot(
+                                    crate::ui_layout::fixed_status_slot(
                                         body,notice_width,typography::METADATA_LINE_HEIGHT,
                                         legacy_notice,legacy_notice,theme::MUTED
                                     );

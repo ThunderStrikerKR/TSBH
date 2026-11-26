@@ -703,7 +703,7 @@ impl ExcelManager{
                             if crate::button::action(bar,"다음",theme::ButtonRole::Standard,!busy&&(self.reply_page+1)*50<count).clicked(){self.reply_page+=1;}
                             let error=self.error.as_deref();
                             let error_width=bar.available_width();
-                            components::fixed_status_slot(bar,error_width,
+                            crate::ui_layout::fixed_status_slot(bar,error_width,
                                 typography::METADATA_LINE_HEIGHT,error,error,theme::DANGER);
                         });
                     });
@@ -766,8 +766,8 @@ impl ExcelManager{
             ui.ctx(),"excel.error","excel.action",
             crate::floating_notice::Tone::Error,self.error.as_deref()
         );
-        components::management_page_title_top_gap(ui);
-        components::management_top_content(ui,|top|{
+        crate::ui_layout::management_page_title_top_gap(ui);
+        crate::ui_layout::management_top_content(ui,|top|{
             top.horizontal(|title|{
                 title.label(typography::page_heading("엑셀 관리"));
                 settings_help::icon(title,"발송 Excel 관리");
@@ -780,7 +780,7 @@ impl ExcelManager{
         });
         ui.add_space(theme::SPACE_8);
         let busy=self.operation.is_some()||self.receiver.is_some();
-        let next_tab=components::management_top_content(ui,|top|
+        let next_tab=crate::ui_layout::management_top_content(ui,|top|
             crate::button::management_tabs(top,&[
                 ("공장 엑셀 대기",self.tab==Tab::Factory,!busy),
                 ("매장 발송 대기",self.tab==Tab::Store,!busy),
@@ -900,7 +900,7 @@ impl ExcelManager{
                 let date_height=if history_compact{
                     theme::INPUT_HEIGHT*2.0+theme::SPACE_8
                 }else{theme::INPUT_HEIGHT};
-                let dates_rect=components::management_toolbar_trailing_rect(
+                let dates_rect=crate::ui_layout::management_toolbar_trailing_rect(
                     toolbar_rect,history_range_width.min(toolbar_width),
                     if history_one_row{0.0}else{
                         theme::INPUT_HEIGHT+theme::SPACE_8
@@ -947,7 +947,7 @@ impl ExcelManager{
                 let actions_y=if stacked{
                     theme::INPUT_HEIGHT+theme::SPACE_8
                 }else{0.0};
-                let actions_rect=components::management_toolbar_trailing_rect(
+                let actions_rect=crate::ui_layout::management_toolbar_trailing_rect(
                     toolbar_rect,
                     theme::MANAGEMENT_EXCEL_TOOLBAR_ACTIONS_WIDTH.min(toolbar_width),
                     actions_y,theme::INPUT_HEIGHT

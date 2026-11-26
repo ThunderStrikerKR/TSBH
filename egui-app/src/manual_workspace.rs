@@ -1028,7 +1028,7 @@ fn manual_workspace_header_height()->f32{
 
 fn manual_workspace_columns_height()->f32{
     manual_recipient_card_height()
-        +components::RECEPTION_STACKED_CARD_GAP
+        +crate::ui_layout::RECEPTION_STACKED_CARD_GAP
         +theme::MANUAL_ITEMS_CARD_MIN_HEIGHT
 }
 
@@ -2272,7 +2272,7 @@ impl ManualWorkspace {
                                                             },None,&mut submit_direct
                                                         );
                                                     }
-                                                    sheet.add_space(components::RECEPTION_STACKED_CARD_GAP);
+                                                    sheet.add_space(crate::ui_layout::RECEPTION_STACKED_CARD_GAP);
                                                     let mut header_add_item=false;
                                                     let mut header_rollback=false;
                                                     let rollback_pending=self.selected_quantity_pending()
@@ -2293,7 +2293,7 @@ impl ManualWorkspace {
                                                                     ).clicked();
                                                             }
                                                         },|items_ui|{
-                                                            components::reception_worksheet_items_body(items_ui);
+                                                            crate::ui_layout::reception_worksheet_items_body(items_ui);
                                                             crate::table::inline(items_ui,crate::table::InlineHeader::Reception{editable:true},|items_ui|{
                                                             for item in list(row,"items"){
                                                                 let item_id=text(item,"id");
@@ -2431,7 +2431,7 @@ impl ManualWorkspace {
                                                             }
                                                             // Pending assignment rollback lives in the fixed header action.
                                                             });
-                                                            components::reception_items_to_freight_gap(items_ui);
+                                                            crate::ui_layout::reception_items_to_freight_gap(items_ui);
                                                             let code=if text(row,"freightCode")=="020"{
                                                                 "020"
                                                             }else{"010"};

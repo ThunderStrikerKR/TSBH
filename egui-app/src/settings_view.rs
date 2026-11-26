@@ -172,8 +172,8 @@ fn settings_title_row(
     let mut restore_rect=None;
     let mut title_rect=egui::Rect::NOTHING;
     let mut content_right=0.0;
-    components::management_page_title_top_gap(ui);
-    components::management_top_content(ui,|top|{
+    crate::ui_layout::management_page_title_top_gap(ui);
+    crate::ui_layout::management_top_content(ui,|top|{
         let width=top.available_width().max(1.0);
         content_right=top.available_rect_before_wrap().right();
         let row=top.allocate_ui_with_layout(
@@ -535,7 +535,7 @@ impl SettingsView{
         );
         if reload{self.reload_confirmation=true;}
         ui.add_space(theme::SPACE_8);
-        let selected_tab=components::management_top_content(ui,|top|
+        let selected_tab=crate::ui_layout::management_top_content(ui,|top|
             crate::button::management_tabs(top,&[
                 ("기본 설정",self.tab==SettingsTab::Basic,true),
                 ("파일 관리",self.tab==SettingsTab::Files,true),
@@ -1192,7 +1192,7 @@ mod management_async_layout_tests{
                     let title_bottom=ui.cursor().top();
                     ui.add_space(theme::SPACE_8);
                     let tabs_top=ui.cursor().top();
-                    components::management_top_content(ui,|top|{
+                    crate::ui_layout::management_top_content(ui,|top|{
                         crate::button::management_tabs(top,&[
                             ("기본 설정",true,true),
                             ("파일 관리",false,true),

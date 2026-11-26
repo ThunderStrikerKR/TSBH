@@ -97,7 +97,7 @@ fn settlement_date_toolbar(
         "결산 날짜는 YYYY-MM-DD 형식으로 입력하세요."
     );
     let status_width=ui.available_width();
-    components::fixed_status_slot(
+    crate::ui_layout::fixed_status_slot(
         ui,status_width,typography::METADATA_LINE_HEIGHT,
         date_error,date_error,theme::DANGER
     );
@@ -419,8 +419,8 @@ impl DailySettlementManager{
         let page_origin_y=ui.cursor().top();
         ui.spacing_mut().scroll=crate::scrollbar::management_scroll_style();
         self.poll();
-        components::management_page_title_top_gap(ui);
-        components::management_top_content(ui,|top|{
+        crate::ui_layout::management_page_title_top_gap(ui);
+        crate::ui_layout::management_top_content(ui,|top|{
             top.label(typography::page_heading("일일 결산"));
         });
         // Always reserve four KPI slots so async report arrival never moves
@@ -438,7 +438,7 @@ impl DailySettlementManager{
                 "{}건",r["billedUnknown"].as_u64().unwrap_or(0)
             )).unwrap_or_else(||"—".to_owned()),
         ];
-        components::management_top_content(ui,|top|{
+        crate::ui_layout::management_top_content(ui,|top|{
             top.horizontal_wrapped(|strip|{
                 strip.spacing_mut().item_spacing=
                     Vec2::new(theme::SPACE_8,theme::SPACE_8);
@@ -618,7 +618,7 @@ impl DailySettlementManager{
                     review.set_max_width(section_inner_max_width);
                     review.label(typography::section_heading("결산 검토 사항"));
                     crate::ui_primitives::section_divider(review);
-                    components::fixed_result_viewport(review,"settlement-warnings",100.0,|list|{
+                    crate::ui_layout::fixed_result_viewport(review,"settlement-warnings",100.0,|list|{
                         for warning in rows(&report["warnings"]){
                             if let Some(message)=warning.as_str(){
                                 list.label(typography::body(message));

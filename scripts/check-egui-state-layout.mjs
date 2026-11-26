@@ -49,6 +49,9 @@ function scan(source) {
         if((module==="components"||module==="button")&&name==="reception_item_header_action"){
           out.push("shared_button","::",name);i=start+2;continue;
         }
+        if((module==="components"||module==="ui_layout")&&["fixed_row","fixed_status_slot","fixed_result_viewport","management_top_content"].includes(name)){
+          out.push("shared_layout","::",name);i=start+2;continue;
+        }
         if((module==="components"||module==="dropdown")&&dropdownNames.has(name)){
           out.push("shared_dropdown","::",name);i=start+2;continue;
         }
@@ -82,7 +85,7 @@ function scan(source) {
     if(tokens[j].kind==="literal"||tests.some(([a,b])=>j>=a&&j<=b))continue;
     if(v[j+1]!=="("||!pairs.has(j+1))continue;
     const isDirect=v[j-1]==="."&&direct.has(v[j]);
-    const isShared=v[j-1]==="::"&&["theme","components","button"].includes(v[j-2])&&shared.has(v[j]);
+    const isShared=v[j-1]==="::"&&["theme","components","button","ui_layout"].includes(v[j-2])&&shared.has(v[j]);
     if(!isDirect&&!isShared)continue;
     if(safe.some(([a,b])=>j>a&&j<b))continue;
     const guard=guards.filter(g=>j>=g.start&&j<g.end&&(j>g.body||v.slice(g.start,j).includes("&&")||v.slice(g.start,j).includes("||"))).at(-1);
@@ -161,7 +164,12 @@ function selfTest(){
   const newHeader=scan('if rollback_pending { crate::button::reception_item_header_action(ui,true,enabled); }');
   assert.equal(additions(oldHeader,newHeader).length,0);
   assert.equal(additions(oldHeader,scan('if rollback_pending { crate::button::reception_item_header_action(ui,false,enabled); }')).length,1);
-  console.log("EGUI_STATE_LAYOUT_SELFTEST_PASS",cases.length+12);
+  const oldSlot=scan('if busy { components::fixed_status_slot(ui,w,h,text,tip,color); }');
+  const newSlot=scan('if busy { crate::ui_layout::fixed_status_slot(ui,w,h,text,tip,color); }');
+  assert.equal(oldSlot.length,1);
+  assert.equal(additions(oldSlot,newSlot).length,0);
+  assert.equal(additions(oldSlot,scan('if busy { crate::ui_layout::fixed_status_slot(ui,w,h,other,tip,color); }')).length,1);
+  console.log("EGUI_STATE_LAYOUT_SELFTEST_PASS",cases.length+15);
 }
 
 function main(){

@@ -606,7 +606,7 @@ impl AutomaticMessageManager {
         );
         // The nested message tabs follow the same guide as the client
         // page's main heading and tabs, without moving either editor card.
-        let tab=components::management_top_content(ui,|top|
+        let tab=crate::ui_layout::management_top_content(ui,|top|
             components::management_tabs(top,&[
                 ("상황별 공통 안내",self.section==Section::General,true),
                 ("잠정 상품 선택 안내",self.section==Section::Provisional,true),

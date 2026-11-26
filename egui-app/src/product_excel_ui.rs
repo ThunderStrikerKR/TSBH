@@ -301,7 +301,7 @@ impl ProductExcelUi {
                             "Excel에서 누락된 기존 {entity} {missing}개는 삭제하거나 중지하지 않고 그대로 유지합니다."
                         ));
                         let missing_width=ui.available_width();
-                        components::fixed_status_slot(
+                        crate::ui_layout::fixed_status_slot(
                             ui,missing_width,typography::METADATA_LINE_HEIGHT,
                             missing_note.as_deref(),missing_note.as_deref(),theme::SECONDARY
                         );
@@ -334,7 +334,7 @@ impl ProductExcelUi {
                             "표에는 최대 500행을 표시하며 모든 행을 검증합니다."
                         );
                         let table_note_width=ui.available_width();
-                        components::fixed_status_slot(
+                        crate::ui_layout::fixed_status_slot(
                             ui,table_note_width,typography::METADATA_LINE_HEIGHT,
                             large_table_note,large_table_note,theme::MUTED
                         );
@@ -347,7 +347,7 @@ impl ProductExcelUi {
                             true
                         );
                         let error_width=ui.available_width();
-                        components::fixed_status_slot(
+                        crate::ui_layout::fixed_status_slot(
                             ui,error_width,typography::METADATA_LINE_HEIGHT,
                             self.error.as_deref(),self.error.as_deref(),theme::DANGER
                         );

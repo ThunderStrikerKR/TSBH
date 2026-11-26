@@ -1177,7 +1177,7 @@ impl OrderHistoryManager {
                                 theme::DANGER
                             }else{theme::MUTED};
                             let status_width=ui.available_width();
-                            components::fixed_status_slot(
+                            crate::ui_layout::fixed_status_slot(
                                 ui,status_width,typography::METADATA_LINE_HEIGHT,
                                 (!status_text.is_empty()).then_some(status_text.as_str()),
                                 (!status_text.is_empty()).then_some(status_text.as_str()),
@@ -1227,8 +1227,8 @@ impl OrderHistoryManager {
         ui.spacing_mut().scroll=crate::scrollbar::management_scroll_style();
         self.poll_memo_save(ui.ctx().clone());
         self.poll();
-        components::management_page_title_top_gap(ui);
-        components::management_top_content(ui,|top|{
+        crate::ui_layout::management_page_title_top_gap(ui);
+        crate::ui_layout::management_top_content(ui,|top|{
             top.horizontal(|heading|{
                 heading.label(typography::page_heading("주문 내역"));
                 settings_help::icon(heading,"주문 내역");
@@ -1285,7 +1285,7 @@ impl OrderHistoryManager {
                         "거래처 / 주문 내용 검색"
                     ).changed(){changed=true;}
                 });
-            let date_rect=components::management_toolbar_trailing_rect(
+            let date_rect=crate::ui_layout::management_toolbar_trailing_rect(
                 toolbar_rect,RANGE_CONTROLS_WIDTH,
                 if one_row{0.0}else{theme::INPUT_HEIGHT+theme::SPACE_8},
                 if one_row{theme::INPUT_HEIGHT}else{date_height}

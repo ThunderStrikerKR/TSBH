@@ -7,6 +7,7 @@
 mod theme;
 mod typography;
 mod layout;
+mod ui_layout;
 mod window_state;
 mod components;
 mod ui_primitives;
@@ -4101,7 +4102,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                         });
                     let error=dialog.error.as_deref();
                     let status_width=ui.available_width();
-                    components::fixed_status_slot(
+                    crate::ui_layout::fixed_status_slot(
                         ui,status_width,typography::METADATA_LINE_HEIGHT,
                         error,error,theme::DANGER
                     );
@@ -6041,7 +6042,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                     ui.ctx().set_cursor_icon(egui::CursorIcon::ResizeHorizontal);
                                 }
                                 let highlighted = response.hovered() || response.dragged();
-                                components::paint_dock_splitter(
+                                crate::ui_layout::paint_dock_splitter(
                                     ui, splitter, true, highlighted,
                                 );
                                 splitter_visuals.push((splitter, highlighted));
@@ -6093,7 +6094,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                             let items_y = all.top() + review_height
                                 + layout::SPLITTER + recipient_height
                                 + layout::SPLITTER / 2.0;
-                            components::paint_dock_network(
+                            crate::ui_layout::paint_dock_network(
                                 ui, &splitter_visuals,
                                 &[
                                     (0, 1, source_y),
@@ -6148,7 +6149,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
         if response.hovered() || response.dragged() {
             ui.ctx().set_cursor_icon(egui::CursorIcon::ResizeVertical);
         }
-        components::paint_dock_splitter(
+        crate::ui_layout::paint_dock_splitter(
             ui, splitter_rect, false,
             response.hovered() || response.dragged(),
         );
@@ -6268,7 +6269,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                 let (body_rect,_)=body.allocate_exact_size(
                     Vec2::new(body.available_width(),available),Sense::hover()
                 );
-                let card_rect=components::reception_source_client_rect(body_rect);
+                let card_rect=crate::ui_layout::reception_source_client_rect(body_rect);
                 let linked_id=self.drafts.iter().find(|row|row.id==draft.id)
                     .and_then(|row|row.client_id.as_deref());
                 let display=linked_id.and_then(|id|self.client_summaries.get(id));
@@ -6406,7 +6407,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                 let (body_rect,_)=body.allocate_exact_size(
                     Vec2::new(body.available_width(),available),Sense::hover()
                 );
-                let card_rect=components::reception_source_client_rect(body_rect);
+                let card_rect=crate::ui_layout::reception_source_client_rect(body_rect);
                 let display=self.client_summaries.get(&group.dealer_id);
                 floating_notice::section(body.ctx(),"reception.client_change",card_rect);
                 change_client_clicked=components::reception_client_summary_card_editable(
@@ -6686,10 +6687,10 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                 // never overlap adjacent cards or change the dock splitter.
                 let gap = theme::SPACE_8;
                 let client_card_height = if has_source {
-                    components::reception_source_client_rect(body_rect).height()
+                    crate::ui_layout::reception_source_client_rect(body_rect).height()
                 } else { 0.0 };
                 if has_source {
-                    let card_rect = components::reception_source_client_rect(body_rect);
+                    let card_rect = crate::ui_layout::reception_source_client_rect(body_rect);
                     // Render a compact single-line reference. An advisory
                     // Rust match is not a confirmed dealer until it has passed
                     // the existing native order-client mutation.
@@ -7057,13 +7058,13 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                             Some("설정 · 파일 관리에서 발주 이미지 수신 폴더를 지정하세요.")
                         };
                         let folder_status_width=intake.available_width();
-                        components::fixed_status_slot(
+                        crate::ui_layout::fixed_status_slot(
                             intake,folder_status_width,typography::METADATA_LINE_HEIGHT,
                             folder_message,folder_message,theme::MUTED
                         );
                         intake.add_space(theme::SPACE_8);
                         let folder_actions_width=intake.available_width();
-                        let _=components::fixed_row(
+                        let _=crate::ui_layout::fixed_row(
                             intake,Vec2::new(folder_actions_width,theme::ACTION_STANDARD_HEIGHT),
                             Layout::left_to_right(Align::Center),|buttons|{
                                 if let Some(path)=inbox_path.as_deref(){
@@ -7205,7 +7206,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                         },
                     );
                 }
-                components::reception_message_footer_gap(body);
+                crate::ui_layout::reception_message_footer_gap(body);
                 one_touch::set(body.ctx(),if payment_emphasis{hover_stage}else{one_touch::Stage::None},false);
                 copy_with_greeting=components::reception_message_copy_actions(body,can_copy);
                 one_touch::set(body.ctx(),one_touch::Stage::None,false);
@@ -7307,7 +7308,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                 Sense::hover(),
             );
             crate::card::paint_source_document_surface(ui, field_rect);
-            components::reception_message_footer_gap(ui);
+            crate::ui_layout::reception_message_footer_gap(ui);
             let _=components::reception_message_copy_actions(ui,false);
         });
     }
@@ -7362,7 +7363,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
             if response.hovered() || response.dragged() {
                 ui.ctx().set_cursor_icon(egui::CursorIcon::ResizeVertical);
             }
-            components::paint_dock_splitter(
+            crate::ui_layout::paint_dock_splitter(
                 ui, splitter_rect, false, response.hovered() || response.dragged(),
             );
             if response.drag_started() {
@@ -7571,7 +7572,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                             confirmed_add=crate::button::reception_item_header_action(
                                 header,false,confirmed_editable && confirmed_controls_idle).clicked();
                         },|ui|{
-                        components::reception_docked_goods_scroll(
+                        crate::ui_layout::reception_docked_goods_scroll(
                             ui,bottom_rect.height(),("native-workflow-products",ship.id.as_str()),
                             true,|contents|{
                                         crate::table::inline(contents,crate::table::InlineHeader::Reception{editable:true},|contents|{
@@ -7646,7 +7647,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                             }
                                         }
                                         });
-                                        components::reception_items_to_freight_gap(contents);
+                                        crate::ui_layout::reception_items_to_freight_gap(contents);
                                         // Match React WorkflowFreightRows: one editable
                                         // amount per actual dispatch origin. The displayed
                                         // amount is the Rust-applied value (including the
@@ -7992,7 +7993,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                         |header|{
                             crate::button::reception_item_header_action(header,false,false);
                         },|ui|{
-                            components::reception_docked_goods_scroll(
+                            crate::ui_layout::reception_docked_goods_scroll(
                                 ui,bottom_rect.height(),("pending-hover-products",draft.id.as_str()),
                                 false,|contents|{
                                             crate::table::inline(contents,crate::table::InlineHeader::Reception{editable:false},|contents|{
@@ -8034,7 +8035,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                             }
                                             });
                                             if let Some(row)=recipient{
-                                                components::reception_items_to_freight_gap(contents);
+                                                crate::ui_layout::reception_items_to_freight_gap(contents);
                                                 let origin=row["dispatchOrigin"].as_str();
                                                 let fee=indexed_billable_freight(quote_index.as_deref(),row);
                                                 let collect=row["freightCode"].as_str()
@@ -8356,7 +8357,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                             .and_then(serde_json::Value::as_str)
                             ==Some(self.raw_source.as_str()));
                     let quote_index=preview.map(indexed_quote);
-                    components::reception_docked_goods_scroll(
+                    crate::ui_layout::reception_docked_goods_scroll(
                         ui,remaining,"recognized-items",true,|items_ui|{
                                     crate::table::inline(items_ui,crate::table::InlineHeader::Reception{editable:true},|items_ui|{
                                     if let Some(recipient)=selected {
@@ -8479,7 +8480,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                     });
                                     if let Some(recipient)=selected {
                                         let recipient_id=reception_service::text(recipient,"id");
-                                        components::reception_items_to_freight_gap(items_ui);
+                                        crate::ui_layout::reception_items_to_freight_gap(items_ui);
                                         // The ORDER total is not a recipient fee.
                                         // Show only the native per-recipient amount.
                                         // Engine result (auto suggestion +
@@ -9983,7 +9984,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                         if response.hovered() || response.dragged(){
                             ctx.set_cursor_icon(egui::CursorIcon::ResizeHorizontal);
                         }
-                        components::paint_dock_splitter(
+                        crate::ui_layout::paint_dock_splitter(
                             host,splitter,true,response.hovered()||response.dragged()
                         );
                         if response.drag_started() {

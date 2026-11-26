@@ -360,7 +360,7 @@ impl ModelGroupManager {
                                             "상품명으로 찾아서 추가");
                                     });
                                     let assigned=self.membership();
-                                    components::fixed_result_viewport(
+                                    crate::ui_layout::fixed_result_viewport(
                                         body,"model-group-search-results",180.0,|results|{
                                     if !self.search.trim().is_empty(){
                                         let query=self.search.trim().to_lowercase();
@@ -423,14 +423,14 @@ impl ModelGroupManager {
                                         ))
                                     }else{None};
                                     let notice_width=body.available_width();
-                                    components::fixed_status_slot(
+                                    crate::ui_layout::fixed_status_slot(
                                         body,notice_width,typography::METADATA_LINE_HEIGHT,
                                         representative_notice.as_deref(),
                                         representative_notice.as_deref(),theme::MUTED
                                     );
                                     let ids=items(&g["productIds"]).iter().filter_map(Value::as_str)
                                         .map(str::to_owned).collect::<Vec<_>>();
-                                    components::fixed_result_viewport(
+                                    crate::ui_layout::fixed_result_viewport(
                                         body,"model-group-registered-products",220.0,|registered|{
                                     if ids.is_empty(){
                                         components::management_body_state_overlay(

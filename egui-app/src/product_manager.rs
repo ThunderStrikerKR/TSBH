@@ -926,12 +926,12 @@ impl ProductManager {
         );
         let selecting=self.selection_client.is_some();
         if !selecting{
-        components::management_page_title_top_gap(ui);
-        components::management_top_content(ui,|top|{
+        crate::ui_layout::management_page_title_top_gap(ui);
+        crate::ui_layout::management_top_content(ui,|top|{
             top.label(typography::page_heading("상품 관리"));
         });
         ui.add_space(theme::SPACE_8);
-        let pressed=components::management_top_content(ui,|top|
+        let pressed=crate::ui_layout::management_top_content(ui,|top|
             crate::button::management_tabs(top,&[
                 ("상품 목록",self.tab==0,true),
                 ("카테고리 관리",self.tab==1,true),
@@ -996,7 +996,7 @@ impl ProductManager {
         }else{
             ui.add_space(theme::SPACE_12);
             let counts=product_summary_counts(self.catalog.as_ref());
-            components::management_top_content(ui,|top|{
+            crate::ui_layout::management_top_content(ui,|top|{
                 top.horizontal_wrapped(|strip|{
                     strip.spacing_mut().item_spacing=Vec2::new(
                         theme::SPACE_8,theme::SPACE_8
@@ -1150,7 +1150,7 @@ impl ProductManager {
             // subtracting the table-only scrollbar gutter (master contract).
             if !selecting{
             let actions_rect=if dual_slot{
-                components::management_toolbar_trailing_rect(
+                crate::ui_layout::management_toolbar_trailing_rect(
                     toolbar_rect,390.0,0.0,theme::INPUT_HEIGHT
                 )
             }else{
