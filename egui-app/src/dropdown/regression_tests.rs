@@ -62,7 +62,7 @@ mod reception_cod_selector_tests {
                     egui::CentralPanel::default().show(ctx,|ui|{
                         ui.set_width(width);
                         let row=reception_freight_row_controls(ui,"운임",
-                            Some(3000),Some(false),Some(false),visible,true,true,true,true);
+                            Some(3000),Some(false),Some(false),visible,true,true,true,true,false);
                         rects=Some([("remote",row.remote_rect.unwrap()),
                             ("amount",row.amount_rect.unwrap())]);
                     });
