@@ -85,12 +85,11 @@ pub const MANAGEMENT_DROPDOWN_HOVER_BG: Color32 = Color32::from_rgb(57, 91, 118)
 // One fixed popup width independent of the category text/depth.
 // 655pt is about 20% wider than the previous 546pt.
 pub const CATEGORY_EXPLORER_POPUP_WIDTH:f32=655.0;
-// Every category list reserves exactly six 34pt rows plus five 4pt gaps.
-// A short/empty list leaves the unused rows blank; longer lists scroll locally.
+// Every category list reserves six common tree rows, without vertical gaps.
+// The current parent and its children share that scrollable tree viewport.
 pub const CATEGORY_EXPLORER_VISIBLE_ROWS:usize=6;
 pub const CATEGORY_EXPLORER_LIST_MAX_HEIGHT:f32=
-    ACTION_STANDARD_HEIGHT*CATEGORY_EXPLORER_VISIBLE_ROWS as f32
-    +SPACE_4*(CATEGORY_EXPLORER_VISIBLE_ROWS-1) as f32;
+    CATALOG_TREE_ROW_HEIGHT*CATEGORY_EXPLORER_VISIBLE_ROWS as f32;
 pub const CATEGORY_EXPLORER_ANCESTOR_MAX_HEIGHT:f32=144.0;
 // Popup footer navigation, breadcrumbs and Apply share the 36pt control baseline.
 pub const CATEGORY_EXPLORER_CRUMB_HEIGHT:f32=ACTION_PRIMARY_HEIGHT;
@@ -98,6 +97,7 @@ pub const CATEGORY_EXPLORER_SEPARATOR_WIDTH:f32=12.0;
 // Accommodate the full '← 상위로' caption without squeezing glyphs.
 pub const CATEGORY_EXPLORER_BACK_WIDTH:f32=88.0;
 pub const CATEGORY_EXPLORER_ROOT_WIDTH:f32=48.0;
+pub const CATEGORY_EXPLORER_OMITTED_WIDTH:f32=36.0;
 pub const CATEGORY_EXPLORER_APPLY_WIDTH:f32=70.0;
 pub const CATEGORY_EXPLORER_APPLIED_BG:Color32=ORANGE_EMPHASIS_BG;
 pub const CATEGORY_EXPLORER_APPLIED_BORDER:Color32=SELECTED_ORDER;

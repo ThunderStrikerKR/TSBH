@@ -5106,7 +5106,8 @@ pub(crate) fn category_tree_row(ui:&mut Ui,item:CategoryTreeRow<'_>)->Response{
     let right=(rect.right()-theme::CATALOG_TREE_INSET).max(rect.left());
     let name_x=geo.name_x.min(right);
     let summary_galley=typography::client_table_metadata_galley(ui,item.summary,theme::SECONDARY);
-    let name_width=(right-name_x-theme::CATALOG_TREE_GAP-summary_galley.size().x).max(0.0);
+    let summary_reserve=if item.summary.is_empty(){0.0}else{theme::CATALOG_TREE_GAP+summary_galley.size().x};
+    let name_width=(right-name_x-summary_reserve).max(0.0);
     let font=if item.root{typography::CategoryPathFont::Subsection}else{typography::CategoryPathFont::Body};
     let visible=typography::fit_category_path(ui,item.name,name_width,font);
     let name_galley=typography::category_tree_name_galley(ui,&visible,item.root);
@@ -5118,7 +5119,7 @@ pub(crate) fn category_tree_row(ui:&mut Ui,item:CategoryTreeRow<'_>)->Response{
             name_galley,theme::TEXT);
     }
     let summary_x=(name_end+theme::CATALOG_TREE_GAP).min(right);
-    if right>summary_x{
+    if !item.summary.is_empty()&&right>summary_x{
         painter.with_clip_rect(Rect::from_min_max(egui::pos2(summary_x,rect.top()),
             egui::pos2(right,rect.bottom()))).galley(
             egui::pos2(summary_x,rect.center().y-summary_galley.size().y/2.0),
@@ -7659,7 +7660,7 @@ mod shared_ghost_action_contract_tests {
         assert!(back.contains("theme::action_with_min_width("));
         assert!(!back.contains("egui::Button::new("));
 
-        let explorer=source.split("if state.ancestors_open && state.path.len()>3")
+        let explorer=source.split("if state.ancestors_open && state.path.len()>1")
             .nth(1).unwrap().split("components::soft_divider(menu);")
             .next().unwrap();
         assert!(explorer.contains("theme::category_ancestor_frame()"));

@@ -2,7 +2,7 @@
 //! Presentation-only: selection writes an existing category ID, never a new
 //! category, product edit, or implicit business transaction.
 use std::collections::{HashMap,HashSet};
-use eframe::egui::{self,Align2,Color32,Context,Id,Response,Sense,Stroke,Ui,Vec2};
+use eframe::egui::{self,Context,Id,Response,Ui,Vec2};
 use serde_json::Value;
 use crate::{category_manager::ROOTS,components,floating_notice,theme,typography};
 
@@ -18,8 +18,6 @@ struct ExplorerState {
     search:String,
     ancestors_open:bool,
 }
-#[derive(Clone,Copy,Debug,PartialEq,Eq)]
-enum CrumbVisual { Ordinary, Current, Applied }
 
 pub fn nodes_from_catalog(catalog:&Value)->Vec<CategoryNode>{
     let mut nodes=catalog.get("categories").and_then(Value::as_array)
@@ -87,334 +85,89 @@ fn search_results<'a>(
     result.sort_by(|a,b|a.name.cmp(&b.name));
     result
 }
-// Contract for BOTH search results and ordinary category children.
-// A category option is always one 34pt row, regardless of depth or length.
-const CATEGORY_RESULT_ROW_HEIGHT:f32=theme::ACTION_STANDARD_HEIGHT;
+// Show only the current category as parent of its immediate children.
+// Earlier ancestors are available exclusively through the ellipsis button.
+fn hidden_ancestor_count(depth:usize)->usize{depth.saturating_sub(1)}
 
-/// Compose a single horizontal path: muted ancestors and the bright leaf.
-/// Overlong paths discard old ancestors first; only if the leaf itself cannot
-/// fit do we ellipsize the END of the leaf. Never duplicate the leaf or wrap.
-fn fitted_category_row_text<F>(
-    path:&[&str],max_width:f32,measure:F
-)->(String,String)
-where F:Fn(&str)->f32 {
-    let Some((leaf,parents))=path.split_last()else{
-        return (String::new(),String::new());
-    };
-    let leaf=*leaf;
-    let normal_ancestors=if parents.is_empty(){String::new()}
-        else{format!("{} > ",parents.join(" > "))};
-    if measure(&normal_ancestors)+measure(leaf)<=max_width{
-        return (normal_ancestors,leaf.to_owned());
-    }
-    if measure(leaf)>max_width{
-        if measure("…")>max_width{
-            return (String::new(),String::new());
-        }
-        for (end,_) in leaf.char_indices().rev(){
-            if end==0{continue;}
-            let candidate=format!("{}…",&leaf[..end]);
-            if measure(&candidate)<=max_width{
-                return (String::new(),candidate);
-            }
-        }
-        return (String::new(),"…".to_owned());
-    }
-    // Keep the nearest parents when possible, folding earlier ancestors.
-    for keep in (0..parents.len()).rev(){
-        let suffix=parents[parents.len()-keep..].join(" > ");
-        let ancestors=if suffix.is_empty(){
-            "… > ".to_owned()
-        }else{format!("… > {suffix} > ")};
-        if measure(&ancestors)+measure(leaf)<=max_width{
-            return (ancestors,leaf.to_owned());
-        }
-    }
-    (String::new(),leaf.to_owned())
+fn navigate(state:&mut ExplorerState,path:Vec<String>){
+    state.path=path;
+    state.search.clear();
+    state.ancestors_open=false;
 }
 
-/// THE sole category list row renderer, used identically for search and
-/// normal navigation. One clipped baseline and one hit rectangle; only the
-/// text's ancestor segment differs between the two modes.
-fn category_option_row(
-    ui:&mut Ui,node:&CategoryNode,
-    index:&HashMap<&str,&CategoryNode>,path:&[String],
-    width:f32,selected:&str,show_ancestors:bool
-)->Response{
-    let (rect,response)=ui.allocate_exact_size(
-        Vec2::new(width,CATEGORY_RESULT_ROW_HEIGHT),Sense::click()
-    );
-    if node.id==selected{
-        ui.painter().rect(
-            rect,theme::CONTROL_RADIUS,theme::CATEGORY_EXPLORER_APPLIED_BG,
-            Stroke::new(
-                theme::SOFT_DIVIDER_WIDTH,theme::CATEGORY_EXPLORER_APPLIED_BORDER
-            ),egui::StrokeKind::Inside
-        );
-    }else if response.hovered()||response.has_focus(){
-        ui.painter().rect_filled(
-            rect,theme::CONTROL_RADIUS,theme::MANAGEMENT_DROPDOWN_HOVER_BG
-        );
+/// Commit a category ID, not a label. A repeated leaf click closes the
+/// selector without emitting a duplicate changed event.
+fn commit_path(state:&ExplorerState,selected:&mut String,changed:&mut bool,
+    enabled:bool,allow_empty:bool)->bool{
+    if !enabled || (!allow_empty && state.path.is_empty()){return false;}
+    let id=state.path.last().cloned().unwrap_or_default();
+    if *selected!=id{
+        *selected=id;
+        *changed=true;
     }
-    let font=egui::FontId::proportional(typography::FONT_STANDARD_ACTION);
-    let mut labels=if show_ancestors{
-        path.iter().filter_map(|id|index.get(id.as_str()))
-            .map(|row|row.name.as_str()).collect::<Vec<_>>()
-    }else{Vec::new()};
-    if !show_ancestors{labels.push(&node.name);}
-    // The right chevron has a fixed, separate 16pt reserve. Text length
-    // cannot expand the row or alter the popup's fixed 546pt width.
-    let available=(rect.width()-theme::SPACE_8*2.0-theme::SPACE_16).max(0.0);
-    let measure=|value:&str|ui.painter().layout_no_wrap(
-        value.to_owned(),font.clone(),theme::TEXT
-    ).size().x;
-    let full=labels.join(" > ");
-    let (ancestors,leaf)=fitted_category_row_text(&labels,available,measure);
-    let overflow=format!("{ancestors}{leaf}")!=full;
-    let text_left=rect.left()+theme::SPACE_8;
-    let painter=ui.painter().with_clip_rect(rect.shrink(1.0));
-    let mut x=text_left;
-    if !ancestors.is_empty(){
-        painter.text(
-            egui::pos2(x,rect.center().y),Align2::LEFT_CENTER,&ancestors,
-            font.clone(),theme::CATEGORY_EXPLORER_ANCESTOR_TEXT
-        );
-        x+=ui.painter().layout_no_wrap(
-            ancestors,font.clone(),theme::CATEGORY_EXPLORER_ANCESTOR_TEXT
-        ).size().x;
-    }
-    painter.text(
-        egui::pos2(x,rect.center().y),Align2::LEFT_CENTER,leaf,
-        font.clone(),theme::TEXT
-    );
-    painter.text(
-        egui::pos2(rect.right()-theme::SPACE_12,rect.center().y),
-        Align2::CENTER_CENTER,"›",font,theme::SECONDARY
-    );
-    components::overflow_tooltip(response,overflow,&full)
+    true
 }
 
-fn crumb(
-    ui:&mut Ui,label:&str,width:f32,visual:CrumbVisual
-)->Response{
-    let (rect,response)=ui.allocate_exact_size(
-        Vec2::new(width,theme::CATEGORY_EXPLORER_CRUMB_HEIGHT),Sense::click()
-    );
-    let hovered=response.hovered()||response.has_focus();
-    let (background,border,ink)=match visual{
-        CrumbVisual::Applied=>(
-            theme::CATEGORY_EXPLORER_APPLIED_BG,
-            theme::CATEGORY_EXPLORER_APPLIED_BORDER,theme::TEXT
-        ),
-        CrumbVisual::Current=>(
-            theme::CATEGORY_EXPLORER_CURRENT_BG,
-            theme::CATEGORY_EXPLORER_CURRENT_BORDER,theme::TEXT
-        ),
-        CrumbVisual::Ordinary if hovered=>(
-            theme::MANAGEMENT_DROPDOWN_HOVER_BG,
-            theme::SELECTION,theme::TEXT
-        ),
-        CrumbVisual::Ordinary=>(
-            Color32::TRANSPARENT,Color32::TRANSPARENT,
-            theme::CATEGORY_EXPLORER_ANCESTOR_TEXT
-        ),
-    };
-    let stroke=if border==Color32::TRANSPARENT{Stroke::NONE}
-        else{Stroke::new(theme::SOFT_DIVIDER_WIDTH,border)};
-    let painter=ui.painter().with_clip_rect(rect);
-    // The current category is a location, not a selected chip:
-    // keep its bright text but NEVER draw a background or border.
-    if visual!=CrumbVisual::Current{
-        painter.rect(
-            rect,theme::CONTROL_RADIUS,background,stroke,egui::StrokeKind::Inside
-        );
-    }
-    // A breadcrumb is a single category, not a whole path. Keep its first
-    // characters on overflow (ending ellipsis), never the trailing suffix
-    // produced by fit_category_path's category-leaf algorithm.
-    let visible=fit_breadcrumb_label(ui,label,(width-theme::SPACE_8).max(1.0));
-    painter.text(
-        rect.center(),Align2::CENTER_CENTER,&visible,
-        egui::FontId::proportional(typography::FONT_STANDARD_ACTION),ink
-    );
-    components::shortened_text_tooltip(response,&visible,label)
+/// Branches are navigation only; terminal nodes are immediately applied.
+/// Both search results and ordinary tree rows use this same transition.
+fn activate_path(state:&mut ExplorerState,path:Vec<String>,has_children:bool,
+    selected:&mut String,changed:&mut bool,enabled:bool,allow_empty:bool)->bool{
+    if !enabled{return false;}
+    navigate(state,path);
+    if has_children{false}else{commit_path(state,selected,changed,enabled,allow_empty)}
 }
-/// The separator has the exact same vertical center as the footer controls.
-/// A drawn chevron is independent of font metrics, caption baselines, or text
-/// wrapping, so all path arrows remain aligned at every category depth.
-fn category_path_separator(ui:&mut Ui)->Response{
-    let (rect,response)=ui.allocate_exact_size(
-        Vec2::new(
-            theme::CATEGORY_EXPLORER_SEPARATOR_WIDTH,
-            theme::CATEGORY_EXPLORER_CRUMB_HEIGHT
-        ),Sense::hover()
-    );
-    let mid=rect.center();
-    let stroke=Stroke::new(1.25_f32,theme::SECONDARY);
-    let painter=ui.painter().with_clip_rect(rect);
-    painter.line_segment([
-        egui::pos2(mid.x-2.0,mid.y-4.0),
-        egui::pos2(mid.x+2.0,mid.y)
-    ],stroke);
-    painter.line_segment([
-        egui::pos2(mid.x+2.0,mid.y),
-        egui::pos2(mid.x-2.0,mid.y+4.0)
-    ],stroke);
-    response
+
+fn category_option_row(ui:&mut Ui,name:&str,depth:usize,is_last:bool,
+    has_children:bool,open:bool,selected:bool)->Response{
+    components::category_tree_row(ui,components::CategoryTreeRow{
+        name,summary:"",depth,ancestor_guides:&[],is_last,
+        root:depth==0&&open,has_children,open,selected,
+    })
 }
-/// A breadcrumb represents ONE category, not a flattened category path.
-/// Retain its beginning on overflow; full text is still available on hover.
-fn fit_breadcrumb_label(ui:&Ui,name:&str,max_width:f32)->String{
-    let font=egui::FontId::proportional(typography::FONT_STANDARD_ACTION);
-    let width=|text:&str|ui.painter().layout_no_wrap(
-        text.to_owned(),font.clone(),theme::TEXT
-    ).size().x;
-    if max_width<=0.0{return String::new();}
-    if width(name)<=max_width{return name.to_owned();}
-    if width("…")>max_width{return String::new();}
-    for (end,_) in name.char_indices().rev(){
-        if end==0{continue;}
-        let candidate=format!("{}…",&name[..end]);
-        if width(&candidate)<=max_width{return candidate;}
-    }
-    "…".to_owned()
-}
-/// Always expose the last three actual category levels. "전체" is a
-/// separate root-navigation control, not counted as a category level.
-fn shown_category_count(depth:usize)->usize{depth.min(3)}
-/// Category names keep their measured width whenever the footer has room.
-/// If three long names exceed the fixed budget, shorten the names (not the
-/// popup) while retaining all three clickable breadcrumb slots.
-fn fitted_crumb_widths(intrinsic:&[f32],budget:f32)->Vec<f32>{
-    if intrinsic.is_empty(){return Vec::new();}
-    let min_width=(budget/intrinsic.len() as f32).min(26.0).max(0.0);
-    let widths=intrinsic.iter().map(|width|
-        width.max(min_width)
-    ).collect::<Vec<_>>();
-    let sum=widths.iter().sum::<f32>();
-    if sum<=budget{return widths;}
-    let flexible=widths.iter().map(|width|width-min_width).sum::<f32>();
-    if flexible<=0.0{return vec![min_width;intrinsic.len()];}
-    let remaining=(budget-min_width*intrinsic.len() as f32).max(0.0);
-    widths.iter().map(|width|
-        min_width+(width-min_width)*remaining/flexible
-    ).collect()
-}
-/// The Back control is an understated 36pt Ghost action on a separate footer
-/// row. Keep its hit area; show the shared blue hover emphasis only on hover.
+
 fn category_back_button(ui:&mut Ui,enabled:bool)->Response{
     theme::action_with_min_width(
         ui,"← 상위로",theme::ButtonRole::Ghost,enabled,
         theme::CATEGORY_EXPLORER_BACK_WIDTH
     )
 }
-fn crumbs_row(
-    ui:&mut Ui,state:&mut ExplorerState,index:&HashMap<&str,&CategoryNode>,
-    selected:&mut String,enabled:bool,allow_empty:bool,changed:&mut bool
-)->(egui::Rect,egui::Rect,Vec<egui::Rect>){
-    let path=state.path.clone();
-    let len=path.len();
-    let row_width=ui.available_width().max(1.0);
-    // Keep three explicit category levels at every depth. Earlier levels
-    // collapse into the ancestor selector only from the fourth category.
-    let shown_count=shown_category_count(len);
-    let hidden=len-shown_count;
-    let visible=path[hidden..].to_vec();
-    let apply_width=theme::CATEGORY_EXPLORER_APPLY_WIDTH;
-    // Reserve fixed-width breadcrumb controls BEFORE fitting long names.
-    // Back is on the line ABOVE, so it never consumes path width.
-    let separators=visible.len()+usize::from(hidden>0);
-    let widget_count=2+visible.len()+separators+usize::from(hidden>0);
-    let fixed=theme::CATEGORY_EXPLORER_ROOT_WIDTH
-        +if hidden>0{31.0}else{0.0}
-        +separators as f32*theme::CATEGORY_EXPLORER_SEPARATOR_WIDTH
-        +apply_width+theme::SPACE_8
-        +widget_count.saturating_sub(1) as f32*theme::SPACE_4;
-    let budget=(row_width-fixed).max(0.0);
-    let intrinsic=visible.iter().map(|id|{
-        let name=index.get(id.as_str()).map(|node|node.name.as_str())
-            .unwrap_or("분류 없음");
-        let galley=ui.painter().layout_no_wrap(
-            name.to_owned(),
-            egui::FontId::proportional(typography::FONT_STANDARD_ACTION),
-            theme::TEXT
-        );
-        galley.size().x+theme::SPACE_12
-    }).collect::<Vec<_>>();
-    let crumb_widths=fitted_crumb_widths(&intrinsic,budget);
-    let mut go_to:Option<Vec<String>>=None;
-    let mut toggle_ancestors=false;
+
+/// Keep root navigation and explicit Apply for a nonterminal category.
+/// The ellipsis is a separate control, never an inert truncation label.
+fn crumbs_row(ui:&mut Ui,state:&mut ExplorerState,selected:&mut String,
+    enabled:bool,allow_empty:bool,changed:&mut bool)->bool{
     let mut apply=false;
-    let mut root_rect=egui::Rect::NOTHING;
-    let mut apply_rect=egui::Rect::NOTHING;
-    let mut chevrons=Vec::new();
-    // Explicitly allocate the approved footer width and height. A nested
-    // shrinking horizontal UI can otherwise place Apply short of the right
-    // edge when the breadcrumb path has few or no entries.
+    let width=ui.available_width().max(1.0);
     ui.allocate_ui_with_layout(
-        Vec2::new(row_width,theme::CATEGORY_EXPLORER_CRUMB_HEIGHT),
-        egui::Layout::left_to_right(egui::Align::Center),
-        |bar|{
-        bar.spacing_mut().item_spacing.x=theme::SPACE_4;
-        let role=if selected.is_empty() && allow_empty {
-            CrumbVisual::Applied
-        }else if path.is_empty(){CrumbVisual::Current}
-            else{CrumbVisual::Ordinary};
-        let root=crumb(bar,"전체",theme::CATEGORY_EXPLORER_ROOT_WIDTH,role);
-        root_rect=root.rect;
-        if root.clicked(){
-            go_to=Some(Vec::new());
-        }
-        if hidden>0{
-            chevrons.push(category_path_separator(bar).rect);
-            if crumb(bar,"···",31.0,CrumbVisual::Ordinary).clicked(){
-                toggle_ancestors=true;
+        Vec2::new(width,theme::CATEGORY_EXPLORER_CRUMB_HEIGHT),
+        egui::Layout::left_to_right(egui::Align::Center),|bar|{
+            bar.spacing_mut().item_spacing.x=theme::SPACE_4;
+            if theme::action_with_min_width(bar,"전체",theme::ButtonRole::Standard,
+                enabled&&!state.path.is_empty(),theme::CATEGORY_EXPLORER_ROOT_WIDTH).clicked(){
+                navigate(state,Vec::new());
             }
-        }
-        for (offset,id) in visible.iter().enumerate(){
-            chevrons.push(category_path_separator(bar).rect);
-            let name=index.get(id.as_str()).map(|n|n.name.as_str())
-                .unwrap_or("분류 없음");
-            let role=if id.as_str()==selected.as_str(){CrumbVisual::Applied}
-                else if offset+hidden+1==len{CrumbVisual::Current}
-                else{CrumbVisual::Ordinary};
-            if crumb(bar,name,crumb_widths[offset],role).clicked()
-                && role!=CrumbVisual::Current{
-                go_to=Some(path[..hidden+offset+1].to_vec());
+            if hidden_ancestor_count(state.path.len())>0{
+                if theme::action_with_min_width(bar,"…",theme::ButtonRole::Standard,
+                    enabled,theme::CATEGORY_EXPLORER_OMITTED_WIDTH).clicked(){
+                    state.ancestors_open=!state.ancestors_open;
+                }
             }
+            bar.with_layout(egui::Layout::right_to_left(egui::Align::Center),|right|{
+                let current=state.path.last().map(String::as_str).unwrap_or("");
+                apply=theme::action_with_min_width(right,"적용",theme::ButtonRole::Primary,
+                    enabled&&(allow_empty||!state.path.is_empty())&&current!=selected.as_str(),
+                    theme::CATEGORY_EXPLORER_APPLY_WIDTH).clicked();
+            });
         }
-        bar.with_layout(
-            egui::Layout::right_to_left(egui::Align::Center),|right|{
-                let response=theme::action_with_min_width(
-                    right,"적용",theme::ButtonRole::Primary,
-                    enabled && (allow_empty || !path.is_empty())
-                        && path.last().map(String::as_str).unwrap_or("")!=selected.as_str(),
-                    theme::CATEGORY_EXPLORER_APPLY_WIDTH
-                );
-                apply_rect=response.rect;
-                if response.clicked(){apply=true;}
-            }
-        );
-    });
-    if toggle_ancestors{state.ancestors_open=!state.ancestors_open;}
-    if let Some(next)=go_to{
-        state.path=next;state.search.clear();state.ancestors_open=false;
-    }
-    if apply{
-        *selected=state.path.last().cloned().unwrap_or_default();
-        *changed=true;
-        floating_notice::dropdown_option_selected(ui.ctx());
-        ui.close();
-    }
-    (root_rect,apply_rect,chevrons)
+    );
+    apply&&commit_path(state,selected,changed,enabled,allow_empty)
 }
+
 fn menu_body(
     menu:&mut Ui,nodes:&[CategoryNode],index:&HashMap<&str,&CategoryNode>,
     state:&mut ExplorerState,selected:&mut String,enabled:bool,
     allow_empty:bool,changed:&mut bool,popup_width:f32,
 ){
-    // Explicitly fix the menu's content rect. Text length and breadcrumb
-    // count may change internal allocation but never the popup width.
     menu.set_min_width(popup_width);
     menu.set_max_width(popup_width);
     menu.set_width(popup_width);
@@ -423,93 +176,113 @@ fn menu_body(
     let search_response=components::management_search_field(
         menu,&mut state.search,available,"카테고리 이름 또는 경로 검색"
     );
-    let search_has_focus=search_response.has_focus();
-    // Browsing arrows must not override keyboard editing in the search field.
-    if !search_has_focus && menu.input(|i|i.key_pressed(egui::Key::ArrowLeft)){
-        state.path.pop();state.ancestors_open=false;
+    if !search_response.has_focus() && enabled &&
+        menu.input(|i|i.key_pressed(egui::Key::ArrowLeft)){
+        let mut path=state.path.clone();
+        path.pop();
+        navigate(state,path);
     }
-    // Navigation lives beside "전체" in the fixed footer. No top Back row
-    // or depth label: the search field is followed directly by the list.
     components::soft_divider(menu);
     let searching=!state.search.trim().is_empty();
+    let current=state.path.last().and_then(|id|index.get(id.as_str())).copied();
     let items=if searching{
         search_results(nodes,index,&state.search)
     }else{
-        direct_children(
-            nodes,index,state.path.last().map(String::as_str).unwrap_or("")
-        )
+        direct_children(nodes,index,current.map(|node|node.id.as_str()).unwrap_or(""))
     };
-    // Stable six-row viewport in search, navigation and empty states.
-    // Reduce it only if the OS viewport cannot physically fit the popup.
+    // Use the tree master's 42pt rows and zero row gap, so the connecting
+    // rails between the current parent and children never break.
     let list_height=theme::CATEGORY_EXPLORER_LIST_MAX_HEIGHT
         .min((menu.ctx().content_rect().height()-270.0).max(100.0));
     let mut next_path=None;
+    let mut next_has_children=false;
     components::scroll_area(components::ScrollAxes::Vertical)
         .id_salt(("category-explorer-list",state.path.clone(),state.search.clone()))
         .max_height(list_height)
-        // Always reserve all six rows, even if the category list is empty.
-        // The seventh row and beyond scroll inside this area only.
         .auto_shrink([false,false])
         .show(menu,|list|{
-            list.spacing_mut().item_spacing.y=theme::SPACE_4;
-            let list_width=list.available_width().max(1.0);
-            if items.is_empty(){
+            list.spacing_mut().item_spacing.y=0.0;
+            if !searching{
+                if let Some(parent)=current{
+                    let has_children=!items.is_empty();
+                    let response=category_option_row(list,&parent.name,0,true,
+                        has_children,has_children,parent.id==*selected);
+                    // The open parent is the browsing context, not a second
+                    // selection action. A terminal parent may close again.
+                    if response.clicked()&&!has_children{
+                        next_path=Some(chain(index,&parent.id));
+                        next_has_children=false;
+                    }
+                }
+            }
+            if items.is_empty()&&(searching||current.is_none()){
                 list.label(typography::caption(if searching{
                     "검색 결과가 없습니다."
                 }else{"하위 카테고리가 없습니다."}));
             }
-            for node in items{
+            let depth=usize::from(!searching&&current.is_some());
+            for (position,node) in items.iter().enumerate(){
                 let path=chain(index,&node.id);
-                let response=category_option_row(
-                    list,node,index,&path,list_width,selected,searching
-                );
-                if response.clicked(){next_path=Some(path);}
+                let has_children=nodes.iter().any(|child|child.parent==node.id);
+                // Search is flat but retains the full path to disambiguate
+                // identical leaf names. Ordinary navigation shows just names.
+                let label=if searching{full_name(index,&path)}else{node.name.clone()};
+                let response=category_option_row(list,&label,depth,
+                    position+1==items.len(),has_children,false,node.id==*selected);
+                if response.clicked(){
+                    next_path=Some(path);
+                    next_has_children=has_children;
+                }
             }
         });
     if let Some(path)=next_path{
-        state.path=path;
-        state.search.clear();
-        state.ancestors_open=false;
+        if activate_path(state,path,next_has_children,selected,changed,enabled,allow_empty){
+            if *changed{floating_notice::dropdown_option_selected(menu.ctx());}
+            menu.close();
+            return;
+        }
     }
-    if state.ancestors_open && state.path.len()>3{
-        theme::category_ancestor_frame()
-            .show(menu,|ancestor_menu|{
-                ancestor_menu.label(typography::caption("생략된 상위 경로"));
-                let path=state.path.clone();
-                let mut next=None;
-                components::scroll_area(components::ScrollAxes::Vertical)
-                    .id_salt("category-explorer-ancestors")
-                    .max_height(theme::CATEGORY_EXPLORER_ANCESTOR_MAX_HEIGHT)
-                    .show(ancestor_menu,|rows|{
-                        for (i,id) in path.iter().enumerate().take(path.len()-shown_category_count(path.len())){
-                            let name=index.get(id.as_str())
-                                .map(|node|node.name.as_str()).unwrap_or(id);
-                            if theme::action(
-                                rows,&format!("{}단계 · {name}",i+1),
-                                theme::ButtonRole::Quiet,true
-                            ).clicked(){next=Some(path[..=i].to_vec());}
+    // Omitted ancestors are a separate, bounded navigation panel. They do
+    // not affect selection or replace the current category until clicked.
+    if state.ancestors_open && state.path.len()>1{
+        theme::category_ancestor_frame().show(menu,|ancestor_menu|{
+            ancestor_menu.label(typography::caption("생략된 상위 경로"));
+            let path=state.path.clone();
+            let mut next=None;
+            components::scroll_area(components::ScrollAxes::Vertical)
+                .id_salt("category-explorer-ancestors")
+                .max_height(theme::CATEGORY_EXPLORER_ANCESTOR_MAX_HEIGHT)
+                .show(ancestor_menu,|rows|{
+                    rows.spacing_mut().item_spacing.y=0.0;
+                    let hidden=hidden_ancestor_count(path.len());
+                    for (i,id) in path.iter().enumerate().take(hidden){
+                        let name=index.get(id.as_str())
+                            .map(|node|node.name.as_str()).unwrap_or(id);
+                        if category_option_row(rows,name,0,true,true,false,id==selected.as_str()).clicked(){
+                            next=Some(path[..=i].to_vec());
                         }
-                    });
-                if let Some(path)=next{
-                    state.path=path;state.search.clear();state.ancestors_open=false;
-                }
-            });
+                    }
+                });
+            if let Some(path)=next{navigate(state,path);}
+        });
     }
     components::soft_divider(menu);
-    // One footer group with a shared left origin and just 4pt between rows.
-    // The surrounding menu retains its ordinary 8pt vertical rhythm.
+    let mut applied=false;
     menu.scope(|footer|{
         footer.spacing_mut().item_spacing.y=theme::SPACE_4;
         footer.horizontal(|row|{
-            row.spacing_mut().item_spacing.x=theme::SPACE_4;
-            if category_back_button(row,!state.path.is_empty()).clicked(){
-                state.path.pop();
-                state.search.clear();
-                state.ancestors_open=false;
+            if category_back_button(row,enabled&&!state.path.is_empty()).clicked(){
+                let mut path=state.path.clone();
+                path.pop();
+                navigate(state,path);
             }
         });
-        crumbs_row(footer,state,index,selected,enabled,allow_empty,changed);
+        applied=crumbs_row(footer,state,selected,enabled,allow_empty,changed);
     });
+    if applied{
+        if *changed{floating_notice::dropdown_option_selected(menu.ctx());}
+        menu.close();
+    }
 }
 
 /// Same trigger, same popup owner, same hover and one-shot feedback anchor as
@@ -610,293 +383,100 @@ mod tests{
         assert_eq!(direct_children(&nodes,&index,"")[0].id,"orphan");
     }
     #[test]
-    fn breadcrumb_labels_use_intrinsic_width_and_shrink_only_when_needed(){
-        assert_eq!(fitted_crumb_widths(&[58.0,112.0],220.0),vec![58.0,112.0]);
-        let fitted=fitted_crumb_widths(&[58.0,112.0],120.0);
-        assert_eq!(fitted.len(),2);
-        assert!((fitted.iter().sum::<f32>()-120.0).abs()<0.01);
-        assert!(fitted[0]<fitted[1]);
-        assert!(fitted.iter().all(|width|*width>=26.0));
-        assert!(fitted_crumb_widths(&[],100.0).is_empty());
-    }
-    #[test]
-    fn category_rows_use_one_fixed_height_and_one_painter_in_both_modes(){
-        assert_eq!(CATEGORY_RESULT_ROW_HEIGHT,34.0);
-        let nodes=vec![
-            CategoryNode{id:"root".into(),name:"반도스탠드".into(),parent:String::new()},
-            CategoryNode{id:"child".into(),name:"보면대".into(),parent:"root".into()},
-        ];
-        let index=tree_index(&nodes);
-        let path=chain(&index,"child");
-        let ctx=egui::Context::default();
-        let mut heights=Vec::new();
-        let _=ctx.run(egui::RawInput::default(),|ctx|{
-            egui::CentralPanel::default().show(ctx,|ui|{
-                for show_ancestors in [false,true]{
-                    let response=category_option_row(
-                        ui,&nodes[1],&index,&path,520.0,"",show_ancestors
-                    );
-                    heights.push(response.rect.height());
-                }
-            });
-        });
-        assert_eq!(heights,[34.0,34.0]);
-        // Inspect only the row renderer and its actual invocation.
-        // Searching the whole source also matches assertions in this test.
-        let source=include_str!("category_dropdown.rs");
-        let renderer=source.split("fn category_option_row(").nth(1).unwrap()
-            .split("fn crumb(").next().unwrap();
-        assert!(!renderer.contains("52.0"));
-        assert!(!renderer.contains("rect.top()+37.0"));
-        let list=source.split("            for node in items{").nth(1).unwrap()
-            .split("    if let Some(path)=next_path{").next().unwrap();
-        assert!(list.contains("category_option_row("));
-        assert!(list.contains("list,node,index,&path,list_width,selected,searching"));
-    }
-    #[test]
-    fn path_search_row_shows_leaf_once_with_muted_ancestors(){
-        let labels=["반도스탠드","보면대","책상,국악,성악용 보면대"];
-        let measure=|s:&str|s.chars().count() as f32;
-        let (parents,leaf)=fitted_category_row_text(&labels,100.0,measure);
-        assert_eq!(parents,"반도스탠드 > 보면대 > ");
-        assert_eq!(leaf,"책상,국악,성악용 보면대");
-        assert_eq!(format!("{parents}{leaf}").matches(leaf.as_str()).count(),1);
-        let (parents,leaf)=fitted_category_row_text(&labels,25.0,measure);
-        assert!(parents.starts_with('…') || parents.is_empty());
-        assert_eq!(leaf,"책상,국악,성악용 보면대");
-        let (parents,leaf)=fitted_category_row_text(&labels,10.0,measure);
-        assert!(parents.is_empty());
-        assert!(leaf.ends_with('…'));
-        assert!(measure(&leaf)<=10.0);
-    }
-    #[test]
-    fn first_three_categories_are_never_hidden_by_the_depth_rule(){
-        for depth in 0..=3{
-            assert_eq!(shown_category_count(depth),depth);
+    fn only_current_parent_is_visible_and_all_earlier_ancestors_are_omitted(){
+        for depth in [0_usize,1,2,3,30]{
+            assert_eq!(hidden_ancestor_count(depth),depth.saturating_sub(1));
         }
-        assert_eq!(shown_category_count(4),3);
-        assert_eq!(shown_category_count(30),3);
-    }
-    #[test]
-    fn category_popup_width_is_fixed_at_655_points(){
-        assert_eq!(theme::CATEGORY_EXPLORER_POPUP_WIDTH,655.0);
-        let source=include_str!("category_dropdown.rs");
-        assert!(source.contains("menu.set_width(popup_width);"));
-    }
-    #[test]
-    fn actual_footer_button_rects_align_at_half_point_precision(){
-        // Exercise the real breadcrumb renderer, not just source literals.
-        // The same rects are used for hit-testing and for all text/arrow paints.
         let nodes=fixture();
         let index=tree_index(&nodes);
-        let mut selected=String::new();
-        let ctx=egui::Context::default();
-        for depth in [0_usize,1,3,4,30]{
-            let path=if depth==0{Vec::new()}else{
-                let last=if depth==1{"root".to_owned()}
-                    else{format!("node-{}",depth-2)};
-                chain(&index,&last)
-            };
-            let mut state=ExplorerState{
-                path,search:String::new(),ancestors_open:false
-            };
-            let mut output=None;
-            let _=ctx.run(egui::RawInput::default(),|ctx|{
-                egui::CentralPanel::default().show(ctx,|ui|{
-                    ui.set_width(theme::CATEGORY_EXPLORER_POPUP_WIDTH);
-                    ui.scope(|footer|{
-                        footer.spacing_mut().item_spacing.y=theme::SPACE_4;
-                        let right=footer.available_rect_before_wrap().right();
-                        let mut back_rect=egui::Rect::NOTHING;
-                        footer.horizontal(|row|{
-                            back_rect=category_back_button(row,depth>0).rect;
-                        });
-                        let mut changed=false;
-                        let (root,apply,arrows)=crumbs_row(
-                            footer,&mut state,&index,&mut selected,
-                            true,true,&mut changed
-                        );
-                        output=Some((right,back_rect,root,apply,arrows));
-                    });
-                });
-            });
-            let (right,back,root,apply,arrows)=output.unwrap();
-            let nearly_equal=|a:f32,b:f32|(a-b).abs()<=0.5;
-            assert!(nearly_equal(back.left(),root.left()),
-                "depth {depth} left origins differ: {back:?}, {root:?}");
-            assert!(nearly_equal(root.top()-back.bottom(),theme::SPACE_4),
-                "depth {depth} footer row gap is not 4pt");
-            assert!(nearly_equal(apply.right(),right),
-                "depth {depth} Apply button is not right aligned: apply={apply:?}, right={right:.2}, back={back:?}, root={root:?}");
-            for control in [back,root,apply]{
-                assert!(nearly_equal(
-                    control.height(),theme::CATEGORY_EXPLORER_CRUMB_HEIGHT
-                ),"depth {depth} control height drift");
-            }
-            assert!(nearly_equal(back.width(),theme::CATEGORY_EXPLORER_BACK_WIDTH));
-            assert!(nearly_equal(root.width(),theme::CATEGORY_EXPLORER_ROOT_WIDTH));
-            assert!(nearly_equal(apply.width(),theme::CATEGORY_EXPLORER_APPLY_WIDTH));
-            for arrow in arrows{
-                assert!(nearly_equal(arrow.center().y,root.center().y),
-                    "depth {depth} separator vertical center drift");
-                assert!(nearly_equal(
-                    arrow.width(),theme::CATEGORY_EXPLORER_SEPARATOR_WIDTH
-                ));
-            }
-        }
+        let mut state=ExplorerState::default();
+        navigate(&mut state,chain(&index,"node-4"));
+        assert_eq!(state.path.last().unwrap(),"node-4");
+        assert_eq!(hidden_ancestor_count(state.path.len()),5);
+        let children=direct_children(&nodes,&index,state.path.last().unwrap());
+        assert_eq!(children.len(),1);
+        assert_eq!(children[0].id,"node-5");
+        navigate(&mut state,chain(&index,"node-1"));
+        assert_eq!(state.path.last().unwrap(),"node-1");
     }
     #[test]
-    fn footer_back_root_and_apply_have_the_same_control_height(){
-        assert_eq!(theme::CATEGORY_EXPLORER_CRUMB_HEIGHT,
-            theme::ACTION_PRIMARY_HEIGHT);
+    fn branches_navigate_without_committing_and_leaf_applies_immediately(){
+        let mut state=ExplorerState::default();
+        let mut selected="previous".to_owned();
+        let mut changed=false;
+        assert!(!activate_path(&mut state,vec!["root".into()],true,
+            &mut selected,&mut changed,true,true));
+        assert_eq!(selected,"previous");
+        assert!(!changed);
+        assert!(activate_path(&mut state,vec!["root".into(),"leaf".into()],false,
+            &mut selected,&mut changed,true,true));
+        assert_eq!(selected,"leaf");
+        assert!(changed);
+        changed=false;
+        assert!(activate_path(&mut state,vec!["root".into(),"leaf".into()],false,
+            &mut selected,&mut changed,true,true));
+        assert!(!changed);
+    }
+    #[test]
+    fn search_leaf_uses_same_transition_and_clears_search(){
+        let nodes=fixture();let index=tree_index(&nodes);
+        let mut state=ExplorerState{search:"카테고리 29".into(),..Default::default()};
+        let result=search_results(&nodes,&index,&state.search);
+        let leaf=result.iter().find(|node|node.id=="node-29").unwrap();
+        let mut selected=String::new();
+        let mut changed=false;
+        assert!(activate_path(&mut state,chain(&index,&leaf.id),false,
+            &mut selected,&mut changed,true,true));
+        assert_eq!(selected,"node-29");
+        assert!(state.search.is_empty());
+        assert!(changed);
+    }
+    #[test]
+    fn manual_branch_and_empty_selection_respect_existing_guards(){
+        let mut state=ExplorerState::default();
+        let mut selected="old".to_owned();let mut changed=false;
+        assert!(!commit_path(&state,&mut selected,&mut changed,true,false));
+        assert!(!activate_path(&mut state,vec!["leaf".into()],false,
+            &mut selected,&mut changed,false,true));
+        assert_eq!(selected,"old");
+        navigate(&mut state,vec!["branch".into()]);
+        assert!(commit_path(&state,&mut selected,&mut changed,true,false));
+        assert_eq!(selected,"branch");
+        navigate(&mut state,Vec::new());
+        assert!(commit_path(&state,&mut selected,&mut changed,true,true));
+        assert!(selected.is_empty());
+    }
+    #[test]
+    fn category_search_and_navigation_share_actual_tree_row_height(){
         let ctx=egui::Context::default();
         let mut heights=Vec::new();
         let _=ctx.run(egui::RawInput::default(),|ctx|{
             egui::CentralPanel::default().show(ctx,|ui|{
-                heights.push(category_back_button(ui,true).rect.height());
-                heights.push(crumb(
-                    ui,"전체",theme::CATEGORY_EXPLORER_ROOT_WIDTH,
-                    CrumbVisual::Ordinary
-                ).rect.height());
-                heights.push(theme::action_with_min_width(
-                    ui,"적용",theme::ButtonRole::Primary,true,
-                    theme::CATEGORY_EXPLORER_APPLY_WIDTH
-                ).rect.height());
+                heights.push(category_option_row(ui,"반도스탠드",0,true,true,true,false).rect.height());
+                heights.push(category_option_row(ui,"보면대",1,true,false,false,true).rect.height());
+                heights.push(category_option_row(ui,"반도스탠드 > 보면대",0,true,false,false,false).rect.height());
             });
         });
-        assert_eq!(heights,[36.0,36.0,36.0]);
+        assert_eq!(heights,[42.0,42.0,42.0]);
+        assert_eq!(theme::CATEGORY_EXPLORER_POPUP_WIDTH,655.0);
+        assert_eq!(theme::CATEGORY_EXPLORER_VISIBLE_ROWS,6);
+        assert_eq!(theme::CATEGORY_EXPLORER_LIST_MAX_HEIGHT,252.0);
     }
     #[test]
-    fn upper_level_control_precedes_breadcrumb_on_its_own_line(){
+    fn tree_menu_uses_shared_rows_and_a_separate_ellipsis_control(){
         let source=include_str!("category_dropdown.rs");
+        let renderer=source.split("fn category_option_row(").nth(1).unwrap()
+            .split("fn category_back_button(").next().unwrap();
+        assert!(renderer.contains("components::category_tree_row("));
+        let body=source.split("fn menu_body(").nth(1).unwrap()
+            .split("pub fn category_dropdown(").next().unwrap();
+        assert!(body.contains("list.spacing_mut().item_spacing.y=0.0;"));
+        assert!(body.contains(".auto_shrink([false,false])"));
+        assert!(body.contains("if state.ancestors_open && state.path.len()>1"));
+        assert!(body.contains("activate_path("));
         let footer=source.split("fn crumbs_row(").nth(1).unwrap()
             .split("fn menu_body(").next().unwrap();
-        assert!(!footer.contains("category_back_button(bar"));
-        assert!(footer.contains("crumb(bar,\"전체\""));
-        let body=source.split("fn menu_body(").nth(1).unwrap()
-            .split("pub fn category_dropdown(").next().unwrap();
-        let last_section=body.rsplit("components::soft_divider(menu);")
-            .next().unwrap();
-        let back=last_section.find(
-            "category_back_button(row,!state.path.is_empty())"
-        ).unwrap();
-        let crumbs=last_section.find("crumbs_row(footer,state,index").unwrap();
-        assert!(back<crumbs);
-        assert!(!last_section.contains("menu.label(typography::caption("));
-        assert!(!body.contains("let can_go_back="));
-        assert!(!body.contains("\"{}단계\""));
-    }
-    #[test]
-    fn footer_back_action_is_ghost_and_rows_share_a_four_point_gap(){
-        let source=include_str!("category_dropdown.rs");
-        let button=source.split("fn category_back_button(").nth(1).unwrap()
-            .split("fn crumbs_row(").next().unwrap();
-        // The category control delegates Ghost visuals to the shared
-        // action component; its visual contract is tested centrally.
-        assert!(button.contains("theme::action_with_min_width("));
-        assert!(button.contains("theme::ButtonRole::Ghost"));
-        assert!(button.contains("theme::CATEGORY_EXPLORER_BACK_WIDTH"));
-        let body=source.split("fn menu_body(").nth(1).unwrap()
-            .split("pub fn category_dropdown(").next().unwrap();
-        let footer=body.rsplit("components::soft_divider(menu);")
-            .next().unwrap();
-        assert!(footer.contains("menu.scope(|footer|"));
-        assert!(footer.contains("footer.spacing_mut().item_spacing.y=theme::SPACE_4;"));
-        assert!(footer.contains("footer.horizontal(|row|"));
-        assert!(footer.contains("crumbs_row(footer,state,index,selected,enabled,allow_empty,changed)"));
-        assert!(!footer.contains("menu.horizontal(|row|"));
-    }
-    #[test]
-    fn upper_navigation_is_compact_and_ancestors_are_visibly_dimmer(){
-        let ctx=egui::Context::default();
-        let mut back_rect=None;
-        let _=ctx.run(egui::RawInput::default(),|ctx|{
-            egui::CentralPanel::default().show(ctx,|ui|{
-                ui.set_width(655.0);
-                ui.horizontal(|row|{
-                    back_rect=Some(category_back_button(row,true).rect);
-                });
-            });
-        });
-        let rect=back_rect.unwrap();
-        assert!(rect.width()<=120.0,"Back button unexpectedly stretched");
-        assert_eq!(rect.height(),theme::CATEGORY_EXPLORER_CRUMB_HEIGHT);
-        assert!(theme::CATEGORY_EXPLORER_ANCESTOR_TEXT.r()
-            <theme::MUTED.r());
-        assert!(theme::CATEGORY_EXPLORER_ANCESTOR_TEXT.r()
-            <theme::SECONDARY.r());
-        let body=include_str!("category_dropdown.rs")
-            .split("fn menu_body(").nth(1).unwrap()
-            .split("pub fn category_dropdown(").next().unwrap();
-        assert!(body.contains("footer.horizontal(|row|"));
-        assert!(body.contains("category_back_button(row,!state.path.is_empty())"));
-    }
-    #[test]
-    fn current_category_is_plain_text_and_selected_category_remains_orange(){
-        assert_eq!(theme::CATEGORY_EXPLORER_CURRENT_BG,Color32::TRANSPARENT);
-        assert_eq!(theme::CATEGORY_EXPLORER_CURRENT_BORDER,Color32::TRANSPARENT);
-        assert_ne!(theme::CATEGORY_EXPLORER_APPLIED_BG,Color32::TRANSPARENT);
-        let crumb_source=include_str!("category_dropdown.rs")
-            .split("fn crumb(").nth(1).unwrap()
-            .split("fn category_path_separator(").next().unwrap();
-        assert!(crumb_source.contains("if visual!=CrumbVisual::Current{"));
-    }
-    #[test]
-    fn all_path_arrows_are_vertically_centered_and_match_control_height(){
-        let ctx=egui::Context::default();
-        let mut arrows=Vec::new();
-        let _=ctx.run(egui::RawInput::default(),|ctx|{
-            egui::CentralPanel::default().show(ctx,|ui|{
-                arrows.push(category_path_separator(ui).rect);
-                arrows.push(category_path_separator(ui).rect);
-            });
-        });
-        assert_eq!(arrows.len(),2);
-        for rect in arrows{
-            assert_eq!(rect.width(),theme::CATEGORY_EXPLORER_SEPARATOR_WIDTH);
-            assert_eq!(rect.height(),theme::CATEGORY_EXPLORER_CRUMB_HEIGHT);
-        }
-        let footer=include_str!("category_dropdown.rs")
-            .split("fn crumbs_row(").nth(1).unwrap()
-            .split("fn menu_body(").next().unwrap();
-        assert!(!footer.contains("bar.label(typography::caption(\"›\"))"));
-        assert_eq!(footer.matches("chevrons.push(category_path_separator(bar).rect);").count(),2);
-    }
-    #[test]
-    fn popup_has_no_child_count_heading_above_the_fixed_six_row_list(){
-        let body=include_str!("category_dropdown.rs")
-            .split("fn menu_body(").nth(1).unwrap()
-            .split("pub fn category_dropdown(").next().unwrap();
-        assert!(!body.contains("menu.horizontal(|heading|"));
-        assert!(!body.contains("items.len()"));
-        assert!(body.contains(".auto_shrink([false,false])"));
-    }
-    #[test]
-    fn category_list_reserves_six_rows_regardless_of_item_count(){
-        assert_eq!(theme::CATEGORY_EXPLORER_VISIBLE_ROWS,6);
-        let expected=6.0*CATEGORY_RESULT_ROW_HEIGHT+5.0*theme::SPACE_4;
-        assert_eq!(theme::CATEGORY_EXPLORER_LIST_MAX_HEIGHT,expected);
-        assert_eq!(expected,224.0);
-        let source=include_str!("category_dropdown.rs");
-        let list=source.split(".id_salt((\"category-explorer-list\"").nth(1).unwrap()
-            .split("    if let Some(path)=next_path{").next().unwrap();
-        assert!(list.contains(".max_height(list_height)"));
-        assert!(list.contains(".auto_shrink([false,false])"));
-        assert!(!list.contains(".auto_shrink([false,true])"));
-        assert!(!list.contains("state.ancestors_open{120.0}"));
-    }
-    #[test]
-    fn selected_and_current_categories_are_distinct_color_roles(){
-        assert_ne!(
-            theme::CATEGORY_EXPLORER_APPLIED_BG,
-            theme::CATEGORY_EXPLORER_CURRENT_BG
-        );
-        assert_eq!(
-            theme::CATEGORY_EXPLORER_APPLIED_BORDER,theme::SELECTED_ORDER
-        );
-        assert_eq!(
-            theme::MANAGEMENT_DROPDOWN_HOVER_BG,
-            egui::Color32::from_rgb(57,91,118)
-        );
+        assert!(footer.contains("hidden_ancestor_count(state.path.len())>0"));
+        assert!(footer.contains("bar,\"…\""));
     }
 }
