@@ -9,7 +9,7 @@ use std::{sync::{Arc,mpsc::{self,Receiver}},thread,time::{SystemTime,UNIX_EPOCH}
 use eframe::egui::{self,Context};
 use serde_json::{json,Value};
 use crate::{
-    cell_navigation::CellNavigationKey,
+    cell_navigation::{self,CellNavigationCell,CellNavigationKey},
     gateway::{BandoGateway,ReadOperation,
         rules::{scope_manual_model_ids,scope_recognition_rows_for_order,scope_reception_edit_ids}},
     preview_store::WorkingReception,
@@ -414,134 +414,82 @@ fn manual_cell_targets(model:&Value)->Vec<ManualCellTarget>{
     cells
 }
 
-/// Resolve movement by *visible worksheet geometry*. Recipient fields are
-/// the same four rows as Reception; Up/Down follow those rows,
-/// Left/Right switch mobile/phone, and Tab still follows all five fields.
-/// Crossing shipment boundaries and the product worksheet remain intact.
-/// remain a three-column worksheet with vertical item-row navigation.
+/// Rendered worksheet geometry. Source-assignment destinations are kept
+/// separate: freight is keyboard-editable but is not a source drop target.
+fn manual_worksheet_cells(model:&Value,pending:Option<&ManualCellTarget>)
+    ->Vec<(ManualCellTarget,CellNavigationCell)>{
+    let mut cells=Vec::new();
+    for (shipment,row) in list(model,"rows").iter().enumerate(){
+        let mut push=|item:Option<String>,field:&str,y:usize,x:usize|{
+            let target=ManualCellTarget{row:shipment,item,field:field.into()};
+            let order=cells.len();
+            let enabled=manual_cell_allowed(pending,&target);
+            cells.push((target,CellNavigationCell{
+                id:order.to_string(),row:y,column:x,order,enabled
+            }));
+        };
+        for field in ["name","address","mobile","phone","note"]{
+            let (y,x)=crate::inline_recipient_visual_position(field);
+            push(None,field,y,x);
+        }
+        let items=list(row,"items");
+        for (index,item) in items.iter().enumerate(){
+            for (column,field) in ["product","quantity","unitPrice"].into_iter().enumerate(){
+                push(Some(text(item,"id").to_owned()),field,4+index,column);
+            }
+        }
+        if text(row,"freightCode")!="020"{
+            push(None,"shippingCharge",4+items.len(),2);
+        }
+    }
+    cells
+}
+fn manual_recipient_section(target:&ManualCellTarget)->bool{
+    target.item.is_none() && target.field!="shippingCharge"
+}
 fn manual_navigation_target(
     model:&Value,current:&ManualCellTarget,key:CellNavigationKey,
     pending:Option<&ManualCellTarget>
 )->Option<ManualCellTarget>{
-    let rows=list(model,"rows");
-    let row=rows.get(current.row)?;
-    let next=match key{
-        CellNavigationKey::Left|CellNavigationKey::Right=>{
-            // The approved Reception contact row is two adjacent cells.
-            // Other recipient fields span one entire row.
-            if current.item.is_none(){
-                let next=match (current.field.as_str(),key){
-                    ("mobile",CellNavigationKey::Right)=>"phone",
-                    ("phone",CellNavigationKey::Left)=>"mobile",
-                    _=>return None,
-                };
-                return manual_cell_allowed(pending,&ManualCellTarget{
-                    row:current.row,item:None,field:next.into()
-                }).then(||ManualCellTarget{
-                    row:current.row,item:None,field:next.into()
-                });
+    let entries=manual_worksheet_cells(model,pending);
+    let (_,active)=entries.iter().find(|(target,cell)|target==current && cell.enabled)?;
+    let recipient=manual_recipient_section(current);
+    let sequential=matches!(key,CellNavigationKey::Next|CellNavigationKey::Previous);
+    let cells=entries.iter().filter(|(target,_)|sequential ||
+        (target.row==current.row && manual_recipient_section(target)==recipient)
+    ).map(|(_,cell)|cell.clone()).collect::<Vec<_>>();
+    if recipient {
+        if let Some(field)=crate::inline_phone_vertical_destination(&current.field,key){
+            if let Some((target,_))=entries.iter().find(|(target,cell)|
+                cell.enabled && target.row==current.row && target.item.is_none() && target.field==field){
+                return Some(target.clone());
             }
-            let fields=&["product","quantity","unitPrice"];
-            let index=fields.iter().position(|field|*field==current.field)?;
-            let adjacent=if key==CellNavigationKey::Left{
-                index.checked_sub(1)?
-            }else{index+1};
-            ManualCellTarget{
-                row:current.row,item:current.item.clone(),
-                field:fields.get(adjacent)?.to_string()
-            }
-        }
-        CellNavigationKey::Up|CellNavigationKey::Down=>{
-            if let Some(item_id)=current.item.as_deref(){
-                let items=list(row,"items");
-                let index=items.iter().position(|item|text(item,"id")==item_id)?;
-                let adjacent=if key==CellNavigationKey::Up{
-                    index.checked_sub(1)?
-                }else{index+1};
-                let item=items.get(adjacent)?;
-                ManualCellTarget{
-                    row:current.row,item:Some(text(item,"id").to_owned()),
-                    field:current.field.clone()
-                }
-            }else{
-                // Match the actual four Reception rows:
-                // name / address / [mobile | phone] / note.
-                let up=key==CellNavigationKey::Up;
-                let (target_row,target_field)=match (current.field.as_str(),up){
-                    ("name",true)=>(current.row.checked_sub(1)?,"note"),
-                    ("name",false)=>(current.row,"address"),
-                    ("address",true)=>(current.row,"name"),
-                    ("address",false)=>(current.row,"mobile"),
-                    ("mobile"|"phone",true)=>(current.row,"address"),
-                    ("mobile"|"phone",false)=>(current.row,"note"),
-                    ("note",true)=>(current.row,"mobile"),
-                    ("note",false)=>(current.row+1,"name"),
-                    _=>return None,
-                };
-                rows.get(target_row)?;
-                ManualCellTarget{
-                    row:target_row,item:None,field:target_field.into()
-                }
-            }
-        }
-        CellNavigationKey::Next|CellNavigationKey::Previous=>{
-            let cells=manual_cell_targets(model);
-            let index=cells.iter().position(|cell|cell==current)?;
-            let adjacent=if key==CellNavigationKey::Previous{
-                index.checked_sub(1)?
-            }else{index+1};
-            cells.get(adjacent)?.clone()
-        }
-    };
-    manual_cell_allowed(pending,&next).then_some(next)
-}
-
-/// Examine raw key events BEFORE TextEdit consumes arrow keys. Keep IME
-/// preedit state across frames, not merely the frame with the first event.
-fn manual_navigation_key_before_editor(
-    events:&[egui::Event],ime_active:&mut bool
-)->Option<(egui::Key,egui::Modifiers,CellNavigationKey)>{
-    let mut ime_event=false;
-    for event in events{
-        match event{
-            egui::Event::Ime(egui::ImeEvent::Preedit(value))=>{
-                *ime_active=!value.is_empty();
-                ime_event=true;
-            }
-            egui::Event::Ime(egui::ImeEvent::Commit(_))
-            |egui::Event::Ime(egui::ImeEvent::Disabled)=>{
-                *ime_active=false;
-                ime_event=true;
-            }
-            egui::Event::Ime(_)=>{ime_event=true;}
-            _=>{}
         }
     }
-    if *ime_active || ime_event {return None;}
-    events.iter().find_map(|event|{
-        let egui::Event::Key{key,pressed:true,modifiers,..}=event else{
-            return None;
-        };
-        // Modified arrow shortcuts (e.g. Ctrl+Left) are not worksheet
-        // movement; IME and application shortcuts retain ownership.
-        if modifiers.command || modifiers.ctrl || modifiers.alt{
-            return None;
-        }
-        let navigation=match key{
-            egui::Key::ArrowUp=>CellNavigationKey::Up,
-            egui::Key::ArrowDown=>CellNavigationKey::Down,
-            egui::Key::ArrowLeft=>CellNavigationKey::Left,
-            egui::Key::ArrowRight=>CellNavigationKey::Right,
-            egui::Key::Enter=>CellNavigationKey::Next,
-            egui::Key::Tab=>{
-                if modifiers.shift{
-                    CellNavigationKey::Previous
-                }else{CellNavigationKey::Next}
-            }
-            _=>return None,
-        };
-        Some((*key,*modifiers,navigation))
-    })
+    if let Some(id)=cell_navigation::resolve_cell_navigation_target(&cells,&active.id,key){
+        return entries.iter().find(|(_,cell)|cell.id==id).map(|(target,_)|target.clone());
+    }
+    // Cross card edges only vertically, with freight as the final cell.
+    let local=||entries.iter().filter(|(target,cell)|
+        cell.enabled && target.row==current.row);
+    let next=match key{
+        CellNavigationKey::Down if recipient=>
+            local().find(|(target,_)|!manual_recipient_section(target)),
+        CellNavigationKey::Up if !recipient=>
+            local().filter(|(target,_)|manual_recipient_section(target)).last(),
+        CellNavigationKey::Down if !recipient && current.field!="shippingCharge"=>
+            local().find(|(target,_)|target.field=="shippingCharge"),
+        _=>None
+    };
+    if let Some((target,_))=next{return Some(target.clone());}
+    match key{
+        CellNavigationKey::Down if !recipient || current.field=="note"=>
+            entries.iter().find(|(target,cell)|cell.enabled && target.row==current.row+1),
+        CellNavigationKey::Up if recipient && current.field=="name"=>
+            entries.iter().rev().find(|(target,cell)|
+                cell.enabled && current.row.checked_sub(1)==Some(target.row)),
+        _=>None
+    }.map(|(target,_)|target.clone())
 }
 
 fn manual_row_has_data(row:&Value,assignments:&Value)->bool{
@@ -1076,7 +1024,6 @@ pub struct ManualWorkspace {
     edit_text:String,
     focus_editor:bool,
     active_editor_id:Option<egui::Id>,
-    ime_preedit_active:bool,
     row_count_text:String,
     history:Vec<ManualHistoryFrame>,
     pending_select_after_apply:Option<ManualCellTarget>,
@@ -1236,7 +1183,7 @@ impl ManualWorkspace {
             selected_recipient:0,selected_item:None,selected_field:"name".into(),
             assignment_gesture:ManualAssignmentGesture::default(),
             edit_text:String::new(),focus_editor:false,active_editor_id:None,
-            ime_preedit_active:false,row_count_text:"1".into(),
+            row_count_text:"1".into(),
             history:Vec::new(),pending_select_after_apply:None,
             advance_after_apply:None,last_action:None,action_pending:false,
             confirm_discard:false,confirm_apply:false,
@@ -1369,7 +1316,7 @@ impl ManualWorkspace {
                 }
                 if let Some(target)=self.pending_select_after_apply.take(){
                     let valid=self.model.as_ref().is_some_and(|model|
-                        manual_cell_targets(model).contains(&target)
+                        manual_worksheet_cells(model,None).iter().any(|(cell,meta)|cell==&target && meta.enabled)
                     );
                     if valid {
                         self.select_cell(target.row,target.item,&target.field);
@@ -1570,26 +1517,14 @@ impl ManualWorkspace {
     fn selected_cell_editor_on_rect(
         &mut self,ui:&mut egui::Ui,rect:egui::Rect,linked:bool,busy:bool
     )->(egui::Response,Option<CellNavigationKey>,bool){
-        let had_focus=!self.focus_editor && self.active_editor_id.is_some_and(
-            |id|ui.ctx().memory(|memory|memory.has_focus(id))
-        );
-        let key_event=ui.input(|input|
-            manual_navigation_key_before_editor(
-                &input.events,&mut self.ime_preedit_active
-            )
-        );
-        let navigation=if had_focus && !busy &&
+        let slot=egui::Id::new(("manual-worksheet-editor",self.selected_recipient,
+            self.selected_item.as_deref(),self.selected_field.as_str()));
+        let navigation=if !self.focus_editor && self.active_editor_id.is_some() && !busy &&
             !self.confirm_apply && !self.confirm_discard &&
             !self.product_dialog_open() && self.remove_recipient_pending.is_none()
-            && !self.reset_pending {
-            key_event.and_then(|(key,modifiers,navigation)|{
-                let consumed=ui.input_mut(|input|{
-                    let mut any=false;
-                    while input.consume_key(modifiers,key){any=true;}
-                    any
-                });
-                consumed.then_some(navigation)
-            })
+            && !self.reset_pending && !crate::overlay::popup_blocks_shortcuts(ui.ctx()){
+            cell_navigation::consume_worksheet_navigation_before_editor(ui.ctx(),slot,
+                CellNavigationKey::Next,CellNavigationKey::Previous)
         }else{None};
         let focus=self.focus_editor && !busy &&
             !self.confirm_apply && !self.confirm_discard &&
@@ -1621,6 +1556,7 @@ impl ManualWorkspace {
                 ui,rect,&mut self.edit_text,focus,None,false
             )
         };
+        cell_navigation::remember_worksheet_editor(ui.ctx(),slot,response.id);
         self.active_editor_id=Some(response.id);
         if focus {
             ui.scroll_to_rect(rect,Some(egui::Align::Center));
@@ -3239,8 +3175,8 @@ mod manual_workspace_modal_routing_tests {
             {"id":"r1","items":[{"id":"i1"},{"id":"i2"}]},
             {"id":"r2","items":[{"id":"i3"}]}
         ]});
-        let cells=manual_cell_targets(&model);
-        let keys=cells.iter().map(|cell|(
+        let cells=manual_worksheet_cells(&model,None);
+        let keys=cells.iter().map(|(cell,_)|(
             cell.row,cell.item.as_deref(),cell.field.as_str()
         )).collect::<Vec<_>>();
         assert_eq!(keys[0],(0,None,"name"));
@@ -3249,7 +3185,8 @@ mod manual_workspace_modal_routing_tests {
         assert_eq!(keys[6],(0,Some("i1"),"quantity"));
         assert_eq!(keys[7],(0,Some("i1"),"unitPrice"));
         assert_eq!(keys[10],(0,Some("i2"),"unitPrice"));
-        assert_eq!(keys[11],(1,None,"name"));
+        assert_eq!(keys[11],(0,None,"shippingCharge"));
+        assert_eq!(keys[12],(1,None,"name"));
     }
 
     #[test]
@@ -3274,8 +3211,7 @@ mod manual_workspace_modal_routing_tests {
             row:0,item:None,field:"note".into()
         };
         assert_eq!(move_to(&last_recipient_field,CellNavigationKey::Down),
-            Some(ManualCellTarget{row:1,field:"name".into(),
-                ..last_recipient_field.clone()}));
+            Some(ManualCellTarget{row:0,item:Some("i1".into()),field:"product".into()}));
         assert_eq!(move_to(&product,CellNavigationKey::Up),
             Some(ManualCellTarget{item:Some("i1".into()),..product.clone()}));
         assert_eq!(move_to(&product,CellNavigationKey::Down),
@@ -3305,7 +3241,17 @@ mod manual_workspace_modal_routing_tests {
         let first=ManualCellTarget{
             row:0,item:Some("i1".into()),field:"quantity".into()
         };
-        assert_eq!(move_to(&first,CellNavigationKey::Up),None);
+        assert_eq!(move_to(&first,CellNavigationKey::Up),Some(last_recipient_field.clone()));
+        let last_price=ManualCellTarget{row:0,item:Some("i3".into()),field:"unitPrice".into()};
+        let freight=ManualCellTarget{row:0,item:None,field:"shippingCharge".into()};
+        let next_name=ManualCellTarget{row:1,item:None,field:"name".into()};
+        assert_eq!(move_to(&last_price,CellNavigationKey::Down),Some(freight.clone()));
+        assert_eq!(move_to(&last_price,CellNavigationKey::Next),Some(freight.clone()));
+        assert_eq!(move_to(&freight,CellNavigationKey::Up),Some(last_price));
+        assert_eq!(move_to(&freight,CellNavigationKey::Down),Some(next_name.clone()));
+        assert_eq!(move_to(&next_name,CellNavigationKey::Up),Some(freight));
+        let collect=json!({"rows":[{"id":"r1","items":[],"freightCode":"020"}]});
+        assert_eq!(manual_navigation_target(&collect,&last_recipient_field,CellNavigationKey::Down,None),None);
         let pending=Some(&product);
         assert_eq!(manual_navigation_target(
             &model,&product,CellNavigationKey::Down,pending
@@ -3318,10 +3264,12 @@ mod manual_workspace_modal_routing_tests {
             key,physical_key:None,pressed:true,repeat:false,
             modifiers:egui::Modifiers::NONE
         };
+        let read=|events:&[egui::Event],ime:&mut bool|
+            cell_navigation::worksheet_key_from_events(events,ime,CellNavigationKey::Next,CellNavigationKey::Previous);
         let mut ime_active=false;
         let event=key_event(egui::Key::ArrowDown);
         assert_eq!(
-            manual_navigation_key_before_editor(&[event.clone()],&mut ime_active)
+            read(&[event.clone()],&mut ime_active)
                 .map(|(_,_,navigation)|navigation),
             Some(CellNavigationKey::Down)
         );
@@ -3331,7 +3279,7 @@ mod manual_workspace_modal_routing_tests {
             events:vec![event],..Default::default()
         },|ctx|{
             let key=ctx.input(|input|
-                manual_navigation_key_before_editor(
+                read(
                     &input.events,&mut ime_active
                 )
             );
@@ -3344,22 +3292,22 @@ mod manual_workspace_modal_routing_tests {
                 "TextEdit must not receive the consumed arrow event");
         });
         assert!(consumed);
-        assert_eq!(manual_navigation_key_before_editor(
+        assert_eq!(read(
             &[egui::Event::Ime(egui::ImeEvent::Preedit("한".into()))],
             &mut ime_active
         ),None);
         assert!(ime_active);
         assert_eq!(
-            manual_navigation_key_before_editor(
+            read(
                 &[key_event(egui::Key::ArrowUp)],&mut ime_active
             ),None,"IME composition spans multiple frames"
         );
-        assert_eq!(manual_navigation_key_before_editor(
+        assert_eq!(read(
             &[egui::Event::Ime(egui::ImeEvent::Commit("한".into()))],
             &mut ime_active
         ),None);
         assert!(!ime_active);
-        assert!(manual_navigation_key_before_editor(
+        assert!(read(
             &[key_event(egui::Key::ArrowUp)],&mut ime_active
         ).is_some());
     }
@@ -3652,7 +3600,7 @@ mod manual_workspace_modal_routing_tests {
             selected_recipient:0,selected_item:None,selected_field:"name".into(),
             assignment_gesture:ManualAssignmentGesture::default(),
             edit_text:String::new(),focus_editor:false,active_editor_id:None,
-            ime_preedit_active:false,row_count_text:"1".into(),
+            row_count_text:"1".into(),
             history:Vec::new(),pending_select_after_apply:None,
             advance_after_apply:None,last_action:None,action_pending:false,
             confirm_discard:false,confirm_apply:false,
