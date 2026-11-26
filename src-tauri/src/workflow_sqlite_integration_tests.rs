@@ -1205,7 +1205,14 @@ fn native_confirmed_dealer_and_vat_edits_keep_first_receipt_and_validate_billing
     let state=&dealer_edit["state"];
     assert_eq!(state["orders"][0]["clientId"],"confirmed-edit-new-client");
     assert_eq!(state["orders"][0]["recipients"][0]["items"][0]["unitPrice"],40000);
-    assert_eq!(state["workflow"]["shipments"][0]["charges"]["FACTORY"],Value::Null);
+    // The stage-three fixture carries a MANUAL 3,000 won charge.
+    // A dealer change refreshes catalog prices, not manually set freight.
+    assert_eq!(state["workflow"]["shipments"][0]["charges"]["FACTORY"],3000);
+    let edited_preview=rust("preview_workflow",json!({"state":state})).unwrap();
+    let edited_group=edited_preview["groups"].as_array().unwrap().iter()
+        .find(|g|g["groupId"]=="group:synthetic").unwrap();
+    assert_eq!(edited_group["totals"]["vat"],3225);
+    assert_eq!(edited_group["totals"]["total"],46225);
     for key in ["id","raw","confirmedAt","confirmationSnapshot","receipt","senderSnapshot"]{
         assert_eq!(state["orders"][0][key],saved["orders"][0][key],"immutable {key}");
     }

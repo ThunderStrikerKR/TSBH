@@ -92,7 +92,7 @@ mod regression {
         assert!(run("resolve_unit_price",json!({"product":p,"variantId":"v1","client":c}))["unitPrice"].is_null());
     }
     #[test]
-    fn tax_and_prepaid_collect_and_waiver_match_ts_totals() {
+    fn tax_and_prepaid_collect_and_waiver_follow_recipient_vat_policy() {
         let mut o=order(2,json!(30000));
         assert_eq!(run("calculate_price",json!({"order":o,"client":client("wholesale")})),
             json!({"subtotal":60000,"shipping":3000,"vat":6300,"total":69300}));
@@ -101,6 +101,11 @@ mod regression {
             json!({"subtotal":60000,"shipping":0,"vat":6000,"total":66000}));
         o["freightCode"]=json!("010");
         o["applyVat"]=json!(false);
+        // The recipient's explicit default takes precedence over the legacy
+        // order fallback. Exempt this recipient using the actual override.
+        assert_eq!(run("calculate_price",json!({"order":o,"client":client("wholesale")})),
+            json!({"subtotal":60000,"shipping":3000,"vat":6300,"total":69300}));
+        o["recipients"][0]["vatOverride"]=json!(false);
         assert_eq!(run("calculate_price",json!({"order":o,"client":client("wholesale")})),
             json!({"subtotal":60000,"shipping":3000,"vat":0,"total":63000}));
         let mut waived=client("wholesale");
@@ -350,7 +355,14 @@ mod regression {
             "state":advanced["state"],"groupId":"group:o1","action":"undo_group",
             "eventId":"event-2","now":"2026-11-13T11:00:00+09:00"}));
         assert_eq!(undone["step"],3);
-        assert_eq!(undone["state"]["workflow"]["events"].as_array().unwrap().len(),1);
+        let events=undone["state"]["workflow"]["events"].as_array().unwrap();
+        assert_eq!(events.len(),2);
+        assert_eq!(events[0],advanced["state"]["workflow"]["events"][0],
+            "the original approval event is immutable");
+        assert_eq!(events[1]["action"],"이전 단계 취소");
+        assert_eq!(events[1]["before"],4);
+        assert_eq!(events[1]["after"],3);
+        assert_eq!(undone["state"]["orders"][0],advanced["state"]["orders"][0]);
     }
     #[test]
     fn freight_edit_downgrades_approval_and_requires_new_notice() {
