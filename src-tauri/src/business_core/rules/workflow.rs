@@ -114,6 +114,10 @@ pub(super) fn fee_total(ship: &Value, row: &Value, order: &Value) -> Option<i64>
         .collect::<Option<Vec<_>>>().and_then(checked_sum);
     super::remote_delivery::multiply_shipment(base,row,ship,order)
 }
+pub(super) fn billable_fee_total(ship:&Value,row:&Value,order:&Value,client:&Value)->Option<i64>{
+    super::shipping::billing_charge(fee_total(ship,row,order),
+        flag(client,"shippingFeeExcluded"),shipment_freight_code(order,row)).0
+}
 fn frozen_snapshot<'a>(state: &'a Value, ship: &Value) -> Option<&'a Value> {
     if !flag(ship,"transferred") || has_value(field(ship,"latestRecipient")) {return None;}
     rows(field(field(state,"workflow"),"queue")).iter()
@@ -139,7 +143,7 @@ pub(super) fn shipment_totals(state: &Value, shipment_id: &str) -> Result<Value,
     set(&mut view,"recipients",json!([row]))?;
     set(&mut view,"freightCode",json!(shipment_freight_code(order,row)))?;
     set(&mut view,"applyVat",json!(shipment_vat(order,row)))?;
-    set(&mut view,"shippingFee",json!(fee_total(ship,row,order)))?;
+    set(&mut view,"shippingFee",json!(billable_fee_total(ship,row,order,client)))?;
     set(&mut view,"pricesLocked",json!(false))?;
     set(&mut view,"vatAmount",Value::Null)?;
     let mut totals=pricing::totals(&view,client)?;
@@ -1351,13 +1355,12 @@ pub(super) fn apply(payload:&Value)->Result<Value,String> {
                 let origin=str_field(bundle,"origin");
                 let amount=safe(field(actual,origin))
                     .ok_or("출고지별 실제 택배 운임을 확인하세요.")?;
-                let charged=if shipment_freight_code(&order,&order_single["recipients"][0])=="020" {
-                    0
-                } else {
-                    super::remote_delivery::multiply_shipment(
-                        safe(field(field(&ship,"charges"),origin)),&recipient,&ship,&order)
-                        .ok_or("청구 운임 확인 필요")?
-                };
+                let exempt=party(&state,&order).is_some_and(|client|flag(client,"shippingFeeExcluded"));
+                let applied=super::remote_delivery::multiply_shipment(
+                    safe(field(field(&ship,"charges"),origin)),&recipient,&ship,&order);
+                let (charged,_)=super::shipping::billing_charge(applied,exempt,
+                    shipment_freight_code(&order,&recipient));
+                let charged=charged.ok_or("청구 운임 확인 필요")?;
                 let applied=if has_value(field(&ship,"latestRecipient")) {None}
                     else {rows(field(&ship,"appliedBundles")).iter()
                         .find(|b|str_field(b,"origin")==origin)};
