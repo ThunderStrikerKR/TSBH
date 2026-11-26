@@ -81,58 +81,65 @@ pub(super) fn resolve_unit_price(
     Ok(if price.as_i64() == Some(0) { Value::Null } else { price })
 }
 
-pub(super) fn totals(order: &Value, client: &Value) -> Result<Value, String> {
-    let effective_client = if flag(order, "pricesLocked") && has_value(field(order, "clientSnapshot")) {
-        field(order, "clientSnapshot")
-    } else {
-        client
-    };
-    let items: Vec<&Value> = rows(field(order, "recipients")).iter()
-        .flat_map(|r| rows(field(r, "items")).iter())
-        .collect();
-    let valid = !items.is_empty() && items.iter().all(|item| {
-        !str_field(item, "productId").is_empty()
-            && !str_field(item, "variantId").is_empty()
-            && safe(field(item, "unitPrice")).is_some()
-            && field(item, "quantity").as_i64().is_some_and(|q| q > 0 && q <= MAX_SAFE)
-    });
-    let subtotal = if valid {
-        items.iter()
-            .map(|item| {
-                safe(field(item, "unitPrice"))?.checked_mul(field(item, "quantity").as_i64()?)
-                    .filter(|n| (0..=MAX_SAFE).contains(n))
-            })
-            .collect::<Option<Vec<_>>>()
-            .and_then(checked_sum)
-    } else {
-        None
-    };
-    let shipping = if flag(effective_client, "shippingFeeExcluded") ||
-        str_field(order, "freightCode") == "020" {
+/// All registered and manually entered unit prices exclude VAT.
+pub(crate) fn vat_applies(order:&Value,recipient:&Value)->bool{
+    field(recipient,"vatOverride").as_bool()
+        .or_else(||field(recipient,"vatDefault").as_bool())
+        .unwrap_or_else(||flag(order,"applyVat"))
+}
+pub(super) fn vat_rate(recipient:&Value)->Result<i64,String>{
+    let rate=field(recipient,"vatRateBps").as_i64().unwrap_or(1000);
+    if !(0..=10_000).contains(&rate){
+        return Err("부가세율이 허용 범위를 벗어났습니다.".into());
+    }
+    Ok(rate)
+}
+fn item_subtotal<'a>(items:impl IntoIterator<Item=&'a Value>)->Option<i64>{
+    let amounts=items.into_iter().map(|item|{
+        if str_field(item,"productId").is_empty() || str_field(item,"variantId").is_empty(){
+            return None;
+        }
+        let unit=safe(field(item,"unitPrice"))?;
+        let quantity=field(item,"quantity").as_i64().filter(|n|*n>0 && *n<=MAX_SAFE)?;
+        unit.checked_mul(quantity).filter(|n|*n<=MAX_SAFE)
+    }).collect::<Option<Vec<_>>>()?;
+    if amounts.is_empty(){None}else{checked_sum(amounts)}
+}
+fn calculate_vat(subtotal:Option<i64>,shipping:Option<i64>,enabled:bool,rate:i64)->Option<i64>{
+    if !enabled{return Some(0);}
+    let base=checked_sum([subtotal?,shipping?])?;
+    i64::try_from((i128::from(base)*i128::from(rate)+5000)/10000)
+        .ok().filter(|n|*n<=MAX_SAFE)
+}
+fn payable(subtotal:Option<i64>,shipping:Option<i64>,vat:Option<i64>)->Option<i64>{
+    checked_sum([subtotal?,shipping?,vat?])
+}
+pub(super) fn shipment_amounts(order:&Value,row:&Value,shipping:Option<i64>)->Result<Value,String>{
+    let subtotal=item_subtotal(rows(field(row,"items")));
+    let vat=calculate_vat(subtotal,shipping,vat_applies(order,row),vat_rate(row)?);
+    Ok(json!({"subtotal":subtotal,"shipping":shipping,"vat":vat,
+        "total":payable(subtotal,shipping,vat)}))
+}
+
+/// Compatibility calculation for older unlinked orders with only an
+/// aggregate freight amount. Do not invent per-recipient allocations.
+pub(super) fn totals(order:&Value,client:&Value)->Result<Value,String>{
+    let effective_client=if flag(order,"pricesLocked") && has_value(field(order,"clientSnapshot")){
+        field(order,"clientSnapshot")
+    }else{client};
+    let recipients=rows(field(order,"recipients"));
+    let row=if recipients.len()==1{&recipients[0]}else{&Value::Null};
+    let subtotal=item_subtotal(recipients.iter().flat_map(|r|rows(field(r,"items")).iter()));
+    let shipping=if flag(effective_client,"shippingFeeExcluded") ||
+        super::workflow::shipment_freight_code(order,row)=="020"{
         json!(0)
-    } else {
-        field(order, "shippingFee").clone()
-    };
-    let complete = subtotal.is_some() && safe(&shipping).is_some();
-    let vat = if flag(order, "pricesLocked") && has_value(field(order, "vatAmount")) {
-        field(order, "vatAmount").clone()
-    } else if !flag(order, "applyVat") {
-        json!(0)
-    } else if complete {
-        let base = subtotal.unwrap() + safe(&shipping).unwrap();
-        // JS Math.round((subtotal + shipping) * 0.1) uses binary64.
-        let value = ((base as f64) * 0.1).round() as i64;
-        json!(value)
-    } else {
-        Value::Null
-    };
-    let total = if complete {
-        safe(&vat).and_then(|v| checked_sum([subtotal.unwrap(), safe(&shipping).unwrap(), v]))
-    } else {
-        None
-    };
-    // TS totals() clears an unsafe total together with the subtotal and VAT.
-    if complete && total.is_none() {
+    }else{field(order,"shippingFee").clone()};
+    let charge=safe(&shipping);
+    let vat=if flag(order,"pricesLocked") && has_value(field(order,"vatAmount")){
+        field(order,"vatAmount").clone()
+    }else{json!(calculate_vat(subtotal,charge,vat_applies(order,row),vat_rate(row)?))};
+    let total=payable(subtotal,charge,safe(&vat));
+    if subtotal.is_some() && charge.is_some() && total.is_none(){
         return Ok(json!({"subtotal":null,"shipping":shipping,"vat":null,"total":null}));
     }
     Ok(json!({"subtotal":subtotal,"shipping":shipping,"vat":vat,"total":total}))
@@ -217,17 +224,6 @@ fn reception_totals(order:&Value,client:&Value,freight:&Value)->Result<Value,Str
     let mut vats=Vec::with_capacity(recipients.len());
     let mut pending_recipients=Vec::new();
     for recipient in recipients{
-        let items=rows(field(recipient,"items"));
-        let subtotal=if items.is_empty(){None}else{
-            items.iter().map(|item|{
-                if str_field(item,"productId").is_empty()
-                    ||str_field(item,"variantId").is_empty(){return None;}
-                let unit=safe(field(item,"unitPrice"))?;
-                let quantity=field(item,"quantity").as_i64()
-                    .filter(|n|*n>0 && *n<=MAX_SAFE)?;
-                unit.checked_mul(quantity).filter(|n|*n<=MAX_SAFE)
-            }).collect::<Option<Vec<i64>>>().and_then(checked_sum)
-        };
         let bundles=rows(field(freight,"bundles")).iter()
             .filter(|bundle|field(bundle,"recipientId")==field(recipient,"id"))
             .collect::<Vec<_>>();
@@ -238,25 +234,9 @@ fn reception_totals(order:&Value,client:&Value,freight:&Value)->Result<Value,Str
                     .map(|bundle|safe(field(bundle,"billableCharge")))
                     .collect::<Option<Vec<i64>>>().and_then(checked_sum)
             };
-        let vat_enabled=field(recipient,"vatOverride").as_bool()
-            .unwrap_or_else(||flag(order,"applyVat"));
-        let rate=field(recipient,"vatRateBps").as_i64()
-            .unwrap_or(1000);
-        if !(0..=10_000).contains(&rate){
-            return Err("부가세율이 허용 범위를 벗어났습니다.".into());
-        }
-        let vat=if !vat_enabled{Some(0)}
-            else{
-                subtotal.zip(shipping)
-                    .and_then(|(items,shipping)|items.checked_add(shipping))
-                    .filter(|n|*n<=MAX_SAFE)
-                    // Exact integer rounding to won for arbitrary tax rates.
-                    .and_then(|base|{
-                        let rounded=((base as i128)*i128::from(rate)+5_000)/10_000;
-                        i64::try_from(rounded).ok()
-                    })
-                    .filter(|n|*n<=MAX_SAFE)
-            };
+        let amounts=shipment_amounts(order,recipient,shipping)?;
+        let subtotal=safe(field(&amounts,"subtotal"));
+        let vat=safe(field(&amounts,"vat"));
         if subtotal.is_none() || shipping.is_none() || vat.is_none(){
             pending_recipients.push(json!({
                 "recipientId":field(recipient,"id"),
@@ -275,8 +255,7 @@ fn reception_totals(order:&Value,client:&Value,freight:&Value)->Result<Value,Str
         .and_then(checked_sum);
     let vat=vats.into_iter().collect::<Option<Vec<_>>>()
         .and_then(checked_sum);
-    let total=subtotal.zip(shipping).zip(vat)
-        .and_then(|((items,shipping),vat)|checked_sum([items,shipping,vat]));
+    let total=payable(subtotal,shipping,vat);
     Ok(json!({
         "subtotal":subtotal,"shipping":shipping,"vat":vat,"total":total,
         "pendingRecipients":pending_recipients
@@ -451,8 +430,7 @@ impl ReceptionEditQuoteCache{
         let subtotal=sum("subtotal");
         let shipping=sum("shipping");
         let vat=sum("vat");
-        let total=subtotal.zip(shipping).zip(vat)
-            .and_then(|((items,shipping),vat)|checked_sum([items,shipping,vat]));
+        let total=payable(subtotal,shipping,vat);
         // shippingFee on the order is the aggregate bundle quote, not the
         // per-recipient total (a recipient with no bundles remains pending).
         let shipping_fee=if flag(client,"shippingFeeExcluded"){Some(0)}
