@@ -77,12 +77,29 @@ pub fn update_v2_entity_if_changed<F>(
     conn:&mut Connection,validate_orders:bool,mutate:F
 )->Result<Value,String>
 where F:FnOnce(&Value)->Result<Option<Value>,String>{
+    update_v2_entity_with_color_policy(conn,validate_orders,true,mutate)
+}
+
+// A reviewed workbook already normalizes explicitly edited/new color cells.
+// Do not apply the unrelated legacy color migration during its commit.
+pub(crate) fn update_v2_reviewed_workbook<F>(conn:&mut Connection,mutate:F)
+    ->Result<Value,String>
+where F:FnOnce(&Value)->Result<Option<Value>,String>{
+    update_v2_entity_with_color_policy(conn,true,false,mutate)
+}
+fn update_v2_entity_with_color_policy<F>(
+    conn:&mut Connection,validate_orders:bool,normalize_colors:bool,mutate:F
+)->Result<Value,String>
+where F:FnOnce(&Value)->Result<Option<Value>,String>{
     let tx=conn.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate).map_err(err)?;
     let revision=crate::read_envelope(&tx)?["revision"].as_u64()
         .ok_or("운영 DB 리비전 오류")?;
     let current=read_current(&tx,revision)?;
     let verified=match mutate(&current)?{
-        Some(state)=>finish_update(&tx,current,state,revision,validate_orders)?,
+        Some(mut state)=>{
+            if normalize_colors{crate::product_colors::normalize_products(&mut state)?;}
+            finish_validated_update(&tx,current,state,revision,validate_orders,false)?
+        },
         None=>current,
     };
     tx.commit().map_err(err)?;
@@ -455,6 +472,10 @@ fn finish_update(tx:&Transaction<'_>,current:Value,state:Value,
 fn finish_update_with_patch(tx:&Transaction<'_>,current:Value,mut state:Value,
     expected_revision:u64,validate_orders:bool,prefer_workflow_patch:bool)->Result<Value,String>{
     crate::product_colors::normalize_products(&mut state)?;
+    finish_validated_update(tx,current,state,expected_revision,validate_orders,prefer_workflow_patch)
+}
+fn finish_validated_update(tx:&Transaction<'_>,current:Value,state:Value,
+    expected_revision:u64,validate_orders:bool,prefer_workflow_patch:bool)->Result<Value,String>{
     crate::valid_state(&state)?;
     let changes_before=total_changes(tx)?;
     let (written,scope)=write_validated(tx,&current,state,expected_revision,validate_orders,prefer_workflow_patch)?;
