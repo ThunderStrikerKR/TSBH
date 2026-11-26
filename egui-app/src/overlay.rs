@@ -102,6 +102,23 @@ pub fn show_menu<R>(owner:&Response,align:Option<egui::RectAlign>,
     let popup=if let Some(align)=align{popup.align(align)}else{popup};
     popup.show(|ui|{record_popup(owner,ui);content(ui)})
 }
+/// Semantic management menu variants share the native overlay lifetime.
+#[derive(Clone,Copy)]
+pub(crate) enum ManagementMenuRole{Actions,Details}
+pub(crate) fn show_management_menu<R>(
+    owner:&Response,align:Option<egui::RectAlign>,role:ManagementMenuRole,
+    content:impl FnOnce(&mut Ui)->R
+)->Option<egui::InnerResponse<R>>{
+    show_menu(owner,align,|menu|{
+        let (width,gap)=match role{
+            ManagementMenuRole::Actions=>(148.0,crate::theme::SPACE_4),
+            ManagementMenuRole::Details=>(280.0,crate::theme::SPACING),
+        };
+        menu.set_min_width(width);
+        menu.spacing_mut().item_spacing.y=gap;
+        content(menu)
+    })
+}
 pub fn show_context_menu(owner:&Response,content:impl FnOnce(&mut Ui)){
     if !owner.enabled(){
         egui::Popup::close_id(&owner.ctx,egui::Popup::default_response_id(owner));

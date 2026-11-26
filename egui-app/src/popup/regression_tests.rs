@@ -1201,3 +1201,23 @@ mod round87_phase5_modal_contract_tests {
         assert_eq!(theme::MODAL_FOOTER_HEIGHT,58.0);
     }
 }
+
+#[cfg(test)]
+#[test]
+fn freight_modal_content_uses_shared_layout_and_controls(){
+    let source=include_str!("../freight_manager.rs");
+    let rate=source.split("    fn rate_dialog(").nth(1).unwrap()
+        .split("    /// Global rate-basis changes").next().unwrap();
+    assert!(rate.contains("crate::popup::modal_form_stack("));
+    assert!(rate.contains("crate::popup::modal_master_body_section("));
+    assert!(rate.contains("crate::table::registry_table("));
+    assert!(!rate.contains("ui.add_space("));
+    assert_eq!(source.matches("crate::popup::modal_named_text_field(").count(),3);
+    assert!(source.contains("crate::popup::modal_compact_table_height("));
+    assert!(source.contains("그룹을 삭제하면 연결된 상품의 배송 그룹이 미지정으로 변경됩니다."));
+    assert!(!source.contains("area.height()-310.0"));
+    assert!(!source.contains("truncated_label(typography::body(warning))"));
+    assert!(source.contains("ManagementMenuRole::Actions"));
+    assert!(source.contains("ManagementMenuRole::Details"));
+    assert!(!source.contains("menu.set_min_width("));
+}

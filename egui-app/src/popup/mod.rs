@@ -799,6 +799,42 @@ fn modal_action_row_split_measured(
     }).1
 }
 
+/// Row viewport for a compact modal table, after accounting for the
+/// actual content already placed above it, shared table header and bottom inset.
+pub(crate) fn modal_compact_table_height(
+    body:&Ui,work_area_height:f32,body_top:f32,count:usize,preferred_rows:usize
+)->f32{
+    let consumed=(body.cursor().top()-body_top).max(0.0);
+    let reserved=consumed+theme::MANAGEMENT_TABLE_HEADER_HEIGHT
+        +2.0*theme::MODAL_SECTION_PADDING+theme::SPACING;
+    let preferred=count.min(preferred_rows).max(1) as f32*theme::MANAGEMENT_COMPACT_ROW_HEIGHT;
+    preferred.min((modal_body_height_budget(work_area_height,true)-reserved).max(1.0))
+}
+
+/// Standard vertical form groups: the caller supplies content, never
+/// additional inter-section spacing. Each group occupies a single child scope.
+pub(crate) fn modal_form_stack<R>(ui:&mut Ui,contents:impl FnOnce(&mut Ui)->R)->R{
+    ui.scope(|form|{
+        form.spacing_mut().item_spacing.y=theme::MODAL_MASTER_WORKSPACE_GAP;
+        contents(form)
+    }).inner
+}
+
+/// Identical label, spacing and input sizing for create/rename/memo forms.
+pub(crate) fn modal_named_text_field(
+    ui:&mut Ui,label:&str,value:&mut String,hint:&str,enabled:bool
+)->Response{
+    ui.scope(|field|{
+        field.spacing_mut().item_spacing.y=theme::SPACING;
+        field.label(typography::field_label(label));
+        field.add_enabled_ui(enabled,|input|{
+            crate::input::flexible_text_field(
+                input,value,theme::MANAGEMENT_SEARCH_MIN_WIDTH,hint
+            )
+        }).inner
+    }).inner
+}
+
 /// Single plain-body inset for both decision and editor workspaces.
 /// Keep the actual content edges equal to the title/footer content grid.
 fn modal_plain_body_region<R>(

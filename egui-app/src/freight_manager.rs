@@ -983,13 +983,9 @@ impl FreightManager {
                         if decision.header("배송 그룹 추가","취소",enabled
                         ){close_create=true;}
                         decision.body(|modal|{
-                            modal.label(typography::field_label("배송 그룹명"));
-                            modal.add_enabled_ui(enabled,|field|{
-                                crate::input::flexible_text_field(
-                                    field,&mut self.new_name,
-                                    theme::MANAGEMENT_SEARCH_MIN_WIDTH,"그룹 이름 입력"
-                                );
-                            });
+                            crate::popup::modal_named_text_field(
+                                modal,"배송 그룹명",&mut self.new_name,"그룹 이름 입력",enabled
+                            );
                         });
                         decision.actions(|controls|{
                                 if crate::button::action(
@@ -1012,7 +1008,9 @@ impl FreightManager {
                                 close_rename=true;
                             }
                             decision.body(|modal|{
-                                crate::input::field(modal,name,crate::input::FieldKind::Text,enabled);
+                                crate::popup::modal_named_text_field(
+                                    modal,"배송 그룹명",name,"그룹 이름 입력",enabled
+                                );
                             });
                             decision.actions(|controls|{
                                 if crate::button::action(controls,"이름 수정",theme::ButtonRole::Primary,
@@ -1034,31 +1032,38 @@ impl FreightManager {
                             if decision.header("배송 그룹 삭제","취소",enabled
                             ){close_delete=true;}
                             decision.framed_body(|workspace|{
+                                let body_top=workspace.min_rect().top();
                                 crate::popup::modal_master_body_section(
                                     workspace,"삭제 대상",|details|{
                                     details.label(typography::section_heading(name));
                                     if !affected.is_empty(){
-                                        details.label(typography::status(
-                                            "사용 중인 상품이 있습니다. 상품을 다른 그룹으로 옮기거나 미지정으로 변경한 후 삭제해야 합니다.",
+                                        details.add(egui::Label::new(typography::status(
+                                            "그룹을 삭제하면 연결된 상품의 배송 그룹이 미지정으로 변경됩니다.",
                                             theme::SELECTED_ORDER
-                                        ));
-                                        crate::scrollbar::scroll_area(crate::scrollbar::ScrollAxes::Vertical)
-                                            .id_salt("freight-delete-affected-products")
-                                            .max_height((area.height()-310.0).max(70.0)
-                                                .min(theme::MANAGEMENT_MODAL_BODY_MAX_HEIGHT))
-                                            .show(details,|list|{
-                                                for product in &affected {
-                                                    let first=rows(&product["variants"]).first();
-                                                    let color=first.map(|v|variant_label(product,v))
-                                                        .unwrap_or_default();
-                                                    let label=if color.is_empty(){
-                                                        model_label(text(product,"name")).to_owned()
-                                                    }else{
-                                                        format!("{} / {}",model_label(text(product,"name")),color)
-                                                    };
-                                                    list.label(typography::table_cell(&label));
-                                                }
-                                            });
+                                        )).wrap());
+                                        let height=crate::popup::modal_compact_table_height(
+                                            details,area.height(),body_top,affected.len(),10
+                                        );
+                                        crate::table::registry_table(
+                                            details,"freight-delete-affected-products",
+                                            ["연결 상품"],[240.0],height,affected.len(),|_|false,
+                                            |row,cells,index,_|{
+                                                let product=affected[index];
+                                                let first=rows(&product["variants"]).first();
+                                                let color=first.map(|v|variant_label(product,v))
+                                                    .unwrap_or_default();
+                                                let label=if color.is_empty(){
+                                                    model_label(text(product,"name")).to_owned()
+                                                }else{
+                                                    format!("{} / {}",model_label(text(product,"name")),color)
+                                                };
+                                                crate::table::registry_cell(
+                                                    row,cells[0],&label,
+                                                    typography::ManagementTableCellRole::ProductName,false,
+                                                    ("freight-delete-product",text(product,"id"))
+                                                );
+                                            }
+                                        );
                                     }else{
                                         details.label(typography::body(
                                             "연결된 현재 상품이 없습니다. 과거 운임과 주문 기록은 보존합니다."
@@ -1190,17 +1195,7 @@ impl FreightManager {
                                 None=>"전체 운임 기준을 변경하면 이전 운임의 자동 추천을 중단합니다. 새 운임을 다시 확인해 등록해야 합니다.",
                                 Some(_)=>"선택한 그룹의 이전 운임 추천을 중단하고 새 운임 기준으로 변경합니다."
                             };
-                            let warning_width=dialog.available_width();
-                            let _=crate::ui_layout::fixed_row(
-                                dialog,egui::Vec2::new(
-                                    warning_width,typography::METADATA_LINE_HEIGHT
-                                ),egui::Layout::left_to_right(egui::Align::Center),|row|{
-                                    let response=row.add(
-                                        crate::ui_primitives::truncated_label(typography::body(warning))
-                                    );
-                                    let _=response;
-                                }
-                            );
+                            dialog.add(egui::Label::new(typography::body(warning)).wrap());
                         });
                         decision.actions(|bar|{
                             if crate::button::action(bar,"기준 변경",
@@ -2059,10 +2054,8 @@ impl FreightManager {
                                             buttons,"관리",
                                             theme::ButtonRole::TableSecondary,enabled
                                         );
-                                        crate::overlay::show_menu(&trigger,None,|menu|{
-            menu.set_min_width(148.0);
-                                                menu.spacing_mut().item_spacing.y=
-                                                    theme::SPACE_4;
+                                        crate::overlay::show_management_menu(
+                                            &trigger,None,crate::overlay::ManagementMenuRole::Actions,|menu|{
                                                 if crate::button::action_full_width(
                                                     menu,"운임 수정",
                                                     theme::ButtonRole::TableSecondary,enabled
@@ -2185,6 +2178,9 @@ impl FreightManager {
     fn rate_dialog(
         ui:&mut Ui,editor:&mut RateEditor,enabled:bool,
     ){
+        crate::popup::modal_form_stack(ui,|ui|{
+        ui.scope(|ui|{
+        ui.spacing_mut().item_spacing.y=theme::SPACING;
         ui.horizontal(|title|{
             title.label(typography::subsection_heading(&format!("{} 운임",editor.name)));
             settings_help::icon(title,if editor.product {
@@ -2193,7 +2189,6 @@ impl FreightManager {
                 "배송 그룹 운임 수정"
             });
         });
-        ui.add_space(theme::SPACE_8);
         ui.horizontal(|line|{
             crate::ui_primitives::form_field_label(line,"최대 묶음포장 수량");
             let before=editor.max_bundle_text.clone();
@@ -2203,8 +2198,8 @@ impl FreightManager {
             );
             if editor.max_bundle_text!=before{editor.sync_max_bundle();}
         });
-        ui.add_space(theme::SPACE_12);
-        ui.label(typography::subsection_heading("수량별 운임"));
+        });
+        crate::popup::modal_master_body_section(ui,"수량별 운임",|ui|{
         let count=editor.visible_count();
         let fee_ids=(1..=count).map(|count|count.to_string()).collect::<Vec<_>>();
         let mut navigation=cell_navigation::WorksheetFocus::new(
@@ -2236,13 +2231,10 @@ impl FreightManager {
             );
             navigation.finish(ui.ctx());
         }
-        ui.add_space(theme::SPACE_12);
-        ui.label(typography::field_label("사용자 참고 메모"));
-        ui.add_enabled_ui(enabled,|input|{
-            crate::input::flexible_text_field(
-                input,&mut editor.notes,theme::MANAGEMENT_SEARCH_MIN_WIDTH,
-                "포장할 때 참고할 사항 (선택)"
-            );
+        });
+        crate::popup::modal_named_text_field(
+            ui,"사용자 참고 메모",&mut editor.notes,"포장할 때 참고할 사항 (선택)",enabled
+        );
         });
     }
 
@@ -2389,8 +2381,8 @@ impl FreightManager {
                             // Registration and verification are retained in
                             // the record, but are no longer table columns.
                             // Popup lives above the virtualized row layout.
-                            crate::overlay::show_menu(&trigger,None,|menu|{
-            menu.set_min_width(280.0);
+                            crate::overlay::show_management_menu(
+                                &trigger,None,crate::overlay::ManagementMenuRole::Details,|menu|{
                                     menu.label(typography::field_label("등록일"));
                                     let at=text(record,"at");
                                     menu.label(typography::body(
