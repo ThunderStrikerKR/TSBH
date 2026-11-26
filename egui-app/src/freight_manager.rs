@@ -1736,8 +1736,6 @@ impl FreightManager {
             // including the scrollbar rail. Only text/checkbox interaction
             // stays inside the column content rect, not the scrollbar.
             let (header_text_rect,_)=crate::table::header_columns(section,header_rect,header_content_rect,&header_cells,theme::FREIGHT_ASSIGNMENT_COL_GAP,|section,header_text_rect|{
-            let header_text_center_y=header_text_rect.center().y;
-            let header_painter=section.painter().with_clip_rect(header_rect);
             for (i,title) in titles.iter().enumerate(){
                 if !title.is_empty(){
                     let region=header_cells[i];
@@ -1755,51 +1753,16 @@ impl FreightManager {
                         if visible.width()>0.0 && visible.height()>0.0 {
                             let next=FreightSort::next(*sort,column);
 
-                            let response=section.interact(
-                                visible,section.make_persistent_id(("freight-sort-column",i)),
-                                egui::Sense::click()
-                            );
-                            if response.clicked(){
+                            if crate::table::sort_clicked(section,visible,("freight-sort-column",i)){
                                 *sort=next;
-                                // Header appears after virtual rows in this
-                                // layout; apply the new order next frame.
                                 section.ctx().request_repaint();
-                            }
-                            if response.hovered(){
-                                components::management_master_header_sort_hover(
-                                    section,visible
-                                );
                             }
                         }
                         (typography::management_table_header_galley(section,glyph),color)
                     });
-                    let gap=if indicator.is_some(){theme::SPACE_4}else{0.0};
-                    let arrow_width=indicator.as_ref().map_or(0.0,|(g,_)|g.size().x);
-                    let total_width=label.size().x+gap+arrow_width;
-                    // Text columns share the same 6pt leading inset as
-                    // freight_assignment_text() in each body cell. The
-                    // group selector and action columns remain centered.
-                    let left=if matches!(i,1|2|3) {
-                        region.left()+theme::MANAGEMENT_TABLE_TEXT_LEADING_INSET
-                    }else{
-                        region.center().x-total_width/2.0
-                    };
-                    let ink=header_painter.with_clip_rect(header_text_rect.intersect(region));
-                    ink.galley(
-                        egui::pos2(
-                            left,header_text_center_y-label.size().y/2.0
-                        ),
-                        label.clone(),theme::SECONDARY
-                    );
-                    if let Some((arrow,color))=indicator{
-                        ink.galley(
-                            egui::pos2(
-                                left+label.size().x+gap,
-                                header_text_center_y-arrow.size().y/2.0
-                            ),
-                            arrow,color
-                        );
-                    }
+                    let alignment=if matches!(i,1|2|3){crate::table::HeadingAlign::Left(theme::MANAGEMENT_TABLE_TEXT_LEADING_INSET)}
+                        else{crate::table::HeadingAlign::Center{min_left:None}};
+                    crate::table::heading(section,region,header_text_rect,region.intersect(header_text_rect),alignment,label,indicator);
                 }
             }
             
@@ -2089,7 +2052,6 @@ impl FreightManager {
             let header_cells=components::management_table_cells(
                 egui::pos2(left,header_rect.top()),&widths,header_rect.height(),theme::FREIGHT_ASSIGNMENT_COL_GAP);
             crate::table::header_columns(section,header_rect,rate_layout.header_content_rect,&header_cells,theme::FREIGHT_ASSIGNMENT_COL_GAP,|section,header_text_rect|{
-            let painter=section.painter().with_clip_rect(header_rect);
             for (index,title) in titles.iter().enumerate(){
                 let cell=header_cells[index];
                 let galley=typography::management_table_header_galley(section,title);
@@ -2105,42 +2067,19 @@ impl FreightManager {
                     if hit.width()>0.0 && hit.height()>0.0{
                         let next=RateSort::next(*sort,column);
 
-                        let response=section.interact(
-                            hit,section.make_persistent_id(("freight-rate-sort",index)),
-                            egui::Sense::click()
-                        );
-                        if response.clicked(){
+                        if crate::table::sort_clicked(section,hit,("freight-rate-sort",index)){
                             *sort=next;
                             section.ctx().request_repaint();
-                        }
-                        if response.hovered(){
-                            components::management_master_header_sort_hover(
-                                section,hit
-                            );
                         }
                     }
                     (typography::management_table_header_galley(section,label),color)
                 });
-                let gap=if indicator.is_some(){theme::SPACE_4}else{0.0};
-                let arrow_width=indicator.as_ref().map_or(0.0,|(g,_)|g.size().x);
-                let total=galley.size().x+gap+arrow_width;
-                let x=match index{
-                    1=>cell.right()-6.0-total,
-                    3=>cell.center().x-total/2.0,
-                    _=>cell.left()+6.0,
+                let alignment=match index{
+                    1=>crate::table::HeadingAlign::Right{inset:6.0,min_left:None},
+                    3=>crate::table::HeadingAlign::Center{min_left:None},
+                    _=>crate::table::HeadingAlign::Left(6.0),
                 };
-                let ink=painter.with_clip_rect(cell.intersect(header_text_rect));
-                ink.galley(
-                    egui::pos2(x,header_text_rect.center().y-galley.size().y/2.0),
-                    galley,theme::SECONDARY
-                );
-                if let Some((arrow,color))=indicator{
-                    ink.galley(
-                        egui::pos2(x+total-arrow.size().x,
-                            header_text_rect.center().y-arrow.size().y/2.0),
-                        arrow,color
-                    );
-                }
+                crate::table::heading(section,cell,header_text_rect,cell.intersect(header_text_rect),alignment,galley,indicator);
             }
             
             
@@ -2641,7 +2580,6 @@ fn freight_history_table<const N:usize>(
     let columns=components::management_table_cells(
         egui::pos2(left,header_rect.top()),&widths,header_rect.height(),theme::FREIGHT_ASSIGNMENT_COL_GAP);
     crate::table::header_columns(ui,header_rect,layout.header_content_rect,&columns,theme::FREIGHT_ASSIGNMENT_COL_GAP,|ui,header_text_rect|{
-    let painter=ui.painter().with_clip_rect(header_rect);
     for (index,title) in titles.iter().enumerate(){
         let cell=columns[index];
         let label=typography::management_table_header_galley(ui,title);
@@ -2663,52 +2601,21 @@ fn freight_history_table<const N:usize>(
             if hit.width()>0.0 && hit.height()>0.0{
                 let next=HistorySort::next(current,column);
 
-                let response=ui.interact(
-                    hit,ui.make_persistent_id((id,"history-sort",index)),
-                    egui::Sense::click()
-                );
-                if response.clicked(){
+                if crate::table::sort_clicked(ui,hit,(id,"history-sort",index)){
                     **slot=next;
                     ui.ctx().request_repaint();
-                }
-                if response.hovered(){
-                    components::management_master_header_sort_hover(ui,hit);
                 }
             }
             indicator=Some((
                 typography::management_table_header_galley(ui,glyph),color
             ));
         }
-        let gap=if indicator.is_some(){theme::SPACE_4}else{0.0};
-        let arrow=indicator.as_ref().map_or(0.0,|(galley,_)|galley.size().x);
-        let combined=label.size().x+gap+arrow;
-        let x=if sort.is_some(){
-            // Overview: combination / charge / actual / basis / details.
-            match index{
-                1|2=>cell.right()-6.0-combined,
-                3|4=>cell.center().x-combined/2.0,
-                _=>cell.left()+6.0,
-            }
+        let alignment=if sort.is_some(){
+            match index{1|2=>crate::table::HeadingAlign::Right{inset:6.0,min_left:None},3|4=>crate::table::HeadingAlign::Center{min_left:None},_=>crate::table::HeadingAlign::Left(6.0)}
         }else{
-            // Expanded historic group versions keep their old 6-column alignment.
-            match index{
-                2|3=>cell.right()-6.0-combined,
-                4|5=>cell.center().x-combined/2.0,
-                _=>cell.left()+6.0,
-            }
+            match index{2|3=>crate::table::HeadingAlign::Right{inset:6.0,min_left:None},4|5=>crate::table::HeadingAlign::Center{min_left:None},_=>crate::table::HeadingAlign::Left(6.0)}
         };
-        let ink=painter.with_clip_rect(cell.intersect(header_text_rect));
-        ink.galley(
-            egui::pos2(x,header_text_rect.center().y-label.size().y/2.0),
-            label,theme::SECONDARY
-        );
-        if let Some((arrow_galley,color))=indicator{
-            ink.galley(
-                egui::pos2(x+combined-arrow_galley.size().x,
-                    header_text_rect.center().y-arrow_galley.size().y/2.0),
-                arrow_galley,color
-            );
-        }
+        crate::table::heading(ui,cell,header_text_rect,cell.intersect(header_text_rect),alignment,label,indicator);
     }
     
     

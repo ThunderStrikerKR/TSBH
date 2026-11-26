@@ -203,10 +203,30 @@ pub(crate) fn fixed_rows<R>(
     crate::components::virtual_fixed_rows(scroll,ui,viewport.width,row_height,count,draw)
 }
 pub(crate) fn variable_rows<R>(
-    ui:&mut Ui,viewport:Viewport,id:impl std::hash::Hash,
-    draw:impl FnOnce(&mut Ui,Rect)->R,
+    ui:&mut Ui,viewport:Viewport,id:impl std::hash::Hash,rows_id:impl std::hash::Hash,
+    offsets:&[f32],draw:impl FnOnce(&mut Ui,egui::Pos2,std::ops::Range<usize>)->R,
 )->egui::containers::scroll_area::ScrollAreaOutput<R>{
-    viewport_scroll(ui,viewport,id).show_viewport(ui,draw)
+    debug_assert!(!offsets.is_empty());
+    let count=offsets.len().saturating_sub(1);
+    viewport_scroll(ui,viewport,id).show_viewport(ui,|body,visible|{
+        management_table_row_body(body,viewport.width);
+        body.set_min_height(*offsets.last().unwrap_or(&0.0));
+        let first=offsets.partition_point(|value|*value<=visible.top())
+            .saturating_sub(1).min(count);
+        let last=offsets.partition_point(|value|*value<=visible.bottom())
+            .saturating_add(1).min(count);
+        let origin=body.max_rect().min;
+        let visible_rect=Rect::from_min_size(
+            egui::pos2(origin.x,origin.y+offsets[first]),
+            Vec2::new(viewport.width,(offsets[last]-offsets[first]).max(0.0)));
+        let clip=body.clip_rect();
+        body.scope_builder(egui::UiBuilder::new().id_salt(rows_id).max_rect(visible_rect),|visible|{
+            visible.spacing_mut().item_spacing.y=0.0;
+            visible.set_clip_rect(clip);
+            visible.skip_ahead_auto_ids(first);
+            draw(visible,origin,first..last)
+        }).inner
+    })
 }
 pub(crate) fn register_rows<R>(
     ui:&mut Ui,height:f32,width:f32,id:impl std::hash::Hash,
@@ -254,4 +274,49 @@ pub(crate) fn header_columns<R>(
     management_table_column_rules(ui,text,cells,gap);
     header_finish(ui,header);
     (text,result)
+}
+
+/// Alignment policies retain each approved column's inset and narrow-width clamp.
+#[derive(Clone,Copy)]
+pub(crate) enum HeadingAlign{
+    Left(f32),
+    Right{inset:f32,min_left:Option<f32>},
+    Center{min_left:Option<f32>},
+}
+pub(crate) fn heading_alignment(align:egui::Align2,left:f32,right:f32)->HeadingAlign{
+    if align==egui::Align2::RIGHT_CENTER{HeadingAlign::Right{inset:right,min_left:None}}
+    else if align==egui::Align2::CENTER_CENTER{HeadingAlign::Center{min_left:None}}
+    else{HeadingAlign::Left(left)}
+}
+pub(crate) fn heading(
+    ui:&Ui,cell:Rect,area:Rect,clip:Rect,align:HeadingAlign,
+    label:std::sync::Arc<egui::Galley>,arrow:Option<(std::sync::Arc<egui::Galley>,Color32)>,
+){
+    let clip=clip.intersect(area).intersect(ui.clip_rect());
+    if clip.width()<=0.0||clip.height()<=0.0{return;}
+    let gap=if arrow.is_some(){theme::SPACE_4}else{0.0};
+    let total=label.size().x+gap+arrow.as_ref().map_or(0.0,|(g,_)|g.size().x);
+    let x=match align{
+        HeadingAlign::Left(inset)=>cell.left()+inset,
+        HeadingAlign::Right{inset,min_left}=>{
+            let x=cell.right()-inset-total;
+            min_left.map_or(x,|left|x.max(cell.left()+left))
+        },
+        HeadingAlign::Center{min_left}=>{
+            let x=cell.center().x-total/2.0;
+            min_left.map_or(x,|left|x.max(cell.left()+left))
+        },
+    };
+    let label_width=label.size().x;
+    let painter=ui.painter().with_clip_rect(clip);
+    painter.galley(egui::pos2(x,area.center().y-label.size().y/2.0),label,theme::SECONDARY);
+    if let Some((glyph,color))=arrow{
+        painter.galley(egui::pos2(x+label_width+gap,area.center().y-glyph.size().y/2.0),glyph,color);
+    }
+}
+pub(crate) fn sort_clicked(ui:&mut Ui,hit:Rect,id:impl std::hash::Hash)->bool{
+    if hit.width()<=0.0||hit.height()<=0.0{return false;}
+    let response=ui.interact(hit,ui.make_persistent_id(id),egui::Sense::click());
+    if response.hovered(){crate::components::management_master_header_sort_hover(ui,hit);}
+    response.clicked()
 }

@@ -1392,7 +1392,6 @@ impl OrderHistoryManager {
             for height in &line_heights{
                 offsets.push(offsets.last().copied().unwrap_or(0.0)+height);
             }
-            let total_height=*offsets.last().unwrap_or(&0.0);
             // Freight reference: header, rows and the right-hand 10pt rail
             // use one measured data width. An unconditional two-axis
             // ScrollArea exposed a bottom scrollbar even at desktop widths.
@@ -1400,26 +1399,8 @@ impl OrderHistoryManager {
             // narrower than the seven-column minimum.
             let output=crate::table::variable_rows(
                 section,crate::table::Viewport{width:table_width,height:scroll_max_height,rail:Some(scroll_track)},
-                "order-history-table-rows",|body,viewport|{
-                    components::management_table_row_body(body,table_width);
-                    body.set_min_height(total_height);
-                    let first=offsets.partition_point(|value|*value<=viewport.top())
-                        .saturating_sub(1).min(lines.len());
-                    let last=offsets.partition_point(|value|*value<=viewport.bottom())
-                        .saturating_add(1).min(lines.len());
-                    let origin=body.max_rect().min;
-                    let visible_rect=Rect::from_min_size(
-                        egui::pos2(origin.x,origin.y+offsets[first]),
-                        Vec2::new(table_width,(offsets[last]-offsets[first]).max(0.0))
-                    );
-                    let clip=body.clip_rect();
-                    body.scope_builder(UiBuilder::new()
-                        .id_salt("history-variable-rows")
-                        .max_rect(visible_rect),|visible|{
-                            visible.spacing_mut().item_spacing.y=0.0;
-                            visible.set_clip_rect(clip);
-                            visible.skip_ahead_auto_ids(first);
-                            for line_index in first..last {
+                "order-history-table-rows","history-variable-rows",&offsets,|visible,origin,range|{
+                            for line_index in range {
                                 let line=lines[line_index];
                                 let spacing=detail_spacings[line_index];
                                 let row_rect=Rect::from_min_size(
@@ -1473,7 +1454,6 @@ impl OrderHistoryManager {
                                         }
                                     });
                             }
-                        });
                 });
             if notice.is_some(){
                 let notice_rect=Rect::from_min_size(
@@ -1493,14 +1473,12 @@ impl OrderHistoryManager {
                 head_rect,left,table_width
             );
             let header_cells=components::management_table_cells(scrolled_header.min,&widths,HEADER_HEIGHT,COL_GAP);
-            let painter=section.painter().with_clip_rect(head_rect);
             crate::table::header_columns(section,head_rect,header_content_rect,&header_cells,COL_GAP,|section,header_text_rect|{
             // Header labels AND column separators must use the same
             // horizontally scrolled origin as the data rows. The viewport
             // background, bottom outline and scrollbar rail remain fixed.
             // Freight centers headings in the 34pt area above its
             // INSIDE-the-header 2pt outline, excluding the right rail.
-            let header_text_center_y=header_text_rect.center().y;
             let mut next_sort=None;
             for (index,title) in headings.iter().enumerate(){
                 let sort_col=match index{
@@ -1522,27 +1500,12 @@ impl OrderHistoryManager {
                     format!("{title} {mark}")
                 }else{(*title).into()};
                 let label=typography::management_table_header_galley(section,&heading);
-                let x=if index==4{
-                    (header_cells[index].right()-theme::SPACE_8-label.size().x)
-                        .max(header_cells[index].left()+theme::SPACE_8)
-                }else if matches!(index,3|5|6){
-                    (header_cells[index].center().x-label.size().x/2.0)
-                        .max(header_cells[index].left()+6.0)
-                }else{header_cells[index].left()+6.0};
-                painter.with_clip_rect(cell).galley(
-                    egui::pos2(x,header_text_center_y-label.size().y/2.0),
-                    label,theme::SECONDARY
-                );
+                let alignment=if index==4{crate::table::HeadingAlign::Right{inset:theme::SPACE_8,min_left:Some(theme::SPACE_8)}}
+                    else if matches!(index,3|5|6){crate::table::HeadingAlign::Center{min_left:Some(6.0)}}
+                    else{crate::table::HeadingAlign::Left(6.0)};
+                crate::table::heading(section,header_cells[index],header_text_rect,cell,alignment,label,None);
                 if let Some(column)=sort_col {
-                    let response=section.interact(cell,
-                        section.make_persistent_id(("order-history-sort",index)),
-                        Sense::click());
-                    if response.hovered(){
-                        components::management_master_header_sort_hover(
-                            section,cell
-                        );
-                    }
-                    if response.clicked(){
+                    if crate::table::sort_clicked(section,cell,("order-history-sort",index)){
                         next_sort=Some(Sort::next(self.sort,column));
                     }
                 }

@@ -360,7 +360,6 @@ fn table<const N:usize>(
     ui.spacing_mut().item_spacing.y=old_gap;
     let left=left.unwrap_or(header.left()-output.state.offset.x);
     let heads=components::management_table_cells(egui::pos2(left,header.top()),&widths,HEADER,GAP);
-    let painter=ui.painter().with_clip_rect(header);
     let (header_text_rect,_)=crate::table::header_columns(ui,header,header_content,&heads,GAP,|ui,header_text_rect|{
     let mut clicked=None;
     for (i,title) in titles.iter().enumerate(){
@@ -376,39 +375,12 @@ fn table<const N:usize>(
             };
             Some((typography::management_table_header_galley(ui,glyph),color))
         }else{None};
-        let gap=if arrow.is_some(){theme::SPACE_4}else{0.0};
-        let arrow_width=arrow.as_ref().map_or(0.0,|(g,_)|g.size().x);
-        let total_width=label.size().x+gap+arrow_width;
-        let x=if align[i]==Align2::RIGHT_CENTER{
-            h.right()-theme::SPACE_8-total_width
-        }else if align[i]==Align2::CENTER_CENTER{
-            h.center().x-total_width/2.0
-        }else{h.left()+theme::MANAGEMENT_TABLE_TEXT_LEADING_INSET};
-        let visible=h.intersect(header_text_rect);
-        if visible.width()>0.0 && visible.height()>0.0 {
-            let ink=painter.with_clip_rect(visible);
-            ink.galley(
-                egui::pos2(x,header_text_rect.center().y-label.size().y/2.0),
-                label.clone(),theme::SECONDARY
-            );
-            if let Some((glyph,color))=arrow{
-                ink.galley(
-                    egui::pos2(x+label.size().x+gap,
-                        header_text_rect.center().y-glyph.size().y/2.0),
-                    glyph,color
-                );
-            }
-        }
+        let alignment=crate::table::heading_alignment(align[i],theme::MANAGEMENT_TABLE_TEXT_LEADING_INSET,theme::SPACE_8);
+        crate::table::heading(ui,h,header_text_rect,h.intersect(header_text_rect),alignment,label,arrow);
         if sort_enabled[i]{
             let hit=h.intersect(header_text_rect);
             if hit.width()>0.0&&hit.height()>0.0{
-                let response=ui.interact(
-                    hit,ui.make_persistent_id((id,"sort",i)),Sense::click()
-                );
-                if response.hovered(){
-                    components::management_master_header_sort_hover(ui,hit);
-                }
-                if response.clicked(){
+                if crate::table::sort_clicked(ui,hit,(id,"sort",i)){
                     clicked=Some(Sort::next(*sort,i));
                 }
             }

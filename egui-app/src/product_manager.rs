@@ -1581,7 +1581,6 @@ impl ProductManager {
             // Master header owns the same 34pt text area and inset 2pt
             // bottom rule as Freight Assignment; no clipped 1pt edge stroke.
             let (_,clicked_sort)=crate::table::header_columns(panel,header_rect,layout.header_content_rect,&header_cells,theme::SPACE_8,|panel,header_text_rect|{
-            let painter=panel.painter().with_clip_rect(header_rect);
             let mut clicked_sort=None;
             for (index,title) in headings.iter().enumerate(){
                 let rect=header_cells[index].intersect(header_text_rect);
@@ -1597,38 +1596,14 @@ impl ProductManager {
                     };
                     (typography::management_table_header_galley(panel,text),color)
                 });
-                let arrow_width=arrow.as_ref().map_or(0.0,|(glyph,_)|glyph.size().x);
-                let icon_gap=if arrow.is_some(){theme::SPACE_4}else{0.0};
-                let ink_width=title_galley.size().x+icon_gap+arrow_width;
-                let x=if matches!(index,2|3|4){
-                    (header_cells[index].right()-theme::SPACE_8-ink_width)
-                        .max(header_cells[index].left()+theme::SPACE_8)
-                }else if index==5{
-                    header_cells[index].center().x-ink_width/2.0
-                }else{
-                    header_cells[index].left()+theme::SPACE_8
-                };
-                let ink=painter.with_clip_rect(rect);
-                ink.galley(
-                    egui::pos2(x,rect.center().y-title_galley.size().y/2.0),
-                    title_galley.clone(),theme::SECONDARY
-                );
-                if let Some((glyph,color))=arrow{
-                    ink.galley(
-                        egui::pos2(x+title_galley.size().x+icon_gap,
-                            rect.center().y-glyph.size().y/2.0),
-                        glyph,color
-                    );
-                }
+                let alignment=if matches!(index,2|3|4){crate::table::HeadingAlign::Right{inset:theme::SPACE_8,min_left:Some(theme::SPACE_8)}}
+                    else if index==5{crate::table::HeadingAlign::Center{min_left:None}}
+                    else{crate::table::HeadingAlign::Left(theme::SPACE_8)};
+                crate::table::heading(panel,header_cells[index],header_text_rect,rect,alignment,title_galley,arrow);
                 if let Some(column)=column{
-                    let response=panel.interact(
-                        rect,panel.make_persistent_id(("product-price-sort",index)),
-                        Sense::click()
-                    );
-                    if response.hovered(){
-                        components::management_master_header_sort_hover(panel,rect);
+                    if crate::table::sort_clicked(panel,rect,("product-price-sort",index)){
+                        clicked_sort=Some(ProductSort::next(self.sort,column));
                     }
-                    if response.clicked(){clicked_sort=Some(ProductSort::next(self.sort,column));}
                 }
             }
             

@@ -5853,7 +5853,6 @@ pub fn management_client_header(
     let text_row=management_master_header_begin(
         ui,header,header_content_rect
     );
-    let painter=ui.painter().with_clip_rect(text_row);
     let column_widths=management_client_column_widths(table_width);
     let mut x=table_left;
     let mut selected=None;
@@ -5865,13 +5864,8 @@ pub fn management_client_header(
         );
         let visible=column.intersect(text_row);
         if visible.width()>0.0 {
-            let response=ui.interact(
-                visible,ui.make_persistent_id(("client-management-sort",i)),
-                Sense::click()
-            );
-            if response.clicked(){selected=Some(i);}
-            if response.hovered(){
-                management_master_header_sort_hover(ui,visible);
+            if crate::table::sort_clicked(ui,visible,("client-management-sort",i)){
+                selected=Some(i);
             }
             let text_rect=Rect::from_min_max(
                 egui::pos2(column.left()+theme::SPACE_12,text_row.top()),
@@ -5885,18 +5879,8 @@ pub fn management_client_header(
                     _=>("↕",theme::MUTED)
                 };
                 let arrow_galley=typography::management_table_header_galley(ui,arrow);
-                let title_x=column.left()+theme::SPACE_12;
-                let clip=painter.with_clip_rect(text_rect);
-                clip.galley(
-                    egui::pos2(title_x,
-                        text_row.center().y-title_galley.size().y/2.0),
-                    title_galley.clone(),theme::SECONDARY
-                );
-                clip.galley(
-                    egui::pos2(title_x+title_galley.size().x+theme::SPACE_4,
-                        text_row.center().y-arrow_galley.size().y/2.0),
-                    arrow_galley,color
-                );
+                crate::table::heading(ui,column,text_row,text_rect,
+                    crate::table::HeadingAlign::Left(theme::SPACE_12),title_galley,Some((arrow_galley,color)));
             }
         }
         x+=col_width;

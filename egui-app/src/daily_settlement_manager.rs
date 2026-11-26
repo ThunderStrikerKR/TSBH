@@ -6,7 +6,7 @@ use crate::{
     settings_help,theme,typography,
 };
 use chrono::{DateTime,Duration as Days,FixedOffset,NaiveDate,Utc};
-use eframe::egui::{self,Align,Align2,Rect,Sense,Ui,UiBuilder,Vec2};
+use eframe::egui::{self,Align,Align2,Rect,Sense,Ui,Vec2};
 use serde_json::{json,Value};
 use std::sync::{mpsc::{self,Receiver,TryRecvError},Arc};
 
@@ -324,7 +324,6 @@ fn report_table<const N:usize>(
     ui.spacing_mut().item_spacing.y=previous_gap;
     let left=first_x.unwrap_or(header.left()-scroll.state.offset.x);
     let header_cells=components::management_table_cells(egui::pos2(left,header.top()),&widths,HEADER_HEIGHT,COL_GAP);
-    let painter=ui.painter().with_clip_rect(header);
     crate::table::header_columns(ui,header,layout.header_content_rect,&header_cells,COL_GAP,|ui,header_text_rect|{
     let mut sort_change=None;
     for (column,title) in headings.iter().enumerate(){
@@ -337,29 +336,11 @@ fn report_table<const N:usize>(
         let galley=typography::management_table_header_galley(
             ui,&format!("{title} {glyph}")
         );
-        let x=if align[column]==Align2::RIGHT_CENTER{
-            cell.right()-theme::SPACE_8-galley.size().x
-        }else if align[column]==Align2::CENTER_CENTER{
-            cell.center().x-galley.size().x/2.0
-        }else{
-            cell.left()+theme::SPACE_8
-        };
         let clip=cell.intersect(header_text_rect);
-        painter.with_clip_rect(clip).galley(
-            egui::pos2(x,header_text_rect.center().y-galley.size().y/2.0),
-            galley,theme::SECONDARY
-        );
-        if clip.width()>0.0 && clip.height()>0.0{
-            let response=ui.interact(
-                clip,ui.make_persistent_id((id,"sort",column)),
-                Sense::click()
-            );
-            if response.hovered(){
-                components::management_master_header_sort_hover(ui,clip);
-            }
-            if response.clicked(){
-                sort_change=Some(Sort::next(*sort,column));
-            }
+        let alignment=crate::table::heading_alignment(align[column],theme::SPACE_8,theme::SPACE_8);
+        crate::table::heading(ui,cell,header_text_rect,clip,alignment,galley,None);
+        if crate::table::sort_clicked(ui,clip,(id,"sort",column)){
+            sort_change=Some(Sort::next(*sort,column));
         }
     }
     
