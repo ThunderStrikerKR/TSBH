@@ -1218,12 +1218,15 @@ pub fn workflow_idle_caption(ui:&Ui,rect:Rect,caption:&str){
 /// Use the existing semantic numeric/body layout for shipment charges.
 fn workflow_freight_text_job(text:&str,ink:Color32)->egui::text::LayoutJob{
     let mut parts=Vec::new();
-    for (index,part) in text.split(" / ").enumerate(){
-        if index>0{parts.push((" / ",None));}
-        if let Some(number)=part.strip_suffix("원"){
-            parts.push((number,Some(typography::DataValueKind::Money)));
-            parts.push(("원",None));
-        }else{parts.push((part,None));}
+    for (line_index,line) in text.split('\n').enumerate(){
+        if line_index>0{parts.push(("\n",None));}
+        for (index,part) in line.split(" / ").enumerate(){
+            if index>0{parts.push((" / ",None));}
+            if let Some(number)=part.strip_suffix("원"){
+                parts.push((number,Some(typography::DataValueKind::Money)));
+                parts.push(("원",None));
+            }else{parts.push((part,None));}
+        }
     }
     let mut job=typography::inline_body_values(&parts);
     for section in &mut job.sections{section.format.color=ink;}
