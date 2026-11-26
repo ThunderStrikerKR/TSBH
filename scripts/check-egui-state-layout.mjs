@@ -74,7 +74,7 @@ function scan(source) {
   }
   const hits=[];
   const direct=new Set(["label","colored_label","small","weak","add_space","separator","spinner","button","checkbox","add","add_sized","allocate_ui","allocate_ui_with_layout","allocate_exact_size","horizontal","horizontal_wrapped","vertical"]);
-  const shared=new Set(["action","action_with_min_width","action_full_width","review_action","soft_divider","reception_item_add_action_editable","reception_item_header_action","fixed_row","fixed_status_slot","fixed_result_viewport"]);
+  const shared=new Set(["action","action_with_min_width","action_full_width","review_action","soft_divider","reception_item_header_action","fixed_row","fixed_status_slot","fixed_result_viewport"]);
   for(let j=0;j<v.length;j++){
     if(tokens[j].kind==="literal"||tests.some(([a,b])=>j>=a&&j<=b))continue;
     if(v[j+1]!=="("||!pairs.has(j+1))continue;

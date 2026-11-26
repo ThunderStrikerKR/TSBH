@@ -2288,9 +2288,9 @@ impl ManualWorkspace {
                                                                 ).clicked();
                                                             }else{
                                                                 header_add_item=
-                                                                    components::reception_item_add_action_editable(
-                                                                        header,can_mutate
-                                                                    );
+                                                                    components::reception_item_header_action(
+                                                                        header,false,can_mutate
+                                                                    ).clicked();
                                                             }
                                                         },|items_ui|{
                                                             components::reception_worksheet_items_body(items_ui);
@@ -3490,7 +3490,7 @@ mod manual_workspace_modal_routing_tests {
             "reception_recipient_fields(",
             "crate::table::inline(",
             "reception_item_row_with_remove(",
-            "reception_item_add_action_editable(",
+            "reception_item_header_action(",
             "reception_freight_row_editable(",
             "reception_item_origin_action_editable(",
             "reception_recipient_navigator("

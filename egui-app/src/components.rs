@@ -691,7 +691,7 @@ mod management_async_behavior_regression_tests {
         assert!(aliases.contains("detail.as_deref(),detail.as_deref(),theme::MUTED"));
 
         let main=include_str!("main.rs");
-        assert!(main.contains("components::reception_client_summary_card("));
+        assert!(main.contains("components::reception_client_summary_card_editable("));
         assert!(main.contains("let client_card_height = if has_source"));
         assert!(main.contains("fn apply_manual_event("));
         assert!(main.contains("row.edit_history.push("));
@@ -2671,16 +2671,6 @@ fn fitted_client_name(ui:&Ui,name:&str,limit:f32)->std::sync::Arc<str>{
     })
 }
 
-/// Single-line Reception client reference. It shares the management badge
-/// and exceptional terms but does not reserve a redundant status/header row
-/// or use the 900pt-wide management table geometry.
-pub fn reception_client_summary_card(
-    ui:&mut Ui,rect:Rect,linked:bool,
-    summary:Option<&ClientDisplaySummary>,fallback:&str,
-)->bool{
-    reception_client_summary_card_editable(ui,rect,linked,summary,fallback,true)
-}
-
 /// Shared source-card geometry, reserving the same chrome across stages.
 pub fn reception_source_client_rect(body:Rect)->Rect{
     let gap=theme::SPACE_8;
@@ -3591,11 +3581,6 @@ mod reception_cod_selector_tests {
             assert_eq!(rect.height(),theme::ACTION_STANDARD_HEIGHT);
         }
     }
-}
-
-/// Shared add-product action; the reception title row owns its placement.
-pub fn reception_item_add_action_editable(ui:&mut Ui,editable:bool)->bool{
-    reception_item_header_action(ui,false,editable).clicked()
 }
 
 /// The add/rollback modes occupy exactly the same header action slot.

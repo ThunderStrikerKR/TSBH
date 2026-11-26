@@ -6641,8 +6641,8 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                 floating_notice::section(
                     ui.ctx(),"reception.client_change",card_rect
                 );
-                if components::reception_client_summary_card(
-                    ui,card_rect,linked_id.is_some(),display,name
+                if components::reception_client_summary_card_editable(
+                    ui,card_rect,linked_id.is_some(),display,name,true
                 ){
                     open_client_chooser=true;
                 }
@@ -6714,8 +6714,8 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                     floating_notice::section(
                         ui.ctx(),"reception.client_change",card_rect
                     );
-                    if components::reception_client_summary_card(
-                        ui,card_rect,linked_id.is_some(),display,name
+                    if components::reception_client_summary_card_editable(
+                        ui,card_rect,linked_id.is_some(),display,name,true
                     ){
                         open_client_chooser=true;
                     }
@@ -7568,8 +7568,8 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                     pane.set_height(bottom_rect.height());
                     Self::section_with_header(pane,"품목 및 운임",bottom_rect.height(),
                         |header|{
-                            confirmed_add=components::reception_item_add_action_editable(
-                                header,confirmed_editable && confirmed_controls_idle);
+                            confirmed_add=components::reception_item_header_action(
+                                header,false,confirmed_editable && confirmed_controls_idle).clicked();
                         },|ui|{
                         components::reception_docked_goods_scroll(
                             ui,bottom_rect.height(),("native-workflow-products",ship.id.as_str()),
@@ -7990,7 +7990,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                     Self::section_with_header(
                         pane,"품목 및 운임",bottom_rect.height(),
                         |header|{
-                            components::reception_item_add_action_editable(header,false);
+                            components::reception_item_header_action(header,false,false);
                         },|ui|{
                             components::reception_docked_goods_scroll(
                                 ui,bottom_rect.height(),("pending-hover-products",draft.id.as_str()),
