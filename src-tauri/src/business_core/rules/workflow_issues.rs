@@ -108,6 +108,76 @@ fn context<'a>(state:&'a Value,ship:&Value)->Result<(&'a Value,&'a Value),String
         .ok_or("배송 건의 발주서 / 수취인 / 거래처 연결을 확인하세요.")?;
     Ok((order,recipient))
 }
+/// Copy-time billing evidence uses the same integer shipment totals as the
+/// payment message. Resolve the account from the group's recipient subset.
+pub(super) fn payment_copy_basis(state:&Value,group_id:&str)->Result<Value,String>{
+    let (gi,ships)=active_shipments(state,group_id)?;
+    let group=&state["workflow"]["groups"][gi];
+    let (order,_)=context(state,ships[0])?;
+    let total=ships.iter().map(|ship|{
+        w::shipment_totals(state,str_field(ship,"id")).ok()
+            .and_then(|amount|super::safe(field(&amount,"total")))
+    }).collect::<Option<Vec<_>>>().and_then(super::checked_sum);
+    let mut view=order.clone();
+    let recipients=rows(field(order,"recipients")).iter().filter(|row|
+        ships.iter().any(|ship|str_field(ship,"recipientId")==str_field(row,"id")))
+        .cloned().collect::<Vec<_>>();
+    set(&mut view,"recipients",json!(recipients))?;
+    if let Some(mode)=group.get("accountMode").filter(|v|!v.is_null()){
+        set(&mut view,"accountMode",mode.clone())?;
+    }
+    let account=w::party(state,&view).and_then(|client|w::account_for(state,group,&view,client));
+    Ok(json!({"total":total,"account":account}))
+}
+
+fn account_identity(account:&Value)->Option<[&str;3]>{
+    let keys=["bank","number","holder"].map(|key|str_field(account,key).trim());
+    keys.iter().all(|s|!s.is_empty()).then_some(keys)
+}
+
+/// Older copy events contain the actual rendered message in the signature,
+/// but no typed total. Only recover a unique, unambiguous default-format
+/// total line; custom templates without a proven amount remain unknown.
+fn legacy_copied_total(signature:&Value)->Option<i64>{
+    let text=field(signature,"text").as_str()?;
+    let mut totals=text.lines().filter_map(|line|{
+        let tail=line.strip_prefix("합계 : ")?;
+        let (amount,suffix)=tail.split_once("원 입니다. ")?;
+        if !matches!(suffix,"(부가세 포함)"|"(부가세 별도)"|"(부가세 포함/별도)"){return None;}
+        if amount.is_empty()||!amount.chars().all(|ch|ch.is_ascii_digit()||ch==','){return None;}
+        let parsed=amount.replace(',',"").parse::<i64>().ok()?;
+        let canonical=won(Some(parsed));
+        if canonical.strip_suffix("원")!=Some(amount){return None;}
+        super::safe(&json!(parsed))
+    });
+    let first=totals.next()?;
+    totals.next().is_none().then_some(first)
+}
+
+fn copied_billing_changed(before:&Value,current:&Value)->bool{
+    let signature=field(before,"signature").as_str()
+        .and_then(|raw|serde_json::from_str::<Value>(raw).ok())
+        .unwrap_or(Value::Null);
+    let basis=field(before,"billing");
+    let prior_total=if basis.is_object(){super::safe(field(basis,"total"))}
+        else{legacy_copied_total(&signature)};
+    let current_total=super::safe(field(current,"total"));
+    let amount_changed=prior_total.zip(current_total).is_some_and(|(a,b)|a!=b);
+    let prior_account=if basis.is_object(){field(basis,"account")}else{field(&signature,"account")};
+    let account_changed=account_identity(prior_account).zip(account_identity(field(current,"account")))
+        .is_some_and(|(a,b)|a!=b);
+    amount_changed||account_changed
+}
+
+/// Only the most recent successful PAYMENT clipboard event counts. A request
+/// copy, old matching event, stage rollback or generic dirty bit is not proof.
+fn payment_renotice_required(state:&Value,group_id:&str)->Result<bool,String>{
+    let Some(event)=rows(field(field(state,"workflow"),"events")).iter().rev().find(|e|
+        str_field(e,"groupId")==group_id&&str_field(e,"action")=="메시지 복사"&&
+        str_field(field(e,"after"),"type")=="PAYMENT") else{return Ok(false);};
+    Ok(copied_billing_changed(field(event,"after"),&payment_copy_basis(state,group_id)?))
+}
+
 pub(super) fn workflow_issues(state:&Value,group_id:&str)->Result<Vec<Value>,String>{
     let (gi,shipments)=active_shipments(state,group_id)?;
     let group=&state["workflow"]["groups"][gi];
@@ -180,7 +250,7 @@ pub(super) fn workflow_issues(state:&Value,group_id:&str)->Result<Vec<Value>,Str
         issues.push(operational(order,None,group_id,"ACCOUNT",
             "입금 계좌를 등록 / 선택하세요".into(),3,"account"));
     }
-    if flag(group,"needsNotice"){
+    if payment_renotice_required(state,group_id)?{
         issues.push(operational(order,None,group_id,"NOTICE",
             "변경된 금액 / 계좌 재안내 필요".into(),3,"account"));
     }
@@ -339,5 +409,30 @@ mod freight_issue_tests {
         state["orders"][0]["recipients"][0]["freightCode"]=json!("020");
         assert!(!workflow_issues(&state,"g").unwrap().iter()
             .any(|issue|str_field(issue,"kind")=="FREIGHT"));
+    }
+}
+
+#[cfg(test)]
+mod copied_payment_notice_tests{
+    use super::*;
+    #[test]
+    fn only_verified_total_or_account_changes_trigger_notice(){
+        let a=json!({"bank":"은행","number":"123","holder":"예금주"});
+        let before=json!({"billing":{"total":30000,"account":a}});
+        assert!(!copied_billing_changed(&before,&json!({"total":30000,"account":a})));
+        assert!(copied_billing_changed(&before,&json!({"total":31000,"account":a})));
+        assert!(copied_billing_changed(&before,&json!({"total":29000,"account":a})));
+        assert!(!copied_billing_changed(&before,&json!({"total":null,"account":a})));
+        assert!(copied_billing_changed(&before,&json!({"total":30000,
+            "account":{"bank":"은행","number":"456","holder":"예금주"}})));
+        assert!(!copied_billing_changed(&json!({}),&json!({"total":30000,"account":a})));
+    }
+    #[test]
+    fn legacy_copy_total_is_recovered_only_from_unambiguous_rendered_total(){
+        let old=json!({"signature":json!({"text":"운임 : 3,000원\n합계 : 30,000원 입니다. (부가세 포함)"}).to_string()});
+        assert!(!copied_billing_changed(&old,&json!({"total":30000})));
+        assert!(copied_billing_changed(&old,&json!({"total":31000})));
+        let ambiguous=json!({"signature":json!({"text":"합계 : 30,000원 입니다. (부가세 포함)\n합계 : 31,000원 입니다. (부가세 별도)"}).to_string()});
+        assert!(!copied_billing_changed(&ambiguous,&json!({"total":31000})));
     }
 }

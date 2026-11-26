@@ -32,7 +32,21 @@ pub(super) fn record(payload:&Value)->Result<Value,String>{
     };
     let mut after=json!({"type":ty,"token":token});
     if ty=="PAYMENT" {
-        after["signature"]=json!(required_str(payload,"signature")?);
+        let signature=required_str(payload,"signature")?;
+        after["signature"]=json!(signature);
+        // The native gateway has revalidated the exact displayed payment
+        // signature against this state before recording clipboard evidence.
+        // Preserve the billed total as an integer, not a dirty flag or text.
+        if let Ok(mut basis)=super::workflow_issues::payment_copy_basis(&state,group){
+            if let Ok(parsed)=serde_json::from_str::<Value>(signature){
+                // The signature freezes the account actually rendered to
+                // the clipboard, including group-specific account choice.
+                if parsed.get("account").is_some(){
+                    basis["account"]=parsed["account"].clone();
+                }
+            }
+            after["billing"]=basis;
+        }
     }
     let actor=str_field(field(&state,"settings"),"operatorName");
     let actor=if actor.is_empty(){"직원".to_owned()}else{actor.to_owned()};

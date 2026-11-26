@@ -531,6 +531,19 @@ fn payment_copy_evidence_survives_sqlite_reopen_and_rejects_changed_account(){
     assert!(!status(&request),"request copy must not count as payment copy");
     let copied=record(&request,"PAYMENT","payment-token","event:payment-copy");
     assert!(status(&copied));
+    let copy_event=copied["workflow"]["events"].as_array().unwrap().last().unwrap();
+    assert!(copy_event["after"]["billing"]["total"].as_i64().is_some());
+    let notice=|state:&Value|{
+        rust("workflow_issues",json!({"state":state,"groupId":"group:synthetic"}))
+            .unwrap()["issues"].as_array().unwrap().iter()
+            .any(|issue|issue["kind"]=="NOTICE")
+    };
+    let mut flagged=copied.clone();
+    flagged["workflow"]["groups"][0]["needsNotice"]=json!(true);
+    assert!(!notice(&flagged),"unchanged copied amount/account must not show a notice");
+    let mut changed_account=flagged.clone();
+    changed_account["settings"]["accounts"][0]["number"]=json!("987-654");
+    assert!(notice(&changed_account),"copied account change must show a notice");
     assert_eq!(record(&copied,"PAYMENT","payment-token","event:duplicate-copy"),copied,
         "one clipboard transaction must create only one audit event");
     assert_eq!(copied["workflow"]["shipments"],saved["workflow"]["shipments"]);
