@@ -1,6 +1,5 @@
-//! Shared table surface. Owns chrome only; no widget IDs, focus, layout
-//! allocation, pointer capture or business state. All profiles keep their
-//! existing row geometry and scroll ownership.
+//! Shared table renderer: surface, header, row/viewport geometry and sort hit testing.
+//! Screens retain column data, stable IDs and business sort state.
 use eframe::egui::{self,Color32,Rect,Stroke,Ui,Vec2};
 use crate::theme;
 
@@ -317,7 +316,7 @@ pub(crate) fn heading(
 pub(crate) fn sort_clicked(ui:&mut Ui,hit:Rect,id:impl std::hash::Hash)->bool{
     if hit.width()<=0.0||hit.height()<=0.0{return false;}
     let response=ui.interact(hit,ui.make_persistent_id(id),egui::Sense::click());
-    if response.hovered(){crate::components::management_master_header_sort_hover(ui,hit);}
+    if response.hovered(){management_master_header_sort_hover(ui,hit);}
     response.clicked()
 }
 
@@ -346,3 +345,21 @@ pub(crate) fn history_row<const N:usize>(
         overlay(row);
     });
 }
+
+/// Identical sort-hover outline for all freight management list headers.
+/// The caller supplies the column intersected with the 34pt text area.
+fn management_master_header_sort_hover(ui:&Ui,hit:Rect){
+    if hit.width()>0.0 && hit.height()>0.0 {
+        let painter=ui.painter().with_clip_rect(hit);
+        painter.rect_filled(
+            hit,2.0,theme::TABLE_SORT_HOVER_TINT
+        );
+        painter.rect_stroke(
+            hit.shrink(1.0),2.0,
+            Stroke::new(theme::SOFT_DIVIDER_WIDTH,
+                theme::SELECTION.linear_multiply(0.82)),
+            egui::StrokeKind::Inside
+        );
+    }
+}
+

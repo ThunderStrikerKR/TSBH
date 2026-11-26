@@ -4,6 +4,17 @@
 use eframe::egui::{self, Align, Color32, Frame, Layout, Rect, Response, Sense, Stroke, Ui, UiBuilder, Vec2};
 use chrono::{Datelike, Duration as Days, Months, NaiveDate};
 use crate::{source_highlight, theme, typography};
+// Stable entry points during migration; primitive rendering has one module owner.
+pub use crate::button::icon_action_button;
+use crate::button::navigation_native_button;
+pub use crate::input::{FieldKind,compact_text_field,field,parse_money_input,money_field,money_edit_text,money_field_with_unit,flexible_text_field,management_date_text_field,multiline_text_field,multiline_text_field_sized,reception_source_text_edit,management_search_field,reception_recipient_inline_cell_editor,reception_inline_cell_editor,reception_freight_inline_cell_editor};
+use crate::input::{singleline_editor,allocate_singleline_field,management_date_text_field_impl,reception_recipient_text_edit,reception_text_editor_at_click,reception_money_inline_cell_editor,reception_freight_money_readonly,RECEPTION_MONEY_UNIT_GAP,RECEPTION_MONEY_PENDING,money_unit_left};
+#[cfg(test)]
+use crate::input::{formatted_money_input,money_cursor_after_format,money_unit_margin,reception_money_font,RECEPTION_FREIGHT_MONEY_WIDTH};
+pub use crate::dropdown::{ManagementSearchChoice,management_dropdown,management_dropdown_full_label,management_status_dropdown,management_dropdown_compact,management_dropdown_values,management_searchable_dropdown,management_dropdown_option,management_dropdown_option_values,management_status_dropdown_option,management_dropdown_compact_option};
+pub(crate) use crate::dropdown::{management_dropdown_trigger,management_dropdown_trigger_full_label};
+#[cfg(test)]
+use crate::dropdown::{management_dropdown_option_palette,management_search_choice_matches};
 // Stable shared-UI entry points; implementation lives only in the table module.
 pub use crate::table::{
     management_table_container_style,management_table_cells,
@@ -1549,31 +1560,6 @@ pub fn checkbox_list_row(
     ).inner
 }
 
-/// Shared zero-padding allocation for compact action roles.
-fn compact_action_surface(ui:&mut Ui,enabled:bool,button:egui::Button<'_>)->Response{
-    ui.scope(|slot|{
-        slot.spacing_mut().button_padding=Vec2::ZERO;
-        slot.add_enabled(enabled,button)
-    }).inner
-}
-
-/// Shared compact icon-only action. Its 28pt hit target follows the
-/// management date-navigation control; glyph and enabled state are
-/// supplied by the caller while hover paint stays in the common layer.
-pub fn icon_action_button(
-    ui:&mut Ui,label:&str,enabled:bool
-)->Response{
-    let response=compact_action_surface(ui,enabled,egui::Button::new(label)
-        .frame(false)
-        .min_size(Vec2::splat(theme::MANAGEMENT_DATE_NAV_BUTTON_WIDTH)));
-    if enabled{
-        theme::paint_button_hover(
-            ui,&response,theme::CONTROL_RADIUS as f32
-        );
-    }
-    response
-}
-
 /// Removable search-tag chip. The modal nested-frame master owns its fill,
 /// outline and radius; only the chip's approved compact vertical inset differs.
 pub fn removable_tag_chip(ui:&mut Ui,tag:&str)->Response{
@@ -1788,33 +1774,6 @@ pub fn reception_docked_goods_scroll(
                 content(items);
             });
     });
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum FieldKind {
-    Text,
-    #[cfg(test)]
-    Telephone,
-    #[cfg(test)]
-    Quantity,
-    Money,
-    #[cfg(test)]
-    Address,
-}
-
-impl FieldKind {
-    pub fn preferred_width(self) -> f32 {
-        match self {
-            Self::Text => 180.0,
-            #[cfg(test)]
-            Self::Telephone => 142.0,
-            #[cfg(test)]
-            Self::Quantity => 68.0,
-            Self::Money => 112.0,
-            #[cfg(test)]
-            Self::Address => 320.0,
-        }
-    }
 }
 
 /// OCR review uses the same KakaoTalk-excluded coordinate space as every
@@ -2909,380 +2868,6 @@ pub fn modal_labeled_row_with_width<R>(
     }).inner
 }
 
-/// Shared construction for single-line text and numeric editors. Wrappers
-/// retain their semantic font, allocation, focus and business behavior.
-fn singleline_editor<'a>(
-    value:&'a mut String,font:impl Into<egui::FontSelection>,width:f32,
-    align:Align,margin:egui::Margin
-)->egui::TextEdit<'a>{
-    egui::TextEdit::singleline(value).font(font)
-        .horizontal_align(align).vertical_align(Align::Center)
-        .margin(margin).desired_width(width)
-}
-
-/// Allocate a native single-line input in the current layout. A permission
-/// scope is opt-in: direct/read-only slots must not gain a child UI ID or
-/// a different cursor advance merely by sharing the allocator.
-fn allocate_singleline_field(
-    ui:&mut Ui,size:Vec2,edit:egui::TextEdit<'_>,enabled:Option<bool>
-)->Response{
-    let place=|slot:&mut Ui|slot.add_sized(size,edit);
-    match enabled{
-        Some(enabled)=>ui.add_enabled_ui(enabled,place).inner,
-        None=>place(ui),
-    }
-}
-
-/// Standard form width policy; compact rate fields retain their 1pt floor.
-fn form_field_width(ui:&Ui,preferred:f32)->f32{
-    preferred.min(ui.available_width().max(60.0))
-}
-
-/// Short body-text input (for rates and percentages): same caret, selection,
-/// margins and row height as every form editor. Font remains proportional,
-/// so the independent Consolas +2.5pt data-value tweak is not involved.
-pub fn compact_text_field(
-    ui:&mut Ui,value:&mut String,width:f32,enabled:bool
-)->Response{
-    let width=width.min(ui.available_width().max(1.0)).max(1.0);
-    let edit=singleline_editor(value,egui::TextStyle::Body,width,Align::LEFT,
-        typography::form_input_text_margin());
-    allocate_singleline_field(ui,Vec2::new(width,theme::INPUT_HEIGHT),edit,Some(enabled))
-}
-
-/// Uses the same height, font and focus styling for every single-line field.
-/// Disabled preview controls cannot edit business data.
-pub fn field(ui: &mut Ui, value: &mut String, kind: FieldKind, enabled: bool) -> Response {
-    let width=form_field_width(ui,kind.preferred_width());
-    let semantic=match kind {
-        FieldKind::Money=>Some(typography::DataValueKind::Money),
-        #[cfg(test)]
-        FieldKind::Quantity=>Some(typography::DataValueKind::Quantity),
-        #[cfg(test)]
-        FieldKind::Telephone=>Some(typography::DataValueKind::Phone),
-        _=>None,
-    };
-    let editor_font=semantic.map_or(
-        egui::FontSelection::Style(egui::TextStyle::Body),
-        |role|egui::FontSelection::FontId(
-            typography::data_value_font(role,typography::DataValueContext::Form)
-        )
-    );
-    let field=singleline_editor(value,editor_font,width,
-        semantic.map_or(Align::LEFT,typography::data_value_align),
-        typography::form_input_text_margin());
-    allocate_singleline_field(ui,Vec2::new(width,theme::INPUT_HEIGHT),field,Some(enabled))
-}
-
-/// UI-only money input: keep the 36pt shared money field and semantic font.
-/// Thousands separators are visible during typing, not only after blur.
-/// The native business command remains responsible for validating saved values.
-pub fn parse_money_input(raw:&str)->Option<i64>{
-    let digits=raw.trim().replace(',',"");
-    if digits.is_empty() || !digits.bytes().all(|b|b.is_ascii_digit()){
-        return None;
-    }
-    digits.parse::<i64>().ok()
-        .filter(|value|*value<=9_007_199_254_740_991)
-}
-
-/// Format digits without changing their numeric meaning or stripping leading
-/// zeros while the employee is still typing. Empty is an unset price.
-fn formatted_money_input(raw:&str)->Option<String>{
-    let digits=raw.trim().replace(',',"");
-    if digits.is_empty(){return Some(String::new());}
-    parse_money_input(&digits)?;
-    let mut formatted=String::with_capacity(digits.len()+digits.len()/3);
-    for (index,digit) in digits.bytes().enumerate(){
-        if index>0 && (digits.len()-index)%3==0{
-            formatted.push(',');
-        }
-        formatted.push(digit as char);
-    }
-    Some(formatted)
-}
-
-/// Remap a caret or selection endpoint using the number of digits before it.
-/// This works when a separator appears *before* a selection, so inserting
-/// digits in the middle does not jump the cursor to the end of the input.
-fn money_cursor_after_format(raw:&str,formatted:&str,old_index:usize)->usize{
-    let before=raw.chars().take(old_index).filter(char::is_ascii_digit).count();
-    if before==0{return 0;}
-    let mut seen=0;
-    let mut target=formatted.chars().count();
-    for (index,c) in formatted.chars().enumerate(){
-        if c.is_ascii_digit(){
-            seen+=1;
-            if seen==before {
-                target=index+1;
-                break;
-            }
-        }
-    }
-    // When the caret was just after an existing separator, keep it there.
-    if raw.chars().nth(old_index.saturating_sub(1))==Some(',')
-        && formatted.chars().nth(target)==Some(','){
-        target+=1;
-    }
-    target
-}
-pub fn money_field(ui:&mut Ui,value:&mut String,enabled:bool)->Response {
-    let before=value.clone();
-    let response=field(ui,value,FieldKind::Money,enabled);
-    normalize_money_edit(ui,value,&before,&response);
-    response
-}
-
-/// One live formatting/caret path for forms and exact-rect worksheet cells.
-fn normalize_money_edit(ui:&Ui,value:&mut String,before:&str,response:&Response){
-    // Never persist display punctuation as an alternative business value.
-    let formatted=formatted_money_input(value);
-    let next=formatted.unwrap_or_else(||before.to_owned());
-    if *value!=next{
-        let raw=value.clone();
-        if response.has_focus(){
-            if let Some(mut state)=egui::TextEdit::load_state(ui.ctx(),response.id){
-                if let Some(mut range)=state.cursor.char_range(){
-                    range.primary=egui::text::CCursor::new(
-                        money_cursor_after_format(
-                            &raw,&next,range.primary.index
-                        )
-                    );
-                    range.secondary=egui::text::CCursor::new(
-                        money_cursor_after_format(
-                            &raw,&next,range.secondary.index
-                        )
-                    );
-                    state.cursor.set_char_range(Some(range));
-                    state.store(ui.ctx(),response.id);
-                }
-            }
-        }
-        *value=next;
-        ui.ctx().request_repaint();
-    }
-}
-
-/// Canonical numeric draft text, shared by resting and focused cells.
-/// No currency suffix enters the native business value.
-pub fn money_edit_text(amount:i64)->String{
-    formatted_money_input(&amount.to_string()).unwrap_or_else(||amount.to_string())
-}
-
-// Reception money uses a fixed gap, independent of the numeric glyphs.
-const RECEPTION_MONEY_UNIT_GAP:f32=theme::SPACE_4;
-const RECEPTION_MONEY_PENDING:&str="—";
-
-fn money_unit_left(right:f32,right_inset:f32,unit_width:f32)->f32{
-    right-right_inset-unit_width
-}
-
-fn money_unit_margin(
-    ui:&Ui,unit:&str,font:egui::FontId,right_inset:f32,unit_gap:f32,
-    mut margin:egui::Margin
-)->(egui::Margin,std::sync::Arc<egui::Galley>){
-    let galley=ui.painter().layout_no_wrap(unit.to_owned(),font,theme::TEXT);
-    margin.right=(galley.size().x+right_inset+unit_gap).ceil().clamp(0.0,127.0) as i8;
-    margin.top=2;
-    margin.bottom=2;
-    (margin,galley)
-}
-
-fn paint_money_unit(ui:&Ui,rect:Rect,galley:std::sync::Arc<egui::Galley>,right_inset:f32){
-    let pos=egui::pos2(money_unit_left(rect.right(),right_inset,galley.size().x),
-        rect.center().y-galley.size().y/2.0);
-    ui.painter().with_clip_rect(rect.intersect(ui.clip_rect()))
-        .galley(pos,galley,theme::TEXT);
-}
-
-/// Shared money widget construction. Both allocated form fields and
-/// exact-rectangle worksheet overlays use the same text and suffix geometry.
-fn money_text_edit_with_unit<'a>(
-    ui:&Ui,value:&'a mut String,font:egui::FontId,width:f32,
-    unit:&str,right_inset:f32,unit_gap:f32,margin:egui::Margin
-)->(egui::TextEdit<'a>,std::sync::Arc<egui::Galley>){
-    let (margin,galley)=money_unit_margin(ui,unit,font.clone(),right_inset,unit_gap,margin);
-    let edit=singleline_editor(value,font,width,Align::RIGHT,margin);
-    (edit,galley)
-}
-
-/// Price-table variant of the same shared money editor. The won unit is
-/// a non-editable suffix inside the 112pt field, never part of the stored
-/// number. Reserve its actual rendered width in the TextEdit's right margin:
-/// the caret and selection cannot cover the suffix. Numeric glyphs retain
-/// the same 14pt font and live comma formatting as money_field().
-///
-/// `unit_right_inset` is relative to the field's right edge (6pt in the
-/// product grid, whose field ends 2pt before the 8pt read-only money anchor).
-pub fn money_field_with_unit(
-    ui:&mut Ui,value:&mut String,enabled:bool,
-    unit:&str,unit_right_inset:f32
-)->Response{
-    let before=value.clone();
-    let width=form_field_width(ui,FieldKind::Money.preferred_width());
-    let (edit,unit_galley)=money_text_edit_with_unit(
-        ui,value,typography::numeric_editor_font(),width,unit,unit_right_inset,
-        0.0,typography::form_input_text_margin()
-    );
-    let response=allocate_singleline_field(ui,Vec2::new(width,theme::INPUT_HEIGHT),edit,Some(enabled));
-    normalize_money_edit(ui,value,&before,&response);
-    paint_money_unit(ui,response.rect,unit_galley,unit_right_inset);
-    response
-}
-
-/// Shared single-line free-text editor for inline manual cells and search.
-/// Uses the same font, internal margin and height as the standard field role.
-pub fn flexible_text_field(
-    ui:&mut Ui, value:&mut String, width:f32, placeholder:&str
-)->Response {
-    let width=form_field_width(ui,width);
-    let edit=singleline_editor(value,egui::TextStyle::Body,width,Align::LEFT,
-        typography::form_input_text_margin()).hint_text(placeholder);
-    allocate_singleline_field(ui,Vec2::new(width,theme::INPUT_HEIGHT),edit,None)
-}
-
-/// Shared date text field used inside the management date-group master.
-/// The caller owns navigation, parsing and validation; this component owns
-/// the centered, frameless editor, proportional date face and caret margin.
-pub fn management_date_text_field(
-    ui:&mut Ui,value:&mut String,width:f32,height:f32,hint:&str
-)->Response{
-    management_date_text_field_impl(ui,value,width,height,hint,None)
-}
-
-fn management_date_text_field_impl(
-    ui:&mut Ui,value:&mut String,width:f32,height:f32,hint:&str,limit:Option<usize>
-)->Response{
-    let mut edit=singleline_editor(value,typography::data_value_font(
-            typography::DataValueKind::Date,typography::DataValueContext::Form
-        ),width,Align::Center,typography::management_date_text_margin())
-        .frame(false).hint_text(hint);
-    if let Some(limit)=limit{edit=edit.char_limit(limit);}
-    allocate_singleline_field(ui,Vec2::new(width,height),edit,None)
-}
-
-#[cfg(test)]
-mod shared_singleline_allocation_tests{
-    use super::*;
-
-    #[test]
-    fn shared_allocation_preserves_native_id_geometry_and_permission_scope(){
-        for permission in [None,Some(true),Some(false)]{
-            let ctx=test_context();
-            let mut value="12,345".to_owned();
-            let mut results=Vec::new();
-            for shared in [false,true]{
-                let _=ctx.run(egui::RawInput::default(),|ctx|{
-                    egui::CentralPanel::default().show(ctx,|ui|{
-                        let size=Vec2::new(112.0,theme::INPUT_HEIGHT);
-                        let edit=singleline_editor(&mut value,typography::numeric_editor_font(),
-                            size.x,Align::RIGHT,typography::form_input_text_margin());
-                        let response=if shared{
-                            allocate_singleline_field(ui,size,edit,permission)
-                        }else if let Some(enabled)=permission{
-                            ui.add_enabled_ui(enabled,|slot|slot.add_sized(size,edit)).inner
-                        }else{
-                            ui.add_sized(size,edit)
-                        };
-                        results.push((response.id,response.rect,response.enabled(),
-                            ui.available_rect_before_wrap().min));
-                    });
-                });
-            }
-            assert_eq!(results[0],results[1]);
-            assert_eq!(results[1].1.height(),theme::INPUT_HEIGHT);
-            assert_eq!(results[1].2,permission.unwrap_or(true));
-            assert_eq!(value,"12,345");
-        }
-    }
-}
-
-/// Single native multiline constructor. Each caller keeps its existing
-/// sizing, frame, input permissions and layout options.
-fn multiline_editor<'a>(
-    value:&'a mut dyn egui::TextBuffer,width:f32
-)->egui::TextEdit<'a>{
-    egui::TextEdit::multiline(value).desired_width(width)
-}
-
-/// Shared multiline editor for long-form messages and management memos.
-/// Screens provide only the existing width, row count and optional hint; the
-/// native TextEdit retains its standard click, selection and keyboard behavior.
-pub fn multiline_text_field(
-    ui:&mut Ui,value:&mut String,enabled:bool,
-    desired_width:f32,desired_rows:usize,hint:Option<&str>
-)->Response{
-    let mut editor=multiline_editor(value,desired_width)
-        .desired_rows(desired_rows);
-    if let Some(hint)=hint{
-        editor=editor.hint_text(hint);
-    }
-    ui.add_enabled(enabled,editor)
-}
-
-/// Shared exact-viewport multiline editor for content-specific text roles.
-/// The caller may supply a dedicated font and inset without rebuilding the
-/// native TextEdit or bypassing the common input layer.
-pub fn multiline_text_field_sized(
-    ui:&mut Ui,value:&mut String,enabled:bool,size:Vec2,
-    font:egui::FontId,frame:bool,margin:egui::Margin,desired_rows:usize
-)->Response{
-    let editor=multiline_editor(value,size.x)
-        .interactive(enabled)
-        .font(font)
-        .frame(frame)
-        .margin(margin)
-        .desired_rows(desired_rows);
-    ui.add_sized(size,editor)
-}
-
-/// Source-document text styling is shared while the caller supplies its
-/// custom layout job and immutable or editable buffer.
-pub fn reception_source_text_edit<'a>(
-    buffer:&'a mut dyn egui::TextBuffer,width:f32
-)->egui::TextEdit<'a>{
-    multiline_editor(buffer,width).frame(false)
-        .margin(egui::Margin::same(theme::SOURCE_DOCUMENT_TEXT_MARGIN))
-        .font(egui::FontId::proportional(typography::FONT_RECEPTION_SOURCE_TEXT))
-}
-
-/// Search inputs are append-first: a normal pointer click to resume an
-/// existing filter places the caret after its last Unicode character, even
-/// when the click lands over the first character. This does NOT alter ordinary
-/// TextEdit or inline editing: double-click selection, dragging, modifier
-/// selection and keyboard caret navigation retain their native behavior.
-fn management_search_append_click(response:&Response,ui:&Ui,text:&str){
-    if !response.clicked_by(egui::PointerButton::Primary)
-        || response.double_clicked()
-        || response.triple_clicked()
-        || response.dragged()
-        || ui.input(|input| {
-            let modifiers=input.modifiers;
-            modifiers.shift || modifiers.ctrl || modifiers.alt || modifiers.mac_cmd
-        })
-    {
-        return;
-    }
-    if let Some(mut state)=egui::TextEdit::load_state(ui.ctx(),response.id){
-        let end=text.chars().count();
-        state.cursor.set_char_range(Some(
-            egui::text::CCursorRange::one(egui::text::CCursor::new(end))
-        ));
-        state.store(ui.ctx(),response.id);
-        ui.ctx().request_repaint();
-    }
-}
-
-/// Same shared 36pt search field geometry, but a deliberate end-of-query
-/// caret policy instead of TextEdit's pointer-position-based initial caret.
-pub fn management_search_field(
-    ui:&mut Ui,text:&mut String,width:f32,placeholder:&str
-)->Response {
-    let response=flexible_text_field(ui,text,width,placeholder);
-    management_search_append_click(&response,ui,text);
-    response
-}
-
 /// Shared compact spreadsheet cell. Selection is an inset border;
 /// hovered cells do not resize the row, and a selected cell does not
 /// borrow the main navigation style.
@@ -3523,30 +3108,6 @@ fn reception_geometry_role(title:&str,header:bool)->&'static str{
     }
 }
 
-/// The READ and EDIT renderers of recipient fields must use exactly one
-/// typography/padding definition. Contact numbers use the same 16pt regular
-/// proportional UI family as name, address, message and source text.
-fn reception_recipient_text_edit(
-    value:&mut String,width:f32,active:bool,phone_number:bool
-)->egui::TextEdit<'_>{
-    let font=if phone_number {
-        typography::data_value_font(
-            typography::DataValueKind::Phone,
-            typography::DataValueContext::Reception
-        )
-    }else{
-        egui::FontId::proportional(typography::FONT_RECEPTION_RECIPIENT_TEXT)
-    };
-    let input=singleline_editor(value,font,width,Align::LEFT,
-        typography::form_input_text_margin());
-    if active {
-        // TextEdit's native background uses a different square/filled
-        // geometry. Let the shared evidence surface own the rounded fill
-        // and the outer caller own the common 2pt border instead.
-        input.frame(false).text_color(source_highlight::ACTIVE_TEXT)
-    }else{input}
-}
-
 /// Draw BEFORE TextEdit renders its glyphs: egui's normal TextEdit background
 /// is disabled only for linked fields, so the same fill/radius used by
 /// source evidence and item cells remains visible without obscuring text.
@@ -3706,69 +3267,6 @@ pub fn reception_recipient_fields(
     }
     crate::one_touch::reveal_target(ui,crate::one_touch::Stage::Review,responses[0].rect);
     responses
-}
-
-/// Place an inline editor in the same exact frame as Ui::place, while
-/// retaining its native galley so the initial pointer position becomes a
-/// real character cursor instead of forcing the end of the text.
-fn reception_text_editor_at_click(
-    ui:&mut Ui,cell:Rect,edit:egui::TextEdit<'_>,
-    request_focus:bool,click_at:Option<egui::Pos2>
-)->Response{
-    let mut placed=ui.new_child(
-        egui::UiBuilder::new()
-            .max_rect(cell)
-            .layout(egui::Layout::centered_and_justified(
-                egui::Direction::TopDown
-            ))
-    );
-    let mut output=edit.show(&mut placed);
-    if request_focus{
-        output.response.request_focus();
-        // The product/amount editor can be inset a few points from the
-        // clickable read-only cell. Clamp clicks in that border to the
-        // nearest valid text position rather than falling back to the end.
-        if let Some(pointer)=click_at.filter(|point|
-            cell.expand2(egui::vec2(theme::SPACE_4,theme::SPACE_2))
-                .contains(*point)
-        ){
-            let pointer=egui::pos2(
-                pointer.x.clamp(cell.left(),cell.right()),
-                pointer.y.clamp(cell.top(),cell.bottom())
-            );
-            // Galley coordinates honor Hangul widths, left/right align,
-            // font choice, margins and horizontal text scrolling.
-            let cursor=output.galley.cursor_from_pos(
-                pointer-output.galley_pos
-            );
-            let range=egui::text::CCursorRange::one(cursor);
-            output.state.cursor.set_char_range(Some(range));
-            // The TextEditOutput still owns its state here. Capture the
-            // newly resolved click caret BEFORE store consumes TextEditState.
-            output.cursor_range=Some(range);
-            crate::floating_notice::text_edit_caret(ui.ctx(),"reception.cell",&output);
-            output.state.store(ui.ctx(),output.response.id);
-            ui.ctx().request_repaint();
-            return output.response;
-        }
-    }
-    crate::floating_notice::text_edit_caret(ui.ctx(),"reception.cell",&output);
-    output.response
-}
-
-/// Edit over the original 36pt input rectangle without shrinking it.
-/// Ui::place never advances the parent layout cursor (Ui::put does).
-/// The readonly control and focused control share the same builder, so the text
-/// baseline, inset and phone font do not change when focus is acquired.
-pub fn reception_recipient_inline_cell_editor(
-    ui:&mut Ui,cell:Rect,value:&mut String,request_focus:bool,
-    click_at:Option<egui::Pos2>,phone_number:bool,active:bool
-)->Response{
-    reception_text_editor_at_click(
-        ui,cell,
-        reception_recipient_text_edit(value,cell.width(),active,phone_number),
-        request_focus,click_at
-    )
 }
 
 /// The source editor and automatic-message canvas use the SAME surface
@@ -4118,18 +3616,6 @@ fn navigation_segment_child(
         .max_rect(rect).layout(layout));
     child.set_clip_rect(rect.intersect(parent.clip_rect()));
     child
-}
-
-/// Native navigation buttons retain their existing optional permission
-/// scope. Fixed-rectangle step buttons deliberately use interact instead.
-fn navigation_native_button(
-    ui:&mut Ui,size:Vec2,button:egui::Button<'_>,enabled:Option<bool>
-)->Response{
-    let place=|slot:&mut Ui|slot.add_sized(size,button);
-    match enabled{
-        Some(enabled)=>ui.add_enabled_ui(enabled,place).inner,
-        None=>place(ui),
-    }
 }
 
 fn paint_navigation_vertical_rules(
@@ -4821,23 +4307,6 @@ pub fn management_master_header_finish(ui:&Ui,header_rect:Rect){
     crate::table::header_finish(ui,header_rect);
 }
 
-/// Identical sort-hover outline for all freight management list headers.
-/// The caller supplies the column intersected with the 34pt text area.
-pub fn management_master_header_sort_hover(ui:&Ui,hit:Rect){
-    if hit.width()>0.0 && hit.height()>0.0 {
-        let painter=ui.painter().with_clip_rect(hit);
-        painter.rect_filled(
-            hit,2.0,theme::TABLE_SORT_HOVER_TINT
-        );
-        painter.rect_stroke(
-            hit.shrink(1.0),2.0,
-            Stroke::new(theme::SOFT_DIVIDER_WIDTH,
-                theme::SELECTION.linear_multiply(0.82)),
-            egui::StrokeKind::Inside
-        );
-    }
-}
-
 /// Plain management-register header for two-column editor/list pages.
 /// The same master allocates the 25pt toolbar transition, 36pt fixed header,
 /// native scrollbar gutter and inner 2pt bottom rule. Only the row content
@@ -4913,7 +4382,7 @@ fn paint_chevron_at_angle_scaled(
     ));
 }
 
-fn paint_management_chevron_with_color(
+pub(crate) fn paint_management_chevron_with_color(
     painter:&egui::Painter,center:egui::Pos2,
     direction:ManagementChevronDirection,color:Color32
 ){
@@ -5141,370 +4610,6 @@ fn paint_collapsing_header_icon(
         ui.painter(),response.rect.center(),
         t*std::f32::consts::FRAC_PI_2,t,theme::SECONDARY
     );
-}
-
-/// Configure the shared SINGLE-SELECT popup only. Never recolor
-/// unrelated checkboxes, tables, global widget hover, or order selection.
-fn management_dropdown_option_palette(ui:&mut Ui){
-    let visuals=ui.visuals_mut();
-    // egui::selectable_value uses selection.bg_fill for the current value.
-    // Keep that persistent state darker than the pointer's transient hover.
-    visuals.selection.bg_fill=theme::MANAGEMENT_DROPDOWN_SELECTED_BG;
-    visuals.selection.stroke=Stroke::new(1.0_f32,theme::TEXT);
-    visuals.widgets.hovered.bg_fill=theme::MANAGEMENT_DROPDOWN_HOVER_BG;
-    visuals.widgets.hovered.weak_bg_fill=theme::MANAGEMENT_DROPDOWN_HOVER_BG;
-    visuals.widgets.hovered.bg_stroke=Stroke::new(
-        theme::SOFT_DIVIDER_WIDTH,theme::SELECTION.linear_multiply(0.8)
-    );
-    visuals.widgets.hovered.fg_stroke=Stroke::new(1.5_f32,theme::TEXT);
-    visuals.widgets.active.bg_fill=theme::MANAGEMENT_DROPDOWN_HOVER_BG;
-    visuals.widgets.active.weak_bg_fill=theme::MANAGEMENT_DROPDOWN_HOVER_BG;
-}
-
-/// Reference "접수일 기준" dropdown: 34pt dark trigger, separated
-/// right-hand chevron, 1pt outline, 6pt corner radius. This replaces native
-/// ComboBox triggers where management screens need the same visual language.
-/// The caller retains its existing option values and change handling.
-pub fn management_dropdown(
-    ui:&mut Ui,label:&str,width:f32,enabled:bool,
-    options:impl FnOnce(&mut Ui)
-)->Response {
-    management_dropdown_inner(ui,label,label,width,enabled,false,None,None,options)
-}
-/// Pre-fitted category paths retain the original text as the single tooltip.
-pub fn management_dropdown_full_label(
-    ui:&mut Ui,label:&str,full_label:&str,width:f32,enabled:bool,
-    options:impl FnOnce(&mut Ui)
-)->Response{
-    management_dropdown_inner(ui,label,full_label,width,enabled,false,None,None,options)
-}
-/// Same management dropdown master, with an optional colored status mark.
-/// This only changes the glyph painting; popup placement, hover and row
-/// selection remain owned by the shared management dropdown.
-pub fn management_status_dropdown(
-    ui:&mut Ui,label:&str,width:f32,enabled:bool,
-    status_color:Color32,options:impl FnOnce(&mut Ui)
-)->Response {
-    management_dropdown_inner(
-        ui,label,label,width,enabled,false,Some(status_color),None,options
-    )
-}
-
-/// Compact, two-option menus such as 선불 / 착불 never grow wider than their
-/// own trigger. Other selectors may expand to fit longer catalog names.
-pub fn management_dropdown_compact(
-    ui:&mut Ui,label:&str,width:f32,enabled:bool,
-    options:impl FnOnce(&mut Ui)
-)->Response {
-    management_dropdown_inner(ui,label,label,width,enabled,true,None,None,options)
-}
-
-/// A mixed label keeps the common trigger, menu, selection and overflow
-/// behavior. Callers supply semantic value spans, never a local painter.
-pub fn management_dropdown_values(
-    ui:&mut Ui,label:&egui::text::LayoutJob,width:f32,enabled:bool,
-    options:impl FnOnce(&mut Ui)
-)->Response{
-    management_dropdown_inner(ui,&label.text,&label.text,width,enabled,false,None,Some(label),options)
-}
-
-/// Shared 34pt management trigger; the hierarchical category popup and
-/// ordinary selectors must use the SAME paint, chevron and hover geometry.
-pub(crate) fn management_dropdown_trigger(
-    ui:&mut Ui,label:&str,width:f32,enabled:bool,
-    indicator:Option<Color32>,
-)->Response {
-    management_dropdown_trigger_full_label(ui,label,label,width,enabled,indicator)
-}
-
-pub(crate) fn management_dropdown_trigger_full_label(
-    ui:&mut Ui,label:&str,full_label:&str,width:f32,enabled:bool,
-    indicator:Option<Color32>,
-)->Response {
-    management_dropdown_trigger_inner(ui,label,full_label,width,enabled,indicator,None)
-}
-
-fn management_dropdown_trigger_inner(
-    ui:&mut Ui,label:&str,full_label:&str,width:f32,enabled:bool,
-    indicator:Option<Color32>,values:Option<&egui::text::LayoutJob>,
-)->Response {
-    // Keep exact toolbar/cell width without stretching the subsequent action
-    // or exceeding a narrow selector slot.
-    let width=width.min(ui.available_width()).max(1.0);
-    // Parent Ui may be disabled independently of the explicit enabled flag.
-    let interactive=enabled && ui.is_enabled();
-    let (fill,ink,stroke)=theme::field_action_palette(interactive,theme::TEXT);
-    let arrow_ink=if interactive{theme::SECONDARY}else{ink};
-    // Inline modal rows opt into the 36pt form interaction height;
-    // standard management toolbars retain their 34pt minimum.
-    let height=theme::ACTION_STANDARD_HEIGHT.max(ui.spacing().interact_size.y);
-    let trigger=ui.add_enabled(
-        enabled,
-        egui::Button::new("")
-            .min_size(Vec2::new(width,height))
-            .fill(fill)
-            .stroke(stroke)
-            .corner_radius(egui::CornerRadius::same(theme::CONTROL_RADIUS))
-    );
-    let rect=trigger.rect;
-    let painter=ui.painter().with_clip_rect(rect);
-    let arrow_left=rect.right()-30.0;
-    let caption=if let Some(values)=values{
-        ui.fonts_mut(|fonts|fonts.layout_job(typography::dropdown_value_job(values,false,ink)))
-    }else{
-        typography::management_control_text_galley(ui,label,ink)
-    };
-    // Sales status selectors sit in a narrow price column. Reserve the
-    // indicator without clipping the longest label ("판매준비중").
-    let caption_x=rect.left()+if indicator.is_some(){
-        theme::SPACE_24
-    }else{theme::SPACE_12};
-    let text_clip=Rect::from_min_max(
-        egui::pos2(caption_x,rect.top()),
-        egui::pos2((arrow_left-theme::SPACE_4).max(caption_x),rect.bottom())
-    );
-    if let Some(color)=indicator{
-        painter.circle_filled(
-            egui::pos2(rect.left()+theme::SPACE_12,rect.center().y),
-            3.5,color
-        );
-    }
-    let overflow=text_exceeds_rect(caption.size(),text_clip.intersect(ui.clip_rect()));
-    painter.with_clip_rect(text_clip).galley(
-        egui::pos2(caption_x,
-            rect.center().y-caption.size().y/2.0
-                +typography::MANAGEMENT_DROPDOWN_TEXT_OPTICAL_Y),
-        caption,ink
-    );
-    painter.line_segment(
-        [egui::pos2(arrow_left,rect.top()+5.0),
-         egui::pos2(arrow_left,rect.bottom()-5.0)],
-        Stroke::new(theme::SOFT_DIVIDER_WIDTH,theme::DIVIDER)
-    );
-    // Restore the pre-enlargement dropdown chevron dimensions; the date
-    // prev/next controls rotate this same shared shape.
-    paint_management_chevron_with_color(
-        &painter,egui::pos2(rect.right()-15.0,rect.center().y),
-        ManagementChevronDirection::Down,arrow_ink
-    );
-    if interactive {
-        theme::paint_button_hover(
-            ui,&trigger,theme::CONTROL_RADIUS as f32
-        );
-    }
-    overflow_tooltip(trigger,overflow||label!=full_label,full_label)
-}
-
-fn management_dropdown_inner(
-    ui:&mut Ui,label:&str,full_label:&str,width:f32,enabled:bool,
-    compact:bool,indicator:Option<Color32>,values:Option<&egui::text::LayoutJob>,
-    options:impl FnOnce(&mut Ui)
-)->Response {
-    let width=width.min(ui.available_width()).max(1.0);
-    let trigger=management_dropdown_trigger_inner(
-        ui,label,full_label,width,enabled,indicator,values
-    );
-    crate::overlay::show_menu(&trigger,None,|menu|{
-            // Every selectable row reports its parent trigger, never its
-            // popup-row pointer, to the shared action-notice origin.
-            menu.set_min_width(width);
-            if compact {menu.set_max_width(width);}
-            management_dropdown_option_palette(menu);
-            // The popup frame owns its 4pt inset. Use full-height selectable
-            // rows, so Hangul glyph ink has space above AND below its center.
-            menu.spacing_mut().item_spacing.y=theme::SPACE_4;
-            // Horizontal auto-shrink is mandatory: forcing a wide ScrollArea
-            // caused 90pt 선불/착불 selectors to open ~600pt-wide menus.
-            let scroll=scroll_area(ScrollAxes::Vertical)
-                .max_height(theme::MANAGEMENT_DROPDOWN_MENU_MAX_HEIGHT)
-                .auto_shrink([true,true]);
-            let scroll=if compact {scroll.max_width(width)}else{scroll};
-            scroll.show(menu,|choices|{
-                choices.spacing_mut().item_spacing.y=theme::SPACE_4;
-                choices.spacing_mut().interact_size.y=
-                    theme::MANAGEMENT_DROPDOWN_OPTION_HEIGHT;
-                if compact{choices.set_width(width);}
-                options(choices);
-            });
-        });
-    trigger
-}
-
-/// One search-capable choice for a management single-select dropdown.
-/// Its stable ID is the value passed to the existing catalog/filter workflow;
-/// search_text can additionally contain localized names and registry aliases.
-#[derive(Clone,Debug,PartialEq,Eq)]
-pub struct ManagementSearchChoice {
-    pub value:String,
-    pub label:String,
-    pub search_text:String,
-}
-impl ManagementSearchChoice {
-    pub fn new(value:String,label:String,search_text:String)->Self{
-        Self{value,label,search_text}
-    }
-}
-
-fn management_search_choice_matches(
-    choice:&ManagementSearchChoice,query:&str
-)->bool{
-    let query=query.trim().to_lowercase();
-    query.is_empty()
-        ||choice.label.to_lowercase().contains(&query)
-        ||choice.search_text.to_lowercase().contains(&query)
-}
-
-/// A searchable variant of the existing single-select master. The trigger,
-/// palette, selection semantics, 28pt option rows, click-to-close and toast
-/// anchor all remain shared; only a 36pt search field is added above the
-/// internally scrolling choices. Search never changes the selected value.
-pub fn management_searchable_dropdown(
-    ui:&mut Ui,label:&str,width:f32,enabled:bool,
-    current:&mut String,options:&[ManagementSearchChoice],hint:&str,
-)->Response{
-    let trigger=management_dropdown_trigger(ui,label,width,enabled,None);
-    let id=trigger.id.with("management-searchable-dropdown");
-    let ctx=ui.ctx().clone();
-    let mut search=ctx.data_mut(|data|
-        data.get_temp::<String>(id).unwrap_or_default()
-    );
-    if trigger.clicked(){search.clear();}
-    // The search field needs room even on a 148pt toolbar trigger, but
-    // long brand names must never stretch the popup or surrounding toolbar.
-    let popup_width=width.max(theme::MANAGEMENT_SEARCHABLE_POPUP_MIN_WIDTH)
-        .min((ctx.content_rect().width()-theme::SPACE_24).max(1.0));
-    crate::overlay::show_menu(&trigger,None,|menu|{
-            menu.set_min_width(popup_width);
-            menu.set_max_width(popup_width);
-            menu.set_width(popup_width);
-            management_dropdown_option_palette(menu);
-            menu.spacing_mut().item_spacing.y=theme::SPACE_4;
-            let input_width=menu.available_width().max(1.0);
-            management_search_field(menu,&mut search,input_width,hint);
-            let visible=options.iter()
-                .filter(|choice|management_search_choice_matches(choice,&search))
-                .collect::<Vec<_>>();
-            scroll_area(ScrollAxes::Vertical)
-                .id_salt("management-searchable-options")
-                .max_height(theme::MANAGEMENT_DROPDOWN_MENU_MAX_HEIGHT)
-                .auto_shrink([false,true])
-                .show(menu,|list|{
-                    list.spacing_mut().item_spacing.y=theme::SPACE_4;
-                    list.spacing_mut().interact_size.y=
-                        theme::MANAGEMENT_DROPDOWN_OPTION_HEIGHT;
-                    if visible.is_empty(){
-                        management_body_state_inline(list,"검색 결과가 없습니다.");
-                    }else{
-                        for choice in visible{
-                            management_dropdown_option(
-                                list,current,choice.value.clone(),&choice.label
-                            );
-                        }
-                    }
-                });
-        });
-    ctx.data_mut(|data|data.insert_temp(id,search));
-    trigger
-}
-
-/// All menu options share native selection, optical text alignment and
-/// notification/close behavior. Compact rows retain exact-width allocation;
-/// status rows retain their indicator dot and label inset.
-#[derive(Clone,Copy)]
-enum ManagementDropdownOptionStyle {
-    Standard,
-    Status(Color32),
-    Compact(f32),
-}
-
-fn management_dropdown_option_inner<T:PartialEq>(
-    ui:&mut Ui,current:&mut T,value:T,label:&str,
-    style:ManagementDropdownOptionStyle,values:Option<&egui::text::LayoutJob>
-)->Response{
-    // Invisible native label reserves the same semantic glyph widths as
-    // the visible label while preserving native selection and keyboard input.
-    let invisible:egui::WidgetText=if let Some(values)=values{
-        typography::dropdown_value_job(values,true,Color32::TRANSPARENT).into()
-    }else{
-        typography::invisible_option_label(label).into()
-    };
-    let response=match style{
-        ManagementDropdownOptionStyle::Compact(width)=>{
-            let selected=*current==value;
-            let mut response=ui.add_sized(
-                Vec2::new(width,theme::MANAGEMENT_DROPDOWN_OPTION_HEIGHT),
-                egui::Button::selectable(selected,invisible)
-            );
-            if response.clicked() && *current!=value{
-                *current=value;
-                response.mark_changed();
-            }
-            response
-        }
-        _=>ui.selectable_value(current,value,invisible),
-    };
-    let row=response.rect;
-    let painter=ui.painter().with_clip_rect(row.shrink(2.0));
-    let galley=if let Some(values)=values{
-        ui.fonts_mut(|fonts|fonts.layout_job(typography::dropdown_value_job(values,true,theme::TEXT)))
-    }else{
-        ui.painter().layout_no_wrap(
-            label.to_owned(),
-            egui::FontId::proportional(typography::FONT_STANDARD_ACTION),
-            theme::TEXT,
-        )
-    };
-    let x=match style{
-        ManagementDropdownOptionStyle::Standard=>row.left()+theme::SPACE_8,
-        ManagementDropdownOptionStyle::Compact(_)=>row.center().x-galley.size().x*0.5,
-        ManagementDropdownOptionStyle::Status(color)=>{
-            painter.circle_filled(
-                egui::pos2(row.left()+theme::SPACE_12,row.center().y),4.0,color
-            );
-            row.left()+theme::SPACE_24
-        }
-    };
-    painter.galley(
-        egui::pos2(
-            x,row.top()+typography::management_dropdown_option_text_y(
-                row.height(),galley.size().y
-            ),
-        ),
-        galley,theme::TEXT,
-    );
-    if response.clicked(){
-        crate::floating_notice::dropdown_option_selected(ui.ctx());
-        ui.close();
-    }
-    response
-}
-
-pub fn management_dropdown_option<T:PartialEq>(
-    ui:&mut Ui,current:&mut T,value:T,label:&str
-)->Response {
-    management_dropdown_option_inner(ui,current,value,label,
-        ManagementDropdownOptionStyle::Standard,None)
-}
-
-pub fn management_dropdown_option_values<T:PartialEq>(
-    ui:&mut Ui,current:&mut T,value:T,label:&egui::text::LayoutJob
-)->Response{
-    management_dropdown_option_inner(ui,current,value,&label.text,
-        ManagementDropdownOptionStyle::Standard,Some(label))
-}
-
-pub fn management_status_dropdown_option<T:PartialEq>(
-    ui:&mut Ui,current:&mut T,value:T,label:&str,color:Color32
-)->Response {
-    management_dropdown_option_inner(ui,current,value,label,
-        ManagementDropdownOptionStyle::Status(color),None)
-}
-
-pub fn management_dropdown_compact_option<T:PartialEq>(
-    ui:&mut Ui,current:&mut T,value:T,label:&str,width:f32
-)->Response {
-    management_dropdown_option_inner(ui,current,value,label,
-        ManagementDropdownOptionStyle::Compact(width),None)
 }
 
 /// Shared management tab roles (content width, no full-page stretching).
@@ -6150,68 +5255,6 @@ fn reception_compact_quantity(full:&str)->&str {
     if count.is_some_and(|n|n>=1000) {"999+"} else {full}
 }
 
-/// Actual editor rendered IN the already allocated input cell; no dialog,
-/// detached form, or second layout row. Focus and response are owned by egui.
-pub fn reception_inline_cell_editor(
-    ui:&mut Ui,cell:Rect,value:&mut String,request_focus:bool,
-    click_at:Option<egui::Pos2>,numeric:bool
-)->Response{
-    let rect=cell.shrink2(egui::vec2(theme::SPACE_4,theme::SPACE_2));
-    let font=if numeric{
-        typography::data_value_font(
-            typography::DataValueKind::Money,
-            typography::DataValueContext::Reception
-        )
-    }else{
-        egui::FontId::proportional(typography::FONT_RECEPTION_RECIPIENT_TEXT)
-    };
-    reception_text_editor_at_click(
-        ui,rect,
-        singleline_editor(value,font,rect.width(),
-            if numeric{Align::RIGHT}else{Align::LEFT},typography::reception_cell_text_margin()),
-        request_focus,click_at
-    )
-}
-
-/// Money variant of the exact-rect editor: preserve the native caret,
-/// table footprint and shared live separator/suffix behavior.
-fn reception_money_inline_cell_editor(
-    ui:&mut Ui,cell:Rect,value:&mut String,request_focus:bool,
-    click_at:Option<egui::Pos2>
-)->Response{
-    reception_money_editor_at_rect(
-        ui,cell.shrink2(egui::vec2(theme::SPACE_4,theme::SPACE_2)),
-        value,request_focus,click_at
-    )
-}
-
-fn reception_money_font()->egui::FontId{
-    typography::data_value_font(
-        typography::DataValueKind::Money,typography::DataValueContext::Reception
-    )
-}
-
-fn reception_money_editor_at_rect(
-    ui:&mut Ui,rect:Rect,value:&mut String,request_focus:bool,
-    click_at:Option<egui::Pos2>
-)->Response{
-    // The preformatted draft is also the comparison baseline in both
-    // callers. Normalize raw initial values for direct component reuse.
-    if let Some(formatted)=formatted_money_input(value){*value=formatted;}
-    let before=value.clone();
-    let inset=theme::SPACE_8;
-    let (edit,unit_galley)=money_text_edit_with_unit(
-        ui,value,reception_money_font(),rect.width(),"원",inset,
-        RECEPTION_MONEY_UNIT_GAP,typography::reception_cell_text_margin()
-    );
-    let response=reception_text_editor_at_click(
-        ui,rect,edit,request_focus,click_at
-    );
-    normalize_money_edit(ui,value,&before,&response);
-    paint_money_unit(ui,response.rect,unit_galley,inset);
-    response
-}
-
 /// Quantity uses the shared date-selector frame and segment buttons.
 /// Only the numeric draft is editable; the fixed suffix never enters the
 /// native quantity parser or changes when the cell gains focus.
@@ -6624,31 +5667,6 @@ pub struct ReceptionFreightEdit {
     pub collect_clicked:bool,
     #[cfg(test)]
     pub remote_rect:Option<Rect>,
-}
-/// The unit occupies the former external label's width, keeping the
-/// overall freight/COD group stable. Resting and focused money controls
-/// use identical suffix geometry; only their interaction mode differs.
-const RECEPTION_FREIGHT_MONEY_WIDTH:f32=104.0;
-
-fn reception_freight_money_readonly(ui:&mut Ui,value:&mut String)->Response{
-    let inset=theme::SPACE_8;
-    let (edit,unit_galley)=money_text_edit_with_unit(
-        ui,value,reception_money_font(),RECEPTION_FREIGHT_MONEY_WIDTH,
-        "원",inset,RECEPTION_MONEY_UNIT_GAP,typography::reception_cell_text_margin()
-    );
-    let response=allocate_singleline_field(
-        ui,Vec2::new(RECEPTION_FREIGHT_MONEY_WIDTH,theme::INPUT_HEIGHT),
-        edit.interactive(false),None
-    );
-    paint_money_unit(ui,response.rect,unit_galley,inset);
-    response
-}
-
-pub fn reception_freight_inline_cell_editor(
-    ui:&mut Ui,cell:Rect,value:&mut String,request_focus:bool,
-    click_at:Option<egui::Pos2>
-)->Response{
-    reception_money_editor_at_rect(ui,cell,value,request_focus,click_at)
 }
 pub fn reception_freight_row(
     ui: &mut Ui, label: &str, amount: Option<i64>, collect: Option<bool>,
@@ -8650,15 +7668,15 @@ mod management_dropdown_unification_tests {
     }
     #[test]
     fn searchable_dropdown_keeps_shared_trigger_and_one_line_options(){
-        let source=include_str!("components.rs");
+        let source=include_str!("dropdown/mod.rs");
         let block=source.split("pub fn management_searchable_dropdown(").nth(1).unwrap()
-            .split("/// Paint only the option glyphs").next().unwrap();
+            .split("/// All menu options").next().unwrap();
         for required in [
             "management_dropdown_trigger(",
             "management_dropdown_option_palette(menu)",
             "management_search_field(menu,&mut search,input_width,hint)",
             "management_dropdown_option(",
-            "dropdown_popup_trigger(menu.ctx(),rect)",
+            "crate::overlay::show_menu(&trigger,None,|menu|{",
             "MANAGEMENT_DROPDOWN_OPTION_HEIGHT",
             "MANAGEMENT_DROPDOWN_MENU_MAX_HEIGHT",
         ]{
@@ -8836,10 +7854,10 @@ mod management_dropdown_unification_tests {
         // The common trigger registers the position; all option variants
         // notify the same bridge. No individual screen should capture a
         // popup item's pointer for a result bubble.
-        let source=include_str!("components.rs");
+        let source=include_str!("dropdown/mod.rs");
         let inner=source.find("fn management_dropdown_option_inner<T:PartialEq>").unwrap();
         let first=source.find("pub fn management_dropdown_option<T:PartialEq>").unwrap();
-        let end=source[first..].find("pub fn management_tabs(").unwrap()+first;
+        let end=source.len();
         assert_eq!(source[inner..first].matches("dropdown_option_selected(ui.ctx())").count(),1);
         assert_eq!(source[first..end].matches("management_dropdown_option_inner(").count(),4);
         assert!(!source[first..end].contains("dropdown_option_selected(ui.ctx())"));
@@ -9528,7 +8546,7 @@ mod modal_editor_workspace_geometry_tests {
 
     #[test]
     fn recipient_text_editor_uses_the_shared_form_input_margin(){
-        let source=include_str!("components.rs");
+        let source=include_str!("input/mod.rs");
         let start=source.find("fn reception_recipient_text_edit(")
             .expect("recipient text editor");
         let editor=source[start..].split("\n}\n").next().unwrap();
@@ -10353,7 +9371,7 @@ mod shared_general_screen_audit_tests {
     fn all_reception_source_entry_points_share_the_native_editor_configuration(){
         let source=include_str!("main.rs");
         let manual=include_str!("manual_source_view.rs");
-        let components=include_str!("components.rs");
+        let components=include_str!("input/mod.rs");
         assert_eq!(source.matches("components::reception_source_text_edit(").count(),3);
         assert!(!source.contains("TextEdit::multiline("));
         assert!(components.contains(

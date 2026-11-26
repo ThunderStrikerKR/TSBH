@@ -1,0 +1,53 @@
+{
+  "schemaVersion": 1,
+  "id": "shared-controls-129",
+  "screen": "공통 버튼·입력·드롭다운·관리 표",
+  "files": [
+    "egui-app/src/theme.rs",
+    "egui-app/src/main.rs",
+    "egui-app/src/button/mod.rs",
+    "egui-app/src/input/mod.rs",
+    "egui-app/src/dropdown/mod.rs",
+    "egui-app/src/components.rs",
+    "egui-app/src/table/mod.rs"
+  ],
+  "visualStatus": "NOT_VERIFIED",
+  "reason": "기존 공통 렌더링을 독립 Rust 모듈로 이전. 최신 표 공통 정렬/헤더/뷰포트 이전을 보존하고 sort hover 렌더러를 표 모듈에 귀속. 색상·규격·위젯 ID·업무 상태 유지 의도. Windows 실화면 증거 없음.",
+  "defects": [],
+  "releaseDecision": "NOT_APPROVED",
+  "verification": {
+    "static": "SCOPED_SOURCE_REVIEW",
+    "rustTests": "NOT_EXECUTED",
+    "githubCI": "NOT_VERIFIED",
+    "windowsVisual": "NOT_VERIFIED"
+  },
+  "nextVerification": {
+    "requiredViewports": [
+      {
+        "width": 1920,
+        "height": 1080,
+        "scalePercent": 100
+      },
+      {
+        "width": 1366,
+        "height": 768,
+        "scalePercent": 100
+      }
+    ],
+    "checks": [
+      "noClipping",
+      "footerVisible",
+      "scrollReachable",
+      "inputReadable",
+      "alignment",
+      "interaction",
+      "hoverAndFocus"
+    ],
+    "focus": [
+      "버튼 역할별 hover/focus/disabled 및 창 버튼",
+      "입력·금액 포맷·한 번 클릭·셀 이동·IME",
+      "드롭다운 팝업 소유권·닫기·옵션 선택",
+      "관리 표 정렬 클릭과 스크롤"
+    ]
+  }
+}
