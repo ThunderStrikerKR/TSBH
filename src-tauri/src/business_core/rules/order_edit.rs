@@ -224,6 +224,21 @@ fn change_client(payload:&Value)->Result<Value,String>{
     set(&mut changed,"shippingVersion",field(&freight,"version").clone())?;
     Ok(json!({"order":changed}))
 }
+// Legacy MANUAL shipments without an override map have ambiguous provenance.
+// Preserve their recorded amounts, but never turn a new automatic origin
+// into a manual override merely because another origin was edited.
+fn retained_origin_override(row:&Value,ship:&Value,origin:&str)->Result<Value,String>{
+    if !rows(field(row,"items")).iter().any(|item|str_field(item,"origin")==origin){
+        return Ok(Value::Null);
+    }
+    let amount=if field(row,"shippingCharges").is_object(){
+        super::manual_freight(row,origin)?
+    }else if str_field(ship,"chargeMode")=="MANUAL"{
+        super::manual_amount(field(field(ship,"charges"),origin))?
+    }else{None};
+    Ok(json!(amount))
+}
+
 /// Apply an explicitly addressed edit to an existing operational order.
 /// Never turn a confirmed order into a draft or rewrite its first receipt.
 /// Existing shipment reconciliation owns stage rechecks and immutable audit.
@@ -267,9 +282,7 @@ fn change_confirmed_dispatch_origin(payload:&Value)->Result<Value,String>{
     // Freight is origin-specific. Keep a known charge for the selected
     // origin only when it was already in this shipment; never copy a factory
     // charge to the store (or vice versa). A new origin needs verification.
-    let existing=if rows(field(previous,"items")).iter().any(|item|str_field(item,"origin")==origin){
-        field(field(ship,"charges"),origin).clone()
-    }else{Value::Null};
+    let existing=retained_origin_override(previous,ship,origin)?;
     let mut charges=serde_json::Map::new();
     charges.insert(origin.to_owned(),existing);
     set(&mut recipient,"shippingCharges",Value::Object(charges))?;
@@ -486,12 +499,10 @@ fn edit_confirmed_recipient(payload:&Value)->Result<Value,String>{
     // physical change clears the obsolete quote rather than silently
     // retaining a price for different goods or an address.
     if matches!(key,"address"|"quantity"|"addItem"|"removeItem"|"product"){
-        let auto=str_field(ship,"chargeMode")=="AUTO";
         let mut charges=serde_json::Map::new();
         for origin in ["FACTORY","STORE"]{
             if rows(field(&recipient,"items")).iter().any(|i|str_field(i,"origin")==origin){
-                let charge=if auto{Value::Null}else{field(field(ship,"charges"),origin).clone()};
-                charges.insert(origin.into(),charge);
+                charges.insert(origin.into(),retained_origin_override(old,ship,origin)?);
             }
         }
         set(&mut recipient,"shippingCharges",Value::Object(charges))?;
