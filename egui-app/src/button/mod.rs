@@ -89,7 +89,7 @@ pub(crate) fn action_style(
         ButtonRole::Ghost => (ACTION_PRIMARY_HEIGHT, Color32::TRANSPARENT, SECONDARY, Stroke::NONE),
         ButtonRole::Danger => (34.0, DANGER_ACTION_BG, ERROR_TEXT, Stroke::new(FRAME_STROKE_WIDTH,DANGER_ACTION_BORDER)),
         ButtonRole::Navigation => (NAV_HEIGHT, Color32::TRANSPARENT, SECONDARY, Stroke::NONE),
-        ButtonRole::ActiveNavigation => (NAV_HEIGHT, Color32::from_rgb(41, 72, 92), TEXT, Stroke::NONE),
+        ButtonRole::ActiveNavigation => (NAV_HEIGHT, ACTIVE_NAVIGATION_BG, TEXT, Stroke::NONE),
         ButtonRole::ManagementTab => (MANAGEMENT_TAB_HEIGHT, Color32::TRANSPARENT, SECONDARY, Stroke::NONE),
         ButtonRole::ActiveManagementTab => (MANAGEMENT_TAB_HEIGHT, RAISED, TEXT, Stroke::new(1.0_f32,BORDER)),
         ButtonRole::KakaoControl => (KAKAO_CONTROL_HEIGHT, Color32::TRANSPARENT, SECONDARY, Stroke::NONE),

@@ -68,6 +68,7 @@ pub const CARD_BORDER:Color32=DIVIDER;
 pub const NEUTRAL_HOVER:Color32=RAISED;
 // Restore the original shared blue pointer feedback; focus stays independent.
 pub const BUTTON_HOVER_BG:Color32=Color32::from_rgb(47,62,74);
+pub const ACTIVE_NAVIGATION_BG:Color32=Color32::from_rgb(41,72,92);
 pub const BUTTON_HOVER_TINT:Color32=Color32::from_rgba_unmultiplied_const(112,180,255,20);
 pub const LINKED_PREVIEW_BG:Color32=Color32::from_rgb(23,67,109);
 pub const LINKED_PREVIEW_TEXT:Color32=Color32::from_rgb(234,244,255);

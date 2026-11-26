@@ -99,6 +99,35 @@ const tableContracts = {
   "product_manager.rs:show_detail":{management_readonly_table:1},
   "product_excel_ui.rs:show_review":{management_readonly_table:1},
 };
+// Verify the shared renderer itself, not just the calls in screens.
+// Removing a required delegation fails even if the public API is unchanged.
+const tableOwnerContracts = {
+  "table/mod.rs:show":{finish:1},
+  "table/mod.rs:inline":{finish_inline:1},
+  "table/mod.rs:finish_inline":{finish:1},
+  "table/mod.rs:finish":{outline_bounds:1,".rect_stroke":1},
+  "table/mod.rs:header_begin":{".rect_filled":1},
+  "table/mod.rs:header_finish":{".rect_filled":1},
+  "table/mod.rs:master_header_begin":{header_begin:1},
+  "table/mod.rs:fixed_row":{row_scope:1,management_table_cells:1,
+    paint_management_table_row_background:1,management_table_column_rules:1,
+    paint_management_table_row_rule:1},
+  "table/mod.rs:history_row":{row_scope:1,management_table_cells:1,
+    paint_management_table_row_background:1,management_table_column_rules:1,
+    paint_management_table_row_rule:1,paint_shipment_detail_surface:1},
+  "table/mod.rs:header_columns":{master_header_begin:1,management_table_column_rules:1,header_finish:1},
+  "table/mod.rs:management_table_column_rules":{management_master_column_rules:1},
+  "table/mod.rs:paint_management_table_row_background":{management_table_row_fill:1,".rect_filled":1},
+  "table/mod.rs:paint_management_table_row_rule":{"theme::paint_soft_rule":1},
+  "table/mod.rs:management_master_column_rules":{"theme::paint_soft_rule":1},
+  "table/mod.rs:fixed_rows":{viewport_scroll:1,virtual_fixed_rows:1},
+  "table/mod.rs:variable_rows":{viewport_scroll:1,management_table_row_body:1},
+  "table/mod.rs:viewport_scroll":{management_fixed_table_scroll_area:1},
+  "table/mod.rs:register_rows":{management_register_list_scroll_area:1},
+};
+const tableOnlyCalls = new Set(["show","fixed_rows","fixed_row","fixed_row_rect",
+  "variable_rows","history_row","header_columns","heading","sort_clicked","row_scope",
+  "register_rows","master_header_begin","header_finish"]);
 const tableMarkers = new Set(["management_table_cells","management_table_column_rules",
   "management_row","management_readonly_table","shipment_detail_cells",
   "fixed_rows","variable_rows","fixed_row","history_row","header_columns","register_rows"]);
@@ -153,6 +182,16 @@ const controls = [
 // Native controls that were previously absent from the shared gate.
 // Every production use must go through its owning constructor; the same
 // rule also applies inside components.rs rather than trusting the file.
+// These primitives have moved out of the legacy compatibility facade.
+// Do not grant the new modules a file-wide native-control exception.
+const extractedControlOwners = new Map([
+  ["Button :: new (",new Set([
+    "button/mod.rs:action_with_palette","button/mod.rs:window_control",
+    "button/mod.rs:icon_action_button","dropdown/mod.rs:management_dropdown_trigger_inner"
+  ])],
+  ["TextEdit :: singleline (",new Set(["input/mod.rs:singleline_editor"])],
+  ["TextEdit :: multiline (",new Set(["input/mod.rs:multiline_editor"])],
+]);
 const ownedControls = new Map([
   ["CollapsingHeader :: new (","components.rs:collapsing_header"],
   ["Slider :: new (","components.rs:ocr_zoom_slider"],
@@ -161,7 +200,7 @@ const ownedControls = new Map([
   ["Spinner :: new (",null],["Separator :: new (",null],
   ["ImageButton :: new (",null],[". radio (",null],[". radio_value (",null],
   [". small_button (",null],[". toggle_value (",null],
-  [". selectable_label (",null],[". selectable_value (","components.rs:management_dropdown_option_inner"],
+  [". selectable_label (",null],[". selectable_value (","dropdown/mod.rs:management_dropdown_option_inner"],
   [". spinner (",null],[". show_tooltip_ui (",null],[". show_tooltip_text (",null],
   [". on_hover_ui (",null],[". on_hover_ui_at_pointer (",null],
 ]);
@@ -253,9 +292,27 @@ export function audit(source,file,checkTableContracts=false){
       flag(i,"global font installation outside typography");
     if(is(i,". set_style (")&&file!=="typography.rs"&&file!=="theme.rs")
       flag(i,"global style installation outside shared theme");
-    if((is(i,"components ::")||is(i,"table ::"))&&v[i+3]==="("){
+    if((is(i,"table ::")||(is(i,"components ::")&&!tableOnlyCalls.has(v[i+2])))&&v[i+3]==="("){
       const key=file+":"+fn+":"+v[i+2];
       sharedCalls.set(key,(sharedCalls.get(key)||0)+1);
+    }
+    if(file==="table/mod.rs"){
+      const scope=file+":"+fn;
+      const required=tableOwnerContracts[scope]||{};
+      for(const name of Object.keys(required)){
+        const pattern=name.startsWith(".")?". "+name.slice(1)+" (":
+          name.includes("::")?name.replace("::"," :: ")+" (":name+" (";
+        // Qualified components call or unqualified local call; never a
+        // declaration, unrelated method, or arbitrary namespace.
+        const matches=name.startsWith(".")||name.includes("::")?is(i,pattern):
+          is(i,pattern)&&(!["fn",".","::"].includes(v[i-1])||
+            (v[i-1]==="::"&&v[i-2]==="components"&&name==="paint_shipment_detail_surface"));
+        if(matches){
+          const key=scope+":"+name;
+          if(!(name==="paint_shipment_detail_surface"&&v[i-1]==="::"))
+            sharedCalls.set(key,(sharedCalls.get(key)||0)+1);
+        }
+      }
     }
     // Within the shared module, count direct unqualified calls as well.
     // Exclude declarations, methods and qualified calls (already counted above).
@@ -310,7 +367,10 @@ export function audit(source,file,checkTableContracts=false){
       }
     }
     if(!base){
-      for(const pattern of controls)if(is(i,pattern)&&!(file==="overlay.rs"&&pattern==="Window :: new ("))flag(i,"raw shared control: "+pattern);
+      for(const pattern of controls)if(is(i,pattern)&&
+        !(file==="overlay.rs"&&pattern==="Window :: new (")&&
+        !extractedControlOwners.get(pattern)?.has(file+":"+fn))
+        flag(i,"raw shared control: "+pattern);
       for(const pattern of ["theme :: soft_rule (","theme :: divider (",". separator (",
         ". on_hover_text (",". on_hover_text_at_pointer ("])
         if(is(i,pattern))flag(i,"raw divider/tooltip: "+pattern);
@@ -326,8 +386,8 @@ export function audit(source,file,checkTableContracts=false){
        !(file==="components.rs"&&fn==="scroll_area"))
       flag(i,"raw scroll constructor outside shared scroll_area");
     if(file==="components.rs"){
-      if(is(i,"TextEdit :: singleline (")&&fn!=="singleline_editor")
-        flag(i,"single-line editor outside shared constructor");
+      if(is(i,"TextEdit :: singleline (")||is(i,"TextEdit :: multiline ("))
+        flag(i,"text editor outside shared input constructor");
       if((is(i,". on_hover_text (")||is(i,". on_hover_text_at_pointer ("))&&fn!=="overflow_tooltip")
         flag(i,"tooltip outside shared overflow policy");
     }
@@ -340,7 +400,7 @@ export function audit(source,file,checkTableContracts=false){
     }
   }
   if(checkTableContracts){
-    for(const [scope,required] of Object.entries(tableContracts)){
+    for(const [scope,required] of Object.entries({...tableContracts,...tableOwnerContracts})){
       if(!scope.startsWith(file+":"))continue;
       for(const [entry,min] of Object.entries(required)){
         const count=sharedCalls.get(scope+":"+entry)||0;
@@ -385,7 +445,21 @@ function selfTest(){
     ["new_screen.rs","fn render(){egui::Slider::new(value,range);}",1],
     ["components.rs","fn ocr_zoom_slider(){egui::Slider::new(value,range);}",0],
     ["new_screen.rs","fn render(){ui.selectable_value(a,b,c);}",1],
-    ["components.rs","fn management_dropdown_option_inner(){ui.selectable_value(a,b,c);}",0],
+    ["components.rs","fn management_dropdown_option_inner(){ui.selectable_value(a,b,c);}",1],
+    ["dropdown/mod.rs","fn management_dropdown_option_inner(){ui.selectable_value(a,b,c);}",0],
+    ["dropdown/mod.rs","fn other(){ui.selectable_value(a,b,c);}",1],
+    ["dropdown/mod.rs","fn management_dropdown_trigger_inner(){egui::Button::new(label);}",0],
+    ["dropdown/mod.rs","fn other(){egui::Button::new(label);}",1],
+    ["button/mod.rs","fn action_with_palette(){egui::Button::new(label);}",0],
+    ["button/mod.rs","fn window_control(){egui::Button::new(label);}",0],
+    ["button/mod.rs","fn icon_action_button(){egui::Button::new(label);}",0],
+    ["button/mod.rs","fn other(){egui::Button::new(label);}",1],
+    ["button/mod.rs","fn action_with_palette(){egui::TextEdit::singleline(value);}",1],
+    ["input/mod.rs","fn singleline_editor(){egui::TextEdit::singleline(value);}",0],
+    ["input/mod.rs","fn multiline_editor(){egui::TextEdit::multiline(value);}",0],
+    ["input/mod.rs","fn other(){egui::TextEdit::singleline(value);}",1],
+    ["input/mod.rs","fn other(){egui::TextEdit::multiline(value);}",1],
+    ["input/mod.rs","fn singleline_editor(){egui::Button::new(label);}",1],
     ["new_screen.rs","fn render(){Color32::from_rgb(1,2,3);}",1],
     ["theme.rs","const INK:Color32=Color32::from_rgb(1,2,3);",0],
     ["new_screen.rs","fn render(){FontId::proportional(16.0);}",1],
@@ -409,7 +483,8 @@ function selfTest(){
     ["settings_view.rs","fn show_account_rows(){components::soft_divider(ui);components::soft_divider(ui);}",1],
     ["settings_view.rs","fn other(){components::soft_divider(ui);}",1],
     ["components.rs","fn wrong(){egui::TextEdit::singleline(value);}",1],
-    ["components.rs","fn singleline_editor(){egui::TextEdit::singleline(value);}",0],
+    ["components.rs","fn singleline_editor(){egui::TextEdit::singleline(value);}",1],
+    ["components.rs","fn multiline_editor(){egui::TextEdit::multiline(value);}",1],
     ["components.rs","fn overflow_tooltip(){response.on_hover_text(full);}",0],
     ["components.rs","fn wrong(){response.on_hover_text(full);}",1],
     ["new_screen.rs","// egui::Button::new(\nfn a(){let x=r#\"ui.on_hover_text(x)\"#;}",0],
@@ -450,7 +525,17 @@ function selfTest(){
   const commonScope="components.rs:shipment_detail_cells";
   assert.equal(missing("fn shipment_detail_cells(){let c=shipment_detail_content(b);management_table_cells(p,w,h,g);}","components.rs",commonScope).length,0);
   assert.equal(missing("fn shipment_detail_cells(){shipment_detail_content(b);} fn management_table_cells(){}","components.rs",commonScope).length,1);
-  console.log("EGUI_SHARED_UI_SELFTEST_PASS",cases.length+8);
+  const tableScope="table/mod.rs:fixed_row";
+  const fixed="fn fixed_row(){row_scope();management_table_cells();paint_management_table_row_background();management_table_column_rules();paint_management_table_row_rule();}";
+  assert.equal(missing(fixed,"table/mod.rs",tableScope).length,0);
+  assert.equal(missing(fixed.replace("paint_management_table_row_rule();",""),"table/mod.rs",tableScope).length,1);
+  assert.equal(missing(fixed.replace("management_table_cells();","fake::management_table_cells();"),"table/mod.rs",tableScope).length,1);
+  assert.equal(missing("fn show(){finish(ui,header,body);}","table/mod.rs","table/mod.rs:show").length,0);
+  assert.equal(missing("fn show(){} fn unrelated(){finish(ui,header,body);}","table/mod.rs","table/mod.rs:show").length,1);
+  assert.equal(missing("fn finish(){outline_bounds(h,b);painter.rect_stroke(r,x,s,k);}","table/mod.rs","table/mod.rs:finish").length,0);
+  assert.equal(missing("fn finish(){outline_bounds(h,b);}","table/mod.rs","table/mod.rs:finish").length,1);
+  assert.equal(missing("fn show_page(){components::show();}","product_manager.rs","product_manager.rs:show_page").length,8);
+  console.log("EGUI_SHARED_UI_SELFTEST_PASS",cases.length+16);
 }
 
 function main(){
