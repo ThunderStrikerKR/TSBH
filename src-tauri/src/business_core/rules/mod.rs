@@ -3,7 +3,7 @@
 use serde_json::{json, Value};
 
 mod pricing;
-pub(crate) use pricing::ReceptionEditQuoteCache;
+pub(crate) use pricing::{ReceptionEditQuoteCache,vat_applies};
 pub mod settings_accounts;
 mod reconciliation;
 pub(crate) use reconciliation::sender_for_export;
