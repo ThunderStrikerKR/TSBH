@@ -149,7 +149,7 @@ const tableOnlyCalls = new Set(["show","fixed_rows","fixed_rows_snapshot","fixed
   "register_rows","registry_table","registry_cell","registry_actions","master_header_begin","header_finish"]);
 const tableMarkers = new Set(["management_table_cells","management_table_column_rules",
   "management_row","management_readonly_table","shipment_detail_cells",
-  "fixed_rows","fixed_rows_snapshot","variable_rows","variable_rows_snapshot","fixed_row","history_row","header_columns","register_rows"]);
+  "fixed_rows","fixed_rows_snapshot","variable_rows","variable_rows_snapshot","fixed_row","history_row","header_columns","register_rows","registry_table"]);
 const componentContractCalls = new Set(Object.entries(tableContracts)
   .filter(([scope])=>scope.startsWith("composite_workflow.rs:"))
   .flatMap(([,entries])=>Object.keys(entries)));
@@ -906,8 +906,8 @@ function selfTest(){
     ["main.rs","fn a(){table::fixed_row();} fn source_section(){painter.rect_filled(body_rect,0.0,theme::CANVAS);painter.rect_filled(body_rect,0.0,theme::CANVAS);}",1],
     ["main.rs","fn a(){table::fixed_row();} fn source_section(){painter.rect_filled(body_rect,0.0,theme::INPUT);}",1],
     ["main.rs","fn a(){table::fixed_row();} fn other(){painter.rect_filled(body_rect,0.0,theme::CANVAS);}",1],
-    ["model_group_manager.rs","fn show_page(){table::register_rows();painter.rect_filled(separator,0.0,theme::BORDER);}",0],
-    ["model_group_manager.rs","fn show_page(){table::register_rows();painter.rect_filled(separator,0.0,theme::BORDER);painter.rect_filled(row_rect,0.0,theme::BORDER);}",1],
+    ["model_group_manager.rs","fn show_page(){table::registry_table();painter.rect_filled(separator,0.0,theme::BORDER);}",1],
+    ["model_group_manager.rs","fn show_page(){table::registry_table();painter.rect_filled(separator,0.0,theme::BORDER);painter.rect_filled(row_rect,0.0,theme::BORDER);}",2],
     ["product_manager.rs","#[cfg(test)] fn t(){painter.rect_filled(r,0.0,c);} fn render(){crate::table::management_table_cells(p,w,h,g);}",0],
   ];
   for(const [file,source,count] of cases)assert.equal(audit(source,file).length,count,source);
