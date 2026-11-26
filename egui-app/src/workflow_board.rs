@@ -54,13 +54,23 @@ pub struct GroupRow {
     pub issues: Vec<Value>,
 }
 impl GroupRow {
-    pub fn management_target_label(&self)->String{
+    pub fn management_target_label(&self)->egui::text::LayoutJob{
+        use crate::typography::{inline_body_values,DataValueKind};
         let names=self.shipments.iter().map(|s|{
             if s.recipient_name.is_empty(){"수취인 확인"}else{s.recipient_name.as_str()}
         }).collect::<Vec<_>>().join(", ");
-        let amount=self.total.map(crate::components::display_won)
-            .unwrap_or_else(||"금액 미확정".to_owned());
-        format!("{names} / 배송 {}건 / {}/4 / {amount}",self.shipments.len(),self.step)
+        let prefix=format!("{names} / 배송 ");
+        let count=self.shipments.len().to_string();
+        let stage=format!("건 / {}/4 / ",self.step);
+        let amount=self.total.map(crate::components::display_won);
+        let (value,kind,unit)=match amount.as_deref(){
+            Some(value)=>(value.strip_suffix("원").unwrap_or(value),Some(DataValueKind::Money),"원"),
+            None=>("금액 미확정",None,""),
+        };
+        inline_body_values(&[
+            (&prefix,None),(&count,Some(DataValueKind::Quantity)),
+            (&stage,None),(value,kind),(unit,None)
+        ])
     }
 }
 
