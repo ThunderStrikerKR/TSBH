@@ -1028,7 +1028,7 @@ struct BandoEgui {
     inbox_folder_error: Option<String>,
     inbox_folder_open_error: Option<String>,
     // One reception-wide revision check owns metadata invalidation.
-    reception_metadata_receiver:Option<Receiver<Result<(Option<u64>,Option<gateway::ReceptionMetadata>),String>>>,
+    reception_metadata_read:screen_refresh::ReadRefresh<(Option<u64>,Option<gateway::ReceptionMetadata>)>,
     reception_metadata_last_probe:Option<Instant>,
     reception_metadata_revision:Option<u64>,
     reception_metadata_ready:bool,
@@ -1165,7 +1165,7 @@ impl BandoEgui {
             inbox_folder_loaded: false,
             inbox_folder_error: None,
             inbox_folder_open_error: None,
-            reception_metadata_receiver:None,
+            reception_metadata_read:Default::default(),
             reception_metadata_last_probe:None,
             reception_metadata_revision:None,
             reception_metadata_ready:false,
@@ -1333,17 +1333,17 @@ impl BandoEgui {
             // In-flight reads belong to the old visit. On re-entry compare
             // the persisted revision immediately; adapters without a native
             // revision re-read once per visit.
-            self.reception_metadata_receiver=None;
+            self.reception_metadata_read.cancel();
             self.reception_metadata_last_probe=None;
             if self.reception_metadata_revision.is_none(){
                 self.reception_metadata_ready=false;
             }
             return;
         }
-        if let Some(result)=self.reception_metadata_receiver.as_ref().map(|rx|rx.try_recv()){
+        if let Some(result)=self.reception_metadata_read.poll(){
             match result{
-                Ok(Ok((revision,metadata)))=>{
-                    self.reception_metadata_receiver=None;
+                Ok((revision,metadata))=>{
+                    self.reception_metadata_read.verified();
                     self.reception_metadata_revision=revision;
                     self.reception_metadata_ready=true;
                     if let Some(metadata)=metadata{
@@ -1380,36 +1380,21 @@ impl BandoEgui {
                     }
                     ctx.request_repaint();
                 }
-                Ok(Err(error))=>{
-                    self.reception_metadata_receiver=None;
+                Err(error)=>{
                     // Retain the last known good caches during a transient
                     // failure. Do not claim a new revision was observed.
                     if !self.inbox_folder_loaded{self.inbox_folder_error=Some(error);}
                 }
-                Err(mpsc::TryRecvError::Disconnected)=>{
-                    self.reception_metadata_receiver=None;
-                    if !self.inbox_folder_loaded{
-                        self.inbox_folder_error=Some("접수 설정 조회가 중단되었습니다.".into());
-                    }
-                }
-                Err(mpsc::TryRecvError::Empty)=>{}
             }
         }
-        if self.reception_metadata_receiver.is_some(){return;}
+        if self.reception_metadata_read.pending(){return;}
         // No local DB revision is available in isolated/HTTP adapters.
         if self.reception_metadata_ready && self.reception_metadata_revision.is_none(){return;}
         if self.reception_metadata_last_probe.is_some_and(|at|at.elapsed()<Duration::from_secs(5)){return;}
         self.reception_metadata_last_probe=Some(Instant::now());
         let known=self.reception_metadata_revision;
         let gateway=Arc::clone(&self.gateway);
-        let context=ctx.clone();
-        let (sender,receiver)=mpsc::channel();
-        self.reception_metadata_receiver=Some(receiver);
-        std::thread::spawn(move||{
-            let result=gateway.reception_metadata(known);
-            let _=sender.send(result);
-            context.request_repaint();
-        });
+        self.reception_metadata_read.submit(ctx.clone(),move||gateway.reception_metadata(known));
     }
 
     // Hidden management screens already refresh on every entry. Do not
@@ -1418,7 +1403,7 @@ impl BandoEgui {
         if !corrected && !imported{return;}
         // Keep the last known revision as the probe baseline, but reject an
         // in-flight pre-commit result. The native probe detects other edits.
-        self.reception_metadata_receiver=None;
+        self.reception_metadata_read.cancel();
         self.reception_metadata_last_probe=None;
         self.workflow_read.cancel();
         self.workflow_last_fetch=None;
@@ -1440,7 +1425,7 @@ impl BandoEgui {
     }
 
     fn invalidate_reception_metadata(&mut self){
-        self.reception_metadata_receiver=None;
+        self.reception_metadata_read.cancel();
         self.reception_metadata_last_probe=None;
         self.reception_metadata_revision=None;
         self.reception_metadata_ready=false;
@@ -11523,13 +11508,12 @@ mod reception_workflow_admission_integration_tests {
         app.inbox_folder_path=Some("saved folder".into());
         app.inbox_folder_loaded=true;
         app.client_names.insert("c".into(),"거래처".into());
-        let (tx,receiver)=mpsc::channel();
-        app.reception_metadata_receiver=Some(receiver);
-        tx.send(Ok((Some(7),None))).unwrap();
+        let finish=app.reception_metadata_read.test_advisory_read();
+        finish(Ok((Some(7),None)));
         app.poll_reception_metadata(&ctx);
         assert_eq!(app.inbox_folder_path.as_deref(),Some("saved folder"));
         assert_eq!(app.client_names.get("c").map(String::as_str),Some("거래처"));
-        assert!(app.reception_metadata_receiver.is_none());
+        assert!(!app.reception_metadata_read.pending());
         app.invalidate_reception_metadata();
         assert!(app.reception_metadata_revision.is_none());
         assert!(!app.reception_metadata_ready);
