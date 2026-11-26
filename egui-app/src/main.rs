@@ -72,7 +72,8 @@ mod excel_service;
 mod management_queries;
 
 use eframe::egui::{self, Align, Layout, Rect, Sense, Ui, UiBuilder, Vec2};
-use theme::{ButtonRole, WindowControl};
+use theme::ButtonRole;
+use button::WindowControl;
 use cell_navigation::{CellNavigationCell, CellNavigationKey};
 use clipboard_intake::{ClipboardImage, ClipboardMonitor, ClipboardPayload, OrderType};
 use preview_store::{OcrFeedback, WorkingReception, WorkingSource};
@@ -2721,7 +2722,7 @@ impl BandoEgui {
             let Some(item)=ship.recipient["items"].as_array().and_then(|items|
                 items.iter().find(|item|reception_service::text(item,"id")==item_id))else{return;};
             let value=item[target.field].as_i64();
-            if target.field=="unitPrice"{value.map(components::money_edit_text).unwrap_or_default()}
+            if target.field=="unitPrice"{value.map(crate::input::money_edit_text).unwrap_or_default()}
             else{value.map(|n|n.to_string()).unwrap_or_default()}
         }else{
             reception_service::text(&ship.recipient,target.field).to_owned()
@@ -3595,8 +3596,8 @@ impl BandoEgui {
         // Compare the same display representation before/after editing,
         // so adding separators alone never creates a native write.
         let original=if matches!(target.field,"unitPrice"|"shippingCharge"){
-            components::parse_money_input(&original)
-                .map(components::money_edit_text).unwrap_or(original)
+            crate::input::parse_money_input(&original)
+                .map(crate::input::money_edit_text).unwrap_or(original)
         }else{original};
         self.inline_editor=Some(InlineReceptionEditor{
             source_id:self.active_id.clone().unwrap_or_default(),
@@ -4023,7 +4024,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                         // Three-digit compact field; decimals remain supported by
                         // native VAT parser. The 36pt shared TextEdit centers caret,
                         // selection and glyphs together.
-                        components::compact_text_field(
+                        crate::input::compact_text_field(
                             row,&mut dialog.rate_text,48.0,!busy
                         );
                         // Let the horizontal row center the natural-height unit
@@ -4097,7 +4098,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                     );
                 });
                 decision.actions(|buttons|{
-                    if theme::action(
+                    if crate::button::action(
                         buttons,"적용",ButtonRole::Primary,!busy
                     ).clicked(){apply=true;}
                 });
@@ -5393,7 +5394,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                             editor.set_clip_rect(text_clip);
                             editor.set_width(text_view_rect.width());
                             editor.set_height(text_view_rect.height());
-                            components::multiline_text_field_sized(
+                            crate::input::multiline_text_field_sized(
                                 editor,
                                 &mut review.edited_text,
                                 true,
@@ -5419,7 +5420,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                     let valid=!edited.is_empty() && edited.chars().count()<=20_000;
                     components::modal_master_footer_in_rect(
                         &mut master_ui,footer_rect,|buttons|{
-                            if theme::action(
+                            if crate::button::action(
                                 buttons,"적용",ButtonRole::Primary,valid
                             ).clicked() {
                                 apply=Some((
@@ -5504,7 +5505,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                         ui.label("OCR 검토에서 수정한 내용을 버릴까요?");
                     });
                     decision.actions(|buttons|{
-                        if theme::action(
+                        if crate::button::action(
                             buttons,"수정 내용 버리기",ButtonRole::Danger,true
                         ).clicked() {
                             self.ocr_review=None;
@@ -5547,7 +5548,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                         ui.label("현재 초안과 분석 결과를 새 원문으로 교체할까요?");
                     });
                     decision.actions(|actions|{
-                        if theme::action(actions, "교체", ButtonRole::Primary, true).clicked() {
+                        if crate::button::action(actions, "교체", ButtonRole::Primary, true).clicked() {
                             accept = true;
                         }
                     });
@@ -5654,7 +5655,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                             } else {
                                 ButtonRole::Navigation
                             };
-                            if theme::action(bar, page.label(), role,
+                            if crate::button::action(bar, page.label(), role,
                                 page==self.page || (self.confirmed_cell.is_none() && self.confirmed_modal_target.is_none())
                             ).clicked() {
                                 // Price cells must commit/cancel before leaving,
@@ -5744,17 +5745,17 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                         }
                         bar.with_layout(Layout::right_to_left(Align::Center), |actions| {
                             actions.spacing_mut().item_spacing.x = theme::SPACE_4;
-                            if theme::window_control(actions, WindowControl::Close).clicked()
+                            if crate::button::window_control(actions, WindowControl::Close).clicked()
                             {
                                 ctx.send_viewport_cmd(egui::ViewportCommand::Close);
                             }
-                            if theme::window_control(actions, WindowControl::Maximize).clicked()
+                            if crate::button::window_control(actions, WindowControl::Maximize).clicked()
                             {
                                 ctx.send_viewport_cmd(
                                     egui::ViewportCommand::Maximized(!maximized)
                                 );
                             }
-                            if theme::window_control(actions, WindowControl::Minimize).clicked()
+                            if crate::button::window_control(actions, WindowControl::Minimize).clicked()
                             {
                                 ctx.send_viewport_cmd(egui::ViewportCommand::Minimized(true));
                             }
@@ -5881,13 +5882,13 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                         let mode_role=|active|if active{
                             ButtonRole::ActiveKakaoControl
                         }else{ButtonRole::KakaoControl};
-                        if theme::action(toolbar,"겹쳐 보기",
+                        if crate::button::action(toolbar,"겹쳐 보기",
                             mode_role(current_mode==kakao_dock::DockMode::Together),true
                         ).clicked(){
                             next_mode=Some(kakao_dock::DockMode::Together);
                         }
                         toolbar.spacing_mut().item_spacing.x=theme::SPACE_8;
-                        if theme::action(toolbar,"나누어 보기",
+                        if crate::button::action(toolbar,"나누어 보기",
                             mode_role(current_mode==kakao_dock::DockMode::Split),true
                         ).clicked(){
                             next_mode=Some(kakao_dock::DockMode::Split);
@@ -5896,7 +5897,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                         // a third choice in the display-mode group.
                         toolbar.with_layout(Layout::right_to_left(Align::Center), |right| {
                             right.add_space(theme::KAKAO_TOOLBAR_PAD_X);
-                            if theme::action(right,"연결 해제",
+                            if crate::button::action(right,"연결 해제",
                                 ButtonRole::KakaoControl,true
                             ).clicked(){
                                 disconnect=true;
@@ -5917,7 +5918,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                             ((slot.height()-theme::ACTION_EMPHASIZED_HEIGHT)/2.0)
                                 .max(0.0)
                         );
-                        if theme::action(center,"카카오톡 연결",
+                        if crate::button::action(center,"카카오톡 연결",
                             ButtonRole::Emphasized,true
                         ).clicked(){
                             connect=true;
@@ -6248,7 +6249,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
             let mut new_clicked=false;
             let mut clicked_source=None;
             Self::section_with_header(ui,"발주 원문",height,|header|{
-                if theme::action(header,"+ 새 주문",ButtonRole::Emphasized,true).clicked(){
+                if crate::button::action(header,"+ 새 주문",ButtonRole::Emphasized,true).clicked(){
                     new_clicked=true;
                 }
             },|body|{
@@ -6300,7 +6301,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                         layout_ui.fonts_mut(|fonts|fonts.layout_job(job))
                                     };
                                     let paint_slot=text_ui.painter().add(egui::Shape::Noop);
-                                    let display=components::reception_source_text_edit(
+                                    let display=crate::input::reception_source_text_edit(
                                         &mut immutable,text_ui.available_width())
                                         .layouter(&mut layouter)
                                         .show(text_ui);
@@ -6386,7 +6387,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                 && !board.groups.iter().flat_map(|g|g.shipments.iter()).any(|s|
                     s.order_id==shipment.order_id && (s.transferred || s.completed_step.unwrap_or(0)>=4));
             Self::section_with_header(ui,"발주 원문",height,|header|{
-                if theme::action(header,"+ 새 주문",ButtonRole::Emphasized,no_edit).clicked(){
+                if crate::button::action(header,"+ 새 주문",ButtonRole::Emphasized,no_edit).clicked(){
                     new_clicked=true;
                 }
             },|body|{
@@ -6435,7 +6436,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                         layout_ui.fonts_mut(|fonts|fonts.layout_job(job))
                                     };
                                     let under=content.painter().add(egui::Shape::Noop);
-                                    let output=components::reception_source_text_edit(
+                                    let output=crate::input::reception_source_text_edit(
                                         &mut immutable,content.available_width())
                                         .layouter(&mut layouter).show(content);
                                     let (normal,focused)=source_highlight::block_shapes(
@@ -6518,7 +6519,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                     saved.get("mode").and_then(serde_json::Value::as_str)==Some("DIRECT")
                 ));
         Self::section_with_header(ui, "발주 원문", height, |ui| {
-            if theme::action(ui, "+ 새 주문", ButtonRole::Emphasized, !ocr_processing).clicked() {
+            if crate::button::action(ui, "+ 새 주문", ButtonRole::Emphasized, !ocr_processing).clicked() {
                 begin_new_order = true;
             }
         }, |ui| {
@@ -6599,7 +6600,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                             typography::ocr_progress_title("이미지 분석중...")
                         );
                         progress.add_space(theme::SPACE_12);
-                        if theme::action(
+                        if crate::button::action(
                             progress,"취소",ButtonRole::Standard,true
                         ).clicked(){
                             cancel_ocr.store(true,Ordering::Release);
@@ -6649,7 +6650,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                         .layout(Layout::right_to_left(Align::Center)),
                     |actions|{
                         actions.set_clip_rect(actions_rect);
-                        if theme::action(actions,"직접 입력 수정",ButtonRole::Emphasized,
+                        if crate::button::action(actions,"직접 입력 수정",ButtonRole::Emphasized,
                             self.manual_workspace.is_none() && self.client_change.is_none()
                                 && self.working_sync.is_none()
                         ).clicked(){
@@ -6810,7 +6811,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                 // Only the explicit direct-entry route gets a
                                 // mutable String buffer.
                                 let mut show_source=|buffer:&mut dyn egui::TextBuffer|{
-                                    components::reception_source_text_edit(
+                                    crate::input::reception_source_text_edit(
                                         buffer,scroll_ui.available_width())
                                         .desired_rows(lines)
                                         .layouter(&mut layouter)
@@ -6942,7 +6943,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                             .layout(Layout::right_to_left(Align::Center)),
                         |actions| {
                             actions.set_clip_rect(actions_rect);
-                            if theme::action(actions,"수동 분류",ButtonRole::Standard,
+                            if crate::button::action(actions,"수동 분류",ButtonRole::Standard,
                                 ready && self.manual_workspace.is_none() &&
                                 self.client_change.is_none() && self.working_sync.is_none()
                             ).clicked() {
@@ -7058,11 +7059,11 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                             Layout::left_to_right(Align::Center),|buttons|{
                                 if let Some(path)=inbox_path.as_deref(){
                                     buttons.spacing_mut().item_spacing.x=theme::SPACE_8;
-                                    if theme::action(buttons,"경로 복사",
+                                    if crate::button::action(buttons,"경로 복사",
                                         ButtonRole::Standard,true).clicked(){
                                         inbox_copy_request=Some(path.to_owned());
                                     }
-                                    if theme::action(buttons,"폴더 열기",
+                                    if crate::button::action(buttons,"폴더 열기",
                                         ButtonRole::Standard,true).clicked(){
                                         inbox_open_request=Some(path.to_owned());
                                     }
@@ -7441,7 +7442,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                                 && self.workflow_mutation_ready()
                                                 && self.workflow_freight_editor.is_none()
                                                 && self.confirmed_cell.is_none();
-                                            if theme::review_action(content,"운임 입력",theme::ButtonRole::Standard,enabled).clicked(){
+                                            if crate::button::review_action(content,"운임 입력",theme::ButtonRole::Standard,enabled).clicked(){
                                                 workflow_freight_open=Some((target.id.clone(),origin,String::new(),None,true));
                                             }
                                         }
@@ -7494,7 +7495,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                 );
                                 let values=[name,address,mobile,phone,note];
                                 for ((response,field),initial) in responses.iter().zip(fields).zip(values){
-                                    if required.contains(id,field){components::paint_required_input(contents,response.rect);}
+                                    if required.contains(id,field){crate::input::paint_required_input(contents,response.rect);}
                                     let key=source_highlight::key(id,id,field);
                                     if response.hovered(){hovered_detail=Some(key.clone());}
                                     let target=InlineTarget{recipient_id:id.into(),item_id:None,field};
@@ -7504,7 +7505,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                     if let Some(editor)=self.confirmed_cell.as_mut().filter(|e|
                                         e.target.selection.shipment_id==ship.id && e.cell.target==target){
                                         let navigation=cell_navigation::consume_worksheet_navigation_before_editor(contents.ctx(),confirmed_editor_slot(&ship.id,&target));
-                                        let result=components::reception_recipient_inline_cell_editor(
+                                        let result=crate::input::reception_recipient_inline_cell_editor(
                                             contents,response.rect,&mut editor.cell.text,editor.cell.focus_next,
                                             editor.cell.click_at.take(),matches!(field,"mobile"|"phone"),
                                             source_highlight::is_active(linked_active.as_ref(),&key));
@@ -7598,7 +7599,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                                     (&cells.quantity,"quantity"),
                                                     (&cells.amount,"price")
                                                 ] {
-                                                    if required.contains(item_id,field){components::paint_required_input(contents,response.rect);}
+                                                    if required.contains(item_id,field){crate::input::paint_required_input(contents,response.rect);}
                                                     let key=source_highlight::key(
                                                         &ship.recipient_id,item_id,field
                                                     );
@@ -7619,18 +7620,18 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                                     if let Some(editor)=self.confirmed_cell.as_mut().filter(|e|
                                                         e.target.selection.shipment_id==ship.id && e.cell.target==target){
                                                         let navigation=cell_navigation::consume_worksheet_navigation_before_editor(contents.ctx(),confirmed_editor_slot(&ship.id,&target));
-                                                        let (result,step)=components::reception_item_numeric_editor(
+                                                        let (result,step)=crate::input::reception_item_numeric_editor(
                                                             contents,response.rect,&mut editor.cell.text,editor.cell.focus_next,
                                                             editor.cell.click_at.take(),if field=="quantity"{
-                                                                components::ReceptionNumericCell::Quantity
-                                                            }else{components::ReceptionNumericCell::Money});
+                                                                crate::input::ReceptionNumericCell::Quantity
+                                                            }else{crate::input::ReceptionNumericCell::Money});
                                                         cell_navigation::remember_worksheet_editor(contents.ctx(),
                                                             confirmed_editor_slot(&ship.id,&target),result.id);
                                                         editor.cell.focus_next=false;
                                                         if overlay::take_cell_escape(&result,false){confirmed_cancel=true;}
                                                         else if let Some(key)=navigation{
                                                             confirmed_navigation_request=Some((target.clone(),key));
-                                                        }else if components::reception_numeric_edit_finished(&result,step){confirmed_commit=true;}
+                                                        }else if crate::input::reception_numeric_edit_finished(&result,step){confirmed_commit=true;}
                                                     }
                                                 }
                                             }
@@ -7710,7 +7711,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                                         self.workflow_freight_guidance.as_deref()==Some(group.id.as_str());
                                                     let target=confirmed_freight_target(ship,origin);
                                                     let navigation=cell_navigation::consume_worksheet_navigation_before_editor(contents.ctx(),confirmed_editor_slot(&ship.id,&target));
-                                                    let response=components::reception_freight_inline_cell_editor(
+                                                    let response=crate::input::reception_freight_inline_cell_editor(
                                                         contents,rect,&mut editor.text,
                                                         editor.focus_next,editor.click_at.take()
                                                     );
@@ -7732,7 +7733,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                             }
                                             if workflow_board::missing_freight_origin(group,ship,origin){
                                                 if let Some(rect)=freight_actions.amount_rect{
-                                                    components::paint_required_input(contents,rect);
+                                                    crate::input::paint_required_input(contents,rect);
                                                 }
                                             }
                                             contents.add_space(theme::SPACE_8);
@@ -7758,7 +7759,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                     pane.set_height(summary_rect.height());
                     Self::section_with_header(
                         pane,"발주서 합계",summary_rect.height(),
-                        |header|{let response=theme::action(
+                        |header|{let response=crate::button::action(
                             header,"부가세 설정",ButtonRole::Standard,confirmed_editable && confirmed_controls_idle
                         );confirmed_vat=response.clicked();if one_touch::stage(header)==one_touch::Stage::Review{one_touch::mark(header,response.rect);}},
                         |body|{
@@ -8057,7 +8058,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                     Self::section_with_header(
                         pane,"발주서 합계",summary_rect.height(),
                         |header|{
-                            let response=theme::action(header,"부가세 설정",ButtonRole::Standard,false);
+                            let response=crate::button::action(header,"부가세 설정",ButtonRole::Standard,false);
                             if one_touch::stage(header)==one_touch::Stage::Review{one_touch::mark(header,response.rect);}
                         },|body|{
                             let inclusive=recipients.iter().filter(|r|
@@ -8268,7 +8269,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                         if let Some(editor)=self.inline_editor.as_mut()
                                             .filter(|edit|edit.target==target) {
                                             let navigation=cell_navigation::consume_worksheet_navigation_before_editor(fields.ctx(),inline_editor_slot(&target));
-                                            let edit_response=components::reception_recipient_inline_cell_editor(
+                                            let edit_response=crate::input::reception_recipient_inline_cell_editor(
                                                 fields,response.rect,&mut editor.text,
                                                 editor.focus_next,
                                                 editor.click_at.take(),
@@ -8294,7 +8295,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                             }
                                         }
                                         if required.contains(recipient_id,field){
-                                            components::paint_required_input(fields,response.rect);
+                                            crate::input::paint_required_input(fields,response.rect);
                                         }
                                     }
                                 });
@@ -8328,7 +8329,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                         let response=components::reception_item_header_action(
                             header,false,editable && selected.is_some());
                         if selected.is_some_and(|row|required.contains(reception_service::text(row,"id"),"addItem")){
-                            components::paint_required_input(header,response.rect);
+                            crate::input::paint_required_input(header,response.rect);
                         }
                         header_add_item=response.clicked();
                     },|ui| {
@@ -8437,11 +8438,11 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                                     if let Some(editor)=self.inline_editor.as_mut()
                                                         .filter(|editor|editor.target==target) {
                                                         let navigation=cell_navigation::consume_worksheet_navigation_before_editor(items_ui.ctx(),inline_editor_slot(&target));
-                                                        let (result,step_interaction)=components::reception_item_numeric_editor(
+                                                        let (result,step_interaction)=crate::input::reception_item_numeric_editor(
                                                             items_ui,response.rect,&mut editor.text,
                                                             editor.focus_next,editor.click_at.take(),
-                                                            if field=="quantity"{components::ReceptionNumericCell::Quantity}
-                                                            else{components::ReceptionNumericCell::Money}
+                                                            if field=="quantity"{crate::input::ReceptionNumericCell::Quantity}
+                                                            else{crate::input::ReceptionNumericCell::Money}
                                                         );
                                                         cell_navigation::remember_worksheet_editor(
                                                             items_ui.ctx(),inline_editor_slot(&target),
@@ -8455,12 +8456,12 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                                             inline_cancel=true;
                                                         }else if let Some(key)=navigation{
                                                             inline_navigation_request=Some((target.clone(),key));
-                                                        }else if components::reception_numeric_edit_finished(&result,step_interaction){
+                                                        }else if crate::input::reception_numeric_edit_finished(&result,step_interaction){
                                                             inline_commit=true;
                                                         }
                                                     }
                                                     if required.contains(item_id,field){
-                                                        components::paint_required_input(items_ui,response.rect);
+                                                        crate::input::paint_required_input(items_ui,response.rect);
                                                     }
                                                 }
                                             }
@@ -8537,7 +8538,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                             freight_actions.amount_rect
                                         ){
                                             let navigation=cell_navigation::consume_worksheet_navigation_before_editor(items_ui.ctx(),inline_editor_slot(&freight_target));
-                                            let result=components::reception_freight_inline_cell_editor(
+                                            let result=crate::input::reception_freight_inline_cell_editor(
                                                 items_ui,rect,&mut editor.text,editor.focus_next,
                                                 editor.click_at.take()
                                             );
@@ -8603,7 +8604,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                 let mut edit_vat=false;
                 Self::section_with_header(pane,"발주서 합계",summary_rect.height(),
                     |header|{
-                        let response=theme::action(header,"부가세 설정",ButtonRole::Standard,
+                        let response=crate::button::action(header,"부가세 설정",ButtonRole::Standard,
                             editable && self.analysis.is_some()
                                 && self.inline_editor.is_none()
                                 && self.vat_change.is_none());
@@ -9361,13 +9362,13 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                         ]));
                                     let previous=target.clone();
                                     components::modal_labeled_row_with_width(ui,"다시 묶을 대상",112.0,|line|{
-                                        components::management_dropdown_values(
+                                        crate::dropdown::management_dropdown_values(
                                             line,&caption,
                                             line.available_width().max(1.0),!applying,|list|{
-                                                components::management_dropdown_option(
+                                                crate::dropdown::management_dropdown_option(
                                                     list,&mut target,String::new(),"대상 선택");
                                                 for other in &targets{
-                                                    components::management_dropdown_option_values(
+                                                    crate::dropdown::management_dropdown_option_values(
                                                         list,&mut target,other.id.clone(),
                                                         &other.management_target_label()
                                                     );
@@ -9401,7 +9402,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                                 "종 / 입금 ",ship.paid,"—",true
                                             ));
                                             list.with_layout(Layout::right_to_left(Align::Center),|line|{
-                                                if !targets.is_empty() && theme::action(
+                                                if !targets.is_empty() && crate::button::action(
                                                     line,"다시 묶기",ButtonRole::Standard,
                                                     writable&&!busy&&!group.transferred&&!ship.transferred&&!target.is_empty()
                                                 ).clicked(){
@@ -9412,7 +9413,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                                         Some(target.clone()),ack
                                                     ));
                                                 }
-                                                if theme::action(
+                                                if crate::button::action(
                                                     line,"이 배송 건 분리",ButtonRole::Standard,
                                                     writable&&!busy &&
                                                         group.shipments.len()>1 &&
@@ -9481,7 +9482,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                     });
                             });
                             decision.actions(|buttons|{
-                                if theme::action(buttons,"거래처 확인하기",
+                                if crate::button::action(buttons,"거래처 확인하기",
                                     ButtonRole::Primary,true).clicked(){
                                     select_pending=Some(id.clone());
                                 }
@@ -9507,7 +9508,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                 ui.label("접수 원문과 감사 기록은 보존됩니다.");
                             });
                             decision.actions(|buttons|{
-                                if theme::action(
+                                if crate::button::action(
                                     buttons,"묶음 삭제",ButtonRole::Danger,
                                     writable && !busy && !group.transferred
                                 ).clicked(){
@@ -9531,7 +9532,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                 ui.label("미확정 발주서를 삭제할까요?");
                             });
                             decision.actions(|buttons|{
-                                if theme::action(
+                                if crate::button::action(
                                     buttons,"발주서 삭제",ButtonRole::Danger,
                                     !busy
                                 ).clicked(){
@@ -9553,7 +9554,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                             );
                         });
                         decision.actions(|buttons|{
-                            if theme::action(
+                            if crate::button::action(
                                 buttons,"전달 완료로 처리",ButtonRole::Primary,
                                 writable && !busy
                             ).clicked(){
@@ -9836,13 +9837,13 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                     ));
                 });
                 decision.actions(|bar|{
-                    if theme::action(bar,"저장하고 이동",ButtonRole::Primary,
+                    if crate::button::action(bar,"저장하고 이동",ButtonRole::Primary,
                         manager.can_save_dirty()).clicked(){
                         if manager.save_dirty(ctx.clone()){
                             self.freight_pending_save=true;
                         }
                     }
-                    if theme::action(bar,"저장 안 함",ButtonRole::Danger,
+                    if crate::button::action(bar,"저장 안 함",ButtonRole::Danger,
                         !manager.busy()).clicked(){
                         manager.discard_drafts();
                         self.page=next;
@@ -9882,12 +9883,12 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                     ));
                 });
                 decision.actions(|actions|{
-                    if theme::action(actions,"저장하고 이동",ButtonRole::Primary,
+                    if crate::button::action(actions,"저장하고 이동",ButtonRole::Primary,
                         !view.busy()&&!view.read_only()).clicked(){
                         self.settings_pending_save=true;
                         view.save(Arc::clone(&self.gateway),ctx.clone());
                     }
-                    if theme::action(actions,"저장 안 함",ButtonRole::Danger,
+                    if crate::button::action(actions,"저장 안 함",ButtonRole::Danger,
                         !view.busy()).clicked(){
                         view.discard();
                         self.page=next;

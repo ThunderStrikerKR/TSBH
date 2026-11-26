@@ -51,7 +51,7 @@ fn settlement_date_toolbar(
     ui.horizontal_wrapped(|controls|{
         controls.spacing_mut().item_spacing.x=theme::SPACE_8;
         components::form_field_label(controls,"결산 날짜");
-        if theme::action(controls,"‹",theme::ButtonRole::Standard,true).clicked(){
+        if crate::button::action(controls,"‹",theme::ButtonRole::Standard,true).clicked(){
             *date=move_date(date,-1);
             *date_input=date.clone();
             if let Ok(day)=NaiveDate::parse_from_str(date,"%Y-%m-%d"){
@@ -59,7 +59,7 @@ fn settlement_date_toolbar(
             }
             changed=true;
         }
-        if components::flexible_text_field(
+        if crate::input::flexible_text_field(
             controls,date_input,theme::SETTLEMENT_DATE_FIELD_WIDTH,"YYYY-MM-DD"
         ).changed() && valid_date(date_input) && date!=date_input{
             *date=date_input.clone();
@@ -68,7 +68,7 @@ fn settlement_date_toolbar(
             }
             changed=true;
         }
-        let trigger=theme::action(
+        let trigger=crate::button::action(
             controls,"달력",theme::ButtonRole::Standard,true
         );
         if trigger.clicked(){
@@ -84,7 +84,7 @@ fn settlement_date_toolbar(
             *date_input=date.clone();
             changed=true;
         }
-        if theme::action(controls,"›",theme::ButtonRole::Standard,true).clicked(){
+        if crate::button::action(controls,"›",theme::ButtonRole::Standard,true).clicked(){
             *date=move_date(date,1);
             *date_input=date.clone();
             if let Ok(day)=NaiveDate::parse_from_str(date,"%Y-%m-%d"){
@@ -276,7 +276,7 @@ fn report_table<const N:usize>(
     stretch_column:usize,indices:&[usize],
     sort:&mut Option<Sort>,empty_notice:Option<&str>,format_row:impl Fn(usize)->[String;N],
 ){
-    let previous_gap=components::management_table_container_style(ui);
+    let previous_gap=crate::table::management_table_container_style(ui);
     let minimum=base.iter().sum::<f32>()+(N.saturating_sub(1)) as f32*COL_GAP;
     // Keep existing column minima; the shared 36pt header now uses the
     // same zero-extra scrollbar reservation as both master tables.
@@ -290,7 +290,7 @@ fn report_table<const N:usize>(
     // at its OWN row viewport and cannot extend into later sections.
     let scroll_max_height=ui.ctx().content_rect().height()
         *theme::MANAGEMENT_TABLE_VIEWPORT_FRACTION;
-    let scroll_track=components::management_table_scroll_track_rect(
+    let scroll_track=crate::table::management_table_scroll_track_rect(
         ui,scroll_max_height
     );
     let mut first_x=None;
@@ -298,7 +298,7 @@ fn report_table<const N:usize>(
                 ui,crate::table::Viewport{width:width,height:scroll_max_height,rail:Some(scroll_track)},
                 id,ROW_HEIGHT,indices.len(),
                 |list,visible_rows|{
-            components::management_table_row_body(list,width);
+            crate::table::management_table_row_body(list,width);
             let first=visible_rows.start;
             let origin=list.max_rect().min;
             for index in visible_rows{
@@ -323,7 +323,7 @@ fn report_table<const N:usize>(
     components::management_body_state_overlay(ui,scroll.inner_rect,empty_notice);
     ui.spacing_mut().item_spacing.y=previous_gap;
     let left=first_x.unwrap_or(header.left()-scroll.state.offset.x);
-    let header_cells=components::management_table_cells(egui::pos2(left,header.top()),&widths,HEADER_HEIGHT,COL_GAP);
+    let header_cells=crate::table::management_table_cells(egui::pos2(left,header.top()),&widths,HEADER_HEIGHT,COL_GAP);
     crate::table::header_columns(ui,header,layout.header_content_rect,&header_cells,COL_GAP,|ui,header_text_rect|{
     let mut sort_change=None;
     for (column,title) in headings.iter().enumerate(){

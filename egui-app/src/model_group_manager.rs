@@ -199,7 +199,7 @@ impl ModelGroupManager {
                 if self.selected==id{theme::RAISED}else{theme::INPUT});
         }
         if self.selected!=id && !self.busy(){
-            theme::paint_button_hover(
+            crate::button::paint_button_hover(
                 ui,&response,theme::CONTROL_RADIUS as f32
             );
         }
@@ -265,7 +265,7 @@ impl ModelGroupManager {
                         left.label(typography::field_label("새 그룹 이름"));
                         left.horizontal(|form|{
                             form.add_enabled_ui(writable&&!busy,|entry|{
-                                let edit=components::flexible_text_field(
+                                let edit=crate::input::flexible_text_field(
                                     entry,&mut self.new_name,
                                     theme::MANAGEMENT_SEARCH_MIN_WIDTH,
                                     "직원이 알아보기 쉬운 이름"
@@ -276,7 +276,7 @@ impl ModelGroupManager {
                                     false,8.0
                                 );
                             });
-                            if theme::action(form,"그룹 생성",theme::ButtonRole::Standard,
+                            if crate::button::action(form,"그룹 생성",theme::ButtonRole::Standard,
                                 writable&&!busy).clicked(){
                                 crate::floating_notice::dispatch_pointer(form.ctx(),"products.model");
                                 self.create();
@@ -285,13 +285,13 @@ impl ModelGroupManager {
                         components::section_divider(left);
                         left.horizontal(|search|{
                             components::form_field_label(search,"상품 검색");
-                            components::management_search_field(search,&mut self.query,
+                            crate::input::management_search_field(search,&mut self.query,
                                 theme::MANAGEMENT_SEARCH_MIN_WIDTH,
                                 "그룹 이름 또는 상품명 검색");
                         });
                         // Fixed register header and one local scroll
                         // viewport, as in the Shipping Assignment master.
-                        components::management_table_container_style(left);
+                        crate::table::management_table_container_style(left);
                         crate::table::show(left,crate::table::Header::Register{primary:"모델군",action:"상품 수",action_width:104.0},|left,header|{
                         let list_height=left.available_height().max(1.0);
                         let mut has_visible=false;
@@ -329,7 +329,7 @@ impl ModelGroupManager {
                             right.horizontal(|head|{
                                 head.label(typography::section_heading("모델군 및 대표모델 설정"));
                                 head.with_layout(Layout::right_to_left(Align::Center),|buttons|{
-                                    if theme::action(buttons,"그룹 삭제",theme::ButtonRole::Danger,
+                                    if crate::button::action(buttons,"그룹 삭제",theme::ButtonRole::Danger,
                                         writable&&!busy).clicked(){
                                         self.confirm_delete=true;
                                     }
@@ -345,7 +345,7 @@ impl ModelGroupManager {
                                     body.label(typography::field_label("그룹 이름"));
                                     let mut name=text(&g,"name").to_owned();
                                     body.add_enabled_ui(writable&&!busy,|field|{
-                                        components::flexible_text_field(field,&mut name,
+                                        crate::input::flexible_text_field(field,&mut name,
                                             theme::MANAGEMENT_SEARCH_MIN_WIDTH,"그룹 이름");
                                     });
                                     if name!=text(&g,"name"){
@@ -355,7 +355,7 @@ impl ModelGroupManager {
                                     components::section_divider(body);
                                     body.label(typography::subsection_heading("상품 추가"));
                                     body.add_enabled_ui(writable&&!busy,|search|{
-                                        components::management_search_field(search,&mut self.search,
+                                        crate::input::management_search_field(search,&mut self.search,
                                             theme::MANAGEMENT_SEARCH_MIN_WIDTH,
                                             "상품명으로 찾아서 추가");
                                     });
@@ -391,7 +391,7 @@ impl ModelGroupManager {
                                                 });
                                                 row.with_layout(Layout::right_to_left(Align::Center),
                                                     |actions|{
-                                                        if theme::action(actions,"추가",
+                                                        if crate::button::action(actions,"추가",
                                                             theme::ButtonRole::Standard,
                                                             writable&&!busy&&
                                                                 !assigned.contains_key(text(&p,"id"))
@@ -448,7 +448,7 @@ impl ModelGroupManager {
                                             }else{row.label(typography::body("확인할 상품"));}
                                             row.with_layout(Layout::right_to_left(Align::Center),
                                                 |actions|{
-                                                    if theme::action(actions,"제외",
+                                                    if crate::button::action(actions,"제외",
                                                         theme::ButtonRole::Standard,
                                                         writable&&!busy).clicked(){
                                                         let values=items(&self.draft[&self.selected]
@@ -464,7 +464,7 @@ impl ModelGroupManager {
                                                         self.status.clear();
                                                     }
                                                     let representative=text(&g,"representativeProductId")==id;
-                                                    if theme::action_with_min_width(actions,
+                                                    if crate::button::action_with_min_width(actions,
                                                         if representative{"대표모델"}else{"대표 지정"},
                                                         theme::ButtonRole::Standard,
                                                         !representative&&writable&&!busy&&product(catalog,&id).is_some(),100.0
@@ -487,13 +487,13 @@ impl ModelGroupManager {
                             right.horizontal(|footer|{
                                 footer.label(typography::caption(if self.dirty(){"저장하지 않은 변경사항 있음"} else {"변경사항 없음"}));
                                 footer.with_layout(Layout::right_to_left(Align::Center),|buttons|{
-                                    if theme::action(buttons,
+                                    if crate::button::action(buttons,
                                         "변경사항 저장",
                                         theme::ButtonRole::Primary,
                                         writable&&!busy&&self.dirty()).clicked(){
                                         save=true;
                                     }
-                                    if theme::action(buttons,"닫기",
+                                    if crate::button::action(buttons,"닫기",
                                         theme::ButtonRole::Standard,!busy).clicked(){
                                         self.request_exit(Exit::Close);
                                     }
@@ -510,11 +510,11 @@ impl ModelGroupManager {
                                     if self.dirty(){"저장하지 않은 변경사항 있음"}
                                     else{"변경사항 없음"}
                                 ));
-                                if theme::action(footer,"닫기",
+                                if crate::button::action(footer,"닫기",
                                     theme::ButtonRole::Standard,!busy).clicked(){
                                     self.request_exit(Exit::Close);
                                 }
-                                if theme::action(footer,"변경사항 저장",
+                                if crate::button::action(footer,"변경사항 저장",
                                     theme::ButtonRole::Primary,
                                     writable&&!busy&&self.dirty()).clicked(){
                                     save=true;
@@ -554,7 +554,7 @@ impl ModelGroupManager {
                                 "이 그룹을 삭제할까요? 기존 주문과 상품은 유지됩니다."));
                         });
                         decision.actions(|actions|{
-                                delete=theme::action(actions,"삭제",
+                                delete=crate::button::action(actions,"삭제",
                                     theme::ButtonRole::Danger,true).clicked();
                             }
                         );
@@ -579,11 +579,11 @@ impl ModelGroupManager {
                             dialog.label(typography::body("모델군 관리의 변경사항을 저장할까요?"));
                         });
                         decision.actions(|actions|{
-                                save=theme::action(actions,"저장",
+                                save=crate::button::action(actions,"저장",
                                     theme::ButtonRole::Primary,
                                     gateway.model_group_write_enabled()&&!self.busy()&&self.dirty()
                                     &&self.new_name.trim().is_empty()).clicked();
-                                discard=theme::action(actions,"저장 안 함",
+                                discard=crate::button::action(actions,"저장 안 함",
                                     theme::ButtonRole::Danger,!self.busy()).clicked();
                             }
                         );

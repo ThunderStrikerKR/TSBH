@@ -105,7 +105,7 @@ fn edit_input_width(
     let mut current=if key=="senderName"{
         canonical(key,draft.get(key)).as_str().unwrap_or("").to_owned()
     }else{field(draft,key)};
-    if components::flexible_text_field(
+    if crate::input::flexible_text_field(
         ui,&mut current,width.min(ui.available_width()),""
     ).changed(){
         draft[key]=json!(current);
@@ -143,16 +143,16 @@ fn recommendation_picker(ui:&mut Ui,draft:&mut Value,key:&str,label:&str){
         .cloned().unwrap_or_default();
     let preview=options.iter().find(|account|field(account,"id")==selected)
         .map(account_display).unwrap_or_else(||"계좌 선택".to_owned());
-    components::management_dropdown(
+    crate::dropdown::management_dropdown(
         ui,&preview,
         ui.available_width().min(theme::SETTINGS_ACCOUNT_PICKER_MAX_WIDTH),
         true,|choices|{
-            components::management_dropdown_option(
+            crate::dropdown::management_dropdown_option(
                 choices,&mut selected,String::new(),"계좌 선택"
             );
             for account in &options{
                 if account_complete(account){
-                    components::management_dropdown_option(
+                    crate::dropdown::management_dropdown_option(
                         choices,&mut selected,field(account,"id"),
                         &account_display(account)
                     );
@@ -183,7 +183,7 @@ fn settings_title_row(
                 heading.label(typography::page_heading("설정"));
                 if conflict{
                     heading.with_layout(Layout::right_to_left(Align::Center),|actions|{
-                        let response=theme::action(
+                        let response=crate::button::action(
                             actions,"저장된 설정 불러오기",
                             ButtonRole::Standard,restore_enabled
                         );
@@ -441,12 +441,12 @@ impl SettingsView{
                     ));
                 });
                 decision.actions(|actions|{
-                    if theme::action(actions,"저장하고 이동",ButtonRole::Primary,
+                    if crate::button::action(actions,"저장하고 이동",ButtonRole::Primary,
                         !self.busy() && !self.read_only()).clicked(){
                         self.switch_after_save=true;
                         self.save(gateway.clone(),ctx.clone());
                     }
-                    if theme::action(actions,"저장 안 함",ButtonRole::Danger,
+                    if crate::button::action(actions,"저장 안 함",ButtonRole::Danger,
                         !self.busy()).clicked(){
                         self.draft=settings(&self.source).clone();
                         if let Some(next)=self.requested_tab.take(){self.tab=next;}
@@ -712,12 +712,12 @@ impl SettingsView{
         ui.label(typography::field_label("전체 UI 크기"));
         let mut scale=self.draft.get("uiScale").and_then(Value::as_u64)
             .unwrap_or(100);
-        components::management_dropdown(
+        crate::dropdown::management_dropdown(
             ui,&format!("{scale}%"),
             theme::MANAGEMENT_FILTER_DROPDOWN_WIDTH.min(ui.available_width()),
             !self.read_only()&&!self.busy(),|choices|{
                 for candidate in [90u64,100,110,125]{
-                    components::management_dropdown_option(
+                    crate::dropdown::management_dropdown_option(
                         choices,&mut scale,candidate,&format!("{candidate}%")
                     );
                 }
@@ -755,7 +755,7 @@ impl SettingsView{
                     #[cfg(test)]
                     components::general_screen_geometry_tests::record("account viewport",_account_viewport.inner_rect);
                     form.add_space(theme::SPACE_8);
-                    if theme::action(
+                    if crate::button::action(
                         form,"＋ 계좌 추가",ButtonRole::Standard,true
                     ).clicked(){
                         let mut accounts=self.draft.get("accounts")
@@ -830,7 +830,7 @@ impl SettingsView{
                         ),
                         Layout::top_down(Align::Min),|delete_ui|{
                             delete_ui.add_space(theme::SPACE_24);
-                            if theme::action_full_width(
+                            if crate::button::action_full_width(
                                 delete_ui,"계좌 삭제",ButtonRole::Danger,true
                             ).clicked(){
                                 delete=Some(index);
@@ -853,7 +853,7 @@ impl SettingsView{
                         row,account,"holder","예금주",
                         theme::SETTINGS_ACCOUNT_FIELD_WIDTHS[2]
                     );
-                    if theme::action(
+                    if crate::button::action(
                         row,"계좌 삭제",ButtonRole::Danger,true
                     ).clicked(){
                         delete=Some(index);
@@ -914,7 +914,7 @@ impl SettingsView{
                 area.add(components::truncated_label(typography::body(displayed)));
                 area.add_space(theme::SPACE_8);
                 area.horizontal_wrapped(|buttons|{
-                    if theme::action(
+                    if crate::button::action(
                         buttons,button,ButtonRole::Standard,
                         editable&&self.folder_picker.is_none()
                     ).clicked(){
@@ -924,13 +924,13 @@ impl SettingsView{
                     // (state.settings), not a newly chosen unsaved draft.
                     let saved_excel=field(settings(&self.source),"excelDirectory");
                     if index==0 && !saved_excel.is_empty(){
-                        if theme::action(
+                        if crate::button::action(
                             buttons,"보관함 열기",ButtonRole::Standard,true
                         ).clicked(){
                             self.open_folder(&saved_excel);
                         }
                     }else if index>0 && !value.is_empty(){
-                        if theme::action(buttons,"자동 수신 중지",
+                        if crate::button::action(buttons,"자동 수신 중지",
                             ButtonRole::Quiet,editable).clicked(){
                             self.draft[*key]=json!("");
                         }
@@ -945,7 +945,7 @@ impl SettingsView{
         ui.add_space(theme::SPACE_8);
         ui.horizontal(|bar|{
             bar.with_layout(Layout::right_to_left(Align::Center),|actions|{
-                let response=theme::action(
+                let response=crate::button::action(
                     actions,"설정 저장",
                     ButtonRole::Primary,!self.read_only()&&!self.busy()
                 );
@@ -960,7 +960,7 @@ impl SettingsView{
         let business=self.source.get("mode").and_then(Value::as_str)==Some("business");
         let reading=self.data_request.is_some()||self.loading.is_some();
         card(ui,"접수 원문 감사 보관함",|panel|{
-            if theme::action(panel,
+            if crate::button::action(panel,
                 "감사 기록 열기",ButtonRole::Standard,
                 business&&self.data_available()&&!reading
             ).clicked(){
@@ -970,13 +970,13 @@ impl SettingsView{
         ui.add_space(theme::SPACE_12);
         card(ui,"데이터 백업 및 복구",|panel|{
             panel.horizontal_wrapped(|actions|{
-                if theme::action(actions,"지금 백업",ButtonRole::Standard,
+                if crate::button::action(actions,"지금 백업",ButtonRole::Standard,
                     business&&self.data_available()&&!self.read_only()&&!reading).clicked(){
                     self.data_action(
                         "backup",None,Arc::clone(&gateway),actions.ctx().clone()
                     );
                 }
-                if theme::action(actions,"백업 목록",ButtonRole::Standard,
+                if crate::button::action(actions,"백업 목록",ButtonRole::Standard,
                     business&&self.data_available()&&!reading).clicked(){
                     self.data_action(
                         "backups",None,Arc::clone(&gateway),actions.ctx().clone()
@@ -1005,7 +1005,7 @@ impl SettingsView{
                         name_column.label(typography::body(name));
                         name_column.label(typography::caption(policy));
                     });
-                    if theme::action(row,"이 백업으로 복구",
+                    if crate::button::action(row,"이 백업으로 복구",
                         ButtonRole::Standard,
                         !self.read_only()&&!reading).clicked(){
                         self.restore_target=Some(filename.clone());
@@ -1036,7 +1036,7 @@ impl SettingsView{
                         ));
                     });
                     decision.actions(|actions|{
-                        if theme::action(
+                        if crate::button::action(
                             actions,"불러오기",ButtonRole::Primary,true
                         ).clicked(){
                             self.reload_confirmation=false;
@@ -1059,7 +1059,7 @@ impl SettingsView{
                     workspace.body_region(|ui|{
                         ui.spacing_mut().scroll=theme::management_scroll_style();
                         let search_width=ui.available_width();
-                        components::management_search_field(
+                        crate::input::management_search_field(
                             ui,&mut self.archive_query,search_width,
                             "원문 / 담당자 / 주문 ID 검색"
                         );
@@ -1139,7 +1139,7 @@ impl SettingsView{
                         ));
                     });
                     decision.actions(|actions|{
-                        if theme::action(actions,"이 백업으로 복구",ButtonRole::Danger,
+                        if crate::button::action(actions,"이 백업으로 복구",ButtonRole::Danger,
                             self.data_available()&&!self.read_only()&&!self.busy()).clicked(){
                             self.restore_target=None;
                             self.data_action(

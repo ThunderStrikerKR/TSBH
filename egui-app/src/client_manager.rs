@@ -55,7 +55,7 @@ fn label_edit(ui:&mut Ui,draft:&mut Value,key:&str,label:&str) {
         ui.spacing_mut().item_spacing.y=theme::SPACE_4;
         ui.label(typography::field_label(label));
         let mut input=field(draft,key).to_owned();
-        if components::flexible_text_field(
+        if crate::input::flexible_text_field(
             ui,&mut input,ui.available_width(),""
         ).changed() {
             draft[key]=json!(input);
@@ -310,13 +310,13 @@ impl ClientManager {
     /// Rendering alone is refactored; Excel remains disabled until migrated.
     fn list_toolbar_actions(&mut self,ui:&mut Ui,gateway:Arc<dyn BandoGateway>) {
         ui.with_layout(Layout::right_to_left(Align::Center),|actions|{
-            if theme::action(actions,"＋ 거래처 등록",ButtonRole::Primary,
+            if crate::button::action(actions,"＋ 거래처 등록",ButtonRole::Primary,
                 self.ready && self.editable() && self.saving.is_none() && !self.excel.blocks_navigation()
             ).clicked(){
                 self.begin(empty_client());
             }
             let allowed=self.ready&&self.editable()&&self.saving.is_none()&&self.draft.is_none()&&!self.excel.blocks_navigation();
-            let response=theme::action(actions,"Excel 관리",ButtonRole::Standard,allowed);
+            let response=crate::button::action(actions,"Excel 관리",ButtonRole::Standard,allowed);
             self.excel.show_menu(actions,&response,gateway,allowed);
         });
     }
@@ -326,7 +326,7 @@ impl ClientManager {
         // left-hand rectangle, so no guesswork about button widths here.
         let width=ui.available_width().max(60.0)
             .min(theme::MANAGEMENT_CLIENT_SEARCH_MAX_WIDTH);
-        if components::management_search_field(
+        if crate::input::management_search_field(
             ui,&mut self.search,width,"상호 / 주소 / 전화번호 / 별칭 검색"
         ).changed(){
             self.query(gateway,ui.ctx().clone());
@@ -479,7 +479,7 @@ impl ClientManager {
             components::management_master_table_card_min_inner_height(ui);
         components::measured_management_master_card(ui,|section|{
             components::fill_management_primary_card(section,card_min_height);
-            components::management_table_container_style(section);
+            crate::table::management_table_container_style(section);
             let toolbar_width=section.available_width().max(1.0);
             if toolbar_width<theme::MANAGEMENT_CLIENT_TOOLBAR_STACK_WIDTH {
                 // Only genuinely narrow panes stack their SEARCH and
@@ -567,14 +567,14 @@ impl ClientManager {
             );
             let mut chosen=None;
             let mut first_row_left=None;
-            let scroll_track=components::management_table_scroll_track_rect(
+            let scroll_track=crate::table::management_table_scroll_track_rect(
                 section,scroll_max_height
             );
             let scroll_output=crate::table::fixed_rows(
                 section,crate::table::Viewport{width:table_width,height:scroll_max_height,rail:Some(scroll_track)},
                 "client-management-table-rows",theme::MANAGEMENT_CLIENT_ROW_HEIGHT,rows.len(),
                 |table,visible_rows|{
-                    components::management_table_row_body(table,table_width);
+                    crate::table::management_table_row_body(table,table_width);
                     let first=visible_rows.start;
                     let origin=table.max_rect().min;
                     let rows_clip=table.clip_rect();
@@ -673,12 +673,12 @@ impl ClientManager {
                 let button_slot=theme::INPUT_HEIGHT*2.5;
                 let width=(entry.available_width()-button_slot
                     -theme::SPACE_8).max(60.0);
-                let response=components::flexible_text_field(
+                let response=crate::input::flexible_text_field(
                     entry,&mut self.tag_input,width,"검색 태그 입력"
                 );
                 let submit_by_enter=response.has_focus() &&
                     entry.input(|input|input.key_pressed(egui::Key::Enter));
-                let submit_by_button=theme::action(
+                let submit_by_button=crate::button::action(
                     entry,"추가",ButtonRole::Standard,
                     !self.tag_input.trim().is_empty()
                 ).clicked();
@@ -720,14 +720,14 @@ impl ClientManager {
             cols[0].label(typography::field_label("가격 등급"));
             let mut tier=field(draft,"tier").to_owned();
             let width=cols[0].available_width();
-            components::management_dropdown(
+            crate::dropdown::management_dropdown(
                 &mut cols[0],components::client_tier_label(&tier),
                 width,true,|ui|{
                     for (key,label) in [
                         ("wholesale","도매"),("semi","반도매"),
                         ("retail","소매"),("special","특수")
                     ] {
-                        components::management_dropdown_option(
+                        crate::dropdown::management_dropdown_option(
                             ui,&mut tier,key.to_owned(),label);
                     }
                 });
@@ -735,12 +735,12 @@ impl ClientManager {
             cols[1].label(typography::field_label("결제 방식"));
             let mut payment=field(draft,"payment").to_owned();
             let width=cols[1].available_width();
-            components::management_dropdown(
+            crate::dropdown::management_dropdown(
                 &mut cols[1],if payment=="POSTPAID"{"후불"}else{"선입금"},
                 width,true,|ui|{
-                    components::management_dropdown_option(
+                    crate::dropdown::management_dropdown_option(
                         ui,&mut payment,"PREPAID".into(),"선입금");
-                    components::management_dropdown_option(
+                    crate::dropdown::management_dropdown_option(
                         ui,&mut payment,"POSTPAID".into(),"후불");
                 });
             draft["payment"]=json!(payment);
@@ -756,10 +756,10 @@ impl ClientManager {
             .unwrap_or(CLIENT_ACCOUNT_EMPTY_LABEL);
         let mut next_selected=selected.clone();
         let width=ui.available_width();
-        components::management_dropdown(
+        crate::dropdown::management_dropdown(
             ui,selected_label,width,true,|menu|{
                 for (id,label) in &choices {
-                    components::management_dropdown_option(
+                    crate::dropdown::management_dropdown_option(
                         menu,&mut next_selected,id.clone(),label
                     );
                 }
@@ -788,7 +788,7 @@ impl ClientManager {
                         row.add(egui::Label::new(typography::inline_body_money(
                             &format!("{label} · "),&format!("{price}원")
                         )));
-                        if theme::action(row,"예외 해제",ButtonRole::Quiet,true)
+                        if crate::button::action(row,"예외 해제",ButtonRole::Quiet,true)
                             .clicked(){remove=Some(id.clone());}
                     });
                 }
@@ -813,25 +813,25 @@ impl ClientManager {
                 }
             }
             ui.horizontal(|row|{
-                components::management_dropdown(
+                crate::dropdown::management_dropdown(
                     row,variants.iter()
                         .find(|(id,_)|id==&self.exception_id)
                         .map(|(_,label)|label.as_str())
                         .unwrap_or("예외 품목 / 색상 선택"),
                     theme::MANAGEMENT_SEARCH_MIN_WIDTH,true,|ui|{
                         for (id,label) in &variants {
-                            components::management_dropdown_option(
+                            crate::dropdown::management_dropdown_option(
                                 ui,&mut self.exception_id,id.clone(),label);
                         }
                     });
                 components::form_field_label(row,"특수 단가");
-                components::money_field(row,&mut self.exception_price,true);
+                crate::input::money_field(row,&mut self.exception_price,true);
                 // The common editor formats even while focused; the
                 // business override still receives an unpunctuated integer.
-                let amount=components::parse_money_input(
+                let amount=crate::input::parse_money_input(
                     &self.exception_price
                 ).and_then(|value|u64::try_from(value).ok());
-                if theme::action(row,"예외 추가",ButtonRole::Standard,
+                if crate::button::action(row,"예외 추가",ButtonRole::Standard,
                     !self.exception_id.is_empty() && amount.is_some()
                 ).clicked(){
                     if let Some(amount)=amount {
@@ -913,7 +913,7 @@ impl ClientManager {
                                 });
                     });
                     workspace.footer(|left|{
-                            if exists && theme::action(left,"거래처 삭제",
+                            if exists && crate::button::action(left,"거래처 삭제",
                                 ButtonRole::Danger,editable && !busy).clicked(){
                                 delete=true;
                             }
@@ -923,7 +923,7 @@ impl ClientManager {
                             let dirty=self.original.as_ref()
                                 .is_some_and(|old|*old!=draft)
                                 || !self.tag_input.trim().is_empty();
-                            if theme::action(right,label,ButtonRole::Primary,
+                            if crate::button::action(right,label,ButtonRole::Primary,
                                 editable && !busy && (!exists || dirty)).clicked(){
                                 save=true;
                             }
@@ -962,7 +962,7 @@ impl ClientManager {
                         ui.label("거래처를 삭제할까요? 기존 주문의 송하인과 금액은 그대로 보존합니다.");
                     });
                     let approve=decision.actions(|buttons|{
-                            theme::action(
+                            crate::button::action(
                                 buttons,"거래처 삭제",ButtonRole::Danger,true
                             ).clicked()
                         }
@@ -984,7 +984,7 @@ impl ClientManager {
                         ui.label("거래처의 수정 내용을 버릴까요?");
                     });
                     let approve=decision.actions(|buttons|{
-                            theme::action(
+                            crate::button::action(
                                 buttons,"변경 취소",ButtonRole::Danger,true
                             ).clicked()
                         }

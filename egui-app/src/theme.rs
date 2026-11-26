@@ -9,11 +9,8 @@ use eframe::egui::{
     self, Color32, CornerRadius, Frame, Stroke, Ui, Vec2,
 };
 use crate::typography;
-// Compatibility paths; native button rendering is owned by crate::button.
-pub use crate::button::{action,action_full_width,action_with_min_width,review_action,paint_button_hover,paint_button_hover_corners,window_control,WindowControl};
-pub(crate) use crate::button::{action_style,field_action_palette};
 #[cfg(test)]
-use crate::button::button_hover_palette;
+use crate::button::{action_style,field_action_palette,button_hover_palette};
 
 pub const CANVAS: Color32 = Color32::from_rgb(16, 16, 16);
 pub const HEADER_BG: Color32 = Color32::from_rgb(27, 27, 27);

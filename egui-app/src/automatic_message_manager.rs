@@ -468,7 +468,7 @@ impl AutomaticMessageManager {
         ui.add_space(theme::SPACE_8);
         ui.label(typography::field_label("안내문을 등록할 상품 검색"));
         let width=ui.available_width();
-        components::management_search_field(
+        crate::input::management_search_field(
             ui,&mut self.product_search,width,"상품명 검색"
         );
         ui.add_space(theme::SPACE_8);
@@ -506,7 +506,7 @@ impl AutomaticMessageManager {
             heading.label(typography::section_heading(def.label));
             settings_help::icon(heading,"선택한 자동 메시지");
             heading.with_layout(Layout::right_to_left(Align::Center),|actions|{
-                if theme::action(actions,"기본 문구 복원",ButtonRole::Standard,
+                if crate::button::action(actions,"기본 문구 복원",ButtonRole::Standard,
                     !self.busy() && self.draft_templates.contains_key(def.id)
                 ).clicked(){
                     self.draft_templates.remove(def.id);
@@ -519,7 +519,7 @@ impl AutomaticMessageManager {
         ui.label(typography::field_label("복사용 자동 메시지 편집"));
         let mut content=Self::template_value(&self.draft_templates,def);
         let width=ui.available_width();
-        if components::multiline_text_field(
+        if crate::input::multiline_text_field(
             ui,&mut content,!self.busy(),width,6,None
         ).changed(){
             self.draft_templates.insert(def.id.into(),json!(content.clone()));
@@ -553,7 +553,7 @@ impl AutomaticMessageManager {
             ui.horizontal(|heading|{
                 heading.label(typography::section_heading(product_name(&product)));
                 heading.with_layout(Layout::right_to_left(Align::Center),|actions|{
-                    if theme::action(actions,"안내문 삭제",ButtonRole::Standard,
+                    if crate::button::action(actions,"안내문 삭제",ButtonRole::Standard,
                         !self.busy() && !content.is_empty()
                     ).clicked(){
                         self.draft_notices.remove(id);
@@ -566,7 +566,7 @@ impl AutomaticMessageManager {
                 "잠정 선택 시 복사용 계좌안내에 추가할 문구"
             ));
             let width=ui.available_width();
-            if components::multiline_text_field(
+            if crate::input::multiline_text_field(
                 ui,&mut content,!self.busy(),width,5,
                 Some("예: 709는 상판에 구멍이 있습니다. 구멍이 없는 제품은 709-1 모델을 확인해 주세요.")
             ).changed(){
@@ -669,7 +669,7 @@ impl AutomaticMessageManager {
                         components::soft_divider(body);
                         body.horizontal(|footer|{
                             footer.with_layout(Layout::right_to_left(Align::Center),|right|{
-                                let action=theme::action(right,
+                                let action=crate::button::action(right,
                                     "변경사항 저장",
                                     ButtonRole::Primary,self.writable()&&!self.busy()
                                         &&self.dirty());
@@ -710,9 +710,9 @@ impl AutomaticMessageManager {
                     ));
                 });
                 decision.actions(|actions|{
-                    save=theme::action(actions,"저장하고 이동",ButtonRole::Primary,
+                    save=crate::button::action(actions,"저장하고 이동",ButtonRole::Primary,
                         self.writable()&&!self.busy()).clicked();
-                    discard=theme::action(actions,"저장 안 함",ButtonRole::Danger,
+                    discard=crate::button::action(actions,"저장 안 함",ButtonRole::Danger,
                         !self.busy()).clicked();
                 });
             });

@@ -510,7 +510,7 @@ fn draw_line(ui:&mut Ui,rect:Rect,line:HistoryLine,snapshot:&HistorySnapshot,
     let id=field(&row["order"],"id");
     match line {
         HistoryLine::Order(_)=>{
-            let columns=components::management_table_cells(rect.min,widths,rect.height(),COL_GAP);
+            let columns=crate::table::management_table_cells(rect.min,widths,rect.height(),COL_GAP);
             paint_text(ui,columns[0],&order_date(row),typography::ManagementTableCellRole::Description,false);
             paint_text(ui,columns[1],&display_client_name(order_client(row)),
                 typography::ManagementTableCellRole::ClientName,false);
@@ -547,7 +547,7 @@ fn draw_line(ui:&mut Ui,rect:Rect,line:HistoryLine,snapshot:&HistorySnapshot,
                 ui.make_persistent_id(("order-history-toggle",id)),Sense::click());
             let response=components::overflow_tooltip(response,
                 history_text_overflow(ui,summary_rect,&summary,typography::ManagementTableCellRole::ProductName),&summary);
-            theme::paint_button_hover(ui,&response,0.0);
+            crate::button::paint_button_hover(ui,&response,0.0);
             if response.clicked(){*pending_toggle=Some(id.to_owned());}
             paint_center(ui,columns[3],field(row,"status"));
             let total=won(&row["total"]);
@@ -606,12 +606,12 @@ fn draw_line(ui:&mut Ui,rect:Rect,line:HistoryLine,snapshot:&HistorySnapshot,
                     actions.set_width(control.width());
                     actions.spacing_mut().item_spacing.x=action_gap;
                     // Copy the FULL order's existing Rust-generated message.
-                    if theme::action_with_min_width(actions,"운송장 복사",
+                    if crate::button::action_with_min_width(actions,"운송장 복사",
                         theme::ButtonRole::TableSecondary,!message.is_empty(),
                         action_width).clicked(){
                         actions.ctx().copy_text(message.to_owned());
                     }
-                    if theme::action_with_min_width(actions,"발주서 상세",
+                    if crate::button::action_with_min_width(actions,"발주서 상세",
                         theme::ButtonRole::TableSecondary,true,
                         action_width).clicked(){
                         *pending_detail=Some(id.to_owned());
@@ -669,7 +669,7 @@ fn draw_line(ui:&mut Ui,rect:Rect,line:HistoryLine,snapshot:&HistorySnapshot,
                 .layout(egui::Layout::left_to_right(Align::Center)),|actions|{
                     actions.set_clip_rect(actions_rect.intersect(area));
                     actions.spacing_mut().item_spacing.x=theme::SPACE_8;
-                    let memo_button=theme::action(actions,"관리 메모",
+                    let memo_button=crate::button::action(actions,"관리 메모",
                         theme::ButtonRole::TableSecondary,shipment.is_some());
                     if memo_button.clicked(){
                         if let Some(ship)=shipment{
@@ -682,7 +682,7 @@ fn draw_line(ui:&mut Ui,rect:Rect,line:HistoryLine,snapshot:&HistorySnapshot,
                             });
                         }
                     }
-                    if theme::action(actions,"운송장 복사",
+                    if crate::button::action(actions,"운송장 복사",
                         theme::ButtonRole::TableSecondary,
                         shipment.is_some() && tracking!="운송장 미확인"
                     ).clicked(){
@@ -725,8 +725,8 @@ fn range_date_picker_rtl(
     const INNER_HEIGHT:f32=theme::ACTION_STANDARD_HEIGHT;
     let mut changed=false;
     components::management_date_group(ui,id,GROUP_WIDTH,|row,inner|{
-            let prev=components::management_date_segment(
-                row,"‹",PREV,components::ManagementDateSegmentEdge::Leading
+            let prev=crate::button::management_date_segment(
+                row,"‹",PREV,crate::button::ManagementDateSegmentEdge::Leading
             )
                 ;
             if prev.clicked(){
@@ -734,7 +734,7 @@ fn range_date_picker_rtl(
                 *date=move_date(date,-1);
                 changed=true;
             }
-            let edit=components::management_date_text_field(
+            let edit=crate::input::management_date_text_field(
                 row,date,HISTORY_DATE_FIELD_WIDTH,INNER_HEIGHT,
                 if all_dates{"전체"}else{"YYYY-MM-DD"}
             );
@@ -747,8 +747,8 @@ fn range_date_picker_rtl(
                 true,2.0
             );
             changed|=edit.changed();
-            let next=components::management_date_segment(
-                row,"›",NEXT,components::ManagementDateSegmentEdge::Middle
+            let next=crate::button::management_date_segment(
+                row,"›",NEXT,crate::button::ManagementDateSegmentEdge::Middle
             )
                 ;
             debug_assert!((prev.rect.width()-next.rect.width()).abs()<0.01);
@@ -757,8 +757,8 @@ fn range_date_picker_rtl(
                 *date=move_date(date,1);
                 changed=true;
             }
-            let trigger=components::management_date_segment(
-                row,"📅",CALENDAR,components::ManagementDateSegmentEdge::Trailing
+            let trigger=crate::button::management_date_segment(
+                row,"📅",CALENDAR,crate::button::ManagementDateSegmentEdge::Trailing
             )
                 ;
             if trigger.clicked(){
@@ -789,12 +789,12 @@ fn range_date_picker_rtl(
 /// Shipping Group Assignment selectors. The values and menu remain unchanged.
 fn history_basis_dropdown(ui:&mut Ui,basis:&mut HistoryDateBasis)->bool{
     let previous=*basis;
-    components::management_dropdown(
+    crate::dropdown::management_dropdown(
         ui,basis.label(),HISTORY_DATE_BASIS_WIDTH,true,|options|{
-            components::management_dropdown_option(
+            crate::dropdown::management_dropdown_option(
                 options,basis,HistoryDateBasis::Reception,"접수일 기준"
             );
-            components::management_dropdown_option(
+            crate::dropdown::management_dropdown_option(
                 options,basis,HistoryDateBasis::Payment,"입금일 기준"
             );
         }
@@ -834,7 +834,7 @@ fn history_date_range_end(
     let mut changed=range_date_picker_rtl(
         ui,all_dates,to,to_month,"order-history-date-to-calendar"
     );
-    if theme::action(ui,"기간 전체",theme::ButtonRole::Standard,
+    if crate::button::action(ui,"기간 전체",theme::ButtonRole::Standard,
         !from.is_empty()||!to.is_empty()).clicked(){
         from.clear();to.clear();changed=true;
     }
@@ -918,7 +918,7 @@ fn excel_export_date_end(
     let mut changed=range_date_picker_rtl(
         ui,all_dates,to,to_month,"excel-export-to-calendar"
     );
-    if theme::action(ui,"기간 전체",theme::ButtonRole::Standard,
+    if crate::button::action(ui,"기간 전체",theme::ButtonRole::Standard,
         !from.is_empty()||!to.is_empty()).clicked(){
         from.clear();to.clear();changed=true;
     }
@@ -1156,7 +1156,7 @@ impl OrderHistoryManager {
                             // enabled UI could shrink the TextEdit to a narrow slot.
                             // Twelve visible lines make this a real memo editor.
                             let editor_width=ui.available_width().max(1.0);
-                            components::multiline_text_field(
+                            crate::input::multiline_text_field(
                                 ui,&mut editor.draft,!busy,editor_width,12,
                                 Some("관리 메모를 입력하세요")
                             );
@@ -1188,7 +1188,7 @@ impl OrderHistoryManager {
                         }else{None}
                     }) else{return;};
                         workspace.footer_single(|bar|{
-                            if theme::action(bar,"저장",theme::ButtonRole::Primary,
+                            if crate::button::action(bar,"저장",theme::ButtonRole::Primary,
                                 can_save).clicked(){
                                 save=true;
                             }
@@ -1248,7 +1248,7 @@ impl OrderHistoryManager {
             // Use the identical zero-implicit-gap toolbar-to-header
             // allocator as Freight Assignment. Do not inject extra space
             // or move the header independently on either screen.
-            let old_gap=components::management_table_container_style(section);
+            let old_gap=crate::table::management_table_container_style(section);
             let full_width=section.available_width().max(1.0);
             // The search toolbar itself has NO scrollbar. Align its last
             // "전체 날짜" control to the card's 16pt inner right edge.
@@ -1280,7 +1280,7 @@ impl OrderHistoryManager {
                 |search|{
                     search.set_width(search_rect.width());
                     search.set_height(search_rect.height());
-                    if components::management_search_field(
+                    if crate::input::management_search_field(
                         search,&mut self.query,search_rect.width(),
                         "거래처 / 주문 내용 검색"
                     ).changed(){changed=true;}
@@ -1373,7 +1373,7 @@ impl OrderHistoryManager {
                 section,card_min_height,0.0
             );
             let scroll_bounds=section.available_rect_before_wrap();
-            let scroll_track=components::management_table_scroll_track_rect(
+            let scroll_track=crate::table::management_table_scroll_track_rect(
                 section,scroll_max_height
             );
             // Mixed fixed parent rows and auto-height shipment details need
@@ -1454,7 +1454,7 @@ impl OrderHistoryManager {
             let scrolled_header=history_scrolled_header_row(
                 head_rect,left,table_width
             );
-            let header_cells=components::management_table_cells(scrolled_header.min,&widths,HEADER_HEIGHT,COL_GAP);
+            let header_cells=crate::table::management_table_cells(scrolled_header.min,&widths,HEADER_HEIGHT,COL_GAP);
             crate::table::header_columns(section,head_rect,header_content_rect,&header_cells,COL_GAP,|section,header_text_rect|{
             // Header labels AND column separators must use the same
             // horizontally scrolled origin as the data rows. The viewport
@@ -1703,8 +1703,8 @@ mod tests{
             let row=history_scrolled_header_row(
                 viewport,viewport.left()-offset,MIN_WIDTH
             );
-            let text_cells=components::management_table_cells(row.min,&COLS,HEADER_HEIGHT,COL_GAP);
-            let divider_cells=components::management_table_cells(row.min,&COLS,HEADER_HEIGHT,COL_GAP);
+            let text_cells=crate::table::management_table_cells(row.min,&COLS,HEADER_HEIGHT,COL_GAP);
+            let divider_cells=crate::table::management_table_cells(row.min,&COLS,HEADER_HEIGHT,COL_GAP);
             assert_eq!(row.top(),viewport.top());
             assert_eq!(row.height(),viewport.height());
             assert_eq!(row.width(),MIN_WIDTH);

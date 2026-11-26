@@ -116,7 +116,7 @@ impl ProductSearch{
                     }
                     workspace.body_region(|ui|{
                         let width=ui.available_width();
-                        if components::management_search_field(
+                        if crate::input::management_search_field(
                             ui,&mut self.query,width,
                             "브랜드 / 상품명 / 모델 / 별칭 검색"
                         ).changed(){changed=true;}
@@ -137,9 +137,9 @@ impl ProductSearch{
                                         ui,label,text_width,typography::CategoryPathFont::Body
                                     );
                                     let mut value=selected.clone();
-                                    components::management_dropdown_full_label(
+                                    crate::dropdown::management_dropdown_full_label(
                                         ui,&visible,label,width,true,|choices|{
-                                            components::management_dropdown_option(
+                                            crate::dropdown::management_dropdown_option(
                                                 choices,&mut value,String::new(),
                                                 if depth==0{"전체 카테고리"}else{"현재 분류 전체"}
                                             );
@@ -151,7 +151,7 @@ impl ProductSearch{
                                                     typography::CategoryPathFont::Body
                                                 );
                                                 if !id.is_empty(){
-                                                    let response=components::management_dropdown_option(
+                                                    let response=crate::dropdown::management_dropdown_option(
                                                         choices,&mut value,id.to_owned(),&visible
                                                     );
                                                     components::shortened_text_tooltip(response,&visible,full);
@@ -164,21 +164,21 @@ impl ProductSearch{
                                     }
                                 }
                                 if !self.major.is_empty() &&
-                                    theme::action(ui,"카테고리 초기화",ButtonRole::Quiet,true).clicked() {
+                                    crate::button::action(ui,"카테고리 초기화",ButtonRole::Quiet,true).clicked() {
                                     self.major.clear();
                                     changed=true;
                                 }
                                 let previous_brand=self.brand.clone();
-                                components::management_dropdown(
+                                crate::dropdown::management_dropdown(
                                     ui,brands.iter().find(|b|field(b,"id")==self.brand)
                                         .map(|v|field(v,"name")).unwrap_or("전체 브랜드"),
                                     theme::MANAGEMENT_FILTER_DROPDOWN_WIDTH,true,|choices|{
-                                        components::management_dropdown_option(
+                                        crate::dropdown::management_dropdown_option(
                                             choices,&mut self.brand,String::new(),"전체 브랜드");
                                         for row in &brands {
                                             let id=field(row,"id");
                                             if !id.is_empty(){
-                                                components::management_dropdown_option(
+                                                crate::dropdown::management_dropdown_option(
                                                     choices,&mut self.brand,id.to_owned(),
                                                     field(row,"name"));
                                             }
@@ -222,7 +222,7 @@ impl ProductSearch{
                                             ui.with_layout(
                                                 egui::Layout::right_to_left(egui::Align::Center),
                                                 |actions|{
-                                                    if theme::action(actions,"선택",ButtonRole::Standard,true)
+                                                    if crate::button::action(actions,"선택",ButtonRole::Standard,true)
                                                         .clicked() {
                                                         chosen=Some(row.clone());
                                                     }
@@ -233,7 +233,7 @@ impl ProductSearch{
                                                             .and_then(|variant|variant.get("url"))
                                                             .and_then(Value::as_str);
                                                         if let Some(url)=url {
-                                                            if theme::action(actions,"상세보기 ↗",
+                                                            if crate::button::action(actions,"상세보기 ↗",
                                                                 ButtonRole::Quiet,true).clicked() {
                                                                 ctx.open_url(egui::OpenUrl::new_tab(
                                                                     url.to_owned()

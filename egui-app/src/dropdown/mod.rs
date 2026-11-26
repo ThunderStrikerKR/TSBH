@@ -94,7 +94,7 @@ fn management_dropdown_trigger_inner(
     let width=width.min(ui.available_width()).max(1.0);
     // Parent Ui may be disabled independently of the explicit enabled flag.
     let interactive=enabled && ui.is_enabled();
-    let (fill,ink,stroke)=theme::field_action_palette(interactive,theme::TEXT);
+    let (fill,ink,stroke)=crate::button::field_action_palette(interactive,theme::TEXT);
     let arrow_ink=if interactive{theme::SECONDARY}else{ink};
     // Inline modal rows opt into the 36pt form interaction height;
     // standard management toolbars retain their 34pt minimum.
@@ -149,7 +149,7 @@ fn management_dropdown_trigger_inner(
         ManagementChevronDirection::Down,arrow_ink
     );
     if interactive {
-        theme::paint_button_hover(
+        crate::button::paint_button_hover(
             ui,&trigger,theme::CONTROL_RADIUS as f32
         );
     }

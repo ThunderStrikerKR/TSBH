@@ -464,12 +464,12 @@ impl CategoryManager {
         &mut self,actions:&mut Ui,cats:&[Category],catalog:&Value,
         editable:bool,busy:bool
     ){
-        if theme::action(actions,"+ 하위 분류 추가",
+        if crate::button::action(actions,"+ 하위 분류 추가",
             theme::ButtonRole::Primary,editable&&!busy &&
                 self.current(cats).is_some()).clicked(){
             self.begin_operation(cats,catalog,Operation::Add);
         }
-        if theme::action(actions,"선택 분류 편집",
+        if crate::button::action(actions,"선택 분류 편집",
             theme::ButtonRole::Standard,!busy &&
                 self.current(cats).is_some()).clicked(){
             if let Some(current)=self.current(cats){
@@ -516,7 +516,7 @@ impl CategoryManager {
                         .layout(Layout::left_to_right(Align::Center)),
                     |search|{
                         search.set_width(search_rect.width());
-                        components::management_search_field(
+                        crate::input::management_search_field(
                             search,&mut self.query,
                             theme::CATALOG_SEARCH_WIDTH.min(search_rect.width()),
                             "카테고리 이름 또는 전체 경로 검색"
@@ -544,7 +544,7 @@ impl CategoryManager {
                         .layout(Layout::left_to_right(Align::Center)),
                     |search|{
                         search.set_width(search_rect.width());
-                        components::management_search_field(
+                        crate::input::management_search_field(
                             search,&mut self.query,search_rect.width(),
                             "카테고리 이름 또는 전체 경로 검색"
                         );
@@ -646,7 +646,7 @@ impl CategoryManager {
                                             editable && !busy && !is_root(&current.id),
                                             |field_ui|{
                                                 let input_width=field_ui.available_width().max(1.0);
-                                                components::flexible_text_field(
+                                                crate::input::flexible_text_field(
                                                     field_ui,&mut self.name,input_width,"분류 이름"
                                                 );
                                             }
@@ -683,7 +683,7 @@ impl CategoryManager {
                                             galley,theme::TEXT
                                         );
                                         components::overflow_tooltip(text_response,visible!=parent_label,&parent_label);
-                                        if theme::action(location,"위치 변경",
+                                        if crate::button::action(location,"위치 변경",
                                             theme::ButtonRole::Standard,
                                             editable&&!busy&&!is_root(&current.id)
                                         ).clicked(){
@@ -714,13 +714,13 @@ impl CategoryManager {
                         let mut request_delete=false;
                         let mut request_save=false;
                         workspace.footer(|left|{
-                                request_delete=theme::action(left,"분류 삭제",
+                                request_delete=crate::button::action(left,"분류 삭제",
                                     theme::ButtonRole::Danger,
                                     editable&&!busy&&!nested_dialog&&can_delete
                                 ).clicked();
                             },
                             |right|{
-                                request_save=theme::action(right,"변경사항 저장",
+                                request_save=crate::button::action(right,"변경사항 저장",
                                     theme::ButtonRole::Primary,
                                     editable&&!busy&&!nested_dialog&&can_save
                                 ).clicked();
@@ -777,7 +777,7 @@ impl CategoryManager {
                                         components::modal_labeled_row(
                                             modal,"새 분류 이름",|line|{
                                                 let input_width=line.available_width().max(1.0);
-                                                components::flexible_text_field(
+                                                crate::input::flexible_text_field(
                                                     line,&mut self.new_name,input_width,
                                                     "새 하위 분류 이름"
                                                 );
@@ -840,7 +840,7 @@ impl CategoryManager {
                             }
                         });
                         decision.actions(|right|{
-                            submit=theme::action(right,
+                            submit=crate::button::action(right,
                                 match operation{
                                     Operation::Add=>"분류 생성",
                                     Operation::Move=>"위치 변경",
@@ -883,9 +883,9 @@ impl CategoryManager {
                         ));
                     });
                     decision.actions(|actions|{
-                            save=theme::action(actions,"저장하고 이동",
+                            save=crate::button::action(actions,"저장하고 이동",
                                 theme::ButtonRole::Primary,editable&&!busy).clicked();
-                            discard=theme::action(actions,"저장 안 함",
+                            discard=crate::button::action(actions,"저장 안 함",
                                 theme::ButtonRole::Danger,!busy).clicked();
                         }
                     );

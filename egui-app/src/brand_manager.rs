@@ -147,7 +147,7 @@ impl BrandManager {
                                 if index==4{
                                     column.add_space(theme::SPACE_24);
                                     column.with_layout(Layout::right_to_left(Align::Center),|actions|{
-                                        if theme::action(actions,"브랜드 저장",
+                                        if crate::button::action(actions,"브랜드 저장",
                                             theme::ButtonRole::Primary,editable&&!busy).clicked(){
                                             save=true;
                                         }
@@ -161,7 +161,7 @@ impl BrandManager {
                                     };
                                     column.label(typography::field_label(label));
                                     column.add_enabled_ui(editable&&!busy,|input|{
-                                        components::flexible_text_field(input,value,field_width,hint);
+                                        crate::input::flexible_text_field(input,value,field_width,hint);
                                     });
                                 }
                             });
@@ -170,7 +170,7 @@ impl BrandManager {
             }
             // Shared Freight master: toolbar-to-header transition,
             // fixed 36pt register header and 10pt solid scroll rail.
-            components::management_table_container_style(card);
+            crate::table::management_table_container_style(card);
             crate::table::show(card,crate::table::Header::Register{primary:"브랜드명 / 한글 표기 / 검색 별칭",action:"관리",action_width:132.0},|card,header|{
             let scroll_height=components::management_single_list_scroll_height(
                 card,card_min_height,0.0
@@ -194,7 +194,7 @@ impl BrandManager {
                                     }else{&aliases})));
                             });
                             line.with_layout(Layout::right_to_left(Align::Center),|actions|{
-                                if theme::action(actions,"정정",
+                                if crate::button::action(actions,"정정",
                                     theme::ButtonRole::Standard,!busy).clicked(){
                                     select=Some(id.to_owned());
                                 }
@@ -227,9 +227,9 @@ impl BrandManager {
                         dialog.label(typography::body("브랜드 변경사항을 저장할까요?"));
                     });
                     decision.actions(|buttons|{
-                            save=theme::action(buttons,"저장",
+                            save=crate::button::action(buttons,"저장",
                                 theme::ButtonRole::Primary,editable&&!busy).clicked();
-                            discard=theme::action(buttons,"저장 안 함",
+                            discard=crate::button::action(buttons,"저장 안 함",
                                 theme::ButtonRole::Danger,!busy).clicked();
                         }
                     );

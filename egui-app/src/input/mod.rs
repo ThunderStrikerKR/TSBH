@@ -1,6 +1,8 @@
 //! Shared native input construction, formatting and exact-cell editing.
-use eframe::egui::{self,Align,Rect,Response,Ui,Vec2};
+use eframe::egui::{self,Align,Layout,Rect,Response,Stroke,Ui,Vec2};
 use crate::{source_highlight,theme,typography};
+use crate::button::{date_navigation_segment_button,DateNavigationSegmentGlyph};
+use crate::components::{navigation_segment_child,date_navigation_segmented_surface};
 #[cfg(test)]
 use crate::components::test_context;
 
@@ -578,4 +580,167 @@ pub fn reception_freight_inline_cell_editor(
     click_at:Option<egui::Pos2>
 )->Response{
     reception_money_editor_at_rect(ui,cell,value,request_focus,click_at)
+}
+
+/// Quantity uses the shared date-selector frame and segment buttons.
+/// Only the numeric draft is editable; the fixed suffix never enters the
+/// native quantity parser or changes when the cell gains focus.
+const RECEPTION_QUANTITY_MAX:i64=9_007_199_254_740_991;
+
+fn reception_quantity_step(value:&str,delta:i64)->Option<String>{
+    let count=value.trim().replace(',',"").parse::<i64>().ok();
+    match (count,delta){
+        (Some(n),-1) if n>1 && n<=RECEPTION_QUANTITY_MAX=>Some((n-1).to_string()),
+        (Some(n),1) if n>=0 && n<RECEPTION_QUANTITY_MAX=>Some((n+1).to_string()),
+        (None,1) if value.trim().is_empty()=>Some("1".into()),
+        _=>None,
+    }
+}
+
+pub struct ReceptionQuantityEditorResponse{
+    pub input:Response,
+    pub step_interaction:bool,
+}
+
+fn reception_quantity_editor(
+    ui:&mut Ui,cell:Rect,value:&mut String,request_focus:bool,
+    click_at:Option<egui::Pos2>
+)->ReceptionQuantityEditorResponse{
+    let rect=cell.shrink2(egui::vec2(theme::SPACE_2,theme::SPACE_2));
+    let mut placed=navigation_segment_child(
+        ui,"reception-quantity-editor",rect,Layout::top_down(Align::Min)
+    );
+    let font=typography::data_value_font(
+        typography::DataValueKind::Quantity,
+        typography::DataValueContext::Reception
+    );
+    let decrease=reception_quantity_step(value,-1);
+    let increase=reception_quantity_step(value,1);
+    let (_, (input,step_interaction))=date_navigation_segmented_surface(
+        &mut placed,"quantity-stepper",rect.size(),|segments,inner|{
+            // Left arrow pair; right-aligned value and permanent unit.
+            let arrow_width=16.0;
+            let unit_width=segments.painter().layout_no_wrap(
+                "개".to_owned(),font.clone(),theme::TEXT
+            ).size().x;
+            // Leave clearance for the rounded outer focus stroke.
+            let arrow_rect=Rect::from_min_max(
+                inner.min+egui::vec2(1.0,1.0),
+                egui::pos2(inner.left()+arrow_width,inner.bottom()-1.0)
+            );
+            let unit_rect=Rect::from_min_max(
+                egui::pos2(inner.right()-unit_width-2.0,inner.top()),
+                egui::pos2(inner.right()-2.0,inner.bottom())
+            );
+            let input_rect=Rect::from_min_max(
+                egui::pos2(arrow_rect.right()+2.0,inner.top()),
+                egui::pos2(unit_rect.left(),inner.bottom()));
+            let mut input_ui=navigation_segment_child(
+                segments,"quantity-value",input_rect,Layout::top_down(Align::Min)
+            );
+            let input=reception_text_editor_at_click(
+                &mut input_ui,input_rect,
+                singleline_editor(value,font.clone(),input_rect.width(),
+                    Align::RIGHT,egui::Margin::ZERO).frame(false),
+                request_focus,click_at
+            );
+            segments.painter().with_clip_rect(unit_rect).text(
+                unit_rect.center(),egui::Align2::CENTER_CENTER,"개",font.clone(),theme::TEXT
+            );
+            let mut clicked=false;
+            let half=arrow_rect.height()/2.0;
+            for (index,next,up) in [
+                (0,increase,true),
+                (1,decrease,false),
+            ]{
+                let part=Rect::from_min_size(
+                    egui::pos2(arrow_rect.left(),arrow_rect.top()+index as f32*half),
+                    egui::vec2(arrow_rect.width(),half)
+                );
+                let mut button=navigation_segment_child(
+                    segments,("quantity-arrow",index),part,Layout::left_to_right(Align::Center)
+                );
+                button.spacing_mut().item_spacing=Vec2::ZERO;
+                // Do not let the standard button's minimum padding enlarge
+                // the half-height arrow slots.
+                button.spacing_mut().interact_size=Vec2::ZERO;
+                button.spacing_mut().button_padding=Vec2::ZERO;
+                let response=date_navigation_segment_button(
+                    &mut button,arrow_rect.width(),next.is_some(),
+                    DateNavigationSegmentGlyph::CompactVerticalChevron{up}
+                );
+                if response.clicked(){
+                    if let Some(next)=next{*value=next;clicked=true;}
+                }
+            }
+            let stroke=Stroke::new(theme::SOFT_DIVIDER_WIDTH,theme::DIVIDER);
+            segments.painter().line_segment(
+                [arrow_rect.right_top(),arrow_rect.right_bottom()],stroke
+            );
+            segments.painter().line_segment(
+                [egui::pos2(arrow_rect.left(),arrow_rect.center().y),
+                 egui::pos2(arrow_rect.right(),arrow_rect.center().y)],stroke
+            );
+            // Pointer-down can remove TextEdit focus before the click is
+            // released. Keep that draft alive until the arrow action resolves.
+            let pressing=segments.input(|input|
+                (input.pointer.any_down() || input.pointer.any_released())
+                    && input.pointer.interact_pos().is_some_and(|p|arrow_rect.contains(p))
+            );
+            if clicked || pressing{input.request_focus();}
+            (input,clicked||pressing)
+        }
+    );
+    if input.has_focus() || step_interaction{
+        placed.painter().rect_stroke(
+            rect.shrink(0.5),theme::CONTROL_RADIUS as f32,
+            Stroke::new(2.0_f32,theme::SELECTION),egui::StrokeKind::Inside
+        );
+    }
+    ReceptionQuantityEditorResponse{input,step_interaction}
+}
+
+#[cfg(test)]
+#[test]
+fn reception_quantity_step_keeps_unit_out_of_native_draft_and_respects_bounds(){
+    assert_eq!(reception_quantity_step("5",1).as_deref(),Some("6"));
+    assert_eq!(reception_quantity_step("5",-1).as_deref(),Some("4"));
+    assert_eq!(reception_quantity_step("",1).as_deref(),Some("1"));
+    assert_eq!(reception_quantity_step("1",-1),None);
+    assert_eq!(reception_quantity_step("5개",1),None);
+    assert_eq!(reception_quantity_step(&RECEPTION_QUANTITY_MAX.to_string(),1),None);
+}
+
+#[derive(Clone,Copy)]
+pub enum ReceptionNumericCell{Quantity,Money}
+
+/// A stepper click may temporarily move the text focus. Both consumers
+/// must retain the draft until that click resolves.
+pub fn reception_numeric_edit_finished(response:&Response,step_interaction:bool)->bool{
+    crate::cell_navigation::worksheet_blur_finished(response,step_interaction)
+}
+
+pub fn reception_item_numeric_editor(
+    ui:&mut Ui,rect:Rect,value:&mut String,focus:bool,
+    click_at:Option<egui::Pos2>,kind:ReceptionNumericCell
+)->(Response,bool){
+    match kind{
+        ReceptionNumericCell::Quantity=>{
+            let editor=reception_quantity_editor(ui,rect,value,focus,click_at);
+            (editor.input,editor.step_interaction)
+        }
+        ReceptionNumericCell::Money=>(
+            reception_money_inline_cell_editor(ui,rect,value,focus,click_at),false
+        )
+    }
+}
+
+/// Persistent required-input accent. Paint on the already allocated cell,
+/// after any inline editor and blue/orange hover decoration. No layout space.
+pub fn paint_required_input(ui:&Ui,rect:Rect){
+    if !rect.is_positive() || !rect.intersects(ui.clip_rect()){return;}
+    let painter=ui.painter().with_clip_rect(ui.clip_rect().intersect(rect));
+    painter.rect_filled(rect,theme::CONTROL_RADIUS,theme::REQUIRED_INPUT_TINT);
+    painter.rect_stroke(rect,theme::CONTROL_RADIUS,
+        Stroke::new(2.0,theme::REQUIRED_INPUT_BORDER),egui::StrokeKind::Inside);
 }

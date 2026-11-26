@@ -1,0 +1,75 @@
+{
+  "schemaVersion": 1,
+  "id": "shared-controls-direct-129",
+  "screen": "공통 버튼·입력·드롭다운·표 직접 호출 전환",
+  "files": [
+    "egui-app/src/alias_manager.rs",
+    "egui-app/src/automatic_message_manager.rs",
+    "egui-app/src/brand_manager.rs",
+    "egui-app/src/category_dropdown.rs",
+    "egui-app/src/category_manager.rs",
+    "egui-app/src/client_chooser.rs",
+    "egui-app/src/client_manager.rs",
+    "egui-app/src/daily_settlement_manager.rs",
+    "egui-app/src/excel_manager.rs",
+    "egui-app/src/floating_notice.rs",
+    "egui-app/src/freight_manager.rs",
+    "egui-app/src/item_editor.rs",
+    "egui-app/src/manual_workspace.rs",
+    "egui-app/src/manual_product_search.rs",
+    "egui-app/src/model_group_manager.rs",
+    "egui-app/src/order_history_manager.rs",
+    "egui-app/src/main.rs",
+    "egui-app/src/product_excel_ui.rs",
+    "egui-app/src/product_manager.rs",
+    "egui-app/src/review_panel.rs",
+    "egui-app/src/settings_view.rs",
+    "egui-app/src/workflow_board_ui.rs",
+    "egui-app/src/one_touch.rs",
+    "egui-app/src/dropdown/mod.rs",
+    "egui-app/src/components.rs",
+    "egui-app/src/theme.rs",
+    "egui-app/src/button/mod.rs",
+    "egui-app/src/input/mod.rs",
+    "egui-app/src/table/mod.rs"
+  ],
+  "visualStatus": "NOT_VERIFIED",
+  "reason": "운영 화면에서 이전 호환 API 경로 제거, 독립 모듈 직접 호출, 잔여 기본 렌더러 이전 및 기존 표 변경 보존. 기존 디자인·좌표·업무 선택/저장 정책 유지 의도. Windows 실화면 증거 없음.",
+  "defects": [],
+  "releaseDecision": "NOT_APPROVED",
+  "verification": {
+    "static": "SCOPED_SOURCE_REVIEW",
+    "rustTests": "NOT_EXECUTED",
+    "githubCI": "NOT_VERIFIED",
+    "windowsVisual": "NOT_VERIFIED"
+  },
+  "nextVerification": {
+    "requiredViewports": [
+      {
+        "width": 1920,
+        "height": 1080,
+        "scalePercent": 100
+      },
+      {
+        "width": 1366,
+        "height": 768,
+        "scalePercent": 100
+      }
+    ],
+    "checks": [
+      "noClipping",
+      "footerVisible",
+      "scrollReachable",
+      "inputReadable",
+      "alignment",
+      "interaction",
+      "hoverAndFocus"
+    ],
+    "focus": [
+      "공통 버튼 및 분할 버튼",
+      "수량 셀·필수 입력·키보드·IME",
+      "카테고리·일반 드롭다운",
+      "표 헤더·정렬·스크롤·조회 전용 표"
+    ]
+  }
+}

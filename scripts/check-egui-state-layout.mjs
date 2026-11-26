@@ -57,7 +57,7 @@ function scan(source) {
     if(tokens[j].kind==="literal"||tests.some(([a,b])=>j>=a&&j<=b))continue;
     if(v[j+1]!=="("||!pairs.has(j+1))continue;
     const isDirect=v[j-1]==="."&&direct.has(v[j]);
-    const isShared=v[j-1]==="::"&&["theme","components"].includes(v[j-2])&&shared.has(v[j]);
+    const isShared=v[j-1]==="::"&&["theme","components","button"].includes(v[j-2])&&shared.has(v[j]);
     if(!isDirect&&!isShared)continue;
     if(safe.some(([a,b])=>j>a&&j<b))continue;
     const guard=guards.filter(g=>j>=g.start&&j<g.end&&(j>g.body||v.slice(g.start,j).includes("&&")||v.slice(g.start,j).includes("||"))).at(-1);
@@ -80,7 +80,7 @@ export { scan, additions };
 function selfTest(){
   const cases=[
   [
-    "if pending && theme::action(items_ui,\"상품 선택 취소\",ButtonRole::Quiet,true).clicked(){undo();}",
+    "if pending && crate::button::action(items_ui,\"상품 선택 취소\",ButtonRole::Quiet,true).clicked(){undo();}",
     1
   ],
   [
@@ -112,7 +112,7 @@ function selfTest(){
     0
   ],
   [
-    "theme::action(ui,\"save\",ButtonRole::Standard,!busy);",
+    "crate::button::action(ui,\"save\",ButtonRole::Standard,!busy);",
     0
   ]
 ];

@@ -184,7 +184,7 @@ pub fn payment_message(ui:&mut Ui,text:&str,signature:&str,emphasis:bool){
             payment_job(buffer.as_str(),signature,emphasis,width)))
     };
     let paint_slot=ui.painter().add(egui::Shape::Noop);
-    let display=crate::components::reception_source_text_edit(&mut immutable,ui.available_width())
+    let display=crate::input::reception_source_text_edit(&mut immutable,ui.available_width())
         .layouter(&mut layouter).show(ui);
     if emphasis{
         let clip=ui.clip_rect().intersect(display.text_clip_rect);

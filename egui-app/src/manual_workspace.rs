@@ -1475,13 +1475,13 @@ impl ManualWorkspace {
                     .or_else(||self.view_quote.as_ref()
                         .and_then(|quote|crate::quoted_item_line(quote,id))
                         .and_then(|line|line["unitPrice"].as_i64()))
-                    .map(components::money_edit_text).unwrap_or_default(),
+                    .map(crate::input::money_edit_text).unwrap_or_default(),
                 _=>text(item,"name").to_owned()
             };
         }
         if self.selected_field=="shippingCharge"{
             return crate::quoted_billable_freight(self.view_quote.as_ref(),row)
-                .map(components::money_edit_text).unwrap_or_default();
+                .map(crate::input::money_edit_text).unwrap_or_default();
         }
         text(row,&self.selected_field).to_owned()
     }
@@ -1512,26 +1512,26 @@ impl ManualWorkspace {
         let mut step_interaction=false;
         let response=if self.selected_item.is_none() {
             if self.selected_field=="shippingCharge" {
-                components::reception_freight_inline_cell_editor(
+                crate::input::reception_freight_inline_cell_editor(
                     ui,rect,&mut self.edit_text,focus,click_at
                 )
             }else{
-                components::reception_recipient_inline_cell_editor(
+                crate::input::reception_recipient_inline_cell_editor(
                     ui,rect,&mut self.edit_text,focus,click_at,
                     matches!(self.selected_field.as_str(),"mobile"|"phone"),
                     linked
                 )
             }
         }else if matches!(self.selected_field.as_str(),"quantity"|"unitPrice"){
-            let (input,step)=components::reception_item_numeric_editor(
+            let (input,step)=crate::input::reception_item_numeric_editor(
                 ui,rect,&mut self.edit_text,focus,click_at,
-                if self.selected_field=="quantity"{components::ReceptionNumericCell::Quantity}
-                else{components::ReceptionNumericCell::Money}
+                if self.selected_field=="quantity"{crate::input::ReceptionNumericCell::Quantity}
+                else{crate::input::ReceptionNumericCell::Money}
             );
             step_interaction=step;
             input
         }else{
-            components::reception_inline_cell_editor(
+            crate::input::reception_inline_cell_editor(
                 ui,rect,&mut self.edit_text,focus,click_at,false
             )
         };
@@ -1551,7 +1551,7 @@ impl ManualWorkspace {
             input.pointer.any_released() &&
                 input.pointer.interact_pos().is_some_and(|pos|!rect.contains(pos))));
         let blurred=if numeric{
-            components::reception_numeric_edit_finished(&response,step_interaction)
+            crate::input::reception_numeric_edit_finished(&response,step_interaction)
         }else{cell_navigation::worksheet_blur_finished(&response,false)};
         let finished=!focus && !busy && !pointer_down && navigation.is_none() && !step_interaction
             && (blurred || outside);
@@ -2401,20 +2401,20 @@ impl ManualWorkspace {
                                                                         && !submit_direct;
                                                                     if actions_enabled {
                                                                         crate::overlay::show_context_menu(&interaction,|menu|{
-                                                                            if theme::action(
+                                                                            if crate::button::action(
                                                                                 menu,"상품 상세 수정",ButtonRole::Standard,true
                                                                             ).clicked(){
                                                                                 lookup=Some((rid.to_owned(),item_id.to_owned()));
                                                                                 menu.close();
                                                                             }
-                                                                            if field=="product" && theme::action(
+                                                                            if field=="product" && crate::button::action(
                                                                                 menu,"원문 배정 대상 선택",ButtonRole::Standard,true
                                                                             ).clicked(){
                                                                                 self.queue_cell_selection(target.clone(),interaction.interact_pointer_pos(),&mut submit_direct);
                                                                                 clicked_target=Some(target.clone());
                                                                                 menu.close();
                                                                             }
-                                                                            if theme::action(
+                                                                            if crate::button::action(
                                                                                 menu,"상품 제거",ButtonRole::Danger,true
                                                                             ).clicked(){
                                                                                 remove_item=Some((rid.to_owned(),item_id.to_owned()));
@@ -2544,7 +2544,7 @@ impl ManualWorkspace {
                     workspace.footer(|left|{
                             // Reset is a destructive worksheet operation with its
                             // existing confirmation, not a toolbar filter.
-                            if theme::action(left,"초기화",ButtonRole::Danger,
+                            if crate::button::action(left,"초기화",ButtonRole::Danger,
                                 !busy && !pending_quantity_active && input_settled
                             ).clicked(){
                                 if input_settled {
@@ -2553,7 +2553,7 @@ impl ManualWorkspace {
                             }
                         },
                         |right|{
-                            let apply_button=theme::action(right,"초안에 적용",
+                            let apply_button=crate::button::action(right,"초안에 적용",
                                 ButtonRole::Primary,!busy && input_settled &&
                                     !has_pending_quantity);
                             let apply_clicked=apply_button.clicked();
@@ -2832,7 +2832,7 @@ impl ManualWorkspace {
                             ui.label(&removal_message);
                         });
                         decision.actions(|actions|{
-                            if theme::action(actions,"확인",ButtonRole::Danger,true).clicked(){
+                            if crate::button::action(actions,"확인",ButtonRole::Danger,true).clicked(){
                                 confirm=true;
                             }
                         });
@@ -2883,7 +2883,7 @@ impl ManualWorkspace {
                             ui.label(reset_message);
                         });
                         confirm=decision.actions(|actions|{
-                                theme::action(
+                                crate::button::action(
                                     actions,"확인",ButtonRole::Primary,true
                                 ).clicked()
                             }
@@ -2923,7 +2923,7 @@ impl ManualWorkspace {
                             ui.label("초안에 반영하지 않은 변경사항이 있습니다. 변경사항을 버리고 닫을까요?");
                         });
                         decision.actions(|actions|{
-                            if theme::action(
+                            if crate::button::action(
                                 actions,"변경사항 버리고 닫기",ButtonRole::Danger,true
                             ).clicked(){
                                 discard_confirmed=true;
@@ -2958,7 +2958,7 @@ impl ManualWorkspace {
                         ui.label(apply_message);
                     });
                     decision.actions(|right|{
-                        if theme::action(
+                        if crate::button::action(
                             right,"적용",ButtonRole::Primary,true
                         ).clicked(){proceed=true;}
                     });
@@ -3429,13 +3429,13 @@ mod manual_workspace_modal_routing_tests {
             "the native asynchronous resize flow must remain in place");
 
         let segmented=components.split("fn date_navigation_segmented_surface<R>(").nth(1).unwrap()
-            .split("fn date_navigation_button_surface(").next().unwrap();
+            .split("/// Shared calendar navigation").next().unwrap();
         assert!(segmented.contains("rect_filled("));
         assert!(segmented.contains("rect_stroke("));
         assert!(segmented.contains("StrokeKind::Inside"));
 
         let control=components.split("pub fn date_navigation_count_control(").nth(1).unwrap()
-            .split("fn date_navigation_button_surface(").next().unwrap();
+            .split("/// Shared calendar navigation").next().unwrap();
         for token in [
             "date_navigation_segmented_surface(",
             "date_navigation_segment_button(",
@@ -3519,7 +3519,7 @@ mod manual_workspace_modal_routing_tests {
         assert!(source.contains("ItemEditor::new("));
         assert!(!render.contains("interaction.double_clicked()"));
         assert!(!source.contains("ProductSearch::new("));
-        assert!(source.contains("components::reception_numeric_edit_finished("));
+        assert!(source.contains("crate::input::reception_numeric_edit_finished("));
         assert!(render.contains("self.focus_editor=!blur_commit"));
         assert!(render.contains("reception_item_delete_confirmation("));
         assert!(source.contains("add_selected_manual_product(service.as_ref()"));

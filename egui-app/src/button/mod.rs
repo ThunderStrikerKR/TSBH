@@ -1,7 +1,8 @@
 //! Shared native button rendering and hover/focus policy.
-use eframe::egui::{self,Color32,CornerRadius,Response,Stroke,Ui,Vec2};
+use eframe::egui::{self,Color32,CornerRadius,Rect,Response,Sense,Stroke,Ui,Vec2};
 use crate::{theme,typography};
 use crate::theme::*;
+use crate::components::{paint_workflow_icon,WorkflowIcon,ManagementChevronDirection,paint_management_chevron,paint_management_chevron_with_color,paint_chevron_at_angle_scaled};
 
 pub(crate) fn button_hover_palette(hovered:bool,focused:bool)->(Option<Color32>,Option<Stroke>){
     let fill=hovered.then_some(BUTTON_HOVER_TINT);
@@ -270,7 +271,7 @@ pub fn icon_action_button(
         .frame(false)
         .min_size(Vec2::splat(theme::MANAGEMENT_DATE_NAV_BUTTON_WIDTH)));
     if enabled{
-        theme::paint_button_hover(
+        crate::button::paint_button_hover(
             ui,&response,theme::CONTROL_RADIUS as f32
         );
     }
@@ -289,3 +290,283 @@ pub(crate) fn navigation_native_button(
     }
 }
 
+
+/// Neutral secondary actions inside a workflow card share one compact
+/// Standard-size control. Keep their existing disabled functionality.
+#[derive(Clone, Copy)]
+pub enum WorkflowAuxiliaryAction {
+    Manage,
+    Delete,
+    PreviousStage,
+}
+
+/// Shared label and glyph painting for allocated and fixed-rectangle workflow controls.
+pub fn paint_workflow_auxiliary_content(
+    painter:&egui::Painter,center:egui::Pos2,
+    action:WorkflowAuxiliaryAction,ink:Color32
+){
+    match action{
+        WorkflowAuxiliaryAction::Manage=>{
+            painter.text(center,egui::Align2::CENTER_CENTER,"관리",
+                egui::FontId::proportional(typography::FONT_STANDARD_ACTION),ink);
+        }
+        WorkflowAuxiliaryAction::Delete=>
+            paint_workflow_icon(painter,center,WorkflowIcon::Trash,ink),
+        WorkflowAuxiliaryAction::PreviousStage=>
+            paint_workflow_icon(painter,center,WorkflowIcon::PreviousStage,ink),
+    }
+}
+
+/// Fixed-size workflow actions share one renderer; callers retain workflow IDs
+/// and business transitions. Stage controls keep hover when disabled because
+/// they also open the existing order preview.
+#[derive(Clone, Copy)]
+pub enum WorkflowFixedAction<'a> {
+    Auxiliary(WorkflowAuxiliaryAction),
+    Stage(&'a str),
+}
+
+pub fn workflow_fixed_action(
+    ui:&mut Ui,id:egui::Id,rect:Rect,
+    action:WorkflowFixedAction<'_>,enabled:bool
+)->Response{
+    let response=ui.interact(
+        rect,id,if enabled{Sense::click()}else{Sense::hover()}
+    );
+    let stage=matches!(action,WorkflowFixedAction::Stage(_));
+    let role=if stage{theme::ButtonRole::Emphasized}else{theme::ButtonRole::Standard};
+    let (_,fill,ink,stroke)=crate::button::action_style(role,enabled,false);
+    let radius=5.0;
+    let painter=ui.painter();
+    painter.rect_filled(rect,radius,fill);
+    if !stage || !enabled{
+        painter.rect_stroke(rect,radius,stroke,egui::StrokeKind::Inside);
+    }
+    match action{
+        WorkflowFixedAction::Auxiliary(action)=>
+            paint_workflow_auxiliary_content(painter,rect.center(),action,ink),
+        WorkflowFixedAction::Stage(text)=>{
+            let galley=painter.layout_no_wrap(
+                text.to_owned(),
+                egui::FontId::proportional(typography::FONT_STANDARD_ACTION),ink
+            );
+            painter.with_clip_rect(rect.shrink2(Vec2::new(theme::SPACE_8,0.0)))
+                .galley(egui::Pos2::new(
+                    rect.center().x-galley.size().x/2.0,
+                    rect.center().y-galley.size().y/2.0
+                ),galley,ink);
+        }
+    }
+    if enabled || stage{crate::button::paint_button_hover(ui,&response,radius);}
+    response
+}
+
+/// Common management date group used by Order History and Excel History.
+/// The shared component owns the outer 36pt frame, 34pt content clip,
+/// asymmetric end caps, divider-safe hover geometry and arrow rendering.
+/// Consumers own only the date value, callbacks and calendar popup.
+#[derive(Clone,Copy,Debug,PartialEq,Eq)]
+pub enum ManagementDateSegmentEdge{Leading,Middle,Trailing}
+
+pub fn management_date_segment_corners(
+    edge:ManagementDateSegmentEdge
+)->egui::CornerRadius{
+    let r=theme::CONTROL_RADIUS.saturating_sub(
+        theme::FRAME_STROKE_WIDTH as u8
+    );
+    match edge {
+        ManagementDateSegmentEdge::Leading=>egui::CornerRadius{
+            nw:r,ne:0,sw:r,se:0
+        },
+        ManagementDateSegmentEdge::Middle=>egui::CornerRadius::same(0),
+        ManagementDateSegmentEdge::Trailing=>egui::CornerRadius{
+            nw:0,ne:r,sw:0,se:r
+        },
+    }
+}
+
+/// Keep the date segment's hit target, fill, asymmetric rounding and hover
+/// tied to one component. The caller must not paint a second hover layer.
+pub fn management_date_segment(
+    ui:&mut Ui,label:&str,width:f32,edge:ManagementDateSegmentEdge
+)->Response{
+    let corners=management_date_segment_corners(edge);
+    let direction=match label {
+        "‹"=>Some(ManagementChevronDirection::Left),
+        "›"=>Some(ManagementChevronDirection::Right),
+        _=>None
+    };
+    let display=if direction.is_some(){""}else{label};
+    let response=navigation_native_button(
+        ui,Vec2::new(width,theme::ACTION_STANDARD_HEIGHT),
+        egui::Button::new(typography::action_label(
+            display,typography::FONT_STANDARD_ACTION,false,theme::TEXT
+        ))
+            .fill(theme::INPUT)
+            .stroke(Stroke::NONE)
+            .corner_radius(corners),
+        None
+    );
+    crate::button::paint_button_hover_corners(ui,&response,corners);
+    if let Some(direction)=direction{
+        let painter=ui.painter().with_clip_rect(response.rect);
+        paint_management_chevron(
+            &painter,response.rect.center(),direction
+        );
+    }
+    response
+}
+
+/// The single date-navigation surface used by calendar arrows and compact
+/// count steppers. Geometry, border, fill, radius and hover treatment must not
+/// drift between controls that share the date-picker visual language.
+#[derive(Clone,Copy)]
+pub(crate) enum DateNavigationSegmentGlyph{
+    CountStep { increase: bool },
+    Chevron(ManagementChevronDirection),
+    CompactVerticalChevron { up: bool },
+}
+
+/// Count symbols are geometric strokes, not unrelated font glyphs.
+/// Both horizontal bars have the same length and the same center line.
+fn paint_count_step_symbol(painter:&egui::Painter,center:egui::Pos2,increase:bool,ink:Color32){
+    let half=4.0;
+    let stroke=Stroke::new(1.8_f32,ink);
+    painter.line_segment(
+        [center-egui::vec2(half,0.0),center+egui::vec2(half,0.0)],stroke
+    );
+    if increase{
+        painter.line_segment(
+            [center-egui::vec2(0.0,half),center+egui::vec2(0.0,half)],stroke
+        );
+    }
+}
+
+/// A borderless segment button; its parent owns the only outer border.
+/// The horizontal navigator uses native allocation. The two compact
+/// stepper forms share exact-rect hit testing and hover painting.
+pub(crate) fn date_navigation_segment_button(
+    ui:&mut Ui,width:f32,enabled:bool,
+    glyph:DateNavigationSegmentGlyph
+)->Response{
+    let enabled=enabled && ui.is_enabled();
+    if let DateNavigationSegmentGlyph::Chevron(direction)=glyph{
+        let height=ui.available_height();
+        let fill=if enabled{theme::INPUT}else{theme::RECEPTION_RECIPIENT_NAV_DISABLED_BG};
+        let response=navigation_native_button(
+            ui,Vec2::new(width,height),
+            egui::Button::new("").fill(fill).stroke(Stroke::NONE).corner_radius(0),
+            Some(enabled)
+        );
+        let ink=if !enabled{theme::RECEPTION_RECIPIENT_NAV_DISABLED_ICON}
+            else if response.hovered(){theme::TEXT}else{theme::SECONDARY};
+        if enabled{crate::button::paint_button_hover(ui,&response,0.0);}
+        let painter=ui.painter().with_clip_rect(response.rect);
+        paint_management_chevron_with_color(&painter,response.rect.center(),direction,ink);
+        return response;
+    }
+    // Preserve the established IDs, exact hit area and separate corner
+    // geometry of the horizontal count and half-height vertical steppers.
+    let rect=ui.max_rect().intersect(ui.clip_rect());
+    let (id,corners)=match glyph{
+        DateNavigationSegmentGlyph::CompactVerticalChevron{up}=>(
+            "compact-chevron",egui::CornerRadius{
+                nw:if up{3}else{0},ne:0,sw:if up{0}else{3},se:0
+            }
+        ),
+        DateNavigationSegmentGlyph::CountStep{increase}=>{
+            let radius=theme::CONTROL_RADIUS.saturating_sub(2);
+            ("count-step",egui::CornerRadius{
+                nw:if increase{0}else{radius},sw:if increase{0}else{radius},
+                ne:if increase{radius}else{0},se:if increase{radius}else{0},
+            })
+        }
+        DateNavigationSegmentGlyph::Chevron(_)=>unreachable!("handled above"),
+    };
+    let response=ui.interact(rect,ui.id().with(id),
+        if enabled{Sense::click()}else{Sense::hover()});
+    let painter=ui.painter().with_clip_rect(rect);
+    let (fill,ink)=match glyph{
+        DateNavigationSegmentGlyph::CompactVerticalChevron{..}=>{
+            let ink=if !enabled{theme::RECEPTION_RECIPIENT_NAV_DISABLED_ICON}
+                else if response.hovered(){theme::TEXT}else{theme::SECONDARY};
+            (if enabled{None}else{Some(theme::RECEPTION_RECIPIENT_NAV_DISABLED_BG)},ink)
+        }
+        DateNavigationSegmentGlyph::CountStep{..}=>{
+            let (_,fill,ink,_)=crate::button::action_style(theme::ButtonRole::Standard,enabled,false);
+            (Some(fill),ink)
+        }
+        DateNavigationSegmentGlyph::Chevron(_)=>unreachable!("handled above"),
+    };
+    if let Some(fill)=fill{painter.rect_filled(rect,corners,fill);}
+    if enabled{crate::button::paint_button_hover_corners(ui,&response,corners);}
+    match glyph{
+        DateNavigationSegmentGlyph::CompactVerticalChevron{up}=>{
+            let angle=if up{-std::f32::consts::FRAC_PI_2}else{std::f32::consts::FRAC_PI_2};
+            paint_chevron_at_angle_scaled(&painter,rect.center(),angle,0.0,ink,0.72);
+        }
+        DateNavigationSegmentGlyph::CountStep{increase}=>
+            paint_count_step_symbol(&painter,rect.center(),increase,ink),
+        DateNavigationSegmentGlyph::Chevron(_)=>unreachable!("handled above"),
+    }
+    response
+}
+
+pub(crate) fn date_navigation_button_surface(
+    ui:&mut Ui,enabled:bool
+)->(Response,Color32){
+    let effective_enabled=enabled && ui.is_enabled();
+    let (fill,ink,stroke)=crate::button::field_action_palette(effective_enabled,theme::SECONDARY);
+    let response=navigation_native_button(
+        ui,Vec2::splat(theme::CALENDAR_NAV_SIZE),
+        egui::Button::new("").fill(fill).stroke(stroke).corner_radius(theme::CONTROL_RADIUS),
+        Some(effective_enabled)
+    );
+    let ink=if effective_enabled && response.hovered(){
+        theme::TEXT
+    }else{ink};
+    if effective_enabled{
+        crate::button::paint_button_hover(
+            ui,&response,theme::CONTROL_RADIUS as f32
+        );
+    }
+    (response,ink)
+}
+
+
+/// Calendar cells use the shared action hover policy without changing grid geometry.
+pub(crate) fn calendar_day(grid:&mut Ui,day:&str,width:f32,selected:bool,today:bool)->Response{
+    let mut button=egui::Button::new(typography::body(day)).corner_radius(theme::CONTROL_RADIUS);
+    if selected{
+        button=button.fill(theme::WORKFLOW_SELECTED_BG)
+            .stroke(Stroke::new(1.0_f32,theme::SELECTION));
+    }else if today{
+        button=button.stroke(Stroke::new(1.0_f32,theme::BORDER));
+    }
+    let response=grid.add_sized(
+        egui::vec2(width,width),button
+    );
+    crate::button::paint_button_hover(
+        grid,&response,theme::CONTROL_RADIUS as f32
+    );
+    response
+}
+
+/// Dispatch-origin toggle; the reception row retains its business selection and highlight.
+pub(crate) fn dispatch_origin(right:&mut Ui,label:&str,selected:bool,editable:bool)->Response{
+    let response=right.add_enabled(editable,
+        egui::Button::new(typography::action_label(
+            label,typography::FONT_STANDARD_ACTION,false,
+            if selected{theme::TEXT}else{theme::SECONDARY}
+        ))
+        .min_size(Vec2::new(42.0,theme::ACTION_STANDARD_HEIGHT))
+        .fill(if selected{theme::RAISED}else{theme::PANEL})
+        .stroke(Stroke::new(theme::FRAME_STROKE_WIDTH,
+            if selected{theme::SELECTION}else{theme::DIVIDER}))
+        .corner_radius(theme::CONTROL_RADIUS)
+    );
+    crate::button::paint_button_hover(
+        right,&response,theme::CONTROL_RADIUS as f32
+    );
+    response
+}

@@ -280,7 +280,7 @@ impl AliasManager {
                 form.vertical(|v|{
                     v.label(typography::field_label("별칭"));
                     v.add_enabled_ui(editable&&!busy,|input|{
-                        components::flexible_text_field(
+                        crate::input::flexible_text_field(
                             input,&mut self.form.text,
                             theme::MANAGEMENT_SEARCH_MIN_WIDTH,"관리 별칭");
                     });
@@ -296,15 +296,15 @@ impl AliasManager {
                             .unwrap_or("거래처 확인 필요")
                     };
                     v.add_enabled_ui(editable&&!busy,|input|{
-                        components::management_dropdown(
+                        crate::dropdown::management_dropdown(
                             input,scope_name,theme::MANAGEMENT_SEARCH_MIN_WIDTH,
                             true,|choices|{
-                                components::management_dropdown_option(
+                                crate::dropdown::management_dropdown_option(
                                     choices,&mut self.form.scope,
                                     "common".to_owned(),"회사 공통 별칭");
                                 for client in rows(&catalog["clients"])
                                     .iter().filter(|c|is_client_active(c)){
-                                    components::management_dropdown_option(
+                                    crate::dropdown::management_dropdown_option(
                                         choices,&mut self.form.scope,
                                         field(client,"id").to_owned(),field(client,"name"));
                                 }
@@ -316,7 +316,7 @@ impl AliasManager {
                     let label=product(catalog,&self.form.target)
                         .map(|p|display_model(field(p,"name")))
                         .unwrap_or_else(||"등록 상품 선택".into());
-                    if theme::action(v,&label,theme::ButtonRole::Standard,
+                    if crate::button::action(v,&label,theme::ButtonRole::Standard,
                         editable&&!busy).clicked(){
                         self.product_search=true;
                         self.query.clear();self.category.clear();self.brand.clear();
@@ -326,13 +326,13 @@ impl AliasManager {
                     // Align the single primary action with the shared field
                     // baseline without altering any shared button dimensions.
                     v.add_space(theme::SPACE_24);
-                    if theme::action(v,"별칭 저장",theme::ButtonRole::Primary,
+                    if crate::button::action(v,"별칭 저장",theme::ButtonRole::Primary,
                         editable&&!busy).clicked(){save=true;}
                 });
             });
             // Shared Freight master: toolbar-to-header transition,
             // fixed 36pt register header and 10pt solid scroll rail.
-            components::management_table_container_style(card);
+            crate::table::management_table_container_style(card);
             crate::table::show(card,crate::table::Header::Register{primary:"별칭 / 적용 범위 / 연결 상품",action:"관리",action_width:132.0},|card,header|{
             let scroll_height=components::management_single_list_scroll_height(
                 card,card_min_height,0.0
@@ -358,7 +358,7 @@ impl AliasManager {
                                 alias_diagnostic_slot(info,item,&warnings);
                             });
                             row.with_layout(Layout::right_to_left(Align::Center),|actions|{
-                                if theme::action(actions,"연결 정정",
+                                if crate::button::action(actions,"연결 정정",
                                     theme::ButtonRole::Standard,!busy).clicked(){
                                     choose=Some(id.to_owned());
                                 }
@@ -395,7 +395,7 @@ impl AliasManager {
                         }
                         workspace.body_region(|modal|{
                             let width=modal.available_width();
-                            components::management_search_field(modal,&mut self.query,
+                            crate::input::management_search_field(modal,&mut self.query,
                                 width,"브랜드 / 상품명 / 모델 / 별칭 검색");
                             modal.horizontal_wrapped(|filters|{
                                 for (depth,(parent,selected,children)) in
@@ -414,9 +414,9 @@ impl AliasManager {
                                         filters,label,text_width,
                                         typography::CategoryPathFont::Body
                                     );
-                                    components::management_dropdown_full_label(
+                                    crate::dropdown::management_dropdown_full_label(
                                         filters,&visible,label,picker_width,true,|choice|{
-                                            components::management_dropdown_option(
+                                            crate::dropdown::management_dropdown_option(
                                                 choice,&mut value,String::new(),
                                                 if depth==0{"전체 카테고리"}else{"현재 분류 전체"});
                                             for (id,name) in &children{
@@ -424,7 +424,7 @@ impl AliasManager {
                                                     choice,name,text_width,
                                                     typography::CategoryPathFont::Body
                                                 );
-                                                let response=components::management_dropdown_option(
+                                                let response=crate::dropdown::management_dropdown_option(
                                                     choice,&mut value,id.clone(),&visible
                                                 );
                                                 components::shortened_text_tooltip(response,&visible,name.as_str());
@@ -444,23 +444,23 @@ impl AliasManager {
                                 let brand=rows(&catalog["brands"]).iter()
                                     .find(|b|field(b,"id")==selected_brand)
                                     .map(|b|field(b,"name")).unwrap_or("전체 브랜드");
-                                components::management_dropdown(
+                                crate::dropdown::management_dropdown(
                                     filters,brand,theme::MANAGEMENT_FILTER_DROPDOWN_WIDTH,
                                     true,|choice|{
-                                        components::management_dropdown_option(
+                                        crate::dropdown::management_dropdown_option(
                                             choice,&mut self.brand,String::new(),"전체 브랜드");
                                         for b in rows(&catalog["brands"])
                                             .iter().filter(|b|{
                                                 available.contains(field(b,"id")) ||
                                                     field(b,"id")==selected_brand
                                             }){
-                                            components::management_dropdown_option(
+                                            crate::dropdown::management_dropdown_option(
                                                 choice,&mut self.brand,field(b,"id").to_owned(),
                                                 field(b,"name"));
                                         }
                                     });
                                 if !self.category.is_empty() &&
-                                    theme::action(filters,"카테고리 초기화",
+                                    crate::button::action(filters,"카테고리 초기화",
                                         theme::ButtonRole::Standard,true).clicked(){
                                     self.category.clear();
                                 }
@@ -489,7 +489,7 @@ impl AliasManager {
                                             for id in ids{
                                                 if let Some(p)=product(catalog,id){
                                                     results.horizontal(|row|{
-                                                        if theme::action(row,
+                                                        if crate::button::action(row,
                                                             &display_model(field(p,"name")),
                                                             theme::ButtonRole::Standard,editable&&!busy)
                                                             .clicked(){chosen=Some(id.to_owned());}
@@ -500,7 +500,7 @@ impl AliasManager {
                                                         if detail.contains(id){
                                                             if let Some(url)=rows(&p["variants"]).first()
                                                                 .and_then(|v|v["url"].as_str()){
-                                                                if theme::action(row,"상세보기 ↗",
+                                                                if crate::button::action(row,"상세보기 ↗",
                                                                     theme::ButtonRole::Quiet,true).clicked(){
                                                                     ctx.open_url(egui::OpenUrl::new_tab(url));
                                                                 }
@@ -536,9 +536,9 @@ impl AliasManager {
                         dialog.label(typography::body("상품 별칭 변경사항을 저장할까요?"));
                     });
                     decision.actions(|actions|{
-                            save_now=theme::action(actions,"저장",
+                            save_now=crate::button::action(actions,"저장",
                                 theme::ButtonRole::Primary,editable&&!busy).clicked();
-                            discard=theme::action(actions,"저장 안 함",
+                            discard=crate::button::action(actions,"저장 안 함",
                                 theme::ButtonRole::Danger,!busy).clicked();
                         }
                     );
@@ -651,7 +651,7 @@ mod tests {
                                 slots.push(alias_diagnostic_slot(info,&item,&warnings));
                             });
                             row.with_layout(Layout::right_to_left(Align::Center),|actions|{
-                                theme::action(
+                                crate::button::action(
                                     actions,"연결 정정",theme::ButtonRole::Standard,true
                                 );
                             });

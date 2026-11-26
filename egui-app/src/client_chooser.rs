@@ -243,7 +243,7 @@ impl ClientChooser {
                         workspace,"거래처 검색",|search_panel|{
                             let response=search_panel.add_enabled_ui(true,|field|{
                                 let width=field.available_width();
-                                components::management_search_field(
+                                crate::input::management_search_field(
                                     field,&mut self.query,width,
                                     "거래처명 / 검색 태그 / 주소 / 전화번호 검색"
                                 )
@@ -260,7 +260,7 @@ impl ClientChooser {
                     workspace.add_space(theme::SPACE_12);
                     components::modal_master_body_section(
                         workspace,"검색 결과",|results_panel|{
-                            components::management_table_container_style(results_panel);
+                            crate::table::management_table_container_style(results_panel);
                             // Errors belong to the shared floating toast,
                             // not an inline row that shifts the pinned table
                             // header or steals space from the scroll viewport.
@@ -291,7 +291,7 @@ impl ClientChooser {
                             let height=(results_panel.available_height()-theme::SPACE_8)
                                 .max(1.0)
                                 .min(theme::CLIENT_CHOOSER_RESULTS_MAX_HEIGHT);
-                            let scroll_track=components::management_table_scroll_track_rect(
+                            let scroll_track=crate::table::management_table_scroll_track_rect(
                                 results_panel,height
                             );
                             let mut first_row_left=None;
@@ -299,7 +299,7 @@ impl ClientChooser {
                 results_panel,crate::table::Viewport{width:table_width,height:height,rail:Some(scroll_track)},
                 "egui-all-clients-scroll",theme::MANAGEMENT_CLIENT_ROW_HEIGHT,clients.len(),
                 |table,visible_rows|{
-                                    components::management_table_row_body(table,table_width);
+                                    crate::table::management_table_row_body(table,table_width);
                                     let first=visible_rows.start;
                                     let origin=table.max_rect().min;
                                     let clip=table.clip_rect();

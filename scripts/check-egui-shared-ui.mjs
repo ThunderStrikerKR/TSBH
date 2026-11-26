@@ -187,8 +187,11 @@ const controls = [
 const extractedControlOwners = new Map([
   ["Button :: new (",new Set([
     "button/mod.rs:action_with_palette","button/mod.rs:window_control",
-    "button/mod.rs:icon_action_button","dropdown/mod.rs:management_dropdown_trigger_inner"
+    "button/mod.rs:icon_action_button","button/mod.rs:management_date_segment",
+    "button/mod.rs:date_navigation_segment_button","button/mod.rs:date_navigation_button_surface",
+    "button/mod.rs:calendar_day","button/mod.rs:dispatch_origin","dropdown/mod.rs:management_dropdown_trigger_inner"
   ])],
+  ["Button :: selectable (",new Set(["dropdown/mod.rs:management_dropdown_option_inner"])],
   ["TextEdit :: singleline (",new Set(["input/mod.rs:singleline_editor"])],
   ["TextEdit :: multiline (",new Set(["input/mod.rs:multiline_editor"])],
 ]);
@@ -207,6 +210,72 @@ const ownedControls = new Map([
 const paletteConstructors = ["from_rgb","from_rgba_unmultiplied",
   "from_rgba_unmultiplied_const","from_rgba_premultiplied","from_gray",
   "from_rgb_additive","from_rgba_premultiplied_const"];
+const retiredControlAliases = {
+  "theme": [
+    "action",
+    "action_full_width",
+    "action_with_min_width",
+    "action_style",
+    "review_action",
+    "paint_button_hover",
+    "paint_button_hover_corners",
+    "window_control",
+    "WindowControl",
+    "field_action_palette"
+  ],
+  "components": [
+    "FieldKind",
+    "field",
+    "compact_text_field",
+    "flexible_text_field",
+    "multiline_text_field",
+    "multiline_text_field_sized",
+    "money_field",
+    "money_field_with_unit",
+    "money_edit_text",
+    "parse_money_input",
+    "management_date_text_field",
+    "management_search_field",
+    "reception_source_text_edit",
+    "reception_recipient_inline_cell_editor",
+    "reception_inline_cell_editor",
+    "reception_freight_inline_cell_editor",
+    "reception_item_numeric_editor",
+    "ReceptionNumericCell",
+    "reception_numeric_edit_finished",
+    "paint_required_input",
+    "ManagementSearchChoice",
+    "management_dropdown",
+    "management_dropdown_full_label",
+    "management_status_dropdown",
+    "management_dropdown_compact",
+    "management_dropdown_values",
+    "management_searchable_dropdown",
+    "management_dropdown_option",
+    "management_dropdown_option_values",
+    "management_status_dropdown_option",
+    "management_dropdown_compact_option",
+    "management_dropdown_trigger",
+    "management_dropdown_trigger_full_label",
+    "management_table_container_style",
+    "management_table_cells",
+    "management_table_row_fill",
+    "management_table_row_body",
+    "management_table_column_rules",
+    "paint_management_table_row_background",
+    "paint_management_table_row_rule",
+    "management_table_scroll_track_rect",
+    "management_readonly_table",
+    "icon_action_button",
+    "management_date_segment",
+    "management_date_segment_corners",
+    "ManagementDateSegmentEdge",
+    "WorkflowFixedAction",
+    "WorkflowAuxiliaryAction",
+    "workflow_fixed_action",
+    "paint_workflow_auxiliary_content"
+  ]
+};
 const retired = [
   "components :: table_header (","components :: table_row (",
   "components :: record_card (","components :: summary_strip (",
@@ -261,6 +330,8 @@ export function audit(source,file,checkTableContracts=false){
   for(let i=0;i<v.length;i++){
     if(v[i]==="fn"&&/^[A-Za-z_]\w*$/.test(v[i+1]??""))fn=v[i+1];
     for(const pattern of retired)if(is(i,pattern))flag(i,"retired UI entry: "+pattern);
+    if(v[i+1]==="::"&&retiredControlAliases[v[i]]?.includes(v[i+2]))
+      flag(i,"retired component alias: "+v[i]+"::"+v[i+2]);
     const overlayNative=["Area :: new (","Window :: new (","Modal :: new (",
       "Popup :: menu (","Popup :: context_menu (","Popup :: from_response (","Popup :: new (",
       ". context_menu (",". layer_painter (",". set_sublayer (",
@@ -272,6 +343,9 @@ export function audit(source,file,checkTableContracts=false){
     if(retiredTable.has(v[i]))flag(i,"retired table entry: "+v[i]);
     if(!base&&is(i,"components ::")&&["management_fixed_table_scroll_area","management_register_list_scroll_area","virtual_fixed_rows","management_master_header_begin"].includes(v[i+2]))
       flag(i,"retired screen table assembly: "+v[i+2]);
+    for(const [pattern,owners] of extractedControlOwners)
+      if(is(i,pattern)&&!owners.has(file+":"+fn))
+        flag(i,"raw control outside owning constructor: "+pattern);
     for(const [pattern,owner] of ownedControls)
       if(is(i,pattern)&&file+":"+fn!==owner)
         flag(i,"raw control outside owning component: "+pattern);
@@ -322,7 +396,7 @@ export function audit(source,file,checkTableContracts=false){
       sharedCalls.set(key,(sharedCalls.get(key)||0)+1);
     }
     if(workflow){
-      const fixed=is(i,"components :: workflow_fixed_action (");
+      const fixed=is(i,"button :: workflow_fixed_action (");
       const wrapper=["workflow_auxiliary_at","workflow_primary_at"].includes(v[i])
         &&v[i+1]==="("&&v[i-1]!=="fn";
       if(fixed||wrapper){
@@ -333,7 +407,7 @@ export function audit(source,file,checkTableContracts=false){
           flag(i,"unexpected workflow action call: "+key);
       }
       const local=v[i]==="."&&workflowPaintMethods.has(v[i+1])&&v[i+2]==="(";
-      const themed=is(i,"theme ::")&&workflowThemePaintMethods.has(v[i+2])&&v[i+3]==="(";
+      const themed=(is(i,"theme ::")||is(i,"button ::"))&&workflowThemePaintMethods.has(v[i+2])&&v[i+3]==="(";
       if(local||themed){
         const start=local?i+1:i+2;
         const fingerprint=v.slice(start,callEnd(start+1)+1).join(" ");
@@ -343,7 +417,7 @@ export function audit(source,file,checkTableContracts=false){
         if(count>(workflowPaintAllowance.get(key)||0))
           flag(i,"raw workflow action/paint: "+v[start]+"; use shared workflow renderer");
       }
-      if(is(i,"components :: paint_workflow_auxiliary_content ("))
+      if(is(i,"button :: paint_workflow_auxiliary_content ("))
         flag(i,"workflow auxiliary glyph outside shared renderer");
     }
     if(managed){
@@ -369,7 +443,7 @@ export function audit(source,file,checkTableContracts=false){
     if(!base){
       for(const pattern of controls)if(is(i,pattern)&&
         !(file==="overlay.rs"&&pattern==="Window :: new (")&&
-        !extractedControlOwners.get(pattern)?.has(file+":"+fn))
+        !extractedControlOwners.has(pattern))
         flag(i,"raw shared control: "+pattern);
       for(const pattern of ["theme :: soft_rule (","theme :: divider (",". separator (",
         ". on_hover_text (",". on_hover_text_at_pointer ("])
@@ -386,8 +460,6 @@ export function audit(source,file,checkTableContracts=false){
        !(file==="components.rs"&&fn==="scroll_area"))
       flag(i,"raw scroll constructor outside shared scroll_area");
     if(file==="components.rs"){
-      if(is(i,"TextEdit :: singleline (")||is(i,"TextEdit :: multiline ("))
-        flag(i,"text editor outside shared input constructor");
       if((is(i,". on_hover_text (")||is(i,". on_hover_text_at_pointer ("))&&fn!=="overflow_tooltip")
         flag(i,"tooltip outside shared overflow policy");
     }
@@ -414,18 +486,18 @@ export function audit(source,file,checkTableContracts=false){
 
 function selfTest(){
   const cases=[
-    ["workflow_board_ui.rs","fn workflow_auxiliary_at(){components::workflow_fixed_action(ui,id,rect,action,enabled);}",0],
-    ["workflow_board_ui.rs","fn workflow_primary_at(){components::workflow_fixed_action(ui,id,rect,action,enabled);}",0],
+    ["workflow_board_ui.rs","fn workflow_auxiliary_at(){crate::button::workflow_fixed_action(ui,id,rect,action,enabled);}",0],
+    ["workflow_board_ui.rs","fn workflow_primary_at(){crate::button::workflow_fixed_action(ui,id,rect,action,enabled);}",0],
     ["workflow_board_ui.rs","fn workflow_primary_at(){painter.rect_filled(rect,5.0,fill);}",1],
     ["workflow_board_ui.rs","fn other(){painter.rect_stroke(rect,5.0,stroke,kind);}",1],
-    ["workflow_board_ui.rs","fn workflow_auxiliary_at(){components::paint_workflow_auxiliary_content(p,r,a,c);}",1],
+    ["workflow_board_ui.rs","fn workflow_auxiliary_at(){crate::button::paint_workflow_auxiliary_content(p,r,a,c);}",1],
     ["workflow_board_ui.rs","fn workflow_header(){theme::paint_bordered_surface(p,r,5.0,c,b);}",1],
     ["workflow_board_ui.rs","fn workflow_action_line(){ui.interact(rect,id,sense);}",1],
-    ["workflow_board_ui.rs","fn other(){theme::action(ui,label,role,enabled);}",1],
-    ["workflow_board_ui.rs","fn other(){components::workflow_fixed_action(ui,id,rect,action,enabled);}",1],
+    ["workflow_board_ui.rs","fn other(){crate::button::action(ui,label,role,enabled);}",1],
+    ["workflow_board_ui.rs","fn other(){crate::button::workflow_fixed_action(ui,id,rect,action,enabled);}",1],
     ["workflow_board_ui.rs","fn workflow_compact_rows(){painter.rect_filled(divider,0.0,theme::WORKFLOW_CARD_BORDER);painter.rect_filled(divider,0.0,theme::WORKFLOW_CARD_BORDER);}",1],
-    ["workflow_board_ui.rs","#[cfg(test)] fn t(){painter.rect_filled(rect,5.0,fill);} fn workflow_primary_at(){components::workflow_fixed_action(ui,id,rect,action,enabled);}",0],
-    ["workflow_board_ui.rs","fn other(){/* painter.rect_filled(r,5.0,c); */ let note=\"theme::action(ui,label,role,enabled)\";}",0],
+    ["workflow_board_ui.rs","#[cfg(test)] fn t(){painter.rect_filled(rect,5.0,fill);} fn workflow_primary_at(){crate::button::workflow_fixed_action(ui,id,rect,action,enabled);}",0],
+    ["workflow_board_ui.rs","fn other(){/* painter.rect_filled(r,5.0,c); */ let note=\"crate::button::action(ui,label,role,enabled)\";}",0],
     ["product_manager.rs","fn render(){egui::ScrollArea :: both ( );}",1],
     ["main.rs","fn render(){egui::ScrollArea::both();}",1],
     ["alias_manager.rs","fn show_page(){egui::ScrollArea::vertical();}",1],
@@ -454,6 +526,11 @@ function selfTest(){
     ["button/mod.rs","fn window_control(){egui::Button::new(label);}",0],
     ["button/mod.rs","fn icon_action_button(){egui::Button::new(label);}",0],
     ["button/mod.rs","fn other(){egui::Button::new(label);}",1],
+    ["button/mod.rs","fn calendar_day(){egui::Button::new(label);}",0],
+    ["button/mod.rs","fn dispatch_origin(){egui::Button::new(label);}",0],
+    ["new_screen.rs","fn wrong(){components::money_field(ui,v,true);}",1],
+    ["new_screen.rs","fn wrong(){theme::action(ui,label,role,true);}",1],
+    ["components.rs","fn wrong(){egui::Button::new(label);}",1],
     ["button/mod.rs","fn action_with_palette(){egui::TextEdit::singleline(value);}",1],
     ["input/mod.rs","fn singleline_editor(){egui::TextEdit::singleline(value);}",0],
     ["input/mod.rs","fn multiline_editor(){egui::TextEdit::multiline(value);}",0],
@@ -502,26 +579,26 @@ function selfTest(){
     ["product_manager.rs","fn render(){let c=theme::TABLE_ROW_ALT_BG;}",1],
     ["product_manager.rs","fn render(){let c=std::array::from_fn(|i|Rect::from_min_size(p,w));}",1],
     ["client_manager.rs","fn render(){let c=std::array::from_fn(|i|i.to_string());}",0],
-    ["new_screen.rs","fn render(){components::management_table_cells(p,w,h,g);painter.rect_filled(r,0.0,ink);}",1],
-    ["new_screen.rs","fn render(){components::management_table_cells(p,w,h,g);components::management_table_column_rules(ui,r,c,g);}",0],
+    ["new_screen.rs","fn render(){crate::table::management_table_cells(p,w,h,g);painter.rect_filled(r,0.0,ink);}",1],
+    ["new_screen.rs","fn render(){crate::table::management_table_cells(p,w,h,g);crate::table::management_table_column_rules(ui,r,c,g);}",0],
     ["new_screen.rs","fn render(){components::management_row_striped(ui,id,c,t,i);}",1],
     ["order_history_manager.rs","fn paint_history_branch(){painter.line_segment([egui::pos2(x,center),egui::pos2(tip,center)],stroke);}",0],
     ["order_history_manager.rs","fn paint_history_branch(){painter.line_segment([egui::pos2(x,center),egui::pos2(tip,center)],stroke);painter.line_segment([egui::pos2(x,center),egui::pos2(tip,center)],stroke);painter.line_segment([egui::pos2(x,center),egui::pos2(tip,center)],stroke);}",1],
     ["order_history_manager.rs","fn paint_history_branch(){painter.line_segment([a,b],stroke);}",1],
     ["freight_manager.rs","fn show_groups(){painter.rect_filled(row_rect,0.0,background);}",1],
     ["freight_manager.rs","fn other(){painter.rect_filled(row_rect,0.0,background);}",1],
-    ["product_manager.rs","#[cfg(test)] fn t(){painter.rect_filled(r,0.0,c);} fn render(){components::management_table_cells(p,w,h,g);}",0],
+    ["product_manager.rs","#[cfg(test)] fn t(){painter.rect_filled(r,0.0,c);} fn render(){crate::table::management_table_cells(p,w,h,g);}",0],
   ];
   for(const [file,source,count] of cases)assert.equal(audit(source,file).length,count,source);
   assert.equal(audit("fn show_page(){}","product_manager.rs",true).length,8);
   assert.equal(audit("fn show(){crate::table::show(ui,h,c);crate::table::fixed_rows(ui,v,id,h,n,c);crate::table::row_scope(ui,id,r,c);components::management_row(ui,id,c,t,i);components::management_client_header(ui,h,c,l,w,s);}","client_chooser.rs",true).length,0);
   assert.equal(audit("fn workflow_primary_at(){}","workflow_board_ui.rs",true).length,5);
-  assert.equal(audit("fn workflow_auxiliary_at(){components::workflow_fixed_action(ui,id,r,a,e);} fn workflow_primary_at(){components::workflow_fixed_action(ui,id,r,a,e);} fn workflow_header(){workflow_auxiliary_at();workflow_auxiliary_at();} fn workflow_action_line(){workflow_primary_at();workflow_auxiliary_at();}","workflow_board_ui.rs",true).length,0);
+  assert.equal(audit("fn workflow_auxiliary_at(){crate::button::workflow_fixed_action(ui,id,r,a,e);} fn workflow_primary_at(){crate::button::workflow_fixed_action(ui,id,r,a,e);} fn workflow_header(){workflow_auxiliary_at();workflow_auxiliary_at();} fn workflow_action_line(){workflow_primary_at();workflow_auxiliary_at();}","workflow_board_ui.rs",true).length,0);
   const missing=(source,file,scope)=>audit(source,file,true)
     .filter(hit=>hit.rule.startsWith("missing shared table contract: "+scope+" requires "));
   const historyScope="order_history_manager.rs:history_detail_cells";
   assert.equal(missing("fn history_detail_cells(){components::shipment_detail_cells(b,w,g);}","order_history_manager.rs",historyScope).length,0);
-  assert.equal(missing("fn history_detail_cells(){components::management_table_cells(p,w,h,g);}","order_history_manager.rs",historyScope).length,1);
+  assert.equal(missing("fn history_detail_cells(){crate::table::management_table_cells(p,w,h,g);}","order_history_manager.rs",historyScope).length,1);
   const commonScope="components.rs:shipment_detail_cells";
   assert.equal(missing("fn shipment_detail_cells(){let c=shipment_detail_content(b);management_table_cells(p,w,h,g);}","components.rs",commonScope).length,0);
   assert.equal(missing("fn shipment_detail_cells(){shipment_detail_content(b);} fn management_table_cells(){}","components.rs",commonScope).length,1);

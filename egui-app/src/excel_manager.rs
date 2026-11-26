@@ -336,7 +336,7 @@ fn table<const N:usize>(
     };
     // No 36pt empty-state footer: the caption is painted inside the body.
     // Rail extension still uses the same shared master scroll policy.
-    let scroll_track=components::management_table_scroll_track_rect(
+    let scroll_track=crate::table::management_table_scroll_track_rect(
         ui,scroll_max_height
     );
     let mut left=None;
@@ -359,7 +359,7 @@ fn table<const N:usize>(
         });
     ui.spacing_mut().item_spacing.y=old_gap;
     let left=left.unwrap_or(header.left()-output.state.offset.x);
-    let heads=components::management_table_cells(egui::pos2(left,header.top()),&widths,HEADER,GAP);
+    let heads=crate::table::management_table_cells(egui::pos2(left,header.top()),&widths,HEADER,GAP);
     let (header_text_rect,_)=crate::table::header_columns(ui,header,header_content,&heads,GAP,|ui,header_text_rect|{
     let mut clicked=None;
     for (i,title) in titles.iter().enumerate(){
@@ -690,7 +690,7 @@ impl ExcelManager{
                                 line.label(typography::field_label(&format!("{} / {}행 / {}",
                                     text(row,"filename"),row["row"],text(row,"name"))));
                                 if text(row,"issue").contains("충돌")&&!text(row,"shipmentId").is_empty(){
-                                    if theme::action(line,"충돌 검토",theme::ButtonRole::Standard,
+                                    if crate::button::action(line,"충돌 검토",theme::ButtonRole::Standard,
                                         !busy&&self.gateway.excel_write_enabled()).clicked(){selected=Some(row.clone());}
                                 }
                             });
@@ -698,16 +698,16 @@ impl ExcelManager{
                                 text(row,"tracking"),amount(&row["actual"]),text(row,"issue"))));
                         }
                         ui.horizontal(|bar|{
-                            if theme::action(bar,"이전",theme::ButtonRole::Standard,!busy&&self.reply_page>0).clicked(){self.reply_page-=1;}
+                            if crate::button::action(bar,"이전",theme::ButtonRole::Standard,!busy&&self.reply_page>0).clicked(){self.reply_page-=1;}
                             bar.label(typography::caption(&format!("{}/{}",self.reply_page+1,(count.saturating_add(49)/50).max(1))));
-                            if theme::action(bar,"다음",theme::ButtonRole::Standard,!busy&&(self.reply_page+1)*50<count).clicked(){self.reply_page+=1;}
+                            if crate::button::action(bar,"다음",theme::ButtonRole::Standard,!busy&&(self.reply_page+1)*50<count).clicked(){self.reply_page+=1;}
                             let error=self.error.as_deref();
                             let error_width=bar.available_width();
                             components::fixed_status_slot(bar,error_width,
                                 typography::METADATA_LINE_HEIGHT,error,error,theme::DANGER);
                         });
                     });
-                    workspace.footer_single(|bar|{if theme::action(bar,"닫기",theme::ButtonRole::Standard,!busy&&self.reply_confirm.is_none()).clicked(){close=true;}});
+                    workspace.footer_single(|bar|{if crate::button::action(bar,"닫기",theme::ButtonRole::Standard,!busy&&self.reply_confirm.is_none()).clicked(){close=true;}});
                 });
             });
         if close{self.reply_review=false;self.reply_confirm=None;return}
@@ -727,7 +727,7 @@ impl ExcelManager{
                     cancel=decision.header("공장 회신 한 행 정정","취소",!busy);
                     decision.body(|body|{body.label(typography::table_cell(text(&review,"confirmedText")));});
                     decision.actions(|bar|{
-                        if theme::action(bar,"정정 반영",theme::ButtonRole::Primary,
+                        if crate::button::action(bar,"정정 반영",theme::ButtonRole::Primary,
                             !busy&&self.gateway.excel_write_enabled()).clicked(){approve=true;}
                     });
                 });
@@ -772,7 +772,7 @@ impl ExcelManager{
                 title.label(typography::page_heading("엑셀 관리"));
                 settings_help::icon(title,"발송 Excel 관리");
                 title.with_layout(egui::Layout::right_to_left(egui::Align::Center),|actions|{
-                    if theme::action(actions,"공장 회신 검토",theme::ButtonRole::Standard,
+                    if crate::button::action(actions,"공장 회신 검토",theme::ButtonRole::Standard,
                         self.result.is_some()&&self.operation.is_none()
                     ).clicked(){self.reply_review=true;self.reply_rows_revision=None;self.reply_page=0;}
                 });
@@ -825,7 +825,7 @@ impl ExcelManager{
             components::fill_management_primary_card(section,card_min_height);
             // Allocate a true 36pt master toolbar. Search and trailing
             // actions use the SAME 16pt card interior width as the header.
-            components::management_table_container_style(section);
+            crate::table::management_table_container_style(section);
             let toolbar_width=section.available_width().max(1.0);
             let has_actions=self.tab!=Tab::History;
             let history_tab=self.tab==Tab::History;
@@ -870,7 +870,7 @@ impl ExcelManager{
                 |search|{
                     search.set_clip_rect(search_rect);
                     search.set_width(search_rect.width());
-                    if components::management_search_field(
+                    if crate::input::management_search_field(
                         search,&mut self.query,
                         theme::MANAGEMENT_SEARCH_MIN_WIDTH,
                         if history_tab{
@@ -959,11 +959,11 @@ impl ExcelManager{
                     |actions|{
                         actions.set_clip_rect(actions_rect);
                         actions.set_width(actions_rect.width());
-                        if theme::action(actions,"폴더 열기",
+                        if crate::button::action(actions,"폴더 열기",
                             theme::ButtonRole::Standard,!busy).clicked(){
                             open_daily=true;
                         }
-                        if theme::action(actions,
+                        if crate::button::action(actions,
                             &format!("선택 {}건 {} Excel 작성",
                                 self.selected.len(),
                                 if self.tab==Tab::Factory{"공장"}else{"매장"}),
@@ -1015,11 +1015,11 @@ impl ExcelManager{
                             .layout(egui::Layout::left_to_right(Align::Center)),
                             |buttons|{
                                 if !text(&entry.export,"savedPath").is_empty() {
-                                    if theme::action(buttons,"파일 열기",
+                                    if crate::button::action(buttons,"파일 열기",
                                         theme::ButtonRole::TableSecondary,!busy).clicked(){
                                         open_file=Some(id.to_owned());
                                     }
-                                    if theme::action(buttons,"경로 복사",
+                                    if crate::button::action(buttons,"경로 복사",
                                         theme::ButtonRole::TableSecondary,!busy).clicked(){
                                         copy_path=Some(text(&entry.export,"savedPath").to_owned());
                                     }
@@ -1078,11 +1078,11 @@ impl ExcelManager{
                             .max_rect(cells[4].shrink2(Vec2::new(theme::SPACE_8,0.0)))
                             .layout(egui::Layout::left_to_right(Align::Center)),
                             |buttons|{
-                                if theme::action(buttons,"상세 보기",
+                                if crate::button::action(buttons,"상세 보기",
                                     theme::ButtonRole::TableSecondary,true).clicked(){
                                     open_order=Some(entry.order_id().to_owned());
                                 }
-                                if selectable && theme::action(
+                                if selectable && crate::button::action(
                                     buttons,"관리",theme::ButtonRole::TableSecondary,true
                                 ).clicked(){
                                     manage_clicked=Some(id.clone());
@@ -1121,16 +1121,16 @@ impl ExcelManager{
                                         "공장 실제 출고 운임"
                                     }else{"매장 실제 출고 운임"}
                                 );
-                                components::money_field(
+                                crate::input::money_field(
                                     line,draft,!busy&&self.gateway.excel_write_enabled()
                                 );
                                 let parsed=if draft.trim().is_empty(){
                                     Some(None)
                                 }else{
-                                    components::parse_money_input(draft).map(Some)
+                                    crate::input::parse_money_input(draft).map(Some)
                                 };
                                 let dirty=parsed!=Some(saved);
-                                if theme::action(
+                                if crate::button::action(
                                     line,"실제 운임 저장",
                                     theme::ButtonRole::Primary,
                                     dirty&&!busy&&self.gateway.excel_write_enabled()
@@ -1138,7 +1138,7 @@ impl ExcelManager{
                                     let value=if draft.trim().is_empty(){
                                         Some(Value::Null)
                                     }else{
-                                        components::parse_money_input(draft)
+                                        crate::input::parse_money_input(draft)
                                             .map(|amount|json!(amount))
                                     };
                                     if let Some(value)=value{
@@ -1154,7 +1154,7 @@ impl ExcelManager{
                                     }
                                 }
                                 if text(&entry.order,"orderType")!="RETAIL"{
-                                    if theme::action(line,"이관 복구",
+                                    if crate::button::action(line,"이관 복구",
                                         theme::ButtonRole::Standard,
                                         !busy&&self.gateway.excel_write_enabled()
                                     ).clicked(){
@@ -1165,7 +1165,7 @@ impl ExcelManager{
                                         ));
                                     }
                                 }
-                                if self.tab==Tab::Store&&theme::action(
+                                if self.tab==Tab::Store&&crate::button::action(
                                     line,"매장 발송 확인",theme::ButtonRole::Standard,
                                     !busy&&self.gateway.excel_write_enabled()
                                 ).clicked(){

@@ -126,7 +126,7 @@ fn category_option_row(ui:&mut Ui,name:&str,depth:usize,is_last:bool,
 }
 
 fn category_back_button(ui:&mut Ui,enabled:bool)->Response{
-    theme::action_with_min_width(
+    crate::button::action_with_min_width(
         ui,"← 상위로",theme::ButtonRole::Ghost,enabled,
         theme::CATEGORY_EXPLORER_BACK_WIDTH
     )
@@ -142,19 +142,19 @@ fn crumbs_row(ui:&mut Ui,state:&mut ExplorerState,selected:&mut String,
         Vec2::new(width,theme::CATEGORY_EXPLORER_CRUMB_HEIGHT),
         egui::Layout::left_to_right(egui::Align::Center),|bar|{
             bar.spacing_mut().item_spacing.x=theme::SPACE_4;
-            if theme::action_with_min_width(bar,"전체",theme::ButtonRole::Standard,
+            if crate::button::action_with_min_width(bar,"전체",theme::ButtonRole::Standard,
                 enabled&&!state.path.is_empty(),theme::CATEGORY_EXPLORER_ROOT_WIDTH).clicked(){
                 navigate(state,Vec::new());
             }
             if hidden_ancestor_count(state.path.len())>0{
-                if theme::action_with_min_width(bar,"…",theme::ButtonRole::Standard,
+                if crate::button::action_with_min_width(bar,"…",theme::ButtonRole::Standard,
                     enabled,theme::CATEGORY_EXPLORER_OMITTED_WIDTH).clicked(){
                     state.ancestors_open=!state.ancestors_open;
                 }
             }
             bar.with_layout(egui::Layout::right_to_left(egui::Align::Center),|right|{
                 let current=state.path.last().map(String::as_str).unwrap_or("");
-                apply=theme::action_with_min_width(right,"적용",theme::ButtonRole::Primary,
+                apply=crate::button::action_with_min_width(right,"적용",theme::ButtonRole::Primary,
                     enabled&&(allow_empty||!state.path.is_empty())&&current!=selected.as_str(),
                     theme::CATEGORY_EXPLORER_APPLY_WIDTH).clicked();
             });
@@ -173,7 +173,7 @@ fn menu_body(
     menu.set_width(popup_width);
     menu.spacing_mut().item_spacing.y=theme::SPACE_8;
     let available=menu.available_width().max(1.0);
-    let search_response=components::management_search_field(
+    let search_response=crate::input::management_search_field(
         menu,&mut state.search,available,"카테고리 이름 또는 경로 검색"
     );
     if !search_response.has_focus() && enabled &&
@@ -301,7 +301,7 @@ pub fn category_dropdown(
         ui,&full,(width-theme::CATEGORY_PATH_PICKER_TEXT_PADDING).max(1.0),
         typography::CategoryPathFont::Body
     );
-    let mut trigger=components::management_dropdown_trigger_full_label(
+    let mut trigger=crate::dropdown::management_dropdown_trigger_full_label(
         ui,&visible,&full,width,enabled,None
     );
     let state_id:Id=trigger.id.with("hierarchical-category-explorer");

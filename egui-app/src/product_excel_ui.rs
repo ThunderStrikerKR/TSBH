@@ -214,7 +214,7 @@ impl ProductExcelUi {
                 menu.set_max_width(width);
                 menu.spacing_mut().item_spacing.y=theme::SPACE_4;
                 let enabled=!self.busy()&&allowed;
-                if theme::action(
+                if crate::button::action(
                     menu,if self.client{"현재 거래처 전체 Excel 다운로드"}else{"현재 상품 전체 Excel 다운로드"},
                     theme::ButtonRole::Standard,enabled
                 ).clicked(){
@@ -224,7 +224,7 @@ impl ProductExcelUi {
                     self.start(menu.ctx(),move||export_file(native.as_ref(),client));
                     menu.close();
                 }
-                if theme::action(
+                if crate::button::action(
                     menu,"Excel 업로드 / 전체 변경 검토",
                     theme::ButtonRole::Standard,enabled
                 ).clicked(){
@@ -307,7 +307,7 @@ impl ProductExcelUi {
                         );
                         ui.horizontal_wrapped(|filters|{
                             for (value,label) in ReviewFilter::options(){
-                                if theme::action(filters,label,
+                                if crate::button::action(filters,label,
                                     if self.filter==value{theme::ButtonRole::Primary}
                                     else{theme::ButtonRole::Standard},!self.busy()
                                 ).clicked(){self.filter=value;}
@@ -320,7 +320,7 @@ impl ProductExcelUi {
                         let mut visible=review_table_rows(&review,self.filter);
                         if self.client{for row in &mut visible{row[0]="거래처 목록".into();}}
                         let headings=["시트","행",if self.client{"거래처"}else{"독립 상품"},"판정","변경 및 사유"];
-                        components::management_readonly_table(
+                        crate::table::management_readonly_table(
                             ui,"product-excel-review-rows",&headings,&visible,
                             work_area.height()*0.40,&[],
                             |available|{
@@ -353,7 +353,7 @@ impl ProductExcelUi {
                         );
                     });
                     workspace.footer_single(|buttons|{
-                        if theme::action(buttons,
+                        if crate::button::action(buttons,
                             if self.client{"백업 후 거래처 변경사항 반영"}else{"백업 후 상품 변경사항 반영"},theme::ButtonRole::Primary,
                             self.can_apply()&&can_edit
                         ).clicked(){request_commit=true;}
@@ -376,7 +376,7 @@ impl ProductExcelUi {
                         )));
                     });
                     decision.actions(|buttons|{
-                        if theme::action(buttons,"반영",theme::ButtonRole::Primary,
+                        if crate::button::action(buttons,"반영",theme::ButtonRole::Primary,
                             self.can_apply()&&can_edit).clicked(){approve=true;}
                     });
                 });
@@ -457,7 +457,7 @@ mod tests {
             egui::CentralPanel::default().show(ctx,|host|{
                 // The trigger remains accessible in this fixture so that
                 // the popup's own permission/busy guard is tested as well.
-                let trigger=components::management_dropdown_trigger(
+                let trigger=crate::dropdown::management_dropdown_trigger(
                     host,"Excel 관리",148.0,true,None
                 );
                 trigger_rect=trigger.rect;
@@ -642,7 +642,7 @@ mod tests {
     fn product_excel_review_uses_shared_virtual_management_table(){
         let source=include_str!("product_excel_ui.rs");
         let production=components::production_source_for_contract(source);
-        assert!(production.contains("components::management_readonly_table("));
+        assert!(production.contains("crate::table::management_readonly_table("));
         assert!(production.contains("components::checkbox("));
         assert!(!production.contains("egui::ScrollArea::both()"));
         assert!(!production.contains("table.horizontal(|line|"));

@@ -83,8 +83,8 @@ fn rows(value: &Value) -> &[Value] {
 /// Selection continues to use the unchanged catalog ID.
 fn brand_search_choices(
     brands:&[Value],empty_label:&str
-)->Vec<components::ManagementSearchChoice>{
-    let mut choices=vec![components::ManagementSearchChoice::new(
+)->Vec<crate::dropdown::ManagementSearchChoice>{
+    let mut choices=vec![crate::dropdown::ManagementSearchChoice::new(
         String::new(),empty_label.to_owned(),empty_label.to_owned()
     )];
     for brand in brands{
@@ -94,7 +94,7 @@ fn brand_search_choices(
         let korean=field(brand,"korean");
         let aliases=rows(&brand["aliases"]).iter()
             .filter_map(Value::as_str).collect::<Vec<_>>().join(" ");
-        choices.push(components::ManagementSearchChoice::new(
+        choices.push(crate::dropdown::ManagementSearchChoice::new(
             id.to_owned(),name.to_owned(),
             format!("{name} {korean} {aliases}")
         ));
@@ -1085,7 +1085,7 @@ impl ProductManager {
             panel.horizontal_wrapped(|filter|{
                     filter.spacing_mut().item_spacing.x=theme::SPACE_8;
                     let before=self.query.clone();
-                    let search_response=components::management_search_field(
+                    let search_response=crate::input::management_search_field(
                         filter,&mut self.query,theme::MANAGEMENT_SEARCH_MIN_WIDTH,
                         if selecting{"상품명 / 모델 / 별칭 검색"}else{"모델명 또는 상품명 검색"}
                     );
@@ -1123,7 +1123,7 @@ impl ProductManager {
                     let brand_text=brands.iter().find(|b|field(b,"id")==self.brand)
                         .map(|b|field(b,"name")).unwrap_or("전체 브랜드");
                     let brand_choices=brand_search_choices(&brands,"전체 브랜드");
-                    components::management_searchable_dropdown(
+                    crate::dropdown::management_searchable_dropdown(
                         filter,brand_text,theme::MANAGEMENT_FILTER_DROPDOWN_WIDTH,
                         true,&mut self.brand,&brand_choices,"브랜드 검색"
                     );
@@ -1170,12 +1170,12 @@ impl ProductManager {
                     actions.set_width(actions_rect.width());
                     actions.set_height(actions_rect.height());
                     actions.spacing_mut().item_spacing.x=theme::SPACE_8;
-                    if theme::action(actions,"상품 추가",
+                    if crate::button::action(actions,"상품 추가",
                         theme::ButtonRole::Primary,can_edit&&!saving&&!self.has_pending_prices()
                     ).clicked(){
                         begin_new=true;
                     }
-                    if theme::action(actions,
+                    if crate::button::action(actions,
                         if self.price_mode{"가격 수정 모드 종료"}
                         else{"가격 수정 모드 켜기"},
                         if self.price_mode{theme::ButtonRole::Primary}
@@ -1193,7 +1193,7 @@ impl ProductManager {
                         }
                     }
                     // Match the shared management dropdown and overlay layer.
-                    let trigger=components::management_dropdown_trigger(
+                    let trigger=crate::dropdown::management_dropdown_trigger(
                         actions,"Excel 관리",112.0,
                         !saving&&!self.has_pending_prices(),None
                     );
@@ -1212,7 +1212,7 @@ impl ProductManager {
             // completed results and errors use their established channels.
             // Registration and Excel use floating dialogs/menus;
             // neither inserts a row or moves the table header.
-            let original_spacing=components::management_table_container_style(panel);
+            let original_spacing=crate::table::management_table_container_style(panel);
             // Fixed six-column geometry: editing changes only a cell's
             // contents, never its width, column origin or scroll range.
             let base=product_table_base_widths();
@@ -1270,7 +1270,7 @@ impl ProductManager {
                 panel,card_min_height,0.0
             );
             // The shared component owns the 7pt rail extension.
-            let scroll_track=components::management_table_scroll_track_rect(
+            let scroll_track=crate::table::management_table_scroll_track_rect(
                 panel,scroll_max_height
             );
             let mut row_left=None;
@@ -1278,7 +1278,7 @@ impl ProductManager {
                 panel,crate::table::Viewport{width:table_width,height:scroll_max_height,rail:Some(scroll_track)},
                 "egui-product-price-grid",theme::PRODUCT_TABLE_ROW_HEIGHT,ordered.len(),
                 |table,visible_rows|{
-                    components::management_table_row_body(table,table_width);
+                    crate::table::management_table_row_body(table,table_width);
                     theme::apply_table_row_colors(table);
                     let first=visible_rows.start;
                     let origin=table.max_rect().min;
@@ -1324,7 +1324,7 @@ impl ProductManager {
                                             controls.set_clip_rect(
                                                 variant_cell.intersect(row_clip)
                                             );
-                                            components::management_dropdown(
+                                            crate::dropdown::management_dropdown(
                                                 controls,
                                                 if current_label.is_empty(){"기본"}
                                                 else{&current_label},
@@ -1332,7 +1332,7 @@ impl ProductManager {
                                                 true,|choices|{
                                                     for variant in variants{
                                                         let label=option_text(product,variant);
-                                                        components::management_dropdown_option(
+                                                        crate::dropdown::management_dropdown_option(
                                                             choices,&mut selected_id,
                                                             field(variant,"id").to_owned(),
                                                             if label.is_empty(){"기본"}else{&label}
@@ -1414,7 +1414,7 @@ impl ProductManager {
                                                                     inputs.ctx(),editor_slot
                                                                 );
                                                             let escape_pressed=crate::overlay::cell_escape_requested(inputs.ctx());
-                                                            let response=components::money_field_with_unit(
+                                                            let response=crate::input::money_field_with_unit(
                                                                 inputs,&mut entry.input,true,"원",
                                                                 theme::SPACE_8-theme::SPACE_4/2.0
                                                             );
@@ -1549,14 +1549,14 @@ impl ProductManager {
                                             // Order engine accepts only independent sale units.
                                             let allowed=selection_ready && selectable_order_product(product)
                                                 && selected_variant.is_some_and(|v|!field(v,"id").is_empty());
-                                            if theme::action(actions,"선택",
+                                            if crate::button::action(actions,"선택",
                                                 theme::ButtonRole::TableSecondary,allowed
                                             ).clicked(){
                                                 picked=Some(serde_json::json!({
                                                     "productId":product_id,"variantId":selected_id
                                                 }));
                                             }
-                                        }else if theme::action(
+                                        }else if crate::button::action(
                                             actions,"상세 관리",
                                             theme::ButtonRole::TableSecondary,!saving
                                         ).clicked(){
@@ -1575,7 +1575,7 @@ impl ProductManager {
             let header_left=row_left.unwrap_or(
                 header_rect.left()-scroll_output.state.offset.x
             );
-            let header_cells=components::management_table_cells(
+            let header_cells=crate::table::management_table_cells(
                 egui::pos2(header_left,header_rect.top()),
                 &widths,header_rect.height(),theme::SPACE_8);
             // Master header owns the same 34pt text area and inset 2pt
@@ -1722,7 +1722,7 @@ impl ProductManager {
             let mut value=field(draft,key).to_owned();
             line.add_enabled_ui(enabled,|input|{
                 let width=input.available_width().max(1.0);
-                if components::flexible_text_field(
+                if crate::input::flexible_text_field(
                     input,&mut value,width,label
                 ).changed(){
                     draft[key]=json!(value);
@@ -1740,7 +1740,7 @@ impl ProductManager {
         let size=Self::detail_image_size(ui.available_width());
         self.photos.photo(ui,draft,size);
         ui.horizontal_wrapped(|actions|{
-            if theme::action(
+            if crate::button::action(
                 actions,"이미지 등록",theme::ButtonRole::Standard,
                 editable&&!busy
             ).clicked(){
@@ -1754,7 +1754,7 @@ impl ProductManager {
                     Err(error)=>*photo_error=Some(error),
                 }
             }
-            if theme::action(
+            if crate::button::action(
                 actions,"이미지 제거",theme::ButtonRole::Quiet,
                 editable&&!busy
             ).clicked(){
@@ -1803,7 +1803,7 @@ impl ProductManager {
             row.add_enabled_ui(editable&&!busy,|input|{
                 let width=input.available_width().max(1.0);
                 let brand_choices=brand_search_choices(brands,"브랜드 미지정");
-                components::management_searchable_dropdown(
+                crate::dropdown::management_searchable_dropdown(
                     input,label,width,true,
                     &mut brand_id,&brand_choices,"브랜드 검색"
                 );
@@ -1824,11 +1824,11 @@ impl ProductManager {
             let mut selected=current.to_owned();
             line.add_enabled_ui(editable&&!busy,|input|{
                 let width=input.available_width().max(1.0);
-                components::management_status_dropdown(
+                crate::dropdown::management_status_dropdown(
                     input,current,width,true,
                     sale_status_color(current),|options|{
                         for state in SALE_STATES{
-                            components::management_status_dropdown_option(
+                            crate::dropdown::management_status_dropdown_option(
                                 options,&mut selected,state.to_owned(),
                                 state,sale_status_color(state)
                             );
@@ -1858,7 +1858,7 @@ impl ProductManager {
                     |input|{
                         input.add_enabled_ui(editable&&!busy,|editor|{
                             navigation.before(editor.ctx(),tier,value);
-                            let response=components::money_field(editor,value,true);
+                            let response=crate::input::money_field(editor,value,true);
                             navigation.record(tier,response,value);
                         });
                     }
@@ -2073,12 +2073,12 @@ impl ProductManager {
                                             .map(|g|field(g,"name")).unwrap_or("미지정");
                                         group_ui.add_enabled_ui(editable&&!busy,|input|{
                                             let width=input.available_width().max(1.0);
-                                            components::management_dropdown(
+                                            crate::dropdown::management_dropdown(
                                                 input,label,width,true,|choices|{
-                                                    components::management_dropdown_option(
+                                                    crate::dropdown::management_dropdown_option(
                                                         choices,&mut group,String::new(),"미지정");
                                                     for row in &groups{
-                                                        components::management_dropdown_option(
+                                                        crate::dropdown::management_dropdown_option(
                                                             choices,&mut group,field(row,"id").to_owned(),
                                                             field(row,"name"));
                                                     }
@@ -2097,13 +2097,13 @@ impl ProductManager {
                                         let mut origin=before.clone();
                                         origin_ui.add_enabled_ui(editable&&!busy,|input|{
                                             let width=input.available_width().max(1.0);
-                                            components::management_dropdown(
+                                            crate::dropdown::management_dropdown(
                                                 input,if origin=="STORE"{"매장"}else{"공장"},
                                                 width,true,|options|{
-                                                    components::management_dropdown_option(
+                                                    crate::dropdown::management_dropdown_option(
                                                         options,&mut origin,
                                                         "FACTORY".into(),"공장");
-                                                    components::management_dropdown_option(
+                                                    crate::dropdown::management_dropdown_option(
                                                         options,&mut origin,
                                                         "STORE".into(),"매장");
                                                 });
@@ -2130,7 +2130,7 @@ impl ProductManager {
                                             .map(price_history_row).collect::<Vec<_>>();
                                         let height=entries.len().min(5) as f32*
                                             (theme::MANAGEMENT_COMPACT_ROW_HEIGHT+theme::SOFT_DIVIDER_WIDTH);
-                                        components::management_readonly_table(
+                                        crate::table::management_readonly_table(
                                             advanced,"product-price-history",
                                             &["변경일시","항목","이전값","변경값","수정 경로"],
                                             &entries,height,&[2,3],Self::detail_history_widths
@@ -2143,7 +2143,7 @@ impl ProductManager {
                         });
                         workspace.footer(
                     |left|{
-                        if !is_new && theme::action(
+                        if !is_new && crate::button::action(
                             left,"상품 삭제",theme::ButtonRole::Danger,
                             editable&&!busy
                         ).clicked(){
@@ -2160,7 +2160,7 @@ impl ProductManager {
                             raw.trim().replace(',', "")!=before
                         });
                         let label=if is_new {"상품 등록"} else {"변경사항 저장"};
-                        if theme::action(right,label,
+                        if crate::button::action(right,label,
                             theme::ButtonRole::Primary,
                             editable&&!busy&&
                                 (is_new || draft!=original || price_changed)
@@ -2230,7 +2230,7 @@ impl ProductManager {
                         ));
                     });
                     decision.actions(|actions|{
-                            if theme::action(actions,"상품 삭제",theme::ButtonRole::Danger,
+                            if crate::button::action(actions,"상품 삭제",theme::ButtonRole::Danger,
                                 editable&&!busy).clicked(){archive=true;}
                         }
                     );
@@ -2257,7 +2257,7 @@ impl ProductManager {
                         ));
                     });
                     decision.actions(|actions|{
-                            if theme::action(actions,"저장 안 함",
+                            if crate::button::action(actions,"저장 안 함",
                                 theme::ButtonRole::Danger,!busy).clicked(){discard=true;}
                         }
                     );
@@ -2292,8 +2292,8 @@ mod tests {
         assert!(!list.contains(concat!("self.", "adding")));
         assert!(!list.contains(concat!("직접", " 등록")));
         assert!(!list.contains("components::management_list_table_header("));
-        let add=list.split("theme::action(actions,\"상품 추가\"").nth(1).unwrap()
-            .split("if theme::action(actions,").next().unwrap();
+        let add=list.split("crate::button::action(actions,\"상품 추가\"").nth(1).unwrap()
+            .split("if crate::button::action(actions,").next().unwrap();
         assert!(add.contains("can_edit&&!saving&&!self.has_pending_prices()"));
         assert!(add.contains("begin_new=true;"));
         let registration=list.split_whitespace().collect::<String>();
@@ -2445,7 +2445,7 @@ mod tests {
         assert!(detail.contains("components::modal_labeled_row("));
         assert!(!detail.contains("ui.vertical(|row|"));
         assert!(!detail.contains("● 판매중"));
-        assert!(detail.contains("components::management_status_dropdown("));
+        assert!(detail.contains("crate::dropdown::management_status_dropdown("));
         for label in ["상품명","상품 옵션","카테고리","브랜드","판매 상태"]{
             assert!(detail.contains(label),"{label} missing from inline form");
         }
@@ -2991,7 +2991,7 @@ mod tests {
         assert!(editor.contains("response.surrender_focus()"));
         assert!(editor.contains("response.request_focus()"));
         assert!(!editor.contains("Popup::"));
-        assert!(!editor.contains("theme::action"));
+        assert!(!editor.contains("crate::button::action"));
         assert!(source.contains("self.price_write_queue.push_back("));
         assert!(source.contains("self.launch_next_price_write(ctx.clone())"));
     }
@@ -3174,7 +3174,7 @@ mod tests {
             egui::pos2(0.0,0.0),egui::pos2(900.0,900.0)
         );
         let (editor,clip)=product_price_editor_rects(cell,viewport);
-        assert_eq!(editor.width(),components::FieldKind::Money.preferred_width());
+        assert_eq!(editor.width(),crate::input::FieldKind::Money.preferred_width());
         assert_eq!(editor.left()-cell.left(),2.0);
         assert_eq!(cell.right()-editor.right(),2.0);
         // Even a 1pt anti-aliased focused border outside the widget's
@@ -3330,9 +3330,9 @@ mod tests {
         let table=source.split("let selected_variant=variants.iter().find(")
             .nth(1).unwrap().split("let action_rect=Rect::from_center_size(")
             .next().unwrap();
-        assert!(table.contains("components::money_field_with_unit("));
+        assert!(table.contains("crate::input::money_field_with_unit("));
         assert!(table.contains("true,\"원\","));
-        assert!(!table.contains("components::money_field(\n"));
+        assert!(!table.contains("crate::input::money_field(\n"));
     }
 
     #[test]
@@ -3352,9 +3352,9 @@ mod tests {
             let browse=product_table_column_widths(data_width);
             let edit=product_table_column_widths(data_width);
             assert_eq!(browse,edit);
-            let browse_rects=components::management_table_cells(
+            let browse_rects=crate::table::management_table_cells(
                 egui::pos2(0.0,0.0),&browse,theme::MANAGEMENT_TABLE_HEADER_HEIGHT,theme::SPACE_8);
-            let edit_rects=components::management_table_cells(
+            let edit_rects=crate::table::management_table_cells(
                 egui::pos2(0.0,0.0),&edit,theme::PRODUCT_TABLE_ROW_HEIGHT,theme::SPACE_8);
             for i in 0..6{
                 assert_eq!(browse_rects[i].left(),edit_rects[i].left());
@@ -3376,8 +3376,8 @@ mod tests {
     fn fixed_product_table_columns_share_identical_header_and_row_geometry(){
         let widths=[340.0,182.0,116.0,116.0,116.0,100.0];
         let start=egui::pos2(20.0,30.0);
-        let header=components::management_table_cells(start,&widths,theme::MANAGEMENT_TABLE_HEADER_HEIGHT,theme::SPACE_8);
-        let row=components::management_table_cells(
+        let header=crate::table::management_table_cells(start,&widths,theme::MANAGEMENT_TABLE_HEADER_HEIGHT,theme::SPACE_8);
+        let row=crate::table::management_table_cells(
             egui::pos2(start.x,start.y+theme::MANAGEMENT_TABLE_HEADER_HEIGHT),
             &widths,theme::PRODUCT_TABLE_ROW_HEIGHT,theme::SPACE_8);
         for i in 0..widths.len(){

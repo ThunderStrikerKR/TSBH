@@ -553,7 +553,7 @@ pub fn show(ctx: &Context) {
                 let response=ui.interact(
                     hit,Id::new(NOTICE_ID).with("close"),Sense::click()
                 );
-                theme::paint_button_hover(ui,&response,4.0);
+                crate::button::paint_button_hover(ui,&response,4.0);
                 paint_close(&painter,center);
                 close=response.clicked();
             }

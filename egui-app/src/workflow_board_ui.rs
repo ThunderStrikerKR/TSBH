@@ -326,17 +326,17 @@ fn workflow_title_fit(ui:&Ui,title:&str,width:f32)->String{
 /// operations as the base card; they never mutate state while painting.
 fn workflow_auxiliary_at(
     ui:&mut Ui,id:&str,rect:Rect,
-    action:components::WorkflowAuxiliaryAction,
+    action:crate::button::WorkflowAuxiliaryAction,
     enabled:bool,in_preview:bool
 )->egui::Response{
     let kind=match action{
-        components::WorkflowAuxiliaryAction::Manage=>"manage",
-        components::WorkflowAuxiliaryAction::Delete=>"delete",
-        components::WorkflowAuxiliaryAction::PreviousStage=>"undo",
+        crate::button::WorkflowAuxiliaryAction::Manage=>"manage",
+        crate::button::WorkflowAuxiliaryAction::Delete=>"delete",
+        crate::button::WorkflowAuxiliaryAction::PreviousStage=>"undo",
     };
-    components::workflow_fixed_action(
+    crate::button::workflow_fixed_action(
         ui,Id::new(("workflow-aux",id,kind,in_preview)),rect,
-        components::WorkflowFixedAction::Auxiliary(action),enabled
+        crate::button::WorkflowFixedAction::Auxiliary(action),enabled
     )
 }
 /// One allocated 85pt rectangle, not three independent egui allocations.
@@ -457,17 +457,17 @@ fn workflow_header(
     }
     let manage_clicked=workflow_auxiliary_at(
         ui,id,workflow_control_rect(manage),
-        components::WorkflowAuxiliaryAction::Manage,
+        crate::button::WorkflowAuxiliaryAction::Manage,
         can_manage,in_preview
     ).clicked();
     let delete_clicked=workflow_auxiliary_at(
         ui,id,workflow_control_rect(delete),
-        components::WorkflowAuxiliaryAction::Delete,
+        crate::button::WorkflowAuxiliaryAction::Delete,
         can_delete,in_preview
     ).clicked();
     // The header is an actionable target even when the status/control
     // boxes beside it are inert. Hover blue; selected cards remain orange.
-    theme::paint_button_hover(ui,&title_response,theme::CONTROL_RADIUS as f32);
+    crate::button::paint_button_hover(ui,&title_response,theme::CONTROL_RADIUS as f32);
     HeaderActions{
         title:title_response,manage:manage_clicked,delete:delete_clicked
     }
@@ -521,9 +521,9 @@ fn primary_release_inside(ui:&Ui,rect:Rect)->bool{
 fn workflow_primary_at(
     ui:&mut Ui,id:&str,rect:Rect,text:&str,enabled:bool,in_preview:bool
 )->(egui::Response,bool){
-    let response=components::workflow_fixed_action(
+    let response=crate::button::workflow_fixed_action(
         ui,workflow_widget_id("workflow-stage-button",id,in_preview),rect,
-        components::WorkflowFixedAction::Stage(text),enabled
+        crate::button::WorkflowFixedAction::Stage(text),enabled
     );
     let clicked=enabled && (response.clicked() || primary_release_inside(ui,rect));
     (response,clicked)
@@ -604,7 +604,7 @@ fn workflow_action_line(
         );
         let undo_response=workflow_auxiliary_at(
             ui,id,workflow_control_rect(undo),
-            components::WorkflowAuxiliaryAction::PreviousStage,
+            crate::button::WorkflowAuxiliaryAction::PreviousStage,
             undo_enabled,in_preview
         );
         let undo_clicked=undo_response.clicked();

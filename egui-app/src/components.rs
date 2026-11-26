@@ -4,25 +4,28 @@
 use eframe::egui::{self, Align, Color32, Frame, Layout, Rect, Response, Sense, Stroke, Ui, UiBuilder, Vec2};
 use chrono::{Datelike, Duration as Days, Months, NaiveDate};
 use crate::{source_highlight, theme, typography};
-// Stable entry points during migration; primitive rendering has one module owner.
-pub use crate::button::icon_action_button;
-use crate::button::navigation_native_button;
-pub use crate::input::{FieldKind,compact_text_field,field,parse_money_input,money_field,money_edit_text,money_field_with_unit,flexible_text_field,management_date_text_field,multiline_text_field,multiline_text_field_sized,reception_source_text_edit,management_search_field,reception_recipient_inline_cell_editor,reception_inline_cell_editor,reception_freight_inline_cell_editor};
+// Composite widgets import primitive renderers from their owning modules.
+use crate::button::icon_action_button;
+use crate::button::{date_navigation_segment_button,date_navigation_button_surface,DateNavigationSegmentGlyph};
+#[cfg(test)]
+use crate::button::{management_date_segment_corners,ManagementDateSegmentEdge};
+use crate::input::{FieldKind,compact_text_field,field,parse_money_input,money_field,money_edit_text,money_field_with_unit,flexible_text_field,management_date_text_field,multiline_text_field,multiline_text_field_sized,reception_source_text_edit,management_search_field,reception_recipient_inline_cell_editor,reception_inline_cell_editor,reception_freight_inline_cell_editor};
 use crate::input::{singleline_editor,allocate_singleline_field,management_date_text_field_impl,reception_recipient_text_edit,reception_text_editor_at_click,reception_money_inline_cell_editor,reception_freight_money_readonly,RECEPTION_MONEY_UNIT_GAP,RECEPTION_MONEY_PENDING,money_unit_left};
 #[cfg(test)]
 use crate::input::{formatted_money_input,money_cursor_after_format,money_unit_margin,reception_money_font,RECEPTION_FREIGHT_MONEY_WIDTH};
-pub use crate::dropdown::{ManagementSearchChoice,management_dropdown,management_dropdown_full_label,management_status_dropdown,management_dropdown_compact,management_dropdown_values,management_searchable_dropdown,management_dropdown_option,management_dropdown_option_values,management_status_dropdown_option,management_dropdown_compact_option};
-pub(crate) use crate::dropdown::{management_dropdown_trigger,management_dropdown_trigger_full_label};
+use crate::dropdown::{ManagementSearchChoice,management_dropdown,management_dropdown_full_label,management_status_dropdown,management_dropdown_compact,management_dropdown_values,management_searchable_dropdown,management_dropdown_option,management_dropdown_option_values,management_status_dropdown_option,management_dropdown_compact_option};
+use crate::dropdown::{management_dropdown_trigger,management_dropdown_trigger_full_label};
 #[cfg(test)]
 use crate::dropdown::{management_dropdown_option_palette,management_search_choice_matches};
-// Stable shared-UI entry points; implementation lives only in the table module.
-pub use crate::table::{
+// Shared table primitives used by reception and other composite widgets.
+use crate::table::{
     management_table_container_style,management_table_cells,
     management_table_row_fill,paint_management_table_row_background,
     paint_management_table_row_rule,management_table_row_body,
     management_table_column_rules,
 };
-pub use crate::table::management_table_scroll_track_rect;
+#[cfg(test)]
+use crate::table::{management_table_scroll_track_rect,management_readonly_table_content_width,management_readonly_table_row_advance};
 use crate::table::{management_master_column_rules,management_table_data_width,management_inline_list_table_header};
 #[cfg(test)]
 use crate::table::{virtual_fixed_rows,management_fixed_table_scroll_area,management_sticky_table_header,management_table_scroll_track_geometry,management_remaining_predivider_gap};
@@ -315,7 +318,7 @@ mod result_viewport_invariance_tests{
                         let (slot,())=fixed_result_viewport(ui,"results",180.0,|list|{
                             for _ in 0..count{list.label("상품 검색 결과");}
                         });
-                        let next=theme::action(ui,"다음 조작부",theme::ButtonRole::Standard,true);
+                        let next=crate::button::action(ui,"다음 조작부",theme::ButtonRole::Standard,true);
                         let current=[("results",slot),("next",next.rect)];
                         if let Some(previous)=baseline.as_ref(){
                             assert_layout_rects_invariant(previous,&current);
@@ -469,7 +472,7 @@ mod fixed_layout_slot_contract_tests {
                     let (row,_)=fixed_row(
                         ui,Vec2::new(row_width,theme::ACTION_STANDARD_HEIGHT),
                         Layout::left_to_right(Align::Center),|contents|{
-                            if visible{theme::action(
+                            if visible{crate::button::action(
                                 contents,"설정",theme::ButtonRole::Standard,true
                             );}
                         }
@@ -762,7 +765,7 @@ mod management_async_behavior_regression_tests {
 
         let model_groups=include_str!("model_group_manager.rs");
         assert!(model_groups.contains("writable&&!busy&&self.dirty()"));
-        assert!(model_groups.contains("theme::action(footer,\"닫기\""));
+        assert!(model_groups.contains("crate::button::action(footer,\"닫기\""));
 
         let aliases=include_str!("alias_manager.rs");
         assert!(aliases.contains("fn alias_diagnostic_slot("));
@@ -808,9 +811,9 @@ mod shared_screen_component_contract_tests {
 
     #[test]
     fn inline_geometry_probe_does_not_truncate_production_source(){
-        let source="fn screen(){\n    #[cfg(test)]\n    record_geometry();\n    components::multiline_text_field();\n}\n#[cfg(test)]\nmod tests {\n    fn test_only(){}\n}";
+        let source="fn screen(){\n    #[cfg(test)]\n    record_geometry();\n    crate::input::multiline_text_field();\n}\n#[cfg(test)]\nmod tests {\n    fn test_only(){}\n}";
         let production=production_source(source);
-        assert!(production.contains("components::multiline_text_field("));
+        assert!(production.contains("crate::input::multiline_text_field("));
         assert!(!production.contains("fn test_only("));
     }
 
@@ -920,7 +923,7 @@ mod shared_screen_component_contract_tests {
     #[test]
     fn migrated_screens_keep_their_shared_component_entrypoints(){
         let excel=production_source(include_str!("product_excel_ui.rs"));
-        assert!(excel.contains("components::management_readonly_table("));
+        assert!(excel.contains("crate::table::management_readonly_table("));
         assert!(excel.contains("components::checkbox("));
 
         let vat=include_str!("main.rs")
@@ -932,11 +935,11 @@ mod shared_screen_component_contract_tests {
         assert!(!vat.contains(".inner_margin("));
 
         let messages=production_source(include_str!("automatic_message_manager.rs"));
-        assert!(messages.contains("components::multiline_text_field("));
+        assert!(messages.contains("crate::input::multiline_text_field("));
 
         let history=production_source(include_str!("order_history_manager.rs"));
-        assert!(history.contains("components::management_date_text_field("));
-        assert!(history.contains("components::multiline_text_field("));
+        assert!(history.contains("crate::input::management_date_text_field("));
+        assert!(history.contains("crate::input::multiline_text_field("));
     }
 }
 
@@ -1008,76 +1011,6 @@ pub enum WorkflowIcon {
     Expanded,
     PreviousStage,
     Trash,
-}
-
-/// Neutral secondary actions inside a workflow card share one compact
-/// Standard-size control. Keep their existing disabled functionality.
-#[derive(Clone, Copy)]
-pub enum WorkflowAuxiliaryAction {
-    Manage,
-    Delete,
-    PreviousStage,
-}
-
-/// Shared label and glyph painting for allocated and fixed-rectangle workflow controls.
-pub fn paint_workflow_auxiliary_content(
-    painter:&egui::Painter,center:egui::Pos2,
-    action:WorkflowAuxiliaryAction,ink:Color32
-){
-    match action{
-        WorkflowAuxiliaryAction::Manage=>{
-            painter.text(center,egui::Align2::CENTER_CENTER,"관리",
-                egui::FontId::proportional(typography::FONT_STANDARD_ACTION),ink);
-        }
-        WorkflowAuxiliaryAction::Delete=>
-            paint_workflow_icon(painter,center,WorkflowIcon::Trash,ink),
-        WorkflowAuxiliaryAction::PreviousStage=>
-            paint_workflow_icon(painter,center,WorkflowIcon::PreviousStage,ink),
-    }
-}
-
-/// Fixed-size workflow actions share one renderer; callers retain workflow IDs
-/// and business transitions. Stage controls keep hover when disabled because
-/// they also open the existing order preview.
-#[derive(Clone, Copy)]
-pub enum WorkflowFixedAction<'a> {
-    Auxiliary(WorkflowAuxiliaryAction),
-    Stage(&'a str),
-}
-
-pub fn workflow_fixed_action(
-    ui:&mut Ui,id:egui::Id,rect:Rect,
-    action:WorkflowFixedAction<'_>,enabled:bool
-)->Response{
-    let response=ui.interact(
-        rect,id,if enabled{Sense::click()}else{Sense::hover()}
-    );
-    let stage=matches!(action,WorkflowFixedAction::Stage(_));
-    let role=if stage{theme::ButtonRole::Emphasized}else{theme::ButtonRole::Standard};
-    let (_,fill,ink,stroke)=theme::action_style(role,enabled,false);
-    let radius=5.0;
-    let painter=ui.painter();
-    painter.rect_filled(rect,radius,fill);
-    if !stage || !enabled{
-        painter.rect_stroke(rect,radius,stroke,egui::StrokeKind::Inside);
-    }
-    match action{
-        WorkflowFixedAction::Auxiliary(action)=>
-            paint_workflow_auxiliary_content(painter,rect.center(),action,ink),
-        WorkflowFixedAction::Stage(text)=>{
-            let galley=painter.layout_no_wrap(
-                text.to_owned(),
-                egui::FontId::proportional(typography::FONT_STANDARD_ACTION),ink
-            );
-            painter.with_clip_rect(rect.shrink2(Vec2::new(theme::SPACE_8,0.0)))
-                .galley(egui::Pos2::new(
-                    rect.center().x-galley.size().x/2.0,
-                    rect.center().y-galley.size().y/2.0
-                ),galley,ink);
-        }
-    }
-    if enabled || stage{theme::paint_button_hover(ui,&response,radius);}
-    response
 }
 
 /// Compact workflow money uses the shared semantic font and one-touch
@@ -1283,7 +1216,7 @@ mod workflow_freight_typography_tests{
 pub fn workflow_shipment_hover(ui:&Ui,response:&Response,chosen:bool,previewed:bool){
     crate::floating_notice::remember_response(ui.ctx(),response);
     if !chosen && !previewed{
-        theme::paint_button_hover(ui,response,theme::CONTROL_RADIUS as f32);
+        crate::button::paint_button_hover(ui,response,theme::CONTROL_RADIUS as f32);
     }
 }
 
@@ -1513,8 +1446,8 @@ pub fn paired_actions(
 ) -> (Response, Response) {
     ui.horizontal_wrapped(|ui| {
         (
-            theme::action(ui, left.0, left.1, left.2),
-            theme::action(ui, right.0, right.1, right.2),
+            crate::button::action(ui, left.0, left.1, left.2),
+            crate::button::action(ui, right.0, right.1, right.2),
         )
     }).inner
 }
@@ -2213,7 +2146,7 @@ fn modal_master_header_content_in_rect(
             .layout(Layout::right_to_left(Align::Center))
     );
     close_ui.set_clip_rect(heading_clip);
-    let response=theme::action(&mut close_ui,close_label,theme::ButtonRole::Standard,enabled);
+    let response=crate::button::action(&mut close_ui,close_label,theme::ButtonRole::Standard,enabled);
     let close=response.clicked();
     let title_right=(response.rect.left()-theme::SPACE_8).max(heading.left());
     if title_right>heading.left(){
@@ -2828,7 +2761,7 @@ fn manual_linked_table_cell(
     if linked {
         source_highlight::paint_active_if(ui,&response,true);
     } else {
-        theme::paint_button_hover(ui,&response,0.0);
+        crate::button::paint_button_hover(ui,&response,0.0);
     }
     response
 }
@@ -3267,7 +3200,7 @@ pub fn reception_message_footer_gap(ui:&mut Ui){
 pub fn reception_message_copy_actions(ui:&mut Ui,enabled:bool)->Option<bool>{
     let mut greeting=None;
     let button=|actions:&mut Ui,label:&str|{
-        let response=theme::action(actions,label,theme::ButtonRole::Standard,enabled);
+        let response=crate::button::action(actions,label,theme::ButtonRole::Standard,enabled);
         if enabled && crate::one_touch::stage(actions)==crate::one_touch::Stage::PaymentCopy{
             crate::one_touch::mark(actions,response.rect);
         }
@@ -3410,62 +3343,6 @@ pub fn calendar_dates(month:NaiveDate)->Vec<Option<NaiveDate>>{
             .flatten()
     }).collect()
 }
-/// Common management date group used by Order History and Excel History.
-/// The shared component owns the outer 36pt frame, 34pt content clip,
-/// asymmetric end caps, divider-safe hover geometry and arrow rendering.
-/// Consumers own only the date value, callbacks and calendar popup.
-#[derive(Clone,Copy,Debug,PartialEq,Eq)]
-pub enum ManagementDateSegmentEdge{Leading,Middle,Trailing}
-
-pub fn management_date_segment_corners(
-    edge:ManagementDateSegmentEdge
-)->egui::CornerRadius{
-    let r=theme::CONTROL_RADIUS.saturating_sub(
-        theme::FRAME_STROKE_WIDTH as u8
-    );
-    match edge {
-        ManagementDateSegmentEdge::Leading=>egui::CornerRadius{
-            nw:r,ne:0,sw:r,se:0
-        },
-        ManagementDateSegmentEdge::Middle=>egui::CornerRadius::same(0),
-        ManagementDateSegmentEdge::Trailing=>egui::CornerRadius{
-            nw:0,ne:r,sw:0,se:r
-        },
-    }
-}
-
-/// Keep the date segment's hit target, fill, asymmetric rounding and hover
-/// tied to one component. The caller must not paint a second hover layer.
-pub fn management_date_segment(
-    ui:&mut Ui,label:&str,width:f32,edge:ManagementDateSegmentEdge
-)->Response{
-    let corners=management_date_segment_corners(edge);
-    let direction=match label {
-        "‹"=>Some(ManagementChevronDirection::Left),
-        "›"=>Some(ManagementChevronDirection::Right),
-        _=>None
-    };
-    let display=if direction.is_some(){""}else{label};
-    let response=navigation_native_button(
-        ui,Vec2::new(width,theme::ACTION_STANDARD_HEIGHT),
-        egui::Button::new(typography::action_label(
-            display,typography::FONT_STANDARD_ACTION,false,theme::TEXT
-        ))
-            .fill(theme::INPUT)
-            .stroke(Stroke::NONE)
-            .corner_radius(corners),
-        None
-    );
-    theme::paint_button_hover_corners(ui,&response,corners);
-    if let Some(direction)=direction{
-        let painter=ui.painter().with_clip_rect(response.rect);
-        paint_management_chevron(
-            &painter,response.rect.center(),direction
-        );
-    }
-    response
-}
-
 /// One 36pt allocation per date group. All children share the 34pt inset
 /// and cannot extend hover painting into the outer rounded frame.
 pub fn management_date_group<R>(
@@ -3478,19 +3355,9 @@ pub fn management_date_group<R>(
     ).1
 }
 
-/// The single date-navigation surface used by calendar arrows and compact
-/// count steppers. Geometry, border, fill, radius and hover treatment must not
-/// drift between controls that share the date-picker visual language.
-#[derive(Clone,Copy)]
-enum DateNavigationSegmentGlyph{
-    CountStep { increase: bool },
-    Chevron(ManagementChevronDirection),
-    CompactVerticalChevron { up: bool },
-}
-
 /// A single outer frame with zero-gap internal segments. Both the recipient
 /// navigator and shipment-count editor use this exact date-selector surface.
-fn date_navigation_segmented_surface<R>(
+pub(crate) fn date_navigation_segmented_surface<R>(
     ui:&mut Ui,id_salt:impl std::hash::Hash,size:Vec2,
     add_segments:impl FnOnce(&mut Ui,Rect)->R
 )->(Rect,R){
@@ -3516,24 +3383,9 @@ fn date_navigation_segmented_surface<R>(
     (outer,content)
 }
 
-/// Count symbols are geometric strokes, not unrelated font glyphs.
-/// Both horizontal bars have the same length and the same center line.
-fn paint_count_step_symbol(painter:&egui::Painter,center:egui::Pos2,increase:bool,ink:Color32){
-    let half=4.0;
-    let stroke=Stroke::new(1.8_f32,ink);
-    painter.line_segment(
-        [center-egui::vec2(half,0.0),center+egui::vec2(half,0.0)],stroke
-    );
-    if increase{
-        painter.line_segment(
-            [center-egui::vec2(0.0,half),center+egui::vec2(0.0,half)],stroke
-        );
-    }
-}
-
 /// A fixed segment gets its own child ID and clipped rectangle without
 /// advancing the parent layout. The caller retains the appropriate layout.
-fn navigation_segment_child(
+pub(crate) fn navigation_segment_child(
     parent:&mut Ui,id:impl std::hash::Hash,rect:Rect,layout:Layout
 )->Ui{
     let mut child=parent.new_child(UiBuilder::new().id_salt(id)
@@ -3551,76 +3403,6 @@ fn paint_navigation_vertical_rules(
             Stroke::new(theme::SOFT_DIVIDER_WIDTH,color)
         );
     }
-}
-
-/// A borderless segment button; its parent owns the only outer border.
-/// The horizontal navigator uses native allocation. The two compact
-/// stepper forms share exact-rect hit testing and hover painting.
-fn date_navigation_segment_button(
-    ui:&mut Ui,width:f32,enabled:bool,
-    glyph:DateNavigationSegmentGlyph
-)->Response{
-    let enabled=enabled && ui.is_enabled();
-    if let DateNavigationSegmentGlyph::Chevron(direction)=glyph{
-        let height=ui.available_height();
-        let fill=if enabled{theme::INPUT}else{theme::RECEPTION_RECIPIENT_NAV_DISABLED_BG};
-        let response=navigation_native_button(
-            ui,Vec2::new(width,height),
-            egui::Button::new("").fill(fill).stroke(Stroke::NONE).corner_radius(0),
-            Some(enabled)
-        );
-        let ink=if !enabled{theme::RECEPTION_RECIPIENT_NAV_DISABLED_ICON}
-            else if response.hovered(){theme::TEXT}else{theme::SECONDARY};
-        if enabled{theme::paint_button_hover(ui,&response,0.0);}
-        let painter=ui.painter().with_clip_rect(response.rect);
-        paint_management_chevron_with_color(&painter,response.rect.center(),direction,ink);
-        return response;
-    }
-    // Preserve the established IDs, exact hit area and separate corner
-    // geometry of the horizontal count and half-height vertical steppers.
-    let rect=ui.max_rect().intersect(ui.clip_rect());
-    let (id,corners)=match glyph{
-        DateNavigationSegmentGlyph::CompactVerticalChevron{up}=>(
-            "compact-chevron",egui::CornerRadius{
-                nw:if up{3}else{0},ne:0,sw:if up{0}else{3},se:0
-            }
-        ),
-        DateNavigationSegmentGlyph::CountStep{increase}=>{
-            let radius=theme::CONTROL_RADIUS.saturating_sub(2);
-            ("count-step",egui::CornerRadius{
-                nw:if increase{0}else{radius},sw:if increase{0}else{radius},
-                ne:if increase{radius}else{0},se:if increase{radius}else{0},
-            })
-        }
-        DateNavigationSegmentGlyph::Chevron(_)=>unreachable!("handled above"),
-    };
-    let response=ui.interact(rect,ui.id().with(id),
-        if enabled{Sense::click()}else{Sense::hover()});
-    let painter=ui.painter().with_clip_rect(rect);
-    let (fill,ink)=match glyph{
-        DateNavigationSegmentGlyph::CompactVerticalChevron{..}=>{
-            let ink=if !enabled{theme::RECEPTION_RECIPIENT_NAV_DISABLED_ICON}
-                else if response.hovered(){theme::TEXT}else{theme::SECONDARY};
-            (if enabled{None}else{Some(theme::RECEPTION_RECIPIENT_NAV_DISABLED_BG)},ink)
-        }
-        DateNavigationSegmentGlyph::CountStep{..}=>{
-            let (_,fill,ink,_)=theme::action_style(theme::ButtonRole::Standard,enabled,false);
-            (Some(fill),ink)
-        }
-        DateNavigationSegmentGlyph::Chevron(_)=>unreachable!("handled above"),
-    };
-    if let Some(fill)=fill{painter.rect_filled(rect,corners,fill);}
-    if enabled{theme::paint_button_hover_corners(ui,&response,corners);}
-    match glyph{
-        DateNavigationSegmentGlyph::CompactVerticalChevron{up}=>{
-            let angle=if up{-std::f32::consts::FRAC_PI_2}else{std::f32::consts::FRAC_PI_2};
-            paint_chevron_at_angle_scaled(&painter,rect.center(),angle,0.0,ink,0.72);
-        }
-        DateNavigationSegmentGlyph::CountStep{increase}=>
-            paint_count_step_symbol(&painter,rect.center(),increase,ink),
-        DateNavigationSegmentGlyph::Chevron(_)=>unreachable!("handled above"),
-    }
-    response
 }
 
 fn date_navigation_count_step_state(
@@ -3705,27 +3487,6 @@ pub fn date_navigation_count_control(
         #[cfg(test)]
         increment_rect:increment.rect,
     }
-}
-
-fn date_navigation_button_surface(
-    ui:&mut Ui,enabled:bool
-)->(Response,Color32){
-    let effective_enabled=enabled && ui.is_enabled();
-    let (fill,ink,stroke)=theme::field_action_palette(effective_enabled,theme::SECONDARY);
-    let response=navigation_native_button(
-        ui,Vec2::splat(theme::CALENDAR_NAV_SIZE),
-        egui::Button::new("").fill(fill).stroke(stroke).corner_radius(theme::CONTROL_RADIUS),
-        Some(effective_enabled)
-    );
-    let ink=if effective_enabled && response.hovered(){
-        theme::TEXT
-    }else{ink};
-    if effective_enabled{
-        theme::paint_button_hover(
-            ui,&response,theme::CONTROL_RADIUS as f32
-        );
-    }
-    (response,ink)
 }
 
 /// Shared calendar navigation: identical 28pt hit targets, border, radius,
@@ -3814,21 +3575,7 @@ pub fn date_calendar(
                     grid.end_row();
                     for (index,day) in dates.iter().enumerate(){
                         if let Some(date)=day{
-                            let mut button=egui::Button::new(typography::body(
-                                &date.day().to_string()
-                            )).corner_radius(theme::CONTROL_RADIUS);
-                            if selected_date==Some(*date){
-                                button=button.fill(theme::WORKFLOW_SELECTED_BG)
-                                    .stroke(Stroke::new(1.0_f32,theme::SELECTION));
-                            }else if *date==today{
-                                button=button.stroke(Stroke::new(1.0_f32,theme::BORDER));
-                            }
-                            let response=grid.add_sized(
-                                egui::vec2(width,width),button
-                            );
-                            theme::paint_button_hover(
-                                grid,&response,theme::CONTROL_RADIUS as f32
-                            );
+                            let response=crate::button::calendar_day(grid,&date.day().to_string(),width,selected_date==Some(*date),*date==today);
                             if response.clicked(){
                                 chosen=Some(*date);
                                 grid.close();
@@ -4051,7 +3798,7 @@ fn paint_chevron_at_angle(
 }
 
 /// Shared chevron geometry, scaled only for constrained half-height segments.
-fn paint_chevron_at_angle_scaled(
+pub(crate) fn paint_chevron_at_angle_scaled(
     painter:&egui::Painter,center:egui::Pos2,angle:f32,optical_raise:f32,
     ink:Color32,scale:f32
 ){
@@ -4200,7 +3947,7 @@ pub(crate) fn category_tree_row(ui:&mut Ui,item:CategoryTreeRow<'_>)->Response{
                 egui::StrokeKind::Inside);
         }
     }else{
-        theme::paint_button_hover(ui,&response,theme::CONTROL_RADIUS as f32);
+        crate::button::paint_button_hover(ui,&response,theme::CONTROL_RADIUS as f32);
     }
     let guide=Stroke::new(theme::CATALOG_TREE_GUIDE_WIDTH,theme::CATALOG_TREE_GUIDE_COLOR);
     geo.guides(item.ancestor_guides,item.is_last,item.has_children,item.open,
@@ -4311,7 +4058,7 @@ pub fn management_tabs(ui:&mut Ui,labels:&[(&str,bool,bool)]) -> Option<usize> {
         for (index,(title,active,enabled)) in labels.iter().enumerate() {
             let role=if *active {theme::ButtonRole::ActiveManagementTab}
                 else {theme::ButtonRole::ManagementTab};
-            if theme::action(bar,title,role,*enabled).clicked() {
+            if crate::button::action(bar,title,role,*enabled).clicked() {
                 pressed=Some(index);
             }
         }
@@ -4362,7 +4109,7 @@ pub fn management_chooser_row(
         secondary,theme::MUTED
     );
     if !selected {
-        theme::paint_button_hover(
+        crate::button::paint_button_hover(
             ui,&response,theme::CONTROL_RADIUS as f32
         );
     }
@@ -4610,7 +4357,7 @@ pub fn reception_client_summary_card_editable(
             .layout(Layout::left_to_right(Align::Center)),
         |buttons|{
             buttons.set_clip_rect(clip);
-            theme::action_with_min_width(
+            crate::button::action_with_min_width(
                 buttons,button_label,theme::ButtonRole::Standard,
                 editable,button_width
             ).clicked()
@@ -4767,7 +4514,7 @@ pub fn management_row(
         ui,rect,
         management_client_column_edges(rect.left(),rect.width())
     );
-    theme::paint_button_hover(ui,&response,0.0);
+    crate::button::paint_button_hover(ui,&response,0.0);
     response
 }
 
@@ -4946,159 +4693,6 @@ fn reception_compact_quantity(full:&str)->&str {
     if count.is_some_and(|n|n>=1000) {"999+"} else {full}
 }
 
-/// Quantity uses the shared date-selector frame and segment buttons.
-/// Only the numeric draft is editable; the fixed suffix never enters the
-/// native quantity parser or changes when the cell gains focus.
-const RECEPTION_QUANTITY_MAX:i64=9_007_199_254_740_991;
-
-fn reception_quantity_step(value:&str,delta:i64)->Option<String>{
-    let count=value.trim().replace(',',"").parse::<i64>().ok();
-    match (count,delta){
-        (Some(n),-1) if n>1 && n<=RECEPTION_QUANTITY_MAX=>Some((n-1).to_string()),
-        (Some(n),1) if n>=0 && n<RECEPTION_QUANTITY_MAX=>Some((n+1).to_string()),
-        (None,1) if value.trim().is_empty()=>Some("1".into()),
-        _=>None,
-    }
-}
-
-pub struct ReceptionQuantityEditorResponse{
-    pub input:Response,
-    pub step_interaction:bool,
-}
-
-fn reception_quantity_editor(
-    ui:&mut Ui,cell:Rect,value:&mut String,request_focus:bool,
-    click_at:Option<egui::Pos2>
-)->ReceptionQuantityEditorResponse{
-    let rect=cell.shrink2(egui::vec2(theme::SPACE_2,theme::SPACE_2));
-    let mut placed=navigation_segment_child(
-        ui,"reception-quantity-editor",rect,Layout::top_down(Align::Min)
-    );
-    let font=typography::data_value_font(
-        typography::DataValueKind::Quantity,
-        typography::DataValueContext::Reception
-    );
-    let decrease=reception_quantity_step(value,-1);
-    let increase=reception_quantity_step(value,1);
-    let (_, (input,step_interaction))=date_navigation_segmented_surface(
-        &mut placed,"quantity-stepper",rect.size(),|segments,inner|{
-            // Left arrow pair; right-aligned value and permanent unit.
-            let arrow_width=16.0;
-            let unit_width=segments.painter().layout_no_wrap(
-                "개".to_owned(),font.clone(),theme::TEXT
-            ).size().x;
-            // Leave clearance for the rounded outer focus stroke.
-            let arrow_rect=Rect::from_min_max(
-                inner.min+egui::vec2(1.0,1.0),
-                egui::pos2(inner.left()+arrow_width,inner.bottom()-1.0)
-            );
-            let unit_rect=Rect::from_min_max(
-                egui::pos2(inner.right()-unit_width-2.0,inner.top()),
-                egui::pos2(inner.right()-2.0,inner.bottom())
-            );
-            let input_rect=Rect::from_min_max(
-                egui::pos2(arrow_rect.right()+2.0,inner.top()),
-                egui::pos2(unit_rect.left(),inner.bottom()));
-            let mut input_ui=navigation_segment_child(
-                segments,"quantity-value",input_rect,Layout::top_down(Align::Min)
-            );
-            let input=reception_text_editor_at_click(
-                &mut input_ui,input_rect,
-                singleline_editor(value,font.clone(),input_rect.width(),
-                    Align::RIGHT,egui::Margin::ZERO).frame(false),
-                request_focus,click_at
-            );
-            segments.painter().with_clip_rect(unit_rect).text(
-                unit_rect.center(),egui::Align2::CENTER_CENTER,"개",font.clone(),theme::TEXT
-            );
-            let mut clicked=false;
-            let half=arrow_rect.height()/2.0;
-            for (index,next,up) in [
-                (0,increase,true),
-                (1,decrease,false),
-            ]{
-                let part=Rect::from_min_size(
-                    egui::pos2(arrow_rect.left(),arrow_rect.top()+index as f32*half),
-                    egui::vec2(arrow_rect.width(),half)
-                );
-                let mut button=navigation_segment_child(
-                    segments,("quantity-arrow",index),part,Layout::left_to_right(Align::Center)
-                );
-                button.spacing_mut().item_spacing=Vec2::ZERO;
-                // Do not let the standard button's minimum padding enlarge
-                // the half-height arrow slots.
-                button.spacing_mut().interact_size=Vec2::ZERO;
-                button.spacing_mut().button_padding=Vec2::ZERO;
-                let response=date_navigation_segment_button(
-                    &mut button,arrow_rect.width(),next.is_some(),
-                    DateNavigationSegmentGlyph::CompactVerticalChevron{up}
-                );
-                if response.clicked(){
-                    if let Some(next)=next{*value=next;clicked=true;}
-                }
-            }
-            let stroke=Stroke::new(theme::SOFT_DIVIDER_WIDTH,theme::DIVIDER);
-            segments.painter().line_segment(
-                [arrow_rect.right_top(),arrow_rect.right_bottom()],stroke
-            );
-            segments.painter().line_segment(
-                [egui::pos2(arrow_rect.left(),arrow_rect.center().y),
-                 egui::pos2(arrow_rect.right(),arrow_rect.center().y)],stroke
-            );
-            // Pointer-down can remove TextEdit focus before the click is
-            // released. Keep that draft alive until the arrow action resolves.
-            let pressing=segments.input(|input|
-                (input.pointer.any_down() || input.pointer.any_released())
-                    && input.pointer.interact_pos().is_some_and(|p|arrow_rect.contains(p))
-            );
-            if clicked || pressing{input.request_focus();}
-            (input,clicked||pressing)
-        }
-    );
-    if input.has_focus() || step_interaction{
-        placed.painter().rect_stroke(
-            rect.shrink(0.5),theme::CONTROL_RADIUS as f32,
-            Stroke::new(2.0_f32,theme::SELECTION),egui::StrokeKind::Inside
-        );
-    }
-    ReceptionQuantityEditorResponse{input,step_interaction}
-}
-
-#[cfg(test)]
-#[test]
-fn reception_quantity_step_keeps_unit_out_of_native_draft_and_respects_bounds(){
-    assert_eq!(reception_quantity_step("5",1).as_deref(),Some("6"));
-    assert_eq!(reception_quantity_step("5",-1).as_deref(),Some("4"));
-    assert_eq!(reception_quantity_step("",1).as_deref(),Some("1"));
-    assert_eq!(reception_quantity_step("1",-1),None);
-    assert_eq!(reception_quantity_step("5개",1),None);
-    assert_eq!(reception_quantity_step(&RECEPTION_QUANTITY_MAX.to_string(),1),None);
-}
-
-#[derive(Clone,Copy)]
-pub enum ReceptionNumericCell{Quantity,Money}
-
-/// A stepper click may temporarily move the text focus. Both consumers
-/// must retain the draft until that click resolves.
-pub fn reception_numeric_edit_finished(response:&Response,step_interaction:bool)->bool{
-    crate::cell_navigation::worksheet_blur_finished(response,step_interaction)
-}
-
-pub fn reception_item_numeric_editor(
-    ui:&mut Ui,rect:Rect,value:&mut String,focus:bool,
-    click_at:Option<egui::Pos2>,kind:ReceptionNumericCell
-)->(Response,bool){
-    match kind{
-        ReceptionNumericCell::Quantity=>{
-            let editor=reception_quantity_editor(ui,rect,value,focus,click_at);
-            (editor.input,editor.step_interaction)
-        }
-        ReceptionNumericCell::Money=>(
-            reception_money_inline_cell_editor(ui,rect,value,focus,click_at),false
-        )
-    }
-}
-
 pub fn reception_item_delete_confirmation(
     ctx:&egui::Context,work_area:Rect,name:&str,error:Option<&str>,busy:bool
 )->(bool,bool){
@@ -5115,7 +4709,7 @@ pub fn reception_item_delete_confirmation(
                     fixed_status_slot(body,width,typography::METADATA_LINE_HEIGHT,
                         error,error,theme::DANGER);
                 },
-                |actions|theme::action(actions,"삭제",theme::ButtonRole::Danger,!busy).clicked()
+                |actions|crate::button::action(actions,"삭제",theme::ButtonRole::Danger,!busy).clicked()
             );
         });
     (cancel,remove)
@@ -5329,7 +4923,7 @@ fn reception_item_row_with_mode(
         let action=ui.interact(hit,ui.make_persistent_id(("item-remove",row_id)),
             if enabled{Sense::click()}else{Sense::hover()});
         let ink=if enabled{theme::SECONDARY}else{theme::DISABLED_ACTION_TEXT};
-        if enabled{theme::paint_button_hover(ui,&action,theme::CONTROL_RADIUS as f32);}
+        if enabled{crate::button::paint_button_hover(ui,&action,theme::CONTROL_RADIUS as f32);}
         let center=hit.center();
         let stroke=Stroke::new(1.5_f32,ink);
         for sign in [-1.0_f32,1.0]{
@@ -5486,7 +5080,7 @@ pub fn reception_freight_row_controls(
         line.with_layout(Layout::right_to_left(Align::Center),|right|{
             // Hidden actions still own the exact same slot as visible ones.
             right.add_visible_ui(inquiry_visible,|slot|{
-                theme::action(slot,"공장에 운임 문의",theme::ButtonRole::Standard,false);
+                crate::button::action(slot,"공장에 운임 문의",theme::ButtonRole::Standard,false);
             });
             if remote_visible{
                 let mut checked=remote.unwrap_or(false);
@@ -5590,15 +5184,6 @@ mod reception_cod_selector_tests {
     }
 }
 
-/// Persistent required-input accent. Paint on the already allocated cell,
-/// after any inline editor and blue/orange hover decoration. No layout space.
-pub fn paint_required_input(ui:&Ui,rect:Rect){
-    if !rect.is_positive() || !rect.intersects(ui.clip_rect()){return;}
-    let painter=ui.painter().with_clip_rect(ui.clip_rect().intersect(rect));
-    painter.rect_filled(rect,theme::CONTROL_RADIUS,theme::REQUIRED_INPUT_TINT);
-    painter.rect_stroke(rect,theme::CONTROL_RADIUS,
-        Stroke::new(2.0,theme::REQUIRED_INPUT_BORDER),egui::StrokeKind::Inside);
-}
 /// Shared add-product action; the reception title row owns its placement.
 pub fn reception_item_add_action_editable(ui:&mut Ui,editable:bool)->bool{
     reception_item_header_action(ui,false,editable).clicked()
@@ -5607,7 +5192,7 @@ pub fn reception_item_add_action_editable(ui:&mut Ui,editable:bool)->bool{
 /// The add/rollback modes occupy exactly the same header action slot.
 /// Never insert a pending-assignment action between the item and freight rows.
 pub fn reception_item_header_action(ui:&mut Ui,rollback:bool,enabled:bool)->Response{
-    theme::action_with_min_width(
+    crate::button::action_with_min_width(
         ui,if rollback{"선택 취소"}else{"＋ 상품 추가"},
         theme::ButtonRole::Standard,enabled,112.0
     )
@@ -5663,7 +5248,7 @@ mod reception_state_layout_invariance_tests{
                     egui::pos2(ui.min_rect().left(),origin),
                     egui::pos2(ui.min_rect().right(),ui.cursor().top())
                 )));
-                let footer=theme::action(ui,"초안에 적용",theme::ButtonRole::Standard,editable);
+                let footer=crate::button::action(ui,"초안에 적용",theme::ButtonRole::Standard,editable);
                 rects.push(("following action",footer.rect));
             });
         });
@@ -5692,7 +5277,7 @@ mod reception_state_layout_invariance_tests{
     fn production_consumers_do_not_reinsert_item_feedback_rows(){
         let manual=include_str!("manual_workspace.rs");
         let production=production_source_for_contract(manual);
-        assert!(!production.contains("theme::action(items_ui,\"상품 선택 취소\""));
+        assert!(!production.contains("crate::button::action(items_ui,\"상품 선택 취소\""));
         assert!(production.contains("components::reception_item_header_action("));
         let main=include_str!("main.rs");
         assert!(!main.contains("items_ui.label(typography::status("));
@@ -5710,20 +5295,7 @@ pub fn reception_item_origin_action_editable(
     ui.horizontal(|bar|{
         bar.with_layout(Layout::right_to_left(Align::Center),|right|{
             let button=|right:&mut Ui,label:&str,selected:bool|{
-                let response=right.add_enabled(editable,
-                    egui::Button::new(typography::action_label(
-                        label,typography::FONT_STANDARD_ACTION,false,
-                        if selected{theme::TEXT}else{theme::SECONDARY}
-                    ))
-                    .min_size(Vec2::new(42.0,theme::ACTION_STANDARD_HEIGHT))
-                    .fill(if selected{theme::RAISED}else{theme::PANEL})
-                    .stroke(Stroke::new(theme::FRAME_STROKE_WIDTH,
-                        if selected{theme::SELECTION}else{theme::DIVIDER}))
-                    .corner_radius(theme::CONTROL_RADIUS)
-                );
-                theme::paint_button_hover(
-                    right,&response,theme::CONTROL_RADIUS as f32
-                );
+                let response=crate::button::dispatch_origin(right,label,selected,editable);
                 if selected && crate::one_touch::stage(right).freight(){crate::one_touch::mark(right,response.rect);}
                 response.clicked()
             };
@@ -5819,94 +5391,6 @@ pub fn reception_total_footer(
     );
 }
 
-/// Read-only embedded management table with the shared fixed-header
-/// geometry, scrollbar gutter and virtual fixed-row viewport. Screens provide
-/// only their column labels, width policy and already formatted cell values.
-pub fn management_readonly_table(
-    ui:&mut Ui,id:&str,headings:&[&str],rows:&[Vec<String>],max_height:f32,
-    right_aligned:&[usize],widths_for_available:impl FnOnce(f32)->Vec<f32>,
-){
-    assert!(!headings.is_empty(),"a management table needs at least one column");
-    let original_scroll=ui.spacing().scroll.clone();
-    ui.spacing_mut().scroll=theme::management_table_scroll_style();
-    let viewport_width=ui.available_rect_before_wrap()
-        .intersect(ui.clip_rect()).width().max(1.0);
-    let available_data_width=(viewport_width
-        -ui.spacing().scroll.allocated_width()).max(1.0);
-    let widths=widths_for_available(available_data_width);
-    assert_eq!(headings.len(),widths.len(),
-        "management table heading and width counts must match");
-    assert!(widths.iter().all(|width|width.is_finite()&&*width>0.0),
-        "management table column widths must be finite and positive");
-    let minimum_width=management_readonly_table_content_width(&widths);
-    crate::table::show(ui,crate::table::Header::List(minimum_width),|ui,layout|{
-
-    let row_height=theme::MANAGEMENT_COMPACT_ROW_HEIGHT;
-    let row_advance=management_readonly_table_row_advance();
-    let output=crate::table::fixed_rows(
-        ui,crate::table::Viewport{width:layout.table_width,height:max_height,rail:None},
-        id,row_advance,rows.len(),
-        |body,range|{
-            for index in range{
-                let values=&rows[index];
-                debug_assert_eq!(values.len(),widths.len(),
-                    "management table row must match its column count");
-                let row_rect=Rect::from_min_size(body.cursor().min,
-                    Vec2::new(layout.table_width,row_advance));
-                paint_management_table_row_background(body.painter(),row_rect,index);
-                let mut x=row_rect.left();
-                let columns=widths.iter().map(|width|{
-                    let cell=Rect::from_min_size(egui::pos2(x,row_rect.top()),Vec2::new(*width,row_height));
-                    x+=*width+theme::SPACE_8;
-                    cell
-                }).collect::<Vec<_>>();
-                body.horizontal(|line|{
-                    line.spacing_mut().item_spacing.x=theme::SPACE_8;
-                    for (index,(value,width)) in values.iter().zip(&widths).enumerate(){
-                        let label=truncated_label(typography::table_cell(value));
-                        let label=if right_aligned.contains(&index){
-                            label.halign(Align::RIGHT)
-                        }else{label};
-                        line.add_sized(Vec2::new(*width,row_height),label);
-                    }
-                });
-                management_table_column_rules(body,row_rect,&columns,theme::SPACE_8);
-                soft_divider(body);
-            }
-        }
-    );
-    let mut x=layout.header_rect.left()-output.state.offset.x;
-    let columns=widths.iter().map(|width|{
-        let cell=Rect::from_min_size(egui::pos2(x,layout.header_rect.top()),
-            Vec2::new(*width,layout.header_rect.height()-theme::MANAGEMENT_TABLE_HEADER_OUTLINE_HEIGHT));
-        x+=*width+theme::SPACE_8;
-        cell
-    }).collect::<Vec<_>>();
-    crate::table::header_columns(ui,layout.header_rect,layout.header_content_rect,&columns,theme::SPACE_8,|ui,area|{
-        for (index,(heading,cell)) in headings.iter().zip(&columns).enumerate(){
-            let alignment=if right_aligned.contains(&index){
-                crate::table::HeadingAlign::Right{inset:0.0,min_left:None}
-            }else{crate::table::HeadingAlign::Left(0.0)};
-            let label=typography::management_table_header_galley(ui,heading);
-            crate::table::heading(ui,*cell,area,cell.intersect(area),alignment,label,None);
-        }
-    });
-    
-            (output.inner_rect,())
-        });
-
-    ui.spacing_mut().scroll=original_scroll;
-}
-
-fn management_readonly_table_content_width(widths:&[f32])->f32{
-    widths.iter().sum::<f32>()
-        +widths.len().saturating_sub(1) as f32*theme::SPACE_8
-}
-
-fn management_readonly_table_row_advance()->f32{
-    theme::MANAGEMENT_COMPACT_ROW_HEIGHT+theme::SOFT_DIVIDER_WIDTH
-}
-
 #[cfg(test)]
 mod management_date_field_contract_tests {
     #[test]
@@ -5914,7 +5398,7 @@ mod management_date_field_contract_tests {
         let source=include_str!("order_history_manager.rs");
         let date=source.split("fn range_date_picker_rtl(").nth(1).unwrap()
             .split("\nfn ").next().unwrap();
-        assert!(date.contains("components::management_date_text_field("));
+        assert!(date.contains("crate::input::management_date_text_field("));
         assert!(!date.contains("egui::TextEdit::singleline(date)"));
     }
 }
@@ -5962,20 +5446,20 @@ mod shared_multiline_field_contract_tests {
     #[test]
     fn automatic_message_and_history_memo_use_shared_multiline_editor(){
         let messages=include_str!("automatic_message_manager.rs");
-        assert_eq!(messages.matches("components::multiline_text_field(").count(),2);
+        assert_eq!(messages.matches("crate::input::multiline_text_field(").count(),2);
         assert!(!messages.contains("TextEdit::multiline("));
         assert_eq!(messages.matches("theme::preview_surface_frame()").count(),2);
         assert!(!messages.contains("egui::Frame::new()"));
         let history=include_str!("order_history_manager.rs");
         let memo=history.split("pub fn show_memo_modal(").nth(1).unwrap()
             .split("pub fn ").next().unwrap();
-        assert!(memo.contains("components::multiline_text_field("));
+        assert!(memo.contains("crate::input::multiline_text_field("));
         assert!(!memo.contains("TextEdit::multiline("));
 
         let main=include_str!("main.rs");
         let ocr=main.split("fn show_ocr_review(").nth(1).unwrap()
             .split("\n    fn ").next().unwrap();
-        assert!(ocr.contains("components::multiline_text_field_sized("));
+        assert!(ocr.contains("crate::input::multiline_text_field_sized("));
         assert!(!ocr.contains("TextEdit::multiline("));
     }
 }
@@ -6266,7 +5750,7 @@ mod shared_ghost_action_contract_tests {
         let back=source.split("fn category_back_button(").nth(1).unwrap()
             .split("fn crumbs_row(").next().unwrap();
         assert!(back.contains("theme::ButtonRole::Ghost"));
-        assert!(back.contains("theme::action_with_min_width("));
+        assert!(back.contains("crate::button::action_with_min_width("));
         assert!(!back.contains("egui::Button::new("));
 
         let explorer=source.split("if state.ancestors_open && state.path.len()>1")
@@ -6340,13 +5824,13 @@ mod management_search_caret_tests {
             ("manual product chooser",include_str!("manual_product_search.rs"),1),
         ];
         for (screen,source,expected) in surfaces {
-            let count=source.matches("components::management_search_field(").count();
+            let count=source.matches("crate::input::management_search_field(").count();
             assert_eq!(count,expected,"{screen} query did not use the shared field");
         }
         // Search-tag entry is an editor, not a query field.
         let clients=include_str!("client_manager.rs");
         assert!(clients.contains("entry,&mut self.tag_input,width"));
-        assert!(clients.contains("components::flexible_text_field("));
+        assert!(clients.contains("crate::input::flexible_text_field("));
     }
 
     #[test]
@@ -7400,7 +6884,7 @@ mod management_dropdown_unification_tests {
             products.matches("category_dropdown::category_dropdown(").count(),2
         );
         assert_eq!(
-            products.matches("components::management_searchable_dropdown(").count(),2
+            products.matches("crate::dropdown::management_searchable_dropdown(").count(),2
         );
         assert!(include_str!("category_manager.rs")
             .contains("category_dropdown::category_dropdown("));
@@ -8032,7 +7516,7 @@ mod modal_editor_workspace_geometry_tests {
                                     field(body,&mut text,FieldKind::Text,enabled).rect
                                 });
                                 let action=owner.footer_single(|footer|{
-                                    let response=theme::action(footer,"저장",
+                                    let response=crate::button::action(footer,"저장",
                                         theme::ButtonRole::Primary,enabled);
                                     assert_eq!(response.enabled(),enabled);
                                     response.rect
@@ -8334,7 +7818,7 @@ mod modal_input_routing_tests {
                         });
                         decision.actions(|actions|{
                             *action_enabled=actions.is_enabled();
-                            let response=theme::action(
+                            let response=crate::button::action(
                                 actions,"변경 취소",theme::ButtonRole::Standard,true
                             );
                             action_rect=response.rect;
@@ -8430,7 +7914,7 @@ mod modal_input_routing_tests {
                 ).show(ctx,|ui|{
                     ui.label("discard?");
                     modal_action_row(ui,|actions|{
-                        theme::action(actions,"변경 취소",theme::ButtonRole::Standard,true);
+                        crate::button::action(actions,"변경 취소",theme::ButtonRole::Standard,true);
                     });
                 });
                 modal_foreground_for_window(ctx,"manual-discard-prompt");
@@ -8499,12 +7983,12 @@ mod manual_nested_prompt_regression_tests{
                     .show(ctx,|decision|{
                         decision.label("초안에 반영하지 않은 변경사항이 있습니다.");
                         decision.horizontal(|row|{
-                            let keep=theme::action(
+                            let keep=crate::button::action(
                                 row,"계속 편집",theme::ButtonRole::Standard,true
                             );
                             keep_rect=keep.rect;
                             if keep.clicked(){*keep_clicked=true;}
-                            let discard=theme::action(
+                            let discard=crate::button::action(
                                 row,"변경사항 버리고 닫기",theme::ButtonRole::Danger,true
                             );
                             discard_rect=discard.rect;
@@ -8725,7 +8209,7 @@ mod date_navigation_segmented_control_tests{
         }
         let source=include_str!("components.rs");
         let count=source.split("pub fn date_navigation_count_control(").nth(1).unwrap()
-            .split("fn date_navigation_button_surface(").next().unwrap();
+            .split("/// Shared calendar navigation").next().unwrap();
         assert!(count.contains("management_date_text_field_impl("));
         assert!(!count.contains("numeric_editor_font("));
         assert_eq!(control.rect.height(),theme::INPUT_HEIGHT);
@@ -8733,9 +8217,9 @@ mod date_navigation_segmented_control_tests{
 
     #[test]
     fn count_stepper_palette_distinguishes_actions_from_editor_and_disabled_end_stops(){
-        let (_,fill,ink,_)=theme::action_style(theme::ButtonRole::Standard,true,false);
+        let (_,fill,ink,_)=crate::button::action_style(theme::ButtonRole::Standard,true,false);
         assert_eq!((fill,ink),(theme::RAISED,theme::TEXT));
-        let (_,fill,ink,_)=theme::action_style(theme::ButtonRole::Standard,false,false);
+        let (_,fill,ink,_)=crate::button::action_style(theme::ButtonRole::Standard,false,false);
         assert_eq!((fill,ink),(theme::DISABLED_ACTION_BG,theme::DISABLED_ACTION_TEXT));
         assert!(theme::RAISED.r()>theme::INPUT.r());
         assert!(theme::INPUT.r()>theme::DISABLED_ACTION_BG.r());
@@ -8913,7 +8397,7 @@ mod round87_phase4_modal_safety_tests {
                                     for _ in 0..80 {body.label("스크롤 검증 항목");}
                                 });
                                 workspace.footer_single(|actions|{
-                                    theme::action(actions,"저장",theme::ButtonRole::Primary,true);
+                                    crate::button::action(actions,"저장",theme::ButtonRole::Primary,true);
                                 });
                             });
                             measured=Some(geometry);
@@ -9063,7 +8547,7 @@ mod shared_general_screen_audit_tests {
         let source=include_str!("main.rs");
         let manual=include_str!("manual_source_view.rs");
         let components=include_str!("input/mod.rs");
-        assert_eq!(source.matches("components::reception_source_text_edit(").count(),3);
+        assert_eq!(source.matches("crate::input::reception_source_text_edit(").count(),3);
         assert!(!source.contains("TextEdit::multiline("));
         assert!(components.contains(
             ".margin(egui::Margin::same(theme::SOURCE_DOCUMENT_TEXT_MARGIN))"

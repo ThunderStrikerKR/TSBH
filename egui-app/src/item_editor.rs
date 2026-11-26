@@ -170,12 +170,12 @@ impl ItemEditor{
             ui.add_space(theme::SPACE_12);
         }
         ui.horizontal(|controls|{
-            if theme::action(
+            if crate::button::action(
                 controls,"상품 변경",ButtonRole::Standard,!busy
             ).clicked(){
                 self.open_search(Arc::clone(&gateway),ctx);
             }
-            if theme::action(
+            if crate::button::action(
                 controls,"선택 취소",ButtonRole::Standard,edited&&!busy
             ).clicked(){
                 self.replacement=None;
@@ -362,13 +362,13 @@ impl ItemEditor{
                         );
                     });
                     workspace.footer(|left|{
-                            if theme::action(left,"삭제",ButtonRole::Danger,!busy)
+                            if crate::button::action(left,"삭제",ButtonRole::Danger,!busy)
                                 .clicked(){
                                 delete_clicked=true;
                             }
                         },
                         |right|{
-                            if theme::action(
+                            if crate::button::action(
                                 right,"적용",ButtonRole::Primary,allow_apply
                             ).clicked(){
                                 apply_clicked=true;
@@ -409,7 +409,7 @@ impl ItemEditor{
                         ui.label("선택한 상품 변경사항을 버릴까요?");
                     });
                     decision.actions(|actions|{
-                        if theme::action(actions,"수정 내용 버리기",ButtonRole::Danger,true)
+                        if crate::button::action(actions,"수정 내용 버리기",ButtonRole::Danger,true)
                             .clicked(){
                             self.confirm_discard=false;
                             result=Some(Event::Closed);

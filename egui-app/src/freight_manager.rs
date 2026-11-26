@@ -401,7 +401,7 @@ impl RateEditor {
                 .map(|value|(count,Some(value)))
         }).collect::<BTreeMap<_,_>>();
         let new=self.fees.iter().map(|(key,value)|{
-            (*key,components::parse_money_input(value))
+            (*key,crate::input::parse_money_input(value))
         }).collect::<BTreeMap<_,_>>();
         old!=new
     }
@@ -426,7 +426,7 @@ impl RateEditor {
             let value=if raw.is_empty() {
                 Value::Null
             }else{
-                let amount=components::parse_money_input(raw)
+                let amount=crate::input::parse_money_input(raw)
                     .ok_or("올바른 운임을 입력하세요.")?;
                 if !(0..=9_007_199_254_740_991).contains(&amount){
                     return Err("올바른 운임을 입력하세요.".into());
@@ -920,14 +920,14 @@ impl FreightManager {
                         decision.body(|modal|{
                             modal.label(typography::field_label("배송 그룹명"));
                             modal.add_enabled_ui(enabled,|field|{
-                                components::flexible_text_field(
+                                crate::input::flexible_text_field(
                                     field,&mut self.new_name,
                                     theme::MANAGEMENT_SEARCH_MIN_WIDTH,"그룹 이름 입력"
                                 );
                             });
                         });
                         decision.actions(|controls|{
-                                if theme::action(
+                                if crate::button::action(
                                     controls,"배송 그룹 추가",theme::ButtonRole::Primary,
                                     enabled&&!self.new_name.trim().is_empty()
                                 ).clicked(){
@@ -947,10 +947,10 @@ impl FreightManager {
                                 close_rename=true;
                             }
                             decision.body(|modal|{
-                                components::field(modal,name,components::FieldKind::Text,enabled);
+                                crate::input::field(modal,name,crate::input::FieldKind::Text,enabled);
                             });
                             decision.actions(|controls|{
-                                if theme::action(controls,"이름 수정",theme::ButtonRole::Primary,
+                                if crate::button::action(controls,"이름 수정",theme::ButtonRole::Primary,
                                     enabled&&!name.trim().is_empty()).clicked(){
                                     action=Some(("rename_group".into(),json!({
                                         "groupId":id,"name":name.trim()
@@ -1002,7 +1002,7 @@ impl FreightManager {
                                 });
                             });
                             decision.actions(|controls|{
-                                if theme::action(controls,if !affected.is_empty(){
+                                if crate::button::action(controls,if !affected.is_empty(){
                                     "상품 연결을 미지정으로 변경하고 삭제"
                                 }else{"그룹 삭제"},theme::ButtonRole::Danger,enabled)
                                     .clicked(){
@@ -1025,7 +1025,7 @@ impl FreightManager {
                             ));
                         });
                         decision.actions(|bar|{
-                            if theme::action(bar,"기준 변경",
+                            if crate::button::action(bar,"기준 변경",
                                 theme::ButtonRole::Danger,enabled).clicked(){
                                 action=Some(("reset_product_freight_rule".into(),
                                     json!({"productId":pid})));
@@ -1066,7 +1066,7 @@ impl FreightManager {
                                         Self::rate_dialog(body,editor,enabled);
                             });
                             workspace.footer_single(|bar|{
-                                if theme::action(bar,"확인한 운임 저장",
+                                if crate::button::action(bar,"확인한 운임 저장",
                                     theme::ButtonRole::Primary,
                                     enabled&&editor.dirty()).clicked(){
                                     match editor.write_action(){
@@ -1092,7 +1092,7 @@ impl FreightManager {
                                 ));
                             });
                             decision.actions(|bar|{
-                                if theme::action(bar,"저장하고 닫기",
+                                if crate::button::action(bar,"저장하고 닫기",
                                     theme::ButtonRole::Primary,enabled&&editor.dirty()).clicked(){
                                     match editor.write_action(){
                                         Ok(command)=>{
@@ -1105,7 +1105,7 @@ impl FreightManager {
                                         }
                                     }
                                 }
-                                if theme::action(bar,"저장 안 함",
+                                if crate::button::action(bar,"저장 안 함",
                                     theme::ButtonRole::Danger,enabled).clicked(){
                                     close_editor=true;
                                 }
@@ -1138,7 +1138,7 @@ impl FreightManager {
                             );
                         });
                         decision.actions(|bar|{
-                            if theme::action(bar,"기준 변경",
+                            if crate::button::action(bar,"기준 변경",
                                 theme::ButtonRole::Danger,enabled).clicked(){
                                 action=Some(("change_basis".into(),match target{
                                     Some(id)=>json!({"groupId":id}),
@@ -1162,12 +1162,12 @@ impl FreightManager {
                         if decision.header("새로 확인된 청구 운임 (원)","취소",enabled
                         ){close=true;}
                         decision.body(|dialog|{
-                            components::money_field(dialog,amount,enabled);
+                            crate::input::money_field(dialog,amount,enabled);
                         });
                         decision.actions(|bar|{
-                            if theme::action(bar,"예외 운임 변경",
+                            if crate::button::action(bar,"예외 운임 변경",
                                 theme::ButtonRole::Primary,enabled).clicked(){
-                                match components::parse_money_input(amount){
+                                match crate::input::parse_money_input(amount){
                                     Some(value)=>{
                                         action=Some(("revise_combination".into(),json!({
                                             "combinationId":id,"charge":value
@@ -1200,9 +1200,9 @@ impl FreightManager {
                         ));
                     });
                     decision.actions(|bar|{
-                        if theme::action(bar,"저장하고 이동",
+                        if crate::button::action(bar,"저장하고 이동",
                             theme::ButtonRole::Primary,can_save).clicked(){save=true;}
-                        if theme::action(bar,"저장 안 함",
+                        if crate::button::action(bar,"저장 안 함",
                             theme::ButtonRole::Danger,enabled).clicked(){discard=true;}
                     });
                 });
@@ -1256,7 +1256,7 @@ impl FreightManager {
             // separates clickable buttons from the scroll hit target.
             // Both Freight and Order History now reserve the toolbar, divider
             // and header with one common zero-implicit-gap layout path.
-            let previous_table_spacing_y=components::management_table_container_style(section);
+            let previous_table_spacing_y=crate::table::management_table_container_style(section);
             // The parent page title and active "배송 그룹 편성" tab already
             // establish context. Start directly with the search/bulk toolbar:
             // do not leave an empty title row or its implicit vertical gap.
@@ -1299,12 +1299,12 @@ impl FreightManager {
                     // Search stays at 36pt; the shared 34pt dropdown trigger
                     // is vertically centered within the same 36pt toolbar.
                     tools.spacing_mut().interact_size.y=theme::INPUT_HEIGHT;
-                components::management_search_field(
+                crate::input::management_search_field(
                     tools,search,theme::MANAGEMENT_SEARCH_MIN_WIDTH,
                     "모델명 / 상품명 / 카테고리 검색"
                 );
                 let before_filter=group_filter.clone();
-                components::management_dropdown(
+                crate::dropdown::management_dropdown(
                     tools,
                     if group_filter.is_empty() {
                         "전체 상품"
@@ -1312,14 +1312,14 @@ impl FreightManager {
                         "그룹 미지정"
                     }else{group_name(groups,group_filter)},
                     theme::MANAGEMENT_FILTER_DROPDOWN_WIDTH,true,|menu|{
-                        components::management_dropdown_option(
+                        crate::dropdown::management_dropdown_option(
                             menu,group_filter,String::new(),"전체 상품"
                         );
-                        components::management_dropdown_option(
+                        crate::dropdown::management_dropdown_option(
                             menu,group_filter,"none".into(),"그룹 미지정만"
                         );
                         for group in groups {
-                            components::management_dropdown_option(
+                            crate::dropdown::management_dropdown_option(
                                 menu,group_filter,text(group,"id").into(),
                                 text(group,"name")
                             );
@@ -1399,7 +1399,7 @@ impl FreightManager {
                     // trigger as the filter and every product-row selector.
                     bulk.spacing_mut().interact_size.y=theme::INPUT_HEIGHT;
                         settings_help::icon(bulk,"배송 그룹 일괄 지정");
-                        if theme::action(bulk,"선택 상품에 적용",
+                        if crate::button::action(bulk,"선택 상품에 적용",
                             theme::ButtonRole::Standard,
                             enabled&&!selected.is_empty()&&bulk_group.is_some()
                         ).clicked(){
@@ -1435,7 +1435,7 @@ impl FreightManager {
                                 }
                             }
                         }
-                        components::management_dropdown(
+                        crate::dropdown::management_dropdown(
                             bulk,
                             match bulk_group.as_deref(){
                                 None=>"배송 그룹 선택",
@@ -1444,11 +1444,11 @@ impl FreightManager {
                             },
                             theme::FREIGHT_BULK_GROUP_WIDTH,
                             enabled,|menu|{
-                                components::management_dropdown_option(
+                                crate::dropdown::management_dropdown_option(
                                     menu,bulk_group,Some(String::new()),"미지정으로 변경"
                                 );
                                 for group in groups {
-                                    components::management_dropdown_option(
+                                    crate::dropdown::management_dropdown_option(
                                         menu,bulk_group,Some(text(group,"id").to_owned()),
                                         text(group,"name")
                                     );
@@ -1483,7 +1483,7 @@ impl FreightManager {
             let scroll_max_height=components::management_single_list_scroll_height(
                 section,card_min_height,0.0
             );
-            let scroll_track=components::management_table_scroll_track_rect(
+            let scroll_track=crate::table::management_table_scroll_track_rect(
                 section,scroll_max_height
             );
             let mut first_row_left=None;
@@ -1491,7 +1491,7 @@ impl FreightManager {
                 section,crate::table::Viewport{width:table_width,height:scroll_max_height,rail:Some(scroll_track)},
                 "freight-assignment-rows",theme::FREIGHT_ASSIGNMENT_ROW_HEIGHT,filtered.len(),
                 |table,visible_rows|{
-                    components::management_table_row_body(table,table_width);
+                    crate::table::management_table_row_body(table,table_width);
                     theme::apply_table_row_colors(table);
                     // Rows outside the viewport keep their selections and
                     // pending assignments, but create no widget this frame.
@@ -1588,17 +1588,17 @@ impl FreightManager {
                         row.scope_builder(selector_builder,|control|{
                                 control.set_clip_rect(selector_clip);
                                 control.set_width(selector_rect.width());
-                                components::management_dropdown(
+                                crate::dropdown::management_dropdown(
                                     control,
                                     if current.is_empty() {
                                         "그룹 선택"
                                     }else{group_name(groups,&current)},
                                     selector_rect.width(),enabled,|menu|{
-                                        components::management_dropdown_option(
+                                        crate::dropdown::management_dropdown_option(
                                             menu,&mut current,String::new(),"그룹 선택"
                                         );
                                         for group in groups {
-                                            components::management_dropdown_option(
+                                            crate::dropdown::management_dropdown_option(
                                                 menu,&mut current,text(group,"id").into(),
                                                 text(group,"name")
                                             );
@@ -1671,7 +1671,7 @@ impl FreightManager {
                                     // Keep the 34pt button target and full
                                     // label, but treat this repeated action as
                                     // secondary to selecting a shipping group.
-                                    if theme::action(actions,"기본 운임 설정",
+                                    if crate::button::action(actions,"기본 운임 설정",
                                         theme::ButtonRole::TableSecondary,editable)
                                         
                                         .clicked(){
@@ -1701,7 +1701,7 @@ impl FreightManager {
                                         }
                                     }
                                     if rule.is_object() &&
-                                        theme::action(actions,"기준 변경",
+                                        crate::button::action(actions,"기준 변경",
                                             theme::ButtonRole::Quiet,editable).clicked(){
                                         *reset_target=Some(id.to_owned());
                                     }
@@ -1729,7 +1729,7 @@ impl FreightManager {
             let header_left=first_row_left.unwrap_or(
                 header_rect.left()-scroll_output.state.offset.x
             );
-            let header_cells=components::management_table_cells(
+            let header_cells=crate::table::management_table_cells(
                 egui::pos2(header_left,header_rect.top()),
                 &widths,header_rect.height(),theme::FREIGHT_ASSIGNMENT_COL_GAP);
             // Paint the header background through the complete table viewport,
@@ -1820,7 +1820,7 @@ impl FreightManager {
             |tools|{
                 tools.set_width(toolbar_rect.width());
                 tools.set_height(toolbar_rect.height());
-                theme::action(
+                crate::button::action(
                     tools,"배송 그룹 추가",theme::ButtonRole::Primary,enabled
                 )
             }
@@ -1840,7 +1840,7 @@ impl FreightManager {
                 |field|{
                     field.set_clip_rect(search_rect);
                     field.set_width(search_rect.width());
-                    components::management_search_field(
+                    crate::input::management_search_field(
                         field,search,search_width,"배송 그룹 검색"
                     )
                 }
@@ -1878,7 +1878,7 @@ impl FreightManager {
             components::fill_management_primary_card(section,card_min_height);
             // Search and group creation share one fixed 36pt toolbar.
             // The global rate-basis action is now on the dedicated Basis tab.
-            let old_gap=components::management_table_container_style(section);
+            let old_gap=crate::table::management_table_container_style(section);
             let (create,_toolbar,_search)=
                 Self::rate_toolbar(section,search,enabled);
             if create.clicked(){*create_group_open=true;}
@@ -1917,7 +1917,7 @@ impl FreightManager {
             );
             // Footer reservation determines viewport height, not rail offset.
             // Every management table uses the same 7pt extension.
-            let scroll_track=components::management_table_scroll_track_rect(
+            let scroll_track=crate::table::management_table_scroll_track_rect(
                 section,scroll_max_height
             );
             let by_group=group_product_labels(products);
@@ -1926,7 +1926,7 @@ impl FreightManager {
                 section,crate::table::Viewport{width:table_width,height:scroll_max_height,rail:Some(scroll_track)},
                 "freight-group-rates-rows",theme::FREIGHT_ASSIGNMENT_ROW_HEIGHT,ordered.len(),
                 |table,visible_rows|{
-                    components::management_table_row_body(table,table_width);
+                    crate::table::management_table_row_body(table,table_width);
                     let origin=table.max_rect().min;
                     let first_index=visible_rows.start;
                     for index in visible_rows {
@@ -1988,7 +1988,7 @@ impl FreightManager {
                                         );
                                         buttons.set_width(rect.width());
                                         buttons.set_height(rect.height());
-                                        let trigger=theme::action(
+                                        let trigger=crate::button::action(
                                             buttons,"관리",
                                             theme::ButtonRole::TableSecondary,enabled
                                         );
@@ -1996,7 +1996,7 @@ impl FreightManager {
             menu.set_min_width(148.0);
                                                 menu.spacing_mut().item_spacing.y=
                                                     theme::SPACE_4;
-                                                if theme::action_full_width(
+                                                if crate::button::action_full_width(
                                                     menu,"운임 수정",
                                                     theme::ButtonRole::TableSecondary,enabled
                                                 ).clicked(){
@@ -2013,14 +2013,14 @@ impl FreightManager {
                                                     }
                                                     menu.close();
                                                 }
-                                                if theme::action_full_width(
+                                                if crate::button::action_full_width(
                                                     menu,"기준 변경",
                                                     theme::ButtonRole::TableSecondary,enabled
                                                 ).clicked(){
                                                     *basis=Some(Some(id.to_owned()));
                                                     menu.close();
                                                 }
-                                                if theme::action_full_width(
+                                                if crate::button::action_full_width(
                                                     menu,"이름 수정",
                                                     theme::ButtonRole::TableSecondary,enabled
                                                 ).clicked(){
@@ -2029,7 +2029,7 @@ impl FreightManager {
                                                     ));
                                                     menu.close();
                                                 }
-                                                if theme::action_full_width(
+                                                if crate::button::action_full_width(
                                                     menu,"삭제",
                                                     theme::ButtonRole::Danger,enabled
                                                 ).clicked(){
@@ -2049,7 +2049,7 @@ impl FreightManager {
             let left=first_row_left.unwrap_or(
                 header_rect.left()-scroll_output.state.offset.x
             );
-            let header_cells=components::management_table_cells(
+            let header_cells=crate::table::management_table_cells(
                 egui::pos2(left,header_rect.top()),&widths,header_rect.height(),theme::FREIGHT_ASSIGNMENT_COL_GAP);
             crate::table::header_columns(section,header_rect,rate_layout.header_content_rect,&header_cells,theme::FREIGHT_ASSIGNMENT_COL_GAP,|section,header_text_rect|{
             for (index,title) in titles.iter().enumerate(){
@@ -2140,13 +2140,13 @@ impl FreightManager {
             line.add_enabled_ui(enabled,|input|{
                 let caption=editor.max_bundle.map(|n|bundle_quantity_label(&n.to_string()))
                     .unwrap_or_else(||typography::inline_body_values(&[("미확정",None)]));
-                components::management_dropdown_values(
+                crate::dropdown::management_dropdown_values(
                     input,&caption,
                     theme::MANAGEMENT_FILTER_DROPDOWN_WIDTH,true,|choice|{
-                        components::management_dropdown_option(
+                        crate::dropdown::management_dropdown_option(
                             choice,&mut editor.max_bundle,None,"미확정");
                         for n in 1..=6 {
-                            components::management_dropdown_option_values(
+                            crate::dropdown::management_dropdown_option_values(
                                 choice,&mut editor.max_bundle,Some(n),&bundle_quantity_label(&n.to_string()));
                         }
                     });
@@ -2166,9 +2166,9 @@ impl FreightManager {
                 components::form_field_label(line,&format!("{count}개 묶음"));
                 let id=count.to_string();
                 navigation.before(line.ctx(),&id,amount);
-                let response=components::money_field(line,amount,enabled);
+                let response=crate::input::money_field(line,amount,enabled);
                 navigation.record(&id,response,amount);
-                if theme::action(line,"삭제",theme::ButtonRole::Standard,enabled).clicked(){
+                if crate::button::action(line,"삭제",theme::ButtonRole::Standard,enabled).clicked(){
                     removed=Some(*count);
                 }
                 let over_limit=editor.max_bundle.is_some_and(|max|*count>max);
@@ -2190,18 +2190,18 @@ impl FreightManager {
                 line.add_enabled_ui(enabled,|input|{
                     let caption=editor.add_count.map(|n|bundle_quantity_label(&n.to_string()))
                         .unwrap_or_else(||typography::inline_body_values(&[("묶음 수량 선택",None)]));
-                    components::management_dropdown_values(
+                    crate::dropdown::management_dropdown_values(
                         input,&caption,
                         theme::MANAGEMENT_FILTER_DROPDOWN_WIDTH,true,|choice|{
                             for count in &available{
-                                components::management_dropdown_option_values(
+                                crate::dropdown::management_dropdown_option_values(
                                     choice,&mut editor.add_count,
                                     Some(*count),&bundle_quantity_label(&count.to_string())
                                 );
                             }
                         });
                 });
-                if theme::action(line,"운임 구간 추가",
+                if crate::button::action(line,"운임 구간 추가",
                     theme::ButtonRole::Standard,enabled&&editor.add_count.is_some()
                 ).clicked(){
                     if let Some(n)=editor.add_count.take(){
@@ -2213,7 +2213,7 @@ impl FreightManager {
         ui.add_space(theme::SPACE_12);
         ui.label(typography::field_label("사용자 참고 메모"));
         ui.add_enabled_ui(enabled,|input|{
-            components::flexible_text_field(
+            crate::input::flexible_text_field(
                 input,&mut editor.notes,theme::MANAGEMENT_SEARCH_MIN_WIDTH,
                 "포장할 때 참고할 사항 (선택)"
             );
@@ -2247,7 +2247,7 @@ impl FreightManager {
             section.horizontal(|row|{
                 row.with_layout(
                     egui::Layout::right_to_left(egui::Align::Center),|right|{
-                        if theme::action(
+                        if crate::button::action(
                             right,"전체 운임 기준 변경",
                             theme::ButtonRole::Danger,enabled
                         ).clicked(){
@@ -2356,7 +2356,7 @@ impl FreightManager {
                         |buttons|{
                             buttons.set_clip_rect(cells[4].intersect(history_row_clip));
                             buttons.set_width(action_rect.width());
-                            let trigger=theme::action(
+                            let trigger=crate::button::action(
                                 buttons,"상세정보",
                                 theme::ButtonRole::TableSecondary,true
                             );
@@ -2387,7 +2387,7 @@ impl FreightManager {
                                     menu.add_space(theme::SPACE_8);
                                     components::soft_divider(menu);
                                     menu.add_space(theme::SPACE_8);
-                                    if theme::action_full_width(
+                                    if crate::button::action_full_width(
                                         menu,"예외 운임 변경",
                                         theme::ButtonRole::TableSecondary,enabled
                                     ).clicked(){
@@ -2530,7 +2530,7 @@ fn freight_history_table<const N:usize>(
     follows_master_toolbar:bool,empty_message:Option<&str>,
     mut render_row:impl FnMut(&mut Ui,&[egui::Rect;N],usize),
 ){
-    let old_spacing=components::management_table_container_style(ui);
+    let old_spacing=crate::table::management_table_container_style(ui);
     let minimum=bases.iter().sum::<f32>()
         +N.saturating_sub(1) as f32*theme::FREIGHT_ASSIGNMENT_COL_GAP;
     crate::table::show(ui,if follows_master_toolbar{crate::table::Header::WithoutToolbar(minimum)}else{crate::table::Header::List(minimum)},|ui,layout|{
@@ -2549,7 +2549,7 @@ fn freight_history_table<const N:usize>(
         ui.ctx().content_rect().height()*theme::MANAGEMENT_TABLE_VIEWPORT_FRACTION
     };
     // The rail itself always uses the same common 7pt extension.
-    let scroll_track=components::management_table_scroll_track_rect(
+    let scroll_track=crate::table::management_table_scroll_track_rect(
         ui,scroll_max_height
     );
     let mut first_row_left=None;
@@ -2557,7 +2557,7 @@ fn freight_history_table<const N:usize>(
                 ui,crate::table::Viewport{width:width,height:scroll_max_height,rail:Some(scroll_track)},
                 id,theme::FREIGHT_ASSIGNMENT_ROW_HEIGHT,total_rows,
                 |table,visible_rows|{
-            components::management_table_row_body(table,width);
+            crate::table::management_table_row_body(table,width);
             let first=visible_rows.start;
             let origin=table.max_rect().min;
             for index in visible_rows {
@@ -2577,7 +2577,7 @@ fn freight_history_table<const N:usize>(
     let left=first_row_left.unwrap_or(
         header_rect.left()-scroll.state.offset.x
     );
-    let columns=components::management_table_cells(
+    let columns=crate::table::management_table_cells(
         egui::pos2(left,header_rect.top()),&widths,header_rect.height(),theme::FREIGHT_ASSIGNMENT_COL_GAP);
     crate::table::header_columns(ui,header_rect,layout.header_content_rect,&columns,theme::FREIGHT_ASSIGNMENT_COL_GAP,|ui,header_text_rect|{
     for (index,title) in titles.iter().enumerate(){
