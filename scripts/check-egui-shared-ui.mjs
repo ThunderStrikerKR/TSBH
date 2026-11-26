@@ -688,6 +688,8 @@ const compositeContracts = {
     "button::remove_at":1,"table::paint_editable_cell_text":1,"table::editable_cell_hit":3
   },
   "model_group_manager.rs:show_editor":{"popup::modal_flow_workspace":1,"popup::modal_window":1},
+  "brand_manager.rs:show_editor":{"popup::modal_flow_workspace":1,"popup::modal_window":1},
+  "alias_manager.rs:show_editor":{"popup::modal_flow_workspace":1,"popup::modal_window":1},
   "workflow_board_ui.rs:workflow_header":{"button::disclosure_at":1},
   "order_history_manager.rs:draw_line":{"button::disclosure_at":1},
   "composite_workflow.rs:workflow_shipment_row":{"source_highlight::paint_active_outline":1},
