@@ -71,7 +71,7 @@ fn sort_value<'a>(client:&'a Value,column:usize)->&'a str{
             let phone=text(client,"phone");
             if phone.trim().is_empty(){text(client,"mobile")}else{phone}
         },
-        _=>components::client_tier_label(text(client,"tier"))
+        _=>crate::composite_client::client_tier_label(text(client,"tier"))
     }
 }
 /// Unsorted search results retain native Rust relevance order. Explicit
@@ -310,18 +310,18 @@ impl ClientChooser {
                                                 row_ui.set_clip_rect(clip);
                                                 if let Some(client)=clients.get(index){
                                                     let client_id=text(client,"id");
-                                                    let data=components::ClientDisplaySummary::from_client(client);
+                                                    let data=crate::composite_client::ClientDisplaySummary::from_client(client);
                                                     let phone=data.primary_phone();
                                                     let shown_phone=if phone.trim().is_empty(){
                                                         "연락처 미등록"
                                                     }else{phone};
                                                     let selected=current_id==Some(client_id);
-                                                    let response=components::management_row(
+                                                    let response=crate::composite_client::management_row(
                                                         row_ui,client_id,[
                                                             (&data.name,""),
                                                             (&data.address,""),
                                                             (shown_phone,data.secondary_mobile()),
-                                                            (components::client_tier_label(&data.tier),
+                                                            (crate::composite_client::client_tier_label(&data.tier),
                                                                 &data.conditions),
                                                         ],&data.tier,index
                                                     );
@@ -411,7 +411,7 @@ mod client_chooser_display_tests{
         assert_eq!(index[0]["name"],"정식 거래처");
         assert_eq!(index[0]["shortNames"],"약칭");
         assert_eq!(index[0]["identifiers"],"검색태그");
-        let data=components::ClientDisplaySummary::from_client(&index[0]);
+        let data=crate::composite_client::ClientDisplaySummary::from_client(&index[0]);
         assert_eq!(data.tier,"semi");
         assert_eq!(data.conditions,"후불 / 부가세 포함");
     }

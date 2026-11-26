@@ -224,7 +224,7 @@ impl ItemEditor{
     )->(bool,bool){
         let name=field(&self.initial,"name");
         let name=if name.is_empty(){field(&self.initial,"code")}else{name};
-        components::reception_item_delete_confirmation(
+        crate::composite_reception::reception_item_delete_confirmation(
             ctx,work_area,name,self.error.as_deref(),busy
         )
     }

@@ -450,7 +450,7 @@ impl AutomaticMessageManager {
                         let caption=if self.draft_templates.contains_key(def.id){
                             "수정됨"
                         }else{"기본 문구"};
-                        if components::management_chooser_row(
+                        if crate::composite_client::management_chooser_row(
                             list,def.label,caption,index==self.selected
                         ).clicked(){
                             *target=Some(Destination::Template(index));
@@ -489,7 +489,7 @@ impl AutomaticMessageManager {
                     let caption=if self.draft_notices.contains_key(id){
                         "안내문 등록됨"
                     }else{"안내문 미등록"};
-                    let choice=components::management_chooser_row(
+                    let choice=crate::composite_client::management_chooser_row(
                         list,product_name(product),caption,self.selected_product==id
                     );
                     #[cfg(test)]

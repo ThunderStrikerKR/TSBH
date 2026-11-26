@@ -93,7 +93,7 @@ const tableContracts = {
   "order_history_manager.rs:paint_detail_products":{shipment_detail_product_galley:1,paint_shipment_detail_products:1},
   // Check the common layer itself: a wrapper must still delegate to the
   // original master, rather than merely retaining the expected name.
-  "components.rs:workflow_shipment_row":{
+  "composite_workflow.rs:workflow_shipment_row":{
     shipment_detail_cells:1,shipment_detail_product_galley:2,
     shipment_detail_block_height:1,paint_shipment_detail_surface:1,
     paint_shipment_detail_products:2,paint_table_galley:1
@@ -151,7 +151,7 @@ const tableMarkers = new Set(["management_table_cells","management_table_column_
   "management_row","management_readonly_table","shipment_detail_cells",
   "fixed_rows","variable_rows","fixed_row","history_row","header_columns","register_rows"]);
 const componentContractCalls = new Set(Object.entries(tableContracts)
-  .filter(([scope])=>scope.startsWith("components.rs:"))
+  .filter(([scope])=>scope.startsWith("composite_workflow.rs:"))
   .flatMap(([,entries])=>Object.keys(entries)));
 
 // Fixed workflow actions must be rendered by components::workflow_fixed_action.
@@ -501,7 +501,8 @@ export function audit(source,file,checkTableContracts=false){
     if(is(i,". set_style (")&&file!=="typography.rs"&&file!=="theme.rs")
       flag(i,"global style installation outside shared theme");
     if((is(i,"table ::")||(is(i,"components ::")&&!tableOnlyCalls.has(v[i+2]))||
-        (is(i,"card ::")&&v[i+2]==="paint_shipment_detail_surface"))&&v[i+3]==="("){
+        (is(i,"card ::")&&v[i+2]==="paint_shipment_detail_surface")||
+        (is(i,"composite_client ::")&&v[i+2]==="management_row"))&&v[i+3]==="("){
       const key=file+":"+fn+":"+v[i+2];
       sharedCalls.set(key,(sharedCalls.get(key)||0)+1);
     }
@@ -525,7 +526,7 @@ export function audit(source,file,checkTableContracts=false){
     }
     // Within the shared module, count direct unqualified calls as well.
     // Exclude declarations, methods and qualified calls (already counted above).
-    if(file==="components.rs"&&componentContractCalls.has(v[i])&&v[i+1]==="("
+    if(file==="composite_workflow.rs"&&componentContractCalls.has(v[i])&&v[i+1]==="("
       &&!["fn",".","::"].includes(v[i-1])){
       const key=file+":"+fn+":"+v[i];
       sharedCalls.set(key,(sharedCalls.get(key)||0)+1);
@@ -751,7 +752,7 @@ function selfTest(){
   assert.equal(missingProduct.filter(hit=>hit.rule.includes("product_manager.rs:show_page requires ")).length,8);
   assert.equal(missingProduct.filter(hit=>hit.rule.includes("product_manager.rs:show_detail requires ")).length,1);
   assert.equal(missingProduct.length,9);
-  assert.equal(audit("fn show(){crate::table::show(ui,h,c);crate::table::fixed_rows(ui,v,id,h,n,c);crate::table::row_scope(ui,id,r,c);components::management_row(ui,id,c,t,i);crate::table::management_client_header(ui,h,c,l,w,s);}","client_chooser.rs",true).length,0);
+  assert.equal(audit("fn show(){crate::table::show(ui,h,c);crate::table::fixed_rows(ui,v,id,h,n,c);crate::table::row_scope(ui,id,r,c);crate::composite_client::management_row(ui,id,c,t,i);crate::table::management_client_header(ui,h,c,l,w,s);}","client_chooser.rs",true).length,0);
   assert.equal(audit("fn workflow_primary_at(){}","workflow_board_ui.rs",true).length,5);
   assert.equal(audit("fn workflow_auxiliary_at(){crate::button::workflow_fixed_action(ui,id,r,a,e);} fn workflow_primary_at(){crate::button::workflow_fixed_action(ui,id,r,a,e);} fn workflow_header(){workflow_auxiliary_at();workflow_auxiliary_at();} fn workflow_action_line(){workflow_primary_at();workflow_auxiliary_at();}","workflow_board_ui.rs",true).length,0);
   const missing=(source,file,scope)=>audit(source,file,true)
@@ -792,7 +793,7 @@ function selfTest(){
 // Parse Rust code tokens (not comments/strings), including grouped crate imports.
 const dependencyOwners=new Set(["components","theme","typography","ui_tokens","ui_primitives",
   "display_format","button","input","dropdown","table","checkbox","scrollbar","popup",
-  "card","overlay","floating_notice","source_highlight","cell_navigation","one_touch","layout","ui_layout","navigation"]);
+  "card","overlay","floating_notice","source_highlight","cell_navigation","one_touch","layout","ui_layout","navigation","composite_workflow","composite_client","composite_reception","text_fit"]);
 function sharedDependencies(source,owner){
   const v=productionTokens(source).map(t=>t.v),out=new Set();
   const add=name=>{if(name!==owner&&dependencyOwners.has(name))out.add(name);};

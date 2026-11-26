@@ -2210,7 +2210,7 @@ impl ManualWorkspace {
                                                                     &source_highlight::key(rid,rid,field)
                                                                 )
                                                             );
-                                                            let responses=components::reception_recipient_fields(
+                                                            let responses=crate::composite_reception::reception_recipient_fields(
                                                                 fields,&mut name,&mut address,
                                                                 &mut mobile,&mut phone,&mut note,
                                                                 active_fields
@@ -2324,7 +2324,7 @@ impl ManualWorkspace {
                                                                         active_link.as_ref(),&key
                                                                     )
                                                                 );
-                                                                let cells=components::reception_item_row(
+                                                                let cells=crate::composite_reception::reception_item_row(
                                                                     items_ui,crate::reception_service::item_title_ref(item),
                                                                     &quantity,&price,active_fields,can_switch,true
                                                                 );
@@ -2444,7 +2444,7 @@ impl ManualWorkspace {
                                                                 .and_then(|value|value["checked"].as_bool())
                                                                 .unwrap_or(false);
                                                             let remote_ready=remote_value.is_some();
-                                                            let freight=components::reception_freight_row_controls(
+                                                            let freight=crate::composite_reception::reception_freight_row_controls(
                                                                 items_ui,"운임",
                                                                 crate::indexed_billable_freight(quote_index.as_deref(),row),
                                                                 Some(code=="020"),
@@ -2498,7 +2498,7 @@ impl ManualWorkspace {
                                                                 "STORE"
                                                             }else{"FACTORY"};
                                                             if let Some(next_origin)=
-                                                                components::reception_item_origin_action_editable(
+                                                                crate::composite_reception::reception_item_origin_action_editable(
                                                                     items_ui,Some(origin),can_mutate
                                                                 ){
                                                                 chosen=Some(("set_manual_delivery_option".into(),
@@ -2663,7 +2663,7 @@ impl ManualWorkspace {
                 .find(|row|text(row,"id")==rid))
                 .and_then(|row|list(row,"items").iter().find(|item|text(item,"id")==iid));
             if let Some(item)=item{
-                let (cancel,remove)=components::reception_item_delete_confirmation(
+                let (cancel,remove)=crate::composite_reception::reception_item_delete_confirmation(
                     ctx,work_area,crate::reception_service::item_title_ref(item),None,self.busy()
                 );
                 if cancel || remove{self.item_remove_confirmation=None;}
@@ -4246,7 +4246,7 @@ mod manual_workspace_layout_tests{
                                 let mut mobile=String::new();
                                 let mut phone=String::new();
                                 let mut note=String::new();
-                                let _=components::reception_recipient_fields(
+                                let _=crate::composite_reception::reception_recipient_fields(
                                     body,&mut name,&mut address,&mut mobile,
                                     &mut phone,&mut note,[false;5]
                                 );

@@ -578,7 +578,7 @@ fn workflow_action_line(
     // Keep the text clip and the highlight slot distinct; the common
     // renderer preserves the full currency padding within the price slot.
     let price_ink=price.shrink2(Vec2::new(theme::SPACE_4.min(price.width()/2.0),0.0));
-    let money_clipped=components::workflow_compact_money(
+    let money_clipped=crate::composite_workflow::workflow_compact_money(
         ui,price,price_ink,bottom_y,&amount,payment_emphasis
     );
     if let Some(vat)=vat{
@@ -613,7 +613,7 @@ fn workflow_action_line(
         (clicked,response.hovered(),undo_clicked)
     }else{
         if let Some(caption)=idle_caption{
-            components::workflow_idle_caption(ui,action,caption);
+            crate::composite_workflow::workflow_idle_caption(ui,action,caption);
         }
         (false,false,false)
     }
@@ -666,7 +666,7 @@ fn shipment_line(
 fn shipment_line_with_freight(
     ui:&mut Ui,name:&str,products:&[String],chosen:bool,previewed:bool,freight:Option<&str>,freight_emphasis:bool
 )->egui::Response{
-    components::workflow_shipment_row(
+    crate::composite_workflow::workflow_shipment_row(
         ui,name,&shipment_product_summary(products),shipment_row_fill(chosen,previewed),
         chosen,previewed,freight,freight_emphasis
     )
@@ -750,7 +750,7 @@ fn group_frame(
                 if in_preview && response.hovered(){
                     *hovered_row=Some(ship.id.clone());
                 }
-                components::workflow_shipment_hover(ui,&response,chosen,previewed);
+                crate::composite_workflow::workflow_shipment_hover(ui,&response,chosen,previewed);
                 if response.clicked(){
                     event=Some(Event::SelectShipment(Selection{
                         group_id:group.id.clone(),order_id:ship.order_id.clone(),
@@ -935,14 +935,14 @@ fn pending_frame(
                 let excerpt=draft.raw.lines().find(|s|!s.trim().is_empty())
                     .unwrap_or("새 발주서");
                 let summary=format!("원문: {excerpt}");
-                let response=components::workflow_shipment_row(
+                let response=crate::composite_workflow::workflow_shipment_row(
                     ui,"수취인 확인",&summary,shipment_row_fill(false,false),
                     false,false,None,false
                 );
                 let action=ui.interact(response.rect,
                     Id::new(("pending-reception-row",draft.id.as_str(),0usize,in_preview)),
                     egui::Sense::click());
-                components::workflow_shipment_hover(ui,&action,false,false);
+                crate::composite_workflow::workflow_shipment_hover(ui,&action,false,false);
                 if action.hovered() {
                     *hovered_pending=Some(PendingTarget::order(&draft.id));
                 }
@@ -981,7 +981,7 @@ fn pending_frame(
                     let action=ui.interact(response.rect,
                         Id::new(("pending-reception-row",draft.id.as_str(),index,in_preview)),
                         egui::Sense::click());
-                    components::workflow_shipment_hover(ui,&action,chosen,previewed);
+                    crate::composite_workflow::workflow_shipment_hover(ui,&action,chosen,previewed);
                     if action.hovered(){
                         *hovered_pending=Some(
                             PendingTarget::recipient(&draft.id,recipient_id)

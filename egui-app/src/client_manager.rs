@@ -457,13 +457,13 @@ impl ClientManager {
                     0=>field(left,"name"),
                     1=>field(left,"address"),
                     2=>displayed_phone(left),
-                    _=>components::client_tier_label(field(left,"tier")),
+                    _=>crate::composite_client::client_tier_label(field(left,"tier")),
                 };
                 let b=match column {
                     0=>field(right,"name"),
                     1=>field(right,"address"),
                     2=>displayed_phone(right),
-                    _=>components::client_tier_label(field(right,"tier")),
+                    _=>crate::composite_client::client_tier_label(field(right,"tier")),
                 };
                 let compared=a.to_lowercase().cmp(&b.to_lowercase())
                     .then_with(||field(left,"id").cmp(field(right,"id")));
@@ -586,7 +586,7 @@ impl ClientManager {
                                 if let Some(client)=rows.get(index){
                                     #[cfg(test)]
                                     crate::ui_test_support::record("data row",row_rect);
-                                    let display=components::ClientDisplaySummary::from_client(client);
+                                    let display=crate::composite_client::ClientDisplaySummary::from_client(client);
                                     let name=display.name.as_str();
                                     let description="";
                                     let address=display.address.as_str();
@@ -596,12 +596,12 @@ impl ClientManager {
                                     }else{phone};
                                     let extra_mobile=display.secondary_mobile();
                                     let conditions=display.conditions.as_str();
-                                    if components::management_row(
+                                    if crate::composite_client::management_row(
                                         row,field(client,"id"),[
                                             (name,description),
                                             (address,""),
                                             (shown_phone,extra_mobile),
-                                            (components::client_tier_label(&display.tier),conditions)
+                                            (crate::composite_client::client_tier_label(&display.tier),conditions)
                                         ],field(client,"tier"),index
                                     ).clicked(){
                                         chosen=Some(client.clone());
@@ -721,7 +721,7 @@ impl ClientManager {
             let mut tier=field(draft,"tier").to_owned();
             let width=cols[0].available_width();
             crate::dropdown::management_dropdown(
-                &mut cols[0],components::client_tier_label(&tier),
+                &mut cols[0],crate::composite_client::client_tier_label(&tier),
                 width,true,|ui|{
                     for (key,label) in [
                         ("wholesale","도매"),("semi","반도매"),
@@ -1037,22 +1037,22 @@ mod client_condition_summary_tests{
     fn normal_client_does_not_repeat_default_conditions(){
         let client=json!({"payment":"PREPAID","defaultApplyVat":false,
             "shippingFeeExcluded":false,"active":true});
-        assert_eq!(components::client_exception_terms(&client),"");
+        assert_eq!(crate::composite_client::client_exception_terms(&client),"");
     }
     #[test]
     fn exceptional_client_terms_have_no_empty_separators(){
         let postpaid=json!({"payment":"POSTPAID","defaultApplyVat":false,
             "shippingFeeExcluded":false,"active":true});
-        assert_eq!(components::client_exception_terms(&postpaid),"후불");
+        assert_eq!(crate::composite_client::client_exception_terms(&postpaid),"후불");
         let vat=json!({"payment":"PREPAID","defaultApplyVat":true,
             "shippingFeeExcluded":false,"active":true});
-        assert_eq!(components::client_exception_terms(&vat),"부가세 포함");
+        assert_eq!(crate::composite_client::client_exception_terms(&vat),"부가세 포함");
         let extra=json!({"payment":"PREPAID","defaultApplyVat":false,
             "shippingFeeExcluded":true,"active":false});
-        assert_eq!(components::client_exception_terms(&extra),"운임 청구 제외 / 거래 중지");
+        assert_eq!(crate::composite_client::client_exception_terms(&extra),"운임 청구 제외 / 거래 중지");
         let all=json!({"payment":"POSTPAID","defaultApplyVat":true,
             "shippingFeeExcluded":true,"active":false});
-        assert_eq!(components::client_exception_terms(&all),
+        assert_eq!(crate::composite_client::client_exception_terms(&all),
             "후불 / 부가세 포함 / 운임 청구 제외 / 거래 중지");
     }
 }

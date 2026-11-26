@@ -9,6 +9,10 @@ mod typography;
 mod layout;
 mod ui_layout;
 mod navigation;
+mod composite_workflow;
+mod composite_client;
+mod composite_reception;
+mod text_fit;
 mod window_state;
 mod components;
 mod ui_primitives;
@@ -1096,7 +1100,7 @@ struct BandoEgui {
     // keeps an ephemeral, READ-ONLY presentation index from the real client
     // master; no operational client data is persisted in preview SQLite.
     client_names: HashMap<String,String>,
-    client_summaries: HashMap<String,components::ClientDisplaySummary>,
+    client_summaries: HashMap<String,crate::composite_client::ClientDisplaySummary>,
 
     analysis_request: u64,
     analysis_pending: bool,
@@ -1351,7 +1355,7 @@ impl BandoEgui {
                                 if client.get("deletedAt").is_some_and(|v|!v.is_null()){continue;}
                                 let id=client["id"].as_str().unwrap_or("");
                                 if id.is_empty(){continue;}
-                                let summary=components::ClientDisplaySummary::from_client(&client);
+                                let summary=crate::composite_client::ClientDisplaySummary::from_client(&client);
                                 if client["active"]!=serde_json::Value::Bool(false) && !summary.name.is_empty(){
                                     names.insert(id.to_owned(),summary.name.clone());
                                 }
@@ -6276,7 +6280,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                 let display=linked_id.and_then(|id|self.client_summaries.get(id));
                 let name=linked_id.and_then(|id|self.client_names.get(id).map(String::as_str))
                     .unwrap_or(if linked_id.is_some(){"거래처 확인 중"}else{"거래처 확인 필요"});
-                components::reception_client_summary_card_editable(
+                crate::composite_client::reception_client_summary_card_editable(
                     body,card_rect,linked_id.is_some(),display,name,false
                 );
                 let document_top=(card_rect.bottom()+theme::SPACE_8).min(body_rect.bottom());
@@ -6411,7 +6415,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                 let card_rect=crate::ui_layout::reception_source_client_rect(body_rect);
                 let display=self.client_summaries.get(&group.dealer_id);
                 floating_notice::section(body.ctx(),"reception.client_change",card_rect);
-                change_client_clicked=components::reception_client_summary_card_editable(
+                change_client_clicked=crate::composite_client::reception_client_summary_card_editable(
                     body,card_rect,!group.dealer_id.is_empty(),display,&group.dealer_name,
                     client_editable
                 );
@@ -6643,7 +6647,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                 floating_notice::section(
                     ui.ctx(),"reception.client_change",card_rect
                 );
-                if components::reception_client_summary_card_editable(
+                if crate::composite_client::reception_client_summary_card_editable(
                     ui,card_rect,linked_id.is_some(),display,name,true
                 ){
                     open_client_chooser=true;
@@ -6716,7 +6720,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                     floating_notice::section(
                         ui.ctx(),"reception.client_change",card_rect
                     );
-                    if components::reception_client_summary_card_editable(
+                    if crate::composite_client::reception_client_summary_card_editable(
                         ui,card_rect,linked_id.is_some(),display,name,true
                     ){
                         open_client_chooser=true;
@@ -7017,7 +7021,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                             start_clipboard = Some(OrderType::Dealer);
                         }
                         intake.add_space(theme::SPACE_8);
-                        components::reception_capture_shortcut_hint(intake);
+                        crate::composite_reception::reception_capture_shortcut_hint(intake);
                         crate::ui_primitives::section_divider(intake);
                         intake.label(typography::subsection_heading("다른 방법으로 접수"));
                         intake.add_space(theme::SPACE_8);
@@ -7209,7 +7213,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                 }
                 crate::ui_layout::reception_message_footer_gap(body);
                 one_touch::set(body.ctx(),if payment_emphasis{hover_stage}else{one_touch::Stage::None},false);
-                copy_with_greeting=components::reception_message_copy_actions(body,can_copy);
+                copy_with_greeting=crate::composite_reception::reception_message_copy_actions(body,can_copy);
                 one_touch::set(body.ctx(),one_touch::Stage::None,false);
             });
             if let Some(include_greeting)=copy_with_greeting{
@@ -7310,7 +7314,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
             );
             crate::card::paint_source_document_surface(ui, field_rect);
             crate::ui_layout::reception_message_footer_gap(ui);
-            let _=components::reception_message_copy_actions(ui,false);
+            let _=crate::composite_reception::reception_message_copy_actions(ui,false);
         });
     }
 
@@ -7500,7 +7504,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                 let id=ship.recipient_id.as_str();
                                 let fields=["name","address","mobile","phone","note"];
                                 let highlighted=fields.map(|field|source_highlight::is_active_field(linked_active.as_ref(),id,id,field));
-                                let responses=components::reception_recipient_fields(
+                                let responses=crate::composite_reception::reception_recipient_fields(
                                     contents,&mut name,&mut address,&mut mobile,
                                     &mut phone,&mut note,highlighted
                                 );
@@ -7598,7 +7602,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                                 let highlighted=fields.map(|field|
                                                     source_highlight::is_active_field(linked_active.as_ref(),&ship.recipient_id,item_id,field)
                                                 );
-                                                let cells=components::reception_item_row(
+                                                let cells=crate::composite_reception::reception_item_row(
                                                     contents,reception_service::item_title_ref(item),
                                                     &quantity,&amount,highlighted,confirmed_editable,true
                                                 );
@@ -7679,7 +7683,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                                 && !ship.transferred && !ship.freight_editing_blocked && !ship.collect
                                                 && !self.workflow_freight_editor.as_ref().is_some_and(|e|
                                                     e.shipment_id==ship.id && e.origin==*origin);
-                                            let freight_actions=components::reception_freight_row_controls(
+                                            let freight_actions=crate::composite_reception::reception_freight_row_controls(
                                                 contents,label,amount,Some(ship.collect),remote,
                                                 origin.as_str()=="FACTORY",amount_editable,
                                                 controls_editable,controls_editable,remote.is_some()
@@ -7751,7 +7755,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                         }
                                         let origin=ship.recipient.get("dispatchOrigin")
                                             .and_then(serde_json::Value::as_str);
-                                        workflow_origin_change=components::reception_item_origin_action_editable(
+                                        workflow_origin_change=crate::composite_reception::reception_item_origin_action_editable(
                                             contents,origin,origin_editable
                                         ).filter(|selected|Some(*selected)!=origin);
                             }
@@ -7782,7 +7786,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                             }
                             let vat=if included && excluded{"부가세 일부 포함"}
                             else if included{"부가세 포함"}else{"부가세 별도"};
-                            components::reception_total_footer(
+                            crate::composite_reception::reception_total_footer(
                                 body,ship.order_total,Some(ship.shipment_count),vat
                             );
                         }
@@ -7968,7 +7972,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                             (hover_stage!=one_touch::Stage::Review && linked_active.is_none() && field=="name") ||
                                             source_highlight::is_active_field(linked_active.as_ref(),recipient_id,recipient_id,field)
                                         );
-                                        let responses=components::reception_recipient_fields(
+                                        let responses=crate::composite_reception::reception_recipient_fields(
                                             contents,&mut name,&mut address,&mut mobile,
                                             &mut phone,&mut note,active_fields
                                         );
@@ -8016,7 +8020,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                                         let active_fields=fields.map(|field|
                                                             source_highlight::is_active_field(linked_active.as_ref(),recipient_id,item_id,field)
                                                         );
-                                                        let cells=components::reception_item_row(
+                                                        let cells=crate::composite_reception::reception_item_row(
                                                             contents,
                                                             reception_service::item_title_ref(item),
                                                             &quantity,&amount,active_fields,false,false
@@ -8042,14 +8046,14 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                                 let collect=row["freightCode"].as_str()
                                                     .map(|code|code=="020").unwrap_or(false);
                                                 let remote=row["remoteDelivery"]["checked"].as_bool();
-                                                let _=components::reception_freight_row_controls(
+                                                let _=crate::composite_reception::reception_freight_row_controls(
                                                     contents,"운임",
                                                     fee,
                                                     Some(collect),remote,
                                                     origin==Some("FACTORY"),false,false,false,true
                                                 );
                                                 contents.add_space(theme::SPACE_8);
-                                                components::reception_item_origin_action_editable(
+                                                crate::composite_reception::reception_item_origin_action_editable(
                                                     contents,origin,false
                                                 );
                                             }
@@ -8078,7 +8082,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                 "부가세 포함"
                             }else if inclusive>0{"부가세 일부 포함"}
                             else{"부가세 별도"};
-                            components::reception_total_footer(
+                            crate::composite_reception::reception_total_footer(
                                 body,preview.and_then(|quote|quote["total"].as_i64()),
                                 Some(recipients.len()),vat
                             );
@@ -8245,7 +8249,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                         "name","address","mobile","phone","note"
                                     ].map(|field|(board_preview && field=="name") ||
                                         source_highlight::is_active_field(linked_active.as_ref(),recipient_id,recipient_id,field));
-                                    let responses = components::reception_recipient_fields(
+                                    let responses = crate::composite_reception::reception_recipient_fields(
                                         fields, &mut name, &mut address, &mut mobile,
                                         &mut phone, &mut note, active_fields,
                                     );
@@ -8390,7 +8394,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                                     "product","quantity","price"
                                                 ].map(|field|(board_preview && field=="product") ||
                                                     source_highlight::is_active_field(linked_active.as_ref(),recipient_id,item_id,field));
-                                                let cells=components::reception_item_row(
+                                                let cells=crate::composite_reception::reception_item_row(
                                                     items_ui,reception_service::item_title_ref(item),
                                                     &quantity,&amount,active_fields,editable,true
                                                 );
@@ -8514,7 +8518,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                         };
                                         // Adding products belongs to the section header,
                                         // not to the scrollable freight and item content.
-                                        let freight_actions=components::reception_freight_row_controls(
+                                        let freight_actions=crate::composite_reception::reception_freight_row_controls(
                                             items_ui,"운임",line_fee,cod,remote,
                                             true,editable,editable,editable,true
                                         );
@@ -8571,7 +8575,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                         }
                                         items_ui.add_space(theme::SPACE_8);
                                         if let Some(value)=
-                                            components::reception_item_origin_action_editable(
+                                            crate::composite_reception::reception_item_origin_action_editable(
                                                 items_ui,origin,editable
                                             )
                                         {
@@ -8643,7 +8647,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                             else if inclusive>0{"부가세 일부 포함"}
                             else{"부가세 별도"})
                     }).unwrap_or("—");
-                    components::reception_total_footer(
+                    crate::composite_reception::reception_total_footer(
                         body,total,shipment_count,vat_label
                     );
 
@@ -10106,7 +10110,7 @@ impl eframe::App for BandoEgui {
         self.clipboard_monitor.shutdown();
         source_highlight::clear_visual_cache();
             clear_quote_display_cache();
-            components::clear_reception_text_fit();
+            crate::text_fit::clear_reception_text_fit();
     }
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         let frame_started=Instant::now();
@@ -10163,7 +10167,7 @@ impl eframe::App for BandoEgui {
             self.workflow_source_display=None;
             source_highlight::clear_visual_cache();
             clear_quote_display_cache();
-            components::clear_reception_text_fit();
+            crate::text_fit::clear_reception_text_fit();
             self.workflow_receiver=None;
             self.workflow_refresh_required=false;
             self.workflow_last_fetch=None;
