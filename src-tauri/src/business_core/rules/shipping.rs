@@ -333,6 +333,15 @@ pub(super) fn recommend(order: &Value, state: &Value) -> Result<Value, String> {
 /// Existing shipping::recommend remains the sole product/group rate engine.
 /// An explicitly typed base charge takes precedence only for that recipient
 /// and origin, and the native remote-delivery multiplier applies exactly once.
+/// Return the unmultipled automatic tariff for one shipment origin.
+pub(super) fn base_recommendation(quote:&Value,origin:&str)->Value{
+    rows(field(quote,"bundles")).iter()
+        .find(|bundle|str_field(bundle,"origin")==origin)
+        .map(|bundle|bundle.get("baseRecommendation")
+            .unwrap_or_else(||field(bundle,"recommendation")))
+        .cloned().unwrap_or(Value::Null)
+}
+
 pub(super) fn reception_recommend(order:&Value,state:&Value)->Result<Value,String>{
     let mut quote=recommend(order,state)?;
     let bundles=quote["bundles"].as_array_mut().ok_or("배송 운임 목록 오류")?;
