@@ -729,7 +729,7 @@ fn group_frame(
             workflow_details(ui,|ui|{
                 components::soft_divider(ui);
                 ui.add_space(theme::SPACE_4);
-                components::workflow_shipment_header(ui);
+                let header=components::workflow_shipment_header(ui);
             for ship in &group.shipments{
                 // Orange means committed selection ONLY on the base card.
                 // Blue means the temporarily hovered row ONLY in the clone.
@@ -753,6 +753,7 @@ fn group_frame(
                     }));
                 }
             }
+            components::paint_management_table_outline(ui,header,ui.min_rect());
             });
         }
     });
@@ -924,7 +925,7 @@ fn pending_frame(
             workflow_details(ui,|ui|{
                 components::soft_divider(ui);
                 ui.add_space(theme::SPACE_4);
-                components::workflow_shipment_header(ui);
+                let header=components::workflow_shipment_header(ui);
             if recipients.is_empty(){
                 let excerpt=draft.raw.lines().find(|s|!s.trim().is_empty())
                     .unwrap_or("새 발주서");
@@ -988,6 +989,7 @@ fn pending_frame(
                     }
                 }
             }
+            components::paint_management_table_outline(ui,header,ui.min_rect());
             });
         }
     });

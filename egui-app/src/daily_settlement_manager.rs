@@ -382,6 +382,7 @@ fn report_table<const N:usize>(
     components::management_table_column_rules(ui,header_text_rect,&header_cells,COL_GAP);
     if let Some(next)=sort_change{*sort=next;}
     components::management_master_header_finish(ui,header);
+    components::paint_management_table_outline(ui,header,scroll.inner_rect);
 }
 
 pub struct DailySettlementManager{

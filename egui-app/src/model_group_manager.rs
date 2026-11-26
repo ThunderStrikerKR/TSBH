@@ -311,6 +311,7 @@ impl ModelGroupManager {
                                 self.row(list,id,g,catalog);
                             }
                         });
+                        components::paint_management_table_outline(left,header.header_rect,output.inner_rect);
                         if !has_visible{
                             let caption=if groups.is_empty(){"등록된 모델군이 없습니다."}
                                 else{"검색 결과가 없습니다."};

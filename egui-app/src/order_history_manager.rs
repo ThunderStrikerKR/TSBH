@@ -1558,6 +1558,7 @@ impl OrderHistoryManager {
             components::management_table_column_rules(section,header_text_rect,&header_cells,COL_GAP);
             if let Some(sort)=next_sort {self.sort=sort;}
             components::management_master_header_finish(section,head_rect);
+            components::paint_management_table_outline(section,head_rect,output.inner_rect);
             section.spacing_mut().item_spacing.y=old_gap;
             if let Some(order_id)=pending_toggle {
                 toggle_history_expansion(&mut self.expanded,&order_id);

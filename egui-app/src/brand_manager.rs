@@ -177,7 +177,7 @@ impl BrandManager {
             let scroll_height=components::management_single_list_scroll_height(
                 card,card_min_height,0.0
             );
-            components::management_register_list_scroll_area(card,scroll_height)
+            let output=components::management_register_list_scroll_area(card,scroll_height)
                 .id_salt("brand-registry-list")
                 .show(card,|list|{
                     list.set_min_width(header.table_width);
@@ -210,6 +210,7 @@ impl BrandManager {
                         components::soft_divider(list);
                     }
                 });
+            components::paint_management_table_outline(card,header.header_rect,output.inner_rect);
         });
         if let Some(id)=select{self.choose(id,catalog);}
         save.then(||self.request())

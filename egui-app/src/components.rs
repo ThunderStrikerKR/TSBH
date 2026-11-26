@@ -1275,7 +1275,7 @@ fn workflow_shipment_columns(outer:f32)->([f32;3],f32){
     let product=(inside-name-freight-2.0*gap).max(0.0);
     ([name,product,freight],gap)
 }
-pub fn workflow_shipment_header(ui:&mut Ui){
+pub fn workflow_shipment_header(ui:&mut Ui)->Rect{
     let layout=management_inline_list_table_header(ui);
     let area=management_master_header_begin(ui,layout.header_rect,layout.header_content_rect);
     let (widths,gap)=workflow_shipment_columns(layout.table_width);
@@ -1289,6 +1289,7 @@ pub fn workflow_shipment_header(ui:&mut Ui){
     }
     management_table_column_rules(ui,area,&cells,gap);
     management_master_header_finish(ui,layout.header_rect);
+    layout.header_rect
 }
 /// Same shipment detail surface, multiline product renderer and cell
 /// coordinates as Order History. Selection only supplies the palette.
@@ -4858,6 +4859,33 @@ pub fn management_master_header_begin(
     text_rect
 }
 
+/// Draw one non-interactive perimeter for the header and visible row viewport.
+/// The scrollbar gutter belongs to the viewport; never use the scrolled
+/// content extent or alter the allocation to create this decoration.
+pub fn paint_management_table_outline(ui:&Ui,header:Rect,body:Rect){
+    let bounds=management_table_outline_rect(header,body);
+    if bounds.width()>0.0 && bounds.height()>0.0{
+        ui.painter().rect_stroke(bounds,0.0,
+            Stroke::new(theme::FRAME_STROKE_WIDTH,theme::BORDER),
+            egui::StrokeKind::Inside);
+    }
+}
+
+fn management_table_outline_rect(header:Rect,body:Rect)->Rect{
+    Rect::from_min_max(header.min,
+        egui::pos2(header.right(),body.bottom().max(header.bottom())))
+}
+
+#[cfg(test)]
+#[test]
+fn management_table_outline_keeps_header_width_and_viewport_bottom(){
+    let header=Rect::from_min_max(egui::pos2(20.0,40.0),egui::pos2(420.0,76.0));
+    let body=Rect::from_min_max(egui::pos2(20.0,76.0),egui::pos2(410.0,300.0));
+    assert_eq!(management_table_outline_rect(header,body),
+        Rect::from_min_max(header.min,egui::pos2(420.0,300.0)));
+    assert_eq!(management_table_outline_rect(header,header),header);
+}
+
 /// Draw the master header's solid 2pt bottom band AFTER labels, separators
 /// and hover chrome. A centered 1pt line at bottom() is half clipped.
 pub fn management_master_header_finish(ui:&Ui,header_rect:Rect){
@@ -7265,7 +7293,7 @@ pub fn management_readonly_table(
         .id_salt(id)
         .max_height(max_height)
         .auto_shrink([false,false]);
-    let _=virtual_fixed_rows(
+    let output=virtual_fixed_rows(
         scroll,ui,layout.table_width,row_advance,rows.len(),
         |body,range|{
             for index in range{
@@ -7286,6 +7314,7 @@ pub fn management_readonly_table(
             }
         }
     );
+    paint_management_table_outline(ui,layout.header_rect,output.inner_rect);
     ui.spacing_mut().scroll=original_scroll;
 }
 
