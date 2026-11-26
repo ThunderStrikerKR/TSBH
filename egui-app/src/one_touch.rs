@@ -116,21 +116,76 @@ pub fn payment_ranges(text:&str,signature:&str)->Vec<(usize,usize)>{
     ranges.sort_unstable();
     ranges
 }
-pub fn payment_job(text:&str,signature:&str)->egui::text::LayoutJob{
+/// Both states use the shared Reception document typography and fixed line pitch.
+fn payment_job(text:&str,signature:&str,emphasis:bool,width:f32)->egui::text::LayoutJob{
     let mut job=egui::text::LayoutJob::default();
-    let format=|active|egui::TextFormat{font_id:egui::FontId::proportional(typography::FONT_BODY),
+    job.wrap.max_width=width;
+    job.first_row_min_height=typography::RECEPTION_SOURCE_LINE_HEIGHT;
+    let format=|active|egui::TextFormat{
+        font_id:egui::FontId::proportional(typography::FONT_RECEPTION_SOURCE_TEXT),
+        line_height:Some(typography::RECEPTION_SOURCE_LINE_HEIGHT),
         color:if active{INK}else{theme::TEXT},
-        background:if active{theme::ONE_TOUCH_BG}else{Color32::TRANSPARENT},
         ..Default::default()};
     let mut start=0;
     for (a,b) in payment_ranges(text,signature){
         if a<start{continue;}
         job.append(&text[start..a],0.0,format(false));
-        job.append(&text[a..b],0.0,format(true));
+        job.append(&text[a..b],0.0,format(emphasis));
         start=b;
     }
     job.append(&text[start..],0.0,format(false));
     job
+}
+fn payment_rects(text:&str,signature:&str,galley:&egui::Galley,pos:egui::Pos2)->Vec<Rect>{
+    let ranges=payment_ranges(text,signature).into_iter().map(|(a,b)|
+        (text[..a].chars().count(),text[..b].chars().count())).collect::<Vec<_>>();
+    let chars=text.chars().collect::<Vec<_>>();
+    let mut row_start=0;
+    let mut rects=Vec::new();
+    for (index,placed) in galley.rows.iter().enumerate(){
+        let glyphs=&placed.row.glyphs;
+        let row_end=row_start+glyphs.len();
+        for &(a,b) in &ranges{
+            let start=a.max(row_start);
+            let end=b.min(row_end);
+            if start>=end{continue;}
+            let first=&glyphs[start-row_start];
+            let last=&glyphs[end-row_start-1];
+            let x=pos.x+placed.pos.x;
+            let y=pos.y+placed.pos.y;
+            let left=x+first.pos.x;
+            let right=x+last.pos.x+last.advance_width;
+            if right>left{
+                rects.push(Rect::from_min_max(egui::pos2(left-2.0,y),
+                    egui::pos2(right+2.0,y+placed.row.size.y)));
+            }
+        }
+        row_start=row_end;
+        if index+1<galley.rows.len() && chars.get(row_start)==Some(&'\n'){row_start+=1;}
+    }
+    rects
+}
+pub fn payment_message(ui:&mut Ui,text:&str,signature:&str,emphasis:bool){
+    let mut immutable=text;
+    let mut layouter=|layout_ui:&egui::Ui,buffer:&dyn egui::TextBuffer,width:f32|{
+        layout_ui.fonts_mut(|fonts|fonts.layout_job(
+            payment_job(buffer.as_str(),signature,emphasis,width)))
+    };
+    let paint_slot=ui.painter().add(egui::Shape::Noop);
+    let display=crate::components::reception_source_text_edit(&mut immutable,ui.available_width())
+        .layouter(&mut layouter).show(ui);
+    if emphasis{
+        let clip=ui.clip_rect().intersect(display.text_clip_rect);
+        let painter=ui.painter().with_clip_rect(clip);
+        let rects=payment_rects(text,signature,&display.galley,display.galley_pos);
+        painter.set(paint_slot,egui::Shape::Vec(rects.iter().map(|&rect|
+            egui::Shape::rect_filled(rect.intersect(clip),theme::CONTROL_RADIUS,theme::ONE_TOUCH_BG)).collect()));
+        for rect in rects{
+            painter.rect_stroke(rect,theme::CONTROL_RADIUS,
+                Stroke::new(theme::ONE_TOUCH_BORDER_WIDTH,theme::ONE_TOUCH_BORDER),
+                egui::StrokeKind::Inside);
+        }
+    }
 }
 #[cfg(test)]
 mod tests{
@@ -155,8 +210,41 @@ mod tests{
         assert!(output.shapes.iter().any(|shape|matches!(&shape.shape,egui::Shape::Rect(r) if r.fill==theme::ONE_TOUCH_BG)));
         assert!(output.shapes.iter().any(|shape|matches!(&shape.shape,egui::Shape::Rect(r) if r.fill==theme::ONE_TOUCH_TINT)));
         assert!(output.shapes.iter().any(|shape|matches!(&shape.shape,egui::Shape::Rect(r) if r.stroke.color==theme::ONE_TOUCH_BORDER && r.stroke.width==theme::ONE_TOUCH_BORDER_WIDTH)));
-        let job=payment_job("합계 8,000원 (부가세 포함)","");
-        assert!(job.sections.iter().any(|s|s.format.background==theme::ONE_TOUCH_BG));
+        let job=payment_job("합계 8,000원 (부가세 포함)","",true,400.0);
+        assert!(job.sections.iter().any(|s|s.format.color==INK));
+        assert!(job.sections.iter().all(|s|s.format.background==Color32::TRANSPARENT));
+    }
+    #[test] fn payment_message_hover_preserves_document_metrics_and_uses_shared_outline(){
+        let text="상품 7,000원\n\n합계 8,000원 (부가세 포함)\n은행 123 예금주";
+        let signature=r#"{"account":{"bank":"은행","number":"123","holder":"예금주"}}"#;
+        let ctx=egui::Context::default();
+        typography::install(&ctx);
+        theme::install(&ctx);
+        let output=ctx.run(egui::RawInput::default(),|ctx|{
+            egui::CentralPanel::default().show(ctx,|ui|{
+                let normal=payment_job(text,signature,false,170.0);
+                let hover=payment_job(text,signature,true,170.0);
+                assert_eq!(normal.sections.len(),hover.sections.len());
+                for (a,b) in normal.sections.iter().zip(&hover.sections){
+                    assert_eq!(a.byte_range,b.byte_range);
+                    assert_eq!(a.format.font_id,b.format.font_id);
+                    assert_eq!(a.format.font_id.size,typography::FONT_RECEPTION_SOURCE_TEXT);
+                    assert_eq!(a.format.line_height,Some(typography::RECEPTION_SOURCE_LINE_HEIGHT));
+                    assert_eq!(a.format.line_height,b.format.line_height);
+                }
+                let (a,b)=ui.fonts_mut(|f|(f.layout_job(normal),f.layout_job(hover)));
+                assert_eq!(a.size(),b.size());
+                assert_eq!(a.rows.len(),b.rows.len());
+                for (a,b) in a.rows.iter().zip(&b.rows){
+                    assert_eq!(a.pos,b.pos);
+                    assert_eq!(a.row.size,b.row.size);
+                }
+                payment_message(ui,text,signature,true);
+            });
+        });
+        assert!(output.shapes.iter().any(|s|matches!(&s.shape,egui::Shape::Rect(r)
+            if r.stroke.color==theme::ONE_TOUCH_BORDER
+                && r.stroke.width==theme::ONE_TOUCH_BORDER_WIDTH)));
     }
     #[test] fn freight_scope_excludes_price_and_non_remote_address(){
         assert!(Stage::Freight.item(0)&&Stage::Freight.item(1));
