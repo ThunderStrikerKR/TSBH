@@ -18,6 +18,28 @@ fn archived(product:&Value)->bool{
 fn optional(raw:&str,previous:&str)->String{
     if raw==EMPTY{"".into()}else if raw.is_empty(){previous.to_owned()}else{raw.to_owned()}
 }
+// Excel text cells are trimmed by the reader. A blank or an equivalent
+// exported value is not an instruction to rewrite the original JSON field.
+fn unchanged_text(raw:&str,previous:&str)->bool{
+    raw.is_empty() || raw==previous.trim()
+}
+fn same_exported_row(previous:&[String],incoming:&[String])->bool{
+    previous.len()==incoming.len() && previous.iter().zip(incoming)
+        .all(|(a,b)|a.trim()==b.trim())
+}
+fn edit_optional_text(target:&mut Value,key:&str,raw:&str){
+    if unchanged_text(raw,field(target,key)){return;}
+    if raw==EMPTY{
+        if let Some(map)=target.as_object_mut(){map.remove(key);}
+    }else{target[key]=json!(raw);}
+}
+fn edit_color(target:&mut Value,key:&str,raw:&str)->bool{
+    if unchanged_text(raw,field(target,key)){return false;}
+    let color=normalized_color(&optional(raw,field(target,key)));
+    if color==normalized_color(field(target,key)){return false;}
+    target[key]=json!(color);
+    true
+}
 fn yes_no(raw:&str,previous:bool)->Result<bool,String>{
     match raw{
         ""=>Ok(previous),"사용"|"예"|"Y"=>Ok(true),
@@ -64,7 +86,7 @@ fn variant_row(p:&Value,v:&Value)->Vec<String>{
 fn category_edit(state:&Value,p:&mut Value,raw:&str)->Result<(),String>{
     let current=items(p,"categories").iter().filter_map(Value::as_str)
         .collect::<Vec<_>>().join(" / ");
-    if raw.is_empty()||raw==current{return Ok(())}
+    if unchanged_text(raw,&current){return Ok(())}
     let ids=raw.split('/').map(str::trim).filter(|s|!s.is_empty())
         .collect::<Vec<_>>();
     let cats=items(state,"categories");
@@ -90,7 +112,7 @@ fn category_edit(state:&Value,p:&mut Value,raw:&str)->Result<(),String>{
     Ok(())
 }
 fn brand_edit(state:&Value,p:&mut Value,raw:&str)->Result<(),String>{
-    if raw.is_empty(){return Ok(())}
+    if unchanged_text(raw,field(p,"brandId")){return Ok(())}
     let value=optional(raw,field(p,"brandId"));
     if !value.is_empty() && !items(state,"brands").iter().any(|b|field(b,"id")==value){
         return Err("등록되지 않은 브랜드 ID입니다.".into())
@@ -102,7 +124,7 @@ fn brand_edit(state:&Value,p:&mut Value,raw:&str)->Result<(),String>{
 fn update_product(state:&Value,current:&Value,cells:&[String])->Result<Value,String>{
     let mut p=current.clone();
     if archived(&p){
-        if product_row(&p)!=cells{
+        if !same_exported_row(&product_row(&p),cells){
             return Err("보관된 상품은 Excel에서 변경할 수 없습니다.".into())
         }
         return Ok(p)
@@ -122,24 +144,22 @@ fn update_product(state:&Value,current:&Value,cells:&[String])->Result<Value,Str
     if !cell(cells,13).is_empty()&&cell(cells,13)!="정상"{
         return Err("보관 상태는 변경할 수 없습니다.".into())
     }
-    p["name"]=json!(optional(cell(cells,2),field(&p,"name")));
-    if !cell(cells,3).is_empty(){
-        if cell(cells,3)==EMPTY{p.as_object_mut().unwrap().remove("subtitle");}
-        else{p["subtitle"]=json!(cell(cells,3));}
+    if !unchanged_text(cell(cells,2),field(&p,"name")){
+        p["name"]=json!(optional(cell(cells,2),field(&p,"name")));
     }
+    edit_optional_text(&mut p,"subtitle",cell(cells,3));
     if field(&p,"name").is_empty(){return Err("상품명은 비울 수 없습니다.".into())}
     category_edit(state,&mut p,cell(cells,7))?;
     brand_edit(state,&mut p,cell(cells,8))?;
     for (index,key) in [(9,"specification"),(10,"sellingUnit")]{
-        if !cell(cells,index).is_empty(){
-            if cell(cells,index)==EMPTY{p.as_object_mut().unwrap().remove(key);}
-            else{p[key]=json!(cell(cells,index));}
-        }
+        edit_optional_text(&mut p,key,cell(cells,index));
     }
-    p["defaultColor"]=json!(normalized_color(&optional(cell(cells,11),field(&p,"defaultColor"))));
-    p["colorStatus"]=json!(if field(&p,"defaultColor").is_empty(){"NOT_REQUIRED"}else{"KNOWN"});
-    p["active"]=json!(yes_no(cell(cells,12),
-        p.get("active").and_then(Value::as_bool).unwrap_or(false))?);
+    if edit_color(&mut p,"defaultColor",cell(cells,11)){
+        p["colorStatus"]=json!(if field(&p,"defaultColor").is_empty(){"NOT_REQUIRED"}else{"KNOWN"});
+    }
+    let prior_active=p.get("active")!=Some(&Value::Bool(false));
+    let next_active=yes_no(cell(cells,12),prior_active)?;
+    if prior_active!=next_active{p["active"]=json!(next_active);}
     Ok(p)
 }
 fn new_product(state:&Value,cells:&[String],id:&str,now:&str)->Result<Value,String>{
@@ -191,15 +211,15 @@ fn new_variant(cells:&[String],id:&str)->Result<Value,String>{
         "source":"MANUAL","url":""}))
 }
 fn edit_variant(original:&Value,cells:&[String],product:&mut Value,now:&str)->Result<Value,String>{
-    if !cell(cells,8).is_empty()&&cell(cells,8)!=field(original,"source"){
+    if !unchanged_text(cell(cells,8),field(original,"source")){
         return Err("가격 원본은 변경할 수 없습니다.".into())
     }
-    if !cell(cells,9).is_empty()&&cell(cells,9)!=field(original,"siteOptionId"){
+    if !unchanged_text(cell(cells,9),field(original,"siteOptionId")){
         return Err("공식 사이트 식별자는 변경할 수 없습니다.".into())
     }
     let mut next=original.clone();
-    next["color"]=json!(normalized_color(&optional(cell(cells,3),field(&next,"color"))));
-    if !cell(cells,4).is_empty()&&cell(cells,4)!=field(original,"option"){
+    edit_color(&mut next,"color",cell(cells,3));
+    if !unchanged_text(cell(cells,4),field(original,"option")){
         return Err("공식 원본 구성 표기는 수정할 수 없습니다. 상품 구분은 상품명에서 수정하세요.".into())
     }
     for (index,tier) in [(5,"wholesale"),(6,"semi"),(7,"retail")]{
@@ -317,7 +337,7 @@ pub(super) fn preview(payload:&Value)->Result<Value,String>{
                 next[position]=candidate.clone();
             }else{next.push(candidate.clone())}
             if !key.is_empty(){keys.insert(key.into(),field(&candidate,"id").into());}
-            let changed=old.is_none_or(|previous|product_row(previous)!=product_row(&candidate));
+            let changed=old.is_none_or(|previous|previous!=&candidate);
             let status=if old.is_none(){"ADD"}else if changed{"UPDATE"}else{"UNCHANGED"};
             if status=="ADD"{new_p+=1}else if status=="UPDATE"{updated_p+=1}
             Ok(row_record("상품 목록",entry,field(&candidate,"id"),field(&candidate,"name"),
@@ -351,7 +371,7 @@ pub(super) fn preview(payload:&Value)->Result<Value,String>{
             if archived(product){
                 let archived_option=initial.iter().find(|p|field(p,"id")==product_id)
                     .and_then(|p|items(p,"variants").iter().find(|v|field(v,"id")==option_id));
-                if archived_option.is_none_or(|v|variant_row(product,v)!=cells){
+                if archived_option.is_none_or(|v|!same_exported_row(&variant_row(product,v),&cells)){
                     return Err("보관된 상품과 옵션은 Excel에서 수정할 수 없습니다.".into())
                 }
                 let candidate=archived_option.unwrap();
@@ -450,7 +470,8 @@ pub(super) fn preview(payload:&Value)->Result<Value,String>{
                     .collect::<Vec<_>>());
                 validate_product(&validation,p)?;
             }
-            p["saleUnit"]=json!(true);
+            // Existing sale-unit and other hidden metadata are not editable
+            // through Excel. Only new rows initialize them.
             p["updatedAt"]=json!(now);
             Ok(())
         })();
