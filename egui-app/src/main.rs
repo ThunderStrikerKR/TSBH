@@ -392,6 +392,17 @@ fn reception_arrow_navigation_keeps_visible_grid_sections_separate(){
     ),None);
 }
 
+#[derive(Clone)]
+struct ConfirmedEditTarget{
+    selection:workflow_board_ui::Selection,
+    revision:u64,
+    recipient_id:String,
+}
+struct ConfirmedCellEditor{
+    target:ConfirmedEditTarget,
+    cell:InlineReceptionEditor,
+}
+
 struct InlineReceptionEditor {
     source_id:String,
     target:InlineTarget,
@@ -988,6 +999,9 @@ struct BandoEgui {
     workflow_ui: workflow_board_ui::BoardUi,
     workflow_action: Option<PendingWorkflowAction>,
     workflow_freight_editor:Option<WorkflowFreightEditor>,
+    confirmed_cell:Option<ConfirmedCellEditor>,
+    submitted_confirmed_cell:Option<ConfirmedCellEditor>,
+    confirmed_product_target:Option<ConfirmedEditTarget>,
     workflow_freight_next_selection:Option<workflow_board_ui::Selection>,
     submitted_workflow_freight:Option<WorkflowFreightEditor>,
     workflow_stage_after_freight:Option<(String,usize,bool)>,
@@ -1116,6 +1130,9 @@ impl BandoEgui {
             workflow_ui: workflow_board_ui::BoardUi::default(),
             workflow_action: None,
             workflow_freight_editor:None,
+            confirmed_cell:None,
+            submitted_confirmed_cell:None,
+            confirmed_product_target:None,
             workflow_freight_next_selection:None,
             submitted_workflow_freight:None,
             workflow_stage_after_freight:None,
@@ -1163,6 +1180,7 @@ impl BandoEgui {
             ){
             active.push(ReceptionJob::InlineEditor);
         }
+        if self.confirmed_cell.is_some(){active.push(ReceptionJob::InlineEditor);}
         if self.analysis_pending {active.push(ReceptionJob::Analysis);}
         if self.remote_recheck.is_some(){active.push(ReceptionJob::RemoteRecheck);}
         if self.clipboard_busy{active.push(ReceptionJob::SourceIntake);}
@@ -2503,7 +2521,88 @@ impl BandoEgui {
         ctx.request_repaint();
     }
 
+    /// Both the existing product chooser and inline cell masters submit an
+    /// identity-bound command. Never use the active temporary draft here.
+    fn confirmed_edit_target(&mut self,board:&workflow_board::BoardSnapshot,
+        group:&workflow_board::GroupRow,ship:&workflow_board::ShipmentRow)
+        ->Option<ConfirmedEditTarget>{
+        let revision=board.revision?;
+        let selection=workflow_board_ui::Selection{
+            group_id:group.id.clone(),order_id:ship.order_id.clone(),shipment_id:ship.id.clone()
+        };
+        self.workflow_ui.select(selection.clone());
+        self.link_hover.clear();
+        self.source_hover=None;
+        self.discard_advisory_workflow_read();
+        Some(ConfirmedEditTarget{selection,revision,recipient_id:ship.recipient_id.clone()})
+    }
+
+    fn submit_confirmed_change(&mut self, target:&ConfirmedEditTarget,
+        field:&str,item_id:Option<&str>,value:serde_json::Value,ctx:&egui::Context)->bool{
+        if self.workflow_snapshot.as_ref().and_then(|b|b.revision)!=Some(target.revision)
+            || self.workflow_ui.selection.as_ref()!=Some(&target.selection){
+            floating_notice::publish(ctx,"reception.workflow",floating_notice::Tone::Validation,
+                "주문 상태가 변경됐습니다. 최신 정보를 확인한 뒤 다시 수정하세요.");
+            return false;
+        }
+        self.start_workflow_action_with_args("edit_confirmed_recipient",
+            &target.selection.group_id,Some(&target.selection.shipment_id),None,false,
+            serde_json::json!({"change":{"recipientId":target.recipient_id,
+                "field":field,"itemId":item_id,"value":value}}),ctx);
+        self.workflow_action.as_ref().is_some_and(|a|a.action=="edit_confirmed_recipient"
+            && a.group_id==target.selection.group_id)
+    }
+
+    fn submit_confirmed_cell(&mut self,ctx:&egui::Context){
+        let Some(mut editor)=self.confirmed_cell.take()else{return;};
+        if editor.cell.text==editor.cell.original{return;}
+        let value=match editor.cell.target.field{
+            "quantity"=>{
+                let parsed=editor.cell.text.trim().parse::<i64>().ok()
+                    .filter(|n|(1..=9_007_199_254_740_991).contains(n));
+                let Some(n)=parsed else{
+                    floating_notice::publish(ctx,"reception.workflow",floating_notice::Tone::Validation,
+                        "수량은 1 이상의 정수로 입력하세요.");
+                    editor.cell.focus_next=true;self.confirmed_cell=Some(editor);return;
+                };
+                serde_json::json!(n.to_string())
+            },
+            "unitPrice"=>{
+                let digits=editor.cell.text.trim().replace(',',"");
+                if digits.is_empty(){serde_json::Value::Null}else{
+                    let Some(n)=digits.parse::<i64>().ok()
+                        .filter(|n|(0..=9_007_199_254_740_991).contains(n))else{
+                        floating_notice::publish(ctx,"reception.workflow",floating_notice::Tone::Validation,
+                            "단가는 0 이상의 정수로 입력하세요.");
+                        editor.cell.focus_next=true;self.confirmed_cell=Some(editor);return;
+                    };
+                    serde_json::json!(n)
+                }
+            },
+            _=>serde_json::json!(editor.cell.text)
+        };
+        if self.submit_confirmed_change(&editor.target,editor.cell.target.field,
+            editor.cell.target.item_id.as_deref(),value,ctx){
+            self.submitted_confirmed_cell=Some(editor);
+        }else{
+            editor.cell.focus_next=true;
+            self.confirmed_cell=Some(editor);
+        }
+    }
+
     fn show_product_picker(&mut self,ctx:&egui::Context,work_area:Rect){
+        if let Some(target)=self.confirmed_product_target.clone(){
+            if let Some((_,_,_,manager))=self.product_picker.as_mut(){
+                let (cancelled,chosen)=manager.show_selection_modal(ctx,work_area,"reception-add-product-picker");
+                if cancelled{self.product_picker=None;self.confirmed_product_target=None;}
+                else if let Some(product)=chosen{
+                    self.product_picker=None;
+                    self.confirmed_product_target=None;
+                    self.submit_confirmed_change(&target,"addItem",None,product,ctx);
+                }
+                return;
+            }
+        }
         let Some((order_id,raw,recipient_id,manager))=self.product_picker.as_mut()else{return};
         if self.active_id.as_deref()!=Some(order_id.as_str()) || self.raw_source!=*raw{
             self.product_picker=None;
@@ -2524,6 +2623,30 @@ impl BandoEgui {
     }
 
     fn show_item_editor(&mut self,ctx:&egui::Context,work_area:Rect){
+        if let Some(target)=self.confirmed_product_target.clone(){
+            if let Some(dialog)=self.item_editor.as_mut(){
+                let item_id=dialog.item_id.clone();
+                let event=dialog.show(ctx,Arc::clone(&self.gateway),work_area,false);
+                if let Some(event)=event{
+                    self.item_editor=None;
+                    self.confirmed_product_target=None;
+                    match event{
+                        item_editor::Event::Closed=>{},
+                        item_editor::Event::Apply(product)=>{
+                            self.submit_confirmed_change(&target,"product",Some(&item_id),
+                                serde_json::json!({"productId":product["id"],"variantId":product["variants"][0]["id"]}),ctx);
+                        },
+                        item_editor::Event::Remove=>{
+                            self.submit_confirmed_change(&target,"removeItem",Some(&item_id),
+                                serde_json::Value::Null,ctx);
+                        }
+                    }
+                }
+                return;
+            }
+            if self.product_picker.is_some(){return;}
+            self.confirmed_product_target=None;
+        }
         let valid=self.item_editor.as_ref().is_some_and(|dialog|
             self.active_id.as_deref()==Some(dialog.order_id.as_str())
             && self.raw_source==dialog.source_raw
@@ -5338,7 +5461,9 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                             } else {
                                 ButtonRole::Navigation
                             };
-                            if theme::action(bar, page.label(), role, true).clicked() {
+                            if theme::action(bar, page.label(), role,
+                                page==self.page || (self.confirmed_cell.is_none() && self.confirmed_product_target.is_none())
+                            ).clicked() {
                                 // Price cells must commit/cancel before leaving,
                                 // and a product modal must not be discarded by nav.
                                 let product_can_leave=
@@ -5863,7 +5988,8 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
     /// Never swap it into the editable egui working_source, autosave worker,
     /// or the active employee-selected draft.
     fn visible_workflow_group(&self)->Option<(Arc<workflow_board::BoardSnapshot>,usize,usize)>{
-        let editing=self.workflow_freight_editor.is_some();
+        let editing=self.workflow_freight_editor.is_some() || self.confirmed_cell.is_some()
+            || self.confirmed_product_target.is_some();
         let stage=if editing{None}else{self.workflow_ui.active_preview()};
         if !editing && stage.is_none() && self.workflow_ui.pending_preview().is_some(){
             return None;
@@ -6110,7 +6236,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                 }
             });
             self.source_hover=hovered_source;
-            if let Some(clicked)=clicked_source{
+            if let Some(clicked)=clicked_source.filter(|_|self.confirmed_cell.is_none() && self.confirmed_product_target.is_none()){
                 // A source token may belong to a recipient in ANOTHER group.
                 // Use the same ID-based resolver as hover, not just this card.
                 if let Some((target_group,target))=self.workflow_snapshot.as_ref()
@@ -6776,6 +6902,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
             let can_copy=self.gateway.workflow_write_enabled()
                 && self.workflow_mutation_ready()
                 && self.workflow_freight_editor.is_none()
+                && self.confirmed_cell.is_none()
                 && !group.transferred
                 && group.automatic_text.as_deref()
                 .is_some_and(|text|!text.trim().is_empty())
@@ -7034,11 +7161,18 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
             let mut workflow_freight_cancel=false;
             let mut workflow_freight_option:Option<(String,serde_json::Value)>=None;
             let mut workflow_origin_change:Option<&'static str>=None;
-            let origin_editable=self.gateway.workflow_write_enabled()
+            let mut confirmed_open:Option<(InlineTarget,String,Option<egui::Pos2>)>=None;
+            let mut confirmed_commit=false;
+            let mut confirmed_cancel=false;
+            let mut confirmed_add=false;
+            let mut confirmed_item:Option<(serde_json::Value,bool)>=None;
+            let confirmed_editable=self.gateway.workflow_write_enabled()
                 && self.workflow_mutation_ready()
                 && self.workflow_freight_editor.is_none()
+                && !self.reception_modal_open()
                 && !board.groups.iter().flat_map(|g|g.shipments.iter())
                     .any(|other|other.order_id==ship.order_id && other.transferred);
+            let origin_editable=confirmed_editable && self.confirmed_cell.is_none();
             // The same preallocated review/recipient/items rectangles are
             // used for real workflow rows. No source replacement, false
             // editing actions or section boundary changes on hover.
@@ -7099,7 +7233,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                         pane,"수취인별 주문 정보",recipient_height,
                         |header|{
                             next_ship=components::reception_recipient_navigator(
-                                header,name,index,count,true
+                                header,name,index,count,self.confirmed_cell.is_none()
                             );
                         },|ui|{
                         components::scroll_area(components::ScrollAxes::Vertical)
@@ -7119,11 +7253,25 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                     contents,&mut name,&mut address,&mut mobile,
                                     &mut phone,&mut note,highlighted
                                 );
-                                for (response,field) in responses.iter().zip(fields){
+                                let values=[name,address,mobile,phone,note];
+                                for ((response,field),initial) in responses.iter().zip(fields).zip(values){
                                     if required.contains(id,field){components::paint_required_input(contents,response.rect);}
                                     let key=source_highlight::key(id,id,field);
-                                    if response.hovered(){
-                                        hovered_detail=Some(key);
+                                    if response.hovered(){hovered_detail=Some(key.clone());}
+                                    let target=InlineTarget{recipient_id:id.into(),item_id:None,field};
+                                    if confirmed_editable && self.confirmed_cell.is_none() && response.clicked(){
+                                        confirmed_open=Some((target.clone(),initial,response.interact_pointer_pos()));
+                                    }
+                                    if let Some(editor)=self.confirmed_cell.as_mut().filter(|e|
+                                        e.target.selection.shipment_id==ship.id && e.cell.target==target){
+                                        let result=components::reception_recipient_inline_cell_editor(
+                                            contents,response.rect,&mut editor.cell.text,editor.cell.focus_next,
+                                            editor.cell.click_at.take(),matches!(field,"mobile"|"phone"),
+                                            source_highlight::is_active(linked_active.as_ref(),&key));
+                                        editor.cell.focus_next=false;
+                                        if overlay::take_cell_escape(&result,false){confirmed_cancel=true;}
+                                        else if result.lost_focus() || (result.has_focus() &&
+                                            contents.input(|i|i.key_pressed(egui::Key::Enter))){confirmed_commit=true;}
                                     }
                                 }
                             });
@@ -7167,12 +7315,13 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                     pane.set_height(bottom_rect.height());
                     Self::section_with_header(pane,"품목 및 운임",bottom_rect.height(),
                         |header|{
-                            components::reception_item_add_action_editable(header,false);
+                            confirmed_add=components::reception_item_add_action_editable(
+                                header,confirmed_editable && self.confirmed_cell.is_none());
                         },|ui|{
                         components::reception_docked_goods_scroll(
                             ui,bottom_rect.height(),("native-workflow-products",ship.id.as_str()),
-                            false,|contents|{
-                                        components::reception_items_header(contents);
+                            true,|contents|{
+                                        components::reception_editable_items_header(contents);
                                         if let Some(items)=ship.recipient.get("items")
                                             .and_then(serde_json::Value::as_array)
                                         {
@@ -7194,11 +7343,13 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                                 let highlighted=fields.map(|field|
                                                     source_highlight::is_active_field(linked_active.as_ref(),&ship.recipient_id,item_id,field)
                                                 );
-                                                let cells=components::reception_item_row(
-                                                    contents,
-                                                    reception_service::item_title_ref(item),
-                                                    &quantity,&amount,highlighted
+                                                let cells=components::reception_item_row_with_remove(
+                                                    contents,reception_service::item_title_ref(item),
+                                                    &quantity,&amount,highlighted,confirmed_editable
                                                 );
+                                                if cells.remove_clicked && self.confirmed_cell.is_none(){
+                                                    confirmed_item=Some((item.clone(),true));
+                                                }
                                                 for (response,field) in [
                                                     (&cells.product,"product"),
                                                     (&cells.quantity,"quantity"),
@@ -7209,6 +7360,29 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                                         &ship.recipient_id,item_id,field
                                                     );
                                                     if response.hovered(){hovered_detail=Some(key);}
+                                                    let target=InlineTarget{recipient_id:ship.recipient_id.clone(),
+                                                        item_id:Some(item_id.into()),field:match field{
+                                                            "price"=>"unitPrice","quantity"=>"quantity",_=>"product"
+                                                        }};
+                                                    if confirmed_editable && self.confirmed_cell.is_none() && response.clicked(){
+                                                        if field=="product"{confirmed_item=Some((item.clone(),false));}
+                                                        else{
+                                                            let original=item.get(target.field).and_then(serde_json::Value::as_i64)
+                                                                .map(|n|n.to_string()).unwrap_or_default();
+                                                            confirmed_open=Some((target.clone(),original,response.interact_pointer_pos()));
+                                                        }
+                                                    }
+                                                    if let Some(editor)=self.confirmed_cell.as_mut().filter(|e|
+                                                        e.target.selection.shipment_id==ship.id && e.cell.target==target){
+                                                        let (result,step)=components::reception_item_numeric_editor(
+                                                            contents,response.rect,&mut editor.cell.text,editor.cell.focus_next,
+                                                            editor.cell.click_at.take(),if field=="quantity"{
+                                                                components::ReceptionNumericCell::Quantity
+                                                            }else{components::ReceptionNumericCell::Money});
+                                                        editor.cell.focus_next=false;
+                                                        if overlay::take_cell_escape(&result,false){confirmed_cancel=true;}
+                                                        else if components::reception_numeric_edit_finished(&result,step){confirmed_commit=true;}
+                                                    }
                                                 }
                                             }
                                         }
@@ -7237,7 +7411,8 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                         let controls_editable=self.gateway.workflow_write_enabled()
                                             && self.workflow_mutation_ready()
                                             && !ship.transferred
-                                            && self.workflow_freight_editor.is_none();
+                                            && self.workflow_freight_editor.is_none()
+                                            && self.confirmed_cell.is_none();
                                         for origin in &origins{
                                             let label=if origins.len()==1{"운임"}
                                                 else if origin.as_str()=="FACTORY"{"공장 운임"}
@@ -7358,7 +7533,36 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                 &ship.order_id,
                 hovered_detail.or_else(||self.source_hover.clone()),ui.ctx()
             );
-            if workflow_freight_cancel{
+            if confirmed_cancel{self.confirmed_cell=None;}
+            else if confirmed_commit{self.submit_confirmed_cell(ui.ctx());}
+            else if let Some((target,original,click_at))=confirmed_open{
+                if let Some(bound)=self.confirmed_edit_target(&board,group,ship){
+                    let original=if target.field=="unitPrice"{
+                        components::parse_money_input(&original).map(components::money_edit_text).unwrap_or(original)
+                    }else{original};
+                    self.confirmed_cell=Some(ConfirmedCellEditor{target:bound,cell:InlineReceptionEditor{
+                        source_id:ship.order_id.clone(),target,original:original.clone(),text:original,
+                        focus_next:true,click_at
+                    }});
+                    ui.ctx().request_repaint();
+                }
+            }else if confirmed_add || confirmed_item.is_some(){
+                if let Some(bound)=self.confirmed_edit_target(&board,group,ship){
+                    if let Some((item,delete))=confirmed_item{
+                        let price=item["unitPrice"].as_i64();
+                        let mut dialog=item_editor::ItemEditor::new(ship.order_id.clone(),ship.source_raw.clone(),
+                            ship.recipient_id.clone(),item,group.dealer_id.clone(),price);
+                        if delete{dialog.open_delete_only();}
+                        self.item_editor=Some(dialog);
+                    }else{
+                        self.product_picker=Some((ship.order_id.clone(),ship.source_raw.clone(),ship.recipient_id.clone(),
+                            product_manager::ProductManager::new_selection(Arc::clone(&self.gateway),
+                                ui.ctx().clone(),group.dealer_id.clone())));
+                    }
+                    self.confirmed_product_target=Some(bound);
+                    ui.ctx().request_repaint();
+                }
+            }else if workflow_freight_cancel{
                 self.workflow_freight_guidance=None;
                 self.workflow_freight_editor=None;
                 self.workflow_freight_next_selection=None;
@@ -8656,6 +8860,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
         match result{
             Ok(Ok(mut saved))=>{
                 self.workflow_action=None;
+                if action=="edit_confirmed_recipient"{self.submitted_confirmed_cell=None;}
                 let scoped_refresh=saved.as_object_mut()
                     .and_then(|root|root.remove("_scopedShipmentRefresh"))
                     .and_then(|flag|flag.as_bool()).unwrap_or(false);
@@ -8749,6 +8954,12 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
             }
             Ok(Err(error))=>{
                 self.workflow_action=None;
+                if action=="edit_confirmed_recipient"{
+                    if let Some(mut editor)=self.submitted_confirmed_cell.take(){
+                        editor.cell.focus_next=true;
+                        self.confirmed_cell=Some(editor);
+                    }
+                }
                 if action=="set_shipment_freight"{
                     self.workflow_freight_next_selection=None;
                     self.workflow_stage_after_freight=None;
@@ -8766,6 +8977,12 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
             }
             Err(mpsc::TryRecvError::Disconnected)=>{
                 self.workflow_action=None;
+                if action=="edit_confirmed_recipient"{
+                    if let Some(mut editor)=self.submitted_confirmed_cell.take(){
+                        editor.cell.focus_next=true;
+                        self.confirmed_cell=Some(editor);
+                    }
+                }
                 if action=="set_shipment_freight"{
                     self.workflow_freight_next_selection=None;
                     self.workflow_stage_after_freight=None;
@@ -9193,6 +9410,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                     let writable=self.gateway.workflow_write_enabled() &&
                         self.workflow_mutation_ready() &&
                         self.workflow_freight_editor.is_none() &&
+                        self.confirmed_cell.is_none() && self.confirmed_product_target.is_none() &&
                         self.pending_draft_confirmation.is_none();
                     let reception_modal_open=self.reception_modal_open();
                     event=workflow_board_ui::show(
@@ -9209,13 +9427,14 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                             self.vat_change.is_none() && self.client_chooser.is_none() &&
                             self.client_change.is_none() && self.working_sync.is_none() &&
                             self.workflow_dialog.is_none() &&
-                            self.workflow_freight_editor.is_none() && !self.ocr_processing,
+                            self.workflow_freight_editor.is_none() && self.confirmed_cell.is_none() && !self.ocr_processing,
                         active_recipient,
                         self.link_hover.scoped_active().map(|(order,key)|
                             (order,key.recipient_id.as_str()))
                     );
                 });
         });
+        if self.confirmed_cell.is_some() || self.confirmed_product_target.is_some(){return;}
         match event{
             Some(workflow_board_ui::Event::ManageGroup(id))=>{
                 self.workflow_ui.stop_preview();
@@ -9674,6 +9893,9 @@ impl eframe::App for BandoEgui {
             self.workflow_ui.clear_card_order();
             self.workflow_stage_deadlines.clear();
             self.workflow_freight_editor=None;
+            self.confirmed_cell=None;
+            self.submitted_confirmed_cell=None;
+            self.confirmed_product_target=None;
             self.submitted_workflow_freight=None;
             self.workflow_stage_after_freight=None;
             self.workflow_freight_guidance=None;
