@@ -118,7 +118,8 @@ fn category_option_row(ui:&mut Ui,name:&str,depth:usize,is_last:bool,
     })
 }
 fn category_back_button(ui:&mut Ui,enabled:bool)->Response{
-    crate::button::icon_action_button(ui,"←",enabled)
+    crate::button::action_with_min_width(ui,"← 상위로",theme::ButtonRole::Standard,
+        enabled,theme::CATEGORY_EXPLORER_BACK_WIDTH)
 }
 pub(crate) fn motion_ms(depth:usize)->f64{
     (450+depth.saturating_sub(1).min(4)*150).min(1000) as f64
@@ -686,13 +687,36 @@ mod tests{
     }
     #[test]
     fn breadcrumb_palette_keeps_only_current_folder_prominent(){
-        assert_eq!(theme::CATEGORY_EXPLORER_BACK_WIDTH,theme::CATEGORY_EXPLORER_CRUMB_HEIGHT);
+        assert!(theme::CATEGORY_EXPLORER_BACK_WIDTH>theme::CATEGORY_EXPLORER_CRUMB_HEIGHT);
         assert_eq!(theme::CATEGORY_EXPLORER_ANCESTOR_INK,theme::MUTED);
         assert!(theme::CATEGORY_EXPLORER_SEPARATOR_INK.r()<theme::CATEGORY_EXPLORER_ANCESTOR_INK.r());
         assert!(theme::CATALOG_TREE_SELECTED_INK.r()>theme::CATEGORY_EXPLORER_ANCESTOR_INK.r());
         let source=include_str!("category_dropdown.rs");
         let row=source.split("fn crumb_text(").nth(1).unwrap().split("fn crumbs_row(").next().unwrap();
         assert!(row.contains("if current{theme::CATALOG_TREE_SELECTED_INK}else{theme::CATEGORY_EXPLORER_ANCESTOR_INK}"));
+    }
+    #[test]
+    fn category_back_is_a_centered_standard_block(){
+        let ctx=egui::Context::default();
+        crate::typography::install(&ctx);
+        let mut measurements=Vec::new();
+        let _=ctx.run(egui::RawInput::default(),|ctx|{
+            egui::CentralPanel::default().show(ctx,|ui|{
+                for enabled in [true,false]{
+                    let (slot,_)=ui.allocate_exact_size(Vec2::new(theme::CATEGORY_EXPLORER_BACK_WIDTH,
+                        theme::CATEGORY_EXPLORER_CRUMB_HEIGHT),egui::Sense::hover());
+                    let mut row=ui.new_child(egui::UiBuilder::new().id_salt(enabled).max_rect(slot)
+                        .layout(egui::Layout::left_to_right(egui::Align::Center)));
+                    let response=category_back_button(&mut row,enabled);
+                    measurements.push((slot,response.rect));
+                }
+            });
+        });
+        for (slot,button) in measurements{
+            assert!((slot.center().y-button.center().y).abs()<=1.0);
+            assert!(button.width()<=slot.width()+1.0);
+            assert!((button.height()-theme::ACTION_STANDARD_HEIGHT).abs()<=1.0);
+        }
     }
     #[test]
     fn shared_rows_and_single_motion_are_used(){
