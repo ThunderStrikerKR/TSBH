@@ -103,7 +103,7 @@ fn prepare_edit(payload:&Value)->Result<Value,String>{
     Ok(json!({"order":order}))
 }
 fn effective_shipping(order:&Value,state:&Value)->Result<Value,String>{
-    let recommended=super::shipping::recommend(order,state)?;
+    let recommended=super::shipping::reception_recommend(order,state)?;
     let selected=live_client(order,state);
     let waived=flag(&selected,"shippingFeeExcluded");
     let total=if waived {json!(0)}else{field(&recommended,"total").clone()};
@@ -136,6 +136,12 @@ fn prepare_save(payload:&Value)->Result<Value,String>{
 fn reprice_for_new_dealer(order:&mut Value,state:&Value,selected:&Value)->Result<(),String>{
     for recipient in order["recipients"].as_array_mut().ok_or("수취인 목록 오류")?{
         for item in recipient["items"].as_array_mut().ok_or("상품 목록 오류")?{
+            if let Some(manual)=item.get("manualUnitPrice"){
+                let price=super::safe(manual)
+                    .ok_or("직접 수정한 상품 단가가 0 이상의 안전한 정수가 아닙니다.")?;
+                set(item,"unitPrice",json!(price))?;
+                continue;
+            }
             let pid=str_field(item,"productId").to_owned();
             let vid=str_field(item,"variantId").to_owned();
             if vid.is_empty(){continue;}
@@ -334,19 +340,9 @@ fn edit_confirmed_recipient(payload:&Value)->Result<Value,String>{
             // Existing sender/source and historical snapshots are immutable.
             // Only the current customer and their commercial terms change.
             state["orders"][oi]=changed;
-            let changed_order=&mut state["orders"][oi];
-            for row in changed_order["recipients"].as_array_mut().ok_or("수취인 목록 오류")?{
-                let mut charges=serde_json::Map::new();
-                for item in rows(field(row,"items")){
-                    let origin=str_field(item,"origin");
-                    if matches!(origin,"FACTORY"|"STORE"){charges.insert(origin.to_owned(),Value::Null);}
-                }
-                set(row,"shippingCharges",Value::Object(charges))?;
-                // Old manual prices belong to the previous customer.
-                for item in row["items"].as_array_mut().ok_or("상품 목록 오류")?{
-                    item.as_object_mut().ok_or("상품 형식 오류")?.remove("manualUnitPrice");
-                }
-            }
+            // Explicit order-level overrides belong to the edited order,
+            // not the dealer master. Reconciliation refreshes automatic
+            // freight on reassignment without clearing these inputs.
         }else{
             let model=json!({"rows":field(order,"recipients")});
             let result=super::manual_classification::apply(&json!({
@@ -616,6 +612,42 @@ mod tests{
         let value=execute(&json!({"action":"resolve_order_clients","order":o,"state":setup()})).unwrap();
         assert_eq!(value["client"]["name"],"반도스탠드");
         assert_eq!(value["liveClient"]["name"],"반도스탠드");
+    }
+    #[test]
+    fn dealer_change_preserves_manual_amounts_and_refreshes_automatic_prices(){
+        let mut state=setup();
+        state["clients"][1]["shippingFeeExcluded"]=json!(false);
+        state["products"]=json!([{"id":"p","origin":"FACTORY",
+            "variants":[{"id":"v","wholesale":10000,"retail":15000}]}]);
+        state["shipping"]=json!({"epoch":1,"productRules":{"p":{
+            "version":"v1","fees":{"3":5200}}}});
+        let mut order=json!({"id":"o","clientId":"c1","orderType":"AGENCY",
+            "recipients":[{"id":"r","dispatchOrigin":"FACTORY","freightCode":"010",
+                "shippingCharges":{"FACTORY":7000},"items":[
+                    {"id":"a","productId":"p","variantId":"v","origin":"FACTORY",
+                        "quantity":2,"manualUnitPrice":9900,"unitPrice":9900},
+                    {"id":"b","productId":"p","variantId":"v","origin":"FACTORY",
+                        "quantity":1,"unitPrice":10000}
+                ]}]});
+        let change=|order:&Value,state:&Value|change_client(&json!({
+            "order":order,"state":state,"dealerId":"c2","now":"now"
+        })).unwrap()["order"].clone();
+        let result=change(&order,&state);
+        assert_eq!(result["recipients"][0]["items"][0]["unitPrice"],9900);
+        assert_eq!(result["recipients"][0]["items"][1]["unitPrice"],15000);
+        assert_eq!(result["shippingFee"],7000);
+        order["recipients"][0]["items"][0]["manualUnitPrice"]=json!(0);
+        order["recipients"][0]["shippingCharges"]["FACTORY"]=json!(0);
+        let zero=change(&order,&state);
+        assert_eq!(zero["recipients"][0]["items"][0]["unitPrice"],0);
+        assert_eq!(zero["shippingFee"],0);
+        order["recipients"][0]["shippingCharges"]["FACTORY"]=Value::Null;
+        assert_eq!(change(&order,&state)["shippingFee"],5200);
+        order["recipients"][0]["shippingCharges"]["FACTORY"]=json!(7000);
+        state["clients"][1]["shippingFeeExcluded"]=json!(true);
+        let waived=change(&order,&state);
+        assert_eq!(waived["shippingFee"],0);
+        assert_eq!(waived["recipients"][0]["shippingCharges"]["FACTORY"],7000);
     }
     #[test]fn pending_native_edits_cannot_be_prepared_for_persistence(){
         let mut order=draft();
