@@ -439,6 +439,57 @@ function productionTokens(source){
   return out;
 }
 
+// Context methods use a non-reentrant lock. A callback may operate on its
+// supplied guard, but must not enter Context/Response again before returning.
+// This is a lexical guard for direct reentry, not a whole-program lock proof.
+export function auditContextLocks(source,file){
+  const tokens=productionTokens(source),v=tokens.map(t=>t.v),hits=[];
+  const guards=new Set(["data","data_mut","memory","memory_mut","input","input_mut","fonts","fonts_mut"]);
+  const reentry=new Set([...guards,"request_repaint","request_repaint_after",
+    "request_focus","surrender_focus","content_rect","viewport_rect",
+    "cumulative_frame_nr","cumulative_pass_nr","set_cursor_icon","layer_id_at"]);
+  const responseCalls=new Set(["has_focus","gained_focus","lost_focus","request_focus","surrender_focus","scroll_to_me"]);
+  for(let i=0;i<v.length-2;i++){
+    const direct=v[i]==="."&&guards.has(v[i+1])&&v[i+2]==="(";
+    const wrapper=(file==="overlay.rs"&&v[i]==="with_scope"||
+      file==="floating_notice.rs"&&v[i]==="with_state")&&v[i+1]==="("&&v[i-1]!=="fn";
+    if(!direct&&!wrapper)continue;
+    const open=i+(direct?2:1);
+    let depth=1,end=open+1;
+    for(;end<v.length&&depth;end++){
+      if(v[end]==="(")depth++;
+      else if(v[end]===")")depth--;
+    }
+    // Only lock-taking closures, not arbitrary methods named data/input.
+    const start=v.indexOf("|",open+1);
+    if(start<0||start>=end)continue;
+    const close=v.indexOf("|",start+1);
+    if(close<0||close>=end)continue;
+    for(let j=close+1;j<end-2;j++){
+      const method=v[j+1],receiver=v[j-1];
+      const nested=v[j]==="."&&v[j+2]==="("&&(
+        reentry.has(method)||
+        method==="ctx"||
+        (responseCalls.has(method)&&/^(response|owner|trigger|r)$/.test(receiver??""))
+      );
+      const staticResponse=v[j]==="Response"&&v[j+1]==="::"&&responseCalls.has(v[j+2]);
+      const staticPopup=v[j]==="Popup"&&v[j+1]==="::";
+      const nestedWrapper=wrapper&&v[j]===v[i]&&v[j+1]==="(";
+      if(nested||staticResponse||staticPopup||nestedWrapper){
+        hits.push({line:tokens[j].line,rule:"egui context reentry inside locked callback"});
+      }
+    }
+  }
+  return hits;
+}
+function contextLockSelfTest(){
+  assert.equal(auditContextLocks("ctx.data_mut(|data|{data.insert_temp(id,response.has_focus());});","view_state.rs").length,1);
+  assert.equal(auditContextLocks("let focused=response.has_focus();ctx.data_mut(|data|data.insert_temp(id,focused));","view_state.rs").length,0);
+  assert.equal(auditContextLocks("ctx.memory(|memory|memory.has_focus(id));","cell_navigation.rs").length,0);
+  assert.equal(auditContextLocks("ctx.input(|input|ctx.memory(|m|m.focused()));","screen.rs").length,1);
+  assert.equal(auditContextLocks("with_state(ctx,|state|{ctx.request_repaint();});","floating_notice.rs").length,1);
+}
+
 export function audit(source,file,checkTableContracts=false){
   const tokens=productionTokens(source);
   const v=tokens.map(t=>t.v);
@@ -980,6 +1031,7 @@ function main(){
   selfTest();
   designTokenSelfTest();
   compositeSelfTest();
+  contextLockSelfTest();
   if(process.argv.includes("--self-test"))return;
   const root=resolve(fileURLToPath(new URL("..",import.meta.url)));
   const walk=p=>readdirSync(p,{withFileTypes:true}).flatMap(e=>
@@ -994,7 +1046,7 @@ function main(){
     const owner=file.endsWith("/mod.rs")?file.split("/")[0]:file.replace(/\.rs$/,"");
     if(dependencyOwners.has(owner))graph.set(owner,sharedDependencies(source,owner));
     for(const rule of designTokenViolations(source,file)){failures++;console.error(file+": "+rule);}
-    for(const hit of [...audit(source,file,true),...auditComposite(source,file,true)]){
+    for(const hit of [...audit(source,file,true),...auditComposite(source,file,true),...auditContextLocks(source,file)]){
       failures++;console.error(file+":"+hit.line+" "+hit.rule);
     }
   }
