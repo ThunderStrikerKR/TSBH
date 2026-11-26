@@ -343,10 +343,10 @@ pub(super) fn reception_recommend(order:&Value,state:&Value)->Result<Value,Strin
         let recipient=rows(field(order,"recipients")).iter().find(|r|
             str_field(r,"id")==recipient_id
         ).ok_or("계산할 수취인을 찾을 수 없습니다.")?;
-        let override_value=field(field(recipient,"shippingCharges"),&origin);
-        let from_staff=override_value.as_i64().is_some();
+        let manual=super::manual_freight(recipient,&origin)?;
+        let from_staff=manual.is_some();
         let applied=if from_staff{
-            super::remote_delivery::multiply(safe(override_value),recipient)
+            super::remote_delivery::multiply(manual,recipient)
         }else{safe(field(bundle,"recommendation"))};
         if from_staff && applied.is_none(){
             return Err("도서/산간 적용 운임이 안전한 정수 범위를 초과했습니다.".into());
