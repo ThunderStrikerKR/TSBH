@@ -290,11 +290,7 @@ fn apply(payload:&Value)->Result<Value,String>{
                     // later React effect to repair it.
                     let pid=str_field(item,"productId").to_string();
                     let vid=str_field(item,"variantId").to_string();
-                    if let Some(manual)=item.get("manualUnitPrice"){
-                        let price=super::safe(manual)
-                            .ok_or("직접 수정한 상품 단가가 0 이상의 안전한 정수가 아닙니다.")?;
-                        set(item,"unitPrice",json!(price))?;
-                    }else if !vid.is_empty() {
+                    if !super::pricing::apply_manual_unit_price(item)? && !vid.is_empty() {
                         if let Some(product)=super::find_by_id(field(state,"products"),&pid) {
                             let price=super::pricing::resolve_unit_price(product,&vid,client)?;
                             set(item,"unitPrice",price)?;
