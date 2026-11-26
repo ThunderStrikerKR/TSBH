@@ -68,6 +68,76 @@ pub fn mutate_client_v2(
     })
 }
 
+/// Compare against the exact normalized record shown when editing began.
+/// Null means creation, not permission to overwrite an existing ID.
+fn checked_client_transition(before:&Value,expected:&Value,action:&str,client:&Value)
+    ->Result<Option<Value>,String>{
+    let id=client.get("id").and_then(Value::as_str)
+        .filter(|id|!id.is_empty()).ok_or("거래처 ID가 없습니다.")?;
+    let actual=before["clients"].as_array().ok_or("거래처 목록 누락")?.iter()
+        .find(|row|row["id"].as_str()==Some(id))
+        .map(crate::client_names::normalized).unwrap_or(Value::Null);
+    let expected=crate::client_names::normalized(expected);
+    let canonical=crate::client_names::normalized(client);
+    if actual!=expected{
+        return Err("편집 중인 거래처의 정보가 변경되었습니다. 입력 내용은 유지됩니다. 최신 거래처 정보를 확인하세요.".into());
+    }
+    let mut transition=match action{
+        "upsert_client"=>{
+            native_client_mutation::validate_client(before,&canonical)?;
+            if actual==canonical{return Ok(None);}
+            native_client_mutation::upsert(before,&canonical,"clients")?
+        },
+        "archive_client"=>{
+            if actual.is_null(){return Err("삭제할 거래처를 찾지 못했습니다.".into());}
+            if !actual["deletedAt"].is_null(){return Ok(None);}
+            native_client_mutation::archive_client(before,id,&chrono::Utc::now().to_rfc3339())?
+        },
+        _=>return Err("허용되지 않은 거래처 변경 명령입니다.".into())
+    };
+    let next=transition.as_object_mut().and_then(|obj|obj.remove("state"))
+        .ok_or("Rust 거래처 변경 결과가 없습니다.")?;
+    validate_limits(&next["clients"])?;
+    Ok(Some(next))
+}
+
+pub fn mutate_client_checked_v2(conn:&mut Connection,expected:&Value,action:&str,client:&Value)
+    ->Result<Value,String>{
+    crate::storage::update_v2_entity_if_changed(conn,true,|before|
+        checked_client_transition(before,expected,action,client))
+}
+
+#[cfg(test)]
+mod client_entity_cas_tests{
+    use super::*;
+    use serde_json::json;
+    fn client(id:&str,name:&str)->Value{
+        json!({"id":id,"name":name,"address":"서울","phone":"02-1234-5678"})
+    }
+    #[test]
+    fn unrelated_revision_and_other_client_do_not_block_target_edit(){
+        let old=client("c","이전");
+        let new=client("c","수정");
+        let other=client("d","다른 거래처");
+        let before=json!({"revision":99,"clients":[old,other],"orders":[{"id":"o"}]});
+        let next=checked_client_transition(&before,&old,"upsert_client",&new).unwrap().unwrap();
+        assert_eq!(next["clients"][0],new);
+        assert_eq!(next["clients"][1],other);
+        assert_eq!(next["orders"],before["orders"]);
+    }
+    #[test]
+    fn same_client_conflict_and_new_id_collision_are_rejected(){
+        let old=client("c","이전");
+        let latest=client("c","외부 수정");
+        let proposed=client("c","내 수정");
+        let before=json!({"clients":[latest]});
+        assert!(checked_client_transition(&before,&old,"upsert_client",&proposed).is_err());
+        assert!(checked_client_transition(&before,&old,"archive_client",&old).is_err());
+        assert!(checked_client_transition(&before,&Value::Null,"upsert_client",&proposed).is_err());
+        assert!(checked_client_transition(&before,&latest,"upsert_client",&latest).unwrap().is_none());
+    }
+}
+
 #[path = "../../../src-tauri/src/business_core/catalog_clients/client_preview.rs"]
 mod native_client_preview;
 
