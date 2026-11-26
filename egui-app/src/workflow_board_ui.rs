@@ -1022,6 +1022,7 @@ fn reserve_compact_card(ui:&mut Ui){
 /// Keep the relative order of already-visible cards. Insert new keys at
 /// their ordinary neighbors without moving the slot of a confirmed draft.
 fn sync_card_order(order:&mut Vec<String>,normal:&[String]){
+    if order==normal{return;}
     let valid:HashSet<&str>=normal.iter().map(String::as_str).collect();
     order.retain(|id|valid.contains(id.as_str()));
     let mut known:HashSet<String>=order.iter().cloned().collect();

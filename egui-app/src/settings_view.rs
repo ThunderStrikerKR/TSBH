@@ -980,7 +980,7 @@ impl SettingsView{
                     );
                 }
             });
-            for filename in self.backups.clone(){
+            for filename in &self.backups{
                 panel.add_space(theme::SPACE_8);
                 crate::ui_primitives::soft_divider(panel);
                 panel.add_space(theme::SPACE_8);
@@ -1060,11 +1060,10 @@ impl SettingsView{
                             ui,&mut self.archive_query,search_width,
                             "원문 / 담당자 / 주문 ID 검색"
                         );
+                        let needle=self.archive_query.trim().to_lowercase();
                         let matches=self.archive.as_ref().into_iter().flatten()
-                            .filter(|row|self.archive_query.trim().is_empty() ||
-                                row.to_string().to_lowercase().contains(
-                                    &self.archive_query.trim().to_lowercase()
-                                )).collect::<Vec<_>>();
+                            .filter(|row|needle.is_empty() || row.to_string().to_lowercase().contains(&needle))
+                            .collect::<Vec<_>>();
                         ui.label(typography::caption(&format!("{}건 조회",matches.len())));
                         let results_height=crate::popup::modal_list_max_height(
                             ui,area.height(),area.height()*0.62,false

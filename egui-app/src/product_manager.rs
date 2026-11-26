@@ -398,6 +398,7 @@ pub struct ProductManager {
     catalog:Option<Value>,
     // Force an authoritative read while keeping the last projection visible.
     products:Vec<Value>,
+    order_cache:crate::screen_refresh::ViewProjectionCache<Option<ProductSort>,Vec<usize>>,
     query:String,
     tab:usize,
     tab_snapshots:crate::navigation::NavigationSnapshots<5>,
@@ -457,7 +458,7 @@ impl ProductManager {
     pub fn new(gateway:Arc<dyn BandoGateway>,ctx:Context)->Self {
         let mut page=Self {
             gateway,selection_client:None,selection_result:None,focus_search:false,
-            catalog:None,products:Vec::new(),
+            catalog:None,products:Vec::new(),order_cache:Default::default(),
             query:String::new(),tab:0,tab_snapshots:crate::navigation::NavigationSnapshots::new(0),
             category_manager:CategoryManager::default(),
             model_groups:ModelGroupManager::default(),
@@ -522,7 +523,7 @@ impl ProductManager {
         match self.tab{
             0=>{
                 self.query.clear();self.category.clear();self.brand.clear();self.missing=false;
-                self.sort=None;self.selected_variants.clear();self.price_mode=false;
+                self.sort=None;self.selected_variants.clear();self.order_cache.invalidate();self.price_mode=false;
                 self.reload(ctx);
             }
             1=>self.category_manager.reset_navigation(),
@@ -536,7 +537,7 @@ impl ProductManager {
         if self.writing.is_some()||self.has_pending_prices()||self.excel.blocks_navigation()||self.selected.is_some(){return;}
         self.tab=0;self.tab_snapshots=crate::navigation::NavigationSnapshots::new(0);
         self.query.clear();self.category.clear();self.brand.clear();self.missing=false;
-        self.sort=None;self.selected_variants.clear();self.price_mode=false;
+        self.sort=None;self.selected_variants.clear();self.order_cache.invalidate();self.price_mode=false;
         self.category_manager.reset_navigation();
         self.model_groups.reset_navigation();self.aliases.reset_navigation();self.brands.reset_navigation();
         self.refresh(ctx);
@@ -710,6 +711,7 @@ impl ProductManager {
                     let price_job=job.kind=="set_price";
                     if let Some(update)=job.price_update.as_ref(){
                         update.apply_to_products(&mut self.products);
+                        self.order_cache.invalidate();
                         if let Some(key)=job.key.as_deref(){
                             self.price_drafts.entry(key.to_owned())
                                 .and_modify(|draft|draft.mark_saved(update.value))
@@ -825,7 +827,7 @@ impl ProductManager {
                         if self.catalog.as_ref()!=Some(&result.catalog){self.category_manager.invalidate_map_cache();}
                         self.catalog=Some(result.catalog);
                         self.result.verified();
-                        self.products=result.products;
+                        self.products=result.products;self.order_cache.invalidate();
                         if !self.has_pending_prices(){self.error=None;}
                     }else{
                         // A query started before a price write may finish
@@ -1250,8 +1252,8 @@ impl ProductManager {
             let selection_locked=self.has_pending_prices();
             let selection_ready=selecting && self.next_query.is_none()
                 && !self.result.pending() && self.error.is_none();
-            let ordered=product_sort_order(
-                &self.products,&self.selected_variants,self.sort
+            let ordered=self.order_cache.get(self.sort,||
+                product_sort_order(&self.products,&self.selected_variants,self.sort)
             );
             // Each selected variant contributes an explicit three-column row.
             // Busy cells remain in the map as disabled slots so coordinates
@@ -1259,7 +1261,7 @@ impl ProductManager {
             let mut price_order=Vec::new();
             let other_price_write_busy=self.writing.as_ref()
                 .is_some_and(|job|job.kind!="set_price");
-            for (row_index,product_index) in ordered.iter().enumerate(){
+            if self.price_mode{for (row_index,product_index) in ordered.iter().enumerate(){
                 let product=&self.products[*product_index];
                 let product_id=field(product,"id");
                 let variants=rows(&product["variants"]);
@@ -1282,7 +1284,7 @@ impl ProductManager {
                         });
                     }
                 }
-            }
+            }}
             let header_rect=layout.header_rect;
             // Only optional add rows consume space; the Excel popup,
             // asynchronous loading, and saving never do.
@@ -1374,9 +1376,12 @@ impl ProductManager {
                                 }else{
                                     product_table_text(row,cells[1],"",typography::ManagementTableCellRole::Option,(product_id,1));
                                 }
-                                self.selected_variants.insert(
-                                    product_id.to_owned(),selected_id.clone()
-                                );
+                                if self.selected_variants.get(product_id)!=Some(&selected_id){
+                                    let changed=displayed_variant(product,&self.selected_variants)
+                                        .is_some_and(|v|field(v,"id")!=selected_id);
+                                    self.selected_variants.insert(product_id.to_owned(),selected_id.clone());
+                                    if changed{self.order_cache.invalidate();}
+                                }
                                 let selected_variant=variants.iter().find(|v|
                                     field(v,"id")==selected_id.as_str()
                                 );

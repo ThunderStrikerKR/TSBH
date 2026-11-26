@@ -237,8 +237,7 @@ pub(crate) fn crumbs_row(ui:&mut Ui,state:&mut ExplorerState,index:&HashMap<&str
     bar.set_clip_rect(rect.intersect(ui.clip_rect()));
     bar.set_opacity(alpha);
     bar.spacing_mut().item_spacing.x=0.0;
-    let paths=(0..=path.len()).map(|i|path[..i].to_vec()).collect::<Vec<_>>();
-    let names=paths.iter().map(|p|label_for(index,p)).collect::<Vec<_>>();
+    let names=(0..=path.len()).map(|i|label_for(index,&path[..i])).collect::<Vec<_>>();
     let widths=names.iter().map(|n|crumb_width(&bar,n)).collect::<Vec<_>>();
     let last=widths.len()-1;
     let dots=theme::CATEGORY_EXPLORER_OMITTED_WIDTH;
@@ -254,7 +253,7 @@ pub(crate) fn crumbs_row(ui:&mut Ui,state:&mut ExplorerState,index:&HashMap<&str
         separator(&mut bar);
     }
     for i in omitted..last{
-        if crumb_text(&mut bar,names[i],widths[i],false,enabled).clicked(){next=Some(paths[i].clone());}
+        if crumb_text(&mut bar,names[i],widths[i],false,enabled).clicked(){next=Some(path[..i].to_vec());}
         separator(&mut bar);
     }
     let remaining=(width-(if omitted>0{dots+sep}else{0.0})-
@@ -273,7 +272,7 @@ pub(crate) fn crumbs_row(ui:&mut Ui,state:&mut ExplorerState,index:&HashMap<&str
                     .show(rows,|rows|{
                         for i in 0..omitted{
                             if category_option_row(rows,names[i],0,true,true,false,false).clicked(){
-                                next=Some(paths[i].clone());
+                                next=Some(path[..i].to_vec());
                             }
                         }
                     });

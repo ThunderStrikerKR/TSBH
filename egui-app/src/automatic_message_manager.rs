@@ -143,6 +143,7 @@ pub struct AutomaticMessageManager {
     product_search:String,
     settings:Value,
     products:Vec<Value>,
+    product_cache:crate::screen_refresh::ViewProjectionCache<String,Vec<usize>>,
     loading:crate::screen_refresh::ReadRefresh<(Value,Value)>,
     saving:Option<Saved>,
     loaded:bool,
@@ -228,7 +229,7 @@ impl AutomaticMessageManager {
             section:Section::General,tab_snapshots:crate::navigation::NavigationSnapshots::new(0),selected:TEMPLATES.iter()
                 .position(|def|def.id=="colorDefault").unwrap_or(0),
             selected_product:String::new(),product_search:String::new(),
-            settings:Value::Null,products:Vec::new(),loading,
+            settings:Value::Null,products:Vec::new(),product_cache:Default::default(),loading,
             saving:None,loaded:false,
             base_templates:Map::new(),draft_templates:Map::new(),
             base_notices:Map::new(),draft_notices:Map::new(),
@@ -240,7 +241,7 @@ impl AutomaticMessageManager {
     pub fn poll(&mut self){
         match self.loading.poll(){
             Some(Ok((settings,catalog)))=>{
-                self.products=catalog["products"].as_array().cloned().unwrap_or_default();
+                self.products=catalog["products"].as_array().cloned().unwrap_or_default();self.product_cache.invalidate();
                 self.set_saved(settings);
                 self.loading.verified();
                 self.loaded=true;self.error=None;
@@ -276,7 +277,7 @@ impl AutomaticMessageManager {
         self.base_templates=message_map(current,"automaticMessageTemplates");
         self.draft_templates=self.base_templates.clone();
         self.base_notices=message_map(current,"provisionalProductNotices");
-        self.draft_notices=self.base_notices.clone();
+        {self.draft_notices=self.base_notices.clone();self.product_cache.invalidate();};
         self.settings=settings;
     }
     fn template_value(map:&Map<String,Value>,def:TemplateDef)->String{
@@ -347,7 +348,7 @@ impl AutomaticMessageManager {
     fn discard_active(&mut self){
         match self.section{
             Section::General=>self.draft_templates=self.base_templates.clone(),
-            Section::Provisional=>self.draft_notices=self.base_notices.clone(),
+            Section::Provisional=>{self.draft_notices=self.base_notices.clone();self.product_cache.invalidate();},
         }
         self.error=None;
     }
@@ -412,11 +413,12 @@ impl AutomaticMessageManager {
             .min(theme::MANAGEMENT_MODAL_BODY_MAX_HEIGHT)
             .min((ui.available_height()-theme::SPACE_24).max(1.0))
     }
-    fn provisional_visible(&self)->Vec<Value>{
+    fn provisional_visible(&mut self)->std::sync::Arc<Vec<usize>>{
+        self.product_cache.get(self.product_search.clone(),||{
         let query=self.product_search.trim().to_lowercase();
-        let mut visible=self.products.iter()
-            .filter(|p|has_registered_product(p))
-            .filter(|p|{
+        let mut visible=self.products.iter().enumerate()
+            .filter(|(_,p)|has_registered_product(p))
+            .filter(|(_,p)|{
                 if query.is_empty(){
                     self.draft_notices.get(product_id(p))
                         .and_then(Value::as_str).is_some_and(|s|!s.is_empty())
@@ -424,8 +426,9 @@ impl AutomaticMessageManager {
                     format!("{} {}",product_name(p),p["subtitle"].as_str().unwrap_or(""))
                         .to_lowercase().contains(&query)
                 }
-            }).cloned().collect::<Vec<_>>();
-        visible.sort_by(|a,b|{
+            }).map(|(i,_)|i).collect::<Vec<_>>();
+        visible.sort_by(|&a,&b|{
+            let (a,b)=(&self.products[a],&self.products[b]);
             let registered=|v:&Value|self.draft_notices.get(product_id(v))
                 .and_then(Value::as_str).is_some_and(|s|!s.is_empty());
             registered(b).cmp(&registered(a))
@@ -433,6 +436,7 @@ impl AutomaticMessageManager {
         });
         visible.truncate(80);
         visible
+        })
     }
     fn general_list(&mut self,ui:&mut Ui,target:&mut Option<Destination>){
         ui.horizontal(|heading|{
@@ -486,7 +490,8 @@ impl AutomaticMessageManager {
                         "아직 등록된 안내문이 없습니다. 상품을 검색해 추가하세요."
                     }else{"검색 결과가 없습니다."});
                 }
-                for product in &visible{
+                for &index in visible.iter(){
+                    let product=&self.products[index];
                     let id=product_id(product);
                     let caption=if self.draft_notices.contains_key(id){
                         "안내문 등록됨"
@@ -558,7 +563,7 @@ impl AutomaticMessageManager {
                     if crate::button::action(actions,"안내문 삭제",ButtonRole::Standard,
                         !self.busy() && !content.is_empty()
                     ).clicked(){
-                        self.draft_notices.remove(id);
+                        self.draft_notices.remove(id);self.product_cache.invalidate();
                         content.clear();self.error=None;
                     }
                 });
@@ -572,8 +577,8 @@ impl AutomaticMessageManager {
                 ui,&mut content,!self.busy(),width,5,
                 Some("예: 709는 상판에 구멍이 있습니다. 구멍이 없는 제품은 709-1 모델을 확인해 주세요.")
             ).changed(){
-                if content.trim().is_empty(){self.draft_notices.remove(id);}
-                else{self.draft_notices.insert(id.into(),json!(content.clone()));}
+                if content.trim().is_empty(){self.draft_notices.remove(id);self.product_cache.invalidate();}
+                else{self.draft_notices.insert(id.into(),json!(content.clone()));self.product_cache.invalidate();}
                 self.error=None;
             }
             ui.add_space(theme::SPACE_8);

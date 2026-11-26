@@ -1000,6 +1000,7 @@ pub struct OrderHistoryManager {
     gateway:Arc<dyn BandoGateway>,
     refresh_job:crate::screen_refresh::ReadRefresh<HistorySnapshot>,
     snapshot:Option<HistorySnapshot>,
+    geometry_cache:crate::screen_refresh::ViewProjectionCache<(Option<Sort>,BTreeSet<String>,[u32;7],u32), (Vec<HistoryLine>,Vec<DetailSpacing>,Vec<f32>,Vec<f32>)>,
     error:Option<String>,
     query:String,
     date_basis:HistoryDateBasis,
@@ -1020,7 +1021,7 @@ impl OrderHistoryManager {
     pub fn new(gateway:Arc<dyn BandoGateway>,ctx:egui::Context)->Self{
         let today=seoul_today();
         let mut manager=Self {
-            gateway,refresh_job:Default::default(),snapshot:None,error:None,
+            gateway,refresh_job:Default::default(),snapshot:None,geometry_cache:Default::default(),error:None,
             query:String::new(),date_basis:HistoryDateBasis::Reception,
             date_from:today.clone(),date_to:today.clone(),
             from_input:today.clone(),to_input:today.clone(),
@@ -1044,7 +1045,7 @@ impl OrderHistoryManager {
         self.from_month=month_start(NaiveDate::parse_from_str(&today,"%Y-%m-%d").expect("today in YYYY-MM-DD"));
         self.to_month=self.from_month;
         self.expanded.clear();self.sort=None;self.detail_order_id=None;
-        self.snapshot=None; // explicit navigation expiry resets the query
+        self.snapshot=None;self.geometry_cache.invalidate(); // explicit navigation expiry resets the query
         self.refresh(ctx);
     }
     /// Excel rows navigate by the order's reception date. A single-day
@@ -1067,7 +1068,7 @@ impl OrderHistoryManager {
         // Navigating from Excel must not leave another order expanded.
         self.expanded.clear();
         self.expanded.insert(id.to_owned());
-        self.snapshot=None; // explicit navigation to a different query
+        self.snapshot=None;self.geometry_cache.invalidate(); // explicit navigation to a different query
         self.refresh(ctx);
     }
     pub fn refresh(&mut self,ctx:egui::Context){
@@ -1083,7 +1084,7 @@ impl OrderHistoryManager {
     fn poll(&mut self){
         match self.refresh_job.poll(){
             Some(Ok(snapshot))=>{
-                self.refresh_job.publish(&mut self.snapshot,snapshot);
+                self.refresh_job.publish(&mut self.snapshot,snapshot);self.geometry_cache.invalidate();
                 self.error=None;
             }
             Some(Err(error))=>self.error=Some(error),
@@ -1316,7 +1317,7 @@ impl OrderHistoryManager {
             ).is_none(){
                 self.date_from=self.from_input.clone();
                 self.date_to=self.to_input.clone();
-                self.snapshot=None; // do not display rows for a different search/date
+                self.snapshot=None;self.geometry_cache.invalidate(); // do not display rows for a different search/date
                 self.refresh(section.ctx().clone());
             }
             // Same measured transition as Freight > Shipping Group
@@ -1344,8 +1345,20 @@ impl OrderHistoryManager {
             let mut pending_memo=None;
             let mut pending_detail=None;
             let snapshot=self.snapshot.as_ref();
-            let lines=snapshot.map(|data|display_lines(data,&self.expanded,self.sort))
-                .unwrap_or_default();
+            let geometry=self.geometry_cache.get(
+                (self.sort,self.expanded.clone(),widths.map(f32::to_bits),section.ctx().pixels_per_point().to_bits()),||{
+                let lines=snapshot.map(|data|display_lines(data,&self.expanded,self.sort)).unwrap_or_default();
+                let spacings=(0..lines.len()).map(|i|history_detail_spacing(&lines,i)).collect::<Vec<_>>();
+                let heights=if let Some(data)=snapshot{
+                    lines.iter().zip(&spacings).map(|(line,spacing)|
+                        history_line_height(section,*line,data,&widths,*spacing)).collect::<Vec<_>>()
+                }else{Vec::new()};
+                let mut offsets=Vec::with_capacity(heights.len()+1);
+                offsets.push(0.0_f32);
+                for height in &heights{offsets.push(offsets.last().copied().unwrap_or(0.0)+height);}
+                (lines,spacings,heights,offsets)
+            });
+            let (lines,detail_spacings,line_heights,offsets)=geometry.as_ref();
             let validation=date_range_error(
                 &self.from_input,&self.to_input
             );
@@ -1381,19 +1394,6 @@ impl OrderHistoryManager {
             // Mixed fixed parent rows and auto-height shipment details need
             // prefix offsets. A fixed-height virtual grid would clip wrapped
             // products and could paint the next shipment on top.
-            let detail_spacings=(0..lines.len()).map(|i|
-                history_detail_spacing(&lines,i)
-            ).collect::<Vec<_>>();
-            let line_heights=if let Some(data)=snapshot{
-                lines.iter().zip(detail_spacings.iter()).map(|(line,spacing)|
-                    history_line_height(section,*line,data,&widths,*spacing)
-                ).collect::<Vec<_>>()
-            }else{Vec::new()};
-            let mut offsets=Vec::with_capacity(line_heights.len()+1);
-            offsets.push(0.0_f32);
-            for height in &line_heights{
-                offsets.push(offsets.last().copied().unwrap_or(0.0)+height);
-            }
             // Freight reference: header, rows and the right-hand 10pt rail
             // use one measured data width. An unconditional two-axis
             // ScrollArea exposed a bottom scrollbar even at desktop widths.

@@ -141,3 +141,36 @@ mod tests {
         assert_eq!(value,None);
     }
 }
+
+
+/// A single bounded, presentation-only projection. The owner invalidates on
+/// authoritative publication; key changes cover local view controls.
+pub(crate) struct ViewProjectionCache<K,V>{
+    entry:Option<(K,std::sync::Arc<V>)>,
+}
+impl<K,V> Default for ViewProjectionCache<K,V>{
+    fn default()->Self{Self{entry:None}}
+}
+impl<K:PartialEq,V> ViewProjectionCache<K,V>{
+    pub(crate) fn get(&mut self,key:K,build:impl FnOnce()->V)->std::sync::Arc<V>{
+        if let Some((stored,value))=&self.entry{
+            if *stored==key{return std::sync::Arc::clone(value);}
+        }
+        let value=std::sync::Arc::new(build());
+        self.entry=Some((key,std::sync::Arc::clone(&value)));
+        value
+    }
+    pub(crate) fn invalidate(&mut self){self.entry=None;}
+}
+#[cfg(test)]
+#[test]
+fn view_projection_reuses_frames_and_invalidates_on_publication(){
+    let mut cache=ViewProjectionCache::default();
+    let first=cache.get(1,||vec![1,2]);
+    for _ in 0..1000{
+        assert!(std::sync::Arc::ptr_eq(&first,&cache.get(1,||panic!("unchanged projection rebuilt"))));
+    }
+    assert_eq!(&*cache.get(2,||vec![2,1]),&[2,1]);
+    cache.invalidate();
+    assert_eq!(&*cache.get(2,||vec![3]),&[3]);
+}

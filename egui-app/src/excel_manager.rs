@@ -424,6 +424,8 @@ pub struct ExcelManager{
     gateway:Arc<dyn BandoGateway>,
     refresh_job:crate::screen_refresh::ReadRefresh<Snapshot>,
     result:Option<Snapshot>,
+    queue_cache:crate::screen_refresh::ViewProjectionCache<(Tab,String,Option<Sort>),(Vec<QueueRow>,BTreeSet<String>)>,
+    history_cache:crate::screen_refresh::ViewProjectionCache<(String,String,String,Option<Sort>),Vec<HistoryRow>>,
     operation:Option<Receiver<Result<Value,String>>>,
     operation_name:Option<String>,
     error:Option<String>,
@@ -460,7 +462,7 @@ impl ExcelManager{
         ).date_naive();
         let (export_from,export_to)=default_export_date_range(today);
         let mut manager=Self{
-            gateway,refresh_job:Default::default(),result:None,operation:None,operation_name:None,
+            gateway,refresh_job:Default::default(),result:None,queue_cache:Default::default(),history_cache:Default::default(),operation:None,operation_name:None,
             error:None,notice:None,tab:Tab::Factory,
             tab_snapshots:crate::navigation::NavigationSnapshots::new(0),tab_filters:Default::default(),
             query:String::new(),selected:BTreeSet::new(),
@@ -540,6 +542,7 @@ impl ExcelManager{
         match self.refresh_job.poll(){
             Some(Ok(value))=>{
                 self.refresh_job.publish(&mut self.result,value);
+                self.queue_cache.invalidate();self.history_cache.invalidate();
                 self.error=None;
             }
             Some(Err(message))=>self.error=Some(message),
@@ -560,6 +563,7 @@ impl ExcelManager{
                         "mark_store_sent"=>"매장 발송을 확인했습니다.",
                         _=>"Excel 관리 변경사항을 저장했습니다.",
                     }.into());
+                    self.queue_cache.invalidate();self.history_cache.invalidate();
                     self.result=Some(Snapshot{
                         state:result["state"].clone(),
                         shipments:result["shipmentReads"].clone()
@@ -584,7 +588,8 @@ impl ExcelManager{
                     // A committed export must not be reported as failed due to a later read.
                     self.refresh_job.cancel();
                     if result.get("shipmentReads").is_some() && result["state"]["revision"].as_u64().is_some(){
-                        self.result=Some(Snapshot{
+                        self.queue_cache.invalidate();self.history_cache.invalidate();
+                    self.result=Some(Snapshot{
                             state:result["state"].clone(),
                             shipments:result["shipmentReads"].clone()
                         });
@@ -618,7 +623,8 @@ impl ExcelManager{
         self.refresh_job.cancel();
         self.notice=Some("공장 회신 정정 내용을 저장했습니다. 기존 원본 및 이력은 유지됩니다.".into());
         if result.get("shipmentReads").is_some() && result["state"]["revision"].as_u64().is_some(){
-            self.result=Some(Snapshot{
+            self.queue_cache.invalidate();self.history_cache.invalidate();
+                    self.result=Some(Snapshot{
                 state:result["state"].take(),
                 shipments:result["shipmentReads"].take(),
             });
@@ -780,6 +786,17 @@ impl ExcelManager{
         }
     }
 
+    fn queue_projection(&mut self)->std::sync::Arc<(Vec<QueueRow>,BTreeSet<String>)>{
+        self.queue_cache.get((self.tab,self.query.clone(),self.sort_queue),||{
+            let mut queued=if self.tab==Tab::History{Vec::new()}
+            else if let Some(snapshot)=self.result.as_ref(){
+                records(&snapshot.state,&snapshot.shipments,self.tab,&self.query)
+            }else{Vec::new()};
+            sort_queue(&mut queued,self.sort_queue);
+            let visible=queued.iter().filter(|r|!r.legacy).map(|r|r.id().to_owned()).collect();
+            (queued,visible)
+        })
+    }
     pub fn show_page(&mut self,ui:&mut Ui){
         // Also consume worker results when this page is hosted independently.
         self.poll(ui.ctx());
@@ -839,16 +856,9 @@ impl ExcelManager{
         // Resolve the currently selectable queue BEFORE allocating the fixed
         // toolbar: its right-hand action caption and enabled state must use
         // the same visible selection as the table below.
-        let mut queued=if self.tab==Tab::History{
-            Vec::new()
-        }else if let Some(snapshot)=self.result.as_ref(){
-            records(&snapshot.state,&snapshot.shipments,self.tab,&self.query)
-        }else{Vec::new()};
-        sort_queue(&mut queued,self.sort_queue);
-        let mut visible:BTreeSet<String>=queued.iter().filter(|r|!r.legacy)
-            .map(|r|r.id().to_owned()).collect();
+        let mut queued=self.queue_projection();
         if self.tab!=Tab::History && self.result.is_some() && !self.refresh_job.required(){
-            self.selected.retain(|id|visible.contains(id));
+            self.selected.retain(|id|queued.1.contains(id));
         }
         crate::card::align_management_primary_card(ui,page_origin_y);
         // Exact same 16pt interior inset and frame as the approved master.
@@ -914,13 +924,7 @@ impl ExcelManager{
                         // query cannot leave an out-of-date table beneath
                         // the master toolbar until the next repaint.
                         if self.tab!=Tab::History{
-                            queued=if let Some(snapshot)=self.result.as_ref(){
-                                records(&snapshot.state,&snapshot.shipments,
-                                    self.tab,&self.query)
-                            }else{Vec::new()};
-                            sort_queue(&mut queued,self.sort_queue);
-                            visible=queued.iter().filter(|r|!r.legacy)
-                                .map(|r|r.id().to_owned()).collect();
+                            queued=self.queue_projection();
                         }
                         search.ctx().request_repaint();
                     }
@@ -1015,14 +1019,16 @@ impl ExcelManager{
             let state=self.result.as_ref().map(|r|&r.state);
             let native=self.result.as_ref().map(|r|&r.shipments);
             if self.tab==Tab::History{
-                let mut history=state.map(|s|{
-                    export_history(s,&self.query,&self.export_from,&self.export_to)
-                }).unwrap_or_default();
-                sort_history(&mut history,self.sort_history);
-                let indexes=0..history.len();
-                let order_list=history.clone();
+                let order_list=self.history_cache.get((self.query.clone(),self.export_from.clone(),self.export_to.clone(),self.sort_history),||{
+                    let mut history=state.map(|s|{
+                        export_history(s,&self.query,&self.export_from,&self.export_to)
+                    }).unwrap_or_default();
+                    sort_history(&mut history,self.sort_history);
+                    history
+                });
+                let indexes=0..order_list.len();
                 let empty_message=table_state_message(
-                    self.tab,&self.query,history.len(),self.refresh_job.pending(),
+                    self.tab,&self.query,order_list.len(),self.refresh_job.pending(),
                     self.error.is_some()
                 );
                 let scroll_keys=|i:usize|crate::scrollbar::row_key(text(&order_list[i].export,"id"));
@@ -1060,9 +1066,10 @@ impl ExcelManager{
                             });
                     });
             }else{
+                let visible=&queued.1;
                 let all=!visible.is_empty()
                     &&self.selected.len()==visible.len();
-                let records=queued;
+                let records=&queued.0;
                 // The Excel/export actions are now in the fixed search
                 // toolbar. Do not reserve an obsolete bottom footer.
                 // Dynamic per-shipment editors still use the conservative cap.
@@ -1125,7 +1132,7 @@ impl ExcelManager{
                     }
                 );
                 if let Some(checked)=toggle_all{
-                    if checked{self.selected=visible;}
+                    if checked{self.selected=visible.clone();}
                     else{self.selected.clear();}
                 }
                 if let Some(id)=manage_clicked.take(){
@@ -1294,7 +1301,7 @@ mod table_state_tests {
         // Source-level guard is intentional: this regression was an inline
         // panel and mutable workflow action, not a data-contract change.
         let source=include_str!("excel_manager.rs");
-        let start=source.find("let mut history=state.map")
+        let start=source.find("let order_list=self.history_cache.get")
             .expect("history table must still exist");
         let end=start+source[start..]
             .find("let all=!visible.is_empty()")

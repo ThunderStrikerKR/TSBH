@@ -10,7 +10,7 @@ use crate::{
     settings_help, theme, typography,
 };
 use eframe::egui::{self, Ui};
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, HashSet};
 use serde_json::{json, Value};
 use std::sync::{
     mpsc::{self, Receiver, TryRecvError},
@@ -830,9 +830,10 @@ impl FreightManager {
         let products: Vec<&Value> = rows(&state["products"])
             .iter().filter(|p| registered(p)).collect();
         let category_paths=ProductCategoryPaths::new(state,&products);
+        let group_ids:HashSet<&str>=groups.iter().map(|g|text(g,"id")).collect();
         let assigned = products.iter().filter(|p| {
             let id = text(p, "shippingGroupId");
-            !id.is_empty() && groups.iter().any(|g| text(g, "id") == id)
+            !id.is_empty() && group_ids.contains(id)
         }).count();
         // KPI cards follow the same 16pt content guide as the page heading
         // and sub-tabs. Their individual 228pt widths and 8pt gaps stay intact.
@@ -1346,10 +1347,9 @@ impl FreightManager {
                 // Apply the current filters before drawing bulk selection.
                 // This ensures "전체 선택" always targets the visible rows.
                 let needle=search.to_lowercase().split_whitespace().collect::<String>();
+                let group_ids:HashSet<&str>=groups.iter().map(|g|text(g,"id")).collect();
                 let mut filtered:Vec<&Value>=products.iter().copied().filter(|p|{
-                    let grouped=groups.iter().any(|g|
-                        text(g,"id")==text(p,"shippingGroupId")
-                    );
+                    let grouped=group_ids.contains(text(p,"shippingGroupId"));
                     (needle.is_empty()||[text(p,"code"),text(p,"name"),
                         text(p,"subtitle"),category_paths.for_product(p)]
                         .iter().any(|s|s.to_lowercase().split_whitespace()
@@ -1371,14 +1371,12 @@ impl FreightManager {
                 } else if needle.is_empty() && group_filter.is_empty() {
                     // Original default: group-unassigned products first.
                     // Use committed membership to avoid shifting rows mid-edit.
-                    filtered.sort_by_key(|p|usize::from(groups.iter().any(|g|
-                        text(g,"id")==text(p,"shippingGroupId")
-                    )));
+                    filtered.sort_by_key(|p|usize::from(group_ids.contains(text(p,"shippingGroupId"))));
                 }
 
                 // None = no target chosen; Some("") = explicit removal.
                 if bulk_group.as_deref().is_some_and(|id|
-                    !id.is_empty() && !groups.iter().any(|g|text(g,"id")==id)
+                    !id.is_empty() && !group_ids.contains(id)
                 ) {
                     *bulk_group=None;
                     *bulk_feedback=None;

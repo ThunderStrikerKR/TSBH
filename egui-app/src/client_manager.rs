@@ -85,6 +85,7 @@ type AsyncState=Receiver<Result<Value,String>>;
 
 pub struct ClientManager {
     state:Value,
+    list_cache:crate::screen_refresh::ViewProjectionCache<(String,Option<(usize,bool)>),([usize;4],Vec<usize>)>,
     ready:bool,
     loading:crate::screen_refresh::ReadRefresh<Value>,
     saving:Option<AsyncState>,
@@ -123,7 +124,7 @@ impl ClientManager {
         let mut loading=crate::screen_refresh::ReadRefresh::default();
         loading.submit_required(ctx,move||gateway.load_client_master());
         Self {
-            state:Value::Null,ready:false,loading,saving:None,
+            state:Value::Null,list_cache:Default::default(),ready:false,loading,saving:None,
             search_job:Default::default(),matches:Vec::new(),matches_query:String::new(),search:String::new(),
             sort:None,error:None,changed:false,
             draft:None,original:None,confirm_delete:false,confirm_discard:false,
@@ -214,6 +215,7 @@ impl ClientManager {
     fn query(&mut self,gateway:Arc<dyn BandoGateway>,ctx:Context) {
         self.search_job.cancel();
         // Retain same-query results, never across a changed search.
+        if self.matches_query!=self.search{self.list_cache.invalidate();}
         crate::screen_refresh::retain_scope(&mut self.matches,self.matches_query==self.search);
         self.matches_query=self.search.clone();
         if self.search.trim().is_empty() {
@@ -238,7 +240,7 @@ impl ClientManager {
     fn poll(&mut self,gateway:Arc<dyn BandoGateway>,ctx:&Context) {
         match self.loading.poll(){
             Some(Ok(state))=>{
-                self.state=state;self.ready=true;self.loading.verified();
+                self.state=state;self.list_cache.invalidate();self.ready=true;self.loading.verified();
                 self.error=None;
                 self.query(Arc::clone(&gateway),ctx.clone());
             },
@@ -248,7 +250,7 @@ impl ClientManager {
         let saved=self.saving.as_ref().map(|rx|rx.try_recv());
         match saved {
             Some(Ok(Ok(state)))=>{
-                self.state=state;self.saving=None;
+                self.state=state;self.list_cache.invalidate();self.saving=None;
                 self.draft=None;self.original=None;self.confirm_delete=false;
                 self.confirm_discard=false;self.error=None;
                 self.tag_input.clear();self.tag_notice=None;
@@ -269,7 +271,7 @@ impl ClientManager {
             _=>{},
         }
         match self.search_job.poll(){
-            Some(Ok(ids))=>{self.matches=ids;self.search_job.verified();},
+            Some(Ok(ids))=>{self.matches=ids;self.list_cache.invalidate();self.search_job.verified();},
             Some(Err(error))=>self.error=Some(error),
             None=>{},
         }
@@ -333,7 +335,7 @@ impl ClientManager {
         let page_origin_y=ui.cursor().top();
         self.poll(Arc::clone(&gateway),ui.ctx());
         if let Some(state)=self.excel.poll(ui.ctx()){
-            self.state=state;self.changed=true;self.error=None;
+            self.state=state;self.list_cache.invalidate();self.changed=true;self.error=None;
             self.query(Arc::clone(&gateway),ui.ctx().clone());
         }
         crate::floating_notice::sync(
@@ -347,23 +349,33 @@ impl ClientManager {
         // The four actual client tiers fill the same four KPI slots as
         // Freight > Shipping Group Assignment. These counts intentionally
         // include every non-deleted client, not just filtered search rows.
-        let mut tier_counts=[0usize;4];
-        let mut filtered_count=0usize;
-        for client in self.clients().iter()
-            .filter(|client|field(client,"deletedAt").is_empty()){
-            match field(client,"tier"){
-                "wholesale"=>tier_counts[0]+=1,
-                "semi"=>tier_counts[1]+=1,
-                "retail"=>tier_counts[2]+=1,
-                "special"=>tier_counts[3]+=1,
-                _=>{},
+        let projection=self.list_cache.get((self.search.clone(),self.sort),||{
+            let clients=self.state.get("clients").and_then(Value::as_array).map(Vec::as_slice).unwrap_or(&[]);
+            let matches:std::collections::HashSet<&str>=self.matches.iter().map(String::as_str).collect();
+            let mut tier_counts=[0usize;4];
+            let mut rows=Vec::new();
+            for (i,client) in clients.iter().enumerate().filter(|(_,row)|field(row,"deletedAt").is_empty()){
+                match field(client,"tier"){
+                    "wholesale"=>tier_counts[0]+=1,"semi"=>tier_counts[1]+=1,
+                    "retail"=>tier_counts[2]+=1,"special"=>tier_counts[3]+=1,_=>{},
+                }
+                if self.search.trim().is_empty()||matches.contains(field(client,"id")){rows.push(i);}
             }
-            if self.search.trim().is_empty() ||
-                (self.matches.iter()
-                    .any(|id|id==field(client,"id"))){
-                filtered_count+=1;
+            if let Some((column,descending))=self.sort{
+                rows.sort_by_cached_key(|&i|{
+                    let client=&clients[i];
+                    let value=match column{
+                        0=>field(client,"name"),1=>field(client,"address"),2=>displayed_phone(client),
+                        _=>crate::composite_client::client_tier_label(field(client,"tier")),
+                    };
+                    let key=(value.to_lowercase(),field(client,"id").to_owned());
+                    if descending{(None,Some(std::cmp::Reverse(key)))}else{(Some(key),None)}
+                });
             }
-        }
+            (tier_counts,rows)
+        });
+        let tier_counts=projection.0;
+        let filtered_count=projection.1.len();
         let list_status=if !self.ready{
             "불러오는 중".to_owned()
         }else if !self.state.is_object(){
@@ -443,31 +455,7 @@ impl ClientManager {
 
         // A filtered copy keeps Rust's search IDs authoritative.
         // Sorting changes display order only, never the backing master.
-        let mut rows=self.clients().iter()
-            .filter(|row|field(row,"deletedAt").is_empty())
-            .filter(|row|self.search.trim().is_empty() ||
-                (self.matches.iter()
-                    .any(|id|id==field(row,"id"))))
-            .cloned().collect::<Vec<_>>();
-        if let Some((column,descending))=self.sort{
-            rows.sort_by(|left,right|{
-                let a=match column {
-                    0=>field(left,"name"),
-                    1=>field(left,"address"),
-                    2=>displayed_phone(left),
-                    _=>crate::composite_client::client_tier_label(field(left,"tier")),
-                };
-                let b=match column {
-                    0=>field(right,"name"),
-                    1=>field(right,"address"),
-                    2=>displayed_phone(right),
-                    _=>crate::composite_client::client_tier_label(field(right,"tier")),
-                };
-                let compared=a.to_lowercase().cmp(&b.to_lowercase())
-                    .then_with(||field(left,"id").cmp(field(right,"id")));
-                if descending{compared.reverse()}else{compared}
-            });
-        }
+        let rows=&projection.1;
 
         // Same FULL master table frame as Freight Assignment: one 16pt
         // inset on every edge, one 36pt toolbar, one 33pt transition and
@@ -568,7 +556,8 @@ impl ClientManager {
             let scroll_track=crate::table::management_table_scroll_track_rect(
                 section,scroll_max_height
             );
-            let scroll_keys=|i:usize|crate::scrollbar::row_key(field(&rows[i],"id"));
+            let clients=self.state.get("clients").and_then(Value::as_array).map(Vec::as_slice).unwrap_or(&[]);
+            let scroll_keys=|i:usize|crate::scrollbar::row_key(field(&clients[rows[i]],"id"));
             let scroll_output=crate::table::fixed_rows_snapshot(
                 section,crate::table::Viewport{width:table_width,height:scroll_max_height,rail:Some(scroll_track)},
                 "client-management-table-rows",theme::MANAGEMENT_CLIENT_ROW_HEIGHT,rows.len(),
@@ -583,7 +572,7 @@ impl ClientManager {
                         first_row_left.get_or_insert(row_rect.left());
                         crate::table::row_scope(table,("client-management-fixed-row",index),row_rect,|row|{
                                 row.set_clip_rect(rows_clip);
-                                if let Some(client)=rows.get(index){
+                                if let Some(client)=rows.get(index).and_then(|&i|clients.get(i)){
                                     #[cfg(test)]
                                     crate::ui_test_support::record("data row",row_rect);
                                     let display=crate::composite_client::ClientDisplaySummary::from_client(client);

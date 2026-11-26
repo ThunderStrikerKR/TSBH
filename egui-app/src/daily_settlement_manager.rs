@@ -358,6 +358,8 @@ pub struct DailySettlementManager{
     gateway:Arc<dyn BandoGateway>,
     refresh_job:crate::screen_refresh::ReadRefresh<Value>,
     report:Option<Value>,
+    order_cache:crate::screen_refresh::ViewProjectionCache<(Option<Sort>,bool),Vec<usize>>,
+    payment_cache:crate::screen_refresh::ViewProjectionCache<(Option<Sort>,bool),Vec<usize>>,
     error:Option<String>,
     date:String,
     date_input:String,
@@ -369,7 +371,7 @@ impl DailySettlementManager{
     pub fn new(gateway:Arc<dyn BandoGateway>,ctx:egui::Context)->Self{
         let today=seoul_today();
         let mut manager=Self{
-            gateway,refresh_job:Default::default(),report:None,error:None,
+            gateway,refresh_job:Default::default(),report:None,order_cache:Default::default(),payment_cache:Default::default(),error:None,
             date:today.clone(),date_input:today.clone(),
             calendar_month:crate::navigation::calendar_month_start(
                 NaiveDate::parse_from_str(&today,"%Y-%m-%d")
@@ -392,6 +394,7 @@ impl DailySettlementManager{
         // Keep an already verified report only for this exact date.
         let same_scope=self.report.as_ref().is_none_or(|report|report["date"].as_str()==Some(self.date.as_str()));
         crate::screen_refresh::retain_scope(&mut self.report,same_scope);
+        if !same_scope{self.order_cache.invalidate();self.payment_cache.invalidate();}
         self.error=None;
         let gateway=Arc::clone(&self.gateway);
         let date=self.date.clone();
@@ -401,6 +404,7 @@ impl DailySettlementManager{
         match self.refresh_job.poll(){
             Some(Ok(report)) if report["date"].as_str()==Some(self.date.as_str())=>{
                 self.refresh_job.publish(&mut self.report,report);
+                self.order_cache.invalidate();self.payment_cache.invalidate();
                 self.error=None;
             }
             Some(Ok(_))=>self.error=Some("조회한 결산 날짜가 요청 날짜와 일치하지 않습니다.".into()),
@@ -522,7 +526,7 @@ impl DailySettlementManager{
                         settings_help::icon(review,"미수금과 실제 운임");
                     });
                     crate::ui_primitives::section_divider(section);
-                    let indices=sorted_indices(orders,self.order_sort,false);
+                    let indices=self.order_cache.get((self.order_sort,visible_report.is_some()),||sorted_indices(orders,self.order_sort,false));
                     let scroll_keys=|i:usize|crate::scrollbar::row_key(field(&orders[indices[i]],"orderId"));
                     report_table(
                         section,"settlement-orders",
@@ -581,7 +585,7 @@ impl DailySettlementManager{
                         }
                     });
                     crate::ui_primitives::section_divider(section);
-                    let indices=sorted_indices(payments,self.payment_sort,true);
+                    let indices=self.payment_cache.get((self.payment_sort,visible_report.is_some()),||sorted_indices(payments,self.payment_sort,true));
                     let scroll_keys=|i:usize|crate::scrollbar::row_key(field(&payments[indices[i]],"id"));
                     report_table(
                         section,"settlement-payments",
