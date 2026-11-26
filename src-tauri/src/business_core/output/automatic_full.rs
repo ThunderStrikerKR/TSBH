@@ -309,22 +309,26 @@ pub(super) fn execute(payload:&Value)->Result<Value,String>{
     // provisional product detection. Build the native payment input once.
     let mut payment_data=payment_input(state,&view,&amounts,account,true)?;
     let payment_with_links=payment(&payment_data,&state["settings"])?;
-    let rendered=if include_links{payment_with_links.clone()}
-        else{
-            payment_data["includeLinks"]=json!(false);
-            payment(&payment_data,&state["settings"])?
-        };
+    payment_data["includeLinks"]=json!(false);
+    let payment_without_links=payment(&payment_data,&state["settings"])?;
     let issues=price_issues(&view,&client,account,&amounts)?;
     let greeting=render(&state["settings"],"paymentGreeting",&Value::Null)?;
-    let pay=string(&rendered,"payment");
-    let payment_text=if pay.starts_with(&greeting){pay[greeting.len()..].trim_start()}
-        else{pay};
-    let text=if string(&request,"phase")=="payment"{
-        payment_text.to_string()
-    }else{string(&request,"requestText").to_string()};
+    let payment_body=|value:&Value|{
+        let pay=string(value,"payment");
+        pay.strip_prefix(greeting.as_str()).map(str::trim_start).unwrap_or(pay).to_owned()
+    };
     let valid_links=distinct(rows(&view,"recipients").iter()
         .flat_map(|r|rows(r,"items")).filter(|i|url_is_official(string(i,"url")))
         .map(|i|format!("{}\n{}",string(i,"name"),string(i,"url"))));
+    let (plain,with_links)=if string(&request,"phase")=="payment"{
+        (payment_body(&payment_without_links),payment_body(&payment_with_links))
+    }else{
+        let plain=string(&request,"requestText").to_owned();
+        let linked=if valid_links.is_empty(){plain.clone()}
+            else{format!("{plain}\n\n{}",valid_links.join("\n"))};
+        (plain,linked)
+    };
+    let text=if include_links{&with_links}else{&plain};
     let signature=payment_signature(&view,string(&payment_with_links,"payment"),
         account,rows(payload,"accountWire"))?;
     let copied=||payment_was_copied(state,gid,&signature);
@@ -332,7 +336,7 @@ pub(super) fn execute(payload:&Value)->Result<Value,String>{
         return Ok(json!({"copied":copied()}));
     }
     let mut result=json!({
-        "phase":string(&request,"phase"),"text":text,
+        "phase":string(&request,"phase"),"text":text,"textWithLinks":with_links,
         "paymentIssues":issues,"signature":signature,
         "validRequestLinks":valid_links
     });
@@ -451,6 +455,22 @@ mod automatic_preview_cache_tests{
                     "queue":[],"events":[]}
             }
         })
+    }
+    #[test]
+    fn automatic_preview_cache_link_variants_preserve_payment_signature(){
+        let mut p=fixture();
+        let url="https://bandostand.com/product/test/123/";
+        p["state"]["orders"][0]["recipients"][0]["items"][0]["url"]=json!(url);
+        let plain=execute(&p).unwrap();
+        assert!(!string(&plain,"text").contains(url));
+        assert!(string(&plain,"textWithLinks").contains(url));
+        p["includeLinks"]=json!(true);
+        let linked=execute(&p).unwrap();
+        assert_eq!(linked["text"],plain["textWithLinks"]);
+        assert_eq!(linked["signature"],plain["signature"]);
+        p["state"]["orders"][0]["recipients"][0]["items"][0]["url"]=json!("https://example.com/product/test/");
+        let rejected=execute(&p).unwrap();
+        assert!(!string(&rejected,"text").contains("example.com"));
     }
     #[test]
     fn automatic_preview_cache_reuses_body_but_checks_copy_evidence_and_invalidates_money(){
