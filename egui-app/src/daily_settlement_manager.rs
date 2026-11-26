@@ -55,7 +55,7 @@ fn settlement_date_toolbar(
             *date=move_date(date,-1);
             *date_input=date.clone();
             if let Ok(day)=NaiveDate::parse_from_str(date,"%Y-%m-%d"){
-                *calendar_month=components::calendar_month_start(day);
+                *calendar_month=crate::navigation::calendar_month_start(day);
             }
             changed=true;
         }
@@ -64,7 +64,7 @@ fn settlement_date_toolbar(
         ).changed() && valid_date(date_input) && date!=date_input{
             *date=date_input.clone();
             if let Ok(day)=NaiveDate::parse_from_str(date,"%Y-%m-%d"){
-                *calendar_month=components::calendar_month_start(day);
+                *calendar_month=crate::navigation::calendar_month_start(day);
             }
             changed=true;
         }
@@ -75,9 +75,9 @@ fn settlement_date_toolbar(
             let open=NaiveDate::parse_from_str(date,"%Y-%m-%d")
                 .unwrap_or_else(|_|NaiveDate::parse_from_str(
                     &seoul_today(),"%Y-%m-%d").expect("valid today"));
-            *calendar_month=components::calendar_month_start(open);
+            *calendar_month=crate::navigation::calendar_month_start(open);
         }
-        if let Some(day)=components::date_calendar(
+        if let Some(day)=crate::navigation::date_calendar(
             &trigger,calendar_month,date,"daily-settlement-date-calendar"
         ){
             *date=day.format("%Y-%m-%d").to_string();
@@ -88,7 +88,7 @@ fn settlement_date_toolbar(
             *date=move_date(date,1);
             *date_input=date.clone();
             if let Ok(day)=NaiveDate::parse_from_str(date,"%Y-%m-%d"){
-                *calendar_month=components::calendar_month_start(day);
+                *calendar_month=crate::navigation::calendar_month_start(day);
             }
             changed=true;
         }
@@ -371,7 +371,7 @@ impl DailySettlementManager{
         let mut manager=Self{
             gateway,receiver:None,report:None,error:None,
             date:today.clone(),date_input:today.clone(),
-            calendar_month:components::calendar_month_start(
+            calendar_month:crate::navigation::calendar_month_start(
                 NaiveDate::parse_from_str(&today,"%Y-%m-%d")
                     .expect("today in YYYY-MM-DD")
             ),

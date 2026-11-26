@@ -3,7 +3,8 @@
 //! The native egui view owns only date/search presentation, sort, expansion,
 //! clipboard copy and virtualized fixed-height rows.
 use crate::{
-    components::{self, calendar_month_start as month_start},
+    components,
+    navigation::calendar_month_start as month_start,
     gateway::{BandoGateway, ReadOperation},
     settings_help, theme, typography,
 };
@@ -724,7 +725,7 @@ fn range_date_picker_rtl(
         +CALENDAR+2.0*theme::FRAME_STROKE_WIDTH;
     const INNER_HEIGHT:f32=theme::ACTION_STANDARD_HEIGHT;
     let mut changed=false;
-    components::management_date_group(ui,id,GROUP_WIDTH,|row,inner|{
+    crate::navigation::management_date_group(ui,id,GROUP_WIDTH,|row,inner|{
             let prev=crate::button::management_date_segment(
                 row,"‹",PREV,crate::button::ManagementDateSegmentEdge::Leading
             )
@@ -767,7 +768,7 @@ fn range_date_picker_rtl(
                         &seoul_today(),"%Y-%m-%d").expect("valid today"));
                 *month=month_start(day);
             }
-            if let Some(day)=components::date_calendar(
+            if let Some(day)=crate::navigation::date_calendar(
                 &trigger,month,date,id
             ){
                 crate::floating_notice::action_rect(row.ctx(),"history.date",trigger.rect);
@@ -1518,7 +1519,7 @@ impl OrderHistoryManager {
 #[cfg(test)]
 mod tests{
     use super::*;
-    use crate::components::{calendar_dates,shift_calendar_month};
+    use crate::navigation::{calendar_dates,shift_calendar_month};
     #[test]
     fn expanded_order_groups_two_recipients_and_preserves_full_delivery_details(){
         let snapshot=HistorySnapshot{

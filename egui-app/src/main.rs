@@ -8,6 +8,7 @@ mod theme;
 mod typography;
 mod layout;
 mod ui_layout;
+mod navigation;
 mod window_state;
 mod components;
 mod ui_primitives;
@@ -7482,7 +7483,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                     Self::section_with_header(
                         pane,"수취인별 주문 정보",recipient_height,
                         |header|{
-                            next_ship=components::reception_recipient_navigator(
+                            next_ship=crate::navigation::reception_recipient_navigator(
                                 header,name,index,count,confirmed_cell_idle
                             );
                         },|ui|{
@@ -7939,7 +7940,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                             if !recipients.is_empty(){
                                 let name=recipient.map(|row|
                                     reception_service::text(row,"name")).unwrap_or("");
-                                if let Some(next)=components::reception_recipient_navigator(
+                                if let Some(next)=crate::navigation::reception_recipient_navigator(
                                     header,name,index,recipients.len(),true){
                                     next_target=recipients.get(next)
                                         .and_then(|row|row["id"].as_str())
@@ -8208,7 +8209,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                         // Actual recipient inputs are directly editable;
                         // separate Edit/History header controls are redundant.
                         if let Some((name,index,total))=recipient_nav.as_ref(){
-                            next_recipient=components::reception_recipient_navigator(
+                            next_recipient=crate::navigation::reception_recipient_navigator(
                                 header,name,*index,*total,
                                 self.inline_change.is_none()
                                     && self.working_sync.is_none()

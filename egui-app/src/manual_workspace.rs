@@ -1978,7 +1978,7 @@ impl ManualWorkspace {
                                         && self.edit_text==self.current_value();
                                     let count_control_id=
                                         right.make_persistent_id("manual-shipment-count");
-                                    let count_control=components::date_navigation_count_control(
+                                    let count_control=crate::navigation::date_navigation_count_control(
                                         right,count_control_id,&mut self.row_count_text,
                                         current_count,can_resize,1,100
                                     );
@@ -2188,7 +2188,7 @@ impl ManualWorkspace {
                                                             // while navigation is locked; only
                                                             // the arrow segments become disabled.
                                                             next_recipient=
-                                                                components::reception_recipient_navigator(
+                                                                crate::navigation::reception_recipient_navigator(
                                                                     header,name,index,rows.len(),can_switch
                                                                 );
                                                         },|fields|{
@@ -3411,11 +3411,11 @@ mod manual_workspace_modal_routing_tests {
     #[test]
     fn shipment_count_is_one_date_selector_segmented_control(){
         let manual=include_str!("manual_workspace.rs");
-        let components=include_str!("components.rs");
+        let navigation=include_str!("navigation.rs");
         let count_row=manual.split("let current_count=header_row_count").nth(1).unwrap()
             .split("let count_commit=").next().unwrap();
         assert_eq!(
-            count_row.matches("components::date_navigation_count_control(").count(),1
+            count_row.matches("crate::navigation::date_navigation_count_control(").count(),1
         );
         assert!(!count_row.contains("date_navigation_step_button("));
         assert!(!count_row.contains("TextEdit::singleline("),
@@ -3436,7 +3436,7 @@ mod manual_workspace_modal_routing_tests {
         assert!(segmented.contains("rect_stroke("));
         assert!(segmented.contains("StrokeKind::Inside"));
 
-        let control=components.split("pub fn date_navigation_count_control(").nth(1).unwrap()
+        let control=navigation.split("pub fn date_navigation_count_control(").nth(1).unwrap()
             .split("/// Shared calendar navigation").next().unwrap();
         for token in [
             "date_navigation_segmented_surface(",
@@ -4236,7 +4236,7 @@ mod manual_workspace_layout_tests{
                         crate::card::reception_section_with_header(
                             sheet,"수취인별 주문 정보",0.0,
                             |header|{
-                                let _=components::reception_recipient_navigator(
+                                let _=crate::navigation::reception_recipient_navigator(
                                     header,"테스트",0,1,true
                                 );
                             },
@@ -4309,9 +4309,9 @@ mod manual_workspace_layout_tests{
         assert!(toolbar_start<header_start && header_start<body_start
             && body_start<columns_start);
         assert!(render[header_start..body_start]
-            .contains("components::date_navigation_count_control("));
+            .contains("crate::navigation::date_navigation_count_control("));
         assert!(!render[body_start..]
-            .contains("components::date_navigation_count_control("));
+            .contains("crate::navigation::date_navigation_count_control("));
         assert!(!render[body_start..columns_start]
             .contains("crate::ui_primitives::section_divider("));
         assert!(render[toolbar_start..body_start]
