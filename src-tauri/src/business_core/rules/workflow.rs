@@ -143,7 +143,20 @@ pub(super) fn shipment_totals(state: &Value, shipment_id: &str) -> Result<Value,
     set(&mut view,"shippingFee",json!(fee_total(ship,row,order)))?;
     set(&mut view,"pricesLocked",json!(false))?;
     set(&mut view,"vatAmount",Value::Null)?;
-    pricing::totals(&view,client)
+    let mut totals=pricing::totals(&view,client)?;
+    // Preserve ordinary historical 10% arithmetic. Explicit non-default
+    // rates use the same exact integer rounding as the reception quote.
+    let rate=field(row,"vatRateBps").as_i64().unwrap_or(1000);
+    if !(0..=10_000).contains(&rate){return Err("부가세율이 허용 범위를 벗어났습니다.".into());}
+    if shipment_vat(order,row) && rate!=1000{
+        let base=safe(field(&totals,"subtotal")).zip(safe(field(&totals,"shipping")))
+            .and_then(|(a,b)|checked_sum([a,b]));
+        let vat=base.and_then(|n|i64::try_from((i128::from(n)*i128::from(rate)+5000)/10000).ok());
+        let total=base.zip(vat).and_then(|(a,b)|checked_sum([a,b]));
+        set(&mut totals,"vat",json!(vat))?;
+        set(&mut totals,"total",json!(total))?;
+    }
+    Ok(totals)
 }
 pub(super) fn account_for<'a>(state: &'a Value,group:&Value,order:&Value,client:&Value) -> Option<&'a Value> {
     let settings=field(state,"settings");

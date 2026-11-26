@@ -270,7 +270,9 @@ pub(super) fn billing(state:&Value,index:usize)->Result<String,String> {
     } else {str_field(order,"freightCode")=="020"};
     let str_json=|s:&str|serde_json::to_string(s).unwrap_or_else(|_|"null".to_string());
     let suffix=if collect {",\"collect\":true"} else {""};
-    Ok(format!("{{\"info\":{},\"fees\":{},\"vat\":{},\"account\":{}{suffix}}}",
+    let rate=field(recipient,"vatRateBps").as_i64().unwrap_or(1000);
+    let rate_suffix=if vat && rate!=1000{format!(",\"vatRateBps\":{rate}")}else{String::new()};
+    Ok(format!("{{\"info\":{},\"fees\":{},\"vat\":{},\"account\":{}{suffix}{rate_suffix}}}",
         field(ship,"infoSignature"),field(ship,"charges"),vat,str_json(&account_key)))
 }
 pub(super) fn reconcile(payload:&Value)->Result<Value,String> {

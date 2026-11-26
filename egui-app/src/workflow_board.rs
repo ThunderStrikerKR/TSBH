@@ -417,7 +417,10 @@ fn project_state(gateway:&dyn BandoGateway,state:&Value,scope:Option<&HashSet<St
             let order_total=field(preview,"total").as_i64();
             // Line amounts belong to the Rust preview, not persisted item fields.
             // Attach them only to the read-only presentation copy.
-            let display_recipient=recipient_with_line_amounts(recipient,preview);
+            let mut display_recipient=recipient_with_line_amounts(recipient,preview);
+            // Preserve the actual effective VAT choice in the presentation
+            // projection even for legacy rows inheriting order.applyVat.
+            display_recipient["vatOverride"]=field(native_ship,"vatIncluded").clone();
             display_shipments.push(ShipmentRow{
                 id:text(ship,"id").to_owned(),
                 order_id:text(ship,"orderId").to_owned(),

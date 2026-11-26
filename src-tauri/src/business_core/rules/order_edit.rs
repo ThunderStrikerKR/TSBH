@@ -323,6 +323,64 @@ fn edit_confirmed_recipient(payload:&Value)->Result<Value,String>{
     if str_field(change,"recipientId")!=rid{return Err("수정 대상 수취인이 변경됐습니다.".into());}
     let ri=rows(field(order,"recipients")).iter().position(|r|str_field(r,"id")==rid)
         .ok_or("수취인을 찾을 수 없습니다.")?;
+    if matches!(key,"clientId"|"vatSettings"){
+        let mut state=before.clone();
+        if key=="clientId"{
+            if str_field(order,"orderType")=="RETAIL"{return Err("소매 주문의 거래처는 변경할 수 없습니다.".into());}
+            let dealer=value.as_str().filter(|s|!s.is_empty()).ok_or("거래처를 선택하세요.")?;
+            if str_field(order,"clientId")==dealer{return Ok(json!({"state":before,"unchanged":true}));}
+            let changed=change_client(&json!({"state":before,"order":order,
+                "dealerId":dealer,"now":now}))?["order"].clone();
+            // Existing sender/source and historical snapshots are immutable.
+            // Only the current customer and their commercial terms change.
+            state["orders"][oi]=changed;
+            let changed_order=&mut state["orders"][oi];
+            for row in changed_order["recipients"].as_array_mut().ok_or("수취인 목록 오류")?{
+                let mut charges=serde_json::Map::new();
+                for item in rows(field(row,"items")){
+                    let origin=str_field(item,"origin");
+                    if matches!(origin,"FACTORY"|"STORE"){charges.insert(origin.to_owned(),Value::Null);}
+                }
+                set(row,"shippingCharges",Value::Object(charges))?;
+                // Old manual prices belong to the previous customer.
+                for item in row["items"].as_array_mut().ok_or("상품 목록 오류")?{
+                    item.as_object_mut().ok_or("상품 형식 오류")?.remove("manualUnitPrice");
+                }
+            }
+        }else{
+            let model=json!({"rows":field(order,"recipients")});
+            let result=super::manual_classification::apply(&json!({
+                "action":"set_manual_vat_settings","model":model,"value":value
+            }))?;
+            let recipients=field(&result["model"],"rows");
+            if recipients==field(order,"recipients"){return Ok(json!({"state":before,"unchanged":true}));}
+            // Legacy stage-three shipments may not yet have a billing
+            // signature; seed their old value before the explicit tax edit.
+            for (si,old_ship) in rows(field(field(before,"workflow"),"shipments")).iter().enumerate(){
+                if str_field(old_ship,"orderId")==str_field(order,"id") &&
+                    !flag(old_ship,"legacyArchived") && field(old_ship,"step").as_i64().unwrap_or(0)>=3 &&
+                    !has_value(field(old_ship,"billingSignature")){
+                    set(&mut state["workflow"]["shipments"][si],"billingSignature",
+                        json!(super::reconciliation::billing(before,si)?))?;
+                }
+            }
+            set(&mut state["orders"][oi],"recipients",recipients.clone())?;
+            let audit=json!({"id":format!("{seed}:vat"),"at":now,
+                "actor":field(field(before,"settings"),"operatorName").as_str()
+                    .filter(|s|!s.trim().is_empty()).unwrap_or("직원"),
+                "action":"부가세 설정 변경","shipmentIds":[sid],"groupId":gid,
+                "before":field(order,"recipients"),"after":recipients});
+            state["workflow"]["events"].as_array_mut().ok_or("업무 이벤트 목록 누락")?.push(audit);
+        }
+        set(&mut state["orders"][oi],"updatedAt",json!(now))?;
+        let result=super::reconciliation::reconcile_shipment(&json!({
+            "state":state,"shipmentId":sid,"groupId":gid,"now":now,"eventSeed":seed
+        }))?;
+        let changed=req(&result,"state")?;
+        super::validation::validate_reception(before,changed)?;
+        super::validate_workflow_transition(changed,before)?;
+        return Ok(result);
+    }
     let old=&order["recipients"][ri];
     let iid=str_field(change,"itemId");
     let old_item=rows(field(old,"items")).iter().find(|i|str_field(i,"id")==iid);
