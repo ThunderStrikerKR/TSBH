@@ -183,7 +183,7 @@ pub fn analyze_raw(
     if raw.trim().is_empty() {
         return Err("발주원문을 먼저 입력하세요.".to_owned());
     }
-    let state = gateway.load_catalog()?;
+    let state = gateway.load_reception_catalog()?;
     let directory = state.get("clients").and_then(Value::as_array);
     let directory_count = directory.map(Vec::len).unwrap_or(0);
 
