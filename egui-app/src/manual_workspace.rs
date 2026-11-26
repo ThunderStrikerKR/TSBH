@@ -2445,7 +2445,8 @@ impl ManualWorkspace {
                                                                 crate::indexed_billable_freight(quote_index.as_deref(),row),
                                                                 Some(code=="020"),
                                                                 remote_ready.then_some(remote),
-                                                                true,can_mutate,can_mutate,can_mutate,true
+                                                                true,can_mutate,can_mutate,can_mutate,true,
+                                                                crate::indexed_freight_exempt(quote_index.as_deref(),row)
                                                             );
                                                             if freight.amount_clicked {
                                                                 self.queue_cell_selection(
@@ -2457,6 +2458,7 @@ impl ManualWorkspace {
                                                             }
                                                             if self.selected_item.is_none() &&
                                                                 self.selected_field=="shippingCharge" && code!="020" &&
+                                                                !crate::indexed_freight_exempt(quote_index.as_deref(),row) &&
                                                                 self.cell_editor_open() {
                                                                 if let Some(rect)=freight.amount_rect {
                                                                     let (_,navigation,finished)=
