@@ -52,6 +52,7 @@ mod category_manager;
 mod category_dropdown;
 mod alias_manager;
 mod latest_job;
+mod screen_refresh;
 mod brand_manager;
 mod model_group_manager;
 mod product_manager;
@@ -272,7 +273,7 @@ impl Drop for PendingAutomaticClient {
 
 fn workflow_write_admission(revision:Option<u64>,writing:bool,
     refresh_required:bool,failed:bool)->bool{
-    revision.is_some() && !writing && !refresh_required && !failed
+    screen_refresh::write_admitted(revision.is_some(),writing,refresh_required,failed)
 }
 
 struct PendingWorkflowAction {
@@ -1073,10 +1074,9 @@ struct BandoEgui {
     workflow_error: Option<String>,
     // Refresh failures belong to the board, not to whichever group is visible.
     workflow_read_error: Option<String>,
-    workflow_receiver: Option<Receiver<Result<Option<workflow_board::BoardSnapshot>,String>>>,
+    workflow_read: screen_refresh::ReadRefresh<Option<workflow_board::BoardSnapshot>>,
     /// A committed write must publish its new revision before another
     /// operational write; an ordinary periodic read is advisory.
-    workflow_refresh_required: bool,
     workflow_last_fetch: Option<Instant>,
     workflow_ui: workflow_board_ui::BoardUi,
     workflow_action: Option<PendingWorkflowAction>,
@@ -1210,8 +1210,7 @@ impl BandoEgui {
             workflow_source_display:None,
             workflow_error: None,
             workflow_read_error: None,
-            workflow_receiver: None,
-            workflow_refresh_required:false,
+            workflow_read:Default::default(),
             workflow_last_fetch: None,
             workflow_ui: workflow_board_ui::BoardUi::default(),
             workflow_action: None,
@@ -1421,9 +1420,9 @@ impl BandoEgui {
         // in-flight pre-commit result. The native probe detects other edits.
         self.reception_metadata_receiver=None;
         self.reception_metadata_last_probe=None;
-        self.workflow_receiver=None;
+        self.workflow_read.cancel();
         self.workflow_last_fetch=None;
-        self.workflow_refresh_required=true;
+        self.workflow_read.require();
         // Correction already projects the verified committed snapshot.
         // Only a separate inbox commit needs another Excel read.
         if imported{
@@ -1723,13 +1722,13 @@ impl BandoEgui {
     fn workflow_mutation_ready(&self)->bool{
         workflow_write_admission(
             self.workflow_snapshot.as_ref().and_then(|board|board.revision),
-            self.workflow_action.is_some(),self.workflow_refresh_required,
+            self.workflow_action.is_some(),self.workflow_read.required(),
             self.workflow_error.is_some()
         )
     }
 
     fn discard_advisory_workflow_read(&mut self){
-        if !self.workflow_refresh_required && self.workflow_receiver.take().is_some(){
+        if self.workflow_read.discard_advisory(){
             // A dropped receiver cannot replace the editor's before-image.
             // A fresh poll will run when the editor/action is released.
             self.workflow_last_fetch=None;
@@ -1826,25 +1825,24 @@ impl BandoEgui {
     }
 
     fn poll_workflow_board(&mut self,ctx:&egui::Context){
-        if let Some(receiver)=self.workflow_receiver.as_ref(){
-            match receiver.try_recv(){
-                Ok(Ok(None))=>{
-                    // An unchanged DB revision is not a new UI snapshot.
-                    self.workflow_receiver=None;
+        if let Some(result)=self.workflow_read.poll(){
+            match result{
+                Ok(None)=>{
+                    // An unchanged advisory revision is not a new UI snapshot.
+                    // A mandatory refresh still requires a verified projection.
                 }
-                Ok(Ok(Some(snapshot)))=>{
-                    self.workflow_receiver=None;
+                Ok(Some(snapshot))=>{
                     if !self.finish_confirmed_draft_handoff(&snapshot,ctx){
                         self.workflow_error=Some("주문은 저장됐지만 확정 화면 갱신을 완료하지 못했습니다.".into());
                         self.workflow_read_error=self.workflow_error.clone();
-                        self.workflow_refresh_required=true;
+                        self.workflow_read.require();
                         ctx.request_repaint();
                         return;
                     }
                     self.reconcile_workflow_selection(&snapshot);
                     self.workflow_snapshot=Some(Arc::new(snapshot));
                     self.workflow_source_display=None;
-                    self.workflow_refresh_required=false;
+                    self.workflow_read.verified();
                     self.workflow_error=None;
                     self.workflow_read_error=None;
                     if let Some((id,step,notice))=self.workflow_stage_after_freight.take(){
@@ -1865,31 +1863,20 @@ impl BandoEgui {
                     }
                     ctx.request_repaint();
                 }
-                Ok(Err(error))=>{
-                    self.workflow_receiver=None;
+                Err(error)=>{
                     self.workflow_freight_guidance=None;
                     self.workflow_error=Some(error);
                     self.workflow_read_error=self.workflow_error.clone();
                     self.workflow_stage_after_freight=None;
                     ctx.request_repaint();
                 }
-                Err(mpsc::TryRecvError::Disconnected)=>{
-                    self.workflow_receiver=None;
-                    self.workflow_freight_guidance=None;
-                    self.workflow_error=Some(
-                        "발주 묶음 조회가 중단되었습니다.".to_owned()
-                    );
-                    self.workflow_read_error=self.workflow_error.clone();
-                    self.workflow_stage_after_freight=None;
-                }
-                Err(mpsc::TryRecvError::Empty)=>{}
             }
         }
         if self.page!=Page::Reception{
             self.workflow_last_fetch=None;
             return;
         }
-        if self.workflow_receiver.is_some() ||
+        if self.workflow_read.pending() ||
             self.workflow_action.is_some() ||
             ((self.workflow_freight_editor.is_some() || self.confirmed_cell.is_some()
                 || self.confirmed_modal_target.is_some()) && self.workflow_error.is_none()) ||
@@ -1904,22 +1891,15 @@ impl BandoEgui {
             // conservative board fallback if explicitly connected.
             (Some(_),None)=>self.reception_metadata_ready,
         };
-        if !changed && !self.workflow_refresh_required && self.workflow_error.is_none(){return;}
-        if !self.workflow_refresh_required && self.workflow_last_fetch.is_some_and(|at|
+        if !changed && !self.workflow_read.required() && self.workflow_error.is_none(){return;}
+        if !self.workflow_read.required() && self.workflow_last_fetch.is_some_and(|at|
             at.elapsed()<Duration::from_secs(5)){return;}
         // A failed mandatory refresh is also bounded, not retried per frame.
         if self.workflow_error.is_some() && self.workflow_last_fetch.is_some_and(|at|
             at.elapsed()<Duration::from_secs(5)){return;}
         self.workflow_last_fetch=Some(Instant::now());
         let gateway=Arc::clone(&self.gateway);
-        let (sender,receiver)=mpsc::channel();
-        self.workflow_receiver=Some(receiver);
-        let context=ctx.clone();
-        std::thread::spawn(move||{
-            let result=workflow_board::load(gateway.as_ref()).map(Some);
-            let _=sender.send(result);
-            context.request_repaint();
-        });
+        self.workflow_read.submit(ctx.clone(),move||workflow_board::load(gateway.as_ref()).map(Some));
     }
 
     /// Click commits to the real working reception; the target ID is kept
@@ -2766,7 +2746,7 @@ impl BandoEgui {
         if self.page!=Page::Reception || self.workflow_error.is_some(){
             self.confirmed_next_cell=None;return;
         }
-        if self.workflow_action.is_some() || self.workflow_refresh_required{return;}
+        if self.workflow_action.is_some() || self.workflow_read.required(){return;}
         let Some((selection,target,click_at,guide))=self.confirmed_next_cell.take()else{return;};
         if !self.workflow_mutation_ready() || !self.gateway.workflow_write_enabled()
             || self.workflow_ui.selection.as_ref()!=Some(&selection)
@@ -4353,7 +4333,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
             return;
         }
         // Do not clear the visible order on a rejected new-order request.
-        if self.workflow_refresh_required && self.workflow_error.is_none(){
+        if self.workflow_read.required() && self.workflow_error.is_none(){
             floating_notice::publish(ctx,"reception.workflow",floating_notice::Tone::Info,
                 "주문 상태를 갱신하고 있습니다. 갱신 후 새 주문을 열어 주세요.");
             return;
@@ -5678,7 +5658,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                 self.workflow_ui.stop_preview();
                 self.workflow_ui.folded=None;
                 if self.active_id.is_none()&&self.workflow_action.is_none()
-                    &&!self.workflow_refresh_required&&self.confirming_order().is_none()
+                    &&!self.workflow_read.required()&&self.confirming_order().is_none()
                     &&self.confirmed_cell.is_none()&&self.confirmed_modal_target.is_none()
                     &&self.workflow_freight_editor.is_none(){
                     self.workflow_ui.selection=None;
@@ -7814,7 +7794,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                                 ));
                                             }
                                             if self.workflow_action.is_none() &&
-                                                !self.workflow_refresh_required{
+                                                !self.workflow_read.required(){
                                                 if let (Some(editor),Some(rect))=(
                                                     self.workflow_freight_editor.as_mut().filter(|editor|
                                                         editor.group_id.as_str()==group.id.as_str() &&
@@ -9002,7 +8982,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
             );
             return;
         }
-        if self.workflow_refresh_required{
+        if self.workflow_read.required(){
             floating_notice::publish(ctx,"reception.workflow",floating_notice::Tone::Info,
                 "저장된 주문 상태를 갱신하고 있습니다. 갱신 후 주문을 확정하세요.");
             return;
@@ -9266,29 +9246,25 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                 // Project it off-frame rather than fetching that DB a third
                 // time. Keep dependent actions locked until projection ends.
                 // External changes are still detected by periodic polling/CAS.
-                self.workflow_receiver=None;
-                self.workflow_refresh_required=true;
+                self.workflow_read.cancel();
+                self.workflow_read.require();
                 self.workflow_last_fetch=None;
                 self.workflow_error=None;
                 self.workflow_read_error=None;
                 if saved["revision"].as_u64().is_some() && saved["workflow"].is_object(){
                     let gateway=Arc::clone(&self.gateway);
-                    let (sender,receiver)=mpsc::channel();
-                    self.workflow_receiver=Some(receiver);
                     self.workflow_last_fetch=Some(Instant::now());
-                    let context=ctx.clone();
                     let changed_group=(scoped_refresh &&
                         matches!(action.as_str(),"set_shipment_freight"|"detach_shipment"|"regroup_shipment"))
                         .then(||group_id.clone());
                     let previous=changed_group.as_ref().and_then(|_|self.workflow_snapshot.as_deref().cloned());
-                    std::thread::spawn(move||{
+                    self.workflow_read.submit_required(ctx.clone(),move||{
                         let result=if let Some(id)=changed_group{
                             workflow_board::after_freight_edit(gateway.as_ref(),saved,previous,&id)
                         }else{
                             workflow_board::from_state(gateway.as_ref(),saved)
                         };
-                        let _=sender.send(result.map(Some));
-                        context.request_repaint();
+                        result.map(Some)
                     });
                 }
                 if action=="process_group"{
@@ -9442,7 +9418,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
         let mut command:Option<(
             String,String,Option<String>,Option<String>,bool
         )>=None;
-        let busy=self.workflow_action.is_some() || self.workflow_refresh_required ||
+        let busy=self.workflow_action.is_some() || self.workflow_read.required() ||
             self.workflow_error.is_some();
         let writable=self.gateway.workflow_write_enabled();
         let mut target=self.workflow_manage_target.clone();
@@ -9825,7 +9801,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                             .get(self.selected_recipient))
                         .and_then(|row|row["id"].as_str());
                     let freight_stage_group=if self.gateway.workflow_write_enabled() &&
-                        !self.workflow_refresh_required && self.workflow_error.is_none() &&
+                        !self.workflow_read.required() && self.workflow_error.is_none() &&
                         self.workflow_stage_after_freight.is_none(){
                         self.workflow_freight_editor.as_ref()
                             .or(self.submitted_workflow_freight.as_ref())
@@ -9847,7 +9823,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                         // Hover navigation must never switch the active receipt
                         // while a staff edit, dialog or pending write is open.
                         !reception_modal_open && self.workflow_action.is_none() &&
-                        !self.workflow_refresh_required && self.pending_draft_confirmation.is_none() &&
+                        !self.workflow_read.required() && self.pending_draft_confirmation.is_none() &&
                         self.inline_editor.is_none() && self.inline_change.is_none() &&
                             self.manual_workspace.is_none() && self.vat_dialog.is_none() &&
                             self.vat_change.is_none() && self.client_chooser.is_none() &&
@@ -10332,8 +10308,8 @@ impl eframe::App for BandoEgui {
             source_highlight::clear_visual_cache();
             clear_quote_display_cache();
             crate::text_fit::clear_reception_text_fit();
-            self.workflow_receiver=None;
-            self.workflow_refresh_required=false;
+            self.workflow_read.cancel();
+            self.workflow_read.verified();
             self.workflow_last_fetch=None;
             self.workflow_ui.selection=None;
             self.workflow_ui.stop_preview();
@@ -11630,12 +11606,11 @@ mod reception_workflow_admission_integration_tests {
         app.workflow_ui.selection=Some(workflow_board_ui::Selection{
             group_id:"g1".into(),order_id:"o1".into(),shipment_id:"s1".into()
         });
-        let (tx,receiver)=mpsc::channel();
-        app.workflow_receiver=Some(receiver);
+        let finish=app.workflow_read.test_advisory_read();
         app.workflow_last_fetch=Some(Instant::now());
-        tx.send(Ok(None)).unwrap();
+        finish(Ok(None));
         app.poll_workflow_board(&ctx);
-        assert!(app.workflow_receiver.is_none());
+        assert!(!app.workflow_read.pending());
         assert_eq!(app.workflow_snapshot.as_ref().and_then(|board|board.revision),Some(7));
         assert_eq!(app.workflow_ui.selection.as_ref().map(|s|s.shipment_id.as_str()),Some("s1"));
         assert!(app.workflow_mutation_ready());
@@ -11648,17 +11623,17 @@ mod reception_workflow_admission_integration_tests {
         app.page=Page::Products;
         app.reception_metadata_revision=Some(7);
         app.reception_metadata_ready=true;
-        let (sender,receiver)=mpsc::channel();
-        app.workflow_receiver=Some(receiver);
+        let finish=app.workflow_read.test_advisory_read();
         app.workflow_last_fetch=Some(Instant::now());
         app.refresh_after_factory_reply(&ctx,false,false);
-        assert!(app.workflow_receiver.is_some());
-        assert!(!app.workflow_refresh_required);
+        assert!(app.workflow_read.pending());
+        assert!(!app.workflow_read.required());
         app.refresh_after_factory_reply(&ctx,false,true);
-        assert!(sender.send(Ok(None)).is_err());
-        assert!(app.workflow_receiver.is_none());
+        finish(Ok(None));
+        assert!(app.workflow_read.poll().is_none());
+        assert!(!app.workflow_read.pending());
         assert!(app.workflow_last_fetch.is_none());
-        assert!(app.workflow_refresh_required);
+        assert!(app.workflow_read.required());
         assert_eq!(app.reception_metadata_revision,Some(7));
         assert!(app.reception_metadata_ready);
         assert!(app.reception_metadata_last_probe.is_none());
@@ -11752,7 +11727,7 @@ mod reception_workflow_admission_integration_tests {
         let ctx=egui::Context::default();
         app.workflow_snapshot=Some(Arc::new(stage_test_board()));
         app.retain_workflow_stage_target("group:draft-1");
-        app.workflow_refresh_required=true;
+        app.workflow_read.require();
         app.new_reception(&ctx);
         assert_eq!(app.workflow_ui.selection.as_ref().unwrap().shipment_id,"s1");
         assert_eq!(app.drafts.len(),2);
@@ -11788,17 +11763,15 @@ mod reception_workflow_admission_integration_tests {
         app.workflow_snapshot=Some(Arc::new(workflow_board::BoardSnapshot{
             revision:Some(7),groups:vec![]
         }));
-        let (_sender,receiver)=mpsc::channel();
-        app.workflow_receiver=Some(receiver);
+        let _finish=app.workflow_read.test_advisory_read();
         assert!(app.workflow_mutation_ready());
         app.discard_advisory_workflow_read();
-        assert!(app.workflow_receiver.is_none());
-        let (_sender,receiver)=mpsc::channel();
-        app.workflow_receiver=Some(receiver);
-        app.workflow_refresh_required=true;
+        assert!(!app.workflow_read.pending());
+        let _finish=app.workflow_read.test_advisory_read();
+        app.workflow_read.require();
         assert!(!app.workflow_mutation_ready());
         app.discard_advisory_workflow_read();
-        assert!(app.workflow_receiver.is_some());
+        assert!(app.workflow_read.pending());
         assert!(!workflow_write_admission(None,false,false,false));
         assert!(!workflow_write_admission(Some(7),true,false,false));
         assert!(!workflow_write_admission(Some(7),false,false,true));
