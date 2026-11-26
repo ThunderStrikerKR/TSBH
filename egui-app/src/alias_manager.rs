@@ -96,6 +96,7 @@ enum Exit {Select(String),Close,Tab(usize),Global}
 pub struct AliasManager{
     form:Form,
     original:Form,
+    expected_entity:Value,
     editor_open:bool,
     list_query:String,
     product_search:bool,
@@ -220,6 +221,7 @@ impl AliasManager {
                     };
                     self.editor_open=true;self.error=None;
                     self.original=self.form.clone();
+                    self.expected_entity=row.clone();
                 }
             }
             Exit::Close=>{self.close_editor();}
@@ -238,7 +240,7 @@ impl AliasManager {
         self.form=Form{scope,..Form::default()};self.original=self.form.clone();self.error=None;
     }
     fn save_request(&self)->Value{
-        json!({"record":{
+        json!({"expectedEntity":if self.form.editing.is_some(){self.expected_entity.clone()}else{Value::Null},"record":{
             "id":self.form.editing.as_deref().unwrap_or(""),
             "text":self.form.text,
             "productId":self.form.target,
