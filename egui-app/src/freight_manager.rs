@@ -460,7 +460,7 @@ pub struct FreightManager {
     product_reset_target: Option<String>,
     requested_tab: Option<FreightTab>,
     saving_for_tab: bool,
-    receiver: Option<Receiver<Result<(Value, Value), String>>>,
+    refresh_job: crate::screen_refresh::ReadRefresh<(Value,Value)>,
     state: Option<Value>,
     projection: Option<Value>,
     error: Option<String>,
@@ -472,32 +472,27 @@ pub struct FreightManager {
     history_sort: Option<HistorySort>,
 }
 impl FreightManager {
-    fn fetch(gateway: Arc<dyn BandoGateway>,ctx:egui::Context)
-        -> Receiver<Result<(Value,Value),String>> {
-        let (sender,receiver)=mpsc::channel();
-        std::thread::spawn(move||{
-            let outcome=management_queries::load_freight(gateway.as_ref());
-            let _=sender.send(outcome);
-            ctx.request_repaint();
-        });
-        receiver
+    fn fetch(refresh:&mut crate::screen_refresh::ReadRefresh<(Value,Value)>,
+        gateway:Arc<dyn BandoGateway>,ctx:egui::Context){
+        refresh.submit_required(ctx,move||management_queries::load_freight(gateway.as_ref()));
     }
     pub fn refresh(&mut self,ctx:egui::Context) {
-        if self.receiver.is_none() && !self.busy() && !self.dirty() {
+        if !self.refresh_job.pending() && !self.busy() && !self.dirty() {
             self.error=None;
             self.notice=None;
-            self.receiver=Some(Self::fetch(Arc::clone(&self.gateway),ctx));
+            Self::fetch(&mut self.refresh_job,Arc::clone(&self.gateway),ctx);
         }
     }
     fn refresh_after_conflict(&mut self,ctx:egui::Context) {
         // Keep local drafts while loading the authoritative newer revision.
         // Never reissue the failed write automatically.
-        if self.receiver.is_none() {
-            self.receiver=Some(Self::fetch(Arc::clone(&self.gateway),ctx));
+        if !self.refresh_job.pending() {
+            Self::fetch(&mut self.refresh_job,Arc::clone(&self.gateway),ctx);
         }
     }
     pub fn new(gateway: Arc<dyn BandoGateway>, ctx: egui::Context) -> Self {
-        let receiver=Self::fetch(Arc::clone(&gateway),ctx);
+        let mut refresh_job=crate::screen_refresh::ReadRefresh::default();
+        Self::fetch(&mut refresh_job,Arc::clone(&gateway),ctx);
         Self {
             tab: FreightTab::Groups,
             tab_snapshots:crate::navigation::NavigationSnapshots::new(0),
@@ -519,7 +514,7 @@ impl FreightManager {
             product_reset_target: None,
             requested_tab: None,
             saving_for_tab: false,
-            receiver: Some(receiver),
+            refresh_job,
             state: None,
             projection: None,
             error: None,
@@ -551,7 +546,7 @@ impl FreightManager {
     }
     pub fn busy(&self)->bool{self.write_receiver.is_some()}
     pub fn can_save_dirty(&self)->bool{
-        self.gateway.shipping_write_enabled() && self.receiver.is_none() && !self.busy() &&
+        self.gateway.shipping_write_enabled() && !self.refresh_job.required() && !self.busy() &&
             self.new_name.trim().is_empty() &&
             (self.rate_editor.as_ref().is_some_and(|editor|editor.dirty()) ||
                 !self.pending_changes().is_empty())
@@ -632,23 +627,14 @@ impl FreightManager {
     }
 
     fn poll(&mut self,ctx:egui::Context) {
-        if let Some(receiver)=self.receiver.as_ref(){
-            match receiver.try_recv() {
-                Ok(Ok((state, projection))) => {
-                    self.state = Some(state);
-                    self.projection = Some(projection);
-                    self.receiver = None;
-                }
-                Ok(Err(error)) => {
-                    self.error = Some(error);
-                    self.receiver = None;
-                }
-                Err(TryRecvError::Disconnected) => {
-                    self.error = Some("운임 기준을 불러오는 작업이 중단되었습니다.".into());
-                    self.receiver = None;
-                }
-                Err(TryRecvError::Empty) => {}
+        match self.refresh_job.poll(){
+            Some(Ok((state,projection)))=>{
+                self.state=Some(state);
+                self.projection=Some(projection);
+                self.refresh_job.verified();
             }
+            Some(Err(error))=>self.error=Some(error),
+            None=>{}
         }
         if let Some(receiver)=self.write_receiver.as_ref(){
             match receiver.try_recv(){
@@ -727,7 +713,7 @@ impl FreightManager {
     }
 
     fn write(&mut self, action: String, data: Value, ctx:egui::Context) {
-        if self.receiver.is_some() || self.write_receiver.is_some() || !self.gateway.shipping_write_enabled(){
+        if self.refresh_job.required() || self.write_receiver.is_some() || !self.gateway.shipping_write_enabled(){
             return;
         }
         crate::floating_notice::dispatch_pointer(&ctx,"freight.action");
@@ -868,7 +854,7 @@ impl FreightManager {
         // Keep the approved Freight Assignment as the layout reference,
         // including when the four KPIs wrap in narrower workspaces.
         crate::card::align_management_primary_card(ui,page_origin_y);
-        let enabled=self.gateway.shipping_write_enabled()&&self.receiver.is_none()&&self.write_receiver.is_none();
+        let enabled=self.gateway.shipping_write_enabled()&&!self.refresh_job.required()&&self.write_receiver.is_none();
         let mut action:Option<(String,Value)>=None;
         // The assignment tab owns its own scrollable *rows*. Do not wrap
         // the heading in a second page-wide vertical scroll, which previously
@@ -2935,13 +2921,12 @@ mod rate_toolbar_tests{
 impl FreightManager {
     pub(crate) fn geometry_fixture(gateway:Arc<dyn BandoGateway>,ctx:egui::Context,tab:usize,loaded:bool)->Self{
         let mut page=Self::new(gateway,ctx);
-        page.receiver=None; page.tab=FreightTab::ALL[tab]; if loaded{page.state=Some(serde_json::json!({"revision":1,"products":[],"categories":[],"shipping":{"groups":[],"epoch":1}})); page.projection=Some(serde_json::json!({"productViews":[]}));}
+        page.refresh_job.reset(); page.tab=FreightTab::ALL[tab]; if loaded{page.state=Some(serde_json::json!({"revision":1,"products":[],"categories":[],"shipping":{"groups":[],"epoch":1}})); page.projection=Some(serde_json::json!({"productViews":[]}));}
         page
     }
 
     pub(crate) fn geometry_begin_read(&mut self)->Box<dyn FnOnce(Result<usize,String>)>{
-        let (tx,rx)=std::sync::mpsc::channel();
-        self.receiver=Some(rx);
+        let finish=self.refresh_job.geometry_begin_read();
         self.error=None;
         Box::new(move |answer|{
             let result=answer.map(|count|{
@@ -2950,7 +2935,7 @@ impl FreightManager {
                 let combinations=(0..count).map(|i|serde_json::json!({"id":format!("geometry-combo-{i}"),"description":format!("검증 배송 조합 {i}"),"charge":3000,"actual":2500,"active":true})).collect::<Vec<_>>();
                 (serde_json::json!({"revision":1,"products":products,"categories":[],"shipping":{"groups":groups,"combinations":combinations,"epoch":1}}),serde_json::json!({"productViews":[],"editableRules":{},"currentCombinations":{}}))
             });
-            assert!(tx.send(result).is_ok());
+            finish(result);
         })
     }
     pub(crate) fn geometry_read_failed(&self)->bool{self.error.is_some()}
