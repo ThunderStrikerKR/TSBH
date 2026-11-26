@@ -24,6 +24,7 @@ pub struct ShipmentRow {
     /// shown by the React workflow freight editor.
     pub display_charges: HashMap<String,Option<i64>>,
     pub freight_editing_blocked: bool,
+    pub freight_exempt: bool,
     pub collect: bool,
     pub shipment_count: usize,
     pub order_total: Option<i64>,
@@ -449,6 +450,8 @@ fn project_state(gateway:&dyn BandoGateway,state:&Value,scope:Option<&HashSet<St
                     .map(|values|values.iter().map(|(origin,value)|
                         (origin.clone(),value.as_i64())).collect())
                     .unwrap_or_default(),
+                freight_exempt:field(native_ship,"billingReasons").as_object()
+                    .is_some_and(|reasons|reasons.values().any(|v|v.as_str()==Some("EXEMPT"))),
                 freight_editing_blocked:field(native_ship,"freightEditingBlocked")
                     .as_bool().unwrap_or(false),
                 collect:text(native_ship,"freightCode")=="020",
@@ -572,7 +575,7 @@ mod linked_recipient_selection_tests{
             completed_step:Some(0),paid:None,
             source_raw:"공통 발주원문".into(),recipient:json!({"id":recipient}),
             remote:None,display_charges:HashMap::new(),
-            freight_editing_blocked:false,collect:false,
+            freight_editing_blocked:false,freight_exempt:false,collect:false,
             shipment_count:1,order_total:None,
         }
     }
