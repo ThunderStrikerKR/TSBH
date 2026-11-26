@@ -632,6 +632,7 @@ fn price_input_snapshot(order:&Value)->Value{
             "shippingCharges":get("shippingCharges"),
             "shippingCharge":get("shippingCharge"),
             "remoteDelivery":get("remoteDelivery"),
+            "vatDefault":get("vatDefault"),
             "vatOverride":get("vatOverride"),
             "vatRateBps":get("vatRateBps"),
             "items":items
