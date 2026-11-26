@@ -218,6 +218,10 @@ impl SettingsView{
             error:None,notice:None
         }
     }
+    pub(crate) fn reset_navigation(&mut self){
+        if self.dirty()||self.busy(){return;}
+        self.tab=SettingsTab::Basic;self.archive_query.clear();self.archive_open=false;
+    }
     pub fn take_restored(&mut self)->bool{
         std::mem::take(&mut self.restored)
     }

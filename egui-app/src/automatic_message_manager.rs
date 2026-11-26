@@ -295,6 +295,12 @@ impl AutomaticMessageManager {
         map.get(def.id).and_then(Value::as_str)
             .unwrap_or(def.body).replace("{수취인}님","{수취인}")
     }
+    pub(crate) fn reset_navigation(&mut self){
+        if self.dirty()||self.busy(){return;}
+        self.section=Section::General;
+        self.selected=TEMPLATES.iter().position(|def|def.id=="colorDefault").unwrap_or(0);
+        self.selected_product.clear();self.product_search.clear();
+    }
     pub fn dirty(&self)->bool{
         if !self.loaded{return false;}
         match self.section{

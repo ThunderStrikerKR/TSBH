@@ -566,6 +566,12 @@ impl FreightManager {
     pub fn has_rate_modal(&self)->bool{self.rate_editor.is_some()}
     pub fn last_error(&self)->Option<&str>{self.error.as_deref()}
 
+    pub(crate) fn reset_navigation(&mut self){
+        if self.dirty()||self.blocks_navigation(){return;}
+        self.tab=FreightTab::Groups;self.search.clear();self.group_filter.clear();
+        self.sort=None;self.rate_sort=None;self.rate_search.clear();self.history_sort=None;
+        self.selected.clear();self.bulk_group=None;self.bulk_feedback=None;
+    }
     pub fn discard_drafts(&mut self){
         self.pending.clear();
         self.selected.clear();

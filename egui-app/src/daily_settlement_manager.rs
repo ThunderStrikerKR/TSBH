@@ -380,6 +380,14 @@ impl DailySettlementManager{
         manager.refresh(ctx);
         manager
     }
+    pub(crate) fn reset_navigation(&mut self,ctx:egui::Context){
+        let today=seoul_today();
+        let changed=self.date!=today;
+        self.date=today.clone();self.date_input=today.clone();
+        self.calendar_month=crate::navigation::calendar_month_start(NaiveDate::parse_from_str(&today,"%Y-%m-%d").expect("today in YYYY-MM-DD"));
+        self.order_sort=None;self.payment_sort=None;
+        if changed{self.refresh(ctx);}
+    }
     pub fn refresh(&mut self,ctx:egui::Context){
         self.report=None;
         self.error=None;

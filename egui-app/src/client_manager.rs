@@ -137,6 +137,12 @@ impl ClientManager {
             show_messages:false,messages:None,excel:crate::product_excel_ui::ProductExcelUi::for_clients(),
         }
     }
+    pub(crate) fn reset_navigation(&mut self,gateway:Arc<dyn BandoGateway>,ctx:Context){
+        if self.has_modal()||self.saving.is_some()||self.messages.as_ref().is_some_and(|m|m.dirty()||m.busy()){return;}
+        self.search.clear();self.sort=None;self.show_messages=false;
+        if let Some(m)=self.messages.as_mut(){m.reset_navigation();}
+        self.query(gateway,ctx);
+    }
     pub fn has_modal(&self)->bool {
         self.draft.is_some() || self.excel.has_modal() || self.messages.as_ref()
             .is_some_and(|message|self.show_messages && message.has_confirmation())

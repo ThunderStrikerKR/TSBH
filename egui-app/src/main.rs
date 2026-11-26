@@ -982,6 +982,7 @@ struct BandoEgui {
     brand_texture: Option<egui::TextureHandle>,
     gateway: Arc<dyn gateway::BandoGateway>,
     page: Page,
+    navigation_snapshots: navigation::NavigationSnapshots<8>,
     layout: layout::LayoutState,
     window_state: window_state::Tracker,
     dragging_split: Option<HorizontalSplitDrag>,
@@ -1124,6 +1125,7 @@ impl BandoEgui {
             brand_texture: None,
             gateway: Arc::new(gateway::LocalGateway),
             page: Page::Reception,
+            navigation_snapshots:navigation::NavigationSnapshots::new(Page::Reception as usize),
             layout,
             window_state: window_state::Tracker::default(),
             dragging_split: None,
@@ -5593,6 +5595,30 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
         }
     }
 
+    fn sync_navigation_snapshot(&mut self,ctx:&egui::Context,now:Instant){
+        if !self.navigation_snapshots.visit(self.page as usize,now){return;}
+        match self.page{
+            Page::Reception=>{
+                // Preserve active sources, editor drafts and all pending jobs.
+                self.workflow_ui.stop_preview();
+                self.workflow_ui.folded=None;
+                if self.active_id.is_none()&&self.workflow_action.is_none()
+                    &&self.confirmed_cell.is_none()&&self.confirmed_modal_target.is_none()
+                    &&self.workflow_freight_editor.is_none(){
+                    self.workflow_ui.selection=None;
+                    self.selected_recipient=0;
+                }
+            }
+            Page::History=>if let Some(m)=self.order_history_manager.as_mut(){m.reset_navigation(ctx.clone());},
+            Page::Excel=>if let Some(m)=self.excel_manager.as_mut(){m.reset_navigation();},
+            Page::Settlement=>if let Some(m)=self.daily_settlement_manager.as_mut(){m.reset_navigation(ctx.clone());},
+            Page::Products=>if let Some(m)=self.product_manager.as_mut(){m.reset_navigation(ctx.clone());},
+            Page::Freight=>if let Some(m)=self.freight_manager.as_mut(){m.reset_navigation();},
+            Page::Clients=>if let Some(m)=self.client_manager.as_mut(){m.reset_navigation(Arc::clone(&self.gateway),ctx.clone());},
+            Page::Settings=>if let Some(m)=self.settings_view.as_mut(){m.reset_navigation();},
+        }
+    }
+
     fn top_bar(&mut self, ctx: &egui::Context) {
         let maximized = ctx.input(|input| input.viewport().maximized.unwrap_or(false));
         egui::TopBottomPanel::top("global_navigation")
@@ -6013,7 +6039,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                             // Each pane has a stable independent rectangle.
                             let _pane_output=ui.scope_builder(
                                 UiBuilder::new()
-                                    .id_salt(("reception-pane", index))
+                                    .id_salt(("reception-pane", index,self.navigation_snapshots.epoch(Page::Reception as usize)))
                                     .max_rect(rect)
                                     .layout(Layout::top_down(Align::Min)),
                                 |pane| {
@@ -10022,7 +10048,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                             egui::pos2(splitter.right(),all.top()),all.max
                         );
                         host.scope_builder(
-                            UiBuilder::new().id_salt(("management-page",self.page.label()))
+                            UiBuilder::new().id_salt(("management-page",self.page.label(),self.navigation_snapshots.epoch(self.page as usize)))
                                 .max_rect(right).layout(Layout::top_down(Align::Min)),
                             |main|{
                                 main.set_clip_rect(right);
@@ -10041,6 +10067,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                                 excel.show_page(page);
                                                 if let Some((order_id,order_date))=excel.take_open_order(){
                                                     self.page=Page::History;
+                                                    self.sync_navigation_snapshot(ctx,Instant::now());
                                                     if self.order_history_manager.is_none(){
                                                         self.order_history_manager=Some(
                                                             order_history_manager::OrderHistoryManager::new(
@@ -10270,7 +10297,9 @@ impl eframe::App for BandoEgui {
             self.pending_input_guidance=None;
             self.guided_inline_target=None;
         }
+        self.sync_navigation_snapshot(ctx,Instant::now());
         self.top_bar(ctx);
+        self.sync_navigation_snapshot(ctx,Instant::now());
         if overlay::begin_page(ctx,self.page.label()){
             floating_notice::begin_page(ctx,self.page.label());
             self.workflow_ui.stop_preview();
@@ -10362,6 +10391,7 @@ impl eframe::App for BandoEgui {
         floating_notice::sync(ctx,"workflow_board_read_error","reception.workflow.read",
             floating_notice::Tone::Error,
             if self.page==Page::Reception{self.workflow_read_error.as_deref()}else{None});
+        self.sync_navigation_snapshot(ctx,Instant::now());
         if overlay::begin_page(ctx,self.page.label()){
             floating_notice::begin_page(ctx,self.page.label());
             self.workflow_ui.stop_preview();

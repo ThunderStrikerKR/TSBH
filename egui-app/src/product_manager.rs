@@ -512,6 +512,14 @@ impl ProductManager {
     pub fn take_selection(&mut self)->Option<Value>{
         self.selection_result.take()
     }
+    pub(crate) fn reset_navigation(&mut self,ctx:Context){
+        if self.writing.is_some()||self.has_pending_prices()||self.excel.blocks_navigation()||self.selected.is_some(){return;}
+        self.tab=0;self.query.clear();self.category.clear();self.brand.clear();self.missing=false;
+        self.sort=None;self.selected_variants.clear();self.price_mode=false;
+        self.category_manager.reset_navigation();
+        self.model_groups.reset_navigation();self.aliases.reset_navigation();self.brands.reset_navigation();
+        self.refresh(ctx);
+    }
     pub fn refresh(&mut self,ctx:Context) {
         // Re-read an explicitly connected operating catalog when returning
         // from another page. Never retain a stale edit/master snapshot.
@@ -520,7 +528,6 @@ impl ProductManager {
         self.original_selected=None;
         self.detail_prices.clear();
         self.photos.clear();
-        self.selected_variants.clear();
         self.price_write_queue.clear();
         self.price_mode_exit_requested=false;
         self.price_focus_target=None;
@@ -528,8 +535,6 @@ impl ProductManager {
         self.confirm_archive=false;
         self.confirm_discard=false;
         self.next_query=None;
-        self.model_groups.reset_navigation();
-        self.brands.reset_navigation();
         self.reload(ctx);
     }
     fn reload(&mut self,ctx:Context) {
@@ -959,8 +964,7 @@ impl ProductManager {
                         self.category_manager.clear_for_leave();
                     }
                     self.tab=next;
-                    self.query.clear();
-                    self.reload(ui.ctx().clone());
+                                        self.reload(ui.ctx().clone());
                 }
             }else if self.has_pending_prices(){
                 self.error=Some("가격 입력 저장이 완료된 뒤 탭을 이동할 수 있습니다.".into());
@@ -968,23 +972,19 @@ impl ProductManager {
         }
         if self.category_manager.take_switch_to_list(){
             self.tab=self.category_next_tab.take().unwrap_or(0);
-            self.query.clear();
-            self.reload(ui.ctx().clone());
+                        self.reload(ui.ctx().clone());
         }
         if let Some(next)=self.model_groups.take_tab_change(){
             self.tab=next;
-            self.query.clear();
-            self.reload(ui.ctx().clone());
+                        self.reload(ui.ctx().clone());
         }
         if let Some(next)=self.aliases.take_tab(){
             self.tab=next;
-            self.query.clear();
-            self.reload(ui.ctx().clone());
+                        self.reload(ui.ctx().clone());
         }
         if let Some(next)=self.brands.take_tab(){
             self.tab=next;
-            self.query.clear();
-            self.reload(ui.ctx().clone());
+                        self.reload(ui.ctx().clone());
         }
         // The category editor keeps its distinct tree layout. The other
         // product tabs share Freight Assignment's actual four-card KPI strip.

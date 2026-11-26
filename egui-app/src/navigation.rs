@@ -573,3 +573,47 @@ mod date_navigation_segmented_control_tests{
         );
     }
 }
+
+
+// Presentation-only state lifetime. Expiration is checked on re-entry;
+// no timer task, persistence, or business mutation is needed.
+pub(crate) const NAVIGATION_SNAPSHOT_TTL:std::time::Duration=std::time::Duration::from_secs(30*60);
+pub(crate) struct NavigationSnapshots<const N:usize>{
+    active:usize,
+    left:[Option<std::time::Instant>;N],
+    epochs:[u64;N],
+}
+impl<const N:usize> NavigationSnapshots<N>{
+    pub(crate) fn new(active:usize)->Self{Self{active,left:[None;N],epochs:[0;N]}}
+    pub(crate) fn visit(&mut self,next:usize,now:std::time::Instant)->bool{
+        if next==self.active{return false;}
+        self.left[self.active]=Some(now);
+        self.active=next;
+        let expired=self.left[next].take().is_some_and(|left|
+            now.saturating_duration_since(left)>=NAVIGATION_SNAPSHOT_TTL);
+        if expired{self.epochs[next]=self.epochs[next].wrapping_add(1);}
+        expired
+    }
+    pub(crate) fn epoch(&self,index:usize)->u64{self.epochs[index]}
+}
+#[cfg(test)]
+mod navigation_snapshot_tests{
+    use super::*;
+    #[test]
+    fn expiry_is_per_page_and_starts_on_departure(){
+        let t=std::time::Instant::now();
+        let seconds=std::time::Duration::from_secs;
+        let mut cache=NavigationSnapshots::<8>::new(0);
+        assert!(!cache.visit(0,t+seconds(7200)));
+        assert!(!cache.visit(1,t+seconds(7200)));
+        assert!(!cache.visit(0,t+seconds(8999)));
+        assert_eq!(cache.epoch(0),0);
+        assert!(!cache.visit(2,t+seconds(9000)));
+        assert!(cache.visit(0,t+seconds(10800)));
+        assert_eq!(cache.epoch(0),1);
+        assert!(cache.visit(1,t+seconds(10801)));
+        assert_eq!(cache.epoch(1),1);
+        assert!(cache.visit(2,t+seconds(10802)));
+        assert_eq!(cache.epoch(2),1);
+    }
+}

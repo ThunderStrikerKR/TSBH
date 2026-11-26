@@ -471,6 +471,18 @@ impl ExcelManager{
         };
         manager.refresh(ctx);manager
     }
+    pub(crate) fn reset_navigation(&mut self){
+        if self.operation.is_some()||self.blocks_reply_navigation(){return;}
+        // Unsaved freight inputs are not a navigation snapshot.
+        let today=Utc::now().with_timezone(&FixedOffset::east_opt(9*3600).expect("Seoul offset")).date_naive();
+        let (from,to)=default_export_date_range(today);
+        self.tab=Tab::Factory;self.query.clear();self.selected.clear();self.sort_queue=None;self.sort_history=None;
+        self.export_from=from.clone();self.export_to=to.clone();
+        self.export_from_input=from;self.export_to_input=to;
+        self.export_from_month=crate::navigation::calendar_month_start(today);
+        self.export_to_month=self.export_from_month;
+        self.reply_page=0;
+    }
     pub fn take_open_order(&mut self)->Option<(String,String)>{
         let id=self.open_order.take()?;
         let when=self.result.as_ref()

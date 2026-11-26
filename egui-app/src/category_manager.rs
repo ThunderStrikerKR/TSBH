@@ -6,7 +6,7 @@ use eframe::egui::{self,Align,Context,Layout,Rect,Sense,Ui,Vec2};
 use serde_json::{json,Value};
 use std::collections::{HashMap,HashSet};
 use std::time::{Duration,Instant};
-const SNAPSHOT_TTL:Duration=Duration::from_secs(30*60);
+const SNAPSHOT_TTL:Duration=crate::navigation::NAVIGATION_SNAPSHOT_TTL;
 #[derive(Clone,Debug)]
 struct TreeMotion{id:String,opening:bool,started:f64,duration:f64}
 #[derive(Clone,Debug)]
@@ -440,13 +440,17 @@ impl CategoryManager {
         }
         self.confirm=None;
     }
+    pub(crate) fn reset_navigation(&mut self){
+        let epoch=self.scroll_epoch.wrapping_add(1);
+        self.selected=ROOTS[0].0.to_owned();
+        self.expanded=ROOTS.iter().map(|(id,_)|(*id).to_owned()).collect();
+        self.query.clear();self.focused=false;self.focus=Default::default();self.crumbs=Default::default();
+        self.scroll_epoch=epoch;self.focus.scroll_epoch=epoch;self.tree_motion=None;self.nav_motion=None;self.scroll_to=None;
+        self.left_at=None;
+    }
     fn restore_snapshot(&mut self,now:Instant){
         if self.left_at.take().is_some_and(|left|now.saturating_duration_since(left)>=SNAPSHOT_TTL){
-            let epoch=self.scroll_epoch.wrapping_add(1);
-            self.selected=ROOTS[0].0.to_owned();
-            self.expanded=ROOTS.iter().map(|(id,_)|(*id).to_owned()).collect();
-            self.query.clear();self.focused=false;self.focus=Default::default();self.crumbs=Default::default();
-            self.scroll_epoch=epoch;self.focus.scroll_epoch=epoch;self.tree_motion=None;self.nav_motion=None;self.scroll_to=None;
+            self.reset_navigation();
         }
     }
     fn select_map(&mut self,cats:&[Category],target:&str,now:f64){

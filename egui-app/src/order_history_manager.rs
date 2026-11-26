@@ -1035,6 +1035,17 @@ impl OrderHistoryManager {
         manager.refresh(ctx);
         manager
     }
+    pub(crate) fn reset_navigation(&mut self,ctx:egui::Context){
+        if self.memo_editor.is_some()||self.memo_save_job.is_some(){return;}
+        let today=seoul_today();
+        self.query.clear();self.date_basis=HistoryDateBasis::Reception;
+        self.date_from=today.clone();self.date_to=today.clone();
+        self.from_input=today.clone();self.to_input=today.clone();
+        self.from_month=month_start(NaiveDate::parse_from_str(&today,"%Y-%m-%d").expect("today in YYYY-MM-DD"));
+        self.to_month=self.from_month;
+        self.expanded.clear();self.sort=None;self.detail_order_id=None;
+        self.refresh(ctx);
+    }
     /// Excel rows navigate by the order's reception date. A single-day
     /// range and Reception basis precisely identify the original order.
     pub fn open_order(&mut self,id:&str,date:&str,ctx:egui::Context){
