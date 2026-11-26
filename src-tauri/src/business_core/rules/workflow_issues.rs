@@ -195,10 +195,18 @@ pub(super) fn notice_pending(state:&Value,group_id:&str)->Result<bool,String>{
     let Some(notice)=rows(field(group,"notices")).last()else{
         return Ok(flag(group,"needsNotice"));
     };
-    let ids=rows(field(notice,"shipmentIds"));
-    if ids.len()!=ships.len()||ships.iter().any(|ship|
-        !ids.iter().any(|id|id.as_str()==Some(str_field(ship,"id")))){
-        return Ok(true);
+    // Some pre-stageValidity notices have no explicit shipmentIds array.
+    // Their frozen amounts map already identifies the exact billed shipments.
+    // Never infer membership from the group total or current order alone.
+    let Some(amounts)=field(notice,"amounts").as_object() else{return Ok(true);};
+    if amounts.len()!=ships.len() || ships.iter().any(|ship|
+        !amounts.contains_key(str_field(ship,"id"))){return Ok(true);}
+    if let Some(ids)=notice.get("shipmentIds"){
+        let Some(ids)=ids.as_array()else{return Ok(true);};
+        if ids.len()!=ships.len()||ships.iter().any(|ship|
+            !ids.iter().any(|id|id.as_str()==Some(str_field(ship,"id")))){
+            return Ok(true);
+        }
     }
     let basis=payment_copy_basis(state,group_id)?;
     if !same_payment_account(field(notice,"account"),field(&basis,"account")){
@@ -209,6 +217,10 @@ pub(super) fn notice_pending(state:&Value,group_id:&str)->Result<bool,String>{
         let total=w::shipment_totals(state,sid)?;
         if !super::safe(field(field(notice,"amounts"),sid)).zip(super::safe(field(&total,"total")))
             .is_some_and(|(a,b)|a==b){return Ok(true);}
+    }
+    let sum=amounts.values().map(super::safe).collect::<Option<Vec<_>>>().and_then(super::checked_sum);
+    if !sum.zip(super::safe(field(notice,"total"))).is_some_and(|(a,b)|a==b){
+        return Ok(true);
     }
     Ok(false)
 }

@@ -2410,7 +2410,7 @@ impl ManualWorkspace {
                                                                             if field=="product" && theme::action(
                                                                                 menu,"원문 배정 대상 선택",ButtonRole::Standard,true
                                                                             ).clicked(){
-                                                                                self.queue_cell_selection(target.clone(),response.interact_pointer_pos(),&mut submit_direct);
+                                                                                self.queue_cell_selection(target.clone(),interaction.interact_pointer_pos(),&mut submit_direct);
                                                                                 clicked_target=Some(target.clone());
                                                                                 menu.close();
                                                                             }

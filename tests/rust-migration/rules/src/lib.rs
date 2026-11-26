@@ -460,6 +460,38 @@ mod regression {
         assert_eq!(out["state"]["orders"][0]["raw"],s["orders"][0]["raw"]);
     }
     #[test]
+    fn prepaid_confirmation_rejects_mismatched_legacy_notice_membership_and_amounts(){
+        let mut state=workflow_state("PREPAID");
+        state["workflow"]["groups"][0]["notices"]=json!([{
+            "id":"notice-legacy","account":{"id":"account-1","bank":"가상은행",
+                "number":"123-456","holder":"가상상호"},
+            "amounts":{"shipment:o1:r1":36300},"total":36300
+        }]);
+        let confirm=|state:&Value|execute("apply_workflow_action",json!({
+            "state":state,"action":"confirm_group_payment","groupId":"group:o1",
+            "confirmationId":"confirm-1","eventId":"event-1",
+            "now":"2026-11-13T11:00:00+09:00"
+        }));
+        assert_eq!(confirm(&state).unwrap()["step"],4);
+        let mut wrong=state.clone();
+        wrong["workflow"]["groups"][0]["notices"][0]["amounts"]=json!({"shipment:other":36300});
+        assert!(confirm(&wrong).is_err());
+        let mut wrong=state.clone();
+        wrong["workflow"]["groups"][0]["notices"][0]["amounts"]["shipment:other"]=json!(0);
+        assert!(confirm(&wrong).is_err());
+        let mut wrong=state.clone();
+        wrong["workflow"]["groups"][0]["notices"][0]["shipmentIds"]=json!(["shipment:other"]);
+        assert!(confirm(&wrong).is_err());
+        let mut wrong=state.clone();
+        wrong["workflow"]["groups"][0]["notices"][0]["total"]=json!(36301);
+        assert!(confirm(&wrong).is_err());
+        let mut wrong=state.clone();
+        wrong["workflow"]["groups"][0]["notices"][0]["account"]["number"]=json!("changed");
+        assert!(confirm(&wrong).is_err());
+        state["workflow"]["groups"][0]["notices"][0]["shipmentIds"]=json!(["shipment:o1:r1"]);
+        assert_eq!(confirm(&state).unwrap()["step"],4);
+    }
+    #[test]
     fn recorded_payment_is_audited_and_cannot_overallocate() {
         let s=workflow_state("PREPAID");
         let input=json!({
