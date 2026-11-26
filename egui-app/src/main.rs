@@ -61,6 +61,7 @@ mod product_option_display;
 mod product_excel;
 mod native_workbooks;
 mod factory_reply_inbox;
+mod notification_center;
 mod product_excel_ui;
 mod client_chooser;
 mod business_state;
@@ -1043,6 +1044,7 @@ struct BandoEgui {
     daily_settlement_manager: Option<daily_settlement_manager::DailySettlementManager>,
     excel_manager: Option<excel_manager::ExcelManager>,
     factory_reply_inbox:factory_reply_inbox::Inbox,
+    notification_center:notification_center::Center,
     freight_pending_page: Option<Page>,
     freight_pending_save: bool,
     product_pending_page: Option<Page>,
@@ -1181,6 +1183,7 @@ impl BandoEgui {
             daily_settlement_manager: None,
             excel_manager: None,
             factory_reply_inbox:factory_reply_inbox::Inbox::default(),
+            notification_center:Default::default(),
             freight_pending_page: None,
             freight_pending_save: false,
             product_pending_page: None,
@@ -5872,6 +5875,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                 ctx.send_viewport_cmd(egui::ViewportCommand::Minimized(true));
                             }
                             actions.add_space(theme::SPACE_8);
+                            self.notification_center.header_button(actions);
                             // Unoccupied header space has the same drag and
                             // double-click behavior as the original titlebar.
                             let empty = actions.available_width();
@@ -10291,6 +10295,7 @@ impl eframe::App for BandoEgui {
             // A restored operational DB invalidates every prior projected
             // price/client/order snapshot. Never keep stale native matches.
             self.invalidate_reception_metadata();
+            self.notification_center=Default::default();
             self.inbox_folder_path=None;
             self.inbox_folder_loaded=false;
             self.inbox_folder_error=None;
@@ -10340,6 +10345,7 @@ impl eframe::App for BandoEgui {
         if let Some(excel)=self.excel_manager.as_mut(){excel.poll(ctx);}
         let corrected=self.excel_manager.as_mut().is_some_and(|excel|excel.take_reply_changed());
         let reply=self.factory_reply_inbox.poll(ctx);
+        self.notification_center.poll(ctx,corrected||reply.is_some());
         self.refresh_after_factory_reply(ctx,corrected,
             reply.as_ref().is_some_and(|r|r.files>0));
         if let Some(reply)=reply{
@@ -10485,6 +10491,7 @@ impl eframe::App for BandoEgui {
                 }
             }
         }
+        self.notification_center.show(ctx,work_area);
         self.frameless_resize(ctx);
         // Tooltip-order overlay is drawn LAST, on top of the current modal,
         // without allocating space in any card, row or scrollbar viewport.

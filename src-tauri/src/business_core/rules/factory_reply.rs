@@ -239,6 +239,10 @@ fn connect(input:&Value,source:&Value,approve:bool,context:&Value)->Result<Value
         }
         if shipment_index.conflicts(&shipment_id,s(&current,"tracking")){
             reply["rows"][index]["issue"]=json!("운송장번호가 다른 배송 건에 이미 연결되어 있습니다.");
+            if let Some(owner)=shipment_index.shipments.iter().find(|ship|
+                s(ship,"id")!=shipment_id&&s(field(ship,"tracking"),"FACTORY")==s(&current,"tracking")){
+                reply["rows"][index]["existingShipmentId"]=field(owner,"id").clone();
+            }
             continue
         }
         let prev_tracking=s(field(&ship,"tracking"),"FACTORY");
@@ -259,6 +263,30 @@ fn connect(input:&Value,source:&Value,approve:bool,context:&Value)->Result<Value
         // Read the current effective cost, never the frozen export note.
         let order_actual=actual(&ship,original_recipient);
         let prev_actual=order_actual.clone();
+        // Notification evidence never participates in selecting the shipment
+        // or overwriting the recipient. Group all differences into one row.
+        let mut changes=Vec::new();
+        let old_address=s(original_recipient,"address");
+        let new_address=s(&current,"address");
+        if !new_address.is_empty()&&normalized(old_address)!=normalized(new_address){
+            changes.push(json!({"field":"주소 불일치","before":old_address,"after":new_address}));
+        }
+        let old_contacts=["phone","mobile"].into_iter().map(|k|s(original_recipient,k))
+            .filter(|v|!v.is_empty()).collect::<Vec<_>>();
+        let new_contacts=rows(&current,"contacts").iter().filter_map(Value::as_str)
+            .filter(|v|!v.is_empty()).collect::<Vec<_>>();
+        let contact_keys=|values:&[&str]|values.iter().map(|v|normalized(v))
+            .collect::<HashSet<_>>();
+        if !new_contacts.is_empty()&&contact_keys(&old_contacts)!=contact_keys(&new_contacts){
+            changes.push(json!({"field":"연락처 불일치","before":old_contacts.join(" / "),"after":new_contacts.join(" / ")}));
+        }
+        if !prev_tracking.is_empty()&&prev_tracking!=s(&current,"tracking"){
+            changes.push(json!({"field":"운송장번호 변경","before":prev_tracking,"after":s(&current,"tracking")}));
+        }
+        if !prev_actual.is_null()&&prev_actual!=*wanted{
+            changes.push(json!({"field":"실제 운임 변경","before":grouped_amount(&prev_actual),"after":grouped_amount(wanted)}));
+        }
+        if !changes.is_empty(){reply["rows"][index]["notificationChanges"]=json!(changes);}
         if !prev_tracking.is_empty()&&prev_tracking==s(&current,"tracking")&&prev_actual==*wanted{
             reply["rows"][index]["applied"]=json!(true);
             continue

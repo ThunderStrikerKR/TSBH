@@ -213,7 +213,13 @@ pub fn read_factory_reply(filename:&str,bytes:&[u8])->Result<Value,String>{
         let goods=if formulas.get_value((r,8)).is_some_and(|s|!s.trim().is_empty()){
             String::new()
         }else{text(sheet.get_value((r,8)).unwrap_or(&Data::Empty)).unwrap_or_default()};
+        // Existing C/D/E are read only as optional notification evidence.
+        // Invalid, empty, or formula cells do not affect matching or import.
+        let evidence=|col|if formulas.get_value((r,col)).is_some_and(|s|!s.trim().is_empty()){
+            String::new()
+        }else{text(sheet.get_value((r,col)).unwrap_or(&Data::Empty)).unwrap_or_default()};
         let mut row=json!({"row":r+1,"name":values[0],"goods":goods,
+            "address":evidence(2),"phone":evidence(3),"mobile":evidence(4),
             "rawFreight":values[1],"tracking":values[2],
             "trackingNumeric":tracking_numeric,"trackingNumberFormat":"",
             "reservedJ":false,"extraAfterQ":false});

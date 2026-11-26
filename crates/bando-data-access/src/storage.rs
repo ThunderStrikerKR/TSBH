@@ -129,6 +129,7 @@ where F:FnOnce(&Value)->Result<String,String>{
         .ok_or("회신 이력 누락")?["archivedPath"]=json!(archived);
 
     let verified=finish_factory_scope(&tx,before,next,&ids,expected_revision)?;
+    crate::notification_store::record_factory_reply(&tx,&verified)?;
     tx.commit().map_err(err)?;
     result["next"]=verified;
     Ok(result)
@@ -147,6 +148,7 @@ pub fn update_v2_factory_correction_snapshot(
     let next=crate::rules::approve_factory_conflict_for_state(&before,review)?;
     validate_factory_scope(&before,&next)?;
     let verified=finish_factory_scope(&tx,before,next,&ids,expected_revision)?;
+    crate::notification_store::record_factory_reply(&tx,&verified)?;
     tx.commit().map_err(err)?;
     Ok(verified)
 }

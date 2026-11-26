@@ -18,7 +18,7 @@ fn id(bytes:&[u8])->String{format!("factory-reply-{:x}",Sha256::digest(bytes))}
 fn text<'a>(v:&'a Value,k:&str)->&'a str{v[k].as_str().unwrap_or("")}
 fn valid_name(n:&str)->bool{!n.is_empty()&&n.len()<=240&&!n.starts_with("~$")&&
     !n.contains('/')&&!n.contains('\\')&&!n.contains('\0')&&n.to_ascii_lowercase().ends_with(".xlsx")}
-fn open_db()->Result<(Connection,PathBuf),String>{
+pub(crate) fn open_db()->Result<(Connection,PathBuf),String>{
     if !excel_service::writable(){return Err("공장 회신 저장 권한 없음".into())}
     let path=business_state::authorized_business_write_path()?;
     let base=path.parent().ok_or("업무 DB 경로 오류")?.to_path_buf();
@@ -205,7 +205,14 @@ fn scan_with_db(cache:&mut Scan,conn:&mut Connection,base:&Path)->Result<Outcome
         // Invalid binary files are reported once until the file changes.
         let source=match native_workbooks::read_factory_reply(name.to_str().unwrap_or(""),&bytes){
             Ok(source)=>source,
-            Err(e)=>{seen.done=true;outcome.error=Some(format!("회신 파일 검토 필요: {e}"));continue}
+            Err(e)=>{
+                let detail=format!("회신 파일 검토 필요: {e}");
+                if let Err(save)=bando_data_access::notification_store::record_file_error(conn,&file_id,
+                    name.to_str().unwrap_or(""),&Utc::now().to_rfc3339(),&detail){
+                    outcome.error=Some(format!("{detail} / 알림 저장 실패: {save}"));continue;
+                }
+                seen.done=true;outcome.error=Some(detail);continue
+            }
         };
         if text(&source,"id")!=file_id{
             outcome.error=Some("회신 원본 ID 불일치".into());continue
@@ -219,7 +226,12 @@ fn scan_with_db(cache:&mut Scan,conn:&mut Connection,base:&Path)->Result<Outcome
                     if let Some(w)=result["archiveWarning"].as_str(){outcome.error=Some(format!("회신 DB 저장 완료, 보관함 복사 실패: {w}"));}
                 }
             },
-            Err(e)=>outcome.error=Some(e),
+            Err(e)=>{
+                if let Err(save)=bando_data_access::notification_store::record_file_error(conn,&file_id,
+                    name.to_str().unwrap_or(""),&Utc::now().to_rfc3339(),&e){
+                    outcome.error=Some(format!("{e} / 알림 저장 실패: {save}"));
+                }else{outcome.error=Some(e);}
+            },
         }
     }
     cache.seen.retain(|p,_|active.contains(p));Ok(outcome)

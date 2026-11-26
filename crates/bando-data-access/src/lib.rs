@@ -16,6 +16,7 @@ use std::collections::HashMap;
 mod validation;
 mod relational_write;
 mod storage;
+pub mod notification_store;
 pub mod workflow_events;
 pub mod workflow_state;
 mod client_commands;
