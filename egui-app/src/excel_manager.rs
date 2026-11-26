@@ -697,7 +697,12 @@ impl ExcelManager{
             for row in rows(&record["rows"]){
                 if row["applied"]==true||rows(&status["resolvedRows"]).iter()
                     .any(|r|r["row"]==row["row"]&&r["resolved"]==true){continue}
-                held.push(json!({"id":record["id"],"filename":record["filename"],
+                let candidates=if text(row,"issue").starts_with("배송 건이 여러 개입니다."){
+                    crate::gateway::rules::execute("factory_reply_candidates",json!({
+                        "state":&snapshot.state,"id":record["id"],"rowNumber":row["row"]
+                    })).ok().and_then(|r|r.get("candidates").cloned()).unwrap_or(json!([]))
+                }else{json!([])};
+                held.push(json!({"candidates":candidates,"id":record["id"],"filename":record["filename"],
                     "row":row["row"],"name":row["name"],"issue":row["issue"],
                     "tracking":row["tracking"],"actual":row["actual"],"shipmentId":row["shipmentId"]}));
             }
@@ -723,7 +728,7 @@ impl ExcelManager{
                         crate::popup::modal_editor_body_max_height(area.height()),|ui|{
                         ui.label(typography::field_label(&format!("미해결 회신 {count}행")));
                         ui.label(typography::caption(crate::native_workbooks::FACTORY_REPLY_FORMAT_GUIDANCE));
-                        ui.label(typography::caption("정상 회신은 자동 저장됩니다. 충돌 건은 기존 값과 회신 값을 확인한 후 한 행씩 정정하세요."));
+                        ui.label(typography::caption("정상 회신은 자동 저장됩니다. 중복 배송 건은 출력 이력을 비교하고, 충돌 건은 기존 값과 회신 값을 확인하세요."));
                         if count==0{crate::ui_primitives::management_body_state_inline(ui,if busy{"조회 중"}else{"검토할 회신이 없습니다."});}
                         for row in self.reply_rows.iter().skip(self.reply_page*50).take(50){
                             crate::ui_primitives::soft_divider(ui);
@@ -737,6 +742,25 @@ impl ExcelManager{
                             });
                             ui.label(typography::table_cell(&format!("송장 {} / 실제 운임 {} / {}",
                                 text(row,"tracking"),amount(&row["actual"]),text(row,"issue"))));
+                            for candidate in rows(&row["candidates"]){
+                                let row_number=candidate["exportRow"].as_u64().map(|n|n.to_string())
+                                    .unwrap_or_else(||"미확인".into());
+                                ui.horizontal_wrapped(|line|{
+                                    line.label(typography::table_cell(&format!("{} / {}행 / {}",
+                                        text(candidate,"filename"),row_number,text(candidate,"exportAt"))));
+                                    if crate::button::action(line,"이 배송 건 선택",theme::ButtonRole::Standard,
+                                        writable_snapshot&&self.gateway.excel_write_enabled()&&candidate["eligible"]==true).clicked(){
+                                        let mut chosen=row.clone();
+                                        chosen["selectedShipmentId"]=candidate["shipmentId"].clone();
+                                        selected=Some(chosen);
+                                    }
+                                });
+                                ui.label(typography::table_cell(&format!("품목: {} / 기존 송장: {} / 실제 운임: {}",
+                                    text(candidate,"items"),text(candidate,"tracking"),amount(&candidate["actual"]))));
+                                if candidate["eligible"]!=true{
+                                    ui.label(typography::caption("기존 회신 또는 배송 상태로 인해 연결할 수 없습니다."));
+                                }
+                            }
                         }
                         ui.horizontal(|bar|{
                             if crate::button::action(bar,"이전",theme::ButtonRole::Standard,!busy&&self.reply_page>0).clicked(){self.reply_page-=1;}
@@ -754,9 +778,11 @@ impl ExcelManager{
         if close{self.reply_review=false;self.reply_confirm=None;return}
         if let (Some(row),Some(snapshot))=(selected,self.result.as_ref()){
             match crate::gateway::rules::execute("factory_conflict_confirmation",json!({
-                "state":&snapshot.state,"id":row["id"],"rowNumber":row["row"]})){
+                "state":&snapshot.state,"id":row["id"],"rowNumber":row["row"],
+                "selectedShipmentId":row["selectedShipmentId"]})){
                 Ok(confirm)=>{self.reply_confirm=Some(json!({"revision":snapshot.state["revision"],
-                    "id":row["id"],"rowNumber":row["row"],"confirmedText":confirm["text"]}));},
+                    "id":row["id"],"rowNumber":row["row"],"selectedShipmentId":row["selectedShipmentId"],
+                    "confirmedText":confirm["text"]}));},
                 Err(e)=>self.error=Some(e),
             }
         }

@@ -159,11 +159,17 @@ fn connect(input:&Value,source:&Value,approve:bool,context:&Value)->Result<Value
             let id=s(q,"shipmentId").to_string();
             if !ids.contains(&id){ids.push(id)}
         }
+        // Explicit selection is accepted only from a revalidated single-row
+        // correction, never an ordinary import or preview payload.
+        if source.get("resolves").is_some() && !approve && count==1 {
+            let chosen=s(context,"selectedShipmentId");
+            if !chosen.is_empty(){ids.retain(|id|id==chosen);}
+        }
         if ids.len()!=1{
             reply["rows"][index]["issue"]=json!(if ids.is_empty(){
                 "일치하는 공장 발송 배송 건이 없습니다."
             }else{
-                "배송 건이 여러 개입니다. 직원 확인 필요"
+                "배송 건이 여러 개입니다. 연결 대상 확인 필요"
             });
             continue
         }
@@ -457,6 +463,63 @@ fn grouped_amount(value:&Value)->String {
     }
     format!("{result}원")
 }
+fn ambiguous(row:&Value)->bool{
+    s(row,"issue").starts_with("배송 건이 여러 개입니다.")
+        && field(row,"applied")!=&Value::Bool(true)
+}
+fn held_row<'a>(state:&'a Value,payload:&Value)->Result<(&'a Value,&'a Value),String>{
+    let record=rows(state,"factoryReplies").iter().find(|r|s(r,"id")==s(payload,"id"))
+        .ok_or("원본 회신 누락")?;
+    let row=rows(record,"rows").iter().find(|r|field(r,"row")==field(payload,"rowNumber"))
+        .ok_or("원본 회신 행 누락")?;
+    if resolved_row(state,record,row){return Err("이미 정정된 회신 행입니다.".into());}
+    Ok((record,row))
+}
+fn ambiguity_candidates(state:&Value,row:&Value)->Vec<Value>{
+    if !ambiguous(row){return Vec::new();}
+    let index=queue_match_index(state);
+    let ships=ShipmentIndex::new(state);
+    let mut seen=HashSet::new();
+    let mut result=Vec::new();
+    for q in matching_queues(&index,row){
+        let id=s(q,"shipmentId");
+        if id.is_empty()||!seen.insert(id){continue;}
+        let Some(pos)=ships.position(id) else{continue;};
+        let ship=ships.shipments[pos].clone();
+        let recipient=field(field(q,"snapshot"),"recipient");
+        let tracking=s(field(&ship,"tracking"),"FACTORY");
+        let old=actual(&ship,recipient);
+        // An ambiguity selection is not approval to overwrite previous
+        // evidence. Existing matching evidence may be acknowledged only.
+        let eligible=!ships.conflicts(id,s(row,"tracking"))
+            && (tracking.is_empty()||tracking==s(row,"tracking"))
+            && (old.is_null()||old==*field(row,"actual"))
+            && field(&ship,"transferred")==&Value::Bool(true)
+            && field(&ship,"step").as_i64()==Some(4)
+            && field(&ship,"legacyArchived")!=&Value::Bool(true);
+        let export=rows(state,"exports").iter().find(|e|
+            !s(q,"exportId").is_empty()&&s(e,"id")==s(q,"exportId"));
+        let filename=export.map(|e|s(e,"filename")).unwrap_or("");
+        let export_row=export.and_then(|e|rows(e,"outputRows").iter().position(|r|
+            s(r,"queueId")==s(q,"id")&&s(r,"shipmentId")==id)).map(|i|i+2);
+        let items=rows(recipient,"items").iter().map(|i|
+            format!("{} {}개",s(i,"name"),field(i,"quantity").as_i64().unwrap_or(0)))
+            .collect::<Vec<_>>().join(" / ");
+        result.push(json!({"shipmentId":id,"orderId":field(&ship,"orderId"),
+            "exportId":field(q,"exportId"),"filename":filename,"exportRow":export_row,
+            "exportAt":export.map(|e|s(e,"at")).unwrap_or_else(||s(q,"at")),
+            "items":items,"tracking":tracking,"actual":old,"eligible":eligible}));
+    }
+    result
+}
+fn selected_ambiguity(state:&Value,payload:&Value,row:&Value)->Result<Value,String>{
+    if !ambiguous(row){return Err("중복 배송 건 검토 대상이 아닙니다.".into());}
+    let selected=s(payload,"selectedShipmentId");
+    if selected.is_empty(){return Err("연결할 배송 건을 선택하세요.".into());}
+    ambiguity_candidates(state,row).into_iter().find(|c|
+        s(c,"shipmentId")==selected&&field(c,"eligible")==&Value::Bool(true))
+        .ok_or("선택한 배송 건을 연결할 수 없습니다. 최신 출력 이력과 송장을 확인하세요.".into())
+}
 fn conflict_confirmation(payload:&Value)->Result<Value,String>{
     let state=payload.get("state").ok_or("공장 회신 상태 누락")?;
     conflict_confirmation_for_state(state,payload)
@@ -470,8 +533,12 @@ pub(crate) fn factory_correction_order_scope(state:&Value,payload:&Value)->Resul
         .ok_or("원본 회신 누락")?;
     let source=rows(record,"rows").iter().find(|r|r["row"]==payload["rowNumber"])
         .ok_or("원본 회신 행 누락")?;
+    let target=if ambiguous(source){
+        let candidate=selected_ambiguity(state,payload,source)?;
+        s(&candidate,"shipmentId").to_owned()
+    }else{s(source,"shipmentId").to_owned()};
     let ship=rows(field(state,"workflow"),"shipments").iter()
-        .find(|ship|s(ship,"id")==s(source,"shipmentId"))
+        .find(|ship|s(ship,"id")==target)
         .ok_or("원본 배송 건을 찾지 못했습니다.")?;
     Ok(vec![s(ship,"orderId").to_owned()])
 }
@@ -484,6 +551,16 @@ fn conflict_confirmation_for_state(state:&Value,payload:&Value)->Result<Value,St
     let row=record.and_then(|r|rows(r,"rows").iter().find(|row|
         field(row,"row").as_i64()==Some(row_num)))
         .ok_or("승인 가능한 회신 충돌 행을 찾지 못했습니다.")?;
+    if ambiguous(row){
+        let (_,row)=held_row(state,payload)?;
+        let candidate=selected_ambiguity(state,payload,row)?;
+        let message=format!("{}행 / {}\n출력: {} / {}행\n출력일: {}\n품목: {}\n배송 건: {}\n회신: {} / 운임 {}\n선택한 출력 이력을 확인했으며 이 배송 건에만 연결할까요?",
+            row_num,s(row,"name"),s(&candidate,"filename"),
+            field(&candidate,"exportRow").as_u64().map(|n|n.to_string()).unwrap_or_else(||"미확인".into()),
+            s(&candidate,"exportAt"),s(&candidate,"items"),s(&candidate,"shipmentId"),
+            s(row,"tracking"),grouped_amount(field(row,"actual")));
+        return Ok(json!({"text":message}));
+    }
     if s(row,"shipmentId").is_empty()||!s(row,"issue").contains("충돌")||
         field(row,"applied").as_bool()==Some(true) {
         return Err("승인 가능한 회신 충돌 행을 찾지 못했습니다.".into())
@@ -540,7 +617,10 @@ pub(crate) fn approve_factory_conflict_for_state(state:&Value,payload:&Value)->R
     if resolved_row(state,original,source){return Err("이미 정정된 회신 행입니다.".into())}
     let correction=s(payload,"correctionId");
     if correction.is_empty()||is_duplicate(state,correction){return Err("회신 정정 ID 오류".into())}
-    let target=s(source,"shipmentId").to_owned();
+    let selection=ambiguous(source);
+    let target=if selection{
+        s(&selected_ambiguity(state,payload,source)?,"shipmentId").to_owned()
+    }else{s(source,"shipmentId").to_owned()};
     let mut clean=source.clone();
     for k in ["issue","applied","shipmentId","orderId"]{
         clean.as_object_mut().ok_or("회신 행 형식 오류")?.remove(k);
@@ -549,7 +629,7 @@ pub(crate) fn approve_factory_conflict_for_state(state:&Value,payload:&Value)->R
         "businessDate":payload["businessDate"],"at":payload["freightAt"],"actor":actor(state),
         "archivedPath":original["archivedPath"],"resolves":{"id":original["id"],"row":source["row"]},
         "status":"REVIEW","rows":[clean]});
-    let next=connect(state,&reply,true,payload)?;
+    let next=connect(state,&reply,!selection,payload)?;
     let appended=rows(&next,"factoryReplies").last().ok_or("정정 기록 누락")?;
     let applied=rows(appended,"rows").first().ok_or("정정 결과 누락")?;
     if applied["applied"]!=true||s(applied,"shipmentId")!=target{
@@ -567,6 +647,11 @@ pub(super) fn execute(operation:&str,payload:&Value)->Result<Value,String>{
             Ok(json!({"duplicate":is_duplicate(state,id)}))
         },
         "factory_reply_review_statuses"=>review_list(payload),
+        "factory_reply_candidates"=>{
+            let state=payload.get("state").ok_or("공장 회신 상태 누락")?;
+            let (_,row)=held_row(state,payload)?;
+            Ok(json!({"candidates":ambiguity_candidates(state,row)}))
+        },
         "factory_conflict_confirmation"=>conflict_confirmation(payload),
         "approve_factory_conflict"=>approve_conflict(payload),
         "analyze_factory_reply"=>analyze(payload),
@@ -980,5 +1065,52 @@ mod tests {
         let p=analyze(&input(another,"001234567890","4000")).unwrap();
         assert_eq!(p["held"],1);
         assert!(p["rows"][0]["issue"].as_str().unwrap().contains("다른 배송 건"));
+    }
+}
+
+#[cfg(test)]
+mod ambiguity_selection_tests{
+    use super::*;
+    #[test]
+    fn explicit_ambiguity_resolution_preserves_other_order_and_rejects_wrong_target(){
+        let recipient=json!({"id":"r","name":"가상","address":"서울 테스트로 1",
+            "phone":"010-0000-0000","items":[{"origin":"FACTORY","name":"가상 상품","quantity":1}]});
+        let mut state=json!({"revision":3,"orders":[
+            {"id":"o1","recipients":[recipient.clone()]},{"id":"o2","recipients":[recipient.clone()]}],
+            "workflow":{"shipments":[
+                {"id":"s1","orderId":"o1","recipientId":"r","step":4,"transferred":true,
+                    "tracking":{"FACTORY":"999999999999"},"actualFreight":{"FACTORY":3000}},
+                {"id":"s2","orderId":"o2","recipientId":"r","step":4,"transferred":true,
+                    "tracking":{},"actualFreight":{}}],
+                "queue":[{"id":"q1","shipmentId":"s1","origin":"FACTORY","status":"EXPORTED","snapshot":{"recipient":recipient.clone()}},
+                    {"id":"q2","shipmentId":"s2","origin":"FACTORY","status":"EXPORTED","snapshot":{"recipient":recipient}}],
+                "events":[],"payments":[],"confirmations":[]}});
+        let request=json!({"sourceRowCount":1,"sourceRows":[{"row":2,"name":"가상",
+            "address":"서울 테스트로 1","phone":"010-0000-0000","rawFreight":"12340",
+            "tracking":"000099990001"}],"id":"reply","filename":"reply.xlsx",
+            "businessDate":"2026-11-27","at":"2026-11-27T00:00:00Z"});
+        state=import_automatic_factory_reply(&state,&request).unwrap()["next"].clone();
+        assert_eq!(state["factoryReplies"][0]["rows"][0]["applied"],false);
+        let mut review=json!({"id":"reply","rowNumber":2,"revision":3,
+            "selectedShipmentId":"s2","correctionId":"correction","businessDate":"2026-11-27",
+            "freightAt":"2026-11-27T00:00:00Z","freightEventIds":["f"],"replyEventIds":["r"]});
+        let row=&state["factoryReplies"][0]["rows"][0];
+        let candidates=ambiguity_candidates(&state,row);
+        assert_eq!(candidates.len(),2);
+        assert_eq!(candidates[0]["eligible"],false);
+        assert_eq!(candidates[1]["eligible"],true);
+        review["confirmedText"]=conflict_confirmation_for_state(&state,&review).unwrap()["text"].clone();
+        let next=approve_factory_conflict_for_state(&state,&review).unwrap();
+        assert_eq!(next["workflow"]["shipments"][0],state["workflow"]["shipments"][0]);
+        assert_eq!(next["workflow"]["shipments"][1]["tracking"]["FACTORY"],"000099990001");
+        assert_eq!(next["workflow"]["shipments"][1]["actualFreight"]["FACTORY"],12340);
+        assert_eq!(next["factoryReplies"][0],state["factoryReplies"][0]);
+        assert!(resolved_row(&next,&next["factoryReplies"][0],&next["factoryReplies"][0]["rows"][0]));
+        for target in ["s1","unknown"]{
+            review["selectedShipmentId"]=json!(target);
+            assert!(approve_factory_conflict_for_state(&state,&review).is_err());
+        }
+        review["selectedShipmentId"]=json!("s2");
+        assert!(approve_factory_conflict_for_state(&next,&review).is_err());
     }
 }
