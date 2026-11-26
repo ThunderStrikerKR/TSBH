@@ -1,4 +1,4 @@
-//! Staff-driven model families. React oracle: ColorGuidanceManager.tsx.
+//! Manually configured model families.
 //! Saved data stays in settings.colorGuidanceGroups, never product/order rows.
 //! Rust catalog_clients::model_groups validates; Tauri settings_patch CAS saves.
 use crate::{catalog_query_bridge,gateway::BandoGateway, theme, typography};
@@ -192,34 +192,57 @@ impl ModelGroupManager {
         }
         assigned
     }
-    fn row(&mut self,ui:&mut Ui,id:&str,g:&Value,products:&HashMap<&str,&Value>){
-        let (rect,response)=crate::card::selectable_list_row(
-            ui,theme::FAMILY_ROW_HEIGHT,self.selected==id,!self.busy());
-        #[cfg(test)]
-        crate::ui_test_support::record("catalog data row",rect);
-        ui.scope_builder(UiBuilder::new().max_rect(rect)
-            .layout(Layout::left_to_right(Align::Center)),|line|{
-                line.add_space(theme::SPACE_12);
-                line.vertical(|info|{
-                    info.label(typography::body(text(g,"name")));
-                    let rep=text(g,"representativeProductId");
-                    let subtitle=if let Some(p)=products.get(rep){
-                        format!("대표모델: {}",text(p,"name"))
-                    }else if !text(g,"representativeColor").is_empty(){
-                        format!("이전 대표색상 {} / 대표모델 재지정 필요",
-                            text(g,"representativeColor"))
-                    }else{"대표모델: 미지정".into()};
-                    info.label(typography::caption(&subtitle));
-                });
-                line.with_layout(Layout::right_to_left(Align::Center),|end|{
-                    end.add_space(theme::SPACE_12);
-                    end.label(typography::caption(&format!(
-                        "{}개 상품",items(&g["productIds"]).len())));
-                });
+    // Shared fixed-column table; the three model-group views differ only
+    // in their column data and actions, never their header or row geometry.
+    fn table<const N:usize>(
+        ui:&mut Ui,id:impl std::hash::Hash,labels:[&str;N],base:[f32;N],
+        height:f32,count:usize,mut draw:impl FnMut(&mut Ui,[Rect;N],usize,Rect),
+    )->Rect{
+        let gap=theme::SPACE_8;
+        let minimum=base.iter().sum::<f32>()+N.saturating_sub(1) as f32*gap;
+        let spacing=crate::table::management_table_container_style(ui);
+        let inner=crate::table::show(ui,crate::table::Header::WithoutToolbar(minimum),|ui,layout|{
+            let mut widths=base;
+            widths[0]+=(layout.table_width-minimum).max(0.0);
+            let cells=crate::table::management_table_cells(
+                layout.header_content_rect.min,&widths,layout.header_content_rect.height(),gap);
+            crate::table::header_columns(ui,layout.header_rect,layout.header_content_rect,&cells,gap,|ui,area|{
+                for (i,cell) in cells.iter().enumerate(){
+                    crate::table::heading(ui,*cell,area,cell.intersect(area),
+                        if i==0{crate::table::HeadingAlign::Left(theme::SPACE_8)}
+                        else{crate::table::HeadingAlign::Center{min_left:None}},
+                        typography::management_table_header_galley(ui,labels[i]),None);
+                }
             });
-        if response.clicked()&&!self.busy(){
-            self.request_exit(Exit::Select(id.to_owned()));
-        }
+            let output=crate::table::fixed_rows(ui,crate::table::Viewport{
+                width:layout.table_width,height:height.max(1.0),rail:None
+            },id,theme::MANAGEMENT_TABLE_ROW_HEIGHT,count,|body,visible|{
+                let origin=body.max_rect().min;
+                let first=visible.start;
+                for index in visible{
+                    let rect=crate::table::fixed_row_rect(origin,index,first,layout.table_width,
+                        theme::MANAGEMENT_TABLE_ROW_HEIGHT);
+                    crate::table::fixed_row(body,index,rect,index,&widths,gap,
+                        crate::table::RowTone::Alternating,|row,cells|draw(row,cells,index,rect));
+                }
+            });
+            (output.inner_rect,output.inner_rect)
+        });
+        ui.spacing_mut().item_spacing.y=spacing;
+        inner
+    }
+    fn cell(ui:&Ui,rect:Rect,value:&str,role:typography::ManagementTableCellRole,
+        center:bool,id:impl std::hash::Hash){
+        crate::table::paint_management_text_cell(ui,rect.shrink2(Vec2::new(theme::SPACE_8,0.0)),
+            value,value,role,if center{egui::Align2::CENTER_CENTER}else{egui::Align2::LEFT_CENTER},
+            id,false);
+    }
+    fn actions<R>(ui:&mut Ui,cell:Rect,draw:impl FnOnce(&mut Ui)->R)->R{
+        ui.scope_builder(UiBuilder::new().max_rect(cell.shrink2(Vec2::new(theme::SPACE_4,0.0)))
+            .layout(Layout::right_to_left(Align::Center)),|actions|{
+                actions.set_clip_rect(actions.clip_rect().intersect(cell));
+                draw(actions)
+            }).inner
     }
     pub fn show_page(&mut self,ui:&mut Ui,catalog:&Value,
         gateway:Arc<dyn BandoGateway>){
@@ -238,288 +261,192 @@ impl ModelGroupManager {
             m.iter().map(|(id,g)|(id.clone(),g.clone())).collect::<Vec<_>>())
             .unwrap_or_default());
         let products:HashMap<&str,&Value>=items(&catalog["products"]).iter().rev().map(|p|(text(p,"id"),p)).collect();
+        use typography::ManagementTableCellRole as Role;
         let card_min_height=crate::card::management_master_table_card_min_inner_height(ui);
         let mut save=false;
         crate::card::measured_management_master_card(ui,|outer|{
             crate::card::fill_management_primary_card(outer,card_min_height);
-            outer.spacing_mut().scroll=crate::scrollbar::management_table_scroll_style();
             let available=outer.available_width();
-            let left_width=theme::FAMILY_LIST_WIDTH.min(available*0.45);
-            let height=outer.available_height().max(
-                theme::MANAGEMENT_TABLE_ROW_HEIGHT*6.0
-            );
-            outer.horizontal(|whole|{
-                whole.allocate_ui_with_layout(
-                    Vec2::new(left_width,height),
-                    Layout::top_down(Align::Min),|left|{
-                        left.label(typography::section_heading("직원 등록 모델군"));
-                        left.label(typography::caption(
-                            "색상, 크기, 규격, 타공 여부가 다른 상품을 직원이 직접 묶고 그중 대표모델을 정합니다. 자동으로 묶거나 주문에 자동 적용하지 않습니다."
-                        ));
-                        crate::ui_primitives::section_divider(left);
-                        left.label(typography::field_label("새 그룹 이름"));
-                        left.horizontal(|form|{
-                            form.add_enabled_ui(writable&&!busy,|entry|{
-                                let edit=crate::input::flexible_text_field(
-                                    entry,&mut self.new_name,
-                                    theme::MANAGEMENT_SEARCH_MIN_WIDTH,
-                                    "직원이 알아보기 쉬운 이름"
-                                );
-                                crate::floating_notice::sized_text_caret(
-                                    entry,"products.model.input",&edit,&self.new_name,
-                                    egui::FontId::proportional(typography::FONT_BODY),
-                                    false,8.0
-                                );
-                            });
-                            if crate::button::action(form,"그룹 생성",theme::ButtonRole::Standard,
-                                writable&&!busy).clicked(){
-                                crate::floating_notice::dispatch_pointer(form.ctx(),"products.model");
-                                self.create();
-                            }
+            let left_width=(available*0.44).max(1.0);
+            let height=outer.available_height().max(theme::MANAGEMENT_TABLE_ROW_HEIGHT*6.0);
+            let right_width=(available-left_width-theme::SPACE_16).max(1.0);
+            outer.spacing_mut().item_spacing.x=theme::SPACE_16;
+            outer.horizontal_top(|whole|{
+                whole.allocate_ui_with_layout(Vec2::new(left_width,height),Layout::top_down(Align::Min),|left|{
+                    left.horizontal(|head|{
+                        head.label(typography::section_heading("모델군 목록"));
+                        head.label(typography::caption(&format!("{}개",groups.len())));
+                    });
+                    left.horizontal(|form|{
+                        let width=(form.available_width()-theme::MANAGEMENT_SEARCH_MIN_WIDTH*0.5).max(1.0);
+                        form.add_enabled_ui(writable&&!busy,|entry|{
+                            let edit=crate::input::flexible_text_field(entry,&mut self.new_name,width,"새 모델군 이름");
+                            crate::floating_notice::sized_text_caret(entry,"products.model.input",&edit,
+                                &self.new_name,egui::FontId::proportional(typography::FONT_BODY),false,8.0);
                         });
-                        crate::ui_primitives::section_divider(left);
-                        left.horizontal(|search|{
-                            crate::ui_primitives::form_field_label(search,"상품 검색");
-                            crate::input::management_search_field(search,&mut self.query,
-                                theme::MANAGEMENT_SEARCH_MIN_WIDTH,
-                                "그룹 이름 또는 상품명 검색");
-                        });
-                        // Fixed register header and one local scroll
-                        // viewport, as in the Shipping Assignment master.
-                        crate::table::management_table_container_style(left);
-                        crate::table::show(left,crate::table::Header::Register{primary:"모델군",action:"상품 수",action_width:104.0},|left,header|{
-                        let list_height=left.available_height().max(1.0);
-                        let mut has_visible=false;
-                        let output=crate::table::register_rows(left,list_height,header.table_width,"family-list",|list|{
-                            let query=self.query.trim().to_lowercase();
-                            for (id,g) in groups.iter(){
-                                if !query.is_empty(){
-                                    let names=items(&g["productIds"]).iter()
-                                        .filter_map(Value::as_str).filter_map(|pid|products.get(pid))
-                                        .map(|p|text(p,"name")).collect::<Vec<_>>().join(" ");
-                                    if !format!("{} {names}",text(g,"name")).to_lowercase().contains(&query){continue;}
-                                }
-                                has_visible=true;
-                                self.row(list,id,g,&products);
-                            }
-                        });
-                        
-                        if !has_visible{
-                            let caption=if groups.is_empty(){"등록된 모델군이 없습니다."}
-                                else{"검색 결과가 없습니다."};
-                            crate::status_notice::management_body_state_overlay(left,output.inner_rect,Some(caption));
+                        if crate::button::action(form,"그룹 생성",theme::ButtonRole::Standard,writable&&!busy).clicked(){
+                            crate::floating_notice::dispatch_pointer(form.ctx(),"products.model");
+                            self.create();
                         }
-
-            (output.inner_rect,())
-        });
+                    });
+                    let width=left.available_width();
+                    crate::input::management_search_field(left,&mut self.query,width,"모델군 이름 또는 상품명 검색");
+                    crate::ui_primitives::section_divider(left);
+                    let query=self.query.trim().to_lowercase();
+                    let visible=groups.iter().filter(|(_,g)|{
+                        query.is_empty()||text(g,"name").to_lowercase().contains(&query)
+                        ||items(&g["productIds"]).iter().filter_map(Value::as_str)
+                            .filter_map(|id|products.get(id))
+                            .any(|p|text(p,"name").to_lowercase().contains(&query))
+                    }).collect::<Vec<_>>();
+                    let body_height=(left.available_height()-theme::MANAGEMENT_TABLE_HEADER_HEIGHT).max(1.0);
+                    let rect=Self::table(left,"family-list",["모델군","대표모델","상품 수"],
+                        [160.0,156.0,76.0],body_height,visible.len(),|row,cells,i,rect|{
+                            let (id,g)=visible[i];
+                            let selected=self.selected==*id;
+                            if selected{
+                                row.painter().rect_filled(rect,0.0,theme::WORKFLOW_SELECTED_BG);
+                                row.painter().rect_filled(Rect::from_min_size(rect.min,
+                                    Vec2::new(theme::WORKFLOW_SELECTED_STRIPE,rect.height())),0.0,theme::SELECTION);
+                            }
+                            let response=row.interact(rect,row.make_persistent_id(id),if busy{Sense::hover()}else{Sense::click()});
+                            if response.hovered()&&!selected&&!busy{
+                                row.painter().rect_filled(rect,0.0,theme::INPUT);
+                            }
+                            let rep=products.get(text(g,"representativeProductId"))
+                                .map(|p|text(p,"name")).unwrap_or(if text(g,"representativeColor").is_empty(){
+                                    "미지정"}else{"재지정 필요"});
+                            Self::cell(row,cells[0],text(g,"name"),Role::Text,false,(id,0));
+                            Self::cell(row,cells[1],rep,Role::ProductName,false,(id,1));
+                            Self::cell(row,cells[2],&items(&g["productIds"]).len().to_string(),Role::Quantity,true,(id,2));
+                            #[cfg(test)]
+                            crate::ui_test_support::record("catalog data row",rect);
+                            if response.clicked()&&!busy&&!selected{self.request_exit(Exit::Select(id.clone()));}
+                        });
+                    if visible.is_empty(){
+                        crate::status_notice::management_body_state_overlay(left,rect,Some(
+                            if groups.is_empty(){"등록된 모델군이 없습니다."}else{"검색 결과가 없습니다."}));
                     }
-                );
-                // React .family-list-panel has a single border-right;
-                // the shared horizontal divider would add the wrong axis.
-                let (separator,_)=whole.allocate_exact_size(
-                    Vec2::new(theme::SOFT_DIVIDER_WIDTH,height),Sense::hover());
-                whole.painter().rect_filled(separator,0.0,theme::BORDER);
-                whole.allocate_ui_with_layout(
-                    Vec2::new(whole.available_width(),height),
-                    Layout::top_down(Align::Min),|right|{
-                        if let Some(g)=self.draft.get(&self.selected).cloned(){
-                            right.horizontal(|head|{
-                                head.label(typography::section_heading("모델군 및 대표모델 설정"));
-                                head.with_layout(Layout::right_to_left(Align::Center),|buttons|{
-                                    if crate::button::action(buttons,"그룹 삭제",theme::ButtonRole::Danger,
-                                        writable&&!busy).clicked(){
-                                        self.confirm_delete=true;
-                                    }
-                                });
+                });
+                whole.allocate_ui_with_layout(Vec2::new(right_width,height),Layout::top_down(Align::Min),|right|{
+                    if let Some(g)=self.draft.get(&self.selected).cloned(){
+                        right.horizontal(|head|{
+                            head.label(typography::section_heading("모델군 상세"));
+                            head.with_layout(Layout::right_to_left(Align::Center),|buttons|{
+                                if crate::button::action(buttons,"그룹 삭제",theme::ButtonRole::Danger,writable&&!busy).clicked(){
+                                    self.confirm_delete=true;
+                                }
                             });
-                            let divider=crate::ui_primitives::section_divider(right);
-                            let extra_divider_height=(divider.height()-theme::SOFT_DIVIDER_WIDTH).max(0.0);
-                            crate::scrollbar::scroll_area(crate::scrollbar::ScrollAxes::Vertical).id_salt("family-editor")
-                                .auto_shrink([false,false])
-                                .max_height((height-theme::FAMILY_FOOTER_HEIGHT-extra_divider_height).max(
-                                    theme::MANAGEMENT_TABLE_ROW_HEIGHT))
-                                .show(right,|body|{
-                                    body.label(typography::field_label("그룹 이름"));
-                                    let mut name=text(&g,"name").to_owned();
-                                    body.add_enabled_ui(writable&&!busy,|field|{
-                                        crate::input::flexible_text_field(field,&mut name,
-                                            theme::MANAGEMENT_SEARCH_MIN_WIDTH,"그룹 이름");
+                        });
+                        let mut name=text(&g,"name").to_owned();
+                        right.horizontal(|form|{
+                            crate::ui_primitives::form_field_label(form,"모델군 이름");
+                            let width=form.available_width();
+                            form.add_enabled_ui(writable&&!busy,|field|{
+                                crate::input::flexible_text_field(field,&mut name,width,"모델군 이름");
+                            });
+                        });
+                        if name!=text(&g,"name"){
+                            self.draft[&self.selected]["name"]=json!(name);
+                            self.groups_cache.invalidate();self.status.clear();
+                        }
+                        let width=right.available_width();
+                        right.add_enabled_ui(writable&&!busy,|search|{
+                            crate::input::management_search_field(search,&mut self.search,width,"추가할 상품 검색");
+                        });
+                        let assigned=self.membership();
+                        let searching=!self.search.trim().is_empty();
+                        if searching{
+                            let query=self.search.trim().to_lowercase();
+                            let choices=items(&catalog["products"]).iter()
+                                .filter(|p|eligible.contains(text(p,"id")))
+                                .filter(|p|!items(&g["productIds"]).iter().any(|id|id.as_str()==Some(text(p,"id"))))
+                                .filter(|p|format!("{} {}",text(p,"name"),text(p,"subtitle")).to_lowercase().contains(&query))
+                                .take(30).collect::<Vec<_>>();
+                            right.label(typography::subsection_heading("상품 검색 결과"));
+                            let result_height=(right.available_height()*0.30).min(theme::MANAGEMENT_TABLE_ROW_HEIGHT*3.0).max(1.0);
+                            let rect=Self::table(right,"model-group-search-results",
+                                ["상품명","상세 정보","소속 모델군","추가"],[140.0,100.0,110.0,80.0],
+                                result_height,choices.len(),|row,cells,i,_|{
+                                    let p=choices[i];let id=text(p,"id");
+                                    Self::cell(row,cells[0],text(p,"name"),Role::ProductName,false,(id,0));
+                                    Self::cell(row,cells[1],text(p,"subtitle"),Role::Description,false,(id,1));
+                                    Self::cell(row,cells[2],assigned.get(id).map(String::as_str).unwrap_or("—"),Role::Text,false,(id,2));
+                                    Self::actions(row,cells[3],|actions|{
+                                        if crate::button::action(actions,"추가",theme::ButtonRole::Standard,
+                                            writable&&!busy&&!assigned.contains_key(id)).clicked(){
+                                            if let Some(ids)=self.draft[&self.selected]["productIds"].as_array_mut(){
+                                                ids.push(json!(id));self.groups_cache.invalidate();self.status.clear();
+                                            }
+                                        }
                                     });
-                                    if name!=text(&g,"name"){
-                                        self.draft[&self.selected]["name"]=json!(name);self.groups_cache.invalidate();
+                                });
+                            if choices.is_empty(){
+                                crate::status_notice::management_body_state_overlay(right,rect,Some(
+                                    if eligibility_pending{"상품을 확인하는 중입니다."}else{"일치하는 상품이 없습니다."}));
+                            }
+                        }
+                        crate::ui_primitives::section_divider(right);
+                        let ids=items(&g["productIds"]).iter().filter_map(Value::as_str).collect::<Vec<_>>();
+                        right.horizontal(|heading|{
+                            heading.label(typography::subsection_heading("등록 상품"));
+                            heading.label(typography::caption(&format!("{}개",ids.len())));
+                        });
+                        if !text(&g,"representativeColor").is_empty()&&text(&g,"representativeProductId").is_empty(){
+                            right.label(typography::caption(&format!("이전 대표색상: {} · 대표모델 재지정 필요",text(&g,"representativeColor"))));
+                        }
+                        let body_height=(right.available_height()-theme::FAMILY_FOOTER_HEIGHT-theme::MANAGEMENT_TABLE_HEADER_HEIGHT).max(1.0);
+                        let rect=Self::table(right,("model-group-registered-products",self.selected.clone()),
+                            ["상품명","상세 정보","대표모델","관리"],[140.0,100.0,96.0,176.0],
+                            body_height,ids.len(),|row,cells,i,_|{
+                                let id=ids[i];
+                                let p=products.get(id).copied();
+                                let rep=text(&g,"representativeProductId")==id;
+                                Self::cell(row,cells[0],p.map(|p|text(p,"name")).unwrap_or("확인할 상품"),Role::ProductName,false,(id,0));
+                                Self::cell(row,cells[1],p.map(|p|text(p,"subtitle")).unwrap_or(""),Role::Description,false,(id,1));
+                                Self::cell(row,cells[2],if rep{"대표모델"}else{"—"},Role::Status,true,(id,2));
+                                Self::actions(row,cells[3],|actions|{
+                                    if crate::button::action(actions,"제외",theme::ButtonRole::Standard,writable&&!busy).clicked(){
+                                        let values=items(&self.draft[&self.selected]["productIds"]).iter()
+                                            .filter(|v|v.as_str()!=Some(id)).cloned().collect::<Vec<_>>();
+                                        self.draft[&self.selected]["productIds"]=json!(values);
+                                        self.groups_cache.invalidate();
+                                        if text(&self.draft[&self.selected],"representativeProductId")==id{
+                                            self.draft[&self.selected]["representativeProductId"]=json!("");
+                                        }
                                         self.status.clear();
                                     }
-                                    crate::ui_primitives::section_divider(body);
-                                    body.label(typography::subsection_heading("상품 추가"));
-                                    body.add_enabled_ui(writable&&!busy,|search|{
-                                        crate::input::management_search_field(search,&mut self.search,
-                                            theme::MANAGEMENT_SEARCH_MIN_WIDTH,
-                                            "상품명으로 찾아서 추가");
-                                    });
-                                    let assigned=self.membership();
-                                    crate::ui_layout::fixed_result_viewport(
-                                        body,"model-group-search-results",180.0,|results|{
-                                    if !self.search.trim().is_empty(){
-                                        let query=self.search.trim().to_lowercase();
-                                        let choices=items(&catalog["products"]).iter()
-                                            .filter(|p|eligible.contains(text(p,"id")))
-                                            .filter(|p|!items(&g["productIds"]).iter()
-                                                .any(|id|id.as_str()==Some(text(p,"id"))))
-                                            .filter(|p|format!("{} {}",text(p,"name"),
-                                                text(p,"subtitle")).to_lowercase().contains(&query))
-                                            .take(30).cloned().collect::<Vec<_>>();
-                                        if choices.is_empty()&&!eligibility_pending{
-                                            crate::status_notice::management_body_state_overlay(
-                                                results,results.available_rect_before_wrap(),
-                                                Some("일치하는 상품이 없습니다.")
-                                            );
+                                    if crate::button::action_with_min_width(actions,"대표 지정",theme::ButtonRole::Standard,
+                                        !rep&&writable&&!busy&&p.is_some(),100.0).clicked(){
+                                        self.draft[&self.selected]["representativeProductId"]=json!(id);
+                                        self.groups_cache.invalidate();
+                                        if let Some(group)=self.draft.get_mut(&self.selected).and_then(Value::as_object_mut){
+                                            group.remove("representativeColor");
                                         }
-                                        for p in choices{
-                                            results.horizontal(|row|{
-                                                row.vertical(|name|{
-                                                    name.label(typography::body(text(&p,"name")));
-                                                    if !text(&p,"subtitle").is_empty(){
-                                                        name.label(typography::caption(text(&p,"subtitle")));
-                                                    }
-                                                    if let Some(group)=assigned.get(text(&p,"id")){
-                                                        name.label(typography::caption(&format!(
-                                                            "현재 그룹: {group}")));
-                                                    }
-                                                });
-                                                row.with_layout(Layout::right_to_left(Align::Center),
-                                                    |actions|{
-                                                        if crate::button::action(actions,"추가",
-                                                            theme::ButtonRole::Standard,
-                                                            writable&&!busy&&
-                                                                !assigned.contains_key(text(&p,"id"))
-                                                        ).clicked(){
-                                                            if let Some(ids)=self.draft[&self.selected]
-                                                                ["productIds"].as_array_mut(){
-                                                                ids.push(json!(text(&p,"id")));self.groups_cache.invalidate();
-                                                                self.status.clear();
-                                                            }
-                                                        }
-                                                    });
-                                            });
-                                            crate::ui_primitives::soft_divider(results);
-                                        }
-                                    }
-                                    });
-                                    crate::ui_primitives::section_divider(body);
-                                    body.horizontal(|heading|{
-                                        heading.label(typography::subsection_heading("등록한 상품"));
-                                        heading.label(typography::caption(
-                                            &format!("{}개",items(&g["productIds"]).len())));
-                                    });
-                                    let representative_notice=if
-                                        !text(&g,"representativeColor").is_empty()
-                                        &&text(&g,"representativeProductId").is_empty(){
-                                        Some(format!(
-                                            "이전 대표색상 설정({})이 있습니다. 아래 상품의 '대표 지정' 버튼으로 실제 대표모델을 선택하세요.",
-                                            text(&g,"representativeColor")
-                                        ))
-                                    }else{None};
-                                    let notice_width=body.available_width();
-                                    crate::ui_layout::fixed_status_slot(
-                                        body,notice_width,typography::METADATA_LINE_HEIGHT,
-                                        representative_notice.as_deref(),
-                                        representative_notice.as_deref(),theme::MUTED
-                                    );
-                                    let ids=items(&g["productIds"]).iter().filter_map(Value::as_str)
-                                        .map(str::to_owned).collect::<Vec<_>>();
-                                    crate::ui_layout::fixed_result_viewport(
-                                        body,"model-group-registered-products",220.0,|registered|{
-                                    if ids.is_empty(){
-                                        crate::status_notice::management_body_state_overlay(
-                                            registered,registered.available_rect_before_wrap(),
-                                            Some("위에서 상품을 검색해 추가하세요.")
-                                        );
-                                    }
-                                    for id in ids{
-                                        registered.horizontal(|row|{
-                                            if let Some(p)=products.get(id.as_str()).copied(){
-                                                row.vertical(|info|{
-                                                    info.label(typography::body(text(p,"name")));
-                                                    info.label(typography::caption(text(p,"subtitle")));
-                                                });
-                                            }else{row.label(typography::body("확인할 상품"));}
-                                            row.with_layout(Layout::right_to_left(Align::Center),
-                                                |actions|{
-                                                    if crate::button::action(actions,"제외",
-                                                        theme::ButtonRole::Standard,
-                                                        writable&&!busy).clicked(){
-                                                        let values=items(&self.draft[&self.selected]
-                                                            ["productIds"]).iter()
-                                                            .filter(|v|v.as_str()!=Some(&id))
-                                                            .cloned().collect::<Vec<_>>();
-                                                        self.draft[&self.selected]["productIds"]=json!(values);self.groups_cache.invalidate();
-                                                        if text(&self.draft[&self.selected],
-                                                            "representativeProductId")==id{
-                                                            self.draft[&self.selected]
-                                                                ["representativeProductId"]=json!("");
-                                                        }
-                                                        self.status.clear();
-                                                    }
-                                                    let representative=text(&g,"representativeProductId")==id;
-                                                    if crate::button::action_with_min_width(actions,
-                                                        if representative{"대표모델"}else{"대표 지정"},
-                                                        theme::ButtonRole::Standard,
-                                                        !representative&&writable&&!busy&&products.get(id.as_str()).copied().is_some(),100.0
-                                                    ).clicked(){
-                                                        self.draft[&self.selected]
-                                                            ["representativeProductId"]=json!(id);self.groups_cache.invalidate();
-                                                        if let Some(group)=self.draft.get_mut(&self.selected)
-                                                            .and_then(Value::as_object_mut){
-                                                            group.remove("representativeColor");
-                                                        }
-                                                        self.status.clear();
-                                                    }
-                                                });
-                                        });
-                                        crate::ui_primitives::soft_divider(registered);
-                                    }
-                                    });
-                                });
-                            crate::ui_primitives::soft_divider(right);
-                            right.horizontal(|footer|{
-                                footer.label(typography::caption(if self.dirty(){"저장하지 않은 변경사항 있음"} else {"변경사항 없음"}));
-                                footer.with_layout(Layout::right_to_left(Align::Center),|buttons|{
-                                    if crate::button::action(buttons,
-                                        "변경사항 저장",
-                                        theme::ButtonRole::Primary,
-                                        writable&&!busy&&self.dirty()).clicked(){
-                                        save=true;
-                                    }
-                                    if crate::button::action(buttons,"닫기",
-                                        theme::ButtonRole::Standard,!busy).clicked(){
-                                        self.request_exit(Exit::Close);
+                                        self.status.clear();
                                     }
                                 });
                             });
-                        }else{
-                            right.label(typography::body(
-                                "모델군을 만든 다음 상품을 추가하고 대표모델을 직접 지정하세요."));
-                            // Keep the footer, both actions and their hit
-                            // rectangles stable when dirty state changes.
-                            crate::ui_primitives::soft_divider(right);
-                            right.horizontal(|footer|{
-                                footer.label(typography::caption(
-                                    if self.dirty(){"저장하지 않은 변경사항 있음"}
-                                    else{"변경사항 없음"}
-                                ));
-                                if crate::button::action(footer,"닫기",
-                                    theme::ButtonRole::Standard,!busy).clicked(){
-                                    self.request_exit(Exit::Close);
-                                }
-                                if crate::button::action(footer,"변경사항 저장",
-                                    theme::ButtonRole::Primary,
-                                    writable&&!busy&&self.dirty()).clicked(){
-                                    save=true;
-                                }
-                            });
+                        if ids.is_empty(){
+                            crate::status_notice::management_body_state_overlay(right,rect,Some("상품을 검색해 추가하세요."));
                         }
+                    }else{
+                        let (rect,_)=right.allocate_exact_size(Vec2::new(right.available_width(),
+                            (right.available_height()-theme::FAMILY_FOOTER_HEIGHT).max(1.0)),Sense::hover());
+                        crate::status_notice::management_body_state_overlay(right,rect,Some("모델군을 선택하세요."));
                     }
-                );
+                    crate::ui_primitives::soft_divider(right);
+                    right.horizontal(|footer|{
+                        footer.label(typography::caption(if self.dirty(){"저장하지 않은 변경사항 있음"}else{"변경사항 없음"}));
+                        footer.with_layout(Layout::right_to_left(Align::Center),|buttons|{
+                            if crate::button::action(buttons,"변경사항 저장",theme::ButtonRole::Primary,
+                                writable&&!busy&&self.dirty()).clicked(){save=true;}
+                            if crate::button::action(buttons,"닫기",theme::ButtonRole::Standard,!busy).clicked(){
+                                self.request_exit(Exit::Close);
+                            }
+                        });
+                    });
+                });
             });
         });
         if save{self.save(gateway,ui.ctx().clone());}
