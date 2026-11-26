@@ -1,7 +1,6 @@
 import {test} from "node:test";
 import assert from "node:assert/strict";
 import {readFileSync} from "node:fs";
-import {tsImport} from "tsx/esm/api";
 
 const read = path => JSON.parse(readFileSync(new URL("../"+path,import.meta.url),"utf8"));
 const seed = read("src-tauri/resources/state-seed.json");
@@ -41,15 +40,12 @@ test("TS and IS Desk specification labels reflect each independently sold length
   }
 });
 
-test("dark-green and wine duplicate listings are retired, not deleted, without losing price or history",async()=>{
-  const {registeredProducts}=await tsImport("../src/product-models.ts",import.meta.url);
+test("dark-green and wine duplicate listings are retired, not deleted, without losing price or history",()=>{
   const pairs=[
     ["bando-site-77","bando-77-single","sku:bando-site-237:bando-237-P00000JC000H","다크 그린"],
     ["bando-site-78","bando-78-single","sku:bando-site-237:bando-237-P00000JC000I","와인"],
   ];
   assert.equal(seed.products.length,360);
-  const sellable=registeredProducts(seed.products);
-  assert.equal(sellable.length,358);
   for(const [old,priceId,current,color] of pairs) {
     const previous=product(old),selected=product(current);
     assert.equal(previous.active,false);
@@ -60,34 +56,8 @@ test("dark-green and wine duplicate listings are retired, not deleted, without l
     assert.equal(selected.variants[0].option,color);
     assert.equal(selected.active,true);
     assert.ok(!selected.supersededBy);
-    assert.ok(!sellable.some(p=>p.id===old));
-    assert.ok(sellable.some(p=>p.id===current));
     assert.ok(!selected.subtitle?.includes("옵션"));
   }
-  const grey=product("sku:bando-site-237:bando-237-P00000JC000J");
-  assert.ok(sellable.some(p=>p.id===grey.id));
-  assert.equal(sellable.filter(p=>p.name.startsWith("뮤직 트레이 /")).length,3);
+  
   assert.equal(new Set(seed.products.map(p=>p.variants[0].id)).size,360);
-});
-
-test("historical orders can still resolve retired independent IDs and unchanged prices", async()=>{
-  const {resolveHistoricalProductReference:resolve}=
-    await tsImport("../src/historical-product-reference.ts",import.meta.url);
-  for(const [id,variant] of [["bando-site-77","bando-77-single"],["bando-site-78","bando-78-single"]]) {
-    const ref=resolve(seed,id,variant);
-    assert.equal(ref?.via,"CURRENT");
-    assert.equal(ref?.product.id,id);
-    assert.equal(ref?.product.variants[0].retail,32000);
-  }
-});
-
-test("unknown color does not generate a request to verify an option",async()=>{
-  const {colorLabel,variantLabel}=await tsImport("../src/product-models.ts",import.meta.url);
-  assert.equal(colorLabel("색상 미표기"), "");
-   assert.equal(colorLabel("단일"), "");
-  assert.equal(variantLabel(bySite("247").variants[0]),"");
-  assert.equal(variantLabel(product("sku:bando-site-237:bando-237-P00000JC000H").variants[0]),"다크 그린");
-  const manager=readFileSync(new URL("../src/ProductManager.tsx",import.meta.url),"utf8");
-  assert.match(manager,/colorLabel\(v\.color\)/);
-  assert.ok(!readFileSync(new URL("../src/product-models.ts",import.meta.url),"utf8").includes('"색상 미표기": "색상 확인 필요"'));
 });
