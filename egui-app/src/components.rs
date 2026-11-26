@@ -1334,6 +1334,34 @@ pub fn workflow_shipment_row(
 mod workflow_freight_typography_tests{
     use super::*;
     #[test]
+    fn nested_shipment_header_uses_master_height_and_shared_detail_columns(){
+        let ctx=egui::Context::default();
+        typography::install(&ctx);
+        theme::install(&ctx);
+        let _=ctx.run(egui::RawInput::default(),|ctx|{
+            egui::CentralPanel::default().show(ctx,|ui|{
+                ui.set_width(390.0);
+                let header=management_inline_list_table_header(ui);
+                assert_eq!(header.header_rect.height(),theme::MANAGEMENT_TABLE_HEADER_HEIGHT);
+                assert_eq!(header.scrollbar_gutter,0.0);
+                assert_eq!(header.header_content_rect,header.header_rect);
+                let area=management_master_header_begin(ui,header.header_rect,header.header_content_rect);
+                let (widths,gap)=workflow_shipment_columns(header.table_width);
+                let headings=shipment_detail_cells(area,&widths,gap);
+                let block=Rect::from_min_size(
+                    egui::pos2(header.header_rect.left(),header.header_rect.bottom()+8.0),
+                    Vec2::new(header.table_width,90.0)
+                );
+                let body=shipment_detail_cells(block,&widths,gap);
+                for (heading,cell) in headings.iter().zip(&body){
+                    assert_eq!(heading.left(),cell.left());
+                    assert_eq!(heading.right(),cell.right());
+                }
+                assert!((body[2].right()-(block.right()-theme::SPACE_12)).abs()<0.01);
+            });
+        });
+    }
+    #[test]
     fn freight_uses_semantic_money_and_stable_layout_in_both_states(){
         let text="4,000원 / —";
         let regular=workflow_freight_text_job(text,theme::TEXT);
