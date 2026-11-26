@@ -7082,9 +7082,18 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
             let hover_stage=if self.workflow_ui.active_preview()==Some(group.id.as_str()) && self.workflow_freight_editor.is_none(){one_touch::Stage::from_step(group.step)}else{one_touch::Stage::None};
             let payment_emphasis=can_copy && group.automatic_phase.as_deref()==Some("payment") && matches!(hover_stage,one_touch::Stage::PaymentCopy|one_touch::Stage::PaymentConfirm);
             let mut copy_with_greeting=None;
+            // A presentation preference survives frames and hover transitions.
+            // A group without a validated official URL cannot add links.
+            let link_preference=egui::Id::new("reception-automatic-include-links");
+            let include_link=std::cell::Cell::new(ui.ctx().data(|d|
+                d.get_temp::<bool>(link_preference).unwrap_or(false)));
+            let has_links=group.has_message_links();
             Self::section_with_header(ui,"복사용 자동 메시지",height,|header|{
-                let mut include_link=false;
-                components::checkbox(header,&mut include_link,"링크 포함",false);
+                let mut checked=include_link.get() && has_links;
+                if components::checkbox(header,&mut checked,"링크 포함",has_links).changed(){
+                    include_link.set(checked);
+                    header.ctx().data_mut(|d|d.insert_temp(link_preference,checked));
+                }
             },|body|{
                 // All message-body spacing is explicit; default item spacing
                 // previously pushed the bottom copy buttons past the pane.
@@ -7118,12 +7127,10 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                 .max_height(inner.height())
                                 .auto_shrink([false,false])
                                 .show(canvas,|content|{
-                                    if let Some(message)=group.automatic_text.as_deref(){
-                                        if payment_emphasis{
-                                            content.add(egui::Label::new(one_touch::payment_job(message,group.automatic_signature.as_deref().unwrap_or(""))).selectable(true));
-                                        }else{
-                                            content.add(egui::Label::new(typography::body(message)).selectable(true));
-                                        }
+                                    if let Some(message)=group.message_text(include_link.get() && has_links){
+                                        one_touch::payment_message(content,message,
+                                            group.automatic_signature.as_deref().unwrap_or(""),
+                                            payment_emphasis);
                                     }
                                 });
                         },
@@ -7143,7 +7150,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                 let result=self.gateway.execute(
                     gateway::ReadOperation::DecorateAutomaticCopy,
                     serde_json::json!({
-                        "text":group.automatic_text.as_deref().unwrap_or(""),
+                        "text":group.message_text(include_link.get() && has_links).unwrap_or(""),
                         "includeGreeting":include_greeting
                     })
                 );
@@ -7165,7 +7172,8 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                             "copyType":copy_type,
                                             "token":uuid::Uuid::new_v4().to_string(),
                                             "signature":group.automatic_signature,
-                                            "messageText":group.automatic_text
+                                            "includeLinks":include_link.get() && has_links,
+                                            "messageText":group.message_text(include_link.get() && has_links)
                                         }),ui.ctx()
                                     );
                                     if self.workflow_action.as_ref().is_none_or(|task|
@@ -11422,7 +11430,7 @@ mod reception_workflow_admission_integration_tests {
             id:"group:draft-1".into(),created_at:String::new(),dealer_name:String::new(),
             source_id:String::new(),source_number:None,dealer_id:String::new(),transferred:false,step:1,
             needs_notice:false,total:None,vat_included:0,vat_excluded:0,shipments:vec![ship],
-            automatic_text:None,automatic_error:None,automatic_phase:None,automatic_signature:None,
+            automatic_text:None,automatic_text_with_links:None,automatic_error:None,automatic_phase:None,automatic_signature:None,
             payment_copied:false,automatic_payment_issues:vec![],issues:vec![]
         }]};
         assert!(app.finish_confirmed_draft_handoff(&board,&ctx));
