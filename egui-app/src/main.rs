@@ -16,6 +16,7 @@ mod text_fit;
 mod window_state;
 mod components;
 mod category_tree;
+mod status_notice;
 mod ui_primitives;
 mod display_format;
 mod ui_tokens;
@@ -7467,7 +7468,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                 for message in workflow_board::workflow_review_extra_messages(
                                     group,None
                                 ){
-                                    components::reception_review_status(issues,&message);
+                                    crate::status_notice::reception_review_status(issues,&message);
                                 }
                             });
                     });
@@ -7924,7 +7925,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                     .and_then(serde_json::Value::as_array){
                                     for item in rows{
                                         if let Some(message)=item.as_str(){
-                                            components::reception_review_status(issues,message);
+                                            crate::status_notice::reception_review_status(issues,message);
                                         }
                                     }
                                 }
@@ -8588,7 +8589,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                             ));
                                         }
                                     } else {
-                                        components::management_body_state_overlay(
+                                        crate::status_notice::management_body_state_overlay(
                                             items_ui,items_ui.available_rect_before_wrap(),
                                             Some("거래처 선택 후 운임과 청구금액을 확인합니다.")
                                         );
@@ -9454,7 +9455,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                 if applying{
                                     ui.label(typography::caption("배송 묶음 변경 내용을 저장하는 중입니다."));
                                 }else if let Some(error)=self.workflow_error.as_deref(){
-                                    components::reception_review_status(ui,error);
+                                    crate::status_notice::reception_review_status(ui,error);
                                 }
                             });
                         });

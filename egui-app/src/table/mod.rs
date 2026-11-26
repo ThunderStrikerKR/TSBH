@@ -1031,3 +1031,19 @@ pub(crate) fn reception_item_value_origin(cell:Rect,glyphs:Vec2,right:bool)->egu
         cell.center().y-glyphs.y/2.0,
     )
 }
+
+/// Semantic labels for management table columns. A screen selects the
+/// column role; the shared component owns the displayed header wording.
+/// This does not change the underlying product description or column size.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ManagementTableColumnLabel {
+    ProductName,
+}
+
+impl ManagementTableColumnLabel {
+    pub const fn text(self) -> &'static str {
+        match self {
+            Self::ProductName => "상품명",
+        }
+    }
+}

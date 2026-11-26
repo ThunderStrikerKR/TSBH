@@ -1222,7 +1222,7 @@ impl ProductManager {
             let table_width=layout.table_width;
             let widths=product_table_column_widths(table_width);
             let headings=[
-                components::ManagementTableColumnLabel::ProductName.text(),
+                crate::table::ManagementTableColumnLabel::ProductName.text(),
                 "색상/옵션","도매가",
                 "반도매가","소매가",if selecting{"선택"}else{"상세"}];
             let selection_locked=self.has_pending_prices();
@@ -1633,7 +1633,7 @@ impl ProductManager {
                     scroll_max_height
                 )
             );
-            components::management_body_state_overlay(
+            crate::status_notice::management_body_state_overlay(
                 panel,body_rect,empty_state
             );
 
@@ -2302,7 +2302,7 @@ mod tests {
         assert!(!list.contains("self.excel.show_panel("));
         assert!(!list.contains("self.excel.open()"));
         assert!(!list.contains("let empty_reserve=if self.products.is_empty(){"));
-        assert!(list.contains("components::management_body_state_overlay("));
+        assert!(list.contains("crate::status_notice::management_body_state_overlay("));
         assert!(list.contains("let scroll_max_height=crate::scrollbar::management_single_list_scroll_height("));
     }
     #[test]

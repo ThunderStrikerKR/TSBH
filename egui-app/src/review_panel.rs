@@ -215,7 +215,7 @@ impl ReviewPanel {
         let interactive=self.ready() && enabled;
         let client_interactive=self.ready() && client_enabled;
         if let Some(error)=self.error.as_deref(){
-            crate::components::body_error_overlay(ui,ui.available_rect_before_wrap(),
+            crate::status_notice::body_error_overlay(ui,ui.available_rect_before_wrap(),
                 "reception.review",error);
             return None;
         }
@@ -229,7 +229,7 @@ impl ReviewPanel {
         let body=ui.available_rect_before_wrap().intersect(ui.clip_rect());
         if actions.is_empty() && facts.is_empty() && inherited.is_empty() && remote.is_none(){
             if let Some(viewport)=review_empty_overlay_rect(body){
-                crate::components::management_body_state_overlay(
+                crate::status_notice::management_body_state_overlay(
                     ui,viewport,Some("필수 확인 사항 없음")
                 );
             }

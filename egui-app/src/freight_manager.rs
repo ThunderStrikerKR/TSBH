@@ -1473,7 +1473,7 @@ impl FreightManager {
             // allocation from the single master specification in theme.rs.
             let widths=theme::FREIGHT_ASSIGNMENT_MASTER_TABLE.widths_for(table_width);
             let titles=[
-                "",components::ManagementTableColumnLabel::ProductName.text(),
+                "",crate::table::ManagementTableColumnLabel::ProductName.text(),
                 "색상/옵션","카테고리",
                 "배송 그룹","설정"
             ];
@@ -1718,7 +1718,7 @@ impl FreightManager {
                     }
                 });
             if filtered.is_empty(){
-                components::management_body_state_overlay(section,scroll_output.inner_rect,
+                crate::status_notice::management_body_state_overlay(section,scroll_output.inner_rect,
                     Some(if products.is_empty(){"등록된 상품이 없습니다."}
                     else{"검색 조건에 맞는 상품이 없습니다."}));
             }

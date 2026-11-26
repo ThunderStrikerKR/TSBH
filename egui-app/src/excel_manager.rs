@@ -410,7 +410,7 @@ fn table<const N:usize>(
             scroll_track,layout.viewport_width,layout.scrollbar_gutter,
             scroll_max_height,ui.clip_rect()
         ){
-            components::management_body_state_overlay(ui,visible,Some(message));
+            crate::status_notice::management_body_state_overlay(ui,visible,Some(message));
         }
     }
 

@@ -617,7 +617,7 @@ impl ClientManager {
                     else if self.searching{"거래처 검색 중…"}
                     else if self.search.trim().is_empty(){"등록된 거래처가 없습니다."}
                     else{"검색 결과가 없습니다."};
-                components::management_body_state_overlay(section,scroll_output.inner_rect,Some(status));
+                crate::status_notice::management_body_state_overlay(section,scroll_output.inner_rect,Some(status));
             }
             let header_left=first_row_left.unwrap_or(
                 header_rect.left()-scroll_output.state.offset.x

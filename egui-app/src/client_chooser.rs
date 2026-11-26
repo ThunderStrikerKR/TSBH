@@ -350,7 +350,7 @@ impl ClientChooser {
                                     else if self.searching{"검색 중…"}
                                     else if self.clients.is_empty(){"등록된 거래처가 없습니다."}
                                     else{"검색 결과가 없습니다."};
-                                components::management_body_state_overlay(results_panel,output.inner_rect,Some(status));
+                                crate::status_notice::management_body_state_overlay(results_panel,output.inner_rect,Some(status));
                             }
                             let header_left=first_row_left.unwrap_or(
                                 header_rect.left()-output.state.offset.x

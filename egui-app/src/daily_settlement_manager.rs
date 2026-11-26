@@ -320,7 +320,7 @@ fn report_table<const N:usize>(
             }
         }
     );
-    components::management_body_state_overlay(ui,scroll.inner_rect,empty_notice);
+    crate::status_notice::management_body_state_overlay(ui,scroll.inner_rect,empty_notice);
     ui.spacing_mut().item_spacing.y=previous_gap;
     let left=first_x.unwrap_or(header.left()-scroll.state.offset.x);
     let header_cells=crate::table::management_table_cells(egui::pos2(left,header.top()),&widths,HEADER_HEIGHT,COL_GAP);

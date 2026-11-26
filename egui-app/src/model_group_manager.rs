@@ -310,7 +310,7 @@ impl ModelGroupManager {
                         if !has_visible{
                             let caption=if groups.is_empty(){"등록된 모델군이 없습니다."}
                                 else{"검색 결과가 없습니다."};
-                            components::management_body_state_overlay(left,output.inner_rect,Some(caption));
+                            crate::status_notice::management_body_state_overlay(left,output.inner_rect,Some(caption));
                         }
 
             (output.inner_rect,())
@@ -372,7 +372,7 @@ impl ModelGroupManager {
                                                 text(p,"subtitle")).to_lowercase().contains(&query))
                                             .take(30).cloned().collect::<Vec<_>>();
                                         if choices.is_empty()&&!eligibility_pending{
-                                            components::management_body_state_overlay(
+                                            crate::status_notice::management_body_state_overlay(
                                                 results,results.available_rect_before_wrap(),
                                                 Some("일치하는 상품이 없습니다.")
                                             );
@@ -433,7 +433,7 @@ impl ModelGroupManager {
                                     crate::ui_layout::fixed_result_viewport(
                                         body,"model-group-registered-products",220.0,|registered|{
                                     if ids.is_empty(){
-                                        components::management_body_state_overlay(
+                                        crate::status_notice::management_body_state_overlay(
                                             registered,registered.available_rect_before_wrap(),
                                             Some("위에서 상품을 검색해 추가하세요.")
                                         );

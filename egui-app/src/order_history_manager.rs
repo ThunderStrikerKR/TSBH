@@ -1447,7 +1447,7 @@ impl OrderHistoryManager {
                             .max(ROW_HEIGHT)
                     )
                 );
-                components::management_body_state_overlay(section,notice_rect,notice);
+                crate::status_notice::management_body_state_overlay(section,notice_rect,notice);
             }
             #[cfg(test)]
             crate::ui_test_support::record("row viewport",output.inner_rect);

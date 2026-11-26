@@ -250,12 +250,12 @@ impl ProductSearch{
                                         }
                                     });
                                 if let Some(error)=self.error.as_deref(){
-                                    components::body_error_overlay(pane,results_rect,"reception.product",error);
+                                    crate::status_notice::body_error_overlay(pane,results_rect,"reception.product",error);
                                 }else{
                                     let caption=if self.receiver.is_some(){Some("상품 검색 중")}
                                         else if self.products.is_empty(){Some("검색 결과가 없습니다.")}
                                         else{None};
-                                    components::management_body_state_overlay(pane,results_rect,caption);
+                                    crate::status_notice::management_body_state_overlay(pane,results_rect,caption);
                                 }
                             },
                         );

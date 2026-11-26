@@ -6,6 +6,10 @@ use chrono::{Datelike, Duration as Days, Months, NaiveDate};
 use crate::{source_highlight, theme, typography};
 use crate::ui_primitives::*;
 #[cfg(test)]
+use crate::status_notice::{management_body_state_overlay,body_error_overlay};
+#[cfg(test)]
+use crate::table::ManagementTableColumnLabel;
+#[cfg(test)]
 use crate::composite_reception::{reception_recipient_fields,reception_item_row,freight_actions_need_second_row,reception_freight_row_controls,reception_item_origin_action_editable,reception_total_footer};
 #[cfg(test)]
 use crate::text_fit::{reception_ellipsized_product,reception_compact_quantity,reception_pending_money_marker};
@@ -125,47 +129,6 @@ mod management_table_container_style_tests{
         });
     }
 }
-
-
-/// Zero-layout feedback for fixed management table/scroll viewports.
-///
-/// Pending, empty and no-result text must never create an egui row, change a
-/// header's Y coordinate, consume scrollbar height or resize the enclosing
-/// card. Call this ONLY after the caller has reserved a stable body rectangle.
-/// Operational errors and decisions continue through FloatingNotice/modals.
-pub fn management_body_state_overlay(
-    ui:&Ui,viewport:Rect,caption:Option<&str>
-){
-    let Some(caption)=caption else {return};
-    let visible=viewport.intersect(ui.clip_rect());
-    if visible.width()<=0.0 || visible.height()<=0.0{return;}
-    ui.painter().with_clip_rect(visible).text(
-        visible.center(),egui::Align2::CENTER_CENTER,caption,
-        egui::FontId::proportional(typography::FONT_METADATA),
-        theme::MUTED
-    );
-}
-
-
-
-pub fn body_error_overlay(ui:&Ui,viewport:Rect,context:&str,error:&str){
-    let visible=viewport.intersect(ui.clip_rect());
-    if visible.width()<=0.0||visible.height()<=0.0{return;}
-    let display=crate::user_error::display(context,error);
-    let painter=ui.painter().with_clip_rect(visible);
-    let galley=painter.layout(display.as_ref().to_owned(),
-        egui::FontId::proportional(typography::FONT_METADATA),
-        theme::DANGER,(visible.width()-2.0*theme::SPACE_8).max(1.0));
-    let pos=egui::pos2(
-        visible.center().x-galley.size().x/2.0,
-        (visible.center().y-galley.size().y/2.0).max(visible.top())
-    );
-    let clipped=text_exceeds_rect(galley.size(),visible);
-    painter.galley(pos,galley,theme::DANGER);
-    overflow_region_tooltip(ui,visible,ui.id().with(("body-error-overlay",context)),
-        clipped,display.as_ref());
-}
-
 
 
 #[cfg(test)]
@@ -351,7 +314,7 @@ mod management_async_layout_contract_tests {
         for source in [include_str!("order_history_manager.rs"),include_str!("excel_manager.rs"),
             include_str!("client_manager.rs"),include_str!("client_chooser.rs"),
             include_str!("manual_product_search.rs"),include_str!("model_group_manager.rs")]{
-            assert!(source.contains("components::management_body_state_overlay("));
+            assert!(source.contains("crate::status_notice::management_body_state_overlay("));
         }
         let history=include_str!("order_history_manager.rs");
         assert!(!history.contains("let galley=typography::management_control_text_galley("));
@@ -518,7 +481,7 @@ mod management_async_layout_contract_tests {
         // separate test strings may intentionally mention prohibited patterns.
         let rendered=products.split("pub fn show_page(").nth(1).unwrap()
             .split("    fn product_price_candidate(").next().unwrap();
-        assert!(rendered.contains("components::management_body_state_overlay("));
+        assert!(rendered.contains("crate::status_notice::management_body_state_overlay("));
         assert!(!rendered.contains("let empty_reserve=if self.products.is_empty()"));
         assert!(!rendered.contains("management_list_strip_frame().show(panel,|empty|"));
         let settlement=include_str!("daily_settlement_manager.rs");
@@ -548,7 +511,7 @@ mod management_async_behavior_regression_tests {
         assert!(freight.contains("gateway.mutate_shipping("));
 
         let products=include_str!("product_manager.rs");
-        assert!(products.contains("components::management_body_state_overlay("));
+        assert!(products.contains("crate::status_notice::management_body_state_overlay("));
         assert!(products.contains("self.start_write(\"set_price\""));
         assert!(products.contains("self.start_write(\"upsert_brand\""));
         assert!(products.contains("self.start_write(\"save_alias\""));
@@ -767,28 +730,6 @@ mod shared_screen_component_contract_tests {
     }
 }
 
-/// Semantic labels for management table columns. A screen selects the
-/// column role; the shared component owns the displayed header wording.
-/// This does not change the underlying product description or column size.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum ManagementTableColumnLabel {
-    ProductName,
-}
-
-impl ManagementTableColumnLabel {
-    pub const fn text(self) -> &'static str {
-        match self {
-            Self::ProductName => "상품명",
-        }
-    }
-}
-
-
-
-
-
-
-
 #[cfg(test)]
 mod common_action_tooltip_tests{
     use super::*;
@@ -944,31 +885,6 @@ fn manual_linked_table_cell(
     }
     response
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-/// Untyped recognition/workflow notices retain informational coloring.
-pub fn reception_review_status(ui:&mut Ui,message:&str){
-    let tone=theme::ReviewTone::Info;
-    let display=crate::user_error::display("reception.review",message);
-    crate::card::review_issue_card(ui,tone,|content|{
-        content.add(egui::Label::new(typography::body(display.as_ref())
-            .color(tone.text_color())).wrap());
-    });
-}
-
-
-
 
 
 
@@ -1265,9 +1181,9 @@ mod shared_review_card_contract_tests {
     fn reception_review_cards_use_shared_surface_frame(){
         let source=include_str!("review_panel.rs");
         assert_eq!(source.matches("crate::card::review_issue_card(").count(),2);
-        assert!(source.contains("crate::components::body_error_overlay("));
+        assert!(source.contains("crate::status_notice::body_error_overlay("));
         assert!(!source.contains("egui::Frame::new()"));
-        let fallback=include_str!("components.rs").split("pub fn reception_review_status(")
+        let fallback=include_str!("status_notice/mod.rs").split("pub fn reception_review_status(")
             .nth(1).unwrap().split("\n///").next().unwrap();
         assert!(fallback.contains("crate::card::review_issue_card("));
     }
