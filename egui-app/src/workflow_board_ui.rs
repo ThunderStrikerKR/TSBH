@@ -1259,13 +1259,27 @@ mod shipment_list_tests {
             });
         });
         assert!(sizes.iter().all(|size|*size==sizes[0]));
-        assert!(sizes[0].y>theme::WORKFLOW_DETAIL_ROW_CONTENT_HEIGHT*2.0);
+        assert!(sizes[0].y>theme::ACTION_STANDARD_HEIGHT);
         let labels=output.shapes.iter().filter_map(|s|match &s.shape{
             egui::Shape::Text(t)=>Some(t.galley.text()),_=>None
         }).collect::<Vec<_>>();
         for label in ["수취인","품목","운임"]{assert!(labels.contains(&label));}
-        for label in ["◆ BD 709 × 4","◆ BD Cart-10 × 2","◆ BD Conductor × 1","10,000원"]{
+        let product_list="◆ BD 709 × 4\n◆ BD Cart-10 × 2\n◆ BD Conductor × 1";
+        for label in [product_list,"10,000원"]{
             assert_eq!(labels.iter().filter(|text|**text==label).count(),3);
+        }
+        let centers=|value:&str|output.shapes.iter().filter_map(|shape|match &shape.shape{
+            egui::Shape::Text(t) if t.galley.text()==value=>
+                Some(t.pos.y+t.galley.size().y/2.0),
+            _=>None
+        }).collect::<Vec<_>>();
+        let product_centers=centers(product_list);
+        let freight_centers=centers("10,000원");
+        let recipient_centers=centers("수취인");
+        assert_eq!(recipient_centers.len(),4); // header plus three cards
+        for index in 0..3{
+            assert!((product_centers[index]-freight_centers[index]).abs()<0.5);
+            assert!((product_centers[index]-recipient_centers[index+1]).abs()<0.5);
         }
     }
     #[test]
@@ -1306,9 +1320,9 @@ mod shipment_list_tests {
         for rect in &measured{
             assert_eq!(rect.width(),measured[0].width());
             assert_eq!(rect.height(),measured[0].height());
-            assert!(rect.height()>=40.0);
+            assert!(rect.height()>=theme::ACTION_STANDARD_HEIGHT);
         }
-        assert_eq!(theme::WORKFLOW_DETAIL_ROW_BG,theme::WORKFLOW_CARD_BG);
+        assert_eq!(theme::WORKFLOW_DETAIL_ROW_BG,theme::PANEL);
     }
 }
 
@@ -1809,7 +1823,7 @@ mod linked_highlight_palette_tests {
         let normal=theme::workflow_shipment_row_frame(shipment_row_fill(false,false),false);
         assert_eq!(selected.fill,Color32::from_rgb(48,42,34));
         assert_eq!(selected.stroke.color,Color32::TRANSPARENT);
-        assert_eq!(normal.stroke.color,Color32::TRANSPARENT);
+        assert_eq!(normal.stroke.color,theme::DIVIDER);
         assert_eq!(selected.stroke.width,normal.stroke.width);
         assert_eq!(selected.inner_margin,normal.inner_margin);
         assert_eq!(selected.corner_radius,normal.corner_radius);
