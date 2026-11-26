@@ -7166,22 +7166,22 @@ pub fn management_readonly_table(
             }
         }
     );
-    let header_text=management_master_header_begin(ui,layout.header_rect,layout.header_content_rect);
     let mut x=layout.header_rect.left()-output.state.offset.x;
-    let mut columns=Vec::with_capacity(widths.len());
-    for (index,(heading,width)) in headings.iter().zip(&widths).enumerate(){
-        let cell=Rect::from_min_size(egui::pos2(x,header_text.top()),
-            Vec2::new(*width,header_text.height()));
-        let galley=typography::management_table_header_galley(ui,heading);
-        let text_x=if right_aligned.contains(&index){
-            cell.right()-galley.size().x
-        }else{cell.left()};
-        paint_table_galley(ui,cell.intersect(header_text),text_x,galley,theme::SECONDARY);
-        columns.push(cell);
+    let columns=widths.iter().map(|width|{
+        let cell=Rect::from_min_size(egui::pos2(x,layout.header_rect.top()),
+            Vec2::new(*width,layout.header_rect.height()-theme::MANAGEMENT_TABLE_HEADER_OUTLINE_HEIGHT));
         x+=*width+theme::SPACE_8;
-    }
-    management_table_column_rules(ui,header_text,&columns,theme::SPACE_8);
-    management_master_header_finish(ui,layout.header_rect);
+        cell
+    }).collect::<Vec<_>>();
+    crate::table::header_columns(ui,layout.header_rect,layout.header_content_rect,&columns,theme::SPACE_8,|ui,area|{
+        for (index,(heading,cell)) in headings.iter().zip(&columns).enumerate(){
+            let alignment=if right_aligned.contains(&index){
+                crate::table::HeadingAlign::Right{inset:0.0,min_left:None}
+            }else{crate::table::HeadingAlign::Left(0.0)};
+            let label=typography::management_table_header_galley(ui,heading);
+            crate::table::heading(ui,*cell,area,cell.intersect(area),alignment,label,None);
+        }
+    });
     
             (output.inner_rect,())
         });

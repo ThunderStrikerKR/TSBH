@@ -320,3 +320,29 @@ pub(crate) fn sort_clicked(ui:&mut Ui,hit:Rect,id:impl std::hash::Hash)->bool{
     if response.hovered(){crate::components::management_master_header_sort_hover(ui,hit);}
     response.clicked()
 }
+
+/// Expanded history rows use the same surface, with the nested shipment card
+/// as an explicit detail profile. Keep the original paint order: row rule,
+/// contents, column rules, then tree connectors.
+pub(crate) fn history_row<const N:usize>(
+    ui:&mut Ui,id:impl std::hash::Hash,rect:Rect,index:usize,
+    widths:&[f32;N],gap:f32,detail:Option<Rect>,
+    draw:impl FnOnce(&mut Ui),overlay:impl FnOnce(&mut Ui),
+){
+    row_scope(ui,id,rect,|row|{
+        row.allocate_exact_size(rect.size(),egui::Sense::hover());
+        if let Some(block)=detail{
+            row.painter().rect_filled(rect,0.0,theme::CANVAS);
+            crate::components::paint_shipment_detail_surface(row,block,theme::PANEL,false);
+        }else{
+            paint_management_table_row_background(row.painter(),rect,index);
+            paint_management_table_row_rule(row.painter(),rect);
+        }
+        draw(row);
+        if detail.is_none(){
+            let cells=management_table_cells(rect.min,widths,rect.height(),gap);
+            management_table_column_rules(row,rect,&cells,gap);
+        }
+        overlay(row);
+    });
+}

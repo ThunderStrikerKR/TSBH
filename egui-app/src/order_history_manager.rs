@@ -1414,37 +1414,19 @@ impl OrderHistoryManager {
                                     components::general_screen_geometry_tests::record("history detail row",row_rect);
                                 }
                                 header_origin.get_or_insert(row_rect.left());
-                                visible.scope_builder(UiBuilder::new()
-                                    .id_salt(("history-variable-row",line_index))
-                                    .max_rect(row_rect)
-                                    .layout(egui::Layout::top_down(Align::Min)),|row_ui|{
-                                        row_ui.allocate_exact_size(
-                                            Vec2::new(table_width,row_rect.height()),Sense::hover()
-                                        );
-                                        match line {
-                                            HistoryLine::Order(_)=>{
-                                                components::paint_management_table_row_background(row_ui.painter(),row_rect,line_index);
-                                                components::paint_management_table_row_rule(row_ui.painter(),row_rect);
-                                            },
-                                            HistoryLine::Recipient(_,_,_)=>{
-                                                row_ui.painter().rect_filled(
-                                                    row_rect,0.0,theme::CANVAS);
-                                                let block_rect=history_detail_block_rect(
-                                                    row_rect,&widths,spacing);
-                                                components::paint_shipment_detail_surface(
-                                                    row_ui,block_rect,theme::PANEL,false);
-                                            }
-                                        }
+                                let detail=match line{
+                                    HistoryLine::Order(_)=>None,
+                                    HistoryLine::Recipient(_,_,_)=>Some(history_detail_block_rect(row_rect,&widths,spacing)),
+                                };
+                                crate::table::history_row(visible,("history-variable-row",line_index),
+                                    row_rect,line_index,&widths,COL_GAP,detail,|row_ui|{
                                         if let Some(snapshot)=snapshot {
                                             draw_line(row_ui,row_rect,line,snapshot,
                                                 &self.expanded,&widths,spacing,
                                                 &mut pending_toggle,&mut pending_memo,
                                                 &mut pending_detail);
                                         }
-                                        if matches!(line,HistoryLine::Order(_)) {
-                                            let columns=components::management_table_cells(row_rect.min,&widths,row_rect.height(),COL_GAP);
-                                            components::management_table_column_rules(row_ui,row_rect,&columns,COL_GAP);
-                                        }
+                                    },|row_ui|{
                                         if snapshot.is_some() {
                                             if let Some(branch)=history_branch(&lines,line_index){
                                                 paint_history_branch(
