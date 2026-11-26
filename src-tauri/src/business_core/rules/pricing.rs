@@ -514,6 +514,46 @@ mod reception_edit_cache_tests{
 mod migration_tests {
     use super::*;
     #[test]
+    fn freight_billing_reasons_distinguish_exempt_missing_collect_and_zero(){
+        let mut payload=json!({
+            "state":{"products":[{"id":"p","origin":"FACTORY","variants":[{"id":"v","wholesale":10000}]}],
+                "shipping":{"epoch":1}},
+            "client":{"id":"c","tier":"wholesale","shippingFeeExcluded":false},
+            "order":{"id":"draft","freightCode":"010","applyVat":true,"recipients":[
+                {"id":"r","dispatchOrigin":"FACTORY","address":"서울특별시 중구 세종대로 1",
+                    "items":[{"id":"i","productId":"p","variantId":"v","origin":"FACTORY","quantity":1}]}
+            ]}
+        });
+        let missing=reception_quote(&payload).unwrap();
+        assert_eq!(missing["freightLines"][0]["billingReason"],"UNREGISTERED");
+        assert!(missing["freightLines"][0]["billableCharge"].is_null());
+        assert!(missing["totals"]["total"].is_null());
+        payload["client"]["shippingFeeExcluded"]=json!(true);
+        let waived=reception_quote(&payload).unwrap();
+        assert_eq!(waived["freightLines"][0]["billingReason"],"EXEMPT");
+        assert!(waived["freightLines"][0]["appliedCharge"].is_null());
+        assert_eq!(waived["freightLines"][0]["billableCharge"],0);
+        assert_eq!(waived["totals"]["total"],11000);
+        payload["order"]["recipients"][0]["shippingCharges"]=json!({"FACTORY":3000});
+        let waived_manual=reception_quote(&payload).unwrap();
+        assert_eq!(waived_manual["freightLines"][0]["appliedCharge"],3000);
+        assert_eq!(waived_manual["freightLines"][0]["billableCharge"],0);
+        assert_eq!(waived_manual["order"]["recipients"][0]["shippingCharges"]["FACTORY"],3000);
+        payload["client"]["shippingFeeExcluded"]=json!(false);
+        let prepaid=reception_quote(&payload).unwrap();
+        assert_eq!(prepaid["freightLines"][0]["billableCharge"],3000);
+        payload["order"]["recipients"][0]["shippingCharges"]["FACTORY"]=json!(0);
+        let zero=reception_quote(&payload).unwrap();
+        assert_eq!(zero["freightLines"][0]["billingReason"],"CHARGED");
+        assert_eq!(zero["freightLines"][0]["billableCharge"],0);
+        payload["order"]["recipients"][0]["shippingCharges"]["FACTORY"]=Value::Null;
+        payload["order"]["freightCode"]=json!("020");
+        let collect=reception_quote(&payload).unwrap();
+        assert_eq!(collect["freightLines"][0]["billingReason"],"COLLECT");
+        assert_eq!(collect["freightLines"][0]["billableCharge"],0);
+        assert_eq!(collect["totals"]["total"],11000);
+    }
+    #[test]
     fn native_reception_quote_multiplies_quantity_and_manual_price_and_freight() {
         let state=json!({"products":[{"id":"p","variants":[{"id":"v",
             "wholesale":12000}]}],"shipping":{"epoch":1}});
