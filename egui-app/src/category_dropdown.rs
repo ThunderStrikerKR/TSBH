@@ -444,31 +444,14 @@ pub(crate) fn explorer_body(menu:&mut Ui,nodes:&[CategoryNode],index:&HashMap<&s
     }
 }
 
-#[derive(Clone,Default)]
-struct PopupStates{
-    entries:HashMap<Id,(ExplorerState,std::time::Instant)>,
-    frame:Option<u64>,
-    seen:HashSet<Id>,
-    last_sweep:Option<std::time::Instant>,
-}
-impl PopupStates{
-    fn advance(&mut self,frame:u64,now:std::time::Instant){
-        if self.frame==Some(frame){return;}
-        self.frame=Some(frame);
-        for id in self.seen.drain(){
-            if let Some(entry)=self.entries.get_mut(&id){entry.1=now;}
-        }
-        if self.last_sweep.is_none_or(|last|now.saturating_duration_since(last)>=std::time::Duration::from_secs(60)){
-            self.entries.retain(|_,entry|now.saturating_duration_since(entry.1)<crate::ui_tokens::NAVIGATION_SNAPSHOT_TTL);
-            self.last_sweep=Some(now);
-        }
-    }
-}
+type PopupStates=crate::view_state::TimedViewStore<(ExplorerState,std::time::Instant)>;
 fn popup_states_id()->Id{Id::new("category-explorer-popup-states")}
 pub(crate) fn sweep_popup_states(ctx:&Context,now:std::time::Instant){
     let frame=ctx.cumulative_frame_nr();
     ctx.data_mut(|data|{
-        data.get_temp_mut_or_default::<PopupStates>(popup_states_id()).advance(frame,now);
+        let states=data.get_temp_mut_or_default::<PopupStates>(popup_states_id());
+        states.advance_frame(frame,now);
+        states.sweep_due(now);
     });
 }
 /// Same trigger, same popup owner, same hover and one-shot feedback anchor as
@@ -502,9 +485,7 @@ pub fn category_dropdown(
             let mut state=ctx.data_mut(|data|{
                 let states=data.get_temp_mut_or_default::<PopupStates>(popup_states_id());
                 let now=std::time::Instant::now();
-                states.entries.remove(&state_id).filter(|entry|
-                    now.saturating_duration_since(entry.1)<crate::ui_tokens::NAVIGATION_SNAPSHOT_TTL)
-                    .map(|entry|entry.0).unwrap_or_default()
+                states.take(state_id,now).map(|entry|entry.0).unwrap_or_default()
             });
             if trigger.clicked(){
                 navigate(&mut state,chain(&index,selected));
@@ -517,8 +498,7 @@ pub fn category_dropdown(
             );
             ctx.data_mut(|data|{
                 let states=data.get_temp_mut_or_default::<PopupStates>(popup_states_id());
-                states.seen.insert(state_id);
-                states.entries.insert(state_id,(state,std::time::Instant::now()));
+                states.put(state_id,(state,std::time::Instant::now()));
             });
         });
     if changed{trigger.mark_changed();}
@@ -554,7 +534,8 @@ mod tests{
         states.entries.insert(active,(explorer,start));
         for n in 0..2048_u32{
             let now=start+step*n;
-            states.advance(u64::from(n),now);
+            states.advance_frame(u64::from(n),now);
+            states.sweep_due(now);
             let id=Id::new(("transient-explorer",n));
             let mut state=ExplorerState::default();
             for folder in 0..32{
@@ -567,8 +548,10 @@ mod tests{
             assert_eq!(states.entries[&active].0.scroll_positions["active-folder"],77.0);
         }
         let closed=start+step*2048;
-        states.advance(2048,closed);
-        states.advance(2049,closed+ttl);
+        states.advance_frame(2048,closed);
+        states.sweep_due(closed);
+        states.advance_frame(2049,closed+ttl);
+        states.sweep_due(closed+ttl);
         assert!(states.entries.is_empty());
         assert!(states.seen.is_empty());
     }
