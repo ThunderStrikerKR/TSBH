@@ -163,6 +163,32 @@ mod management_readonly_table_contract_tests {
             theme::MANAGEMENT_COMPACT_ROW_HEIGHT
         );
     }
+
+    #[test]
+    fn read_only_table_rendered_rows_touch_at_shared_compact_height(){
+        let ctx=test_context();
+        let rows=vec![vec!["first".to_owned()],vec!["second".to_owned()],vec!["third".to_owned()]];
+        crate::ui_test_support::TRACE.with(|trace|*trace.borrow_mut()=Some(Vec::new()));
+        let _=ctx.run(egui::RawInput{
+            screen_rect:Some(Rect::from_min_size(egui::Pos2::ZERO,Vec2::new(900.0,500.0))),
+            ..Default::default()
+        },|ctx|{
+            egui::CentralPanel::default().show(ctx,|ui|{
+                crate::table::management_readonly_table(ui,"readonly-compact-test",
+                    &["name"],&rows,180.0,&[],|width|vec![width]);
+            });
+        });
+        let samples=crate::ui_test_support::TRACE.with(|trace|trace.borrow_mut().take().unwrap());
+        let measured=samples.iter().filter(|(kind,_)|*kind=="readonly data row")
+            .map(|(_,rect)|*rect).collect::<Vec<_>>();
+        assert_eq!(measured.len(),3);
+        for row in &measured{
+            assert!((row.height()-theme::MANAGEMENT_COMPACT_ROW_HEIGHT).abs()<=0.5);
+        }
+        for pair in measured.windows(2){
+            assert!((pair[1].top()-pair[0].bottom()).abs()<=0.5);
+        }
+    }
 }
 
 #[cfg(test)]
