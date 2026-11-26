@@ -298,6 +298,179 @@ fn change_confirmed_dispatch_origin(payload:&Value)->Result<Value,String>{
     Ok(result)
 }
 
+/// Operational edits use only the persisted before-image and a typed field
+/// intent. Draft creation, source reanalysis and UI-calculated prices are
+/// deliberately excluded. Keep the original order, shipment and receipt IDs.
+fn edit_confirmed_recipient(payload:&Value)->Result<Value,String>{
+    let before=req(payload,"state")?;
+    let sid=required_str(payload,"shipmentId")?;
+    let gid=required_str(payload,"groupId")?;
+    let now=required_str(payload,"now")?;
+    let seed=required_str(payload,"eventSeed")?;
+    let change=req(payload,"change")?;
+    let key=required_str(change,"field")?;
+    let value=change.get("value").ok_or("변경값이 없습니다.")?;
+    let ship=rows(field(field(before,"workflow"),"shipments")).iter().find(|s|
+        str_field(s,"id")==sid && str_field(s,"groupId")==gid &&
+        !flag(s,"transferred") && !flag(s,"legacyArchived"))
+        .ok_or("현재 묶음의 수정 가능한 배송 건을 선택하세요.")?;
+    let oi=rows(field(before,"orders")).iter().position(|o|
+        str_field(o,"id")==str_field(ship,"orderId")).ok_or("주문을 찾을 수 없습니다.")?;
+    let order=&before["orders"][oi];
+    editable(order,before)?;
+    if !has_value(field(order,"confirmedAt")){return Err("확정 주문을 선택하세요.".into());}
+    let rid=str_field(ship,"recipientId");
+    if str_field(change,"recipientId")!=rid{return Err("수정 대상 수취인이 변경됐습니다.".into());}
+    let ri=rows(field(order,"recipients")).iter().position(|r|str_field(r,"id")==rid)
+        .ok_or("수취인을 찾을 수 없습니다.")?;
+    let old=&order["recipients"][ri];
+    let iid=str_field(change,"itemId");
+    let old_item=rows(field(old,"items")).iter().find(|i|str_field(i,"id")==iid);
+    let mut model=json!({"rows":[old],"assignments":{},"blocks":[]});
+    let cell=json!({"recipientId":rid,"itemId":iid,"field":key});
+    match key {
+        "name"|"address"|"mobile"|"phone"|"note"=>{
+            if !iid.is_empty(){return Err("수취인 입력 대상을 확인하세요.".into());}
+            if value.as_str()==Some(str_field(old,key)){return Ok(json!({"state":before,"unchanged":true}));}
+            model=super::manual_classification::apply(&json!({
+                "action":"set_manual_recipient_field","model":model,"cell":cell,"value":value
+            }))?["model"].clone();
+            if key=="address"{
+                let row=&mut model["rows"][0];
+                let address=str_field(row,"address").to_owned();
+                let detection=super::remote_delivery::detect(&json!({"address":address}))?;
+                set(row,"remoteDelivery",json!({"address":address,
+                    "checked":flag(&detection,"suggestedChecked"),"manual":false}))?;
+            }
+        },
+        "quantity"=>{
+            let item=old_item.ok_or("수정할 품목을 확인하세요.")?;
+            let quantity=value.as_str().ok_or("수량은 정수로 입력하세요.")?;
+            if quantity.parse::<i64>().ok()==field(item,"quantity").as_i64() &&
+                flag(item,"quantityConfirmed"){return Ok(json!({"state":before,"unchanged":true}));}
+            let draft=super::manual_structure::execute(&json!({
+                "action":"set_manual_quantity_draft","model":model,"cell":cell,"value":quantity
+            }))?;
+            model=super::manual_structure::execute(&json!({
+                "action":"confirm_manual_quantity","model":draft["model"],"cell":cell
+            }))?["model"].clone();
+        },
+        "unitPrice"=>{
+            let item=old_item.ok_or("수정할 품목을 확인하세요.")?;
+            if value==field(item,"unitPrice"){return Ok(json!({"state":before,"unchanged":true}));}
+            // The explicit reset alone may resolve a new catalog price; no
+            // passive repricing of the other already confirmed items.
+            model=super::manual_classification::apply(&json!({
+                "action":"set_manual_unit_price","model":model,"cell":cell,"value":value
+            }))?["model"].clone();
+            if value.is_null(){
+                let product=rows(field(before,"products")).iter().find(|p|
+                    str_field(p,"id")==str_field(item,"productId"))
+                    .ok_or("등록된 상품을 확인하세요.")?;
+                let selected=client(order,before);
+                let price=super::pricing::resolve_unit_price(product,str_field(item,"variantId"),&selected)?;
+                let target=model["rows"][0]["items"].as_array_mut().unwrap()
+                    .iter_mut().find(|i|str_field(i,"id")==iid).unwrap();
+                set(target,"unitPrice",price)?;
+            }
+        },
+        "removeItem"=>{
+            old_item.ok_or("삭제할 품목을 확인하세요.")?;
+            model=super::manual_structure::execute(&json!({
+                "action":"remove_manual_item","model":model,"recipientId":rid,"itemId":iid
+            }))?["model"].clone();
+        },
+        "addItem"|"product"=>{
+            let pid=required_str(value,"productId")?;
+            let vid=required_str(value,"variantId")?;
+            let product=rows(field(before,"products")).iter().find(|p|
+                str_field(p,"id")==pid && !has_value(field(p,"deletedAt")) &&
+                field(p,"active").as_bool()!=Some(false))
+                .ok_or("최신 상품 목록에서 상품을 확인하세요.")?;
+            let variants=rows(field(product,"variants"));
+            if flag(product,"requiresOption") || variants.len()!=1 ||
+                str_field(&variants[0],"id")!=vid{
+                return Err("등록된 독립 판매 상품을 다시 선택하세요.".into());
+            }
+            let replacement=if key=="product"{Some(old_item.ok_or("변경할 품목을 확인하세요.")?)}else{
+                if !iid.is_empty(){return Err("상품 추가 대상을 확인하세요.".into());}
+                None
+            };
+            if replacement.is_some_and(|i|str_field(i,"productId")==pid && str_field(i,"variantId")==vid){
+                return Ok(json!({"state":before,"unchanged":true}));
+            }
+            let id=if replacement.is_some(){iid.to_owned()}else{format!("{seed}:item")};
+            let selected=client(order,before);
+            let quantity=replacement.map(|i|field(i,"quantity").clone()).unwrap_or(json!(1));
+            let mut item=super::catalog_item::make(&json!({
+                "product":product,"client":selected,"newItemId":id,"variantId":vid,
+                "color":field(&variants[0],"color"),"quantity":quantity
+            }))?["item"].clone();
+            let origin=replacement.map(|i|str_field(i,"origin"))
+                .filter(|o|matches!(*o,"FACTORY"|"STORE"))
+                .or_else(||old.get("dispatchOrigin").and_then(Value::as_str)
+                    .filter(|o|matches!(*o,"FACTORY"|"STORE")))
+                .or_else(||rows(field(old,"items")).first().map(|i|str_field(i,"origin"))
+                    .filter(|o|matches!(*o,"FACTORY"|"STORE")))
+                .unwrap_or("FACTORY");
+            set(&mut item,"origin",json!(origin))?;
+            set(&mut item,"quantityConfirmed",json!(replacement.is_none_or(|i|flag(i,"quantityConfirmed"))))?;
+            if let Some(previous)=replacement{
+                for key in ["raw","sources","quantityApproval"]{
+                    if let Some(v)=previous.get(key){set(&mut item,key,v.clone())?;}
+                }
+            }
+            let items=model["rows"][0]["items"].as_array_mut().ok_or("품목 목록 오류")?;
+            if replacement.is_some(){
+                let target=items.iter_mut().find(|i|str_field(i,"id")==iid)
+                    .ok_or("변경할 품목을 확인하세요.")?;
+                *target=item;
+            }else{items.push(item);}
+        },
+        _=>return Err("지원하지 않는 확정 주문 편집 항목입니다.".into())
+    }
+    let mut state=before.clone();
+    let mut recipient=model["rows"][0].clone();
+    if &recipient==old{return Ok(json!({"state":before,"unchanged":true}));}
+    // Keep the current manual charge only on an existing origin. New
+    // origins are intentionally unconfirmed. For automatic rates, a
+    // physical change clears the obsolete quote rather than silently
+    // retaining a price for different goods or an address.
+    if matches!(key,"address"|"quantity"|"addItem"|"removeItem"|"product"){
+        let auto=str_field(ship,"chargeMode")=="AUTO";
+        let mut charges=serde_json::Map::new();
+        for origin in ["FACTORY","STORE"]{
+            if rows(field(&recipient,"items")).iter().any(|i|str_field(i,"origin")==origin){
+                let charge=if auto{Value::Null}else{field(field(ship,"charges"),origin).clone()};
+                charges.insert(origin.into(),charge);
+            }
+        }
+        set(&mut recipient,"shippingCharges",Value::Object(charges))?;
+    }
+    let audit=json!({"id":format!("{seed}:confirmed-edit"),"at":now,
+        "actor":field(field(before,"settings"),"operatorName").as_str()
+            .filter(|s|!s.trim().is_empty()).unwrap_or("직원"),
+        "action":"확정 주문 수정","shipmentIds":[sid],"groupId":gid,
+        "reason":key,"before":old,"after":recipient});
+    state["workflow"]["events"].as_array_mut().ok_or("업무 이벤트 목록 누락")?.push(audit);
+    state["orders"][oi]["recipients"][ri]=recipient;
+    set(&mut state["orders"][oi],"updatedAt",json!(now))?;
+    if key=="removeItem" || key=="product"{
+        if let Some(assignments)=state["orders"][oi].pointer_mut("/manualClassification/assignments")
+            .and_then(Value::as_object_mut){
+            assignments.retain(|_,cell|str_field(cell,"itemId")!=iid ||
+                (key=="product" && str_field(cell,"field")!="product"));
+        }
+    }
+    let result=super::reconciliation::reconcile_shipment(&json!({
+        "state":state,"shipmentId":sid,"groupId":gid,"now":now,"eventSeed":seed
+    }))?;
+    let changed=req(&result,"state")?;
+    super::validation::validate_reception(before,changed)?;
+    super::validate_workflow_transition(changed,before)?;
+    Ok(result)
+}
+
 pub(super) fn execute(payload:&Value)->Result<Value,String>{
     match required_str(payload,"action")? {
         "resolve_order_client" => Ok(json!({"client":client(req(payload,"order")?,
@@ -308,6 +481,7 @@ pub(super) fn execute(payload:&Value)->Result<Value,String>{
             Ok(json!({"client":client(order,state),"liveClient":live_client(order,state)}))
         },
         "change_confirmed_dispatch_origin" => change_confirmed_dispatch_origin(payload),
+        "edit_confirmed_recipient" => edit_confirmed_recipient(payload),
         "prepare_order_edit" => prepare_edit(payload),
         "calculate_order_shipping" => effective_shipping(req(payload,"order")?,
             req(payload,"state")?),

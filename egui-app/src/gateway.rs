@@ -652,7 +652,7 @@ impl BandoGateway for LocalGateway {
             action,
             "advance_group"|"undo_group"|"confirm_group_payment"|"process_group"
             |"detach_shipment"|"regroup_shipment"|"set_shipment_freight"|"record_message_copy"
-            |"change_confirmed_dispatch_origin"
+            |"change_confirmed_dispatch_origin"|"edit_confirmed_recipient"
         ){
             return Err("지원하지 않는 주문 묶음 작업입니다.".into());
         }
@@ -678,7 +678,7 @@ impl BandoGateway for LocalGateway {
         };
         let scoped_freight=action=="set_shipment_freight" && args.get("draft").is_none();
         let scoped_group_move=matches!(action,"detach_shipment"|"regroup_shipment");
-        let confirmed_origin_edit=action=="change_confirmed_dispatch_origin";
+        let confirmed_order_edit=matches!(action,"change_confirmed_dispatch_origin"|"edit_confirmed_recipient");
         let mutate=|before:&Value|->Result<Value,String>{
         checkpoint("read_snapshot");
         // An unconfirmed egui draft may enter the operational ledger ONLY
@@ -730,11 +730,11 @@ impl BandoGateway for LocalGateway {
         let actor=before["settings"]["operatorName"].as_str()
             .filter(|name|!name.trim().is_empty())
             .unwrap_or("사용자(이름 미설정)").to_owned();
-        if confirmed_origin_edit{
+        if confirmed_order_edit{
             let result=rules::execute("order_edit_rules",serde_json::json!({
                 "action":action,"state":before,"shipmentId":args["shipmentId"],
                 "groupId":args["groupId"],"origin":args["origin"],
-                "now":now,"eventSeed":event_id
+                "change":args["change"],"now":now,"eventSeed":event_id
             }))?;
             return result.get("state").cloned()
                 .ok_or("확정 주문 수정 결과에 상태가 없습니다.".into());
