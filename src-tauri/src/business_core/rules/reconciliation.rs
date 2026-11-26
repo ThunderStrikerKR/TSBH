@@ -639,6 +639,8 @@ fn reconcile_inner(payload:&Value,order_scope:Option<&str>,scoped_seed:Option<&s
             if flag(&state["workflow"]["shipments"][si],"transferred") ||
                 flag(&state["workflow"]["shipments"][si],"legacyArchived") {continue;}
             let previous_info=str_field(&state["workflow"]["shipments"][si],"infoSignature");
+            let physical_change=!previous_info.is_empty() &&
+                previous_info!=info && !same_freight_review_basis(previous_info,&info);
             if previous_info!=info {
                 let same_review=same_review_basis(previous_info,&info,true);
                 let review_valid=if same_review{
@@ -658,7 +660,7 @@ fn reconcile_inner(payload:&Value,order_scope:Option<&str>,scoped_seed:Option<&s
             }
             let old_version=field(&state["workflow"]["shipments"][si],"freightVersion");
             let freight_confirmed=stages::read(&state["workflow"]["shipments"][si])[1];
-            if (!frozen || reassigned) && old_version!=field(&reco,"version") &&
+            if (!frozen || reassigned || physical_change) && old_version!=field(&reco,"version") &&
                 !(freight_confirmed && str_field(&state["workflow"]["shipments"][si],"chargeMode")=="MANUAL") {
                 pending_rechecks.entry(si).and_modify(|entry|entry.1=true).or_insert((1,true,"적용 운임 기준 변경"));
                 set(&mut state["workflow"]["shipments"][si],"freightVersion",
@@ -689,7 +691,7 @@ fn reconcile_inner(payload:&Value,order_scope:Option<&str>,scoped_seed:Option<&s
                 super::manual_freight(&recipient,origin))
                 .collect::<Result<Vec<_>,_>>()?;
             let automatic=str_field(&state["workflow"]["shipments"][si],"chargeMode")=="AUTO";
-            if reassigned || (!frozen && (overrides.is_object() || automatic)) {
+            if reassigned || physical_change || (!frozen && (overrides.is_object() || automatic)) {
                 // A legacy MANUAL shipment may predate recipient overrides.
                 // Preserve its explicit amounts when no override map exists.
                 let legacy_manual=!automatic && !has_value(overrides);
