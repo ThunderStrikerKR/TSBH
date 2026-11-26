@@ -2,6 +2,13 @@ use serde_json::{json, Value};
 
 use super::{checked_sum, field, find_by_id, flag, has_value, req, rows, safe, set, str_field, MAX_SAFE};
 
+/// Apply only the explicit order-line override. Return false for automatic pricing.
+pub(super) fn apply_manual_unit_price(item:&mut Value)->Result<bool,String>{
+    let Some(price)=super::manual_unit_price(item)? else{return Ok(false);};
+    set(item,"unitPrice",json!(price))?;
+    Ok(true)
+}
+
 pub(super) fn resolve_unit_price(
     product: &Value,
     variant_id: &str,
@@ -140,15 +147,7 @@ pub(super) fn reprice_order(payload: &Value) -> Result<Value, String> {
         let items = recipient.get_mut("items").and_then(Value::as_array_mut)
             .ok_or_else(|| "상품 목록을 확인하세요.".to_string())?;
         for item in items {
-            if let Some(override_price)=item.get("manualUnitPrice") {
-                // A staff-confirmed override belongs to this order line
-                // only. Never rewrite the catalog, and never silently
-                // overwrite an explicit unit price during native repricing.
-                let price=safe(override_price)
-                    .ok_or("직접 수정한 상품 단가가 0 이상의 안전한 정수가 아닙니다.")?;
-                set(item,"unitPrice",json!(price))?;
-                continue;
-            }
+            if apply_manual_unit_price(item)? {continue;}
             let pid = str_field(item, "productId").to_string();
             let vid = str_field(item, "variantId").to_string();
             if vid.is_empty() { continue; }
