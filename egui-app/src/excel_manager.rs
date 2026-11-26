@@ -488,11 +488,9 @@ impl ExcelManager{
             (self.query,self.sort_queue,self.selected)=current;
             // An actual-freight edit panel is not a read-only navigation snapshot.
             self.managed_queue=None;
-            self.freight_drafts.clear();
         }
         if !self.tab_snapshots.visit(next,std::time::Instant::now()){return;}
         self.query.clear();self.sort_queue=None;self.selected.clear();self.managed_queue=None;
-        self.freight_drafts.clear();
         if self.tab==Tab::History{
             let today=Utc::now().with_timezone(&FixedOffset::east_opt(9*3600).expect("Seoul offset")).date_naive();
             let (from,to)=default_export_date_range(today);
@@ -509,7 +507,7 @@ impl ExcelManager{
         let (from,to)=default_export_date_range(today);
         self.tab=Tab::Factory;self.tab_snapshots=crate::view_state::NavigationSnapshots::new(0);self.tab_filters=Default::default();
         self.query.clear();self.selected.clear();self.sort_queue=None;self.sort_history=None;
-        self.managed_queue=None;self.freight_drafts.clear();
+        self.managed_queue=None;
         self.export_from=from.clone();self.export_to=to.clone();
         self.export_from_input=from;self.export_to_input=to;
         self.export_from_month=crate::navigation::calendar_month_start(today);
