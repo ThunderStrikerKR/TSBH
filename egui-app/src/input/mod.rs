@@ -555,11 +555,11 @@ fn reception_money_editor_at_rect(
 /// use identical suffix geometry; only their interaction mode differs.
 pub(crate) const RECEPTION_FREIGHT_MONEY_WIDTH:f32=104.0;
 
-pub(crate) fn reception_freight_money_readonly(ui:&mut Ui,value:&mut String)->Response{
+pub(crate) fn reception_freight_money_readonly(ui:&mut Ui,value:&mut String,exempt:bool)->Response{
     let inset=theme::SPACE_8;
     let (edit,unit_galley)=money_text_edit_with_unit(
         ui,value,reception_money_font(),RECEPTION_FREIGHT_MONEY_WIDTH,
-        "원",inset,RECEPTION_MONEY_UNIT_GAP,typography::reception_cell_text_margin()
+        if exempt{"원·면제"}else{"원"},inset,RECEPTION_MONEY_UNIT_GAP,typography::reception_cell_text_margin()
     );
     let response=allocate_singleline_field(
         ui,Vec2::new(RECEPTION_FREIGHT_MONEY_WIDTH,theme::INPUT_HEIGHT),
