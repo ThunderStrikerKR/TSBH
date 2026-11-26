@@ -123,6 +123,13 @@ pub(crate) fn paint_management_table_row_background(painter:&egui::Painter,rect:
     painter.rect_filled(rect,0.0,management_table_row_fill(index));
 }
 
+/// Interactive table rows retain the standard alternating background when idle.
+/// The hover surface is owned by the table, not by an individual screen.
+pub(crate) fn paint_management_interactive_row_background(painter:&egui::Painter,rect:Rect,index:usize,hovered:bool){
+    if hovered{painter.rect_filled(rect,0.0,theme::INPUT);}
+    else{paint_management_table_row_background(painter,rect,index);}
+}
+
 /// All table rows use the same filled 1pt rule inside the bottom edge.
 /// Do not center a stroke on the boundary: clipping would halve its width.
 pub(crate) fn paint_management_table_row_rule(painter:&egui::Painter,rect:Rect){

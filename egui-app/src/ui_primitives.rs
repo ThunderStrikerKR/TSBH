@@ -236,7 +236,7 @@ fn allocate_section_divider(ui:&mut Ui,top_gap:f32,bottom_gap:f32)->(Rect,Rect){
         egui::pos2(strip.left(),strip.top()+top_gap),
         Vec2::new(strip.width(),theme::SOFT_DIVIDER_WIDTH)
     );
-    ui.painter().rect_filled(rule,0.0,theme::DIVIDER);
+    theme::paint_soft_rule(ui.painter(),rule);
     (strip,rule)
 }
 
@@ -263,6 +263,11 @@ pub fn form_field_label_sized(ui:&mut Ui,label:&str,width:f32)->Response {
 pub fn form_field_label(ui:&mut Ui,label:&str)->Response {
     let width=typography::field_label_galley(ui,label).size().x;
     form_field_label_sized(ui,label,width)
+}
+
+/// A selected item's fixed blue outline, with caller-owned inset and corner geometry.
+pub(crate) fn paint_selection_outline(painter:&egui::Painter,rect:Rect,radius:impl Into<egui::CornerRadius>){
+    painter.rect_stroke(rect,radius,Stroke::new(SOFT_DIVIDER_WIDTH,SELECTION),egui::StrokeKind::Inside);
 }
 
 pub(crate) fn button_hover_palette(hovered:bool,focused:bool)->(Option<Color32>,Option<Stroke>){

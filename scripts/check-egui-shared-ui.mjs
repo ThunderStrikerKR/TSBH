@@ -69,9 +69,7 @@ const paintExceptions = [
     "line_segment([egui::pos2(x,row_rect.top()),egui::pos2(x,center)],stroke)"],
   ["order_history_manager.rs","range_date_picker_rtl",1,
     "line_segment([egui::pos2(x,inner.top()+4.0),egui::pos2(x,inner.bottom()-4.0)],Stroke::new(theme::SOFT_DIVIDER_WIDTH,theme::DIVIDER))"],
-  // Chooser selection outline.
-  ["client_chooser.rs","show",1,
-    "rect_stroke(response.rect.shrink(1.0),0.0,egui::Stroke::new(theme::SOFT_DIVIDER_WIDTH,theme::SELECTION),egui::StrokeKind::Inside)"],
+  // Chooser selection outline now delegates to ui_primitives::paint_selection_outline.
 ];
 const normalized = source=>tokenizeRust(source).map(t=>t.kind==="literal"?"<literal>":t.v).join(" ");
 const paintAllowance = new Map(paintExceptions.map(([file,fn,count,call])=>

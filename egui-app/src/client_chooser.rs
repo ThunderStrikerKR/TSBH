@@ -326,14 +326,9 @@ impl ClientChooser {
                                                         ],&data.tier,index
                                                     );
                                                     if selected {
-                                                        row_ui.painter().with_clip_rect(clip)
-                                                            .rect_stroke(
-                                                                response.rect.shrink(1.0),0.0,
-                                                                egui::Stroke::new(
-                                                                    theme::SOFT_DIVIDER_WIDTH,
-                                                                    theme::SELECTION
-                                                                ),egui::StrokeKind::Inside
-                                                            );
+                                                        crate::ui_primitives::paint_selection_outline(
+                                                            &row_ui.painter().with_clip_rect(clip),response.rect.shrink(1.0),0.0
+                                                        );
                                                     }
                                                     if !selected&&response.clicked(){
                                                         floating_notice::action_rect(row_ui.ctx(),"reception.client_change",response.rect.intersect(clip));

@@ -2,7 +2,7 @@
 use eframe::egui::{self,Align,Color32,Layout,Rect,Response,Sense,Stroke,Ui,Vec2};
 use crate::{theme,typography};
 use crate::ui_primitives::{text_exceeds_rect,overflow_region_tooltip};
-use crate::table::{paint_table_galley,management_client_column_widths,management_client_column_edges,management_table_row_fill,paint_management_table_row_rule,management_master_column_rules};
+use crate::table::{paint_table_galley,management_client_column_widths,management_client_column_edges,paint_management_interactive_row_background,paint_management_table_row_rule,management_master_column_rules};
 use crate::card::paint_reception_client_summary_surface;
 use crate::text_fit::fitted_client_name;
 
@@ -24,11 +24,7 @@ pub fn management_chooser_row(
     let painter=ui.painter().with_clip_rect(rect);
     painter.rect_filled(rect,theme::CONTROL_RADIUS as f32,background);
     if selected{
-        painter.rect_stroke(
-            rect.shrink(0.5),theme::CONTROL_RADIUS as f32,
-            Stroke::new(theme::SOFT_DIVIDER_WIDTH,theme::SELECTION),
-            egui::StrokeKind::Inside
-        );
+        crate::ui_primitives::paint_selection_outline(&painter,rect.shrink(0.5),theme::CONTROL_RADIUS as f32);
     }
     let primary=typography::management_table_cell_galley(
         ui,title,typography::ManagementTableCellRole::ClientName
@@ -266,9 +262,7 @@ pub fn management_row(
     let (rect,response)=ui.allocate_exact_size(
         Vec2::new(width,theme::MANAGEMENT_CLIENT_ROW_HEIGHT),Sense::click()
     );
-    let bg=if response.hovered() {theme::INPUT}
-        else {management_table_row_fill(visible_index)};
-    ui.painter().rect_filled(rect,0.0,bg);
+    paint_management_interactive_row_background(ui.painter(),rect,visible_index,response.hovered());
     // Paint the 1pt row rule inside its allocated rect. A centered
     // line_segment on bottom() was half-clipped and looked inconsistent
     // against the master's crisp 2pt header band at fractional DPI.
