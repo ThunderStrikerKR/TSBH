@@ -395,6 +395,45 @@ pub fn patch_product_v2(conn:&mut Connection, request:&Value)->Result<Value,Stri
 
 
 #[cfg(test)]
+mod management_scope_cas_tests{
+    use super::*;
+    #[test]
+    fn management_scopes_ignore_unrelated_order_revision_and_prices(){
+        let old=json!({"revision":1,"orders":[],"clients":[],
+            "categories":[{"id":"c","name":"분류"}],
+            "shipping":{"groups":[{"id":"g","name":"그룹"}]},
+            "products":[{"id":"p","category":"c","shippingGroupId":"g","origin":"FACTORY",
+                "variants":[{"id":"v","wholesale":1000}]}]});
+        let cat=management_scope_token(&old,"categories");
+        let freight=management_scope_token(&old,"shipping");
+        let mut new=old.clone();
+        new["revision"]=json!(7);
+        new["orders"]=json!([{"id":"o"}]);
+        new["clients"]=json!([{"id":"dealer"}]);
+        new["products"][0]["variants"][0]["wholesale"]=json!(2000);
+        assert_eq!(management_scope_token(&new,"categories"),cat);
+        assert_eq!(management_scope_token(&new,"shipping"),freight);
+        new["products"][0]["shippingGroupId"]=json!("g2");
+        assert_ne!(management_scope_token(&new,"shipping"),freight);
+        assert_eq!(management_scope_token(&new,"categories"),cat);
+        new["products"][0]["category"]=json!("c2");
+        assert_ne!(management_scope_token(&new,"categories"),cat);
+    }
+    #[test]
+    fn target_entity_cas_and_bulk_review_have_different_scope(){
+        let original=json!({"id":"p","name":"원본"});
+        let before=json!({"revision":12,"products":[original,{"id":"other"}]});
+        let request=json!({"product":{"id":"p","name":"수정"},"expectedEntity":original});
+        assert!(check_catalog_write_scope(&before,"upsert_product",&request,1,12).is_ok());
+        assert!(check_catalog_write_scope(&before,"set_price",&json!({}),1,12).is_ok());
+        let mut changed=before.clone();
+        changed["products"][0]["name"]=json!("외부 변경");
+        assert!(check_catalog_write_scope(&changed,"upsert_product",&request,1,12).is_err());
+        assert!(check_catalog_write_scope(&before,"apply_product_workbook",&json!({}),1,12).is_err());
+    }
+}
+
+#[cfg(test)]
 mod price_history_tests{
     use super::*;
 
