@@ -3,7 +3,7 @@
 //! Rust catalog_clients::model_groups validates; Tauri settings_patch CAS saves.
 use crate::{catalog_query_bridge,gateway::BandoGateway, theme, typography};
 use crate::screen_refresh::ReadRefresh;
-use eframe::egui::{self, Align, Context, Layout, Rect, Sense, Ui, UiBuilder, Vec2};
+use eframe::egui::{self, Align, Context, Layout, Rect, Sense, Ui, Vec2};
 use serde_json::{json, Value};
 use std::{
     collections::{HashMap,HashSet},
@@ -192,59 +192,6 @@ impl ModelGroupManager {
         }
         assigned
     }
-    // Shared fixed-column table; the three model-group views differ only
-    // in their column data and actions, never their header or row geometry.
-    fn table<const N:usize>(
-        ui:&mut Ui,id:impl std::hash::Hash,labels:[&str;N],base:[f32;N],
-        height:f32,count:usize,selected:impl Fn(usize)->bool,
-        mut draw:impl FnMut(&mut Ui,[Rect;N],usize,Rect),
-    )->Rect{
-        let gap=theme::SPACE_8;
-        let minimum=base.iter().sum::<f32>()+N.saturating_sub(1) as f32*gap;
-        let spacing=crate::table::management_table_container_style(ui);
-        let inner=crate::table::show(ui,crate::table::Header::WithoutToolbar(minimum),|ui,layout|{
-            let mut widths=base;
-            widths[0]+=(layout.table_width-minimum).max(0.0);
-            let cells=crate::table::management_table_cells(
-                layout.header_content_rect.min,&widths,layout.header_content_rect.height(),gap);
-            crate::table::header_columns(ui,layout.header_rect,layout.header_content_rect,&cells,gap,|ui,area|{
-                for (i,cell) in cells.iter().enumerate(){
-                    crate::table::heading(ui,*cell,area,cell.intersect(area),
-                        if i==0{crate::table::HeadingAlign::Left(theme::SPACE_8)}
-                        else{crate::table::HeadingAlign::Center{min_left:None}},
-                        typography::management_table_header_galley(ui,labels[i]),None);
-                }
-            });
-            let output=crate::table::fixed_rows(ui,crate::table::Viewport{
-                width:layout.table_width,height:height.max(1.0),rail:None
-            },id,theme::MANAGEMENT_TABLE_ROW_HEIGHT,count,|body,visible|{
-                let origin=body.max_rect().min;
-                let first=visible.start;
-                for index in visible{
-                    let rect=crate::table::fixed_row_rect(origin,index,first,layout.table_width,
-                        theme::MANAGEMENT_TABLE_ROW_HEIGHT);
-                    crate::table::fixed_row(body,index,rect,index,&widths,gap,
-                        crate::table::RowTone::SelectedIf(selected(index)),|row,cells|draw(row,cells,index,rect));
-                }
-            });
-            (output.inner_rect,output.inner_rect)
-        });
-        ui.spacing_mut().item_spacing.y=spacing;
-        inner
-    }
-    fn cell(ui:&Ui,rect:Rect,value:&str,role:typography::ManagementTableCellRole,
-        center:bool,id:impl std::hash::Hash){
-        crate::table::paint_management_text_cell(ui,rect.shrink2(Vec2::new(theme::SPACE_8,0.0)),
-            value,value,role,if center{egui::Align2::CENTER_CENTER}else{egui::Align2::LEFT_CENTER},
-            id,false);
-    }
-    fn actions<R>(ui:&mut Ui,cell:Rect,draw:impl FnOnce(&mut Ui)->R)->R{
-        ui.scope_builder(UiBuilder::new().max_rect(cell.shrink2(Vec2::new(theme::SPACE_4,0.0)))
-            .layout(Layout::right_to_left(Align::Center)),|actions|{
-                actions.set_clip_rect(actions.clip_rect().intersect(cell));
-                draw(actions)
-            }).inner
-    }
     pub fn show_page(&mut self,ui:&mut Ui,catalog:&Value,
         gateway:Arc<dyn BandoGateway>){
         self.sync(catalog);
@@ -302,7 +249,7 @@ impl ModelGroupManager {
                     }).collect::<Vec<_>>();
                     let body_height=(left.available_height()-theme::MANAGEMENT_TABLE_HEADER_HEIGHT).max(1.0);
                     let selected_id=self.selected.clone();
-                    let rect=Self::table(left,"family-list",["모델군","대표모델","상품 수"],
+                    let rect=crate::table::registry_table(left,"family-list",["모델군","대표모델","상품 수"],
                         [160.0,156.0,76.0],body_height,visible.len(),
                         |i|visible[i].0==selected_id,|row,cells,i,rect|{
                             let (id,g)=visible[i];
@@ -314,9 +261,9 @@ impl ModelGroupManager {
                             let rep=products.get(text(g,"representativeProductId"))
                                 .map(|p|text(p,"name")).unwrap_or(if text(g,"representativeColor").is_empty(){
                                     "미지정"}else{"재지정 필요"});
-                            Self::cell(row,cells[0],text(g,"name"),Role::Text,false,(id,0));
-                            Self::cell(row,cells[1],rep,Role::ProductName,false,(id,1));
-                            Self::cell(row,cells[2],&items(&g["productIds"]).len().to_string(),Role::Quantity,true,(id,2));
+                            crate::table::registry_cell(row,cells[0],text(g,"name"),Role::Text,false,(id,0));
+                            crate::table::registry_cell(row,cells[1],rep,Role::ProductName,false,(id,1));
+                            crate::table::registry_cell(row,cells[2],&items(&g["productIds"]).len().to_string(),Role::Quantity,true,(id,2));
                             #[cfg(test)]
                             crate::ui_test_support::record("catalog data row",rect);
                             if response.clicked()&&!busy&&!selected{self.request_exit(Exit::Select(id.clone()));}
@@ -363,14 +310,14 @@ impl ModelGroupManager {
                                 .take(30).collect::<Vec<_>>();
                             right.label(typography::subsection_heading("상품 검색 결과"));
                             let result_height=(right.available_height()*0.30).min(theme::MANAGEMENT_TABLE_ROW_HEIGHT*3.0).max(1.0);
-                            let rect=Self::table(right,"model-group-search-results",
+                            let rect=crate::table::registry_table(right,"model-group-search-results",
                                 ["상품명","상세 정보","소속 모델군","추가"],[140.0,100.0,110.0,80.0],
                                 result_height,choices.len(),|_|false,|row,cells,i,_|{
                                     let p=choices[i];let id=text(p,"id");
-                                    Self::cell(row,cells[0],text(p,"name"),Role::ProductName,false,(id,0));
-                                    Self::cell(row,cells[1],text(p,"subtitle"),Role::Description,false,(id,1));
-                                    Self::cell(row,cells[2],assigned.get(id).map(String::as_str).unwrap_or("—"),Role::Text,false,(id,2));
-                                    Self::actions(row,cells[3],|actions|{
+                                    crate::table::registry_cell(row,cells[0],text(p,"name"),Role::ProductName,false,(id,0));
+                                    crate::table::registry_cell(row,cells[1],text(p,"subtitle"),Role::Description,false,(id,1));
+                                    crate::table::registry_cell(row,cells[2],assigned.get(id).map(String::as_str).unwrap_or("—"),Role::Text,false,(id,2));
+                                    crate::table::registry_actions(row,cells[3],|actions|{
                                         if crate::button::action(actions,"추가",theme::ButtonRole::Standard,
                                             writable&&!busy&&!assigned.contains_key(id)).clicked(){
                                             if let Some(ids)=self.draft[&self.selected]["productIds"].as_array_mut(){
@@ -394,16 +341,16 @@ impl ModelGroupManager {
                             right.label(typography::caption(&format!("이전 대표색상: {} · 대표모델 재지정 필요",text(&g,"representativeColor"))));
                         }
                         let body_height=(right.available_height()-theme::FAMILY_FOOTER_HEIGHT-theme::MANAGEMENT_TABLE_HEADER_HEIGHT).max(1.0);
-                        let rect=Self::table(right,("model-group-registered-products",self.selected.clone()),
+                        let rect=crate::table::registry_table(right,("model-group-registered-products",self.selected.clone()),
                             ["상품명","상세 정보","대표모델","관리"],[140.0,100.0,96.0,176.0],
                             body_height,ids.len(),|_|false,|row,cells,i,_|{
                                 let id=ids[i];
                                 let p=products.get(id).copied();
                                 let rep=text(&g,"representativeProductId")==id;
-                                Self::cell(row,cells[0],p.map(|p|text(p,"name")).unwrap_or("확인할 상품"),Role::ProductName,false,(id,0));
-                                Self::cell(row,cells[1],p.map(|p|text(p,"subtitle")).unwrap_or(""),Role::Description,false,(id,1));
-                                Self::cell(row,cells[2],if rep{"대표모델"}else{"—"},Role::Status,true,(id,2));
-                                Self::actions(row,cells[3],|actions|{
+                                crate::table::registry_cell(row,cells[0],p.map(|p|text(p,"name")).unwrap_or("확인할 상품"),Role::ProductName,false,(id,0));
+                                crate::table::registry_cell(row,cells[1],p.map(|p|text(p,"subtitle")).unwrap_or(""),Role::Description,false,(id,1));
+                                crate::table::registry_cell(row,cells[2],if rep{"대표모델"}else{"—"},Role::Status,true,(id,2));
+                                crate::table::registry_actions(row,cells[3],|actions|{
                                     if crate::button::action(actions,"제외",theme::ButtonRole::Standard,writable&&!busy).clicked(){
                                         let values=items(&self.draft[&self.selected]["productIds"]).iter()
                                             .filter(|v|v.as_str()!=Some(id)).cloned().collect::<Vec<_>>();
@@ -538,12 +485,11 @@ mod responsiveness_tests{
     #[test]
     fn model_group_tables_share_fixed_rows_and_independent_columns(){
         let source=include_str!("model_group_manager.rs");
-        let body=source.split("    fn table<const N:usize>(").nth(1).unwrap()
+        let body=source.split("    pub fn show_page(").nth(1).unwrap()
             .split("    pub fn show_dialogs(").next().unwrap();
-        assert!(body.contains("crate::table::header_columns("));
-        assert!(body.contains("crate::table::fixed_rows("));
-        assert!(body.contains("crate::table::fixed_row("));
-        assert!(body.contains("crate::table::paint_management_text_cell("));
+        assert!(body.contains("crate::table::registry_table("));
+        assert!(body.contains("crate::table::registry_cell("));
+        assert!(body.contains("crate::table::registry_actions("));
         assert!(body.contains("[\"모델군\",\"대표모델\",\"상품 수\"]"));
         assert!(body.contains("[\"상품명\",\"상세 정보\",\"대표모델\",\"관리\"]"));
         assert!(body.contains("[\"상품명\",\"상세 정보\",\"소속 모델군\",\"추가\"]"));
