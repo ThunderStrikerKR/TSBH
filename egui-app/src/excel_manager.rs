@@ -736,7 +736,7 @@ impl ExcelManager{
                                 line.label(typography::field_label(&format!("{} / {}행 / {}",
                                     text(row,"filename"),row["row"],text(row,"name"))));
                                 if text(row,"issue").contains("충돌")&&!text(row,"shipmentId").is_empty(){
-                                    if crate::button::action(line,"이전 보류 회신 처리",theme::ButtonRole::Standard,
+                                    if crate::button::action(line,"충돌 검토",theme::ButtonRole::Standard,
                                         writable_snapshot&&self.gateway.excel_write_enabled()).clicked(){selected=Some(row.clone());}
                                 }
                             });

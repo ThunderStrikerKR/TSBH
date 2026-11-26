@@ -231,9 +231,6 @@ fn connect(input:&Value,source:&Value,approve:bool,context:&Value)->Result<Value
             continue;
         };
         let ship=rows(field(&next,"workflow"),"shipments")[shipment_pos].clone();
-        let queue=candidates.iter().find(|q|s(q,"shipmentId")==shipment_id)
-            .ok_or("회신 목록의 배송 건이 없습니다.")?;
-        let recipient=field(field(queue,"snapshot"),"recipient");
         reply["rows"][index]["shipmentId"]=json!(shipment_id);
         reply["rows"][index]["orderId"]=field(&ship,"orderId").clone();
         if !claimed.insert(shipment_id.clone()){
@@ -245,13 +242,7 @@ fn connect(input:&Value,source:&Value,approve:bool,context:&Value)->Result<Value
             continue
         }
         let prev_tracking=s(field(&ship,"tracking"),"FACTORY");
-        let prev_actual=actual(&ship,recipient);
         let wanted=field(&current,"actual");
-        if !prev_tracking.is_empty() && prev_tracking==s(&current,"tracking")
-            && !prev_actual.is_null() && &prev_actual==wanted{
-            reply["rows"][index]["applied"]=json!(true);
-            continue
-        }
         // A uniquely matched valid reply updates the two cost-side fields.
         // A differing prior value is audit evidence, not an approval gate.
         // recordActualFreight() only accepts an existing origin of the original
@@ -265,10 +256,13 @@ fn connect(input:&Value,source:&Value,approve:bool,context:&Value)->Result<Value
         if !rows(original_recipient,"items").iter().any(|i|s(i,"origin")=="FACTORY"){
             return Err("실제 출고지와 배송 건을 확인하세요.".into())
         }
-        // TS connectFactoryReply checks collisions against the archived queue
-        // recipient, BUT recordActualFreight reads the current order recipient.
-        // Its audit and no-op rule must keep that distinction.
+        // Read the current effective cost, never the frozen export note.
         let order_actual=actual(&ship,original_recipient);
+        let prev_actual=order_actual.clone();
+        if !prev_tracking.is_empty()&&prev_tracking==s(&current,"tracking")&&prev_actual==*wanted{
+            reply["rows"][index]["applied"]=json!(true);
+            continue
+        }
         let changed_freight=order_actual!=*wanted;
         if changed_freight{
             let at=s(context,"freightAt");
@@ -529,6 +523,13 @@ fn held_row<'a>(state:&'a Value,payload:&Value)->Result<(&'a Value,&'a Value),St
     if resolved_row(state,record,row){return Err("이미 정정된 회신 행입니다.".into());}
     Ok((record,row))
 }
+fn reply_row_with_date(record:&Value,row:&Value)->Value{
+    let mut row=row.clone();
+    if business_day(s(&row,"matchDate")).is_none(){
+        row["matchDate"]=field(record,"businessDate").clone();
+    }
+    row
+}
 fn ambiguity_candidates(state:&Value,row:&Value)->Vec<Value>{
     if !ambiguous(row){return Vec::new();}
     let index=queue_match_index(state);
@@ -543,13 +544,9 @@ fn ambiguity_candidates(state:&Value,row:&Value)->Vec<Value>{
         let recipient=field(field(q,"snapshot"),"recipient");
         let tracking=s(field(&ship,"tracking"),"FACTORY");
         let old=actual(&ship,recipient);
-        // An ambiguity selection is not approval to overwrite previous
-        // evidence. Existing matching evidence may be acknowledged only.
+        // Exported factory queue membership already establishes eligibility.
+        // Selecting the target resolves ambiguity, not a second fee approval.
         let eligible=!ships.conflicts(id,s(row,"tracking"))
-            && (tracking.is_empty()||tracking==s(row,"tracking"))
-            && (old.is_null()||old==*field(row,"actual"))
-            && field(&ship,"transferred")==&Value::Bool(true)
-            && field(&ship,"step").as_i64()==Some(4)
             && field(&ship,"legacyArchived")!=&Value::Bool(true);
         let export=rows(state,"exports").iter().find(|e|
             !s(q,"exportId").is_empty()&&s(e,"id")==s(q,"exportId"));
@@ -588,7 +585,7 @@ pub(crate) fn factory_correction_order_scope(state:&Value,payload:&Value)->Resul
     let source=rows(record,"rows").iter().find(|r|r["row"]==payload["rowNumber"])
         .ok_or("원본 회신 행 누락")?;
     let target=if ambiguous(source){
-        let candidate=selected_ambiguity(state,payload,source)?;
+        let candidate=selected_ambiguity(state,payload,&reply_row_with_date(record,source))?;
         s(&candidate,"shipmentId").to_owned()
     }else{s(source,"shipmentId").to_owned()};
     let ship=rows(field(state,"workflow"),"shipments").iter()
@@ -606,8 +603,8 @@ fn conflict_confirmation_for_state(state:&Value,payload:&Value)->Result<Value,St
         field(row,"row").as_i64()==Some(row_num)))
         .ok_or("승인 가능한 회신 충돌 행을 찾지 못했습니다.")?;
     if ambiguous(row){
-        let (_,row)=held_row(state,payload)?;
-        let candidate=selected_ambiguity(state,payload,row)?;
+        let (record,row)=held_row(state,payload)?;
+        let candidate=selected_ambiguity(state,payload,&reply_row_with_date(record,row))?;
         let message=format!("{}행 / {}\n출력: {} / {}행\n출력일: {}\n품목: {}\n배송 건: {}\n회신: {} / 운임 {}\n선택한 출력 이력을 확인했으며 이 배송 건에만 연결할까요?",
             row_num,s(row,"name"),s(&candidate,"filename"),
             field(&candidate,"exportRow").as_u64().map(|n|n.to_string()).unwrap_or_else(||"미확인".into()),
@@ -673,9 +670,9 @@ pub(crate) fn approve_factory_conflict_for_state(state:&Value,payload:&Value)->R
     if correction.is_empty()||is_duplicate(state,correction){return Err("회신 정정 ID 오류".into())}
     let selection=ambiguous(source);
     let target=if selection{
-        s(&selected_ambiguity(state,payload,source)?,"shipmentId").to_owned()
+        s(&selected_ambiguity(state,payload,&reply_row_with_date(original,source))?,"shipmentId").to_owned()
     }else{s(source,"shipmentId").to_owned()};
-    let mut clean=source.clone();
+    let mut clean=reply_row_with_date(original,source);
     for k in ["issue","applied","shipmentId","orderId"]{
         clean.as_object_mut().ok_or("회신 행 형식 오류")?.remove(k);
     }
@@ -705,8 +702,8 @@ pub(super) fn execute(operation:&str,payload:&Value)->Result<Value,String>{
         "factory_reply_review_statuses"=>review_list(payload),
         "factory_reply_candidates"=>{
             let state=payload.get("state").ok_or("공장 회신 상태 누락")?;
-            let (_,row)=held_row(state,payload)?;
-            Ok(json!({"candidates":ambiguity_candidates(state,row)}))
+            let (record,row)=held_row(state,payload)?;
+            Ok(json!({"candidates":ambiguity_candidates(state,&reply_row_with_date(record,row))}))
         },
         "factory_conflict_confirmation"=>conflict_confirmation(payload),
         "approve_factory_conflict"=>approve_conflict(payload),
@@ -1150,7 +1147,7 @@ mod ambiguity_selection_tests{
         let row=&state["factoryReplies"][0]["rows"][0];
         let candidates=ambiguity_candidates(&state,row);
         assert_eq!(candidates.len(),2);
-        assert_eq!(candidates[0]["eligible"],false);
+        assert_eq!(candidates[0]["eligible"],true);
         assert_eq!(candidates[1]["eligible"],true);
         review["confirmedText"]=conflict_confirmation_for_state(&state,&review).unwrap()["text"].clone();
         let next=approve_factory_conflict_for_state(&state,&review).unwrap();
