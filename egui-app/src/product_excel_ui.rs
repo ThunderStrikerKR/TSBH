@@ -206,34 +206,24 @@ impl ProductExcelUi {
             crate::floating_notice::Tone::Error,
             if self.review.is_none(){self.error.as_deref()}else{None}
         );
-        crate::overlay::show_menu(trigger,Some(egui::RectAlign::BOTTOM_END),|menu|{
-            let width=300.0_f32.min(
-                    (menu.ctx().content_rect().width()-theme::SPACE_24).max(1.0)
-                );
-                menu.set_min_width(width);
-                menu.set_max_width(width);
-                menu.spacing_mut().item_spacing.y=theme::SPACE_4;
+        crate::popup::show_management_menu(
+            trigger,Some(egui::RectAlign::BOTTOM_END),crate::popup::ManagementMenuRole::Workbook,|menu|{
                 let enabled=!self.busy()&&allowed;
-                if crate::button::action(
-                    menu,if self.client{"현재 거래처 전체 Excel 다운로드"}else{"현재 상품 전체 Excel 다운로드"},
-                    theme::ButtonRole::Standard,enabled
-                ).clicked(){
+                menu.workbook_action(
+                    if self.client{"현재 거래처 전체 Excel 다운로드"}else{"현재 상품 전체 Excel 다운로드"},
+                    enabled,|ctx|{
+                        let native=Arc::clone(&gateway);
+                        crate::floating_notice::dropdown_option_selected(ctx);
+                        let client=self.client;
+                        self.start(ctx,move||export_file(native.as_ref(),client));
+                    }
+                );
+                menu.workbook_action("Excel 업로드 / 전체 변경 검토",enabled,|ctx|{
                     let native=Arc::clone(&gateway);
-                    crate::floating_notice::dropdown_option_selected(menu.ctx());
+                    crate::floating_notice::dropdown_option_selected(ctx);
                     let client=self.client;
-                    self.start(menu.ctx(),move||export_file(native.as_ref(),client));
-                    menu.close();
-                }
-                if crate::button::action(
-                    menu,"Excel 업로드 / 전체 변경 검토",
-                    theme::ButtonRole::Standard,enabled
-                ).clicked(){
-                    let native=Arc::clone(&gateway);
-                    crate::floating_notice::dropdown_option_selected(menu.ctx());
-                    let client=self.client;
-                    self.start(menu.ctx(),move||preview_file(native.as_ref(),client));
-                    menu.close();
-                }
+                    self.start(ctx,move||preview_file(native.as_ref(),client));
+                });
                 // Keep popup height identical before, during and after
                 // a native Excel job. Both actions already reflect busy
                 // state through their enabled flag; no conditional row.

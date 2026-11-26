@@ -1903,12 +1903,12 @@ impl ProductManager {
         // own only their internal 8pt row gaps, not the structural gap.
         crate::popup::modal_master_controlled_spacing(ui);
         ui.scope(|group|{
-            group.spacing_mut().item_spacing.y=theme::SPACING;
+            crate::popup::modal_form_row_spacing(group);
             Self::detail_overview_column(group,draft,brands,categories,category_nodes,editable,busy);
         });
         crate::ui_primitives::section_divider(ui);
         ui.scope(|group|{
-            group.spacing_mut().item_spacing.y=theme::SPACING;
+            crate::popup::modal_form_row_spacing(group);
             Self::detail_price_column(group,draft,prices,editable,busy);
         });
     }
@@ -2060,7 +2060,7 @@ impl ProductManager {
                             .id_salt("product-detail-advanced")
                             .default_open(false)
                             .show(body,|advanced|{
-                                advanced.spacing_mut().item_spacing.y=theme::SPACING;
+                                crate::popup::modal_form_row_spacing(advanced);
                                 // Reserve the longest label using the shared font
                                 // metrics, and use that width for every advanced row.
                                 let label_width=typography::field_label_galley(

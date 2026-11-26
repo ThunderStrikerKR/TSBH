@@ -9782,7 +9782,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
             floating_notice::section(ui.ctx(),"reception.workflow.read",ui.clip_rect());
             // A continuous order-card list needs the same 10pt solid
             // scrollbar that management lists use, never a floating thumb.
-            ui.spacing_mut().scroll=crate::scrollbar::management_table_scroll_style();
+            crate::scrollbar::apply_management_scroll_role(ui,crate::scrollbar::ManagementScrollRole::Table);
             crate::scrollbar::scroll_area(crate::scrollbar::ScrollAxes::Vertical)
                 .scroll_bar_visibility(
                     egui::containers::scroll_area::ScrollBarVisibility::VisibleWhenNeeded

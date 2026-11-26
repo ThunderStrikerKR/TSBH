@@ -1218,7 +1218,7 @@ impl OrderHistoryManager {
 
     pub fn show_page(&mut self,ui:&mut Ui){
         let page_origin_y=ui.cursor().top();
-        ui.spacing_mut().scroll=crate::scrollbar::management_scroll_style();
+        crate::scrollbar::apply_management_scroll_role(ui,crate::scrollbar::ManagementScrollRole::Standard);
         self.poll_memo_save(ui.ctx().clone());
         self.poll();
         crate::ui_layout::management_page_title_top_gap(ui);

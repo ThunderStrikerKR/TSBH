@@ -560,7 +560,7 @@ impl SettingsView{
         if self.tab==SettingsTab::Basic{
             self.show_basic(ui,editable,Arc::clone(&gateway));
         }else{
-            ui.spacing_mut().scroll=crate::scrollbar::management_scroll_style();
+            crate::scrollbar::apply_management_scroll_role(ui,crate::scrollbar::ManagementScrollRole::Standard);
             crate::scrollbar::scroll_area(crate::scrollbar::ScrollAxes::Vertical)
                 .id_salt(("settings-view",self.tab.label()))
                 .auto_shrink([false,false])
@@ -742,7 +742,7 @@ impl SettingsView{
                         theme::SETTINGS_ACCOUNT_LIST_MIN_HEIGHT,
                         theme::SETTINGS_ACCOUNT_LIST_MAX_HEIGHT
                     );
-                    form.spacing_mut().scroll=crate::scrollbar::management_scroll_style();
+                    crate::scrollbar::apply_management_scroll_role(form,crate::scrollbar::ManagementScrollRole::Standard);
                     let _account_viewport=crate::scrollbar::scroll_area(crate::scrollbar::ScrollAxes::Vertical)
                         .id_salt("settings-bank-account-list")
                         .max_height(list_height)
@@ -1058,7 +1058,7 @@ impl SettingsView{
                     if workspace.header("접수 원문 감사 보관함","닫기",true
                     ){self.archive_open=false;}
                     workspace.body_region(|ui|{
-                        ui.spacing_mut().scroll=crate::scrollbar::management_scroll_style();
+                        crate::scrollbar::apply_management_scroll_role(ui,crate::scrollbar::ManagementScrollRole::Standard);
                         let search_width=ui.available_width();
                         crate::input::management_search_field(
                             ui,&mut self.archive_query,search_width,

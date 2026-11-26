@@ -34,6 +34,17 @@ pub(crate) fn management_table_scroll_style()->egui::style::ScrollStyle{
     style
 }
 
+/// Screens select a scroll role, not its rail properties. The native style
+/// remains owned by this module and the existing table constructors.
+#[derive(Clone,Copy)]
+pub(crate) enum ManagementScrollRole{Standard,Table}
+pub(crate) fn apply_management_scroll_role(ui:&mut Ui,role:ManagementScrollRole){
+    ui.spacing_mut().scroll=match role{
+        ManagementScrollRole::Standard=>management_scroll_style(),
+        ManagementScrollRole::Table=>management_table_scroll_style(),
+    };
+}
+
 /// CONFLICT-004=A: use the remaining inner height of a SINGLE-list card,
 /// not a fixed fraction of the whole application's content rectangle.
 /// Measure AFTER toolbars, notices and the pinned header have been laid out.

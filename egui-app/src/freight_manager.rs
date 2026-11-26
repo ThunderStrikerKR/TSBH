@@ -791,7 +791,7 @@ impl FreightManager {
         let page_origin_y=ui.cursor().top();
         // Non-floating, always legible scrollbar geometry for every freight
         // management tab. This is scoped to the freight page, not global nav.
-        ui.spacing_mut().scroll=crate::scrollbar::management_scroll_style();
+        crate::scrollbar::apply_management_scroll_role(ui,crate::scrollbar::ManagementScrollRole::Standard);
         self.poll(ui.ctx().clone());
         crate::floating_notice::sync(
             ui.ctx(),"freight.result","freight.action",

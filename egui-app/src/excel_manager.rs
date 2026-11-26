@@ -835,7 +835,7 @@ impl ExcelManager{
         // Also consume worker results when this page is hosted independently.
         self.poll(ui.ctx());
         let page_origin_y=ui.cursor().top();
-        ui.spacing_mut().scroll=crate::scrollbar::management_scroll_style();
+        crate::scrollbar::apply_management_scroll_role(ui,crate::scrollbar::ManagementScrollRole::Standard);
         if self.reply_refresh_pending&&self.operation.is_none()&&!self.refresh_job.pending(){
             self.refresh(ui.ctx().clone());
         }

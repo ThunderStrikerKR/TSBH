@@ -840,6 +840,22 @@ pub(crate) fn modal_form_stack<R>(
     }).inner
 }
 
+/// Common compact form row rhythm; no screen-supplied numeric gap.
+pub(crate) fn modal_form_row_spacing(ui:&mut Ui){
+    ui.spacing_mut().item_spacing.y=theme::SPACING;
+}
+
+/// Full-width compact label/input pair, used by dense record editors.
+pub(crate) fn modal_compact_text_field(
+    ui:&mut Ui,label:&str,value:&mut String,hint:&str
+)->Response{
+    ui.vertical(|field|{
+        field.spacing_mut().item_spacing.y=theme::SPACE_4;
+        field.label(typography::field_label(label));
+        crate::input::flexible_text_field(field,value,field.available_width(),hint)
+    }).inner
+}
+
 /// Identical label, spacing and input sizing for create/rename/memo forms.
 pub(crate) fn modal_named_text_field(
     ui:&mut Ui,label:&str,value:&mut String,hint:&str,enabled:bool
@@ -858,7 +874,7 @@ pub(crate) fn modal_named_text_field(
 /// A management menu exposes content roles, not its raw UI or style.
 /// Native popup ownership and outside-click behavior stay in overlay.
 #[derive(Clone,Copy)]
-pub(crate) enum ManagementMenuRole{Actions,Details}
+pub(crate) enum ManagementMenuRole{Actions,Details,Workbook}
 pub(crate) struct ManagementMenu<'a>{ui:&'a mut Ui}
 impl ManagementMenu<'_>{
     fn action_with_role(&mut self,label:&str,role:theme::ButtonRole,enabled:bool)->bool{
@@ -871,6 +887,16 @@ impl ManagementMenu<'_>{
     }
     pub(crate) fn danger_action(&mut self,label:&str,enabled:bool)->bool{
         self.action_with_role(label,theme::ButtonRole::Danger,enabled)
+    }
+    /// Workbook actions keep the option-origin notification and native job
+    /// callback before closing the menu, without exposing its raw UI.
+    pub(crate) fn workbook_action(
+        &mut self,label:&str,enabled:bool,run:impl FnOnce(&egui::Context)
+    ){
+        if crate::button::action(self.ui,label,theme::ButtonRole::Standard,enabled).clicked(){
+            run(self.ui.ctx());
+            self.ui.close();
+        }
     }
     pub(crate) fn detail(&mut self,label:&str,value:&str){
         self.ui.label(typography::field_label(label));
@@ -890,8 +916,12 @@ pub(crate) fn show_management_menu<R>(
         let (width,gap)=match role{
             ManagementMenuRole::Actions=>(148.0,theme::SPACE_4),
             ManagementMenuRole::Details=>(280.0,theme::SPACING),
+            ManagementMenuRole::Workbook=>(300.0_f32.min(
+                (menu.ctx().content_rect().width()-theme::SPACE_24).max(1.0)
+            ),theme::SPACE_4),
         };
         menu.set_min_width(width);
+        if matches!(role,ManagementMenuRole::Workbook){menu.set_max_width(width);}
         menu.spacing_mut().item_spacing.y=gap;
         content(&mut ManagementMenu{ui:menu})
     })

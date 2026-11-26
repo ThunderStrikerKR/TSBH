@@ -1277,6 +1277,20 @@ export function auditManagedLayout(source,file){
         hits.push({line:tokens[j].line,rule:"managed layout override: "+v[j+1]+"; use a shared role"});
     }
   }
+  // Native scrollbar style is assigned only by owning infrastructure.
+  if(!["scrollbar/mod.rs","table/mod.rs","ui_layout.rs","theme.rs"].includes(file)&&
+      /\. spacing_mut \( \) \. scroll\b/.test(v.join(" ")))
+    hits.push({line:1,rule:"direct scrollbar style override; choose a common scroll role"});
+  // Migrated record editor and workbook menu roles are owned by popup.
+  // Limit the assertions to the migrated functions, not all screen layout.
+  const code=v.join(" ");
+  if(file==="product_excel_ui.rs"&&(!code.includes("ManagementMenuRole :: Workbook")||
+      /menu \. (?:set_min_width|set_max_width|spacing_mut) \(/.test(code)))
+    hits.push({line:1,rule:"workbook menu must use the shared popup role"});
+  if(file==="client_manager.rs"&&!code.includes("popup :: modal_compact_text_field ("))
+    hits.push({line:1,rule:"client label editor must use shared compact field"});
+  if(file==="product_manager.rs"&&/\b(?:group|advanced) \. spacing_mut \( \) \. item_spacing \. y/.test(code))
+    hits.push({line:1,rule:"product detail group spacing belongs to popup"});
   // The freight migration is explicit: don't allow a screen to swap the
   // typed wrappers back to the old raw callback APIs.
   if(file==="freight_manager.rs"){
@@ -1297,6 +1311,8 @@ function managedLayoutSelfTest(){
   assert.equal(audit("fn show(){modal_form_stack(ui,|form|{form.named_text_field(a,b,c,d);});ui.add_space(4.0);}").length,0);
   assert.equal(audit("fn show(){modal_form_stack(ui,|form|{/* ui.add_space(4.0); */form.named_text_field(a,b,c,d);});}").length,0);
   assert.equal(auditManagedLayout("fn show(){show_menu(a,b,c);}","freight_manager.rs").length,2);
+  assert.equal(audit("fn show(){ui.spacing_mut().scroll=custom;}").length,1);
+  assert.equal(audit("fn show(){crate::scrollbar::apply_management_scroll_role(ui,role);}").length,0);
 }
 
 function main(){

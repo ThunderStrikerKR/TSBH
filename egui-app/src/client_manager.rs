@@ -49,18 +49,10 @@ fn client_account_choices(accounts:&[Value])->Vec<(String,String)>{
     choices
 }
 fn label_edit(ui:&mut Ui,draft:&mut Value,key:&str,label:&str) {
-    ui.vertical(|ui|{
-        // React client-editor fields use a compact label/control gap;
-        // keep the shared body typeface and standard 36pt field height.
-        ui.spacing_mut().item_spacing.y=theme::SPACE_4;
-        ui.label(typography::field_label(label));
-        let mut input=field(draft,key).to_owned();
-        if crate::input::flexible_text_field(
-            ui,&mut input,ui.available_width(),""
-        ).changed() {
-            draft[key]=json!(input);
-        }
-    });
+    let mut input=field(draft,key).to_owned();
+    if crate::popup::modal_compact_text_field(ui,label,&mut input,"").changed(){
+        draft[key]=json!(input);
+    }
 }
 fn bool_edit(ui:&mut Ui,draft:&mut Value,key:&str,title:&str) {
     let mut selected=draft.get(key).and_then(Value::as_bool).unwrap_or(false);
@@ -351,7 +343,7 @@ impl ClientManager {
         );
         // The client directory uses the same always-readable 10pt solid
         // scrollbar track as the approved Freight Assignment screen.
-        ui.spacing_mut().scroll=crate::scrollbar::management_scroll_style();
+        crate::scrollbar::apply_management_scroll_role(ui,crate::scrollbar::ManagementScrollRole::Standard);
         crate::ui_layout::management_page_title_top_gap(ui);
         // The four actual client tiers fill the same four KPI slots as
         // Freight > Shipping Group Assignment. These counts intentionally

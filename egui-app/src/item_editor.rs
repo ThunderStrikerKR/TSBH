@@ -146,7 +146,7 @@ impl ItemEditor{
         busy:bool,edited:bool,align_height:Option<f32>
     ){
         let top=ui.cursor().top();
-        ui.spacing_mut().item_spacing.y=theme::SPACE_8;
+        crate::popup::modal_form_row_spacing(ui);
         crate::popup::modal_labeled_row(ui,"상품명",|row|{
             row.label(typography::subsection_heading(name));
         });
