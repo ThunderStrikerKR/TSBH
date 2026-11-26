@@ -137,7 +137,7 @@ type Saved=Receiver<Result<Value,String>>;
 
 pub struct AutomaticMessageManager {
     pub section:Section,
-    tab_snapshots:crate::navigation::NavigationSnapshots<2>,
+    tab_snapshots:crate::view_state::NavigationSnapshots<2>,
     selected:usize,
     selected_product:String,
     product_search:String,
@@ -226,7 +226,7 @@ impl AutomaticMessageManager {
             Ok((settings,catalog))
         });
         Self{
-            section:Section::General,tab_snapshots:crate::navigation::NavigationSnapshots::new(0),selected:TEMPLATES.iter()
+            section:Section::General,tab_snapshots:crate::view_state::NavigationSnapshots::new(0),selected:TEMPLATES.iter()
                 .position(|def|def.id=="colorDefault").unwrap_or(0),
             selected_product:String::new(),product_search:String::new(),
             settings:Value::Null,products:Vec::new(),product_cache:Default::default(),loading,
@@ -294,7 +294,7 @@ impl AutomaticMessageManager {
     }
     pub(crate) fn reset_navigation(&mut self){
         if self.dirty()||self.busy(){return;}
-        self.section=Section::General;self.tab_snapshots=crate::navigation::NavigationSnapshots::new(0);
+        self.section=Section::General;self.tab_snapshots=crate::view_state::NavigationSnapshots::new(0);
         self.selected=TEMPLATES.iter().position(|def|def.id=="colorDefault").unwrap_or(0);
         self.selected_product.clear();self.product_search.clear();
     }
