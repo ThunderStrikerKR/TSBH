@@ -688,18 +688,8 @@ fn reconcile_inner(payload:&Value,order_scope:Option<&str>,scoped_seed:Option<&s
             let manual_amounts=origins.iter().map(|origin|
                 super::manual_freight(&recipient,origin))
                 .collect::<Result<Vec<_>,_>>()?;
-            let has_manual_amount=manual_amounts.iter().any(Option::is_some);
-            let cleared_override=overrides.is_object() && !has_manual_amount &&
-                origins.iter().all(|origin|field(overrides,origin).is_null());
-            // Draft editing stores null for a cleared override. The native
-            // reception quote treats null as automatic, not a manual blank.
-            // Keep the same contract when projecting the working shipment.
-            // Existing frozen MANUAL shipments retain their historical blank.
-            if cleared_override && !frozen {
-                set(&mut state["workflow"]["shipments"][si],"chargeMode",json!("AUTO"))?;
-            }
             let automatic=str_field(&state["workflow"]["shipments"][si],"chargeMode")=="AUTO";
-            if reassigned || (!frozen && overrides.is_object()) {
+            if reassigned || (!frozen && (overrides.is_object() || automatic)) {
                 // A legacy MANUAL shipment may predate recipient overrides.
                 // Preserve its explicit amounts when no override map exists.
                 let legacy_manual=!automatic && !has_value(overrides);
@@ -712,31 +702,24 @@ fn reconcile_inner(payload:&Value,order_scope:Option<&str>,scoped_seed:Option<&s
                         manual=true;
                         json!(value)
                     }else{
-                        rows(field(&reco,"bundles")).iter()
-                            .find(|b|str_field(b,"origin")==origin)
-                            .map(|b|b.get("baseRecommendation")
-                                .unwrap_or_else(||field(b,"recommendation")))
-                            .cloned().unwrap_or(Value::Null)
+                        super::shipping::base_recommendation(&reco,origin)
                     };
                     set(&mut charges,origin,value)?;
                 }
                 set(&mut state["workflow"]["shipments"][si],"chargeMode",
                     json!(if manual{"MANUAL"}else{"AUTO"}))?;
-            } else if has_value(overrides) && !(cleared_override && automatic) {
-                set(&mut state["workflow"]["shipments"][si],"chargeMode",json!("MANUAL"))?;
-                for origin in &origins {
-                    let v=field(overrides,origin);
-                    set(&mut charges,origin,v.clone())?;
+            } else if overrides.is_object() {
+                // A frozen automatic amount is held by the shipment, not
+                // the override map. A missing override must not erase it.
+                let mut manual=false;
+                for (origin,amount) in origins.iter().zip(manual_amounts){
+                    if let Some(amount)=amount{
+                        manual=true;
+                        set(&mut charges,origin,json!(amount))?;
+                    }
                 }
-            } else if automatic && !frozen {
-                for origin in &origins {
-                    let v=rows(field(&reco,"bundles")).iter()
-                        .find(|b|str_field(b,"origin")==origin)
-                        .map(|b|b.get("baseRecommendation")
-                            .unwrap_or_else(||field(b,"recommendation")))
-                        .unwrap_or(&Value::Null);
-                    set(&mut charges,origin,v.clone())?;
-                }
+                set(&mut state["workflow"]["shipments"][si],"chargeMode",
+                    json!(if manual{"MANUAL"}else{"AUTO"}))?;
             }
             if flag(&client,"shippingFeeExcluded") {
                 for origin in &origins {set(&mut charges,origin,json!(0))?;}
