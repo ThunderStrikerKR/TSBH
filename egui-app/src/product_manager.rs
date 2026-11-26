@@ -2131,7 +2131,7 @@ impl ProductManager {
                                         let entries=history.iter().rev()
                                             .map(price_history_row).collect::<Vec<_>>();
                                         let height=entries.len().min(5) as f32*
-                                            (theme::MANAGEMENT_COMPACT_ROW_HEIGHT+theme::SOFT_DIVIDER_WIDTH);
+                                            theme::MANAGEMENT_COMPACT_ROW_HEIGHT;
                                         crate::table::management_readonly_table(
                                             advanced,"product-price-history",
                                             &["변경일시","항목","이전값","변경값","수정 경로"],
