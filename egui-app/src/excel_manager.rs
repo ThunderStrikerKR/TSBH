@@ -650,7 +650,8 @@ impl ExcelManager{
 
     fn task(&mut self,action:&str,ctx:egui::Context,
         work:impl FnOnce(Arc<dyn BandoGateway>)->Result<Value,String>+Send+'static){
-        if self.operation.is_some()||self.receiver.is_some()||self.snapshot_stale{return}
+        if self.operation.is_some()||self.receiver.is_some()||
+            (self.snapshot_stale&&!matches!(action,"file"|"folder")){return}
         crate::floating_notice::dispatch_pointer(&ctx,"excel.action");
         let (sender,receiver)=mpsc::channel();
         self.operation=Some(receiver);self.operation_name=Some(action.into());
