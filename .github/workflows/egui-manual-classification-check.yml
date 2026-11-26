@@ -112,12 +112,15 @@ jobs:
       - name: Category navigation and common breadcrumb geometry
         run: cargo test --manifest-path egui-app/Cargo.toml category_dropdown::tests -- --nocapture
       - name: Category management layout and navigation
-        run: cargo test --manifest-path egui-app/Cargo.toml category_manager:: -- --nocapture
+        run: |
+          cargo test --manifest-path egui-app/Cargo.toml category_manager:: -- --nocapture
       - name: Model group registry and editor
-        run: cargo test --manifest-path egui-app/Cargo.toml model_group_manager:: -- --nocapture
+        run: |
+          cargo test --manifest-path egui-app/Cargo.toml model_group_manager:: -- --nocapture
       - name: Brand modal lifecycle
         run: cargo test --manifest-path egui-app/Cargo.toml brand_manager::modal_lifecycle_tests -- --nocapture
       - name: Alias registry, picker and editor
-        run: cargo test --manifest-path egui-app/Cargo.toml alias_manager:: -- --nocapture
+        run: |
+          cargo test --manifest-path egui-app/Cargo.toml alias_manager:: -- --nocapture
       - name: Shared table renderer geometry
         run: cargo test --manifest-path egui-app/Cargo.toml table::regression_tests -- --nocapture
