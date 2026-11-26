@@ -281,6 +281,15 @@ pub(super) fn reception_quote(payload:&Value)->Result<Value,String>{
 }
 
 fn finish_reception_quote(mut order:Value,state:&Value,client:&Value)->Result<Value,String>{
+    // Drafts inherit the selected dealer's default. An explicit recipient
+    // override always wins. Store the resolved default for the UI and the
+    // first-confirmation workflow; do not modify any confirmed order.
+    if let Some(default)=field(client,"defaultApplyVat").as_bool(){
+        set(&mut order,"applyVat",json!(default))?;
+        for row in order["recipients"].as_array_mut().ok_or("수취인 목록 오류")?{
+            set(row,"vatDefault",json!(default))?;
+        }
+    }
     let freight=super::shipping::reception_recommend_for_client(&order,state,client)?;
     let shipping=field(&freight,"total").clone();
     set(&mut order,"shippingFee",shipping)?;
@@ -438,6 +447,9 @@ impl ReceptionEditQuoteCache{
             else{freight_lines.iter().map(|line|safe(field(line,"billableCharge")))
                 .collect::<Option<Vec<_>>>().and_then(checked_sum)};
         let mut order=original.clone();
+        if let Some(default)=field(client,"defaultApplyVat").as_bool(){
+            set(&mut order,"applyVat",json!(default))?;
+        }
         set(&mut order,"recipients",json!(quoted_rows))?;
         set(&mut order,"shippingFee",json!(shipping_fee))?;
         set(&mut order,"shippingVersion",json!(format!("{prefix}{}]}}",versions.join(","))))?;
