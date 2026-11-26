@@ -2,7 +2,7 @@
 //! Saved data stays in settings.colorGuidanceGroups, never product/order rows.
 //! Rust catalog_clients::model_groups validates; Tauri settings_patch CAS saves.
 use crate::{catalog_query_bridge,gateway::BandoGateway, theme, typography};
-use crate::latest_job::LatestJob;
+use crate::screen_refresh::ReadRefresh;
 use eframe::egui::{self, Align, Context, Layout, Rect, Sense, Ui, UiBuilder, Vec2};
 use serde_json::{json, Value};
 use std::{
@@ -39,7 +39,7 @@ pub struct ModelGroupManager {
     leave_tab:Option<usize>,
     global_approved:bool,
     eligibility_snapshot:Option<Arc<Value>>,
-    eligibility:LatestJob<HashSet<String>>,
+    eligibility:ReadRefresh<HashSet<String>>,
     eligible:Arc<HashSet<String>>,
 }
 impl Default for ModelGroupManager{
@@ -49,7 +49,7 @@ impl Default for ModelGroupManager{
             query:String::new(),search:String::new(),status:String::new(),
             write:None,confirm:None,after_save:None,confirm_delete:false,
             leave_tab:None,global_approved:false,
-            eligibility_snapshot:None,eligibility:LatestJob::default(),eligible:Arc::default()}
+            eligibility_snapshot:None,eligibility:ReadRefresh::default(),eligible:Arc::default()}
     }
 }
 impl ModelGroupManager {
