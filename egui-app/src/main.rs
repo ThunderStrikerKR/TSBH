@@ -53,6 +53,7 @@ mod category_dropdown;
 mod alias_manager;
 mod latest_job;
 mod screen_refresh;
+mod view_state;
 mod brand_manager;
 mod model_group_manager;
 mod product_manager;
@@ -983,7 +984,7 @@ struct BandoEgui {
     brand_texture: Option<egui::TextureHandle>,
     gateway: Arc<dyn gateway::BandoGateway>,
     page: Page,
-    navigation_snapshots: navigation::NavigationSnapshots<8>,
+    navigation_snapshots: view_state::NavigationSnapshots<8>,
     layout: layout::LayoutState,
     window_state: window_state::Tracker,
     dragging_split: Option<HorizontalSplitDrag>,
@@ -1127,7 +1128,7 @@ impl BandoEgui {
             brand_texture: None,
             gateway: Arc::new(gateway::LocalGateway),
             page: Page::Reception,
-            navigation_snapshots:navigation::NavigationSnapshots::new(Page::Reception as usize),
+            navigation_snapshots:view_state::NavigationSnapshots::new(Page::Reception as usize),
             layout,
             window_state: window_state::Tracker::default(),
             dragging_split: None,
@@ -5615,6 +5616,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
     fn sync_navigation_snapshot(&mut self,ctx:&egui::Context,now:Instant){
         crate::scrollbar::sweep_snapshots(ctx,now);
         crate::category_dropdown::sweep_popup_states(ctx,now);
+        crate::view_state::sweep_focus(ctx,now);
         let previous=self.navigation_snapshots.active();
         if previous!=self.page as usize{
             match Page::ALL[previous]{
