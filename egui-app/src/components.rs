@@ -6812,6 +6812,13 @@ pub fn reception_item_origin_action_editable(
     selection
 }
 
+/// Paint a value-only one-touch surface from the same measured galley
+/// bounds used for the actual text. The surrounding row is only a clip,
+/// never the highlight target. Keep the common 4pt text/outline clearance.
+fn reception_total_value_rect(ink:Rect,row:Rect)->Rect{
+    ink.expand(theme::SPACE_4).intersect(row)
+}
+
 /// In the dedicated "발주서 합계" card, show the right-aligned total amount
 /// and the second line of shipment count / VAT without a duplicate "총 주문"
 /// caption or another border: the containing card owns its header and rule.
@@ -6824,61 +6831,71 @@ pub fn reception_total_footer(
     );
     #[cfg(test)]
     general_screen_geometry_tests::record("order total footer",rect);
-    // Both summary lines occupy fixed vertical centers. The containing
-    // order-total card already has the separating header line.
     let left = rect.left() + theme::SPACE_8;
     let right = rect.right() - theme::SPACE_8;
     let right_start = (right - 148.0).max(left + 50.0);
+    let review=crate::one_touch::stage(ui)==crate::one_touch::Stage::Review;
+    let value_color=if review{crate::one_touch::INK}else{theme::TEXT};
     let amount = total.map(display_money_number)
         .unwrap_or_else(||RECEPTION_MONEY_PENDING.to_owned());
     let first_amount = Rect::from_min_max(
-        egui::pos2(right_start, rect.top()), egui::pos2(right, rect.top() + 30.0),
+        egui::pos2(left-theme::SPACE_4,rect.top()),
+        egui::pos2(right+theme::SPACE_4,rect.top()+30.0),
     );
     let font=typography::data_value_font(
         typography::DataValueKind::Money,
         typography::DataValueContext::ReceptionTotal
     );
-    // The currency unit is always present and has a fixed right anchor.
-    // Pending, zero and calculated amounts only change the numeric galley.
-    if crate::one_touch::stage(ui)==crate::one_touch::Stage::Review{crate::one_touch::background(ui,first_amount);crate::one_touch::outline(ui,first_amount);}
     let painter=ui.painter().with_clip_rect(first_amount.intersect(ui.clip_rect()));
-    let unit=painter.layout_no_wrap("원".to_owned(),font.clone(),theme::TEXT);
+    let unit=painter.layout_no_wrap("원".to_owned(),font.clone(),value_color);
+    let number=painter.layout_no_wrap(amount,font,value_color);
+    // Preserve the fixed currency anchor and the shared number/unit gap.
+    // The actual text and its measured surface share one vertical center.
+    let center_y=first_amount.center().y;
     let unit_left=money_unit_left(right,0.0,unit.size().x);
-    let center_y=rect.top()+17.0;
-    painter.text(
-        egui::pos2(unit_left-RECEPTION_MONEY_UNIT_GAP,center_y),
-        egui::Align2::RIGHT_CENTER,&amount,font,theme::TEXT
-    );
-    painter.galley(egui::pos2(unit_left,center_y-unit.size().y/2.0),unit,theme::TEXT);
-    // A missing shipment count is unknown, not zero.
-    let count_text = count.map(|n| format!("배송 {n}건"))
-        .unwrap_or_else(|| "배송 건수 미확정".to_owned());
+    let unit_pos=egui::pos2(unit_left,center_y-unit.size().y/2.0);
+    let number_pos=egui::pos2(unit_left-RECEPTION_MONEY_UNIT_GAP-number.size().x,
+        center_y-number.size().y/2.0);
+    let amount_ink=Rect::from_min_size(number_pos,number.size())
+        .union(Rect::from_min_size(unit_pos,unit.size()));
+    let amount_highlight=reception_total_value_rect(amount_ink,first_amount);
+    if review{crate::one_touch::background(ui,amount_highlight);}
+    painter.galley(number_pos,number,value_color);
+    painter.galley(unit_pos,unit,value_color);
+    if review{crate::one_touch::outline(ui,amount_highlight);}
+
+    // A missing shipment count is unknown, not zero. Only the value,
+    // including the unit, participates in one-touch emphasis.
     let second_left = Rect::from_min_max(
         egui::pos2(left, rect.top() + 30.0),
         egui::pos2(right_start, rect.bottom()),
     );
-    if crate::one_touch::stage(ui)==crate::one_touch::Stage::Review{
-        let font=egui::FontId::proportional(typography::FONT_METADATA);
-        let prefix=ui.painter().layout_no_wrap("배송 ".into(),font.clone(),theme::SECONDARY).size().x;
-        if let Some(n)=count{
-            let width=ui.painter().layout_no_wrap(format!("{n}건"),font,theme::TEXT).size().x;
-            let value=Rect::from_min_size(egui::pos2(left+prefix-2.0,rect.top()+33.0),Vec2::new(width+4.0,20.0)).intersect(second_left);
-            crate::one_touch::background(ui,value);crate::one_touch::outline(ui,value);
-        }
+    let metadata_font=egui::FontId::proportional(typography::FONT_METADATA);
+    let count_painter=ui.painter().with_clip_rect(second_left.intersect(ui.clip_rect()));
+    let center_y=second_left.center().y;
+    if let Some(n)=count{
+        let prefix=count_painter.layout_no_wrap("배송".to_owned(),metadata_font.clone(),theme::SECONDARY);
+        let count_color=if review{crate::one_touch::INK}else{theme::SECONDARY};
+        let value=count_painter.layout_no_wrap(format!("{n}건"),metadata_font.clone(),count_color);
+        let prefix_pos=egui::pos2(left,center_y-prefix.size().y/2.0);
+        let value_pos=egui::pos2(left+prefix.size().x+theme::SPACE_8,center_y-value.size().y/2.0);
+        let value_ink=Rect::from_min_size(value_pos,value.size());
+        let count_highlight=reception_total_value_rect(value_ink,second_left);
+        if review{crate::one_touch::background(ui,count_highlight);}
+        count_painter.galley(prefix_pos,prefix,theme::SECONDARY);
+        count_painter.galley(value_pos,value,count_color);
+        if review{crate::one_touch::outline(ui,count_highlight);}
+    }else{
+        count_painter.text(egui::pos2(left,center_y),egui::Align2::LEFT_CENTER,
+            "배송 건수 미확정",metadata_font.clone(),theme::SECONDARY);
     }
-    ui.painter().with_clip_rect(second_left).text(
-        egui::pos2(left, rect.top() + 43.0), egui::Align2::LEFT_CENTER,
-        count_text, egui::FontId::proportional(typography::FONT_METADATA),
-        theme::SECONDARY,
-    );
     let second_right = Rect::from_min_max(
         egui::pos2(right_start, rect.top() + 30.0),
         egui::pos2(right, rect.bottom()),
     );
-    ui.painter().with_clip_rect(second_right).text(
-        egui::pos2(right, rect.top() + 43.0), egui::Align2::RIGHT_CENTER,
-        vat, egui::FontId::proportional(typography::FONT_METADATA),
-        theme::SECONDARY,
+    ui.painter().with_clip_rect(second_right.intersect(ui.clip_rect())).text(
+        egui::pos2(right, second_right.center().y), egui::Align2::RIGHT_CENTER,
+        vat, metadata_font, theme::SECONDARY,
     );
 }
 
@@ -8789,6 +8806,52 @@ mod money_live_format_tests{
             assert!((unit.x-amount.right()-RECEPTION_MONEY_UNIT_GAP).abs()<=1.0);
         }
         assert_eq!(display_won(-1234),"-1,234원");
+    }
+
+    #[test]
+    fn reception_total_review_highlights_follow_value_galleys_without_layout_drift(){
+        fn render(total:i64,count:usize,review:bool)->(Vec<(String,Rect)>,Vec<Rect>){
+            let ctx=test_context();
+            crate::one_touch::set(&ctx,if review{crate::one_touch::Stage::Review}
+                else{crate::one_touch::Stage::None},false);
+            let output=ctx.run(egui::RawInput::default(),|ctx|{
+                egui::CentralPanel::default().show(ctx,|ui|{
+                    ui.set_width(400.0);
+                    reception_total_footer(ui,Some(total),Some(count),"부가세 별도");
+                });
+            });
+            let mut text=Vec::new();
+            let mut highlights=Vec::new();
+            for shape in &output.shapes{
+                match &shape.shape{
+                    egui::Shape::Text(t)=>text.push((t.galley.text().to_owned(),
+                        Rect::from_min_size(t.pos,t.galley.size()))),
+                    egui::Shape::Rect(r) if r.stroke.color==theme::ONE_TOUCH_BORDER
+                        =>highlights.push(r.rect),
+                    _=>{}
+                }
+            }
+            (text,highlights)
+        }
+        for (total,count) in [(0,1),(3_775_000,12),(123_456_789,100)]{
+            let (normal,none)=render(total,count,false);
+            let (review,highlights)=render(total,count,true);
+            assert_eq!(normal,review,"hover must not move text");
+            assert!(none.is_empty());
+            assert_eq!(highlights.len(),2);
+            let bounds=|value:&str|review.iter().find(|(text,_)|text==value).unwrap().1;
+            let number=display_money_number(total);
+            let amount=bounds(&number).union(bounds("원"));
+            let count_value=bounds(&format!("{count}건"));
+            for (ink,frame) in [(amount,highlights[0]),(count_value,highlights[1])]{
+                assert!(frame.contains_rect(ink),"highlight must contain the entire value");
+                assert!((ink.left()-frame.left()-theme::SPACE_4).abs()<0.5);
+                assert!((frame.right()-ink.right()-theme::SPACE_4).abs()<0.5);
+                assert!((frame.center().y-ink.center().y).abs()<0.5);
+            }
+            assert!(highlights[1].left()>bounds("배송").right());
+            assert!(!highlights[1].intersects(bounds("부가세 별도")));
+        }
     }
 
     #[test]
