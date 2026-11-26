@@ -1406,30 +1406,30 @@ pub(crate) mod general_screen_geometry_tests {
         let finish=begin(page);
         let populated_pending=draw(page);
         assert!(!failed(page),"{name}: populated refresh must start without an error");
+        assert_visible_data_rows(name,&populated_pending,64);
         compare_data_state_geometry(name,"populated refresh pending",&populated,&populated_pending,true);
         finish(Err("합성 재조회 실패: 데이터 로딩 이후 오류".into()));
         let error=draw(page);
         assert!(failed(page),"{name}: refresh failure was not consumed");
-        compare_data_state_geometry(name,"refresh error",&empty,&error,true);
+        assert_visible_data_rows(name,&error,64);
+        compare_data_state_geometry(name,"refresh error",&populated,&error,true);
         let finish=begin(page);
         let retry=draw(page);
         assert!(!failed(page),"{name}: populated retry must clear failure");
-        compare_data_state_geometry(name,"populated retry pending",&empty,&retry,true);
-        // LatestJob (products) publishes caught worker panics as an Err
-        // rather than exposing an mpsc disconnect to the view. Its staged
-        // answer fixture has no sender-drop semantics.
-        if name=="products"{
-            finish(Err("조회 작업이 중단되었습니다.".into()));
-        }else{
-            drop(finish);
-        }
+        assert_visible_data_rows(name,&retry,64);
+        compare_data_state_geometry(name,"populated retry pending",&populated,&retry,true);
+        // The shared refresh fixture models an interrupted worker by
+        // dropping its completion, consistently across management tables.
+        drop(finish);
         let disconnected=draw(page);
         assert!(failed(page),"{name}: interrupted read was not consumed");
-        compare_data_state_geometry(name,"disconnected read",&empty,&disconnected,true);
+        assert_visible_data_rows(name,&disconnected,64);
+        compare_data_state_geometry(name,"disconnected read",&populated,&disconnected,true);
         let finish=begin(page);
         let reconnecting=draw(page);
         assert!(!failed(page),"{name}: reconnect must clear the old error");
-        compare_data_state_geometry(name,"reconnect pending",&empty,&reconnecting,true);
+        assert_visible_data_rows(name,&reconnecting,64);
+        compare_data_state_geometry(name,"reconnect pending",&populated,&reconnecting,true);
         finish(Ok(64));
         let recovered=draw(page);
         assert!(!failed(page),"{name}: retry did not clear failure");
