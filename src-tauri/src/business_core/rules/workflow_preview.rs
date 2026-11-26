@@ -104,19 +104,15 @@ pub(super) fn project(payload: &Value) -> Result<Value, String> {
                 .is_some_and(|client| flag(client, "shippingFeeExcluded"));
             let remote = super::remote_delivery::resolve_shipment(recipient,ship,order)?;
             let mut display_charges = serde_json::Map::new();
+            let mut billing_reasons = serde_json::Map::new();
             for item in rows(field(recipient, "items")) {
                 let origin = str_field(item, "origin");
                 if !["FACTORY", "STORE"].contains(&origin) { continue; }
-                let value = if freight_code == "020" || excluded {
-                    json!(0)
-                } else {
-                    let base=field(field(ship,"charges"),origin);
-                    if base.is_null() {Value::Null} else {
-                        super::remote_delivery::multiply_shipment(safe(base),recipient,ship,order)
-                            .map(|amount|json!(amount)).unwrap_or(Value::Null)
-                    }
-                };
-                display_charges.insert(origin.to_string(), value);
+                let applied=super::remote_delivery::multiply_shipment(
+                    safe(field(field(ship,"charges"),origin)),recipient,ship,order);
+                let (amount,reason)=super::shipping::billing_charge(applied,excluded,freight_code);
+                display_charges.insert(origin.to_string(),json!(amount));
+                billing_reasons.insert(origin.to_string(),json!(reason));
             }
             all_vat &= vat;
             any_vat |= vat;
@@ -141,6 +137,7 @@ pub(super) fn project(payload: &Value) -> Result<Value, String> {
                 "totals": amount,
                 "freightCode": freight_code,
                 "displayCharges": display_charges,
+                "billingReasons": billing_reasons,
                 "freightEditingBlocked": freight_code == "020" || excluded,
                 "vatIncluded": vat
             });
