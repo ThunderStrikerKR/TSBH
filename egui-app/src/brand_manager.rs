@@ -123,7 +123,7 @@ impl BrandManager {
             card.label(typography::section_heading("브랜드 관리"));
             card.add_space(theme::SPACE_8);
             card.label(typography::body(
-                "공식명 / 한글명 / 검색 별칭을 직원이 확인해 연결합니다. 유사한 이름을 자동 병합하지 않습니다."
+                "공식명, 한글명, 검색 별칭을 직접 연결합니다. 유사한 이름은 자동 병합하지 않습니다."
             ));
             card.add_space(theme::SPACE_12);
             // React registry-edit-form uses auto-fit columns >=240px,
