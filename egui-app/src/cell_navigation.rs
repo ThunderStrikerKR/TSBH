@@ -121,6 +121,27 @@ pub fn resolve_reception_navigation(
     next.map(|entry|entry.cell.id.clone())
 }
 
+/// One pointer transition policy for staged and native-backed worksheets.
+#[derive(Clone,Copy,Debug,PartialEq,Eq)]
+pub enum CellSwitch { KeepCurrent, OpenNow, CommitThenOpen }
+pub fn cell_switch(current_is_target:bool,dirty:bool)->CellSwitch{
+    if current_is_target{CellSwitch::KeepCurrent}
+    else if dirty{CellSwitch::CommitThenOpen}
+    else{CellSwitch::OpenNow}
+}
+
+#[cfg(test)]
+mod pointer_cell_switch_tests{
+    use super::*;
+    #[test]
+    fn one_click_keeps_target_or_opens_after_exactly_one_commit(){
+        assert_eq!(cell_switch(true,false),CellSwitch::KeepCurrent);
+        assert_eq!(cell_switch(true,true),CellSwitch::KeepCurrent);
+        assert_eq!(cell_switch(false,false),CellSwitch::OpenNow);
+        assert_eq!(cell_switch(false,true),CellSwitch::CommitThenOpen);
+    }
+}
+
 /// Shared, focus-scoped spreadsheet input contract for egui TextEdit.
 /// Call BEFORE the TextEdit is rendered, then register the Response.id once
 /// rendered. Other fields (search, dates, memos, forms) are never intercepted.
