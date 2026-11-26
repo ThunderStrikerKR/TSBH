@@ -1087,3 +1087,6 @@ pub fn removable_tag_chip(ui:&mut Ui,tag:&str)->Response{
             }).inner
         }).inner
 }
+
+#[cfg(test)]
+mod regression_tests;

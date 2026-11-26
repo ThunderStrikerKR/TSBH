@@ -361,3 +361,6 @@ pub fn paint_reception_client_summary_surface(ui:&Ui,rect:Rect){
     theme::paint_bordered_surface(ui.painter(),rect,theme::CONTROL_RADIUS,
         theme::RECEPTION_CLIENT_SUMMARY_BG,theme::RECEPTION_CLIENT_SUMMARY_BORDER);
 }
+
+#[cfg(test)]
+mod regression_tests;

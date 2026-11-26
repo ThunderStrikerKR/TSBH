@@ -15,7 +15,7 @@ mod composite_reception;
 mod text_fit;
 mod window_state;
 #[cfg(test)]
-mod components;
+mod ui_regressions;
 mod category_tree;
 mod status_notice;
 mod ui_primitives;

@@ -838,6 +838,7 @@ function main(){
   for(const path of files){
     const file=relative(resolve(root,"egui-app/src"),path).replaceAll("\\","/");
     const source=readFileSync(path,"utf8");
+    if(source.startsWith("#![cfg(test)]"))continue;
     const owner=file.endsWith("/mod.rs")?file.split("/")[0]:file.replace(/\.rs$/,"");
     if(dependencyOwners.has(owner))graph.set(owner,sharedDependencies(source,owner));
     for(const hit of audit(source,file,true)){

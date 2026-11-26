@@ -1047,3 +1047,6 @@ impl ManagementTableColumnLabel {
         }
     }
 }
+
+#[cfg(test)]
+mod regression_tests;

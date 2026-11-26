@@ -187,7 +187,9 @@ function main(){
   let total=0;const introduced=[];
   for(const abs of files){
     const path=relative(root,abs).replaceAll("\\","/");
-    const current=scan(readFileSync(abs,"utf8"));total+=current.length;
+    const source=readFileSync(abs,"utf8");
+    if(source.startsWith("#![cfg(test)]"))continue;
+    const current=scan(source);total+=current.length;
     const before=base&&oldPaths.has(path)?scan(git("show",base+":"+path)):[];
     const fresh=base?additions(before,current):current;
     for(const hit of fresh)introduced.push({...hit,path});

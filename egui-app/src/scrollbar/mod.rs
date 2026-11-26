@@ -59,3 +59,6 @@ pub(crate) fn management_single_list_scroll_height_geometry(
     remaining.min(available_height.max(0.0)).max(1.0)
 }
 
+
+#[cfg(test)]
+mod regression_tests;

@@ -390,3 +390,6 @@ pub(crate) fn reception_cod_dropdown(
     });
     (editable && selected!=collect.unwrap_or(false),response)
 }
+
+#[cfg(test)]
+mod regression_tests;

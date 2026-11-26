@@ -248,9 +248,9 @@ jobs:
       - name: Verify rate-management toolbar actions occupy one centered row
         run: cargo test --manifest-path egui-app/Cargo.toml freight_manager::rate_toolbar_tests -- --nocapture
       - name: Verify shared Freight and Excel table-checkbox centered geometry
-        run: cargo test --manifest-path egui-app/Cargo.toml components::management_toolbar_geometry_tests::table_checkbox -- --nocapture
+        run: cargo test --manifest-path egui-app/Cargo.toml table::regression_tests::management_toolbar_geometry_tests::table_checkbox -- --nocapture
       - name: Verify shared concise product-name table header
-        run: cargo test --manifest-path egui-app/Cargo.toml components::management_toolbar_geometry_tests::product_name_column_header -- --nocapture
+        run: cargo test --manifest-path egui-app/Cargo.toml table::regression_tests::management_toolbar_geometry_tests::product_name_column_header -- --nocapture
       - name: Verify all repeating table rows including billed totals use Regular
         run: cargo test --manifest-path egui-app/Cargo.toml typography::management_table_type_roles_tests -- --nocapture
       - name: Verify read-only order history date, row expansion and label rules

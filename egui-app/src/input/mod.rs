@@ -769,3 +769,6 @@ pub fn ocr_zoom_slider(ui:&mut Ui,zoom:&mut f32)->Response{
         egui::Slider::new(zoom,0.5..=4.0).show_value(false)
     )
 }
+
+#[cfg(test)]
+mod regression_tests;

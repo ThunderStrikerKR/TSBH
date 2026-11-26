@@ -13,7 +13,7 @@ on:
       - egui-app/src/manual_source_view.rs
       - egui-app/src/source_highlight.rs
       - egui-app/src/one_touch.rs
-      - egui-app/src/components.rs
+      - 'egui-app/src/**'
       - egui-app/src/main.rs
       - egui-app/src/theme.rs
       - egui-app/src/typography.rs
@@ -30,7 +30,7 @@ on:
       - egui-app/src/manual_source_view.rs
       - egui-app/src/source_highlight.rs
       - egui-app/src/one_touch.rs
-      - egui-app/src/components.rs
+      - 'egui-app/src/**'
       - egui-app/src/main.rs
       - egui-app/src/theme.rs
       - egui-app/src/typography.rs

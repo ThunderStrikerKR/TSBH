@@ -682,3 +682,6 @@ fn paint_collapsing_header_icon(
         t*std::f32::consts::FRAC_PI_2,t,theme::SECONDARY
     );
 }
+
+#[cfg(test)]
+mod regression_tests;

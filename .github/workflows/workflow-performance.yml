@@ -10,7 +10,7 @@ on:
       - egui-app/src/kakao_dock.rs
       - egui-app/src/clipboard_intake.rs
       - egui-app/src/gateway.rs
-      - egui-app/src/components.rs
+      - 'egui-app/src/**'
       - egui-app/src/reception_jobs.rs
       - egui-app/src/review_panel.rs
       - egui-app/src/source_highlight.rs
