@@ -2062,6 +2062,12 @@ impl ManualWorkspace {
                         // The status/count toolbar is part of the shared modal
                         // header. The body begins directly at the card workspace.
                         ui.spacing_mut().item_spacing.y=0.0;
+                        if self.selected_field=="product" && self.selected_item.is_some(){
+                            ui.add(egui::Label::new(typography::caption(
+                                crate::review_panel::MODEL_RESOLUTION_GUIDANCE
+                            )).wrap());
+                            ui.add_space(theme::SPACE_8);
+                        }
                         // The source column matches Reception's live pane width.
                         // The right worksheet takes the remaining width; on narrow windows keep
                         // both minimum widths and scroll the workspace horizontally

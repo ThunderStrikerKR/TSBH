@@ -196,6 +196,16 @@ impl ReviewPanel {
             "조치 {}건 / 안내 {}건",self.action_indices.len(),info_count
         ))));
     }
+    /// Keep model resolution outside the scrolling issue body.
+    pub fn show_model_shortcut(&self,ui:&mut Ui,analysis:&ReceptionAnalysis,
+        selected_recipient:usize,enabled:bool)->(bool,Option<Action>){
+        let rid=analysis.recognition.get("recipients").and_then(Value::as_array)
+            .and_then(|rows|rows.get(selected_recipient)).map(|row|text(row,"id")).unwrap_or("");
+        let Some(issue)=preferred_model_issue(&self.issues,&self.action_indices,rid) else{return (false,None);};
+        let clicked=crate::button::review_action(ui,"상품 확인",ButtonRole::Standard,
+            self.ready()&&enabled).clicked();
+        (true,clicked.then(||model_navigation(issue)))
+    }
     /// A client action may be queued while an unrelated delivery edit commits.
     /// Other issue actions still require the ordinary edit admission policy.
     pub fn show_with_client_actions(&self,ui:&mut Ui,analysis:&ReceptionAnalysis,
@@ -369,6 +379,24 @@ pub(crate) fn pricing_registration_hint(kind:&str)->Option<&'static str>{
     }
 }
 
+fn model_resolution_kind(kind:&str)->bool{
+    matches!(kind,"MODEL"|"MODEL_CHOICE"|"ALIAS_CONFLICT"|"CATEGORY_CONFLICT"|"MODEL_CONFIRM")
+}
+fn preferred_model_issue<'a>(issues:&'a [Value],indices:&[usize],rid:&str)->Option<&'a Value>{
+    let candidates=||indices.iter().filter_map(|i|issues.get(*i)).filter(|issue|
+        model_resolution_kind(text(issue,"kind"))&&!text(issue,"recipientId").is_empty()
+        && !text(issue,"itemId").is_empty());
+    candidates().find(|issue|text(issue,"recipientId")==rid).or_else(||candidates().next())
+}
+fn model_navigation(issue:&Value)->Action{
+    Action::Navigate{kind:text(issue,"kind").to_owned(),
+        recipient_id:text(issue,"recipientId").to_owned(),
+        item_id:issue.get("itemId").and_then(Value::as_str).map(str::to_owned),
+        link_key:issue.get("linkKey").and_then(Value::as_str).map(str::to_owned)}
+}
+pub(crate) const MODEL_RESOLUTION_GUIDANCE:&str=
+    "품목 클릭 → 상품 변경 → 선택 → 적용 → 초안에 적용";
+
 fn issue_card(
     ui:&mut Ui,issue:&Value,analysis:&ReceptionAnalysis,
     enabled:bool,selected:&mut Option<Action>,
@@ -388,6 +416,12 @@ fn issue_card(
                     "수량 1개 잠정 처리됨"
                 }else{title},tone
             )).wrap());
+            let model_action=model_resolution_kind(kind)&&severity!="INFO"&&!rid.is_empty()&&iid.is_some_and(|id|!id.is_empty());
+            if model_action{
+                if crate::button::review_action(cell,"상품 확인",ButtonRole::Standard,enabled).clicked(){
+                    *selected=Some(model_navigation(issue));
+                }
+            }
             if !detail.is_empty() && detail!=title {
                 cell.add(egui::Label::new(typography::review_detail(detail,tone)).wrap());
             }
@@ -475,7 +509,7 @@ fn issue_card(
                     }
                 }
                 // React's informational client-match evidence has no action.
-                if kind=="CLIENT_MATCH_EVIDENCE" && severity=="INFO"{return;}
+                if model_action || (kind=="CLIENT_MATCH_EVIDENCE" && severity=="INFO"){return;}
                 let caption=if kind=="QUANTITY_MISSING" {"수량 수정"}
                     else if kind=="PRICE" {"단가 입력"}
                     else if kind=="FREIGHT" {"운임 입력"}
@@ -496,6 +530,9 @@ fn issue_card(
             // Keep the immediate action ahead of the secondary reference
             // guidance so a narrow panel does not hide the input button.
             if severity!="INFO"{
+                if model_action{
+                    cell.add(egui::Label::new(typography::review_detail(MODEL_RESOLUTION_GUIDANCE,tone)).wrap());
+                }
                 if let Some(hint)=pricing_registration_hint(kind){
                     cell.add(egui::Label::new(typography::review_detail(hint,tone)).wrap());
                 }
@@ -505,6 +542,21 @@ fn issue_card(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn fixed_model_shortcut_prefers_visible_recipient_and_requires_item_identity(){
+        let issues=vec![
+            json!({"kind":"PRICE","recipientId":"r2","itemId":"p"}),
+            json!({"kind":"MODEL","recipientId":"r1","itemId":"i1"}),
+            json!({"kind":"MODEL_CHOICE","recipientId":"r2","itemId":"i2"}),
+            json!({"kind":"MODEL","recipientId":"r3"})
+        ];
+        let indices=[0,1,2,3];
+        assert_eq!(text(preferred_model_issue(&issues,&indices,"r2").unwrap(),"itemId"),"i2");
+        assert_eq!(text(preferred_model_issue(&issues,&indices,"r3").unwrap(),"itemId"),"i1");
+        assert!(preferred_model_issue(&issues,&[0,3],"r3").is_none());
+        assert!(matches!(model_navigation(&issues[2]),Action::Navigate{recipient_id,item_id,..}
+            if recipient_id=="r2"&&item_id.as_deref()==Some("i2")));
+    }
     #[test]
     fn registration_guidance_names_the_management_path_and_keeps_manual_input(){
         let price=pricing_registration_hint("PRICE").unwrap();

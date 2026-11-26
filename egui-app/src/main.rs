@@ -8157,6 +8157,13 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
             .map(|(source,analysis)|self.review_panel.required_fields(source,analysis,target))
             .unwrap_or_default();
         let mut review_action:Option<review_panel::Action>=None;
+        let mut review_header_action:Option<review_panel::Action>=None;
+        let review_model_enabled=self.inline_editor.is_none()
+            &&self.manual_workspace.is_none()&&self.vat_change.is_none()
+            &&self.vat_dialog.is_none()&&self.client_change.is_none()
+            &&self.working_sync.is_none()&&self.workflow_ui.pending_preview().is_none()
+            &&!self.active_confirmation_locked()&&!self.active_delete_locked()
+            &&self.inline_change.is_none();
         let mut hovered_detail: Option<source_highlight::LinkKey>=None;
         let linked_active=self.active_id.as_deref()
             .and_then(|id|self.link_hover.active_for(id)).cloned();
@@ -8169,7 +8176,12 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                 pane.set_height(review_rect.height());
                 Self::section_with_header(pane, "확인할 내용", review_height, |header| {
                     if let Some(analysis)=&self.analysis {
-                        self.review_panel.show_header_summary(header,analysis,visible_index);
+                        let (shown,action)=self.review_panel.show_model_shortcut(
+                            header,analysis,visible_index,review_model_enabled);
+                        review_header_action=action;
+                        if !shown || header.available_width()>=160.0{
+                            self.review_panel.show_header_summary(header,analysis,visible_index);
+                        }
                     }
                 }, |ui| {
                     crate::scrollbar::scroll_area(crate::scrollbar::ScrollAxes::Vertical)
@@ -8198,7 +8210,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                 });
             },
         );
-        if let Some(action)=review_action {
+        if let Some(action)=review_header_action.or(review_action) {
             self.handle_review_action(action,ui.ctx());
         }
 
