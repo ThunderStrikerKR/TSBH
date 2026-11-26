@@ -9370,18 +9370,10 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                             decision.body(|ui|{
                                 let number=group.source_number.map(|n|format!("{n:03}"))
                                     .unwrap_or_else(||"—".to_owned());
-                                let prefix=format!("발주 {number} / {} / 배송 ",group.dealer_name);
-                                let count=group.shipments.len().to_string();
-                                let amount=group.total.map(components::display_won);
-                                let (amount_text,amount_kind,unit)=match amount.as_deref(){
-                                    Some(value)=>(value.strip_suffix("원").unwrap_or(value),
-                                        Some(typography::DataValueKind::Money),"원"),
-                                    None=>("금액 미확정",None,""),
-                                };
-                                ui.label(typography::inline_body_values(&[
-                                    (&prefix,None),(&count,Some(typography::DataValueKind::Quantity)),
-                                    ("건 / ",None),(amount_text,amount_kind),(unit,None)
-                                ]));
+                                ui.label(typography::inline_quantity_amount(
+                                    &format!("발주 {number} / {} / 배송 ",group.dealer_name),
+                                    group.shipments.len(),"건 / ",group.total,"금액 미확정",false
+                                ));
                                 components::section_divider(ui);
                                 if !targets.is_empty(){
                                     let caption=targets.iter().find(|g|g.id==target)
@@ -9426,18 +9418,10 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                             ));
                                             let step=ship.completed_step.map(|n|format!("{n}/4 완료"))
                                                 .unwrap_or_else(||"단계 미확인".to_owned());
-                                            let prefix=format!("{step} / 상품 ");
-                                            let count=ship.products.len().to_string();
-                                            let paid=ship.paid.map(components::display_won);
-                                            let (paid_text,paid_kind,unit)=match paid.as_deref(){
-                                                Some(value)=>(value.strip_suffix("원").unwrap_or(value),
-                                                    Some(typography::DataValueKind::Money),"원"),
-                                                None=>("—",None,""),
-                                            };
-                                            list.label(typography::inline_metadata_values(&[
-                                                (&prefix,None),(&count,Some(typography::DataValueKind::Quantity)),
-                                                ("종 / 입금 ",None),(paid_text,paid_kind),(unit,None)
-                                            ]));
+                                            list.label(typography::inline_quantity_amount(
+                                                &format!("{step} / 상품 "),ship.products.len(),
+                                                "종 / 입금 ",ship.paid,"—",true
+                                            ));
                                             list.with_layout(Layout::right_to_left(Align::Center),|line|{
                                                 if !targets.is_empty() && theme::action(
                                                     line,"다시 묶기",ButtonRole::Standard,
