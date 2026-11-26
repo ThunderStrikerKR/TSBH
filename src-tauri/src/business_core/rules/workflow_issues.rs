@@ -277,8 +277,10 @@ pub(super) fn workflow_issues(state:&Value,group_id:&str)->Result<Vec<Value>,Str
             issues.push(operational(order,Some(row),group_id,"ORIGIN",
                 "발송지를 확인하세요".into(),1,"product"));
         }
-        let shipment_client=w::party(state,shipment_order).ok_or("거래처 정보를 확인하세요.")?;
-        if w::billable_fee_total(ship,row,shipment_order,shipment_client).is_none() &&
+        let shipment_fee=if let Some(client)=w::party(state,shipment_order){
+            w::billable_fee_total(ship,row,shipment_order,client)
+        }else{w::fee_total(ship,row,shipment_order)};
+        if shipment_fee.is_none() &&
             !issues.iter().any(|i|str_field(i,"recipientId")==str_field(row,"id")&&
                 has_value(field(i,"itemId"))&&str_field(i,"severity")=="ACTION"&&
                 ["MODEL","MODEL_CHOICE","ALIAS_CONFLICT","QUANTITY_LINK",
@@ -454,6 +456,13 @@ mod freight_issue_tests {
         assert!(!workflow_issues(&state,"g").unwrap().iter()
             .any(|issue|str_field(issue,"kind")=="FREIGHT"));
         state["workflow"]["shipments"][0]["charges"]["FACTORY"]=Value::Null;
+        state["clients"][0]["shippingFeeExcluded"]=json!(true);
+        assert!(!workflow_issues(&state,"g").unwrap().iter()
+            .any(|issue|str_field(issue,"kind")=="FREIGHT"));
+        assert!(state["workflow"]["shipments"][0]["charges"]["FACTORY"].is_null());
+        state["clients"][0]["shippingFeeExcluded"]=json!(false);
+        assert!(workflow_issues(&state,"g").unwrap().iter()
+            .any(|issue|str_field(issue,"kind")=="FREIGHT"));
         state["orders"][0]["recipients"][0]["freightCode"]=json!("020");
         assert!(!workflow_issues(&state,"g").unwrap().iter()
             .any(|issue|str_field(issue,"kind")=="FREIGHT"));
