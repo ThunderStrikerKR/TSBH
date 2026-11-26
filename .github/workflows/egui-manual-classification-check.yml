@@ -1,4 +1,4 @@
-name: Native egui interaction and management regression
+name: Native egui interaction, management and workflow regression
 on:
   push:
     branches: [main]
@@ -9,7 +9,9 @@ on:
       - egui-app/src/product_manager.rs
       - egui-app/src/item_editor.rs
       - egui-app/src/pricing_basis.rs
-      - src-tauri/src/business_core/rules/**
+      - 'src-tauri/src/business_core/**'
+      - 'crates/bando-data-access/**'
+      - '.github/workflows/workflow-performance.yml'
       - egui-app/src/manual_source_view.rs
       - egui-app/src/source_highlight.rs
       - egui-app/src/one_touch.rs
@@ -26,7 +28,9 @@ on:
       - egui-app/src/product_manager.rs
       - egui-app/src/item_editor.rs
       - egui-app/src/pricing_basis.rs
-      - src-tauri/src/business_core/rules/**
+      - 'src-tauri/src/business_core/**'
+      - 'crates/bando-data-access/**'
+      - '.github/workflows/workflow-performance.yml'
       - egui-app/src/manual_source_view.rs
       - egui-app/src/source_highlight.rs
       - egui-app/src/one_touch.rs
@@ -43,7 +47,7 @@ concurrency:
 jobs:
   manual-classification:
     runs-on: windows-latest
-    timeout-minutes: 35
+    timeout-minutes: 50
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -70,7 +74,9 @@ jobs:
       - name: Verify live money cell and quantity stepper contracts
         run: |
           cargo test --manifest-path egui-app/Cargo.toml money_live_format_tests -- --nocapture
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           cargo test --manifest-path egui-app/Cargo.toml reception_quantity_step_keeps_unit_out_of_native_draft_and_respects_bounds -- --nocapture
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Verify nested modal input routing
         run: cargo test --manifest-path egui-app/Cargo.toml modal_input_routing_tests -- --nocapture
       - name: Reproduce modal pointer clicks and shared linked-cell blue emphasis
@@ -81,22 +87,20 @@ jobs:
         run: cargo test --manifest-path egui-app/Cargo.toml manual_pending_interaction_tests -- --nocapture
       - name: Verify manual source ownership and Unicode hit testing
         run: cargo test --manifest-path egui-app/Cargo.toml manual_span_projection_tests -- --nocapture
-      - name: Verify manual source click and drag identity
-        run: cargo test --manifest-path egui-app/Cargo.toml manual_source_view::tests -- --nocapture
       - name: Verify both click orders and drag share native assignment validation
         run: cargo test --manifest-path egui-app/Cargo.toml manual_assignment_gesture_tests -- --nocapture
       - name: Verify shared product click routing and manual draft detail policy
         run: |
           cargo test --manifest-path egui-app/Cargo.toml item_editor::tests -- --nocapture
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           cargo test --manifest-path egui-app/Cargo.toml reception_item_editor_integration_tests -- --nocapture
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Verify freight inquiry visibility preserves checkbox geometry
         run: cargo test --manifest-path egui-app/Cargo.toml reception_cod_selector_tests -- --nocapture
       - name: Verify shared button blue hover and keyboard focus palette
         run: cargo test --manifest-path egui-app/Cargo.toml shared_action_style_tests -- --nocapture
       - name: Verify one-touch message typography, hover geometry and shared palette
         run: cargo test --manifest-path egui-app/Cargo.toml one_touch::tests -- --nocapture
-      - name: Verify existing reception source highlighting remains stable
-        run: cargo test --manifest-path egui-app/Cargo.toml source_highlight::tests -- --nocapture
       - name: Verify manual arrow navigation follows visible worksheet rows
         run: cargo test --manifest-path egui-app/Cargo.toml arrows_move_to_visible_adjacent_cells_not_text_caret_positions -- --nocapture
       - name: Verify arrow interception happens before TextEdit and preserves Korean IME
@@ -114,13 +118,63 @@ jobs:
       - name: Category management layout and navigation
         run: |
           cargo test --manifest-path egui-app/Cargo.toml category_manager:: -- --nocapture
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Model group registry and editor
         run: |
           cargo test --manifest-path egui-app/Cargo.toml model_group_manager:: -- --nocapture
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Brand modal lifecycle
         run: cargo test --manifest-path egui-app/Cargo.toml brand_manager::modal_lifecycle_tests -- --nocapture
       - name: Alias registry, picker and editor
         run: |
           cargo test --manifest-path egui-app/Cargo.toml alias_manager:: -- --nocapture
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Shared table renderer geometry
         run: cargo test --manifest-path egui-app/Cargo.toml table::regression_tests -- --nocapture
+      - name: Compile egui and verify admission and scope contracts
+        shell: pwsh
+        run: |
+          cargo test --manifest-path egui-app/Cargo.toml compact_virtualization_tests -- --nocapture
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cargo test --manifest-path egui-app/Cargo.toml shipment_list_tests -- --nocapture
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cargo test --manifest-path egui-app/Cargo.toml workflow_freight_typography_tests -- --nocapture
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cargo test --manifest-path egui-app/Cargo.toml reception_product_ellipsis_respects_width_and_korean_boundaries -- --nocapture
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cargo test --manifest-path egui-app/Cargo.toml quote_identity_tests -- --nocapture
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cargo test --manifest-path egui-app/Cargo.toml cell_navigation:: -- --nocapture
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cargo test --manifest-path egui-app/Cargo.toml source_highlight:: -- --nocapture
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cargo test --manifest-path egui-app/Cargo.toml manual_source_view:: -- --nocapture
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cargo test --manifest-path egui-app/Cargo.toml manual_render_cache_tests -- --nocapture
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cargo test --manifest-path egui-app/Cargo.toml pending_display_cache_reuses_exact_projection_and_rejects_edited_receipt -- --nocapture
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cargo test --manifest-path egui-app/Cargo.toml review_panel:: -- --nocapture
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cargo test --manifest-path egui-app/Cargo.toml clipboard_intake:: -- --nocapture
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cargo test --manifest-path egui-app/Cargo.toml kakao_context:: -- --nocapture
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cargo test --manifest-path egui-app/Cargo.toml periodic_workflow_read_is_advisory_but_post_commit_refresh_is_mandatory -- --nocapture
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cargo test --manifest-path egui-app/Cargo.toml reception_metadata_tests -- --nocapture
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cargo test --manifest-path egui-app/Cargo.toml shared_reception_metadata_keeps_cached_values_on_unchanged_revision -- --nocapture
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cargo test --manifest-path egui-app/Cargo.toml unchanged_workflow_revision_keeps_current_snapshot_and_selection -- --nocapture
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cargo test --manifest-path egui-app/Cargo.toml failed_delivery_command_never_restores_a_hidden_editor -- --nocapture
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cargo test --manifest-path egui-app/Cargo.toml reception_jobs::tests -- --nocapture
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cargo test --manifest-path egui-app/Cargo.toml freight_refresh_includes_split_groups_and_rejects_stale_or_cross_order_scope -- --nocapture
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cargo test --manifest-path egui-app/Cargo.toml reception_edit_cache_tests -- --nocapture
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cargo test --manifest-path egui-app/Cargo.toml automatic_preview_cache_tests -- --nocapture
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

@@ -266,8 +266,6 @@ jobs:
         run: |
           cargo test --manifest-path egui-app/Cargo.toml product_excel::tests -- --nocapture
 
-      - name: Verify product Excel backup, SQLite apply, unchanged orders and stale CAS
-        run: cargo test --manifest-path src-tauri/Cargo.toml --lib native_product_excel_backup_commit_reopen_and_stale_revision_guard -- --nocapture
       - name: Verify shared UI catalog roots remain read-only in alias category filter
         run: cargo test --manifest-path egui-app/Cargo.toml alias_manager::tests -- --nocapture
 

@@ -1,4 +1,4 @@
-name: Native workflow performance and regression
+name: Native Rust release performance and projection regression
 on:
   push:
     branches: [main]
@@ -41,59 +41,3 @@ jobs:
           cargo test --manifest-path tests/rust-migration/output/Cargo.toml --release --lib reception_edit_cache_tests -- --nocapture
           cargo test --manifest-path tests/rust-migration/output/Cargo.toml --release --lib automatic_preview_cache_tests -- --nocapture
           cargo test --manifest-path tests/rust-migration/output/Cargo.toml --release --lib freight_issue_tests -- --nocapture
-  native-egui:
-    runs-on: windows-latest
-    timeout-minutes: 30
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: egui-app -> target
-      - name: Compile egui and verify admission and scope contracts
-        shell: pwsh
-        run: |
-          cargo test --manifest-path egui-app/Cargo.toml compact_virtualization_tests -- --nocapture
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          cargo test --manifest-path egui-app/Cargo.toml shipment_list_tests -- --nocapture
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          cargo test --manifest-path egui-app/Cargo.toml workflow_freight_typography_tests -- --nocapture
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          cargo test --manifest-path egui-app/Cargo.toml reception_product_ellipsis_respects_width_and_korean_boundaries -- --nocapture
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          cargo test --manifest-path egui-app/Cargo.toml quote_identity_tests -- --nocapture
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          cargo test --manifest-path egui-app/Cargo.toml cell_navigation:: -- --nocapture
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          cargo test --manifest-path egui-app/Cargo.toml source_highlight:: -- --nocapture
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          cargo test --manifest-path egui-app/Cargo.toml manual_source_view:: -- --nocapture
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          cargo test --manifest-path egui-app/Cargo.toml manual_render_cache_tests -- --nocapture
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          cargo test --manifest-path egui-app/Cargo.toml pending_display_cache_reuses_exact_projection_and_rejects_edited_receipt -- --nocapture
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          cargo test --manifest-path egui-app/Cargo.toml review_panel:: -- --nocapture
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          cargo test --manifest-path egui-app/Cargo.toml clipboard_intake:: -- --nocapture
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          cargo test --manifest-path egui-app/Cargo.toml kakao_context:: -- --nocapture
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          cargo test --manifest-path egui-app/Cargo.toml periodic_workflow_read_is_advisory_but_post_commit_refresh_is_mandatory -- --nocapture
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          cargo test --manifest-path egui-app/Cargo.toml reception_metadata_tests -- --nocapture
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          cargo test --manifest-path egui-app/Cargo.toml shared_reception_metadata_keeps_cached_values_on_unchanged_revision -- --nocapture
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          cargo test --manifest-path egui-app/Cargo.toml unchanged_workflow_revision_keeps_current_snapshot_and_selection -- --nocapture
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          cargo test --manifest-path egui-app/Cargo.toml failed_delivery_command_never_restores_a_hidden_editor -- --nocapture
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          cargo test --manifest-path egui-app/Cargo.toml reception_jobs::tests -- --nocapture
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          cargo test --manifest-path egui-app/Cargo.toml freight_refresh_includes_split_groups_and_rejects_stale_or_cross_order_scope -- --nocapture
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          cargo test --manifest-path egui-app/Cargo.toml reception_edit_cache_tests -- --nocapture
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          cargo test --manifest-path egui-app/Cargo.toml automatic_preview_cache_tests -- --nocapture
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
