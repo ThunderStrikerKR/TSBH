@@ -185,14 +185,7 @@ fn merge_item(incoming:&Value,prior:&Value)->Result<Value,String>{
         saved
     }else{ incoming.clone() };
     clone_field(&mut item,prior,"id")?;
-    // An explicit unit price is independent of recognition confirmation.
-    // Retain it only for the same identified product and variant.
-    if !str_field(item,"productId").is_empty() &&
-        !str_field(item,"variantId").is_empty() &&
-        field(item,"productId")==field(prior,"productId") &&
-        field(item,"variantId")==field(prior,"variantId") {
-        clone_field(&mut item,prior,"manualUnitPrice")?;
-    }
+    super::pricing::retain_manual_unit_price(&mut item,prior)?;
     if qty_changed {
         clone_field(&mut item,incoming,"quantity")?;
         clone_field(&mut item,incoming,"quantityConfirmed")?;
