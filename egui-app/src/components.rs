@@ -1184,6 +1184,29 @@ pub fn workflow_fixed_action(
     response
 }
 
+/// Compact workflow money uses the shared semantic font and one-touch
+/// geometry. The allocated price slot, rather than its text clip, bounds
+/// the highlight so the currency suffix retains the same 4pt clearance.
+pub fn workflow_compact_money(
+    ui:&Ui,price:Rect,price_ink:Rect,bottom_y:f32,amount:&str,emphasis:bool
+)->bool{
+    let color=if emphasis{crate::one_touch::INK}else{theme::TEXT};
+    let galley=ui.painter().layout_no_wrap(
+        amount.to_owned(),typography::data_value_font(
+            typography::DataValueKind::Money,typography::DataValueContext::CompactCard
+        ),color
+    );
+    let pos=egui::pos2(price_ink.right()-galley.size().x,bottom_y-galley.size().y);
+    let bounds=Rect::from_min_size(pos,galley.size());
+    let highlight=crate::one_touch::value_rect(bounds,price);
+    if emphasis{crate::one_touch::background(ui,highlight);}
+    let clip=price_ink.intersect(ui.clip_rect());
+    let clipped=text_exceeds_rect(galley.size(),clip);
+    ui.painter().with_clip_rect(clip).galley(pos,galley,color);
+    if emphasis{crate::one_touch::outline(ui,highlight);}
+    clipped
+}
+
 /// Noninteractive retail marker occupies the existing unused action slot.
 pub fn workflow_idle_caption(ui:&Ui,rect:Rect,caption:&str){
     let galley=ui.painter().layout_no_wrap(caption.to_owned(),
