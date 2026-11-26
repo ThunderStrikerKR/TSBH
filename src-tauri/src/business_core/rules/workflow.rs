@@ -101,11 +101,6 @@ pub(super) fn shipment_freight_code<'a>(order: &'a Value, row: &'a Value) -> &'a
     if has_value(field(row,"freightCode")) {str_field(row,"freightCode")}
     else {str_field(order,"freightCode")}
 }
-fn shipment_vat(order: &Value, row: &Value) -> bool {
-    if let Some(v)=field(row,"vatOverride").as_bool() {return v;}
-    if let Some(v)=field(row,"vatDefault").as_bool() {return v;}
-    flag(order,"applyVat")
-}
 pub(super) fn fee_total(ship: &Value, row: &Value, order: &Value) -> Option<i64> {
     if shipment_freight_code(order,row)=="020" {return Some(0);}
     let os=row_origins(row);
@@ -139,27 +134,7 @@ pub(super) fn shipment_totals(state: &Value, shipment_id: &str) -> Result<Value,
         .and_then(|rs|rs.get(ri))
         .ok_or_else(||"수취인 정보를 확인하세요.".to_string())?;
     let client=party(state,order).ok_or_else(||"거래처 정보를 확인하세요.".to_string())?;
-    let mut view=order.clone();
-    set(&mut view,"recipients",json!([row]))?;
-    set(&mut view,"freightCode",json!(shipment_freight_code(order,row)))?;
-    set(&mut view,"applyVat",json!(shipment_vat(order,row)))?;
-    set(&mut view,"shippingFee",json!(billable_fee_total(ship,row,order,client)))?;
-    set(&mut view,"pricesLocked",json!(false))?;
-    set(&mut view,"vatAmount",Value::Null)?;
-    let mut totals=pricing::totals(&view,client)?;
-    // Preserve ordinary historical 10% arithmetic. Explicit non-default
-    // rates use the same exact integer rounding as the reception quote.
-    let rate=field(row,"vatRateBps").as_i64().unwrap_or(1000);
-    if !(0..=10_000).contains(&rate){return Err("부가세율이 허용 범위를 벗어났습니다.".into());}
-    if shipment_vat(order,row) && rate!=1000{
-        let base=safe(field(&totals,"subtotal")).zip(safe(field(&totals,"shipping")))
-            .and_then(|(a,b)|checked_sum([a,b]));
-        let vat=base.and_then(|n|i64::try_from((i128::from(n)*i128::from(rate)+5000)/10000).ok());
-        let total=base.zip(vat).and_then(|(a,b)|checked_sum([a,b]));
-        set(&mut totals,"vat",json!(vat))?;
-        set(&mut totals,"total",json!(total))?;
-    }
-    Ok(totals)
+    pricing::shipment_amounts(order,row,billable_fee_total(ship,row,order,client))
 }
 pub(super) fn account_for<'a>(state: &'a Value,group:&Value,order:&Value,client:&Value) -> Option<&'a Value> {
     let settings=field(state,"settings");
