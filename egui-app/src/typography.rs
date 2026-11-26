@@ -557,9 +557,15 @@ pub fn management_table_money_font()->FontId {
 pub fn freight_table_wrapped_galley(
     ui:&egui::Ui,text:&str,max_width:f32,
 )->std::sync::Arc<egui::Galley>{
+    freight_table_wrapped_galley_with_color(ui,text,max_width,TEXT)
+}
+/// Same history detail layout, with an optional linked-selection ink.
+pub fn freight_table_wrapped_galley_with_color(
+    ui:&egui::Ui,text:&str,max_width:f32,color:Color32,
+)->std::sync::Arc<egui::Galley>{
     let style=spec(Role::Body);
     let format=measured_role_format(Role::Body,
-        FontId::new(style.size,FontFamily::Proportional),TEXT);
+        FontId::new(style.size,FontFamily::Proportional),color);
     let mut job=egui::text::LayoutJob::single_section(text.to_owned(),format);
     job.wrap.max_width=max_width.max(1.0);
     job.wrap.break_anywhere=true;
