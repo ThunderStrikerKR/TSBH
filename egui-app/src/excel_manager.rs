@@ -448,6 +448,8 @@ pub struct ExcelManager{
     reply_confirm:Option<Value>,
     reply_changed:bool,
     reply_refresh_pending:bool,
+    // Retain verified rows for display, but never write using a stale revision.
+    snapshot_stale:bool,
     reply_rows:Vec<Value>,
     reply_rows_revision:Option<u64>,
     reply_page:usize,
@@ -470,7 +472,7 @@ impl ExcelManager{
             export_to_month:crate::navigation::calendar_month_start(today),
             managed_queue:None,freight_drafts:HashMap::new(),
             open_order:None,
-            reply_review:false,reply_confirm:None,reply_changed:false,reply_refresh_pending:false,
+            reply_review:false,reply_confirm:None,reply_changed:false,reply_refresh_pending:false,snapshot_stale:false,
             reply_rows:Vec::new(),reply_rows_revision:None,reply_page:0,
         };
         manager.refresh(ctx);manager
@@ -527,7 +529,7 @@ impl ExcelManager{
         // Any read started after the notification satisfies the pending
         // inbox refresh, including the existing page-entry read.
         self.reply_refresh_pending=false;
-        self.error=None;self.result=None;
+        self.error=None;self.snapshot_stale=true;
         let (sender,receiver)=mpsc::channel();
         self.receiver=Some(receiver);
         let gateway=Arc::clone(&self.gateway);
@@ -545,14 +547,14 @@ impl ExcelManager{
         let read=self.receiver.as_ref().map(Receiver::try_recv);
         match read{
             Some(Ok(Ok(value)))=>{
-                self.result=Some(value);self.error=None;self.receiver=None;
+                self.result=Some(value);self.snapshot_stale=false;self.error=None;self.receiver=None;
             }
             Some(Ok(Err(message)))=>{
-                self.error=Some(message);self.result=None;self.receiver=None;
+                self.error=Some(message);self.snapshot_stale=true;self.receiver=None;
             }
             Some(Err(TryRecvError::Disconnected))=>{
                 self.error=Some("Excel 목록 조회가 중단되었습니다.".into());
-                self.result=None;self.receiver=None;
+                self.snapshot_stale=true;self.receiver=None;
             }
             _=>{}
         }
@@ -575,7 +577,8 @@ impl ExcelManager{
                         state:result["state"].clone(),
                         shipments:result["shipmentReads"].clone()
                     });
-                    self.selected.clear();
+                    self.snapshot_stale=false;
+                    // The list reconciles only IDs that actually left the queue.
                 }else if operation=="reply-correction"{
                     self.accept_reply_correction(result);
                 }else if operation=="export"{
@@ -598,8 +601,9 @@ impl ExcelManager{
                             state:result["state"].clone(),
                             shipments:result["shipmentReads"].clone()
                         });
+                        self.snapshot_stale=false;
                     }else{
-                        self.result=None;
+                        self.snapshot_stale=true;
                         self.reply_refresh_pending=true;
                         self.error=result["projectionError"].as_str().map(str::to_owned);
                     }
@@ -631,13 +635,14 @@ impl ExcelManager{
                 state:result["state"].take(),
                 shipments:result["shipmentReads"].take(),
             });
+            self.snapshot_stale=false;
             self.error=None;
             // Do not clear an independent inbox notification that arrived
             // while the correction worker was running.
         }else{
             // A projection error cannot undo an already committed reply.
             // Keep the success notification and fall back to a fresh read.
-            self.result=None;
+            self.snapshot_stale=true;
             self.reply_refresh_pending=true;
             self.error=result["projectionError"].as_str().map(str::to_owned);
         }
@@ -645,7 +650,7 @@ impl ExcelManager{
 
     fn task(&mut self,action:&str,ctx:egui::Context,
         work:impl FnOnce(Arc<dyn BandoGateway>)->Result<Value,String>+Send+'static){
-        if self.operation.is_some(){return}
+        if self.operation.is_some()||self.receiver.is_some()||self.snapshot_stale{return}
         crate::floating_notice::dispatch_pointer(&ctx,"excel.action");
         let (sender,receiver)=mpsc::channel();
         self.operation=Some(receiver);self.operation_name=Some(action.into());
@@ -707,6 +712,7 @@ impl ExcelManager{
         if !self.reply_review{return}
         self.update_reply_review();
         let busy=self.operation.is_some()||self.receiver.is_some();
+        let writable_snapshot=!busy&&!self.snapshot_stale;
         let mut close=false;let mut selected:Option<Value>=None;
         let count=self.reply_rows.len();
         crate::popup::modal_backdrop(ctx,"factory-reply-review-backdrop",false);
@@ -727,7 +733,7 @@ impl ExcelManager{
                                     text(row,"filename"),row["row"],text(row,"name"))));
                                 if text(row,"issue").contains("충돌")&&!text(row,"shipmentId").is_empty(){
                                     if crate::button::action(line,"충돌 검토",theme::ButtonRole::Standard,
-                                        !busy&&self.gateway.excel_write_enabled()).clicked(){selected=Some(row.clone());}
+                                        writable_snapshot&&self.gateway.excel_write_enabled()).clicked(){selected=Some(row.clone());}
                                 }
                             });
                             ui.label(typography::table_cell(&format!("송장 {} / 실제 운임 {} / {}",
@@ -764,7 +770,7 @@ impl ExcelManager{
                     decision.body(|body|{body.label(typography::table_cell(text(&review,"confirmedText")));});
                     decision.actions(|bar|{
                         if crate::button::action(bar,"정정 반영",theme::ButtonRole::Primary,
-                            !busy&&self.gateway.excel_write_enabled()).clicked(){approve=true;}
+                            writable_snapshot&&self.gateway.excel_write_enabled()).clicked(){approve=true;}
                     });
                 });
             });
@@ -816,6 +822,7 @@ impl ExcelManager{
         });
         ui.add_space(theme::SPACE_8);
         let busy=self.operation.is_some()||self.receiver.is_some();
+        let writable_snapshot=!busy&&!self.snapshot_stale;
         let next_tab=crate::ui_layout::management_top_content(ui,|top|
             crate::button::management_tabs(top,&[
                 ("공장 엑셀 대기",self.tab==Tab::Factory,!busy),
@@ -852,7 +859,7 @@ impl ExcelManager{
         sort_queue(&mut queued,self.sort_queue);
         let mut visible:BTreeSet<String>=queued.iter().filter(|r|!r.legacy)
             .map(|r|r.id().to_owned()).collect();
-        if self.tab!=Tab::History{
+        if self.tab!=Tab::History && self.result.is_some() && !self.snapshot_stale{
             self.selected.retain(|id|visible.contains(id));
         }
         crate::card::align_management_primary_card(ui,page_origin_y);
@@ -1005,7 +1012,7 @@ impl ExcelManager{
                                 self.selected.len(),
                                 if self.tab==Tab::Factory{"공장"}else{"매장"}),
                             theme::ButtonRole::Primary,
-                            !self.selected.is_empty()&&!busy
+                            !self.selected.is_empty()&&writable_snapshot
                                 &&self.gateway.excel_write_enabled()
                         ).clicked(){
                             exported=Some(self.selected.iter().cloned()
@@ -1161,7 +1168,7 @@ impl ExcelManager{
                                     }else{"매장 실제 출고 운임"}
                                 );
                                 crate::input::money_field(
-                                    line,draft,!busy&&self.gateway.excel_write_enabled()
+                                    line,draft,writable_snapshot&&self.gateway.excel_write_enabled()
                                 );
                                 let parsed=if draft.trim().is_empty(){
                                     Some(None)
@@ -1172,7 +1179,7 @@ impl ExcelManager{
                                 if crate::button::action(
                                     line,"실제 운임 저장",
                                     theme::ButtonRole::Primary,
-                                    dirty&&!busy&&self.gateway.excel_write_enabled()
+                                    dirty&&writable_snapshot&&self.gateway.excel_write_enabled()
                                 ).clicked(){
                                     let value=if draft.trim().is_empty(){
                                         Some(Value::Null)
@@ -1195,7 +1202,7 @@ impl ExcelManager{
                                 if text(&entry.order,"orderType")!="RETAIL"{
                                     if crate::button::action(line,"이관 복구",
                                         theme::ButtonRole::Standard,
-                                        !busy&&self.gateway.excel_write_enabled()
+                                        writable_snapshot&&self.gateway.excel_write_enabled()
                                     ).clicked(){
                                         workflow_action=Some((
                                             "restore_shipment".into(),
@@ -1206,7 +1213,7 @@ impl ExcelManager{
                                 }
                                 if self.tab==Tab::Store&&crate::button::action(
                                     line,"매장 발송 확인",theme::ButtonRole::Standard,
-                                    !busy&&self.gateway.excel_write_enabled()
+                                    writable_snapshot&&self.gateway.excel_write_enabled()
                                 ).clicked(){
                                     workflow_action=Some((
                                         "mark_store_sent".into(),
@@ -1483,7 +1490,8 @@ mod table_state_tests {
         manager.accept_reply_correction(json!({"projectionError":"synthetic"}));
         assert!(manager.take_reply_changed());
         assert!(manager.reply_refresh_pending);
-        assert!(manager.result.is_none());
+        assert!(manager.result.is_some());
+        assert!(manager.snapshot_stale);
     }
 
     #[test]
@@ -1508,7 +1516,8 @@ mod table_state_tests {
             let _=ctx.run(Default::default(),|ctx|manager.poll(ctx));
             assert!(manager.operation.is_none());
             assert!(manager.notice.as_deref().unwrap().contains("Excel 저장과 출력 이력을 기록했습니다."));
-            assert!(manager.result.is_none());
+            assert!(manager.result.is_some());
+            assert!(manager.snapshot_stale);
             assert!(manager.reply_refresh_pending);
             assert_eq!(manager.error.as_deref(),Some("synthetic"));
         }
@@ -1552,7 +1561,7 @@ mod table_state_tests {
 impl ExcelManager {
     pub(crate) fn geometry_fixture(gateway:Arc<dyn BandoGateway>,ctx:egui::Context,tab:usize,loaded:bool)->Self{
         let mut page=Self::new(gateway,ctx);
-        page.receiver=None;page.tab=Tab::ALL[tab];if loaded{page.result=Some(Snapshot{state:serde_json::json!({}),shipments:serde_json::json!([])});}
+        page.receiver=None;page.snapshot_stale=false;page.tab=Tab::ALL[tab];if loaded{page.result=Some(Snapshot{state:serde_json::json!({}),shipments:serde_json::json!([])});}
         page
     }
 
