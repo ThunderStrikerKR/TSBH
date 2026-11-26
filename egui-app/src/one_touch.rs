@@ -67,13 +67,20 @@ pub fn reveal_target(ui:&Ui,expected:Stage,rect:Rect){
         ui.scroll_to_rect(rect,None);
     }
 }
+fn background_shape(rect:Rect)->egui::Shape{
+    egui::Shape::rect_filled(rect,theme::CONTROL_RADIUS,theme::ONE_TOUCH_BG)
+}
+fn outline_shape(rect:Rect)->egui::Shape{
+    egui::Shape::rect_stroke(rect,theme::CONTROL_RADIUS,
+        Stroke::new(theme::ONE_TOUCH_BORDER_WIDTH,theme::ONE_TOUCH_BORDER),egui::StrokeKind::Inside)
+}
 pub fn background(ui:&Ui,rect:Rect){
     if rect.is_positive(){ui.painter().with_clip_rect(ui.clip_rect().intersect(rect))
-        .rect_filled(rect,theme::CONTROL_RADIUS,theme::ONE_TOUCH_BG);}
+        .add(background_shape(rect));}
 }
 pub fn outline(ui:&Ui,rect:Rect){
     if rect.is_positive(){ui.painter().with_clip_rect(ui.clip_rect().intersect(rect))
-        .rect_stroke(rect,theme::CONTROL_RADIUS,Stroke::new(theme::ONE_TOUCH_BORDER_WIDTH,theme::ONE_TOUCH_BORDER),egui::StrokeKind::Inside);}
+        .add(outline_shape(rect));}
 }
 /// Existing widgets with their own fill: tint lightly without covering text.
 pub fn mark(ui:&Ui,rect:Rect){
@@ -178,12 +185,12 @@ pub fn payment_message(ui:&mut Ui,text:&str,signature:&str,emphasis:bool){
         let clip=ui.clip_rect().intersect(display.text_clip_rect);
         let painter=ui.painter().with_clip_rect(clip);
         let rects=payment_rects(text,signature,&display.galley,display.galley_pos);
-        painter.set(paint_slot,egui::Shape::Vec(rects.iter().map(|&rect|
-            egui::Shape::rect_filled(rect.intersect(clip),theme::CONTROL_RADIUS,theme::ONE_TOUCH_BG)).collect()));
-        for rect in rects{
-            painter.rect_stroke(rect,theme::CONTROL_RADIUS,
-                Stroke::new(theme::ONE_TOUCH_BORDER_WIDTH,theme::ONE_TOUCH_BORDER),
-                egui::StrokeKind::Inside);
+        painter.set(paint_slot,egui::Shape::Vec(rects.iter().copied()
+            .filter(|rect|rect.intersects(clip))
+            .map(|rect|background_shape(rect.intersect(clip)))
+            .collect()));
+        for rect in rects.into_iter().filter(|rect|rect.intersects(clip)){
+            painter.add(outline_shape(rect));
         }
     }
 }
