@@ -36,7 +36,13 @@ fn parse_freight(input:&str)->Option<i64>{
     input.replace(',',"").parse::<i64>().ok()
         .filter(|n|(0..=9_007_199_254_740_991).contains(n))
 }
-type QueueMatchIndex<'a> = HashMap<String,Vec<(Option<chrono::NaiveDate>,&'a Value)>>;
+struct QueueCandidate<'a>{
+    day:Option<chrono::NaiveDate>,
+    queue:&'a Value,
+    tracking:&'a str,
+    pending:bool,
+}
+type QueueMatchIndex<'a> = HashMap<String,Vec<QueueCandidate<'a>>>;
 
 fn match_key(recipient:&Value)->String{
     normalized(s(recipient,"name"))
@@ -49,6 +55,8 @@ fn business_day(value:&str)->Option<chrono::NaiveDate>{
 fn queue_match_index(state:&Value)->QueueMatchIndex<'_>{
     let export_days:HashMap<&str,Option<chrono::NaiveDate>>=rows(state,"exports").iter()
         .map(|e|(s(e,"id"),business_day(s(e,"at")))).collect();
+    let ships:HashMap<&str,&Value>=rows(field(state,"workflow"),"shipments").iter()
+        .map(|ship|(s(ship,"id"),ship)).collect();
     let mut index=HashMap::new();
     for queue in rows(field(state,"workflow"),"queue").iter().filter(|q|
         s(q,"origin")=="FACTORY" && s(q,"status")=="EXPORTED"
@@ -57,7 +65,12 @@ fn queue_match_index(state:&Value)->QueueMatchIndex<'_>{
         if key.is_empty(){continue;}
         let day=business_day(s(queue,"exportedAt"))
             .or_else(||export_days.get(s(queue,"exportId")).copied().flatten());
-        index.entry(key).or_insert_with(Vec::new).push((day,queue));
+        let ship=ships.get(s(queue,"shipmentId")).copied();
+        if ship.is_some_and(|s|field(s,"legacyArchived")==true){continue;}
+        let tracking=ship.map(|s|self::s(field(s,"tracking"),"FACTORY")).unwrap_or("");
+        let pending=tracking.is_empty()||ship.is_none_or(|s|
+            actual(s,field(field(queue,"snapshot"),"recipient")).is_null());
+        index.entry(key).or_insert_with(Vec::new).push(QueueCandidate{day,queue,tracking,pending});
     }
     index
 }
@@ -76,12 +89,22 @@ fn queue_goods(queue:&Value)->Vec<String>{
 fn matching_queues<'a>(index:&QueueMatchIndex<'a>,row:&Value)->Vec<&'a Value>{
     let Some(entries)=index.get(&match_key(row)) else{return Vec::new();};
     let cutoff=business_day(s(row,"matchDate"));
-    let latest=entries.iter().filter_map(|(day,_)|*day)
-        .filter(|day|cutoff.is_none_or(|max|*day<=max)).max();
-    // Search dates newest first, never skip a same-day ambiguity to guess
-    // an older order. Undated legacy exports are a last-resort group.
-    let candidates=entries.iter().filter(|(day,_)|*day==latest)
-        .map(|(_,q)|*q).collect::<Vec<_>>();
+    let eligible=entries.iter().filter(|e|e.day.is_none_or(|day|cutoff.is_none_or(|max|day<=max)))
+        .collect::<Vec<_>>();
+    // An already registered identical Q value is replay/correction evidence,
+    // not a second new shipment. Only within the same recipient name.
+    let tracking=s(row,"tracking");
+    if !tracking.is_empty(){
+        let identical=eligible.iter().filter(|e|e.tracking==tracking)
+            .map(|e|e.queue).collect::<Vec<_>>();
+        if !identical.is_empty(){return identical;}
+    }
+    // New replies search pending orders from today's export backwards.
+    // Completed orders are a fallback only when no pending candidate exists.
+    let pending=eligible.iter().any(|e|e.pending);
+    let latest=eligible.iter().filter(|e|!pending||e.pending).filter_map(|e|e.day).max();
+    let candidates=eligible.iter().filter(|e|(!pending||e.pending)&&e.day==latest)
+        .map(|e|e.queue).collect::<Vec<_>>();
     let unique=candidates.iter().map(|q|s(q,"shipmentId")).collect::<HashSet<_>>();
     if unique.len()<=1{return candidates;}
     let wanted=goods_key(s(row,"goods"));
@@ -89,6 +112,13 @@ fn matching_queues<'a>(index:&QueueMatchIndex<'a>,row:&Value)->Vec<&'a Value>{
     let narrowed=candidates.iter().copied().filter(|q|queue_goods(q)==wanted).collect::<Vec<_>>();
     // A missing or changed description cannot pick an unrelated older date.
     if narrowed.is_empty(){candidates}else{narrowed}
+}
+/// The legacy Tauri write guard must use exactly the same business matcher.
+pub(crate) fn factory_reply_matches_shipment(state:&Value,row:&Value,id:&str)->bool{
+    let index=queue_match_index(state);
+    let ids=matching_queues(&index,row).into_iter()
+        .map(|q|s(q,"shipmentId")).collect::<HashSet<_>>();
+    ids.len()==1&&ids.contains(id)
 }
 // Independent linear baseline for the undated, unique-name performance fixture.
 #[cfg(test)]
@@ -133,7 +163,7 @@ fn actual(ship:&Value,recipient:&Value)->Value {
 }
 fn actor(state:&Value)->String {
     let name=s(field(state,"settings"),"operatorName");
-    if name.is_empty(){"직원".into()}else{name.to_string()}
+    if name.is_empty(){"공장 회신".into()}else{name.to_string()}
 }
 fn add_event(state:&mut Value,event:Value)->Result<(),String>{
     state["workflow"]["events"].as_array_mut()
@@ -168,7 +198,14 @@ fn connect(input:&Value,source:&Value,approve:bool,context:&Value)->Result<Value
             reply["rows"][index]["issue"]=json!("필수 배송정보 / Q열 운송장 / 실제 운임 확인 필요");
             continue
         }
-        let candidates=matching_queues(&queue_index,&current);
+        let explicit=if source.get("resolves").is_some()&&count==1 {
+            s(context,"selectedShipmentId")
+        }else{""};
+        let candidates=if approve&&!explicit.is_empty(){
+            // A historical correction owns its previously recorded shipment.
+            queue_index.get(&match_key(&current)).into_iter().flatten()
+                .filter(|e|s(e.queue,"shipmentId")==explicit).map(|e|e.queue).collect()
+        }else{matching_queues(&queue_index,&current)};
         let mut ids=Vec::<String>::new();
         for q in &candidates {
             let id=s(q,"shipmentId").to_string();
@@ -189,8 +226,10 @@ fn connect(input:&Value,source:&Value,approve:bool,context:&Value)->Result<Value
             continue
         }
         let shipment_id=ids[0].clone();
-        let shipment_pos=shipment_index.position(&shipment_id)
-            .ok_or("공장 회신과 연결된 배송 건을 찾지 못했습니다.")?;
+        let Some(shipment_pos)=shipment_index.position(&shipment_id) else{
+            reply["rows"][index]["issue"]=json!("연결된 배송 건을 찾지 못했습니다.");
+            continue;
+        };
         let ship=rows(field(&next,"workflow"),"shipments")[shipment_pos].clone();
         let queue=candidates.iter().find(|q|s(q,"shipmentId")==shipment_id)
             .ok_or("회신 목록의 배송 건이 없습니다.")?;
@@ -213,11 +252,8 @@ fn connect(input:&Value,source:&Value,approve:bool,context:&Value)->Result<Value
             reply["rows"][index]["applied"]=json!(true);
             continue
         }
-        if !approve && ((!prev_tracking.is_empty() && prev_tracking!=s(&current,"tracking"))
-            || (!prev_actual.is_null() && &prev_actual!=wanted)){
-            reply["rows"][index]["issue"]=json!("기존 송장 / 실제 운임과 충돌합니다. 직원 확인 필요");
-            continue
-        }
+        // A uniquely matched valid reply updates the two cost-side fields.
+        // A differing prior value is audit evidence, not an approval gate.
         // recordActualFreight() only accepts an existing origin of the original
         // order. Keep its independent audit event before the reply event.
         let order=rows(&next,"orders").iter()
@@ -258,7 +294,8 @@ fn connect(input:&Value,source:&Value,approve:bool,context:&Value)->Result<Value
         }
         shipment["tracking"]["FACTORY"]=field(&current,"tracking").clone();
         shipment_index.replace(shipment_pos,prev_tracking,s(&current,"tracking"));
-        let reply_action=if approve || (!prev_tracking.is_empty() && prev_tracking!=s(&current,"tracking")) {
+        let reply_action=if approve || (!prev_tracking.is_empty() && prev_tracking!=s(&current,"tracking"))
+            || (!prev_actual.is_null()&&&prev_actual!=wanted) {
             "공장 송장 / 운임 정정"
         }else{"공장 회신 반영"};
         add_event(&mut next,json!({
@@ -454,12 +491,21 @@ fn apply(payload:&Value)->Result<Value,String>{
     let next=connect(state,reply,false,payload)?;
     Ok(json!({"next":next,"applied":field(&current,"applied"),"held":field(&current,"held")}))
 }
-// A resolved historical row requires a later successfully applied correction.
+// Preserve the source history. A later successful row with the same name
+// and exact waybill resolves an earlier bad G-cell/held row; name alone never does.
 fn resolved_row(state:&Value,record:&Value,row:&Value)->bool{
-    rows(state,"factoryReplies").iter().any(|later|
-        s(field(later,"resolves"),"id")==s(record,"id") &&
-        field(field(later,"resolves"),"row")==field(row,"row") &&
-        rows(later,"rows").iter().any(|r|field(r,"applied").as_bool()==Some(true)))
+    let records=rows(state,"factoryReplies");
+    let Some(position)=records.iter().position(|r|s(r,"id")==s(record,"id")) else{return false;};
+    let tracking=s(row,"tracking");
+    let name=match_key(row);
+    records[position+1..].iter().any(|later|{
+        let explicit=s(field(later,"resolves"),"id")==s(record,"id") &&
+            field(field(later,"resolves"),"row")==field(row,"row");
+        rows(later,"rows").iter().any(|r|field(r,"applied")==true && (explicit ||
+            (valid_tracking(tracking)&&!name.is_empty()&&match_key(r)==name&&s(r,"tracking")==tracking
+             && (s(row,"shipmentId").is_empty()||s(row,"shipmentId")==s(r,"shipmentId"))
+             && (s(row,"goods").is_empty()||s(r,"goods").is_empty()||goods_key(s(row,"goods"))==goods_key(s(r,"goods"))))))
+    })
 }
 fn grouped_amount(value:&Value)->String {
     let Some(n)=value.as_i64() else{return "미확인".into();};
@@ -637,7 +683,9 @@ pub(crate) fn approve_factory_conflict_for_state(state:&Value,payload:&Value)->R
         "businessDate":payload["businessDate"],"at":payload["freightAt"],"actor":actor(state),
         "archivedPath":original["archivedPath"],"resolves":{"id":original["id"],"row":source["row"]},
         "status":"REVIEW","rows":[clean]});
-    let next=connect(state,&reply,!selection,payload)?;
+    let mut context=payload.clone();
+    context["selectedShipmentId"]=json!(target);
+    let next=connect(state,&reply,!selection,&context)?;
     let appended=rows(&next,"factoryReplies").last().ok_or("정정 기록 누락")?;
     let applied=rows(appended,"rows").first().ok_or("정정 결과 누락")?;
     if applied["applied"]!=true||s(applied,"shipmentId")!=target{
@@ -772,7 +820,7 @@ mod tests {
         }
     }
     #[test]
-    fn approved_freight_only_conflict_is_audited_as_correction_without_changing_payment(){
+    fn automatic_freight_correction_is_audited_without_changing_payment(){
         let mut state=fixture();
         state["workflow"]["shipments"][0]["tracking"]["FACTORY"]=json!("001234567890");
         state["workflow"]["shipments"][0]["actualFreight"]["FACTORY"]=json!(4000);
@@ -781,18 +829,9 @@ mod tests {
         state["workflow"]["confirmations"]=json!([{"id":"c1","amount":13000}]);
         let payload=input(state.clone(),"001234567890","5500");
         let held=import_automatic_factory_reply(&state,&payload).unwrap();
-        assert_eq!(held["held"],1);
-        assert_eq!(held["applied"],0);
-        let before=held["next"].clone();
-        assert_eq!(before["workflow"],state["workflow"]);
-        let mut approval=json!({
-            "state":before,"revision":before["revision"],"id":"factory-reply-test",
-            "rowNumber":2,"correctionId":"factory-correction-test",
-            "businessDate":"2026-11-13","freightAt":"2026-11-13T10:00:00Z",
-            "freightEventIds":["f1"],"replyEventIds":["r1"]
-        });
-        approval["confirmedText"]=conflict_confirmation(&approval).unwrap()["text"].clone();
-        let next=approve_conflict(&approval).unwrap();
+        assert_eq!(held["held"],0);
+        assert_eq!(held["applied"],1);
+        let next=held["next"].clone();
         let ship=&next["workflow"]["shipments"][0];
         assert_eq!(ship["tracking"]["FACTORY"],"001234567890");
         assert_eq!(ship["actualFreight"]["FACTORY"],5500);
@@ -805,8 +844,8 @@ mod tests {
         assert_eq!(events[0]["before"],4000);
         assert_eq!(events[0]["after"]["amount"],5500);
         assert_eq!(events[1]["action"],"공장 송장 / 운임 정정");
-        assert_eq!(next["factoryReplies"][0],before["factoryReplies"][0]);
-        assert_eq!(next["factoryReplies"][1]["resolves"],json!({"id":"factory-reply-test","row":2}));
+        assert_eq!(next["factoryReplies"].as_array().unwrap().len(),1);
+        assert_eq!(next["factoryReplies"][0]["status"],"APPLIED");
     }
 
     fn legacy_matching_queues<'a>(state:&'a Value,row:&Value)->Vec<&'a Value>{
@@ -969,10 +1008,10 @@ mod tests {
         let accepted=analyze(&req).unwrap();
         assert_eq!(accepted["applied"],1);
     }
-    #[test] fn conflicts_hold_but_safe_numeric_waybills_are_accepted(){
+    #[test] fn corrected_waybill_and_safe_numeric_waybills_are_accepted(){
         let mut s=fixture();
         s["workflow"]["shipments"][0]["tracking"]["FACTORY"]=json!("009988776655");
-        assert_eq!(analyze(&input(s,"001234567890","4000")).unwrap()["held"],1);
+        assert_eq!(analyze(&input(s,"001234567890","4000")).unwrap()["applied"],1);
         let mut req=input(fixture(),"123456789012","4000");
         req["sourceRows"][0]["trackingNumeric"]=json!(true);
         let accepted=analyze(&req).unwrap();
@@ -1093,7 +1132,7 @@ mod ambiguity_selection_tests{
             {"id":"o1","recipients":[recipient.clone()]},{"id":"o2","recipients":[recipient.clone()]}],
             "workflow":{"shipments":[
                 {"id":"s1","orderId":"o1","recipientId":"r","step":4,"transferred":true,
-                    "tracking":{"FACTORY":"999999999999"},"actualFreight":{"FACTORY":3000}},
+                    "tracking":{"FACTORY":"999999999999"},"actualFreight":{}},
                 {"id":"s2","orderId":"o2","recipientId":"r","step":4,"transferred":true,
                     "tracking":{},"actualFreight":{}}],
                 "queue":[{"id":"q1","shipmentId":"s1","origin":"FACTORY","status":"EXPORTED","snapshot":{"recipient":recipient.clone()}},
@@ -1157,5 +1196,32 @@ mod date_name_matching_tests{
         assert_eq!(ids(&row),vec!["old"]);
         row["matchDate"]=json!("2026-11-24");
         assert!(ids(&row).is_empty());
+    }
+}
+
+#[cfg(test)]
+mod pending_reply_policy_tests{
+    use super::*;
+    #[test]
+    fn pending_orders_take_precedence_but_existing_waybill_replay_keeps_its_owner(){
+        let q=|id:&str,date:&str|json!({"shipmentId":id,"origin":"FACTORY","status":"EXPORTED","exportedAt":date,
+            "snapshot":{"recipient":{"name":"김수하","items":[{"origin":"FACTORY","name":"BD 709","quantity":1}]}}});
+        let state=json!({"workflow":{"queue":[q("today","2026-11-27"),q("yesterday","2026-11-26"),q("future","2026-11-28")],
+            "shipments":[{"id":"today","tracking":{"FACTORY":"11111111"},"actualFreight":{"FACTORY":3000}},
+                {"id":"yesterday","tracking":{},"actualFreight":{}},{"id":"future","tracking":{},"actualFreight":{}}]}});
+        let index=queue_match_index(&state);
+        let mut row=json!({"name":"김수하","matchDate":"2026-11-27","tracking":"22222222"});
+        assert_eq!(s(matching_queues(&index,&row)[0],"shipmentId"),"yesterday");
+        row["tracking"]=json!("11111111");
+        assert_eq!(s(matching_queues(&index,&row)[0],"shipmentId"),"today");
+    }
+    #[test]
+    fn later_valid_same_waybill_resolves_invalid_g_without_erasing_history(){
+        let old=json!({"id":"old","rows":[{"row":2,"name":"김수하","tracking":"001234567890","issue":"G열 오류"}]});
+        let mut state=json!({"factoryReplies":[old.clone(),{"id":"new","rows":[{"row":8,"name":"김수하","tracking":"001234567890","shipmentId":"s1","applied":true}]}]});
+        assert!(resolved_row(&state,&old,&old["rows"][0]));
+        state["factoryReplies"][1]["rows"][0]["tracking"]=json!("009999999999");
+        assert!(!resolved_row(&state,&old,&old["rows"][0]));
+        assert_eq!(state["factoryReplies"][0],old);
     }
 }

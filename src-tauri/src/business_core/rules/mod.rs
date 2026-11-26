@@ -28,7 +28,7 @@ mod reply_rules;
 mod shipping_read;
 mod client_change;
 mod factory_reply;
-pub(crate) use factory_reply::{import_automatic_factory_reply,prepare_automatic_factory_reply,apply_prepared_factory_reply,factory_correction_order_scope,approve_factory_conflict_for_state};
+pub(crate) use factory_reply::{factory_reply_matches_shipment,import_automatic_factory_reply,prepare_automatic_factory_reply,apply_prepared_factory_reply,factory_correction_order_scope,approve_factory_conflict_for_state};
 mod legacy_migration;
 mod shipping;
 mod remote_delivery;

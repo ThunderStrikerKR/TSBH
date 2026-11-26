@@ -4,7 +4,6 @@
 //! byte identity, and the final revision-checked SQLite commit.
 use super::*;
 use serde::Serialize;
-use unicode_normalization::UnicodeNormalization;
 use sha2::{Digest, Sha256};
 use std::collections::{HashMap, HashSet};
 use std::io::Write;
@@ -144,29 +143,6 @@ pub(super) fn factory_reply_watch_scan(
     scan_files(&directory, &mut seen, &registered)
 }
 
-// Apply the exact NFKC recipient normalization used by the original TS
-// matcher and the Rust matching engine. Native auto-import validation must
-// not reject a shipment that the reviewed Rust preview uniquely matched.
-fn compact_recipient(text: &str) -> String {
-    text.nfkc().filter(|c| !c.is_whitespace() && !"(),.-[]".contains(*c))
-        .flat_map(char::to_lowercase).collect()
-}
-fn same_recipient(row: &Value, queue: &Value) -> bool {
-    let recipient = &queue["snapshot"]["recipient"];
-    let text_matches = |key: &str| {
-        let left = row[key].as_str().unwrap_or("");
-        let right = recipient[key].as_str().unwrap_or("");
-        !left.is_empty() && !right.is_empty()
-            && compact_recipient(left) == compact_recipient(right)
-    };
-    let contact_matches = row["contacts"].as_array().is_some_and(|contacts|
-        contacts.iter().filter_map(Value::as_str).any(|contact|
-            ["phone", "mobile"].iter().any(|field| recipient[*field].as_str()
-                .is_some_and(|saved| !saved.is_empty()
-                    && compact_recipient(saved) == compact_recipient(contact)))));
-    text_matches("name") && text_matches("address") && contact_matches
-}
-
 // Automated imports are narrower than the general state_save API.
 // The UI may only append one reply and change the related workflow shipments
 // and append-only workflow events. The original orders and everything else
@@ -274,33 +250,8 @@ fn validate_automatic_change(before: &Value, next: &Value, id: &str, name: &str)
             || effective_actual != Some(actual) {
             return Err("운송장번호와 운임이 반영된 배송 건의 값이 다릅니다.".into());
         }
-        let matching_ids: HashSet<&str> = before["workflow"]["queue"].as_array()
-            .ok_or("공장 발송 목록 오류")?.iter()
-            .filter(|q| q["origin"] == "FACTORY" && q["status"] == "EXPORTED"
-                && same_recipient(row, q))
-            .filter_map(|q| q["shipmentId"].as_str()).collect();
-        if matching_ids.len() != 1 || !matching_ids.contains(shipment_id) {
-            return Err("수취인 정보가 고유한 공장 발송 배송 건과 일치하지 않습니다.".into());
-        }
-        let original = old_shipments.iter().find(|s| s["id"] == shipment_id)
-            .ok_or("원본 공장 배송 건 누락")?;
-        if original["tracking"]["FACTORY"].as_str()
-            .is_some_and(|old| !old.is_empty() && old != tracking) {
-            return Err("기존 운송장번호와 충돌합니다. 직원 승인이 필요합니다.".into());
-        }
-        let original_freight = if let Some(saved) =
-            original["actualFreight"].as_object().and_then(|m| m.get("FACTORY")) {
-            saved.as_u64()
-        } else {
-            before["orders"].as_array().and_then(|orders| orders.iter()
-                .find(|order| order["id"] == original["orderId"]))
-                .and_then(|order| order["recipients"].as_array())
-                .and_then(|recipients| recipients.iter()
-                    .find(|recipient| recipient["id"] == original["recipientId"]))
-                .and_then(|recipient| recipient["actualFreight"].as_u64())
-        };
-        if original_freight.is_some_and(|amount| amount != actual) {
-            return Err("기존 실제 운임과 충돌합니다. 직원 승인이 필요합니다.".into());
+        if !crate::business_core::rules::factory_reply_matches_shipment(before,row,shipment_id){
+            return Err("회신 수하인과 연결 대상 배송 건이 일치하지 않습니다.".into());
         }
         if new_shipments.iter().any(|s| s["id"] != shipment_id
             && s["tracking"]["FACTORY"] == tracking) {

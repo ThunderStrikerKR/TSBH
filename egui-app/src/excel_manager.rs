@@ -728,7 +728,7 @@ impl ExcelManager{
                         crate::popup::modal_editor_body_max_height(area.height()),|ui|{
                         ui.label(typography::field_label(&format!("미해결 회신 {count}행")));
                         ui.label(typography::caption(crate::native_workbooks::FACTORY_REPLY_FORMAT_GUIDANCE));
-                        ui.label(typography::caption("정상 회신은 자동 저장됩니다. 중복 배송 건은 출력 이력을 비교하고, 충돌 건은 기존 값과 회신 값을 확인하세요."));
+                        ui.label(typography::caption("정상 회신은 자동 반영됩니다. 연결할 배송 건이 여러 개일 때만 대상을 확인하세요."));
                         if count==0{crate::ui_primitives::management_body_state_inline(ui,if busy{"조회 중"}else{"검토할 회신이 없습니다."});}
                         for row in self.reply_rows.iter().skip(self.reply_page*50).take(50){
                             crate::ui_primitives::soft_divider(ui);
@@ -736,12 +736,12 @@ impl ExcelManager{
                                 line.label(typography::field_label(&format!("{} / {}행 / {}",
                                     text(row,"filename"),row["row"],text(row,"name"))));
                                 if text(row,"issue").contains("충돌")&&!text(row,"shipmentId").is_empty(){
-                                    if crate::button::action(line,"충돌 검토",theme::ButtonRole::Standard,
+                                    if crate::button::action(line,"이전 보류 회신 처리",theme::ButtonRole::Standard,
                                         writable_snapshot&&self.gateway.excel_write_enabled()).clicked(){selected=Some(row.clone());}
                                 }
                             });
                             ui.label(typography::table_cell(&format!("송장 {} / 실제 운임 {} / {}",
-                                text(row,"tracking"),amount(&row["actual"]),text(row,"issue"))));
+                                text(row,"tracking"),amount(&row["actual"]),text(row,"issue").replace("직원 확인 필요","확인 필요"))));
                             for candidate in rows(&row["candidates"]){
                                 let row_number=candidate["exportRow"].as_u64().map(|n|n.to_string())
                                     .unwrap_or_else(||"미확인".into());

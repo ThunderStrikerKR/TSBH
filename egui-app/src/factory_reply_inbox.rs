@@ -681,44 +681,22 @@ mod tests{
     }
 
     #[test]
-    fn approved_factory_conflict_updates_only_cost_and_preserves_paid_amounts_and_history(){
+    fn automatic_factory_correction_updates_only_cost_and_preserves_paid_amounts_and_history(){
         let base=Temp::new();
         let (mut conn,inbox)=synthetic_db(&base.0);
         let initial=snapshot(&mut conn).unwrap();
         let first=reply_bytes("001234567890",4000);
-        let conflict=reply_bytes("009876543210",5500);
+        let correction=reply_bytes("009876543210",5500);
         fs::write(inbox.join("first.xlsx"),&first).unwrap();
         let mut cache=Scan::default();
         let imported=scan_ready(&mut cache,&mut conn,&base.0);
         assert!(imported.error.is_none(),"{:?}",imported.error);
         assert_eq!((imported.files,imported.applied,imported.held),(1,1,0));
-        let first_saved=snapshot(&mut conn).unwrap();
-        fs::write(inbox.join("conflict.xlsx"),&conflict).unwrap();
-        let held=scan_ready(&mut cache,&mut conn,&base.0);
-        assert!(held.error.is_none(),"{:?}",held.error);
-        assert_eq!((held.files,held.applied,held.held),(1,0,1));
         let before=snapshot(&mut conn).unwrap();
-        assert_eq!(before["workflow"]["shipments"],first_saved["workflow"]["shipments"]);
-        assert_eq!(before["workflow"]["events"],first_saved["workflow"]["events"]);
-        assert_eq!(before["factoryReplies"][0],first_saved["factoryReplies"][0]);
-        let reply_id=id(&conflict);
-        let confirm=rules::execute("factory_conflict_confirmation",json!({
-            "state":before,"id":reply_id,"rowNumber":2
-        })).unwrap();
-        let review=json!({"revision":before["revision"],"id":reply_id,"rowNumber":2,
-            "confirmedText":confirm["text"]});
-        let mut stale=review.clone();
-        stale["revision"]=json!(before["revision"].as_u64().unwrap()-1);
-        assert!(approve_with_db(&mut conn,&base.0,stale).is_err());
-        let mut tampered=review.clone();
-        tampered["confirmedText"]=json!("변조된 승인 내용");
-        assert!(approve_with_db(&mut conn,&base.0,tampered).is_err());
-        let original=PathBuf::from(before["factoryReplies"][1]["archivedPath"].as_str().unwrap());
-        fs::write(&original,b"tampered archive").unwrap();
-        assert!(approve_with_db(&mut conn,&base.0,review.clone()).is_err());
-        assert_eq!(snapshot(&mut conn).unwrap(),before);
-        fs::write(&original,&conflict).unwrap();
-        approve_with_db(&mut conn,&base.0,review.clone()).unwrap();
+        fs::write(inbox.join("corrected.xlsx"),&correction).unwrap();
+        let updated=scan_ready(&mut cache,&mut conn,&base.0);
+        assert!(updated.error.is_none(),"{:?}",updated.error);
+        assert_eq!((updated.files,updated.applied,updated.held),(1,1,0));
         drop(conn);
         let mut conn=Connection::open(base.0.join("synthetic.sqlite")).unwrap();
         let after=snapshot(&mut conn).unwrap();
@@ -731,41 +709,20 @@ mod tests{
             assert_eq!(after["workflow"][key],initial["workflow"][key],"{key}");
         }
         assert_eq!(after["orders"],initial["orders"]);
-        assert_eq!(after["workflow"]["payments"][0]["amount"],13000);
         let replies=after["factoryReplies"].as_array().unwrap();
-        assert_eq!(replies.len(),3);
+        assert_eq!(replies.len(),2);
         assert_eq!(replies[0],before["factoryReplies"][0]);
-        assert_eq!(replies[1],before["factoryReplies"][1]);
-        assert_eq!(replies[2]["resolves"],json!({"id":reply_id,"row":2}));
-        assert_eq!(replies[2]["rows"].as_array().unwrap().len(),1);
-        assert_eq!(replies[2]["rows"][0]["shipmentId"],"s1");
-        assert_eq!(replies[2]["status"],"APPLIED");
+        assert_eq!(replies[1]["status"],"APPLIED");
+        assert_eq!(replies[1]["rows"][0]["shipmentId"],"s1");
         let events=after["workflow"]["events"].as_array().unwrap();
         assert_eq!(events.len(),4);
-        // Differential oracle: identical approval metadata and full legacy
-        // dispatcher must produce precisely the same durable snapshot.
-        let mut expected=rules::execute("approve_factory_conflict",json!({
-            "state":before,"revision":before["revision"],"id":reply_id,"rowNumber":2,
-            "confirmedText":review["confirmedText"],"correctionId":replies[2]["id"],
-            "businessDate":replies[2]["businessDate"],"freightAt":events[2]["at"],
-            "freightEventIds":[events[2]["id"]],"replyEventIds":[events[3]["id"]]
-        })).unwrap();
-        expected["revision"]=after["revision"].clone();
-        assert_eq!(after,expected);
         assert_eq!(events[2]["before"],4000);
         assert_eq!(events[2]["after"]["amount"],5500);
         assert_eq!(events[3]["action"],"공장 송장 / 운임 정정");
-        let mut replay=review;
-        replay["revision"]=after["revision"].clone();
-        replay["confirmedText"]=rules::execute("factory_conflict_confirmation",json!({
-            "state":after,"id":reply_id,"rowNumber":2
-        })).unwrap()["text"].clone();
-        assert!(approve_with_db(&mut conn,&base.0,replay).is_err());
-        assert_eq!(snapshot(&mut conn).unwrap(),after);
+        assert_eq!(fs::read(replies[1]["archivedPath"].as_str().unwrap()).unwrap(),correction);
         let repeated=scan_ready(&mut Scan::default(),&mut conn,&base.0);
         assert!(repeated.error.is_none(),"{:?}",repeated.error);
         assert_eq!(repeated.files,0);
         assert_eq!(snapshot(&mut conn).unwrap(),after);
-        assert_eq!(fs::read(&original).unwrap(),conflict);
     }
 }
