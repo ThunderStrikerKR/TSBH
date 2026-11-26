@@ -2402,7 +2402,7 @@ mod tests {
         let composition=source.split("    pub fn show_detail(").nth(1).unwrap()
             .split("        self.selected=Some(draft.clone());").next().unwrap();
         let horizontal=composition.split("measured.cards=crate::popup::modal_parallel_sections(").nth(1).unwrap()
-            .split("                        }else{").next().unwrap();
+            .split("\n                        }else{").next().unwrap();
         let stacked=composition.split("body.vertical(|stack|{").nth(1).unwrap()
             .split("                        // A single shared structural separator").next().unwrap();
         for section in [horizontal,stacked]{
