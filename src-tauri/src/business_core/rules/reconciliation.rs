@@ -4,6 +4,68 @@ use serde_json::{json,Value};
 use super::{field, find_by_id, flag, has_value, req, required_str, rows, set, str_field};
 use super::{shipping,workflow_stages as stages};
 
+// Order review freezes product prices, not a shipment's first freight approval.
+// Only clearly owned AUTO/explicit-override freight with no later approval or
+// previous freight confirmation is eligible for a passive master refresh.
+fn pending_first_freight(order:&Value,ship:&Value,recipient:&Value)->bool {
+    (has_value(field(order,"confirmedAt")) || flag(order,"pricesLocked"))
+        && stages::read(ship)==[true,false,false,false]
+        && !flag(ship,"transferred") && !flag(ship,"legacyArchived")
+        && !has_value(field(ship,"confirmedFreightVersion"))
+        && (str_field(ship,"chargeMode")=="AUTO" ||
+            field(recipient,"shippingCharges").is_object())
+}
+
+// The same base-rate selection is used by reconciliation and the read-only
+// board projection. Explicit zero is manual; null is automatic.
+fn requote_charges(ship:&Value,recipient:&Value,reco:&Value,charges:&mut Value)
+    ->Result<bool,String>{
+    let overrides=field(recipient,"shippingCharges");
+    let legacy_manual=str_field(ship,"chargeMode")!="AUTO" && !has_value(overrides);
+    let mut manual=false;
+    for origin in ["FACTORY","STORE"] {
+        if !rows(field(recipient,"items")).iter().any(|i|str_field(i,"origin")==origin){
+            continue;
+        }
+        let explicit=super::manual_freight(recipient,origin)?;
+        let retained=if explicit.is_some(){explicit}
+            else if legacy_manual{super::manual_amount(field(field(ship,"charges"),origin))?}
+            else{None};
+        let value=if let Some(value)=retained{
+            manual=true;
+            json!(value)
+        }else{shipping::base_recommendation(reco,origin)};
+        set(charges,origin,value)?;
+    }
+    Ok(manual)
+}
+
+/// Mutates an owned presentation snapshot only. No stages, events, order
+/// prices, receipt snapshots or SQLite writes are performed by this read path.
+pub(crate) fn refresh_pending_freight_preview(state:&mut Value)->Result<(),String>{
+    let count=rows(field(field(state,"workflow"),"shipments")).len();
+    for si in 0..count {
+        let ship=&state["workflow"]["shipments"][si];
+        let Some(order)=find_by_id(field(state,"orders"),str_field(ship,"orderId")) else{continue;};
+        if has_value(field(order,"deletedAt")){continue;}
+        let Some(group)=find_by_id(field(field(state,"workflow"),"groups"),str_field(ship,"groupId")) else{continue;};
+        if has_value(field(group,"deletedAt")){continue;}
+        let Some(recipient)=find_by_id(field(order,"recipients"),str_field(ship,"recipientId")) else{continue;};
+        if !pending_first_freight(order,ship,recipient){continue;}
+        let mut individual=order.clone();
+        set(&mut individual,"recipients",json!([recipient]))?;
+        let reco=shipping::recommend(&individual,state)?;
+        let mut charges=field(ship,"charges").clone();
+        if !charges.is_object(){charges=json!({});}
+        let manual=requote_charges(ship,recipient,&reco,&mut charges)?;
+        let ship=&mut state["workflow"]["shipments"][si];
+        set(ship,"charges",charges)?;
+        set(ship,"chargeMode",json!(if manual{"MANUAL"}else{"AUTO"}))?;
+        set(ship,"freightVersion",field(&reco,"version").clone())?;
+    }
+    Ok(())
+}
+
 fn workflow_empty() -> Value {
     json!({"sources":[],"groups":[],"shipments":[],"payments":[],
         "queue":[],"events":[],"deliveries":[],"changeRequests":[]})
@@ -658,7 +720,8 @@ fn reconcile_inner(payload:&Value,order_scope:Option<&str>,scoped_seed:Option<&s
             }
             let old_version=field(&state["workflow"]["shipments"][si],"freightVersion");
             let freight_confirmed=stages::read(&state["workflow"]["shipments"][si])[1];
-            if (!frozen || reassigned || physical_change) && old_version!=field(&reco,"version") &&
+            let pending_freight=pending_first_freight(&order,&state["workflow"]["shipments"][si],&recipient);
+            if (!frozen || reassigned || physical_change || pending_freight) && old_version!=field(&reco,"version") &&
                 !(freight_confirmed && str_field(&state["workflow"]["shipments"][si],"chargeMode")=="MANUAL") {
                 pending_rechecks.entry(si).and_modify(|entry|entry.1=true).or_insert((1,true,"적용 운임 기준 변경"));
                 set(&mut state["workflow"]["shipments"][si],"freightVersion",
@@ -689,23 +752,8 @@ fn reconcile_inner(payload:&Value,order_scope:Option<&str>,scoped_seed:Option<&s
                 super::manual_freight(&recipient,origin))
                 .collect::<Result<Vec<_>,_>>()?;
             let automatic=str_field(&state["workflow"]["shipments"][si],"chargeMode")=="AUTO";
-            if reassigned || physical_change || (!frozen && (overrides.is_object() || automatic)) {
-                // A legacy MANUAL shipment may predate recipient overrides.
-                // Preserve its explicit amounts when no override map exists.
-                let legacy_manual=!automatic && !has_value(overrides);
-                let mut manual=false;
-                for (origin,explicit) in origins.iter().zip(manual_amounts){
-                    let retained=if explicit.is_some(){explicit}
-                        else if legacy_manual{super::manual_amount(field(&previous_charges,origin))?}
-                        else{None};
-                    let value=if let Some(value)=retained{
-                        manual=true;
-                        json!(value)
-                    }else{
-                        super::shipping::base_recommendation(&reco,origin)
-                    };
-                    set(&mut charges,origin,value)?;
-                }
+            if reassigned || physical_change || pending_freight || (!frozen && (overrides.is_object() || automatic)) {
+                let manual=requote_charges(&state["workflow"]["shipments"][si],&recipient,&reco,&mut charges)?;
                 set(&mut state["workflow"]["shipments"][si],"chargeMode",
                     json!(if manual{"MANUAL"}else{"AUTO"}))?;
             } else if overrides.is_object() {
@@ -981,5 +1029,85 @@ mod reception_freight_reset_tests {
         let frozen=project(frozen);
         assert_eq!(frozen["workflow"]["shipments"][0]["chargeMode"],"AUTO");
         assert_eq!(frozen["workflow"]["shipments"][0]["charges"]["FACTORY"],5200);
+    }
+}
+
+#[cfg(test)]
+mod pending_first_freight_tests{
+    use super::*;
+
+    fn fixture()->Value{
+        let recipient=|id:&str,manual:Value|json!({
+            "id":id,"name":"테스트 수취인","address":"서울특별시 중구 세종대로 1",
+            "dispatchOrigin":"FACTORY","freightCode":"010","vatOverride":true,
+            "shippingCharges":{"FACTORY":manual},
+            "items":[{"id":format!("i-{id}"),"productId":"p","variantId":"v",
+                "quantity":1,"unitPrice":201000,"origin":"FACTORY"}]
+        });
+        json!({
+            "clients":[{"id":"c","tier":"wholesale","defaultApplyVat":true}],
+            "products":[{"id":"p","origin":"FACTORY","variants":[{"id":"v","wholesale":201000}]}],
+            "shipping":{"epoch":1,"productRules":{"p":{"version":"missing",
+                "fees":{"1":null},"maxBundle":1,"maxConfirmed":true}}},
+            "orders":[{"id":"o","clientId":"c","orderType":"AGENCY","applyVat":true,
+                "recipients":[recipient("auto",Value::Null),recipient("manual",json!(7000)),
+                    recipient("zero",json!(0)),recipient("approved",json!(3000)),
+                    recipient("later",json!(5000))]}]
+        })
+    }
+    fn reconcile_state(state:&Value)->Value{
+        reconcile(&json!({"state":state,"now":"2026-11-27T00:00:00+09:00",
+            "eventIds":["pending-1","pending-2","pending-3","pending-4","pending-5"]}))
+            .unwrap()["state"].clone()
+    }
+    #[test]
+    fn first_review_does_not_freeze_unapproved_auto_freight(){
+        let mut state=reconcile_state(&fixture());
+        state["orders"][0]["confirmedAt"]=json!("2026-11-27T00:00:00+09:00");
+        state["orders"][0]["pricesLocked"]=json!(true);
+        for si in 0..5{
+            stages::write(&mut state["workflow"]["shipments"][si],[true,false,false,false]).unwrap();
+        }
+        stages::write(&mut state["workflow"]["shipments"][3],[true,true,false,false]).unwrap();
+        stages::write(&mut state["workflow"]["shipments"][4],[true,false,true,true]).unwrap();
+        assert!(state["workflow"]["shipments"][0]["charges"]["FACTORY"].is_null());
+        state["shipping"]["productRules"]["p"]["version"]=json!("registered");
+        state["shipping"]["productRules"]["p"]["fees"]["1"]=json!(4580);
+        let orders=state["orders"].clone();
+        let events=state["workflow"]["events"].clone();
+        let mut preview=state.clone();
+        refresh_pending_freight_preview(&mut preview).unwrap();
+        assert_eq!(preview["workflow"]["shipments"][0]["charges"]["FACTORY"],4580);
+        assert_eq!(preview["workflow"]["shipments"][0]["chargeMode"],"AUTO");
+        assert_eq!(preview["workflow"]["shipments"][1]["charges"]["FACTORY"],7000);
+        assert_eq!(preview["workflow"]["shipments"][2]["charges"]["FACTORY"],0);
+        assert_eq!(preview["workflow"]["shipments"][3]["charges"]["FACTORY"],3000);
+        assert_eq!(preview["workflow"]["shipments"][4]["charges"]["FACTORY"],5000);
+        // Even without explicit overrides an already approved or independently
+        // financially approved shipment is excluded from passive refresh.
+        let mut protected=state.clone();
+        for si in [3,4]{
+            protected["orders"][0]["recipients"][si]["shippingCharges"]["FACTORY"]=Value::Null;
+            protected["workflow"]["shipments"][si]["chargeMode"]=json!("AUTO");
+        }
+        refresh_pending_freight_preview(&mut protected).unwrap();
+        assert_eq!(protected["workflow"]["shipments"][3]["charges"]["FACTORY"],3000);
+        assert_eq!(protected["workflow"]["shipments"][4]["charges"]["FACTORY"],5000);
+        assert_eq!(preview["orders"],orders);
+        assert_eq!(preview["workflow"]["events"],events);
+        assert!(state["workflow"]["shipments"][0]["charges"]["FACTORY"].is_null());
+        let result=reconcile_state(&state);
+        assert_eq!(result["workflow"]["shipments"][0]["charges"]["FACTORY"],4580);
+        assert_eq!(result["workflow"]["shipments"][0]["step"],1);
+        assert_eq!(result["workflow"]["shipments"][0]["freightVersion"],
+            preview["workflow"]["shipments"][0]["freightVersion"]);
+        assert_eq!(result["workflow"]["shipments"][1]["charges"]["FACTORY"],7000);
+        assert_eq!(result["workflow"]["shipments"][2]["charges"]["FACTORY"],0);
+        let ship_id=str_field(&result["workflow"]["shipments"][0],"id");
+        let totals=super::super::workflow::shipment_totals(&result,ship_id).unwrap();
+        assert_eq!(totals["subtotal"],201000);
+        assert_eq!(totals["shipping"],4580);
+        assert_eq!(totals["vat"],20558);
+        assert_eq!(totals["total"],226138);
     }
 }

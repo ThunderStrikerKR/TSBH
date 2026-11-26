@@ -252,6 +252,9 @@ pub trait BandoGateway: Send + Sync {
     }
     /// Native shipment mutations support order-scoped projection when the commit proves its scope.
     fn supports_scoped_freight_refresh(&self)->bool{false}
+    /// Prepare an owned read-only board snapshot with native pending freight.
+    /// Adapters without an operational local snapshot retain their own projection.
+    fn prepare_workflow_preview(&self,_state:&mut Value)->Result<(),String>{Ok(())}
     fn mutate_workflow(
         &self,_expected_revision:u64,_action:&str,_args:Value
     )->Result<Value,String>{
@@ -623,6 +626,9 @@ impl BandoGateway for LocalGateway {
         Ok(serde_json::json!({"state":committed,"projection":projection}))
     }
     fn supports_scoped_freight_refresh(&self)->bool{true}
+    fn prepare_workflow_preview(&self,state:&mut Value)->Result<(),String>{
+        rules::refresh_pending_freight_preview(state)
+    }
     fn workflow_write_enabled(&self)->bool{
         // A named, pre-existing v2 database is the user's explicit binding.
         // The writer guard restricts debug Windows to the developer TEST DB.

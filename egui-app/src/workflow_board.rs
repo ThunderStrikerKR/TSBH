@@ -304,7 +304,8 @@ pub fn load(gateway:&dyn BandoGateway)->Result<BoardSnapshot,String>{
 
 /// Project the exact snapshot returned by an authoritative, verified write.
 /// Periodic reads still go through load() to detect external changes.
-pub fn from_state(gateway:&dyn BandoGateway,state:Value)->Result<BoardSnapshot,String>{
+pub fn from_state(gateway:&dyn BandoGateway,mut state:Value)->Result<BoardSnapshot,String>{
+    gateway.prepare_workflow_preview(&mut state)?;
     project_state(gateway,&state,None)
 }
 
@@ -346,11 +347,12 @@ fn freight_refresh_scope(previous:&BoardSnapshot,state:&Value,group_id:&str)
     Some(scope)
 }
 
-pub fn after_freight_edit(gateway:&dyn BandoGateway,state:Value,
+pub fn after_freight_edit(gateway:&dyn BandoGateway,mut state:Value,
     previous:Option<BoardSnapshot>,group_id:&str)->Result<BoardSnapshot,String>{
     if gateway.supports_scoped_freight_refresh(){
         if let Some(mut board)=previous{
             if let Some(scope)=freight_refresh_scope(&board,&state,group_id){
+                gateway.prepare_workflow_preview(&mut state)?;
                 let updated=match project_state(gateway,&state,Some(&scope)){
                     Ok(updated)=>updated,
                     Err(_)=>return from_state(gateway,state),

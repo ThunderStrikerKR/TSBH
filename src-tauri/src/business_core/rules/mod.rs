@@ -6,7 +6,7 @@ mod pricing;
 pub(crate) use pricing::{ReceptionEditQuoteCache,vat_applies};
 pub mod settings_accounts;
 mod reconciliation;
-pub(crate) use reconciliation::sender_for_export;
+pub(crate) use reconciliation::{sender_for_export,refresh_pending_freight_preview};
 mod issues;
 mod product_confirmation;
 mod message_audit;
