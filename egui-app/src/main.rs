@@ -9189,16 +9189,18 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                 if !targets.is_empty(){
                                     let caption=targets.iter().find(|g|g.id==target)
                                         .map(|g|g.management_target_label())
-                                        .unwrap_or_else(||"같은 최초 발주서의 묶음 선택".to_owned());
+                                        .unwrap_or_else(||typography::inline_body_values(&[
+                                            ("같은 최초 발주서의 묶음 선택",None)
+                                        ]));
                                     let previous=target.clone();
                                     components::modal_labeled_row_with_width(ui,"다시 묶을 대상",112.0,|line|{
-                                        components::management_dropdown(
+                                        components::management_dropdown_values(
                                             line,&caption,
                                             line.available_width().max(1.0),!applying,|list|{
                                                 components::management_dropdown_option(
                                                     list,&mut target,String::new(),"대상 선택");
                                                 for other in &targets{
-                                                    components::management_dropdown_option(
+                                                    components::management_dropdown_option_values(
                                                         list,&mut target,other.id.clone(),
                                                         &other.management_target_label()
                                                     );
