@@ -4,7 +4,7 @@
 use std::collections::{HashMap,HashSet};
 use eframe::egui::{self,Context,Id,Response,Ui,Vec2};
 use serde_json::Value;
-use crate::{category_manager::ROOTS,components,floating_notice,theme,typography};
+use crate::{category_manager::ROOTS,category_tree,floating_notice,theme,typography};
 
 #[derive(Clone,Debug,PartialEq,Eq)]
 pub struct CategoryNode {
@@ -119,7 +119,7 @@ fn activate_path(state:&mut ExplorerState,path:Vec<String>,has_children:bool,
 
 fn category_option_row(ui:&mut Ui,name:&str,depth:usize,is_last:bool,
     has_children:bool,open:bool,selected:bool)->Response{
-    components::category_tree_row(ui,components::CategoryTreeRow{
+    category_tree::category_tree_row(ui,category_tree::CategoryTreeRow{
         name,summary:"",depth,ancestor_guides:&[],is_last,
         root:depth==0&&open,has_children,open,selected,
     })
@@ -467,7 +467,7 @@ mod tests{
         let source=include_str!("category_dropdown.rs");
         let renderer=source.split("fn category_option_row(").nth(1).unwrap()
             .split("fn category_back_button(").next().unwrap();
-        assert!(renderer.contains("components::category_tree_row("));
+        assert!(renderer.contains("category_tree::category_tree_row("));
         let body=source.split("fn menu_body(").nth(1).unwrap()
             .split("pub fn category_dropdown(").next().unwrap();
         assert!(body.contains("list.spacing_mut().item_spacing.y=0.0;"));

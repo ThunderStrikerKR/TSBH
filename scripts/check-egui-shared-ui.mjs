@@ -794,7 +794,7 @@ function selfTest(){
 // Parse Rust code tokens (not comments/strings), including grouped crate imports.
 const dependencyOwners=new Set(["components","theme","typography","ui_tokens","ui_primitives",
   "display_format","button","input","dropdown","table","checkbox","scrollbar","popup",
-  "card","overlay","floating_notice","source_highlight","cell_navigation","one_touch","layout","ui_layout","navigation","composite_workflow","composite_client","composite_reception","text_fit"]);
+  "card","overlay","floating_notice","source_highlight","cell_navigation","one_touch","layout","ui_layout","navigation","composite_workflow","composite_client","composite_reception","text_fit","category_tree"]);
 function sharedDependencies(source,owner){
   const v=productionTokens(source).map(t=>t.v),out=new Set();
   const add=name=>{if(name!==owner&&dependencyOwners.has(name))out.add(name);};

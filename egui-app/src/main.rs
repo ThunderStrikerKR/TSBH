@@ -15,6 +15,7 @@ mod composite_reception;
 mod text_fit;
 mod window_state;
 mod components;
+mod category_tree;
 mod ui_primitives;
 mod display_format;
 mod ui_tokens;

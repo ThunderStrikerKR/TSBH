@@ -1,7 +1,7 @@
-//! Native CategoryManager: tree presentation is owned by components::category_tree_row.
+//! Native CategoryManager: tree presentation is owned by category_tree::category_tree_row.
 //! Category selection, search, expansion and operations remain in this manager.
 //! All add/rename/move/delete decisions are delegated to catalog_clients.
-use crate::{category_dropdown,components,theme,typography};
+use crate::{category_dropdown,category_tree,components,theme,typography};
 use eframe::egui::{self,Align,Context,Layout,Rect,Sense,Ui,Vec2};
 use serde_json::{json,Value};
 use std::collections::{HashMap,HashSet};
@@ -428,7 +428,7 @@ impl CategoryManager {
         }else{
             format!("(상품 {count} · 하위 분류 {})",branches.len())
         };
-        let response=components::category_tree_row(ui,components::CategoryTreeRow{
+        let response=category_tree::category_tree_row(ui,category_tree::CategoryTreeRow{
             name:&item.name,summary:&summary,depth,ancestor_guides,is_last,
             root:is_root(&item.id),has_children:!branches.is_empty(),open,
             selected:self.selected==item.id,
