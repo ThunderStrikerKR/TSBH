@@ -13,11 +13,12 @@ pub struct CategoryNode {
     pub parent:String,
 }
 #[derive(Clone,Debug,Default)]
-struct ExplorerState {
-    path:Vec<String>,
-    search:String,
+pub(crate) struct ExplorerState {
+    pub(crate) path:Vec<String>,
+    pub(crate) search:String,
     ancestors_open:bool,
     motion:Option<Motion>,
+    pub(crate) scroll_epoch:u64,
 }
 
 pub fn nodes_from_catalog(catalog:&Value)->Vec<CategoryNode>{
@@ -45,10 +46,10 @@ pub fn nodes_from_catalog(catalog:&Value)->Vec<CategoryNode>{
     }
     nodes
 }
-fn tree_index(nodes:&[CategoryNode])->HashMap<&str,&CategoryNode>{
+pub(crate) fn tree_index(nodes:&[CategoryNode])->HashMap<&str,&CategoryNode>{
     nodes.iter().map(|n|(n.id.as_str(),n)).collect()
 }
-fn chain(index:&HashMap<&str,&CategoryNode>,id:&str)->Vec<String>{
+pub(crate) fn chain(index:&HashMap<&str,&CategoryNode>,id:&str)->Vec<String>{
     let mut result=Vec::new();
     let mut seen=HashSet::new();
     let mut current=id;
@@ -90,7 +91,7 @@ fn search_results<'a>(
     result
 }
 // Empty path is a virtual root, not a persisted category ID.
-fn navigate(state:&mut ExplorerState,path:Vec<String>){
+pub(crate) fn navigate(state:&mut ExplorerState,path:Vec<String>){
     state.path=path;
     state.search.clear();
     state.ancestors_open=false;
@@ -116,7 +117,7 @@ fn category_back_button(ui:&mut Ui,enabled:bool)->Response{
         theme::CATEGORY_EXPLORER_BACK_WIDTH
     )
 }
-fn motion_ms(depth:usize)->f64{
+pub(crate) fn motion_ms(depth:usize)->f64{
     (450+depth.saturating_sub(1).min(4)*150).min(1000) as f64
 }
 #[derive(Clone,Debug)]
@@ -139,7 +140,7 @@ impl Motion{
         ((now-self.started)/self.duration).clamp(0.0,1.0) as f32*450.0
     }
 }
-fn ease(t:f32)->f32{let t=t.clamp(0.0,1.0);1.0-(1.0-t).powi(3)}
+pub(crate) fn ease(t:f32)->f32{let t=t.clamp(0.0,1.0);1.0-(1.0-t).powi(3)}
 fn lerp(a:f32,b:f32,t:f32)->f32{a+(b-a)*ease(t)}
 // Normalized to 450ms: fade, horizontal, vertical, unfold; exact reverse.
 fn motion_pose(m:&Motion,t:f32)->(f32,f32){
@@ -215,10 +216,9 @@ fn crumb_text(ui:&mut Ui,name:&str,width:f32,current:bool,enabled:bool)->Respons
         if current{theme::CATALOG_TREE_SELECTED_INK}else{theme::TEXT});
     crate::ui_primitives::overflow_tooltip(response,visible!=name,name)
 }
-fn crumbs_row(ui:&mut Ui,state:&mut ExplorerState,index:&HashMap<&str,&CategoryNode>,
-    path:&[String],enabled:bool,alpha:f32,slide:f32)->Option<Vec<String>>{
+pub(crate) fn crumbs_row(ui:&mut Ui,state:&mut ExplorerState,index:&HashMap<&str,&CategoryNode>,
+    path:&[String],enabled:bool,alpha:f32,slide:f32,rail:f32)->Option<Vec<String>>{
     let mut next=None;
-    let rail=theme::CATEGORY_EXPLORER_BACK_WIDTH+theme::SPACE_8;
     let width=(ui.available_width()-rail).max(1.0);
     let height=theme::CATEGORY_EXPLORER_CRUMB_HEIGHT;
     let (rect,_)=ui.allocate_exact_size(Vec2::new(ui.available_width().max(1.0),height),egui::Sense::hover());
@@ -236,7 +236,8 @@ fn crumbs_row(ui:&mut Ui,state:&mut ExplorerState,index:&HashMap<&str,&CategoryN
     let sep=theme::CATEGORY_EXPLORER_SEPARATOR_WIDTH;
     let omitted=omitted_count(width,&widths[..last],widths[last],dots,sep);
     let separator=|bar:&mut Ui|{let (r,_)=bar.allocate_exact_size(Vec2::new(sep,height),egui::Sense::hover());
-        bar.painter().text(r.center(),egui::Align2::CENTER_CENTER,"›",egui::FontId::proportional(14.0),theme::SECONDARY);};
+        let galley=typography::category_tree_name_galley(bar,"›",false);
+        bar.painter().galley_with_override_text_color(r.center()-galley.size()/2.0,galley,theme::SECONDARY);};
     if omitted>0{
         if crate::button::action_with_min_width(&mut bar,"…",theme::ButtonRole::Standard,enabled,dots).clicked(){
             state.ancestors_open=!state.ancestors_open;
@@ -254,7 +255,7 @@ fn crumbs_row(ui:&mut Ui,state:&mut ExplorerState,index:&HashMap<&str,&CategoryN
         // A foreground area overlays the list; opening it never resizes the popup.
         let id=ui.id().with("category-omitted-paths");
         let pos=rect.left_bottom();
-        egui::Area::new(id).order(egui::Order::Foreground).fixed_pos(pos).show(ui.ctx(),|area|{
+        crate::overlay::area(id,crate::overlay::AreaRole::Help).fixed_pos(pos).show(ui.ctx(),|area|{
             crate::card::category_ancestor_frame().show(area,|rows|{
                 rows.set_max_width(width);
                 crate::scrollbar::scroll_area(crate::scrollbar::ScrollAxes::Vertical)
@@ -272,6 +273,12 @@ fn crumbs_row(ui:&mut Ui,state:&mut ExplorerState,index:&HashMap<&str,&CategoryN
     }
     next
 }
+impl ExplorerState{
+    pub(crate) fn moving(&self)->bool{self.motion.is_some()}
+    pub(crate) fn finish_motion(&mut self){
+        if let Some(m)=self.motion.take(){navigate(self,m.to);}
+    }
+}
 fn menu_body(
     menu:&mut Ui,nodes:&[CategoryNode],index:&HashMap<&str,&CategoryNode>,
     state:&mut ExplorerState,selected:&mut String,enabled:bool,
@@ -279,6 +286,31 @@ fn menu_body(
 ){
     menu.set_min_width(popup_width);menu.set_max_width(popup_width);menu.set_width(popup_width);
     menu.spacing_mut().item_spacing.y=theme::SPACE_8;
+    let available=menu.available_width().max(1.0);
+    let search_response=menu.add_enabled_ui(enabled&&!state.moving(),|menu|
+        crate::input::management_search_field(menu,&mut state.search,available,"카테고리 이름 또는 경로 검색")
+    ).inner;
+    let list_height=theme::CATEGORY_EXPLORER_LIST_MAX_HEIGHT
+        .min((menu.ctx().content_rect().height()-270.0).max(100.0));
+    explorer_body(menu,nodes,index,state,enabled,list_height,search_response.has_focus(),None);
+    let busy=state.moving();
+    crate::ui_primitives::soft_divider(menu);
+    let mut applied=false;
+    menu.with_layout(egui::Layout::right_to_left(egui::Align::Center),|right|{
+        applied=crate::button::action_with_min_width(right,"적용",theme::ButtonRole::Primary,
+            enabled&&!busy&&state.motion.is_none()&&(allow_empty||!state.path.is_empty()),
+            theme::CATEGORY_EXPLORER_APPLY_WIDTH).clicked();
+    });
+    if applied&&commit_path(state,selected,changed,enabled,allow_empty){
+        if *changed{floating_notice::dropdown_option_selected(menu.ctx());}
+        menu.close();
+    }
+}
+
+/// Shared focused explorer: the manager uses this without an Apply footer.
+pub(crate) fn explorer_body(menu:&mut Ui,nodes:&[CategoryNode],index:&HashMap<&str,&CategoryNode>,
+    state:&mut ExplorerState,enabled:bool,list_height:f32,search_focused:bool,
+    totals:Option<&HashMap<String,usize>>){
     let now=menu.input(|i|i.time);
     if let Some(m)=state.motion.clone(){
         if m.elapsed(now)>=450.0{navigate(state,m.to);}
@@ -286,15 +318,9 @@ fn menu_body(
     }
     let motion=state.motion.clone();
     let busy=motion.is_some();
-    let available=menu.available_width().max(1.0);
-    let search_response=menu.add_enabled_ui(enabled&&!busy,|menu|
-        crate::input::management_search_field(menu,&mut state.search,available,"카테고리 이름 또는 경로 검색")
-    ).inner;
-    let list_height=theme::CATEGORY_EXPLORER_LIST_MAX_HEIGHT
-        .min((menu.ctx().content_rect().height()-270.0).max(100.0));
     let mut next_path=None;
     let mut source=None;
-    if !search_response.has_focus()&&enabled&&!busy&&menu.input(|i|i.key_pressed(egui::Key::ArrowLeft)){
+    if !search_focused&&enabled&&!busy&&menu.input(|i|i.key_pressed(egui::Key::ArrowLeft)){
         let mut p=state.path.clone();p.pop();next_path=Some(p);
     }
     let t=motion.as_ref().map(|m|m.elapsed(now)).unwrap_or(450.0);
@@ -307,7 +333,7 @@ fn menu_body(
     }).unwrap_or(1.0);
     let nav_slide=motion.as_ref().map(|m|if final_phase{(1.0-alpha)*if m.reverse{-8.0}else{8.0}}
         else{(1.0-alpha)*if m.reverse{8.0}else{-8.0}}).unwrap_or(0.0);
-    if let Some(p)=crumbs_row(menu,state,index,&visual_path,enabled&&!busy,alpha,nav_slide){next_path=Some(p);}
+    if let Some(p)=crumbs_row(menu,state,index,&visual_path,enabled&&!busy,alpha,nav_slide,theme::CATEGORY_EXPLORER_BACK_WIDTH+theme::SPACE_8){next_path=Some(p);}
     crate::ui_primitives::soft_divider(menu);
     let searching=!state.search.trim().is_empty();
     let context=context_path(nodes,&visual_path);
@@ -321,7 +347,7 @@ fn menu_body(
         }
         body.vertical(|tree_ui|{
             let mut scroll=crate::scrollbar::scroll_area(crate::scrollbar::ScrollAxes::Vertical)
-                .id_salt(("category-explorer-list",context.clone(),state.search.clone()))
+                .id_salt(("category-explorer-list",state.scroll_epoch,context.clone(),state.search.clone()))
                 .max_height(list_height).auto_shrink([false,false]);
             if let Some(m)=&motion{scroll=scroll.vertical_scroll_offset(if final_phase{m.target_scroll}else{m.source_scroll});}
             let output=scroll.show(tree_ui,|list|{
@@ -334,7 +360,18 @@ fn menu_body(
                     });
                     let response=list.scope(|row|{
                         row.set_opacity(if hide{0.0}else{alpha});
-                        category_option_row(row,name,depth,last,has_children,open,path==visual_path)
+                        if let Some(totals)=totals{
+                            let id=path.last().map(String::as_str).unwrap_or("");
+                            let summary=if id.is_empty(){String::new()}else{
+                                let count=totals.get(id).copied().unwrap_or(0);
+                                let children=nodes.iter().filter(|n|n.parent==id).count();
+                                if children==0{format!("(상품 {count})")}else{format!("(상품 {count} · 하위 분류 {children})")}
+                            };
+                            category_tree::category_tree_row(row,category_tree::CategoryTreeRow{
+                                name,summary:&summary,depth,ancestor_guides:&[],is_last:last,
+                                root:depth==0&&open,has_children,open,selected:path==visual_path,
+                            })
+                        }else{category_option_row(row,name,depth,last,has_children,open,path==visual_path)}
                     }).inner;
                     if enabled&&!busy&&response.clicked(){
                         source=Some((response.rect.top()-clip.top(),(clip.top()-top).max(0.0)));
@@ -344,7 +381,11 @@ fn menu_body(
                 if !searching{
                     paint_row(list,label_for(index,&context),context.clone(),0,true,!items.is_empty(),!items.is_empty());
                 }
-                if items.is_empty()&&searching{list.label(typography::caption("검색 결과가 없습니다."));}
+                // Empty search feedback occupies a reserved row, not a new conditional layout.
+                if searching{
+                    let message=if items.is_empty(){"검색 결과가 없습니다."}else{""};
+                    if items.is_empty(){crate::category_tree::empty_search_row(list,message);}
+                }
                 for (i,node) in items.iter().enumerate(){
                     let path=chain(index,&node.id);
                     let has_children=nodes.iter().any(|child|child.parent==node.id);
@@ -368,17 +409,6 @@ fn menu_body(
     if let Some(path)=next_path{
         begin_move(state,path,nodes,index,now,source,list_height);
         menu.ctx().request_repaint();
-    }
-    crate::ui_primitives::soft_divider(menu);
-    let mut applied=false;
-    menu.with_layout(egui::Layout::right_to_left(egui::Align::Center),|right|{
-        applied=crate::button::action_with_min_width(right,"적용",theme::ButtonRole::Primary,
-            enabled&&!busy&&state.motion.is_none()&&(allow_empty||!state.path.is_empty()),
-            theme::CATEGORY_EXPLORER_APPLY_WIDTH).clicked();
-    });
-    if applied&&commit_path(state,selected,changed,enabled,allow_empty){
-        if *changed{floating_notice::dropdown_option_selected(menu.ctx());}
-        menu.close();
     }
 }
 

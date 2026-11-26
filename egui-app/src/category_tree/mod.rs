@@ -148,6 +148,9 @@ pub(crate) fn category_tree_row(ui:&mut Ui,item:CategoryTreeRow<'_>)->Response{
     overflow_tooltip(response,visible!=item.name,item.name)
 }
 
+pub(crate) fn empty_search_row(ui:&mut Ui,message:&str){
+    ui.label(typography::caption(message));
+}
 #[cfg(test)]
 mod category_tree_geometry_tests{
     use super::*;

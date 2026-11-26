@@ -5,6 +5,13 @@ use crate::{category_dropdown,category_tree,theme,typography};
 use eframe::egui::{self,Align,Context,Layout,Rect,Sense,Ui,Vec2};
 use serde_json::{json,Value};
 use std::collections::{HashMap,HashSet};
+use std::time::{Duration,Instant};
+const SNAPSHOT_TTL:Duration=Duration::from_secs(30*60);
+#[derive(Clone,Debug)]
+struct TreeMotion{id:String,opening:bool,started:f64,duration:f64}
+impl TreeMotion{
+    fn progress(&self,now:f64)->f32{category_dropdown::ease(((now-self.started)/self.duration).clamp(0.0,1.0) as f32)}
+}
 
 pub(crate) const ROOTS:[(&str,&str);2]=[
     ("catalog-root:BANDOSTAND","반도스탠드"),
@@ -31,6 +38,13 @@ pub struct CategoryManager {
     selected:String,
     expanded:HashSet<String>,
     query:String,
+    focused:bool,
+    focus:category_dropdown::ExplorerState,
+    crumbs:category_dropdown::ExplorerState,
+    tree_motion:Option<TreeMotion>,
+    left_at:Option<Instant>,
+    scroll_epoch:u64,
+    scroll_to:Option<String>,
     name:String,
     editor:bool,
     operation:Option<Operation>,
@@ -49,7 +63,9 @@ impl Default for CategoryManager {
         Self{
             selected:ROOTS[0].0.into(),
             expanded:ROOTS.iter().map(|(id,_)|(*id).to_owned()).collect(),
-            query:String::new(),name:String::new(),editor:false,
+            query:String::new(),focused:false,focus:Default::default(),crumbs:Default::default(),
+            tree_motion:None,left_at:None,scroll_epoch:0,scroll_to:None,
+            name:String::new(),editor:false,
             operation:None,new_name:String::new(),target:String::new(),
             transfer:false,confirm:None,after_save:None,
             switch_to_list:false,global_leave_approved:false,
@@ -261,10 +277,13 @@ impl CategoryManager {
         self.confirm==Some(Confirm::GlobalLeave)
             || self.after_save==Some(Confirm::GlobalLeave)
     }
-    pub fn clear_search(&mut self){self.query.clear();}
     pub fn report_error(&mut self,message:String){self.error=Some(message);}
 
     pub fn clear_for_leave(&mut self){
+        self.focus.finish_motion();
+        if self.focused{self.selected=self.focus.path.last().cloned().unwrap_or_default();}
+        self.tree_motion=None;
+        self.left_at=Some(Instant::now());
         self.editor=false;
         self.operation=None;
         self.confirm=None;
@@ -417,11 +436,34 @@ impl CategoryManager {
         }
         self.confirm=None;
     }
+    fn restore_snapshot(&mut self,now:Instant){
+        if self.left_at.take().is_some_and(|left|now.saturating_duration_since(left)>=SNAPSHOT_TTL){
+            let epoch=self.scroll_epoch.wrapping_add(1);
+            self.selected=ROOTS[0].0.to_owned();
+            self.expanded=ROOTS.iter().map(|(id,_)|(*id).to_owned()).collect();
+            self.query.clear();self.focused=false;self.focus=Default::default();self.crumbs=Default::default();
+            self.scroll_epoch=epoch;self.focus.scroll_epoch=epoch;self.tree_motion=None;self.scroll_to=None;
+        }
+    }
+    fn start_fold(&mut self,id:&str,opening:bool,now:f64,depth:usize){
+        if opening{self.expanded.insert(id.to_owned());}else{self.expanded.remove(id);}
+        self.tree_motion=Some(TreeMotion{id:id.to_owned(),opening,started:now,duration:category_dropdown::motion_ms(depth)/1000.0});
+    }
+    fn visible_descendants(&self,cats:&[Category],index:&CategoryMapIndex,id:&str,seen:&mut HashSet<String>)->usize{
+        if !seen.insert(id.to_owned()){return 0;}
+        index.branches(id).iter().filter(|&&i|index.shows(&cats[i].id)).map(|&i|{
+            let child=&cats[i];
+            1+if self.expanded.contains(&child.id){self.visible_descendants(cats,index,&child.id,seen)}else{0}
+        }).sum()
+    }
     fn node(&mut self,ui:&mut Ui,cats:&[Category],index:&CategoryMapIndex,
-        item:&Category,depth:usize,ancestor_guides:&[bool],is_last:bool){
-        if !index.shows(&item.id){return;}
+        item:&Category,depth:usize,ancestor_guides:&[bool],is_last:bool,ancestors:&mut HashSet<String>){
+        if !ancestors.insert(item.id.clone()){return;}
+        if !index.shows(&item.id){ancestors.remove(&item.id);return;}
         let branches=index.branches(&item.id);
         let open=self.expanded.contains(&item.id)||!self.query.trim().is_empty();
+        let motion=self.tree_motion.clone().filter(|m|m.id==item.id);
+        let locked=self.tree_motion.is_some();
         let count=index.total(&item.id);
         let summary=if branches.is_empty(){
             format!("(상품 {count})")
@@ -437,26 +479,43 @@ impl CategoryManager {
         if item.id.starts_with("geometry-cat-"){
             crate::ui_test_support::record("catalog data row",response.rect);
         }
-        if response.clicked(){
+        if self.scroll_to.as_deref()==Some(item.id.as_str()){
+            response.scroll_to_me(Some(Align::Center));self.scroll_to=None;
+        }
+        if response.clicked()&&!locked{
             self.selected=item.id.clone();
             self.name=item.name.clone();
             if !branches.is_empty() && self.query.trim().is_empty(){
-                if !self.expanded.insert(item.id.clone()){
-                    self.expanded.remove(&item.id);
-                }
+                self.start_fold(&item.id,!open,ui.input(|i|i.time),1);
+                ui.ctx().request_repaint();
             }
         }
-        if open {
+        if open||motion.is_some() {
             let visible_children=branches.iter()
                 .copied().filter(|&child|index.shows(&cats[child].id))
                 .collect::<Vec<_>>();
             let mut child_guides=ancestor_guides.to_vec();
             if depth>0{child_guides.push(!is_last);}
-            for (position,&child) in visible_children.iter().enumerate(){
-                self.node(ui,cats,index,&cats[child],depth+1,
-                    &child_guides,position+1==visible_children.len());
-            }
+            let draw=|this:&mut Self,rows:&mut Ui,ancestors:&mut HashSet<String>|{
+                for (position,&child) in visible_children.iter().enumerate(){
+                    this.node(rows,cats,index,&cats[child],depth+1,&child_guides,
+                        position+1==visible_children.len(),ancestors);
+                }
+            };
+            if let Some(m)=motion{
+                let t=m.progress(ui.input(|i|i.time));let fraction=if m.opening{t}else{1.0-t};
+                let full=self.visible_descendants(cats,index,&item.id,&mut HashSet::new()) as f32*theme::CATALOG_TREE_ROW_HEIGHT;
+                let (slot,_)=ui.allocate_exact_size(Vec2::new(ui.available_width(),full*fraction),Sense::hover());
+                let mut child=ui.new_child(egui::UiBuilder::new().id_salt(("animated-category",item.id.as_str()))
+                    .max_rect(Rect::from_min_size(slot.min,Vec2::new(slot.width(),full)))
+                    .layout(Layout::top_down(Align::Min)).disabled());
+                child.set_clip_rect(slot.intersect(ui.clip_rect()));
+                child.set_opacity(fraction);
+                child.spacing_mut().item_spacing.y=0.0;
+                draw(self,&mut child,ancestors);
+            }else{draw(self,ui,ancestors);}
         }
+        ancestors.remove(&item.id);
     }
     /// Only action controls remain from the former title row. Both wide and
     /// narrow layouts render the same actions with the approved button roles.
@@ -479,7 +538,13 @@ impl CategoryManager {
         }
     }
     pub fn show_page(&mut self,ui:&mut Ui,catalog:&Value,editable:bool,busy:bool){
+        self.restore_snapshot(Instant::now());
         let cats=categories(catalog);
+        if !self.selected.is_empty()&&!cats.iter().any(|c|c.id==self.selected){self.selected=ROOTS[0].0.to_owned();}
+        if let Some(m)=&self.tree_motion{
+            if ui.input(|i|i.time)>=m.started+m.duration{self.tree_motion=None;}
+            else{ui.ctx().request_repaint();}
+        }
         let card_min_height=crate::card::management_primary_card_min_inner_height(
             ui,theme::SECTION_PADDING
         );
@@ -561,20 +626,79 @@ impl CategoryManager {
                     }
                 );
             }
+            // The mode switch and path both use the existing shared controls.
+            let nodes=cats.iter().map(|c|category_dropdown::CategoryNode{
+                id:c.id.clone(),name:c.name.clone(),parent:c.parent.clone()
+            }).collect::<Vec<_>>();
+            let node_index=category_dropdown::tree_index(&nodes);
+            let mut focused=self.focused;
+            panel.horizontal(|bar|{
+                crate::checkbox::checkbox(bar,&mut focused,"집중 탐색",!busy&&!self.focus.moving()&&self.tree_motion.is_none());
+            });
+            if focused!=self.focused{
+                self.focused=focused;
+                if focused{
+                    category_dropdown::navigate(&mut self.focus,category_dropdown::chain(&node_index,&self.selected));
+                    self.focus.search=self.query.clone();
+                }else{
+                    for ancestor in path(&cats,&self.selected){self.expanded.insert(ancestor.id);}
+                    self.scroll_to=Some(self.selected.clone());
+                }
+            }
+            let index=CategoryMapIndex::new(&cats,catalog,&self.query);
+            if self.focused{
+                if !self.focus.moving(){
+                    let current=category_dropdown::chain(&node_index,&self.selected);
+                    if self.focus.path!=current{category_dropdown::navigate(&mut self.focus,current);}
+                    self.focus.search=self.query.clone();
+                }
+                let height=(panel.available_height()-theme::CATEGORY_EXPLORER_CRUMB_HEIGHT-theme::SPACE_24)
+                    .max(theme::MANAGEMENT_TABLE_ROW_HEIGHT);
+                let search_focused=panel.ctx().memory(|mem|mem.focused().is_some());
+                category_dropdown::explorer_body(panel,&nodes,&node_index,&mut self.focus,
+                    !busy,height,search_focused,Some(&index.totals));
+                if !self.focus.moving(){
+                    let new=self.focus.path.last().cloned().unwrap_or_default();
+                    if self.selected!=new{
+                        self.selected=new;
+                        self.name=self.current(&cats).map(|c|c.name).unwrap_or_default();
+                    }
+                    self.query=self.focus.search.clone();
+                }
+            }else{
+                let current=category_dropdown::chain(&node_index,&self.selected);
+                if let Some(target)=category_dropdown::crumbs_row(panel,&mut self.crumbs,&node_index,
+                    &current,!busy&&self.tree_motion.is_none(),1.0,0.0,0.0){
+                    let depth=current.len().saturating_sub(target.len());
+                    let branch=current.get(target.len()).cloned();
+                    self.selected=target.last().cloned().unwrap_or_default();
+                    self.name=self.current(&cats).map(|c|c.name).unwrap_or_default();
+                    self.query.clear();
+                    for ancestor in &target{self.expanded.insert(ancestor.clone());}
+                    if let Some(branch)=branch{
+                        if self.expanded.contains(&branch){self.start_fold(&branch,false,panel.input(|i|i.time),depth);}
+                    }
+                    self.scroll_to=Some(self.selected.clone());
+                }
             // The same structural divider as Reception and management tables.
             crate::ui_primitives::section_divider(panel);
-            let index=CategoryMapIndex::new(&cats,catalog,&self.query);
             crate::scrollbar::scroll_area(crate::scrollbar::ScrollAxes::Vertical)
-                .id_salt("category-map-tree")
+                .id_salt(("category-map-tree",self.scroll_epoch))
                 .auto_shrink([false,false])
                 .max_height(panel.available_height().max(theme::MANAGEMENT_TABLE_ROW_HEIGHT))
                 .show(panel,|tree|{
                     // Adjacent rows must touch so parent/child guide lines
                     // form one continuous tree rather than broken dashes.
                     tree.spacing_mut().item_spacing.y=0.0;
+                    let root=category_tree::category_tree_row(tree,category_tree::CategoryTreeRow{
+                        name:"전체",summary:"",depth:0,ancestor_guides:&[],is_last:true,
+                        root:true,has_children:true,open:true,selected:self.selected.is_empty(),
+                    });
+                    if root.clicked()&&self.tree_motion.is_none(){self.selected.clear();self.name.clear();}
+                    if self.scroll_to.as_deref()==Some(""){root.scroll_to_me(Some(Align::Min));self.scroll_to=None;}
                     for (id,_) in ROOTS{
                         if let Some(current)=cats.iter().find(|c|c.id==id){
-                            self.node(tree,&cats,&index,current,0,&[],true);
+                            self.node(tree,&cats,&index,current,0,&[],true,&mut HashSet::new());
                         }
                     }
                     let legacy=cats.iter().filter(|c|c.parent.is_empty()&&!is_root(&c.id))
@@ -585,10 +709,11 @@ impl CategoryManager {
                             &format!("상위 분류 소속 확인 ({})",legacy.len())
                         ));
                         for row in &legacy{
-                            self.node(tree,&cats,&index,row,0,&[],true);
+                            self.node(tree,&cats,&index,row,0,&[],true,&mut HashSet::new());
                         }
                     }
                 });
+            }
         });
     }
     pub fn show_overlays(&mut self,ctx:&Context,work_area:Rect,
@@ -915,6 +1040,20 @@ impl CategoryManager {
 #[cfg(test)]
 mod modal_layout_contract_tests{
     use super::*;
+    #[test]
+    fn category_map_snapshot_expires_only_after_leaving(){
+        let mut manager=CategoryManager::default();
+        manager.focused=true;manager.query="보면대".into();
+        let now=Instant::now();
+        manager.left_at=Some(now);
+        manager.restore_snapshot(now+Duration::from_secs(1799));
+        assert!(manager.focused);assert_eq!(manager.query,"보면대");
+        manager.left_at=Some(now);
+        manager.restore_snapshot(now+SNAPSHOT_TTL);
+        assert!(!manager.focused);assert!(manager.query.is_empty());
+        assert_eq!(manager.selected,ROOTS[0].0);
+        assert_eq!(manager.scroll_epoch,1);
+    }
     #[test]
     fn category_map_index_counts_each_product_once_per_ancestor(){
         let cats=categories(&json!({"categories":[

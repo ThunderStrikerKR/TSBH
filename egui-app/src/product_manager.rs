@@ -957,11 +957,9 @@ impl ProductManager {
                 if allowed{
                     if self.tab==1{
                         self.category_manager.clear_for_leave();
-                        self.category_manager.clear_search();
                     }
                     self.tab=next;
                     self.query.clear();
-                    if next==1{self.category_manager.clear_search();}
                     self.reload(ui.ctx().clone());
                 }
             }else if self.has_pending_prices(){
