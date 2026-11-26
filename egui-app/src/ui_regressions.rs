@@ -453,7 +453,7 @@ mod management_async_behavior_regression_tests {
 
         let model_groups=include_str!("model_group_manager.rs");
         assert!(model_groups.contains("writable&&!busy&&self.dirty()"));
-        assert!(model_groups.contains("crate::button::action(buttons,\"닫기\""));
+        assert!(model_groups.contains("workspace.header(title,\"닫기\""));
 
         let aliases=include_str!("alias_manager.rs");
         assert!(aliases.contains("fn alias_diagnostic("));
@@ -1923,7 +1923,6 @@ mod structural_divider_contract_tests {
         let allowed:&[(&str,usize)]=&[
             ("main.rs",1), // repeated shipment rows
             ("settings_view.rs",2), // repeated account and backup records
-            ("model_group_manager.rs",1), // fixed footer; table rows own their rules
             ("automatic_message_manager.rs",1), // fixed footer
             ("order_history_detail.rs",1), // repeated payment records
             ("freight_manager.rs",1), // compact context menu
