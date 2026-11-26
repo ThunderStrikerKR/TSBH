@@ -8,6 +8,8 @@ on:
       - egui-app/src/main.rs
       - egui-app/src/product_manager.rs
       - egui-app/src/manual_workspace.rs
+      - egui-app/src/freight_manager.rs
+      - egui-app/src/overlay.rs
   pull_request:
     branches: [main]
     paths:
@@ -16,6 +18,8 @@ on:
       - egui-app/src/main.rs
       - egui-app/src/product_manager.rs
       - egui-app/src/manual_workspace.rs
+      - egui-app/src/freight_manager.rs
+      - egui-app/src/overlay.rs
 permissions:
   contents: read
 concurrency:
@@ -31,7 +35,11 @@ jobs:
       - name: Compile egui application and run shared cell navigation tests
         run: |
           cargo check --manifest-path egui-app/Cargo.toml
-          cargo test --manifest-path egui-app/Cargo.toml cell_navigation::tests -- --nocapture
-          cargo test --manifest-path egui-app/Cargo.toml reception_arrow_navigation_keeps_visible_grid_sections_separate -- --nocapture
-          cargo test --manifest-path egui-app/Cargo.toml price_navigation -- --nocapture
+          cargo test --manifest-path egui-app/Cargo.toml cell_navigation:: -- --nocapture
+          cargo test --manifest-path egui-app/Cargo.toml reception_arrow_navigation_preserves_section_local_geometry -- --nocapture
+          cargo test --manifest-path egui-app/Cargo.toml reception_navigation_crosses_recipient_item_boundary_in_both_directions -- --nocapture
+          cargo test --manifest-path egui-app/Cargo.toml confirmed_navigation_uses_shared_geometry_and_skips_ineligible_freight -- --nocapture
+          cargo test --manifest-path egui-app/Cargo.toml price_grid_keyboard_navigation_uses_explicit_rows_and_columns -- --nocapture
+          cargo test --manifest-path egui-app/Cargo.toml spreadsheet_navigation_keys_match_enter_tab_and_arrow_semantics -- --nocapture
+          cargo test --manifest-path egui-app/Cargo.toml arrows_move_to_visible_adjacent_cells_not_text_caret_positions -- --nocapture
           cargo test --manifest-path egui-app/Cargo.toml arrow_navigation_is_captured_before_text_edit_and_ime_is_respected -- --nocapture

@@ -302,8 +302,8 @@ fn inline_navigation_entries(recipient:&serde_json::Value,editable:bool)->Vec<In
             id:inline_target_key(&target),row,column,order,enabled
         },target});
     };
-    for (order,field) in ["name","address","mobile","phone","note"].into_iter().enumerate(){
-        let (row,column)=inline_recipient_visual_position(field);
+    for (order,field) in cell_navigation::RECIPIENT_FIELDS.into_iter().enumerate(){
+        let (row,column)=cell_navigation::recipient_visual_position(field);
         push(None,field,row,column,order,editable);
     }
     let items=recipient["items"].as_array().map(Vec::as_slice).unwrap_or(&[]);
@@ -353,49 +353,15 @@ fn confirmed_navigation_entries(ship:&workflow_board::ShipmentRow,editable:bool,
 }
 fn resolve_inline_navigation(entries:&[InlineNavigationEntry],current:&InlineTarget,key:CellNavigationKey)
     ->Option<InlineTarget>{
-    let key=key.direction();
-    let cells:Vec<CellNavigationCell>=entries.iter().filter(|entry|
-        matches!(key,CellNavigationKey::Next|CellNavigationKey::Previous)
-            ||inline_same_visible_grid(current,&entry.target)
-    ).map(|entry|entry.cell.clone()).collect();
-    let current_id=inline_target_key(current);
-    if !cells.iter().any(|cell|cell.id==current_id && cell.enabled){return None;}
-    if current.item_id.is_none(){
-        if let Some(next)=inline_phone_vertical_destination(current.field,key)
-            .and_then(|field|entries.iter().find(|entry|
-                entry.cell.enabled && entry.target.item_id.is_none() && entry.target.field==field)){
-            return Some(next.target.clone());
-        }
-    }
-    if let Some(id)=cell_navigation::resolve_cell_navigation_target(&cells,&current_id,key){
-        return entries.iter().find(|entry|entry.cell.id==id).map(|entry|entry.target.clone());
-    }
-    // Vertical movement crosses a section boundary only after exhausting
-    // the current column. Horizontal movement remains on the visible row.
-    let from_recipient=current.item_id.is_none() && current.field!="shippingCharge";
-    let other=entries.iter().filter(|entry|
-        entry.cell.enabled && entry.target.recipient_id==current.recipient_id
-            && !inline_same_visible_grid(current,&entry.target));
-    match key{
-        CellNavigationKey::Down if from_recipient=>
-            other.min_by_key(|entry|entry.cell.order).map(|entry|entry.target.clone()),
-        CellNavigationKey::Up if !from_recipient=>
-            other.max_by_key(|entry|entry.cell.order).map(|entry|entry.target.clone()),
-        CellNavigationKey::Down if current.item_id.is_some() && current.field!="shippingCharge"=>
-            entries.iter().find(|entry|entry.cell.enabled &&
-                entry.target.recipient_id==current.recipient_id && entry.target.field=="shippingCharge")
-                .map(|entry|entry.target.clone()),
-        _=>None
-    }
+    let cells=entries.iter().filter(|entry|entry.target.recipient_id==current.recipient_id)
+        .map(|entry|cell_navigation::ReceptionNavigationCell{
+            cell:&entry.cell,shipment:0,field:entry.target.field,has_item:entry.target.item_id.is_some()
+        }).collect::<Vec<_>>();
+    let id=cell_navigation::resolve_reception_navigation(&cells,&inline_target_key(current),key,false)?;
+    entries.iter().find(|entry|entry.cell.id==id).map(|entry|entry.target.clone())
 }
 fn confirmed_editor_slot(shipment_id:&str,target:&InlineTarget)->egui::Id{
     egui::Id::new(("confirmed-inline-grid",shipment_id,inline_target_key(target)))
-}
-fn confirmed_navigation_key(ctx:&egui::Context,shipment_id:&str,target:&InlineTarget)
-    ->Option<CellNavigationKey>{
-    if overlay::popup_blocks_shortcuts(ctx){return None;}
-    cell_navigation::consume_worksheet_navigation_before_editor(ctx,
-        confirmed_editor_slot(shipment_id,target))
 }
 fn inline_target_key(target:&InlineTarget)->String{
     format!("{}:{}:{}",target.recipient_id,
@@ -405,71 +371,20 @@ fn inline_target_key(target:&InlineTarget)->String{
 fn inline_editor_slot(target:&InlineTarget)->egui::Id{
     egui::Id::new(("reception-inline-grid",inline_target_key(target)))
 }
-fn inline_navigation_key(ctx:&egui::Context,target:&InlineTarget)->Option<CellNavigationKey>{
-    cell_navigation::consume_worksheet_navigation_before_editor(
-        ctx,inline_editor_slot(target)
-    )
-}
-fn inline_same_visible_grid(a:&InlineTarget,b:&InlineTarget)->bool{
-    let is_recipient=|target:&InlineTarget|
-        target.item_id.is_none()&&target.field!="shippingCharge";
-    is_recipient(a)==is_recipient(b)
-}
-/// Recipient inputs are stacked, except mobile/phone which share a row.
-fn inline_recipient_visual_position(field:&str)->(usize,usize){
-    match field{
-        "name"=>(0,0),"address"=>(1,0),
-        "mobile"=>(2,0),"phone"=>(2,1),
-        "note"=>(3,0),_=>(usize::MAX,usize::MAX)
-    }
-}
-fn inline_phone_vertical_destination(
-    field:&str,key:CellNavigationKey
-)->Option<&'static str>{
-    if field!="phone"{return None;}
-    match key{
-        CellNavigationKey::Up=>Some("address"),
-        CellNavigationKey::Down=>Some("note"),
-        _=>None
-    }
-}
 #[cfg(test)]
 #[test]
 fn reception_arrow_navigation_preserves_section_local_geometry(){
-    let recipient=InlineTarget{
-        recipient_id:"r1".into(),item_id:None,field:"address"
+    let recipient=serde_json::json!({"id":"r1","items":[{"id":"i1"},{"id":"i2"}],"freightCode":"010"});
+    let entries=inline_navigation_entries(&recipient,true);
+    let target=|item:Option<&str>,field:&'static str|InlineTarget{
+        recipient_id:"r1".into(),item_id:item.map(str::to_owned),field
     };
-    let other_recipient=InlineTarget{
-        recipient_id:"r1".into(),item_id:None,field:"phone"
-    };
-    let item_quantity=InlineTarget{
-        recipient_id:"r1".into(),item_id:Some("i1".into()),field:"quantity"
-    };
-    let other_item=InlineTarget{
-        recipient_id:"r1".into(),item_id:Some("i2".into()),field:"quantity"
-    };
-    let freight=InlineTarget{
-        recipient_id:"r1".into(),item_id:None,field:"shippingCharge"
-    };
-    assert!(inline_same_visible_grid(&recipient,&other_recipient));
-    assert!(inline_same_visible_grid(&item_quantity,&other_item));
-    assert!(inline_same_visible_grid(&item_quantity,&freight));
-    assert!(!inline_same_visible_grid(&recipient,&item_quantity));
-    assert!(!inline_same_visible_grid(&recipient,&freight));
-    assert_eq!(inline_recipient_visual_position("name"),(0,0));
-    assert_eq!(inline_recipient_visual_position("address"),(1,0));
-    assert_eq!(inline_recipient_visual_position("mobile"),(2,0));
-    assert_eq!(inline_recipient_visual_position("phone"),(2,1));
-    assert_eq!(inline_recipient_visual_position("note"),(3,0));
-    assert_eq!(inline_phone_vertical_destination(
-        "phone",CellNavigationKey::Up
-    ),Some("address"));
-    assert_eq!(inline_phone_vertical_destination(
-        "phone",CellNavigationKey::Down
-    ),Some("note"));
-    assert_eq!(inline_phone_vertical_destination(
-        "mobile",CellNavigationKey::Up
-    ),None);
+    let phone=target(None,"phone");
+    assert_eq!(resolve_inline_navigation(&entries,&phone,CellNavigationKey::Up),Some(target(None,"address")));
+    assert_eq!(resolve_inline_navigation(&entries,&phone,CellNavigationKey::Down),Some(target(None,"note")));
+    assert_eq!(resolve_inline_navigation(&entries,&phone,CellNavigationKey::Left),Some(target(None,"mobile")));
+    assert_eq!(resolve_inline_navigation(&entries,&target(None,"note"),CellNavigationKey::Right),None);
+    assert_eq!(resolve_inline_navigation(&entries,&target(Some("i1"),"quantity"),CellNavigationKey::Right),Some(target(Some("i1"),"unitPrice")));
 }
 
 #[cfg(test)]
@@ -7521,7 +7436,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                     }
                                     if let Some(editor)=self.confirmed_cell.as_mut().filter(|e|
                                         e.target.selection.shipment_id==ship.id && e.cell.target==target){
-                                        let navigation=confirmed_navigation_key(contents.ctx(),&ship.id,&target);
+                                        let navigation=cell_navigation::consume_worksheet_navigation_before_editor(contents.ctx(),confirmed_editor_slot(&ship.id,&target));
                                         let result=components::reception_recipient_inline_cell_editor(
                                             contents,response.rect,&mut editor.cell.text,editor.cell.focus_next,
                                             editor.cell.click_at.take(),matches!(field,"mobile"|"phone"),
@@ -7635,7 +7550,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                                     }
                                                     if let Some(editor)=self.confirmed_cell.as_mut().filter(|e|
                                                         e.target.selection.shipment_id==ship.id && e.cell.target==target){
-                                                        let navigation=confirmed_navigation_key(contents.ctx(),&ship.id,&target);
+                                                        let navigation=cell_navigation::consume_worksheet_navigation_before_editor(contents.ctx(),confirmed_editor_slot(&ship.id,&target));
                                                         let (result,step)=components::reception_item_numeric_editor(
                                                             contents,response.rect,&mut editor.cell.text,editor.cell.focus_next,
                                                             editor.cell.click_at.take(),if field=="quantity"{
@@ -7723,7 +7638,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                                     let guide_focus=editor.focus_next &&
                                                         self.workflow_freight_guidance.as_deref()==Some(group.id.as_str());
                                                     let target=confirmed_freight_target(ship,origin);
-                                                    let navigation=confirmed_navigation_key(contents.ctx(),&ship.id,&target);
+                                                    let navigation=cell_navigation::consume_worksheet_navigation_before_editor(contents.ctx(),confirmed_editor_slot(&ship.id,&target));
                                                     let response=components::reception_freight_inline_cell_editor(
                                                         contents,rect,&mut editor.text,
                                                         editor.focus_next,editor.click_at.take()
@@ -8296,9 +8211,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                         if response.hovered(){hovered_detail=Some(key.clone());}
                                         if let Some(editor)=self.inline_editor.as_mut()
                                             .filter(|edit|edit.target==target) {
-                                            let navigation=inline_navigation_key(
-                                                fields.ctx(),&target
-                                            );
+                                            let navigation=cell_navigation::consume_worksheet_navigation_before_editor(fields.ctx(),inline_editor_slot(&target));
                                             let edit_response=components::reception_recipient_inline_cell_editor(
                                                 fields,response.rect,&mut editor.text,
                                                 editor.focus_next,
@@ -8467,9 +8380,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                                     }
                                                     if let Some(editor)=self.inline_editor.as_mut()
                                                         .filter(|editor|editor.target==target) {
-                                                        let navigation=inline_navigation_key(
-                                                            items_ui.ctx(),&target
-                                                        );
+                                                        let navigation=cell_navigation::consume_worksheet_navigation_before_editor(items_ui.ctx(),inline_editor_slot(&target));
                                                         let (result,step_interaction)=components::reception_item_numeric_editor(
                                                             items_ui,response.rect,&mut editor.text,
                                                             editor.focus_next,editor.click_at.take(),
@@ -8565,9 +8476,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                                 .filter(|edit|edit.target==freight_target && cod!=Some(true)),
                                             freight_actions.amount_rect
                                         ){
-                                            let navigation=inline_navigation_key(
-                                                items_ui.ctx(),&freight_target
-                                            );
+                                            let navigation=cell_navigation::consume_worksheet_navigation_before_editor(items_ui.ctx(),inline_editor_slot(&freight_target));
                                             let result=components::reception_freight_inline_cell_editor(
                                                 items_ui,rect,&mut editor.text,editor.focus_next,
                                                 editor.click_at.take()

@@ -24,10 +24,15 @@ pub fn resolve_cell_navigation_target(
     cells: &[CellNavigationCell], current_id: &str, key: CellNavigationKey,
 ) -> Option<String> {
     let current = cells.iter().find(|cell| cell.id == current_id && cell.enabled)?;
+    nearest_cell(current,cells.iter(),key).map(|cell|cell.id.clone())
+}
+fn nearest_cell<'a>(
+    current:&CellNavigationCell,cells:impl Iterator<Item=&'a CellNavigationCell>,
+    key:CellNavigationKey
+)->Option<&'a CellNavigationCell>{
     let key=key.direction();
-    // Preserve stable input-order tie breaking while selecting the nearest
-    // cell in a single pass. No temporary candidate list or sort.
-    cells.iter().filter(|cell|cell.enabled && cell.id!=current_id)
+    // Stable input-order tie breaking; no cloned candidate grid.
+    cells.filter(|cell|cell.enabled && cell.id!=current.id)
         .filter_map(|cell|{
             let rank=match key{
                 CellNavigationKey::Left if cell.row==current.row && cell.column<current.column=>
@@ -44,7 +49,76 @@ pub fn resolve_cell_navigation_target(
             };
             Some((rank,cell))
         })
-        .min_by_key(|(rank,_)|*rank).map(|(_,cell)|cell.id.clone())
+        .min_by_key(|(rank,_)|*rank).map(|(_,cell)|cell)
+}
+
+/// Shared geometry for Reception and the manual delivery worksheet.
+pub const RECIPIENT_FIELDS:[&str;5]=["name","address","mobile","phone","note"];
+pub fn recipient_visual_position(field:&str)->(usize,usize){
+    match field{
+        "name"=>(0,0),"address"=>(1,0),"mobile"=>(2,0),"phone"=>(2,1),
+        "note"=>(3,0),_=>(usize::MAX,usize::MAX)
+    }
+}
+pub struct ReceptionNavigationCell<'a>{
+    pub cell:&'a CellNavigationCell,
+    pub shipment:usize,
+    pub field:&'a str,
+    pub has_item:bool,
+}
+impl ReceptionNavigationCell<'_>{
+    fn recipient_section(&self)->bool{
+        !self.has_item && self.field!="shippingCharge"
+    }
+}
+/// Resolve recipient/item/freight card boundaries in one place. The manual
+/// workspace permits adjacent-delivery navigation; Reception supplies only
+/// the selected delivery. Field IDs and write/validation rules stay local.
+pub fn resolve_reception_navigation(
+    entries:&[ReceptionNavigationCell<'_>],current_id:&str,key:CellNavigationKey,
+    cross_shipments:bool
+)->Option<String>{
+    let key=key.direction();
+    let active=entries.iter().find(|entry|entry.cell.enabled && entry.cell.id==current_id)?;
+    let recipient=active.recipient_section();
+    let local=||entries.iter().filter(|entry|entry.cell.enabled && entry.shipment==active.shipment);
+    // Phone shares the mobile row, but its vertical neighbors span the card.
+    if recipient && active.field=="phone"{
+        let field=match key{
+            CellNavigationKey::Up=>Some("address"),CellNavigationKey::Down=>Some("note"),_=>None
+        };
+        if let Some(next)=field.and_then(|field|local().find(|entry|
+            entry.recipient_section() && entry.field==field)){
+            return Some(next.cell.id.clone());
+        }
+    }
+    let sequential=matches!(key,CellNavigationKey::Next|CellNavigationKey::Previous);
+    let candidates=entries.iter().filter(|entry|
+        (sequential && (cross_shipments || entry.shipment==active.shipment))
+        || (entry.shipment==active.shipment && entry.recipient_section()==recipient)
+    ).map(|entry|entry.cell);
+    if let Some(next)=nearest_cell(active.cell,candidates,key){
+        return Some(next.id.clone());
+    }
+    let boundary=match key{
+        CellNavigationKey::Down if recipient=>
+            local().filter(|entry|!entry.recipient_section()).min_by_key(|entry|entry.cell.order),
+        CellNavigationKey::Up if !recipient=>
+            local().filter(|entry|entry.recipient_section()).max_by_key(|entry|entry.cell.order),
+        CellNavigationKey::Down if !recipient && active.field!="shippingCharge"=>
+            local().find(|entry|entry.field=="shippingCharge"),
+        _=>None
+    };
+    if let Some(next)=boundary{return Some(next.cell.id.clone());}
+    if !cross_shipments{return None;}
+    let next=match key{
+        CellNavigationKey::Down if !recipient || active.field=="note"=>
+            entries.iter().find(|entry|entry.cell.enabled && active.shipment.checked_add(1)==Some(entry.shipment)),
+        CellNavigationKey::Up if recipient && active.field=="name"=>
+            entries.iter().rev().find(|entry|entry.cell.enabled && active.shipment.checked_sub(1)==Some(entry.shipment)),
+        _=>None
+    };
+    next.map(|entry|entry.cell.id.clone())
 }
 
 /// Shared, focus-scoped spreadsheet input contract for egui TextEdit.

@@ -289,11 +289,6 @@ fn parse_product_price(raw:&str,field_name:&str,zero_unregistered:bool)
 fn accepts_catalog_revision(current:u64,incoming:u64)->bool{
     incoming>=current
 }
-fn price_navigation_target(
-    order:&[CellNavigationCell],current:&str,key:CellNavigationKey
-)->Option<String>{
-    cell_navigation::resolve_cell_navigation_target(order,current,key)
-}
 struct PriceDraft {
     original:Option<i64>,
     input:String,
@@ -1483,7 +1478,7 @@ impl ProductManager {
                                                                 && crate::overlay::take_cell_escape(&response,was_focused);
                                                             let navigation_target=navigation_key
                                                                 .and_then(|navigation|
-                                                                    price_navigation_target(
+                                                                    cell_navigation::resolve_cell_navigation_target(
                                                                         &price_order,&key,navigation
                                                                     )
                                                                 );
@@ -3135,12 +3130,12 @@ mod tests {
             CellNavigationCell{id:"p2:s".into(),row:1,column:1,order:4,enabled:true},
             CellNavigationCell{id:"p2:r".into(),row:1,column:2,order:5,enabled:true},
         ];
-        assert_eq!(price_navigation_target(&order,"p1:w",CellNavigationKey::Right).as_deref(),Some("p1:s"));
-        assert_eq!(price_navigation_target(&order,"p1:r",CellNavigationKey::Left).as_deref(),Some("p1:s"));
-        assert_eq!(price_navigation_target(&order,"p1:s",CellNavigationKey::Down).as_deref(),Some("p2:s"));
-        assert_eq!(price_navigation_target(&order,"p2:s",CellNavigationKey::Up).as_deref(),Some("p1:s"));
-        assert_eq!(price_navigation_target(&order,"p1:r",CellNavigationKey::Right),None);
-        assert_eq!(price_navigation_target(&order,"p1:w",CellNavigationKey::Left),None);
+        assert_eq!(cell_navigation::resolve_cell_navigation_target(&order,"p1:w",CellNavigationKey::Right).as_deref(),Some("p1:s"));
+        assert_eq!(cell_navigation::resolve_cell_navigation_target(&order,"p1:r",CellNavigationKey::Left).as_deref(),Some("p1:s"));
+        assert_eq!(cell_navigation::resolve_cell_navigation_target(&order,"p1:s",CellNavigationKey::Down).as_deref(),Some("p2:s"));
+        assert_eq!(cell_navigation::resolve_cell_navigation_target(&order,"p2:s",CellNavigationKey::Up).as_deref(),Some("p1:s"));
+        assert_eq!(cell_navigation::resolve_cell_navigation_target(&order,"p1:r",CellNavigationKey::Right),None);
+        assert_eq!(cell_navigation::resolve_cell_navigation_target(&order,"p1:w",CellNavigationKey::Left),None);
     }
     #[test]
     fn excel_price_write_payload_commits_values_and_empty_as_null(){

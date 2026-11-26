@@ -428,8 +428,8 @@ fn manual_worksheet_cells(model:&Value,pending:Option<&ManualCellTarget>)
                 id:order.to_string(),row:y,column:x,order,enabled
             }));
         };
-        for field in ["name","address","mobile","phone","note"]{
-            let (y,x)=crate::inline_recipient_visual_position(field);
+        for field in cell_navigation::RECIPIENT_FIELDS{
+            let (y,x)=cell_navigation::recipient_visual_position(field);
             push(None,field,y,x);
         }
         let items=list(row,"items");
@@ -444,53 +444,17 @@ fn manual_worksheet_cells(model:&Value,pending:Option<&ManualCellTarget>)
     }
     cells
 }
-fn manual_recipient_section(target:&ManualCellTarget)->bool{
-    target.item.is_none() && target.field!="shippingCharge"
-}
 fn manual_navigation_target(
     model:&Value,current:&ManualCellTarget,key:CellNavigationKey,
     pending:Option<&ManualCellTarget>
 )->Option<ManualCellTarget>{
-    let key=key.direction();
     let entries=manual_worksheet_cells(model,pending);
-    let (_,active)=entries.iter().find(|(target,cell)|target==current && cell.enabled)?;
-    let recipient=manual_recipient_section(current);
-    let sequential=matches!(key,CellNavigationKey::Next|CellNavigationKey::Previous);
-    let cells=entries.iter().filter(|(target,_)|sequential ||
-        (target.row==current.row && manual_recipient_section(target)==recipient)
-    ).map(|(_,cell)|cell.clone()).collect::<Vec<_>>();
-    if recipient {
-        if let Some(field)=crate::inline_phone_vertical_destination(&current.field,key){
-            if let Some((target,_))=entries.iter().find(|(target,cell)|
-                cell.enabled && target.row==current.row && target.item.is_none() && target.field==field){
-                return Some(target.clone());
-            }
-        }
-    }
-    if let Some(id)=cell_navigation::resolve_cell_navigation_target(&cells,&active.id,key){
-        return entries.iter().find(|(_,cell)|cell.id==id).map(|(target,_)|target.clone());
-    }
-    // Cross card edges only vertically, with freight as the final cell.
-    let local=||entries.iter().filter(|(target,cell)|
-        cell.enabled && target.row==current.row);
-    let next=match key{
-        CellNavigationKey::Down if recipient=>
-            local().find(|(target,_)|!manual_recipient_section(target)),
-        CellNavigationKey::Up if !recipient=>
-            local().filter(|(target,_)|manual_recipient_section(target)).last(),
-        CellNavigationKey::Down if !recipient && current.field!="shippingCharge"=>
-            local().find(|(target,_)|target.field=="shippingCharge"),
-        _=>None
-    };
-    if let Some((target,_))=next{return Some(target.clone());}
-    match key{
-        CellNavigationKey::Down if !recipient || current.field=="note"=>
-            entries.iter().find(|(target,cell)|cell.enabled && target.row==current.row+1),
-        CellNavigationKey::Up if recipient && current.field=="name"=>
-            entries.iter().rev().find(|(target,cell)|
-                cell.enabled && current.row.checked_sub(1)==Some(target.row)),
-        _=>None
-    }.map(|(target,_)|target.clone())
+    let (_,active)=entries.iter().find(|(target,_)|target==current)?;
+    let cells=entries.iter().map(|(target,cell)|cell_navigation::ReceptionNavigationCell{
+        cell,shipment:target.row,field:&target.field,has_item:target.item.is_some()
+    }).collect::<Vec<_>>();
+    let id=cell_navigation::resolve_reception_navigation(&cells,&active.id,key,true)?;
+    entries.iter().find(|(_,cell)|cell.id==id).map(|(target,_)|target.clone())
 }
 
 fn manual_row_has_data(row:&Value,assignments:&Value)->bool{
@@ -1529,7 +1493,7 @@ impl ManualWorkspace {
         let navigation=if !self.focus_editor && self.active_editor_id.is_some() && !busy &&
             !self.confirm_apply && !self.confirm_discard &&
             !self.product_dialog_open() && self.remove_recipient_pending.is_none()
-            && !self.reset_pending && !crate::overlay::popup_blocks_shortcuts(ui.ctx()){
+            && !self.reset_pending {
             cell_navigation::consume_worksheet_navigation_before_editor(ui.ctx(),slot)
         }else{None};
         let focus=self.focus_editor && !busy &&
