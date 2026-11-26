@@ -185,6 +185,14 @@ fn merge_item(incoming:&Value,prior:&Value)->Result<Value,String>{
         saved
     }else{ incoming.clone() };
     clone_field(&mut item,prior,"id")?;
+    // An explicit unit price is independent of recognition confirmation.
+    // Retain it only for the same identified product and variant.
+    if !str_field(item,"productId").is_empty() &&
+        !str_field(item,"variantId").is_empty() &&
+        field(item,"productId")==field(prior,"productId") &&
+        field(item,"variantId")==field(prior,"variantId") {
+        clone_field(&mut item,prior,"manualUnitPrice")?;
+    }
     if qty_changed {
         clone_field(&mut item,incoming,"quantity")?;
         clone_field(&mut item,incoming,"quantityConfirmed")?;
@@ -282,7 +290,11 @@ fn apply(payload:&Value)->Result<Value,String>{
                     // later React effect to repair it.
                     let pid=str_field(item,"productId").to_string();
                     let vid=str_field(item,"variantId").to_string();
-                    if !vid.is_empty() {
+                    if let Some(manual)=item.get("manualUnitPrice"){
+                        let price=super::safe(manual)
+                            .ok_or("직접 수정한 상품 단가가 0 이상의 안전한 정수가 아닙니다.")?;
+                        set(item,"unitPrice",json!(price))?;
+                    }else if !vid.is_empty() {
                         if let Some(product)=super::find_by_id(field(state,"products"),&pid) {
                             let price=super::pricing::resolve_unit_price(product,&vid,client)?;
                             set(item,"unitPrice",price)?;
@@ -328,7 +340,7 @@ fn apply(payload:&Value)->Result<Value,String>{
     ]{set(&mut next,key,value)?;}
     // Match the original TypeScript's atomic post-merge freight calculation.
     // No transient null/empty-version state may reach React.
-    let freight=super::shipping::recommend(&next,state)?;
+    let freight=super::shipping::reception_recommend(&next,state)?;
     let fee=if field(client,"shippingFeeExcluded")==&json!(true) {
         json!(0)
     } else { field(&freight,"total").clone() };
@@ -506,6 +518,41 @@ mod tests{
         assert_eq!(item["id"],"old-i");
         assert_eq!(item["unitPrice"],7500);
         assert_eq!(item["quantity"],2);
+    }
+    #[test]
+    fn reanalysis_keeps_explicit_prices_and_freight_for_same_product(){
+        let previous=json!({"id":"o","orderType":"DEALER",
+            "recipients":[{"id":"r","name":"테스트","address":"서울",
+                "dispatchOrigin":"FACTORY","freightCode":"010",
+                "shippingCharges":{"FACTORY":7000},
+                "items":[{"id":"i","raw":"테스트 상품","productId":"p","variantId":"v",
+                    "quantity":2,"origin":"FACTORY","manualUnitPrice":9900,"unitPrice":9900}]}]});
+        let evidence=json!({"recipients":[{"id":"new-r","name":"테스트","address":"서울",
+            "items":[{"id":"new-i","raw":"테스트 상품","productId":"p","variantId":"v",
+                "quantity":2,"origin":"FACTORY","unitPrice":12000}]}],"candidates":[]});
+        let state=json!({"products":[{"id":"p","origin":"FACTORY",
+            "variants":[{"id":"v","wholesale":12000},{"id":"v2","wholesale":15000}]}],
+            "shipping":{"epoch":1,"productRules":{"p":{"version":"1","fees":{"2":5200}}}}});
+        let client=json!({"id":"c","tier":"wholesale"});
+        let merge=|previous:&Value,evidence:&Value|apply(&json!({
+            "previous":previous,"evidence":evidence,"raw":"테스트 상품",
+            "clientId":"c","at":"now","state":state,"client":client
+        })).unwrap()["order"].clone();
+        let kept=merge(&previous,&evidence);
+        assert_eq!(kept["recipients"][0]["items"][0]["unitPrice"],9900);
+        assert_eq!(kept["recipients"][0]["items"][0]["manualUnitPrice"],9900);
+        assert_eq!(kept["shippingFee"],7000);
+        let mut zero=previous.clone();
+        zero["recipients"][0]["items"][0]["manualUnitPrice"]=json!(0);
+        zero["recipients"][0]["shippingCharges"]["FACTORY"]=json!(0);
+        let kept_zero=merge(&zero,&evidence);
+        assert_eq!(kept_zero["recipients"][0]["items"][0]["unitPrice"],0);
+        assert_eq!(kept_zero["shippingFee"],0);
+        let mut changed=evidence.clone();
+        changed["recipients"][0]["items"][0]["variantId"]=json!("v2");
+        let changed=merge(&previous,&changed);
+        assert!(changed["recipients"][0]["items"][0].get("manualUnitPrice").is_none());
+        assert_eq!(changed["recipients"][0]["items"][0]["unitPrice"],15000);
     }
     #[test]
     fn merged_price_respects_current_dealer_special_override(){
