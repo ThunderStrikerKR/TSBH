@@ -10,7 +10,7 @@ use crate::{
     model_group_manager::ModelGroupManager,
     gateway::BandoGateway,
     management_queries::{self, ManagementProductRows},
-    latest_job::LatestJob,
+    screen_refresh::ReadRefresh,
     product_excel_ui::ProductExcelUi,
     product_images::{self,ProductImageCache},
     theme, typography,
@@ -397,7 +397,6 @@ pub struct ProductManager {
     focus_search:bool,
     catalog:Option<Value>,
     // Force an authoritative read while keeping the last projection visible.
-    catalog_stale:bool,
     products:Vec<Value>,
     query:String,
     tab:usize,
@@ -429,7 +428,7 @@ pub struct ProductManager {
     photos:ProductImageCache,
     writing:Option<ProductWrite>,
     notice:Option<String>,
-    result:LatestJob<ManagementProductRows>,
+    result:ReadRefresh<ManagementProductRows>,
     next_query:Option<Instant>,
     error:Option<String>,
 }
@@ -458,7 +457,7 @@ impl ProductManager {
     pub fn new(gateway:Arc<dyn BandoGateway>,ctx:Context)->Self {
         let mut page=Self {
             gateway,selection_client:None,selection_result:None,focus_search:false,
-            catalog:None,catalog_stale:false,products:Vec::new(),
+            catalog:None,products:Vec::new(),
             query:String::new(),tab:0,tab_snapshots:crate::navigation::NavigationSnapshots::new(0),
             category_manager:CategoryManager::default(),
             model_groups:ModelGroupManager::default(),
@@ -477,7 +476,7 @@ impl ProductManager {
             excel:ProductExcelUi::default(),
             photos:ProductImageCache::default(),
             writing:None,notice:None,
-            result:LatestJob::default(),next_query:None,error:None,
+            result:ReadRefresh::default(),next_query:None,error:None,
         };
         page.reload(ctx);
         page
@@ -546,13 +545,13 @@ impl ProductManager {
         // Keep verified view data during page re-entry; force the worker to
         // read the operating catalog instead of treating the display cache as fresh.
         if self.writing.is_some()||self.has_pending_prices()||self.selected.is_some(){return;}
-        self.catalog_stale=true;
+        self.result.require();
         self.next_query=None;
         self.reload(ctx);
     }
     fn reload(&mut self,ctx:Context) {
         let gateway=Arc::clone(&self.gateway);
-        let cached=if self.catalog_stale{None}else{self.catalog.clone()};
+        let cached=if self.result.required(){None}else{self.catalog.clone()};
         let query=self.query.clone();
         let category=self.category.clone();
         let brand=self.brand.clone();
@@ -638,7 +637,7 @@ impl ProductManager {
     fn launch_write(
         &mut self,action:&str,data:Value,key:Option<String>,ctx:Context
     ){
-        if self.catalog_stale{
+        if self.result.required(){
             self.error=Some("최신 상품 정보를 확인한 뒤 저장해 주세요.".into());
             return;
         }
@@ -821,7 +820,7 @@ impl ProductManager {
                         self.model_groups.set_catalog(&result.catalog,ctx);
                         self.aliases.set_catalog(&result.catalog,ctx);
                         self.catalog=Some(result.catalog);
-                        self.catalog_stale=false;
+                        self.result.verified();
                         self.products=result.products;
                         if !self.has_pending_prices(){self.error=None;}
                     }else{
@@ -834,7 +833,7 @@ impl ProductManager {
                 Err(e)=>self.error=Some(e),
             }
         }
-        // LatestJob already requests a repaint on worker completion.
+        // Shared refresh coordinator requests a repaint on completion.
     }
     pub fn has_modal(&self)->bool {
         self.selected.is_some() || self.excel.has_modal() ||
@@ -1033,9 +1032,9 @@ impl ProductManager {
         }
         if !selecting{self.sync_tab_navigation(ui.ctx().clone());}
         ui.push_id(("product-navigation",self.tab,self.tab_snapshots.epoch(self.tab)),|ui|{
-        let can_edit=!selecting && !self.catalog_stale && self.gateway.product_write_enabled()
+        let can_edit=!selecting && !self.result.required() && self.gateway.product_write_enabled()
             && self.catalog.as_ref().is_some_and(|c|c["revision"].as_u64().is_some());
-        let saving=self.catalog_stale||self.writing.is_some()||self.excel.busy();
+        let saving=self.result.required()||self.writing.is_some()||self.excel.busy();
         let mut price_write:Option<(String,Value)>=None;
         let mut open_detail:Option<Value>=None;
         let mut picked:Option<Value>=None;
@@ -1069,7 +1068,7 @@ impl ProductManager {
         }
         if self.tab==2 {
             if let Some(catalog)=self.catalog.as_ref(){
-                ui.add_enabled_ui(!self.catalog_stale,|ui|{
+                ui.add_enabled_ui(!self.result.required(),|ui|{
                     self.model_groups.show_page(ui,catalog,Arc::clone(&self.gateway));
                 });
             }else{
@@ -1218,7 +1217,7 @@ impl ProductManager {
                     );
                     self.excel.show_menu(
                         actions,&trigger,Arc::clone(&self.gateway),
-                        self.catalog.is_some()&&!self.catalog_stale&&self.writing.is_none()
+                        self.catalog.is_some()&&!self.result.required()&&self.writing.is_none()
                             &&!self.has_pending_prices()
                     );
                 }
@@ -1273,7 +1272,7 @@ impl ProductManager {
                         price_order.push(CellNavigationCell{
                             id:key.clone(),row:row_index,column,
                             order:row_index*3+column,
-                            enabled:!self.catalog_stale && !other_price_write_busy &&
+                            enabled:!self.result.required() && !other_price_write_busy &&
                                 !self.price_mode_exit_requested &&
                                 !self.price_cell_busy(&key),
                         });
@@ -1909,7 +1908,7 @@ impl ProductManager {
         });
     }
     pub fn show_detail(&mut self,ctx:&Context,work_area:egui::Rect){
-        if self.catalog_stale{return;}
+        if self.result.required(){return;}
         if self.tab==0 && self.excel.has_modal(){
             self.excel.show_review(
                 ctx,work_area,Arc::clone(&self.gateway),
@@ -3437,7 +3436,7 @@ mod reception_selection_tests{
 impl ProductManager {
     pub(crate) fn geometry_fixture(gateway:Arc<dyn BandoGateway>,ctx:egui::Context,tab:usize,loaded:bool)->Self{
         let mut page=Self::new(gateway,ctx);
-        page.result=LatestJob::default(); page.next_query=None; page.tab=tab; if loaded{page.catalog=Some(serde_json::json!({"revision":1,"products":[],"categories":[],"brands":[],"aliases":[],"settings":{}}));}
+        page.result=ReadRefresh::default(); page.next_query=None; page.tab=tab; if loaded{page.catalog=Some(serde_json::json!({"revision":1,"products":[],"categories":[],"brands":[],"aliases":[],"settings":{}}));}
         page
     }
 
