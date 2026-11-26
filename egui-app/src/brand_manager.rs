@@ -26,6 +26,7 @@ enum Exit {Select(String),Close,Tab(usize),Global}
 pub struct BrandManager{
     form:BrandForm,
     original:BrandForm,
+    expected_entity:Value,
     editor_open:bool,
     list_query:String,
     pending:Option<Exit>,
@@ -79,6 +80,7 @@ impl BrandManager {
                     };
                     self.editor_open=true;
                     self.original=self.form.clone();
+                    self.expected_entity=row.clone();
                     self.error=None;
                     self.notice=None;
                 }
@@ -99,6 +101,7 @@ impl BrandManager {
     fn request(&self)->Value{
         json!({
             "editing":self.form.editing,
+            "expectedEntity":if self.form.editing.is_some(){self.expected_entity.clone()}else{Value::Null},
             "name":self.form.name,
             "korean":self.form.korean,
             "aliases":self.form.aliases,
