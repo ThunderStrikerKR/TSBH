@@ -394,7 +394,7 @@ pub fn icon(heading:&mut Ui,title:&str){
                 .fixed_pos(Pos2::new(left,top))
                 .movable(false)
                 .show(&ctx,|popup|{
-                    crate::components::attach_popup_to_owner(&response,popup);
+                    crate::overlay::attach_popup(popup.ctx(),response.layer_id,popup.layer_id());
                     theme::settings_help_surface_frame()
                         .show(popup,|panel|{
                             panel.set_width(width-theme::SPACE_24);

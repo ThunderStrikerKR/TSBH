@@ -139,6 +139,11 @@ pub fn tooltip_allowed(response:&Response)->bool{
         && modal_scope(ctx).is_none_or(|active|response_owner(response)==Some(active))
         && ctx.memory(|m|m.allows_interaction(response.layer_id))
 }
+/// A popup owns keyboard shortcuts for the entire pass, including the
+/// pass in which it is dismissed. Do not mutate its underlying editor.
+pub fn popup_blocks_shortcuts(ctx:&Context)->bool{
+    with_scope(ctx,|s|s.popup_at_start)||egui::Popup::is_any_open(ctx)
+}
 pub fn cell_escape_requested(ctx:&Context)->bool{
     ctx.input(|input|input.key_pressed(egui::Key::Escape))
         && with_scope(ctx,|s|!s.popup_at_start&&!s.escape_claimed)
@@ -254,7 +259,9 @@ mod modal_input_routing_tests{
             egui::Popup::open_id(ctx,Id::new("test-popup"));
             begin_frame(ctx);
             assert!(!notice_visible(ctx,None));
+            assert!(popup_blocks_shortcuts(ctx));
             egui::Popup::close_all(ctx);
+            assert!(popup_blocks_shortcuts(ctx));
             assert!(!take_modal_escape(ctx));
         });
     }

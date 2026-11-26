@@ -1889,7 +1889,9 @@ impl ManualWorkspace {
             }
         }
         if self.busy() || self.nested_modal_window_id().is_some(){self.assignment_gesture.clear();}
-        if ctx.input(|input|input.modifiers.command && input.key_pressed(egui::Key::Z)){
+        if self.nested_modal_window_id().is_none()
+            && !crate::overlay::popup_blocks_shortcuts(ctx)
+            && ctx.input(|input|input.modifiers.command && input.key_pressed(egui::Key::Z)){
             self.assignment_gesture.clear();
             self.undo();
         }
