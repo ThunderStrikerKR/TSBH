@@ -78,14 +78,6 @@ pub(crate) fn preview_surface_frame()->Frame{
     Frame::new().fill(INPUT).inner_margin(SPACE_12 as i8)
 }
 
-/// Border and rounding belong to the reusable source-document surface.
-/// The editor's own frame is disabled so its square corners cannot cover
-/// the approved rounded rect below the dealer card.
-pub(crate) fn source_document_frame() -> Frame {
-    bordered_surface(INPUT,BORDER,CONTROL_RADIUS)
-        .inner_margin(SPACE_4)
-}
-
 /// Reusable absolute-layout panel with a fixed title band and an
 /// independently scrolling body. The caller supplies approved geometry and
 /// stable IDs; clipping, frame paint, title placement and scroll ownership
@@ -354,7 +346,7 @@ fn paint_source_document_surface(ui: &Ui, rect: Rect) {
     theme::paint_bordered_surface(ui.painter(),rect,theme::CONTROL_RADIUS,theme::INPUT,theme::BORDER);
 }
 
-/// One reserved document surface for draft, confirmed, hover and message content.
+/// One reserved document surface for draft, confirmed, hover, manual classification and message content.
 /// The inside stroke occupies one point; the content starts four points beyond it.
 pub(crate) fn reception_document_inner_rect(rect:Rect)->Option<Rect>{
     let inset=theme::SPACE_4+theme::FRAME_STROKE_WIDTH;

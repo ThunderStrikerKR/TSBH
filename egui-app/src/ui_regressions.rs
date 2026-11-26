@@ -1840,6 +1840,11 @@ pub(crate) mod general_screen_geometry_tests {
         assert_eq!(source.matches("crate::card::reception_document_viewport(").count(),5);
         assert!(!source.contains("crate::card::source_document_frame()"));
         assert!(!source.contains("crate::card::paint_source_document_surface("));
+        let manual=include_str!("manual_workspace.rs");
+        let manual_render=manual.split("mod manual_assignment_gesture_tests{").next().unwrap();
+        assert_eq!(manual_render.matches("crate::card::reception_document_viewport(").count(),1);
+        assert!(!manual_render.contains("crate::card::source_document_frame()"));
+        assert!(!manual_render.contains("crate::card::paint_source_document_surface("));
     }
 
     #[test]

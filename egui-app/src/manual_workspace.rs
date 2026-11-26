@@ -2100,42 +2100,38 @@ impl ManualWorkspace {
                                             // divider, and 12pt inset on all four sides
                                             // as the intake source pane.
                                             body.spacing_mut().item_spacing.y=0.0;
-                                            crate::card::source_document_frame().show(body,|document|{
-                                                crate::scrollbar::scroll_area(crate::scrollbar::ScrollAxes::Vertical)
-                                                    .id_salt("manual-source-blocks")
-                                                    .max_height((
-                                                        crate::card::docked_section_body_height(height)
-                                                        -theme::SPACE_8
-                                                        -2.0*theme::FRAME_STROKE_WIDTH
-                                                    ).max(0.0))
-                                                    .auto_shrink([false,false])
-                                                    .show(document,|ui|{
-                                                        let interaction=crate::manual_source_view::source_document(
-                                                            ui,&self.raw,&spans,&assigned_source_ids,
-                                                            selected_recipient_id.as_deref(),active_link.as_ref(),
-                                                            scroll_link.as_ref(),!busy,
-                                                            self.assignment_gesture.dragging.as_deref().or(self.assignment_gesture.source.as_deref())
+                                            let available=crate::card::docked_section_body_height(height)
+                                                .min(body.available_height().max(0.0));
+                                            let (rect,_)=body.allocate_exact_size(
+                                                egui::vec2(body.available_width(),available),egui::Sense::hover()
+                                            );
+                                            let _=crate::card::reception_document_viewport(
+                                                body,rect,"manual-source-document","manual-source-blocks",|ui|{
+                                                let interaction=crate::manual_source_view::source_document(
+                                                    ui,&self.raw,&spans,&assigned_source_ids,
+                                                    selected_recipient_id.as_deref(),active_link.as_ref(),
+                                                    scroll_link.as_ref(),!busy,
+                                                    self.assignment_gesture.dragging.as_deref().or(self.assignment_gesture.source.as_deref())
+                                                );
+                                                hovered_source=interaction.hovered;
+                                                source_did_scroll=interaction.did_scroll;
+                                                if let Some(id)=interaction.drag_started_block {
+                                                    if assignments.get(&id).is_none(){
+                                                        self.assignment_gesture.start_drag(
+                                                            id.clone(),interaction.drag_anchor_offset,
+                                                            interaction.drag_layout_width
                                                         );
-                                                        hovered_source=interaction.hovered;
-                                                        source_did_scroll=interaction.did_scroll;
-                                                        if let Some(id)=interaction.drag_started_block {
-                                                            if assignments.get(&id).is_none(){
-                                                                self.assignment_gesture.start_drag(
-                                                                    id.clone(),interaction.drag_anchor_offset,
-                                                                    interaction.drag_layout_width
-                                                                );
-                                                                // Recommend valid cells on the initial press frame,
-                                                                // even while the pointer remains completely still.
-                                                                drag_recommendations=data.recommendations(
-                                                                    &id,pending_quantity_cell.as_ref()
-                                                                );
-                                                            }
-                                                        }
-                                                        if interaction.drag_moved{
-                                                            self.assignment_gesture.mark_drag_moved();
-                                                        }
-                                                        source_clicked=interaction.clicked_block;
-                                                    });
+                                                        // Recommend valid cells on the initial press frame,
+                                                        // even while the pointer remains completely still.
+                                                        drag_recommendations=data.recommendations(
+                                                            &id,pending_quantity_cell.as_ref()
+                                                        );
+                                                    }
+                                                }
+                                                if interaction.drag_moved{
+                                                    self.assignment_gesture.mark_drag_moved();
+                                                }
+                                                source_clicked=interaction.clicked_block;
                                             });
                                         },
                                     );
@@ -4316,7 +4312,9 @@ mod manual_workspace_layout_tests{
             .contains("crate::ui_primitives::section_divider("));
         assert!(render[toolbar_start..body_start]
             .contains("status.set_min_height(theme::MODAL_MASTER_WORKSPACE_TOOLBAR_HEIGHT)"));
-        assert!(render.contains("crate::card::source_document_frame().show(body"));
+        assert!(render.contains("crate::card::reception_document_viewport("));
+        assert!(render.contains("body,rect,\"manual-source-document\",\"manual-source-blocks\""));
+        assert!(!render.contains("crate::card::source_document_frame()"));
         assert!(!render.contains("crate::popup::modal_nested_role_frame(crate::popup::ModalNestedRole::Standard).show(source_ui"));
         assert!(render.contains("crate::card::docked_section_body_height(height)"));
         assert!(render.contains("sheet.spacing_mut().item_spacing.y=0.0;"));
