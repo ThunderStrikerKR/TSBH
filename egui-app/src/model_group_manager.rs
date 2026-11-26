@@ -29,6 +29,7 @@ pub struct ModelGroupManager {
     draft:Value,
     groups_cache:crate::screen_refresh::ViewProjectionCache<(),Vec<(String,Value)>>,
     selected:String,
+    editor_open:bool,
     new_name:String,
     query:String,
     search:String,
@@ -46,7 +47,7 @@ pub struct ModelGroupManager {
 impl Default for ModelGroupManager{
     fn default()->Self{
         Self{initialized:false,baseline:Value::Null,draft:json!({}),groups_cache:Default::default(),
-            selected:String::new(),new_name:String::new(),
+            selected:String::new(),editor_open:false,new_name:String::new(),
             query:String::new(),search:String::new(),status:String::new(),
             write:None,confirm:None,after_save:None,confirm_delete:false,
             leave_tab:None,global_approved:false,
@@ -82,7 +83,7 @@ impl ModelGroupManager {
     }
     fn unsaved(&self)->bool{self.dirty()||!self.new_name.trim().is_empty()}
     pub fn busy(&self)->bool{self.write.is_some()}
-    pub fn has_overlay(&self)->bool{self.confirm_delete||self.confirm.is_some()}
+    pub fn has_overlay(&self)->bool{self.editor_open||self.confirm_delete||self.confirm.is_some()}
     pub fn request_tab_leave(&mut self,index:usize)->bool{
         if self.busy(){return false;}
         if self.unsaved(){self.confirm=Some(Exit::Tab(index));false}
@@ -101,7 +102,7 @@ impl ModelGroupManager {
     }
     pub fn take_tab_change(&mut self)->Option<usize>{self.leave_tab.take()}
     pub fn reset_navigation(&mut self){
-        self.selected.clear();self.search.clear();self.query.clear();
+        self.editor_open=false;self.selected.clear();self.search.clear();self.query.clear();
         self.new_name.clear();self.status.clear();
         self.confirm=None;self.after_save=None;self.confirm_delete=false;
     }
@@ -112,10 +113,10 @@ impl ModelGroupManager {
     }
     fn finish_exit(&mut self,next:Exit){
         match next{
-            Exit::Select(id)=>{self.selected=id;self.search.clear();self.status.clear();}
-            Exit::Close=>{self.selected.clear();self.search.clear();self.status.clear();}
-            Exit::Tab(index)=>{self.leave_tab=Some(index);}
-            Exit::Global=>{self.global_approved=true;}
+            Exit::Select(id)=>{self.editor_open=true;self.selected=id;self.search.clear();self.status.clear();}
+            Exit::Close=>{self.editor_open=false;self.selected.clear();self.search.clear();self.status.clear();}
+            Exit::Tab(index)=>{self.editor_open=false;self.selected.clear();self.leave_tab=Some(index);}
+            Exit::Global=>{self.editor_open=false;self.selected.clear();self.global_approved=true;}
         }
     }
     fn request_exit(&mut self,next:Exit){
@@ -133,7 +134,7 @@ impl ModelGroupManager {
             chrono::Utc::now().timestamp_micros(),
             NEXT_ID.fetch_add(1,Ordering::Relaxed));
         self.draft[&id]=json!({"name":name,"productIds":[],"representativeProductId":""});self.groups_cache.invalidate();
-        self.selected=id;self.new_name.clear();self.status.clear();
+        self.editor_open=true;self.selected=id;self.new_name.clear();self.status.clear();
     }
     pub fn poll(&mut self,_ctx:&Context)->Option<Value>{
         let response=self.write.as_ref().map(|rx|rx.try_recv());
@@ -203,43 +204,25 @@ impl ModelGroupManager {
                 Err(error)=>self.status=error,
             }
         }
-        let eligible=Arc::clone(&self.eligible);
-        let eligibility_pending=self.eligibility.pending();
         let groups=self.groups_cache.get((),||self.draft.as_object().map(|m|
-            m.iter().map(|(id,g)|(id.clone(),g.clone())).collect::<Vec<_>>())
-            .unwrap_or_default());
+            m.iter().map(|(id,g)|(id.clone(),g.clone())).collect::<Vec<_>>()).unwrap_or_default());
         let products:HashMap<&str,&Value>=items(&catalog["products"]).iter().rev().map(|p|(text(p,"id"),p)).collect();
         use typography::ManagementTableCellRole as Role;
         let card_min_height=crate::card::management_master_table_card_min_inner_height(ui);
-        let mut save=false;
-        crate::card::measured_management_master_card(ui,|outer|{
-            crate::card::fill_management_primary_card(outer,card_min_height);
-            let available=outer.available_width();
-            let left_width=(available*0.44).max(1.0);
-            let height=outer.available_height().max(theme::MANAGEMENT_TABLE_ROW_HEIGHT*6.0);
-            let right_width=(available-left_width-theme::SPACE_16).max(1.0);
-            outer.spacing_mut().item_spacing.x=theme::SPACE_16;
-            outer.horizontal_top(|whole|{
-                whole.allocate_ui_with_layout(Vec2::new(left_width,height),Layout::top_down(Align::Min),|left|{
-                    left.horizontal(|head|{
-                        head.label(typography::section_heading("모델군 목록"));
-                        head.label(typography::caption(&format!("{}개",groups.len())));
-                    });
-                    left.horizontal(|form|{
-                        let width=(form.available_width()-theme::MANAGEMENT_SEARCH_MIN_WIDTH*0.5).max(1.0);
-                        form.add_enabled_ui(writable&&!busy,|entry|{
-                            let edit=crate::input::flexible_text_field(entry,&mut self.new_name,width,"새 모델군 이름");
-                            crate::floating_notice::sized_text_caret(entry,"products.model.input",&edit,
-                                &self.new_name,egui::FontId::proportional(typography::FONT_BODY),false,8.0);
-                        });
-                        if crate::button::action(form,"그룹 생성",theme::ButtonRole::Standard,writable&&!busy).clicked(){
-                            crate::floating_notice::dispatch_pointer(form.ctx(),"products.model");
-                            self.create();
-                        }
-                    });
-                    let width=left.available_width();
-                    crate::input::management_search_field(left,&mut self.query,width,"모델군 이름 또는 상품명 검색");
-                    crate::ui_primitives::section_divider(left);
+        crate::card::measured_management_master_card(ui,|panel|{
+            crate::card::fill_management_primary_card(panel,card_min_height);
+            panel.horizontal(|toolbar|{
+                let width=theme::CATALOG_SEARCH_WIDTH.min((toolbar.available_width()-160.0).max(1.0));
+                crate::input::management_search_field(toolbar,&mut self.query,width,"모델군 이름 또는 상품명 검색");
+                toolbar.with_layout(Layout::right_to_left(Align::Center),|actions|{
+                    if crate::button::action(actions,"+ 모델군 추가",theme::ButtonRole::Primary,
+                        writable&&!busy&&!self.editor_open).clicked(){
+                        self.editor_open=true;self.selected.clear();self.new_name.clear();
+                        self.search.clear();self.status.clear();
+                    }
+                });
+            });
+            crate::ui_primitives::section_divider(panel);
                     let query=self.query.trim().to_lowercase();
                     let visible=groups.iter().filter(|(_,g)|{
                         query.is_empty()||text(g,"name").to_lowercase().contains(&query)
@@ -247,14 +230,14 @@ impl ModelGroupManager {
                             .filter_map(|id|products.get(id))
                             .any(|p|text(p,"name").to_lowercase().contains(&query))
                     }).collect::<Vec<_>>();
-                    let body_height=(left.available_height()-theme::MANAGEMENT_TABLE_HEADER_HEIGHT).max(1.0);
+                    let body_height=(panel.available_height()-theme::MANAGEMENT_TABLE_HEADER_HEIGHT).max(1.0);
                     let selected_id=self.selected.clone();
-                    let rect=crate::table::registry_table(left,"family-list",["모델군","대표모델","상품 수"],
-                        [160.0,156.0,76.0],body_height,visible.len(),
+                    let rect=crate::table::registry_table(panel,"family-list",["모델군","대표모델","상품 수","관리"],
+                        [240.0,220.0,96.0,108.0],body_height,visible.len(),
                         |i|visible[i].0==selected_id,|row,cells,i,rect|{
                             let (id,g)=visible[i];
                             let selected=self.selected==*id;
-                            let response=row.interact(rect,row.make_persistent_id(id),if busy{Sense::hover()}else{Sense::click()});
+                            let response=row.interact(rect,row.make_persistent_id(id),if busy||self.editor_open{Sense::hover()}else{Sense::click()});
                             if response.hovered()&&!selected&&!busy{
                                 crate::table::paint_management_interactive_row_background(row.painter(),rect,i,true);
                             }
@@ -266,25 +249,62 @@ impl ModelGroupManager {
                             crate::table::registry_cell(row,cells[2],&items(&g["productIds"]).len().to_string(),Role::Quantity,true,(id,2));
                             #[cfg(test)]
                             crate::ui_test_support::record("catalog data row",rect);
-                            if response.clicked()&&!busy&&!selected{self.request_exit(Exit::Select(id.clone()));}
+                            let edit=crate::table::registry_actions(row,cells[3],|actions|{
+                                crate::button::action(actions,"편집",theme::ButtonRole::Standard,!busy&&!self.editor_open).clicked()
+                            });
+                            if (response.clicked()||edit)&&!busy&&!self.editor_open{self.request_exit(Exit::Select(id.clone()));}
                         });
                     if visible.is_empty(){
-                        crate::status_notice::management_body_state_overlay(left,rect,Some(
+                        crate::status_notice::management_body_state_overlay(panel,rect,Some(
                             if groups.is_empty(){"등록된 모델군이 없습니다."}else{"검색 결과가 없습니다."}));
                     }
-                });
-                whole.allocate_ui_with_layout(Vec2::new(right_width,height),Layout::top_down(Align::Min),|right|{
-                    if let Some(g)=self.draft.get(&self.selected).cloned(){
-                        right.horizontal(|head|{
-                            head.label(typography::section_heading("모델군 상세"));
-                            head.with_layout(Layout::right_to_left(Align::Center),|buttons|{
-                                if crate::button::action(buttons,"그룹 삭제",theme::ButtonRole::Danger,writable&&!busy).clicked(){
-                                    self.confirm_delete=true;
-                                }
-                            });
-                        });
+        });
+        let input_error=self.status.contains("그룹 이름") ||
+            self.status.contains("같은 이름");
+        crate::floating_notice::sync(
+            ui.ctx(),"products.model.status",
+            if input_error{"products.model.input"}else{"products.model"},
+            if self.status.contains("저장했습니다"){
+                crate::floating_notice::Tone::Success
+            }else if input_error{
+                crate::floating_notice::Tone::Validation
+            }else{
+                crate::floating_notice::Tone::Error
+            },
+            if self.status.is_empty(){None}else{Some(self.status.as_str())}
+        );
+    }
+
+    fn show_editor(&mut self,ctx:&Context,rect:Rect,catalog:&Value,gateway:Arc<dyn BandoGateway>){
+        if !self.editor_open{return;}
+        let writable=gateway.model_group_write_enabled();
+        let busy=self.busy();
+        let nested=self.confirm_delete||self.confirm.is_some();
+        let eligible=Arc::clone(&self.eligible);
+        let eligibility_pending=self.eligibility.pending();
+        let products:HashMap<&str,&Value>=items(&catalog["products"]).iter().rev().map(|p|(text(p,"id"),p)).collect();
+        use typography::ManagementTableCellRole as Role;
+        let mut save=false;
+        let mut close=false;
+        let title=if self.selected.is_empty()&&!self.dirty(){"모델군 추가"}else{"모델군 편집"};
+        crate::popup::modal_backdrop(ctx,"model-group-editor-dim",false);
+        crate::popup::modal_window(ctx,title,"model-group-editor",rect)
+            .default_width(theme::MODAL_DEFAULT_MAX_WIDTH.min(rect.width()))
+            .show(ctx,|modal|{
+                let body_height=crate::popup::modal_editor_body_max_height(rect.height());
+                crate::popup::modal_flow_workspace(modal,|workspace|{
+                    close=workspace.header(title,"닫기",!busy&&!nested);
+                    workspace.scroll_region("model-group-editor-body",body_height,|body|{
+                        body.add_enabled_ui(!nested,|body|{
+                            let body_top=body.cursor().top();
+                            if let Some(g)=self.draft.get(&self.selected).cloned(){
+                                body.with_layout(Layout::right_to_left(Align::Center),|actions|{
+                                    if crate::button::action(actions,"그룹 삭제",theme::ButtonRole::Danger,writable&&!busy).clicked(){
+                                        self.confirm_delete=true;
+                                    }
+                                });
                         let mut name=text(&g,"name").to_owned();
-                        right.horizontal(|form|{
+                        body.horizontal(|form|{
                             crate::ui_primitives::form_field_label(form,"모델군 이름");
                             let width=form.available_width();
                             form.add_enabled_ui(writable&&!busy,|field|{
@@ -295,8 +315,8 @@ impl ModelGroupManager {
                             self.draft[&self.selected]["name"]=json!(name);
                             self.groups_cache.invalidate();self.status.clear();
                         }
-                        let width=right.available_width();
-                        right.add_enabled_ui(writable&&!busy,|search|{
+                        let width=body.available_width();
+                        body.add_enabled_ui(writable&&!busy,|search|{
                             crate::input::management_search_field(search,&mut self.search,width,"추가할 상품 검색");
                         });
                         let assigned=self.membership();
@@ -308,9 +328,9 @@ impl ModelGroupManager {
                                 .filter(|p|!items(&g["productIds"]).iter().any(|id|id.as_str()==Some(text(p,"id"))))
                                 .filter(|p|format!("{} {}",text(p,"name"),text(p,"subtitle")).to_lowercase().contains(&query))
                                 .take(30).collect::<Vec<_>>();
-                            right.label(typography::subsection_heading("상품 검색 결과"));
-                            let result_height=(right.available_height()*0.30).min(theme::MANAGEMENT_TABLE_ROW_HEIGHT*3.0).max(1.0);
-                            let rect=crate::table::registry_table(right,"model-group-search-results",
+                            body.label(typography::subsection_heading("상품 검색 결과"));
+                            let result_height=(body_height*0.25).min(theme::MANAGEMENT_TABLE_ROW_HEIGHT*3.0).max(theme::MANAGEMENT_TABLE_ROW_HEIGHT);
+                            let rect=crate::table::registry_table(body,"model-group-search-results",
                                 ["상품명","상세 정보","소속 모델군","추가"],[140.0,100.0,110.0,80.0],
                                 result_height,choices.len(),|_|false,|row,cells,i,_|{
                                     let p=choices[i];let id=text(p,"id");
@@ -327,21 +347,21 @@ impl ModelGroupManager {
                                     });
                                 });
                             if choices.is_empty(){
-                                crate::status_notice::management_body_state_overlay(right,rect,Some(
+                                crate::status_notice::management_body_state_overlay(body,rect,Some(
                                     if eligibility_pending{"상품을 확인하는 중입니다."}else{"일치하는 상품이 없습니다."}));
                             }
                         }
-                        crate::ui_primitives::section_divider(right);
+                        crate::ui_primitives::section_divider(body);
                         let ids=items(&g["productIds"]).iter().filter_map(Value::as_str).collect::<Vec<_>>();
-                        right.horizontal(|heading|{
+                        body.horizontal(|heading|{
                             heading.label(typography::subsection_heading("등록 상품"));
                             heading.label(typography::caption(&format!("{}개",ids.len())));
                         });
                         if !text(&g,"representativeColor").is_empty()&&text(&g,"representativeProductId").is_empty(){
-                            right.label(typography::caption(&format!("이전 대표색상: {} · 대표모델 재지정 필요",text(&g,"representativeColor"))));
+                            body.label(typography::caption(&format!("이전 대표색상: {} · 대표모델 재지정 필요",text(&g,"representativeColor"))));
                         }
-                        let body_height=(right.available_height()-theme::FAMILY_FOOTER_HEIGHT-theme::MANAGEMENT_TABLE_HEADER_HEIGHT).max(1.0);
-                        let rect=crate::table::registry_table(right,("model-group-registered-products",self.selected.clone()),
+                        let body_height=(body_height-(body.cursor().top()-body_top)-theme::MANAGEMENT_TABLE_HEADER_HEIGHT-theme::SPACE_8).max(theme::MANAGEMENT_TABLE_ROW_HEIGHT);
+                        let rect=crate::table::registry_table(body,("model-group-registered-products",self.selected.clone()),
                             ["상품명","상세 정보","대표모델","관리"],[140.0,100.0,96.0,176.0],
                             body_height,ids.len(),|_|false,|row,cells,i,_|{
                                 let id=ids[i];
@@ -373,45 +393,40 @@ impl ModelGroupManager {
                                 });
                             });
                         if ids.is_empty(){
-                            crate::status_notice::management_body_state_overlay(right,rect,Some("상품을 검색해 추가하세요."));
+                            crate::status_notice::management_body_state_overlay(body,rect,Some("상품을 검색해 추가하세요."));
                         }
-                    }else{
-                        let (rect,_)=right.allocate_exact_size(Vec2::new(right.available_width(),
-                            (right.available_height()-theme::FAMILY_FOOTER_HEIGHT).max(1.0)),Sense::hover());
-                        crate::status_notice::management_body_state_overlay(right,rect,Some("모델군을 선택하세요."));
-                    }
-                    crate::ui_primitives::soft_divider(right);
-                    right.horizontal(|footer|{
-                        footer.label(typography::caption(if self.dirty(){"저장하지 않은 변경사항 있음"}else{"변경사항 없음"}));
-                        footer.with_layout(Layout::right_to_left(Align::Center),|buttons|{
+                            }else if self.dirty(){
+                                body.label(typography::body("모델군이 삭제되었습니다. 변경사항을 저장하세요."));
+                            }else{
+                                body.horizontal(|form|{
+                                    let width=(form.available_width()-144.0).max(1.0);
+                                    form.add_enabled_ui(writable&&!busy,|entry|{
+                                        let edit=crate::input::flexible_text_field(entry,&mut self.new_name,width,"새 모델군 이름");
+                                        crate::floating_notice::sized_text_caret(entry,"products.model.input",&edit,
+                                            &self.new_name,egui::FontId::proportional(typography::FONT_BODY),false,8.0);
+                                    });
+                                    if crate::button::action(form,"그룹 생성",theme::ButtonRole::Primary,writable&&!busy).clicked(){
+                                        crate::floating_notice::dispatch_pointer(form.ctx(),"products.model");
+                                        self.create();
+                                    }
+                                });
+                            }
+                        });
+                    });
+                    workspace.footer_single(|buttons|{
+                        buttons.add_enabled_ui(!nested,|buttons|{
                             if crate::button::action(buttons,"변경사항 저장",theme::ButtonRole::Primary,
                                 writable&&!busy&&self.dirty()).clicked(){save=true;}
-                            if crate::button::action(buttons,"닫기",theme::ButtonRole::Standard,!busy).clicked(){
-                                self.request_exit(Exit::Close);
-                            }
                         });
                     });
                 });
             });
-        });
-        if save{self.save(gateway,ui.ctx().clone());}
-        let input_error=self.status.contains("그룹 이름") ||
-            self.status.contains("같은 이름");
-        crate::floating_notice::sync(
-            ui.ctx(),"products.model.status",
-            if input_error{"products.model.input"}else{"products.model"},
-            if self.status.contains("저장했습니다"){
-                crate::floating_notice::Tone::Success
-            }else if input_error{
-                crate::floating_notice::Tone::Validation
-            }else{
-                crate::floating_notice::Tone::Error
-            },
-            if self.status.is_empty(){None}else{Some(self.status.as_str())}
-        );
+        if close{self.request_exit(Exit::Close);}
+        if save{self.after_save=Some(Exit::Close);self.save(gateway,ctx.clone());}
     }
     pub fn show_dialogs(&mut self,ctx:&Context,rect:Rect,
-        gateway:Arc<dyn BandoGateway>){
+        catalog:&Value,gateway:Arc<dyn BandoGateway>){
+        self.show_editor(ctx,rect,catalog,Arc::clone(&gateway));
         if self.confirm_delete{
             let mut delete=false;let mut cancel=false;
             crate::popup::modal_backdrop(ctx,"family-delete-dim",false);
@@ -490,7 +505,7 @@ mod responsiveness_tests{
         assert!(body.contains("crate::table::registry_table("));
         assert!(body.contains("crate::table::registry_cell("));
         assert!(body.contains("crate::table::registry_actions("));
-        assert!(body.contains("[\"모델군\",\"대표모델\",\"상품 수\"]"));
+        assert!(body.contains("[\"모델군\",\"대표모델\",\"상품 수\",\"관리\"]"));
         assert!(body.contains("[\"상품명\",\"상세 정보\",\"대표모델\",\"관리\"]"));
         assert!(body.contains("[\"상품명\",\"상세 정보\",\"소속 모델군\",\"추가\"]"));
         assert!(!body.contains("직원"));
