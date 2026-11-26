@@ -92,6 +92,8 @@ jobs:
           cargo test --manifest-path egui-app/Cargo.toml reception_item_editor_integration_tests -- --nocapture
       - name: Verify freight inquiry visibility preserves checkbox geometry
         run: cargo test --manifest-path egui-app/Cargo.toml reception_cod_selector_tests -- --nocapture
+      - name: Verify shared button blue hover and keyboard focus palette
+        run: cargo test --manifest-path egui-app/Cargo.toml shared_action_style_tests -- --nocapture
       - name: Verify one-touch message typography, hover geometry and shared palette
         run: cargo test --manifest-path egui-app/Cargo.toml one_touch::tests -- --nocapture
       - name: Verify existing reception source highlighting remains stable
