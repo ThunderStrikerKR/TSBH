@@ -212,6 +212,7 @@ export function audit(source,file,checkTableContracts=false){
       "Popup :: menu (","Popup :: context_menu (","Popup :: from_response (","Popup :: new (",
       ". context_menu (",". layer_painter (",". set_sublayer (",
       ". set_modal_layer (",". move_to_top (",
+      ". order ( egui :: Order ::",". order ( Order ::",
       "Popup :: open_id (","Popup :: close_all (","Popup :: close_id ("];
     for(const pattern of overlayNative)
       if(file!=="overlay.rs"&&is(i,pattern))flag(i,"raw overlay outside shared manager: "+pattern);
@@ -378,6 +379,7 @@ function selfTest(){
     ["new_screen.rs","fn render(){ctx.set_sublayer(a,b);}",1],
     ["new_screen.rs","fn render(){memory.set_modal_layer(layer);}",1],
     ["overlay.rs","fn activate_modal(){memory.set_modal_layer(layer);}",0],
+    ["components.rs","fn nested(){modal_window(ctx,title,id,area).order(egui::Order::Foreground);}",1],
     ["new_screen.rs","fn render(){components::section_divider(ui);}",0],
     ["new_screen.rs","fn render(){components::soft_divider(ui);}",1],
     ["settings_view.rs","fn show_account_rows(){components::soft_divider(ui);}",0],

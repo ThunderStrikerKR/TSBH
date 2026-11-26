@@ -2614,7 +2614,7 @@ pub fn modal_master_controlled_spacing(ui:&mut Ui){
 pub fn nested_modal_window(
     ctx:&egui::Context,title:&str,id:&'static str,work_area:egui::Rect
 )->egui::Window<'static>{
-    modal_window(ctx,title,id,work_area).order(egui::Order::Foreground)
+    modal_window(ctx,title,id,work_area)
 }
 
 /// Shared decision layout. The owner allocates header, body and action
@@ -2768,16 +2768,6 @@ pub fn modal_foreground_for_window(
 ){
     let dialog_layer=modal_window_layer(window_id);
     crate::overlay::activate_modal(ctx,dialog_layer,true);
-}
-
-/// Bind an open popup to the Foreground window that owns its trigger.
-/// egui 0.33 orders same-order sublayers directly above their parent at
-/// end_pass, even when a modal is raised after its body has been rendered.
-/// Never promote a popup above a different, newer modal or change its
-/// owner's input boundary. Background/Middle triggers already have lower
-/// Order than their Foreground popup and cannot be registered as sublayers.
-pub fn attach_popup_to_owner(owner:&egui::Response,popup:&Ui){
-    crate::overlay::attach_popup(popup.ctx(),owner.layer_id,popup.layer_id());
 }
 
 /// Reusable absolute-layout panel with a fixed title band and an
@@ -9270,8 +9260,8 @@ mod modal_input_routing_tests {
                 modal_backdrop(ctx,"popup-owner-regression-dim",true);
                 show_decision_window(ctx,"Popup owner","popup-owner-regression",work_area,|ui|{
                     let trigger=ui.button("Open popup");
-                    let _=egui::Popup::from_response(&trigger).open(true).show(|menu|{
-                        attach_popup_to_owner(&trigger,menu);
+                    egui::Popup::open_id(ctx,egui::Popup::default_response_id(&trigger));
+                    let _=crate::overlay::show_menu(&trigger,None,|menu|{
                         let response=menu.button("Select option");
                         popup_layer=Some(response.layer_id);
                         popup_rect=response.rect;

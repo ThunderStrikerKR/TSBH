@@ -3426,7 +3426,11 @@ mod tests {
         let table=source.split("let base=product_table_base_widths();")
             .nth(1).unwrap().split("let headings=[").next().unwrap();
         assert!(!table.contains("self.price_mode"));
-        assert!(source.contains("egui::Popup::from_response(&response)"));
+        let production=source.split("#[cfg(test)]").next().unwrap();
+        assert!(production.contains("self.excel.show_menu("));
+        assert!(!production.contains("egui::Popup::"));
+        let excel=include_str!("product_excel_ui.rs");
+        assert!(excel.contains("crate::overlay::show_menu(trigger,"));
         assert!(!table.contains("PRODUCT_TABLE_EDIT_PRICE_WIDTH"));
     }
     #[test]
