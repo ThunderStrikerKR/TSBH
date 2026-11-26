@@ -142,6 +142,14 @@ mod pointer_cell_switch_tests{
     }
 }
 
+/// A press may drop TextEdit focus before the destination emits clicked().
+/// Defer closing/saving the old overlay until release, when that click can
+/// win the transition. A retained overlay also observes focus loss on later frames.
+pub fn worksheet_blur_finished(response:&eframe::egui::Response,step_interaction:bool)->bool{
+    !step_interaction && !response.ctx.input(|input|input.pointer.any_down())
+        && (response.lost_focus() || !response.has_focus())
+}
+
 /// Shared, focus-scoped spreadsheet input contract for egui TextEdit.
 /// Call BEFORE the TextEdit is rendered, then register the Response.id once
 /// rendered. Other fields (search, dates, memos, forms) are never intercepted.
