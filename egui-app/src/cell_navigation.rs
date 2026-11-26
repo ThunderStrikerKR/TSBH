@@ -140,6 +140,28 @@ mod pointer_cell_switch_tests{
         assert_eq!(cell_switch(false,false),CellSwitch::OpenNow);
         assert_eq!(cell_switch(false,true),CellSwitch::CommitThenOpen);
     }
+
+    #[test]
+    fn pointer_press_does_not_commit_before_destination_release(){
+        use eframe::egui::{self,Event,Modifiers,PointerButton,RawInput,Sense,Vec2};
+        let ctx=egui::Context::default();
+        let mut result=Vec::new();
+        for pressed in [true,false]{
+            let _=ctx.run(RawInput{
+                events:vec![Event::PointerButton{pos:egui::pos2(50.0,50.0),
+                    button:PointerButton::Primary,pressed,modifiers:Modifiers::NONE}],
+                ..Default::default()
+            },|ctx|{
+                egui::CentralPanel::default().show(ctx,|ui|{
+                    let (_,response)=ui.allocate_exact_size(Vec2::new(100.0,30.0),Sense::hover());
+                    assert!(!response.has_focus());
+                    result.push(worksheet_blur_finished(&response,false));
+                    assert!(!worksheet_blur_finished(&response,true));
+                });
+            });
+        }
+        assert_eq!(result,vec![false,true]);
+    }
 }
 
 /// A press may drop TextEdit focus before the destination emits clicked().
