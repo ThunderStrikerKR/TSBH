@@ -97,8 +97,8 @@ pub const CATEGORY_EXPLORER_ANCESTOR_MAX_HEIGHT:f32=144.0;
 // Popup footer navigation, breadcrumbs and Apply share the 36pt control baseline.
 pub const CATEGORY_EXPLORER_CRUMB_HEIGHT:f32=ACTION_PRIMARY_HEIGHT;
 pub const CATEGORY_EXPLORER_SEPARATOR_WIDTH:f32=12.0;
-// Fixed icon slot in the breadcrumb header, never a column beside the tree.
-pub const CATEGORY_EXPLORER_BACK_WIDTH:f32=CATEGORY_EXPLORER_CRUMB_HEIGHT;
+// Fixed standard-action slot, including the arrow and parent-navigation label.
+pub const CATEGORY_EXPLORER_BACK_WIDTH:f32=108.0;
 pub const CATEGORY_EXPLORER_ANCESTOR_INK:Color32=MUTED;
 pub const CATEGORY_EXPLORER_SEPARATOR_INK:Color32=Color32::from_gray(110);
 pub const CATEGORY_EXPLORER_ROOT_WIDTH:f32=48.0;
