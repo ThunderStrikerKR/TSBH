@@ -185,7 +185,7 @@ fn freight_assignment_text(
 ) {
     let clipped=rect.shrink2(egui::vec2(theme::MANAGEMENT_TABLE_TEXT_LEADING_INSET,0.0));
     if !matches!(role,typography::ManagementTableCellRole::Category){
-        components::paint_management_text_cell_with_full(
+        components::paint_management_text_cell(
             ui,clipped,value,full_text,role,egui::Align2::LEFT_CENTER,
             ("freight-cell",id),value!=full_text
         );
@@ -264,7 +264,7 @@ fn freight_rate_cell(
     role:typography::ManagementTableCellRole,id:impl std::hash::Hash,
     full_tooltip:Option<&str>
 ){
-    components::paint_management_text_cell_with_full(
+    components::paint_management_text_cell(
         ui,rect.shrink2(egui::vec2(6.0,0.0)),value,full_tooltip.unwrap_or(value),
         role,align,("freight-rate-cell",id),false
     );
@@ -2513,7 +2513,7 @@ fn history_cell(
     align:egui::Align2,role:typography::ManagementTableCellRole,
     id:impl std::hash::Hash
 ){
-    components::paint_management_text_cell_with_full(
+    components::paint_management_text_cell(
         ui,rect.shrink2(egui::vec2(6.0,0.0)),visible,full,role,align,
         ("freight-history-cell",id),visible!=full
     );

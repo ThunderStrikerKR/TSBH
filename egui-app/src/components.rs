@@ -129,16 +129,10 @@ pub fn management_body_state_overlay(
 /// Shared clipped single-line management cell. Callers choose semantic role,
 /// alignment and the existing column-specific insets; no business interaction
 /// or row identity is owned by the painter.
-pub fn paint_management_text_cell(
-    ui:&Ui,content:Rect,text:&str,role:typography::ManagementTableCellRole,
-    align:egui::Align2,id:impl std::hash::Hash
-){
-    paint_management_text_cell_with_full(ui,content,text,text,role,align,id,false);
-}
-
 /// For a deliberately shortened displayed value, preserve the original
 /// text only when clipping or the explicit shortening flag warrants it.
-pub fn paint_management_text_cell_with_full(
+/// Ordinary cells pass their display text as full text with shortened=false.
+pub fn paint_management_text_cell(
     ui:&Ui,content:Rect,text:&str,full:&str,role:typography::ManagementTableCellRole,
     align:egui::Align2,id:impl std::hash::Hash,shortened:bool
 ){
@@ -2999,16 +2993,6 @@ mod client_display_summary_tests{
     }
 }
 
-/// Geometry shared by recognized working orders and native workflow rows.
-/// The name receives all width not reserved for the two narrow numeric columns.
-/// Stable grid geometry for both the item header and rows.
-/// The product column uses remaining viewport space, but the numeric columns
-/// retain exactly 76pt and 136pt regardless of content or window dimensions.
-/// Below the minimum, the entire grid scrolls instead of compressing columns.
-#[cfg(test)]
-fn reception_item_table_width(available:f32)->f32 {
-    available.max(theme::RECEPTION_ITEMS_MIN_TABLE_WIDTH)
-}
 /// The vertically scrolling item list reserves a native scrollbar rail.
 /// Using the OUTER ScrollArea width for the three columns made the table
 /// overflow by exactly that rail width whenever many products were added,
@@ -3133,7 +3117,9 @@ fn reception_item_text_clip(rect:Rect,index:usize)->Rect {
 /// One shared item header; remove_slot preserves the action-column footprint.
 pub fn reception_items_header(ui:&mut Ui,remove_slot:bool)->Rect{
     let action_width=if remove_slot{theme::RECEPTION_ITEM_REMOVE_WIDTH}else{0.0};
-    let width=ui.available_width().max(theme::RECEPTION_ITEMS_MIN_TABLE_WIDTH+action_width);
+    let width=management_table_data_width(
+        ui.available_width(),0.0,theme::RECEPTION_ITEMS_MIN_TABLE_WIDTH+action_width
+    );
     let (rect, _) = ui.allocate_exact_size(
         Vec2::new(width, theme::RECEPTION_ITEMS_HEADER_HEIGHT), Sense::hover()
     );
@@ -3193,7 +3179,9 @@ pub fn reception_item_row(
     active: [bool; 3],editable:bool,remove_slot:bool,
 ) -> ReceptionItemCells {
     let action_width=if remove_slot{theme::RECEPTION_ITEM_REMOVE_WIDTH}else{0.0};
-    let width=ui.available_width().max(theme::RECEPTION_ITEMS_MIN_TABLE_WIDTH+action_width);
+    let width=management_table_data_width(
+        ui.available_width(),0.0,theme::RECEPTION_ITEMS_MIN_TABLE_WIDTH+action_width
+    );
     let (rect, _) = ui.allocate_exact_size(
         Vec2::new(width, theme::RECEPTION_ITEMS_ROW_HEIGHT), Sense::hover()
     );
@@ -4880,7 +4868,7 @@ mod management_toolbar_geometry_tests {
         // Header and every row use the same reserved width; no data value
         // changes the column geometry.
         for viewport in [220.0,350.0,392.0,520.0,820.0] {
-            let width=reception_item_table_width(viewport);
+            let width=management_table_data_width(viewport,0.0,theme::RECEPTION_ITEMS_MIN_TABLE_WIDTH);
             let area=Rect::from_min_size(
                 egui::pos2(0.0,0.0),Vec2::new(width,42.0)
             );
@@ -4892,7 +4880,7 @@ mod management_toolbar_geometry_tests {
             assert_eq!(quantity.right(),amount.left());
             assert_eq!(amount.right(),area.right());
         }
-        assert_eq!(reception_item_table_width(220.0),
+        assert_eq!(management_table_data_width(220.0,0.0,theme::RECEPTION_ITEMS_MIN_TABLE_WIDTH),
             theme::RECEPTION_ITEMS_MIN_TABLE_WIDTH);
     }
 

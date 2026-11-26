@@ -262,8 +262,8 @@ fn paint_cell(
     role:typography::ManagementTableCellRole,id:impl std::hash::Hash,
 ){
     components::paint_management_text_cell(
-        ui,rect.shrink2(Vec2::new(theme::SPACE_8,0.0)),content,role,
-        align,("settlement-cell",id)
+        ui,rect.shrink2(Vec2::new(theme::SPACE_8,0.0)),content,content,role,
+        align,("settlement-cell",id),false
     );
 }
 

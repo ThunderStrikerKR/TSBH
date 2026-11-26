@@ -263,7 +263,7 @@ fn cell(ui:&Ui,rect:Rect,visible:&str,align:Align2,
         rect.shrink2(Vec2::new(theme::SPACE_8,0.0))
     };
     components::paint_management_text_cell(
-        ui,padded,visible,role,align,("excel-table-cell",id)
+        ui,padded,visible,visible,role,align,("excel-table-cell",id),false
     );
 }
 /// Each Excel tab shows one table at a time. Loading and empty-state text

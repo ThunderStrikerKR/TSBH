@@ -216,8 +216,8 @@ fn product_price_editor_rects(cell:Rect,scroll_clip:Rect)->(Rect,Rect){
 fn product_table_text(ui:&mut Ui,rect:Rect,text:&str,
     role:typography::ManagementTableCellRole,unique:impl std::hash::Hash){
     components::paint_management_text_cell(
-        ui,rect.shrink2(Vec2::new(theme::SPACE_8,0.0)),text,role,
-        egui::Align2::LEFT_CENTER,("product-table-text",unique)
+        ui,rect.shrink2(Vec2::new(theme::SPACE_8,0.0)),text,text,role,
+        egui::Align2::LEFT_CENTER,("product-table-text",unique),false
     );
 }
 fn product_price_text(ui:&mut Ui,rect:Rect,value:&Value) {
