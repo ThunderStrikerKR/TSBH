@@ -198,6 +198,32 @@ mod view_state_tests{
     use super::*;
     use std::collections::BTreeSet;
     #[test]
+    fn shared_search_focus_render_completes_without_context_reentry(){
+        // Run a real shared search widget, not a mocked focus value.
+        // The watchdog prevents a lock regression from hanging the test job.
+        let (done,finished)=std::sync::mpsc::channel();
+        let worker=std::thread::spawn(move||{
+            let ctx=Context::default();
+            let mut query=String::new();
+            for frame in 0..3{
+                let _=ctx.run(egui::RawInput::default(),|ctx|{
+                    egui::CentralPanel::default().show(ctx,|ui|{
+                        if frame==1{return;}
+                        let response=crate::input::management_search_field(
+                            ui,&mut query,200.0,"검색"
+                        );
+                        if frame==0{response.request_focus();}
+                        remember_search_focus(&response);
+                    });
+                });
+            }
+            done.send(()).unwrap();
+        });
+        finished.recv_timeout(Duration::from_secs(10))
+            .expect("shared search focus render stalled or panicked");
+        worker.join().unwrap();
+    }
+    #[test]
     fn selection_survives_unverified_refresh_and_reconciles_verified_ids(){
         let mut selected=BTreeSet::from(["a","b"]);
         let mut target=Some("b");
