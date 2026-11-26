@@ -148,7 +148,7 @@ pub fn snapshot(state:&Value,client:&Value,order:&Value)->Value{
     json!({
         // Invalidate quotes calculated before the freight billing reason
         // and client exemption were represented consistently per shipment.
-        "schema":4,
+        "schema":5,
         "orderInputs":order_inputs(order),
         "client":{
             "id":value(client,"id"),"tier":value(client,"tier"),
