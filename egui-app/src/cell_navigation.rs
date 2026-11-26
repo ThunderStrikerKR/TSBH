@@ -1,7 +1,17 @@
 //! Shared spreadsheet-style cell navigation contract for native egui grids.
 //! Each screen supplies explicit row/column/order metadata.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum CellNavigationKey { Left, Right, Up, Down, Next, Previous }
+pub enum CellNavigationKey { Left, Right, Up, Down, Next, Previous, EnterDown, EnterUp }
+impl CellNavigationKey {
+    pub fn direction(self)->Self{
+        match self{Self::EnterDown=>Self::Down,Self::EnterUp=>Self::Up,other=>other}
+    }
+    /// Enter and Tab explicitly confirm even at the edge of a worksheet.
+    /// An arrow with no destination never commits or abandons the editor.
+    pub fn commits_at_boundary(self)->bool{
+        matches!(self,Self::EnterDown|Self::EnterUp|Self::Next|Self::Previous)
+    }
+}
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct CellNavigationCell {
     pub id: String,
@@ -14,6 +24,7 @@ pub fn resolve_cell_navigation_target(
     cells: &[CellNavigationCell], current_id: &str, key: CellNavigationKey,
 ) -> Option<String> {
     let current = cells.iter().find(|cell| cell.id == current_id && cell.enabled)?;
+    let key=key.direction();
     // Preserve stable input-order tie breaking while selecting the nearest
     // cell in a single pass. No temporary candidate list or sort.
     cells.iter().filter(|cell|cell.enabled && cell.id!=current_id)
@@ -45,11 +56,10 @@ pub fn remember_worksheet_editor(
     ctx.data_mut(|data|data.insert_temp(slot,editor_id));
 }
 
-/// Extract only worksheet keys; callers choose the Enter mapping. IME
+/// Extract only worksheet keys using one Enter/Tab mapping. IME
 /// preedit ownership persists across frames, unlike a one-frame Ime check.
 pub(crate) fn worksheet_key_from_events(
-    events:&[eframe::egui::Event],ime_active:&mut bool,
-    enter:CellNavigationKey,shift_enter:CellNavigationKey
+    events:&[eframe::egui::Event],ime_active:&mut bool
 )->Option<(eframe::egui::Key,eframe::egui::Modifiers,CellNavigationKey)>{
     use eframe::egui::{Event,ImeEvent,Key};
     let mut ime_event=false;
@@ -81,7 +91,7 @@ pub(crate) fn worksheet_key_from_events(
             Key::Tab=>if modifiers.shift{
                 CellNavigationKey::Previous
             }else{CellNavigationKey::Next},
-            Key::Enter=>if modifiers.shift{shift_enter}else{enter},
+            Key::Enter=>if modifiers.shift{CellNavigationKey::EnterUp}else{CellNavigationKey::EnterDown},
             _=>return None
         };
         Some((*key,*modifiers,direction))
@@ -92,9 +102,9 @@ pub(crate) fn worksheet_key_from_events(
 /// owns egui keyboard focus. Consume it before TextEdit changes the caret.
 /// Do not call for normal search, document, date or standalone form fields.
 pub fn consume_worksheet_navigation_before_editor(
-    ctx:&eframe::egui::Context,slot:eframe::egui::Id,
-    enter:CellNavigationKey,shift_enter:CellNavigationKey
+    ctx:&eframe::egui::Context,slot:eframe::egui::Id
 )->Option<CellNavigationKey>{
+    if crate::overlay::popup_blocks_shortcuts(ctx){return None;}
     let focused=ctx.data(|data|data.get_temp::<eframe::egui::Id>(slot))
         .is_some_and(|id|ctx.memory(|memory|memory.has_focus(id)));
     if !focused{return None;}
@@ -102,7 +112,7 @@ pub fn consume_worksheet_navigation_before_editor(
         .unwrap_or(false);
     let events=ctx.input(|input|input.events.clone());
     let navigation=worksheet_key_from_events(
-        &events,&mut ime_active,enter,shift_enter
+        &events,&mut ime_active
     );
     ctx.data_mut(|data|data.insert_temp(slot.with("ime"),ime_active));
     navigation.and_then(|(key,modifiers,direction)|{
@@ -118,6 +128,11 @@ pub fn consume_worksheet_navigation_before_editor(
 /// Navigation for explicitly opted-in, locally staged form cells. Render
 /// all controls first, then request the destination focus by its real ID.
 /// This does not save data or alter a form's existing save/cancel contract.
+#[derive(Clone)]
+struct StagedCellState {
+    original:String,
+    focused:bool,
+}
 pub struct WorksheetFocus {
     scope:eframe::egui::Id,
     cells:Vec<CellNavigationCell>,
@@ -128,26 +143,49 @@ impl WorksheetFocus {
     pub fn new(scope:eframe::egui::Id,cells:Vec<CellNavigationCell>)->Self{
         Self{scope,cells,responses:Vec::new(),request:None}
     }
-    pub fn before(&mut self,ctx:&eframe::egui::Context,id:&str){
-        if self.request.is_some() || crate::overlay::popup_blocks_shortcuts(ctx)
-            || !self.cells.iter().any(|cell|cell.id==id && cell.enabled){return;}
-        if let Some(key)=consume_worksheet_navigation_before_editor(
-            ctx,self.scope.with(id),CellNavigationKey::Next,CellNavigationKey::Previous
-        ){
+    pub fn before(&mut self,ctx:&eframe::egui::Context,id:&str,value:&str){
+        if !self.cells.iter().any(|cell|cell.id==id && cell.enabled){return;}
+        let slot=self.scope.with(id);
+        let state_key=slot.with("staged-original");
+        ctx.data_mut(|data|{
+            let state=data.get_temp::<StagedCellState>(state_key);
+            if !state.is_some_and(|state|state.focused){
+                data.insert_temp(state_key,StagedCellState{original:value.to_owned(),focused:false});
+            }
+        });
+        if self.request.is_some(){return;}
+        if let Some(key)=consume_worksheet_navigation_before_editor(ctx,slot){
             self.request=Some((id.to_owned(),key));
         }
     }
-    pub fn record(&mut self,id:&str,response:eframe::egui::Response){
-        remember_worksheet_editor(&response.ctx,self.scope.with(id),response.id);
+    pub fn record(&mut self,id:&str,response:eframe::egui::Response,value:&mut String){
+        let slot=self.scope.with(id);
+        remember_worksheet_editor(&response.ctx,slot,response.id);
+        let state_key=slot.with("staged-original");
+        let state=response.ctx.data(|data|data.get_temp::<StagedCellState>(state_key));
+        if let Some(mut state)=state{
+            if crate::overlay::take_cell_escape(&response,state.focused){
+                *value=state.original.clone();
+                response.surrender_focus();
+                self.request=None;
+            }
+            state.focused=response.has_focus();
+            response.ctx.data_mut(|data|data.insert_temp(state_key,state));
+        }
         self.responses.push((id.to_owned(),response));
     }
     pub fn finish(self,ctx:&eframe::egui::Context){
         let Some((current,key))=self.request else{return;};
-        let Some(next)=resolve_cell_navigation_target(&self.cells,&current,key)else{return;};
-        if let Some((_,response))=self.responses.iter().find(|(id,_)|id==&next){
-            response.request_focus();
-            response.scroll_to_me(Some(eframe::egui::Align::Center));
-            ctx.request_repaint();
+        if let Some(next)=resolve_cell_navigation_target(&self.cells,&current,key){
+            if let Some((_,response))=self.responses.iter().find(|(id,_)|id==&next){
+                response.request_focus();
+                response.scroll_to_me(Some(eframe::egui::Align::Center));
+                ctx.request_repaint();
+            }
+        }else if key.commits_at_boundary(){
+            if let Some((_,response))=self.responses.iter().find(|(id,_)|id==&current){
+                response.surrender_focus();
+            }
         }
     }
 }
@@ -181,7 +219,7 @@ mod tests {
         let mut ime=false;
         let read=|events:&[Event],ime:&mut bool|
             worksheet_key_from_events(
-                events,ime,CellNavigationKey::Next,CellNavigationKey::Previous
+                events,ime
             ).map(|(_,_,key)|key);
         assert_eq!(read(&[arrow(Key::ArrowUp,Modifiers::NONE)],&mut ime),
             Some(CellNavigationKey::Up));
@@ -192,9 +230,9 @@ mod tests {
         assert_eq!(read(&[arrow(Key::ArrowRight,Modifiers::NONE)],&mut ime),
             Some(CellNavigationKey::Right));
         assert_eq!(read(&[arrow(Key::Enter,Modifiers::NONE)],&mut ime),
-            Some(CellNavigationKey::Next));
+            Some(CellNavigationKey::EnterDown));
         assert_eq!(read(&[arrow(Key::Enter,Modifiers::SHIFT)],&mut ime),
-            Some(CellNavigationKey::Previous));
+            Some(CellNavigationKey::EnterUp));
         assert_eq!(read(&[arrow(Key::Tab,Modifiers::SHIFT)],&mut ime),
             Some(CellNavigationKey::Previous));
         assert_eq!(read(&[arrow(Key::ArrowUp,Modifiers::CTRL)],&mut ime),None);
@@ -220,7 +258,7 @@ mod tests {
         };
         ctx.run(RawInput{events:vec![arrow.clone()],..Default::default()},|ctx|{
             assert_eq!(consume_worksheet_navigation_before_editor(
-                ctx,slot,CellNavigationKey::Down,CellNavigationKey::Up
+                ctx,slot
             ),None,"unfocused inputs are not intercepted");
             assert!(ctx.input(|input|input.key_pressed(Key::ArrowUp)));
         });
@@ -228,7 +266,7 @@ mod tests {
         ctx.memory_mut(|memory|memory.request_focus(editor_id));
         ctx.run(RawInput{events:vec![arrow],..Default::default()},|ctx|{
             assert_eq!(consume_worksheet_navigation_before_editor(
-                ctx,slot,CellNavigationKey::Down,CellNavigationKey::Up
+                ctx,slot
             ),Some(CellNavigationKey::Up));
             assert!(!ctx.input(|input|input.key_pressed(Key::ArrowUp)),
                 "TextEdit must not be able to consume a worksheet arrow");
@@ -248,6 +286,18 @@ mod tests {
         assert_eq!(resolve_cell_navigation_target(&cells, "a", CellNavigationKey::Down).as_deref(), Some("c"));
         assert_eq!(resolve_cell_navigation_target(&cells, "b", CellNavigationKey::Down).as_deref(), Some("e"));
         assert_eq!(resolve_cell_navigation_target(&cells, "e", CellNavigationKey::Up).as_deref(), Some("b"));
+    }
+    #[test]
+    fn enter_moves_vertically_and_confirms_at_edges_without_changing_arrow_rules(){
+        let cells=grid();
+        assert_eq!(resolve_cell_navigation_target(&cells,"a",CellNavigationKey::EnterDown).as_deref(),Some("c"));
+        assert_eq!(resolve_cell_navigation_target(&cells,"c",CellNavigationKey::EnterUp).as_deref(),Some("a"));
+        assert!(CellNavigationKey::EnterDown.commits_at_boundary());
+        assert!(CellNavigationKey::EnterUp.commits_at_boundary());
+        assert!(CellNavigationKey::Next.commits_at_boundary());
+        assert!(!CellNavigationKey::Down.commits_at_boundary());
+        assert!(!CellNavigationKey::Right.commits_at_boundary());
+        assert_eq!(resolve_cell_navigation_target(&cells,"c",CellNavigationKey::EnterDown),None);
     }
     #[test]
     fn tab_order_is_explicit_and_skips_disabled_cells() {

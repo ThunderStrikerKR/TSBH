@@ -451,6 +451,7 @@ fn manual_navigation_target(
     model:&Value,current:&ManualCellTarget,key:CellNavigationKey,
     pending:Option<&ManualCellTarget>
 )->Option<ManualCellTarget>{
+    let key=key.direction();
     let entries=manual_worksheet_cells(model,pending);
     let (_,active)=entries.iter().find(|(target,cell)|target==current && cell.enabled)?;
     let recipient=manual_recipient_section(current);
@@ -1452,7 +1453,13 @@ impl ManualWorkspace {
         let pending=self.pending_quantity_cell();
         let Some(target)=manual_navigation_target(
             model,&current,navigation,pending.as_ref()
-        ) else{return};
+        ) else{
+            if navigation.commits_at_boundary(){
+                self.active_editor_id=None;
+                self.focus_editor=false;
+            }
+            return;
+        };
         self.select_cell(target.row,target.item,&target.field);
     }
 
@@ -1523,8 +1530,7 @@ impl ManualWorkspace {
             !self.confirm_apply && !self.confirm_discard &&
             !self.product_dialog_open() && self.remove_recipient_pending.is_none()
             && !self.reset_pending && !crate::overlay::popup_blocks_shortcuts(ui.ctx()){
-            cell_navigation::consume_worksheet_navigation_before_editor(ui.ctx(),slot,
-                CellNavigationKey::Next,CellNavigationKey::Previous)
+            cell_navigation::consume_worksheet_navigation_before_editor(ui.ctx(),slot)
         }else{None};
         let focus=self.focus_editor && !busy &&
             !self.confirm_apply && !self.confirm_discard &&
@@ -1582,6 +1588,16 @@ impl ManualWorkspace {
         &mut self,navigation:CellNavigationKey,
         submit_direct:&mut bool,navigate_now:&mut Option<CellNavigationKey>
     ){
+        let current=ManualCellTarget{
+            row:self.selected_recipient,item:self.selected_item.clone(),field:self.selected_field.clone()
+        };
+        // A pending quantity is validated before leaving. Determine whether
+        // an arrow has a destination after that validation, not before it.
+        let pending=self.pending_quantity_cell();
+        let after_validation=if self.selected_field=="quantity"{None}else{pending.as_ref()};
+        let has_target=self.model.as_ref().is_some_and(|model|
+            manual_navigation_target(model,&current,navigation,after_validation).is_some());
+        if !has_target && !navigation.commits_at_boundary(){return;}
         let needs_commit=self.edit_text!=self.current_value() ||
             self.selected_field=="quantity";
         if needs_commit{
@@ -1863,7 +1879,7 @@ impl ManualWorkspace {
                 self.reset_pending,
                 self.confirm_apply,
                 self.confirm_discard,
-                self.edit_text!=self.current_value(),
+                self.edit_text!=self.current_value() || self.cell_editor_open(),
             ){
                 EscapeAction::CloseProductSearch=>{
                     self.item_detail=None;
@@ -1885,6 +1901,10 @@ impl ManualWorkspace {
                 EscapeAction::CancelDiscard=>self.confirm_discard=false,
                 EscapeAction::RevertCell=>{
                     self.edit_text=self.current_value();
+                    if let Some(id)=self.active_editor_id.take(){
+                        ctx.memory_mut(|memory|memory.surrender_focus(id));
+                    }
+                    self.focus_editor=false;
                     self.error=None;
                 }
                 EscapeAction::RequestClose=>open=false,
@@ -3265,7 +3285,7 @@ mod manual_workspace_modal_routing_tests {
             modifiers:egui::Modifiers::NONE
         };
         let read=|events:&[egui::Event],ime:&mut bool|
-            cell_navigation::worksheet_key_from_events(events,ime,CellNavigationKey::Next,CellNavigationKey::Previous);
+            cell_navigation::worksheet_key_from_events(events,ime);
         let mut ime_active=false;
         let event=key_event(egui::Key::ArrowDown);
         assert_eq!(

@@ -2296,9 +2296,9 @@ impl FreightManager {
             ui.horizontal(|line|{
                 components::form_field_label(line,&format!("{count}개 묶음"));
                 let id=count.to_string();
-                navigation.before(line.ctx(),&id);
+                navigation.before(line.ctx(),&id,amount);
                 let response=components::money_field(line,amount,enabled);
-                navigation.record(&id,response);
+                navigation.record(&id,response,amount);
                 if theme::action(line,"삭제",theme::ButtonRole::Standard,enabled).clicked(){
                     removed=Some(*count);
                 }

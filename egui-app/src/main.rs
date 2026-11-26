@@ -353,6 +353,7 @@ fn confirmed_navigation_entries(ship:&workflow_board::ShipmentRow,editable:bool,
 }
 fn resolve_inline_navigation(entries:&[InlineNavigationEntry],current:&InlineTarget,key:CellNavigationKey)
     ->Option<InlineTarget>{
+    let key=key.direction();
     let cells:Vec<CellNavigationCell>=entries.iter().filter(|entry|
         matches!(key,CellNavigationKey::Next|CellNavigationKey::Previous)
             ||inline_same_visible_grid(current,&entry.target)
@@ -380,6 +381,10 @@ fn resolve_inline_navigation(entries:&[InlineNavigationEntry],current:&InlineTar
             other.min_by_key(|entry|entry.cell.order).map(|entry|entry.target.clone()),
         CellNavigationKey::Up if !from_recipient=>
             other.max_by_key(|entry|entry.cell.order).map(|entry|entry.target.clone()),
+        CellNavigationKey::Down if current.item_id.is_some() && current.field!="shippingCharge"=>
+            entries.iter().find(|entry|entry.cell.enabled &&
+                entry.target.recipient_id==current.recipient_id && entry.target.field=="shippingCharge")
+                .map(|entry|entry.target.clone()),
         _=>None
     }
 }
@@ -390,7 +395,7 @@ fn confirmed_navigation_key(ctx:&egui::Context,shipment_id:&str,target:&InlineTa
     ->Option<CellNavigationKey>{
     if overlay::popup_blocks_shortcuts(ctx){return None;}
     cell_navigation::consume_worksheet_navigation_before_editor(ctx,
-        confirmed_editor_slot(shipment_id,target),CellNavigationKey::Next,CellNavigationKey::Previous)
+        confirmed_editor_slot(shipment_id,target))
 }
 fn inline_target_key(target:&InlineTarget)->String{
     format!("{}:{}:{}",target.recipient_id,
@@ -402,8 +407,7 @@ fn inline_editor_slot(target:&InlineTarget)->egui::Id{
 }
 fn inline_navigation_key(ctx:&egui::Context,target:&InlineTarget)->Option<CellNavigationKey>{
     cell_navigation::consume_worksheet_navigation_before_editor(
-        ctx,inline_editor_slot(target),
-        CellNavigationKey::Next,CellNavigationKey::Previous
+        ctx,inline_editor_slot(target)
     )
 }
 fn inline_same_visible_grid(a:&InlineTarget,b:&InlineTarget)->bool{
@@ -480,6 +484,9 @@ fn reception_navigation_crosses_recipient_item_boundary_in_both_directions(){
     let qty=target(Some("i1"),"quantity");
     let price=target(Some("i1"),"unitPrice");
     assert_eq!(resolve_inline_navigation(&entries,&note,CellNavigationKey::Down),Some(qty.clone()));
+    assert_eq!(resolve_inline_navigation(&entries,&note,CellNavigationKey::EnterDown),Some(qty.clone()));
+    assert_eq!(resolve_inline_navigation(&entries,&qty,CellNavigationKey::EnterUp),Some(note.clone()));
+    assert_eq!(resolve_inline_navigation(&entries,&target(Some("i2"),"quantity"),CellNavigationKey::Down),Some(target(None,"shippingCharge")));
     assert_eq!(resolve_inline_navigation(&entries,&qty,CellNavigationKey::Up),Some(note.clone()));
     assert_eq!(resolve_inline_navigation(&entries,&price,CellNavigationKey::Up),Some(note.clone()));
     assert_eq!(resolve_inline_navigation(&entries,&note,CellNavigationKey::Next),Some(qty.clone()));
@@ -7798,7 +7805,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                     && !ship.transferred && !ship.freight_editing_blocked && !ship.collect;
                 let entries=confirmed_navigation_entries(ship,editable,freight_editable);
                 let next=resolve_inline_navigation(&entries,&current,key);
-                if next.is_some() || matches!(key,CellNavigationKey::Next|CellNavigationKey::Previous){
+                if next.is_some() || key.commits_at_boundary(){
                     self.confirmed_next_cell=next.map(|target|(workflow_board_ui::Selection{
                         group_id:group.id.clone(),order_id:ship.order_id.clone(),shipment_id:ship.id.clone()
                     },target));
@@ -8723,8 +8730,8 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
             // a second click after the pending native save.
             self.switch_inline_edit(target,text,click_at,ui.ctx());
         }else if let Some((current,key))=inline_navigation_request{
-            // Arrow movement stays inside the visible recipient or
-            // item/freight grid; Tab/Shift+Tab crosses the two groups.
+            // Vertical navigation bridges visible sections; Enter also
+            // confirms the current value if no eligible destination exists.
             let inline_navigation=self.analysis.as_ref()
                 .and_then(|analysis|reception_service::recipients(analysis).get(visible_index))
                 .map(|recipient|inline_navigation_entries(recipient,editable)).unwrap_or_default();
@@ -8737,7 +8744,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                     current_inline_value(&analysis.recognition,quote,&next)
                 ).unwrap_or_default();
                 self.switch_inline_edit(next,original,None,ui.ctx());
-            }else if matches!(key,CellNavigationKey::Next|CellNavigationKey::Previous){
+            }else if key.commits_at_boundary(){
                 self.submit_inline_edit(ui.ctx());
             }
         }else if inline_commit{
