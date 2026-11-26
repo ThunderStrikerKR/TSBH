@@ -183,8 +183,8 @@ pub const WORKFLOW_VAT_FONT_SIZE: f32 = 10.0;
 // Expanded working-order shipments are a plain list, not a table.
 // All rows use one bottom-tier surface; only real hover/selection tint it.
 // The header, alternating row fills and product-chip surfaces were removed.
-pub const WORKFLOW_DETAIL_ROW_BG: Color32 = WORKFLOW_CARD_BG;
-pub const WORKFLOW_DETAIL_ROW_BORDER: Color32 = Color32::TRANSPARENT;
+pub const WORKFLOW_DETAIL_ROW_BG: Color32 = PANEL;
+pub const WORKFLOW_DETAIL_ROW_BORDER: Color32 = DIVIDER;
 pub const WORKFLOW_DETAIL_ROW_PADDING_X: f32 = SPACE_12;
 pub const WORKFLOW_DETAIL_NAME_WIDTH: f32 = 102.0;
 pub const WORKFLOW_DETAIL_ROW_CONTENT_HEIGHT: f32 = 32.0;
@@ -836,7 +836,7 @@ pub fn workflow_group_card_frame(highlighted:bool)->Frame{
 }
 pub fn workflow_shipment_row_frame(fill:Color32,chosen:bool)->Frame{
     // Keep the existing stroke width and inner margin in every state.
-    bordered_surface(fill,if chosen{WORKFLOW_SELECTED_ROW_BORDER}else{WORKFLOW_DETAIL_ROW_BORDER},CONTROL_RADIUS)
+    bordered_surface(fill,if chosen{WORKFLOW_SELECTED_ROW_BORDER}else{WORKFLOW_DETAIL_ROW_BORDER},ORDER_HISTORY_RECIPIENT_BLOCK_RADIUS as u8)
         .inner_margin(egui::Margin::symmetric(
             WORKFLOW_DETAIL_ROW_PADDING_X as i8,SPACE_4 as i8
         ))
