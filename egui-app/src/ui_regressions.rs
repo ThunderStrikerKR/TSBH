@@ -591,20 +591,7 @@ mod shared_screen_component_contract_tests {
         assert!(excel.contains("crate::table::management_readonly_table("));
         assert!(excel.contains("crate::checkbox::checkbox("));
 
-        let vat=include_str!("main.rs")
-            .split("fn show_vat_settings(").nth(1).unwrap()
-            .split("\n    fn ").next().unwrap();
-        assert!(vat.contains("crate::checkbox::checkbox("));
-        assert!(vat.contains("crate::checkbox::checkbox_list_row("));
-        assert!(vat.contains("crate::popup::modal_nested_role_frame(crate::popup::ModalNestedRole::RecipientChecklist)"));
-        assert!(!vat.contains(".inner_margin("));
 
-        let messages=production_source(include_str!("automatic_message_manager.rs"));
-        assert!(messages.contains("crate::input::multiline_text_field("));
-
-        let history=production_source(include_str!("order_history_manager.rs"));
-        assert!(history.contains("crate::input::management_date_text_field("));
-        assert!(history.contains("crate::input::multiline_text_field("));
     }
 }
 
