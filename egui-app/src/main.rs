@@ -5628,6 +5628,12 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                 _=>{}
             }
         }
+        // Re-entering reception is a business refresh boundary independent
+        // of presentation snapshot expiry. A retained draft may have been
+        // opened before its catalog price or freight tariff was registered.
+        if previous!=self.page as usize && self.page==Page::Reception{
+            self.start_pricing_basis_check(ctx);
+        }
         if !self.navigation_snapshots.visit(self.page as usize,now){return;}
         match self.page{
             Page::Reception=>{
@@ -11482,6 +11488,46 @@ mod reception_workflow_admission_integration_tests {
             assert!(app.source_save_error.is_some());
             assert_eq!(app.reception_job_admission(ReceptionJob::ManualClient,false),JobAdmission::Start);
         }
+    }
+
+    // No filesystem, SQLite or operational gateway access in this fixture.
+    struct PricingBasisReadFixture;
+    impl gateway::BandoGateway for PricingBasisReadFixture{
+        fn label(&self)->&'static str{"pricing-basis-navigation-test"}
+        fn load_catalog(&self)->Result<serde_json::Value,String>{Err("fixture".into())}
+        fn load_working_source(&self)->Result<WorkingSource,String>{Err("fixture".into())}
+        fn save_working_source(&self,_source:&WorkingSource)->Result<u64,String>{Err("fixture".into())}
+        fn execute(&self,_op:gateway::ReadOperation,_value:serde_json::Value)
+            ->Result<serde_json::Value,String>{Err("fixture".into())}
+        fn load_business_state(&self)->Result<serde_json::Value,String>{
+            Ok(serde_json::json!({"clients":[{"id":"c","tier":"wholesale"}]}))
+        }
+    }
+
+    #[test]
+    fn reception_metadata_tests_rechecks_quote_on_return_before_snapshot_expiry(){
+        let ctx=egui::Context::default();
+        let mut app=app();
+        app.gateway=Arc::new(PricingBasisReadFixture);
+        app.drafts[0].client_id=Some("c".into());
+        app.drafts[0].client_selection=Some("MANUAL".into());
+        app.drafts[0].pricing_preview=Some(serde_json::json!({
+            "linePrices":[],"freightLines":[],"pendingRecipients":[],
+            "pricingBasis":{"orderInputs":{"recipients":[]}}
+        }));
+        let now=Instant::now();
+        app.page=Page::Products;
+        app.sync_navigation_snapshot(&ctx,now);
+        assert!(app.pricing_basis_check.is_none());
+        app.page=Page::Reception;
+        app.sync_navigation_snapshot(&ctx,now);
+        assert!(app.pricing_basis_check.is_some(),
+            "retained reception must check its price and freight basis on return");
+        assert_eq!(app.navigation_snapshots.epoch(Page::Reception as usize),0);
+        // Repeated frame sync must not spawn another check.
+        app.pricing_basis_check.take();
+        app.sync_navigation_snapshot(&ctx,now);
+        assert!(app.pricing_basis_check.is_none());
     }
 
     #[test]
