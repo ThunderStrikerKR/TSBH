@@ -46,6 +46,9 @@ function scan(source) {
         if((module==="theme"||module==="button")&&actionNames.has(name)){
           out.push("shared_button","::",name);i=start+2;continue;
         }
+        if((module==="components"||module==="button")&&name==="reception_item_header_action"){
+          out.push("shared_button","::",name);i=start+2;continue;
+        }
         if((module==="components"||module==="dropdown")&&dropdownNames.has(name)){
           out.push("shared_dropdown","::",name);i=start+2;continue;
         }
@@ -154,7 +157,11 @@ function selfTest(){
   const newDropdown=scan('if ready { ui.horizontal(|line|{crate::dropdown::management_dropdown_values(line,a,b,c,d);}); }');
   assert.equal(additions(oldDropdown,newDropdown).length,0);
   assert.equal(additions(oldDropdown,scan('if ready { ui.horizontal(|line|{crate::dropdown::management_dropdown_values(line,a,b,c,e);}); }')).length,1);
-  console.log("EGUI_STATE_LAYOUT_SELFTEST_PASS",cases.length+10);
+  const oldHeader=scan('if rollback_pending { components::reception_item_header_action(ui,true,enabled); }');
+  const newHeader=scan('if rollback_pending { crate::button::reception_item_header_action(ui,true,enabled); }');
+  assert.equal(additions(oldHeader,newHeader).length,0);
+  assert.equal(additions(oldHeader,scan('if rollback_pending { crate::button::reception_item_header_action(ui,false,enabled); }')).length,1);
+  console.log("EGUI_STATE_LAYOUT_SELFTEST_PASS",cases.length+12);
 }
 
 function main(){
