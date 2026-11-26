@@ -205,6 +205,62 @@ fn compatible_info_signature(order:&Value,recipient:&Value,sender:&Value,old:&st
     }
     current
 }
+/// Separate order-review identity from financial values and non-identity
+/// contact corrections. Unknown legacy signatures retain the old safe path.
+fn review_basis(raw:&str,ignore_price:bool)->Option<Value>{
+    let mut value:Value=serde_json::from_str(raw).ok()?;
+    let recipient=value.get_mut("recipient")?.as_array_mut()?;
+    if !(6..=7).contains(&recipient.len()){return None;}
+    for index in [3,4,5]{recipient[index]=Value::Null;}
+    // Explicit false and the ordinary absent remote marker are equivalent.
+    if recipient.len()==7&&recipient[6]==Value::Bool(false){recipient.pop();}
+    let items=value.get_mut("items")?.as_array_mut()?;
+    for item in items{
+        let values=item.as_array_mut()?;
+        if values.len()!=9{return None;}
+        if ignore_price{values[6]=Value::Null;}
+    }
+    Some(value)
+}
+fn same_review_basis(before:&str,after:&str,ignore_price:bool)->bool{
+    review_basis(before,ignore_price).zip(review_basis(after,ignore_price))
+        .is_some_and(|(old,new)|old==new)
+}
+
+/// Compare historical billing evidence with actual per-shipment totals.
+/// Keep the existing serialized signature format for old databases and
+/// export audit compatibility; only use a proven matching notice to ignore
+/// differences in tax/price representation.
+fn same_billing_effect(state:&Value,index:usize,old:&str,new:&str)->Result<bool,String>{
+    let (Ok(mut previous),Ok(mut current))=(
+        serde_json::from_str::<Value>(old),serde_json::from_str::<Value>(new)
+    )else{return Ok(false);};
+    if field(&previous,"account")!=field(&current,"account"){return Ok(false);}
+    let before=str_field(&previous,"info");
+    let after=str_field(&current,"info");
+    if same_review_basis(before,after,false){
+        previous["info"]=Value::Null;
+        current["info"]=Value::Null;
+        if previous==current{return Ok(true);}
+    }
+    let ship=&state["workflow"]["shipments"][index];
+    let group=find_by_id(field(&state["workflow"],"groups"),str_field(ship,"groupId"))
+        .ok_or("현재 주문 묶음을 찾지 못했습니다.")?;
+    let Some(notice)=rows(field(group,"notices")).last()else{return Ok(false);};
+    let sid=str_field(ship,"id");
+    if !rows(field(notice,"shipmentIds")).iter().any(|id|id.as_str()==Some(sid)){
+        return Ok(false);
+    }
+    let account=field(notice,"account");
+    let notice_key=json!([field(account,"id"),str_field(account,"bank").trim(),
+        str_field(account,"number").trim(),str_field(account,"holder").trim()]);
+    let encoded=serde_json::to_string(&notice_key).map_err(|e|e.to_string())?;
+    if str_field(&current,"account")!=encoded{return Ok(false);}
+    let actual=super::workflow::shipment_totals(state,sid)?;
+    Ok(super::safe(field(field(notice,"amounts"),sid))
+        .zip(super::safe(field(&actual,"total"))).is_some_and(|(a,b)|a==b))
+}
+
 fn downgrade(state:&mut Value,audit:&mut Audit<'_>,index:usize,to:i64,reason:&str)
     ->Result<(),String> {
     let ship=state["workflow"]["shipments"][index].clone();
@@ -508,9 +564,22 @@ fn reconcile_inner(payload:&Value,order_scope:Option<&str>,scoped_seed:Option<&s
             let si=index.ok_or("배송 건 누락")?;
             if flag(&state["workflow"]["shipments"][si],"transferred") ||
                 flag(&state["workflow"]["shipments"][si],"legacyArchived") {continue;}
-            if str_field(&state["workflow"]["shipments"][si],"infoSignature")!=info {
-                downgrade(&mut state,&mut audit,si,0,
-                    "수취인 / 상품 / 수량 / 가격 / 출고지 / 송하인 변경")?;
+            let previous_info=str_field(&state["workflow"]["shipments"][si],"infoSignature");
+            if previous_info!=info {
+                let same_review=same_review_basis(previous_info,&info,true);
+                let review_valid=if same_review{
+                    let ship=&state["workflow"]["shipments"][si];
+                    let gid=str_field(ship,"groupId");
+                    let rid=str_field(ship,"recipientId");
+                    !super::workflow_issues::workflow_issues(&state,gid)?.iter().any(|issue|
+                        str_field(issue,"severity")=="ACTION" &&
+                        field(issue,"blockingStage").as_i64().is_some_and(|stage|stage<=1) &&
+                        (str_field(issue,"recipientId").is_empty()||str_field(issue,"recipientId")==rid))
+                }else{false};
+                if !review_valid{
+                    downgrade(&mut state,&mut audit,si,0,
+                        "수취인 / 상품 / 수량 / 가격 / 출고지 / 송하인 변경")?;
+                }
                 set(&mut state["workflow"]["shipments"][si],"infoSignature",json!(info))?;
             }
             let old_version=field(&state["workflow"]["shipments"][si],"freightVersion");
@@ -592,12 +661,16 @@ fn reconcile_inner(payload:&Value,order_scope:Option<&str>,scoped_seed:Option<&s
         if field(&ship,"step").as_i64().unwrap_or(0)<3 ||
             flag(&ship,"transferred") || flag(&ship,"legacyArchived") ||
             !has_value(field(&ship,"billingSignature")) {continue;}
-        if str_field(&ship,"billingSignature")!=billing(&state,si)? {
-            let gi=rows(field(&state["workflow"],"groups")).iter()
-                .position(|g|str_field(g,"id")==str_field(&ship,"groupId"))
-                .ok_or("현재 주문 묶음을 찾지 못했습니다.")?;
-            set(&mut state["workflow"]["groups"][gi],"needsNotice",json!(true))?;
-            downgrade(&mut state,&mut audit,si,2,"계좌 / 청구 금액 변경")?;
+        let current_billing=billing(&state,si)?;
+        let previous_billing=str_field(&ship,"billingSignature");
+        if previous_billing!=current_billing {
+            if same_billing_effect(&state,si,previous_billing,&current_billing)?{
+                // Refresh comparison metadata without revoking valid approval
+                // or altering the frozen notice, payment and audit history.
+                set(&mut state["workflow"]["shipments"][si],"billingSignature",json!(current_billing))?;
+            }else{
+                downgrade(&mut state,&mut audit,si,2,"계좌 / 청구 금액 변경")?;
+            }
         }
     }
     Ok(json!({"state":state,"emittedEvents":audit.position}))
@@ -633,5 +706,41 @@ mod retired_sender_name_tests{
         frozen["senderSnapshot"]=legacy.clone();
         assert_eq!(sender_for(&state,&frozen),legacy);
         assert_eq!(compatible_info_signature(&frozen,&recipient,&legacy,&old),old);
+    }
+}
+
+#[cfg(test)]
+mod stage_impact_tests{
+    use super::*;
+    #[test]
+    fn review_identity_ignores_contact_note_and_price_but_not_goods(){
+        let order=json!({"clientId":"c"});
+        let sender=json!({"name":"발송처"});
+        let mut row=json!({"name":"수취인","address":"서울 주소","phone":"010-1234-5678",
+            "note":"","items":[{"id":"i","productId":"p","variantId":"v",
+                "quantity":1,"unitPrice":30000,"origin":"FACTORY"}]});
+        let original=signature(&order,&row,&sender);
+        row["phone"]=json!("010-9876-5432");
+        row["note"]=json!("문 앞");
+        assert!(same_review_basis(&original,&signature(&order,&row,&sender),false));
+        row["items"][0]["unitPrice"]=json!(31000);
+        assert!(same_review_basis(&original,&signature(&order,&row,&sender),true));
+        assert!(!same_review_basis(&original,&signature(&order,&row,&sender),false));
+        row["items"][0]["quantity"]=json!(2);
+        assert!(!same_review_basis(&original,&signature(&order,&row,&sender),true));
+        assert!(!same_review_basis("unknown",&original,true));
+    }
+    #[test]
+    fn contact_only_billing_difference_does_not_revoke_approval(){
+        let order=json!({"clientId":"c"});
+        let sender=json!({"name":"발송처"});
+        let mut row=json!({"name":"수취인","address":"서울 주소","note":"","items":[]});
+        let old=signature(&order,&row,&sender);
+        row["note"]=json!("문 앞");
+        let new=signature(&order,&row,&sender);
+        let bill=|info:&str,account:&str|json!({"info":info,"fees":{"FACTORY":3000},
+            "vat":true,"account":account}).to_string();
+        assert!(same_billing_effect(&Value::Null,0,&bill(&old,"a"),&bill(&new,"a")).unwrap());
+        assert!(!same_billing_effect(&Value::Null,0,&bill(&old,"a"),&bill(&new,"b")).unwrap());
     }
 }

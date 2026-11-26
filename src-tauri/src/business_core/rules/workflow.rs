@@ -181,6 +181,27 @@ pub(super) fn account_for<'a>(state: &'a Value,group:&Value,order:&Value,client:
         else {str_field(field(settings,"brandAccounts"),"BANDOSTAND")};
     find_by_id(accounts,if id.is_empty() {str_field(settings,"defaultAccountId")} else {id})
 }
+/// A freight configuration can change without changing the actual approved
+/// shipping result (e.g. AUTO -> MANUAL at the same price).
+fn freight_effect(ship:&Value,row:&Value,order:&Value)->Option<Value>{
+    let code=shipment_freight_code(order,row);
+    let remote=super::remote_delivery::resolve_shipment(row,ship,order).ok()?;
+    let checked=field(&remote,"checked").as_bool()?;
+    let mut amounts=serde_json::Map::new();
+    for origin in row_origins(row){
+        let amount=if code=="020"{0}else{
+            super::remote_delivery::multiply_shipment(
+                safe(field(field(ship,"charges"),origin)),row,ship,order)?
+        };
+        amounts.insert(origin.to_owned(),json!(amount));
+    }
+    if amounts.is_empty(){return None;}
+    Some(json!({"code":code,"remote":checked,"amounts":amounts}))
+}
+fn same_freight_effect(before:Option<Value>,after:Option<Value>)->bool{
+    before.zip(after).is_some_and(|(a,b)|a==b)
+}
+
 fn stage_issues(state:&Value,group_id:&str,next:i64)->Result<Vec<String>,String>{
     super::workflow_issues::stage_issues(state,group_id,next)
 }
@@ -219,9 +240,9 @@ pub(super) fn payment_due(state:&Value,ship:&Value,order:&Value,client:&Value)->
 pub(super) fn evaluate(payload:&Value)->Result<Value,String> {
     let state=req(payload,"state")?;
     let group_id=required_str(payload,"groupId")?;
-    let (gi,ids)=group_indices(state,group_id)?;
+    let (_,ids)=group_indices(state,group_id)?;
     let step=group_step(state,group_id)?;
-    let needs_notice=flag(&state["workflow"]["groups"][gi],"needsNotice");
+    let needs_notice=super::workflow_issues::notice_pending(state,group_id)?;
     let next=if needs_notice && step>=2 {3} else {step+1};
     let issues=if next<=4 {stage_issues(state,group_id,next)?} else {Vec::new()};
     Ok(json!({"step":step,"nextStep":next,"issues":issues,
@@ -348,7 +369,7 @@ pub(super) fn apply(payload:&Value)->Result<Value,String> {
                 return Err("이미 엑셀 관리 목록으로 이관한 배송 건입니다.".into());
             }
             let step=group_step(&state,id)?;
-            let notice=flag(&state["workflow"]["groups"][gi],"needsNotice");
+            let notice=super::workflow_issues::notice_pending(&state,id)?;
             if step>=4 && !notice {return Err("처리완료 버튼으로 이관하세요.".into());}
             let next=if notice && step>=2 {3} else {step+1};
             let issues=stage_issues(&state,id,next)?;
@@ -606,6 +627,8 @@ pub(super) fn apply(payload:&Value)->Result<Value,String> {
                 "shippingCharges":field(&state["orders"][oi]["recipients"][ri],"shippingCharges"),
                 "chargeMode":field(&state["workflow"]["shipments"][si],"chargeMode")
             });
+            let prior_freight=freight_effect(&state["workflow"]["shipments"][si],
+                &state["orders"][oi]["recipients"][ri],&state["orders"][oi]);
             let mut recipient=state["orders"][oi]["recipients"][ri].clone();
             if let Some(code)=requested_code {
                 set(&mut recipient,"freightCode",code.clone())?;
@@ -658,9 +681,11 @@ pub(super) fn apply(payload:&Value)->Result<Value,String> {
             if !changed {
                 return Ok(json!({"state":state,"unchanged":true}));
             }
+            let same_freight=same_freight_effect(prior_freight,
+                freight_effect(&shipment,&recipient,&state["orders"][oi]));
             state["orders"][oi]["recipients"][ri]=recipient.clone();
             state["workflow"]["shipments"][si]=shipment;
-            if old_step>1 {
+            if old_step>1 && !same_freight {
                 let gi=index_by_id(field(&state["workflow"],"groups"),&group_id)
                     .ok_or("현재 주문 묶음을 찾지 못했습니다.")?;
                 set(&mut state["workflow"]["shipments"][si],"step",json!(1))?;
@@ -724,7 +749,7 @@ pub(super) fn apply(payload:&Value)->Result<Value,String> {
                 return Err("이미 일부가 이관되어 있습니다. 이관 상태를 먼저 확인하세요.".into());
             }
             if ships.iter().any(|i|field(&state["workflow"]["shipments"][*i],"step").as_i64()!=Some(4))
-                || flag(&state["workflow"]["groups"][gi],"needsNotice") {
+                || super::workflow_issues::notice_pending(&state,group_id)? {
                 return Err("네 단계와 변경 금액 재안내를 먼저 완료하세요.".into());
             }
             let issues=stage_issues(&state,group_id,4)?;
@@ -835,7 +860,7 @@ pub(super) fn apply(payload:&Value)->Result<Value,String> {
                 return Ok(json!({"state":state,"unchanged":true}));
             }
             if group_step(&state,group_id)?!=3 ||
-                flag(&state["workflow"]["groups"][gi],"needsNotice") {
+                super::workflow_issues::notice_pending(&state,group_id)? {
                 return Err("계좌 안내를 먼저 완료하세요.".into());
             }
             let issues=stage_issues(&state,group_id,3)?;
@@ -1056,19 +1081,22 @@ pub(super) fn apply(payload:&Value)->Result<Value,String> {
             let group_account=json!({"mode":mode,"id":account_id});
             let first_id=str_field(&state["workflow"]["shipments"][ships[0]],"id").to_string();
             let (_,oi,_ri)=shipment_indices(&state,&first_id)?;
+            let old_account=super::workflow_issues::payment_copy_basis(&state,group_id)?["account"].clone();
             set(&mut state["workflow"]["groups"][gi],"accountMode",json!(mode))?;
             set(&mut state["workflow"]["groups"][gi],"accountId",json!(account_id))?;
             if !state["orders"][oi]["groupAccounts"].is_object() {
                 set(&mut state["orders"][oi],"groupAccounts",json!({}))?;
             }
             set(&mut state["orders"][oi]["groupAccounts"],group_id,group_account)?;
+            let new_account=super::workflow_issues::payment_copy_basis(&state,group_id)?["account"].clone();
+            let same_account=super::workflow_issues::same_payment_account(&old_account,&new_account);
             let now=required_str(payload,"now")?.to_string();
             let seed=required_str(payload,"eventId")?;
             let audit_ids=rows(field(payload,"auditEventIds"));
             let mut audit_cursor=0usize;
             for si in &ships {
                 let old_step=field(&state["workflow"]["shipments"][*si],"step").as_i64().unwrap_or(0);
-                if old_step < 3 {continue;}
+                if old_step < 3 || same_account {continue;}
                 let ship_id=str_field(&state["workflow"]["shipments"][*si],"id").to_string();
                 let active_confirms=rows(field(&state["workflow"],"confirmations")).iter()
                     .filter(|c| {
@@ -1506,5 +1534,22 @@ mod workflow_freight_edit_tests {
             "actor":"검증 담당자"
         }));
         assert!(result.unwrap_err().contains("착불 운임은 직접 수정할 수 없습니다."));
+    }
+}
+
+#[cfg(test)]
+mod stage_effect_tests{
+    use super::*;
+    #[test]
+    fn identical_effective_freight_keeps_stage_even_when_charge_mode_changes(){
+        let order=json!({"freightCode":"010"});
+        let mut row=json!({"address":"서울 주소","items":[{"origin":"FACTORY"}]});
+        let mut ship=json!({"step":3,"charges":{"FACTORY":3000},"chargeMode":"AUTO"});
+        let old=freight_effect(&ship,&row,&order);
+        ship["chargeMode"]=json!("MANUAL");
+        row["shippingCharges"]=json!({"FACTORY":3000});
+        assert!(same_freight_effect(old.clone(),freight_effect(&ship,&row,&order)));
+        ship["charges"]["FACTORY"]=json!(4000);
+        assert!(!same_freight_effect(old,freight_effect(&ship,&row,&order)));
     }
 }

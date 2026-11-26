@@ -156,7 +156,7 @@ pub(super) fn project(payload: &Value) -> Result<Value, String> {
         let step = ships.iter()
             .filter_map(|ship| field(ship, "step").as_i64())
             .min().unwrap_or(0);
-        let needs_notice = flag(group, "needsNotice");
+        let needs_notice = workflow_issues::notice_pending(state, group_id)?;
         let next_step = if needs_notice && step >= 2 { 3 } else { step + 1 };
         let blockers = if next_step <= 4 {
             workflow_issues::stage_issues(state, group_id, next_step)?

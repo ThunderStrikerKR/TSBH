@@ -135,6 +135,13 @@ fn account_identity(account:&Value)->Option<[&str;3]>{
     keys.iter().all(|s|!s.is_empty()).then_some(keys)
 }
 
+/// The allocation ledger additionally uses the registered account ID.
+/// Do not retain an approval across different ledger identities.
+pub(super) fn same_payment_account(a:&Value,b:&Value)->bool{
+    field(a,"id")==field(b,"id") &&
+        account_identity(a).zip(account_identity(b)).is_some_and(|(a,b)|a==b)
+}
+
 /// Older copy events contain the actual rendered message in the signature,
 /// but no typed total. Only recover a unique, unambiguous default-format
 /// total line; custom templates without a proven amount remain unknown.
@@ -176,6 +183,34 @@ fn payment_renotice_required(state:&Value,group_id:&str)->Result<bool,String>{
         str_field(e,"groupId")==group_id&&str_field(e,"action")=="메시지 복사"&&
         str_field(field(e,"after"),"type")=="PAYMENT") else{return Ok(false);};
     Ok(copied_billing_changed(field(event,"after"),&payment_copy_basis(state,group_id)?))
+}
+
+/// Formal stage completion remains separate from a clipboard copy. The
+/// dirty flag alone is insufficient when all notice amounts and allocation
+/// identities can be proven unchanged. Missing evidence stays conservative.
+pub(super) fn notice_pending(state:&Value,group_id:&str)->Result<bool,String>{
+    let (gi,ships)=active_shipments(state,group_id)?;
+    let group=&state["workflow"]["groups"][gi];
+    if payment_renotice_required(state,group_id)?{return Ok(true);}
+    let Some(notice)=rows(field(group,"notices")).last()else{
+        return Ok(flag(group,"needsNotice"));
+    };
+    let ids=rows(field(notice,"shipmentIds"));
+    if ids.len()!=ships.len()||ships.iter().any(|ship|
+        !ids.iter().any(|id|id.as_str()==Some(str_field(ship,"id")))){
+        return Ok(true);
+    }
+    let basis=payment_copy_basis(state,group_id)?;
+    if !same_payment_account(field(notice,"account"),field(&basis,"account")){
+        return Ok(true);
+    }
+    for ship in ships{
+        let sid=str_field(ship,"id");
+        let total=w::shipment_totals(state,sid)?;
+        if !super::safe(field(field(notice,"amounts"),sid)).zip(super::safe(field(&total,"total")))
+            .is_some_and(|(a,b)|a==b){return Ok(true);}
+    }
+    Ok(false)
 }
 
 pub(super) fn workflow_issues(state:&Value,group_id:&str)->Result<Vec<Value>,String>{
