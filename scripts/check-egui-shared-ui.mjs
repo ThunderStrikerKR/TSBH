@@ -167,11 +167,11 @@ const workflowPaintAllowance = new Map([
   ["workflow_header:paint_bordered_surface ( ui . painter ( ) , block , 5.0 , theme :: WORKFLOW_SIGNAL_BLOCK_BG , theme :: WORKFLOW_SIGNAL_BLOCK_BORDER )",1],
   ["workflow_header:paint_bordered_surface ( ui . painter ( ) , lamp , theme :: WORKFLOW_SIGNAL_RADIUS , fill , border )",1],
   ["workflow_header:paint_button_hover ( ui , & title_response , theme :: CONTROL_RADIUS as f32 )",1],
-  ["workflow_action_line:layout_no_wrap ( shipping_text . clone ( ) , egui :: FontId :: proportional ( theme :: WORKFLOW_VAT_FONT_SIZE ) , theme :: SECONDARY )",1],
+  ["workflow_action_line:layout_no_wrap ( shipping_text . clone ( ) , egui :: FontId :: proportional ( typography :: WORKFLOW_VAT_FONT_SIZE ) , theme :: SECONDARY )",1],
   ["workflow_action_line:galley ( Pos2 :: new ( shipping . left ( ) , bottom_y - ship_galley . size ( ) . y ) , ship_galley , theme :: SECONDARY )",1],
   ["workflow_action_line:layout_no_wrap ( amount . clone ( ) , typography :: data_value_font ( typography :: DataValueKind :: Money , typography :: DataValueContext :: CompactCard ) , theme :: TEXT )",1],
   ["workflow_action_line:galley ( Pos2 :: new ( price_ink . right ( ) - money_galley . size ( ) . x , bottom_y - money_galley . size ( ) . y ) , money_galley , theme :: TEXT )",1],
-  ["workflow_action_line:layout_no_wrap ( visible , egui :: FontId :: proportional ( theme :: WORKFLOW_VAT_FONT_SIZE ) , theme :: WORKFLOW_VAT_TEXT )",1],
+  ["workflow_action_line:layout_no_wrap ( visible , egui :: FontId :: proportional ( typography :: WORKFLOW_VAT_FONT_SIZE ) , theme :: WORKFLOW_VAT_TEXT )",1],
   ["workflow_action_line:galley ( Pos2 :: new ( price_ink . right ( ) - vat_galley . size ( ) . x , price . top ( ) + 3.0 ) , vat_galley , theme :: WORKFLOW_VAT_TEXT )",1],
   ["shipment_line:add_sized ( [ name_width , theme :: WORKFLOW_DETAIL_ROW_CONTENT_HEIGHT ] , egui :: Label :: new ( typography :: body ( name ) . color ( preview_ink ) ) . truncate ( ) )",1],
   ["shipment_line:add_sized ( [ product_width , theme :: WORKFLOW_DETAIL_ROW_CONTENT_HEIGHT ] , egui :: Label :: new ( typography :: body ( & summary ) . color ( preview_ink ) ) . truncate ( ) )",1],
@@ -825,8 +825,46 @@ function dependencyCycles(graph){
   return cycles;
 }
 
+// Exact role contracts: protect shared values without banning legitimate
+// equal-sized independent roles, geometry fixtures, or icon strokes.
+export function designTokenViolations(source,file){
+  const code=productionTokens(source).map(t=>t.v).join(" ");
+  const required={
+    "theme.rs":[
+      "TABLE_SORT_HOVER_TINT : Color32 = INTERACTION_BLUE_TINT",
+      "MANUAL_ASSIGNMENT_TINT : Color32 = INTERACTION_BLUE_TINT",
+      "BUTTON_HOVER_TINT : Color32 = INTERACTION_BLUE_TINT",
+      "RECIPIENT_PHONE_COLUMN_GAP : f32 = SPACE_8",
+      "ACTION_EMPHASIZED_HEIGHT : f32 = ACTION_STANDARD_HEIGHT",
+      "FREIGHT_SUMMARY_PADDING_Y : f32 = SPACE_12",
+      "PANEL_GAP : f32 = SPACE_6",
+      "FREIGHT_SUMMARY_NUMBER_LINE_HEIGHT , FREIGHT_SUMMARY_LABEL_LINE_HEIGHT"
+    ],
+    "typography.rs":[
+      "line_height : Some ( crate :: ui_tokens :: FREIGHT_SUMMARY_NUMBER_LINE_HEIGHT )",
+      "line_height : Some ( crate :: ui_tokens :: FREIGHT_SUMMARY_LABEL_LINE_HEIGHT )",
+      "FORM_INPUT_OPTICAL_SHIFT_Y : i8 = INPUT_TEXT_OPTICAL_SHIFT_Y",
+      "MANAGEMENT_DATE_TEXT_OPTICAL_SHIFT_Y : i8 = INPUT_TEXT_OPTICAL_SHIFT_Y"
+    ],
+    "button/mod.rs":["ButtonRole :: Danger => ( ACTION_STANDARD_HEIGHT"],
+    "input/mod.rs":["Stroke :: new ( theme :: INPUT_FOCUS_STROKE_WIDTH , theme :: SELECTION","Stroke :: new ( theme :: REQUIRED_INPUT_STROKE_WIDTH , theme :: REQUIRED_INPUT_BORDER"],
+    "layout.rs":["SPLITTER : f32 = crate :: ui_tokens :: SPACE_6"]
+  };
+  const hits=(required[file]||[]).filter(pattern=>!code.includes(pattern)).map(pattern=>"missing common token: "+pattern);
+  if(file!=="typography.rs"&&code.includes("const WORKFLOW_VAT_FONT_SIZE"))hits.push("workflow VAT font belongs to typography");
+  if(code.includes("theme :: WORKFLOW_VAT_FONT_SIZE"))hits.push("retired VAT font token path");
+  return hits;
+}
+function designTokenSelfTest(){
+  assert.equal(designTokenViolations("const SPLITTER:f32=6.0;","layout.rs").length,1);
+  assert.equal(designTokenViolations("const SPLITTER:f32=crate::ui_tokens::SPACE_6;","layout.rs").length,0);
+  assert.equal(designTokenViolations("const WORKFLOW_VAT_FONT_SIZE:f32=10.0;","theme.rs").includes("workflow VAT font belongs to typography"),true);
+  assert.equal(designTokenViolations("fn icon(){Stroke::new(1.0,ink);}","screen.rs").length,0);
+}
+
 function main(){
   selfTest();
+  designTokenSelfTest();
   if(process.argv.includes("--self-test"))return;
   const root=resolve(fileURLToPath(new URL("..",import.meta.url)));
   const walk=p=>readdirSync(p,{withFileTypes:true}).flatMap(e=>
@@ -840,6 +878,7 @@ function main(){
     if(source.startsWith("#![cfg(test)]"))continue;
     const owner=file.endsWith("/mod.rs")?file.split("/")[0]:file.replace(/\.rs$/,"");
     if(dependencyOwners.has(owner))graph.set(owner,sharedDependencies(source,owner));
+    for(const rule of designTokenViolations(source,file)){failures++;console.error(file+": "+rule);}
     for(const hit of audit(source,file,true)){
       failures++;console.error(file+":"+hit.line+" "+hit.rule);
     }

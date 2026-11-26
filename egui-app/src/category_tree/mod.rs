@@ -106,7 +106,7 @@ pub(crate) fn category_tree_row(ui:&mut Ui,item:CategoryTreeRow<'_>)->Response{
         let highlight=rect.shrink(0.5);
         if highlight.width()>1.0{
             painter.rect_filled(highlight,radius,theme::CATALOG_TREE_SELECTED_BG);
-            painter.rect_stroke(highlight,radius,Stroke::new(1.0,theme::CATALOG_TREE_SELECTED_BORDER),
+            painter.rect_stroke(highlight,radius,Stroke::new(theme::SELECTION_STROKE_WIDTH,theme::CATALOG_TREE_SELECTED_BORDER),
                 egui::StrokeKind::Inside);
         }
     }else{

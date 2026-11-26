@@ -45,6 +45,9 @@ pub const FONT_MANAGEMENT_TAB: f32 = 16.0;
 /// Visual hierarchy of freight KPI cards: prominent value, supporting caption.
 pub const FONT_PRIMARY_ACTION: f32 = 14.0;
 pub const FONT_STANDARD_ACTION: f32 = 13.0;
+pub const WORKFLOW_VAT_FONT_SIZE:f32=10.0;
+const INPUT_VERTICAL_PADDING:i8=2;
+const INPUT_TEXT_OPTICAL_SHIFT_Y:i8=-1;
 
 /// Business data typography is classified by semantic value, never by the
 /// screen that happens to contain it. Monetary amounts and quantities use
@@ -191,7 +194,7 @@ pub fn management_dropdown_option_text_y(row_height:f32,text_height:f32)->f32 {
 /// Date TextEdit optical centering: the original ink appeared too low, while
 /// the full -2pt correction appeared too high in subsequent Windows captures.
 /// Use the midpoint -1pt without moving control or table rectangles.
-pub const MANAGEMENT_DATE_TEXT_OPTICAL_SHIFT_Y: i8 = -1;
+pub const MANAGEMENT_DATE_TEXT_OPTICAL_SHIFT_Y: i8 = INPUT_TEXT_OPTICAL_SHIFT_Y;
 
 /// Common form rows: label glyphs in the 19pt emphasized Korean line box
 /// look above the optical center of a 36pt field. Apply the adjustment only
@@ -200,7 +203,7 @@ pub const MANAGEMENT_DATE_TEXT_OPTICAL_SHIFT_Y: i8 = -1;
 pub const FORM_LABEL_OPTICAL_CENTER_Y: f32 = 2.0;
 /// Move form-editing ink and its caret together. Never use the Consolas
 /// numeric glyph tweak to fix a proportional Body TextEdit baseline.
-pub const FORM_INPUT_OPTICAL_SHIFT_Y: i8 = -1;
+pub const FORM_INPUT_OPTICAL_SHIFT_Y: i8 = INPUT_TEXT_OPTICAL_SHIFT_Y;
 
 pub fn form_label_text_y(row_height:f32,galley_height:f32)->f32 {
     (row_height-galley_height)*0.5+FORM_LABEL_OPTICAL_CENTER_Y
@@ -210,7 +213,7 @@ pub fn reception_cell_text_margin()->egui::Margin{
     egui::Margin::symmetric(8,2)
 }
 pub fn form_input_text_margin()->egui::Margin{
-    const VERTICAL:i8=2;
+    const VERTICAL:i8=INPUT_VERTICAL_PADDING;
     egui::Margin {
         left:8,right:8,
         top:VERTICAL+FORM_INPUT_OPTICAL_SHIFT_Y,
@@ -222,7 +225,7 @@ pub fn form_input_text_margin()->egui::Margin{
 /// text area's center upward 1pt. Unlike painting text over a TextEdit,
 /// this moves the selection cursor and placeholder with the typed text.
 pub fn management_date_text_margin() -> egui::Margin {
-    const BASE: i8 = 2;
+    const BASE: i8 = INPUT_VERTICAL_PADDING;
     egui::Margin {
         left: BASE,
         right: BASE,
@@ -661,7 +664,7 @@ pub fn freight_summary_large_number_galley(
             FontFamily::Name(EMPHASIS_FAMILY.into()),
         ),
         color: TEXT,
-        line_height: Some(FONT_FREIGHT_SUMMARY_NUMBER + 6.0),
+        line_height: Some(crate::ui_tokens::FREIGHT_SUMMARY_NUMBER_LINE_HEIGHT),
         ..Default::default()
     };
     ui.fonts_mut(|fonts| fonts.layout_job(
@@ -676,7 +679,7 @@ pub fn freight_summary_small_label_galley(
     let format = egui::TextFormat {
         font_id: FontId::proportional(FONT_FREIGHT_SUMMARY_LABEL),
         color: SECONDARY,
-        line_height: Some(FONT_FREIGHT_SUMMARY_LABEL + 5.0),
+        line_height: Some(crate::ui_tokens::FREIGHT_SUMMARY_LABEL_LINE_HEIGHT),
         ..Default::default()
     };
     ui.fonts_mut(|fonts| fonts.layout_job(

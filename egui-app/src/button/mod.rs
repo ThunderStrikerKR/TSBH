@@ -51,21 +51,21 @@ pub(crate) fn action_style(
 )->(f32,Color32,Color32,Stroke){
     let (height, fill, color, stroke): (f32, Color32, Color32, Stroke) = match role {
         ButtonRole::Primary => (ACTION_PRIMARY_HEIGHT, PRIMARY_ACTION_FILL, BRIGHT_TEXT, Stroke::NONE),
-        ButtonRole::Standard => (ACTION_STANDARD_HEIGHT, RAISED, TEXT, Stroke::new(1.0_f32, BORDER)),
+        ButtonRole::Standard => (ACTION_STANDARD_HEIGHT, RAISED, TEXT, Stroke::new(FRAME_STROKE_WIDTH, BORDER)),
         ButtonRole::TableSecondary => (
             ACTION_STANDARD_HEIGHT,
             PANEL,
             SECONDARY,
-            Stroke::new(1.0_f32, DIVIDER),
+            Stroke::new(FRAME_STROKE_WIDTH, DIVIDER),
         ),
         ButtonRole::Emphasized => (ACTION_EMPHASIZED_HEIGHT, BRIGHT, BRIGHT_TEXT, Stroke::NONE),
         ButtonRole::Quiet => (ACTION_QUIET_HEIGHT, PANEL, SECONDARY, Stroke::new(FRAME_STROKE_WIDTH,DIVIDER)),
         ButtonRole::Ghost => (ACTION_PRIMARY_HEIGHT, Color32::TRANSPARENT, SECONDARY, Stroke::NONE),
-        ButtonRole::Danger => (34.0, DANGER_ACTION_BG, ERROR_TEXT, Stroke::new(FRAME_STROKE_WIDTH,DANGER_ACTION_BORDER)),
+        ButtonRole::Danger => (ACTION_STANDARD_HEIGHT, DANGER_ACTION_BG, ERROR_TEXT, Stroke::new(FRAME_STROKE_WIDTH,DANGER_ACTION_BORDER)),
         ButtonRole::Navigation => (NAV_HEIGHT, Color32::TRANSPARENT, SECONDARY, Stroke::NONE),
         ButtonRole::ActiveNavigation => (NAV_HEIGHT, ACTIVE_NAVIGATION_BG, TEXT, Stroke::NONE),
         ButtonRole::ManagementTab => (MANAGEMENT_TAB_HEIGHT, Color32::TRANSPARENT, SECONDARY, Stroke::NONE),
-        ButtonRole::ActiveManagementTab => (MANAGEMENT_TAB_HEIGHT, RAISED, TEXT, Stroke::new(1.0_f32,BORDER)),
+        ButtonRole::ActiveManagementTab => (MANAGEMENT_TAB_HEIGHT, RAISED, TEXT, Stroke::new(FRAME_STROKE_WIDTH,BORDER)),
         ButtonRole::KakaoControl => (KAKAO_CONTROL_HEIGHT, Color32::TRANSPARENT, SECONDARY, Stroke::NONE),
         ButtonRole::ActiveKakaoControl => (KAKAO_CONTROL_HEIGHT, RAISED, TEXT, Stroke::new(FRAME_STROKE_WIDTH,BORDER)),
     };
@@ -512,9 +512,9 @@ pub(crate) fn calendar_day(grid:&mut Ui,day:&str,width:f32,selected:bool,today:b
     let mut button=egui::Button::new(typography::body(day)).corner_radius(theme::CONTROL_RADIUS);
     if selected{
         button=button.fill(theme::WORKFLOW_SELECTED_BG)
-            .stroke(Stroke::new(1.0_f32,theme::SELECTION));
+            .stroke(Stroke::new(theme::SELECTION_STROKE_WIDTH,theme::SELECTION));
     }else if today{
-        button=button.stroke(Stroke::new(1.0_f32,theme::BORDER));
+        button=button.stroke(Stroke::new(theme::FRAME_STROKE_WIDTH,theme::BORDER));
     }
     let response=grid.add_sized(
         egui::vec2(width,width),button

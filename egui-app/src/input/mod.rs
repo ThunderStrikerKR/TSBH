@@ -694,7 +694,7 @@ fn reception_quantity_editor(
     if input.has_focus() || step_interaction{
         placed.painter().rect_stroke(
             rect.shrink(0.5),theme::CONTROL_RADIUS as f32,
-            Stroke::new(2.0_f32,theme::SELECTION),egui::StrokeKind::Inside
+            Stroke::new(theme::INPUT_FOCUS_STROKE_WIDTH,theme::SELECTION),egui::StrokeKind::Inside
         );
     }
     ReceptionQuantityEditorResponse{input,step_interaction}
@@ -742,7 +742,7 @@ pub(crate) fn paint_required_input(ui:&Ui,rect:Rect){
     let painter=ui.painter().with_clip_rect(ui.clip_rect().intersect(rect));
     painter.rect_filled(rect,theme::CONTROL_RADIUS,theme::REQUIRED_INPUT_TINT);
     painter.rect_stroke(rect,theme::CONTROL_RADIUS,
-        Stroke::new(2.0,theme::REQUIRED_INPUT_BORDER),egui::StrokeKind::Inside);
+        Stroke::new(theme::REQUIRED_INPUT_STROKE_WIDTH,theme::REQUIRED_INPUT_BORDER),egui::StrokeKind::Inside);
 }
 
 // Shared controls and presentation profiles.

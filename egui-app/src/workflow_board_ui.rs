@@ -562,7 +562,7 @@ fn workflow_action_line(
     let shipping_text=format!("배송 {shipments}건");
     let ship_galley=ui.painter().layout_no_wrap(
         shipping_text.clone(),
-        egui::FontId::proportional(theme::WORKFLOW_VAT_FONT_SIZE),
+        egui::FontId::proportional(typography::WORKFLOW_VAT_FONT_SIZE),
         theme::SECONDARY
     );
     let shipping_clipped=crate::ui_primitives::text_exceeds_rect(ship_galley.size(),shipping.intersect(ui.clip_rect()));
@@ -585,7 +585,7 @@ fn workflow_action_line(
         let visible=if vat.starts_with('('){vat.to_owned()}
             else{format!("({vat})")};
         let vat_galley=ui.painter().layout_no_wrap(
-            visible,egui::FontId::proportional(theme::WORKFLOW_VAT_FONT_SIZE),
+            visible,egui::FontId::proportional(typography::WORKFLOW_VAT_FONT_SIZE),
             theme::WORKFLOW_VAT_TEXT
         );
         ui.painter().with_clip_rect(price_ink).galley(

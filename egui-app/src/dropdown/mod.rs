@@ -12,7 +12,7 @@ fn management_dropdown_option_palette(ui:&mut Ui){
     // egui::selectable_value uses selection.bg_fill for the current value.
     // Keep that persistent state darker than the pointer's transient hover.
     visuals.selection.bg_fill=theme::MANAGEMENT_DROPDOWN_SELECTED_BG;
-    visuals.selection.stroke=Stroke::new(1.0_f32,theme::TEXT);
+    visuals.selection.stroke=Stroke::new(theme::SELECTION_STROKE_WIDTH,theme::TEXT);
     visuals.widgets.hovered.bg_fill=theme::MANAGEMENT_DROPDOWN_HOVER_BG;
     visuals.widgets.hovered.weak_bg_fill=theme::MANAGEMENT_DROPDOWN_HOVER_BG;
     visuals.widgets.hovered.bg_stroke=Stroke::new(

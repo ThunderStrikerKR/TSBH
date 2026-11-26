@@ -34,8 +34,8 @@ pub const FLOATING_NOTICE_BG: Color32 = RAISED;
 pub const FLOATING_NOTICE_MAX_WIDTH: f32 = 320.0;
 pub const FLOATING_NOTICE_SCREEN_MARGIN: f32 = 10.0;
 pub const FLOATING_NOTICE_ANCHOR_GAP: f32 = SPACE_8;
-pub const FLOATING_NOTICE_PADDING_X: i8 = 12;
-pub const FLOATING_NOTICE_PADDING_Y: i8 = 8;
+pub const FLOATING_NOTICE_PADDING_X: i8 = SPACE_12 as i8;
+pub const FLOATING_NOTICE_PADDING_Y: i8 = SPACE_8 as i8;
 pub const FLOATING_NOTICE_ICON_SIZE: f32 = 16.0;
 pub const FLOATING_NOTICE_TEXT_SIZE: f32 = crate::ui_tokens::FONT_FIELD_LABEL;
 pub const FLOATING_NOTICE_CLOSE_HIT_SIZE: f32 = 20.0;
@@ -53,17 +53,18 @@ pub const TEXT: Color32 = Color32::from_rgb(237, 237, 237);
 pub const SECONDARY: Color32 = Color32::from_rgb(185, 185, 185);
 pub const MUTED: Color32 = Color32::from_rgb(153, 153, 153);
 pub const SELECTION: Color32 = Color32::from_rgb(112, 180, 255);
-pub const TABLE_SORT_HOVER_TINT:Color32=Color32::from_rgba_unmultiplied_const(112,180,255,20);
+pub const INTERACTION_BLUE_TINT:Color32=Color32::from_rgba_unmultiplied_const(112,180,255,20);
+pub const TABLE_SORT_HOVER_TINT:Color32=INTERACTION_BLUE_TINT;
 pub const SOURCE_BLOCK_FILL:Color32=Color32::from_rgb(66,66,66);
 pub const SOURCE_CONTEXT_FILL:Color32=Color32::from_rgb(73,73,73);
-pub const MANUAL_ASSIGNMENT_TINT:Color32=Color32::from_rgba_unmultiplied_const(112,180,255,20);
+pub const MANUAL_ASSIGNMENT_TINT:Color32=INTERACTION_BLUE_TINT;
 pub const MANUAL_ASSIGNMENT_HOVER_TINT:Color32=Color32::from_rgba_unmultiplied_const(112,180,255,42);
 pub const CARD_BORDER:Color32=DIVIDER;
 pub const NEUTRAL_HOVER:Color32=RAISED;
 // Restore the original shared blue pointer feedback; focus stays independent.
 pub const BUTTON_HOVER_BG:Color32=Color32::from_rgb(47,62,74);
 pub const ACTIVE_NAVIGATION_BG:Color32=Color32::from_rgb(41,72,92);
-pub const BUTTON_HOVER_TINT:Color32=Color32::from_rgba_unmultiplied_const(112,180,255,20);
+pub const BUTTON_HOVER_TINT:Color32=INTERACTION_BLUE_TINT;
 pub const LINKED_PREVIEW_BG:Color32=Color32::from_rgb(23,67,109);
 pub const LINKED_PREVIEW_TEXT:Color32=Color32::from_rgb(234,244,255);
 pub const LINKED_PREVIEW_BORDER:Color32=Color32::from_rgb(117,181,255);
@@ -134,19 +135,19 @@ pub const WORKFLOW_CARD_BG: Color32 = INPUT;
 pub const WORKFLOW_SELECTED_BG: Color32 = WORKFLOW_CARD_BG;
 pub const WORKFLOW_CARD_BORDER: Color32 = DIVIDER;
 pub const WORKFLOW_SELECTED_BORDER: Color32 = SELECTED_ORDER;
-pub const WORKFLOW_CARD_PADDING_X: f32 = 6.0;
-pub const WORKFLOW_CARD_PADDING_Y: f32 = 8.0;
+pub const WORKFLOW_CARD_PADDING_X: f32 = SPACE_6;
+pub const WORKFLOW_CARD_PADDING_Y: f32 = SPACE_8;
 pub const WORKFLOW_CARD_RADIUS: u8 = 7;
 pub const WORKFLOW_SELECTED_STRIPE: f32 = 2.0;
 pub const WORKFLOW_CARD_GAP: f32 = SPACE_8;
 // Both compact card bands reserve 6pt above and below their 30pt controls.
 // Their equal heights keep upper and lower buttons visually balanced at 1080p
 // without moving the fixed-width columns or creating extra list rows.
-pub const WORKFLOW_CONTROL_VERTICAL_INSET: f32 = 6.0;
+pub const WORKFLOW_CONTROL_VERTICAL_INSET: f32 = SPACE_6;
 pub const WORKFLOW_TITLE_HEIGHT: f32 = 42.0;
 pub const WORKFLOW_BOTTOM_HEIGHT: f32 = WORKFLOW_TITLE_HEIGHT;
-pub const WORKFLOW_BAND_DIVIDER_HEIGHT: f32 = 1.0;
-pub const WORKFLOW_CARD_SLOT_GAP: f32 = 6.0;
+pub const WORKFLOW_BAND_DIVIDER_HEIGHT: f32 = SOFT_DIVIDER_WIDTH;
+pub const WORKFLOW_CARD_SLOT_GAP: f32 = SPACE_6;
 pub const WORKFLOW_SIGNAL_WIDTH: f32 = 104.0;
 pub const WORKFLOW_SIGNAL_BLOCK_HEIGHT: f32 = 30.0;
 pub const WORKFLOW_SIGNAL_BLOCK_BG: Color32 = INPUT;
@@ -180,12 +181,11 @@ pub const WORKFLOW_VAT_TEXT: Color32 = Color32::from_rgb(185, 215, 246);
 pub const WORKFLOW_CONTROL_WIDTH: f32 = 154.0;
 pub const WORKFLOW_MANAGE_WIDTH: f32 = 44.0;
 pub const WORKFLOW_TRASH_WIDTH: f32 = 32.0;
-pub const WORKFLOW_UNDO_WIDTH: f32 = 32.0;
-pub const WORKFLOW_SHIPPING_WIDTH: f32 = 44.0;
+pub const WORKFLOW_UNDO_WIDTH: f32 = WORKFLOW_TRASH_WIDTH;
+pub const WORKFLOW_SHIPPING_WIDTH: f32 = WORKFLOW_MANAGE_WIDTH;
 pub const WORKFLOW_AUX_CONTROL_HEIGHT: f32 = 30.0;
-pub const WORKFLOW_ACTION_ROW_HEIGHT: f32 = 30.0;
+pub const WORKFLOW_ACTION_ROW_HEIGHT: f32 = WORKFLOW_AUX_CONTROL_HEIGHT;
 pub const WORKFLOW_TOGGLE_ICON_WIDTH: f32 = 12.0;
-pub const WORKFLOW_VAT_FONT_SIZE: f32 = 10.0;
 // Expanded working-order shipments are a plain list, not a table.
 // All rows use one bottom-tier surface; only real hover/selection tint it.
 // The header, alternating row fills and product-chip surfaces were removed.
@@ -212,9 +212,7 @@ pub const BRIGHT_TEXT: Color32 = Color32::from_rgb(23, 23, 23);
 const LEGACY_SOURCE_REFERENCE_GRAY: u8 = 238;
 pub const PRIMARY_ACTION_FILL: Color32 = BRIGHT;
 // Compact inline-cell edit inset; shared with the 4pt and 8pt layout tokens.
-pub const SPACE_2: f32 = 2.0;
-pub const SPACE_4: f32 = 4.0;
-pub const SPACE_8: f32 = 8.0;
+pub use crate::ui_tokens::{SPACE_2,SPACE_4,SPACE_6,SPACE_8,SPACE_12,SPACE_16,SPACE_24};
 pub const SETTINGS_HELP_ICON_SIZE: f32 = 22.0;
 // Settings/Basic compresses the form into three shared section cards.
 // Above the split threshold, the two information cards remain left of the
@@ -239,11 +237,8 @@ pub const SETTINGS_ACCOUNT_LIST_MIN_HEIGHT:f32=48.0;
 pub const SETTINGS_ACCOUNT_LIST_MAX_HEIGHT:f32=260.0;
 pub const SETTINGS_ACCOUNT_PANEL_FIXED_HEIGHT:f32=190.0;
 pub const SETTINGS_ACCOUNT_STACKED_EXTRA_HEIGHT:f32=62.0;
-pub const SPACE_12: f32 = 12.0;
-pub const SPACE_16: f32 = 16.0;
-pub const SPACE_24: f32 = 24.0;
 pub const SPACING: f32 = SPACE_8;
-pub const HEADER_PADDING_X: i8 = 16;
+pub const HEADER_PADDING_X: i8 = SPACE_16 as i8;
 pub const BRAND_ICON_SIZE: f32 = 38.0;
 // Optical alignment of the visible red glyph within the PNG canvas.
 // Keep text and navigation on the original header centerline.
@@ -310,7 +305,7 @@ pub const RECIPIENT_LABEL_WIDTH: f32 = 56.0;
 pub const RECIPIENT_PHONE_LABEL_WIDTH: f32 = 32.0;
 pub const RECIPIENT_LABEL_GAP: f32 = SPACE_8;
 pub const RECIPIENT_ROW_GAP: f32 = SPACE_8;
-pub const RECIPIENT_PHONE_COLUMN_GAP: f32 = 8.0;
+pub const RECIPIENT_PHONE_COLUMN_GAP: f32 = SPACE_8;
 // Minimum phone widths accommodate an 11-digit mobile and shorter landline.
 // Both fields grow proportionally to fill the available row instead of leaving
 // a dead zone to the right. Shared label/input alignment is preserved.
@@ -322,12 +317,12 @@ pub const RECIPIENT_PHONE_ROW_MIN_WIDTH: f32 =
     + RECIPIENT_MOBILE_INPUT_WIDTH + RECIPIENT_PHONE_COLUMN_GAP
     + RECIPIENT_PHONE_LABEL_WIDTH + RECIPIENT_LABEL_GAP
     + RECIPIENT_PHONE_INPUT_WIDTH;
-pub const PANEL_GAP: f32 = 6.0;
+pub const PANEL_GAP: f32 = SPACE_6;
 // Kakao dock toolbar: one compact row (2pt vertical gap around 22pt controls).
 // Only its body rect is passed to the Win32 dock.
 pub const KAKAO_TOOLBAR_HEIGHT: f32 = 26.0;
 pub const KAKAO_CONTROL_HEIGHT: f32 = 22.0;
-pub const KAKAO_TOOLBAR_PAD_X: f32 = 4.0;
+pub const KAKAO_TOOLBAR_PAD_X: f32 = SPACE_4;
 // Deliberately separate the Kakao identity icon from the mode group;
 // mode-to-mode spacing stays at the shared 4pt.
 pub const KAKAO_ICON_MODE_GAP: f32 = SPACE_8;
@@ -339,6 +334,9 @@ pub const DOCK_SPLITTER_LINE: f32 = 1.0;
 pub const DOCK_SPLITTER_HOVER_LINE: f32 = 2.0;
 pub const SOFT_DIVIDER_WIDTH: f32 = 1.0;
 pub const FRAME_STROKE_WIDTH: f32 = 1.0;
+pub const SELECTION_STROKE_WIDTH:f32=1.0;
+pub const INPUT_FOCUS_STROKE_WIDTH:f32=2.0;
+pub const REQUIRED_INPUT_STROKE_WIDTH:f32=2.0;
 // Radius hierarchy: modal shell 9pt, section cards 8pt, controls 6pt, source chips 4pt.
 pub const CONTROL_RADIUS: u8 = 6;
 pub const SECTION_RADIUS: u8 = 8;
@@ -358,7 +356,7 @@ pub const CALENDAR_GRID_GAP: f32 = SPACE_4;
 pub const CALENDAR_GRID_WIDTH: f32 = 7.0*CALENDAR_DAY_SIZE+6.0*CALENDAR_GRID_GAP;
 pub const ACTION_PRIMARY_HEIGHT: f32 = 36.0;
 pub const ACTION_STANDARD_HEIGHT: f32 = 34.0;
-pub const ACTION_EMPHASIZED_HEIGHT: f32 = 34.0;
+pub const ACTION_EMPHASIZED_HEIGHT: f32 = ACTION_STANDARD_HEIGHT;
 pub const ACTION_QUIET_HEIGHT: f32 = 32.0;
 // Reserve space for the single-row order total at the bottom of its pane.
 // The four freight KPIs remain separate cards, each with a centered value
@@ -366,13 +364,10 @@ pub const ACTION_QUIET_HEIGHT: f32 = 32.0;
 pub const FREIGHT_SUMMARY_CARD_WIDTH: f32 = 228.0;
 // Size all geometry from the two text roles: 28pt value, 13pt label.
 // Number line 34 + label line 18 + gap 2 + padding 12*2 + border 2 = 80pt.
-pub const FREIGHT_SUMMARY_NUMBER_LINE_HEIGHT: f32 =
-    crate::ui_tokens::FONT_FREIGHT_SUMMARY_NUMBER + 6.0;
-pub const FREIGHT_SUMMARY_LABEL_LINE_HEIGHT: f32 =
-    crate::ui_tokens::FONT_FREIGHT_SUMMARY_LABEL + 5.0;
-pub const FREIGHT_SUMMARY_TEXT_GAP: f32 = 2.0;
+pub use crate::ui_tokens::{FREIGHT_SUMMARY_NUMBER_LINE_HEIGHT,FREIGHT_SUMMARY_LABEL_LINE_HEIGHT};
+pub const FREIGHT_SUMMARY_TEXT_GAP: f32 = SPACE_2;
 pub const FREIGHT_SUMMARY_PADDING_X: f32 = SPACE_12;
-pub const FREIGHT_SUMMARY_PADDING_Y: f32 = 12.0;
+pub const FREIGHT_SUMMARY_PADDING_Y: f32 = SPACE_12;
 pub const FREIGHT_SUMMARY_CARD_HEIGHT: f32 =
     FREIGHT_SUMMARY_NUMBER_LINE_HEIGHT + FREIGHT_SUMMARY_LABEL_LINE_HEIGHT
     + FREIGHT_SUMMARY_TEXT_GAP
@@ -819,10 +814,10 @@ pub fn install(ctx: &egui::Context) {
     style.visuals.widgets.hovered.expansion = 0.0;
     style.visuals.widgets.active.bg_fill = INPUT;
     style.visuals.widgets.active.bg_stroke = Stroke::new(SOFT_DIVIDER_WIDTH,SELECTION);
-    style.visuals.widgets.noninteractive.bg_stroke = Stroke::new(1.0_f32, BORDER);
-    style.visuals.widgets.inactive.bg_stroke = Stroke::new(1.0_f32, BORDER);
+    style.visuals.widgets.noninteractive.bg_stroke = Stroke::new(FRAME_STROKE_WIDTH, BORDER);
+    style.visuals.widgets.inactive.bg_stroke = Stroke::new(FRAME_STROKE_WIDTH, BORDER);
     style.visuals.selection.bg_fill = SELECTION.linear_multiply(0.3);
-    style.visuals.selection.stroke = Stroke::new(1.0_f32, SELECTION);
+    style.visuals.selection.stroke = Stroke::new(SELECTION_STROKE_WIDTH, SELECTION);
     style.spacing.item_spacing = Vec2::new(SPACING, SPACING);
     // Per-role horizontal padding is applied by action() below.
     style.spacing.button_padding = Vec2::new(SPACE_12, SPACE_8);
