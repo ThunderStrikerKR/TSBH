@@ -5483,6 +5483,23 @@ pub fn reception_client_summary_card(
     ui:&mut Ui,rect:Rect,linked:bool,
     summary:Option<&ClientDisplaySummary>,fallback:&str,
 )->bool{
+    reception_client_summary_card_editable(ui,rect,linked,summary,fallback,true)
+}
+
+/// Shared source-card geometry, reserving the same chrome across stages.
+pub fn reception_source_client_rect(body:Rect)->Rect{
+    let gap=theme::SPACE_8;
+    let height=(body.height()-4.0*gap-theme::ACTION_STANDARD_HEIGHT)
+        .max(0.0).min(theme::ACTION_STANDARD_HEIGHT+2.0*gap);
+    Rect::from_min_size(egui::pos2(body.left(),body.top()+gap),
+        Vec2::new(body.width(),height))
+}
+
+/// Keep the exact client surface when workflow permissions change.
+pub fn reception_client_summary_card_editable(
+    ui:&mut Ui,rect:Rect,linked:bool,
+    summary:Option<&ClientDisplaySummary>,fallback:&str,editable:bool,
+)->bool{
     paint_reception_client_summary_surface(ui,rect);
     if rect.width()<40.0||rect.height()<18.0{return false;}
     let inset=theme::SPACE_12.min(rect.width()/6.0);
@@ -5577,7 +5594,7 @@ pub fn reception_client_summary_card(
             buttons.set_clip_rect(clip);
             theme::action_with_min_width(
                 buttons,button_label,theme::ButtonRole::Standard,
-                true,button_width
+                editable,button_width
             ).clicked()
         }
     ).inner
@@ -6438,6 +6455,8 @@ pub struct ReceptionFreightEdit {
     pub amount_click_pos:Option<egui::Pos2>,
     pub remote_clicked:bool,
     pub collect_clicked:bool,
+    #[cfg(test)]
+    pub remote_rect:Option<Rect>,
 }
 /// The unit occupies the former external label's width, keeping the
 /// overall freight/COD group stable. Resting and focused money controls
@@ -6522,6 +6541,8 @@ pub fn reception_freight_row_controls(
     let mut clicked=false;
     let mut amount_click_pos=None;
     let mut remote_clicked=false;
+    #[cfg(test)]
+    let mut remote_rect=None;
     let mut collect_clicked=false;
     let mut amount_rect=None;
     let mut amount_text=amount
@@ -6587,13 +6608,17 @@ pub fn reception_freight_row_controls(
         // Right edge matches React: disabled inquiry is the rightmost
         // action and the 도서/산간 checkbox is immediately to its left.
         line.with_layout(Layout::right_to_left(Align::Center),|right|{
-            if inquiry_visible{
-                theme::action(right,"공장에 운임 문의",theme::ButtonRole::Standard,false);
-            }
+            // Hidden actions still own the exact same slot as visible ones.
+            right.add_visible_ui(inquiry_visible,|slot|{
+                theme::action(slot,"공장에 운임 문의",theme::ButtonRole::Standard,false);
+            });
             if remote_visible{
                 let mut checked=remote.unwrap_or(false);
-                if checkbox(right,&mut checked,"도서/산간",
-                    remote_editable && remote.is_some()).changed(){
+                let response=checkbox(right,&mut checked,"도서/산간",
+                    remote_editable && remote.is_some());
+                #[cfg(test)]
+                {remote_rect=Some(response.rect);}
+                if response.changed(){
                     remote_clicked=true;
                 }
             }
@@ -6617,7 +6642,9 @@ pub fn reception_freight_row_controls(
     if let Some(rect)=amount_rect{general_screen_geometry_tests::record("freight amount",rect);}
     ReceptionFreightEdit {
         amount_rect,amount_clicked:clicked,amount_click_pos,
-        remote_clicked,collect_clicked
+        remote_clicked,collect_clicked,
+        #[cfg(test)]
+        remote_rect,
     }
 }
 #[cfg(test)]
@@ -6635,6 +6662,30 @@ mod reception_cod_selector_tests {
         assert!(freight_actions_need_second_row(559.0));
         assert!(!freight_actions_need_second_row(560.0));
         assert!(!freight_actions_need_second_row(720.0));
+    }
+
+    #[test]
+    fn factory_inquiry_visibility_does_not_move_remote_checkbox(){
+        for width in [392.0,480.0,560.0,800.0]{
+            let render=|visible|{
+                let ctx=test_context();
+                let mut rects=None;
+                let _=ctx.run(egui::RawInput{
+                    screen_rect:Some(Rect::from_min_size(egui::Pos2::ZERO,Vec2::new(width+16.0,600.0))),
+                    ..Default::default()
+                },|ctx|{
+                    egui::CentralPanel::default().show(ctx,|ui|{
+                        ui.set_width(width);
+                        let row=reception_freight_row_editable(ui,"운임",
+                            Some(3000),Some(false),Some(false),visible,true);
+                        rects=Some([("remote",row.remote_rect.unwrap()),
+                            ("amount",row.amount_rect.unwrap())]);
+                    });
+                });
+                rects.unwrap()
+            };
+            assert_layout_rects_invariant(&render(true),&render(false));
+        }
     }
 
     #[test]
