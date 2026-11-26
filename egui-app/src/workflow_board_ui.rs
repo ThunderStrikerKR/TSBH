@@ -570,27 +570,27 @@ fn workflow_action_line(
 
     let amount=total.map(components::display_won)
         .unwrap_or_else(||"금액 미확정".to_owned());
+    let money_color=if payment_emphasis{crate::one_touch::INK}else{theme::TEXT};
     let money_galley=ui.painter().layout_no_wrap(
         amount.clone(),
         typography::data_value_font(
             typography::DataValueKind::Money,
             typography::DataValueContext::CompactCard
-        ),theme::TEXT
+        ),money_color
     );
-    let price_ink=Rect::from_min_max(
-        price.min,Pos2::new((price.right()-theme::SPACE_4).max(price.left()),
-            price.bottom())
-    );
-    if payment_emphasis{
-        let amount_rect=Rect::from_min_size(Pos2::new((price_ink.right()-money_galley.size().x-2.0).max(price_ink.left()),bottom_y-money_galley.size().y-2.0),Vec2::new((money_galley.size().x+4.0).min(price_ink.width()),money_galley.size().y+4.0)).intersect(price_ink);
-        crate::one_touch::background(ui,amount_rect);crate::one_touch::outline(ui,amount_rect);
-    }
+    // The text clip and the highlight slot must be different: clipping
+    // against the text's right edge used to erase all currency padding.
+    let price_ink=price.shrink2(Vec2::new(theme::SPACE_4,0.0));
+    let money_pos=Pos2::new(price_ink.right()-money_galley.size().x,
+        bottom_y-money_galley.size().y);
+    let money_bounds=Rect::from_min_size(money_pos,money_galley.size());
+    let amount_rect=crate::one_touch::value_rect(money_bounds,price);
+    if payment_emphasis{crate::one_touch::background(ui,amount_rect);}
     let money_clipped=components::text_exceeds_rect(money_galley.size(),price_ink.intersect(ui.clip_rect()));
-    ui.painter().with_clip_rect(price_ink).galley(
-        Pos2::new(price_ink.right()-money_galley.size().x,
-            bottom_y-money_galley.size().y),
-        money_galley,theme::TEXT
+    ui.painter().with_clip_rect(price_ink.intersect(ui.clip_rect())).galley(
+        money_pos,money_galley,money_color
     );
+    if payment_emphasis{crate::one_touch::outline(ui,amount_rect);}
     if let Some(vat)=vat{
         let visible=if vat.starts_with('('){vat.to_owned()}
             else{format!("({vat})")};
