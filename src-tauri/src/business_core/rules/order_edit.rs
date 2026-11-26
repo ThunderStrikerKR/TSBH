@@ -103,10 +103,10 @@ fn prepare_edit(payload:&Value)->Result<Value,String>{
     Ok(json!({"order":order}))
 }
 fn effective_shipping(order:&Value,state:&Value)->Result<Value,String>{
-    let recommended=super::shipping::reception_recommend(order,state)?;
     let selected=live_client(order,state);
+    let recommended=super::shipping::reception_recommend_for_client(order,state,&selected)?;
     let waived=flag(&selected,"shippingFeeExcluded");
-    let total=if waived {json!(0)}else{field(&recommended,"total").clone()};
+    let total=field(&recommended,"total").clone();
     Ok(json!({"total":total,"version":field(&recommended,"version"),
         "waived":waived}))
 }
