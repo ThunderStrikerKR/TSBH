@@ -467,7 +467,7 @@ pub fn reception_freight_row_controls(
     ui:&mut Ui,label:&str,amount:Option<i64>,collect:Option<bool>,
     remote:Option<bool>,inquiry_visible:bool,
     amount_editable:bool,collect_editable:bool,remote_editable:bool,
-    remote_visible:bool
+    remote_visible:bool,exempt:bool
 )->ReceptionFreightEdit{
     let mut clicked=false;
     let mut amount_click_pos=None;
@@ -509,10 +509,10 @@ pub fn reception_freight_row_controls(
                 );
                 // Prevent editing without greying out an already entered
                 // amount. The disabled parent Ui was dimming valid freight.
-                let displayed=reception_freight_money_readonly(price,&mut amount_text);
+                let displayed=reception_freight_money_readonly(price,&mut amount_text,exempt);
                 amount_rect=Some(displayed.rect);
                 if crate::one_touch::stage(price).freight(){crate::one_touch::mark(price,displayed.rect);}
-                if amount_editable && collect!=Some(true){
+                if amount_editable && collect!=Some(true) && !exempt{
                     let hit=price.interact(
                         displayed.rect,
                         price.make_persistent_id(("edit-applied-freight",label)),
