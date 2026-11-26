@@ -69,6 +69,26 @@ where F:FnOnce(&Value)->Result<Option<Value>,String>{
     Ok(verified)
 }
 
+/// A scoped compare-and-set reducer decides conflicts from the authoritative
+/// entity before-image, rather than a stale global UI revision. Acquire the
+/// write reservation before reading, so unrelated commits cannot race the
+/// comparison or overwrite the validated state.
+pub(crate) fn update_v2_entity_if_changed<F>(
+    conn:&mut Connection,validate_orders:bool,mutate:F
+)->Result<Value,String>
+where F:FnOnce(&Value)->Result<Option<Value>,String>{
+    let tx=conn.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate).map_err(err)?;
+    let revision=crate::read_envelope(&tx)?["revision"].as_u64()
+        .ok_or("운영 DB 리비전 오류")?;
+    let current=read_current(&tx,revision)?;
+    let verified=match mutate(&current)?{
+        Some(state)=>finish_update(&tx,current,state,revision,validate_orders)?,
+        None=>current,
+    };
+    tx.commit().map_err(err)?;
+    Ok(verified)
+}
+
 /// Native automatic factory reply: only candidate order trees enter the
 /// reducer. All shipments and payment evidence remain visible for collision
 /// and immutability checks. Hydrate the complementary trees exactly once
