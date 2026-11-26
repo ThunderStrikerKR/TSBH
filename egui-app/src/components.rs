@@ -4947,14 +4947,14 @@ pub fn management_dropdown(
     ui:&mut Ui,label:&str,width:f32,enabled:bool,
     options:impl FnOnce(&mut Ui)
 )->Response {
-    management_dropdown_inner(ui,label,label,width,enabled,false,None,options)
+    management_dropdown_inner(ui,label,label,width,enabled,false,None,None,options)
 }
 /// Pre-fitted category paths retain the original text as the single tooltip.
 pub fn management_dropdown_full_label(
     ui:&mut Ui,label:&str,full_label:&str,width:f32,enabled:bool,
     options:impl FnOnce(&mut Ui)
 )->Response{
-    management_dropdown_inner(ui,label,full_label,width,enabled,false,None,options)
+    management_dropdown_inner(ui,label,full_label,width,enabled,false,None,None,options)
 }
 /// Same management dropdown master, with an optional colored status mark.
 /// This only changes the glyph painting; popup placement, hover and row
@@ -4964,7 +4964,7 @@ pub fn management_status_dropdown(
     status_color:Color32,options:impl FnOnce(&mut Ui)
 )->Response {
     management_dropdown_inner(
-        ui,label,label,width,enabled,false,Some(status_color),options
+        ui,label,label,width,enabled,false,Some(status_color),None,options
     )
 }
 
@@ -4974,7 +4974,16 @@ pub fn management_dropdown_compact(
     ui:&mut Ui,label:&str,width:f32,enabled:bool,
     options:impl FnOnce(&mut Ui)
 )->Response {
-    management_dropdown_inner(ui,label,label,width,enabled,true,None,options)
+    management_dropdown_inner(ui,label,label,width,enabled,true,None,None,options)
+}
+
+/// A mixed label keeps the common trigger, menu, selection and overflow
+/// behavior. Callers supply semantic value spans, never a local painter.
+pub fn management_dropdown_values(
+    ui:&mut Ui,label:&egui::text::LayoutJob,width:f32,enabled:bool,
+    options:impl FnOnce(&mut Ui)
+)->Response{
+    management_dropdown_inner(ui,&label.text,&label.text,width,enabled,false,None,Some(label),options)
 }
 
 /// Shared 34pt management trigger; the hierarchical category popup and
@@ -4989,6 +4998,13 @@ pub(crate) fn management_dropdown_trigger(
 pub(crate) fn management_dropdown_trigger_full_label(
     ui:&mut Ui,label:&str,full_label:&str,width:f32,enabled:bool,
     indicator:Option<Color32>,
+)->Response {
+    management_dropdown_trigger_inner(ui,label,full_label,width,enabled,indicator,None)
+}
+
+fn management_dropdown_trigger_inner(
+    ui:&mut Ui,label:&str,full_label:&str,width:f32,enabled:bool,
+    indicator:Option<Color32>,values:Option<&egui::text::LayoutJob>,
 )->Response {
     // Keep exact toolbar/cell width without stretching the subsequent action
     // or exceeding a narrow selector slot.
@@ -5011,9 +5027,11 @@ pub(crate) fn management_dropdown_trigger_full_label(
     let rect=trigger.rect;
     let painter=ui.painter().with_clip_rect(rect);
     let arrow_left=rect.right()-30.0;
-    let caption=typography::management_control_text_galley(
-        ui,label,ink
-    );
+    let caption=if let Some(values)=values{
+        ui.fonts_mut(|fonts|fonts.layout_job(typography::dropdown_value_job(values,false,ink)))
+    }else{
+        typography::management_control_text_galley(ui,label,ink)
+    };
     // Sales status selectors sit in a narrow price column. Reserve the
     // indicator without clipping the longest label ("판매준비중").
     let caption_x=rect.left()+if indicator.is_some(){
@@ -5057,12 +5075,12 @@ pub(crate) fn management_dropdown_trigger_full_label(
 
 fn management_dropdown_inner(
     ui:&mut Ui,label:&str,full_label:&str,width:f32,enabled:bool,
-    compact:bool,indicator:Option<Color32>,
+    compact:bool,indicator:Option<Color32>,values:Option<&egui::text::LayoutJob>,
     options:impl FnOnce(&mut Ui)
 )->Response {
     let width=width.min(ui.available_width()).max(1.0);
-    let trigger=management_dropdown_trigger_full_label(
-        ui,label,full_label,width,enabled,indicator
+    let trigger=management_dropdown_trigger_inner(
+        ui,label,full_label,width,enabled,indicator,values
     );
     crate::overlay::show_menu(&trigger,None,|menu|{
             // Every selectable row reports its parent trigger, never its
@@ -5179,9 +5197,15 @@ enum ManagementDropdownOptionStyle {
 
 fn management_dropdown_option_inner<T:PartialEq>(
     ui:&mut Ui,current:&mut T,value:T,label:&str,
-    style:ManagementDropdownOptionStyle
+    style:ManagementDropdownOptionStyle,values:Option<&egui::text::LayoutJob>
 )->Response{
-    let invisible=typography::invisible_option_label(label);
+    // Invisible native label reserves the same semantic glyph widths as
+    // the visible label while preserving native selection and keyboard input.
+    let invisible:egui::WidgetText=if let Some(values)=values{
+        typography::dropdown_value_job(values,true,Color32::TRANSPARENT).into()
+    }else{
+        typography::invisible_option_label(label).into()
+    };
     let response=match style{
         ManagementDropdownOptionStyle::Compact(width)=>{
             let selected=*current==value;
@@ -5199,11 +5223,15 @@ fn management_dropdown_option_inner<T:PartialEq>(
     };
     let row=response.rect;
     let painter=ui.painter().with_clip_rect(row.shrink(2.0));
-    let galley=ui.painter().layout_no_wrap(
-        label.to_owned(),
-        egui::FontId::proportional(typography::FONT_STANDARD_ACTION),
-        theme::TEXT,
-    );
+    let galley=if let Some(values)=values{
+        ui.fonts_mut(|fonts|fonts.layout_job(typography::dropdown_value_job(values,true,theme::TEXT)))
+    }else{
+        ui.painter().layout_no_wrap(
+            label.to_owned(),
+            egui::FontId::proportional(typography::FONT_STANDARD_ACTION),
+            theme::TEXT,
+        )
+    };
     let x=match style{
         ManagementDropdownOptionStyle::Standard=>row.left()+theme::SPACE_8,
         ManagementDropdownOptionStyle::Compact(_)=>row.center().x-galley.size().x*0.5,
@@ -5233,21 +5261,28 @@ pub fn management_dropdown_option<T:PartialEq>(
     ui:&mut Ui,current:&mut T,value:T,label:&str
 )->Response {
     management_dropdown_option_inner(ui,current,value,label,
-        ManagementDropdownOptionStyle::Standard)
+        ManagementDropdownOptionStyle::Standard,None)
+}
+
+pub fn management_dropdown_option_values<T:PartialEq>(
+    ui:&mut Ui,current:&mut T,value:T,label:&egui::text::LayoutJob
+)->Response{
+    management_dropdown_option_inner(ui,current,value,&label.text,
+        ManagementDropdownOptionStyle::Standard,Some(label))
 }
 
 pub fn management_status_dropdown_option<T:PartialEq>(
     ui:&mut Ui,current:&mut T,value:T,label:&str,color:Color32
 )->Response {
     management_dropdown_option_inner(ui,current,value,label,
-        ManagementDropdownOptionStyle::Status(color))
+        ManagementDropdownOptionStyle::Status(color),None)
 }
 
 pub fn management_dropdown_compact_option<T:PartialEq>(
     ui:&mut Ui,current:&mut T,value:T,label:&str,width:f32
 )->Response {
     management_dropdown_option_inner(ui,current,value,label,
-        ManagementDropdownOptionStyle::Compact(width))
+        ManagementDropdownOptionStyle::Compact(width),None)
 }
 
 /// Shared management tab roles (content width, no full-page stretching).
@@ -8573,7 +8608,7 @@ mod management_dropdown_unification_tests {
         let first=source.find("pub fn management_dropdown_option<T:PartialEq>").unwrap();
         let end=source[first..].find("pub fn management_tabs(").unwrap()+first;
         assert_eq!(source[inner..first].matches("dropdown_option_selected(ui.ctx())").count(),1);
-        assert_eq!(source[first..end].matches("management_dropdown_option_inner(").count(),3);
+        assert_eq!(source[first..end].matches("management_dropdown_option_inner(").count(),4);
         assert!(!source[first..end].contains("dropdown_option_selected(ui.ctx())"));
         let popup=source.find("fn management_dropdown_inner(").unwrap();
         assert!(source[popup..inner].contains("crate::overlay::show_menu("));
