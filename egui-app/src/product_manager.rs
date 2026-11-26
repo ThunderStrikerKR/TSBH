@@ -610,8 +610,12 @@ impl ProductManager {
         }
     }
     fn start_write(
-        &mut self,action:&str,data:Value,key:Option<String>,ctx:Context
+        &mut self,action:&str,mut data:Value,key:Option<String>,ctx:Context
     ){
+        if matches!(action,"upsert_product"|"archive_product"){
+            data["expectedEntity"]=self.original_selected.as_ref()
+                .filter(|row|!field(row,"id").is_empty()).cloned().unwrap_or(Value::Null);
+        }
         if action=="set_price"{
             let Some(price_key)=key.as_deref()else{
                 self.error=Some("가격 셀 식별자를 확인할 수 없습니다.".into());
