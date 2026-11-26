@@ -678,13 +678,26 @@ fn reconcile_inner(payload:&Value,order_scope:Option<&str>,scoped_seed:Option<&s
                     charges.as_object_mut().ok_or("운임 형식 오류")?.remove(origin);
                 }
             }
-            if has_value(field(&recipient,"shippingCharges")) {
+            let overrides=field(&recipient,"shippingCharges");
+            let has_manual_amount=origins.iter().any(|origin|
+                field(overrides,origin).as_i64().is_some());
+            let cleared_override=overrides.is_object() && !has_manual_amount &&
+                origins.iter().all(|origin|field(overrides,origin).is_null());
+            // Draft editing stores null for a cleared override. The native
+            // reception quote treats null as automatic, not a manual blank.
+            // Keep the same contract when projecting the working shipment.
+            // Existing frozen MANUAL shipments retain their historical blank.
+            if cleared_override && !frozen {
+                set(&mut state["workflow"]["shipments"][si],"chargeMode",json!("AUTO"))?;
+            }
+            let automatic=str_field(&state["workflow"]["shipments"][si],"chargeMode")=="AUTO";
+            if has_value(overrides) && !(cleared_override && automatic) {
                 set(&mut state["workflow"]["shipments"][si],"chargeMode",json!("MANUAL"))?;
                 for origin in &origins {
-                    let v=field(field(&recipient,"shippingCharges"),origin);
+                    let v=field(overrides,origin);
                     set(&mut charges,origin,v.clone())?;
                 }
-            } else if str_field(&state["workflow"]["shipments"][si],"chargeMode")=="AUTO" && !frozen {
+            } else if automatic && !frozen {
                 for origin in &origins {
                     let v=rows(field(&reco,"bundles")).iter()
                         .find(|b|str_field(b,"origin")==origin)
@@ -854,5 +867,67 @@ mod independent_stage_reconciliation_tests{
         assert_eq!(state["workflow"]["shipments"][0]["stageValidity"],json!([true,true,false,false]));
         assert!(rows(field(&state["workflow"],"events")).iter().any(|event|
             str_field(event,"action")=="입금 승인 재확인 필요"));
+    }
+}
+
+// Exercise the same reducer, quote and workflow projection used by intake.
+#[cfg(test)]
+mod reception_freight_reset_tests {
+    use super::*;
+
+    #[test]
+    fn cleared_draft_freight_restores_registered_rate_and_survives_freeze(){
+        let state=json!({
+            "clients":[{"id":"c","name":"테스트 거래처","tier":"wholesale"}],
+            "products":[{"id":"p","name":"테스트 상품","origin":"FACTORY",
+                "variants":[{"id":"v","wholesale":45000}]}],
+            "shipping":{"epoch":1,"productRules":{"p":{
+                "version":"v1","fees":{"2":5200},"maxBundle":4,"maxConfirmed":true}}},
+            "orders":[{"id":"o","clientId":"c","orderType":"AGENCY","applyVat":true,
+                "recipients":[{"id":"r","name":"테스트 수취인",
+                    "address":"서울특별시 중구 세종대로 1","dispatchOrigin":"FACTORY",
+                    "freightCode":"010","shippingCharges":{"FACTORY":7000},
+                    "items":[{"id":"i","name":"테스트 상품","productId":"p",
+                        "variantId":"v","quantity":2,"origin":"FACTORY"}]}]}]
+        });
+        let project=|state:Value|reconcile(&json!({
+            "state":state,"now":"2026-11-27T00:00:00+09:00",
+            "eventIds":["synthetic-reset-1","synthetic-reset-2"]
+        })).unwrap()["state"].clone();
+        let mut state=project(state);
+        assert_eq!(state["workflow"]["shipments"][0]["chargeMode"],"MANUAL");
+        assert_eq!(state["workflow"]["shipments"][0]["charges"]["FACTORY"],7000);
+        // A typed zero remains a manual amount, unlike a cleared field.
+        state["orders"][0]["recipients"][0]["shippingCharges"]["FACTORY"]=json!(0);
+        state=project(state);
+        assert_eq!(state["workflow"]["shipments"][0]["chargeMode"],"MANUAL");
+        assert_eq!(state["workflow"]["shipments"][0]["charges"]["FACTORY"],0);
+        let model=super::super::execute("apply_manual_classification",json!({
+            "action":"set_manual_delivery_option",
+            "model":{"rows":state["orders"][0]["recipients"]},
+            "cell":{"recipientId":"r","field":"shippingCharge"},
+            "order":state["orders"][0],"value":null
+        })).unwrap()["model"].clone();
+        state["orders"][0]["recipients"]=model["rows"].clone();
+        let quoted=super::super::execute("calculate_reception_quote",json!({
+            "state":state,"client":state["clients"][0],"order":state["orders"][0]
+        })).unwrap();
+        assert_eq!(quoted["freightLines"][0]["appliedCharge"],5200);
+        assert_eq!(quoted["totals"]["total"],104720);
+        let automatic=project(state);
+        assert_eq!(automatic["workflow"]["shipments"][0]["chargeMode"],"AUTO");
+        assert_eq!(automatic["workflow"]["shipments"][0]["charges"]["FACTORY"],5200);
+        // Missing tariff stays unresolved; never fabricate a zero.
+        let mut missing=automatic.clone();
+        missing["shipping"]["productRules"]["p"]["fees"]["2"]=Value::Null;
+        let missing=project(missing);
+        assert!(missing["workflow"]["shipments"][0]["charges"]["FACTORY"].is_null());
+        // A later reconciliation must not erase the already frozen auto fee.
+        let mut frozen=automatic;
+        frozen["orders"][0]["confirmedAt"]=json!("2026-11-27T00:00:00+09:00");
+        frozen["shipping"]["productRules"]["p"]["fees"]["2"]=json!(9000);
+        let frozen=project(frozen);
+        assert_eq!(frozen["workflow"]["shipments"][0]["chargeMode"],"AUTO");
+        assert_eq!(frozen["workflow"]["shipments"][0]["charges"]["FACTORY"],5200);
     }
 }
