@@ -551,7 +551,7 @@ impl FreightManager {
     }
     pub fn busy(&self)->bool{self.write_receiver.is_some()}
     pub fn can_save_dirty(&self)->bool{
-        self.gateway.shipping_write_enabled() && !self.busy() &&
+        self.gateway.shipping_write_enabled() && self.receiver.is_none() && !self.busy() &&
             self.new_name.trim().is_empty() &&
             (self.rate_editor.as_ref().is_some_and(|editor|editor.dirty()) ||
                 !self.pending_changes().is_empty())
@@ -727,7 +727,7 @@ impl FreightManager {
     }
 
     fn write(&mut self, action: String, data: Value, ctx:egui::Context) {
-        if self.write_receiver.is_some() || !self.gateway.shipping_write_enabled(){
+        if self.receiver.is_some() || self.write_receiver.is_some() || !self.gateway.shipping_write_enabled(){
             return;
         }
         crate::floating_notice::dispatch_pointer(&ctx,"freight.action");
@@ -868,7 +868,7 @@ impl FreightManager {
         // Keep the approved Freight Assignment as the layout reference,
         // including when the four KPIs wrap in narrower workspaces.
         crate::card::align_management_primary_card(ui,page_origin_y);
-        let enabled=self.gateway.shipping_write_enabled()&&self.write_receiver.is_none();
+        let enabled=self.gateway.shipping_write_enabled()&&self.receiver.is_none()&&self.write_receiver.is_none();
         let mut action:Option<(String,Value)>=None;
         // The assignment tab owns its own scrollable *rows*. Do not wrap
         // the heading in a second page-wide vertical scroll, which previously
