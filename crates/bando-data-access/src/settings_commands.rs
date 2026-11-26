@@ -78,11 +78,8 @@ pub fn patch_settings_v2(
     if changes.as_object().is_some_and(serde_json::Map::is_empty){
         return crate::read_v2_snapshot(conn);
     }
-    // Revision discovery needs only the envelope, not the historical
-    // order ledger. The writer reads the full authoritative before-image
-    // once inside its transaction and repeats the revision check there.
-    let revision=crate::read_envelope(conn)?["revision"].as_u64()
-        .ok_or("운영 DB revision 오류")?;
-    crate::update_v2_snapshot(conn,revision,true,|before|
-        apply_settings_changes(before.clone(),is_test,changes,expected))
+    crate::storage::update_v2_entity_if_changed(conn,true,|before|{
+        let next=apply_settings_changes(before.clone(),is_test,changes,expected)?;
+        Ok((next!=*before).then_some(next))
+    })
 }
