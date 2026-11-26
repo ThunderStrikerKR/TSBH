@@ -12,6 +12,7 @@ on:
       - src-tauri/src/business_core/rules/**
       - egui-app/src/manual_source_view.rs
       - egui-app/src/source_highlight.rs
+      - egui-app/src/one_touch.rs
       - egui-app/src/components.rs
       - egui-app/src/main.rs
       - egui-app/src/theme.rs
@@ -28,6 +29,7 @@ on:
       - src-tauri/src/business_core/rules/**
       - egui-app/src/manual_source_view.rs
       - egui-app/src/source_highlight.rs
+      - egui-app/src/one_touch.rs
       - egui-app/src/components.rs
       - egui-app/src/main.rs
       - egui-app/src/theme.rs
@@ -88,6 +90,8 @@ jobs:
         run: |
           cargo test --manifest-path egui-app/Cargo.toml item_editor::tests -- --nocapture
           cargo test --manifest-path egui-app/Cargo.toml reception_item_editor_integration_tests -- --nocapture
+      - name: Verify one-touch message typography, hover geometry and shared palette
+        run: cargo test --manifest-path egui-app/Cargo.toml one_touch::tests -- --nocapture
       - name: Verify existing reception source highlighting remains stable
         run: cargo test --manifest-path egui-app/Cargo.toml source_highlight::tests -- --nocapture
       - name: Verify manual arrow navigation follows visible worksheet rows
