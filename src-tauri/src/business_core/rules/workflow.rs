@@ -482,9 +482,8 @@ pub(super) fn apply(payload:&Value)->Result<Value,String> {
                     let recommendation=super::shipping::recommend(&individual,&state)?;
                     let version=field(&state["workflow"]["shipments"][*si],"freightVersion").clone();
                     let basis_current=version==*field(&recommendation,"version");
-                    let charges=field(&state["workflow"]["shipments"][*si],"charges").clone();
-                    set(&mut state["orders"][oi]["recipients"][ri],"shippingCharges",charges)?;
-                    set(&mut state["workflow"]["shipments"][*si],"chargeMode",json!("MANUAL"))?;
+                    // Confirmation freezes the current shipment charges via
+                    // stage validity; it does not create manual overrides.
                     set(&mut state["workflow"]["shipments"][*si],"confirmedFreightVersion",version)?;
                     if basis_current {
                         let epoch=field(field(&state,"shipping"),"epoch").as_i64().unwrap_or(1);
@@ -623,13 +622,12 @@ pub(super) fn apply(payload:&Value)->Result<Value,String> {
                 return Err("도서/산간 선택값이 올바르지 않습니다.".into());
             }
             if has_applied {
-                if !payload["appliedCharge"].is_null() &&
-                    !safe(&payload["appliedCharge"]).is_some_and(|n|(0..=99_999).contains(&n)){
+                if super::manual_amount(&payload["appliedCharge"])?
+                    .is_some_and(|n|n>99_999){
                     return Err("적용 운임은 0~99,999원의 정수로 입력하세요.".into());
                 }
-            }else if has_legacy_value && !payload["value"].is_null() &&
-                !safe(&payload["value"]).is_some_and(|n|n>=0){
-                return Err("운임은 0 이상의 원 단위 정수로 입력하세요.".into());
+            }else if has_legacy_value{
+                super::manual_amount(&payload["value"])?;
             }
             let (si,oi,ri)=shipment_indices(&state,ship_id)?;
             if flag(&state["workflow"]["shipments"][si],"transferred") {
@@ -680,17 +678,30 @@ pub(super) fn apply(payload:&Value)->Result<Value,String> {
                 };
                 let mut charges=field(&shipment,"charges").clone();
                 if !charges.is_object(){charges=json!({});}
-                if let Some(existing)=field(&recipient,"shippingCharges").as_object(){
-                    for (key,value) in existing{
-                        if charges.get(key).is_none(){
-                            set(&mut charges,key,value.clone())?;
-                        }
-                    }
+                let mut overrides=field(&recipient,"shippingCharges").clone();
+                if !overrides.is_object(){
+                    // Old MANUAL records may not carry a separate override map.
+                    // Preserve known legacy amounts, not automatic charges.
+                    overrides=if str_field(&shipment,"chargeMode")=="MANUAL"{
+                        charges.clone()
+                    }else{json!({})};
                 }
-                set(&mut charges,origin,base_value)?;
-                set(&mut shipment,"charges",charges.clone())?;
-                set(&mut recipient,"shippingCharges",charges)?;
-                set(&mut shipment,"chargeMode",json!("MANUAL"))?;
+                let manual=super::manual_amount(&base_value)?;
+                set(&mut overrides,origin,json!(manual))?;
+                let effective=if let Some(amount)=manual{json!(amount)}else{
+                    let mut individual=state["orders"][oi].clone();
+                    set(&mut individual,"recipients",json!([recipient]))?;
+                    let recommendation=super::shipping::recommend(&individual,&state)?;
+                    set(&mut shipment,"freightVersion",field(&recommendation,"version").clone())?;
+                    super::shipping::base_recommendation(&recommendation,origin)
+                };
+                set(&mut charges,origin,effective)?;
+                set(&mut shipment,"charges",charges)?;
+                set(&mut recipient,"shippingCharges",overrides)?;
+                let has_manual=row_origins(&recipient).into_iter().map(|origin|
+                    super::manual_freight(&recipient,origin))
+                    .collect::<Result<Vec<_>,_>>()?.iter().any(Option::is_some);
+                set(&mut shipment,"chargeMode",json!(if has_manual{"MANUAL"}else{"AUTO"}))?;
             }
             let changed=previous!=json!({
                 "origin":origin,
@@ -1539,6 +1550,25 @@ mod workflow_freight_edit_tests {
         ),Some(6000));
         assert_eq!(next["workflow"]["shipments"][0]["step"],1);
         assert_eq!(next["workflow"]["shipments"][0]["transferred"],false);
+    }
+
+    #[test]
+    fn clearing_manual_freight_does_not_copy_other_automatic_origins(){
+        let mut input=state();
+        input["orders"][0]["recipients"][0]["items"]=json!([
+            {"id":"i","origin":"FACTORY","quantity":1},
+            {"id":"j","origin":"STORE","quantity":1}
+        ]);
+        input["orders"][0]["recipients"][0]["shippingCharges"]=json!({"FACTORY":7000});
+        input["workflow"]["shipments"][0]["charges"]=json!({"FACTORY":7000,"STORE":2500});
+        input["workflow"]["shipments"][0]["chargeMode"]=json!("MANUAL");
+        let next=apply(&json!({"state":input,"action":"set_shipment_freight",
+            "groupId":"g","shipmentId":"s","origin":"FACTORY","appliedCharge":null,
+            "eventId":"clear","now":"2026-11-27T00:00:00+09:00"})).unwrap()["state"].clone();
+        assert_eq!(next["orders"][0]["recipients"][0]["shippingCharges"],json!({"FACTORY":null}));
+        assert_eq!(next["workflow"]["shipments"][0]["charges"]["FACTORY"],Value::Null);
+        assert_eq!(next["workflow"]["shipments"][0]["charges"]["STORE"],2500);
+        assert_eq!(next["workflow"]["shipments"][0]["chargeMode"],"AUTO");
     }
 
     #[test]
