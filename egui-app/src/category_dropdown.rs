@@ -244,7 +244,8 @@ pub(crate) fn crumbs_row(ui:&mut Ui,state:&mut ExplorerState,index:&HashMap<&str
     let mut bar=ui.new_child(egui::UiBuilder::new().max_rect(rect.translate(egui::vec2(slide,0.0)))
         .layout(egui::Layout::left_to_right(egui::Align::Center)));
     bar.set_clip_rect(rect.intersect(ui.clip_rect()));
-    bar.set_opacity(alpha);
+    // Preserve an enclosing manager-mode fade when no path motion is active.
+    if alpha<1.0{bar.set_opacity(alpha);}
     bar.spacing_mut().item_spacing.x=0.0;
     let names=(0..=path.len()).map(|i|label_for(index,&path[..i])).collect::<Vec<_>>();
     let widths=names.iter().map(|n|crumb_width(&bar,n)).collect::<Vec<_>>();
@@ -389,7 +390,9 @@ pub(crate) fn explorer_body(menu:&mut Ui,nodes:&[CategoryNode],index:&HashMap<&s
                         if final_phase{!m.reverse&&path==m.to}else if m.reverse{path==m.from}else{path==m.to}
                     });
                     let response=list.scope(|row|{
-                        row.set_opacity(if hide{0.0}else{alpha});
+                        // A fully opaque local row must not cancel the parent mode fade.
+                        if hide{row.set_opacity(0.0);}
+                        else if alpha<1.0{row.set_opacity(alpha);}
                         if let Some(totals)=totals{
                             let id=path.last().map(String::as_str).unwrap_or("");
                             let summary=if id.is_empty(){String::new()}else{
