@@ -388,7 +388,7 @@ pub const FREIGHT_SUMMARY_CARD_HEIGHT: f32 =
 // Reception items/freight mirrors the React 3-column table. The summary
 // remains a separate fixed-height strip below its own scrolling content.
 pub const RECEPTION_ITEMS_HEADER_HEIGHT: f32 = 32.0;
-pub const RECEPTION_ITEMS_ROW_HEIGHT: f32 = 42.0;
+pub const RECEPTION_ITEMS_ROW_HEIGHT: f32 = MANAGEMENT_COMPACT_ROW_HEIGHT;
 // Reception item table: only product text ellipsizes; quantity and amount
 // columns never expand or contract with their values or the pane width.
 // On very narrow panes the fixed minimum table scrolls horizontally.
@@ -413,7 +413,7 @@ pub const RECEPTION_ORDER_TOTAL_SECTION_GAP: f32 = SPACE_8;
 // visible surface; always reserve five 42pt rows, grow up to ten before scroll.
 pub const RECEPTION_VAT_LIST_MIN_VISIBLE_ROWS: usize = 5;
 pub const RECEPTION_VAT_LIST_VISIBLE_ROWS: usize = 10;
-pub const RECEPTION_VAT_LIST_ROW_HEIGHT: f32 = 42.0;
+pub const RECEPTION_VAT_LIST_ROW_HEIGHT: f32 = MANAGEMENT_COMPACT_ROW_HEIGHT;
 pub const RECEPTION_VAT_LIST_SCREEN_RESERVE: f32 = 256.0;
 
 pub const RECEPTION_TOTAL_HEIGHT: f32 = 56.0;
@@ -501,7 +501,7 @@ pub const MODAL_BACKDROP_ALPHA: u8 = 144;
 pub const MODAL_NESTED_BACKDROP_ALPHA: u8 = 94;
 // Shared management list roles; the client page does not invent row geometry.
 // CategoryTree master: every depth uses the same row, slots and guide geometry.
-pub const CATALOG_TREE_ROW_HEIGHT:f32 = 42.0;
+pub const CATALOG_TREE_ROW_HEIGHT:f32 = MANAGEMENT_COMPACT_ROW_HEIGHT;
 pub const CATALOG_TREE_INDENT:f32 = 24.0;
 pub const CATALOG_TREE_INSET:f32 = SPACE_12;
 pub const CATEGORY_EXPLORER_CRUMB_TEXT_INSET:f32=SPACE_6;
@@ -544,8 +544,8 @@ pub const MANAGEMENT_TABLE_HEADER_HEIGHT: f32 = 36.0;
 /// The bottom 2pt stroke is painted inside the fixed 36pt header,
 /// so its text centers in the remaining 34pt, never below the baseline.
 pub const MANAGEMENT_TABLE_HEADER_OUTLINE_HEIGHT:f32=2.0;
-/// Single-line management data rows, shared by the approved masters and
-/// other compact lists. The 58pt two-line management rows are a different role.
+/// Single source of truth for compact, single-line data rows across management,
+/// reception, catalog trees and manual entry. Two-line rows are a different role.
 pub const MANAGEMENT_COMPACT_ROW_HEIGHT: f32 = 42.0;
 pub const MANAGEMENT_TABLE_ROW_HEIGHT: f32 = 58.0;
 // Product table: a full-width, single-line record per product. The six
@@ -753,7 +753,7 @@ pub const MANAGEMENT_CLIENT_NAME_COLUMN_WIDTH:f32 = 172.0;
 pub const MANAGEMENT_CLIENT_PHONE_COLUMN_WIDTH:f32 = 154.0;
 pub const MANAGEMENT_CLIENT_TERMS_COLUMN_WIDTH:f32 = 350.0;
 #[cfg(test)]
-pub const MANUAL_TABLE_ROW_HEIGHT: f32 = 42.0;
+pub const MANUAL_TABLE_ROW_HEIGHT: f32 = MANAGEMENT_COMPACT_ROW_HEIGHT;
 // Recognized source tokens in Reception and classified manual blocks share
 // the same subdued gray 1pt outline. Focused blue evidence keeps its own 2pt stroke.
 pub const SOURCE_RECOGNIZED_BORDER: Color32 = Color32::from_rgb(96, 96, 96);
