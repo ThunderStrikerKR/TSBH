@@ -8,7 +8,7 @@ use crate::{
 use chrono::{DateTime,Duration as Days,FixedOffset,NaiveDate,Utc};
 use eframe::egui::{self,Align,Align2,Rect,Sense,Ui,Vec2};
 use serde_json::{json,Value};
-use std::sync::{mpsc::{self,Receiver,TryRecvError},Arc};
+use std::sync::Arc;
 
 const ROW_HEIGHT:f32=theme::MANAGEMENT_COMPACT_ROW_HEIGHT;
 const HEADER_HEIGHT:f32=theme::MANAGEMENT_TABLE_HEADER_HEIGHT;
@@ -356,7 +356,7 @@ fn report_table<const N:usize>(
 
 pub struct DailySettlementManager{
     gateway:Arc<dyn BandoGateway>,
-    receiver:Option<Receiver<Result<Value,String>>>,
+    refresh_job:crate::screen_refresh::ReadRefresh<Value>,
     report:Option<Value>,
     error:Option<String>,
     date:String,
@@ -369,7 +369,7 @@ impl DailySettlementManager{
     pub fn new(gateway:Arc<dyn BandoGateway>,ctx:egui::Context)->Self{
         let today=seoul_today();
         let mut manager=Self{
-            gateway,receiver:None,report:None,error:None,
+            gateway,refresh_job:Default::default(),report:None,error:None,
             date:today.clone(),date_input:today.clone(),
             calendar_month:crate::navigation::calendar_month_start(
                 NaiveDate::parse_from_str(&today,"%Y-%m-%d")
@@ -390,40 +390,22 @@ impl DailySettlementManager{
     }
     pub fn refresh(&mut self,ctx:egui::Context){
         // Keep an already verified report only for this exact date.
-        if self.report.as_ref().is_some_and(|report|report["date"].as_str()!=Some(self.date.as_str())){
-            self.report=None;
-        }
+        let same_scope=self.report.as_ref().is_none_or(|report|report["date"].as_str()==Some(self.date.as_str()));
+        crate::screen_refresh::retain_scope(&mut self.report,same_scope);
         self.error=None;
-        let (sender,receiver)=mpsc::channel();
-        self.receiver=Some(receiver);
         let gateway=Arc::clone(&self.gateway);
         let date=self.date.clone();
-        std::thread::spawn(move||{
-            let answer=fetch(gateway.as_ref(),&date);
-            let _=sender.send(answer);
-            ctx.request_repaint();
-        });
+        self.refresh_job.submit_required(ctx,move||fetch(gateway.as_ref(),&date));
     }
     fn poll(&mut self){
-        let current=self.receiver.as_ref().map(Receiver::try_recv);
-        match current{
-            Some(Ok(Ok(report)))=>{
-                // Old async results are unreachable because refresh drops the
-                // previous receiver. Still verify the requested date.
-                if report["date"].as_str()==Some(self.date.as_str()){
-                    self.report=Some(report);
-                    self.error=None;
-                }
-                self.receiver=None;
-            },
-            Some(Ok(Err(error)))=>{
-                self.error=Some(error);self.receiver=None;
-            },
-            Some(Err(TryRecvError::Disconnected))=>{
-                self.receiver=None;
-                self.error=Some("일일 결산 조회 연결이 중단되었습니다.".into());
-            },
-            _=>{}
+        match self.refresh_job.poll(){
+            Some(Ok(report)) if report["date"].as_str()==Some(self.date.as_str())=>{
+                self.refresh_job.publish(&mut self.report,report);
+                self.error=None;
+            }
+            Some(Ok(_))=>self.error=Some("조회한 결산 날짜가 요청 날짜와 일치하지 않습니다.".into()),
+            Some(Err(error))=>self.error=Some(error),
+            None=>{}
         }
     }
     pub fn show_page(&mut self,ui:&mut Ui){
@@ -468,7 +450,7 @@ impl DailySettlementManager{
         let mut date_changed=false;
         let unavailable=crate::user_error::display("settlement.query",
             self.error.as_deref().unwrap_or("해당 날짜의 결산 자료를 불러올 수 없습니다."));
-        let loading=self.receiver.is_some();
+        let loading=self.refresh_job.pending();
         // The report tables scroll horizontally inside their own row
         // viewports. Keep the OUTER vertical section stack bounded by the
         // visible work area so a wide report cannot expand the card/header
@@ -677,13 +659,12 @@ mod tests{
 impl DailySettlementManager {
     pub(crate) fn geometry_fixture(gateway:Arc<dyn BandoGateway>,ctx:egui::Context,_tab:usize,loaded:bool)->Self{
         let mut page=Self::new(gateway,ctx);
-        page.receiver=None;if loaded{page.report=Some(serde_json::json!({"date":page.date.clone(),"orderRows":[],"paymentRows":[]}));}
+        page.refresh_job.reset();if loaded{page.report=Some(serde_json::json!({"date":page.date.clone(),"orderRows":[],"paymentRows":[]}));}
         page
     }
 
     pub(crate) fn geometry_begin_read(&mut self)->Box<dyn FnOnce(Result<usize,String>)>{
-        let (tx,rx)=std::sync::mpsc::channel();
-        self.receiver=Some(rx);
+        let finish=self.refresh_job.geometry_begin_read();
         self.error=None;
         let date=self.date.clone();
         Box::new(move |answer|{
@@ -701,7 +682,7 @@ impl DailySettlementManager {
                     "outstandingKnown":count as i64*13300,"actualFreightKnown":count as i64*3000,
                     "outstandingUnknown":0,"freightUnknown":0,"allocatedCash":count as i64*95000,"unallocatedCash":count as i64*5000})
             });
-            assert!(tx.send(result).is_ok());
+            finish(result);
         })
     }
     pub(crate) fn geometry_read_failed(&self)->bool{self.error.is_some()}
