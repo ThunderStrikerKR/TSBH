@@ -217,6 +217,7 @@ fn set_item(payload:&Value,value:&str)->Result<Value,String>{
         set(&mut item,"origin",field(&previous,"origin").clone())?;
     }
     item.as_object_mut().ok_or("상품 데이터 오류")?.remove("quantityApproval");
+    super::pricing::retain_manual_unit_price(&mut item,&previous)?;
     r["items"][idx]=item;
     model["assignments"].as_object_mut().ok_or("배정 정보 오류")?
         .retain(|_,v|str_field(v,"itemId")!=iid ||
