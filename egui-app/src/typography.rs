@@ -124,6 +124,23 @@ fn inline_role_values(role:Role,parts:&[(&str,Option<DataValueKind>)])->egui::te
     job
 }
 
+/// Reuse explicitly tagged inline values in the dropdown's existing
+/// trigger/option typography roles. Only color and role size change;
+/// the numeric and proportional font families remain semantic.
+pub fn dropdown_value_job(source:&egui::text::LayoutJob,option:bool,color:Color32)
+    ->egui::text::LayoutJob{
+    let mut job=source.clone();
+    job.wrap.max_width=f32::INFINITY;
+    for section in &mut job.sections{
+        section.format.color=color;
+        if option{
+            section.format.font_id.size=FONT_STANDARD_ACTION;
+            section.format.line_height=None;
+        }
+    }
+    job
+}
+
 pub fn inline_body_money(prefix:&str,amount:&str)->egui::text::LayoutJob {
     inline_body_values(&[
         (prefix,None),(amount,Some(DataValueKind::Money))
@@ -939,6 +956,21 @@ mod management_table_type_roles_tests {
         assert_eq!(job.sections[0].format.line_height,Some(22.0));
         assert_eq!(job.sections[1].format.line_height,Some(22.0));
         assert_eq!(job.text,"709 · 2,000원");
+        let mixed=inline_body_values(&[
+            ("709 / 배송 ",None),("2",Some(DataValueKind::Quantity)),
+            ("건 / ",None),("0",Some(DataValueKind::Money)),("원",None)
+        ]);
+        for option in [false,true]{
+            let rendered=dropdown_value_job(&mixed,option,egui::Color32::TRANSPARENT);
+            let size=if option{FONT_STANDARD_ACTION}else{FONT_BODY};
+            assert_eq!(rendered.text,"709 / 배송 2건 / 0원");
+            for (index,section) in rendered.sections.iter().enumerate(){
+                let expected=if index==1 || index==3{FontId::monospace(size)}
+                    else{FontId::proportional(size)};
+                assert_eq!(section.format.font_id,expected);
+                assert_eq!(section.format.color,egui::Color32::TRANSPARENT);
+            }
+        }
     }
 
     #[test]
