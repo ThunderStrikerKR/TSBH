@@ -238,20 +238,14 @@ fn patch_business(changes:Value,expected:Value)->Result<Value,String>{
     let committed=bando_data_access::patch_settings_v2(
         &mut conn,business_state::test_launch(),&changes,&expected
     )?;
-    let saved_revision=committed["revision"].as_u64()
-        .ok_or("운영 설정 저장 결과 revision 오류")?;
     drop(conn);
-    let fresh=load()?;
-    if fresh["revision"].as_u64()!=Some(saved_revision) {
-        return Err("설정은 저장됐지만 이후 다른 작업에서 변경됐습니다. 최신 상태를 다시 불러오세요.".into());
-    }
-    for (key,updated) in changes_obj {
-        let now=fresh["settings"].get(key).unwrap_or(&Value::Null);
-        if now!=updated{
-            return Err(format!("{key} 설정은 저장됐지만 재조회 결과가 일치하지 않습니다."));
-        }
-    }
-    Ok(fresh)
+    // The writer verifies the persisted snapshot before commit. Do not turn
+    // a later unrelated revision (or failed follow-up read) into a save error.
+    Ok(json!({
+        "revision":committed["revision"],"settings":committed["settings"],
+        "readOnly":!writable_business(),"mode":"business",
+        "dataAvailable":data_service_available(),"usedAccounts":used_accounts(&committed["clients"])
+    }))
 }
 pub fn patch(changes:Value,expected:Value)->Result<Value,String>{
     // Model groups belong to the operating catalog/settings, never to the
