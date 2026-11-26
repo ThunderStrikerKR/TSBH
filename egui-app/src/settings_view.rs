@@ -33,6 +33,7 @@ pub struct SettingsView{
     folder_picker:Option<(String,Receiver<Result<Option<String>,String>>)>,
     data_request:Option<(String,Pending)>,
     archive:Option<Vec<Value>>,
+    archive_cache:crate::screen_refresh::ViewProjectionCache<String,Vec<usize>>,
     archive_query:String,
     archive_open:bool,
     backups:Vec<String>,
@@ -207,7 +208,7 @@ impl SettingsView{
             tab:SettingsTab::Basic,tab_snapshots:crate::navigation::NavigationSnapshots::new(0),source:Value::Null,draft:Value::Null,
             loaded:false,loading,saving:None,
             folder_picker:None,data_request:None,
-            archive:None,archive_query:String::new(),archive_open:false,
+            archive:None,archive_cache:Default::default(),archive_query:String::new(),archive_open:false,
             backups:Vec::new(),backup_refresh_after_create:false,
             restore_target:None,restored:false,
             requested_tab:None,switch_after_save:false,
@@ -320,7 +321,7 @@ impl SettingsView{
                     self.data_request=None;
                     match kind.as_str(){
                         "archive"=>{
-                            self.archive=payload.as_array().cloned();
+                            self.archive=payload.as_array().cloned();self.archive_cache.invalidate();
                             self.archive_query.clear();
                             self.archive_open=true;
                         }
@@ -340,7 +341,7 @@ impl SettingsView{
                                 "백업을 복구했습니다. 주문 내역을 다시 확인하세요.".into()
                             );
                             self.restored=true;
-                            self.archive=None;self.backups.clear();
+                            self.archive=None;self.archive_cache.invalidate();self.backups.clear();
                             self.reload(Arc::clone(&gateway),ctx.clone());
                         }
                         _=>{}
@@ -980,6 +981,8 @@ impl SettingsView{
                     );
                 }
             });
+            let restore_allowed=!self.read_only()&&!reading;
+            let mut chosen_backup=None;
             for filename in &self.backups{
                 panel.add_space(theme::SPACE_8);
                 crate::ui_primitives::soft_divider(panel);
@@ -1004,11 +1007,12 @@ impl SettingsView{
                     });
                     if crate::button::action(row,"이 백업으로 복구",
                         ButtonRole::Standard,
-                        !self.read_only()&&!reading).clicked(){
-                        self.restore_target=Some(filename.clone());
+                        restore_allowed).clicked(){
+                        chosen_backup=Some(filename.clone());
                     }
                 });
             }
+            if let Some(filename)=chosen_backup{self.restore_target=Some(filename);}
         });
         ui.add_space(theme::SPACE_12);
         // React shows the heading and its on-demand help, not a filesystem
@@ -1061,9 +1065,12 @@ impl SettingsView{
                             "원문 / 담당자 / 주문 ID 검색"
                         );
                         let needle=self.archive_query.trim().to_lowercase();
-                        let matches=self.archive.as_ref().into_iter().flatten()
-                            .filter(|row|needle.is_empty() || row.to_string().to_lowercase().contains(&needle))
-                            .collect::<Vec<_>>();
+                        let indices=self.archive_cache.get(needle.clone(),||{
+                            self.archive.as_ref().into_iter().flatten().enumerate()
+                                .filter(|(_,row)|needle.is_empty()||row.to_string().to_lowercase().contains(&needle))
+                                .map(|(i,_)|i).collect()
+                        });
+                        let matches=indices.iter().filter_map(|&i|self.archive.as_ref().and_then(|rows|rows.get(i))).collect::<Vec<_>>();
                         ui.label(typography::caption(&format!("{}건 조회",matches.len())));
                         let results_height=crate::popup::modal_list_max_height(
                             ui,area.height(),area.height()*0.62,false

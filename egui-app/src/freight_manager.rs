@@ -462,6 +462,8 @@ pub struct FreightManager {
     saving_for_tab: bool,
     refresh_job: crate::screen_refresh::ReadRefresh<(Value,Value)>,
     state: Option<Value>,
+    display_cache:crate::screen_refresh::ViewProjectionCache<(),(Vec<Value>,Vec<usize>,ProductCategoryPaths,usize)>,
+    assignment_cache:crate::screen_refresh::ViewProjectionCache<(String,String,Option<FreightSort>),Vec<usize>>,
     projection: Option<Value>,
     error: Option<String>,
     search: String,
@@ -516,6 +518,7 @@ impl FreightManager {
             saving_for_tab: false,
             refresh_job,
             state: None,
+            display_cache:Default::default(),assignment_cache:Default::default(),
             projection: None,
             error: None,
             search: String::new(),
@@ -629,7 +632,7 @@ impl FreightManager {
     fn poll(&mut self,ctx:egui::Context) {
         match self.refresh_job.poll(){
             Some(Ok((state,projection)))=>{
-                self.state=Some(state);
+                self.state=Some(state);self.display_cache.invalidate();self.assignment_cache.invalidate();
                 self.projection=Some(projection);
                 self.refresh_job.verified();
             }
@@ -640,7 +643,7 @@ impl FreightManager {
             match receiver.try_recv(){
                 Ok(Ok(result))=>{
                     if result["state"].is_object() && result["projection"].is_object(){
-                        self.state=Some(result["state"].clone());
+                        self.state=Some(result["state"].clone());self.display_cache.invalidate();self.assignment_cache.invalidate();
                         self.projection=Some(result["projection"].clone());
                         self.error=None;
                         let action=self.write_action.take().unwrap_or_default();
@@ -824,17 +827,24 @@ impl FreightManager {
             crate::card::management_pending_primary_card(ui);
             return;
         };
-        let shipping = &state["shipping"];
-        let groups: Vec<Value> = rows(&shipping["groups"])
-            .iter().filter(|g| active(g)).cloned().collect();
-        let products: Vec<&Value> = rows(&state["products"])
-            .iter().filter(|p| registered(p)).collect();
-        let category_paths=ProductCategoryPaths::new(state,&products);
-        let group_ids:HashSet<&str>=groups.iter().map(|g|text(g,"id")).collect();
-        let assigned = products.iter().filter(|p| {
-            let id = text(p, "shippingGroupId");
-            !id.is_empty() && group_ids.contains(id)
-        }).count();
+        let display=self.display_cache.get((),||{
+            let groups:Vec<Value>=rows(&state["shipping"]["groups"]).iter().filter(|g|active(g)).cloned().collect();
+            let indices:Vec<usize>=rows(&state["products"]).iter().enumerate()
+                .filter(|(_,p)|registered(p)).map(|(i,_)|i).collect();
+            let products:Vec<&Value>=indices.iter().map(|&i|&rows(&state["products"])[i]).collect();
+            let category_paths=ProductCategoryPaths::new(state,&products);
+            let group_ids:HashSet<&str>=groups.iter().map(|g|text(g,"id")).collect();
+            let assigned=products.iter().filter(|p|{
+                let id=text(p,"shippingGroupId");
+                !id.is_empty()&&group_ids.contains(id)
+            }).count();
+            (groups,indices,category_paths,assigned)
+        });
+        let groups=&display.0;
+        let products:Vec<&Value>=display.1.iter().map(|&i|&rows(&state["products"])[i]).collect();
+        let category_paths=&display.2;
+        let assigned=display.3;
+        let shipping=&state["shipping"];
         // KPI cards follow the same 16pt content guide as the page heading
         // and sub-tabs. Their individual 228pt widths and 8pt gaps stay intact.
         // On narrow panes the four complete cards still wrap, never compress.
@@ -862,7 +872,7 @@ impl FreightManager {
         // pushed the column headings offscreen with the product list.
         if self.tab == FreightTab::Groups {
             Self::show_groups(
-                ui, &groups, &products, &category_paths,
+                ui, &groups, &products, &category_paths, &mut self.assignment_cache,
                 &mut self.search, &mut self.group_filter, &mut self.sort,
                 &mut self.pending, &mut self.selected,
                 &mut self.bulk_group, &mut self.bulk_feedback,
@@ -1238,6 +1248,7 @@ impl FreightManager {
     fn show_groups(
         ui: &mut Ui, groups: &[Value], products: &[&Value],
         category_paths:&ProductCategoryPaths,
+        assignment_cache:&mut crate::screen_refresh::ViewProjectionCache<(String,String,Option<FreightSort>),Vec<usize>>,
         search: &mut String, group_filter: &mut String,
         sort:&mut Option<FreightSort>,
         pending: &mut BTreeMap<String,String>, selected: &mut BTreeSet<String>,
@@ -1348,7 +1359,8 @@ impl FreightManager {
                 // This ensures "전체 선택" always targets the visible rows.
                 let needle=search.to_lowercase().split_whitespace().collect::<String>();
                 let group_ids:HashSet<&str>=groups.iter().map(|g|text(g,"id")).collect();
-                let mut filtered:Vec<&Value>=products.iter().copied().filter(|p|{
+                let filtered=assignment_cache.get((search.clone(),group_filter.clone(),*sort),||{
+                let mut filtered:Vec<usize>=products.iter().enumerate().filter(|(_,p)|{
                     let grouped=group_ids.contains(text(p,"shippingGroupId"));
                     (needle.is_empty()||[text(p,"code"),text(p,"name"),
                         text(p,"subtitle"),category_paths.for_product(p)]
@@ -1357,13 +1369,13 @@ impl FreightManager {
                     && (group_filter.is_empty()
                         || (group_filter.as_str()=="none" && !grouped)
                         || text(p,"shippingGroupId")==group_filter.as_str())
-                }).collect();
+                }).map(|(i,_)|i).collect();
                 // Apply the chosen column to the entire filtered set BEFORE
                 // virtualizing; every page of the scroll area has one order.
                 // Cached keys avoid repeated category traversal during sort.
                 if let Some(active)=*sort {
-                    filtered.sort_by_cached_key(|p|
-                        freight_sort_key(p,active.column,groups,category_paths)
+                    filtered.sort_by_cached_key(|&i|
+                        freight_sort_key(products[i],active.column,groups,category_paths)
                     );
                     if active.direction==FreightSortDirection::Descending {
                         filtered.reverse();
@@ -1371,8 +1383,10 @@ impl FreightManager {
                 } else if needle.is_empty() && group_filter.is_empty() {
                     // Original default: group-unassigned products first.
                     // Use committed membership to avoid shifting rows mid-edit.
-                    filtered.sort_by_key(|p|usize::from(group_ids.contains(text(p,"shippingGroupId"))));
+                    filtered.sort_by_key(|&i|usize::from(group_ids.contains(text(products[i],"shippingGroupId"))));
                 }
+                filtered
+                });
 
                 // None = no target chosen; Some("") = explicit removal.
                 if bulk_group.as_deref().is_some_and(|id|
@@ -1510,13 +1524,13 @@ impl FreightManager {
                     let first_visible_row=visible_rows.start;
                     let row_origin=table.max_rect().min;
                     for row_index in visible_rows{
-                        let product_id=text(filtered[row_index],"id");
+                        let product_id=text(products[filtered[row_index]],"id");
                         let row_rect=crate::table::fixed_row_rect(row_origin,row_index,first_visible_row,table_width,theme::FREIGHT_ASSIGNMENT_ROW_HEIGHT);
                         #[cfg(test)]
                         crate::ui_test_support::record("data row",row_rect);
                         first_row_left.get_or_insert(row_rect.left());
                         crate::table::fixed_row(table,("freight-fixed-row",product_id),row_rect,row_index,&widths,theme::FREIGHT_ASSIGNMENT_COL_GAP,crate::table::RowTone::SelectedIf(selected.contains(product_id)),|row,cells|{
-                        let product=filtered[row_index];
+                        let product=products[filtered[row_index]];
                         let id=text(product,"id");
                         let committed=text(product,"shippingGroupId");
                         let mut checked=selected.contains(id);
@@ -1781,7 +1795,7 @@ impl FreightManager {
             // filtered product list (not only the virtualized visible rows).
             // It replaces the redundant checkbox in the bulk-action toolbar.
             let mut all_filtered=!filtered.is_empty()
-                && filtered.iter().all(|p|selected.contains(text(p,"id")));
+                && filtered.iter().all(|&i|selected.contains(text(products[i],"id")));
             if crate::checkbox::management_table_checkbox(
                 section,header_cells[0],header_text_rect,
                 &mut all_filtered,enabled&&!filtered.is_empty(),
@@ -1790,7 +1804,7 @@ impl FreightManager {
                 .changed()
             {
                 let current_ids: BTreeSet<&str>=filtered.iter()
-                    .map(|p|text(p,"id")).collect();
+                    .map(|&i|text(products[i],"id")).collect();
                 // Keep selections outside the current filtered list.
                 selected.retain(|id|!current_ids.contains(id.as_str()));
                 if all_filtered{

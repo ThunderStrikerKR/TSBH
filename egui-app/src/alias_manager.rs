@@ -264,6 +264,8 @@ impl AliasManager {
         let mut save=false;
         let mut choose=None;
         self.poll_diagnostics();
+        let products:HashMap<&str,&Value>=rows(&catalog["products"]).iter().rev().map(|p|(field(p,"id"),p)).collect();
+        let clients:HashMap<&str,&Value>=rows(&catalog["clients"]).iter().rev().map(|c|(field(c,"id"),c)).collect();
         let warnings=Arc::clone(&self.warnings);
         let card_min_height=crate::card::management_master_table_card_min_inner_height(ui);
         crate::card::measured_management_master_card(ui,|card|{
@@ -290,9 +292,7 @@ impl AliasManager {
                     let scope_name=if self.form.scope=="common"{
                         "회사 공통 별칭"
                     }else{
-                        rows(&catalog["clients"]).iter()
-                            .find(|c|field(c,"id")==self.form.scope)
-                            .map(|c|field(c,"name"))
+                        clients.get(self.form.scope.as_str()).map(|c|field(c,"name"))
                             .unwrap_or("거래처 확인 필요")
                     };
                     v.add_enabled_ui(editable&&!busy,|input|{
@@ -313,7 +313,7 @@ impl AliasManager {
                 });
                 form.vertical(|v|{
                     v.label(typography::field_label("연결 상품"));
-                    let label=product(catalog,&self.form.target)
+                    let label=products.get(self.form.target.as_str())
                         .map(|p|display_model(field(p,"name")))
                         .unwrap_or_else(||"등록 상품 선택".into());
                     if crate::button::action(v,&label,theme::ButtonRole::Standard,
@@ -340,15 +340,13 @@ impl AliasManager {
             let output=crate::table::register_rows(card,scroll_height,header.table_width,"alias-registered-list",|list|{
                     for item in rows(&catalog["aliases"]){
                         let id=field(item,"id");
-                        let target=product(catalog,field(item,"productId"))
+                        let target=products.get(field(item,"productId"))
                             .map(|p|display_model(field(p,"name")))
                             .unwrap_or_else(||"과거 상품".into());
                         let scope=if field(item,"clientId").is_empty(){
                             "회사 공통"
                         }else{
-                            rows(&catalog["clients"]).iter()
-                                .find(|c|field(c,"id")==field(item,"clientId"))
-                                .map(|c|field(c,"name")).unwrap_or("")
+                            clients.get(field(item,"clientId")).map(|c|field(c,"name")).unwrap_or("")
                         };
                         let _row=list.horizontal(|row|{
                             row.vertical(|info|{

@@ -45,6 +45,7 @@ pub struct BoardUi {
     pub folded:Option<String>,
     // Canonical slot identity is unchanged when a draft becomes group:<id>.
     card_order:Vec<String>,
+    normal_order:Vec<String>,
     preview_pending:Option<(String,Instant)>,
     preview_active:Option<String>,
     preview_leave:Option<Instant>,
@@ -77,7 +78,7 @@ pub enum Event {
     DeletePending(String),
 }
 impl BoardUi{
-    pub fn clear_card_order(&mut self){self.card_order.clear();}
+    pub fn clear_card_order(&mut self){self.card_order.clear();self.normal_order.clear();}
     pub fn stop_preview(&mut self){
         self.preview_pending=None;
         self.preview_active=None;
@@ -1022,7 +1023,7 @@ fn reserve_compact_card(ui:&mut Ui){
 /// Keep the relative order of already-visible cards. Insert new keys at
 /// their ordinary neighbors without moving the slot of a confirmed draft.
 fn sync_card_order(order:&mut Vec<String>,normal:&[String]){
-    if order==normal{return;}
+    if order.as_slice()==normal{return;}
     let valid:HashSet<&str>=normal.iter().map(String::as_str).collect();
     order.retain(|id|valid.contains(id.as_str()));
     let mut known:HashSet<String>=order.iter().cloned().collect();
@@ -1073,7 +1074,10 @@ pub fn show(
         .map(|g|g.id.clone()).chain(drafts.iter().rev()
             .filter(|d|!confirmed.contains(d.id.as_str()))
             .map(|d|format!("group:{}",d.id))).collect();
-    sync_card_order(&mut state.card_order,&normal);
+    if state.normal_order!=normal{
+        sync_card_order(&mut state.card_order,&normal);
+        state.normal_order=normal;
+    }
     let card_order=state.card_order.clone();
     for slot in &card_order{
         if let Some(&group)=groups.get(slot.as_str()){

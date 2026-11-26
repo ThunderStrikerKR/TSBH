@@ -27,6 +27,7 @@ pub struct ModelGroupManager {
     initialized:bool,
     baseline:Value,
     draft:Value,
+    groups_cache:crate::screen_refresh::ViewProjectionCache<(),Vec<(String,Value)>>,
     selected:String,
     new_name:String,
     query:String,
@@ -44,7 +45,7 @@ pub struct ModelGroupManager {
 }
 impl Default for ModelGroupManager{
     fn default()->Self{
-        Self{initialized:false,baseline:Value::Null,draft:json!({}),
+        Self{initialized:false,baseline:Value::Null,draft:json!({}),groups_cache:Default::default(),
             selected:String::new(),new_name:String::new(),
             query:String::new(),search:String::new(),status:String::new(),
             write:None,confirm:None,after_save:None,confirm_delete:false,
@@ -65,18 +66,19 @@ impl ModelGroupManager {
         });
     }
     pub fn sync(&mut self,catalog:&Value){
-        let latest=original_groups(catalog);
+        let latest=catalog["settings"].get("colorGuidanceGroups").unwrap_or(&Value::Null);
         if !self.initialized || (!self.dirty()&&self.new_name.trim().is_empty()
-            &&self.write.is_none()&&self.baseline!=latest){
+            &&self.write.is_none()&& &self.baseline!=latest){
             self.initialized=true;
             self.baseline=latest.clone();
-            self.draft=if latest.is_object(){latest}else{json!({})};
+            self.draft=if latest.is_object(){latest.clone()}else{json!({})};
+            self.groups_cache.invalidate();
             if self.draft.get(&self.selected).is_none(){self.selected.clear();}
         }
     }
     pub fn dirty(&self)->bool{
-        let old=if self.baseline.is_object(){self.baseline.clone()}else{json!({})};
-        self.draft!=old
+        if self.baseline.is_object(){self.draft!=self.baseline}
+        else{self.draft.as_object().is_none_or(|groups|!groups.is_empty())}
     }
     fn unsaved(&self)->bool{self.dirty()||!self.new_name.trim().is_empty()}
     pub fn busy(&self)->bool{self.write.is_some()}
@@ -104,7 +106,7 @@ impl ModelGroupManager {
         self.confirm=None;self.after_save=None;self.confirm_delete=false;
     }
     fn discard(&mut self){
-        self.draft=if self.baseline.is_object(){self.baseline.clone()}else{json!({})};
+        self.draft=if self.baseline.is_object(){self.baseline.clone()}else{json!({})};self.groups_cache.invalidate();
         self.new_name.clear();self.status.clear();self.selected.clear();
         self.search.clear();
     }
@@ -130,7 +132,7 @@ impl ModelGroupManager {
         let id=format!("egui-model-{}-{}-{}",std::process::id(),
             chrono::Utc::now().timestamp_micros(),
             NEXT_ID.fetch_add(1,Ordering::Relaxed));
-        self.draft[&id]=json!({"name":name,"productIds":[],"representativeProductId":""});
+        self.draft[&id]=json!({"name":name,"productIds":[],"representativeProductId":""});self.groups_cache.invalidate();
         self.selected=id;self.new_name.clear();self.status.clear();
     }
     pub fn poll(&mut self,_ctx:&Context)->Option<Value>{
@@ -142,6 +144,7 @@ impl ModelGroupManager {
                 self.draft=if self.baseline.is_object(){
                     self.baseline.clone()
                 }else{json!({})};
+                self.groups_cache.invalidate();
                 self.new_name.clear();
                 self.status="모델군 설정을 저장했습니다. 기존 상품과 주문은 변경하지 않았습니다.".into();
                 if let Some(exit)=self.after_save.take(){self.finish_exit(exit);}
@@ -189,7 +192,7 @@ impl ModelGroupManager {
         }
         assigned
     }
-    fn row(&mut self,ui:&mut Ui,id:&str,g:&Value,catalog:&Value){
+    fn row(&mut self,ui:&mut Ui,id:&str,g:&Value,products:&HashMap<&str,&Value>){
         let (rect,response)=ui.allocate_exact_size(
             Vec2::new(ui.available_width(),theme::FAMILY_ROW_HEIGHT),Sense::click());
         #[cfg(test)]
@@ -209,7 +212,7 @@ impl ModelGroupManager {
                 line.vertical(|info|{
                     info.label(typography::body(text(g,"name")));
                     let rep=text(g,"representativeProductId");
-                    let subtitle=if let Some(p)=product(catalog,rep){
+                    let subtitle=if let Some(p)=products.get(rep){
                         format!("대표모델: {}",text(p,"name"))
                     }else if !text(g,"representativeColor").is_empty(){
                         format!("이전 대표색상 {} / 대표모델 재지정 필요",
@@ -240,9 +243,10 @@ impl ModelGroupManager {
         }
         let eligible=Arc::clone(&self.eligible);
         let eligibility_pending=self.eligibility.pending();
-        let groups=self.draft.as_object().map(|m|
+        let groups=self.groups_cache.get((),||self.draft.as_object().map(|m|
             m.iter().map(|(id,g)|(id.clone(),g.clone())).collect::<Vec<_>>())
-            .unwrap_or_default();
+            .unwrap_or_default());
+        let products:HashMap<&str,&Value>=items(&catalog["products"]).iter().rev().map(|p|(text(p,"id"),p)).collect();
         let card_min_height=crate::card::management_master_table_card_min_inner_height(ui);
         let mut save=false;
         crate::card::measured_management_master_card(ui,|outer|{
@@ -296,14 +300,16 @@ impl ModelGroupManager {
                         let list_height=left.available_height().max(1.0);
                         let mut has_visible=false;
                         let output=crate::table::register_rows(left,list_height,header.table_width,"family-list",|list|{
-                            for (id,g) in &groups{
-                                let names=items(&g["productIds"]).iter()
-                                    .filter_map(Value::as_str).filter_map(|pid|product(catalog,pid))
-                                    .map(|p|text(p,"name")).collect::<Vec<_>>().join(" ");
-                                if !format!("{} {names}",text(g,"name")).to_lowercase()
-                                    .contains(&self.query.trim().to_lowercase()){continue;}
+                            let query=self.query.trim().to_lowercase();
+                            for (id,g) in groups.iter(){
+                                if !query.is_empty(){
+                                    let names=items(&g["productIds"]).iter()
+                                        .filter_map(Value::as_str).filter_map(|pid|products.get(pid))
+                                        .map(|p|text(p,"name")).collect::<Vec<_>>().join(" ");
+                                    if !format!("{} {names}",text(g,"name")).to_lowercase().contains(&query){continue;}
+                                }
                                 has_visible=true;
-                                self.row(list,id,g,catalog);
+                                self.row(list,id,g,&products);
                             }
                         });
                         
@@ -349,7 +355,7 @@ impl ModelGroupManager {
                                             theme::MANAGEMENT_SEARCH_MIN_WIDTH,"그룹 이름");
                                     });
                                     if name!=text(&g,"name"){
-                                        self.draft[&self.selected]["name"]=json!(name);
+                                        self.draft[&self.selected]["name"]=json!(name);self.groups_cache.invalidate();
                                         self.status.clear();
                                     }
                                     crate::ui_primitives::section_divider(body);
@@ -398,7 +404,7 @@ impl ModelGroupManager {
                                                         ).clicked(){
                                                             if let Some(ids)=self.draft[&self.selected]
                                                                 ["productIds"].as_array_mut(){
-                                                                ids.push(json!(text(&p,"id")));
+                                                                ids.push(json!(text(&p,"id")));self.groups_cache.invalidate();
                                                                 self.status.clear();
                                                             }
                                                         }
@@ -440,7 +446,7 @@ impl ModelGroupManager {
                                     }
                                     for id in ids{
                                         registered.horizontal(|row|{
-                                            if let Some(p)=product(catalog,&id){
+                                            if let Some(p)=products.get(id.as_str()).copied(){
                                                 row.vertical(|info|{
                                                     info.label(typography::body(text(p,"name")));
                                                     info.label(typography::caption(text(p,"subtitle")));
@@ -455,7 +461,7 @@ impl ModelGroupManager {
                                                             ["productIds"]).iter()
                                                             .filter(|v|v.as_str()!=Some(&id))
                                                             .cloned().collect::<Vec<_>>();
-                                                        self.draft[&self.selected]["productIds"]=json!(values);
+                                                        self.draft[&self.selected]["productIds"]=json!(values);self.groups_cache.invalidate();
                                                         if text(&self.draft[&self.selected],
                                                             "representativeProductId")==id{
                                                             self.draft[&self.selected]
@@ -467,10 +473,10 @@ impl ModelGroupManager {
                                                     if crate::button::action_with_min_width(actions,
                                                         if representative{"대표모델"}else{"대표 지정"},
                                                         theme::ButtonRole::Standard,
-                                                        !representative&&writable&&!busy&&product(catalog,&id).is_some(),100.0
+                                                        !representative&&writable&&!busy&&products.get(id.as_str()).copied().is_some(),100.0
                                                     ).clicked(){
                                                         self.draft[&self.selected]
-                                                            ["representativeProductId"]=json!(id);
+                                                            ["representativeProductId"]=json!(id);self.groups_cache.invalidate();
                                                         if let Some(group)=self.draft.get_mut(&self.selected)
                                                             .and_then(Value::as_object_mut){
                                                             group.remove("representativeColor");
@@ -563,7 +569,7 @@ impl ModelGroupManager {
             if cancel{self.confirm_delete=false;}
             else if delete{
                 if let Some(groups)=self.draft.as_object_mut(){
-                    groups.remove(&self.selected);
+                    groups.remove(&self.selected);self.groups_cache.invalidate();
                 }
                 self.selected.clear();self.confirm_delete=false;self.status.clear();
             }

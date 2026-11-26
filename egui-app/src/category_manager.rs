@@ -44,6 +44,7 @@ pub struct CategoryManager {
     tree_motion:Option<TreeMotion>,
     nav_motion:Option<NavMotion>,
     map_cache:Option<(u64,String,std::sync::Arc<CategoryMapIndex>)>,
+    node_cache:crate::screen_refresh::ViewProjectionCache<Option<u64>,(Vec<Category>,Vec<category_dropdown::CategoryNode>)>,
     scroll_epoch:u64,
     scroll_to:Option<String>,
     name:String,
@@ -65,7 +66,7 @@ impl Default for CategoryManager {
             selected:ROOTS[0].0.into(),
             expanded:ROOTS.iter().map(|(id,_)|(*id).to_owned()).collect(),
             query:String::new(),focused:false,focus:Default::default(),crumbs:Default::default(),
-            tree_motion:None,nav_motion:None,map_cache:None,scroll_epoch:0,scroll_to:None,
+            tree_motion:None,nav_motion:None,map_cache:None,node_cache:Default::default(),scroll_epoch:0,scroll_to:None,
             name:String::new(),editor:false,
             operation:None,new_name:String::new(),target:String::new(),
             transfer:false,confirm:None,after_save:None,
@@ -132,8 +133,15 @@ impl ProductCategoryPaths {
                 .filter_map(Value::as_str).find(|id|by_id.contains_key(id));
             let display=if let Some(id)=leaf{
                 // Identical ancestor traversal to the Category Map.
-                path(&cats,id).iter().map(|node|node.name.as_str())
-                    .collect::<Vec<_>>().join(" > ")
+                let mut names=Vec::new();
+                let mut seen=HashSet::new();
+                let mut cursor=id;
+                while !cursor.is_empty()&&seen.insert(cursor){
+                    let Some(node)=by_id.get(cursor)else{break;};
+                    names.push(node.name.as_str());
+                    cursor=node.parent.as_str();
+                }
+                names.reverse();names.join(" > ")
             }else{
                 // Legacy records without a valid category ID are not silently
                 // assigned to a root: keep their stored display as fallback.
@@ -451,9 +459,9 @@ impl CategoryManager {
         self.expanded=ROOTS.iter().map(|(id,_)|(*id).to_owned()).collect();
         self.query.clear();self.focused=false;self.focus=Default::default();self.crumbs=Default::default();
         self.scroll_epoch=epoch;self.focus.scroll_epoch=epoch;self.tree_motion=None;self.nav_motion=None;self.scroll_to=None;
-        self.map_cache=None;
+        self.invalidate_map_cache();
     }
-    pub(crate) fn invalidate_map_cache(&mut self){self.map_cache=None;}
+    pub(crate) fn invalidate_map_cache(&mut self){self.map_cache=None;self.node_cache.invalidate();}
     fn map_index(&mut self,cats:&[Category],catalog:&Value)->std::sync::Arc<CategoryMapIndex>{
         let Some(revision)=catalog["revision"].as_u64()else{
             return std::sync::Arc::new(CategoryMapIndex::new(cats,catalog,&self.query));
@@ -576,7 +584,16 @@ impl CategoryManager {
         }
     }
     pub fn show_page(&mut self,ui:&mut Ui,catalog:&Value,editable:bool,busy:bool){
-        let cats=categories(catalog);
+        let revision=catalog["revision"].as_u64();
+        if revision.is_none(){self.node_cache.invalidate();}
+        let projection=self.node_cache.get(revision,||{
+            let cats=categories(catalog);
+            let nodes=cats.iter().map(|c|category_dropdown::CategoryNode{
+                id:c.id.clone(),name:c.name.clone(),parent:c.parent.clone()
+            }).collect::<Vec<_>>();
+            (cats,nodes)
+        });
+        let cats=&projection.0;
         if !self.selected.is_empty()&&!cats.iter().any(|c|c.id==self.selected){self.selected=ROOTS[0].0.to_owned();}
         if let Some(m)=&self.tree_motion{
             if ui.input(|i|i.time)>=m.started+m.duration{self.tree_motion=None;}
@@ -669,9 +686,7 @@ impl CategoryManager {
                 );
             }
             // The mode switch and path both use the existing shared controls.
-            let nodes=cats.iter().map(|c|category_dropdown::CategoryNode{
-                id:c.id.clone(),name:c.name.clone(),parent:c.parent.clone()
-            }).collect::<Vec<_>>();
+            let nodes=&projection.1;
             let node_index=category_dropdown::tree_index(&nodes);
             let mut focused=self.focused;
             panel.horizontal(|bar|{
