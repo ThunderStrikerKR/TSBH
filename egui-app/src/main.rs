@@ -9165,7 +9165,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                                     Some(typography::DataValueKind::Money),"원"),
                                                 None=>("—",None,""),
                                             };
-                                            list.label(typography::inline_body_values(&[
+                                            list.label(typography::inline_metadata_values(&[
                                                 (&prefix,None),(&count,Some(typography::DataValueKind::Quantity)),
                                                 ("종 / 입금 ",None),(paid_text,paid_kind),(unit,None)
                                             ]));
