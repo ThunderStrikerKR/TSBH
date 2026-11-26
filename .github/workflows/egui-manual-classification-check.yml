@@ -200,5 +200,9 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           cargo test --manifest-path crates/bando-data-access/Cargo.toml missing_prepaid_freight_is_a_structured_stage_two_issue -- --nocapture
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cargo test --manifest-path crates/bando-data-access/Cargo.toml shared_vat_rule_matches_reported_order_and_preserves_explicit_overrides -- --nocapture
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cargo test --manifest-path crates/bando-data-access/Cargo.toml dealer_vat_default_is_shared_by_cached_and_full_reception -- --nocapture
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           cargo test --manifest-path egui-app/Cargo.toml automatic_preview_cache_tests -- --nocapture
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
