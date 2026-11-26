@@ -9304,8 +9304,9 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                     .max_height((work_area.height()*0.45).max(1.0))
                                     .auto_shrink([false,true])
                                     .show(ui,|list|{
-                                        for (index,recipient) in rows.iter().enumerate(){
-                                            if index>0{components::soft_divider(list);}
+                                        // Pending recipients are single-line information, not
+                                        // shipment action records. The shared body spacing is enough.
+                                        for recipient in rows{
                                             let name=recipient.get("name")
                                                 .and_then(serde_json::Value::as_str)
                                                 .filter(|s|!s.is_empty())
