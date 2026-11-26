@@ -44,7 +44,7 @@ mod shared_review_card_contract_tests {
         assert_eq!(source.matches("crate::card::review_issue_card(").count(),2);
         assert!(source.contains("crate::status_notice::body_error_overlay("));
         assert!(!source.contains("egui::Frame::new()"));
-        let fallback=include_str!("../status_notice/mod.rs").split("pub fn reception_review_status(")
+        let fallback=include_str!("../status_notice/mod.rs").split("fn reception_review_status(")
             .nth(1).unwrap().split("\n///").next().unwrap();
         assert!(fallback.contains("crate::card::review_issue_card("));
     }

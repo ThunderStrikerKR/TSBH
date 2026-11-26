@@ -4,7 +4,7 @@ use crate::{theme,typography};
 use crate::theme::*;
 use crate::ui_primitives::{truncated_label,section_divider,form_field_label_sized};
 use crate::scrollbar::{scroll_area,ScrollAxes};
-pub fn modal_frame() -> Frame {
+pub(crate) fn modal_frame() -> Frame {
     bordered_surface(PANEL,BORDER,PANEL_RADIUS)
         .inner_margin(egui::Margin {
             left: MODAL_PANEL_PADDING_X as i8,
@@ -17,13 +17,13 @@ pub fn modal_frame() -> Frame {
 /// Nested surface variants describe a content role, not a screen-specific
 /// style override. All variants inherit identical fill, border and rounding.
 #[derive(Clone,Copy,Debug,Eq,PartialEq)]
-pub enum ModalNestedRole {
+pub(crate) enum ModalNestedRole {
     Standard,
     RecipientChecklist,
     CompactTag,
 }
 
-pub fn modal_nested_role_frame(role:ModalNestedRole)->Frame{
+pub(crate) fn modal_nested_role_frame(role:ModalNestedRole)->Frame{
     let margin=match role{
         ModalNestedRole::Standard=>egui::Margin::same(SPACE_8 as i8),
         ModalNestedRole::RecipientChecklist=>egui::Margin::symmetric(SPACE_12 as i8,SPACE_8 as i8),
@@ -56,7 +56,7 @@ mod modal_nested_role_tests{
 /// OCR review uses the same KakaoTalk-excluded coordinate space as every
 /// other modal. Its outer frame is sized and centered entirely inside the
 /// approved work area, never the full viewport hidden behind the Kakao dock.
-pub fn modal_ocr_review_rect(work_area:Rect)->Rect{
+pub(crate) fn modal_ocr_review_rect(work_area:Rect)->Rect{
     let width=(work_area.width()*0.94).clamp(560.0,1480.0)
         .min(work_area.width().max(1.0));
     let height=(work_area.height()*0.88).clamp(450.0,960.0)
@@ -71,7 +71,7 @@ pub fn modal_ocr_review_rect(work_area:Rect)->Rect{
 /// outer space. Using the outer height for content caused the window to grow
 /// past its fixed bounds and clip the rounded bottom edge. Avoid the paint
 /// clip for sizing: it may be empty during the first egui layout pass.
-pub fn modal_master_content_from_ui(available:Rect,outer:Vec2)->Vec2{
+pub(crate) fn modal_master_content_from_ui(available:Rect,outer:Vec2)->Vec2{
     let frame_x=theme::MODAL_PANEL_PADDING_X
         +theme::FRAME_STROKE_WIDTH;
     let frame_y=theme::MODAL_PANEL_PADDING_Y
@@ -91,7 +91,7 @@ pub fn modal_master_content_from_ui(available:Rect,outer:Vec2)->Vec2{
 /// image, editor and footer must NOT expand the enclosing Window's min_rect.
 /// Using scope_builder directly on that parent caused the window to outgrow
 /// fixed_size and lose its lower rounded frame to viewport clipping.
-pub fn modal_master_overlay_ui(parent:&mut Ui,bounds:Rect,id:&'static str)->Ui{
+pub(crate) fn modal_master_overlay_ui(parent:&mut Ui,bounds:Rect,id:&'static str)->Ui{
     let inherited_clip=parent.clip_rect();
     let mut overlay=parent.new_child(
         egui::UiBuilder::new()
@@ -106,7 +106,7 @@ pub fn modal_master_overlay_ui(parent:&mut Ui,bounds:Rect,id:&'static str)->Ui{
 /// A split OCR review needs room for fixed header, footer, toolbar, inset
 /// and real image/text viewports. If the window is only in a sizing pass,
 /// skip child construction instead of passing a negative size into egui.
-pub fn modal_master_ocr_body_is_usable(body:Vec2)->bool{
+pub(crate) fn modal_master_ocr_body_is_usable(body:Vec2)->bool{
     const EXTRA_PANE_HEIGHT:f32=2.0*theme::SPACE_12+4.0;
     let required_height=
         theme::MODAL_MASTER_DESCRIPTIVE_HEADER_HEIGHT
@@ -118,7 +118,7 @@ pub fn modal_master_ocr_body_is_usable(body:Vec2)->bool{
 }
 /// Native modal geometry belongs here, not to individual screens.
 /// `work_area` excludes the externally foregrounded KakaoTalk dock.
-pub fn modal_window(
+pub(crate) fn modal_window(
     ctx:&egui::Context,title:&str,id:&'static str,work_area:egui::Rect
 ) -> egui::Window<'static> {
     crate::overlay::window(ctx,typography::modal_title(title),egui::Id::new(id))
@@ -143,26 +143,26 @@ pub fn modal_window(
 /// Runtime-measured rects for the common editable modal stack.
 /// These are actual egui allocation results, not inferred pixel offsets.
 #[derive(Clone,Debug,Default)]
-pub struct ModalEditorBodyGeometry {
-    pub cards:Vec<Rect>,
-    pub divider:Option<Rect>,
-    pub advanced_header:Option<Rect>,
+pub(crate) struct ModalEditorBodyGeometry {
+    pub(crate) cards:Vec<Rect>,
+    pub(crate) divider:Option<Rect>,
+    pub(crate) advanced_header:Option<Rect>,
 }
 
 #[derive(Clone,Debug,Default)]
-pub struct ModalEditorGeometry {
-    pub header:Option<Rect>,
-    pub header_toolbar:Option<Rect>,
-    pub body:Option<Rect>,
-    pub viewport:Option<Rect>,
-    pub scroll_offset_y:f32,
-    pub footer:Option<Rect>,
-    pub content:ModalEditorBodyGeometry,
+pub(crate) struct ModalEditorGeometry {
+    pub(crate) header:Option<Rect>,
+    pub(crate) header_toolbar:Option<Rect>,
+    pub(crate) body:Option<Rect>,
+    pub(crate) viewport:Option<Rect>,
+    pub(crate) scroll_offset_y:f32,
+    pub(crate) footer:Option<Rect>,
+    pub(crate) content:ModalEditorBodyGeometry,
 }
 impl ModalEditorGeometry {
     /// Actual boundary distances measured from allocated screen rects.
     /// The advanced divider contains the intentional 12pt on both sides.
-    pub fn gaps(&self)->Vec<(&'static str,f32)>{
+    pub(crate) fn gaps(&self)->Vec<(&'static str,f32)>{
         let mut out=Vec::new();
         if let (Some(header),Some(card))=(self.header,self.content.cards.first()){
             out.push(("header_to_card",card.top()-header.bottom()));
@@ -195,7 +195,7 @@ impl ModalEditorGeometry {
         }
         out
     }
-    pub fn invalid_gaps(&self,one_pixel_tolerance:f32)->Vec<(&'static str,f32)>{
+    pub(crate) fn invalid_gaps(&self,one_pixel_tolerance:f32)->Vec<(&'static str,f32)>{
         self.gaps().into_iter()
             .filter(|(_,actual)|{
                 (*actual-theme::MODAL_MASTER_WORKSPACE_GAP).abs()
@@ -207,12 +207,12 @@ impl ModalEditorGeometry {
 /// One owner for the popup's title, bounded scrolling workspace, and
 /// fixed action footer. Individual editors supply only their contents.
 /// All structural gaps are allocated ONCE at the owning level.
-pub struct ModalEditorWorkspace<'a> {
+pub(crate) struct ModalEditorWorkspace<'a> {
     ui:&'a mut Ui,
     geometry:ModalEditorGeometry,
 }
 impl ModalEditorWorkspace<'_> {
-    pub fn header(&mut self,title:&str,close_label:&str,enabled:bool)->bool{
+    pub(crate) fn header(&mut self,title:&str,close_label:&str,enabled:bool)->bool{
         let (header,_)=self.ui.allocate_exact_size(
             Vec2::new(self.ui.available_width(),theme::MODAL_HEADER_HEIGHT),
             Sense::hover()
@@ -224,7 +224,7 @@ impl ModalEditorWorkspace<'_> {
     /// Header variant for workspaces with a persistent status/action toolbar.
     /// The toolbar sits below the title divider; the body starts one
     /// master gap below the toolbar.
-    pub fn header_with_toolbar<R>(
+    pub(crate) fn header_with_toolbar<R>(
         &mut self,title:&str,close_label:&str,enabled:bool,
         toolbar:impl FnOnce(&mut Ui)->R,
     )->(bool,R){
@@ -243,7 +243,7 @@ impl ModalEditorWorkspace<'_> {
         )
     }
 
-    pub fn disable(&mut self){self.ui.disable();}
+    pub(crate) fn disable(&mut self){self.ui.disable();}
 
     fn before_body(&mut self){
         let top=self.ui.cursor().top();
@@ -254,7 +254,7 @@ impl ModalEditorWorkspace<'_> {
 
     /// Fixed dashboards and search/list workspaces keep their own inner scroll
     /// regions. Only the master owns the outer inset and structural gaps.
-    pub fn body_region<R>(&mut self,contents:impl FnOnce(&mut Ui)->R)->R{
+    pub(crate) fn body_region<R>(&mut self,contents:impl FnOnce(&mut Ui)->R)->R{
         self.before_body();
         let body=modal_plain_body_region(self.ui,contents);
         self.geometry.body=Some(body.response.rect);
@@ -263,7 +263,7 @@ impl ModalEditorWorkspace<'_> {
 
     /// A viewer that already has the master framed body uses its own
     /// 12pt inset exactly once. Do not wrap it in a second body_region.
-    pub fn framed_region<R>(&mut self,contents:impl FnOnce(&mut Ui)->R)->R{
+    pub(crate) fn framed_region<R>(&mut self,contents:impl FnOnce(&mut Ui)->R)->R{
         self.before_body();
         let region=self.ui.scope(|host|modal_master_body(host,contents));
         self.geometry.body=Some(region.response.rect);
@@ -271,7 +271,7 @@ impl ModalEditorWorkspace<'_> {
     }
 
     /// Ordinary single-pane forms use one bounded body scrollbar.
-    pub fn scroll_region<R>(&mut self,id:&str,max_height:f32,contents:impl FnOnce(&mut Ui)->R)->R{
+    pub(crate) fn scroll_region<R>(&mut self,id:&str,max_height:f32,contents:impl FnOnce(&mut Ui)->R)->R{
         self.body_region(|host|{
             scroll_area(ScrollAxes::Vertical).id_salt(id)
                 .max_height(max_height.max(1.0))
@@ -287,14 +287,14 @@ impl ModalEditorWorkspace<'_> {
         self.ui.add_space((target-top).max(0.0));
     }
 
-    pub fn footer_single<R>(&mut self,actions:impl FnOnce(&mut Ui)->R)->egui::InnerResponse<R>{
+    pub(crate) fn footer_single<R>(&mut self,actions:impl FnOnce(&mut Ui)->R)->egui::InnerResponse<R>{
         self.before_footer();
         let (response,rect)=modal_action_row_measured(self.ui,actions);
         self.geometry.footer=Some(rect);
         response
     }
 
-    pub fn body<R>(
+    pub(crate) fn body<R>(
         &mut self,max_height:f32,
         contents:impl FnOnce(&mut Ui)->(R,ModalEditorBodyGeometry),
     )->R{
@@ -330,7 +330,7 @@ impl ModalEditorWorkspace<'_> {
         value
     }
 
-    pub fn footer(
+    pub(crate) fn footer(
         &mut self,
         leading:impl FnOnce(&mut Ui),
         trailing:impl FnOnce(&mut Ui),
@@ -342,7 +342,7 @@ impl ModalEditorWorkspace<'_> {
 
 /// Same master owner for sequential forms, viewers and existing dashboard
 /// bodies. No additional scrollbar is imposed on a split/list workspace.
-pub fn modal_flow_workspace<R>(ui:&mut Ui,contents:impl FnOnce(&mut ModalEditorWorkspace<'_>)->R)->R{
+pub(crate) fn modal_flow_workspace<R>(ui:&mut Ui,contents:impl FnOnce(&mut ModalEditorWorkspace<'_>)->R)->R{
     modal_flow_workspace_measured(ui,contents).0
 }
 
@@ -357,11 +357,11 @@ pub(crate) fn modal_flow_workspace_measured<R>(
     }).inner
 }
 
-pub fn modal_workspace_footer_reserve()->f32{
+pub(crate) fn modal_workspace_footer_reserve()->f32{
     theme::MODAL_FOOTER_HEIGHT+theme::MODAL_MASTER_WORKSPACE_GAP
 }
 
-pub fn modal_editor_workspace<R>(
+pub(crate) fn modal_editor_workspace<R>(
     ui:&mut Ui,title:&str,close_label:&str,enabled:bool,
     contents:impl FnOnce(&mut ModalEditorWorkspace<'_>)->R,
 )->(bool,R,ModalEditorGeometry){
@@ -386,13 +386,13 @@ pub fn modal_editor_workspace<R>(
 /// future egui dialogs. Text length and local scrollbars never move these
 /// three regions. Callers choose the appropriate popup size.
 #[derive(Clone,Copy,Debug)]
-pub struct ModalMasterLayout {
-    pub header:Rect,
-    pub workspace:Rect,
-    pub footer:Rect,
+pub(crate) struct ModalMasterLayout {
+    pub(crate) header:Rect,
+    pub(crate) workspace:Rect,
+    pub(crate) footer:Rect,
 }
 
-pub fn modal_master_layout(
+pub(crate) fn modal_master_layout(
     bounds:Rect,header_height:f32,footer_height:f32,gap:f32
 )->ModalMasterLayout {
     let h=bounds.height().max(0.0);
@@ -417,16 +417,16 @@ pub fn modal_master_layout(
 /// Returned lines are authoritative layout anchors for clipped contents.
 /// NO nested cards, doubled strokes, or independent popup color palette.
 #[derive(Clone,Copy,Debug)]
-pub struct ModalMasterWorkspace {
-    pub toolbar_bottom:f32,
-    pub divider_x:Option<f32>,
+pub(crate) struct ModalMasterWorkspace {
+    pub(crate) toolbar_bottom:f32,
+    pub(crate) divider_x:Option<f32>,
 }
 
 /// Align the master edges to physical pixels before painting the header,
 /// rounded workspace, or footer. Layout still owns the original dimensions;
 /// every edge moves by at most half a device pixel. All strokes and pane fills
 /// must use the SAME aligned rect so anti-aliasing cannot expose a seam.
-pub fn modal_master_pixel_aligned_rect(rect:Rect,pixels_per_point:f32)->Rect {
+pub(crate) fn modal_master_pixel_aligned_rect(rect:Rect,pixels_per_point:f32)->Rect {
     let scale=pixels_per_point.max(1.0);
     let snap=|v:f32|(v*scale).round()/scale;
     Rect::from_min_max(
@@ -438,7 +438,7 @@ pub fn modal_master_pixel_aligned_rect(rect:Rect,pixels_per_point:f32)->Rect {
 /// One horizontal content grid for the modal title, toolbar, body, rules and footer.
 /// The outer frame owns its own 12pt inset; this second inset is shared by every
 /// visible child so the popup never has competing left/right alignment columns.
-pub(crate) fn modal_master_content_rect(rect:Rect)->Rect {
+fn modal_master_content_rect(rect:Rect)->Rect {
     let inset=theme::MODAL_MASTER_CONTENT_INSET.min(rect.width().max(0.0)*0.5);
     Rect::from_min_max(
         egui::pos2(rect.left()+inset,rect.top()),
@@ -447,7 +447,7 @@ pub(crate) fn modal_master_content_rect(rect:Rect)->Rect {
 }
 
 /// Pixel-aligned rule using the same left/right edges as modal content.
-pub(crate) fn modal_master_rule_rect(rect:Rect,ppp:f32,at_bottom:bool)->Rect {
+fn modal_master_rule_rect(rect:Rect,ppp:f32,at_bottom:bool)->Rect {
     let scale=ppp.max(1.0);
     let height=(theme::SOFT_DIVIDER_WIDTH*scale).round().max(1.0)/scale;
     let content=modal_master_content_rect(rect);
@@ -460,7 +460,7 @@ pub(crate) fn modal_master_rule_rect(rect:Rect,ppp:f32,at_bottom:bool)->Rect {
 
 /// Balance footer actions against the outer frame padding and top rule
 /// while keeping the same horizontal content edges.
-pub(crate) fn modal_master_action_area(rect:Rect,action_height:f32)->Rect {
+fn modal_master_action_area(rect:Rect,action_height:f32)->Rect {
     let content=modal_master_content_rect(rect);
     let height=action_height.max(0.0).min(rect.height().max(0.0));
     let free=(rect.height()-height).max(0.0);
@@ -475,7 +475,7 @@ pub(crate) fn modal_master_action_area(rect:Rect,action_height:f32)->Rect {
 /// Paint only the single shared work-surface background. OCR paints its
 /// two content panes after this step, then uses `finish` for crisp borders.
 /// This order prevents rectangular pane fills from erasing rounded corners.
-pub fn modal_master_workspace_background(
+pub(crate) fn modal_master_workspace_background(
     ui:&Ui,rect:Rect,toolbar_height:f32,split_ratio:Option<f32>
 )->ModalMasterWorkspace {
     let ppp=ui.ctx().pixels_per_point().max(1.0);
@@ -493,7 +493,7 @@ pub fn modal_master_workspace_background(
 /// one outer outline as the final layer. Pixel-aligned rectangular hairlines
 /// have flat endpoints; intersecting dividers therefore do not protrude into
 /// the outer frame or leave doubled anti-aliased corner pixels.
-pub fn modal_master_workspace_finish(
+pub(crate) fn modal_master_workspace_finish(
     ui:&Ui,rect:Rect,geometry:ModalMasterWorkspace
 ) {
     let painter=ui.painter();
@@ -600,7 +600,7 @@ fn modal_master_header_content_in_rect(
 /// title and top-right Cancel/Close in the first row, optional explanation
 /// in the second, ONE bottom divider. Height belongs to modal_master_layout.
 /// Use an empty description for dialogs with no explanatory subtitle.
-pub fn modal_master_header_in_rect(
+pub(crate) fn modal_master_header_in_rect(
     ui:&mut Ui,rect:Rect,title:&str,description:&str,
     close_label:&str,enabled:bool
 )->bool {
@@ -618,7 +618,7 @@ pub fn modal_master_header_in_rect(
 }
 
 /// Shared height budget for the title, divider and below-rule toolbar.
-pub fn modal_master_header_with_toolbar_height()->f32{
+pub(crate) fn modal_master_header_with_toolbar_height()->f32{
     theme::MODAL_HEADER_HEIGHT
         +theme::SOFT_DIVIDER_WIDTH
         +theme::MODAL_MASTER_TOOLBAR_RULE_GAP
@@ -626,7 +626,7 @@ pub fn modal_master_header_with_toolbar_height()->f32{
 }
 
 /// The single divider occupies the slot directly after the title row.
-pub(crate) fn modal_master_toolbar_rule_rect(rect:Rect,ppp:f32)->Rect{
+fn modal_master_toolbar_rule_rect(rect:Rect,ppp:f32)->Rect{
     let rect=modal_master_pixel_aligned_rect(rect,ppp);
     let top=(rect.top()+theme::MODAL_HEADER_HEIGHT).min(rect.bottom());
     let slot=Rect::from_min_max(
@@ -637,7 +637,7 @@ pub(crate) fn modal_master_toolbar_rule_rect(rect:Rect,ppp:f32)->Rect{
 }
 
 /// Toolbar uses the same horizontal inset as the body, below the rule.
-pub(crate) fn modal_master_header_toolbar_rect(rect:Rect,ppp:f32)->Rect{
+fn modal_master_header_toolbar_rect(rect:Rect,ppp:f32)->Rect{
     let rect=modal_master_pixel_aligned_rect(rect,ppp);
     let content=modal_master_content_rect(rect);
     let top=(rect.top()+theme::MODAL_HEADER_HEIGHT
@@ -650,7 +650,7 @@ pub(crate) fn modal_master_header_toolbar_rect(rect:Rect,ppp:f32)->Rect{
 }
 
 /// Common header: title/close, single divider, then the status/action row.
-pub fn modal_master_header_with_toolbar_in_rect<R>(
+pub(crate) fn modal_master_header_with_toolbar_in_rect<R>(
     ui:&mut Ui,rect:Rect,title:&str,close_label:&str,enabled:bool,
     toolbar:impl FnOnce(&mut Ui)->R,
 )->(bool,R){
@@ -692,7 +692,7 @@ fn paint_modal_master_footer_surface(ui:&Ui,rect:Rect) {
 
 /// Canonical quiet modal footer: one upper divider and the final action
 /// anchored at the right, never an additional bottom Cancel button.
-pub fn modal_master_footer_in_rect(
+pub(crate) fn modal_master_footer_in_rect(
     ui:&mut Ui,rect:Rect,actions:impl FnOnce(&mut Ui)
 ) {
     paint_modal_master_footer_surface(ui,rect);
@@ -720,7 +720,7 @@ pub fn modal_master_footer_in_rect(
 /// confirmations. Shares the OCR master footer appearance and 36pt hitbox
 /// while retaining egui's InnerResponse<R>, so existing confirmation state
 /// machines (including .inner results) remain unchanged.
-pub fn modal_action_row<R>(
+pub(crate) fn modal_action_row<R>(
     ui:&mut Ui,actions:impl FnOnce(&mut Ui)->R
 )->egui::InnerResponse<R> {
     modal_action_row_measured(ui,actions).0
@@ -755,13 +755,13 @@ fn modal_action_row_measured<R>(
 /// header/footer and the native modal's fixed outer margins. Screen modules
 /// must not independently subtract arbitrary offsets from the full work area:
 /// doing so can push the final 58pt action row outside a short window.
-pub fn modal_editor_body_max_height(work_area_height:f32)->f32 {
+pub(crate) fn modal_editor_body_max_height(work_area_height:f32)->f32 {
     modal_body_height_budget(work_area_height,true)
 }
 
 /// The same structural budget for every flowing modal. Viewers without
 /// a footer do not reserve a phantom action row.
-pub fn modal_body_height_budget(work_area_height:f32,has_footer:bool)->f32 {
+pub(crate) fn modal_body_height_budget(work_area_height:f32,has_footer:bool)->f32 {
     let fixed=2.0*theme::MODAL_PANEL_PADDING_Y
         +2.0*theme::FRAME_STROKE_WIDTH
         +theme::MODAL_HEADER_HEIGHT
@@ -774,7 +774,7 @@ pub fn modal_body_height_budget(work_area_height:f32,has_footer:bool)->f32 {
 /// Bound a list after its search toolbar and filters have actually been
 /// laid out. The parent owns the outer header and optional footer budget;
 /// the caller can choose a preferred list height, never exceed the budget.
-pub fn modal_list_max_height(
+pub(crate) fn modal_list_max_height(
     body:&Ui,work_area_height:f32,preferred:f32,has_footer:bool
 )->f32{
     let consumed=(body.cursor().top()-body.min_rect().top()).max(0.0);
@@ -801,7 +801,7 @@ fn modal_action_row_split_measured(
 
 /// Single plain-body inset for both decision and editor workspaces.
 /// Keep the actual content edges equal to the title/footer content grid.
-pub(crate) fn modal_plain_body_region<R>(
+fn modal_plain_body_region<R>(
     ui:&mut Ui,contents:impl FnOnce(&mut Ui)->R
 )->egui::InnerResponse<R>{
     let inset=theme::MODAL_MASTER_CONTENT_INSET;
@@ -816,7 +816,7 @@ pub(crate) fn modal_plain_body_region<R>(
 
 /// One framed content work surface for flow-based popup bodies. Use one
 /// per dialog rather than wrapping every subsection in another card.
-pub fn modal_master_body<R>(
+pub(crate) fn modal_master_body<R>(
     ui:&mut Ui,contents:impl FnOnce(&mut Ui)->R
 )->R {
     let inset=theme::MODAL_SECTION_PADDING;
@@ -833,7 +833,7 @@ pub fn modal_master_body<R>(
 /// Shared modal-section heading geometry. Both margins around its
 /// 1pt rule are explicit 16pt, independent of egui's default item spacing.
 /// Its content gets a separate scope to prevent an implicit extra 8pt gap.
-pub(crate) fn modal_section_heading_with_rule(ui:&mut Ui,title:&str){
+fn modal_section_heading_with_rule(ui:&mut Ui,title:&str){
     ui.spacing_mut().item_spacing.y=0.0;
     ui.label(typography::section_heading(title));
     section_divider(ui);
@@ -841,7 +841,7 @@ pub(crate) fn modal_section_heading_with_rule(ui:&mut Ui,title:&str){
 
 /// A heading and one divider within the modal master work surface.
 /// Uses the same heading-rule-content geometry as the boxed modal section.
-pub fn modal_master_body_section<R>(
+pub(crate) fn modal_master_body_section<R>(
     ui:&mut Ui,title:&str,contents:impl FnOnce(&mut Ui)->R
 )->R {
     ui.scope(|section|{
@@ -855,7 +855,7 @@ pub fn modal_master_body_section<R>(
 
 /// Exact outer card rectangle from the same canonical section renderer.
 /// Do not estimate it from the inner body or content text size.
-pub fn modal_section_measured<R>(
+pub(crate) fn modal_section_measured<R>(
     ui:&mut Ui,title:&str,contents:impl FnOnce(&mut Ui)->R
 )->egui::InnerResponse<R>{
     let inner_width=(ui.available_width()-2.0*theme::MODAL_SECTION_PADDING
@@ -878,14 +878,14 @@ pub fn modal_section_measured<R>(
 /// A controlled modal sets vertical spacing to zero, and structural gaps
 /// are then allocated exactly once by the master components below.
 /// Keep normal 8pt spacing inside the shared section field content.
-pub fn modal_master_controlled_spacing(ui:&mut Ui){
+pub(crate) fn modal_master_controlled_spacing(ui:&mut Ui){
     ui.spacing_mut().item_spacing.y=0.0;
 }
 
 /// A nested decision remains an interactive Foreground window.
 /// Tooltip order is reserved for transient overlays and is not a reliable
 /// interaction surface for modal actions in egui 0.33.
-pub fn nested_modal_window(
+pub(crate) fn nested_modal_window(
     ctx:&egui::Context,title:&str,id:&'static str,work_area:egui::Rect
 )->egui::Window<'static>{
     modal_window(ctx,title,id,work_area)
@@ -894,14 +894,14 @@ pub fn nested_modal_window(
 /// Shared decision layout. The owner allocates header, body and action
 /// regions in sequence, so form edits are available to the footer immediately.
 /// The caller supplies contents and actions, not outer padding or separators.
-pub struct DecisionWorkspace<'a>{
+pub(crate) struct DecisionWorkspace<'a>{
     ui:&'a mut Ui,
     header_bottom:Option<f32>,
     body_bottom:Option<f32>,
 }
 
 impl DecisionWorkspace<'_>{
-    pub fn header(&mut self,title:&str,cancel_label:&str,enabled:bool)->bool{
+    pub(crate) fn header(&mut self,title:&str,cancel_label:&str,enabled:bool)->bool{
         let (rect,_)=self.ui.allocate_exact_size(
             Vec2::new(self.ui.available_width(),theme::MODAL_HEADER_HEIGHT),
             Sense::hover()
@@ -910,7 +910,7 @@ impl DecisionWorkspace<'_>{
         modal_master_header_in_rect(self.ui,rect,title,"",cancel_label,enabled)
     }
 
-    pub fn body<R>(&mut self,contents:impl FnOnce(&mut Ui)->R)->R{
+    pub(crate) fn body<R>(&mut self,contents:impl FnOnce(&mut Ui)->R)->R{
         let top=self.ui.cursor().top();
         let target=self.header_bottom.unwrap_or(top)+theme::MODAL_MASTER_WORKSPACE_GAP;
         self.ui.add_space((target-top).max(0.0));
@@ -921,7 +921,7 @@ impl DecisionWorkspace<'_>{
 
     /// A framed decision owns one surface, instead of adding a framed
     /// master inside the already inset plain decision body.
-    pub fn framed_body<R>(&mut self,contents:impl FnOnce(&mut Ui)->R)->R{
+    pub(crate) fn framed_body<R>(&mut self,contents:impl FnOnce(&mut Ui)->R)->R{
         let top=self.ui.cursor().top();
         let target=self.header_bottom.unwrap_or(top)+theme::MODAL_MASTER_WORKSPACE_GAP;
         self.ui.add_space((target-top).max(0.0));
@@ -936,13 +936,13 @@ impl DecisionWorkspace<'_>{
         self.ui.add_space((target-top).max(0.0));
     }
 
-    pub fn actions<R>(&mut self,contents:impl FnOnce(&mut Ui)->R)->egui::InnerResponse<R>{
+    pub(crate) fn actions<R>(&mut self,contents:impl FnOnce(&mut Ui)->R)->egui::InnerResponse<R>{
         self.before_actions();
         modal_action_row(self.ui,contents)
     }
 }
 
-pub fn decision_workspace<R>(
+pub(crate) fn decision_workspace<R>(
     ui:&mut Ui,contents:impl FnOnce(&mut DecisionWorkspace<'_>)->R
 )->R{
     ui.scope(|layout|{
@@ -955,7 +955,7 @@ pub fn decision_workspace<R>(
 
 /// Convenience entry point for simple decisions. Uses the same workspace
 /// as interactive decision forms; never assembles a second layout.
-pub fn decision_content<R>(
+pub(crate) fn decision_content<R>(
     ui:&mut Ui,title:&str,cancel_label:&str,enabled:bool,
     body:impl FnOnce(&mut Ui),actions:impl FnOnce(&mut Ui)->R
 )->(bool,R){
@@ -966,7 +966,7 @@ pub fn decision_content<R>(
     })
 }
 
-pub(crate) fn decision_window(
+fn decision_window(
     ctx:&egui::Context,title:&str,id:&'static str,work_area:egui::Rect
 ) -> egui::Window<'static> {
     nested_modal_window(ctx,title,id,work_area)
@@ -984,7 +984,7 @@ pub(crate) fn decision_window(
 /// Show a decision and establish the real window as the input boundary
 /// only after egui has created its layer. This applies to nested and root
 /// decisions alike, avoiding a full-screen dim swallowing button input.
-pub fn show_decision_window<R>(
+pub(crate) fn show_decision_window<R>(
     ctx:&egui::Context,title:&str,id:&'static str,work_area:Rect,
     contents:impl FnOnce(&mut Ui)->R,
 ){
@@ -997,7 +997,7 @@ pub fn show_decision_window<R>(
 /// and KakaoTalk reserved pane. Only the actual dialog remains centered in
 /// the Kakao-safe work area; do not use that area to clip the backdrop.
 /// Render before its dialog; nested confirmations draw one more dim layer.
-pub fn modal_backdrop(
+pub(crate) fn modal_backdrop(
     ctx:&egui::Context,id:&'static str,nested:bool
 ) {
     let viewport=ctx.content_rect();
@@ -1028,7 +1028,7 @@ pub fn modal_backdrop(
 /// Layer occupied by the interactive nested decision window.
 /// It intentionally shares Foreground order with its parent and backdrop;
 /// explicit stacking below keeps the dialog above the full-screen dim Area.
-pub fn modal_window_layer(id:&'static str)->egui::LayerId {
+pub(crate) fn modal_window_layer(id:&'static str)->egui::LayerId {
     egui::LayerId::new(egui::Order::Foreground,egui::Id::new(id))
 }
 
@@ -1037,7 +1037,7 @@ pub fn modal_window_layer(id:&'static str)->egui::LayerId {
 /// it. An extra full-screen Foreground Area can intercept every button when
 /// egui resolves previous-frame hit testing; the outer Middle backdrop and
 /// disabled parent already block background input.
-pub fn modal_foreground_for_window(
+pub(crate) fn modal_foreground_for_window(
     ctx:&egui::Context,window_id:&'static str
 ){
     let dialog_layer=modal_window_layer(window_id);
@@ -1048,7 +1048,7 @@ pub fn modal_foreground_for_window(
 /// The editor is responsible for its own minimum width and disabled state.
 /// Reuse this for product, client and other management dialogs instead of
 /// screen-specific vertical label/input stacks.
-pub fn modal_labeled_row<R>(
+pub(crate) fn modal_labeled_row<R>(
     ui:&mut Ui,label:&str,control:impl FnOnce(&mut Ui)->R
 )->R {
     modal_labeled_row_with_width(ui,label,theme::MODAL_FORM_LABEL_WIDTH,control)
@@ -1056,7 +1056,7 @@ pub fn modal_labeled_row<R>(
 
 /// A wider label column for forms containing longer localized captions.
 /// The same row geometry applies to all controls, including selectors.
-pub fn modal_labeled_row_with_width<R>(
+pub(crate) fn modal_labeled_row_with_width<R>(
     ui:&mut Ui,label:&str,label_width:f32,control:impl FnOnce(&mut Ui)->R
 )->R {
     ui.horizontal(|line|{
@@ -1071,7 +1071,7 @@ pub fn modal_labeled_row_with_width<R>(
 // Shared controls and presentation profiles.
 /// Removable search-tag chip. The modal nested-frame master owns its fill,
 /// outline and radius; only the chip's approved compact vertical inset differs.
-pub fn removable_tag_chip(ui:&mut Ui,tag:&str)->Response{
+pub(crate) fn removable_tag_chip(ui:&mut Ui,tag:&str)->Response{
     let visible=if tag.chars().count()>22{
         format!("{}…",tag.chars().take(22).collect::<String>())
     }else{tag.to_owned()};

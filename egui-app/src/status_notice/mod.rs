@@ -9,7 +9,7 @@ use crate::ui_primitives::{overflow_region_tooltip,text_exceeds_rect};
 /// header's Y coordinate, consume scrollbar height or resize the enclosing
 /// card. Call this ONLY after the caller has reserved a stable body rectangle.
 /// Operational errors and decisions continue through FloatingNotice/modals.
-pub fn management_body_state_overlay(
+pub(crate) fn management_body_state_overlay(
     ui:&Ui,viewport:Rect,caption:Option<&str>
 ){
     let Some(caption)=caption else {return};
@@ -24,7 +24,7 @@ pub fn management_body_state_overlay(
 
 
 
-pub fn body_error_overlay(ui:&Ui,viewport:Rect,context:&str,error:&str){
+pub(crate) fn body_error_overlay(ui:&Ui,viewport:Rect,context:&str,error:&str){
     let visible=viewport.intersect(ui.clip_rect());
     if visible.width()<=0.0||visible.height()<=0.0{return;}
     let display=crate::user_error::display(context,error);
@@ -43,7 +43,7 @@ pub fn body_error_overlay(ui:&Ui,viewport:Rect,context:&str,error:&str){
 }
 
 /// Untyped recognition/workflow notices retain informational coloring.
-pub fn reception_review_status(ui:&mut Ui,message:&str){
+pub(crate) fn reception_review_status(ui:&mut Ui,message:&str){
     let tone=theme::ReviewTone::Info;
     let display=crate::user_error::display("reception.review",message);
     crate::card::review_issue_card(ui,tone,|content|{

@@ -194,7 +194,7 @@ mod modal_section_heading_spacing_tests {
             .split("/// A heading and one divider").next().unwrap();
         assert!(helper.contains("ui.spacing_mut().item_spacing.y=0.0;"));
         assert!(helper.contains("section_divider(ui);"));
-        let boxed=source.split("pub fn modal_section_measured<R>(").nth(1).unwrap()
+        let boxed=source.split("fn modal_section_measured<R>(").nth(1).unwrap()
             .split("/// Structural spacing").next().unwrap();
         assert!(boxed.contains("modal_section_heading_with_rule(section,title)"));
         assert!(!boxed.contains("theme::divider(section)"));

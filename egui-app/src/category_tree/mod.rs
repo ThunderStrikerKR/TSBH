@@ -6,17 +6,17 @@ use crate::ui_primitives::{overflow_tooltip,paint_management_chevron,ManagementC
 /// CategoryTree presentation contract. The caller owns data, selection and
 /// expansion; all tree row geometry and painting are centralized here.
 pub(crate) struct CategoryTreeRow<'a>{
-    pub name:&'a str,
-    pub summary:&'a str,
-    pub depth:usize,
+    pub(crate) name:&'a str,
+    pub(crate) summary:&'a str,
+    pub(crate) depth:usize,
     /// For each ancestor axis above the immediate parent, whether a later
     /// sibling still needs that vertical rail (root axis is index zero).
-    pub ancestor_guides:&'a [bool],
-    pub is_last:bool,
-    pub root:bool,
-    pub has_children:bool,
-    pub open:bool,
-    pub selected:bool,
+    pub(crate) ancestor_guides:&'a [bool],
+    pub(crate) is_last:bool,
+    pub(crate) root:bool,
+    pub(crate) has_children:bool,
+    pub(crate) open:bool,
+    pub(crate) selected:bool,
 }
 
 struct CategoryTreeGeometry{
