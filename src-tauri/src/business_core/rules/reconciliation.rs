@@ -723,9 +723,8 @@ fn reconcile_inner(payload:&Value,order_scope:Option<&str>,scoped_seed:Option<&s
                 set(&mut state["workflow"]["shipments"][si],"chargeMode",
                     json!(if manual{"MANUAL"}else{"AUTO"}))?;
             }
-            if flag(&client,"shippingFeeExcluded") {
-                for origin in &origins {set(&mut charges,origin,json!(0))?;}
-            }
+            // Exemption changes the bill, not the stored underlying rate.
+            // Preserve original/manual amounts for a later dealer change.
             set(&mut state["workflow"]["shipments"][si],"charges",charges.clone())?;
             if previous_charges!=charges {
                 pending_rechecks.entry(si).and_modify(|entry|entry.1=true).or_insert((1,true,"추천 운임 변경"));
