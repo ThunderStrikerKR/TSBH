@@ -9,6 +9,41 @@ pub(super) fn apply_manual_unit_price(item:&mut Value)->Result<bool,String>{
     Ok(true)
 }
 
+/// Retain an explicit amount only when the resolved sellable item is identical.
+pub(super) fn retain_manual_unit_price(item:&mut Value,previous:&Value)->Result<(),String>{
+    let same=!str_field(item,"productId").is_empty() &&
+        !str_field(item,"variantId").is_empty() &&
+        field(item,"productId")==field(previous,"productId") &&
+        field(item,"variantId")==field(previous,"variantId");
+    let retained=if same{super::manual_unit_price(previous)?}else{None};
+    item.as_object_mut().ok_or("상품 데이터 오류")?.remove("manualUnitPrice");
+    if let Some(amount)=retained{
+        set(item,"manualUnitPrice",json!(amount))?;
+        apply_manual_unit_price(item)?;
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod manual_price_retention_tests{
+    use super::*;
+    #[test]
+    fn identical_catalog_identity_preserves_zero_and_positive_override(){
+        for amount in [0,9900]{
+            let old=json!({"productId":"p","variantId":"v","manualUnitPrice":amount});
+            let mut next=json!({"productId":"p","variantId":"v","unitPrice":15000});
+            retain_manual_unit_price(&mut next,&old).unwrap();
+            assert_eq!(next["unitPrice"],amount);
+            assert_eq!(next["manualUnitPrice"],amount);
+            let mut different=json!({"productId":"p","variantId":"v2","unitPrice":20000,
+                "manualUnitPrice":amount});
+            retain_manual_unit_price(&mut different,&old).unwrap();
+            assert!(different.get("manualUnitPrice").is_none());
+            assert_eq!(different["unitPrice"],20000);
+        }
+    }
+}
+
 pub(super) fn resolve_unit_price(
     product: &Value,
     variant_id: &str,
