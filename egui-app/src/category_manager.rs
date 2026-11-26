@@ -1277,10 +1277,20 @@ mod modal_layout_contract_tests{
         assert!(page[toolbar_end..mode_start].contains("crate::ui_primitives::section_divider(panel);"));
         assert!(page.contains("theme::CATEGORY_EXPLORER_CRUMB_HEIGHT-theme::SECTION_DIVIDER_HEIGHT"));
         assert!(!page.contains("panel.add_space(theme::SPACE_8);\n            panel.horizontal_wrapped"));
-        assert_eq!(
-            theme::SECTION_DIVIDER_HEIGHT,
-            33.0
-        );
+        // Management master: 12pt above and below the 1pt structural rule.
+        // Measure the shared renderer in the same zero-spacing layout as
+        // show_page, rather than keeping the obsolete 16/1/16pt expectation.
+        assert_eq!(theme::SECTION_DIVIDER_HEIGHT,25.0);
+        let ctx=egui::Context::default();
+        let mut measured=None;
+        let _=ctx.run(egui::RawInput::default(),|ctx|{
+            egui::CentralPanel::default().show(ctx,|panel|{
+                panel.spacing_mut().item_spacing.y=0.0;
+                let strip=crate::ui_primitives::section_divider(panel);
+                measured=Some(strip.height());
+            });
+        });
+        assert_eq!(measured,Some(theme::SECTION_DIVIDER_HEIGHT));
     }
     #[test]
     fn category_editor_add_move_use_only_shared_inline_form_rows(){
