@@ -3,7 +3,7 @@
 
 use eframe::egui::{self,Context};
 use serde_json::Value;
-use std::{sync::{mpsc::{self,Receiver},Arc},thread};
+use std::sync::Arc;
 use crate::{gateway::BandoGateway,management_queries::{self,ManualProductRows},theme::{self,ButtonRole},typography};
 
 fn field<'a>(v:&'a Value,key:&str)->&'a str{
@@ -45,7 +45,7 @@ pub struct ProductSearch{
     catalog:Option<Value>,
     products:Vec<Value>,
     detail_ids:Vec<String>,
-    receiver:Option<Receiver<Result<ManualProductRows,String>>>,
+    refresh:crate::screen_refresh::ReadRefresh<ManualProductRows>,
     error:Option<String>,
 }
 impl ProductSearch{
@@ -57,7 +57,7 @@ impl ProductSearch{
     )->Self{
         let mut state=Self{query,major:String::new(),
             brand:String::new(),client_id,catalog:None,products:Vec::new(),
-            detail_ids:Vec::new(),receiver:None,error:None};
+            detail_ids:Vec::new(),refresh:Default::default(),error:None};
         state.reload(gateway,ctx);
         state
     }
@@ -70,31 +70,20 @@ impl ProductSearch{
         let major=self.major.clone();
         let client=self.client_id.clone();
         let catalog=self.catalog.clone();
-        let (tx,rx)=mpsc::channel();
-        self.receiver=Some(rx);
-        thread::spawn(move||{
-            let result=management_queries::query_manual_products(
-                gateway.as_ref(),catalog,&query,&client,&major,&brand,
-            );
-            let _=tx.send(result);
-            ctx.request_repaint();
-        });
+        self.refresh.submit_required(ctx,move||management_queries::query_manual_products(
+            gateway.as_ref(),catalog,&query,&client,&major,&brand,
+        ));
     }
     fn poll(&mut self){
-        if let Some(receiver)=self.receiver.as_ref(){
-            match receiver.try_recv(){
-                Ok(Ok(result))=>{
-                    self.catalog=Some(result.catalog);
-                    self.products=result.products;
-                    self.detail_ids=result.detail_ids;
-                    self.receiver=None;
-                }
-                Ok(Err(error))=>{self.receiver=None;self.error=Some(error);}
-                Err(mpsc::TryRecvError::Disconnected)=>{
-                    self.receiver=None;self.error=Some("상품 검색 작업이 중단되었습니다.".into());
-                }
-                Err(mpsc::TryRecvError::Empty)=>{}
+        match self.refresh.poll(){
+            Some(Ok(result))=>{
+                self.catalog=Some(result.catalog);
+                self.products=result.products;
+                self.detail_ids=result.detail_ids;
+                self.refresh.verified();
             }
+            Some(Err(error))=>self.error=Some(error),
+            None=>{}
         }
     }
     pub fn show(&mut self,ctx:&Context,gateway:Arc<dyn BandoGateway>,
@@ -204,7 +193,7 @@ impl ProductSearch{
                                     .show(pane,|ui|{
                                         if self.error.is_some() {
                                             // Error uses the reserved outer result viewport below.
-                                        } else if self.receiver.is_some() {
+                                        } else if self.refresh.pending() {
                                             // Pending status is painted in the reserved result viewport.
                                         } else {
                                     for row in &self.products{
@@ -252,7 +241,7 @@ impl ProductSearch{
                                 if let Some(error)=self.error.as_deref(){
                                     crate::status_notice::body_error_overlay(pane,results_rect,"reception.product",error);
                                 }else{
-                                    let caption=if self.receiver.is_some(){Some("상품 검색 중")}
+                                    let caption=if self.refresh.pending(){Some("상품 검색 중")}
                                         else if self.products.is_empty(){Some("검색 결과가 없습니다.")}
                                         else{None};
                                     crate::status_notice::management_body_state_overlay(pane,results_rect,caption);
@@ -263,7 +252,7 @@ impl ProductSearch{
                 });
             });
         crate::popup::modal_foreground_for_window(ctx,"native-manual-product-search");
-        if changed{self.reload(gateway,ctx.clone());}
+        if changed{self.reload(gateway,ctx.clone());chosen=None;}
         if let Some(row)=chosen{return Some(Event::Chosen(row));}
         if !open{return Some(Event::Cancelled);}
         None
