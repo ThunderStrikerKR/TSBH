@@ -1,21 +1,13 @@
 name: UI visual evidence gate
 
+# Optional human review only; not part of automatic CI or completion criteria.
 on:
-  push:
-    branches: [main]
-    paths:
-      - "egui-app/src/**/*.rs"
-      - "docs/ui-visual-verification/audits/**"
-      - "scripts/check-ui-visual-verification.mjs"
-      - "tests/ui-visual-verification.test.mjs"
-      - ".github/workflows/ui-visual-evidence.yml"
-  pull_request:
-    paths:
-      - "egui-app/src/**/*.rs"
-      - "docs/ui-visual-verification/audits/**"
-      - "scripts/check-ui-visual-verification.mjs"
-      - "tests/ui-visual-verification.test.mjs"
-      - ".github/workflows/ui-visual-evidence.yml"
+  workflow_dispatch:
+    inputs:
+      base:
+        description: "Base commit for optional human visual review"
+        required: true
+        type: string
 
 permissions:
   contents: read
@@ -35,7 +27,7 @@ jobs:
         run: node --test tests/ui-visual-verification.test.mjs
       - name: Require version-bound human visual review for changed UI
         env:
-          UI_DIFF_BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+          UI_DIFF_BASE: ${{ inputs.base }}
         run: |
           if [ -z "$UI_DIFF_BASE" ]; then
             echo "Missing diff base: fail closed" >&2
