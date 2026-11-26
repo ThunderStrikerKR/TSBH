@@ -210,7 +210,7 @@ impl BrandManager {
                         components::soft_divider(list);
                     }
                 });
-            components::paint_management_table_outline(card,header.header_rect,output.inner_rect);
+            header.finish(card,output.inner_rect);
         });
         if let Some(id)=select{self.choose(id,catalog);}
         save.then(||self.request())

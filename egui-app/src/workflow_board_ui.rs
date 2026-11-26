@@ -757,7 +757,7 @@ fn group_frame(
                     }));
                 }
             }
-            components::paint_management_table_outline(ui,header,ui.min_rect());
+            crate::table::finish_inline(ui,header);
             });
         }
     });
@@ -993,7 +993,7 @@ fn pending_frame(
                     }
                 }
             }
-            components::paint_management_table_outline(ui,header,ui.min_rect());
+            crate::table::finish_inline(ui,header);
             });
         }
     });

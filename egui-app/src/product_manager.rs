@@ -1665,7 +1665,7 @@ impl ProductManager {
             }
             components::management_table_column_rules(panel,header_text_rect,&header_cells,theme::SPACE_8);
             components::management_master_header_finish(panel,header_rect);
-            components::paint_management_table_outline(panel,header_rect,scroll_output.inner_rect);
+            layout.finish(panel,scroll_output.inner_rect);
             if let Some(next)=clicked_sort{
                 self.sort=next;
                 panel.ctx().request_repaint();

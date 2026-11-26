@@ -654,7 +654,7 @@ impl ClientManager {
                 };
                 section.ctx().request_repaint();
             }
-            components::paint_management_table_outline(section,header_rect,scroll_output.inner_rect);
+            layout.finish(section,scroll_output.inner_rect);
             if !self.excel.blocks_navigation(){if let Some(client)=chosen{self.begin(client);}}
         });
     }

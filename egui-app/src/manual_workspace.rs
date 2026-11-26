@@ -2294,7 +2294,7 @@ impl ManualWorkspace {
                                                             }
                                                         },|items_ui|{
                                                             components::reception_worksheet_items_body(items_ui);
-                                                            components::reception_editable_items_header(items_ui);
+                                                            let items_header=components::reception_editable_items_header(items_ui);
                                                             for item in list(row,"items"){
                                                                 let item_id=text(item,"id");
                                                                 let quantity=item.get("quantity")
@@ -2430,6 +2430,7 @@ impl ManualWorkspace {
                                                                 }
                                                             }
                                                             // Pending assignment rollback lives in the fixed header action.
+                                                            components::finish_reception_items_table(items_ui,items_header);
                                                             components::reception_items_to_freight_gap(items_ui);
                                                             let code=if text(row,"freightCode")=="020"{
                                                                 "020"

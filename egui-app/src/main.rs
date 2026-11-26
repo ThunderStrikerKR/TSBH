@@ -9,6 +9,7 @@ mod typography;
 mod layout;
 mod window_state;
 mod components;
+mod table;
 mod overlay;
 mod cell_navigation;
 mod floating_notice;
@@ -7560,7 +7561,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                         components::reception_docked_goods_scroll(
                             ui,bottom_rect.height(),("native-workflow-products",ship.id.as_str()),
                             true,|contents|{
-                                        components::reception_editable_items_header(contents);
+                                        let items_header=components::reception_editable_items_header(contents);
                                         if let Some(items)=ship.recipient.get("items")
                                             .and_then(serde_json::Value::as_array)
                                         {
@@ -7631,6 +7632,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                                 }
                                             }
                                         }
+                                        components::finish_reception_items_table(contents,items_header);
                                         components::reception_items_to_freight_gap(contents);
                                         // Match React WorkflowFreightRows: one editable
                                         // amount per actual dispatch origin. The displayed
@@ -7980,7 +7982,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                             components::reception_docked_goods_scroll(
                                 ui,bottom_rect.height(),("pending-hover-products",draft.id.as_str()),
                                 false,|contents|{
-                                            components::reception_items_header(contents);
+                                            let items_header=components::reception_items_header(contents);
                                             if let Some(row)=recipient{
                                                 if let Some(items)=row["items"].as_array(){
                                                     for item in items{
@@ -8016,7 +8018,8 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                                         }
                                                     }
                                                 }
-                                                components::reception_items_to_freight_gap(contents);
+                                                components::finish_reception_items_table(contents,items_header);
+                                        components::reception_items_to_freight_gap(contents);
                                                 let origin=row["dispatchOrigin"].as_str();
                                                 let fee=indexed_billable_freight(quote_index.as_deref(),row);
                                                 let collect=row["freightCode"].as_str()
@@ -8032,6 +8035,8 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                                 components::reception_item_origin_action_editable(
                                                     contents,origin,false
                                                 );
+                                            }else{
+                                                components::finish_reception_items_table(contents,items_header);
                                             }
                                 }
                             );
@@ -8340,7 +8345,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                     let quote_index=preview.map(indexed_quote);
                     components::reception_docked_goods_scroll(
                         ui,remaining,"recognized-items",true,|items_ui|{
-                                    components::reception_editable_items_header(items_ui);
+                                    let items_header=components::reception_editable_items_header(items_ui);
                                     if let Some(recipient)=selected {
                                         let recipient_id=reception_service::text(recipient,"id");
                                         if let Some(items)=recipient.get("items")
@@ -8457,6 +8462,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                                 }
                                             }
                                         }
+                                        components::finish_reception_items_table(items_ui,items_header);
                                         components::reception_items_to_freight_gap(items_ui);
                                         // The ORDER total is not a recipient fee.
                                         // Show only the native per-recipient amount.
@@ -8559,6 +8565,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                             ));
                                         }
                                     } else {
+                                        components::finish_reception_items_table(items_ui,items_header);
                                         components::management_body_state_overlay(
                                             items_ui,items_ui.available_rect_before_wrap(),
                                             Some("거래처 선택 후 운임과 청구금액을 확인합니다.")

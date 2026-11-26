@@ -4702,6 +4702,12 @@ pub struct ManagementTableHeader {
     pub scrollbar_gutter:f32,
     pub table_width:f32,
 }
+impl ManagementTableHeader {
+    /// Close the table surface at the visible body, without allocating a widget.
+    pub fn finish(self,ui:&Ui,body:Rect){
+        crate::table::finish(ui,self.header_rect,body);
+    }
+}
 
 /// One minimum-width calculation for both sticky master tables and
 /// other fixed-header management lists. The gutter supplied here is the
@@ -4772,7 +4778,7 @@ pub fn management_list_table_header(
 }
 
 /// Both fixed-header variants share the allocation, data width and rail.
-fn allocate_management_table_header(
+pub(crate) fn allocate_management_table_header(
     ui:&mut Ui,viewport_width:f32,min_table_width:f32
 )->ManagementTableHeader{
     let scrollbar_gutter=ui.spacing().scroll.allocated_width();
@@ -4844,36 +4850,15 @@ pub fn management_master_header_begin(
 )->Rect {
     debug_assert!((header_rect.height()-theme::MANAGEMENT_TABLE_HEADER_HEIGHT)
         .abs()<0.01);
-    let text_rect=Rect::from_min_max(
-        header_content_rect.min,
-        egui::pos2(
-            header_content_rect.right(),
-            header_content_rect.bottom()-theme::MANAGEMENT_TABLE_HEADER_OUTLINE_HEIGHT
-        )
-    );
-    debug_assert!((text_rect.height()-
-        (theme::MANAGEMENT_TABLE_HEADER_HEIGHT-
-            theme::MANAGEMENT_TABLE_HEADER_OUTLINE_HEIGHT)).abs()<0.01);
-    ui.painter().with_clip_rect(header_rect)
-        .rect_filled(header_rect,0.0,theme::RAISED);
-    text_rect
+    crate::table::header_begin(ui,header_rect,header_content_rect)
 }
 
 /// Draw one non-interactive perimeter for the header and visible row viewport.
 /// The scrollbar gutter belongs to the viewport; never use the scrolled
 /// content extent or alter the allocation to create this decoration.
-pub fn paint_management_table_outline(ui:&Ui,header:Rect,body:Rect){
-    let bounds=management_table_outline_rect(header,body);
-    if bounds.width()>0.0 && bounds.height()>0.0{
-        ui.painter().rect_stroke(bounds,0.0,
-            Stroke::new(theme::FRAME_STROKE_WIDTH,theme::BORDER),
-            egui::StrokeKind::Inside);
-    }
-}
-
+#[cfg(test)]
 fn management_table_outline_rect(header:Rect,body:Rect)->Rect{
-    Rect::from_min_max(header.min,
-        egui::pos2(header.right(),body.bottom().max(header.bottom())))
+    crate::table::outline_bounds(header,body)
 }
 
 #[cfg(test)]
@@ -4889,14 +4874,7 @@ fn management_table_outline_keeps_header_width_and_viewport_bottom(){
 /// Draw the master header's solid 2pt bottom band AFTER labels, separators
 /// and hover chrome. A centered 1pt line at bottom() is half clipped.
 pub fn management_master_header_finish(ui:&Ui,header_rect:Rect){
-    ui.painter().with_clip_rect(header_rect).rect_filled(
-        Rect::from_min_max(
-            egui::pos2(
-                header_rect.left(),
-                header_rect.bottom()-theme::MANAGEMENT_TABLE_HEADER_OUTLINE_HEIGHT
-            ),header_rect.right_bottom()
-        ),0.0,theme::TABLE_HEADER_OUTLINE
-    );
+    crate::table::header_finish(ui,header_rect);
 }
 
 /// Identical sort-hover outline for all freight management list headers.
@@ -6527,16 +6505,20 @@ fn reception_item_text_clip(rect:Rect,index:usize)->Rect {
     }else{rect}
 }
 
-pub fn reception_editable_items_header(ui:&mut Ui){
-    reception_items_header_with_actions(ui,"금액",true);
+pub fn reception_editable_items_header(ui:&mut Ui)->Rect{
+    reception_items_header_with_actions(ui,"금액",true)
 }
 
-pub fn reception_items_header(ui:&mut Ui){
-    reception_items_header_with_actions(ui,"금액",false);
+pub fn reception_items_header(ui:&mut Ui)->Rect{
+    reception_items_header_with_actions(ui,"금액",false)
+}
+
+pub fn finish_reception_items_table(ui:&Ui,header:Rect){
+    crate::table::finish_inline(ui,header);
 }
 
 // Only these two fixed public headers may be used: read-only or editable.
-fn reception_items_header_with_actions(ui:&mut Ui,amount_heading:&str,remove_slot:bool){
+fn reception_items_header_with_actions(ui:&mut Ui,amount_heading:&str,remove_slot:bool)->Rect{
     let action_width=if remove_slot{theme::RECEPTION_ITEM_REMOVE_WIDTH}else{0.0};
     let width=ui.available_width().max(theme::RECEPTION_ITEMS_MIN_TABLE_WIDTH+action_width);
     let (rect, _) = ui.allocate_exact_size(
@@ -6545,7 +6527,7 @@ fn reception_items_header_with_actions(ui:&mut Ui,amount_heading:&str,remove_slo
     // The reception list has its own approved 32pt compact header, but
     // follows the master's raised header surface and INSIDE bottom band.
     // No extra layout height or clipped 1pt edge is introduced.
-    ui.painter().rect_filled(rect,0.0,theme::RAISED);
+    let text_rect=crate::table::header_begin(ui,rect,rect);
     let columns = reception_item_columns(Rect::from_min_max(
         rect.min,egui::pos2(rect.right()-action_width,rect.bottom())
     ));
@@ -6562,23 +6544,14 @@ fn reception_items_header_with_actions(ui:&mut Ui,amount_heading:&str,remove_slo
         } else {
             cell.right() - galley.size().x
         };
-        let text_bottom = cell.bottom() - theme::MANAGEMENT_TABLE_HEADER_OUTLINE_HEIGHT;
-        let text_center_y = (cell.top() + text_bottom) / 2.0;
+        let text_center_y = text_rect.center().y;
         ui.painter().with_clip_rect(cell).galley(
             egui::pos2(x, text_center_y - galley.size().y / 2.0),
             galley, theme::SECONDARY,
         );
     }
-    ui.painter().rect_filled(
-        Rect::from_min_max(
-            egui::pos2(
-                rect.left(),
-                rect.bottom()-theme::MANAGEMENT_TABLE_HEADER_OUTLINE_HEIGHT
-            ),
-            rect.right_bottom()
-        ),
-        0.0,theme::TABLE_HEADER_OUTLINE
-    );
+    crate::table::header_finish(ui,rect);
+    rect
 }
 
 /// Use the actual laid-out glyph box for all value cells.
@@ -7265,28 +7238,6 @@ pub fn management_readonly_table(
     let minimum_width=management_readonly_table_content_width(&widths);
     let layout=management_list_table_header(ui,minimum_width);
 
-    // Embedded review tables retain their existing plain header appearance.
-    // The shared list-header allocation owns the 36pt height and scrollbar
-    // gutter; text uses the same table-header role as the management masters.
-    let header_clip=layout.header_content_rect.intersect(ui.clip_rect());
-    let painter=ui.painter().with_clip_rect(header_clip);
-    let mut x=layout.header_rect.left();
-    for (index,(heading,width)) in headings.iter().zip(&widths).enumerate(){
-        let galley=typography::table_header_galley(ui,heading);
-        let text_x=if right_aligned.contains(&index){
-            x+(*width-galley.size().x).max(0.0)
-        }else{x};
-        let y=layout.header_rect.center().y-galley.size().y/2.0;
-        if header_clip.width()>0.0&&header_clip.height()>0.0{
-            painter.with_clip_rect(egui::Rect::from_min_max(
-                egui::pos2(x,layout.header_rect.top()),
-                egui::pos2((x+*width).min(layout.header_rect.right()),
-                    layout.header_rect.bottom())
-            )).galley(egui::pos2(text_x,y),galley,theme::SECONDARY);
-        }
-        x+=*width+theme::SPACE_8;
-    }
-
     let row_height=theme::MANAGEMENT_COMPACT_ROW_HEIGHT;
     let row_advance=management_readonly_table_row_advance();
     let scroll=management_fixed_table_scroll_area(ui,layout.table_width)
@@ -7300,6 +7251,15 @@ pub fn management_readonly_table(
                 let values=&rows[index];
                 debug_assert_eq!(values.len(),widths.len(),
                     "management table row must match its column count");
+                let row_rect=Rect::from_min_size(body.cursor().min,
+                    Vec2::new(layout.table_width,row_advance));
+                paint_management_table_row_background(body.painter(),row_rect,index);
+                let mut x=row_rect.left();
+                let columns=widths.iter().map(|width|{
+                    let cell=Rect::from_min_size(egui::pos2(x,row_rect.top()),Vec2::new(*width,row_height));
+                    x+=*width+theme::SPACE_8;
+                    cell
+                }).collect::<Vec<_>>();
                 body.horizontal(|line|{
                     line.spacing_mut().item_spacing.x=theme::SPACE_8;
                     for (index,(value,width)) in values.iter().zip(&widths).enumerate(){
@@ -7310,11 +7270,28 @@ pub fn management_readonly_table(
                         line.add_sized(Vec2::new(*width,row_height),label);
                     }
                 });
+                management_table_column_rules(body,row_rect,&columns,theme::SPACE_8);
                 soft_divider(body);
             }
         }
     );
-    paint_management_table_outline(ui,layout.header_rect,output.inner_rect);
+    let header_text=management_master_header_begin(ui,layout.header_rect,layout.header_content_rect);
+    let mut x=layout.header_rect.left()-output.state.offset.x;
+    let mut columns=Vec::with_capacity(widths.len());
+    for (index,(heading,width)) in headings.iter().zip(&widths).enumerate(){
+        let cell=Rect::from_min_size(egui::pos2(x,header_text.top()),
+            Vec2::new(*width,header_text.height()));
+        let galley=typography::management_table_header_galley(ui,heading);
+        let text_x=if right_aligned.contains(&index){
+            cell.right()-galley.size().x
+        }else{cell.left()};
+        paint_table_galley(ui,cell.intersect(header_text),text_x,galley,theme::SECONDARY);
+        columns.push(cell);
+        x+=*width+theme::SPACE_8;
+    }
+    management_table_column_rules(ui,header_text,&columns,theme::SPACE_8);
+    management_master_header_finish(ui,layout.header_rect);
+    layout.finish(ui,output.inner_rect);
     ui.spacing_mut().scroll=original_scroll;
 }
 

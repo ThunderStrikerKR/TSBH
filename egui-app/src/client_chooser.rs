@@ -285,24 +285,12 @@ impl ClientChooser {
                             };
                             results_panel.label(typography::caption(&count_label));
                             let viewport_width=results_panel.available_width().max(1.0);
-                            let gutter=results_panel.spacing().scroll.allocated_width();
-                            let table_width=(viewport_width-gutter)
-                                .max(theme::MANAGEMENT_CLIENT_TABLE_MIN_WIDTH);
-                            // Fixed 36pt header is independent from the 42pt
-                            // scrolling rows, exactly as in Client Management.
-                            let (header_rect,_)=results_panel.allocate_exact_size(
-                                egui::vec2(
-                                    viewport_width,theme::MANAGEMENT_TABLE_HEADER_HEIGHT
-                                ),egui::Sense::hover()
+                            let layout=components::allocate_management_table_header(
+                                results_panel,viewport_width,theme::MANAGEMENT_CLIENT_TABLE_MIN_WIDTH
                             );
-                            let header_content=egui::Rect::from_min_max(
-                                header_rect.min,
-                                egui::pos2(
-                                    (header_rect.right()-gutter)
-                                        .max(header_rect.left()+1.0),
-                                    header_rect.bottom()
-                                )
-                            );
+                            let table_width=layout.table_width;
+                            let header_rect=layout.header_rect;
+                            let header_content=layout.header_content_rect;
                             let height=(results_panel.available_height()-theme::SPACE_8)
                                 .max(1.0)
                                 .min(theme::CLIENT_CHOOSER_RESULTS_MAX_HEIGHT);
@@ -399,6 +387,7 @@ impl ClientChooser {
                                 };
                                 ctx.request_repaint();
                             }
+                            layout.finish(results_panel,output.inner_rect);
                         }
                     );
                     });

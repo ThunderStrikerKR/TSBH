@@ -1855,7 +1855,7 @@ impl FreightManager {
             components::management_table_column_rules(section,header_text_rect,&header_cells,theme::FREIGHT_ASSIGNMENT_COL_GAP);
             // This shared painter preserves the exact master 2pt bottom band.
             components::management_master_header_finish(section,header_rect);
-            components::paint_management_table_outline(section,header_rect,scroll_output.inner_rect);
+            table_header.finish(section,scroll_output.inner_rect);
 
             // This is the single "select all" control for the currently
             // filtered product list (not only the virtualized visible rows).
@@ -2221,7 +2221,7 @@ impl FreightManager {
             }
             components::management_table_column_rules(section,header_text_rect,&header_cells,theme::FREIGHT_ASSIGNMENT_COL_GAP);
             components::management_master_header_finish(section,header_rect);
-            components::paint_management_table_outline(section,header_rect,scroll_output.inner_rect);
+            rate_layout.finish(section,scroll_output.inner_rect);
             if ordered.is_empty(){
                 let caption=if groups.is_empty(){
                     "등록된 배송 그룹이 없습니다."
@@ -2817,7 +2817,7 @@ fn freight_history_table<const N:usize>(
     }
     components::management_table_column_rules(ui,header_text_rect,&columns,theme::FREIGHT_ASSIGNMENT_COL_GAP);
     components::management_master_header_finish(ui,header_rect);
-    components::paint_management_table_outline(ui,header_rect,scroll.inner_rect);
+    layout.finish(ui,scroll.inner_rect);
     if total_rows==0 {
         if let Some(message)=empty_message {
             // D-type state paints in the body, with no extra title/footer

@@ -425,7 +425,7 @@ fn table<const N:usize>(
     // Paint the very same column separators as the data rows.
     components::management_table_column_rules(ui,header_text_rect,&heads,GAP);
     components::management_master_header_finish(ui,header);
-    components::paint_management_table_outline(ui,header,output.inner_rect);
+    layout.finish(ui,output.inner_rect);
     if let Some((all,enabled))=header_selection{
         let mut checked=all;
         if components::management_table_checkbox(
