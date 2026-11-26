@@ -5810,11 +5810,8 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                                 manager.refresh(ctx.clone());
                                             }
                                         }
-                                        if self.page==Page::Freight && page!=Page::Freight {
-                                            if let Some(manager)=self.freight_manager.as_mut(){
-                                                manager.discard_drafts();
-                                            }
-                                        }
+                                        // Clean navigation preserves the assignment selection.
+                                        // Explicit discard still goes through the leave guard.
                                         self.page=page;
                                     }
                                 }
