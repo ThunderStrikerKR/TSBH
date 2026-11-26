@@ -19,6 +19,8 @@ struct Worker<T> {
 }
 pub struct LatestJob<T> {
     worker: Option<Worker<T>>,
+    #[cfg(test)]
+    staged_transport: bool,
     generation: u64,
     pending: bool,
 }
@@ -26,6 +28,8 @@ impl<T> Default for LatestJob<T> {
     fn default() -> Self {
         Self {
             worker: None,
+            #[cfg(test)]
+            staged_transport: false,
             generation: 0,
             pending: false,
         }
@@ -49,6 +53,11 @@ impl<T: Send + 'static> LatestJob<T> {
         work: impl FnOnce() -> Result<T, String> + Send + 'static,
     ) {
         self.invalidate();
+        #[cfg(test)]
+        if self.staged_transport {
+            self.worker=None;
+            self.staged_transport=false;
+        }
         if self.worker.is_none() {
             let next: Arc<Mutex<Option<Job<T>>>> = Arc::new(Mutex::new(None));
             let answer = Arc::new(Mutex::new(None));
@@ -90,8 +99,12 @@ impl<T: Send + 'static> LatestJob<T> {
         self.worker=Some(Worker{next:Arc::new(Mutex::new(None)),
             answer:Arc::clone(&answer),wake});
         self.pending=true;
-        let generation=self.generation;
-        Box::new(move |result|*answer.lock().unwrap()=Some((generation,result)))
+        self.staged_transport=true;
+        // Preserve the former channel fixture's sender-drop semantics.
+        // A dropped completion represents an interrupted read, not a job
+        // that silently stays pending forever.
+        let staged=StagedAnswer{answer,generation:self.generation,completed:false};
+        Box::new(move |result|staged.complete(result))
     }
     pub fn poll(&mut self) -> Option<Result<T, String>> {
         let answer = self.worker.as_ref()?.answer.lock().unwrap().take()?;
@@ -100,6 +113,28 @@ impl<T: Send + 'static> LatestJob<T> {
         }
         self.pending = false;
         Some(answer.1)
+    }
+}
+
+#[cfg(test)]
+struct StagedAnswer<T>{
+    answer:Arc<Mutex<Option<Answer<T>>>>,
+    generation:u64,
+    completed:bool,
+}
+#[cfg(test)]
+impl<T> StagedAnswer<T>{
+    fn complete(mut self,result:Result<T,String>){
+        *self.answer.lock().unwrap()=Some((self.generation,result));
+        self.completed=true;
+    }
+}
+#[cfg(test)]
+impl<T> Drop for StagedAnswer<T>{
+    fn drop(&mut self){
+        if !self.completed{
+            *self.answer.lock().unwrap()=Some((self.generation,Err("조회 작업이 중단되었습니다.".into())));
+        }
     }
 }
 
@@ -116,6 +151,15 @@ mod tests {
             assert!(Instant::now() < deadline, "worker did not finish");
             std::thread::sleep(Duration::from_millis(1));
         }
+    }
+    #[test]
+    fn staged_disconnect_is_consumed_and_real_worker_can_restart(){
+        let mut job=LatestJob::<u64>::default();
+        drop(job.geometry_begin_read());
+        assert!(job.poll().unwrap().is_err());
+        assert!(!job.pending());
+        job.submit(Context::default(),||Ok(42));
+        assert_eq!(completed(&mut job).unwrap(),42);
     }
     #[test]
     fn burst_replaces_pending_work_and_rejects_old_results() {
