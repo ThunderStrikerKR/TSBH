@@ -220,7 +220,7 @@ pub fn patch_product_v2(conn:&mut Connection, request:&Value)->Result<Value,Stri
     ).map_err(|_|"운영 DB 스키마를 확인할 수 없습니다.".to_owned())?;
     if !crate::supported_relational_version(version){return Err("지원하지 않는 운영 DB 버전입니다.".into());}
     let data=request.get("data").ok_or("상품 변경 입력이 없습니다.")?;
-    crate::storage::update_v2_entity_if_changed(conn,true,|before|{
+    let mutate=|before:&Value|->Result<Option<Value>,String>{
     let current=before["revision"].as_u64().ok_or("운영 DB revision 오류")?;
     check_catalog_write_scope(before,action,data,expected,current)?;
     let mut next=match action {
@@ -390,7 +390,12 @@ pub fn patch_product_v2(conn:&mut Connection, request:&Value)->Result<Value,Stri
     };
     next["revision"]=json!(current);
     Ok((next!=*before).then_some(next))
-    })
+    };
+    if action=="apply_product_workbook"{
+        crate::storage::update_v2_reviewed_workbook(conn,mutate)
+    }else{
+        crate::storage::update_v2_entity_if_changed(conn,true,mutate)
+    }
 }
 
 
