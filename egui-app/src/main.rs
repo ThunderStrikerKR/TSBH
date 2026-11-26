@@ -1001,7 +1001,7 @@ struct BandoEgui {
     workflow_freight_editor:Option<WorkflowFreightEditor>,
     confirmed_cell:Option<ConfirmedCellEditor>,
     submitted_confirmed_cell:Option<ConfirmedCellEditor>,
-    confirmed_product_target:Option<ConfirmedEditTarget>,
+    confirmed_modal_target:Option<ConfirmedEditTarget>,
     workflow_freight_next_selection:Option<workflow_board_ui::Selection>,
     submitted_workflow_freight:Option<WorkflowFreightEditor>,
     workflow_stage_after_freight:Option<(String,usize,bool)>,
@@ -1132,7 +1132,7 @@ impl BandoEgui {
             workflow_freight_editor:None,
             confirmed_cell:None,
             submitted_confirmed_cell:None,
-            confirmed_product_target:None,
+            confirmed_modal_target:None,
             workflow_freight_next_selection:None,
             submitted_workflow_freight:None,
             workflow_stage_after_freight:None,
@@ -1763,7 +1763,7 @@ impl BandoEgui {
         if self.workflow_receiver.is_some() ||
             self.workflow_action.is_some() ||
             ((self.workflow_freight_editor.is_some() || self.confirmed_cell.is_some()
-                || self.confirmed_product_target.is_some()) && self.workflow_error.is_none()) ||
+                || self.confirmed_modal_target.is_some()) && self.workflow_error.is_none()) ||
             !std::env::var_os("BANDO_EGUI_BUSINESS_DB")
                 .is_some_and(|p|!p.is_empty()) {return;}
         let current=self.workflow_snapshot.as_ref().and_then(|board|board.revision);
@@ -2593,13 +2593,13 @@ impl BandoEgui {
     }
 
     fn show_product_picker(&mut self,ctx:&egui::Context,work_area:Rect){
-        if let Some(target)=self.confirmed_product_target.clone(){
+        if let Some(target)=self.confirmed_modal_target.clone(){
             if let Some((_,_,_,manager))=self.product_picker.as_mut(){
                 let (cancelled,chosen)=manager.show_selection_modal(ctx,work_area,"reception-add-product-picker");
-                if cancelled{self.product_picker=None;self.confirmed_product_target=None;}
+                if cancelled{self.product_picker=None;self.confirmed_modal_target=None;}
                 else if let Some(product)=chosen{
                     self.product_picker=None;
-                    self.confirmed_product_target=None;
+                    self.confirmed_modal_target=None;
                     self.submit_confirmed_change(&target,"addItem",None,product,ctx);
                 }
                 return;
@@ -2625,13 +2625,13 @@ impl BandoEgui {
     }
 
     fn show_item_editor(&mut self,ctx:&egui::Context,work_area:Rect){
-        if let Some(target)=self.confirmed_product_target.clone(){
+        if let Some(target)=self.confirmed_modal_target.clone(){
             if let Some(dialog)=self.item_editor.as_mut(){
                 let item_id=dialog.item_id.clone();
                 let event=dialog.show(ctx,Arc::clone(&self.gateway),work_area,false);
                 if let Some(event)=event{
                     self.item_editor=None;
-                    self.confirmed_product_target=None;
+                    self.confirmed_modal_target=None;
                     match event{
                         item_editor::Event::Closed=>{},
                         item_editor::Event::Apply(product)=>{
@@ -2646,8 +2646,8 @@ impl BandoEgui {
                 }
                 return;
             }
-            if self.product_picker.is_some(){return;}
-            self.confirmed_product_target=None;
+            if self.product_picker.is_some() || self.client_chooser.is_some() || self.vat_dialog.is_some(){return;}
+            self.confirmed_modal_target=None;
         }
         let valid=self.item_editor.as_ref().is_some_and(|dialog|
             self.active_id.as_deref()==Some(dialog.order_id.as_str())
@@ -3841,14 +3841,23 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
 
     fn show_vat_settings(&mut self,ctx:&egui::Context,work_area:Rect){
         let Some(dialog)=self.vat_dialog.as_mut() else{return};
-        if self.active_id.as_deref()!=Some(dialog.order_id.as_str()) ||
-            self.raw_source!=dialog.source_raw{
+        let confirmed=self.confirmed_modal_target.clone();
+        if confirmed.is_none() && (self.active_id.as_deref()!=Some(dialog.order_id.as_str()) ||
+            self.raw_source!=dialog.source_raw){
             self.vat_dialog=None;
             return;
         }
-        let recipients=self.analysis.as_ref().map(|analysis|
-            reception_service::recipients(analysis).to_vec()
-        ).unwrap_or_default();
+        let recipients=if let Some(target)=confirmed.as_ref(){
+            self.workflow_snapshot.as_ref().map(|board|{
+                let mut seen=std::collections::HashSet::new();
+                board.groups.iter().flat_map(|g|g.shipments.iter())
+                    .filter(|s|s.order_id==target.selection.order_id && seen.insert(s.recipient_id.clone()))
+                    .map(|s|s.recipient.clone()).collect::<Vec<_>>()
+            }).unwrap_or_default()
+        }else{
+            self.analysis.as_ref().map(|analysis|
+                reception_service::recipients(analysis).to_vec()).unwrap_or_default()
+        };
         let busy=self.vat_change.is_some();
         let mut cancel=false;
         let mut apply=false;
@@ -3944,12 +3953,22 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                 });
             });
         });
-        if cancel && !busy{self.vat_dialog=None;return;}
+        if cancel && !busy{self.vat_dialog=None;if confirmed.is_some(){self.confirmed_modal_target=None;}return;}
         if apply && !busy{
             let result=self.vat_dialog.as_ref()
                 .expect("current VAT dialog").request(&recipients);
             match result{
-                Ok(request)=>self.start_vat_change(request,ctx),
+                Ok(request)=>{
+                    if let Some(target)=confirmed.as_ref(){
+                        // Release the modal's job admission only for its own submit.
+                        let dialog=self.vat_dialog.take();
+                        self.confirmed_modal_target=None;
+                        if !self.submit_confirmed_change(target,"vatSettings",None,request.value,ctx){
+                            self.vat_dialog=dialog;
+                            self.confirmed_modal_target=Some(target.clone());
+                        }
+                    }else{self.start_vat_change(request,ctx);}
+                },
                 Err(error)=>{
                     if let Some(dialog)=self.vat_dialog.as_mut(){
                         dialog.error=Some(error);
@@ -4057,6 +4076,28 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
     }
 
     fn show_client_chooser(&mut self, ctx: &egui::Context, work_area:Rect) {
+        if let Some(target)=self.confirmed_modal_target.clone(){
+            if self.client_chooser.is_some(){
+                let current=self.workflow_snapshot.as_ref().and_then(|b|b.groups.iter()
+                    .find(|g|g.id==target.selection.group_id)).map(|g|g.dealer_id.clone());
+                let event=self.client_chooser.as_mut().and_then(|chooser|
+                    chooser.show(ctx,Arc::clone(&self.gateway),current.as_deref(),work_area));
+                match event{
+                    Some(Choice::Selected(id))=>{
+                        if self.client_chooser.as_ref().is_some_and(|chooser|chooser.contains(&id)){
+                            self.client_chooser=None;
+                            self.confirmed_modal_target=None;
+                            if current.as_deref()!=Some(id.as_str()){
+                                self.submit_confirmed_change(&target,"clientId",None,serde_json::json!(id),ctx);
+                            }
+                        }
+                    },
+                    Some(Choice::Closed)=>{self.client_chooser=None;self.confirmed_modal_target=None;},
+                    None=>{}
+                }
+                return;
+            }
+        }
         // The chooser belongs to one reception, not a global selection.
         if self.client_chooser.as_ref().is_some_and(|chooser|
             self.active_id.as_deref() != Some(chooser.order_id.as_str())
@@ -5464,7 +5505,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                 ButtonRole::Navigation
                             };
                             if theme::action(bar, page.label(), role,
-                                page==self.page || (self.confirmed_cell.is_none() && self.confirmed_product_target.is_none())
+                                page==self.page || (self.confirmed_cell.is_none() && self.confirmed_modal_target.is_none())
                             ).clicked() {
                                 // Price cells must commit/cancel before leaving,
                                 // and a product modal must not be discarded by nav.
@@ -5991,7 +6032,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
     /// or the active employee-selected draft.
     fn visible_workflow_group(&self)->Option<(Arc<workflow_board::BoardSnapshot>,usize,usize)>{
         let editing=self.workflow_freight_editor.is_some() || self.confirmed_cell.is_some()
-            || self.confirmed_product_target.is_some();
+            || self.confirmed_modal_target.is_some();
         let stage=if editing{None}else{self.workflow_ui.active_preview()};
         if !editing && stage.is_none() && self.workflow_ui.pending_preview().is_some(){
             return None;
@@ -6173,9 +6214,17 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
             let mut hovered_source=None;
             let mut clicked_source=None;
             let mut new_clicked=false;
+            let mut change_client_clicked=false;
+            let no_edit=self.confirmed_cell.is_none() && self.confirmed_modal_target.is_none();
+            let client_editable=no_edit && self.gateway.workflow_write_enabled()
+                && self.workflow_mutation_ready() && !self.reception_modal_open()
+                && self.workflow_freight_editor.is_none()
+                && !group.dealer_id.is_empty()
+                && !board.groups.iter().flat_map(|g|g.shipments.iter()).any(|s|
+                    s.order_id==shipment.order_id && (s.transferred || s.completed_step.unwrap_or(0)>=4));
             Self::section_with_header(ui,"발주 원문",height,|header|{
-                if theme::action(header,"+ 새 주문",ButtonRole::Emphasized,
-                    self.confirmed_cell.is_none() && self.confirmed_product_target.is_none()).clicked(){
+                change_client_clicked=theme::action(header,"거래처 변경",ButtonRole::Standard,client_editable).clicked();
+                if theme::action(header,"+ 새 주문",ButtonRole::Emphasized,no_edit).clicked(){
                     new_clicked=true;
                 }
             },|body|{
@@ -6239,7 +6288,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                 }
             });
             self.source_hover=hovered_source;
-            if let Some(clicked)=clicked_source.filter(|_|self.confirmed_cell.is_none() && self.confirmed_product_target.is_none()){
+            if let Some(clicked)=clicked_source.filter(|_|self.confirmed_cell.is_none() && self.confirmed_modal_target.is_none()){
                 // A source token may belong to a recipient in ANOTHER group.
                 // Use the same ID-based resolver as hover, not just this card.
                 if let Some((target_group,target))=self.workflow_snapshot.as_ref()
@@ -6254,6 +6303,13 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                     });
                     self.link_hover.clear();
                     self.source_hover=None;
+                }
+            }
+            if change_client_clicked{
+                if let Some(bound)=self.confirmed_edit_target(&board,group,shipment){
+                    self.client_chooser=Some(ClientChooser::new(shipment.order_id.clone(),
+                        Arc::clone(&self.gateway),ui.ctx().clone()));
+                    self.confirmed_modal_target=Some(bound);
                 }
             }
             if new_clicked{
@@ -7168,6 +7224,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
             let mut confirmed_commit=false;
             let mut confirmed_cancel=false;
             let mut confirmed_add=false;
+            let mut confirmed_vat=false;
             let mut confirmed_item:Option<(serde_json::Value,bool)>=None;
             let confirmed_editable=self.gateway.workflow_write_enabled()
                 && self.workflow_mutation_ready()
@@ -7520,13 +7577,17 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                     Self::section_with_header(
                         pane,"발주서 합계",summary_rect.height(),
                         |header|{let response=theme::action(
-                            header,"부가세 설정",ButtonRole::Standard,false
-                        );if one_touch::stage(header)==one_touch::Stage::Review{one_touch::mark(header,response.rect);}},
+                            header,"부가세 설정",ButtonRole::Standard,confirmed_editable && confirmed_cell_idle
+                        );confirmed_vat=response.clicked();if one_touch::stage(header)==one_touch::Stage::Review{one_touch::mark(header,response.rect);}},
                         |body|{
-                            let vat=if group.vat_included>0 && group.vat_excluded>0{
-                                "부가세 일부 포함"
-                            }else if group.vat_included>0{"부가세 포함"}
-                            else{"부가세 별도"};
+                            let mut included=false;
+                            let mut excluded=false;
+                            for row in board.groups.iter().flat_map(|g|g.shipments.iter())
+                                .filter(|row|row.order_id==ship.order_id){
+                                if row.recipient["vatOverride"].as_bool().unwrap_or(false){included=true;}else{excluded=true;}
+                            }
+                            let vat=if included && excluded{"부가세 일부 포함"}
+                            else if included{"부가세 포함"}else{"부가세 별도"};
                             components::reception_total_footer(
                                 body,ship.order_total,Some(ship.shipment_count),vat
                             );
@@ -7551,6 +7612,15 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                     }});
                     ui.ctx().request_repaint();
                 }
+            }else if confirmed_vat{
+                if let Some(bound)=self.confirmed_edit_target(&board,group,ship){
+                    let mut seen=std::collections::HashSet::new();
+                    let rows=board.groups.iter().flat_map(|g|g.shipments.iter())
+                        .filter(|row|row.order_id==ship.order_id && seen.insert(row.recipient_id.clone()))
+                        .map(|row|row.recipient.clone()).collect::<Vec<_>>();
+                    self.vat_dialog=Some(VatDialog::new(ship.order_id.clone(),ship.source_raw.clone(),&rows));
+                    self.confirmed_modal_target=Some(bound);
+                }
             }else if confirmed_add || confirmed_item.is_some(){
                 if let Some(bound)=self.confirmed_edit_target(&board,group,ship){
                     if let Some((item,delete))=confirmed_item{
@@ -7564,7 +7634,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                             product_manager::ProductManager::new_selection(Arc::clone(&self.gateway),
                                 ui.ctx().clone(),group.dealer_id.clone())));
                     }
-                    self.confirmed_product_target=Some(bound);
+                    self.confirmed_modal_target=Some(bound);
                     ui.ctx().request_repaint();
                 }
             }else if workflow_freight_cancel{
@@ -9441,7 +9511,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                     let writable=self.gateway.workflow_write_enabled() &&
                         self.workflow_mutation_ready() &&
                         self.workflow_freight_editor.is_none() &&
-                        self.confirmed_cell.is_none() && self.confirmed_product_target.is_none() &&
+                        self.confirmed_cell.is_none() && self.confirmed_modal_target.is_none() &&
                         self.pending_draft_confirmation.is_none();
                     let reception_modal_open=self.reception_modal_open();
                     event=workflow_board_ui::show(
@@ -9465,7 +9535,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                     );
                 });
         });
-        if self.confirmed_cell.is_some() || self.confirmed_product_target.is_some(){return;}
+        if self.confirmed_cell.is_some() || self.confirmed_modal_target.is_some(){return;}
         match event{
             Some(workflow_board_ui::Event::ManageGroup(id))=>{
                 self.workflow_ui.stop_preview();
@@ -9926,7 +9996,7 @@ impl eframe::App for BandoEgui {
             self.workflow_freight_editor=None;
             self.confirmed_cell=None;
             self.submitted_confirmed_cell=None;
-            self.confirmed_product_target=None;
+            self.confirmed_modal_target=None;
             self.submitted_workflow_freight=None;
             self.workflow_stage_after_freight=None;
             self.workflow_freight_guidance=None;
