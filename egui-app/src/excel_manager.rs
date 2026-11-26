@@ -735,10 +735,13 @@ impl ExcelManager{
                             ui.horizontal_wrapped(|line|{
                                 line.label(typography::field_label(&format!("{} / {}행 / {}",
                                     text(row,"filename"),row["row"],text(row,"name"))));
-                                if text(row,"issue").contains("충돌")&&!text(row,"shipmentId").is_empty(){
-                                    if crate::button::action(line,"충돌 검토",theme::ButtonRole::Standard,
-                                        writable_snapshot&&self.gateway.excel_write_enabled()).clicked(){selected=Some(row.clone());}
-                                }
+                                // Legacy conflicts alone expose the action; reserve its
+                                // geometry even for rows without an actionable conflict.
+                                let legacy_conflict=text(row,"issue").contains("충돌")&&!text(row,"shipmentId").is_empty();
+                                line.add_visible_ui(legacy_conflict,|slot|{
+                                    if crate::button::action(slot,"충돌 검토",theme::ButtonRole::Standard,
+                                        legacy_conflict&&writable_snapshot&&self.gateway.excel_write_enabled()).clicked(){selected=Some(row.clone());}
+                                });
                             });
                             ui.label(typography::table_cell(&format!("송장 {} / 실제 운임 {} / {}",
                                 text(row,"tracking"),amount(&row["actual"]),text(row,"issue").replace("직원 확인 필요","확인 필요"))));

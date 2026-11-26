@@ -443,7 +443,7 @@ mod tests {
         fs::remove_dir_all(root).unwrap();
     }
     #[test]
-    fn native_matching_rejects_wrong_recipient_and_existing_waybill_collision() {
+    fn native_matching_ignores_address_allows_correction_and_rejects_wrong_name_or_other_owner() {
         let recipient = json!({
             "id":"r1","name":"김수취","address":"서울 테스트로 1",
             "phone":"010-2222-3333","mobile":"","actualFreight":null,
@@ -476,15 +476,26 @@ mod tests {
         assert_eq!(validate(&before,&next).unwrap(),(1,0));
         let mut mismatched = next.clone();
         mismatched["factoryReplies"][0]["rows"][0]["address"] = json!("다른 주소");
-        assert!(validate(&before,&mismatched).unwrap_err().contains("수취인"));
+        mismatched["factoryReplies"][0]["rows"][0]["contacts"]=json!(["010-0000-0000"]);
+        assert_eq!(validate(&before,&mismatched).unwrap(),(1,0));
+        mismatched["factoryReplies"][0]["rows"][0]["name"]=json!("다른 수하인");
+        assert!(validate(&before,&mismatched).is_err());
         let mut conflicting = before.clone();
         conflicting["workflow"]["shipments"][0]["tracking"]["FACTORY"] =
             json!("009988776655");
-        assert!(validate(&conflicting,&next).unwrap_err().contains("기존 운송장"));
+        assert_eq!(validate(&conflicting,&next).unwrap(),(1,0));
         let mut freight_conflict = before.clone();
         freight_conflict["workflow"]["shipments"][0]["actualFreight"]["FACTORY"] =
             json!(5000);
-        assert!(validate(&freight_conflict,&next).unwrap_err().contains("기존 실제 운임"));
+        assert_eq!(validate(&freight_conflict,&next).unwrap(),(1,0));
+        // A Q value already owned by an unrelated shipment must never be stolen.
+        let other=json!({"id":"ship2","orderId":"order2","recipientId":"r2",
+            "tracking":{"FACTORY":"001234567890"},"actualFreight":{}});
+        let mut old=before.clone();
+        old["workflow"]["shipments"].as_array_mut().unwrap().push(other.clone());
+        let mut updated=next.clone();
+        updated["workflow"]["shipments"].as_array_mut().unwrap().push(other);
+        assert!(validate(&old,&updated).unwrap_err().contains("중복"));
     }
 
     #[test]
