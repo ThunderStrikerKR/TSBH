@@ -96,6 +96,22 @@ mod tests {
         assert_eq!(values[12],"04500");
     }
     #[test]
+    fn recognized_dispatch_date_and_existing_note_reach_logen_message_column(){
+        let raw="수령자: 가상 수취인\n주소: 서울특별시 중구 테스트로 1\n메모: 문 앞\n10월12일 발송";
+        let recognized=super::recognition::execute("analyze_order",json!({
+            "raw":raw,"state":{"products":[],"aliases":[],"clients":[]}
+        })).unwrap();
+        assert_eq!(recognized["recipients"][0]["note"],"문 앞\n10월12일 발송");
+        for (origin,operation) in [("FACTORY","prepare_factory_export"),("STORE","prepare_store_export")]{
+            let mut s=state(origin);
+            s["workflow"]["queue"][0]["snapshot"]["recipient"]["note"]=
+                recognized["recipients"][0]["note"].clone();
+            let preview=output::execute(operation,json!({"state":s,"ids":["queue-1"]})).unwrap();
+            assert_eq!(preview["rows"][0]["values"][10],"문 앞\n10월12일 발송");
+            assert_eq!(preview["rows"][0]["values"].as_array().unwrap().len(),16);
+        }
+    }
+    #[test]
     fn store_product_separator_and_color_preserved() {
         let mut state = state("STORE");
         state["workflow"]["queue"][0]["snapshot"]["recipient"]["items"]

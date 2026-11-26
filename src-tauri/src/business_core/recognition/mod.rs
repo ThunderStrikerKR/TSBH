@@ -779,6 +779,19 @@ fn ts_product_display<'a>(
     (source,0)
 }
 
+/// A standalone dispatch instruction with an explicit calendar date is
+/// delivery evidence, not a product, quantity, or new recipient. Keep the
+/// wording intact: do not infer a year or convert dispatch into arrival.
+fn dated_dispatch_instruction(text:&str)->bool{
+    static RE:std::sync::OnceLock<Regex>=std::sync::OnceLock::new();
+    let re=RE.get_or_init(||Regex::new(concat!(
+        r"^\s*(?:[※*■>-]+\s*)?(?:발송\s*(?:요청일|예정일|일자|일)|출고\s*(?:요청일|예정일|일자|일))?\s*[:：]?\s*",
+        r"(?:[0-9]{4}\s*년\s*)?(?:0?[1-9]|1[0-2])\s*월\s*(?:0?[1-9]|[12][0-9]|3[01])\s*일",
+        r"(?:\s*\([월화수목금토일](?:요일)?\))?\s*(?:에|까지|부터|이후|이전)?\s*",
+        r"(?:발송|출고)(?:\s*(?:요청(?:드립니다|합니다)?|부탁(?:드립니다|합니다|드려요)?|해주세요|해\s*주세요|바랍니다|예정|필수|희망))?\s*[.!~]*\s*$"
+    )).expect("dated dispatch instruction"));
+    re.is_match(text)
+}
 fn analyze(raw: &str, state: &Value, client: Option<&Value>) -> Result<Value, String> {
     let client_id = client_id(client);
     let lines = physical_lines(raw);
@@ -812,11 +825,22 @@ fn analyze(raw: &str, state: &Value, client: Option<&Value>) -> Result<Value, St
             note_continuation=None;
             continue;
         }
+        // Parse an explicit dated dispatch instruction before recipient or
+        // product heuristics. An ordinary order date or a question does not
+        // become a confirmed dispatch request.
+        if dated_dispatch_instruction(text){
+            let start=line.text.find(text).unwrap_or(0);
+            add_match(&mut events,line,start,start+text.len(),"note",
+                text.to_owned(),"발송 요청일 원문 구간");
+            note_continuation=None;
+            continue;
+        }
         if is_money_or_header(text) { continue; }
         // The TS recognizer extends a memo through subsequent non-field
         // lines in the same paragraph, stopping at any contact/address/item.
         if let Some(i)=note_continuation {
             let field=person_label.is_match(line.text)
+                || note_label.is_match(line.text)
                 || address_begin(line.text).is_some()
                 || phone.is_match(line.text)
                 || (near_delivery && !other_recipient_field(text))
@@ -1118,6 +1142,10 @@ fn analyze(raw: &str, state: &Value, client: Option<&Value>) -> Result<Value, St
             recipients[row_index][kind] = json!(v);
         } else if kind=="address" && !previous.contains(&v) {
             recipients[row_index]["address"] = json!(format!("{previous} {v}"));
+        } else if kind=="note" && !previous.lines().any(|line|line==v.as_str()) && previous!=v {
+            // Multiple independent delivery instructions share the existing
+            // note field. Preserve order and avoid duplicate exact lines.
+            recipients[row_index]["note"]=json!(format!("{previous}\n{v}"));
         } else if (kind=="phone" || kind=="mobile") && previous != v {
             let other = if kind=="phone" { "mobile" } else { "phone" };
             if recipients[row_index][other].as_str().unwrap_or("").is_empty() {
@@ -2249,5 +2277,41 @@ mod recipient_postcode_tests{
         assert_eq!(out["recipients"].as_array().unwrap().len(),1);
         assert_eq!(out["recipients"][0]["postcode"],"01234");
         assert!(out["recipients"][0]["items"].as_array().unwrap().is_empty());
+    }
+}
+
+#[cfg(test)]
+mod dated_dispatch_tests{
+    use super::*;
+    #[test]
+    fn explicit_dispatch_date_is_preserved_with_existing_note(){
+        let state=json!({"products":[],"aliases":[],"clients":[]});
+        for text in ["10월12일 발송","10월 12일 발송 부탁드립니다","2026년 10월 12일 출고 요청"]{
+            let raw=format!("수령자: 가상 수취인\n주소: 서울특별시 중구 테스트로 1\n메모: 문 앞\n{text}");
+            let result=analyze(&raw,&state,None).unwrap();
+            let rows=result["recipients"].as_array().unwrap();
+            assert_eq!(rows.len(),1);
+            assert_eq!(rows[0]["note"],format!("문 앞\n{text}"));
+            assert!(rows[0]["items"].as_array().unwrap().is_empty());
+            assert!(rows[0]["sources"].as_array().unwrap().iter()
+                .any(|s|s["field"]=="note" && s["text"]==text));
+        }
+    }
+    #[test]
+    fn dispatch_recognizer_does_not_turn_questions_or_order_dates_into_instructions(){
+        for text in ["발주일: 10월12일","10월12일 발송 가능한가요?","10월12일 입금",
+            "10월12일 배송 완료","10월12일 709 3개"]{
+            assert!(!dated_dispatch_instruction(text),"{text}");
+        }
+    }
+    #[test]
+    fn each_recipient_keeps_its_local_dispatch_date(){
+        let state=json!({"products":[],"aliases":[],"clients":[]});
+        let raw="수령자: 가상 수취인 A\n주소: 서울특별시 중구 테스트로 1\n10월12일 발송\n\n수령자: 가상 수취인 B\n주소: 경기도 가평군 테스트로 2\n11월13일 출고";
+        let result=analyze(raw,&state,None).unwrap();
+        let rows=result["recipients"].as_array().unwrap();
+        assert_eq!(rows.len(),2);
+        assert_eq!(rows[0]["note"],"10월12일 발송");
+        assert_eq!(rows[1]["note"],"11월13일 출고");
     }
 }
