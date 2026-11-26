@@ -254,7 +254,7 @@ pub(super) fn workflow_issues(state:&Value,group_id:&str)->Result<Vec<Value>,Str
     }
     // Sender fields are checked at Excel output, not at order confirmation.
     for ship in &shipments{
-        let (_o,row)=context(state,ship)?;
+        let (shipment_order,row)=context(state,ship)?;
         for item in rows(field(row,"items")){
             let pid=str_field(item,"productId");
             let vid=str_field(item,"variantId");
@@ -277,7 +277,8 @@ pub(super) fn workflow_issues(state:&Value,group_id:&str)->Result<Vec<Value>,Str
             issues.push(operational(order,Some(row),group_id,"ORIGIN",
                 "발송지를 확인하세요".into(),1,"product"));
         }
-        if w::fee_total(ship,row,order).is_none() &&
+        let shipment_client=w::party(state,shipment_order).ok_or("거래처 정보를 확인하세요.")?;
+        if w::billable_fee_total(ship,row,shipment_order,shipment_client).is_none() &&
             !issues.iter().any(|i|str_field(i,"recipientId")==str_field(row,"id")&&
                 has_value(field(i,"itemId"))&&str_field(i,"severity")=="ACTION"&&
                 ["MODEL","MODEL_CHOICE","ALIAS_CONFLICT","QUANTITY_LINK",
