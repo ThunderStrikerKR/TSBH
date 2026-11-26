@@ -422,7 +422,7 @@ fn table<const N:usize>(
 struct Snapshot{state:Value,shipments:Value}
 pub struct ExcelManager{
     gateway:Arc<dyn BandoGateway>,
-    receiver:Option<Receiver<Result<Snapshot,String>>>,
+    refresh_job:crate::screen_refresh::ReadRefresh<Snapshot>,
     result:Option<Snapshot>,
     operation:Option<Receiver<Result<Value,String>>>,
     operation_name:Option<String>,
@@ -449,7 +449,6 @@ pub struct ExcelManager{
     reply_changed:bool,
     reply_refresh_pending:bool,
     // Retain verified rows for display, but never write using a stale revision.
-    snapshot_stale:bool,
     reply_rows:Vec<Value>,
     reply_rows_revision:Option<u64>,
     reply_page:usize,
@@ -461,7 +460,7 @@ impl ExcelManager{
         ).date_naive();
         let (export_from,export_to)=default_export_date_range(today);
         let mut manager=Self{
-            gateway,receiver:None,result:None,operation:None,operation_name:None,
+            gateway,refresh_job:Default::default(),result:None,operation:None,operation_name:None,
             error:None,notice:None,tab:Tab::Factory,
             tab_snapshots:crate::navigation::NavigationSnapshots::new(0),tab_filters:Default::default(),
             query:String::new(),selected:BTreeSet::new(),
@@ -472,7 +471,7 @@ impl ExcelManager{
             export_to_month:crate::navigation::calendar_month_start(today),
             managed_queue:None,freight_drafts:HashMap::new(),
             open_order:None,
-            reply_review:false,reply_confirm:None,reply_changed:false,reply_refresh_pending:false,snapshot_stale:false,
+            reply_review:false,reply_confirm:None,reply_changed:false,reply_refresh_pending:false,
             reply_rows:Vec::new(),reply_rows_revision:None,reply_page:0,
         };
         manager.refresh(ctx);manager
@@ -529,34 +528,22 @@ impl ExcelManager{
         // Any read started after the notification satisfies the pending
         // inbox refresh, including the existing page-entry read.
         self.reply_refresh_pending=false;
-        self.error=None;self.snapshot_stale=true;
-        let (sender,receiver)=mpsc::channel();
-        self.receiver=Some(receiver);
+        self.error=None;
         let gateway=Arc::clone(&self.gateway);
-        std::thread::spawn(move||{
-            let result=gateway.load_business_state().and_then(|state|{
-                let shipments=gateway.execute(ReadOperation::ReadShipments,
-                    json!({"state":&state}))?;
-                Ok(Snapshot{state,shipments})
-            });
-            let _=sender.send(result);
-            ctx.request_repaint();
+        self.refresh_job.submit_required(ctx,move||{
+            let state=gateway.load_business_state()?;
+            let shipments=gateway.execute(ReadOperation::ReadShipments,json!({"state":&state}))?;
+            Ok(Snapshot{state,shipments})
         });
     }
     pub fn poll(&mut self,ctx:&egui::Context){
-        let read=self.receiver.as_ref().map(Receiver::try_recv);
-        match read{
-            Some(Ok(Ok(value)))=>{
-                self.result=Some(value);self.snapshot_stale=false;self.error=None;self.receiver=None;
+        match self.refresh_job.poll(){
+            Some(Ok(value))=>{
+                self.refresh_job.publish(&mut self.result,value);
+                self.error=None;
             }
-            Some(Ok(Err(message)))=>{
-                self.error=Some(message);self.snapshot_stale=true;self.receiver=None;
-            }
-            Some(Err(TryRecvError::Disconnected))=>{
-                self.error=Some("Excel 목록 조회가 중단되었습니다.".into());
-                self.snapshot_stale=true;self.receiver=None;
-            }
-            _=>{}
+            Some(Err(message))=>self.error=Some(message),
+            None=>{}
         }
         let write=self.operation.as_ref().map(Receiver::try_recv);
         match write{
@@ -577,7 +564,7 @@ impl ExcelManager{
                         state:result["state"].clone(),
                         shipments:result["shipmentReads"].clone()
                     });
-                    self.snapshot_stale=false;
+                    self.refresh_job.verified();
                     // The list reconciles only IDs that actually left the queue.
                 }else if operation=="reply-correction"{
                     self.accept_reply_correction(result);
@@ -595,15 +582,15 @@ impl ExcelManager{
                         ));
                     }
                     // A committed export must not be reported as failed due to a later read.
-                    self.receiver=None;
+                    self.refresh_job.cancel();
                     if result.get("shipmentReads").is_some() && result["state"]["revision"].as_u64().is_some(){
                         self.result=Some(Snapshot{
                             state:result["state"].clone(),
                             shipments:result["shipmentReads"].clone()
                         });
-                        self.snapshot_stale=false;
+                        self.refresh_job.verified();
                     }else{
-                        self.snapshot_stale=true;
+                        self.refresh_job.require();
                         self.reply_refresh_pending=true;
                         self.error=result["projectionError"].as_str().map(str::to_owned);
                     }
@@ -628,21 +615,21 @@ impl ExcelManager{
     fn accept_reply_correction(&mut self,mut result:Value){
         self.reply_confirm=None;
         self.reply_changed=true;
-        self.receiver=None;
+        self.refresh_job.cancel();
         self.notice=Some("공장 회신 정정 내용을 저장했습니다. 기존 원본 및 이력은 유지됩니다.".into());
         if result.get("shipmentReads").is_some() && result["state"]["revision"].as_u64().is_some(){
             self.result=Some(Snapshot{
                 state:result["state"].take(),
                 shipments:result["shipmentReads"].take(),
             });
-            self.snapshot_stale=false;
+            self.refresh_job.verified();
             self.error=None;
             // Do not clear an independent inbox notification that arrived
             // while the correction worker was running.
         }else{
             // A projection error cannot undo an already committed reply.
             // Keep the success notification and fall back to a fresh read.
-            self.snapshot_stale=true;
+            self.refresh_job.require();
             self.reply_refresh_pending=true;
             self.error=result["projectionError"].as_str().map(str::to_owned);
         }
@@ -650,8 +637,8 @@ impl ExcelManager{
 
     fn task(&mut self,action:&str,ctx:egui::Context,
         work:impl FnOnce(Arc<dyn BandoGateway>)->Result<Value,String>+Send+'static){
-        if self.operation.is_some()||self.receiver.is_some()||
-            (self.snapshot_stale&&!matches!(action,"file"|"folder")){return}
+        if self.operation.is_some()||self.refresh_job.pending()||
+            (self.refresh_job.required()&&!matches!(action,"file"|"folder")){return}
         crate::floating_notice::dispatch_pointer(&ctx,"excel.action");
         let (sender,receiver)=mpsc::channel();
         self.operation=Some(receiver);self.operation_name=Some(action.into());
@@ -712,8 +699,8 @@ impl ExcelManager{
     pub fn show_reply_review(&mut self,ctx:&egui::Context,area:Rect){
         if !self.reply_review{return}
         self.update_reply_review();
-        let busy=self.operation.is_some()||self.receiver.is_some();
-        let writable_snapshot=!busy&&!self.snapshot_stale;
+        let busy=self.operation.is_some()||self.refresh_job.pending();
+        let writable_snapshot=!busy&&!self.refresh_job.required();
         let mut close=false;let mut selected:Option<Value>=None;
         let count=self.reply_rows.len();
         crate::popup::modal_backdrop(ctx,"factory-reply-review-backdrop",false);
@@ -798,7 +785,7 @@ impl ExcelManager{
         self.poll(ui.ctx());
         let page_origin_y=ui.cursor().top();
         ui.spacing_mut().scroll=crate::scrollbar::management_scroll_style();
-        if self.reply_refresh_pending&&self.operation.is_none()&&self.receiver.is_none(){
+        if self.reply_refresh_pending&&self.operation.is_none()&&!self.refresh_job.pending(){
             self.refresh(ui.ctx().clone());
         }
         crate::floating_notice::sync(
@@ -822,8 +809,8 @@ impl ExcelManager{
             });
         });
         ui.add_space(theme::SPACE_8);
-        let busy=self.operation.is_some()||self.receiver.is_some();
-        let writable_snapshot=!busy&&!self.snapshot_stale;
+        let busy=self.operation.is_some()||self.refresh_job.pending();
+        let writable_snapshot=!busy&&!self.refresh_job.required();
         let next_tab=crate::ui_layout::management_top_content(ui,|top|
             crate::button::management_tabs(top,&[
                 ("공장 엑셀 대기",self.tab==Tab::Factory,!busy),
@@ -860,7 +847,7 @@ impl ExcelManager{
         sort_queue(&mut queued,self.sort_queue);
         let mut visible:BTreeSet<String>=queued.iter().filter(|r|!r.legacy)
             .map(|r|r.id().to_owned()).collect();
-        if self.tab!=Tab::History && self.result.is_some() && !self.snapshot_stale{
+        if self.tab!=Tab::History && self.result.is_some() && !self.refresh_job.required(){
             self.selected.retain(|id|visible.contains(id));
         }
         crate::card::align_management_primary_card(ui,page_origin_y);
@@ -1035,7 +1022,7 @@ impl ExcelManager{
                 let indexes=0..history.len();
                 let order_list=history.clone();
                 let empty_message=table_state_message(
-                    self.tab,&self.query,history.len(),self.receiver.is_some(),
+                    self.tab,&self.query,history.len(),self.refresh_job.pending(),
                     self.error.is_some()
                 );
                 let scroll_keys=order_list.iter().map(|entry|text(&entry.export,"id").to_owned()).collect::<Vec<_>>();
@@ -1085,7 +1072,7 @@ impl ExcelManager{
                     ExcelTableHeightPolicy::FillCard{card_min_height}
                 };
                 let empty_message=table_state_message(
-                    self.tab,&self.query,records.len(),self.receiver.is_some(),
+                    self.tab,&self.query,records.len(),self.refresh_job.pending(),
                     self.error.is_some()
                 );
                 let scroll_keys=records.iter().map(|entry|entry.id().to_owned()).collect::<Vec<_>>();
@@ -1492,7 +1479,7 @@ mod table_state_tests {
         assert!(manager.take_reply_changed());
         assert!(manager.reply_refresh_pending);
         assert!(manager.result.is_some());
-        assert!(manager.snapshot_stale);
+        assert!(manager.refresh_job.required());
     }
 
     #[test]
@@ -1518,7 +1505,7 @@ mod table_state_tests {
             assert!(manager.operation.is_none());
             assert!(manager.notice.as_deref().unwrap().contains("Excel 저장과 출력 이력을 기록했습니다."));
             assert!(manager.result.is_some());
-            assert!(manager.snapshot_stale);
+            assert!(manager.refresh_job.required());
             assert!(manager.reply_refresh_pending);
             assert_eq!(manager.error.as_deref(),Some("synthetic"));
         }
@@ -1562,13 +1549,12 @@ mod table_state_tests {
 impl ExcelManager {
     pub(crate) fn geometry_fixture(gateway:Arc<dyn BandoGateway>,ctx:egui::Context,tab:usize,loaded:bool)->Self{
         let mut page=Self::new(gateway,ctx);
-        page.receiver=None;page.snapshot_stale=false;page.tab=Tab::ALL[tab];if loaded{page.result=Some(Snapshot{state:serde_json::json!({}),shipments:serde_json::json!([])});}
+        page.refresh_job.reset();page.tab=Tab::ALL[tab];if loaded{page.result=Some(Snapshot{state:serde_json::json!({}),shipments:serde_json::json!([])});}
         page
     }
 
     pub(crate) fn geometry_begin_read(&mut self)->Box<dyn FnOnce(Result<usize,String>)>{
-        let (tx,rx)=std::sync::mpsc::channel();
-        self.receiver=Some(rx);
+        let finish=self.refresh_job.geometry_begin_read();
         self.error=None;
         let origin=if self.tab==Tab::Store{"STORE"}else{"FACTORY"};
         if self.tab==Tab::History{self.export_from.clear();self.export_to.clear();self.export_from_input.clear();self.export_to_input.clear();}
@@ -1580,7 +1566,7 @@ impl ExcelManager {
                 let exports=(0..count).map(|i|json!({"id":format!("geometry-export-{i}"),"at":"2026-11-24T09:00:00+09:00","filename":format!("검증-{i}.xlsx"),"orderIds":[format!("geometry-o-{i}")],"snapshots":[{"snapshot":{"recipient":{"items":[{"name":"검증 상품","quantity":2}]}}}]})).collect::<Vec<_>>();
                 Snapshot{state:json!({"orders":orders,"exports":exports,"workflow":{"shipments":shipments,"queue":queue}}),shipments:json!({"shipments":[]})}
             });
-            assert!(tx.send(result).is_ok());
+            finish(result);
         })
     }
     pub(crate) fn geometry_read_failed(&self)->bool{self.error.is_some()}
