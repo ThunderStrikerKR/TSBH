@@ -102,9 +102,12 @@ pub(crate) fn remember_search_focus(response:&Response){
         && ctx.memory(|memory|memory.focused().is_none()){
         response.request_focus();
     }
+    // Response::has_focus reads Context memory. Never call it inside
+    // Context::data_mut: egui's context lock is not reentrant.
+    let focused=response.has_focus();
     ctx.data_mut(|data|{
         data.get_temp_mut_or_default::<FocusStore>(focus_store_id()).put(
-            response.id,(SearchFocus{frame,focused:response.has_focus()},now));
+            response.id,(SearchFocus{frame,focused},now));
     });
 }
 
