@@ -414,11 +414,6 @@ fn workflow_header(
     debug_assert!((manage.left()-signal.right()-gap).abs()<=0.01);
     debug_assert!((delete.left()-manage.right()-gap).abs()<=0.01);
 
-    crate::ui_primitives::paint_workflow_icon(
-        ui.painter(),arrow.center(),
-        if open{crate::ui_primitives::WorkflowIcon::Expanded}
-        else{crate::ui_primitives::WorkflowIcon::Collapsed},theme::SECONDARY
-    );
     let text_rect=Rect::from_min_max(
         Pos2::new(title_rect.left()+theme::WORKFLOW_TITLE_LEADING_INSET,title_rect.top()),
         Pos2::new((title_rect.right()-theme::WORKFLOW_TITLE_TRAILING_INSET).max(title_rect.left()+theme::WORKFLOW_TITLE_LEADING_INSET),
@@ -433,11 +428,9 @@ fn workflow_header(
         Pos2::new(text_rect.left(),text_rect.center().y-galley.size().y/2.0),
         galley,theme::TEXT
     );
-    let title_response=ui.interact(
-        arrow.union(title_rect),
-        workflow_widget_id("workflow-header",id,in_preview),egui::Sense::click()
-    );
-    let title_response=crate::ui_primitives::shortened_text_tooltip(title_response,&visible,title);
+    let title_response=crate::button::disclosure_at(ui,arrow.union(title_rect),
+        workflow_widget_id("workflow-header",id,in_preview),arrow.center(),None,
+        open,visible!=title,title,theme::CONTROL_RADIUS as f32);
 
     let block=workflow_control_rect(signal);
     theme::paint_bordered_surface(ui.painter(),block,theme::WORKFLOW_SIGNAL_BLOCK_RADIUS,
@@ -466,9 +459,6 @@ fn workflow_header(
         crate::button::WorkflowAuxiliaryAction::Delete,
         can_delete,in_preview
     ).clicked();
-    // The header is an actionable target even when the status/control
-    // boxes beside it are inert. Hover blue; selected cards remain orange.
-    crate::button::paint_button_hover(ui,&title_response,theme::CONTROL_RADIUS as f32);
     HeaderActions{
         title:title_response,manage:manage_clicked,delete:delete_clicked
     }

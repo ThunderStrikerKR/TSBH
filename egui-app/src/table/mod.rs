@@ -5,6 +5,29 @@ use crate::{theme,typography};
 use eframe::egui::{Sense,Align};
 use crate::ui_primitives::{truncated_label,soft_divider,overflow_region_tooltip,text_exceeds_rect,positioned_text_overflow};
 
+/// Shared editable-cell text placement, clipping and overflow measurement.
+pub(crate) fn paint_editable_cell_text(
+    ui:&Ui,clip:Rect,label:&str,full:&str,font:egui::FontId,ink:Color32,
+    right:bool,y_adjust:f32
+)->bool{
+    let galley=ui.painter().layout_no_wrap(label.to_owned(),font,ink);
+    let overflow=label!=full || text_exceeds_rect(galley.size(),clip.intersect(ui.clip_rect()));
+    let mut origin=reception_item_value_origin(clip,galley.size(),right);
+    origin.y+=y_adjust;
+    ui.painter().with_clip_rect(clip).galley(origin,galley,ink);
+    overflow
+}
+
+/// Shared fixed-cell interaction and semantic cursor.
+pub(crate) fn editable_cell_hit(
+    ui:&Ui,rect:Rect,id:egui::Id,editable:bool,cursor:egui::CursorIcon,
+    overflow:bool,full:&str
+)->egui::Response{
+    let response=ui.interact(rect,id,if editable{Sense::click()}else{Sense::hover()});
+    let response=crate::ui_primitives::overflow_tooltip(response,overflow,full);
+    if editable{response.on_hover_cursor(cursor)}else{response}
+}
+
 fn header_begin(ui:&Ui,header:Rect,content:Rect)->Rect{
     let text=Rect::from_min_max(content.min,egui::pos2(
         content.right(),content.bottom()-theme::MANAGEMENT_TABLE_HEADER_OUTLINE_HEIGHT

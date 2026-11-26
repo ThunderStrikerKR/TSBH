@@ -17,6 +17,38 @@ pub(crate) fn paint_button_hover(ui:&Ui,response:&Response,radius:f32){
     paint_button_hover_corners(ui,response,radius);
 }
 
+/// Fixed-rectangle remove action for compact rows.
+pub(crate) fn remove_at(ui:&Ui,hit:Rect,id:egui::Id,enabled:bool)->Response{
+    let enabled=enabled && ui.is_enabled();
+    let response=ui.interact(hit,id,if enabled{Sense::click()}else{Sense::hover()});
+    let ink=if enabled{theme::SECONDARY}else{theme::DISABLED_ACTION_TEXT};
+    if enabled{paint_button_hover(ui,&response,theme::CONTROL_RADIUS as f32);}
+    let center=hit.center();
+    let stroke=Stroke::new(1.5,ink);
+    for sign in [-1.0_f32,1.0]{
+        ui.painter().line_segment([
+            center+egui::vec2(-4.0,-4.0*sign),
+            center+egui::vec2(4.0,4.0*sign)
+        ],stroke);
+    }
+    response
+}
+
+/// Shared disclosure chevron, overflow tooltip and hover policy.
+pub(crate) fn disclosure_at(
+    ui:&Ui,hit:Rect,id:egui::Id,center:egui::Pos2,arrow_clip:Option<Rect>,
+    open:bool,overflow:bool,full:&str,hover_radius:f32
+)->Response{
+    let painter=ui.painter().with_clip_rect(arrow_clip.unwrap_or(ui.clip_rect()));
+    paint_management_chevron(&painter,center,if open{
+        ManagementChevronDirection::Down
+    }else{ManagementChevronDirection::Right});
+    let response=ui.interact(hit,id,Sense::click());
+    let response=crate::ui_primitives::overflow_tooltip(response,overflow,full);
+    paint_button_hover(ui,&response,hover_radius);
+    response
+}
+
 pub(crate) fn action(ui: &mut Ui, label: &str, role: ButtonRole, enabled: bool) -> Response {
     action_with_min_width(ui, label, role, enabled, 0.0)
 }

@@ -193,19 +193,10 @@ impl ModelGroupManager {
         assigned
     }
     fn row(&mut self,ui:&mut Ui,id:&str,g:&Value,products:&HashMap<&str,&Value>){
-        let (rect,response)=ui.allocate_exact_size(
-            Vec2::new(ui.available_width(),theme::FAMILY_ROW_HEIGHT),Sense::click());
+        let (rect,response)=crate::card::selectable_list_row(
+            ui,theme::FAMILY_ROW_HEIGHT,self.selected==id,!self.busy());
         #[cfg(test)]
         crate::ui_test_support::record("catalog data row",rect);
-        if self.selected==id||response.hovered(){
-            ui.painter().rect_filled(rect,theme::CONTROL_RADIUS as f32,
-                if self.selected==id{theme::RAISED}else{theme::INPUT});
-        }
-        if self.selected!=id && !self.busy(){
-            crate::button::paint_button_hover(
-                ui,&response,theme::CONTROL_RADIUS as f32
-            );
-        }
         ui.scope_builder(UiBuilder::new().max_rect(rect)
             .layout(Layout::left_to_right(Align::Center)),|line|{
                 line.add_space(theme::SPACE_12);

@@ -3,7 +3,7 @@ use eframe::egui::{self,Align,Layout,Rect,Response,Sense,Stroke,Ui,Vec2};
 use crate::{theme,typography,source_highlight};
 use crate::ui_primitives::{text_exceeds_rect,overflow_tooltip};
 use crate::input::{reception_recipient_text_edit,allocate_singleline_field,reception_recipient_value_hit,money_edit_text,reception_freight_money_readonly,money_unit_left,RECEPTION_MONEY_PENDING,RECEPTION_MONEY_UNIT_GAP};
-use crate::table::{management_table_data_width,reception_item_columns,reception_item_text_clip,reception_item_value_origin,paint_management_table_row_rule};
+use crate::table::{management_table_data_width,reception_item_columns,reception_item_text_clip,paint_management_table_row_rule};
 use crate::scrollbar::{scroll_area,ScrollAxes};
 use crate::popup::{show_decision_window,decision_content};
 use crate::ui_layout::fixed_status_slot;
@@ -392,39 +392,27 @@ pub fn reception_item_row(
         ));
         let ink=if active[index] {source_highlight::ACTIVE_TEXT} else if orange{crate::one_touch::INK}else{color};
         let label=visible_product.as_deref().unwrap_or(row_text);
-        let galley=ui.painter().layout_no_wrap(label.to_owned(),font,ink);
-        item_overflow[index]=label!=text || text_exceeds_rect(galley.size(),value_clip.intersect(ui.clip_rect()));
-        let mut origin=reception_item_value_origin(value_clip,galley.size(),right);
-        // Pending monetary markers are not digits; do not inherit the
-        // approved 2.5pt downward numeric glyph correction.
-        if index==2 && reception_pending_money_marker(label){
-            origin.y-=typography::DATA_NUMERIC_GLYPH_OFFSET_Y;
-        }
-        ui.painter().with_clip_rect(value_clip).galley(origin,galley,ink);
+        // Pending monetary markers are not digits; preserve the approved optical correction.
+        let y_adjust=if index==2 && reception_pending_money_marker(label){
+            -typography::DATA_NUMERIC_GLYPH_OFFSET_Y
+        }else{0.0};
+        item_overflow[index]=crate::table::paint_editable_cell_text(
+            ui,value_clip,label,text,font,ink,right,y_adjust);
     }
     // Preserve the five-source-field highlighting contract: these three
     // hover responses still map to the exact Rust product/quantity/price keys.
     // Use a distinct id for each column in each row. next_auto_id()
     // alone would not necessarily advance for manually painted cells.
     let row_id = (rect.top().to_bits(), rect.left().to_bits());
-    let product = ui.interact(
-        cells[0], ui.make_persistent_id(("item-cell", row_id, 0)),
-        if editable{Sense::click()}else{Sense::hover()},
-    );
-    let product=overflow_tooltip(product,item_overflow[0],name);
-    let product = if editable { product.on_hover_cursor(egui::CursorIcon::PointingHand) } else { product };
-    let quantity_response = ui.interact(
-        cells[1], ui.make_persistent_id(("item-cell", row_id, 1)),
-        if editable{Sense::click()}else{Sense::hover()},
-    );
-    let quantity=overflow_tooltip(quantity_response,item_overflow[1],quantity);
-    let quantity = if editable { quantity.on_hover_cursor(egui::CursorIcon::Text) } else { quantity };
-    let amount_response = ui.interact(
-        cells[2], ui.make_persistent_id(("item-cell", row_id, 2)),
-        if editable{Sense::click()}else{Sense::hover()},
-    );
-    let amount=overflow_tooltip(amount_response,item_overflow[2],amount);
-    let amount = if editable { amount.on_hover_cursor(egui::CursorIcon::Text) } else { amount };
+    let product=crate::table::editable_cell_hit(ui,cells[0],
+        ui.make_persistent_id(("item-cell",row_id,0)),editable,
+        egui::CursorIcon::PointingHand,item_overflow[0],name);
+    let quantity=crate::table::editable_cell_hit(ui,cells[1],
+        ui.make_persistent_id(("item-cell",row_id,1)),editable,
+        egui::CursorIcon::Text,item_overflow[1],quantity);
+    let amount=crate::table::editable_cell_hit(ui,cells[2],
+        ui.make_persistent_id(("item-cell",row_id,2)),editable,
+        egui::CursorIcon::Text,item_overflow[2],amount);
     paint_management_table_row_rule(ui.painter(),rect);
     // The renderer owns both fill and border. Do not let reception page
     // branches independently paint an outline: pending board previews
@@ -441,18 +429,7 @@ pub fn reception_item_row(
             egui::vec2(action_width,28.0)
         );
         let enabled=editable && ui.is_enabled();
-        let action=ui.interact(hit,ui.make_persistent_id(("item-remove",row_id)),
-            if enabled{Sense::click()}else{Sense::hover()});
-        let ink=if enabled{theme::SECONDARY}else{theme::DISABLED_ACTION_TEXT};
-        if enabled{crate::button::paint_button_hover(ui,&action,theme::CONTROL_RADIUS as f32);}
-        let center=hit.center();
-        let stroke=Stroke::new(1.5_f32,ink);
-        for sign in [-1.0_f32,1.0]{
-            ui.painter().line_segment([
-                center+egui::vec2(-4.0,-4.0*sign),
-                center+egui::vec2(4.0,4.0*sign)
-            ],stroke);
-        }
+        let action=crate::button::remove_at(ui,hit,ui.make_persistent_id(("item-remove",row_id)),enabled);
         remove_clicked=enabled && action.clicked();
     }
     #[cfg(test)]

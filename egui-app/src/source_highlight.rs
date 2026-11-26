@@ -397,13 +397,16 @@ pub fn paint_active_background(ui:&egui::Ui,rect:egui::Rect) {
 /// marks a field active. A board-driven recipient preview and a span-driven
 /// hover MUST produce exactly the same border, even when no LinkKey has
 /// completed its 50ms entrance timer yet.
+pub(crate) fn paint_active_outline(ui:&egui::Ui,rect:egui::Rect,radius:impl Into<egui::CornerRadius>){
+    ui.painter().rect_stroke(
+        rect.shrink(0.5),radius,
+        egui::Stroke::new(ACTIVE_BORDER_WIDTH,ACTIVE_BORDER),
+        egui::StrokeKind::Inside,
+    );
+}
 pub fn paint_active_if(ui:&egui::Ui, response:&egui::Response, highlighted:bool) {
     if highlighted {
-        ui.painter().rect_stroke(
-            response.rect.shrink(0.5),ACTIVE_RADIUS,
-            egui::Stroke::new(ACTIVE_BORDER_WIDTH,ACTIVE_BORDER),
-            egui::StrokeKind::Inside,
-        );
+        paint_active_outline(ui,response.rect,ACTIVE_RADIUS);
     }
 }
 

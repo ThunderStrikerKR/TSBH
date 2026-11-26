@@ -1958,3 +1958,19 @@ mod structural_divider_contract_tests {
         assert!(violations.is_empty(),"structural divider bypass:\n{}",violations.join("\n"));
     }
 }
+
+#[cfg(test)]
+mod shared_composite_control_contract_tests{
+    #[test]
+    fn migrated_composite_controls_use_their_shared_owners(){
+        let reception=include_str!("composite_reception.rs");
+        assert!(reception.contains("crate::button::remove_at("));
+        assert_eq!(reception.matches("crate::table::editable_cell_hit(").count(),3);
+        assert!(reception.contains("crate::table::paint_editable_cell_text("));
+        assert!(!reception.contains("let action=ui.interact(hit,ui.make_persistent_id((\"item-remove\""));
+        assert!(include_str!("model_group_manager.rs").contains("crate::card::selectable_list_row("));
+        assert!(include_str!("workflow_board_ui.rs").contains("crate::button::disclosure_at("));
+        assert!(include_str!("order_history_manager.rs").contains("crate::button::disclosure_at("));
+        assert!(include_str!("composite_workflow.rs").contains("source_highlight::paint_active_outline("));
+    }
+}

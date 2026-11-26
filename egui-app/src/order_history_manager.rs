@@ -526,13 +526,6 @@ fn draw_line(ui:&mut Ui,rect:Rect,line:HistoryLine,snapshot:&HistorySnapshot,
             // workflow cards, category trees, date arrows and dropdowns.
             // Keep the existing chevron center and the row's click area.
             let center=egui::pos2(columns[2].left()+11.0,columns[2].center().y);
-            crate::ui_primitives::paint_management_chevron(
-                &ui.painter().with_clip_rect(columns[2].intersect(area)),
-                center,
-                if expanded.contains(id){
-                    crate::ui_primitives::ManagementChevronDirection::Down
-                }else{crate::ui_primitives::ManagementChevronDirection::Right}
-            );
             // The 10pt arrow reaches 16pt from the cell's left edge when
             // expanded. Reserve a 4pt text gap without changing column or row.
             let summary_rect=Rect::from_min_max(
@@ -543,11 +536,10 @@ fn draw_line(ui:&mut Ui,rect:Rect,line:HistoryLine,snapshot:&HistorySnapshot,
             let open_area=Rect::from_min_max(
                 rect.left_top(),egui::pos2(columns[6].left(),rect.bottom())
             ).intersect(area);
-            let response=ui.interact(open_area,
-                ui.make_persistent_id(("order-history-toggle",id)),Sense::click());
-            let response=crate::ui_primitives::overflow_tooltip(response,
-                history_text_overflow(ui,summary_rect,&summary,typography::ManagementTableCellRole::ProductName),&summary);
-            crate::button::paint_button_hover(ui,&response,0.0);
+            let response=crate::button::disclosure_at(ui,open_area,
+                ui.make_persistent_id(("order-history-toggle",id)),center,
+                Some(columns[2].intersect(area)),expanded.contains(id),
+                history_text_overflow(ui,summary_rect,&summary,typography::ManagementTableCellRole::ProductName),&summary,0.0);
             if response.clicked(){*pending_toggle=Some(id.to_owned());}
             paint_center(ui,columns[3],field(row,"status"));
             let total=won(&row["total"]);

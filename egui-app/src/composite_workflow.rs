@@ -89,9 +89,7 @@ pub fn workflow_shipment_row(
     paint_table_galley(ui,freight_rect,x,freight_galley,freight_ink);
     if freight_emphasis{crate::one_touch::outline(ui,highlight);}
     if previewed && !chosen{
-        ui.painter().rect_stroke(block.shrink(0.5),theme::ORDER_HISTORY_RECIPIENT_BLOCK_RADIUS,
-            egui::Stroke::new(source_highlight::ACTIVE_BORDER_WIDTH,source_highlight::ACTIVE_BORDER),
-            egui::StrokeKind::Inside);
+        source_highlight::paint_active_outline(ui,block,theme::ORDER_HISTORY_RECIPIENT_BLOCK_RADIUS);
     }
     response
 }

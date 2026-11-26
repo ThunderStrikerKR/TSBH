@@ -5,6 +5,19 @@ use crate::theme::*;
 use crate::scrollbar::{scroll_area,ScrollAxes};
 #[cfg(test)]
 use crate::ui_test_support::record;
+/// Selected/hovered list-row surface; callers own content and selection.
+pub(crate) fn selectable_list_row(ui:&mut Ui,height:f32,selected:bool,enabled:bool)->(Rect,Response){
+    let (rect,response)=ui.allocate_exact_size(Vec2::new(ui.available_width(),height),Sense::click());
+    if selected||response.hovered(){
+        ui.painter().rect_filled(rect,theme::CONTROL_RADIUS as f32,
+            if selected{theme::RAISED}else{theme::INPUT});
+    }
+    if !selected && enabled{
+        crate::button::paint_button_hover(ui,&response,theme::CONTROL_RADIUS as f32);
+    }
+    (rect,response)
+}
+
 pub(crate) fn workflow_group_card_frame(highlighted:bool)->Frame{
     bordered_surface(if highlighted{WORKFLOW_SELECTED_BG}else{WORKFLOW_CARD_BG},WORKFLOW_CARD_BORDER,WORKFLOW_CARD_RADIUS)
         .inner_margin(0)
