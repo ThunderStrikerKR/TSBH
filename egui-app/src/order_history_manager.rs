@@ -998,7 +998,7 @@ fn history_date_controls(
 
 pub struct OrderHistoryManager {
     gateway:Arc<dyn BandoGateway>,
-    receiver:Option<Receiver<Result<HistorySnapshot,String>>>,
+    refresh_job:crate::screen_refresh::ReadRefresh<HistorySnapshot>,
     snapshot:Option<HistorySnapshot>,
     error:Option<String>,
     query:String,
@@ -1020,7 +1020,7 @@ impl OrderHistoryManager {
     pub fn new(gateway:Arc<dyn BandoGateway>,ctx:egui::Context)->Self{
         let today=seoul_today();
         let mut manager=Self {
-            gateway,receiver:None,snapshot:None,error:None,
+            gateway,refresh_job:Default::default(),snapshot:None,error:None,
             query:String::new(),date_basis:HistoryDateBasis::Reception,
             date_from:today.clone(),date_to:today.clone(),
             from_input:today.clone(),to_input:today.clone(),
@@ -1073,33 +1073,21 @@ impl OrderHistoryManager {
     pub fn refresh(&mut self,ctx:egui::Context){
         self.error=None;
         // Same-query refresh keeps the last verified rows until replacement.
-        let (sender,receiver)=mpsc::channel();
-        self.receiver=Some(receiver);
         let gateway=Arc::clone(&self.gateway);
         let query=self.query.clone();
         let from=self.date_from.clone();
         let to=self.date_to.clone();
         let basis=self.date_basis;
-        std::thread::spawn(move||{
-            let answer=fetch(gateway.as_ref(),&query,&from,&to,basis);
-            let _=sender.send(answer);
-            ctx.request_repaint();
-        });
+        self.refresh_job.submit_required(ctx,move||fetch(gateway.as_ref(),&query,&from,&to,basis));
     }
     fn poll(&mut self){
-        let answer=self.receiver.as_ref().map(Receiver::try_recv);
-        match answer{
-            Some(Ok(Ok(snapshot)))=>{
-                self.snapshot=Some(snapshot);self.error=None;self.receiver=None;
-            },
-            Some(Ok(Err(error)))=>{
-                self.error=Some(error);self.receiver=None;
-            },
-            Some(Err(TryRecvError::Disconnected))=>{
-                self.receiver=None;
-                self.error=Some("주문내역 조회 연결이 중단되었습니다.".into());
-            },
-            _=>{}
+        match self.refresh_job.poll(){
+            Some(Ok(snapshot))=>{
+                self.refresh_job.publish(&mut self.snapshot,snapshot);
+                self.error=None;
+            }
+            Some(Err(error))=>self.error=Some(error),
+            None=>{}
         }
     }
     fn poll_memo_save(&mut self,ctx:egui::Context){
@@ -1150,7 +1138,7 @@ impl OrderHistoryManager {
         if self.memo_editor.is_none(){return;}
         crate::popup::modal_backdrop(ctx,"history-memo-modal-backdrop",false);
         let busy=self.memo_save_job.is_some();
-        let writable=self.gateway.shipment_memo_write_enabled() && self.receiver.is_none() && self.error.is_none();
+        let writable=self.gateway.shipment_memo_write_enabled() && !self.refresh_job.required() && self.error.is_none();
         let mut cancel=false;
         let mut save=false;
         crate::popup::modal_window(ctx,"관리 메모","history-shipment-memo",work_area)
@@ -1371,7 +1359,7 @@ impl OrderHistoryManager {
             );
             // Empty, loading and no-result states remain in the table body.
             // Input/server errors are floating notices anchored to the toolbar.
-            let notice=if self.receiver.is_some() && snapshot.is_none(){
+            let notice=if self.refresh_job.pending() && snapshot.is_none(){
                 Some("주문 이력을 확인 중입니다.")
             }else if snapshot.is_some_and(|data|data.rows.is_empty()){
                 Some(if self.query.is_empty()
@@ -1529,7 +1517,7 @@ impl OrderHistoryManager {
             if let Some(order_id)=pending_toggle {
                 toggle_history_expansion(&mut self.expanded,&order_id);
             }
-            if let Some(editor)=pending_memo.filter(|_|self.receiver.is_none()&&self.error.is_none()) {
+            if let Some(editor)=pending_memo.filter(|_|!self.refresh_job.required()&&self.error.is_none()) {
                 self.memo_editor=Some(editor);
                 self.memo_error=None;
             }
@@ -1849,19 +1837,18 @@ mod tests{
 impl OrderHistoryManager {
     pub(crate) fn geometry_fixture(gateway:Arc<dyn BandoGateway>,ctx:egui::Context,_tab:usize,loaded:bool)->Self{
         let mut page=Self::new(gateway,ctx);
-        page.receiver=None; if loaded{page.snapshot=Some(HistorySnapshot{state:serde_json::json!({}),rows:Vec::new()});}
+        page.refresh_job.reset(); if loaded{page.snapshot=Some(HistorySnapshot{state:serde_json::json!({}),rows:Vec::new()});}
         page
     }
 
     pub(crate) fn geometry_begin_read(&mut self)->Box<dyn FnOnce(Result<usize,String>)>{
-        let (tx,rx)=std::sync::mpsc::channel();
-        self.receiver=Some(rx);
+        let finish=self.refresh_job.geometry_begin_read();
         self.error=None;
         Box::new(move |answer|{
             let result=answer.map(|count|{
                 HistorySnapshot{state:json!({"workflow":{"shipments":[]}}),rows:(0..count).map(|i|json!({"order":{"id":format!("geometry-o-{i}"),"createdAt":"2026-11-24T08:00:00+09:00"},"client":{"name":format!("검증 거래처 {i:03}")},"recipients":[{"id":format!("r-{i}"),"name":"합성 수취인","items":[{"id":format!("i-{i}"),"name":"BD 709 긴 품목명 검증","quantity":2},{"id":format!("j-{i}"),"name":"Desk TS 옵션 검증","quantity":1}]}],"total":123456,"status":"처리 중"})).collect()}
             });
-            assert!(tx.send(result).is_ok());
+            finish(result);
         })
     }
     pub(crate) fn geometry_read_failed(&self)->bool{self.error.is_some()}
