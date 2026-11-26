@@ -239,6 +239,36 @@ fn flag(value: &Value, key: &str) -> bool {
 fn safe(value: &Value) -> Option<i64> {
     value.as_i64().filter(|n| (0..=MAX_SAFE).contains(n))
 }
+// Manual amounts have three distinct states: unset (automatic), valid
+// explicit amount (including zero), or invalid (never silently replaced).
+pub(crate) fn manual_amount(value:&Value)->Result<Option<i64>,String>{
+    if value.is_null(){return Ok(None);}
+    safe(value).map(Some).ok_or_else(||"직접 입력한 금액은 0 이상의 안전한 정수여야 합니다.".into())
+}
+pub(super) fn manual_unit_price(item:&Value)->Result<Option<i64>,String>{
+    manual_amount(field(item,"manualUnitPrice"))
+}
+pub(super) fn manual_freight(recipient:&Value,origin:&str)->Result<Option<i64>,String>{
+    manual_amount(field(field(recipient,"shippingCharges"),origin))
+}
+#[cfg(test)]
+mod manual_amount_priority_tests{
+    use super::*;
+    #[test]
+    fn missing_zero_positive_and_invalid_amounts_remain_distinct(){
+        for value in [Value::Null,json!(0),json!(7000),json!(MAX_SAFE)]{
+            let expected=value.as_i64();
+            assert_eq!(manual_amount(&value).unwrap(),expected);
+            assert_eq!(manual_unit_price(&json!({"manualUnitPrice":value})).unwrap(),expected);
+            assert_eq!(manual_freight(&json!({"shippingCharges":{"FACTORY":value}}),"FACTORY").unwrap(),expected);
+        }
+        assert_eq!(manual_unit_price(&json!({})).unwrap(),None);
+        assert_eq!(manual_freight(&json!({}),"STORE").unwrap(),None);
+        for invalid in [json!(-1),json!(1.5),json!("7000"),json!(MAX_SAFE+1),json!(true)]{
+            assert!(manual_amount(&invalid).is_err());
+        }
+    }
+}
 fn checked_sum(values: impl IntoIterator<Item = i64>) -> Option<i64> {
     values.into_iter().try_fold(0_i64, |a, b| {
         a.checked_add(b).filter(|n| (0..=MAX_SAFE).contains(n))
