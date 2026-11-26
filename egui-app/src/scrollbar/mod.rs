@@ -117,39 +117,16 @@ impl ScrollSnapshot{
 pub(crate) fn row_key(id:&str)->Option<egui::Id>{
     (!id.is_empty()).then(||egui::Id::new(id))
 }
-#[derive(Clone,Default)]
-struct ScrollStore{
-    entries:std::collections::HashMap<egui::Id,ScrollEntry>,
-    last_sweep:Option<std::time::Instant>,
-    frame:Option<u64>,
-    seen:std::collections::HashSet<egui::Id>,
-}
+type ScrollStore=crate::view_state::TimedViewStore<ScrollEntry>;
 #[derive(Clone)]
 struct ScrollEntry{
     snapshot:ScrollSnapshot,
     touched:std::time::Instant,
     native:egui::Id,
 }
-impl ScrollStore{
-    // The UI may sleep for hours while the same screen remains visible.
-    // Renew the previous frame's visible IDs before checking idle expiry.
-    fn advance_frame(&mut self,frame:u64,now:std::time::Instant){
-        if self.frame==Some(frame){return;}
-        for id in self.seen.drain(){
-            if let Some(entry)=self.entries.get_mut(&id){entry.touched=now;}
-        }
-        self.frame=Some(frame);
-    }
-    fn sweep(&mut self,now:std::time::Instant)->Vec<egui::Id>{
-        let mut retired=Vec::new();
-        self.entries.retain(|_,entry|{
-            let keep=now.saturating_duration_since(entry.touched)<crate::ui_tokens::NAVIGATION_SNAPSHOT_TTL;
-            if !keep{retired.push(entry.native);}
-            keep
-        });
-        self.last_sweep=Some(now);
-        retired
-    }
+impl crate::view_state::TimedEntry for ScrollEntry{
+    fn touched(&self)->std::time::Instant{self.touched}
+    fn touch(&mut self,now:std::time::Instant){self.touched=now;}
 }
 fn store_id()->egui::Id{egui::Id::new("navigation-scroll-store")}
 pub(crate) fn sweep_snapshots(ctx:&egui::Context,now:std::time::Instant){
@@ -158,8 +135,7 @@ pub(crate) fn sweep_snapshots(ctx:&egui::Context,now:std::time::Instant){
         let retired={
             let store=data.get_temp_mut_or_default::<ScrollStore>(store_id());
             store.advance_frame(frame,now);
-            if store.last_sweep.is_some_and(|last|now.saturating_duration_since(last)<std::time::Duration::from_secs(60)){return;}
-            store.sweep(now)
+            store.sweep_due(now).into_iter().map(|entry|entry.native).collect::<Vec<_>>()
         };
         for id in retired{data.remove::<egui::containers::scroll_area::State>(id);}
     });
@@ -172,8 +148,7 @@ pub(crate) fn track_native<R>(ui:&Ui,output:&egui::containers::scroll_area::Scro
     ui.ctx().data_mut(|data|{
         let store=data.get_temp_mut_or_default::<ScrollStore>(store_id());
         let id=output.id.with("native-only");
-        store.seen.insert(id);
-        store.entries.insert(id,ScrollEntry{snapshot:Default::default(),touched:now,native:output.id});
+        store.put(id,ScrollEntry{snapshot:Default::default(),touched:now,native:output.id});
     });
 }
 pub(crate) struct ScrollCapture{
@@ -190,7 +165,7 @@ impl ScrollCapture{
         let state=ui.ctx().data_mut(|data|{
             let entry=data.get_temp_mut_or_default::<ScrollStore>(store_id()).entries.remove(&id);
             match entry{
-                Some(entry) if now.saturating_duration_since(entry.touched)<crate::ui_tokens::NAVIGATION_SNAPSHOT_TTL=>entry.snapshot,
+                Some(entry) if crate::view_state::is_fresh(entry.touched,now)=>entry.snapshot,
                 Some(entry)=>{data.remove::<egui::containers::scroll_area::State>(entry.native);ScrollSnapshot::default()}
                 None=>ScrollSnapshot::default(),
             }
@@ -207,8 +182,7 @@ impl ScrollCapture{
         self.state.observe(self.ready,output.state.offset,rows);
         ui.ctx().data_mut(|data|{
             let store=data.get_temp_mut_or_default::<ScrollStore>(store_id());
-            store.seen.insert(self.id);
-            store.entries.insert(self.id,ScrollEntry{
+            store.put(self.id,ScrollEntry{
                 snapshot:self.state,touched:std::time::Instant::now(),native:output.id,
             });
         });
@@ -242,7 +216,7 @@ mod snapshot_tests{
         let a=egui::Id::new("a");let b=egui::Id::new("b");
         store.entries.insert(a,ScrollEntry{snapshot:Default::default(),touched:now,native:a});
         store.entries.insert(b,ScrollEntry{snapshot:Default::default(),touched:now+std::time::Duration::from_secs(1),native:b});
-        assert_eq!(store.sweep(now+crate::ui_tokens::NAVIGATION_SNAPSHOT_TTL),vec![a]);
+        assert_eq!(store.sweep(now+crate::ui_tokens::NAVIGATION_SNAPSHOT_TTL).into_iter().map(|entry|entry.native).collect::<Vec<_>>(),vec![a]);
         assert!(store.entries.contains_key(&b));assert_eq!(store.entries.len(),1);
     }
     #[test]
@@ -255,7 +229,7 @@ mod snapshot_tests{
         let later=now+crate::ui_tokens::NAVIGATION_SNAPSHOT_TTL;
         store.advance_frame(2,later);
         assert!(store.sweep(later).is_empty());
-        assert_eq!(store.sweep(later+crate::ui_tokens::NAVIGATION_SNAPSHOT_TTL),vec![id]);
+        assert_eq!(store.sweep(later+crate::ui_tokens::NAVIGATION_SNAPSHOT_TTL).into_iter().map(|entry|entry.native).collect::<Vec<_>>(),vec![id]);
     }
     #[test]
     fn repeated_generations_reclaim_native_scroll_entries(){
