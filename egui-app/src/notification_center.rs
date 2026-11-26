@@ -50,8 +50,10 @@ impl Center{
         let response=crate::button::action_with_min_width(ui,"알림",theme::ButtonRole::Standard,true,72.0);
         if unread>0{
             let count=if unread>99{"99+".to_owned()}else{unread.to_string()};
-            ui.painter().text(response.rect.right_center()-egui::vec2(5.0,0.0),egui::Align2::RIGHT_CENTER,
-                count,egui::FontId::proportional(12.0),theme::ERROR_TEXT);
+            let galley=typography::client_table_metadata_galley(ui,&count,theme::ERROR_TEXT);
+            let anchor=response.rect.right_center()-egui::vec2(theme::SPACE_4,0.0);
+            let origin=anchor-egui::vec2(galley.size().x,galley.size().y/2.0);
+            ui.painter().galley(origin,galley,theme::ERROR_TEXT);
         }
         if response.clicked(){self.open=true;self.request(ui.ctx(),Action::Load);}
     }
@@ -68,11 +70,16 @@ impl Center{
                             if crate::button::action(bar,"모두 읽음",theme::ButtonRole::Standard,!busy&&!self.items.is_empty()).clicked(){action=Some(Action::Read(None));}
                             if crate::button::action(bar,"전체 삭제",theme::ButtonRole::Standard,!busy&&!self.items.is_empty()).clicked(){action=Some(Action::Dismiss(None));}
                         });
-                        if let Some(error)=self.error.as_deref(){ui.label(typography::caption(error));}
+                        // Reserve one fixed status line; overflow is available on hover.
+                        let error=self.error.as_deref().unwrap_or("");
+                        let status=ui.add(egui::Label::new(typography::caption(
+                            if error.is_empty(){" "}else{error}
+                        )).truncate());
+                        if !error.is_empty(){status.on_hover_text(error);}
                         if self.items.is_empty(){crate::ui_primitives::management_body_state_inline(ui,if busy{"조회 중"}else{"알림이 없습니다."});}
                         for n in &self.items{
                             let text=|k:&str|n[k].as_str().unwrap_or("");
-                            crate::ui_primitives::soft_divider(ui);
+                            crate::ui_primitives::section_divider(ui);
                             ui.horizontal_wrapped(|bar|{
                                 bar.label(typography::field_label(text("title")));
                                 bar.label(typography::caption(text("at")));
