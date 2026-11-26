@@ -584,6 +584,136 @@ function cardHeightSelfTest(){
   console.log("EGUI_CARD_HEIGHT_SELFTEST_PASS",19);
 }
 
+// Indirect vertical expansion must use shared geometry or an existing
+// reviewed layout reservation. Ordinary spacing tokens remain available.
+// Scope each exception to the exact call and occurrence count.
+const indirectHeightAllowances=new Map([
+  ["main.rs:show_ocr_review:line.add_space(left_pad)",1],
+  ["main.rs:top_bar:bar.allocate_space(Vec2::new(icon_and_gap+wordmark.size().x,theme::HEADER_HEIGHT,))",1],
+  ["main.rs:kakao_pane:pane.set_min_size(slot.size())",1],
+  ["main.rs:kakao_pane:toolbar.add_space(theme::KAKAO_TOOLBAR_PAD_X)",1],
+  ["main.rs:kakao_pane:right.add_space(theme::KAKAO_TOOLBAR_PAD_X)",1],
+  ["main.rs:kakao_pane:center.add_space(((slot.height()-theme::ACTION_EMPHASIZED_HEIGHT)/2.0).max(0.0))",1],
+  ["main.rs:reception:ui.allocate_space(Vec2::new(content_width,content_height))",1],
+  ["main.rs:source_and_message:ui.allocate_space(Vec2::new(width,height))",1],
+  ["main.rs:source_section:progress.add_space(((body_rect.height()-content_height)/2.0).max(0.0))",1],
+  ["main.rs:source_section:intake.add_space(balanced_gap)",2],
+  ["main.rs:details_and_freight:ui.allocate_space(Vec2::new(full_width,full_height))",1],
+  ["main.rs:other_page:host.allocate_space(Vec2::new(content_width,height))",1],
+  ["item_editor.rs:detail_information:ui.add_space((height-used-theme::ACTION_STANDARD_HEIGHT-theme::SPACE_8).max(theme::SPACE_8))",1],
+  ["item_editor.rs:show:line.add_space(ITEM_DETAIL_PANEL_GAP)",1],
+  ["manual_workspace.rs:show:sheet.add_space(crate::ui_layout::RECEPTION_STACKED_CARD_GAP)",1],
+  ["card/mod.rs:parallel_frames:ui.advance_cursor_after_rect(bounds)",1],
+  ["card/mod.rs:management_summary_card_value:cell.add_space(theme::FREIGHT_SUMMARY_TEXT_GAP)",1],
+  ["card/mod.rs:align_management_primary_card:ui.add_space(remaining)",1],
+  ["popup/mod.rs:before_body:ui.add_space((target-top).max(0.0))",1],
+  ["popup/mod.rs:before_footer:ui.add_space((target-top).max(0.0))",1],
+  ["popup/mod.rs:body:ui.add_space((target_top-cursor_top).max(0.0))",1],
+  ["popup/mod.rs:body:ui.add_space((target-top).max(0.0))",1],
+  ["popup/mod.rs:framed_body:ui.add_space((target-top).max(0.0))",1],
+  ["popup/mod.rs:before_actions:ui.add_space((target-top).max(0.0))",1],
+  ["ui_layout.rs:management_page_title_top_gap:ui.add_space((theme::SPACE_12-theme::PANEL_GAP).max(0.0))",1],
+  ["ui_layout.rs:reception_items_to_freight_gap:ui.add_space(theme::RECEPTION_ITEMS_TO_FREIGHT_GAP)",1],
+  ["navigation.rs:date_calendar:grid.allocate_space(egui::vec2(width,width))",1],
+  ["daily_settlement_manager.rs:kpi:cell.add_space(theme::FREIGHT_SUMMARY_TEXT_GAP)",1],
+  ["order_history_detail.rs:show:ui.add_space(PANE_GAP)",1],
+  ["workflow_board_ui.rs:workflow_details:ui.add_space(theme::WORKFLOW_CARD_PADDING_Y)",2],
+  ["workflow_board_ui.rs:workflow_details:row.add_space(theme::WORKFLOW_CARD_PADDING_X)",1],
+  ["workflow_board_ui.rs:reserve_compact_card:ui.allocate_space(Vec2::new(ui.available_width(),compact_card_height()))",1],
+  ["workflow_board_ui.rs:reserve_compact_card:ui.add_space(theme::WORKFLOW_CARD_GAP)",1],
+  ["workflow_board_ui.rs:show:ui.add_space(theme::WORKFLOW_CARD_GAP)",2],
+]);
+export function auditIndirectCardHeights(source,file){
+  const tokens=productionTokens(source),v=tokens.map(t=>t.v),hits=[],used=new Map();
+  const raw=new Set(["set_min_size","set_max_size","set_size","set_min_rect",
+    "expand_to_include_rect","expand_to_include_y","advance_cursor_after_rect",
+    "set_cursor_pos","allocate_space","outer_margin"]);
+  const spacers=/^(?:(?:crate::)?(?:theme|ui_tokens)::)?SPACE_(?:2|4|6|8|12|16|24)$/;
+  const numeric=x=>/^\d+(?:\.\d+)?$/.test(x??"");
+  let fn="";
+  for(let i=0;i<v.length;i++){
+    if(v[i]==="fn"&&/^[A-Za-z_]\w*$/.test(v[i+1]??""))fn=v[i+1];
+    const name=v[i]?.replace(/^r#/,"");
+    if(![".","::"].includes(v[i-1]))continue;
+    if(!raw.has(name)&&!["add_space","allocate_exact_size","allocate_ui","allocate_ui_with_layout","inner_margin"].includes(name))continue;
+    let end=i;
+    if(v[i+1]==="("){
+      let depth=0;
+      for(let j=i+1;j<v.length;j++){
+        if(v[j]==="(")depth++;
+        else if(v[j]===")"&&--depth===0){end=j;break;}
+      }
+    }
+    const args=v.slice(i+2,end), arg=args.join("");
+    let suspicious=raw.has(name);
+    if(name==="add_space")suspicious=v[i-1]!=="."||!spacers.test(arg);
+    // Catch empty fixed-size children, not functional allocations with
+    // real widgets or images. A discarded explicit hover-only rectangle
+    // with a large literal height is also a blank reservation.
+    if(["allocate_ui","allocate_ui_with_layout"].includes(name))
+      suspicious=/,\|(?:_|[A-Za-z_]\w*)\|\{\}$/.test(arg);
+    if(name==="allocate_exact_size"){
+      const discarded=v[end+1]===";"&&
+        ([";","{","}"].includes(v[i-3])||
+         v.slice(i-5,i-2).join(" ")==="let _ =");
+      const size=arg.match(/^(?:egui::)?(?:vec2|Vec2::new)\([^,]+,(\d+(?:\.\d+)?)\),/);
+      const square=arg.match(/^Vec2::splat\((\d+(?:\.\d+)?)\),/);
+      suspicious=discarded&&/Sense::hover\(\)$/.test(arg)&&
+        Number(size?.[1]??square?.[1]??0)>24;
+    }
+    // Oversized vertical margin literals also bypass normal card insets.
+    // Leave semantic margins and horizontal-only insets to their owners.
+    if(name==="inner_margin"){
+      const scalar=numeric(arg)&&Number(arg)>24;
+      const sym=arg.match(/^(?:egui::)?Margin::symmetric\([^,]+,(\d+(?:\.\d+)?)(?:asi8)?\)$/);
+      const edges=[...arg.matchAll(/(?:top|bottom):(\d+(?:\.\d+)?)(?:,|\})/g)];
+      suspicious=scalar||Number(sym?.[1]??0)>24||edges.some(m=>Number(m[1])>24);
+    }
+    if(!suspicious)continue;
+    const call=v.slice(Math.max(0,i-2),end+1).join("");
+    const key=file+":"+fn+":"+call;
+    const count=(used.get(key)||0)+1;used.set(key,count);
+    if(count>(indirectHeightAllowances.get(key)||0))
+      hits.push({line:tokens[i].line,rule:"unreviewed indirect UI height reservation: "+call+
+        "; use shared card/viewport geometry or semantic spacing"});
+  }
+  return hits;
+}
+function indirectCardHeightSelfTest(){
+  const check=(s,file="new_screen.rs")=>auditIndirectCardHeights(s,file).length;
+  const cases=[
+    ["fn render(){ui.add_space(320.0);}",1],
+    ["fn render(){ui.add_space(height-used);}",1],
+    ["fn render(){ui.add_space(theme::SPACE_12);}",0],
+    ["fn render(){ui.add_space(crate::ui_tokens::SPACE_8);}",0],
+    ["fn render(){ui.set_min_size(Vec2::new(w,h));}",1],
+    ["fn render(){ui.set_max_size(size);}",1],
+    ["fn render(){ui.expand_to_include_rect(rect);}",1],
+    ["fn render(){ui.advance_cursor_after_rect(rect);}",1],
+    ["fn render(){ui.allocate_space(Vec2::new(w,h));}",1],
+    ["fn render(){ui.allocate_ui_with_layout(size,layout,|_|{});}",1],
+    ["fn render(){ui.allocate_ui(size,|child|{draw(child);});}",0],
+    ["fn render(){ui.allocate_exact_size(Vec2::new(w,300.0),Sense::hover());}",1],
+    ["fn render(){let _=ui.allocate_exact_size(Vec2::splat(300.0),Sense::hover());}",1],
+    ["fn render(){let (rect,_)=ui.allocate_exact_size(Vec2::new(w,300.0),Sense::hover());paint(rect);}",0],
+    ["fn render(){frame.inner_margin(100.0);}",1],
+    ["fn render(){frame.inner_margin(egui::Margin::symmetric(8,100));}",1],
+    ["fn render(){frame.inner_margin(egui::Margin{top:100,bottom:8,left:8,right:8});}",1],
+    ["fn render(){frame.inner_margin(egui::Margin::symmetric(100,8));}",0],
+    ["fn render(){frame.outer_margin(margin);}",1],
+    ["fn render(){scroll_area(axes).max_height(h);}",0],
+    ["fn render(){/* ui.add_space(300.0); */ let s=\"ui.set_min_size(size)\";}",0],
+    ["#[cfg(test)] mod tests{fn t(){ui.allocate_space(size);}} fn render(){}",0],
+  ];
+  for(const [source,expected] of cases)assert.equal(check(source),expected,source);
+  const existing="fn source_section(){intake.add_space(balanced_gap);}";
+  assert.equal(check(existing,"main.rs"),0);
+  assert.equal(check(existing,"new_screen.rs"),1);
+  assert.equal(check(existing.replace("balanced_gap","height"),"main.rs"),1);
+  assert.equal(check("fn source_section(){"+ "intake.add_space(balanced_gap);".repeat(3)+"}","main.rs"),1);
+  console.log("EGUI_INDIRECT_CARD_HEIGHT_SELFTEST_PASS",cases.length+4);
+}
+
 export function audit(source,file,checkTableContracts=false){
   const tokens=productionTokens(source);
   const v=tokens.map(t=>t.v);
@@ -1135,6 +1265,7 @@ function main(){
   compositeSelfTest();
   contextLockSelfTest();
   cardHeightSelfTest();
+  indirectCardHeightSelfTest();
   if(process.argv.includes("--self-test"))return;
   const root=resolve(fileURLToPath(new URL("..",import.meta.url)));
   const walk=p=>readdirSync(p,{withFileTypes:true}).flatMap(e=>
@@ -1149,7 +1280,7 @@ function main(){
     const owner=file.endsWith("/mod.rs")?file.split("/")[0]:file.replace(/\.rs$/,"");
     if(dependencyOwners.has(owner))graph.set(owner,sharedDependencies(source,owner));
     for(const rule of designTokenViolations(source,file)){failures++;console.error(file+": "+rule);}
-    for(const hit of [...audit(source,file,true),...auditComposite(source,file,true),...auditContextLocks(source,file),...auditCardHeights(source,file)]){
+    for(const hit of [...audit(source,file,true),...auditComposite(source,file,true),...auditContextLocks(source,file),...auditCardHeights(source,file),...auditIndirectCardHeights(source,file)]){
       failures++;console.error(file+":"+hit.line+" "+hit.rule);
     }
   }
