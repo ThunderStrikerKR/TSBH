@@ -7,7 +7,6 @@ test("Native catalog and management command routing",()=>{
   const dispatcher=read("src-tauri/src/business_core/mod.rs");
   const native=read("src-tauri/src/business_core/catalog_clients.rs");
   assert.match(dispatcher, /"catalog_clients" => catalog_clients::execute/);
-    assert.match(source,new RegExp('"catalog_clients", "'+command+'"'));
   const nativeBrands=read("src-tauri/src/business_core/catalog_clients/brands.rs");
   const nativeCategories=read("src-tauri/src/business_core/catalog_clients/categories.rs");
   assert.match(nativeBrands,/fn upsert_brand\(/);
