@@ -2053,7 +2053,7 @@ impl ProductManager {
                         measured.divider=Some(
                             crate::ui_primitives::section_divider(body)
                         );
-                        let advanced=components::collapsing_header(
+                        let advanced=crate::button::collapsing_header(
                             "고급 정보"
                         )
                             .id_salt("product-detail-advanced")

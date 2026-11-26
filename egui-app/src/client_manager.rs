@@ -852,7 +852,7 @@ impl ClientManager {
             .cloned().unwrap_or_default();
         if !aliases.is_empty() || !history.is_empty() {
             crate::ui_primitives::section_divider(ui);
-            components::collapsing_header("상품 별칭 / 변경 이력")
+            crate::button::collapsing_header("상품 별칭 / 변경 이력")
                 .show(ui,|ui|{
                 for alias in &aliases {
                     let product_name=self.state.get("products")

@@ -220,7 +220,7 @@ const extractedControlOwners = new Map([
   ["TextEdit :: multiline (",new Set(["input/mod.rs:multiline_editor"])],
 ]);
 const ownedControls = new Map([
-  ["CollapsingHeader :: new (","components.rs:collapsing_header"],
+  ["CollapsingHeader :: new (","button/mod.rs:collapsing_header"],
   ["Slider :: new (","input/mod.rs:ocr_zoom_slider"],
   ["DragValue :: new (",null],["RadioButton :: new (",null],
   ["SelectableLabel :: new (",null],["ProgressBar :: new (",null],
@@ -662,7 +662,8 @@ function selfTest(){
     ["new_screen.rs","fn render(){egui::Button :: new ( \"x\" );}",1],
     ["new_screen.rs","fn render(){ui.on_hover_text(\"x\");}",1],
     ["new_screen.rs","fn render(){egui::CollapsingHeader::new(title);}",1],
-    ["components.rs","fn collapsing_header(){egui::CollapsingHeader::new(title);}",0],
+    ["button/mod.rs","fn collapsing_header(){egui::CollapsingHeader::new(title);}",0],
+    ["components.rs","fn collapsing_header(){egui::CollapsingHeader::new(title);}",1],
     ["components.rs","fn other(){egui::CollapsingHeader::new(title);}",1],
     ["new_screen.rs","fn render(){egui::Slider::new(value,range);}",1],
     ["input/mod.rs","fn ocr_zoom_slider(){egui::Slider::new(value,range);}",0],

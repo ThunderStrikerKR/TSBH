@@ -2424,7 +2424,7 @@ impl FreightManager {
             for group in rows(&shipping["groups"]).iter().filter(|g|active(g)){
                 let group_id=text(group,"id");
                 let history=rows(&group["history"]);
-                components::collapsing_header(format!(
+                crate::button::collapsing_header(format!(
                     "{} / {}개 기준",text(group,"name"),history.len()
                 )).id_salt(("freight-history",group_id))
                     .show(section,|body|{

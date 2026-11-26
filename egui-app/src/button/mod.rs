@@ -663,3 +663,22 @@ pub fn reception_item_header_action(ui:&mut Ui,rollback:bool,enabled:bool)->Resp
         theme::ButtonRole::Standard,enabled,112.0
     )
 }
+
+
+/// Native CollapsingHeader keeps its original click/keyboard/state/indent
+/// behavior; only its default filled triangle becomes the common line icon.
+/// Rotate smoothly with egui's animated openness (0 = right, 1 = down).
+pub fn collapsing_header(title:impl Into<egui::WidgetText>)->egui::CollapsingHeader{
+    egui::CollapsingHeader::new(title).icon(paint_collapsing_header_icon)
+}
+
+
+fn paint_collapsing_header_icon(
+    ui:&mut Ui,openness:f32,response:&Response
+){
+    let t=openness.clamp(0.0,1.0);
+    crate::ui_primitives::paint_chevron_at_angle(
+        ui.painter(),response.rect.center(),
+        t*std::f32::consts::FRAC_PI_2,t,theme::SECONDARY
+    );
+}

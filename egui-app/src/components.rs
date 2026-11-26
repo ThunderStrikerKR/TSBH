@@ -1,9 +1,12 @@
-//! Reusable egui controls. A screen specifies business purpose and data,
-//! while colors, sizes and alignment are owned by the shared UI layer.
+//! Legacy cross-module regression suite. Production controls live in their owner modules.
 
+#[cfg(test)]
 use eframe::egui::{self, Align, Color32, Frame, Layout, Rect, Response, Sense, Stroke, Ui, UiBuilder, Vec2};
+#[cfg(test)]
 use chrono::{Datelike, Duration as Days, Months, NaiveDate};
+#[cfg(test)]
 use crate::{source_highlight, theme, typography};
+#[cfg(test)]
 use crate::ui_primitives::*;
 #[cfg(test)]
 use crate::status_notice::{management_body_state_overlay,body_error_overlay};
@@ -13,32 +16,47 @@ use crate::table::ManagementTableColumnLabel;
 use crate::composite_reception::{reception_recipient_fields,reception_item_row,freight_actions_need_second_row,reception_freight_row_controls,reception_item_origin_action_editable,reception_total_footer};
 #[cfg(test)]
 use crate::text_fit::{reception_ellipsized_product,reception_compact_quantity,reception_pending_money_marker};
+#[cfg(test)]
 use crate::ui_layout::{fixed_row,fixed_result_viewport,fixed_status_slot,management_page_title_top_gap,management_top_content,management_toolbar_trailing_rect,reception_goods_viewport,reception_docked_goods_scroll};
+#[cfg(test)]
 use crate::display_format::{display_won,display_money_number};
+#[cfg(test)]
 use crate::card::paint_shipment_detail_surface;
 #[cfg(test)]
 use crate::ui_test_support::test_context;
+#[cfg(test)]
 use crate::checkbox::*;
+#[cfg(test)]
 use crate::scrollbar::*;
+#[cfg(test)]
 use crate::popup::*;
+#[cfg(test)]
 use crate::card::*;
 // Composite widgets import primitive renderers from their owning modules.
 #[cfg(test)]
 use crate::button::{management_tabs,reception_item_header_action};
+#[cfg(test)]
 use crate::input::reception_recipient_value_hit;
+#[cfg(test)]
 use crate::dropdown::reception_cod_dropdown;
+#[cfg(test)]
 use crate::button::{date_navigation_segment_button,date_navigation_button_surface,DateNavigationSegmentGlyph};
 #[cfg(test)]
 use crate::button::{management_date_segment_corners,ManagementDateSegmentEdge};
+#[cfg(test)]
 use crate::input::{FieldKind,compact_text_field,field,parse_money_input,money_field,money_edit_text,money_field_with_unit,flexible_text_field,management_date_text_field,multiline_text_field,multiline_text_field_sized,reception_source_text_edit,management_search_field,reception_recipient_inline_cell_editor,reception_inline_cell_editor,reception_freight_inline_cell_editor};
+#[cfg(test)]
 use crate::input::{singleline_editor,allocate_singleline_field,management_date_text_field_impl,reception_recipient_text_edit,reception_text_editor_at_click,reception_money_inline_cell_editor,reception_freight_money_readonly,RECEPTION_MONEY_UNIT_GAP,RECEPTION_MONEY_PENDING,money_unit_left};
 #[cfg(test)]
 use crate::input::{formatted_money_input,money_cursor_after_format,money_unit_margin,reception_money_font,RECEPTION_FREIGHT_MONEY_WIDTH};
+#[cfg(test)]
 use crate::dropdown::{ManagementSearchChoice,management_dropdown,management_dropdown_full_label,management_status_dropdown,management_dropdown_compact,management_dropdown_values,management_searchable_dropdown,management_dropdown_option,management_dropdown_option_values,management_status_dropdown_option,management_dropdown_compact_option};
+#[cfg(test)]
 use crate::dropdown::{management_dropdown_trigger,management_dropdown_trigger_full_label};
 #[cfg(test)]
 use crate::dropdown::{management_dropdown_option_palette,management_search_choice_matches};
 // Shared table primitives used by reception and other composite widgets.
+#[cfg(test)]
 use crate::table::{
     paint_table_galley,
     shipment_detail_cells,
@@ -59,6 +77,7 @@ use crate::table::{
 };
 #[cfg(test)]
 use crate::table::{management_table_scroll_track_rect,management_readonly_table_content_width,management_readonly_table_row_advance};
+#[cfg(test)]
 use crate::table::{management_master_column_rules,management_table_data_width,management_inline_list_table_header};
 #[cfg(test)]
 use crate::table::{virtual_fixed_rows,management_fixed_table_scroll_area,management_sticky_table_header,management_table_scroll_track_geometry,management_remaining_predivider_gap};
@@ -908,23 +927,7 @@ fn management_table_outline_keeps_header_width_and_viewport_bottom(){
     assert_eq!(crate::table::outline_bounds(header,header),header);
 }
 
-/// Native CollapsingHeader keeps its original click/keyboard/state/indent
-/// behavior; only its default filled triangle becomes the common line icon.
-/// Rotate smoothly with egui's animated openness (0 = right, 1 = down).
-pub fn collapsing_header(title:impl Into<egui::WidgetText>)->egui::CollapsingHeader{
-    egui::CollapsingHeader::new(title).icon(paint_collapsing_header_icon)
-}
 
-
-fn paint_collapsing_header_icon(
-    ui:&mut Ui,openness:f32,response:&Response
-){
-    let t=openness.clamp(0.0,1.0);
-    paint_chevron_at_angle(
-        ui.painter(),response.rect.center(),
-        t*std::f32::consts::FRAC_PI_2,t,theme::SECONDARY
-    );
-}
 
 
 
