@@ -431,7 +431,7 @@ pub struct ExcelManager{
     error:Option<String>,
     notice:Option<String>,
     tab:Tab,
-    tab_snapshots:crate::navigation::NavigationSnapshots<3>,
+    tab_snapshots:crate::view_state::NavigationSnapshots<3>,
     tab_filters:[(String,Option<Sort>);3],
     query:String,
     selected:BTreeSet<String>,
@@ -464,7 +464,7 @@ impl ExcelManager{
         let mut manager=Self{
             gateway,refresh_job:Default::default(),result:None,queue_cache:Default::default(),history_cache:Default::default(),operation:None,operation_name:None,
             error:None,notice:None,tab:Tab::Factory,
-            tab_snapshots:crate::navigation::NavigationSnapshots::new(0),tab_filters:Default::default(),
+            tab_snapshots:crate::view_state::NavigationSnapshots::new(0),tab_filters:Default::default(),
             query:String::new(),selected:BTreeSet::new(),
             sort_queue:None,sort_history:None,
             export_from:export_from.clone(),export_to:export_to.clone(),
@@ -502,7 +502,7 @@ impl ExcelManager{
         // Unsaved freight inputs are not a navigation snapshot.
         let today=Utc::now().with_timezone(&FixedOffset::east_opt(9*3600).expect("Seoul offset")).date_naive();
         let (from,to)=default_export_date_range(today);
-        self.tab=Tab::Factory;self.tab_snapshots=crate::navigation::NavigationSnapshots::new(0);self.tab_filters=Default::default();
+        self.tab=Tab::Factory;self.tab_snapshots=crate::view_state::NavigationSnapshots::new(0);self.tab_filters=Default::default();
         self.query.clear();self.selected.clear();self.sort_queue=None;self.sort_history=None;
         self.export_from=from.clone();self.export_to=to.clone();
         self.export_from_input=from;self.export_to_input=to;
