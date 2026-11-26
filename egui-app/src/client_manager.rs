@@ -253,15 +253,19 @@ impl ClientManager {
         }
         let saved=self.saving.as_ref().map(|rx|rx.try_recv());
         match saved {
-            Some(Ok(Ok(state)))=>{
+            Some(Ok(Ok(mut state)))=>{
+                let notice=state.as_object_mut().and_then(|map|map.remove("saveNotice"));
                 self.state=state;self.list_cache.invalidate();self.saving=None;
                 self.draft=None;self.original=None;self.confirm_delete=false;
                 self.confirm_discard=false;self.error=None;
                 self.tag_input.clear();self.tag_notice=None;
                 self.changed=true;
+                let message=notice.as_ref().and_then(Value::as_str);
                 crate::floating_notice::publish(
-                    ctx,"clients.action",crate::floating_notice::Tone::Success,
-                    "거래처 변경사항을 반영했습니다."
+                    ctx,"clients.action",if message.is_some(){
+                        crate::floating_notice::Tone::Info
+                    }else{crate::floating_notice::Tone::Success},
+                    message.unwrap_or("거래처 변경사항을 반영했습니다.")
                 );
                 self.query(Arc::clone(&gateway),ctx.clone());
             },
