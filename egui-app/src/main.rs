@@ -1059,7 +1059,7 @@ struct BandoEgui {
     workflow_freight_editor:Option<WorkflowFreightEditor>,
     confirmed_cell:Option<ConfirmedCellEditor>,
     submitted_confirmed_cell:Option<ConfirmedCellEditor>,
-    confirmed_next_cell:Option<(workflow_board_ui::Selection,InlineTarget)>,
+    confirmed_next_cell:Option<(workflow_board_ui::Selection,InlineTarget,Option<egui::Pos2>,bool)>,
     confirmed_modal_target:Option<ConfirmedEditTarget>,
     workflow_freight_next_selection:Option<workflow_board_ui::Selection>,
     submitted_workflow_freight:Option<WorkflowFreightEditor>,
@@ -2652,6 +2652,43 @@ impl BandoEgui {
         }
     }
 
+    /// Preserve the clicked destination before closing the active editor.
+    /// Clean switches reuse the current projection; dirty switches wait for
+    /// the existing native save and authoritative refreshed projection.
+    fn switch_confirmed_editor(&mut self,selection:workflow_board_ui::Selection,
+        target:InlineTarget,click_at:Option<egui::Pos2>,guide:bool,ctx:&egui::Context){
+        let same=self.confirmed_cell.as_ref().is_some_and(|e|
+            e.target.selection==selection && e.cell.target==target)
+            || self.workflow_freight_editor.as_ref().is_some_and(|e|
+                e.shipment_id==selection.shipment_id && target.field=="shippingCharge"
+                && target.item_id.as_deref()==Some(e.origin.as_str()));
+        let dirty=self.confirmed_cell.as_ref().is_some_and(|e|e.cell.text!=e.cell.original)
+            || self.workflow_freight_editor.as_ref().is_some_and(|e|
+                e.text.trim().replace(',',"")!=e.original.trim().replace(',',""));
+        use cell_navigation::CellSwitch;
+        match cell_navigation::cell_switch(same,dirty){
+            CellSwitch::KeepCurrent=>return,
+            CellSwitch::OpenNow=>{
+                self.confirmed_cell=None;
+                self.workflow_freight_editor=None;
+                self.workflow_freight_guidance=None;
+                self.workflow_ui.select(selection.clone());
+                self.confirmed_next_cell=Some((selection,target,click_at,guide));
+                self.resume_confirmed_navigation(ctx);
+            },
+            CellSwitch::CommitThenOpen=>{
+                self.confirmed_next_cell=Some((selection,target,click_at,guide));
+                if self.confirmed_cell.is_some(){
+                    self.submit_confirmed_cell(ctx);
+                    if self.confirmed_cell.is_some(){self.confirmed_next_cell=None;}
+                }else if !self.submit_workflow_freight_edit(ctx){
+                    self.confirmed_next_cell=None;
+                }
+            }
+        }
+        ctx.request_repaint();
+    }
+
     // Open the next cell only after the authoritative post-save projection.
     fn resume_confirmed_navigation(&mut self,ctx:&egui::Context){
         if self.confirmed_next_cell.is_none(){return;}
@@ -2659,7 +2696,7 @@ impl BandoEgui {
             self.confirmed_next_cell=None;return;
         }
         if self.workflow_action.is_some() || self.workflow_refresh_required{return;}
-        let Some((selection,target))=self.confirmed_next_cell.take()else{return;};
+        let Some((selection,target,click_at,guide))=self.confirmed_next_cell.take()else{return;};
         if !self.workflow_mutation_ready() || !self.gateway.workflow_write_enabled()
             || self.workflow_ui.selection.as_ref()!=Some(&selection)
             || self.confirmed_cell.is_some() || self.workflow_freight_editor.is_some()
@@ -2687,15 +2724,16 @@ impl BandoEgui {
         };
         let Some(bound)=self.confirmed_edit_target(&board,group,ship)else{return;};
         if target.field=="shippingCharge"{
+            self.workflow_freight_guidance=guide.then(||group.id.clone());
             let Some(origin)=target.item_id else{return;};
             self.workflow_freight_editor=Some(WorkflowFreightEditor{
                 group_id:group.id.clone(),shipment_id:ship.id.clone(),origin,
-                original:original.clone(),text:original,focus_next:true,click_at:None
+                original:original.clone(),text:original,focus_next:true,click_at
             });
         }else{
             self.confirmed_cell=Some(ConfirmedCellEditor{target:bound,cell:InlineReceptionEditor{
                 source_id:ship.order_id.clone(),target,original:original.clone(),text:original,
-                focus_next:true,click_at:None
+                focus_next:true,click_at
             }});
         }
         ctx.request_repaint();
@@ -3570,12 +3608,11 @@ impl BandoEgui {
         click_at:Option<egui::Pos2>,ctx:&egui::Context
     ){
         if self.inline_change.is_some(){return;}
-        if self.inline_editor.as_ref().is_some_and(|editor|
-            editor.target==target
-        ){return;}
-        if self.inline_editor.as_ref().is_some_and(|editor|
-            editor.text!=editor.original
-        ){
+        let transition=cell_navigation::cell_switch(
+            self.inline_editor.as_ref().is_some_and(|editor|editor.target==target),
+            self.inline_editor.as_ref().is_some_and(|editor|editor.text!=editor.original));
+        if transition==cell_navigation::CellSwitch::KeepCurrent{return;}
+        if transition==cell_navigation::CellSwitch::CommitThenOpen{
             self.submit_inline_edit(ctx);
             if let Some(pending)=self.inline_change.as_mut(){
                 pending.next=Some((target,click_at));
@@ -7364,11 +7401,10 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
             let mut confirmed_item:Option<(serde_json::Value,bool)>=None;
             let confirmed_editable=self.gateway.workflow_write_enabled()
                 && self.workflow_mutation_ready()
-                && self.workflow_freight_editor.is_none()
                 && !self.reception_modal_open()
                 && !board.groups.iter().flat_map(|g|g.shipments.iter())
                     .any(|other|other.order_id==ship.order_id && other.transferred);
-            let confirmed_cell_idle=self.confirmed_cell.is_none();
+            let confirmed_cell_idle=self.confirmed_cell.is_none() && self.workflow_freight_editor.is_none();
             let origin_editable=confirmed_editable && confirmed_cell_idle;
             // The same preallocated review/recipient/items rectangles are
             // used for real workflow rows. No source replacement, false
@@ -7457,7 +7493,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                     let key=source_highlight::key(id,id,field);
                                     if response.hovered(){hovered_detail=Some(key.clone());}
                                     let target=InlineTarget{recipient_id:id.into(),item_id:None,field};
-                                    if confirmed_editable && self.confirmed_cell.is_none() && response.clicked(){
+                                    if confirmed_editable && response.clicked() && !self.confirmed_cell.as_ref().is_some_and(|e|e.cell.target==target){
                                         confirmed_open=Some((target.clone(),initial,response.interact_pointer_pos()));
                                     }
                                     if let Some(editor)=self.confirmed_cell.as_mut().filter(|e|
@@ -7549,7 +7585,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                                     contents,reception_service::item_title_ref(item),
                                                     &quantity,&amount,highlighted,confirmed_editable
                                                 );
-                                                if cells.remove_clicked && self.confirmed_cell.is_none(){
+                                                if cells.remove_clicked && confirmed_cell_idle{
                                                     confirmed_item=Some((item.clone(),true));
                                                 }
                                                 for (response,field) in [
@@ -7566,9 +7602,10 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                                         item_id:Some(item_id.into()),field:match field{
                                                             "price"=>"unitPrice","quantity"=>"quantity",_=>"product"
                                                         }};
-                                                    if confirmed_editable && self.confirmed_cell.is_none() && response.clicked(){
-                                                        if field=="product"{confirmed_item=Some((item.clone(),false));}
-                                                        else{
+                                                    if confirmed_editable && response.clicked() && !self.confirmed_cell.as_ref().is_some_and(|e|e.cell.target==target){
+                                                        if field=="product"{
+                                                            if confirmed_cell_idle{confirmed_item=Some((item.clone(),false));}
+                                                        }else{
                                                             let original=item.get(target.field).and_then(serde_json::Value::as_i64)
                                                                 .map(|n|n.to_string()).unwrap_or_default();
                                                             confirmed_open=Some((target.clone(),original,response.interact_pointer_pos()));
@@ -7619,9 +7656,10 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                             let remote=if remote_origin.as_deref()==Some(origin.as_str()){
                                                 Some(remote_checked)
                                             }else{None};
-                                            let amount_editable=controls_editable
-                                                && !ship.freight_editing_blocked
-                                                && !ship.collect;
+                                            let amount_editable=confirmed_editable && !ship.transferred
+                                                && !ship.freight_editing_blocked && !ship.collect
+                                                && !self.workflow_freight_editor.as_ref().is_some_and(|e|
+                                                    e.shipment_id==ship.id && e.origin==*origin);
                                             let freight_actions=components::reception_freight_row_controls(
                                                 contents,label,amount,Some(ship.collect),remote,
                                                 origin.as_str()=="FACTORY",amount_editable,
@@ -7737,7 +7775,24 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                 hovered_detail.or_else(||self.source_hover.clone()),ui.ctx()
             );
             if confirmed_cancel{self.confirmed_cell=None;}
-            else if let Some((current,key))=confirmed_navigation_request{
+            else if workflow_freight_cancel{
+                self.workflow_freight_guidance=None;
+                self.workflow_freight_editor=None;
+                self.workflow_freight_next_selection=None;
+            }
+            // Destination click wins over the previous editor's blur.
+            else if let Some((target,_original,click_at))=confirmed_open{
+                self.switch_confirmed_editor(workflow_board_ui::Selection{
+                    group_id:group.id.clone(),order_id:ship.order_id.clone(),shipment_id:ship.id.clone()
+                },target,click_at,false,ui.ctx());
+            }else if let Some((target_id,origin,_original,click_at,guide))=workflow_freight_open{
+                if let Some(target_ship)=group.shipments.iter().find(|s|s.id==target_id){
+                    self.switch_confirmed_editor(workflow_board_ui::Selection{
+                        group_id:group.id.clone(),order_id:target_ship.order_id.clone(),
+                        shipment_id:target_ship.id.clone()
+                    },confirmed_freight_target(target_ship,&origin),click_at,guide,ui.ctx());
+                }
+            }else if let Some((current,key))=confirmed_navigation_request{
                 let editable=self.gateway.workflow_write_enabled() && self.workflow_mutation_ready()
                     && !self.reception_modal_open()
                     && !board.groups.iter().flat_map(|g|g.shipments.iter())
@@ -7749,7 +7804,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                 if next.is_some() || key.commits_at_boundary(){
                     self.confirmed_next_cell=next.map(|target|(workflow_board_ui::Selection{
                         group_id:group.id.clone(),order_id:ship.order_id.clone(),shipment_id:ship.id.clone()
-                    },target));
+                    },target,None,false));
                     if current.field=="shippingCharge"{
                         if self.confirmed_next_cell.is_some(){self.workflow_freight_guidance=None;}
                         if !self.submit_workflow_freight_edit(ui.ctx()){self.confirmed_next_cell=None;}
@@ -7761,18 +7816,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                 }
             }
             else if confirmed_commit{self.submit_confirmed_cell(ui.ctx());}
-            else if let Some((target,original,click_at))=confirmed_open{
-                if let Some(bound)=self.confirmed_edit_target(&board,group,ship){
-                    let original=if target.field=="unitPrice"{
-                        components::parse_money_input(&original).map(components::money_edit_text).unwrap_or(original)
-                    }else{original};
-                    self.confirmed_cell=Some(ConfirmedCellEditor{target:bound,cell:InlineReceptionEditor{
-                        source_id:ship.order_id.clone(),target,original:original.clone(),text:original,
-                        focus_next:true,click_at
-                    }});
-                    ui.ctx().request_repaint();
-                }
-            }else if confirmed_vat{
+            else if confirmed_vat{
                 if let Some(bound)=self.confirmed_edit_target(&board,group,ship){
                     let mut seen=std::collections::HashSet::new();
                     let rows=board.groups.iter().flat_map(|g|g.shipments.iter())
@@ -7797,30 +7841,6 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                     self.confirmed_modal_target=Some(bound);
                     ui.ctx().request_repaint();
                 }
-            }else if workflow_freight_cancel{
-                self.workflow_freight_guidance=None;
-                self.workflow_freight_editor=None;
-                self.workflow_freight_next_selection=None;
-            }else if let Some((target_id,origin,original,click_at,guide))=workflow_freight_open{
-                let Some(target)=group.shipments.iter().find(|s|s.id==target_id)else{return;};
-                // The review action and a missing amount click enter the same
-                // guided flow as the one-touch stage button.
-                self.workflow_freight_guidance=guide.then(||group.id.clone());
-                self.discard_advisory_workflow_read();
-                // Editing a hover preview commits its exact shipment first.
-                // Pointer movement must not hide the live cell editor.
-                self.workflow_ui.select(workflow_board_ui::Selection{
-                    group_id:group.id.clone(),order_id:target.order_id.clone(),
-                    shipment_id:target.id.clone()
-                });
-                self.link_hover.clear();
-                self.source_hover=None;
-                self.workflow_freight_editor=Some(WorkflowFreightEditor{
-                    group_id:group.id.clone(),shipment_id:target.id.clone(),
-                    origin,original:original.clone(),text:original,
-                    focus_next:true,click_at
-                });
-                ui.ctx().request_repaint();
             }else if workflow_freight_commit{
                 self.submit_workflow_freight_edit(ui.ctx());
             }else if let Some(origin)=workflow_origin_change{
