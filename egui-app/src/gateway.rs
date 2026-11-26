@@ -143,6 +143,7 @@ pub trait BandoGateway: Send + Sync {
     /// confirmed orders, customer contacts or workflow state.
     /// This method does not persist or mutate anything.
     fn load_catalog(&self) -> Result<Value, String>;
+    fn load_reception_catalog(&self)->Result<Value,String>{self.load_catalog()}
     /// Client management uses only the authoritative Tauri v2 business DB.
     /// Upsert/archive requires explicit write authorization; no egui shadow DB.
     fn load_client_master(&self) -> Result<Value, String> {
@@ -281,6 +282,7 @@ pub trait BandoGateway: Send + Sync {
     fn execute(&self, operation: ReadOperation, payload: Value) -> Result<Value, String>;
 }
 
+pub(crate) fn kakao_title_key(title:&str)->String{native_title_clients::key(title)}
 fn management_catalog_projection(full:&Value)->Result<Value,String>{
     let (clients,mut settings)=crate::client_directory::project_index(full)?;
     settings["colorGuidanceGroups"]=full["settings"]
@@ -367,6 +369,14 @@ impl BandoGateway for LocalGateway {
         let catalog=PreviewStore::initialize()?.load_catalog()?;
         // No shadow customer master; an exported index is read-only.
         crate::client_directory::attach(catalog)
+    }
+    fn load_reception_catalog(&self)->Result<Value,String>{
+        if std::env::var_os("BANDO_EGUI_BUSINESS_DB").is_some_and(|p|!p.is_empty()){
+            let full=crate::business_state::load_reception_catalog()?;
+            let mut catalog=management_catalog_projection(&full)?;
+            catalog["confirmedTitleCounts"]=full["confirmedTitleCounts"].clone();
+            Ok(catalog)
+        }else{self.load_catalog()}
     }
     fn load_client_master(&self) -> Result<Value,String> {
         crate::client_master::load()
