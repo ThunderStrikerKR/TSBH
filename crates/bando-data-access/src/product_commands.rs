@@ -153,9 +153,40 @@ pub fn preview_unified_product_workbook(
 // Price cells already carry an exact field CAS. Editor commands carry
 // the original entity; older callers without an entity retain global CAS.
 // Bulk workbook review deliberately keeps its reviewed revision boundary.
+/// Only fields participating in classification or freight operations enter
+/// their scope token; unrelated order, customer, price and settings changes
+/// cannot invalidate a pending management edit.
+pub fn management_scope_token(state:&Value,domain:&str)->String{
+    use sha2::{Digest,Sha256};
+    let keys:&[&str]=if domain=="categories"{
+        &["id","category","categories","catalog","deletedAt","supersededBy"]
+    }else{
+        &["id","shippingGroupId","origin","active","deletedAt","supersededBy"]
+    };
+    let products=state["products"].as_array().into_iter().flatten().map(|p|{
+        let mut row=serde_json::Map::new();
+        for key in keys{row.insert((*key).into(),p[*key].clone());}
+        if domain=="shipping"{
+            row.insert("variants".into(),json!(p["variants"].as_array().into_iter().flatten()
+                .map(|v|v["id"].clone()).collect::<Vec<_>>()));
+        }
+        Value::Object(row)
+    }).collect::<Vec<_>>();
+    let input=json!({"domain":domain,"data":state[domain],"products":products});
+    format!("{:x}",Sha256::digest(input.to_string().as_bytes()))
+}
+
 fn check_catalog_write_scope(before:&Value,action:&str,data:&Value,
     expected:u64,current:u64)->Result<(),String>{
     if action=="set_price"{return Ok(());}
+    if matches!(action,"change_category"|"delete_category"){
+        if let Some(token)=data["expectedScope"].as_str(){
+            if token!=management_scope_token(before,"categories"){
+                return Err("분류 또는 연결 상품이 변경되었습니다. 입력 내용을 유지합니다.".into());
+            }
+            return Ok(());
+        }
+    }
     if let Some(original)=data.get("expectedEntity"){
         let (collection,id)=match action{
             "upsert_product"=>("products",data["product"]["id"].as_str().unwrap_or("")),
