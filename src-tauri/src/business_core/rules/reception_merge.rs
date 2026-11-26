@@ -329,10 +329,8 @@ fn apply(payload:&Value)->Result<Value,String>{
     ]{set(&mut next,key,value)?;}
     // Match the original TypeScript's atomic post-merge freight calculation.
     // No transient null/empty-version state may reach React.
-    let freight=super::shipping::reception_recommend(&next,state)?;
-    let fee=if field(client,"shippingFeeExcluded")==&json!(true) {
-        json!(0)
-    } else { field(&freight,"total").clone() };
+    let freight=super::shipping::reception_recommend_for_client(&next,state,client)?;
+    let fee=field(&freight,"total").clone();
     set(&mut next,"shippingFee",fee)?;
     set(&mut next,"shippingVersion",field(&freight,"version").clone())?;
     Ok(json!({"order":next}))
