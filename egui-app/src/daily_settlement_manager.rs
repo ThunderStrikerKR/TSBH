@@ -500,6 +500,9 @@ impl DailySettlementManager{
                         section,&mut self.date,&mut self.date_input,
                         &mut self.calendar_month
                     );
+                    crate::floating_notice::section(section.ctx(),"settlement.query",section.clip_rect());
+                    crate::floating_notice::sync(section.ctx(),"settlement.query.error","settlement.query",
+                        crate::floating_notice::Tone::Error,self.error.as_deref());
                     crate::ui_primitives::section_divider(section);
                     if date_changed{visible_report=None;}
                     let report=visible_report.unwrap_or(&missing);
