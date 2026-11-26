@@ -99,6 +99,7 @@ pub struct ClientManager {
     changed:bool,
     draft:Option<Value>,
     original:Option<Value>,
+    expected_client:Value,
     confirm_delete:bool,
     confirm_discard:bool,
     exception_id:String,
@@ -127,7 +128,7 @@ impl ClientManager {
             state:Value::Null,list_cache:Default::default(),ready:false,loading,saving:None,
             search_job:Default::default(),matches:Vec::new(),matches_query:String::new(),search:String::new(),
             sort:None,error:None,changed:false,
-            draft:None,original:None,confirm_delete:false,confirm_discard:false,
+            draft:None,original:None,expected_client:Value::Null,confirm_delete:false,confirm_discard:false,
             exception_id:String::new(),exception_price:String::new(),
             tag_input:String::new(),tag_notice:None,
             show_messages:false,tab_snapshots:crate::view_state::NavigationSnapshots::new(0),messages:None,excel:crate::product_excel_ui::ProductExcelUi::for_clients(),
@@ -202,6 +203,9 @@ impl ClientManager {
             .map(Vec::as_slice).unwrap_or(&[])
     }
     fn begin(&mut self,client:Value) {
+        self.expected_client=self.clients().iter()
+            .find(|row|field(row,"id")==field(&client,"id"))
+            .cloned().unwrap_or(Value::Null);
         self.original=Some(client.clone());
         self.draft=Some(client);
         self.error=None;
@@ -280,15 +284,14 @@ impl ClientManager {
         if self.saving.is_some() || !self.editable(){return;}
         let Some(client)=self.draft.clone() else {return};
         crate::floating_notice::dispatch_pointer(ctx,"clients.action");
-        let Some(revision)=self.state.get("revision").and_then(Value::as_u64)
-            else{self.error=Some("최신 거래처 정보를 확인할 수 없습니다.".into());return};
+        let expected=self.expected_client.clone();
         let (tx,rx)=mpsc::channel();
         self.saving=Some(rx);
         self.error=None;
         let action=action.to_owned();
         let ctx=ctx.clone();
         thread::spawn(move||{
-            let result=gateway.mutate_client_master(revision,&action,client);
+            let result=gateway.mutate_client_master(expected,&action,client);
             let _=tx.send(result);
             ctx.request_repaint();
         });
