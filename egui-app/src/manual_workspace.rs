@@ -3428,8 +3428,10 @@ mod manual_workspace_modal_routing_tests {
         assert!(count_flow.contains("self.request_resize(count,ctx)"),
             "the native asynchronous resize flow must remain in place");
 
-        let segmented=components.split("fn date_navigation_segmented_surface<R>(").nth(1).unwrap()
-            .split("/// Shared calendar navigation").next().unwrap();
+        let primitives=include_str!("ui_primitives.rs");
+        let segmented=primitives.split("fn date_navigation_segmented_surface<R>(").nth(1)
+            .expect("shared segmented surface must be owned by ui_primitives")
+            .split("/// A fixed segment").next().unwrap();
         assert!(segmented.contains("rect_filled("));
         assert!(segmented.contains("rect_stroke("));
         assert!(segmented.contains("StrokeKind::Inside"));
