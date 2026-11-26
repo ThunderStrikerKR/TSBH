@@ -1233,83 +1233,101 @@ fn workflow_freight_text_job(text:&str,ink:Color32)->egui::text::LayoutJob{
     job
 }
 
-/// One column contract for the shipment list header and every delivery row.
-/// The product column absorbs remaining width; names and amounts never move
-/// neighboring columns when their content or highlight state changes.
-fn workflow_shipment_columns(outer:f32)->(f32,f32,f32,f32){
-    let inset=theme::WORKFLOW_DETAIL_ROW_PADDING_X+theme::SOFT_DIVIDER_WIDTH;
-    let inside=(outer-2.0*inset).max(0.0);
+/// Shared expanded shipment detail geometry for History and Reception.
+pub fn shipment_detail_content(block:Rect)->Rect{
+    block.shrink2(Vec2::new(theme::SPACE_12.min(block.width()/2.0),0.0))
+}
+pub fn shipment_detail_cells<const N:usize>(block:Rect,widths:&[f32;N],gap:f32)->[Rect;N]{
+    let content=shipment_detail_content(block);
+    management_table_cells(content.min,widths,content.height(),gap)
+}
+pub fn shipment_detail_product_galley(
+    ui:&Ui,cell_width:f32,text:&str,ink:Color32
+)->std::sync::Arc<egui::Galley>{
+    typography::freight_table_wrapped_galley_with_color(
+        ui,text,(cell_width-theme::SPACE_12).max(1.0),ink)
+}
+pub fn shipment_detail_block_height(text_height:f32)->f32{
+    (text_height+2.0*theme::SPACE_4).ceil().max(theme::ACTION_STANDARD_HEIGHT)
+}
+pub fn paint_shipment_detail_products(
+    ui:&Ui,cell:Rect,galley:std::sync::Arc<egui::Galley>,ink:Color32
+)->bool{
+    let x=cell.left()+theme::SPACE_12/2.0;
+    let pos=egui::pos2(x,cell.center().y-galley.size().y/2.0);
+    let overflow=positioned_text_overflow(Rect::from_min_size(pos,galley.size()),
+        cell.intersect(ui.clip_rect()),galley.elided);
+    paint_table_galley(ui,cell,x,galley,ink);
+    overflow
+}
+pub fn paint_shipment_detail_surface(ui:&Ui,block:Rect,fill:Color32,chosen:bool){
+    let style=theme::workflow_shipment_row_frame(fill,chosen);
+    theme::paint_bordered_surface(ui.painter(),block,
+        theme::ORDER_HISTORY_RECIPIENT_BLOCK_RADIUS,style.fill,style.stroke.color);
+}
+/// Only the responsive widths differ from History: this nested list has
+/// no tracking column or management action column.
+fn workflow_shipment_columns(outer:f32)->([f32;3],f32){
+    let inside=(outer-2.0*theme::SPACE_12).max(0.0);
     let gap=theme::SPACE_8.min(inside*0.04);
-    let name=96.0_f32.min(inside*0.28);
-    let freight=(theme::WORKFLOW_DETAIL_NAME_WIDTH-theme::SPACE_8).min(inside*0.25);
+    let name=96.0_f32.min(inside*0.25);
+    let freight=116.0_f32.min(inside*0.23);
     let product=(inside-name-freight-2.0*gap).max(0.0);
-    (name,product,freight,gap)
+    ([name,product,freight],gap)
 }
 pub fn workflow_shipment_header(ui:&mut Ui){
-    let outer=ui.available_width();
-    let (name,product,freight,gap)=workflow_shipment_columns(outer);
-    let (rect,_)=ui.allocate_exact_size(Vec2::new(outer,24.0),Sense::hover());
-    let x=rect.left()+theme::WORKFLOW_DETAIL_ROW_PADDING_X+theme::SOFT_DIVIDER_WIDTH;
-    let painter=ui.painter().with_clip_rect(rect.intersect(ui.clip_rect()));
-    let font=egui::FontId::proportional(typography::FONT_FIELD_LABEL);
-    painter.text(egui::pos2(x,rect.center().y),egui::Align2::LEFT_CENTER,
-        "수취인",font.clone(),theme::SECONDARY);
-    painter.text(egui::pos2(x+name+gap,rect.center().y),egui::Align2::LEFT_CENTER,
-        "품목",font.clone(),theme::SECONDARY);
-    painter.text(egui::pos2(x+name+product+freight+2.0*gap-theme::SPACE_4,rect.center().y),
-        egui::Align2::RIGHT_CENTER,"운임",font,theme::SECONDARY);
+    let layout=management_inline_list_table_header(ui);
+    let area=management_master_header_begin(ui,layout.header_rect,layout.header_content_rect);
+    let (widths,gap)=workflow_shipment_columns(layout.table_width);
+    let cells=shipment_detail_cells(area,&widths,gap);
+    for (index,label) in ["수취인","품목","운임"].iter().enumerate(){
+        let cell=cells[index];
+        let galley=typography::management_table_header_galley(ui,label);
+        let x=if index==2{cell.right()-theme::SPACE_8-galley.size().x}
+            else{cell.left()+theme::SPACE_12/2.0};
+        paint_table_galley(ui,cell,x,galley,theme::SECONDARY);
+    }
+    management_table_column_rules(ui,area,&cells,gap);
+    management_master_header_finish(ui,layout.header_rect);
 }
-/// Shared shipment group renderer. Each product is measured independently;
-/// one group selection/hover hit rect still owns all of its wrapped lines.
+/// Same shipment detail surface, multiline product renderer and cell
+/// coordinates as Order History. Selection only supplies the palette.
 pub fn workflow_shipment_row(
     ui:&mut Ui,name:&str,summary:&str,fill:Color32,chosen:bool,previewed:bool,freight:Option<&str>,freight_emphasis:bool
 )->egui::Response{
     let outer=ui.available_width();
-    let (name_width,product_width,freight_width,gap)=workflow_shipment_columns(outer);
+    let (widths,gap)=workflow_shipment_columns(outer);
     let preview_ink=if chosen{theme::WORKFLOW_SELECTED_ROW_TEXT}
         else if previewed{source_highlight::ACTIVE_TEXT}else{theme::TEXT};
     let summary_ink=if chosen{theme::TEXT}else{preview_ink};
     let freight_ink=if freight_emphasis{crate::one_touch::INK}else{theme::TEXT};
-    let response=theme::workflow_shipment_row_frame(fill,chosen).show(ui,|row|{
-        // Reuse the exact history-table multiline galley and its line pitch.
-        // The side cells center against the complete product list, not its
-        // first line. No extra gap between individual item lines.
-        let name_galley=typography::freight_table_wrapped_galley_with_color(
-            row,name,name_width,preview_ink);
-        let product_galley=typography::freight_table_wrapped_galley_with_color(
-            row,summary,product_width,summary_ink);
-        let freight_text=freight.unwrap_or("—");
-        let mut freight_job=workflow_freight_text_job(&freight_text.replace(" / ","\n"),freight_ink);
-        freight_job.wrap.max_width=(freight_width-2.0*theme::SPACE_4).max(1.0);
-        freight_job.wrap.break_anywhere=true;
-        let freight_galley=row.fonts_mut(|fonts|fonts.layout_job(freight_job));
-        let content_height=name_galley.size().y.max(product_galley.size().y)
-            .max(freight_galley.size().y+2.0*theme::SPACE_4)
-            .max(theme::ACTION_STANDARD_HEIGHT-2.0*theme::SPACE_4).ceil();
-        let (rect,_)=row.allocate_exact_size(
-            Vec2::new(name_width+product_width+freight_width+2.0*gap,content_height),Sense::hover());
-        let name_rect=Rect::from_min_size(rect.min,Vec2::new(name_width,content_height));
-        let product_rect=Rect::from_min_size(
-            egui::pos2(name_rect.right()+gap,rect.top()),Vec2::new(product_width,content_height));
-        let freight_rect=Rect::from_min_size(
-            egui::pos2(product_rect.right()+gap,rect.top()),Vec2::new(freight_width,content_height));
-        paint_table_galley(row,name_rect,name_rect.left(),name_galley,preview_ink);
-        paint_table_galley(row,product_rect,product_rect.left(),product_galley,summary_ink);
-        let x=freight_rect.right()-theme::SPACE_4-freight_galley.size().x;
-        let bounds=Rect::from_min_size(
-            egui::pos2(x,freight_rect.center().y-freight_galley.size().y/2.0),freight_galley.size());
-        let highlight=crate::one_touch::value_rect(bounds,freight_rect);
-        if freight_emphasis{crate::one_touch::background(row,highlight);}
-        paint_table_galley(row,freight_rect,x,freight_galley,freight_ink);
-        if freight_emphasis{crate::one_touch::outline(row,highlight);}
-    });
+    let name_galley=shipment_detail_product_galley(ui,widths[0],name,preview_ink);
+    let product_galley=shipment_detail_product_galley(ui,widths[1],summary,summary_ink);
+    let freight_text=freight.unwrap_or("—");
+    let mut freight_job=workflow_freight_text_job(&freight_text.replace(" / ","\n"),freight_ink);
+    freight_job.wrap.max_width=(widths[2]-2.0*theme::SPACE_8).max(1.0);
+    freight_job.wrap.break_anywhere=true;
+    let freight_galley=ui.fonts_mut(|fonts|fonts.layout_job(freight_job));
+    let height=shipment_detail_block_height(name_galley.size().y.max(product_galley.size().y)
+        .max(freight_galley.size().y));
+    let (block,response)=ui.allocate_exact_size(Vec2::new(outer,height),Sense::hover());
+    let [name_rect,product_rect,freight_rect]=shipment_detail_cells(block,&widths,gap);
+    paint_shipment_detail_surface(ui,block,fill,chosen);
+    paint_shipment_detail_products(ui,name_rect,name_galley,preview_ink);
+    paint_shipment_detail_products(ui,product_rect,product_galley,summary_ink);
+    let x=freight_rect.right()-theme::SPACE_8-freight_galley.size().x;
+    let bounds=Rect::from_min_size(
+        egui::pos2(x,freight_rect.center().y-freight_galley.size().y/2.0),freight_galley.size());
+    let highlight=crate::one_touch::value_rect(bounds,freight_rect);
+    if freight_emphasis{crate::one_touch::background(ui,highlight);}
+    paint_table_galley(ui,freight_rect,x,freight_galley,freight_ink);
+    if freight_emphasis{crate::one_touch::outline(ui,highlight);}
     if previewed && !chosen{
-        ui.painter().rect_stroke(response.response.rect.shrink(0.5),
-            theme::ORDER_HISTORY_RECIPIENT_BLOCK_RADIUS,
+        ui.painter().rect_stroke(block.shrink(0.5),theme::ORDER_HISTORY_RECIPIENT_BLOCK_RADIUS,
             egui::Stroke::new(source_highlight::ACTIVE_BORDER_WIDTH,source_highlight::ACTIVE_BORDER),
             egui::StrokeKind::Inside);
     }
-    response.response
+    response
 }
 
 #[cfg(test)]
@@ -4729,6 +4747,18 @@ fn allocate_management_table_header(
     ui:&mut Ui,viewport_width:f32,min_table_width:f32
 )->ManagementTableHeader{
     let scrollbar_gutter=ui.spacing().scroll.allocated_width();
+    allocate_management_table_header_with_gutter(ui,viewport_width,min_table_width,scrollbar_gutter)
+}
+
+/// Nested tables scroll with their enclosing pane, so no second native
+/// scrollbar gutter belongs to the header or the detail rows.
+pub fn management_inline_list_table_header(ui:&mut Ui)->ManagementTableHeader{
+    let width=ui.available_width().max(1.0);
+    allocate_management_table_header_with_gutter(ui,width,width,0.0)
+}
+fn allocate_management_table_header_with_gutter(
+    ui:&mut Ui,viewport_width:f32,min_table_width:f32,scrollbar_gutter:f32
+)->ManagementTableHeader{
     let table_width=management_table_data_width(
         viewport_width,scrollbar_gutter,min_table_width
     );
