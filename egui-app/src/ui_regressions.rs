@@ -453,7 +453,7 @@ mod management_async_behavior_regression_tests {
 
         let model_groups=include_str!("model_group_manager.rs");
         assert!(model_groups.contains("writable&&!busy&&self.dirty()"));
-        assert!(model_groups.contains("crate::button::action(footer,\"닫기\""));
+        assert!(model_groups.contains("crate::button::action(buttons,\"닫기\""));
 
         let aliases=include_str!("alias_manager.rs");
         assert!(aliases.contains("fn alias_diagnostic_slot("));
@@ -1925,7 +1925,7 @@ mod structural_divider_contract_tests {
             ("settings_view.rs",2), // repeated account and backup records
             ("alias_manager.rs",2), // repeated list/result rows
             ("brand_manager.rs",1), // repeated list rows
-            ("model_group_manager.rs",4), // repeated result/registered rows, fixed footer
+            ("model_group_manager.rs",1), // fixed footer; table rows own their rules
             ("automatic_message_manager.rs",1), // fixed footer
             ("order_history_detail.rs",1), // repeated payment records
             ("freight_manager.rs",1), // compact context menu
@@ -1968,7 +1968,10 @@ mod shared_composite_control_contract_tests{
         assert_eq!(reception.matches("crate::table::editable_cell_hit(").count(),3);
         assert!(reception.contains("crate::table::paint_editable_cell_text("));
         assert!(!reception.contains("let action=ui.interact(hit,ui.make_persistent_id((\"item-remove\""));
-        assert!(include_str!("model_group_manager.rs").contains("crate::card::selectable_list_row("));
+        let models=include_str!("model_group_manager.rs");
+        assert!(models.contains("crate::table::fixed_row("));
+        assert!(models.contains("crate::table::RowTone::SelectedIf("));
+        assert!(!models.contains("crate::card::selectable_list_row("));
         assert!(include_str!("workflow_board_ui.rs").contains("crate::button::disclosure_at("));
         assert!(include_str!("order_history_manager.rs").contains("crate::button::disclosure_at("));
         assert!(include_str!("composite_workflow.rs").contains("source_highlight::paint_active_outline("));
