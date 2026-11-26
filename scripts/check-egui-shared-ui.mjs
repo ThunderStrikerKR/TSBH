@@ -467,7 +467,10 @@ export function auditContextLocks(source,file){
     if(close<0||close>=end)continue;
     for(let j=close+1;j<end-2;j++){
       const method=v[j+1],receiver=v[j-1];
-      const nested=v[j]==="."&&v[j+2]==="("&&(
+      const guardArg=v[start+1]==="mut"?v[start+2]:v[start+1];
+      const directGuardFocus=direct&&["memory","memory_mut"].includes(v[i+1])&&
+        receiver===guardArg&&["request_focus","surrender_focus"].includes(method);
+      const nested=v[j]==="."&&v[j+2]==="("&&!directGuardFocus&&(
         reentry.has(method)||
         method==="ctx"||
         (responseCalls.has(method)&&/^(response|owner|trigger|r)$/.test(receiver??""))
@@ -486,6 +489,7 @@ function contextLockSelfTest(){
   assert.equal(auditContextLocks("ctx.data_mut(|data|{data.insert_temp(id,response.has_focus());});","view_state.rs").length,1);
   assert.equal(auditContextLocks("let focused=response.has_focus();ctx.data_mut(|data|data.insert_temp(id,focused));","view_state.rs").length,0);
   assert.equal(auditContextLocks("ctx.memory(|memory|memory.has_focus(id));","cell_navigation.rs").length,0);
+  assert.equal(auditContextLocks("ctx.memory_mut(|m|m.surrender_focus(id));","manual_workspace.rs").length,0);
   assert.equal(auditContextLocks("ctx.input(|input|ctx.memory(|m|m.focused()));","screen.rs").length,1);
   assert.equal(auditContextLocks("with_state(ctx,|state|{ctx.request_repaint();});","floating_notice.rs").length,1);
 }
