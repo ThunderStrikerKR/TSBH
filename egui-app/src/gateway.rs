@@ -281,6 +281,18 @@ pub trait BandoGateway: Send + Sync {
     fn execute(&self, operation: ReadOperation, payload: Value) -> Result<Value, String>;
 }
 
+fn management_catalog_projection(full:&Value)->Result<Value,String>{
+    let (clients,mut settings)=crate::client_directory::project_index(full)?;
+    settings["colorGuidanceGroups"]=full["settings"]
+        .get("colorGuidanceGroups").cloned().unwrap_or(Value::Null);
+    Ok(serde_json::json!({
+        "revision":full.get("revision"),"products":full.get("products"),
+        "aliases":full.get("aliases"),"brands":full.get("brands"),
+        "categories":full.get("categories"),"shipping":full.get("shipping"),
+        "clients":clients,"settings":settings
+    }))
+}
+
 fn message_account_wire(state:&Value)->Result<Vec<Value>,String>{
     state["settings"]["accounts"].as_array().into_iter().flatten().map(|account|
         Ok(serde_json::json!({
@@ -350,22 +362,7 @@ impl BandoGateway for LocalGateway {
             .is_some_and(|value| !value.is_empty())
         {
             let full = crate::business_state::load_catalog()?;
-            let (clients, mut settings) = crate::client_directory::project_index(&full)?;
-            // Model-group settings are safe catalog metadata, not client
-            // contacts. Retain the REAL settings field for native CAS rather
-            // than the client-index-only projection.
-            settings["colorGuidanceGroups"]=full["settings"]
-                .get("colorGuidanceGroups").cloned().unwrap_or(Value::Null);
-            return Ok(serde_json::json!({
-                "revision":full.get("revision"),
-                "products":full.get("products"),
-                "aliases":full.get("aliases"),
-                "brands":full.get("brands"),
-                "categories":full.get("categories"),
-                "shipping":full.get("shipping"),
-                "clients":clients,
-                "settings":settings,
-            }));
+            return management_catalog_projection(&full);
         }
         let catalog=PreviewStore::initialize()?.load_catalog()?;
         // No shadow customer master; an exported index is read-only.
@@ -420,17 +417,8 @@ impl BandoGateway for LocalGateway {
         let saved=bando_data_access::patch_model_groups_v2(
             &mut conn,&groups,&expected
         )?;
-        let revision=saved["revision"].as_u64()
-            .ok_or("모델군 저장 결과 revision 오류")?;
         drop(conn);
-        let catalog=self.load_catalog()?;
-        // A non-null key alone is NOT proof that the editor's exact draft
-        // survived a concurrent commit or the SQLite round trip.
-        if catalog["revision"].as_u64()!=Some(revision) ||
-            catalog["settings"]["colorGuidanceGroups"]!=groups{
-            return Err("모델군 저장 후 최신 데이터가 일치하지 않습니다. 다시 불러온 뒤 확인하세요.".into());
-        }
-        Ok(catalog)
+        management_catalog_projection(&saved)
     }
     fn settings_data(&self,operation:&str,filename:Option<&str>)->Result<Value,String>{
         crate::settings_store::data(operation,filename)
@@ -472,14 +460,8 @@ impl BandoGateway for LocalGateway {
         // All seven original catalog operations and price CAS now run
         // in-process. The shared writer owns the commit and revision check.
         let saved=bando_data_access::patch_product_v2(&mut conn,&request)?;
-        let written_revision=saved["revision"].as_u64()
-            .ok_or("상품 변경 결과의 revision을 확인할 수 없습니다.")?;
         drop(conn);
-        let catalog=self.load_catalog()?;
-        if catalog["revision"].as_u64()!=Some(written_revision){
-            return Err("상품은 저장됐지만 최신 상태 조회가 일치하지 않습니다. 새로고침하세요.".into());
-        }
-        Ok(catalog)
+        management_catalog_projection(&saved)
     }
     fn mutate_excel_workflow(
         &self,revision:u64,action:&str,shipment_id:&str,
@@ -602,13 +584,17 @@ impl BandoGateway for LocalGateway {
             [],|row|row.get(0),
         ).map_err(|_|"운영 DB 스키마를 확인할 수 없습니다.".to_owned())?;
         if !bando_data_access::supported_relational_version(version){return Err("지원하지 않는 운영 DB 버전입니다.".into());}
-        let before=bando_data_access::read_v2_snapshot(&conn)?;
+        let committed=bando_data_access::update_v2_entity_if_changed(&mut conn,true,|before|{
         let current=before["revision"].as_u64().ok_or("운영 DB 리비전 오류")?;
-        if current!=revision{
+        if let Some(token)=data["expectedScope"].as_str(){
+            if token!=bando_data_access::management_scope_token(before,"shipping"){
+                return Err("운임 기준 또는 배송 그룹 구성이 변경되었습니다. 입력 내용을 유지합니다.".into());
+            }
+        }else if current!=revision{
             return Err("다른 작업에서 데이터가 수정되었습니다. 다시 불러오세요.".into());
         }
         let payload=bando_data_access::shipping_action::action_payload(
-            action,&data,&before
+            action,&data,before
         )?;
         // Execute the SAME original Rust shipping mutation rule as Tauri.
         let result=rules::execute("apply_shipping_action",payload)?;
@@ -619,22 +605,12 @@ impl BandoGateway for LocalGateway {
             snapshot["shipping"]=shipping.clone();
             snapshot
         }else{return Err("Rust 운임 처리 결과를 확인할 수 없습니다.".into());};
-        next["revision"]=serde_json::json!(revision);
-        let committed=bando_data_access::write_v2_snapshot(
-            &mut conn,next,revision,true
-        )?;
-        let committed_revision=committed["revision"].as_u64()
-            .ok_or("운임 저장 결과 리비전을 확인하지 못했습니다.")?;
+        next["revision"]=serde_json::json!(current);
+        Ok((next!=*before).then_some(next))
+        })?;
         drop(conn);
-        // Never present an optimistic draft as confirmed saved data.
-        let state=self.load_business_state()?;
-        if state["revision"].as_u64()!=Some(committed_revision) {
-            return Err(
-                "운임은 저장됐지만 이후 다른 작업에서 데이터가 다시 수정되었습니다. 최신 상태를 불러와 확인하세요.".into()
-            );
-        }
-        let projection=crate::management_queries::project_freight(self,&state)?;
-        Ok(serde_json::json!({"state":state,"projection":projection}))
+        let projection=crate::management_queries::project_freight(self,&committed)?;
+        Ok(serde_json::json!({"state":committed,"projection":projection}))
     }
     fn supports_scoped_freight_refresh(&self)->bool{true}
     fn workflow_write_enabled(&self)->bool{
