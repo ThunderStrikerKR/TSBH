@@ -6863,13 +6863,6 @@ pub fn reception_item_origin_action_editable(
     selection
 }
 
-/// Paint a value-only one-touch surface from the same measured galley
-/// bounds used for the actual text. The surrounding row is only a clip,
-/// never the highlight target. Keep the common 4pt text/outline clearance.
-fn reception_total_value_rect(ink:Rect,row:Rect)->Rect{
-    ink.expand(theme::SPACE_4).intersect(row)
-}
-
 /// In the dedicated "발주서 합계" card, show the right-aligned total amount
 /// and the second line of shipment count / VAT without a duplicate "총 주문"
 /// caption or another border: the containing card owns its header and rule.
@@ -6909,7 +6902,7 @@ pub fn reception_total_footer(
         center_y-number.size().y/2.0);
     let amount_ink=Rect::from_min_size(number_pos,number.size())
         .union(Rect::from_min_size(unit_pos,unit.size()));
-    let amount_highlight=reception_total_value_rect(amount_ink,first_amount);
+    let amount_highlight=crate::one_touch::value_rect(amount_ink,first_amount);
     if review{crate::one_touch::background(ui,amount_highlight);}
     painter.galley(number_pos,number,value_color);
     painter.galley(unit_pos,unit,value_color);
@@ -6931,7 +6924,7 @@ pub fn reception_total_footer(
         let prefix_pos=egui::pos2(left,center_y-prefix.size().y/2.0);
         let value_pos=egui::pos2(left+prefix.size().x+theme::SPACE_8,center_y-value.size().y/2.0);
         let value_ink=Rect::from_min_size(value_pos,value.size());
-        let count_highlight=reception_total_value_rect(value_ink,second_left);
+        let count_highlight=crate::one_touch::value_rect(value_ink,second_left);
         if review{crate::one_touch::background(ui,count_highlight);}
         count_painter.galley(prefix_pos,prefix,theme::SECONDARY);
         count_painter.galley(value_pos,value,count_color);
