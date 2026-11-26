@@ -277,6 +277,27 @@ fn append_extra_event(state:&mut Value,payload:&Value,id:&str,action:&str,
         .ok_or("업무 이벤트 목록 누락")?.push(event);
     Ok(())
 }
+fn invalidate_cancelled_approvals(state:&mut Value,payload:&Value,group_id:&str,affected:&[String])->Result<(),String>{
+    let mut invalidations=Vec::new();
+    for confirmation in rows(field(&state["workflow"],"confirmations")){
+        let confirmation_id=str_field(confirmation,"id");
+        let active=affected.iter().filter(|sid|
+            rows(field(confirmation,"shipmentIds")).iter().any(|v|v.as_str()==Some(sid.as_str())) &&
+            !rows(field(&state["workflow"],"events")).iter().any(|event|
+                str_field(event,"action")=="입금 승인 재확인 필요" &&
+                field(event,"before")==field(confirmation,"id") &&
+                rows(field(event,"shipmentIds")).iter().any(|v|v.as_str()==Some(sid.as_str())))
+            ).cloned().collect::<Vec<_>>();
+        if !active.is_empty(){invalidations.push((confirmation_id.to_owned(),active));}
+    }
+    let seed=required_str(payload,"eventId")?;
+    for (index,(confirmation_id,ids)) in invalidations.into_iter().enumerate(){
+        let event_id=format!("{seed}:undo-approval:{index}");
+        append_extra_event(state,payload,&event_id,"입금 승인 재확인 필요",
+            &ids,group_id,json!(confirmation_id),Value::Null,"시스템","입금 확인 취소")?;
+    }
+    Ok(())
+}
 // The receipt source positions are JavaScript UTF-16 offsets, not Rust byte
 // indices. Never slice a Korean address or product expression by byte offset.
 fn source_expression(raw:&str, start:&Value, end:&Value)->Option<String>{
@@ -514,48 +535,13 @@ pub(super) fn apply(payload:&Value)->Result<Value,String> {
             let step=group_step(&state,id)?;
             if step==0 {return Err("첫 단계입니다.".into());}
             if step==4 {
-                // Source undoGroup revokes only confirmations that include
-                // an affected shipment and are not already invalidated
-                // by a prior recheck event. For partial confirmations retain
-                // allocations belonging to unaffected shipments.
+                // Preserve the original approval as historical evidence.
+                // Existing billing/settlement rules already exclude an
+                // approval for each shipment named by an invalidation event.
                 let affected=ships.iter().map(|i|
-                    str_field(&state["workflow"]["shipments"][*i],"id").to_string()
-                ).collect::<std::collections::HashSet<_>>();
-                let old=rows(field(&state["workflow"],"confirmations")).to_vec();
-                let mut next_confirmations=Vec::new();
-                for mut confirmation in old {
-                    let already_invalidated=rows(field(&state["workflow"],"events")).iter()
-                        .any(|e|str_field(e,"action")=="입금 승인 재확인 필요" &&
-                            field(e,"before")==field(&confirmation,"id"));
-                    let contains_affected=rows(field(&confirmation,"shipmentIds")).iter()
-                        .any(|sid|sid.as_str().is_some_and(|v|affected.contains(v)));
-                    if already_invalidated||!contains_affected{
-                        next_confirmations.push(confirmation);continue;
-                    }
-                    let remaining=rows(field(&confirmation,"shipmentIds")).iter()
-                        .filter(|id|!id.as_str().is_some_and(|sid|affected.contains(sid)))
-                        .cloned().collect::<Vec<_>>();
-                    if remaining.is_empty(){continue;}
-                    let mut amounts=serde_json::Map::new();
-                    for id in &remaining{
-                        let sid=id.as_str().unwrap_or("");
-                        let v=field(field(&confirmation,"amounts"),sid)
-                            .as_i64().or_else(||rows(field(&confirmation,"allocations"))
-                                .iter().find(|a|str_field(a,"shipmentId")==sid)
-                                .and_then(|a|field(a,"amount").as_i64())).unwrap_or(0);
-                        amounts.insert(sid.to_string(),json!(v));
-                    }
-                    let allocations=rows(field(&confirmation,"allocations")).iter()
-                        .filter(|allocation|!affected.contains(str_field(allocation,"shipmentId")))
-                        .cloned().collect::<Vec<_>>();
-                    let total=amounts.values().filter_map(Value::as_i64).sum::<i64>();
-                    set(&mut confirmation,"shipmentIds",json!(remaining))?;
-                    set(&mut confirmation,"allocations",json!(allocations))?;
-                    set(&mut confirmation,"amounts",Value::Object(amounts))?;
-                    set(&mut confirmation,"amount",json!(total))?;
-                    next_confirmations.push(confirmation);
-                }
-                set(&mut state["workflow"],"confirmations",json!(next_confirmations))?;
+                    str_field(&state["workflow"]["shipments"][*i],"id").to_string())
+                    .collect::<Vec<_>>();
+                invalidate_cancelled_approvals(&mut state,payload,id,&affected)?;
             }
             if step==3{
                 super::reconciliation::invalidate_notice_approvals(&mut state,payload,&ships)?;
@@ -571,11 +557,9 @@ pub(super) fn apply(payload:&Value)->Result<Value,String> {
             if step==3 && !rows(field(&state["workflow"]["groups"][gi],"notices")).is_empty() {
                 set(&mut state["workflow"]["groups"][gi],"needsNotice",json!(true))?;
             }
-            if step!=4 {
-                let ship_ids=ships.iter().map(|i|str_field(&state["workflow"]["shipments"][*i],"id").to_string()).collect::<Vec<_>>();
-                append_event(&mut state,payload,"이전 단계 취소",&ship_ids,
-                    json!(step),json!(step-1),id)?;
-            }
+            let ship_ids=ships.iter().map(|i|str_field(&state["workflow"]["shipments"][*i],"id").to_string()).collect::<Vec<_>>();
+            append_event(&mut state,payload,"이전 단계 취소",&ship_ids,
+                json!(step),json!(step-1),id)?;
             Ok(json!({"state":state,"step":if step==4 {3} else {step-1}}))
         }
         "set_shipment_freight" => {
@@ -1595,5 +1579,27 @@ mod stage_effect_tests{
         assert!(same_freight_effect(old.clone(),freight_effect(&ship,&row,&order)));
         ship["charges"]["FACTORY"]=json!(4000);
         assert!(!same_freight_effect(old,freight_effect(&ship,&row,&order)));
+    }
+}
+
+#[cfg(test)]
+mod undo_approval_history_tests{
+    use super::*;
+    #[test]
+    fn undo_preserves_original_approval_and_invalidates_only_affected_shipment(){
+        let mut state=json!({"workflow":{"confirmations":[{"id":"c","shipmentIds":["a","b"],
+            "amount":3000,"allocations":[{"shipmentId":"a","amount":1000},{"shipmentId":"b","amount":2000}]}],
+            "payments":[{"id":"p","amount":1000}],"events":[]}});
+        let before=state.clone();
+        let request=json!({"eventId":"undo","now":"2026-11-27"});
+        invalidate_cancelled_approvals(&mut state,&request,"g",&["a".into()]).unwrap();
+        assert_eq!(state["workflow"]["confirmations"],before["workflow"]["confirmations"]);
+        assert_eq!(state["workflow"]["payments"],before["workflow"]["payments"]);
+        assert_eq!(state["workflow"]["events"][0]["shipmentIds"],json!(["a"]));
+        assert_eq!(state["workflow"]["events"][0]["before"],"c");
+        invalidate_cancelled_approvals(&mut state,&request,"g",&["a".into()]).unwrap();
+        assert_eq!(state["workflow"]["events"].as_array().unwrap().len(),1);
+        invalidate_cancelled_approvals(&mut state,&json!({"eventId":"undo2","now":"2026-11-27"}),"g2",&["b".into()]).unwrap();
+        assert_eq!(state["workflow"]["events"][1]["shipmentIds"],json!(["b"]));
     }
 }
