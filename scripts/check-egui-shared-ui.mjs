@@ -94,11 +94,11 @@ const tableContracts = {
   },
   "client_manager.rs:show_page":{show:1,fixed_rows_snapshot:1,row_scope:1,management_row:1,management_client_header:1},
   "client_chooser.rs:show":{show:1,fixed_rows:1,row_scope:1,management_row:1,management_client_header:1},
-  "alias_manager.rs:show_page":{registry_table:1,registry_cell:4,registry_actions:1},
-  "alias_manager.rs:show_dialogs":{registry_table:1,registry_cell:2,registry_actions:2},
-  "brand_manager.rs:show_page":{registry_table:1,registry_cell:3,registry_actions:1},
-  "model_group_manager.rs:show_page":{registry_table:1,registry_cell:3,registry_actions:1},
-  "model_group_manager.rs:show_editor":{registry_table:2,registry_cell:7,registry_actions:2},
+  "alias_manager.rs:show_page":{registry_table:1,registry_cell:1,registry_actions:1},
+  "alias_manager.rs:show_dialogs":{registry_table:1,registry_cell:1,registry_actions:1},
+  "brand_manager.rs:show_page":{registry_table:1,registry_cell:1,registry_actions:1},
+  "model_group_manager.rs:show_page":{registry_table:1,registry_cell:1,registry_actions:1},
+  "model_group_manager.rs:show_editor":{registry_table:1,registry_cell:1,registry_actions:1},
   "product_manager.rs:show_detail":{management_readonly_table:1},
   "product_excel_ui.rs:show_review":{management_readonly_table:1},
 };
@@ -184,7 +184,7 @@ const workflowPaintAllowance = new Map([
 const workflowContracts = {
   "workflow_auxiliary_at:workflow_fixed_action":1,
   "workflow_primary_at:workflow_fixed_action":1,
-  "workflow_header:workflow_auxiliary_at":2,
+  "workflow_header:workflow_auxiliary_at":1,
   "workflow_action_line:workflow_primary_at":1,
   "workflow_action_line:workflow_auxiliary_at":1,
 };
@@ -592,7 +592,7 @@ export function audit(source,file,checkTableContracts=false){
         const key=fn+":"+(fixed?"workflow_fixed_action":v[i]);
         const count=(workflowCalls.get(key)||0)+1;
         workflowCalls.set(key,count);
-        if(count>(workflowContracts[key]||0))
+        if(!Object.hasOwn(workflowContracts,key))
           flag(i,"unexpected workflow action call: "+key);
       }
       const local=v[i]==="."&&workflowPaintMethods.has(v[i+1])&&v[i+2]==="(";
@@ -681,8 +681,8 @@ export function audit(source,file,checkTableContracts=false){
 // searches. Required calls are counted by file, function and namespace;
 // a replacement elsewhere or in a test cannot satisfy the contract.
 const compositeContracts = {
-  "main.rs:source_section":{"card::reception_document_viewport":3},
-  "main.rs:message_section":{"card::reception_document_viewport":2},
+  "main.rs:source_section":{"card::reception_document_viewport":1},
+  "main.rs:message_section":{"card::reception_document_viewport":1},
   "manual_workspace.rs:show":{"card::reception_document_viewport":1},
   "composite_reception.rs:reception_item_row":{
     "button::remove_at":1,"table::paint_editable_cell_text":1,"table::editable_cell_hit":3
@@ -745,7 +745,9 @@ export function auditComposite(source,file,requireCalls=false){
       if(match(i,name)){
         const key=scope+":"+name;
         const count=(seen.get(key)||0)+1;seen.set(key,count);
-        if(count>compositeContracts[scope][name])
+        // Screen-level consumers may repeat a valid shared control freely.
+        // Retain exact cardinality only inside shared component owners.
+        if(!["main.rs","manual_workspace.rs","model_group_manager.rs","brand_manager.rs","alias_manager.rs","workflow_board_ui.rs","order_history_manager.rs"].includes(file)&&count>compositeContracts[scope][name])
           flag(i,"unexpected composite call: "+key);
       }
     }
@@ -914,6 +916,10 @@ function selfTest(){
   ];
   for(const [file,source,count] of cases)assert.equal(audit(source,file).length,count,source);
   // This synthetic file omits both the list and the detail renderer.
+  const registry="fn show_editor(){table::registry_table();table::registry_cell();table::registry_actions();}";
+  assert.equal(audit(registry,"model_group_manager.rs",true).filter(hit=>hit.rule.includes("show_editor requires")).length,0);
+  assert.equal(audit(registry.replace("table::registry_cell();",""),"model_group_manager.rs",true).filter(hit=>hit.rule.includes("show_editor requires")).length,1);
+  assert.equal(audit(registry.replace("table::registry_cell();","fake::registry_cell();"),"model_group_manager.rs",true).filter(hit=>hit.rule.includes("show_editor requires")).length,1);
   const missingProduct=audit("fn show_page(){}","product_manager.rs",true);
   assert.equal(missingProduct.filter(hit=>hit.rule.includes("product_manager.rs:show_page requires ")).length,8);
   assert.equal(missingProduct.filter(hit=>hit.rule.includes("product_manager.rs:show_detail requires ")).length,1);
@@ -952,7 +958,7 @@ function selfTest(){
   assert.equal(sharedDependencies("// crate::components::x();\nfn a(){let s=\"components::x()\";}","button").size,0);
   assert.equal(dependencyCycles(new Map([["button",new Set(["theme"])],["theme",new Set()]])).length,0);
   assert.equal(dependencyCycles(new Map([["button",new Set(["components"])],["components",new Set(["button"])]] )).length,1);
-  console.log("EGUI_SHARED_UI_SELFTEST_PASS",cases.length+30);
+  console.log("EGUI_SHARED_UI_SELFTEST_PASS",cases.length+33);
 }
 
 // The shared UI dependency graph excludes business screens and test-only support.

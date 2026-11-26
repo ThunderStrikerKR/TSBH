@@ -1,4 +1,4 @@
-name: Manual classification modal and linked-source checks
+name: Native egui interaction and management regression
 on:
   push:
     branches: [main]
@@ -43,15 +43,14 @@ concurrency:
 jobs:
   manual-classification:
     runs-on: windows-latest
-    timeout-minutes: 22
+    timeout-minutes: 35
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: egui-app -> target
-      - name: Compile the native egui workspace
-        run: cargo check --manifest-path egui-app/Cargo.toml
+      # cargo test compiles the current application; the independent quick compile gate remains.
       - name: Verify inline editing persists order-scoped recognition IDs and assignment links
         run: cargo test --manifest-path egui-app/Cargo.toml inline_recognition_identity_tests -- --nocapture
       - name: Verify order confirmation commits the active cell before resuming
@@ -104,3 +103,21 @@ jobs:
         run: cargo test --manifest-path egui-app/Cargo.toml arrow_navigation_is_captured_before_text_edit_and_ime_is_respected -- --nocapture
       - name: Verify manual quantity, address and quote behavior
         run: cargo test --manifest-path egui-app/Cargo.toml manual_remote_row_tests -- --nocapture
+      - name: Verify client preferred-account options and stored selection semantics
+        run: cargo test --manifest-path egui-app/Cargo.toml client_account_picker_tests -- --nocapture
+      - name: Verify search-tag add, duplicate prevention and individual removal
+        run: cargo test --manifest-path egui-app/Cargo.toml client_search_tags::tests -- --nocapture
+      - name: Verify the same header and row column-divider positions
+        run: cargo test --manifest-path egui-app/Cargo.toml management_client_column_divider_tests -- --nocapture
+      - name: Category navigation and common breadcrumb geometry
+        run: cargo test --manifest-path egui-app/Cargo.toml category_dropdown::tests -- --nocapture
+      - name: Category management layout and navigation
+        run: cargo test --manifest-path egui-app/Cargo.toml category_manager:: -- --nocapture
+      - name: Model group registry and editor
+        run: cargo test --manifest-path egui-app/Cargo.toml model_group_manager:: -- --nocapture
+      - name: Brand modal lifecycle
+        run: cargo test --manifest-path egui-app/Cargo.toml brand_manager::modal_lifecycle_tests -- --nocapture
+      - name: Alias registry, picker and editor
+        run: cargo test --manifest-path egui-app/Cargo.toml alias_manager:: -- --nocapture
+      - name: Shared table renderer geometry
+        run: cargo test --manifest-path egui-app/Cargo.toml table::regression_tests -- --nocapture

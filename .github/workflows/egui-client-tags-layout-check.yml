@@ -1,22 +1,8 @@
 name: Client tag and freight-master table layout verification
 on:
-  push:
-    branches:
-      - ui/client-search-tag-chips-67
-      - main
-    paths:
-      - .github/workflows/egui-client-tags-layout-check.yml
-      - egui-app/src/client_search_tags.rs
-      - egui-app/src/client_manager.rs
-      - 'egui-app/src/**'
-      - egui-app/src/freight_manager.rs
-      - egui-app/src/main.rs
-  pull_request:
-    paths:
-      - .github/workflows/egui-client-tags-layout-check.yml
-      - egui-app/src/client_search_tags.rs
-      - 'egui-app/src/**'
-      - egui-app/src/freight_manager.rs
+  # Main automatic coverage is consolidated in egui-manual-classification-check.yml.
+  # Keep this focused workflow for explicit troubleshooting.
+  workflow_dispatch:
 permissions:
   contents: read
 concurrency:
