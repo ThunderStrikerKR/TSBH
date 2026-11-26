@@ -34,22 +34,12 @@ fn display_model(name:&str)->String{
 fn product<'a>(state:&'a Value,id:&str)->Option<&'a Value>{
     rows(&state["products"]).iter().find(|p|field(p,"id")==id)
 }
-fn alias_diagnostic_slot(ui:&mut Ui,item:&Value,warnings:&Warnings)->Rect{
-    // Always reserve the third caption line. Diagnostic arrival and message
-    // length must not change this alias row's height or the next row's Y.
-    let slot_width=ui.min_rect().width().max(1.0);
-    let detail=warnings.get(field(item,"id")).filter(|v|!v.is_empty())
-        .map(|issues|format!(
-            "충돌: {} / 영향 범위: {}",
-            issues.join(" / "),
-            if field(item,"clientId").is_empty(){
-                "모든 거래처의 이후 주문"
-            }else{"해당 거래처의 이후 주문"}
-        ));
-    crate::ui_layout::fixed_status_slot(
-        ui,slot_width,typography::FONT_METADATA+theme::SPACE_4,
-        detail.as_deref(),detail.as_deref(),theme::MUTED
-    )
+fn alias_diagnostic(item:&Value,warnings:&Warnings)->String{
+    warnings.get(field(item,"id")).filter(|v|!v.is_empty())
+        .map(|issues|format!("충돌: {} / 영향 범위: {}",issues.join(" / "),
+            if field(item,"clientId").is_empty(){"모든 거래처의 이후 주문"}
+            else{"해당 거래처의 이후 주문"}))
+        .unwrap_or_default()
 }
 fn is_client_active(v:&Value)->bool{v.get("deletedAt").is_none_or(Value::is_null)}
 fn category_levels(catalog:&Value,selected:&str)
@@ -330,46 +320,37 @@ impl AliasManager {
                         editable&&!busy).clicked(){save=true;}
                 });
             });
-            // Shared Freight master: toolbar-to-header transition,
-            // fixed 36pt register header and 10pt solid scroll rail.
-            crate::table::management_table_container_style(card);
-            crate::table::show(card,crate::table::Header::Register{primary:"별칭 / 적용 범위 / 연결 상품",action:"관리",action_width:132.0},|card,header|{
-            let scroll_height=crate::scrollbar::management_single_list_scroll_height(
-                card,card_min_height,0.0
-            );
-            let output=crate::table::register_rows(card,scroll_height,header.table_width,"alias-registered-list",|list|{
-                    for item in rows(&catalog["aliases"]){
-                        let id=field(item,"id");
-                        let target=products.get(field(item,"productId"))
-                            .map(|p|display_model(field(p,"name")))
-                            .unwrap_or_else(||"과거 상품".into());
-                        let scope=if field(item,"clientId").is_empty(){
-                            "회사 공통"
-                        }else{
-                            clients.get(field(item,"clientId")).map(|c|field(c,"name")).unwrap_or("")
-                        };
-                        let _row=list.horizontal(|row|{
-                            row.vertical(|info|{
-                                info.label(typography::body(field(item,"text")));
-                                info.label(typography::caption(
-                                    &format!("→ {target} / {scope}")));
-                                alias_diagnostic_slot(info,item,&warnings);
-                            });
-                            row.with_layout(Layout::right_to_left(Align::Center),|actions|{
-                                if crate::button::action(actions,"연결 정정",
-                                    theme::ButtonRole::Standard,!busy).clicked(){
-                                    choose=Some(id.to_owned());
-                                }
-                            });
-                        });
-                        #[cfg(test)]
-                        crate::ui_test_support::record("catalog data row",_row.response.rect);
-                        crate::ui_primitives::soft_divider(list);
-                    }
+            crate::ui_primitives::section_divider(card);
+            use typography::ManagementTableCellRole as Role;
+            let aliases=rows(&catalog["aliases"]);
+            let height=(card.available_height()-theme::MANAGEMENT_TABLE_HEADER_HEIGHT).max(1.0);
+            let rect=crate::table::registry_table(card,"alias-registered-list",
+                ["별칭","적용 범위","연결 상품","충돌 안내","관리"],
+                [150.0,160.0,150.0,220.0,120.0],height,aliases.len(),
+                |i|self.form.editing.as_deref()==Some(field(&aliases[i],"id")),
+                |row,cells,i,rect|{
+                    let item=&aliases[i];let id=field(item,"id");
+                    let target=products.get(field(item,"productId"))
+                        .map(|p|display_model(field(p,"name"))).unwrap_or_else(||"과거 상품".into());
+                    let scope=if field(item,"clientId").is_empty(){"회사 공통"}
+                        else{clients.get(field(item,"clientId")).map(|c|field(c,"name")).unwrap_or("거래처 확인 필요")};
+                    let diagnostic=alias_diagnostic(item,&warnings);
+                    crate::table::registry_cell(row,cells[0],field(item,"text"),Role::Text,false,(id,0));
+                    crate::table::registry_cell(row,cells[1],scope,Role::Text,false,(id,1));
+                    crate::table::registry_cell(row,cells[2],&target,Role::ProductName,false,(id,2));
+                    crate::table::registry_cell(row,cells[3],&diagnostic,Role::Status,false,(id,3));
+                    crate::table::registry_actions(row,cells[4],|actions|{
+                        if crate::button::action(actions,"연결 정정",theme::ButtonRole::Standard,!busy).clicked(){
+                            choose=Some(id.to_owned());
+                        }
+                    });
+                    #[cfg(test)]
+                    crate::ui_test_support::record("catalog data row",rect);
+                    let _=rect;
                 });
-            
-            (output.inner_rect,())
-        });
+            if aliases.is_empty(){
+                crate::status_notice::management_body_state_overlay(card,rect,Some("등록된 별칭이 없습니다."));
+            }
 
         });
         if let Some(id)=choose{self.choose(id,catalog);}
@@ -469,49 +450,43 @@ impl AliasManager {
                             let results_height=crate::popup::modal_list_max_height(
                                 modal,work_area.height(),theme::MANAGEMENT_MODAL_BODY_MAX_HEIGHT,false
                             );
-                            crate::scrollbar::scroll_area(crate::scrollbar::ScrollAxes::Vertical)
-                                .id_salt("alias-product-results")
-                                .max_height(results_height)
-                                .show(modal,|results|{
-                                    match &found{
-                                        Some(result)=>{
-                                            let data=&result.data;
-                                            let detail=rows(&data["detailLinkIds"]).iter()
-                                                .filter_map(Value::as_str).collect::<HashSet<_>>();
-                                            let ids=rows(&data["ids"]).iter()
-                                                .filter_map(Value::as_str).take(100)
-                                                .collect::<Vec<_>>();
-                                            if ids.is_empty(){
-                                                crate::ui_primitives::management_body_state_inline(results,"검색 결과가 없습니다.");
-                                            }
-                                            for id in ids{
-                                                if let Some(p)=product(catalog,id){
-                                                    results.horizontal(|row|{
-                                                        if crate::button::action(row,
-                                                            &display_model(field(p,"name")),
-                                                            theme::ButtonRole::Standard,editable&&!busy)
-                                                            .clicked(){chosen=Some(id.to_owned());}
-                                                        let description=if field(p,"subtitle").is_empty(){
-                                                            field(p,"specification")
-                                                        }else{field(p,"subtitle")};
-                                                        row.label(typography::caption(description));
-                                                        if detail.contains(id){
-                                                            if let Some(url)=rows(&p["variants"]).first()
-                                                                .and_then(|v|v["url"].as_str()){
-                                                                if crate::button::action(row,"상세보기 ↗",
-                                                                    theme::ButtonRole::Quiet,true).clicked(){
-                                                                    ctx.open_url(egui::OpenUrl::new_tab(url));
-                                                                }
-                                                            }
-                                                        }
-                                                    });
-                                                    crate::ui_primitives::soft_divider(results);
+                            use typography::ManagementTableCellRole as Role;
+                            let detail=found.as_ref().map(|result|rows(&result.data["detailLinkIds"])
+                                .iter().filter_map(Value::as_str).collect::<HashSet<_>>()).unwrap_or_default();
+                            let choices=found.as_ref().map(|result|rows(&result.data["ids"]).iter()
+                                .filter_map(Value::as_str).take(100)
+                                .filter_map(|id|product(catalog,id).map(|p|(id,p)))
+                                .collect::<Vec<_>>()).unwrap_or_default();
+                            let rect=crate::table::registry_table(modal,"alias-product-results",
+                                ["상품명","상세 정보","상세보기","선택"],
+                                [140.0,200.0,132.0,96.0],
+                                (results_height-theme::MANAGEMENT_TABLE_HEADER_HEIGHT).max(1.0),
+                                choices.len(),|_|false,|row,cells,i,_|{
+                                    let (id,p)=choices[i];
+                                    let description=if field(p,"subtitle").is_empty(){field(p,"specification")}
+                                        else{field(p,"subtitle")};
+                                    crate::table::registry_cell(row,cells[0],&display_model(field(p,"name")),Role::ProductName,false,(id,0));
+                                    crate::table::registry_cell(row,cells[1],description,Role::Description,false,(id,1));
+                                    if detail.contains(id){
+                                        if let Some(url)=rows(&p["variants"]).first().and_then(|v|v["url"].as_str()){
+                                            crate::table::registry_actions(row,cells[2],|actions|{
+                                                if crate::button::action(actions,"상세보기 ↗",theme::ButtonRole::Quiet,true).clicked(){
+                                                    ctx.open_url(egui::OpenUrl::new_tab(url));
                                                 }
-                                            }
+                                            });
                                         }
-                                        None=>{}
                                     }
+                                    crate::table::registry_actions(row,cells[3],|actions|{
+                                        if crate::button::action(actions,"선택",theme::ButtonRole::Standard,editable&&!busy).clicked(){
+                                            chosen=Some(id.to_owned());
+                                        }
+                                    });
                                 });
+                            if choices.is_empty(){
+                                crate::status_notice::management_body_state_overlay(modal,rect,Some(
+                                    if found.is_some(){"검색 결과가 없습니다."}else{"상품을 확인하는 중입니다."}));
+                            }
+
                         });
                     });
                 });
@@ -621,64 +596,33 @@ mod tests {
         assert!(manager.warnings["a1"].is_empty());
     }
     #[test]
-    fn diagnostic_slot_keeps_next_alias_row_fixed_when_long_warnings_arrive(){
-        fn render(warnings:Warnings)->(Rect,f32){
+    fn diagnostic_column_keeps_next_alias_row_fixed_when_long_warnings_arrive(){
+        fn render(warnings:Warnings)->Vec<Rect>{
             let ctx=Context::default();
             crate::typography::install(&ctx);
-            let mut measured=None;
+            let mut measured=Vec::new();
             let mut raw=egui::RawInput::default();
-            raw.screen_rect=Some(Rect::from_min_size(
-                egui::Pos2::ZERO,egui::vec2(720.0,360.0)
-            ));
+            raw.screen_rect=Some(Rect::from_min_size(egui::Pos2::ZERO,egui::vec2(1000.0,400.0)));
             let _=ctx.run(raw,|ctx|{
                 egui::CentralPanel::default().show(ctx,|ui|{
-                    ui.set_width(620.0);
-                    let mut slots=Vec::new();
-                    let mut second_row_top=0.0;
-                    for index in 0..2{
-                        if index==1{second_row_top=ui.cursor().top();}
-                        let item=json!({
-                            "id":format!("alias-{index}"),
-                            "text":format!("별칭 {index}"),
-                            "clientId":""
+                    crate::table::registry_table(ui,"test-alias-diagnostic",
+                        ["별칭","충돌 안내"],[120.0,240.0],180.0,2,|_|false,|row,cells,index,rect|{
+                            let item=json!({"id":format!("alias-{index}"),"clientId":""});
+                            let detail=alias_diagnostic(&item,&warnings);
+                            crate::table::registry_cell(row,cells[1],&detail,
+                                typography::ManagementTableCellRole::Status,false,index);
+                            measured.push(rect);
                         });
-                        ui.horizontal(|row|{
-                            row.vertical(|info|{
-                                info.label(typography::body(field(&item,"text")));
-                                info.label(typography::caption("→ 709 / 회사 공통"));
-                                slots.push(alias_diagnostic_slot(info,&item,&warnings));
-                            });
-                            row.with_layout(Layout::right_to_left(Align::Center),|actions|{
-                                crate::button::action(
-                                    actions,"연결 정정",theme::ButtonRole::Standard,true
-                                );
-                            });
-                        });
-                        crate::ui_primitives::soft_divider(ui);
-                    }
-                    measured=Some((slots,second_row_top));
                 });
             });
-            let (slots,second_top)=measured.expect("alias rows were rendered");
-            (slots[0],second_top)
+            measured
         }
         let plain=render(Warnings::new());
         let mut warnings=Warnings::new();
-        warnings.insert("alias-0".into(),vec![
-            format!("중복 후보 / {}", "매우 긴 충돌 설명 ".repeat(40))
-        ]);
+        warnings.insert("alias-0".into(),vec!["매우 긴 충돌 설명 ".repeat(40)]);
         let diagnosed=render(warnings);
-        let source=include_str!("alias_manager.rs");
-        let page=source.split("pub fn show_page(").nth(1).unwrap()
-            .split("pub fn show_dialogs(").next().unwrap();
-        assert!(page.contains("alias_diagnostic_slot(info,item,&warnings);"));
-        let near=|a:f32,b:f32|(a-b).abs()<=0.5;
-        assert!(near(plain.0.top(),diagnosed.0.top()));
-        assert!(near(plain.0.width(),diagnosed.0.width()));
-        assert!(near(plain.0.height(),diagnosed.0.height()));
-        assert!(near(plain.1,diagnosed.1),
-            "diagnostic text moved the next alias row: plain={}, diagnosed={}",
-            plain.1,diagnosed.1);
+        assert_eq!(plain.len(),2);
+        assert_eq!(plain,diagnosed,"diagnostic text must not change row geometry");
     }
 
     #[test]
