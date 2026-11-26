@@ -97,9 +97,22 @@ pub fn mutate(expected:Value,action:&str,client:Value)->Result<Value,String>{
         "settings":{"accounts":committed.pointer("/settings/accounts").cloned().unwrap_or_else(||json!([]))},
         "readOnly":!editable()
     });
+    let id=client["id"].as_str().ok_or("거래처 ID가 없습니다.")?;
+    let saved=|state:&Value|state["clients"].as_array().into_iter().flatten()
+        .find(|row|row["id"].as_str()==Some(id))
+        .map(bando_data_access::client_names::normalized);
     match load(){
-        Ok(current)=>Ok(current),
-        Err(_)=>Ok(projection()),
+        Ok(mut current)=>{
+            if saved(&current)!=saved(&committed){
+                current["saveNotice"]=json!("거래처는 저장됐지만 이후 해당 거래처가 다시 변경되었습니다. 최신 목록을 표시합니다.");
+            }
+            Ok(current)
+        },
+        Err(_)=>{
+            let mut current=projection();
+            current["saveNotice"]=json!("거래처는 저장됐지만 최신 목록을 불러오지 못했습니다. 저장 당시 목록을 표시합니다.");
+            Ok(current)
+        },
     }
 }
 
