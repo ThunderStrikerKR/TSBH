@@ -350,8 +350,38 @@ fn reception_geometry_role(title:&str,header:bool)->&'static str{
 /// The source editor and automatic-message canvas use the SAME surface
 /// tokens. Painting a reserved rect avoids Frame::show shrinking an empty
 /// message body and moving the fixed copy-action row.
-pub(crate) fn paint_source_document_surface(ui: &Ui, rect: Rect) {
+fn paint_source_document_surface(ui: &Ui, rect: Rect) {
     theme::paint_bordered_surface(ui.painter(),rect,theme::CONTROL_RADIUS,theme::INPUT,theme::BORDER);
+}
+
+/// One reserved document surface for draft, confirmed, hover and message content.
+/// The inside stroke occupies one point; the content starts four points beyond it.
+pub(crate) fn reception_document_inner_rect(rect:Rect)->Option<Rect>{
+    let inset=theme::SPACE_4+theme::FRAME_STROKE_WIDTH;
+    if rect.width()<=2.0*inset || rect.height()<=2.0*inset{return None;}
+    Some(rect.shrink(inset))
+}
+
+pub(crate) fn reception_document_viewport<R>(
+    ui:&mut Ui,rect:Rect,canvas_id:impl std::hash::Hash,
+    scroll_id:impl std::hash::Hash,content:impl FnOnce(&mut Ui)->R
+)->Option<R>{
+    if rect.width()<=0.0 || rect.height()<=0.0{return None;}
+    paint_source_document_surface(ui,rect);
+    let inner=reception_document_inner_rect(rect)?;
+    let clip=ui.clip_rect().intersect(inner);
+    Some(ui.scope_builder(
+        UiBuilder::new().id_salt(canvas_id).max_rect(inner)
+            .layout(Layout::top_down(Align::Min)),
+        |canvas|{
+            canvas.set_clip_rect(clip);
+            canvas.set_width(inner.width());
+            canvas.set_height(inner.height());
+            scroll_area(ScrollAxes::Vertical).id_salt(scroll_id)
+                .max_height(inner.height()).auto_shrink([false,false])
+                .show(canvas,content).inner
+        }
+    ).inner)
 }
 
 /// The 70pt client identification band is INFORMATION, not an editable

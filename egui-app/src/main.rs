@@ -6375,64 +6375,48 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                 let document_rect=Rect::from_min_max(
                     egui::pos2(body_rect.left(),document_top),body_rect.max
                 );
-                crate::card::paint_source_document_surface(body,document_rect);
-                if document_rect.height()>0.0{
-                    let inner=document_rect.shrink(theme::SPACE_4);
-                    body.scope_builder(
-                        UiBuilder::new()
-                            .id_salt(("pending-hover-source",draft.id.as_str()))
-                            .max_rect(inner).layout(Layout::top_down(Align::Min)),
-                        |canvas|{
-                            canvas.set_clip_rect(inner);
-                            canvas.set_width(inner.width());
-                            canvas.set_height(inner.height());
-                            crate::scrollbar::scroll_area(crate::scrollbar::ScrollAxes::Vertical)
-                                .id_salt(("pending-hover-source-scroll",draft.id.as_str()))
-                                .max_height(inner.height())
-                                .auto_shrink([false,false])
-                                .show(canvas,|text_ui|{
-                                    let mut immutable=draft.raw.as_str();
-                                    let mut layouter=|layout_ui:&egui::Ui,
-                                        buffer:&dyn egui::TextBuffer,width:f32|{
-                                        let job=source_highlight::layout(
-                                            buffer.as_str(),&spans,
-                                            selected_id.as_deref(),active.as_ref(),width,
-                                            egui::FontId::proportional(
-                                                typography::FONT_RECEPTION_SOURCE_TEXT),
-                                            theme::TEXT
-                                        );
-                                        layout_ui.fonts_mut(|fonts|fonts.layout_job(job))
-                                    };
-                                    let paint_slot=text_ui.painter().add(egui::Shape::Noop);
-                                    let display=crate::input::reception_source_text_edit(
-                                        &mut immutable,text_ui.available_width())
-                                        .layouter(&mut layouter)
-                                        .show(text_ui);
-                                    let (normal,focused)=source_highlight::block_shapes(
-                                        &draft.raw,&display.galley,display.galley_pos,
-                                        &spans,selected_id.as_deref(),active.as_ref(),
-                                        text_ui.clip_rect().intersect(display.text_clip_rect),
-                                    );
-                                    text_ui.painter().set(
-                                        paint_slot,egui::Shape::Vec(normal)
-                                    );
-                                    text_ui.painter().add(egui::Shape::Vec(focused));
-                                    if display.response.hovered(){
-                                        if let Some(pointer)=text_ui.input(|i|
-                                            i.pointer.hover_pos()){
-                                            hovered_source=source_highlight::hovered_key_at_pointer(
-                                                &draft.raw,&spans,&display.galley,
-                                                display.galley_pos,pointer
-                                            );
-                                            if display.response.clicked(){
-                                                clicked_source=hovered_source.clone();
-                                            }
-                                        }
-                                    }
-                                });
-                        }
+                let _=crate::card::reception_document_viewport(body,document_rect,
+                    ("pending-hover-source",draft.id.as_str()),
+                    ("pending-hover-source-scroll",draft.id.as_str()),|text_ui|{
+                    let mut immutable=draft.raw.as_str();
+                    let mut layouter=|layout_ui:&egui::Ui,
+                        buffer:&dyn egui::TextBuffer,width:f32|{
+                        let job=source_highlight::layout(
+                            buffer.as_str(),&spans,
+                            selected_id.as_deref(),active.as_ref(),width,
+                            egui::FontId::proportional(
+                                typography::FONT_RECEPTION_SOURCE_TEXT),
+                            theme::TEXT
+                        );
+                        layout_ui.fonts_mut(|fonts|fonts.layout_job(job))
+                    };
+                    let paint_slot=text_ui.painter().add(egui::Shape::Noop);
+                    let display=crate::input::reception_source_text_edit(
+                        &mut immutable,text_ui.available_width())
+                        .layouter(&mut layouter)
+                        .show(text_ui);
+                    let (normal,focused)=source_highlight::block_shapes(
+                        &draft.raw,&display.galley,display.galley_pos,
+                        &spans,selected_id.as_deref(),active.as_ref(),
+                        text_ui.clip_rect().intersect(display.text_clip_rect),
                     );
-                }
+                    text_ui.painter().set(
+                        paint_slot,egui::Shape::Vec(normal)
+                    );
+                    text_ui.painter().add(egui::Shape::Vec(focused));
+                    if display.response.hovered(){
+                        if let Some(pointer)=text_ui.input(|i|
+                            i.pointer.hover_pos()){
+                            hovered_source=source_highlight::hovered_key_at_pointer(
+                                &draft.raw,&spans,&display.galley,
+                                display.galley_pos,pointer
+                            );
+                            if display.response.clicked(){
+                                clicked_source=hovered_source.clone();
+                            }
+                        }
+                    }
+                });
             });
             self.source_hover=hovered_source;
             if let Some(clicked)=clicked_source{
@@ -6508,58 +6492,43 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                 let document_rect=Rect::from_min_max(
                     egui::pos2(body_rect.left(),document_top),body_rect.max
                 );
-                crate::card::paint_source_document_surface(body,document_rect);
-                if document_rect.height()>0.0{
-                    let inner=document_rect.shrink(theme::SPACE_4);
-                    body.scope_builder(
-                        UiBuilder::new()
-                            .id_salt(("workflow-source-read-only",shipment.order_id.as_str()))
-                            .max_rect(inner).layout(Layout::top_down(Align::Min)),
-                        |canvas|{
-                            canvas.set_clip_rect(inner);
-                            canvas.set_width(inner.width());
-                            canvas.set_height(inner.height());
-                            crate::scrollbar::scroll_area(crate::scrollbar::ScrollAxes::Vertical)
-                                .id_salt(("workflow-source-lines",shipment.order_id.as_str()))
-                                .max_height(inner.height()).auto_shrink([false,false])
-                                .show(canvas,|content|{
-                                    let mut immutable=raw.as_str();
-                                    let mut layouter=|layout_ui:&egui::Ui,
-                                        buffer:&dyn egui::TextBuffer,width:f32|{
-                                        let job=source_highlight::layout(
-                                            buffer.as_str(),&spans,
-                                            selected_id,active.as_ref(),width,
-                                            egui::FontId::proportional(
-                                                typography::FONT_RECEPTION_SOURCE_TEXT),
-                                            theme::TEXT
-                                        );
-                                        layout_ui.fonts_mut(|fonts|fonts.layout_job(job))
-                                    };
-                                    let under=content.painter().add(egui::Shape::Noop);
-                                    let output=crate::input::reception_source_text_edit(
-                                        &mut immutable,content.available_width())
-                                        .layouter(&mut layouter).show(content);
-                                    let (normal,focused)=source_highlight::block_shapes(
-                                        raw,&output.galley,output.galley_pos,&spans,
-                                        selected_id,active.as_ref(),
-                                        content.clip_rect().intersect(output.text_clip_rect),
-                                    );
-                                    content.painter().set(under,egui::Shape::Vec(normal));
-                                    content.painter().add(egui::Shape::Vec(focused));
-                                    if output.response.hovered(){
-                                        if let Some(pointer)=content.input(|i|i.pointer.hover_pos()){
-                                            hovered_source=source_highlight::hovered_key_at_pointer(
-                                                raw,&spans,&output.galley,output.galley_pos,pointer
-                                            );
-                                            if output.response.clicked(){
-                                                clicked_source=hovered_source.clone();
-                                            }
-                                        }
-                                    }
-                                });
-                        }
+                let _=crate::card::reception_document_viewport(body,document_rect,
+                    ("workflow-source-read-only",shipment.order_id.as_str()),
+                    ("workflow-source-lines",shipment.order_id.as_str()),|content|{
+                    let mut immutable=raw.as_str();
+                    let mut layouter=|layout_ui:&egui::Ui,
+                        buffer:&dyn egui::TextBuffer,width:f32|{
+                        let job=source_highlight::layout(
+                            buffer.as_str(),&spans,
+                            selected_id,active.as_ref(),width,
+                            egui::FontId::proportional(
+                                typography::FONT_RECEPTION_SOURCE_TEXT),
+                            theme::TEXT
+                        );
+                        layout_ui.fonts_mut(|fonts|fonts.layout_job(job))
+                    };
+                    let under=content.painter().add(egui::Shape::Noop);
+                    let output=crate::input::reception_source_text_edit(
+                        &mut immutable,content.available_width())
+                        .layouter(&mut layouter).show(content);
+                    let (normal,focused)=source_highlight::block_shapes(
+                        raw,&output.galley,output.galley_pos,&spans,
+                        selected_id,active.as_ref(),
+                        content.clip_rect().intersect(output.text_clip_rect),
                     );
-                }
+                    content.painter().set(under,egui::Shape::Vec(normal));
+                    content.painter().add(egui::Shape::Vec(focused));
+                    if output.response.hovered(){
+                        if let Some(pointer)=content.input(|i|i.pointer.hover_pos()){
+                            hovered_source=source_highlight::hovered_key_at_pointer(
+                                raw,&spans,&output.galley,output.galley_pos,pointer
+                            );
+                            if output.response.clicked(){
+                                clicked_source=hovered_source.clone();
+                            }
+                        }
+                    }
+                });
             });
             self.source_hover=hovered_source;
             if let Some(clicked)=clicked_source.filter(|_|self.confirmed_cell.is_none() && self.confirmed_modal_target.is_none()){
@@ -6825,7 +6794,6 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                 if editor_height > 0.0 {
                     // The document uses its own reserved rectangle; changing
                     // client labels, recognized text or selection never moves it.
-                    let clip = ui.clip_rect().intersect(viewport);
                     // The native recognition worker owns source/recipient
                     // associations. Never infer a position by text search.
                     let spans=self.analysis.as_ref()
@@ -6863,102 +6831,85 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                     let mut hovered_link=None;
                     let mut clicked_link=None;
                     let mut did_scroll=false;
-                    let editor = ui.scope_builder(
-                        UiBuilder::new()
-                            .id_salt("source-editor-fixed-slot")
-                            .max_rect(viewport)
-                            .layout(Layout::top_down(Align::Min)),
-                        |editor_ui| {
-                            editor_ui.set_clip_rect(clip);
-                            editor_ui.set_width(viewport.width());
-                            editor_ui.set_height(viewport.height());
-                            crate::card::source_document_frame().show(editor_ui, |document_ui| {
-                            crate::scrollbar::scroll_area(crate::scrollbar::ScrollAxes::Vertical)
-                            .id_salt(("source-editor-vertical-scroll",self.active_id.as_deref()))
-                            // The frame border/padding occupies the outer
-                            // editor slot; only the text contents scroll.
-                            .max_height((editor_height-theme::SPACE_8
-                                -2.0*theme::FRAME_STROKE_WIDTH).max(0.0))
-                            .auto_shrink([false, false])
-                            .show(document_ui, |scroll_ui| {
-                                // Keep the source/message splitter fixed. Only
-                                // this scroll area grows its internal content.
-                                let lines=self.raw_source.lines().count().max(8).min(1000);
-                                let mut layouter=|lay_ui:&egui::Ui,
-                                    buffer:&dyn egui::TextBuffer, width:f32| {
-                                    let job=source_highlight::layout(
-                                        buffer.as_str(),&spans,
-                                        selected_id.as_deref(),active_link.as_ref(),
-                                        width,egui::FontId::proportional(
-                                            typography::FONT_RECEPTION_SOURCE_TEXT
-                                        ),theme::TEXT,
-                                    );
-                                    lay_ui.fonts_mut(|fonts|fonts.layout_job(job))
-                                };
-                                // Reserve an under-text paint slot before TextEdit draws its
-                                // glyphs, caret and selection. Rounded gray source blocks
-                                // remain decoration, never input hit targets.
-                                let block_slot=scroll_ui.painter().add(egui::Shape::Noop);
-                                // Use egui's immutable &str TextBuffer for
-                                // imported/reopened source documents. Unlike
-                                // interactive(false), this keeps text selection,
-                                // copying and linked-span click/hover working.
-                                // Only the explicit direct-entry route gets a
-                                // mutable String buffer.
-                                let mut show_source=|buffer:&mut dyn egui::TextBuffer|{
-                                    crate::input::reception_source_text_edit(
-                                        buffer,scroll_ui.available_width())
-                                        .desired_rows(lines)
-                                        .layouter(&mut layouter)
-                                        .show(scroll_ui)
-                                };
-                                let output=if self.direct_source_entry {
-                                    show_source(&mut self.raw_source)
-                                }else{
-                                    let mut read_only=self.raw_source.as_str();
-                                    show_source(&mut read_only)
-                                };
-                                let (block_fills,active_outlines)=
-                                    source_highlight::block_shapes(
-                                        &self.raw_source,&output.galley,output.galley_pos,
-                                        &spans,selected_id.as_deref(),active_link.as_ref(),
-                                        scroll_ui.clip_rect().intersect(output.text_clip_rect),
-                                    );
-                                // Gray fills remain below glyphs; the active outline
-                                // stays above neighboring fills and the editor text.
-                                scroll_ui.painter().set(
-                                    block_slot,egui::Shape::Vec(block_fills)
+                    let editor=crate::card::reception_document_viewport(ui,viewport,
+                        "source-editor-fixed-slot",
+                        ("source-editor-vertical-scroll",self.active_id.as_deref()),|scroll_ui|{
+                        // Keep the source/message splitter fixed. Only
+                        // this scroll area grows its internal content.
+                        let lines=self.raw_source.lines().count().max(8).min(1000);
+                        let mut layouter=|lay_ui:&egui::Ui,
+                            buffer:&dyn egui::TextBuffer, width:f32| {
+                            let job=source_highlight::layout(
+                                buffer.as_str(),&spans,
+                                selected_id.as_deref(),active_link.as_ref(),
+                                width,egui::FontId::proportional(
+                                    typography::FONT_RECEPTION_SOURCE_TEXT
+                                ),theme::TEXT,
+                            );
+                            lay_ui.fonts_mut(|fonts|fonts.layout_job(job))
+                        };
+                        // Reserve an under-text paint slot before TextEdit draws its
+                        // glyphs, caret and selection. Rounded gray source blocks
+                        // remain decoration, never input hit targets.
+                        let block_slot=scroll_ui.painter().add(egui::Shape::Noop);
+                        // Use egui's immutable &str TextBuffer for
+                        // imported/reopened source documents. Unlike
+                        // interactive(false), this keeps text selection,
+                        // copying and linked-span click/hover working.
+                        // Only the explicit direct-entry route gets a
+                        // mutable String buffer.
+                        let mut show_source=|buffer:&mut dyn egui::TextBuffer|{
+                            crate::input::reception_source_text_edit(
+                                buffer,scroll_ui.available_width())
+                                .desired_rows(lines)
+                                .layouter(&mut layouter)
+                                .show(scroll_ui)
+                        };
+                        let output=if self.direct_source_entry {
+                            show_source(&mut self.raw_source)
+                        }else{
+                            let mut read_only=self.raw_source.as_str();
+                            show_source(&mut read_only)
+                        };
+                        let (block_fills,active_outlines)=
+                            source_highlight::block_shapes(
+                                &self.raw_source,&output.galley,output.galley_pos,
+                                &spans,selected_id.as_deref(),active_link.as_ref(),
+                                scroll_ui.clip_rect().intersect(output.text_clip_rect),
+                            );
+                        // Gray fills remain below glyphs; the active outline
+                        // stays above neighboring fills and the editor text.
+                        scroll_ui.painter().set(
+                            block_slot,egui::Shape::Vec(block_fills)
+                        );
+                        scroll_ui.painter().add(
+                            egui::Shape::Vec(active_outlines)
+                        );
+                        if output.response.hovered() {
+                            if let Some(pointer)=scroll_ui.input(|i|i.pointer.hover_pos()) {
+                                hovered_link=source_highlight::hovered_key_at_pointer(
+                                    &self.raw_source,&spans,&output.galley,
+                                    output.galley_pos,pointer
                                 );
-                                scroll_ui.painter().add(
-                                    egui::Shape::Vec(active_outlines)
+                                if output.response.clicked() {
+                                    clicked_link=hovered_link.clone();
+                                }
+                            }
+                        }
+                        if let Some(key)=scroll_link.as_ref() {
+                            if let Some(span)=spans.iter().find(|span|span.key==*key) {
+                                let cursor=output.galley.pos_from_cursor(
+                                    egui::text::CCursor::new(span.start_char)
                                 );
-                                if output.response.hovered() {
-                                    if let Some(pointer)=scroll_ui.input(|i|i.pointer.hover_pos()) {
-                                        hovered_link=source_highlight::hovered_key_at_pointer(
-                                            &self.raw_source,&spans,&output.galley,
-                                            output.galley_pos,pointer
-                                        );
-                                        if output.response.clicked() {
-                                            clicked_link=hovered_link.clone();
-                                        }
-                                    }
-                                }
-                                if let Some(key)=scroll_link.as_ref() {
-                                    if let Some(span)=spans.iter().find(|span|span.key==*key) {
-                                        let cursor=output.galley.pos_from_cursor(
-                                            egui::text::CCursor::new(span.start_char)
-                                        );
-                                        scroll_ui.scroll_to_rect(
-                                            cursor.translate(output.galley_pos.to_vec2()),
-                                            Some(Align::Center),
-                                        );
-                                        did_scroll=true;
-                                    }
-                                }
-                                output.response
-                            }).inner
-                        }).inner
-                    }).inner;
+                                scroll_ui.scroll_to_rect(
+                                    cursor.translate(output.galley_pos.to_vec2()),
+                                    Some(Align::Center),
+                                );
+                                did_scroll=true;
+                            }
+                        }
+                        output.response
+                    });
                     self.source_hover=hovered_link;
                     if did_scroll {self.link_hover.scroll_to=None;}
                     if let Some(clicked)=clicked_link {
@@ -6973,7 +6924,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                             }
                         }
                     }
-                    if self.direct_source_entry && editor.changed() {
+                    if self.direct_source_entry && editor.as_ref().is_some_and(|response|response.changed()) {
                         // Ctrl+V into explicit direct entry is text paste,
                         // not manual typing. Clipboard image OCR is recorded
                         // separately by the worker's OCR result branch.
@@ -7006,7 +6957,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                     // A blur is an explicit end of this editing session.
                     // Empty input returns to intake options; nonempty input
                     // becomes immutable and is analyzed just once afterward.
-                    if self.direct_source_entry && editor.lost_focus(){
+                    if self.direct_source_entry && editor.as_ref().is_some_and(|response|response.lost_focus()){
                         self.direct_source_entry=false;
                         if self.raw_source.trim().is_empty(){
                             self.source_editing=false;
@@ -7265,32 +7216,15 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                 let (message_rect,_)=body.allocate_exact_size(
                     Vec2::new(body.available_width(),message_height),Sense::hover()
                 );
-                crate::card::paint_source_document_surface(body,message_rect);
-                if message_height>0.0 {
-                    let inner=message_rect.shrink(theme::SPACE_4);
-                    body.scope_builder(
-                        UiBuilder::new()
-                            .id_salt("native-workflow-message-canvas")
-                            .max_rect(inner)
-                            .layout(Layout::top_down(Align::Min)),
-                        |canvas|{
-                            canvas.set_clip_rect(inner);
-                            canvas.set_width(inner.width());
-                            canvas.set_height(inner.height());
-                            crate::scrollbar::scroll_area(crate::scrollbar::ScrollAxes::Vertical)
-                                .id_salt(("native-workflow-message",group.id.as_str()))
-                                .max_height(inner.height())
-                                .auto_shrink([false,false])
-                                .show(canvas,|content|{
-                                    if let Some(message)=group.message_text(include_link.get() && has_links){
-                                        one_touch::payment_message(content,message,
-                                            group.automatic_signature.as_deref().unwrap_or(""),
-                                            payment_emphasis);
-                                    }
-                                });
-                        },
-                    );
-                }
+                let _=crate::card::reception_document_viewport(body,message_rect,
+                    "native-workflow-message-canvas",
+                    ("native-workflow-message",group.id.as_str()),|content|{
+                    if let Some(message)=group.message_text(include_link.get() && has_links){
+                        one_touch::payment_message(content,message,
+                            group.automatic_signature.as_deref().unwrap_or(""),
+                            payment_emphasis);
+                    }
+                });
                 crate::ui_layout::reception_message_footer_gap(body);
                 one_touch::set(body.ctx(),if payment_emphasis{hover_stage}else{one_touch::Stage::None},false);
                 copy_with_greeting=crate::composite_reception::reception_message_copy_actions(body,can_copy);
@@ -7395,7 +7329,8 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                 Vec2::new(ui.available_width(), field_height),
                 Sense::hover(),
             );
-            crate::card::paint_source_document_surface(ui, field_rect);
+            let _=crate::card::reception_document_viewport(ui,field_rect,
+                "pending-message-canvas","pending-message-scroll",|_|{});
             crate::ui_layout::reception_message_footer_gap(ui);
             let _=crate::composite_reception::reception_message_copy_actions(ui,false);
         });

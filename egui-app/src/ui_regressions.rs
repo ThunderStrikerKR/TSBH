@@ -1826,18 +1826,34 @@ pub(crate) mod general_screen_geometry_tests {
             &[("items card",first(&long,"items card")),("after goods",first(&long,"after goods"))]);
     }
     #[test]
+    fn reception_document_viewport_reserves_equal_border_and_padding(){
+        let rect=Rect::from_min_size(egui::pos2(12.0,24.0),Vec2::new(200.0,100.0));
+        let inner=crate::card::reception_document_inner_rect(rect).unwrap();
+        assert_eq!(inner,rect.shrink(theme::SPACE_4+theme::FRAME_STROKE_WIDTH));
+        assert_eq!(inner.left()-rect.left(),5.0);
+        assert_eq!(inner.top()-rect.top(),5.0);
+        assert_eq!(rect.right()-inner.right(),5.0);
+        assert_eq!(rect.bottom()-inner.bottom(),5.0);
+        assert!(crate::card::reception_document_inner_rect(
+            Rect::from_min_size(rect.min,Vec2::new(200.0,10.0))).is_none());
+        let source=include_str!("main.rs");
+        assert_eq!(source.matches("crate::card::reception_document_viewport(").count(),5);
+        assert!(!source.contains("crate::card::source_document_frame()"));
+        assert!(!source.contains("crate::card::paint_source_document_surface("));
+    }
+
+    #[test]
     fn reception_section_divider_keeps_12pt_to_visible_document_frame(){
         let ctx=test_context();
         let screen=Vec2::new(900.0,700.0);
         let work=Rect::from_min_max(egui::pos2(24.0,24.0),egui::pos2(876.0,676.0));
         let trace=render(&ctx,screen,work,|ui|{
             reception_section_with_header(ui,"발주 원문",320.0,|_|{},|body|{
-                let document=crate::card::source_document_frame().show(body,|document|{
-                    document.allocate_exact_size(
-                        Vec2::new(document.available_width(),80.0),Sense::hover()
-                    );
-                });
-                record("visible document frame",document.response.rect);
+                let (rect,_)=body.allocate_exact_size(
+                    Vec2::new(body.available_width(),90.0),Sense::hover());
+                let _=crate::card::reception_document_viewport(body,rect,
+                    "regression-document","regression-document-scroll",|_|{});
+                record("visible document frame",rect);
             });
         });
         let header=first(&trace,"source header");
