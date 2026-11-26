@@ -451,7 +451,7 @@ fn confirmed_navigation_uses_shared_geometry_and_skips_ineligible_freight(){
         completed_step:Some(1),paid:None,source_raw:String::new(),
         recipient:serde_json::json!({"id":"r1","items":[
             {"id":"i1","origin":"FACTORY"},{"id":"i2","origin":"STORE"}]}),
-        remote:None,display_charges:Default::default(),freight_editing_blocked:false,
+        remote:None,display_charges:Default::default(),freight_editing_blocked:false,freight_exempt:false,
         collect:false,shipment_count:1,order_total:None
     };
     let entries=confirmed_navigation_entries(&ship,true,true);
@@ -11619,7 +11619,7 @@ mod reception_workflow_admission_integration_tests {
             transferred:false,recipient_name:"synthetic".into(),products:vec![],
             completed_step:Some(1),paid:None,
             source_raw:"원문".into(),recipient:serde_json::json!({}),remote:None,
-            display_charges:HashMap::new(),freight_editing_blocked:false,
+            display_charges:HashMap::new(),freight_editing_blocked:false,freight_exempt:false,
             collect:false,shipment_count:1,order_total:None
         };
         workflow_board::BoardSnapshot{revision:Some(8),groups:vec![workflow_board::GroupRow{
