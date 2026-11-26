@@ -1154,6 +1154,56 @@ fn native_workflow_confirmed_recipient_item_edit_preserves_receipt_prices_and_id
 }
 
 #[test]
+fn native_confirmed_dealer_and_vat_edits_keep_first_receipt_and_validate_billing(){
+    let (_isolated,mut conn)=IsolatedDatabase::open();
+    let mut base=get_snapshot(&conn).unwrap();
+    base["products"][0]["variants"][0]["wholesale"]=json!(30000);
+    base["products"][0]["variants"][0]["retail"]=json!(40000);
+    let mut initial=stage_three(&base,"POSTPAID");
+    let mut dealer=initial["clients"].as_array().unwrap().iter()
+        .find(|c|c["id"]=="synthetic-workflow-client").unwrap().clone();
+    dealer["id"]=json!("confirmed-edit-new-client");
+    dealer["name"]=json!("변경 거래처");
+    dealer["tier"]=json!("retail");
+    initial["clients"].as_array_mut().unwrap().push(dealer);
+    let saved=write_snapshot(&mut conn,initial,0,true).unwrap();
+    let command=|state:&Value,field:&str,value:Value,seed:&str|json!({
+        "action":"edit_confirmed_recipient","state":state,
+        "shipmentId":"shipment:synthetic","groupId":"group:synthetic",
+        "now":"2026-11-26T09:10:00+09:00","eventSeed":seed,
+        "change":{"recipientId":"recipient:synthetic","field":field,"value":value}
+    });
+    let vat=rust("order_edit_rules",command(&saved,"vatSettings",
+        json!({"scope":"all","recipientIds":[],"rateBps":750}),"vat-edit")).unwrap();
+    let state=&vat["state"];
+    assert_eq!(state["orders"][0]["recipients"][0]["vatRateBps"],750);
+    let preview=rust("preview_workflow",json!({"state":state})).unwrap();
+    let group=preview["groups"].as_array().unwrap().iter()
+        .find(|g|g["groupId"]=="group:synthetic").unwrap();
+    assert_eq!(group["totals"]["vat"],2475);
+    assert_eq!(group["totals"]["total"],35475);
+    let vat_saved=write_snapshot(&mut conn,state.clone(),saved["revision"].as_u64().unwrap(),true).unwrap();
+    let mut blocked=vat_saved.clone();
+    blocked["workflow"]["shipments"][0]["step"]=json!(4);
+    assert!(rust("order_edit_rules",command(&blocked,"clientId",
+        json!("confirmed-edit-new-client"),"blocked-dealer")).is_err());
+    let dealer_edit=rust("order_edit_rules",command(&vat_saved,"clientId",
+        json!("confirmed-edit-new-client"),"dealer-edit")).unwrap();
+    let state=&dealer_edit["state"];
+    assert_eq!(state["orders"][0]["clientId"],"confirmed-edit-new-client");
+    assert_eq!(state["orders"][0]["recipients"][0]["items"][0]["unitPrice"],40000);
+    assert_eq!(state["workflow"]["shipments"][0]["charges"]["FACTORY"],Value::Null);
+    for key in ["id","raw","confirmedAt","confirmationSnapshot","receipt","senderSnapshot"]{
+        assert_eq!(state["orders"][0][key],saved["orders"][0][key],"immutable {key}");
+    }
+    assert_eq!(state["workflow"]["sources"],saved["workflow"]["sources"]);
+    assert_eq!(state["workflow"]["shipments"][0]["completedAt"],
+        saved["workflow"]["shipments"][0]["completedAt"]);
+    let committed=write_snapshot(&mut conn,state.clone(),vat_saved["revision"].as_u64().unwrap(),true).unwrap();
+    assert_eq!(get_snapshot(&conn).unwrap(),committed);
+}
+
+#[test]
 fn scoped_freight_reconciliation_matches_full_for_target_and_preserves_other_order(){
     let (_isolated,conn)=IsolatedDatabase::open();
     let before=get_snapshot(&conn).unwrap();
