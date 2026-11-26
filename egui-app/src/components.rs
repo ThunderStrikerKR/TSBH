@@ -22,7 +22,10 @@ pub use crate::table::{
     paint_management_table_row_rule,management_table_row_body,
     management_table_column_rules,
 };
-use crate::table::{management_master_column_rules,management_table_data_width};
+pub use crate::table::management_table_scroll_track_rect;
+use crate::table::{management_master_column_rules,management_table_data_width,management_inline_list_table_header};
+#[cfg(test)]
+use crate::table::{virtual_fixed_rows,management_fixed_table_scroll_area,management_sticky_table_header,management_table_scroll_track_geometry,management_remaining_predivider_gap};
 
 #[cfg(test)]
 pub(crate) fn test_context()->egui::Context {
@@ -44,85 +47,6 @@ pub fn scroll_area(axes:ScrollAxes)->egui::ScrollArea{
         ScrollAxes::Horizontal=>egui::ScrollArea::horizontal(),
         ScrollAxes::Both=>egui::ScrollArea::both(),
     }
-}
-
-/// Fixed-header register lists retain a vertical-only rail and fixed viewport.
-/// The caller already installs the management table style and owns the height.
-pub fn management_register_list_scroll_area(ui:&Ui,height:f32)->egui::ScrollArea{
-    scroll_area(ScrollAxes::Vertical)
-        .scroll_bar_rect(management_table_scroll_track_rect(ui,height))
-        .scroll_bar_visibility(egui::containers::scroll_area::ScrollBarVisibility::VisibleWhenNeeded)
-        .max_height(height)
-        .auto_shrink([false,false])
-}
-
-/// Render only the rows intersecting a scroll viewport, while reserving the
-/// full logical height and width of the list. This works with BOTH-axis
-/// scrolling, unlike a paginated list, and preserves the backing row indices.
-///
-/// Each caller must render each row at exactly `row_height` with no vertical
-/// spacing; widgets/edits must be keyed by stable entity IDs rather than by
-/// which row happened to be visible in the current frame.
-pub fn virtual_fixed_rows<R>(
-    scroll:egui::ScrollArea,
-    ui:&mut Ui,
-    content_width:f32,
-    row_height:f32,
-    total_rows:usize,
-    add_visible:impl FnOnce(&mut Ui,std::ops::Range<usize>)->R,
-) -> egui::containers::scroll_area::ScrollAreaOutput<R> {
-    debug_assert!(row_height>0.0 && row_height.is_finite());
-    let output=scroll.show_viewport(ui,move |body,viewport|{
-        management_table_row_body(body,content_width);
-        body.set_min_height(row_height*total_rows as f32);
-        let first=((viewport.top()/row_height).floor().max(0.0) as usize)
-            .saturating_sub(1).min(total_rows);
-        let last=((viewport.bottom()/row_height).ceil().max(0.0) as usize)
-            .saturating_add(1).min(total_rows);
-        let top=body.max_rect().top()+first as f32*row_height;
-        let visible_rect=egui::Rect::from_min_size(
-            egui::pos2(body.max_rect().left(),top),
-            egui::vec2(content_width,(last-first) as f32*row_height),
-        );
-        let clip=body.clip_rect();
-        body.scope_builder(
-            egui::UiBuilder::new()
-                .id_salt("virtual-fixed-rows")
-                .max_rect(visible_rect),
-            |visible|{
-                visible.spacing_mut().item_spacing.y=0.0;
-                visible.set_clip_rect(clip);
-                visible.skip_ahead_auto_ids(first);
-                add_visible(visible,first..last)
-            }
-        ).inner
-    });
-    #[cfg(test)]
-    {
-        general_screen_geometry_tests::record("row viewport",output.inner_rect);
-        // Retain the measured content extent so transient failures can
-        // distinguish native scrollbar reservation from card/layout drift.
-        general_screen_geometry_tests::record("row content extent",
-            Rect::from_min_size(output.inner_rect.min,output.content_size));
-    }
-    output
-}
-
-/// Fixed-width management tables must reserve horizontal scrollbar space
-/// from the first frame whenever the approved columns exceed the available
-/// width after the vertical gutter. Otherwise the native scrollbar's
-/// previous-frame visibility can change the row viewport height by 10pt.
-/// A narrow table reserves both rails deterministically; a fitting table
-/// remains vertical-only with its existing conditional scrollbar.
-pub fn management_fixed_table_scroll_area(ui:&Ui,content_width:f32)->egui::ScrollArea{
-    use egui::containers::scroll_area::ScrollBarVisibility;
-    let data_width=(ui.available_width()-ui.spacing().scroll.allocated_width()).max(1.0);
-    let horizontal=content_width>data_width+0.01;
-    scroll_area(if horizontal{ScrollAxes::Both}else{ScrollAxes::Vertical}).scroll_bar_visibility(if horizontal{
-        ScrollBarVisibility::AlwaysVisible
-    }else{
-        ScrollBarVisibility::VisibleWhenNeeded
-    })
 }
 
 #[cfg(test)]
@@ -1249,7 +1173,7 @@ fn workflow_shipment_columns(outer:f32)->([f32;3],f32){
 }
 pub fn workflow_shipment_header(ui:&mut Ui)->Rect{
     let layout=management_inline_list_table_header(ui);
-    let area=management_master_header_begin(ui,layout.header_rect,layout.header_content_rect);
+    let area=crate::table::master_header_begin(ui,layout.header_rect,layout.header_content_rect);
     let (widths,gap)=workflow_shipment_columns(layout.table_width);
     let cells=shipment_detail_cells(area,&widths,gap);
     for (index,label) in ["수취인","품목","운임"].iter().enumerate(){
@@ -1260,7 +1184,7 @@ pub fn workflow_shipment_header(ui:&mut Ui)->Rect{
         paint_table_galley(ui,cell,x,galley,theme::SECONDARY);
     }
     management_table_column_rules(ui,area,&cells,gap);
-    management_master_header_finish(ui,layout.header_rect);
+    crate::table::header_finish(ui,layout.header_rect);
     layout.header_rect
 }
 /// Same shipment detail surface, multiline product renderer and cell
@@ -1318,7 +1242,7 @@ mod workflow_freight_typography_tests{
                 assert_eq!(header.header_rect.height(),theme::MANAGEMENT_TABLE_HEADER_HEIGHT);
                 assert_eq!(header.scrollbar_gutter,0.0);
                 assert_eq!(header.header_content_rect,header.header_rect);
-                let area=management_master_header_begin(ui,header.header_rect,header.header_content_rect);
+                let area=crate::table::master_header_begin(ui,header.header_rect,header.header_content_rect);
                 let (widths,gap)=workflow_shipment_columns(header.table_width);
                 let headings=shipment_detail_cells(area,&widths,gap);
                 let block=Rect::from_min_size(
@@ -3296,7 +3220,7 @@ pub fn section_divider(ui:&mut Ui)->Rect{
 
 /// Shared renderer also supports a preceding inset already consumed by the
 /// toolbar, or a reserved missing-toolbar slot. The bottom gap never varies.
-fn section_divider_with_top_gap(ui:&mut Ui,top_gap:f32)->(Rect,Rect){
+pub(crate) fn section_divider_with_top_gap(ui:&mut Ui,top_gap:f32)->(Rect,Rect){
     debug_assert!(ui.spacing().item_spacing.y.abs()<0.01);
     allocate_section_divider(ui,top_gap,theme::SECTION_DIVIDER_GAP)
 }
@@ -4100,247 +4024,14 @@ pub fn management_toolbar_trailing_rect(
     rect
 }
 
-/// One shared 7pt rail extension for EVERY management table, regardless of
-/// its page, outer frame or footer. Each caller owns ONLY the viewport height
-/// (and reserves its footer separately); the scrollbar offset is not a
-/// per-page layout policy. The native 3pt bottom inset leaves 4pt beyond rows.
-pub fn management_table_scroll_track_rect(
-    ui:&Ui,scroll_height:f32
-)->Rect {
-    let track=management_table_scroll_track_geometry(
-        ui.available_rect_before_wrap(),scroll_height
-    );
-    #[cfg(test)]
-    general_screen_geometry_tests::record("scroll rail",track);
-    track
-}
-
-/// The only place that computes top/bottom of a management table rail.
-/// The rail starts exactly below its fixed header (0pt gap); 7pt of common
-/// extension minus 3pt optical shortening puts its end 4pt past the body.
-/// The row viewport, data columns and any reserved footer stay unchanged.
-fn management_table_scroll_track_geometry(
-    bounds:Rect,scroll_height:f32
-)->Rect {
-    debug_assert!(scroll_height.is_finite()&&scroll_height>=0.0);
-    let rows_bottom=(bounds.top()+scroll_height).min(bounds.bottom());
-    let track_bottom=(rows_bottom+theme::MANAGEMENT_TABLE_SCROLL_RAIL_EXTENSION
-        -theme::MANAGEMENT_TABLE_SCROLL_TRACK_BOTTOM_INSET)
-        .max(bounds.top()+1.0);
-    let track_top=(bounds.top()+theme::MANAGEMENT_TABLE_SCROLL_TRACK_TOP_INSET)
-        .min(track_bottom-1.0);
-    Rect::from_min_max(
-        egui::pos2(bounds.left(),track_top),
-        egui::pos2(bounds.right(),track_bottom)
-    )
-}
-
-/// One measured vertical transition for every fixed-header management table.
-///
-/// Call with `item_spacing.y == 0` *from the toolbar allocation onward*.
-/// This owns the symmetric 12pt toolbar-to-divider breathing room,
-/// 1pt divider, 4pt after it, and 36pt sticky header. Screens must
-/// not add a separate `add_space` or rely on egui's preceding item spacing.
-#[derive(Clone,Copy,Debug)]
-pub struct ManagementTableHeader {
-    pub header_rect:Rect,
-    pub header_content_rect:Rect,
-    pub viewport_width:f32,
-    pub scrollbar_gutter:f32,
-    pub table_width:f32,
-}
-
-/// Standard 25pt transition for a toolbar that touches the card cursor.
-/// Existing inset panels can consume part of the 12pt pre-divider margin.
-pub fn management_sticky_table_header(
-    ui:&mut Ui,min_table_width:f32
-)->ManagementTableHeader{
-    management_sticky_table_header_with_top_gap(
-        ui,min_table_width,theme::SECTION_DIVIDER_GAP
-    )
-}
-
-/// CONFLICT-005 (approved): the parent toolbar/strip may already contain an
-/// 8pt bottom inner margin. Subtract that existing inset from the 16pt
-/// pre-divider breathing room instead of adding another full 25pt strip.
-/// Call only for a directly adjacent toolbar and fixed table header.
-#[cfg(test)]
-pub fn management_sticky_table_header_after_inset(
-    ui:&mut Ui,min_table_width:f32,consumed_bottom_inset:f32
-)->ManagementTableHeader{
-    management_sticky_table_header_with_top_gap(
-        ui,min_table_width,
-        management_remaining_predivider_gap(consumed_bottom_inset)
-    )
-}
-
-/// Pure SSOT conversion: the frame's existing bottom inset is part of the
-/// 12pt pre-divider whitespace, not space to add on top of it.
-#[cfg(test)]
-fn management_remaining_predivider_gap(consumed_bottom_inset:f32)->f32{
-    debug_assert!(consumed_bottom_inset.is_finite()&&consumed_bottom_inset>=0.0
-        && consumed_bottom_inset<=theme::SECTION_DIVIDER_GAP,
-        "toolbar bottom inset must fit inside the standard top gap");
-    (theme::SECTION_DIVIDER_GAP-consumed_bottom_inset).max(0.0)
-}
-
-fn management_sticky_table_header_with_top_gap(
-    ui:&mut Ui,min_table_width:f32,top_gap:f32
-)->ManagementTableHeader{
-    debug_assert!(ui.spacing().item_spacing.y.abs()<0.01,
-        "table toolbar and header must use zero implicit vertical spacing");
-    let viewport_width=ui.available_width().max(1.0);
-    // One allocation for the full toolbar-to-header separator strip.
-    let (_transition,_rule)=section_divider_with_top_gap(ui,top_gap);
-    #[cfg(test)]
-    general_screen_geometry_tests::record("toolbar transition",_transition);
-    allocate_management_table_header(ui,viewport_width,min_table_width)
-}
-
-/// Bare-header variant for nested or independent lists. The data body can
-/// exceed the viewport, but the header itself must remain inside its clip.
-pub fn management_list_table_header(
-    ui:&mut Ui,min_table_width:f32
-)->ManagementTableHeader{
-    let viewport_width=ui.available_rect_before_wrap()
-        .intersect(ui.clip_rect()).width().max(1.0);
-    allocate_management_table_header(ui,viewport_width,min_table_width)
-}
-
-/// Both fixed-header variants share the allocation, data width and rail.
-pub(crate) fn allocate_management_table_header(
-    ui:&mut Ui,viewport_width:f32,min_table_width:f32
-)->ManagementTableHeader{
-    let scrollbar_gutter=ui.spacing().scroll.allocated_width();
-    allocate_management_table_header_with_gutter(ui,viewport_width,min_table_width,scrollbar_gutter)
-}
-
-/// Nested tables scroll with their enclosing pane, so no second native
-/// scrollbar gutter belongs to the header or the detail rows.
-pub fn management_inline_list_table_header(ui:&mut Ui)->ManagementTableHeader{
-    let width=ui.available_width().max(1.0);
-    allocate_management_table_header_with_gutter(ui,width,width,0.0)
-}
-fn allocate_management_table_header_with_gutter(
-    ui:&mut Ui,viewport_width:f32,min_table_width:f32,scrollbar_gutter:f32
-)->ManagementTableHeader{
-    let table_width=management_table_data_width(
-        viewport_width,scrollbar_gutter,min_table_width
-    );
-    let (header_rect,_)=ui.allocate_exact_size(
-        Vec2::new(viewport_width,theme::MANAGEMENT_TABLE_HEADER_HEIGHT),
-        Sense::hover()
-    );
-    // The rightmost scrollbar rail is not another table column. Both the
-    // sticky header and virtualized body should use the same data width.
-    let header_content_rect=Rect::from_min_max(
-        header_rect.min,
-        egui::pos2(
-            (header_rect.right()-scrollbar_gutter)
-                .max(header_rect.left()+1.0),
-            header_rect.bottom()
-        )
-    );
-    // Fixed-header contract shared by BOTH approved master tables.
-    // Validate real allocated Rects, not just intended token values.
-    debug_assert!((header_rect.height()-theme::MANAGEMENT_TABLE_HEADER_HEIGHT).abs()<0.01,
-        "management table header must retain the shared 36pt height");
-    if header_rect.width()>=scrollbar_gutter+1.0 {
-        debug_assert!((header_content_rect.right()+scrollbar_gutter
-            -header_rect.right()).abs()<0.01,
-            "header's data right edge must exclude the table scrollbar gutter");
-    }
-    #[cfg(test)]
-    general_screen_geometry_tests::record("table header",header_rect);
-    ManagementTableHeader{
-        header_rect,header_content_rect,viewport_width,
-        scrollbar_gutter,table_width
-    }
-}
-
-/// A history overview without interactive toolbar controls still has the
-/// same fixed-header origin as the assignment master: 36pt toolbar role plus
-/// the approved 25pt transition. Reserve those 61pt as ONE separator area,
-/// not a phantom interactive toolbar widget with its own implicit spacing.
-/// This keeps the first row and the 1pt divider on the master coordinates.
-pub fn management_sticky_table_header_without_toolbar(
-    ui:&mut Ui,min_table_width:f32
-)->ManagementTableHeader {
-    management_sticky_table_header_with_top_gap(
-        ui,min_table_width,
-        theme::INPUT_HEIGHT+theme::SECTION_DIVIDER_GAP
-    )
-}
-
-/// Paint a freight master header's background and return its 34pt text area.
-/// Shared by assignment, group management and combination history so text,
-/// arrow centers and sort hit rects never use the lower 2pt outline.
-pub fn management_master_header_begin(
-    ui:&Ui,header_rect:Rect,header_content_rect:Rect
-)->Rect {
-    debug_assert!((header_rect.height()-theme::MANAGEMENT_TABLE_HEADER_HEIGHT)
-        .abs()<0.01);
-    crate::table::header_begin(ui,header_rect,header_content_rect)
-}
-
-/// Draw one non-interactive perimeter for the header and visible row viewport.
-/// The scrollbar gutter belongs to the viewport; never use the scrolled
-/// content extent or alter the allocation to create this decoration.
-#[cfg(test)]
-fn management_table_outline_rect(header:Rect,body:Rect)->Rect{
-    crate::table::outline_bounds(header,body)
-}
-
 #[cfg(test)]
 #[test]
 fn management_table_outline_keeps_header_width_and_viewport_bottom(){
     let header=Rect::from_min_max(egui::pos2(20.0,40.0),egui::pos2(420.0,76.0));
     let body=Rect::from_min_max(egui::pos2(20.0,76.0),egui::pos2(410.0,300.0));
-    assert_eq!(management_table_outline_rect(header,body),
+    assert_eq!(crate::table::outline_bounds(header,body),
         Rect::from_min_max(header.min,egui::pos2(420.0,300.0)));
-    assert_eq!(management_table_outline_rect(header,header),header);
-}
-
-/// Draw the master header's solid 2pt bottom band AFTER labels, separators
-/// and hover chrome. A centered 1pt line at bottom() is half clipped.
-pub fn management_master_header_finish(ui:&Ui,header_rect:Rect){
-    crate::table::header_finish(ui,header_rect);
-}
-
-/// Plain management-register header for two-column editor/list pages.
-/// The same master allocates the 25pt toolbar transition, 36pt fixed header,
-/// native scrollbar gutter and inner 2pt bottom rule. Only the row content
-/// is allowed to be taller than a compact 42pt product row.
-pub fn management_master_register_header(
-    ui:&mut Ui,primary:&str,action:&str,action_width:f32
-)->ManagementTableHeader{
-    let layout=management_sticky_table_header(ui,0.0);
-    let text_rect=management_master_header_begin(
-        ui,layout.header_rect,layout.header_content_rect
-    );
-    let x=(text_rect.right()-action_width).max(text_rect.left());
-    let left=typography::management_table_header_galley(ui,primary);
-    let right=typography::management_table_header_galley(ui,action);
-    let painter=ui.painter().with_clip_rect(text_rect);
-    // Long alias/brand titles must not run under the right-hand
-    // management column on a narrow workspace.
-    let primary_rect=Rect::from_min_max(
-        text_rect.min,egui::pos2(x,text_rect.bottom())
-    );
-    painter.with_clip_rect(primary_rect).galley(
-        egui::pos2(text_rect.left()+theme::SPACE_8,
-            text_rect.center().y-left.size().y/2.0),
-        left,theme::SECONDARY
-    );
-    painter.galley(
-        egui::pos2((x+(action_width-right.size().x)/2.0)
-            .max(x).min(text_rect.right()),
-            text_rect.center().y-right.size().y/2.0),
-        right,theme::SECONDARY
-    );
-    management_master_column_rules(ui,text_rect,[x]);
-    management_master_header_finish(ui,layout.header_rect);
-    layout
+    assert_eq!(crate::table::outline_bounds(header,header),header);
 }
 
 /// One 10pt / 1.8pt-stroke chevron for selectors, date stepping and
@@ -4955,7 +4646,7 @@ pub fn management_client_header(
 )->Option<usize>{
     let titles=["거래처","주소","전화번호","거래 조건"];
 
-    let text_row=management_master_header_begin(
+    let text_row=crate::table::master_header_begin(
         ui,header,header_content_rect
     );
     let column_widths=management_client_column_widths(table_width);
@@ -4994,7 +4685,7 @@ pub fn management_client_header(
         ui,text_row,
         management_client_column_edges(table_left,table_width)
     );
-    management_master_header_finish(ui,header);
+    crate::table::header_finish(ui,header);
     selected
 }
 
@@ -6990,9 +6681,9 @@ mod shared_card_scroll_rendering_tests {
                                 rows
                             }
                         );
-                        management_master_header_begin(body,layout.header_rect,
+                        crate::table::master_header_begin(body,layout.header_rect,
                             layout.header_content_rect);
-                        management_master_header_finish(body,layout.header_rect);
+                        crate::table::header_finish(body,layout.header_rect);
                         body.add_space(12.0);
                         let footer=body.allocate_exact_size(
                             Vec2::new(w,theme::INPUT_HEIGHT),Sense::hover()).0;
@@ -7116,8 +6807,8 @@ mod management_toolbar_geometry_tests {
                 let content=Rect::from_min_max(
                     header.min,egui::pos2(header.right()-10.0,header.bottom())
                 );
-                let text=management_master_header_begin(ui,header,content);
-                management_master_header_finish(ui,header);
+                let text=crate::table::master_header_begin(ui,header,content);
+                crate::table::header_finish(ui,header);
                 observed=Some((header,content,text));
             });
         });

@@ -37,15 +37,11 @@ const tableScreens = new Set([...headerScreens,"client_manager.rs",
 const retiredTable = new Set(["ManagementRowRule","management_row_striped",
   "management_row_impl","management_readonly_table_aligned",
   "paint_management_table_column_rule","paint_column_dividers",
-  "manual_table_cell","manual_table_heading","manual_linked_table_editor"]);
+  "manual_table_cell","manual_table_heading","manual_linked_table_editor",
+  "management_sticky_table_header_after_inset","management_table_outline_rect","management_master_header_finish"]);
 const tablePaintMethods = new Set(["rect_filled","rect_stroke","rect",
   "line_segment","hline","vline"]);
 const paintExceptions = [
-  // Selected assignment row and selection stripe, not ordinary zebra styling.
-  ["freight_manager.rs","show_groups",1,
-    "rect_filled(row_rect,0.0,background)"],
-  ["freight_manager.rs","show_groups",1,
-    "rect_filled(egui::Rect::from_min_size(row_rect.min,egui::vec2(theme::WORKFLOW_SELECTED_STRIPE,row_rect.height())),0.0,theme::SELECTION)"],
   // History branch glyphs and date navigation, not table dividers.
   ["order_history_manager.rs","paint_history_branch",1,
     "line_segment([egui::pos2(x,center),egui::pos2(x,row_rect.bottom())],stroke)"],
@@ -57,9 +53,7 @@ const paintExceptions = [
     "line_segment([egui::pos2(x,row_rect.top()),egui::pos2(x,center)],stroke)"],
   ["order_history_manager.rs","range_date_picker_rtl",1,
     "line_segment([egui::pos2(x,inner.top()+4.0),egui::pos2(x,inner.bottom()-4.0)],Stroke::new(theme::SOFT_DIVIDER_WIDTH,theme::DIVIDER))"],
-  // Expanded shipment card and chooser selection outline.
-  ["order_history_manager.rs","show_page",1,
-    "rect_filled(row_rect,0.0,theme::CANVAS)"],
+  // Chooser selection outline.
   ["client_chooser.rs","show",1,
     "rect_stroke(response.rect.shrink(1.0),0.0,egui::Stroke::new(theme::SOFT_DIVIDER_WIDTH,theme::SELECTION),egui::StrokeKind::Inside)"],
 ];
@@ -67,19 +61,18 @@ const normalized = source=>tokenizeRust(source).map(t=>t.kind==="literal"?"<lite
 const paintAllowance = new Map(paintExceptions.map(([file,fn,count,call])=>
   [file+":"+fn+":"+normalized(call),count]));
 const masterContract = {
-  management_table_cells:2,management_table_column_rules:2,
-  paint_management_table_row_background:1,paint_management_table_row_rule:1,
-  management_master_header_begin:1,management_master_header_finish:1,
+  show:1,fixed_rows:1,fixed_row:1,fixed_row_rect:1,
+  management_table_cells:1,header_columns:1,heading:1,sort_clicked:1,
 };
 const tableContracts = {
   "product_manager.rs:show_page":masterContract,
-  "freight_manager.rs:show_groups":{...masterContract,
-    paint_management_table_row_background:0,management_table_row_fill:1},
+  "freight_manager.rs:show_groups":masterContract,
   "freight_manager.rs:show_rates":masterContract,
   "freight_manager.rs:freight_history_table":masterContract,
   "excel_manager.rs:table":masterContract,
   "daily_settlement_manager.rs:report_table":masterContract,
-  "order_history_manager.rs:show_page":{...masterContract,paint_shipment_detail_surface:1},
+  "order_history_manager.rs:show_page":{show:1,variable_rows:1,history_row:1,
+    management_table_cells:1,header_columns:1,heading:1,sort_clicked:1},
   "order_history_manager.rs:draw_line":{management_table_cells:1},
   "order_history_manager.rs:history_detail_cells":{shipment_detail_cells:1},
   "order_history_manager.rs:history_line_height":{shipment_detail_product_galley:1,shipment_detail_block_height:1},
@@ -89,23 +82,26 @@ const tableContracts = {
   "components.rs:shipment_detail_cells":{management_table_cells:1,shipment_detail_content:1},
   "components.rs:paint_shipment_detail_products":{paint_table_galley:1},
   "components.rs:workflow_shipment_header":{
-    management_inline_list_table_header:1,management_master_header_begin:1,
+    management_inline_list_table_header:1,master_header_begin:1,
     shipment_detail_cells:1,paint_table_galley:1,management_table_column_rules:1,
-    management_master_header_finish:1
+    header_finish:1
   },
   "components.rs:workflow_shipment_row":{
     shipment_detail_cells:1,shipment_detail_product_galley:2,
     shipment_detail_block_height:1,paint_shipment_detail_surface:1,
     paint_shipment_detail_products:2,paint_table_galley:1
   },
-  "client_manager.rs:show_page":{management_row:1,management_client_header:1},
-  "client_chooser.rs:show":{management_row:1,management_client_header:1},
+  "client_manager.rs:show_page":{show:1,fixed_rows:1,row_scope:1,management_row:1,management_client_header:1},
+  "client_chooser.rs:show":{show:1,fixed_rows:1,row_scope:1,management_row:1,management_client_header:1},
+  "alias_manager.rs:show_page":{show:1,register_rows:1},
+  "brand_manager.rs:show_page":{show:1,register_rows:1},
+  "model_group_manager.rs:show_page":{show:1,register_rows:1},
   "product_manager.rs:show_detail":{management_readonly_table:1},
   "product_excel_ui.rs:show_review":{management_readonly_table:1},
 };
 const tableMarkers = new Set(["management_table_cells","management_table_column_rules",
-  "management_master_header_begin","management_row","management_readonly_table",
-  "shipment_detail_cells"]);
+  "management_row","management_readonly_table","shipment_detail_cells",
+  "fixed_rows","variable_rows","fixed_row","history_row","header_columns","register_rows"]);
 const componentContractCalls = new Set(Object.entries(tableContracts)
   .filter(([scope])=>scope.startsWith("components.rs:"))
   .flatMap(([,entries])=>Object.keys(entries)));
@@ -209,9 +205,9 @@ export function audit(source,file,checkTableContracts=false){
   const flag=(i,rule)=>hits.push({line:tokens[i].line,rule});
   const workflow=file==="workflow_board_ui.rs";
   const workflowCalls=new Map(),workflowPaintUsed=new Map();
-  const base=file==="components.rs"||file==="theme.rs";
+  const base=file==="components.rs"||file==="theme.rs"||file==="table/mod.rs";
   const managed=!base&&(tableScreens.has(file)||v.some((x,i)=>
-    x==="components"&&v[i+1]==="::"&&tableMarkers.has(v[i+2])));
+    (x==="components"||x==="table")&&v[i+1]==="::"&&tableMarkers.has(v[i+2])));
   // Match the complete argument list so nested Rect/Stroke expressions
   // cannot turn a specific exception into a general painter exemption.
   const callEnd=open=>{
@@ -235,6 +231,8 @@ export function audit(source,file,checkTableContracts=false){
     for(const pattern of overlayNative)
       if(file!=="overlay.rs"&&is(i,pattern))flag(i,"raw overlay outside shared manager: "+pattern);
     if(retiredTable.has(v[i]))flag(i,"retired table entry: "+v[i]);
+    if(!base&&is(i,"components ::")&&["management_fixed_table_scroll_area","management_register_list_scroll_area","virtual_fixed_rows","management_master_header_begin"].includes(v[i+2]))
+      flag(i,"retired screen table assembly: "+v[i+2]);
     for(const [pattern,owner] of ownedControls)
       if(is(i,pattern)&&file+":"+fn!==owner)
         flag(i,"raw control outside owning component: "+pattern);
@@ -255,7 +253,7 @@ export function audit(source,file,checkTableContracts=false){
       flag(i,"global font installation outside typography");
     if(is(i,". set_style (")&&file!=="typography.rs"&&file!=="theme.rs")
       flag(i,"global style installation outside shared theme");
-    if(is(i,"components ::")&&v[i+3]==="("){
+    if((is(i,"components ::")||is(i,"table ::"))&&v[i+3]==="("){
       const key=file+":"+fn+":"+v[i+2];
       sharedCalls.set(key,(sharedCalls.get(key)||0)+1);
     }
@@ -377,7 +375,7 @@ function selfTest(){
     ["components.rs","fn wrong(){egui::ScrollArea::vertical();}",1],
     ["components.rs","fn scroll_area(){egui::ScrollArea::vertical();egui::ScrollArea::horizontal();egui::ScrollArea::both();}",0],
     ["new_screen.rs","fn render(){components::scroll_area(components::ScrollAxes::Vertical);}",0],
-    ["alias_manager.rs","fn render(){components::management_register_list_scroll_area(ui,height);}",0],
+    ["alias_manager.rs","fn render(){crate::table::register_rows(ui,height,width,id,draw);}",0],
     ["main.rs","#[cfg(test)] mod tests {fn t(){egui::ScrollArea::vertical();}} fn render(){egui::ScrollArea::horizontal();}",1],
     ["new_screen.rs","fn render(){egui::Button :: new ( \"x\" );}",1],
     ["new_screen.rs","fn render(){ui.on_hover_text(\"x\");}",1],
@@ -435,13 +433,13 @@ function selfTest(){
     ["order_history_manager.rs","fn paint_history_branch(){painter.line_segment([egui::pos2(x,center),egui::pos2(tip,center)],stroke);}",0],
     ["order_history_manager.rs","fn paint_history_branch(){painter.line_segment([egui::pos2(x,center),egui::pos2(tip,center)],stroke);painter.line_segment([egui::pos2(x,center),egui::pos2(tip,center)],stroke);painter.line_segment([egui::pos2(x,center),egui::pos2(tip,center)],stroke);}",1],
     ["order_history_manager.rs","fn paint_history_branch(){painter.line_segment([a,b],stroke);}",1],
-    ["freight_manager.rs","fn show_groups(){painter.rect_filled(row_rect,0.0,background);}",0],
+    ["freight_manager.rs","fn show_groups(){painter.rect_filled(row_rect,0.0,background);}",1],
     ["freight_manager.rs","fn other(){painter.rect_filled(row_rect,0.0,background);}",1],
     ["product_manager.rs","#[cfg(test)] fn t(){painter.rect_filled(r,0.0,c);} fn render(){components::management_table_cells(p,w,h,g);}",0],
   ];
   for(const [file,source,count] of cases)assert.equal(audit(source,file).length,count,source);
-  assert.equal(audit("fn show_page(){}","product_manager.rs",true).length,7);
-  assert.equal(audit("fn show(){components::management_row(ui,id,c,t,i);components::management_client_header(ui,h,c,l,w,s);}","client_chooser.rs",true).length,0);
+  assert.equal(audit("fn show_page(){}","product_manager.rs",true).length,8);
+  assert.equal(audit("fn show(){crate::table::show(ui,h,c);crate::table::fixed_rows(ui,v,id,h,n,c);crate::table::row_scope(ui,id,r,c);components::management_row(ui,id,c,t,i);components::management_client_header(ui,h,c,l,w,s);}","client_chooser.rs",true).length,0);
   assert.equal(audit("fn workflow_primary_at(){}","workflow_board_ui.rs",true).length,5);
   assert.equal(audit("fn workflow_auxiliary_at(){components::workflow_fixed_action(ui,id,r,a,e);} fn workflow_primary_at(){components::workflow_fixed_action(ui,id,r,a,e);} fn workflow_header(){workflow_auxiliary_at();workflow_auxiliary_at();} fn workflow_action_line(){workflow_primary_at();workflow_auxiliary_at();}","workflow_board_ui.rs",true).length,0);
   const missing=(source,file,scope)=>audit(source,file,true)

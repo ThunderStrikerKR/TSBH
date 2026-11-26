@@ -2682,7 +2682,7 @@ mod rate_toolbar_tests{
                 theme::management_master_table_frame().show(ui,|section|{
                     section.spacing_mut().item_spacing.y=0.0;
                     let top=section.cursor().top();
-                    let layout=components::management_sticky_table_header_without_toolbar(
+                    let layout=crate::table::management_sticky_table_header_without_toolbar(
                         section,theme::FREIGHT_COMBINATION_HISTORY_COL_WIDTHS
                             .iter().sum::<f32>()
                             +4.0*theme::FREIGHT_ASSIGNMENT_COL_GAP
