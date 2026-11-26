@@ -106,7 +106,7 @@ pub struct ClientManager {
     tag_input:String,
     tag_notice:Option<String>,
     show_messages:bool,
-    tab_snapshots:crate::navigation::NavigationSnapshots<2>,
+    tab_snapshots:crate::view_state::NavigationSnapshots<2>,
     messages:Option<AutomaticMessageManager>,
     excel:crate::product_excel_ui::ProductExcelUi,
 }
@@ -130,7 +130,7 @@ impl ClientManager {
             draft:None,original:None,confirm_delete:false,confirm_discard:false,
             exception_id:String::new(),exception_price:String::new(),
             tag_input:String::new(),tag_notice:None,
-            show_messages:false,tab_snapshots:crate::navigation::NavigationSnapshots::new(0),messages:None,excel:crate::product_excel_ui::ProductExcelUi::for_clients(),
+            show_messages:false,tab_snapshots:crate::view_state::NavigationSnapshots::new(0),messages:None,excel:crate::product_excel_ui::ProductExcelUi::for_clients(),
         }
     }
     pub(crate) fn suspend_navigation(&mut self,now:std::time::Instant){
@@ -152,7 +152,7 @@ impl ClientManager {
     pub(crate) fn reset_navigation(&mut self,gateway:Arc<dyn BandoGateway>,ctx:Context){
         if self.has_modal()||self.saving.is_some()||self.messages.as_ref().is_some_and(|m|m.dirty()||m.busy()){return;}
         self.search.clear();self.sort=None;self.show_messages=false;
-        self.tab_snapshots=crate::navigation::NavigationSnapshots::new(0);
+        self.tab_snapshots=crate::view_state::NavigationSnapshots::new(0);
         if let Some(m)=self.messages.as_mut(){m.reset_navigation();}
         self.query(gateway,ctx);
     }
