@@ -91,11 +91,13 @@ impl Default for Form {
     }
 }
 #[derive(Clone,PartialEq,Eq)]
-enum Exit {Select(String),Tab(usize),Global}
+enum Exit {Select(String),Close,Tab(usize),Global}
 #[derive(Default)]
 pub struct AliasManager{
     form:Form,
     original:Form,
+    editor_open:bool,
+    list_query:String,
     product_search:bool,
     query:String,
     category:String,
@@ -172,7 +174,7 @@ impl AliasManager {
         }
     }
     fn dirty(&self)->bool{self.form!=self.original}
-    pub fn has_overlay(&self)->bool{self.product_search||self.pending.is_some()}
+    pub fn has_overlay(&self)->bool{self.editor_open||self.product_search||self.pending.is_some()}
     pub fn global_leave_in_progress(&self)->bool{
         self.pending==Some(Exit::Global)||self.after_save==Some(Exit::Global)
     }
@@ -181,6 +183,7 @@ impl AliasManager {
     }
     pub fn take_tab(&mut self)->Option<usize>{self.next_tab.take()}
     pub fn reset_navigation(&mut self){
+        self.editor_open=false;self.list_query.clear();
         self.picker.reset();
         self.picker_key=None;
         self.picker_result=None;
@@ -215,17 +218,24 @@ impl AliasManager {
                         }else{field(row,"clientId").into()},
                         editing:Some(id),
                     };
+                    self.editor_open=true;self.error=None;
                     self.original=self.form.clone();
                 }
             }
-            Exit::Tab(tab)=>{self.next_tab=Some(tab);}
-            Exit::Global=>{self.global_approved=true;}
+            Exit::Close=>{self.close_editor();}
+            Exit::Tab(tab)=>{self.close_editor();self.next_tab=Some(tab);}
+            Exit::Global=>{self.close_editor();self.global_approved=true;}
         }
     }
     fn choose(&mut self,id:String,catalog:&Value){
         if self.form.editing.as_deref()==Some(&id){return;}
         if self.dirty(){self.pending=Some(Exit::Select(id));}
         else{self.apply_exit(Exit::Select(id),catalog);}
+    }
+    fn close_editor(&mut self){
+        self.editor_open=false;self.product_search=false;
+        let scope=self.original.scope.clone();
+        self.form=Form{scope,..Form::default()};self.original=self.form.clone();self.error=None;
     }
     fn save_request(&self)->Value{
         json!({"record":{
@@ -238,7 +248,8 @@ impl AliasManager {
         }})
     }
     pub fn on_saved(&mut self,catalog:&Value){
-        // React: reset fields, preserve the selected scope after save.
+        self.editor_open=false;self.product_search=false;
+        // Preserve the last saved scope for the next registration.
         let scope=self.form.scope.clone();
         self.form=Form{scope,..Form::default()};
         self.original=self.form.clone();
@@ -251,7 +262,6 @@ impl AliasManager {
     }
     pub fn show_page(&mut self,ui:&mut Ui,catalog:&Value,editable:bool,busy:bool)
         ->Option<Value>{
-        let mut save=false;
         let mut choose=None;
         self.poll_diagnostics();
         let products:HashMap<&str,&Value>=rows(&catalog["products"]).iter().rev().map(|p|(field(p,"id"),p)).collect();
@@ -260,69 +270,27 @@ impl AliasManager {
         let card_min_height=crate::card::management_master_table_card_min_inner_height(ui);
         crate::card::measured_management_master_card(ui,|card|{
             crate::card::fill_management_primary_card(card,card_min_height);
-            card.label(typography::section_heading("공통 / 거래처 별칭 관리"));
-            card.add_space(theme::SPACE_8);
-            card.label(typography::body(
-                "넓은 상품 종류명과 실제 개별 상품에 충돌하는 별칭은 등록하지 않습니다. 기존 충돌은 삭제하지 않고 아래에 표시합니다."
-            ));
-            card.add_space(theme::SPACE_12);
-            // Like the React auto-fit grid, controls wrap within the form
-            // while sharing the existing management field/button tokens.
-            card.horizontal_wrapped(|form|{
-                form.vertical(|v|{
-                    v.label(typography::field_label("별칭"));
-                    v.add_enabled_ui(editable&&!busy,|input|{
-                        crate::input::flexible_text_field(
-                            input,&mut self.form.text,
-                            theme::MANAGEMENT_SEARCH_MIN_WIDTH,"관리 별칭");
-                    });
-                });
-                form.vertical(|v|{
-                    v.label(typography::field_label("적용 범위"));
-                    let scope_name=if self.form.scope=="common"{
-                        "회사 공통 별칭"
-                    }else{
-                        clients.get(self.form.scope.as_str()).map(|c|field(c,"name"))
-                            .unwrap_or("거래처 확인 필요")
-                    };
-                    v.add_enabled_ui(editable&&!busy,|input|{
-                        crate::dropdown::management_dropdown(
-                            input,scope_name,theme::MANAGEMENT_SEARCH_MIN_WIDTH,
-                            true,|choices|{
-                                crate::dropdown::management_dropdown_option(
-                                    choices,&mut self.form.scope,
-                                    "common".to_owned(),"회사 공통 별칭");
-                                for client in rows(&catalog["clients"])
-                                    .iter().filter(|c|is_client_active(c)){
-                                    crate::dropdown::management_dropdown_option(
-                                        choices,&mut self.form.scope,
-                                        field(client,"id").to_owned(),field(client,"name"));
-                                }
-                            });
-                    });
-                });
-                form.vertical(|v|{
-                    v.label(typography::field_label("연결 상품"));
-                    let label=products.get(self.form.target.as_str())
-                        .map(|p|display_model(field(p,"name")))
-                        .unwrap_or_else(||"등록 상품 선택".into());
-                    if crate::button::action(v,&label,theme::ButtonRole::Standard,
-                        editable&&!busy).clicked(){
-                        self.product_search=true;
-                        self.query.clear();self.category.clear();self.brand.clear();
+            card.horizontal(|toolbar|{
+                let width=theme::CATALOG_SEARCH_WIDTH.min((toolbar.available_width()-160.0).max(1.0));
+                crate::input::management_search_field(toolbar,&mut self.list_query,width,"별칭, 적용 범위 또는 연결 상품 검색");
+                toolbar.with_layout(Layout::right_to_left(Align::Center),|actions|{
+                    if crate::button::action(actions,"+ 별칭 추가",theme::ButtonRole::Primary,
+                        editable&&!busy&&!self.editor_open).clicked(){
+                        self.close_editor();self.editor_open=true;
                     }
-                });
-                form.vertical(|v|{
-                    // Align the single primary action with the shared field
-                    // baseline without altering any shared button dimensions.
-                    v.add_space(theme::SPACE_24);
-                    if crate::button::action(v,"별칭 저장",theme::ButtonRole::Primary,
-                        editable&&!busy).clicked(){save=true;}
                 });
             });
             crate::ui_primitives::section_divider(card);
             use typography::ManagementTableCellRole as Role;
-            let aliases=rows(&catalog["aliases"]);
+            let query=self.list_query.trim().to_lowercase();
+            let aliases=rows(&catalog["aliases"]).iter().filter(|item|{
+                let scope=if field(item,"clientId").is_empty(){"회사 공통"}else{
+                    clients.get(field(item,"clientId")).map(|c|field(c,"name")).unwrap_or("거래처 확인 필요")};
+                query.is_empty()||field(item,"text").to_lowercase().contains(&query)
+                    ||scope.to_lowercase().contains(&query)
+                    ||products.get(field(item,"productId")).is_some_and(|p|
+                        field(p,"name").to_lowercase().contains(&query))
+            }).collect::<Vec<_>>();
             let height=(card.available_height()-theme::MANAGEMENT_TABLE_HEADER_HEIGHT).max(1.0);
             let rect=crate::table::registry_table(card,"alias-registered-list",
                 ["별칭","적용 범위","연결 상품","충돌 안내","관리"],
@@ -340,7 +308,7 @@ impl AliasManager {
                     crate::table::registry_cell(row,cells[2],&target,Role::ProductName,false,(id,2));
                     crate::table::registry_cell(row,cells[3],&diagnostic,Role::Status,false,(id,3));
                     crate::table::registry_actions(row,cells[4],|actions|{
-                        if crate::button::action(actions,"연결 정정",theme::ButtonRole::Standard,!busy).clicked(){
+                        if crate::button::action(actions,"연결 정정",theme::ButtonRole::Standard,!busy&&!self.editor_open).clicked(){
                             choose=Some(id.to_owned());
                         }
                     });
@@ -349,17 +317,63 @@ impl AliasManager {
                     let _=rect;
                 });
             if aliases.is_empty(){
-                crate::status_notice::management_body_state_overlay(card,rect,Some("등록된 별칭이 없습니다."));
+                crate::status_notice::management_body_state_overlay(card,rect,Some(if query.is_empty(){"등록된 별칭이 없습니다."}else{"검색 결과가 없습니다."}));
             }
 
         });
         if let Some(id)=choose{self.choose(id,catalog);}
+        None
+    }
+    fn show_editor(&mut self,ctx:&Context,work_area:Rect,catalog:&Value,editable:bool,busy:bool)->Option<Value>{
+        if !self.editor_open||self.product_search{return None;}
+        let title=if self.form.editing.is_some(){"별칭 정정"}else{"별칭 추가"};
+        let mut close=false;let mut save=false;
+        let nested=self.pending.is_some();
+        crate::popup::modal_backdrop(ctx,"alias-editor-dim",false);
+        crate::popup::modal_window(ctx,title,"alias-editor",work_area)
+            .default_width(theme::MODAL_DEFAULT_MAX_WIDTH.min(work_area.width()))
+            .show(ctx,|modal|{
+                crate::popup::modal_flow_workspace(modal,|workspace|{
+                    close=workspace.header(title,"닫기",!busy&&!nested);
+                    workspace.scroll_region("alias-editor-body",crate::popup::modal_editor_body_max_height(work_area.height()),|body|{
+                        body.add_enabled_ui(editable&&!busy&&!nested,|body|{
+                            body.label(typography::field_label("별칭"));
+                            let width=body.available_width();
+                            crate::input::flexible_text_field(body,&mut self.form.text,width,"관리 별칭");
+                            body.label(typography::field_label("적용 범위"));
+                            let scope_name=if self.form.scope=="common"{"회사 공통 별칭"}else{
+                                rows(&catalog["clients"]).iter().find(|c|field(c,"id")==self.form.scope)
+                                    .map(|c|field(c,"name")).unwrap_or("거래처 확인 필요")};
+                            let width=body.available_width();
+                            crate::dropdown::management_dropdown(body,scope_name,width,true,|choices|{
+                                crate::dropdown::management_dropdown_option(choices,&mut self.form.scope,"common".to_owned(),"회사 공통 별칭");
+                                for client in rows(&catalog["clients"]).iter().filter(|c|is_client_active(c)){
+                                    crate::dropdown::management_dropdown_option(choices,&mut self.form.scope,
+                                        field(client,"id").to_owned(),field(client,"name"));
+                                }
+                            });
+                            body.label(typography::field_label("연결 상품"));
+                            let label=product(catalog,&self.form.target).map(|p|display_model(field(p,"name")))
+                                .unwrap_or_else(||"등록 상품 선택".into());
+                            if crate::button::action(body,&label,theme::ButtonRole::Standard,true).clicked(){
+                                self.product_search=true;self.query.clear();self.category.clear();self.brand.clear();
+                            }
+                        });
+                        if let Some(error)=self.error.as_deref(){body.label(typography::caption(error));}
+                    });
+                    workspace.footer_single(|actions|{
+                        save=crate::button::action(actions,"별칭 저장",theme::ButtonRole::Primary,
+                            editable&&!busy&&!nested&&self.dirty()).clicked();
+                    });
+                });
+            });
+        if close{if self.dirty(){self.pending=Some(Exit::Close);}else{self.close_editor();}}
         save.then(||self.save_request())
     }
     pub fn show_dialogs(&mut self,ctx:&Context,work_area:Rect,catalog:&Value,
         editable:bool,busy:bool)->Option<Value>{
         self.poll_picker();
-        let mut save=None;
+        let mut save=self.show_editor(ctx,work_area,catalog,editable,busy);
         if self.product_search{
             let mut close=false;
             let mut chosen=None;
