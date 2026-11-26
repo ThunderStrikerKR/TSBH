@@ -1,6 +1,6 @@
 //! Shared UI layout allocations, reserved geometry and dock rendering.
 //! Business state and persisted window/split sizes remain in layout.rs.
-use eframe::egui::{self,Align,Color32,Frame,Layout,Rect,Sense,Stroke,Ui,UiBuilder,Vec2};
+use eframe::egui::{self,Align,Color32,Layout,Rect,Sense,Stroke,Ui,UiBuilder,Vec2};
 use crate::{theme,typography};
 use crate::ui_primitives::{text_exceeds_rect,truncated_label_for_explicit_tooltip,truncated_label,overflow_tooltip};
 use crate::scrollbar::{scroll_area,ScrollAxes};
@@ -259,8 +259,7 @@ pub fn management_page_title_top_gap(ui:&mut Ui) {
 pub fn management_top_content<R>(
     ui:&mut Ui, add:impl FnOnce(&mut Ui)->R
 )->R{
-    let output=Frame::new()
-        .inner_margin(egui::Margin::symmetric(theme::SECTION_PADDING as i8,0))
+    let output=theme::management_top_content_frame()
         .show(ui,|inset|{
             inset.set_min_width(inset.available_width());
             add(inset)

@@ -838,6 +838,10 @@ pub fn navigation_header_frame()->Frame{
 pub fn management_page_host_frame()->Frame{
     Frame::new().inner_margin(0)
 }
+/// Transparent heading inset, not a second card surface.
+pub fn management_top_content_frame()->Frame{
+    Frame::new().inner_margin(egui::Margin::symmetric(SECTION_PADDING as i8,0))
+}
 /// Base visual surface shared by cards and modal sections. Role wrappers
 /// retain their approved radius, padding, fill and border color.
 pub(crate) fn bordered_surface(fill:Color32,border:Color32,radius:u8)->Frame{

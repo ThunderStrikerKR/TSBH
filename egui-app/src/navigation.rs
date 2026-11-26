@@ -356,7 +356,7 @@ pub fn date_calendar(
                 }
             });
             calendar.add_space(theme::SPACE_8);
-            calendar.separator();
+            crate::ui_primitives::soft_divider(calendar);
             calendar.add_space(theme::SPACE_4);
             let width=theme::CALENDAR_DAY_SIZE;
             let dates=calendar_dates(*month);

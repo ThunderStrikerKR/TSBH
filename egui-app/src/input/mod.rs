@@ -753,7 +753,7 @@ pub(crate) fn reception_recipient_value_hit(ui:&mut Ui,display:&Response)->Respo
     let hit=ui.interact(
         display.rect,
         display.id.with("recipient-value-hit"),
-        Sense::click()
+        egui::Sense::click()
     );
     if hit.hovered(){
         ui.ctx().set_cursor_icon(egui::CursorIcon::Text);
