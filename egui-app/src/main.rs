@@ -7175,7 +7175,8 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                 && !self.reception_modal_open()
                 && !board.groups.iter().flat_map(|g|g.shipments.iter())
                     .any(|other|other.order_id==ship.order_id && other.transferred);
-            let origin_editable=confirmed_editable && self.confirmed_cell.is_none();
+            let confirmed_cell_idle=self.confirmed_cell.is_none();
+            let origin_editable=confirmed_editable && confirmed_cell_idle;
             // The same preallocated review/recipient/items rectangles are
             // used for real workflow rows. No source replacement, false
             // editing actions or section boundary changes on hover.
@@ -7237,7 +7238,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                         pane,"수취인별 주문 정보",recipient_height,
                         |header|{
                             next_ship=components::reception_recipient_navigator(
-                                header,name,index,count,self.confirmed_cell.is_none()
+                                header,name,index,count,confirmed_cell_idle
                             );
                         },|ui|{
                         components::scroll_area(components::ScrollAxes::Vertical)
@@ -7320,7 +7321,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                     Self::section_with_header(pane,"품목 및 운임",bottom_rect.height(),
                         |header|{
                             confirmed_add=components::reception_item_add_action_editable(
-                                header,confirmed_editable && self.confirmed_cell.is_none());
+                                header,confirmed_editable && confirmed_cell_idle);
                         },|ui|{
                         components::reception_docked_goods_scroll(
                             ui,bottom_rect.height(),("native-workflow-products",ship.id.as_str()),
