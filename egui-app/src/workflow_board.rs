@@ -44,6 +44,7 @@ pub struct GroupRow {
     pub vat_excluded: usize,
     pub shipments: Vec<ShipmentRow>,
     pub automatic_text: Option<String>,
+    pub automatic_text_with_links: Option<String>,
     pub automatic_error: Option<String>,
     // Copy enablement follows the same Rust phase/payment issue response
     // as React; a rendered monetary string alone is not proof it is safe.
@@ -54,6 +55,15 @@ pub struct GroupRow {
     pub issues: Vec<Value>,
 }
 impl GroupRow {
+    pub fn message_text(&self,include_links:bool)->Option<&str>{
+        if include_links{
+            self.automatic_text_with_links.as_deref().or(self.automatic_text.as_deref())
+        }else{self.automatic_text.as_deref()}
+    }
+    pub fn has_message_links(&self)->bool{
+        self.automatic_text_with_links.as_deref().is_some_and(|linked|
+            self.automatic_text.as_deref().is_some_and(|plain|linked!=plain))
+    }
     pub fn management_target_label(&self)->eframe::egui::text::LayoutJob{
         let names=self.shipments.iter().map(|s|{
             if s.recipient_name.is_empty(){"수취인 확인"}else{s.recipient_name.as_str()}
@@ -472,17 +482,18 @@ fn project_state(gateway:&dyn BandoGateway,state:&Value,scope:Option<&HashSet<St
                 "mode":"payment_copy_status"
             })).ok().is_some_and(|result|result["copied"]==true),
         };
-        let (automatic_text,automatic_error,automatic_phase,automatic_payment_issues,automatic_signature)=
+        let (automatic_text,automatic_text_with_links,automatic_error,automatic_phase,automatic_payment_issues,automatic_signature)=
             match automatic{
                 Ok(result)=>(
                     result.get("text").and_then(Value::as_str).map(str::to_owned),
+                    result.get("textWithLinks").and_then(Value::as_str).map(str::to_owned),
                     None,
                     result.get("phase").and_then(Value::as_str).map(str::to_owned),
                     rows(field(&result,"paymentIssues")).iter()
                         .filter_map(Value::as_str).map(str::to_owned).collect(),
                     result.get("signature").and_then(Value::as_str).map(str::to_owned)
                 ),
-                Err(error)=>(None,Some(error),None,Vec::new(),None),
+                Err(error)=>(None,None,Some(error),None,Vec::new(),None),
             };
         let issues=workflow_review_entries(native,&display_shipments);
         groups.push(GroupRow{
@@ -501,7 +512,7 @@ fn project_state(gateway:&dyn BandoGateway,state:&Value,scope:Option<&HashSet<St
             total:field(field(native,"totals"),"total").as_i64(),
             vat_included,vat_excluded,
             shipments:display_shipments,
-            automatic_text,automatic_error,automatic_phase,
+            automatic_text,automatic_text_with_links,automatic_error,automatic_phase,
             automatic_payment_issues,automatic_signature,payment_copied,issues,
         });
     }
@@ -567,7 +578,7 @@ mod linked_recipient_selection_tests{
             id:id.into(),created_at:String::new(),dealer_name:String::new(),
             source_id:String::new(),source_number:None,dealer_id:String::new(),transferred:false,
             step:0,needs_notice:false,total:None,vat_included:0,vat_excluded:0,
-            shipments,automatic_text:None,automatic_error:None,
+            shipments,automatic_text:None,automatic_text_with_links:None,automatic_error:None,
             automatic_phase:None,automatic_signature:None,payment_copied:false,
             automatic_payment_issues:vec![],issues:vec![],
         }
