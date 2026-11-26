@@ -243,7 +243,7 @@ struct PendingPricingBasisCheck {
     order_type:String,
     client_id:String,
     quote:serde_json::Value,
-    receiver:Receiver<Result<bool,String>>,
+    read:screen_refresh::ReadRefresh<bool>,
 }
 
 // An automatic match is only advisory until the same native Rust order
@@ -1635,16 +1635,10 @@ impl BandoEgui {
             .filter(|rows|rows.is_array()).cloned()
         else{return};
         let gateway=Arc::clone(&self.gateway);
-        let context=ctx.clone();
         let old_quote=quote.clone();
         let selected_id=client_id.clone();
-        let (tx,receiver)=mpsc::channel();
-        self.pricing_basis_check=Some(PendingPricingBasisCheck {
-            order_id:row.id,source_raw:row.raw,order_type:row.order_type,
-            client_id,quote,receiver
-        });
-        std::thread::spawn(move||{
-            let result=(||->Result<bool,String>{
+        let mut read=screen_refresh::ReadRefresh::default();
+        read.submit(ctx.clone(),move||->Result<bool,String>{
                 let state=gateway.load_business_state()?;
                 let client=state.get("clients").and_then(serde_json::Value::as_array)
                     .and_then(|clients|clients.iter().find(|client|
@@ -1654,21 +1648,15 @@ impl BandoEgui {
                 Ok(old_quote.get("pricingBasis")==Some(
                     &pricing_basis::snapshot(&state,client,&order)
                 ))
-            })();
-            let _=tx.send(result);
-            context.request_repaint();
+        });
+        self.pricing_basis_check=Some(PendingPricingBasisCheck{
+            order_id:row.id,source_raw:row.raw,order_type:row.order_type,
+            client_id,quote,read
         });
     }
 
     fn poll_pricing_basis_check(&mut self,ctx:&egui::Context){
-        let answer=self.pricing_basis_check.as_ref()
-            .map(|pending|pending.receiver.try_recv());
-        let received=match answer{
-            Some(Ok(result))=>Some(result),
-            Some(Err(mpsc::TryRecvError::Disconnected))=>
-                Some(Err("저장된 가격 기준 확인 작업이 중단됐습니다.".into())),
-            _=>None
-        };
+        let received=self.pricing_basis_check.as_mut().and_then(|pending|pending.read.poll());
         let Some(received)=received else{
             return;
         };
