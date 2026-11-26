@@ -366,8 +366,22 @@ fn resolve_inline_navigation(entries:&[InlineNavigationEntry],current:&InlineTar
             return Some(next.target.clone());
         }
     }
-    let id=cell_navigation::resolve_cell_navigation_target(&cells,&current_id,key)?;
-    entries.iter().find(|entry|entry.cell.id==id).map(|entry|entry.target.clone())
+    if let Some(id)=cell_navigation::resolve_cell_navigation_target(&cells,&current_id,key){
+        return entries.iter().find(|entry|entry.cell.id==id).map(|entry|entry.target.clone());
+    }
+    // Vertical movement crosses a section boundary only after exhausting
+    // the current column. Horizontal movement remains on the visible row.
+    let from_recipient=current.item_id.is_none() && current.field!="shippingCharge";
+    let other=entries.iter().filter(|entry|
+        entry.cell.enabled && entry.target.recipient_id==current.recipient_id
+            && !inline_same_visible_grid(current,&entry.target));
+    match key{
+        CellNavigationKey::Down if from_recipient=>
+            other.min_by_key(|entry|entry.cell.order).map(|entry|entry.target.clone()),
+        CellNavigationKey::Up if !from_recipient=>
+            other.max_by_key(|entry|entry.cell.order).map(|entry|entry.target.clone()),
+        _=>None
+    }
 }
 fn confirmed_editor_slot(shipment_id:&str,target:&InlineTarget)->egui::Id{
     egui::Id::new(("confirmed-inline-grid",shipment_id,inline_target_key(target)))
@@ -417,7 +431,7 @@ fn inline_phone_vertical_destination(
 }
 #[cfg(test)]
 #[test]
-fn reception_arrow_navigation_keeps_visible_grid_sections_separate(){
+fn reception_arrow_navigation_preserves_section_local_geometry(){
     let recipient=InlineTarget{
         recipient_id:"r1".into(),item_id:None,field:"address"
     };
@@ -456,6 +470,33 @@ fn reception_arrow_navigation_keeps_visible_grid_sections_separate(){
 
 #[cfg(test)]
 #[test]
+fn reception_navigation_crosses_recipient_item_boundary_in_both_directions(){
+    let recipient=serde_json::json!({"id":"r1","items":[{"id":"i1"},{"id":"i2"}],"freightCode":"010"});
+    let entries=inline_navigation_entries(&recipient,true);
+    let target=|item:Option<&str>,field:&'static str|InlineTarget{
+        recipient_id:"r1".into(),item_id:item.map(str::to_owned),field
+    };
+    let note=target(None,"note");
+    let qty=target(Some("i1"),"quantity");
+    let price=target(Some("i1"),"unitPrice");
+    assert_eq!(resolve_inline_navigation(&entries,&note,CellNavigationKey::Down),Some(qty.clone()));
+    assert_eq!(resolve_inline_navigation(&entries,&qty,CellNavigationKey::Up),Some(note.clone()));
+    assert_eq!(resolve_inline_navigation(&entries,&price,CellNavigationKey::Up),Some(note.clone()));
+    assert_eq!(resolve_inline_navigation(&entries,&note,CellNavigationKey::Next),Some(qty.clone()));
+    assert_eq!(resolve_inline_navigation(&entries,&qty,CellNavigationKey::Previous),Some(note.clone()));
+    assert_eq!(resolve_inline_navigation(&entries,&note,CellNavigationKey::Right),None);
+    assert_eq!(resolve_inline_navigation(&entries,&qty,CellNavigationKey::Left),None);
+    assert_eq!(resolve_inline_navigation(&entries,&target(Some("i2"),"quantity"),CellNavigationKey::Up),Some(qty));
+    let empty=inline_navigation_entries(&serde_json::json!({"id":"r1","items":[],"freightCode":"010"}),true);
+    let freight=target(None,"shippingCharge");
+    assert_eq!(resolve_inline_navigation(&empty,&note,CellNavigationKey::Down),Some(freight.clone()));
+    assert_eq!(resolve_inline_navigation(&empty,&freight,CellNavigationKey::Up),Some(note.clone()));
+    let collect=inline_navigation_entries(&serde_json::json!({"id":"r1","items":[],"freightCode":"020"}),true);
+    assert_eq!(resolve_inline_navigation(&collect,&note,CellNavigationKey::Down),None);
+}
+
+#[cfg(test)]
+#[test]
 fn confirmed_navigation_uses_shared_geometry_and_skips_ineligible_freight(){
     let ship=workflow_board::ShipmentRow{
         id:"s1".into(),order_id:"o1".into(),recipient_id:"r1".into(),
@@ -469,6 +510,12 @@ fn confirmed_navigation_uses_shared_geometry_and_skips_ineligible_freight(){
     let entries=confirmed_navigation_entries(&ship,true,true);
     let phone=InlineTarget{recipient_id:"r1".into(),item_id:None,field:"phone"};
     assert_eq!(resolve_inline_navigation(&entries,&phone,CellNavigationKey::Up).unwrap().field,"address");
+    let note=InlineTarget{recipient_id:"r1".into(),item_id:None,field:"note"};
+    let first_qty=InlineTarget{recipient_id:"r1".into(),item_id:Some("i1".into()),field:"quantity"};
+    let first_price=InlineTarget{recipient_id:"r1".into(),item_id:Some("i1".into()),field:"unitPrice"};
+    assert_eq!(resolve_inline_navigation(&entries,&note,CellNavigationKey::Down),Some(first_qty.clone()));
+    assert_eq!(resolve_inline_navigation(&entries,&first_qty,CellNavigationKey::Up),Some(note.clone()));
+    assert_eq!(resolve_inline_navigation(&entries,&first_price,CellNavigationKey::Up),Some(note));
     let price=InlineTarget{recipient_id:"r1".into(),item_id:Some("i2".into()),field:"unitPrice"};
     let factory=confirmed_freight_target(&ship,"FACTORY");
     let store=confirmed_freight_target(&ship,"STORE");
