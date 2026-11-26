@@ -9018,7 +9018,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
     }
 
     fn submit_workflow_freight_edit(&mut self,ctx:&egui::Context)->bool{
-        let Some(editor)=self.workflow_freight_editor.take() else{return true;};
+        let Some(mut editor)=self.workflow_freight_editor.take() else{return true;};
         floating_notice::inherit_origin(ctx,"reception.cell","reception.freight");
         let digits=editor.text.trim().replace(',',"");
         let original_digits=editor.original.trim().replace(',',"");
@@ -9035,6 +9035,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                     ctx,"reception.freight",floating_notice::Tone::Error,
                     "운임은 0~99,999원 사이의 정수로 입력하세요."
                 );
+                editor.focus_next=true;
                 self.workflow_freight_editor=Some(editor);
                 self.workflow_freight_next_selection=None;
                 return false;
@@ -9054,7 +9055,8 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
         if started{
             self.submitted_workflow_freight=Some(editor);
         }else{
-            self.workflow_freight_editor=Some(editor);
+            editor.focus_next=true;
+                self.workflow_freight_editor=Some(editor);
             self.workflow_freight_next_selection=None;
         }
         started
@@ -11195,6 +11197,30 @@ mod reception_workflow_admission_integration_tests {
         ));
         assert!(app.inline_editor.is_some(),
             "a failed cell write must preserve the employee's editable value");
+    }
+
+    #[test]
+    fn invalid_confirmed_cell_keeps_editor_and_discards_clicked_destination(){
+        let ctx=egui::Context::default();
+        let mut app=app();
+        let selection=workflow_board_ui::Selection{
+            group_id:"g".into(),order_id:"o".into(),shipment_id:"s".into()
+        };
+        let quantity=InlineTarget{recipient_id:"r1".into(),item_id:Some("i".into()),field:"quantity"};
+        app.confirmed_cell=Some(ConfirmedCellEditor{
+            target:ConfirmedEditTarget{selection:selection.clone(),revision:1,recipient_id:"r1".into()},
+            cell:InlineReceptionEditor{source_id:"o".into(),target:quantity.clone(),
+                original:"1".into(),text:"0".into(),focus_next:false,click_at:None}
+        });
+        app.switch_confirmed_editor(selection,InlineTarget{
+            recipient_id:"r1".into(),item_id:None,field:"name"
+        },Some(egui::pos2(20.0,20.0)),false,&ctx);
+        let editor=app.confirmed_cell.as_ref().unwrap();
+        assert_eq!(editor.cell.target,quantity);
+        assert_eq!(editor.cell.text,"0");
+        assert!(editor.cell.focus_next);
+        assert!(app.confirmed_next_cell.is_none());
+        assert!(app.workflow_action.is_none());
     }
 
     #[test]
