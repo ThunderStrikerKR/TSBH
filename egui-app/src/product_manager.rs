@@ -1273,7 +1273,7 @@ impl ProductManager {
                         price_order.push(CellNavigationCell{
                             id:key.clone(),row:row_index,column,
                             order:row_index*3+column,
-                            enabled:!other_price_write_busy &&
+                            enabled:!self.catalog_stale && !other_price_write_busy &&
                                 !self.price_mode_exit_requested &&
                                 !self.price_cell_busy(&key),
                         });
@@ -1909,6 +1909,7 @@ impl ProductManager {
         });
     }
     pub fn show_detail(&mut self,ctx:&Context,work_area:egui::Rect){
+        if self.catalog_stale{return;}
         if self.tab==0 && self.excel.has_modal(){
             self.excel.show_review(
                 ctx,work_area,Arc::clone(&self.gateway),
