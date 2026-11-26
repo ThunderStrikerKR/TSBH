@@ -301,11 +301,39 @@ mod regression {
         let view=run("evaluate_workflow",json!({"state":s,"groupId":"group:o1"}));
         assert_eq!(view["step"],3);
         assert!(view["issues"].as_array().unwrap().iter().any(|i|
+            i.as_str()==Some("가상 거래처 입금 청구 36,300원")));
+        assert!(!view["issues"].as_array().unwrap().iter().any(|i|
             i.as_str().unwrap().contains("입금 부족")));
         assert!(execute("apply_workflow_action",json!({
             "state":s,"groupId":"group:o1","action":"advance_group",
             "eventId":"event-1","now":"2026-11-13T10:00:00+09:00"})).is_err());
     }
+    #[test]
+    fn payment_claim_aggregates_delivery_recipients_and_preserves_partial_payment() {
+        let mut s=workflow_state("PREPAID");
+        let mut second=s["orders"][0]["recipients"][0].clone();
+        second["id"]=json!("r2");
+        second["name"]=json!("다른 수취인");
+        second["items"][0]["id"]=json!("item2");
+        s["orders"][0]["recipients"].as_array_mut().unwrap().push(second);
+        let mut ship=s["workflow"]["shipments"][0].clone();
+        ship["id"]=json!("shipment:o1:r2");
+        ship["recipientId"]=json!("r2");
+        s["workflow"]["shipments"].as_array_mut().unwrap().push(ship);
+        let claims=|state:&Value|{
+            let view=run("evaluate_workflow",json!({"state":state,"groupId":"group:o1"}));
+            view["issues"].as_array().unwrap().iter()
+                .filter_map(Value::as_str).filter(|text|text.contains("입금 청구"))
+                .map(str::to_owned).collect::<Vec<_>>()
+        };
+        assert_eq!(claims(&s),vec!["가상 거래처 입금 청구 72,600원"]);
+        s["workflow"]["payments"]=json!([{
+            "dealerId":"dealer-1","account":s["settings"]["accounts"][0],
+            "allocations":[{"shipmentId":"shipment:o1:r1","amount":10000}]
+        }]);
+        assert_eq!(claims(&s),vec!["가상 거래처 입금 청구 62,600원"]);
+    }
+
     #[test]
     fn postpaid_stage_advance_and_undo_keep_original_order() {
         let s=workflow_state("POSTPAID");
