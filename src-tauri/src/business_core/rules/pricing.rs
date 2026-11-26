@@ -504,6 +504,57 @@ mod reception_edit_cache_tests{
 mod migration_tests {
     use super::*;
     #[test]
+    fn shared_vat_rule_matches_reported_order_and_preserves_explicit_overrides(){
+        let order=json!({"applyVat":false,"recipients":[{
+            "id":"r","vatDefault":true,"items":[
+                {"productId":"p","variantId":"v","unitPrice":45000,"quantity":2}
+            ]}]});
+        let freight=json!({"bundles":[{"recipientId":"r","billableCharge":5200}]});
+        let row=&order["recipients"][0];
+        let expected=json!({"subtotal":90000,"shipping":5200,"vat":9520,"total":104720});
+        assert_eq!(shipment_amounts(&order,row,Some(5200)).unwrap(),expected);
+        let quote=reception_totals(&order,&json!({}),&freight).unwrap();
+        for key in ["subtotal","shipping","vat","total"]{assert_eq!(quote[key],expected[key]);}
+        let mut edited=row.clone();
+        edited["vatRateBps"]=json!(750);
+        assert_eq!(shipment_amounts(&order,&edited,Some(5200)).unwrap()["vat"],7140);
+        edited["vatOverride"]=json!(false);
+        assert_eq!(shipment_amounts(&order,&edited,Some(5200)).unwrap()["total"],95200);
+        edited["vatOverride"]=json!(true);
+        edited["vatRateBps"]=json!(1000);
+        assert_eq!(shipment_amounts(&order,&edited,Some(0)).unwrap()["total"],99000);
+        assert!(shipment_amounts(&order,&edited,None).unwrap()["total"].is_null());
+        assert_eq!(calculate_vat(Some(5),Some(0),true,1000),Some(1));
+        assert_eq!(calculate_vat(Some(4),Some(0),true,1000),Some(0));
+        let mut frozen=order.clone();
+        frozen["shippingFee"]=json!(5200);
+        frozen["pricesLocked"]=json!(true);
+        frozen["vatAmount"]=json!(1234);
+        assert_eq!(totals(&frozen,&json!({})).unwrap()["vat"],1234);
+    }
+    #[test]
+    fn dealer_vat_default_is_shared_by_cached_and_full_reception(){
+        let mut payload=json!({
+            "state":{"products":[{"id":"p","origin":"FACTORY","variants":[{"id":"v","wholesale":45000}]}],
+                "shipping":{"epoch":1}},
+            "client":{"id":"c","tier":"wholesale","defaultApplyVat":true},
+            "order":{"id":"draft","applyVat":false,"recipients":[
+                {"id":"r","dispatchOrigin":"FACTORY","address":"서울특별시 중구 세종대로 1",
+                    "shippingCharges":{"FACTORY":5200},
+                    "items":[{"id":"i","productId":"p","variantId":"v","origin":"FACTORY","quantity":2}]}
+            ]}
+        });
+        let mut cache=ReceptionEditQuoteCache::default();
+        let full=reception_quote(&payload).unwrap();
+        assert_eq!(full["totals"]["total"],104720);
+        assert_eq!(full["order"]["recipients"][0]["vatDefault"],true);
+        assert_eq!(cache.quote(&payload).unwrap(),full);
+        payload["order"]["recipients"][0]["vatOverride"]=json!(false);
+        let edited=reception_quote(&payload).unwrap();
+        assert_eq!(edited["totals"]["total"],95200);
+        assert_eq!(cache.quote(&payload).unwrap(),edited);
+    }
+    #[test]
     fn freight_billing_reasons_distinguish_exempt_missing_collect_and_zero(){
         let mut payload=json!({
             "state":{"products":[{"id":"p","origin":"FACTORY","variants":[{"id":"v","wholesale":10000}]}],
