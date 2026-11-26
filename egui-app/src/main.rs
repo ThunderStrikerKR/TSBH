@@ -6841,6 +6841,8 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                     let mut hovered_link=None;
                     let mut clicked_link=None;
                     let mut did_scroll=false;
+                    // Resolve the delete guard before the closure borrows raw_source.
+                    let source_writable=self.direct_source_entry && !self.active_delete_locked();
                     let editor=crate::card::reception_document_viewport(ui,viewport,
                         "source-editor-fixed-slot",
                         ("source-editor-vertical-scroll",self.active_id.as_deref()),|scroll_ui|{
@@ -6875,7 +6877,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                 .layouter(&mut layouter)
                                 .show(scroll_ui)
                         };
-                        let output=if self.direct_source_entry && !self.active_delete_locked() {
+                        let output=if source_writable {
                             show_source(&mut self.raw_source)
                         }else{
                             let mut read_only=self.raw_source.as_str();
