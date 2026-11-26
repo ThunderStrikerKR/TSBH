@@ -755,7 +755,8 @@ impl BandoGateway for LocalGateway {
             }
             let wire=message_account_wire(&before)?;
             let current=output::execute("render_automatic_message",serde_json::json!({
-                "state":&before,"groupId":group_id,"includeLinks":false,"accountWire":wire
+                "state":&before,"groupId":group_id,
+                "includeLinks":args["includeLinks"].as_bool().unwrap_or(false),"accountWire":wire
             }))?;
             let copy_type=match current["phase"].as_str(){
                 Some("request")=>"REQUEST",
