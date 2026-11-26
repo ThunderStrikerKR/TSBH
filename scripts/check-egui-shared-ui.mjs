@@ -626,7 +626,7 @@ const indirectHeightAllowances=new Map([
 export function auditIndirectCardHeights(source,file){
   const tokens=productionTokens(source),v=tokens.map(t=>t.v),hits=[],used=new Map();
   const raw=new Set(["set_min_size","set_max_size","set_size","set_min_rect",
-    "expand_to_include_rect","expand_to_include_y","advance_cursor_after_rect",
+    "expand_to_include_rect","expand_to_include_y","expand_to_include_x","advance_cursor_after_rect",
     "set_cursor_pos","allocate_space","outer_margin"]);
   const spacers=/^(?:(?:crate::)?(?:theme|ui_tokens)::)?SPACE_(?:2|4|6|8|12|16|24)$/;
   const numeric=x=>/^\d+(?:\.\d+)?$/.test(x??"");
@@ -658,23 +658,25 @@ export function auditIndirectCardHeights(source,file){
          v.slice(i-5,i-2).join(" ")==="let _ =");
       const size=arg.match(/^(?:egui::)?(?:vec2|Vec2::new)\([^,]+,(\d+(?:\.\d+)?)\),/);
       const square=arg.match(/^Vec2::splat\((\d+(?:\.\d+)?)\),/);
+      const width=arg.match(/^(?:egui::)?(?:vec2|Vec2::new)\((\d+(?:\.\d+)?),[^,]+\),/);
       suspicious=discarded&&/Sense::hover\(\)$/.test(arg)&&
-        Number(size?.[1]??square?.[1]??0)>24;
+        Math.max(Number(size?.[1]??square?.[1]??0),Number(width?.[1]??0))>24;
     }
-    // Oversized vertical margin literals also bypass normal card insets.
-    // Leave semantic margins and horizontal-only insets to their owners.
+    // Oversized margin literals on either axis bypass normal card insets.
+    // Semantic frame margins remain controlled by the shared owner.
     if(name==="inner_margin"){
       const scalar=numeric(arg)&&Number(arg)>24;
       const sym=arg.match(/^(?:egui::)?Margin::symmetric\([^,]+,(\d+(?:\.\d+)?)(?:asi8)?\)$/);
-      const edges=[...arg.matchAll(/(?:top|bottom):(\d+(?:\.\d+)?)(?:,|\})/g)];
-      suspicious=scalar||Number(sym?.[1]??0)>24||edges.some(m=>Number(m[1])>24);
+      const horizontal=arg.match(/^(?:egui::)?Margin::symmetric\((\d+(?:\.\d+)?)(?:asi8)?,[^,]+\)$/);
+      const edges=[...arg.matchAll(/(?:top|bottom|left|right):(\d+(?:\.\d+)?)(?:,|\})/g)];
+      suspicious=scalar||Number(sym?.[1]??0)>24||Number(horizontal?.[1]??0)>24||edges.some(m=>Number(m[1])>24);
     }
     if(!suspicious)continue;
     const call=v.slice(Math.max(0,i-2),end+1).join("");
     const key=file+":"+fn+":"+call;
     const count=(used.get(key)||0)+1;used.set(key,count);
     if(count>(indirectHeightAllowances.get(key)||0))
-      hits.push({line:tokens[i].line,rule:"unreviewed indirect UI height reservation: "+call+
+      hits.push({line:tokens[i].line,rule:"unreviewed indirect UI size reservation: "+call+
         "; use shared card/viewport geometry or semantic spacing"});
   }
   return hits;
@@ -699,7 +701,12 @@ function indirectCardHeightSelfTest(){
     ["fn render(){frame.inner_margin(100.0);}",1],
     ["fn render(){frame.inner_margin(egui::Margin::symmetric(8,100));}",1],
     ["fn render(){frame.inner_margin(egui::Margin{top:100,bottom:8,left:8,right:8});}",1],
-    ["fn render(){frame.inner_margin(egui::Margin::symmetric(100,8));}",0],
+    ["fn render(){frame.inner_margin(egui::Margin::symmetric(100,8));}",1],
+    ["fn render(){frame.inner_margin(egui::Margin{left:100,right:8,top:8,bottom:8});}",1],
+    ["fn render(){frame.inner_margin(egui::Margin::symmetric(12,8));}",0],
+    ["fn render(){ui.expand_to_include_x(x);}",1],
+    ["fn render(){ui.allocate_exact_size(Vec2::new(300.0,h),Sense::hover());}",1],
+    ["fn render(){let (r,_)=ui.allocate_exact_size(Vec2::new(300.0,h),Sense::hover());paint(r);}",0],
     ["fn render(){frame.outer_margin(margin);}",1],
     ["fn render(){scroll_area(axes).max_height(h);}",0],
     ["fn render(){/* ui.add_space(300.0); */ let s=\"ui.set_min_size(size)\";}",0],
@@ -712,6 +719,153 @@ function indirectCardHeightSelfTest(){
   assert.equal(check(existing.replace("balanced_gap","height"),"main.rs"),1);
   assert.equal(check("fn source_section(){"+ "intake.add_space(balanced_gap);".repeat(3)+"}","main.rs"),1);
   console.log("EGUI_INDIRECT_CARD_HEIGHT_SELFTEST_PASS",cases.length+4);
+}
+
+// Reviewed width writes: card policy owner and existing non-card geometry.
+// Exact file/function/receiver/argument/count, not whole-screen exemptions.
+const widthWriteAllowances=new Map([
+  ["card/mod.rs:apply_width_policy:ui.set_min_width(width)",1],
+  ["card/mod.rs:apply_width_policy:ui.set_width(width)",2],
+  ["card/mod.rs:apply_width_policy:ui.set_max_width(width)",1],
+  ["card/mod.rs:fixed_scroll_panel:content.set_width(scroll_rect.width())",1],
+  ["card/mod.rs:reception_document_viewport:canvas.set_width(inner.width())",1],
+  ["popup/mod.rs:modal_master_header_content_in_rect:details.set_width(subtitle.width())",1],
+  ["popup/mod.rs:modal_master_footer_in_rect:footer.set_width(content.width())",1],
+  ["popup/mod.rs:modal_action_row_measured:buttons.set_width(area.width())",1],
+  ["popup/mod.rs:show_management_menu:menu.set_min_width(width)",1],
+  ["popup/mod.rs:modal_plain_body_region:content.set_width(width)",1],
+  ["popup/mod.rs:modal_master_body:body.set_min_width(width)",1],
+  ["main.rs:show_ocr_review:toolbar.set_width(left_header.width())",1],
+  ["main.rs:show_ocr_review:toolbar.set_width(right_header.width())",1],
+  ["main.rs:show_ocr_review:viewport.set_width(image_scroll_rect.width())",1],
+  ["main.rs:show_ocr_review:editor.set_width(text_view_rect.width())",1],
+  ["main.rs:reception:pane.set_width(rect.width())",1],
+  ["main.rs:source_and_message:child.set_width(source_rect.width())",1],
+  ["main.rs:source_and_message:child.set_width(message_rect.width())",1],
+  ["main.rs:details_and_freight:pane.set_width(review_rect.width())",3],
+  ["main.rs:details_and_freight:pane.set_width(recipient_rect.width())",3],
+  ["main.rs:details_and_freight:pane.set_width(bottom_rect.width())",3],
+  ["main.rs:details_and_freight:pane.set_width(summary_rect.width())",3],
+  ["main.rs:other_page:pane.set_width(left.width())",1],
+  ["main.rs:other_page:main.set_width(right.width())",1],
+  ["manual_workspace.rs:show:outer.set_min_width(content_width)",1],
+  ["manual_workspace.rs:show:panel.set_min_width(panel_width)",1],
+  ["workflow_board_ui.rs:workflow_details:details.set_width(width)",1],
+  ["workflow_board_ui.rs:show:overlay_ui.set_min_width(width)",1],
+  ["workflow_board_ui.rs:show:overlay_ui.set_max_width(width)",1],
+  ["workflow_board_ui.rs:show:ui.set_min_width(width)",1],
+  ["workflow_board_ui.rs:show:ui.set_max_width(width)",1],
+  ["order_history_detail.rs:overview:panel.set_width(inner.width())",1],
+  ["order_history_detail.rs:show:ui.set_width((modal_size.x-2.0*theme::MODAL_PANEL_PADDING_X-2.0).max(1.0))",1],
+  ["product_manager.rs:show_selection_modal:ui.set_width(width)",1],
+  ["product_manager.rs:show_page:actions.set_width(actions_rect.width())",1],
+  ["product_excel_ui.rs:show_menu:menu.set_min_width(width)",1],
+  ["product_excel_ui.rs:show_menu:menu.set_max_width(width)",1],
+  ["product_excel_ui.rs:show_review:ui.set_min_width(inner_width.min(900.0))",1],
+  ["settings_view.rs:setting_field_column:col.set_width(width)",1],
+  ["settings_view.rs:show_work_settings:size.set_width(theme::MANAGEMENT_FILTER_DROPDOWN_WIDTH)",1],
+  ["settings_view.rs:show_accounts:col.set_width(theme::SETTINGS_ACCOUNT_PICKER_MAX_WIDTH)",1],
+  ["settings_view.rs:show_account_rows:input.set_width(width)",1],
+  ["settings_help.rs:icon:details.set_width(width-theme::SPACE_24)",1],
+  ["category_manager.rs:show_page:actions.set_width(actions_rect.width())",2],
+  ["category_manager.rs:show_page:search.set_width(search_rect.width())",2],
+  ["client_manager.rs:show_page:search.set_width(search_rect.width())",2],
+  ["client_manager.rs:show_page:actions.set_width(actions_rect.width())",1],
+  ["client_manager.rs:show_page:actions.set_width(action_rect.width())",1],
+  ["excel_manager.rs:show_page:search.set_width(search_rect.width())",1],
+  ["excel_manager.rs:show_page:dates.set_width(dates_rect.width())",1],
+  ["excel_manager.rs:show_page:actions.set_width(actions_rect.width())",1],
+  ["freight_manager.rs:show_groups:tools.set_width(left_rect.width())",1],
+  ["freight_manager.rs:show_groups:bulk.set_width(right_controls_rect.width())",1],
+  ["freight_manager.rs:show_groups:control.set_width(selector_rect.width())",1],
+  ["freight_manager.rs:show_groups:actions.set_width(actions_rect.width())",1],
+  ["freight_manager.rs:rate_toolbar:tools.set_width(toolbar_rect.width())",1],
+  ["freight_manager.rs:rate_toolbar:field.set_width(search_rect.width())",1],
+  ["freight_manager.rs:show_rates:buttons.set_width(rect.width())",1],
+  ["freight_manager.rs:show_history:buttons.set_width(action_rect.width())",1],
+  ["order_history_manager.rs:draw_line:actions.set_width(control.width())",1],
+  ["order_history_manager.rs:excel_export_date_controls:line.set_width(first.width())",1],
+  ["order_history_manager.rs:excel_export_date_controls:line.set_width(second.width())",1],
+  ["order_history_manager.rs:history_date_controls:line.set_width(first.width())",1],
+  ["order_history_manager.rs:history_date_controls:line.set_width(second.width())",1],
+  ["order_history_manager.rs:show_page:search.set_width(search_rect.width())",1],
+  ["order_history_manager.rs:show_page:dates.set_width(date_rect.width())",1],
+  ["category_dropdown.rs:crumbs_row:rows.set_max_width(width)",1],
+  ["category_dropdown.rs:menu_body:menu.set_min_width(popup_width)",1],
+  ["category_dropdown.rs:menu_body:menu.set_max_width(popup_width)",1],
+  ["category_dropdown.rs:menu_body:menu.set_width(popup_width)",1],
+  ["composite_reception.rs:row:contacts.set_min_width(row_width)",1],
+  ["floating_notice.rs:show:inner.set_width(text_rect.width())",1],
+  ["floating_notice.rs:show:content.set_width(text_rect.width().max(1.0))",1],
+  ["ui_layout.rs:reception_goods_viewport:child.set_width(rect.width())",1],
+  ["ui_layout.rs:reception_items_body:ui.set_width(width)",1],
+  ["ui_layout.rs:reception_items_body:ui.set_min_width(width)",1],
+  ["ui_layout.rs:management_top_content:inset.set_min_width(inset.available_width())",1],
+  ["table/mod.rs:management_table_row_body:ui.set_min_width(width)",1],
+  ["table/mod.rs:register_rows:body.set_min_width(width)",1],
+  ["navigation.rs:reception_recipient_navigator:segments.set_width(inner.width())",1],
+  ["navigation.rs:reception_recipient_navigator:popup.set_max_width(320.0)",1],
+  ["navigation.rs:date_calendar:calendar.set_min_width(theme::CALENDAR_GRID_WIDTH)",1],
+  ["ui_primitives.rs:date_navigation_segmented_surface:segments.set_width(inner.width())",1],
+  ["dropdown/mod.rs:management_dropdown_inner:menu.set_min_width(width)",1],
+  ["dropdown/mod.rs:management_dropdown_inner:menu.set_max_width(width)",1],
+  ["dropdown/mod.rs:management_dropdown_inner:choices.set_width(width)",1],
+  ["dropdown/mod.rs:management_searchable_dropdown:menu.set_min_width(popup_width)",1],
+  ["dropdown/mod.rs:management_searchable_dropdown:menu.set_max_width(popup_width)",1],
+  ["dropdown/mod.rs:management_searchable_dropdown:menu.set_width(popup_width)",1],
+]);
+export function auditCardWidths(source,file){
+  const tokens=productionTokens(source),v=tokens.map(t=>t.v),hits=[],used=new Map();
+  const setters=new Set(["set_min_width","set_width","set_max_width"]);
+  let fn="";
+  for(let i=0;i<v.length;i++){
+    if(v[i]==="fn"&&/^[A-Za-z_]\w*$/.test(v[i+1]??""))fn=v[i+1];
+    const name=v[i]?.replace(/^r#/,"");
+    if(!setters.has(name)||![".","::"].includes(v[i-1]))continue;
+    // Also reject method references/UFCS forms; none is a reviewed exception.
+    let end=i;
+    if(v[i+1]==="("){
+      let depth=0;
+      for(let j=i+1;j<v.length;j++){
+        if(v[j]==="(")depth++;
+        else if(v[j]===")"&&--depth===0){end=j;break;}
+      }
+    }
+    const call=v.slice(Math.max(0,i-2),end+1).join("");
+    const key=file+":"+fn+":"+call;
+    const count=(used.get(key)||0)+1;
+    used.set(key,count);
+    if(count>(widthWriteAllowances.get(key)||0)){
+      hits.push({line:tokens[i].line,rule:"raw UI width write: "+call+
+        "; use card::apply_width_policy / shared card or viewport geometry"});
+    }
+  }
+  return hits;
+}
+function cardWidthSelfTest(){
+  const check=(s,file="new_screen.rs")=>auditCardWidths(s,file).length;
+  const cases=[
+    ["fn show(){card.set_width(320.0);}",1],
+    ["fn show(){card.set_min_width(w);card.set_max_width(w);}",2],
+    ["fn show(){egui::Ui::set_width(ui,w);}",1],
+    ["fn show(){let write=Ui::set_width;}",1],
+    ["fn show(){ui.r#set_width(w);}",1],
+    ["fn show(){crate::card::apply_width_policy(ui,CardWidthPolicy::FillAvailable,w);}",0],
+    ["fn show(){scroll_area(axes).max_width(w);}",0],
+    ['fn show(){/* ui.set_width(w); */ let s="ui.set_width(w)";}',0],
+    ["#[cfg(test)] mod tests{fn t(){ui.set_width(w);}} fn show(){}",0],
+  ];
+  for(const [source,expected] of cases)assert.equal(check(source),expected,source);
+  const owner="fn apply_width_policy(){ui.set_min_width(width);ui.set_width(width);ui.set_max_width(width);}";
+  assert.equal(check(owner,"card/mod.rs"),0);
+  assert.equal(check(owner,"new_screen.rs"),3);
+  assert.equal(check(owner.replace("ui.set_min_width(width)","ui.set_min_width(width+1.0)"),"card/mod.rs"),1);
+  assert.equal(check("fn other(){ui.set_width(width);}","card/mod.rs"),1);
+  const viewport="fn details_and_freight(){pane.set_width(review_rect.width());}";
+  assert.equal(check(viewport,"main.rs"),0);
+  assert.equal(check(viewport.replace("pane.","card."),"main.rs"),1);
+  assert.equal(check("fn details_and_freight(){"+"pane.set_width(review_rect.width());".repeat(4)+"}","main.rs"),1);
+  console.log("EGUI_CARD_WIDTH_SELFTEST_PASS",cases.length+7);
 }
 
 export function audit(source,file,checkTableContracts=false){
@@ -1323,6 +1477,7 @@ function main(){
   contextLockSelfTest();
   cardHeightSelfTest();
   indirectCardHeightSelfTest();
+  cardWidthSelfTest();
   if(process.argv.includes("--self-test"))return;
   const root=resolve(fileURLToPath(new URL("..",import.meta.url)));
   const walk=p=>readdirSync(p,{withFileTypes:true}).flatMap(e=>
@@ -1337,7 +1492,7 @@ function main(){
     const owner=file.endsWith("/mod.rs")?file.split("/")[0]:file.replace(/\.rs$/,"");
     if(dependencyOwners.has(owner))graph.set(owner,sharedDependencies(source,owner));
     for(const rule of designTokenViolations(source,file)){failures++;console.error(file+": "+rule);}
-    for(const hit of [...audit(source,file,true),...auditComposite(source,file,true),...auditContextLocks(source,file),...auditCardHeights(source,file),...auditIndirectCardHeights(source,file),...auditManagedLayout(source,file)]){
+    for(const hit of [...audit(source,file,true),...auditComposite(source,file,true),...auditContextLocks(source,file),...auditCardHeights(source,file),...auditIndirectCardHeights(source,file),...auditCardWidths(source,file),...auditManagedLayout(source,file)]){
       failures++;console.error(file+":"+hit.line+" "+hit.rule);
     }
   }
