@@ -595,3 +595,71 @@ mod shared_action_style_tests{
         }
     }
 }
+
+// Shared controls and presentation profiles.
+/// A compact KakaoTalk identity mark, used only as a visual menu prefix.
+/// The native Kakao HWND and order-matching logic remain unchanged.
+pub fn kakao_menu_icon(ui:&mut Ui) -> Response {
+    let side=theme::KAKAO_MENU_ICON_SIZE;
+    let (rect,response)=ui.allocate_exact_size(Vec2::splat(side),Sense::hover());
+    let painter=ui.painter();
+    painter.rect_filled(rect,4.0,theme::KAKAO_ICON_YELLOW);
+    let bubble=Rect::from_min_max(
+        egui::pos2(rect.left()+3.6,rect.top()+4.7),
+        egui::pos2(rect.right()-3.6,rect.bottom()-5.8),
+    );
+    painter.rect_filled(bubble,5.0,theme::KAKAO_ICON_INK);
+    painter.add(egui::Shape::convex_polygon(vec![
+        egui::pos2(rect.left()+6.0,rect.bottom()-6.5),
+        egui::pos2(rect.left()+5.3,rect.bottom()-3.0),
+        egui::pos2(rect.left()+9.2,rect.bottom()-6.3),
+    ],theme::KAKAO_ICON_INK,Stroke::NONE));
+    for dx in [-2.8,0.0,2.8] {
+        painter.circle_filled(
+            egui::pos2(rect.center().x+dx,rect.center().y-0.8),
+            0.75,theme::KAKAO_ICON_YELLOW
+        );
+    }
+    response
+}
+
+/// Keep paired reception actions at their content widths. Available pane
+/// space stays empty rather than stretching two buttons to the pane edges.
+/// The row wraps only if Korean labels cannot fit without clipping.
+pub fn paired_actions(
+    ui: &mut Ui,
+    left: (&str, theme::ButtonRole, bool),
+    right: (&str, theme::ButtonRole, bool),
+) -> (Response, Response) {
+    ui.horizontal_wrapped(|ui| {
+        (
+            action(ui, left.0, left.1, left.2),
+            action(ui, right.0, right.1, right.2),
+        )
+    }).inner
+}
+
+/// Shared management tab roles (content width, no full-page stretching).
+pub fn management_tabs(ui:&mut Ui,labels:&[(&str,bool,bool)]) -> Option<usize> {
+    let mut pressed=None;
+    ui.horizontal(|bar|{
+        bar.spacing_mut().item_spacing.x=theme::SPACE_4;
+        for (index,(title,active,enabled)) in labels.iter().enumerate() {
+            let role=if *active {theme::ButtonRole::ActiveManagementTab}
+                else {theme::ButtonRole::ManagementTab};
+            if action(bar,title,role,*enabled).clicked() {
+                pressed=Some(index);
+            }
+        }
+    });
+    pressed
+}
+
+/// The add/rollback modes occupy exactly the same header action slot.
+/// Never insert a pending-assignment action between the item and freight rows.
+pub fn reception_item_header_action(ui:&mut Ui,rollback:bool,enabled:bool)->Response{
+    action_with_min_width(
+        ui,if rollback{"선택 취소"}else{"＋ 상품 추가"},
+        theme::ButtonRole::Standard,enabled,112.0
+    )
+}

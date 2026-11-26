@@ -5205,7 +5205,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                             typography::ocr_zoom_label(review.zoom)
                                         )
                                     );
-                                    components::ocr_zoom_slider(zoom,&mut review.zoom);
+                                    crate::input::ocr_zoom_slider(zoom,&mut review.zoom);
                                 }
                             );
                         },
@@ -5840,7 +5840,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
     ){
         // Single shared card chrome: Reception and manual classification
         // use identical header, spacing, divider and panel geometry.
-        components::reception_section_with_header(
+        crate::card::reception_section_with_header(
             ui,title,minimum_height,header_right,content
         );
     }
@@ -5885,7 +5885,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                         // Left: Kakao identity icon + one two-option mode
                         // group. Keep 8pt between the icon and first mode
                         // button AND between the two mode buttons.
-                        components::kakao_menu_icon(toolbar);
+                        crate::button::kakao_menu_icon(toolbar);
                         toolbar.spacing_mut().item_spacing.x=
                             theme::KAKAO_ICON_MODE_GAP;
                         let mode_role=|active|if active{
@@ -6263,7 +6263,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                 }
             },|body|{
                 body.spacing_mut().item_spacing.y=0.0;
-                let available=components::docked_section_body_height(height)
+                let available=crate::card::docked_section_body_height(height)
                     .min(body.available_height().max(0.0));
                 let (body_rect,_)=body.allocate_exact_size(
                     Vec2::new(body.available_width(),available),Sense::hover()
@@ -6281,7 +6281,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                 let document_rect=Rect::from_min_max(
                     egui::pos2(body_rect.left(),document_top),body_rect.max
                 );
-                components::paint_source_document_surface(body,document_rect);
+                crate::card::paint_source_document_surface(body,document_rect);
                 if document_rect.height()>0.0{
                     let inner=document_rect.shrink(theme::SPACE_4);
                     body.scope_builder(
@@ -6401,7 +6401,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                 }
             },|body|{
                 body.spacing_mut().item_spacing.y=0.0;
-                let available=components::docked_section_body_height(height)
+                let available=crate::card::docked_section_body_height(height)
                     .min(body.available_height().max(0.0));
                 let (body_rect,_)=body.allocate_exact_size(
                     Vec2::new(body.available_width(),available),Sense::hover()
@@ -6417,7 +6417,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                 let document_rect=Rect::from_min_max(
                     egui::pos2(body_rect.left(),document_top),body_rect.max
                 );
-                components::paint_source_document_surface(body,document_rect);
+                crate::card::paint_source_document_surface(body,document_rect);
                 if document_rect.height()>0.0{
                     let inner=document_rect.shrink(theme::SPACE_4);
                     body.scope_builder(
@@ -6540,7 +6540,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                 // replace the entire source body instead of overlaying a
                 // small status line on an interactive editor or intake menu.
                 self.source_hover = None;
-                let available_body = components::docked_section_body_height(height)
+                let available_body = crate::card::docked_section_body_height(height)
                     .min(ui.available_height().max(0.0));
                 let (body_rect, _) = ui.allocate_exact_size(
                     Vec2::new(ui.available_width(), available_body),
@@ -6618,7 +6618,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                 );
             } else if has_direct_input {
                 self.source_hover=None;
-                let available_body=components::docked_section_body_height(height)
+                let available_body=crate::card::docked_section_body_height(height)
                     .min(ui.available_height().max(0.0));
                 let (body_rect,_)=ui.allocate_exact_size(
                     Vec2::new(ui.available_width(),available_body),Sense::hover()
@@ -6673,7 +6673,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                 // of allocations mixed with scope_builder() could advance the
                 // parent cursor so the document border landed on the client
                 // card's bottom border. Position all three from ONE origin.
-                let available_body = components::docked_section_body_height(height)
+                let available_body = crate::card::docked_section_body_height(height)
                     .min(ui.available_height().max(0.0));
                 let (body_rect, _) = ui.allocate_exact_size(
                     Vec2::new(ui.available_width(), available_body),
@@ -6965,7 +6965,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                 self.source_hover=None;
                 // Narrow panes may need a stacked button row. Scroll ONLY the
                 // intake instructions, never the source/message divider.
-                let intake_height = components::docked_section_body_height(height)
+                let intake_height = crate::card::docked_section_body_height(height)
                     .min(ui.available_height().max(0.0));
                 // The two inter-group dividers use the fixed shared geometry.
                 // Distribute remaining space above and below the three groups.
@@ -7004,7 +7004,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                             "복사한 텍스트와 이미지를 자동으로 구분해 인식합니다."
                         ));
                         intake.add_space(theme::SPACE_8);
-                        let (agency, dealer) = components::paired_actions(
+                        let (agency, dealer) = crate::button::paired_actions(
                             intake,
                             ("대리발송", ButtonRole::Emphasized, can_receive_clipboard),
                             ("대리점 납품", ButtonRole::Emphasized, can_receive_clipboard),
@@ -7019,7 +7019,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                         crate::ui_primitives::section_divider(intake);
                         intake.label(typography::subsection_heading("다른 방법으로 접수"));
                         intake.add_space(theme::SPACE_8);
-                        let (direct,capture) = components::paired_actions(
+                        let (direct,capture) = crate::button::paired_actions(
                             intake,
                             ("직접 입력", ButtonRole::Emphasized, true),
                             // A new region can be captured even if the clipboard
@@ -7170,7 +7170,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                 let button_row_height=if body.available_width()<280.0{
                     theme::ACTION_STANDARD_HEIGHT*2.0+theme::SPACING
                 }else{theme::ACTION_STANDARD_HEIGHT};
-                let available=components::docked_section_body_height(height)
+                let available=crate::card::docked_section_body_height(height)
                     .min(body.available_height().max(0.0));
                 let message_height=(available-button_row_height
                     -theme::RECEPTION_MESSAGE_ACTION_GAP).max(0.0);
@@ -7179,7 +7179,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                 let (message_rect,_)=body.allocate_exact_size(
                     Vec2::new(body.available_width(),message_height),Sense::hover()
                 );
-                components::paint_source_document_surface(body,message_rect);
+                crate::card::paint_source_document_surface(body,message_rect);
                 if message_height>0.0 {
                     let inner=message_rect.shrink(theme::SPACE_4);
                     body.scope_builder(
@@ -7299,14 +7299,14 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                 theme::ACTION_STANDARD_HEIGHT
             };
             let bottom_controls = button_row_height + theme::RECEPTION_MESSAGE_ACTION_GAP;
-            let available_body = components::docked_section_body_height(height)
+            let available_body = crate::card::docked_section_body_height(height)
                 .min(ui.available_height().max(0.0));
             let field_height = (available_body - bottom_controls).max(0.0);
             let (field_rect, _) = ui.allocate_exact_size(
                 Vec2::new(ui.available_width(), field_height),
                 Sense::hover(),
             );
-            components::paint_source_document_surface(ui, field_rect);
+            crate::card::paint_source_document_surface(ui, field_rect);
             components::reception_message_footer_gap(ui);
             let _=components::reception_message_copy_actions(ui,false);
         });
@@ -7433,7 +7433,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                     pane.set_height(review_rect.height());
                     Self::section(pane,"확인할 내용",review_height,|ui|{
                         crate::scrollbar::scroll_area(crate::scrollbar::ScrollAxes::Vertical)
-                            .max_height(components::docked_section_body_height(review_height))
+                            .max_height(crate::card::docked_section_body_height(review_height))
                             .id_salt(("native-workflow-issues",group.id.as_str()))
                             .show(ui,|issues|{
                                 for issue in &group.issues{
@@ -7486,7 +7486,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                             );
                         },|ui|{
                         crate::scrollbar::scroll_area(crate::scrollbar::ScrollAxes::Vertical)
-                            .max_height(components::docked_section_body_height(recipient_height))
+                            .max_height(crate::card::docked_section_body_height(recipient_height))
                             .auto_shrink([false,false])
                             .id_salt(("native-workflow-recipient-readonly",ship.id.as_str()))
                             .show(ui,|contents|{
@@ -7568,7 +7568,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                     pane.set_height(bottom_rect.height());
                     Self::section_with_header(pane,"품목 및 운임",bottom_rect.height(),
                         |header|{
-                            confirmed_add=components::reception_item_header_action(
+                            confirmed_add=crate::button::reception_item_header_action(
                                 header,false,confirmed_editable && confirmed_controls_idle).clicked();
                         },|ui|{
                         components::reception_docked_goods_scroll(
@@ -7911,7 +7911,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                     pane.set_height(review_rect.height());
                     Self::section(pane,"확인할 내용",review_height,|ui|{
                         crate::scrollbar::scroll_area(crate::scrollbar::ScrollAxes::Vertical)
-                            .max_height(components::docked_section_body_height(review_height))
+                            .max_height(crate::card::docked_section_body_height(review_height))
                             .show(ui,|issues|{
                                 if let Some(rows)=recognition.get("issues")
                                     .and_then(serde_json::Value::as_array){
@@ -7951,7 +7951,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                         },|ui|{
                             if let Some(row)=recipient{
                                 crate::scrollbar::scroll_area(crate::scrollbar::ScrollAxes::Vertical)
-                                    .max_height(components::docked_section_body_height(recipient_height))
+                                    .max_height(crate::card::docked_section_body_height(recipient_height))
                                     .id_salt(("pending-hover-recipient",draft.id.as_str()))
                                     .auto_shrink([false,false])
                                     .show(ui,|contents|{
@@ -7990,7 +7990,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                     Self::section_with_header(
                         pane,"품목 및 운임",bottom_rect.height(),
                         |header|{
-                            components::reception_item_header_action(header,false,false);
+                            crate::button::reception_item_header_action(header,false,false);
                         },|ui|{
                             components::reception_docked_goods_scroll(
                                 ui,bottom_rect.height(),("pending-hover-products",draft.id.as_str()),
@@ -8130,7 +8130,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                 }, |ui| {
                     crate::scrollbar::scroll_area(crate::scrollbar::ScrollAxes::Vertical)
                         .id_salt("reception-review-content-scroll")
-                        .max_height(components::docked_section_body_height(review_height))
+                        .max_height(crate::card::docked_section_body_height(review_height))
                         .auto_shrink([false, false])
                         .show(ui, |ui| {
                     if let Some(analysis)=&self.analysis {
@@ -8230,7 +8230,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                             // content to scroll when the user narrows this pane.
                             crate::scrollbar::scroll_area(crate::scrollbar::ScrollAxes::Vertical)
                                 .id_salt("recognized-recipient-fields")
-                                .max_height(components::docked_section_body_height(recipient_height)
+                                .max_height(crate::card::docked_section_body_height(recipient_height)
                                     .min(ui.available_height().max(0.0)))
                                 .auto_shrink([false, false])
                                 .show(ui, |fields| {
@@ -8335,7 +8335,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                 let mut header_add_item=false;
                 Self::section_with_header(pane,"품목 및 운임",remaining,
                     |header|{
-                        let response=components::reception_item_header_action(
+                        let response=crate::button::reception_item_header_action(
                             header,false,editable && selected.is_some());
                         if selected.is_some_and(|row|required.contains(reception_service::text(row,"id"),"addItem")){
                             crate::input::paint_required_input(header,response.rect);

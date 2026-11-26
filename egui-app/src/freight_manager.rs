@@ -775,7 +775,7 @@ impl FreightManager {
         // shared primary-card border below its 59th-round position.
         ui.add_space(theme::SPACE_8);
         let selected_tab=freight_top_content(ui,|top|
-            components::management_tabs(top, &[
+            crate::button::management_tabs(top, &[
                 (FreightTab::LABELS[0], self.tab == FreightTab::Groups, true),
                 (FreightTab::LABELS[1], self.tab == FreightTab::Rates, true),
                 (FreightTab::LABELS[2], self.tab == FreightTab::History, true),

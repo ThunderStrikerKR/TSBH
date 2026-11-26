@@ -397,7 +397,7 @@ impl ClientManager {
             if manager.take_clients_approved(){self.show_messages=false;}
         }
         let chosen_tab=components::management_top_content(ui,|top|
-            components::management_tabs(top,&[
+            crate::button::management_tabs(top,&[
                 ("거래처 목록",!self.show_messages,true),
                 ("자동 메시지 편집",self.show_messages,true),
             ])
@@ -658,7 +658,7 @@ impl ClientManager {
                         theme::SPACE_8,theme::SPACE_8
                     );
                     for tag in &tags{
-                        if components::removable_tag_chip(chips,tag).clicked(){
+                        if crate::popup::removable_tag_chip(chips,tag).clicked(){
                             removed=Some(tag.to_owned());
                         }
                     }

@@ -536,7 +536,7 @@ impl SettingsView{
         if reload{self.reload_confirmation=true;}
         ui.add_space(theme::SPACE_8);
         let selected_tab=components::management_top_content(ui,|top|
-            components::management_tabs(top,&[
+            crate::button::management_tabs(top,&[
                 ("기본 설정",self.tab==SettingsTab::Basic,true),
                 ("파일 관리",self.tab==SettingsTab::Files,true),
                 ("데이터 관리",self.tab==SettingsTab::Data,true),
@@ -1193,7 +1193,7 @@ mod management_async_layout_tests{
                     ui.add_space(theme::SPACE_8);
                     let tabs_top=ui.cursor().top();
                     components::management_top_content(ui,|top|{
-                        components::management_tabs(top,&[
+                        crate::button::management_tabs(top,&[
                             ("기본 설정",true,true),
                             ("파일 관리",false,true),
                             ("데이터 관리",false,true),

@@ -14,7 +14,10 @@ use crate::scrollbar::*;
 use crate::popup::*;
 use crate::card::*;
 // Composite widgets import primitive renderers from their owning modules.
-use crate::button::icon_action_button;
+#[cfg(test)]
+use crate::button::{management_tabs,reception_item_header_action};
+use crate::input::reception_recipient_value_hit;
+use crate::dropdown::reception_cod_dropdown;
 use crate::button::{date_navigation_segment_button,date_navigation_button_surface,DateNavigationSegmentGlyph};
 #[cfg(test)]
 use crate::button::{management_date_segment_corners,ManagementDateSegmentEdge};
@@ -1096,66 +1099,8 @@ mod common_action_tooltip_tests{
     }
 }
 
-/// A compact KakaoTalk identity mark, used only as a visual menu prefix.
-/// The native Kakao HWND and order-matching logic remain unchanged.
-pub fn kakao_menu_icon(ui:&mut Ui) -> Response {
-    let side=theme::KAKAO_MENU_ICON_SIZE;
-    let (rect,response)=ui.allocate_exact_size(Vec2::splat(side),Sense::hover());
-    let painter=ui.painter();
-    painter.rect_filled(rect,4.0,theme::KAKAO_ICON_YELLOW);
-    let bubble=Rect::from_min_max(
-        egui::pos2(rect.left()+3.6,rect.top()+4.7),
-        egui::pos2(rect.right()-3.6,rect.bottom()-5.8),
-    );
-    painter.rect_filled(bubble,5.0,theme::KAKAO_ICON_INK);
-    painter.add(egui::Shape::convex_polygon(vec![
-        egui::pos2(rect.left()+6.0,rect.bottom()-6.5),
-        egui::pos2(rect.left()+5.3,rect.bottom()-3.0),
-        egui::pos2(rect.left()+9.2,rect.bottom()-6.3),
-    ],theme::KAKAO_ICON_INK,Stroke::NONE));
-    for dx in [-2.8,0.0,2.8] {
-        painter.circle_filled(
-            egui::pos2(rect.center().x+dx,rect.center().y-0.8),
-            0.75,theme::KAKAO_ICON_YELLOW
-        );
-    }
-    response
-}
 
-/// Removable search-tag chip. The modal nested-frame master owns its fill,
-/// outline and radius; only the chip's approved compact vertical inset differs.
-pub fn removable_tag_chip(ui:&mut Ui,tag:&str)->Response{
-    let visible=if tag.chars().count()>22{
-        format!("{}…",tag.chars().take(22).collect::<String>())
-    }else{tag.to_owned()};
-    crate::popup::modal_nested_role_frame(crate::popup::ModalNestedRole::CompactTag)
-        .show(ui,|chip|{
-            chip.horizontal(|line|{
-                line.spacing_mut().item_spacing.x=theme::SPACE_4;
-                let label=line.label(typography::body(&visible));
-                shortened_text_tooltip(label,&visible,tag);
-                icon_action_button(
-                    line,"×",true
-                )
-            }).inner
-        }).inner
-}
 
-/// Keep paired reception actions at their content widths. Available pane
-/// space stays empty rather than stretching two buttons to the pane edges.
-/// The row wraps only if Korean labels cannot fit without clipping.
-pub fn paired_actions(
-    ui: &mut Ui,
-    left: (&str, theme::ButtonRole, bool),
-    right: (&str, theme::ButtonRole, bool),
-) -> (Response, Response) {
-    ui.horizontal_wrapped(|ui| {
-        (
-            crate::button::action(ui, left.0, left.1, left.2),
-            crate::button::action(ui, right.0, right.1, right.2),
-        )
-    }).inner
-}
 
 
 /// Four distinct panes replace the word "Win". This is a static glyph
@@ -1269,13 +1214,6 @@ pub fn reception_capture_shortcut_hint(ui:&mut Ui){
     });
 }
 
-/// The actual content space in a fixed-height docked section. Reserve
-/// exactly the existing top/bottom frame padding, title, divider and gaps.
-/// Section widgets must not impose independent minimums that can spill
-/// across the source/message splitter.
-pub fn docked_section_body_height(section_height: f32) -> f32 {
-    (section_height - theme::RECEPTION_SECTION_CHROME_HEIGHT).max(0.0)
-}
 
 /// The fixed goods viewport owns its allocated rectangle. Content may
 /// scroll, but an egui child reporting a larger min_rect must not grow
@@ -1528,58 +1466,7 @@ pub fn reception_recipient_navigator(
 }
 
 
-/// The approved Reception card chrome is shared with the manual worksheet.
-/// The same 16pt card heading, 12pt inset, divider and header-action alignment
-/// now render in both screens; business actions stay in their callers.
-pub fn reception_section_with_header(
-    ui:&mut Ui,title:&str,minimum_height:f32,
-    header_right:impl FnOnce(&mut Ui),content:impl FnOnce(&mut Ui),
-){
-    let width=ui.available_width();
-    let _card=crate::card::docked_pane_frame().show(ui,|ui|{
-        let width_inset=2.0*theme::SECTION_PADDING;
-        let height_inset=theme::RECEPTION_SECTION_HEADER_TOP+theme::RECEPTION_PANE_PADDING_Y;
-        ui.set_min_width((width-width_inset).max(60.0));
-        ui.set_min_height((minimum_height-height_inset).max(48.0));
-        let body_item_spacing=theme::SPACING;
-        ui.spacing_mut().item_spacing.y=0.0;
-        let _header=ui.allocate_ui_with_layout(
-            Vec2::new(ui.available_width(),theme::SECTION_HEADER_HEIGHT),
-            Layout::left_to_right(Align::Center),|header|{
-                header.set_min_height(theme::SECTION_HEADER_HEIGHT);
-                header.label(typography::section_heading(title));
-                header.with_layout(Layout::right_to_left(Align::Center),header_right);
-            }
-        );
-        #[cfg(test)]
-        crate::ui_test_support::record(reception_geometry_role(title,true),_header.response.rect);
-        let (_transition,_divider)=section_divider_with_top_gap(ui,theme::SECTION_DIVIDER_GAP);
-        #[cfg(test)]
-        crate::ui_test_support::record("source divider",_divider);
-        let _body=ui.scope(|body|{
-            body.spacing_mut().item_spacing.y=body_item_spacing;
-            content(body);
-        });
-        #[cfg(test)]
-        crate::ui_test_support::record("source body",_body.response.rect);
-    });
-    #[cfg(test)]
-    crate::ui_test_support::record(reception_geometry_role(title,false),_card.response.rect);
-}
 
-#[cfg(test)]
-fn reception_geometry_role(title:&str,header:bool)->&'static str{
-    match (title,header){
-        ("발주 원문",false)=>"source card",("발주 원문",true)=>"source header",
-        ("복사용 자동 메시지",false)=>"message card",("복사용 자동 메시지",true)=>"message header",
-        ("확인할 내용",false)=>"review card",("확인할 내용",true)=>"review header",
-        ("수취인별 주문 정보",false)=>"recipient card",("수취인별 주문 정보",true)=>"recipient header",
-        ("품목 및 운임",false)=>"items card",("품목 및 운임",true)=>"items header",
-        ("발주서 합계",false)=>"total card",("발주서 합계",true)=>"total header",
-        ("처리 중인 주문",false)=>"orders card",("처리 중인 주문",true)=>"orders header",
-        (_,false)=>"other reception card",(_,true)=>"other reception header",
-    }
-}
 
 /// Draw BEFORE TextEdit renders its glyphs: egui's normal TextEdit background
 /// is disabled only for linked fields, so the same fill/radius used by
@@ -1595,20 +1482,6 @@ fn reception_recipient_linked_background(
     source_highlight::paint_active_background(ui,rect);
 }
 
-/// Read-only TextEdit does not reliably own the egui hover response.
-/// One shared hit target now owns field hover, I-beam cursor and inline-click
-/// handoff for both recipient details and read-only workflow views.
-fn reception_recipient_value_hit(ui:&mut Ui,display:&Response)->Response{
-    let hit=ui.interact(
-        display.rect,
-        display.id.with("recipient-value-hit"),
-        Sense::click()
-    );
-    if hit.hovered(){
-        ui.ctx().set_cursor_icon(egui::CursorIcon::Text);
-    }
-    hit
-}
 
 /// Every recipient field shares one 36pt baseline. The two telephone
 /// editors occupy the same FULL-WIDTH row: mobile begins at the same x
@@ -1742,20 +1615,7 @@ pub fn reception_recipient_fields(
     responses
 }
 
-/// The source editor and automatic-message canvas use the SAME surface
-/// tokens. Painting a reserved rect avoids Frame::show shrinking an empty
-/// message body and moving the fixed copy-action row.
-pub fn paint_source_document_surface(ui: &Ui, rect: Rect) {
-    theme::paint_bordered_surface(ui.painter(),rect,theme::CONTROL_RADIUS,theme::INPUT,theme::BORDER);
-}
 
-/// The 70pt client identification band is INFORMATION, not an editable
-/// source document. Keep its exact reserved Rect and use the management
-/// master's muted inner-row colors to establish a quieter visual tier.
-pub fn paint_reception_client_summary_surface(ui:&Ui,rect:Rect){
-    theme::paint_bordered_surface(ui.painter(),rect,theme::CONTROL_RADIUS,
-        theme::RECEPTION_CLIENT_SUMMARY_BG,theme::RECEPTION_CLIENT_SUMMARY_BORDER);
-}
 
 /// Untyped recognition/workflow notices retain informational coloring.
 pub fn reception_review_status(ui:&mut Ui,message:&str){
@@ -2380,14 +2240,6 @@ pub fn collapsing_header(title:impl Into<egui::WidgetText>)->egui::CollapsingHea
     egui::CollapsingHeader::new(title).icon(paint_collapsing_header_icon)
 }
 
-/// OCR image zoom uses a fixed control width and a separate formatted label.
-/// Keep the native slider's keyboard and drag behavior.
-pub fn ocr_zoom_slider(ui:&mut Ui,zoom:&mut f32)->Response{
-    ui.add_sized(
-        Vec2::new(118.0,24.0),
-        egui::Slider::new(zoom,0.5..=4.0).show_value(false)
-    )
-}
 
 fn paint_collapsing_header_icon(
     ui:&mut Ui,openness:f32,response:&Response
@@ -2399,21 +2251,6 @@ fn paint_collapsing_header_icon(
     );
 }
 
-/// Shared management tab roles (content width, no full-page stretching).
-pub fn management_tabs(ui:&mut Ui,labels:&[(&str,bool,bool)]) -> Option<usize> {
-    let mut pressed=None;
-    ui.horizontal(|bar|{
-        bar.spacing_mut().item_spacing.x=theme::SPACE_4;
-        for (index,(title,active,enabled)) in labels.iter().enumerate() {
-            let role=if *active {theme::ButtonRole::ActiveManagementTab}
-                else {theme::ButtonRole::ManagementTab};
-            if crate::button::action(bar,title,role,*enabled).clicked() {
-                pressed=Some(index);
-            }
-        }
-    });
-    pressed
-}
 
 /// Select a row in an editor's left-hand list. This is NOT a table
 /// record: it has a 14pt item title and a separate 12pt state caption,
@@ -3094,25 +2931,6 @@ pub struct ReceptionFreightEdit {
     #[cfg(test)]
     pub remote_rect:Option<Rect>,
 }
-/// Do not swap the COD selector for a textual caption during a Rust save.
-/// The shared dropdown keeps its width, baseline, outline and chevron in
-/// BOTH states; only hit-testing is disabled while another edit is pending.
-fn reception_cod_dropdown(
-    ui:&mut Ui,collect:Option<bool>,editable:bool
-)->(bool,Response){
-    let mut selected=collect.unwrap_or(false);
-    let label=match collect {
-        Some(true)=>"착불",
-        Some(false)=>"선불",
-        None if editable=>"선불",
-        None=>"—",
-    };
-    let response=management_dropdown_compact(ui,label,90.0,editable,|menu|{
-        management_dropdown_compact_option(menu,&mut selected,false,"선불",90.0);
-        management_dropdown_compact_option(menu,&mut selected,true,"착불",90.0);
-    });
-    (editable && selected!=collect.unwrap_or(false),response)
-}
 
 // Combined intrinsic controls need more width than the fixed 392pt
 // product table. Above this threshold they remain in one horizontal
@@ -3307,14 +3125,6 @@ mod reception_cod_selector_tests {
     }
 }
 
-/// The add/rollback modes occupy exactly the same header action slot.
-/// Never insert a pending-assignment action between the item and freight rows.
-pub fn reception_item_header_action(ui:&mut Ui,rollback:bool,enabled:bool)->Response{
-    crate::button::action_with_min_width(
-        ui,if rollback{"선택 취소"}else{"＋ 상품 추가"},
-        theme::ButtonRole::Standard,enabled,112.0
-    )
-}
 
 
 #[cfg(test)]
@@ -3396,7 +3206,7 @@ mod reception_state_layout_invariance_tests{
         let manual=include_str!("manual_workspace.rs");
         let production=production_source_for_contract(manual);
         assert!(!production.contains("crate::button::action(items_ui,\"상품 선택 취소\""));
-        assert!(production.contains("components::reception_item_header_action("));
+        assert!(production.contains("crate::button::reception_item_header_action("));
         let main=include_str!("main.rs");
         assert!(!main.contains("items_ui.label(typography::status("));
         assert!(!main.contains("components::reception_item_issue_values("));
@@ -3886,7 +3696,7 @@ mod shared_tag_chip_contract_tests {
         let source=include_str!("client_manager.rs");
         let editor=source.split("fn search_tag_editor(").nth(1).unwrap()
             .split("fn editor_fields(").next().unwrap();
-        assert!(editor.contains("components::removable_tag_chip("));
+        assert!(editor.contains("crate::popup::removable_tag_chip("));
         assert!(!editor.contains("egui::Frame::new()"));
         assert!(!editor.contains("egui::Button::new("));
     }

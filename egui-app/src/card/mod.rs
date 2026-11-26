@@ -284,3 +284,80 @@ pub fn paint_shipment_detail_surface(ui:&Ui,block:Rect,fill:Color32,chosen:bool)
     theme::paint_bordered_surface(ui.painter(),block,
         theme::ORDER_HISTORY_RECIPIENT_BLOCK_RADIUS,style.fill,style.stroke.color);
 }
+
+// Shared controls and presentation profiles.
+/// The actual content space in a fixed-height docked section. Reserve
+/// exactly the existing top/bottom frame padding, title, divider and gaps.
+/// Section widgets must not impose independent minimums that can spill
+/// across the source/message splitter.
+pub fn docked_section_body_height(section_height: f32) -> f32 {
+    (section_height - theme::RECEPTION_SECTION_CHROME_HEIGHT).max(0.0)
+}
+
+/// The approved Reception card chrome is shared with the manual worksheet.
+/// The same 16pt card heading, 12pt inset, divider and header-action alignment
+/// now render in both screens; business actions stay in their callers.
+pub fn reception_section_with_header(
+    ui:&mut Ui,title:&str,minimum_height:f32,
+    header_right:impl FnOnce(&mut Ui),content:impl FnOnce(&mut Ui),
+){
+    let width=ui.available_width();
+    let _card=docked_pane_frame().show(ui,|ui|{
+        let width_inset=2.0*theme::SECTION_PADDING;
+        let height_inset=theme::RECEPTION_SECTION_HEADER_TOP+theme::RECEPTION_PANE_PADDING_Y;
+        ui.set_min_width((width-width_inset).max(60.0));
+        ui.set_min_height((minimum_height-height_inset).max(48.0));
+        let body_item_spacing=theme::SPACING;
+        ui.spacing_mut().item_spacing.y=0.0;
+        let _header=ui.allocate_ui_with_layout(
+            Vec2::new(ui.available_width(),theme::SECTION_HEADER_HEIGHT),
+            Layout::left_to_right(Align::Center),|header|{
+                header.set_min_height(theme::SECTION_HEADER_HEIGHT);
+                header.label(typography::section_heading(title));
+                header.with_layout(Layout::right_to_left(Align::Center),header_right);
+            }
+        );
+        #[cfg(test)]
+        crate::ui_test_support::record(reception_geometry_role(title,true),_header.response.rect);
+        let (_transition,_divider)=crate::ui_primitives::section_divider_with_top_gap(ui,theme::SECTION_DIVIDER_GAP);
+        #[cfg(test)]
+        crate::ui_test_support::record("source divider",_divider);
+        let _body=ui.scope(|body|{
+            body.spacing_mut().item_spacing.y=body_item_spacing;
+            content(body);
+        });
+        #[cfg(test)]
+        crate::ui_test_support::record("source body",_body.response.rect);
+    });
+    #[cfg(test)]
+    crate::ui_test_support::record(reception_geometry_role(title,false),_card.response.rect);
+}
+
+#[cfg(test)]
+fn reception_geometry_role(title:&str,header:bool)->&'static str{
+    match (title,header){
+        ("발주 원문",false)=>"source card",("발주 원문",true)=>"source header",
+        ("복사용 자동 메시지",false)=>"message card",("복사용 자동 메시지",true)=>"message header",
+        ("확인할 내용",false)=>"review card",("확인할 내용",true)=>"review header",
+        ("수취인별 주문 정보",false)=>"recipient card",("수취인별 주문 정보",true)=>"recipient header",
+        ("품목 및 운임",false)=>"items card",("품목 및 운임",true)=>"items header",
+        ("발주서 합계",false)=>"total card",("발주서 합계",true)=>"total header",
+        ("처리 중인 주문",false)=>"orders card",("처리 중인 주문",true)=>"orders header",
+        (_,false)=>"other reception card",(_,true)=>"other reception header",
+    }
+}
+
+/// The source editor and automatic-message canvas use the SAME surface
+/// tokens. Painting a reserved rect avoids Frame::show shrinking an empty
+/// message body and moving the fixed copy-action row.
+pub fn paint_source_document_surface(ui: &Ui, rect: Rect) {
+    theme::paint_bordered_surface(ui.painter(),rect,theme::CONTROL_RADIUS,theme::INPUT,theme::BORDER);
+}
+
+/// The 70pt client identification band is INFORMATION, not an editable
+/// source document. Keep its exact reserved Rect and use the management
+/// master's muted inner-row colors to establish a quieter visual tier.
+pub fn paint_reception_client_summary_surface(ui:&Ui,rect:Rect){
+    theme::paint_bordered_surface(ui.painter(),rect,theme::CONTROL_RADIUS,
+        theme::RECEPTION_CLIENT_SUMMARY_BG,theme::RECEPTION_CLIENT_SUMMARY_BORDER);
+}

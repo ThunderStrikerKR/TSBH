@@ -369,3 +369,24 @@ pub fn management_dropdown_compact_option<T:PartialEq>(
         ManagementDropdownOptionStyle::Compact(width),None)
 }
 
+
+// Shared controls and presentation profiles.
+/// Do not swap the COD selector for a textual caption during a Rust save.
+/// The shared dropdown keeps its width, baseline, outline and chevron in
+/// BOTH states; only hit-testing is disabled while another edit is pending.
+pub(crate) fn reception_cod_dropdown(
+    ui:&mut Ui,collect:Option<bool>,editable:bool
+)->(bool,Response){
+    let mut selected=collect.unwrap_or(false);
+    let label=match collect {
+        Some(true)=>"착불",
+        Some(false)=>"선불",
+        None if editable=>"선불",
+        None=>"—",
+    };
+    let response=management_dropdown_compact(ui,label,90.0,editable,|menu|{
+        management_dropdown_compact_option(menu,&mut selected,false,"선불",90.0);
+        management_dropdown_compact_option(menu,&mut selected,true,"착불",90.0);
+    });
+    (editable && selected!=collect.unwrap_or(false),response)
+}

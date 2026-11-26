@@ -932,7 +932,7 @@ impl ProductManager {
         });
         ui.add_space(theme::SPACE_8);
         let pressed=components::management_top_content(ui,|top|
-            components::management_tabs(top,&[
+            crate::button::management_tabs(top,&[
                 ("상품 목록",self.tab==0,true),
                 ("카테고리 관리",self.tab==1,true),
                 ("모델군 관리",self.tab==2,true),

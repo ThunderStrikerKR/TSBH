@@ -1067,3 +1067,23 @@ pub fn modal_labeled_row_with_width<R>(
     }).inner
 }
 
+
+// Shared controls and presentation profiles.
+/// Removable search-tag chip. The modal nested-frame master owns its fill,
+/// outline and radius; only the chip's approved compact vertical inset differs.
+pub fn removable_tag_chip(ui:&mut Ui,tag:&str)->Response{
+    let visible=if tag.chars().count()>22{
+        format!("{}…",tag.chars().take(22).collect::<String>())
+    }else{tag.to_owned()};
+    modal_nested_role_frame(ModalNestedRole::CompactTag)
+        .show(ui,|chip|{
+            chip.horizontal(|line|{
+                line.spacing_mut().item_spacing.x=theme::SPACE_4;
+                let label=line.label(typography::body(&visible));
+                crate::ui_primitives::shortened_text_tooltip(label,&visible,tag);
+                crate::button::icon_action_button(
+                    line,"×",true
+                )
+            }).inner
+        }).inner
+}

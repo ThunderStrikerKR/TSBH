@@ -744,3 +744,28 @@ pub fn paint_required_input(ui:&Ui,rect:Rect){
     painter.rect_stroke(rect,theme::CONTROL_RADIUS,
         Stroke::new(2.0,theme::REQUIRED_INPUT_BORDER),egui::StrokeKind::Inside);
 }
+
+// Shared controls and presentation profiles.
+/// Read-only TextEdit does not reliably own the egui hover response.
+/// One shared hit target now owns field hover, I-beam cursor and inline-click
+/// handoff for both recipient details and read-only workflow views.
+pub(crate) fn reception_recipient_value_hit(ui:&mut Ui,display:&Response)->Response{
+    let hit=ui.interact(
+        display.rect,
+        display.id.with("recipient-value-hit"),
+        Sense::click()
+    );
+    if hit.hovered(){
+        ui.ctx().set_cursor_icon(egui::CursorIcon::Text);
+    }
+    hit
+}
+
+/// OCR image zoom uses a fixed control width and a separate formatted label.
+/// Keep the native slider's keyboard and drag behavior.
+pub fn ocr_zoom_slider(ui:&mut Ui,zoom:&mut f32)->Response{
+    ui.add_sized(
+        Vec2::new(118.0,24.0),
+        egui::Slider::new(zoom,0.5..=4.0).show_value(false)
+    )
+}

@@ -220,7 +220,7 @@ const extractedControlOwners = new Map([
 ]);
 const ownedControls = new Map([
   ["CollapsingHeader :: new (","components.rs:collapsing_header"],
-  ["Slider :: new (","components.rs:ocr_zoom_slider"],
+  ["Slider :: new (","input/mod.rs:ocr_zoom_slider"],
   ["DragValue :: new (",null],["RadioButton :: new (",null],
   ["SelectableLabel :: new (",null],["ProgressBar :: new (",null],
   ["Spinner :: new (",null],["Separator :: new (",null],
@@ -663,7 +663,7 @@ function selfTest(){
     ["components.rs","fn collapsing_header(){egui::CollapsingHeader::new(title);}",0],
     ["components.rs","fn other(){egui::CollapsingHeader::new(title);}",1],
     ["new_screen.rs","fn render(){egui::Slider::new(value,range);}",1],
-    ["components.rs","fn ocr_zoom_slider(){egui::Slider::new(value,range);}",0],
+    ["input/mod.rs","fn ocr_zoom_slider(){egui::Slider::new(value,range);}",0],
     ["new_screen.rs","fn render(){ui.selectable_value(a,b,c);}",1],
     ["components.rs","fn management_dropdown_option_inner(){ui.selectable_value(a,b,c);}",1],
     ["dropdown/mod.rs","fn management_dropdown_option_inner(){ui.selectable_value(a,b,c);}",0],

@@ -781,7 +781,7 @@ impl ExcelManager{
         ui.add_space(theme::SPACE_8);
         let busy=self.operation.is_some()||self.receiver.is_some();
         let next_tab=components::management_top_content(ui,|top|
-            components::management_tabs(top,&[
+            crate::button::management_tabs(top,&[
                 ("공장 엑셀 대기",self.tab==Tab::Factory,!busy),
                 ("매장 발송 대기",self.tab==Tab::Store,!busy),
                 ("엑셀 작성 이력",self.tab==Tab::History,!busy),

@@ -2093,7 +2093,7 @@ impl ManualWorkspace {
                                 egui::vec2(source_width,height),
                                 egui::Layout::top_down(egui::Align::Min),
                                 |source_ui|{
-                                    components::reception_section_with_header(
+                                    crate::card::reception_section_with_header(
                                         source_ui,"발주 원문",
                                         height,|_|{},|body|{
                                             // Use the same outer Reception card, title row,
@@ -2104,7 +2104,7 @@ impl ManualWorkspace {
                                                 crate::scrollbar::scroll_area(crate::scrollbar::ScrollAxes::Vertical)
                                                     .id_salt("manual-source-blocks")
                                                     .max_height((
-                                                        components::docked_section_body_height(height)
+                                                        crate::card::docked_section_body_height(height)
                                                         -theme::SPACE_8
                                                         -2.0*theme::FRAME_STROKE_WIDTH
                                                     ).max(0.0))
@@ -2180,7 +2180,7 @@ impl ManualWorkspace {
                                                     let row=&rows[index];
                                                     let rid=text(row,"id");
                                                     let mut next_recipient=None;
-                                                    components::reception_section_with_header(
+                                                    crate::card::reception_section_with_header(
                                                         sheet,"수취인별 주문 정보",0.0,
                                                         |header|{
                                                             let name=text(row,"name");
@@ -2279,16 +2279,16 @@ impl ManualWorkspace {
                                                         && matches!(self.last_action.as_deref(),
                                                             Some("set_manual_product"|"assign_manual_block"));
                                                     let rollback_enabled=!busy && self.edit_text==self.current_value();
-                                                    components::reception_section_with_header(
+                                                    crate::card::reception_section_with_header(
                                                         sheet,"품목 및 운임",theme::MANUAL_ITEMS_CARD_MIN_HEIGHT,
                                                         |header|{
                                                             if rollback_pending{
-                                                                header_rollback=components::reception_item_header_action(
+                                                                header_rollback=crate::button::reception_item_header_action(
                                                                     header,true,rollback_enabled
                                                                 ).clicked();
                                                             }else{
                                                                 header_add_item=
-                                                                    components::reception_item_header_action(
+                                                                    crate::button::reception_item_header_action(
                                                                         header,false,can_mutate
                                                                     ).clicked();
                                                             }
@@ -3483,7 +3483,7 @@ mod manual_workspace_modal_routing_tests {
         assert_eq!(render.matches("reception_section_with_header(").count(),3);
         for (ui,title) in [("source_ui","발주 원문"),("sheet","수취인별 주문 정보"),("sheet","품목 및 운임")] {
             let compact=render.split_whitespace().collect::<String>();
-            let call=format!("components::reception_section_with_header({ui},\"{}\",",title.replace(' ',""));
+            let call=format!("crate::card::reception_section_with_header({ui},\"{}\",",title.replace(' ',""));
             assert!(compact.contains(&call),"missing shared reception section: {title}");
         }
         for common in [
@@ -4202,7 +4202,7 @@ mod manual_workspace_layout_tests{
         assert_eq!(manual_recipient_card_height(),251.0);
         assert_eq!(manual_workspace_columns_height(),607.0);
         assert_eq!(
-            components::docked_section_body_height(manual_recipient_card_height()),
+            crate::card::docked_section_body_height(manual_recipient_card_height()),
             4.0*theme::INPUT_HEIGHT+3.0*theme::RECIPIENT_ROW_GAP
         );
         let work_area=egui::Rect::from_min_size(
@@ -4233,7 +4233,7 @@ mod manual_workspace_layout_tests{
                     let measured=ui.scope(|sheet|{
                         sheet.set_width(800.0);
                         sheet.spacing_mut().item_spacing.y=0.0;
-                        components::reception_section_with_header(
+                        crate::card::reception_section_with_header(
                             sheet,"수취인별 주문 정보",0.0,
                             |header|{
                                 let _=components::reception_recipient_navigator(
@@ -4297,7 +4297,7 @@ mod manual_workspace_layout_tests{
         let production=source.split("mod manual_assignment_gesture_tests{")
             .next().expect("production source boundary");
         let render=production.split("pub fn show(").nth(1).unwrap();
-        assert!(render.contains("components::reception_section_with_header("));
+        assert!(render.contains("crate::card::reception_section_with_header("));
         let header_start=render.find("workspace.header_with_toolbar(")
             .expect("status/count controls belong to the shared modal header");
         let toolbar_start=render.find("let mut count_resize_requested=false;")
@@ -4318,7 +4318,7 @@ mod manual_workspace_layout_tests{
             .contains("status.set_min_height(theme::MODAL_MASTER_WORKSPACE_TOOLBAR_HEIGHT)"));
         assert!(render.contains("crate::card::source_document_frame().show(body"));
         assert!(!render.contains("crate::popup::modal_nested_role_frame(crate::popup::ModalNestedRole::Standard).show(source_ui"));
-        assert!(render.contains("components::docked_section_body_height(height)"));
+        assert!(render.contains("crate::card::docked_section_body_height(height)"));
         assert!(render.contains("sheet.spacing_mut().item_spacing.y=0.0;"));
         assert!(render.contains("ui.spacing_mut().item_spacing.x=if self.direct_input{"));
         assert!(render.contains("else{theme::MANUAL_COLUMN_GAP}"));
