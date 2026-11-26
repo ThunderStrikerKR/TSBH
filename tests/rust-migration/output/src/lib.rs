@@ -96,6 +96,20 @@ mod tests {
         assert_eq!(values[12],"04500");
     }
     #[test]
+    fn approved_logen_layout_keeps_reserved_cells_blank_even_when_postcode_is_known(){
+        for (origin,operation) in [("FACTORY","prepare_factory_export"),("STORE","prepare_store_export")]{
+            let mut s=state(origin);
+            let recipient=&mut s["workflow"]["queue"][0]["snapshot"]["recipient"];
+            recipient["postcode"]=json!("01234");
+            recipient["note"]=json!("10월12일 발송");
+            let preview=output::execute(operation,json!({"state":s,"ids":["queue-1"]})).unwrap();
+            let values=preview["rows"][0]["values"].as_array().unwrap();
+            assert_eq!(values.len(),16);
+            for column in [1,5,6,9]{assert_eq!(values[column],"","reserved column {column}");}
+            assert_eq!(values[10],"10월12일 발송");
+        }
+    }
+    #[test]
     fn recognized_dispatch_date_and_existing_note_reach_logen_message_column(){
         let raw="수령자: 가상 수취인\n주소: 서울특별시 중구 테스트로 1\n메모: 문 앞\n10월12일 발송";
         let recognized=super::recognition::execute("analyze_order",json!({

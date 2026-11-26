@@ -153,12 +153,6 @@ fn validate_factory_product(state: &Value, item: &Value) -> Result<(), String> {
     }
     Ok(())
 }
-fn recipient_postcode(recipient:&Value)->String{
-    // Modern Korean postal codes are five ASCII digits, including leading zero.
-    let code=trimmed(recipient,"postcode");
-    if code.len()==5 && code.bytes().all(|b|b.is_ascii_digit()){code}
-    else{String::new()}
-}
 fn export_row(state: &Value, entry: &Value, origin: &str) -> Result<Value, String> {
     let factory = origin == "FACTORY";
     let label = if factory { "공장" } else { "매장" };
@@ -252,7 +246,9 @@ fn export_row(state: &Value, entry: &Value, origin: &str) -> Result<Value, Strin
         trimmed(sender, "displayName")
     };
     let values = vec![
-        text(recipient, "name").to_owned(), recipient_postcode(recipient), trimmed(recipient, "address"),
+        // B remains blank in the approved Logen export; recognition may
+        // retain a postcode internally but must not fill reserved cells.
+        text(recipient, "name").to_owned(), String::new(), trimmed(recipient, "address"),
         trimmed(recipient, "phone"), trimmed(recipient, "mobile"),
         String::new(), String::new(), code.to_owned(),
         goods, String::new(), trimmed(recipient, "note"), sender_name,
@@ -330,17 +326,3 @@ mod sender_review_tests {
     }
 }
 
-#[cfg(test)]
-mod postcode_export_tests{
-    use super::*;
-    #[test]
-    fn recipient_postcode_is_text_and_missing_or_invalid_is_blank(){
-        for code in ["21534","12416","01234"]{
-            assert_eq!(recipient_postcode(&json!({"postcode":code})),code);
-        }
-        for value in [Value::Null,json!("123456"),json!("1234"),json!(12345),json!("１２３４５")]{
-            assert_eq!(recipient_postcode(&json!({"postcode":value})),"");
-        }
-        assert_eq!(recipient_postcode(&json!({})),"");
-    }
-}
