@@ -12,12 +12,7 @@ const compact = new Map(Object.entries({
   "main.rs:show_workflow_dialog:list":1,
   "settings_view.rs:show_account_rows:ui":1,
   "settings_view.rs:show_data:panel":1,
-  "alias_manager.rs:show_page:list":1,
-  "alias_manager.rs:show_dialogs:results":1,
-  "brand_manager.rs:show_page:list":1,
-  "model_group_manager.rs:show_page:results":1,
-  "model_group_manager.rs:show_page:registered":1,
-  "model_group_manager.rs:show_page:right":2,
+
   "automatic_message_manager.rs:show:body":1,
   "order_history_detail.rs:payment_panel:ui":1,
   "freight_manager.rs:show_history:menu":1,
@@ -54,8 +49,7 @@ const paintExceptions = [
     "paint_surface_outline(line.painter(),image.rect,0.0,edge)"],
   ["main.rs","source_section",1,
     "rect_filled(body_rect,0.0,theme::CANVAS)"],
-  ["model_group_manager.rs","show_page",1,
-    "rect_filled(separator,0.0,theme::BORDER)"],
+
   // History branch glyphs and date navigation, not table dividers.
   ["order_history_manager.rs","paint_history_branch",1,
     "line_segment([egui::pos2(x,center),egui::pos2(x,row_rect.bottom())],stroke)"],
@@ -100,9 +94,11 @@ const tableContracts = {
   },
   "client_manager.rs:show_page":{show:1,fixed_rows_snapshot:1,row_scope:1,management_row:1,management_client_header:1},
   "client_chooser.rs:show":{show:1,fixed_rows:1,row_scope:1,management_row:1,management_client_header:1},
-  "alias_manager.rs:show_page":{show:1,register_rows:1},
-  "brand_manager.rs:show_page":{show:1,register_rows:1},
-  "model_group_manager.rs:show_page":{show:1,register_rows:1},
+  "alias_manager.rs:show_page":{registry_table:1,registry_cell:4,registry_actions:1},
+  "alias_manager.rs:show_dialogs":{registry_table:1,registry_cell:2,registry_actions:2},
+  "brand_manager.rs:show_page":{registry_table:1,registry_cell:3,registry_actions:1},
+  "model_group_manager.rs:show_page":{registry_table:1,registry_cell:3,registry_actions:1},
+  "model_group_manager.rs:show_editor":{registry_table:2,registry_cell:7,registry_actions:2},
   "product_manager.rs:show_detail":{management_readonly_table:1},
   "product_excel_ui.rs:show_review":{management_readonly_table:1},
 };
@@ -117,6 +113,8 @@ const tableOwnerContracts = {
     header_finish:1
   },
   "table/mod.rs:show":{"TableGeometry::new":1,".paint":1},
+  "table/mod.rs:registry_table":{show:1,management_table_cells:1,header_columns:1,heading:1,fixed_rows:1,fixed_row_rect:1,fixed_row:1},
+  "table/mod.rs:registry_cell":{paint_management_text_cell:1},
   "table/mod.rs:inline":{finish_inline:1},
   "table/mod.rs:finish_inline":{finish:1},
   "table/mod.rs:finish":{outline_bounds:1,paint_frame:1},
@@ -148,7 +146,7 @@ const tableOwnerContracts = {
 };
 const tableOnlyCalls = new Set(["show","fixed_rows","fixed_rows_snapshot","fixed_row","fixed_row_rect",
   "variable_rows","variable_rows_snapshot","history_row","header_columns","heading","sort_clicked","row_scope",
-  "register_rows","master_header_begin","header_finish"]);
+  "register_rows","registry_table","registry_cell","registry_actions","master_header_begin","header_finish"]);
 const tableMarkers = new Set(["management_table_cells","management_table_column_rules",
   "management_row","management_readonly_table","shipment_detail_cells",
   "fixed_rows","fixed_rows_snapshot","variable_rows","variable_rows_snapshot","fixed_row","history_row","header_columns","register_rows"]);
@@ -689,7 +687,7 @@ const compositeContracts = {
   "composite_reception.rs:reception_item_row":{
     "button::remove_at":1,"table::paint_editable_cell_text":1,"table::editable_cell_hit":3
   },
-  "model_group_manager.rs:row":{"card::selectable_list_row":1},
+  "model_group_manager.rs:show_editor":{"popup::modal_flow_workspace":1,"popup::modal_window":1},
   "workflow_board_ui.rs:workflow_header":{"button::disclosure_at":1},
   "order_history_manager.rs:draw_line":{"button::disclosure_at":1},
   "composite_workflow.rs:workflow_shipment_row":{"source_highlight::paint_active_outline":1},
@@ -718,7 +716,7 @@ const compositeRawBans = {
   "composite_reception.rs:reception_item_row":[
     ".interact",".line_segment",".layout_no_wrap",".galley",".on_hover_cursor","ui_primitives::overflow_tooltip"
   ],
-  "model_group_manager.rs:row":[".allocate_exact_size",".rect_filled",".interact","button::paint_button_hover"],
+
   "workflow_board_ui.rs:workflow_header":[".interact","button::paint_button_hover","ui_primitives::paint_workflow_icon"],
   "order_history_manager.rs:draw_line":[".interact","button::paint_button_hover","ui_primitives::paint_management_chevron"],
   "composite_workflow.rs:workflow_shipment_row":[".rect_stroke"],
