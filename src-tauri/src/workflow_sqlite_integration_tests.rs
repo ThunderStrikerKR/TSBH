@@ -1053,6 +1053,50 @@ fn native_workflow_freight_edit_normalizes_remote_and_reopens_sqlite(){
 }
 
 #[test]
+fn native_workflow_confirmed_origin_edit_preserves_first_receipt_and_rechecks(){
+    let (isolated,mut conn)=IsolatedDatabase::open();
+    let base=get_snapshot(&conn).unwrap();
+    let saved=write_snapshot(&mut conn,stage_three(&base,"POSTPAID"),0,true).unwrap();
+    let command=|state:&Value,group_id:&str,origin:&str|json!({
+        "action":"change_confirmed_dispatch_origin","state":state,
+        "shipmentId":"shipment:synthetic","groupId":group_id,"origin":origin,
+        "now":"2026-11-26T09:00:00+09:00","eventSeed":"confirmed-origin-test"
+    });
+    assert!(rust("order_edit_rules",command(&saved,"other-group","STORE")).is_err());
+    assert!(rust("order_edit_rules",command(&saved,"group:synthetic","OTHER")).is_err());
+    let mut locked=saved.clone();
+    locked["workflow"]["shipments"][0]["transferred"]=json!(true);
+    assert!(rust("order_edit_rules",command(&locked,"group:synthetic","STORE")).is_err());
+    let result=rust("order_edit_rules",command(&saved,"group:synthetic","STORE"))
+        .expect("confirmed order origin edit");
+    let changed=&result["state"];
+    let before=&saved["orders"][0];
+    let after=&changed["orders"][0];
+    for key in ["raw","confirmedAt","confirmationSnapshot","receipt","senderSnapshot"]{
+        assert_eq!(before[key],after[key],"immutable first receipt: {key}");
+    }
+    assert_eq!(after["recipients"][0]["dispatchOrigin"],"STORE");
+    assert_eq!(after["recipients"][0]["items"][0]["origin"],"STORE");
+    assert_eq!(after["recipients"][0]["items"][0]["unitPrice"],30000);
+    let old=&saved["workflow"]["shipments"][0];
+    let ship=&changed["workflow"]["shipments"][0];
+    assert_eq!(ship["id"],old["id"]);
+    assert_eq!(ship["completedAt"],old["completedAt"]);
+    assert_eq!(ship["step"],0);
+    assert_eq!(ship["charges"],json!({"STORE":null}));
+    assert_eq!(changed["workflow"]["groups"][0]["needsNotice"],true);
+    let old_events=saved["workflow"]["events"].as_array().unwrap();
+    let events=changed["workflow"]["events"].as_array().unwrap();
+    assert_eq!(&events[..old_events.len()],old_events.as_slice());
+    assert!(events.iter().any(|e|e["action"]=="발송지 변경"));
+    let committed=write_snapshot(&mut conn,changed.clone(),
+        saved["revision"].as_u64().unwrap(),true).unwrap();
+    drop(conn);
+    let reopened=initialize_database(&isolated.root.join("state.sqlite")).unwrap();
+    assert_eq!(get_snapshot(&reopened).unwrap(),committed);
+}
+
+#[test]
 fn scoped_freight_reconciliation_matches_full_for_target_and_preserves_other_order(){
     let (_isolated,conn)=IsolatedDatabase::open();
     let before=get_snapshot(&conn).unwrap();

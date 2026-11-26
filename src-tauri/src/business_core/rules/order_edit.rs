@@ -272,6 +272,18 @@ fn change_confirmed_dispatch_origin(payload:&Value)->Result<Value,String>{
     let mut charges=serde_json::Map::new();
     charges.insert(origin.to_owned(),existing);
     set(&mut recipient,"shippingCharges",Value::Object(charges))?;
+    let audit=json!({
+        "id":format!("{seed}:confirmed-origin"),"at":now,
+        "actor":field(field(before,"settings"),"operatorName").as_str()
+            .filter(|name|!name.trim().is_empty()).unwrap_or("직원"),
+        "action":"발송지 변경","shipmentIds":[shipment_id],"groupId":group_id,
+        "before":{"dispatchOrigin":field(previous,"dispatchOrigin"),
+            "itemOrigins":rows(field(previous,"items")).iter().map(|item|json!({
+                "id":field(item,"id"),"origin":field(item,"origin")
+            })).collect::<Vec<_>>(),"charges":field(ship,"charges")},
+        "after":{"dispatchOrigin":origin,"charges":field(&recipient,"shippingCharges")}
+    });
+    state["workflow"]["events"].as_array_mut().ok_or("업무 이벤트 목록 누락")?.push(audit);
     state["orders"][oi]["recipients"][ri]=recipient;
     set(&mut state["orders"][oi],"updatedAt",json!(now))?;
     // Scoped reconciliation changes only this source order and its split
