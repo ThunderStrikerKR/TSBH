@@ -1405,7 +1405,10 @@ pub fn reception_docked_goods_scroll(
     reception_goods_viewport(ui,height,|area|{
         let minimum=theme::RECEPTION_ITEMS_MIN_TABLE_WIDTH+
             if editable_columns{theme::RECEPTION_ITEM_REMOVE_WIDTH}else{0.0};
-        let width=reception_items_scroll_content_width(area).max(minimum);
+        // Reserve the rail even for short lists so overflow never shifts columns.
+        let width=management_table_data_width(
+            area.available_width(),area.spacing().scroll.allocated_width(),minimum
+        );
         scroll_area(ScrollAxes::Both)
             .scroll_bar_visibility(egui::containers::scroll_area::ScrollBarVisibility::VisibleWhenNeeded)
             .id_salt(id_salt).max_height(height).auto_shrink([false,false])
@@ -2747,8 +2750,7 @@ pub fn reception_client_summary_card_editable(
                     let terms_cell=Rect::from_min_max(
                         egui::pos2(terms_x,row.top()),row.right_bottom()
                     );
-                    let overflow=text_exceeds_rect(terms_galley.size(),terms_cell.intersect(ui.clip_rect()));
-                    paint_table_galley(
+                    let overflow=paint_table_galley(
                         ui,terms_cell,terms_x,terms_galley,theme::MUTED
                     );
                     overflow_region_tooltip(ui,terms_cell,
@@ -2892,8 +2894,7 @@ pub fn management_row(
                     cell.max
                 );
                 let galley=typography::client_table_metadata_galley(ui,secondary,theme::MUTED);
-                let overflow=text_exceeds_rect(galley.size(),second.intersect(ui.clip_rect()));
-                paint_table_galley(ui,second,second.left(),galley,theme::MUTED);
+                let overflow=paint_table_galley(ui,second,second.left(),galley,theme::MUTED);
                 overflow_region_tooltip(ui,second,
                     ui.make_persistent_id(("management-row-hover",row_id,i,1)),overflow,secondary);
             }
@@ -2913,8 +2914,7 @@ pub fn management_row(
                         }
                     )
                 };
-                let overflow=text_exceeds_rect(galley.size(),cell.intersect(ui.clip_rect()));
-                paint_table_galley(
+                let overflow=paint_table_galley(
                     ui,cell,cell.left(),galley,
                     if metadata{theme::MUTED}else{theme::TEXT}
                 );
@@ -2993,19 +2993,6 @@ mod client_display_summary_tests{
     }
 }
 
-/// The vertically scrolling item list reserves a native scrollbar rail.
-/// Using the OUTER ScrollArea width for the three columns made the table
-/// overflow by exactly that rail width whenever many products were added,
-/// causing a spurious horizontal scrollbar even in a 1080p workspace.
-/// Keep this rail reserved in both short and long lists so the item/header
-/// columns do not jump sideways when vertical overflow first appears.
-pub fn reception_items_scroll_content_width(ui:&Ui)->f32 {
-    management_table_data_width(
-        ui.available_width(),
-        ui.spacing().scroll.allocated_width(),
-        theme::RECEPTION_ITEMS_MIN_TABLE_WIDTH
-    )
-}
 fn reception_item_columns(rect: Rect) -> [Rect; 3] {
     let qty=theme::RECEPTION_ITEMS_QTY_WIDTH;
     let amount=theme::RECEPTION_ITEMS_AMOUNT_MAX_WIDTH;
