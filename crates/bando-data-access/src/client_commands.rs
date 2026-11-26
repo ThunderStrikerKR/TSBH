@@ -126,6 +126,31 @@ mod client_entity_cas_tests{
         assert_eq!(next["orders"],before["orders"]);
     }
     #[test]
+    fn transaction_reads_latest_revision_and_leaves_database_untouched_on_noop_or_conflict(){
+        let mut conn=Connection::open_in_memory().unwrap();
+        conn.execute_batch("CREATE TABLE core_schema(key TEXT,version INTEGER);
+            INSERT INTO core_schema VALUES ('business-core',2);
+            CREATE TABLE app_state(id INTEGER PRIMARY KEY,payload TEXT);
+            CREATE TABLE core_products(id TEXT PRIMARY KEY,position INTEGER,payload TEXT);
+            CREATE TABLE core_product_prices(product_id TEXT,payload TEXT);
+            CREATE TABLE core_clients(id TEXT PRIMARY KEY,position INTEGER,payload TEXT);
+            CREATE TABLE core_orders(id TEXT PRIMARY KEY,position INTEGER,payload TEXT);
+            CREATE TABLE core_recipients(id TEXT PRIMARY KEY,order_id TEXT,position INTEGER,payload TEXT);
+            CREATE TABLE core_items(id TEXT PRIMARY KEY,recipient_id TEXT,position INTEGER,payload TEXT);").unwrap();
+        let latest=client("c","최신");
+        let root=json!({"revision":99,"settings":{},"workflow":{"shipments":[]}});
+        conn.execute("INSERT INTO app_state VALUES (1,?1)",[root.to_string()]).unwrap();
+        conn.execute("INSERT INTO core_clients VALUES ('c',0,?1)",[latest.to_string()]).unwrap();
+        let count:i64=conn.query_row("SELECT total_changes()",[],|row|row.get(0)).unwrap();
+        let result=mutate_client_checked_v2(&mut conn,&latest,"upsert_client",&latest).unwrap();
+        assert_eq!(result["revision"],99);
+        assert_eq!(result["clients"][0],latest);
+        let old=client("c","이전");
+        assert!(mutate_client_checked_v2(&mut conn,&old,"upsert_client",&old).is_err());
+        assert_eq!(crate::read_v2_snapshot(&conn).unwrap(),result);
+        assert_eq!(conn.query_row("SELECT total_changes()",[],|row|row.get::<_,i64>(0)).unwrap(),count);
+    }
+    #[test]
     fn same_client_conflict_and_new_id_collision_are_rejected(){
         let old=client("c","이전");
         let latest=client("c","외부 수정");
