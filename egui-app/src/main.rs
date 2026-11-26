@@ -74,7 +74,6 @@ mod workflow_board_ui;
 mod one_touch;
 mod manual_workspace;
 mod catalog_query_bridge;
-mod manual_product_search;
 mod item_editor;
 mod product_images;
 mod manual_source_view;
