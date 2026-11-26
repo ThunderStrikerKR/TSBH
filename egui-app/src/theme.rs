@@ -290,7 +290,11 @@ pub const RECEPTION_RECIPIENT_NAV_WIDTH:f32 =
     +RECEPTION_RECIPIENT_NAV_COUNT_WIDTH
     +2.0*FRAME_STROKE_WIDTH;
 // Reception card title top inset follows the shared section padding.
-pub const RECEPTION_SECTION_HEADER_TOP: f32 = SECTION_PADDING;
+pub const RECEPTION_SECTION_HEADER_TOP: f32 = SPACE_8;
+// Compact reception header only; ordinary management/modal rules stay 12pt.
+pub const RECEPTION_SECTION_DIVIDER_GAP: f32 = SPACE_8;
+pub const RECEPTION_SECTION_DIVIDER_HEIGHT: f32 =
+    2.0 * RECEPTION_SECTION_DIVIDER_GAP + SOFT_DIVIDER_WIDTH;
 // Canvas/footer clearance must be counted in the message editor's height.
 pub const RECEPTION_MESSAGE_ACTION_GAP: f32 = SPACE_12;
 // One 13pt shortcut label with 3pt keycap top/bottom padding and border.
@@ -399,7 +403,7 @@ pub const RECEPTION_ITEMS_MIN_TABLE_WIDTH: f32 =
 // Single source of truth for section height budgeting (including the rule).
 pub const RECEPTION_SECTION_CHROME_HEIGHT: f32 =
     RECEPTION_SECTION_HEADER_TOP + RECEPTION_PANE_PADDING_Y
-    + SECTION_HEADER_HEIGHT + SECTION_DIVIDER_HEIGHT;
+    + SECTION_HEADER_HEIGHT + RECEPTION_SECTION_DIVIDER_HEIGHT;
 pub const RECEPTION_RECIPIENT_BODY_HEIGHT: f32 =
     4.0 * INPUT_HEIGHT + 3.0 * RECIPIENT_ROW_GAP;
 pub const RECEPTION_ORDER_TOTAL_SECTION_HEIGHT: f32 =

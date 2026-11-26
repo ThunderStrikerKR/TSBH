@@ -227,6 +227,12 @@ pub(crate) fn section_divider_with_top_gap(ui:&mut Ui,top_gap:f32)->(Rect,Rect){
     allocate_section_divider(ui,top_gap,theme::SECTION_DIVIDER_GAP)
 }
 
+/// Symmetric section-header clearance, with explicit spacing owned by the caller.
+pub(crate) fn section_divider_symmetric(ui:&mut Ui,gap:f32)->(Rect,Rect){
+    debug_assert!(ui.spacing().item_spacing.y.abs()<0.01);
+    allocate_section_divider(ui,gap,gap)
+}
+
 fn allocate_section_divider(ui:&mut Ui,top_gap:f32,bottom_gap:f32)->(Rect,Rect){
     let (strip,_)=ui.allocate_exact_size(
         Vec2::new(ui.available_width(),top_gap+theme::SOFT_DIVIDER_WIDTH

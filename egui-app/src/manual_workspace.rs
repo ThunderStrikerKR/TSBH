@@ -2104,7 +2104,7 @@ impl ManualWorkspace {
                                         source_ui,"발주 원문",
                                         height,|_|{},|body|{
                                             // Use the same outer Reception card, title row,
-                                            // divider, and 12pt inset on all four sides
+                                            // divider, and shared compact header / 12pt body inset
                                             // as the intake source pane.
                                             body.spacing_mut().item_spacing.y=0.0;
                                             let available=crate::card::docked_section_body_height(height)
@@ -4201,11 +4201,13 @@ mod manual_workspace_layout_tests{
     fn popup_height_tracks_the_visible_card_stack_and_fixed_modal_chrome(){
         assert_eq!(theme::RECEPTION_PANE_PADDING_Y,12.0);
         assert_eq!(manual_workspace_header_height(),109.0);
-        // Shared section chrome now includes the approved 12pt divider gaps.
+        // Shared section chrome includes the approved 8pt header and divider gaps.
         // Keep explicit geometry expectations independent of the budget helper.
         assert_eq!(theme::SECTION_DIVIDER_GAP,12.0);
-        assert_eq!(manual_recipient_card_height(),251.0);
-        assert_eq!(manual_workspace_columns_height(),607.0);
+        assert_eq!(theme::RECEPTION_SECTION_HEADER_TOP,8.0);
+        assert_eq!(theme::RECEPTION_SECTION_DIVIDER_GAP,8.0);
+        assert_eq!(manual_recipient_card_height(),239.0);
+        assert_eq!(manual_workspace_columns_height(),595.0);
         assert_eq!(
             crate::card::docked_section_body_height(manual_recipient_card_height()),
             4.0*theme::INPUT_HEIGHT+3.0*theme::RECIPIENT_ROW_GAP
@@ -4215,7 +4217,7 @@ mod manual_workspace_layout_tests{
         );
         let size=manual_workspace_dialog_size(work_area);
         assert_eq!(size.x,1364.0);
-        assert_eq!(size.y,824.0);
+        assert_eq!(size.y,812.0);
         let short_area=egui::Rect::from_min_size(
             egui::Pos2::ZERO,egui::vec2(1400.0,700.0)
         );

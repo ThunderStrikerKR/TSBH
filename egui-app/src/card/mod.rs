@@ -300,7 +300,7 @@ pub(crate) fn docked_section_body_height(section_height: f32) -> f32 {
 }
 
 /// The approved Reception card chrome is shared with the manual worksheet.
-/// The same 16pt card heading, 12pt inset, divider and header-action alignment
+/// The same 16pt card heading, compact 8pt header clearance and 12pt body inset
 /// now render in both screens; business actions stay in their callers.
 pub(crate) fn reception_section_with_header(
     ui:&mut Ui,title:&str,minimum_height:f32,
@@ -324,7 +324,7 @@ pub(crate) fn reception_section_with_header(
         );
         #[cfg(test)]
         crate::ui_test_support::record(reception_geometry_role(title,true),_header.response.rect);
-        let (_transition,_divider)=crate::ui_primitives::section_divider_with_top_gap(ui,theme::SECTION_DIVIDER_GAP);
+        let (_transition,_divider)=crate::ui_primitives::section_divider_symmetric(ui,theme::RECEPTION_SECTION_DIVIDER_GAP);
         #[cfg(test)]
         crate::ui_test_support::record("source divider",_divider);
         let _body=ui.scope(|body|{

@@ -1848,7 +1848,7 @@ pub(crate) mod general_screen_geometry_tests {
     }
 
     #[test]
-    fn reception_section_divider_keeps_12pt_to_visible_document_frame(){
+    fn reception_section_divider_keeps_8pt_to_visible_document_frame(){
         let ctx=test_context();
         let screen=Vec2::new(900.0,700.0);
         let work=Rect::from_min_max(egui::pos2(24.0,24.0),egui::pos2(876.0,676.0));
@@ -1864,16 +1864,20 @@ pub(crate) mod general_screen_geometry_tests {
         let header=first(&trace,"source header");
         let divider=first(&trace,"source divider");
         let document=first(&trace,"visible document frame");
+        let card=first(&trace,"source card");
+        let header_top=header.top()-card.top();
         let top_gap=divider.top()-header.bottom();
         let bottom_gap=document.top()-divider.bottom();
-        assert!((top_gap-12.0).abs()<=0.5,
+        assert!((header_top-8.0).abs()<=0.5,
+            "card-to-header clearance drifted: {header_top:.2}pt");
+        assert!((top_gap-8.0).abs()<=0.5,
             "header-row-to-divider clearance drifted: {top_gap:.2}pt");
-        assert!((bottom_gap-12.0).abs()<=0.5,
+        assert!((bottom_gap-8.0).abs()<=0.5,
             "divider-to-visible-document-frame clearance drifted: {bottom_gap:.2}pt");
         let expected_chrome=theme::RECEPTION_SECTION_HEADER_TOP
             +theme::RECEPTION_PANE_PADDING_Y
             +theme::SECTION_HEADER_HEIGHT
-            +33.0;
+            +17.0;
         assert!((docked_section_body_height(320.0)-(320.0-expected_chrome)).abs()<=0.5,
             "fixed-height body calculator does not reserve both divider gaps");
     }
