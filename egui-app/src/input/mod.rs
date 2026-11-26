@@ -404,6 +404,7 @@ pub(crate) fn management_search_field(
 )->Response {
     let response=flexible_text_field(ui,text,width,placeholder);
     management_search_append_click(&response,ui,text);
+    crate::view_state::remember_search_focus(&response);
     response
 }
 
