@@ -20,3 +20,22 @@ pub(crate) fn display_money_number(amount:i64)->String{
     format!("{sign}{groups}")
 }
 
+
+/// Freight label only; zero alone is never an exemption.
+pub(crate) fn display_freight(amount:Option<i64>,exempt:bool,collect:bool)->String{
+    if collect {"착불".to_owned()}
+    else if exempt {"면제".to_owned()}
+    else {amount.map(display_won).unwrap_or_else(||"—".to_owned())}
+}
+#[cfg(test)]
+mod freight_tests{
+    use super::*;
+    #[test]
+    fn freight_state_and_numeric_zero_are_distinct(){
+        assert_eq!(display_freight(Some(0),true,false),"면제");
+        assert_eq!(display_freight(Some(0),false,false),"0원");
+        assert_eq!(display_freight(None,false,false),"—");
+        assert_eq!(display_freight(Some(3500),false,false),"3,500원");
+        assert_eq!(display_freight(Some(0),false,true),"착불");
+    }
+}

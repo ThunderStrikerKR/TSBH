@@ -199,7 +199,12 @@ fn payment_input(state:&Value,view:&Value,amounts:&[(Value,Value)],
     }));
     let mut recipients=Vec::new();
     for (index,row) in rows(view,"recipients").iter().enumerate(){
-        let (_,amount)=amounts.get(index).ok_or("배송 건 연결을 확인하세요.")?;
+        let (ship,amount)=amounts.get(index).ok_or("배송 건 연결을 확인하세요.")?;
+        // Use the same effective party (including the confirmed snapshot)
+        // as the workflow billing projection, not the numerical zero.
+        let original=by_id(rows(state,"orders"),string(ship,"orderId")).unwrap_or(view);
+        let exempt=rules::workflow_party(state,original)
+            .is_some_and(|party|is_true(party,"shippingFeeExcluded"));
         let items=rows(row,"items").iter().map(|item|{
             let mut item=item.clone();
             let amount=match (opt_i64(&item,"unitPrice"),opt_i64(&item,"quantity")){
@@ -221,7 +226,7 @@ fn payment_input(state:&Value,view:&Value,amounts:&[(Value,Value)],
             .unwrap_or_else(||is_true(view,"applyVat"));
         recipients.push(json!({
             "name":string(row,"name"),"items":items,
-            "freightCode":freight,"applyVat":vat,
+            "freightCode":freight,"freightExempt":exempt,"applyVat":vat,
             "shipping":amount.get("shipping"),"vat":amount.get("vat")
         }));
     }

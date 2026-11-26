@@ -288,6 +288,20 @@ mod tests {
         assert!(text.contains("합계 : 100,000원"));
     }
     #[test]
+    fn operational_payment_distinguishes_exemption_zero_collect_and_missing(){
+        let mut p=payment_fixture();
+        p["recipients"][0]["shipping"]=json!(0);
+        p["recipients"][0]["freightExempt"]=json!(true);
+        assert!(render_payment(&p).contains("운임 : 면제"));
+        assert!(!render_payment(&p).contains("운임 : 0원"));
+        p["recipients"][0]["freightExempt"]=json!(false);
+        assert!(render_payment(&p).contains("운임 : 0원"));
+        p["recipients"][0]["shipping"]=Value::Null;
+        assert!(render_payment(&p).contains("운임 : 확인 필요"));
+        p["recipients"][0]["freightCode"]=json!("020");
+        assert!(render_payment(&p).contains("운임 : 착불"));
+    }
+    #[test]
     fn operational_payment_mixed_vat_and_unresolved_values_are_not_fabricated(){
         let mut p=payment_fixture();
         let mut second=p["recipients"][0].clone();

@@ -33,6 +33,7 @@ mod legacy_migration;
 mod shipping;
 mod remote_delivery;
 mod workflow;
+pub(crate) use workflow::party as workflow_party;
 mod workflow_stages;
 mod workflow_issues;
 mod workflow_preview;

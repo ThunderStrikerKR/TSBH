@@ -53,7 +53,7 @@ fn group_step(state: &Value, group_id: &str) -> Result<i64,String> {
     let (_,ids)=group_indices(state,group_id)?;
     Ok(stages::prefix(stages::aggregate(ids.iter().map(|i|&state["workflow"]["shipments"][*i]))))
 }
-pub(super) fn party<'a>(state: &'a Value, order: &'a Value) -> Option<&'a Value> {
+pub(crate) fn party<'a>(state: &'a Value, order: &'a Value) -> Option<&'a Value> {
     if (has_value(field(order,"confirmedAt")) || flag(order,"pricesLocked") ||
         str_field(order,"orderType")=="RETAIL") &&
         has_value(field(order,"clientSnapshot")) {

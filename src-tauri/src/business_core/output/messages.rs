@@ -245,7 +245,10 @@ pub(super) fn payment(payload: &Value, settings: &Value) -> Result<Value, String
         if freight_code == "010" && recipient.get("shipping").is_none() {
             return Err("계산된 배송 운임이 없습니다.".into());
         }
-        let freight = if freight_code == "020" { "착불".into() } else { money(&recipient["shipping"]) };
+        let freight = if freight_code == "020" { "착불".into() }
+            else if recipient.get("freightExempt").and_then(Value::as_bool)==Some(true) {
+                "면제".into()
+            } else { money(&recipient["shipping"]) };
         parts.push(render(settings, "paymentFreight", &json!({"운임":freight}))?);
         let vat = recipient.get("applyVat").and_then(Value::as_bool)
             .ok_or("부가세 적용 기준이 없습니다.")?;

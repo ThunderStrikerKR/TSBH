@@ -670,8 +670,11 @@ fn row(
         "수취인 확인"
     }else{ship.recipient_name.as_str()};
     let freight={
-        if ship.collect{"착불".to_owned()}else{
-        let values=["FACTORY","STORE"].into_iter().filter_map(|origin|ship.display_charges.get(origin)).map(|amount|amount.map(crate::display_format::display_won).unwrap_or_else(||"—".into())).collect::<Vec<_>>();
+        if ship.collect||ship.freight_exempt{
+            crate::display_format::display_freight(None,ship.freight_exempt,ship.collect)
+        }else{
+        let values=["FACTORY","STORE"].into_iter().filter_map(|origin|ship.display_charges.get(origin))
+            .map(|amount|crate::display_format::display_freight(*amount,false,false)).collect::<Vec<_>>();
         if values.is_empty(){"—".to_owned()}else{values.join(" / ")}
         }
     };
@@ -963,10 +966,13 @@ fn pending_frame(
                     }else if quote_ready{
                         let values=["FACTORY","STORE"].into_iter().filter_map(|origin|
                             quote.and_then(|q|crate::quoted_freight_line(q,recipient_id,Some(origin)))
-                                .map(|line|line.get("billableCharge").unwrap_or(&line["appliedCharge"])
-                                    .as_i64().map(crate::display_format::display_won).unwrap_or_else(||"—".to_owned())))
+                                .map(|line|crate::display_format::display_freight(
+                                    line.get("billableCharge").unwrap_or(&line["appliedCharge"]).as_i64(),
+                                    line["billingReason"].as_str()==Some("EXEMPT"),false)))
                             .collect::<Vec<_>>();
-                        if values.is_empty(){"—".to_owned()}else{values.join(" / ")}
+                        if values.is_empty(){"—".to_owned()}
+                        else if values.iter().all(|v|v=="면제"){"면제".to_owned()}
+                        else{values.join(" / ")}
                     }else{"—".to_owned()};
                     let response=shipment_line_with_freight(ui,name,&products,chosen,previewed,Some(&freight),false);
                     let action=ui.interact(response.rect,
