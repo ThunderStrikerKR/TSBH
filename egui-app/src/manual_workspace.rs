@@ -1550,9 +1550,11 @@ impl ManualWorkspace {
             input.pointer.any_down(),
             input.pointer.any_released() &&
                 input.pointer.interact_pos().is_some_and(|pos|!rect.contains(pos))));
-        let finished=numeric && !busy && !pointer_down && navigation.is_none() && !step_interaction &&
-            (components::reception_numeric_edit_finished(&response,step_interaction)
-                || outside || (!focus && !response.has_focus()));
+        let blurred=if numeric{
+            components::reception_numeric_edit_finished(&response,step_interaction)
+        }else{cell_navigation::worksheet_blur_finished(&response,false)};
+        let finished=!focus && !busy && !pointer_down && navigation.is_none() && !step_interaction
+            && (blurred || outside);
         if finished{
             ui.ctx().memory_mut(|memory|memory.surrender_focus(response.id));
             self.active_editor_id=None;
@@ -2227,8 +2229,8 @@ impl ManualWorkspace {
                                                                 let selected=index==self.selected_recipient &&
                                                                     self.selected_item.is_none() &&
                                                                     self.selected_field==field;
-                                                                if selected {
-                                                                    let (editing,navigation,_finished)=
+                                                                if selected && self.cell_editor_open() {
+                                                                    let (editing,navigation,finished)=
                                                                         self.selected_cell_editor_on_rect(
                                                                             fields,response.rect,
                                                                             source_highlight::is_active(
@@ -2240,6 +2242,10 @@ impl ManualWorkspace {
                                                                             navigation,&mut submit_direct,
                                                                             &mut navigate_now
                                                                         );
+                                                                    }
+                                                                    if finished && self.edit_text!=self.current_value(){
+                                                                        submit_direct=true;
+                                                                        blur_commit=true;
                                                                     }
                                                                     if editing.clicked(){clicked_target=Some(target.clone());}
                                                                     if editing.hovered(){hovered_detail=Some(key);}
@@ -2741,6 +2747,10 @@ impl ManualWorkspace {
                         value=json!(price);
                     }else{
                         self.error=Some("단가는 0 이상의 정수로 입력하세요.".into());
+                        self.pending_select_after_apply=None;
+                        self.pending_click_at=None;
+                        self.advance_after_apply=None;
+                        self.focus_editor=true;
                         return None;
                     }
                     "set_manual_unit_price"
@@ -2750,6 +2760,10 @@ impl ManualWorkspace {
                     ).is_some_and(|row|text(row,"freightCode")=="020");
                     if collect {
                         self.error=Some("착불인 주문은 운임을 수정할 수 없습니다.".into());
+                        self.pending_select_after_apply=None;
+                        self.pending_click_at=None;
+                        self.advance_after_apply=None;
+                        self.focus_editor=true;
                         return None;
                     }
                     // The UI only parses an entered integer. The existing
@@ -2762,6 +2776,10 @@ impl ManualWorkspace {
                         value=json!(n);
                     }else{
                         self.error=Some("운임은 0 이상의 정수로 입력하세요.".into());
+                        self.pending_select_after_apply=None;
+                        self.pending_click_at=None;
+                        self.advance_after_apply=None;
+                        self.focus_editor=true;
                         return None;
                     }
                     "set_manual_delivery_option"
