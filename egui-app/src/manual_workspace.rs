@@ -989,6 +989,8 @@ pub struct ManualWorkspace {
     edit_text:String,
     focus_editor:bool,
     active_editor_id:Option<egui::Id>,
+    editor_click_at:Option<egui::Pos2>,
+    pending_click_at:Option<egui::Pos2>,
     row_count_text:String,
     history:Vec<ManualHistoryFrame>,
     pending_select_after_apply:Option<ManualCellTarget>,
@@ -1148,6 +1150,7 @@ impl ManualWorkspace {
             selected_recipient:0,selected_item:None,selected_field:"name".into(),
             assignment_gesture:ManualAssignmentGesture::default(),
             edit_text:String::new(),focus_editor:false,active_editor_id:None,
+            editor_click_at:None,pending_click_at:None,
             row_count_text:"1".into(),
             history:Vec::new(),pending_select_after_apply:None,
             advance_after_apply:None,last_action:None,action_pending:false,
@@ -1280,11 +1283,13 @@ impl ManualWorkspace {
                     self.item_detail=None;
                 }
                 if let Some(target)=self.pending_select_after_apply.take(){
+                    let click_at=self.pending_click_at.take();
                     let valid=self.model.as_ref().is_some_and(|model|
                         manual_worksheet_cells(model,None).iter().any(|(cell,meta)|cell==&target && meta.enabled)
                     );
                     if valid {
                         self.select_cell(target.row,target.item,&target.field);
+                        self.editor_click_at=click_at;
                     }
                 }else if let Some(navigation)=self.advance_after_apply.take(){
                     self.move_selection(navigation);
@@ -1317,6 +1322,7 @@ impl ManualWorkspace {
                 if self.edit_text!=self.current_value(){self.focus_editor=true;}
                 self.advance_after_apply=None;
                 self.pending_select_after_apply=None;
+                self.pending_click_at=None;
                 if self.action_pending {self.last_action=None;}
                 self.action_pending=false;
                 self.receiver=None;
@@ -1332,6 +1338,7 @@ impl ManualWorkspace {
                 self.pending_item_detail=None;
                 self.advance_after_apply=None;
                 self.pending_select_after_apply=None;
+                self.pending_click_at=None;
                 if self.action_pending {self.last_action=None;}
                 self.action_pending=false;
                 self.receiver=None;
@@ -1357,6 +1364,7 @@ impl ManualWorkspace {
         self.selected_field=field.to_owned();
         self.edit_text=self.current_value();
         self.active_editor_id=None;
+        self.editor_click_at=None;
         self.focus_editor=true;
     }
 
@@ -1500,22 +1508,23 @@ impl ManualWorkspace {
             !self.confirm_apply && !self.confirm_discard &&
             !self.product_dialog_open() &&
             self.remove_recipient_pending.is_none() && !self.reset_pending;
+        let click_at=if focus{self.editor_click_at.take()}else{None};
         let mut step_interaction=false;
         let response=if self.selected_item.is_none() {
             if self.selected_field=="shippingCharge" {
                 components::reception_freight_inline_cell_editor(
-                    ui,rect,&mut self.edit_text,focus,None
+                    ui,rect,&mut self.edit_text,focus,click_at
                 )
             }else{
                 components::reception_recipient_inline_cell_editor(
-                    ui,rect,&mut self.edit_text,focus,None,
+                    ui,rect,&mut self.edit_text,focus,click_at,
                     matches!(self.selected_field.as_str(),"mobile"|"phone"),
                     linked
                 )
             }
         }else if matches!(self.selected_field.as_str(),"quantity"|"unitPrice"){
             let (input,step)=components::reception_item_numeric_editor(
-                ui,rect,&mut self.edit_text,focus,None,
+                ui,rect,&mut self.edit_text,focus,click_at,
                 if self.selected_field=="quantity"{components::ReceptionNumericCell::Quantity}
                 else{components::ReceptionNumericCell::Money}
             );
@@ -1523,7 +1532,7 @@ impl ManualWorkspace {
             input
         }else{
             components::reception_inline_cell_editor(
-                ui,rect,&mut self.edit_text,focus,None,false
+                ui,rect,&mut self.edit_text,focus,click_at,false
             )
         };
         cell_navigation::remember_worksheet_editor(ui.ctx(),slot,response.id);
@@ -1535,9 +1544,13 @@ impl ManualWorkspace {
         // Preserve the assignment target while dismissing its editing
         // overlay. Blank-space clicks must end editing even if egui kept focus.
         let numeric=matches!(self.selected_field.as_str(),"quantity"|"unitPrice"|"shippingCharge");
-        let outside=ui.input(|input|input.pointer.any_pressed() &&
-            input.pointer.interact_pos().is_some_and(|pos|!rect.contains(pos)));
-        let finished=numeric && !busy && navigation.is_none() && !step_interaction &&
+        // Pointer-down is not a completed click. Starting a native save
+        // before release would disable the destination hit target.
+        let (pointer_down,outside)=ui.input(|input|(
+            input.pointer.any_down(),
+            input.pointer.any_released() &&
+                input.pointer.interact_pos().is_some_and(|pos|!rect.contains(pos))));
+        let finished=numeric && !busy && !pointer_down && navigation.is_none() && !step_interaction &&
             (components::reception_numeric_edit_finished(&response,step_interaction)
                 || outside || (!focus && !response.has_focus()));
         if finished{
@@ -1567,6 +1580,7 @@ impl ManualWorkspace {
         if needs_commit{
             *submit_direct=true;
             self.pending_select_after_apply=None;
+            self.pending_click_at=None;
             self.advance_after_apply=Some(navigation);
         }else{
             *navigate_now=Some(navigation);
@@ -1574,14 +1588,22 @@ impl ManualWorkspace {
     }
 
     fn queue_cell_selection(
-        &mut self,target:ManualCellTarget,submit_direct:&mut bool
+        &mut self,target:ManualCellTarget,click_at:Option<egui::Pos2>,submit_direct:&mut bool
     ){
-        if self.edit_text!=self.current_value(){
-            self.advance_after_apply=None;
-            self.pending_select_after_apply=Some(target);
-            *submit_direct=true;
-        }else{
-            self.select_cell(target.row,target.item,&target.field);
+        let same=self.cell_editor_open() && target.row==self.selected_recipient
+            && target.item==self.selected_item && target.field==self.selected_field;
+        match cell_navigation::cell_switch(same,self.edit_text!=self.current_value()){
+            cell_navigation::CellSwitch::KeepCurrent=>{},
+            cell_navigation::CellSwitch::CommitThenOpen=>{
+                self.advance_after_apply=None;
+                self.pending_select_after_apply=Some(target);
+                self.pending_click_at=click_at;
+                *submit_direct=true;
+            },
+            cell_navigation::CellSwitch::OpenNow=>{
+                self.select_cell(target.row,target.item,&target.field);
+                self.editor_click_at=click_at;
+            }
         }
     }
 
@@ -2227,7 +2249,7 @@ impl ManualWorkspace {
                                                                     }
                                                                     if response.clicked(){
                                                                         clicked_target=Some(target.clone());
-                                                                        self.queue_cell_selection(target,&mut submit_direct);
+                                                                        self.queue_cell_selection(target,response.interact_pointer_pos(),&mut submit_direct);
                                                                     }
                                                                 }
                                                                 if recommended{
@@ -2241,7 +2263,7 @@ impl ManualWorkspace {
                                                         self.queue_cell_selection(
                                                             ManualCellTarget{
                                                                 row:next,item:None,field:"name".into()
-                                                            },&mut submit_direct
+                                                            },None,&mut submit_direct
                                                         );
                                                     }
                                                     sheet.add_space(components::RECEPTION_STACKED_CARD_GAP);
@@ -2354,13 +2376,13 @@ impl ManualWorkspace {
                                                                                     lookup=Some((rid.to_owned(),item_id.to_owned()));
                                                                                 }
                                                                                 ProductClickIntent::SelectAssignmentTarget=>{
-                                                                                    self.queue_cell_selection(target.clone(),&mut submit_direct);
+                                                                                    self.queue_cell_selection(target.clone(),response.interact_pointer_pos(),&mut submit_direct);
                                                                                     clicked_target=Some(target.clone());
                                                                                 }
                                                                                 ProductClickIntent::None=>{}
                                                                             }
                                                                         }else if response.clicked(){
-                                                                            self.queue_cell_selection(target.clone(),&mut submit_direct);
+                                                                            self.queue_cell_selection(target.clone(),response.interact_pointer_pos(),&mut submit_direct);
                                                                         }
                                                                         response
                                                                     };
@@ -2382,7 +2404,7 @@ impl ManualWorkspace {
                                                                             if field=="product" && theme::action(
                                                                                 menu,"원문 배정 대상 선택",ButtonRole::Standard,true
                                                                             ).clicked(){
-                                                                                self.queue_cell_selection(target.clone(),&mut submit_direct);
+                                                                                self.queue_cell_selection(target.clone(),response.interact_pointer_pos(),&mut submit_direct);
                                                                                 clicked_target=Some(target.clone());
                                                                                 menu.close();
                                                                             }
@@ -2427,7 +2449,7 @@ impl ManualWorkspace {
                                                                     ManualCellTarget{
                                                                         row:index,item:None,
                                                                         field:"shippingCharge".into()
-                                                                    },&mut submit_direct
+                                                                    },freight.amount_click_pos,&mut submit_direct
                                                                 );
                                                             }
                                                             if self.selected_item.is_none() &&
@@ -3584,6 +3606,7 @@ mod manual_workspace_modal_routing_tests {
             selected_recipient:0,selected_item:None,selected_field:"name".into(),
             assignment_gesture:ManualAssignmentGesture::default(),
             edit_text:String::new(),focus_editor:false,active_editor_id:None,
+            editor_click_at:None,pending_click_at:None,
             row_count_text:"1".into(),
             history:Vec::new(),pending_select_after_apply:None,
             advance_after_apply:None,last_action:None,action_pending:false,
