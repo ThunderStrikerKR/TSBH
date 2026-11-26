@@ -396,6 +396,8 @@ pub struct ProductManager {
     selection_result:Option<Value>,
     focus_search:bool,
     catalog:Option<Value>,
+    // Force an authoritative read while keeping the last projection visible.
+    catalog_stale:bool,
     products:Vec<Value>,
     query:String,
     tab:usize,
@@ -456,7 +458,7 @@ impl ProductManager {
     pub fn new(gateway:Arc<dyn BandoGateway>,ctx:Context)->Self {
         let mut page=Self {
             gateway,selection_client:None,selection_result:None,focus_search:false,
-            catalog:None,products:Vec::new(),
+            catalog:None,catalog_stale:false,products:Vec::new(),
             query:String::new(),tab:0,tab_snapshots:crate::navigation::NavigationSnapshots::new(0),
             category_manager:CategoryManager::default(),
             model_groups:ModelGroupManager::default(),
@@ -541,25 +543,16 @@ impl ProductManager {
         self.refresh(ctx);
     }
     pub fn refresh(&mut self,ctx:Context) {
-        // Re-read an explicitly connected operating catalog when returning
-        // from another page. Never retain a stale edit/master snapshot.
-        self.catalog=None;
-        self.selected=None;
-        self.original_selected=None;
-        self.detail_prices.clear();
-        self.photos.clear();
-        self.price_write_queue.clear();
-        self.price_mode_exit_requested=false;
-        self.price_focus_target=None;
-        self.price_previous_focus=None;
-        self.confirm_archive=false;
-        self.confirm_discard=false;
+        // Keep verified view data during page re-entry; force the worker to
+        // read the operating catalog instead of treating the display cache as fresh.
+        if self.writing.is_some()||self.has_pending_prices()||self.selected.is_some(){return;}
+        self.catalog_stale=true;
         self.next_query=None;
         self.reload(ctx);
     }
     fn reload(&mut self,ctx:Context) {
         let gateway=Arc::clone(&self.gateway);
-        let cached=self.catalog.clone();
+        let cached=if self.catalog_stale{None}else{self.catalog.clone()};
         let query=self.query.clone();
         let category=self.category.clone();
         let brand=self.brand.clone();
@@ -645,6 +638,10 @@ impl ProductManager {
     fn launch_write(
         &mut self,action:&str,data:Value,key:Option<String>,ctx:Context
     ){
+        if self.catalog_stale{
+            self.error=Some("최신 상품 정보를 확인한 뒤 저장해 주세요.".into());
+            return;
+        }
         if action!="set_price"{
             crate::floating_notice::dispatch_pointer(&ctx,"products.action");
         }
@@ -824,6 +821,7 @@ impl ProductManager {
                         self.model_groups.set_catalog(&result.catalog,ctx);
                         self.aliases.set_catalog(&result.catalog,ctx);
                         self.catalog=Some(result.catalog);
+                        self.catalog_stale=false;
                         self.products=result.products;
                         if !self.has_pending_prices(){self.error=None;}
                     }else{
@@ -1035,9 +1033,9 @@ impl ProductManager {
         }
         if !selecting{self.sync_tab_navigation(ui.ctx().clone());}
         ui.push_id(("product-navigation",self.tab,self.tab_snapshots.epoch(self.tab)),|ui|{
-        let can_edit=!selecting && self.gateway.product_write_enabled()
+        let can_edit=!selecting && !self.catalog_stale && self.gateway.product_write_enabled()
             && self.catalog.as_ref().is_some_and(|c|c["revision"].as_u64().is_some());
-        let saving=self.writing.is_some()||self.excel.busy();
+        let saving=self.catalog_stale||self.writing.is_some()||self.excel.busy();
         let mut price_write:Option<(String,Value)>=None;
         let mut open_detail:Option<Value>=None;
         let mut picked:Option<Value>=None;
@@ -1071,7 +1069,9 @@ impl ProductManager {
         }
         if self.tab==2 {
             if let Some(catalog)=self.catalog.as_ref(){
-                self.model_groups.show_page(ui,catalog,Arc::clone(&self.gateway));
+                ui.add_enabled_ui(!self.catalog_stale,|ui|{
+                    self.model_groups.show_page(ui,catalog,Arc::clone(&self.gateway));
+                });
             }else{
                 crate::card::management_pending_primary_card(ui);
             }
@@ -1218,7 +1218,7 @@ impl ProductManager {
                     );
                     self.excel.show_menu(
                         actions,&trigger,Arc::clone(&self.gateway),
-                        self.catalog.is_some()&&self.writing.is_none()
+                        self.catalog.is_some()&&!self.catalog_stale&&self.writing.is_none()
                             &&!self.has_pending_prices()
                     );
                 }
