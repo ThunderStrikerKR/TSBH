@@ -389,7 +389,10 @@ impl DailySettlementManager{
         if changed{self.refresh(ctx);}
     }
     pub fn refresh(&mut self,ctx:egui::Context){
-        self.report=None;
+        // Keep an already verified report only for this exact date.
+        if self.report.as_ref().is_some_and(|report|report["date"].as_str()!=Some(self.date.as_str())){
+            self.report=None;
+        }
         self.error=None;
         let (sender,receiver)=mpsc::channel();
         self.receiver=Some(receiver);
@@ -414,10 +417,10 @@ impl DailySettlementManager{
                 self.receiver=None;
             },
             Some(Ok(Err(error)))=>{
-                self.report=None;self.error=Some(error);self.receiver=None;
+                self.error=Some(error);self.receiver=None;
             },
             Some(Err(TryRecvError::Disconnected))=>{
-                self.report=None;self.receiver=None;
+                self.receiver=None;
                 self.error=Some("일일 결산 조회 연결이 중단되었습니다.".into());
             },
             _=>{}
