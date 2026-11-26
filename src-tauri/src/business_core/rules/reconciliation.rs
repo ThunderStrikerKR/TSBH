@@ -907,6 +907,45 @@ mod reception_freight_reset_tests {
     use super::*;
 
     #[test]
+    fn confirmed_dealer_reassignment_requotes_auto_but_preserves_manual_freight(){
+        let row=|id:&str,charge:Value|json!({
+            "id":id,"name":"테스트","address":"서울특별시 중구 세종대로 1",
+            "dispatchOrigin":"FACTORY","freightCode":"010",
+            "shippingCharges":charge,
+            "items":[{"id":format!("i-{id}"),"productId":"p","variantId":"v",
+                "quantity":1,"origin":"FACTORY"}]
+        });
+        let state=json!({
+            "clients":[{"id":"c1","tier":"wholesale"},{"id":"c2","tier":"retail"}],
+            "products":[{"id":"p","origin":"FACTORY","variants":[{"id":"v"}]}],
+            "shipping":{"epoch":1,"productRules":{"p":{"version":"v1","fees":{"1":5200}}}},
+            "orders":[{"id":"o","clientId":"c1","orderType":"AGENCY","recipients":[
+                row("manual",json!({"FACTORY":7000})),
+                row("zero",json!({"FACTORY":0})),
+                row("auto",json!({"FACTORY":null}))
+            ]}]
+        });
+        let project=|state:Value|reconcile(&json!({
+            "state":state,"now":"2026-11-27T00:00:00+09:00",
+            "eventIds":["dealer-reset-1","dealer-reset-2","dealer-reset-3","dealer-reset-4"]
+        })).unwrap()["state"].clone();
+        let mut state=project(state);
+        state["orders"][0]["confirmedAt"]=json!("2026-11-27T00:00:00+09:00");
+        state["orders"][0]["clientId"]=json!("c2");
+        state["shipping"]["productRules"]["p"]["fees"]["1"]=json!(6000);
+        let result=project(state);
+        let shipments=&result["workflow"]["shipments"];
+        assert_eq!(shipments[0]["charges"]["FACTORY"],7000);
+        assert_eq!(shipments[0]["chargeMode"],"MANUAL");
+        assert_eq!(shipments[1]["charges"]["FACTORY"],0);
+        assert_eq!(shipments[1]["chargeMode"],"MANUAL");
+        assert_eq!(shipments[2]["charges"]["FACTORY"],6000);
+        assert_eq!(shipments[2]["chargeMode"],"AUTO");
+        assert_eq!(result["orders"][0]["recipients"][0]["shippingCharges"]["FACTORY"],7000);
+        assert_eq!(result["workflow"]["groups"][0]["dealerId"],"c2");
+    }
+
+    #[test]
     fn cleared_draft_freight_restores_registered_rate_and_survives_freeze(){
         let state=json!({
             "clients":[{"id":"c","name":"테스트 거래처","tier":"wholesale"}],
