@@ -685,8 +685,10 @@ fn reconcile_inner(payload:&Value,order_scope:Option<&str>,scoped_seed:Option<&s
                 }
             }
             let overrides=field(&recipient,"shippingCharges");
-            let has_manual_amount=origins.iter().any(|origin|
-                field(overrides,origin).as_i64().is_some());
+            let manual_amounts=origins.iter().map(|origin|
+                super::manual_freight(&recipient,origin))
+                .collect::<Result<Vec<_>,_>>()?;
+            let has_manual_amount=manual_amounts.iter().any(Option::is_some);
             let cleared_override=overrides.is_object() && !has_manual_amount &&
                 origins.iter().all(|origin|field(overrides,origin).is_null());
             // Draft editing stores null for a cleared override. The native
@@ -697,28 +699,26 @@ fn reconcile_inner(payload:&Value,order_scope:Option<&str>,scoped_seed:Option<&s
                 set(&mut state["workflow"]["shipments"][si],"chargeMode",json!("AUTO"))?;
             }
             let automatic=str_field(&state["workflow"]["shipments"][si],"chargeMode")=="AUTO";
-            if reassigned {
+            if reassigned || (!frozen && overrides.is_object()) {
                 // A legacy MANUAL shipment may predate recipient overrides.
                 // Preserve its explicit amounts when no override map exists.
                 let legacy_manual=!automatic && !has_value(overrides);
                 let mut manual=false;
-                for origin in &origins {
-                    let explicit=field(overrides,origin);
-                    let prior=field(&previous_charges,origin);
-                    let retained=if super::safe(explicit).is_some(){Some(explicit)}
-                        else if legacy_manual && super::safe(prior).is_some(){Some(prior)}
+                for (origin,explicit) in origins.iter().zip(manual_amounts){
+                    let retained=if explicit.is_some(){explicit}
+                        else if legacy_manual{super::manual_amount(field(&previous_charges,origin))?}
                         else{None};
                     let value=if let Some(value)=retained{
                         manual=true;
-                        value
+                        json!(value)
                     }else{
                         rows(field(&reco,"bundles")).iter()
                             .find(|b|str_field(b,"origin")==origin)
                             .map(|b|b.get("baseRecommendation")
                                 .unwrap_or_else(||field(b,"recommendation")))
-                            .unwrap_or(&Value::Null)
+                            .cloned().unwrap_or(Value::Null)
                     };
-                    set(&mut charges,origin,value.clone())?;
+                    set(&mut charges,origin,value)?;
                 }
                 set(&mut state["workflow"]["shipments"][si],"chargeMode",
                     json!(if manual{"MANUAL"}else{"AUTO"}))?;
