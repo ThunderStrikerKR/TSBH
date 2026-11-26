@@ -1724,9 +1724,8 @@ impl ProductManager {
     fn detail_columns(width:f32)->Option<(f32,f32)>{
         let inset=2.0*(theme::MODAL_SECTION_PADDING+theme::FRAME_STROKE_WIDTH);
         let image=theme::PRODUCT_DETAIL_IMAGE_SIZE+inset;
-        let overview=width-image-theme::MODAL_MASTER_WORKSPACE_GAP;
-        if overview<310.0{return None;}
-        Some((overview,image))
+        crate::card::fixed_and_remaining_columns(width,image,theme::MODAL_MASTER_WORKSPACE_GAP,310.0)
+            .map(|(fixed,remaining)|(remaining,fixed))
     }
     fn detail_image_size(available:f32)->f32{
         theme::PRODUCT_DETAIL_IMAGE_SIZE.min(available.max(1.0))

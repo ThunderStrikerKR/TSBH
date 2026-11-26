@@ -638,7 +638,7 @@ impl AutomaticMessageManager {
         let gap=theme::SPACE_12;
         let left_width=(width*0.35).clamp(250.0,theme::FAMILY_LIST_WIDTH)
             .min((width-gap).max(160.0));
-        let right_width=(width-left_width-gap).max(260.0);
+        let right_width=crate::card::remaining_column_width(width,left_width,gap).max(260.0);
         // Use the actual remaining management pane height. A 340pt
         // minimum previously forced the footer below short windows.
         let height=(ui.available_height()-theme::SPACE_8).max(1.0);
@@ -651,7 +651,7 @@ impl AutomaticMessageManager {
             panes.allocate_ui_with_layout(
                 Vec2::new(left_width,height),Layout::top_down(Align::Min),
                 |list|{
-                    list.set_width(left_width);
+                    crate::card::apply_width_policy(list,crate::card::CardWidthPolicy::Fixed,left_width);
                     crate::card::measured_management_section_card(list,|body|{
                         crate::card::fill_management_primary_card(body,card_min_height);
                         if self.section==Section::General{
@@ -663,7 +663,7 @@ impl AutomaticMessageManager {
             panes.allocate_ui_with_layout(
                 Vec2::new(right_width,height),Layout::top_down(Align::Min),
                 |editor|{
-                    editor.set_width(right_width);
+                    crate::card::apply_width_policy(editor,crate::card::CardWidthPolicy::Fixed,right_width);
                     crate::card::measured_management_section_card(editor,|body|{
                         crate::card::fill_management_primary_card(body,card_min_height);
                         crate::scrollbar::scroll_area(crate::scrollbar::ScrollAxes::Vertical)

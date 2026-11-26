@@ -586,17 +586,17 @@ impl SettingsView{
         let available_height=ui.available_height();
         if available_width>=theme::SETTINGS_BASIC_SPLIT_MIN_WIDTH{
             let left_width=theme::SETTINGS_BASIC_LEFT_PANE_WIDTH;
-            let right_width=(available_width-left_width-theme::SPACE_12).max(1.0);
+            let right_width=crate::card::remaining_column_width(available_width,left_width,theme::SPACE_12).max(1.0);
             ui.horizontal(|row|{
                 row.spacing_mut().item_spacing.x=theme::SPACE_12;
                 row.vertical(|left|{
-                    left.set_width(left_width);
+                    crate::card::apply_width_policy(left,crate::card::CardWidthPolicy::Fixed,left_width);
                     self.show_work_settings(left,editable,Arc::clone(&gateway));
                     left.add_space(theme::SPACE_12);
                     self.show_sender_settings(left,editable);
                 });
                 row.vertical(|right|{
-                    right.set_width(right_width);
+                    crate::card::apply_width_policy(right,crate::card::CardWidthPolicy::Fixed,right_width);
                     self.show_accounts(
                         right,editable,
                         (available_height-theme::SETTINGS_BASIC_SAVE_RESERVE).max(0.0)

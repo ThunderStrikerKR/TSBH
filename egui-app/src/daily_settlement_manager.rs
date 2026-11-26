@@ -205,7 +205,7 @@ fn kpi(ui:&mut Ui,label:&str,value:&str){
         Vec2::new(width,theme::FREIGHT_SUMMARY_CARD_HEIGHT),
         egui::Layout::top_down(Align::Min),
         |slot|{
-            slot.set_width(width);
+            crate::card::apply_width_policy(slot,crate::card::CardWidthPolicy::Fixed,width);
             crate::card::freight_summary_frame().show(slot,|cell|{
                 cell.spacing_mut().item_spacing.y=0.0;
                 let content_width=width-2.0*theme::FREIGHT_SUMMARY_PADDING_X
@@ -461,10 +461,9 @@ impl DailySettlementManager{
         // beyond the window before its nested horizontal scroller is reached.
         let section_viewport_width=ui.available_rect_before_wrap()
             .intersect(ui.clip_rect()).width().max(1.0);
-        let section_inner_max_width=(section_viewport_width
-            -ui.spacing().scroll.allocated_width()
-            -2.0*theme::SECTION_PADDING
-            -2.0*theme::FRAME_STROKE_WIDTH).max(1.0);
+        let section_inner_max_width=crate::card::inner_width_for_insets(
+            section_viewport_width,theme::SECTION_PADDING,theme::SECTION_PADDING,
+            theme::FRAME_STROKE_WIDTH,ui.spacing().scroll.allocated_width(),1.0);
         let scroll=crate::scrollbar::scroll_area(crate::scrollbar::ScrollAxes::Vertical)
             .id_salt("daily-settlement-sections")
             .max_width(section_viewport_width)
@@ -475,9 +474,7 @@ impl DailySettlementManager{
                 crate::card::measured_management_section_card(body,|section|{
                     // Keep the section inside the bounded vertical viewport;
                     // its report rows own their independent horizontal scroll.
-                    section.set_width(section_inner_max_width);
-                    // set_width is a minimum; cap content width before wide table children allocate.
-                    section.set_max_width(section_inner_max_width);
+                    crate::card::apply_width_policy(section,crate::card::CardWidthPolicy::Bounded,section_inner_max_width);
                     // The date selector is the first element of the
                     // settlement card. No redundant title/help row above it.
                     // Like Order History, the date picker is inside the
@@ -565,9 +562,7 @@ impl DailySettlementManager{
                 crate::card::measured_management_section_card(body,|section|{
                     // Keep the section inside the bounded vertical viewport;
                     // its report rows own their independent horizontal scroll.
-                    section.set_width(section_inner_max_width);
-                    // set_width is a minimum; cap content width before wide table children allocate.
-                    section.set_max_width(section_inner_max_width);
+                    crate::card::apply_width_policy(section,crate::card::CardWidthPolicy::Bounded,section_inner_max_width);
                     section.label(typography::section_heading(
                         "실제 입금 내역 / 입금 일시 기준"
                     ));
@@ -618,8 +613,7 @@ impl DailySettlementManager{
                 });
                 body.add_space(theme::SPACE_12);
                 crate::card::measured_management_section_card(body,|review|{
-                    review.set_width(section_inner_max_width);
-                    review.set_max_width(section_inner_max_width);
+                    crate::card::apply_width_policy(review,crate::card::CardWidthPolicy::Bounded,section_inner_max_width);
                     review.label(typography::section_heading("결산 검토 사항"));
                     crate::ui_primitives::section_divider(review);
                     crate::ui_layout::fixed_result_viewport(review,"settlement-warnings",100.0,|list|{

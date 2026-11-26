@@ -956,12 +956,13 @@ pub(crate) fn modal_master_body_section<R>(
 pub(crate) fn modal_section_measured<R>(
     ui:&mut Ui,title:&str,contents:impl FnOnce(&mut Ui)->R
 )->egui::InnerResponse<R>{
-    let inner_width=(ui.available_width()-2.0*theme::MODAL_SECTION_PADDING
-        -2.0*theme::FRAME_STROKE_WIDTH).max(1.0);
+    let inner_width=crate::card::inner_width_for_insets(ui.available_width(),
+        theme::MODAL_SECTION_PADDING,theme::MODAL_SECTION_PADDING,
+        theme::FRAME_STROKE_WIDTH,0.0,1.0);
     theme::bordered_surface(theme::MODAL_SECTION_BG,theme::DIVIDER,theme::MODAL_SECTION_RADIUS)
         .inner_margin(theme::MODAL_SECTION_PADDING)
         .show(ui,|section|{
-            section.set_min_width(inner_width);
+            crate::card::apply_width_policy(section,crate::card::CardWidthPolicy::FillAvailable,inner_width);
             modal_section_heading_with_rule(section,title);
             section.scope(|body|{
                 body.spacing_mut().item_spacing.y=theme::SPACING;

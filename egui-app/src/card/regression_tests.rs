@@ -297,3 +297,32 @@ fn screen_card_height_reservations_use_the_common_policy(){
     let cards=include_str!("mod.rs");
     assert!(cards.contains("apply_height_policy(ui,CardHeightPolicy::FillAvailable,min_inner_height)"));
 }
+
+#[test]
+fn card_width_policies_preserve_natural_and_reserved_widths(){
+    use super::{apply_width_policy,CardWidthPolicy,inner_width_for_insets,fixed_and_remaining_columns};
+    let ctx=egui::Context::default();
+    for (policy,target,expected) in [
+        (CardWidthPolicy::FitContent,240.0,40.0),
+        (CardWidthPolicy::FillAvailable,180.0,180.0),
+        (CardWidthPolicy::FillAvailable,20.0,40.0),
+        (CardWidthPolicy::Fixed,160.0,160.0),
+        (CardWidthPolicy::Bounded,140.0,140.0),
+    ]{
+        let _=ctx.run(egui::RawInput::default(),|ctx|{
+            egui::CentralPanel::default().show(ctx,|ui|{
+                let measured=ui.scope(|body|{
+                    apply_width_policy(body,policy,target);
+                    body.allocate_exact_size(Vec2::new(40.0,30.0),Sense::hover());
+                });
+                assert!((measured.response.rect.width()-expected).abs()<1.0,
+                    "{policy:?}: {:?}",measured.response.rect);
+            });
+        });
+    }
+    assert_eq!(CardWidthPolicy::default(),CardWidthPolicy::FitContent);
+    assert_eq!(inner_width_for_insets(400.0,12.0,12.0,1.0,14.0,1.0),360.0);
+    assert_eq!(inner_width_for_insets(10.0,12.0,12.0,1.0,0.0,1.0),1.0);
+    assert_eq!(fixed_and_remaining_columns(880.0,346.0,12.0,310.0),Some((346.0,522.0)));
+    assert_eq!(fixed_and_remaining_columns(667.0,346.0,12.0,310.0),None);
+}

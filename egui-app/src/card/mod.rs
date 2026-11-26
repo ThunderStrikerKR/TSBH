@@ -36,6 +36,49 @@ pub(crate) fn apply_height_policy(ui:&mut Ui,policy:CardHeightPolicy,target:f32)
     }
 }
 
+/// Card width is independent of height. Natural cards do not reserve space;
+/// full-width cards reserve a minimum, fixed columns retain their allocation,
+/// and bounded report cards additionally constrain wrapping before scrolling.
+#[derive(Clone,Copy,Debug,Default,PartialEq,Eq)]
+pub(crate) enum CardWidthPolicy {
+    #[default]
+    FitContent,
+    FillAvailable,
+    Fixed,
+    Bounded,
+}
+pub(crate) fn apply_width_policy(ui:&mut Ui,policy:CardWidthPolicy,target:f32){
+    if !target.is_finite(){return;}
+    let width=target.max(0.0);
+    match policy{
+        CardWidthPolicy::FitContent=>{},
+        CardWidthPolicy::FillAvailable=>ui.set_min_width(width),
+        CardWidthPolicy::Fixed=>ui.set_width(width),
+        CardWidthPolicy::Bounded=>{
+            ui.set_width(width);
+            ui.set_max_width(width);
+        }
+    }
+}
+
+/// Width arithmetic for the outer card, its horizontal frame insets and
+/// optional scrollbar reservation. Preserve caller-approved minimum widths.
+pub(crate) fn inner_width_for_insets(
+    outer:f32,left:f32,right:f32,stroke:f32,reserve:f32,minimum:f32,
+)->f32{
+    (outer-left-right-2.0*stroke-reserve).max(minimum)
+}
+pub(crate) fn remaining_column_width(total:f32,occupied:f32,gap:f32)->f32{
+    total-occupied-gap
+}
+pub(crate) fn fixed_and_remaining_columns(
+    total:f32,fixed:f32,gap:f32,remaining_min:f32,
+)->Option<(f32,f32)>{
+    let remaining=remaining_column_width(total,fixed,gap);
+    if remaining<remaining_min{return None;}
+    Some((fixed,remaining))
+}
+
 /// Render each card once in an independent top-aligned, content-sized UI.
 /// Finalize the shared frame only after all natural heights are known.
 /// A zero-height soft layout bound prevents the scroll viewport or sibling
@@ -57,10 +100,10 @@ pub(crate) fn parallel_frames(
             .max_rect(Rect::from_min_size(egui::pos2(x,origin.y),Vec2::new(width,0.0)))
             .layout(Layout::top_down(Align::Min)));
         column.spacing_mut().item_spacing.y=0.0;
-        column.set_width(width);
+        apply_width_policy(&mut column,CardWidthPolicy::Fixed,width);
         let mut card=frame.clone().begin(&mut column);
         let inner_width=card.content_ui.available_width().max(1.0);
-        card.content_ui.set_min_width(inner_width);
+        apply_width_policy(&mut card.content_ui,CardWidthPolicy::FillAvailable,inner_width);
         contents(index,&mut card.content_ui);
         let natural=card.content_ui.min_rect().height();
         prepared.push((column,card,natural));
@@ -157,7 +200,8 @@ pub(crate) fn review_issue_frame(tone: ReviewTone) -> Frame {
 /// The frame owns its insets; the parent owns scrolling and clipping.
 pub(crate) fn review_issue_card(ui: &mut Ui, tone: ReviewTone, add_contents: impl FnOnce(&mut Ui)) {
     review_issue_frame(tone).show(ui, |content| {
-        content.set_min_width(content.available_width().max(0.0));
+        let width=content.available_width().max(0.0);
+        apply_width_policy(content,CardWidthPolicy::FillAvailable,width);
         add_contents(content);
     });
 }
@@ -252,7 +296,7 @@ pub(crate) fn management_summary_card_value(ui:&mut Ui,label:&str,value:&str){
         egui::vec2(card_width,theme::FREIGHT_SUMMARY_CARD_HEIGHT),
         egui::Layout::top_down(egui::Align::Min),
         |slot|{
-            slot.set_width(card_width);
+            apply_width_policy(slot,CardWidthPolicy::Fixed,card_width);
             crate::card::freight_summary_frame().show(slot,|cell|{
                 cell.spacing_mut().item_spacing.y=0.0;
                 let content_width=card_width-2.0*theme::FREIGHT_SUMMARY_PADDING_X
@@ -341,7 +385,8 @@ pub(crate) fn management_master_table_card_min_inner_height(ui:&Ui)->f32{
     )
 }
 pub(crate) fn fill_management_primary_card(ui: &mut Ui, min_inner_height: f32) {
-    ui.set_min_width(ui.available_width().max(1.0));
+    let width=ui.available_width().max(1.0);
+    apply_width_policy(ui,CardWidthPolicy::FillAvailable,width);
     apply_height_policy(ui,CardHeightPolicy::FillAvailable,min_inner_height);
 }
 
@@ -385,9 +430,10 @@ pub(crate) fn reception_section_with_header(
 ){
     let width=ui.available_width();
     let _card=docked_pane_frame().show(ui,|ui|{
-        let width_inset=2.0*theme::SECTION_PADDING;
         let height_inset=theme::RECEPTION_SECTION_HEADER_TOP+theme::RECEPTION_PANE_PADDING_Y;
-        ui.set_min_width((width-width_inset).max(60.0));
+        let inner_width=inner_width_for_insets(width,theme::SECTION_PADDING,
+            theme::SECTION_PADDING,0.0,0.0,60.0);
+        apply_width_policy(ui,CardWidthPolicy::FillAvailable,inner_width);
         // Docked panes have an explicit viewport budget; zero requests a natural card.
         let policy=if minimum_height>0.0{CardHeightPolicy::FillAvailable}
             else{CardHeightPolicy::FitContent};

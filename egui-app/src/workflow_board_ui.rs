@@ -267,9 +267,8 @@ fn workflow_card<R>(
         // The 42pt upper/lower bands and 1pt divider own all vertical
         // spacing. No additional automatic gap between the compact rows.
         card.spacing_mut().item_spacing.y=0.0;
-        card.set_min_width(
-            (outer-theme::SOFT_DIVIDER_WIDTH*2.0).max(0.0)
-        );
+        let width=crate::card::inner_width_for_insets(outer,0.0,0.0,theme::SOFT_DIVIDER_WIDTH,0.0,0.0);
+        crate::card::apply_width_policy(card,crate::card::CardWidthPolicy::FillAvailable,width);
         body(card)
     });
     if selected || preview{
