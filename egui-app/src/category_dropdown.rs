@@ -19,6 +19,7 @@ pub(crate) struct ExplorerState {
     ancestors_open:bool,
     motion:Option<Motion>,
     pub(crate) scroll_epoch:u64,
+    committed_anchor:Option<String>,
     scroll_positions:HashMap<String,f32>,
     rendered_context:Option<String>,
     rendered_query:String,
@@ -488,14 +489,21 @@ pub fn category_dropdown(
                 states.take(state_id,now).map(|entry|entry.0).unwrap_or_default()
             });
             if trigger.clicked(){
-                navigate(&mut state,chain(&index,selected));
-                state.rendered_context=None;
+                // Restore browsing only for the same committed value and
+                // a still-valid path. An external change starts a new scope.
+                state.finish_motion();
+                let valid=state.path.last().is_none_or(|id|chain(&index,id)==state.path);
+                if state.committed_anchor.as_deref()!=Some(selected.as_str())||!valid{
+                    navigate(&mut state,chain(&index,selected));
+                    state.rendered_context=None;
+                }
                 state.scroll_positions.retain(|id,_|id.is_empty()||index.contains_key(id.as_str()));
             }
             menu_body(
                 menu,nodes,&index,&mut state,selected,enabled,allow_empty,
                 &mut changed,popup_width
             );
+            state.committed_anchor=Some(selected.clone());
             ctx.data_mut(|data|{
                 let states=data.get_temp_mut_or_default::<PopupStates>(popup_states_id());
                 states.put(state_id,(state,std::time::Instant::now()));
