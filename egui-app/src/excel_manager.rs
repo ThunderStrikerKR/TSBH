@@ -262,7 +262,7 @@ fn cell(ui:&Ui,rect:Rect,visible:&str,align:Align2,
     }else{
         rect.shrink2(Vec2::new(theme::SPACE_8,0.0))
     };
-    components::paint_management_text_cell(
+    crate::table::paint_management_text_cell(
         ui,padded,visible,visible,role,align,("excel-table-cell",id),false
     );
 }

@@ -93,13 +93,6 @@ const tableContracts = {
   "order_history_manager.rs:paint_detail_products":{shipment_detail_product_galley:1,paint_shipment_detail_products:1},
   // Check the common layer itself: a wrapper must still delegate to the
   // original master, rather than merely retaining the expected name.
-  "components.rs:shipment_detail_cells":{management_table_cells:1,shipment_detail_content:1},
-  "components.rs:paint_shipment_detail_products":{paint_table_galley:1},
-  "components.rs:workflow_shipment_header":{
-    management_inline_list_table_header:1,master_header_begin:1,
-    shipment_detail_cells:1,paint_table_galley:1,management_table_column_rules:1,
-    header_finish:1
-  },
   "components.rs:workflow_shipment_row":{
     shipment_detail_cells:1,shipment_detail_product_galley:2,
     shipment_detail_block_height:1,paint_shipment_detail_surface:1,
@@ -116,6 +109,13 @@ const tableContracts = {
 // Verify the shared renderer itself, not just the calls in screens.
 // Removing a required delegation fails even if the public API is unchanged.
 const tableOwnerContracts = {
+  "table/mod.rs:shipment_detail_cells":{management_table_cells:1,shipment_detail_content:1},
+  "table/mod.rs:paint_shipment_detail_products":{paint_table_galley:1},
+  "table/mod.rs:workflow_shipment_header":{
+    management_inline_list_table_header:1,master_header_begin:1,
+    shipment_detail_cells:1,paint_table_galley:1,management_table_column_rules:1,
+    header_finish:1
+  },
   "table/mod.rs:show":{finish:1},
   "table/mod.rs:inline":{finish_inline:1},
   "table/mod.rs:finish_inline":{finish:1},
@@ -719,7 +719,7 @@ function selfTest(){
     ["product_manager.rs","fn render(){theme::paint_soft_rule(p,r);}",1],
     ["order_history_manager.rs","fn show_page(){theme::paint_bordered_surface(row_ui.painter(),block_rect,theme::ORDER_HISTORY_RECIPIENT_BLOCK_RADIUS,theme::PANEL,theme::DIVIDER);}",1],
     ["order_history_manager.rs","fn show_page(){card::paint_shipment_detail_surface(row_ui,block_rect,theme::PANEL,false);}",0],
-    ["new_screen.rs","fn render(){components::shipment_detail_cells(b,w,g);painter.rect_filled(r,0.0,ink);}",1],
+    ["new_screen.rs","fn render(){crate::table::shipment_detail_cells(b,w,g);painter.rect_filled(r,0.0,ink);}",1],
     ["excel_manager.rs","fn render(){painter.rect_filled(r,0.0,theme::DIVIDER);}",1],
     ["product_manager.rs","fn render(){let c=theme::TABLE_ROW_ALT_BG;}",1],
     ["product_manager.rs","fn render(){let c=std::array::from_fn(|i|Rect::from_min_size(p,w));}",1],
@@ -746,17 +746,17 @@ function selfTest(){
   assert.equal(missingProduct.filter(hit=>hit.rule.includes("product_manager.rs:show_page requires ")).length,8);
   assert.equal(missingProduct.filter(hit=>hit.rule.includes("product_manager.rs:show_detail requires ")).length,1);
   assert.equal(missingProduct.length,9);
-  assert.equal(audit("fn show(){crate::table::show(ui,h,c);crate::table::fixed_rows(ui,v,id,h,n,c);crate::table::row_scope(ui,id,r,c);components::management_row(ui,id,c,t,i);components::management_client_header(ui,h,c,l,w,s);}","client_chooser.rs",true).length,0);
+  assert.equal(audit("fn show(){crate::table::show(ui,h,c);crate::table::fixed_rows(ui,v,id,h,n,c);crate::table::row_scope(ui,id,r,c);components::management_row(ui,id,c,t,i);crate::table::management_client_header(ui,h,c,l,w,s);}","client_chooser.rs",true).length,0);
   assert.equal(audit("fn workflow_primary_at(){}","workflow_board_ui.rs",true).length,5);
   assert.equal(audit("fn workflow_auxiliary_at(){crate::button::workflow_fixed_action(ui,id,r,a,e);} fn workflow_primary_at(){crate::button::workflow_fixed_action(ui,id,r,a,e);} fn workflow_header(){workflow_auxiliary_at();workflow_auxiliary_at();} fn workflow_action_line(){workflow_primary_at();workflow_auxiliary_at();}","workflow_board_ui.rs",true).length,0);
   const missing=(source,file,scope)=>audit(source,file,true)
     .filter(hit=>hit.rule.startsWith("missing shared table contract: "+scope+" requires "));
   const historyScope="order_history_manager.rs:history_detail_cells";
-  assert.equal(missing("fn history_detail_cells(){components::shipment_detail_cells(b,w,g);}","order_history_manager.rs",historyScope).length,0);
+  assert.equal(missing("fn history_detail_cells(){crate::table::shipment_detail_cells(b,w,g);}","order_history_manager.rs",historyScope).length,0);
   assert.equal(missing("fn history_detail_cells(){crate::table::management_table_cells(p,w,h,g);}","order_history_manager.rs",historyScope).length,1);
-  const commonScope="components.rs:shipment_detail_cells";
-  assert.equal(missing("fn shipment_detail_cells(){let c=shipment_detail_content(b);management_table_cells(p,w,h,g);}","components.rs",commonScope).length,0);
-  assert.equal(missing("fn shipment_detail_cells(){shipment_detail_content(b);} fn management_table_cells(){}","components.rs",commonScope).length,1);
+  const commonScope="table/mod.rs:shipment_detail_cells";
+  assert.equal(missing("fn shipment_detail_cells(){let c=shipment_detail_content(b);management_table_cells(p,w,h,g);}","table/mod.rs",commonScope).length,0);
+  assert.equal(missing("fn shipment_detail_cells(){shipment_detail_content(b);} fn management_table_cells(){}","table/mod.rs",commonScope).length,1);
   const tableScope="table/mod.rs:fixed_row";
   const fixed="fn fixed_row(){row_scope();management_table_cells();paint_management_table_row_background();management_table_column_rules();paint_management_table_row_rule();}";
   assert.equal(missing(fixed,"table/mod.rs",tableScope).length,0);

@@ -261,7 +261,7 @@ fn paint_cell(
     ui:&Ui,rect:Rect,content:&str,align:Align2,
     role:typography::ManagementTableCellRole,id:impl std::hash::Hash,
 ){
-    components::paint_management_text_cell(
+    crate::table::paint_management_text_cell(
         ui,rect.shrink2(Vec2::new(theme::SPACE_8,0.0)),content,content,role,
         align,("settlement-cell",id),false
     );

@@ -1256,7 +1256,7 @@ mod shipment_list_tests {
         let output=ctx.run(egui::RawInput::default(),|ctx|{
             egui::CentralPanel::default().show(ctx,|ui|{
                 ui.set_width(390.0);
-                components::workflow_shipment_header(ui);
+                crate::table::workflow_shipment_header(ui);
                 for (chosen,previewed) in [(false,false),(true,false),(false,true)]{
                     let response=shipment_line_with_freight(ui,"수취인", &[
                         "BD 709 × 4".into(),"BD Cart-10 × 2".into(),"BD Conductor × 1".into()

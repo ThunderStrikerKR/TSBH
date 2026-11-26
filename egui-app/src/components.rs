@@ -28,6 +28,18 @@ use crate::dropdown::{management_dropdown_trigger,management_dropdown_trigger_fu
 use crate::dropdown::{management_dropdown_option_palette,management_search_choice_matches};
 // Shared table primitives used by reception and other composite widgets.
 use crate::table::{
+    paint_table_galley,
+    shipment_detail_cells,
+    shipment_detail_product_galley,
+    shipment_detail_block_height,
+    paint_shipment_detail_products,
+    workflow_shipment_columns,
+    management_client_column_widths,
+    management_client_column_edges,
+    reception_item_columns,
+    reception_item_text_clip,
+    reception_items_header,
+    reception_item_value_origin,
     management_table_container_style,management_table_cells,
     management_table_row_fill,paint_management_table_row_background,
     paint_management_table_row_rule,management_table_row_body,
@@ -126,44 +138,7 @@ pub fn management_body_state_overlay(
     );
 }
 
-/// Shared clipped single-line management cell. Callers choose semantic role,
-/// alignment and the existing column-specific insets; no business interaction
-/// or row identity is owned by the painter.
-/// For a deliberately shortened displayed value, preserve the original
-/// text only when clipping or the explicit shortening flag warrants it.
-/// Ordinary cells pass their display text as full text with shortened=false.
-pub fn paint_management_text_cell(
-    ui:&Ui,content:Rect,text:&str,full:&str,role:typography::ManagementTableCellRole,
-    align:egui::Align2,id:impl std::hash::Hash,shortened:bool
-){
-    let visible=content.intersect(ui.clip_rect());
-    if visible.width()<=0.0||visible.height()<=0.0{return;}
-    let color=typography::management_table_cell_color(role);
-    let galley=typography::management_table_cell_galley(ui,text,role);
-    let x=if align==egui::Align2::RIGHT_CENTER{
-        content.right()-galley.size().x
-    }else if align==egui::Align2::CENTER_CENTER{
-        content.center().x-galley.size().x/2.0
-    }else{content.left()};
-    let overflow=paint_table_galley(ui,content,x,galley,color);
-    overflow_region_tooltip(ui,visible,ui.make_persistent_id(id),
-        overflow||shortened,full);
-}
 
-/// Shared vertically centered text painting for ordinary and composite cells.
-/// The caller owns the horizontal anchor, semantic font and interaction.
-pub fn paint_table_galley(
-    ui:&Ui,cell:Rect,x:f32,galley:std::sync::Arc<egui::Galley>,color:Color32
-)->bool{
-    let visible=cell.intersect(ui.clip_rect());
-    let overflow=text_exceeds_rect(galley.size(),visible);
-    if visible.width()>0.0&&visible.height()>0.0{
-        ui.painter().with_clip_rect(visible).galley(
-            egui::pos2(x,cell.center().y-galley.size().y/2.0),galley,color
-        );
-    }
-    overflow
-}
 
 pub fn body_error_overlay(ui:&Ui,viewport:Rect,context:&str,error:&str){
     let visible=viewport.intersect(ui.clip_rect());
@@ -919,59 +894,6 @@ fn workflow_freight_text_job(text:&str,ink:Color32)->egui::text::LayoutJob{
     job
 }
 
-/// Shared expanded shipment detail geometry for History and Reception.
-pub fn shipment_detail_content(block:Rect)->Rect{
-    block.shrink2(Vec2::new(theme::SPACE_12.min(block.width()/2.0),0.0))
-}
-pub fn shipment_detail_cells<const N:usize>(block:Rect,widths:&[f32;N],gap:f32)->[Rect;N]{
-    let content=shipment_detail_content(block);
-    management_table_cells(content.min,widths,content.height(),gap)
-}
-pub fn shipment_detail_product_galley(
-    ui:&Ui,cell_width:f32,text:&str,ink:Color32
-)->std::sync::Arc<egui::Galley>{
-    typography::freight_table_wrapped_galley_with_color(
-        ui,text,(cell_width-theme::SPACE_12).max(1.0),ink)
-}
-pub fn shipment_detail_block_height(text_height:f32)->f32{
-    (text_height+2.0*theme::SPACE_4).ceil().max(theme::ACTION_STANDARD_HEIGHT)
-}
-pub fn paint_shipment_detail_products(
-    ui:&Ui,cell:Rect,galley:std::sync::Arc<egui::Galley>,ink:Color32
-)->bool{
-    let x=cell.left()+theme::SPACE_12/2.0;
-    let pos=egui::pos2(x,cell.center().y-galley.size().y/2.0);
-    let overflow=positioned_text_overflow(Rect::from_min_size(pos,galley.size()),
-        cell.intersect(ui.clip_rect()),galley.elided);
-    paint_table_galley(ui,cell,x,galley,ink);
-    overflow
-}
-/// Only the responsive widths differ from History: this nested list has
-/// no tracking column or management action column.
-fn workflow_shipment_columns(outer:f32)->([f32;3],f32){
-    let inside=(outer-2.0*theme::SPACE_12).max(0.0);
-    let gap=theme::SPACE_8.min(inside*0.04);
-    let name=96.0_f32.min(inside*0.25);
-    let freight=116.0_f32.min(inside*0.23);
-    let product=(inside-name-freight-2.0*gap).max(0.0);
-    ([name,product,freight],gap)
-}
-pub fn workflow_shipment_header(ui:&mut Ui)->Rect{
-    let layout=management_inline_list_table_header(ui);
-    let area=crate::table::master_header_begin(ui,layout.header_rect,layout.header_content_rect);
-    let (widths,gap)=workflow_shipment_columns(layout.table_width);
-    let cells=shipment_detail_cells(area,&widths,gap);
-    for (index,label) in ["수취인","품목","운임"].iter().enumerate(){
-        let cell=cells[index];
-        let galley=typography::management_table_header_galley(ui,label);
-        let x=if index==2{cell.right()-theme::SPACE_8-galley.size().x}
-            else{cell.left()+theme::SPACE_12/2.0};
-        paint_table_galley(ui,cell,x,galley,theme::SECONDARY);
-    }
-    management_table_column_rules(ui,area,&cells,gap);
-    crate::table::header_finish(ui,layout.header_rect);
-    layout.header_rect
-}
 /// Same shipment detail surface, multiline product renderer and cell
 /// coordinates as Order History. Selection only supplies the palette.
 pub fn workflow_shipment_row(
@@ -2781,76 +2703,7 @@ pub fn reception_client_summary_card_editable(
     ).inner
 }
 
-/// The three compact columns keep fixed widths; the address gets all spare
-/// width. The header, rows and rules share this one layout computation.
-fn management_client_column_widths(table_width:f32)->[f32;4]{
-    let name=theme::MANAGEMENT_CLIENT_NAME_COLUMN_WIDTH;
-    let phone=theme::MANAGEMENT_CLIENT_PHONE_COLUMN_WIDTH;
-    let terms=theme::MANAGEMENT_CLIENT_TERMS_COLUMN_WIDTH;
-    [name,(table_width-name-phone-terms).max(0.0),phone,terms]
-}
-fn management_client_column_edges(table_left:f32,table_width:f32)->[f32;3]{
-    let [name,address,phone,_]=management_client_column_widths(table_width);
-    [
-        table_left+name,
-        table_left+name+address,
-        table_left+name+address+phone
-    ]
-}
 
-/// Client columns share the EXACT 36pt / 34pt text / 2pt footer band
-/// of Freight Assignment. Column widths and 12pt label starts still
-/// belong to the client row contract; only the master chrome is reused.
-/// The visible data rect excludes the scrollbar, and horizontally scrolled
-/// labels move together with the row data rather than with the rail.
-pub fn management_client_header(
-    ui:&mut Ui,header:Rect,header_content_rect:Rect,
-    table_left:f32,table_width:f32,current_sort:Option<(usize,bool)>
-)->Option<usize>{
-    let titles=["거래처","주소","전화번호","거래 조건"];
-
-    let text_row=crate::table::master_header_begin(
-        ui,header,header_content_rect
-    );
-    let column_widths=management_client_column_widths(table_width);
-    let mut x=table_left;
-    let mut selected=None;
-    for (i,title) in titles.iter().enumerate(){
-        let col_width=column_widths[i];
-        let column=Rect::from_min_max(
-            egui::pos2(x,text_row.top()),
-            egui::pos2(x+col_width,text_row.bottom())
-        );
-        let visible=column.intersect(text_row);
-        if visible.width()>0.0 {
-            if crate::table::sort_clicked(ui,visible,("client-management-sort",i)){
-                selected=Some(i);
-            }
-            let text_rect=Rect::from_min_max(
-                egui::pos2(column.left()+theme::SPACE_12,text_row.top()),
-                egui::pos2(column.right()-theme::SPACE_12,text_row.bottom())
-            ).intersect(text_row);
-            if text_rect.width()>0.0 {
-                let title_galley=typography::management_table_header_galley(ui,title);
-                let (arrow,color)=match current_sort{
-                    Some((col,false)) if col==i=>("▲",theme::SELECTION),
-                    Some((col,true)) if col==i=>("▼",theme::SELECTION),
-                    _=>("↕",theme::MUTED)
-                };
-                let arrow_galley=typography::management_table_header_galley(ui,arrow);
-                crate::table::heading(ui,column,text_row,text_rect,
-                    crate::table::HeadingAlign::Left(theme::SPACE_12),title_galley,Some((arrow_galley,color)));
-            }
-        }
-        x+=col_width;
-    }
-    management_master_column_rules(
-        ui,text_row,
-        management_client_column_edges(table_left,table_width)
-    );
-    crate::table::header_finish(ui,header);
-    selected
-}
 
 /// Four client data columns. The visible index determines the alternating
 /// background; the dedicated management_client_header owns header rendering.
@@ -2993,18 +2846,6 @@ mod client_display_summary_tests{
     }
 }
 
-fn reception_item_columns(rect: Rect) -> [Rect; 3] {
-    let qty=theme::RECEPTION_ITEMS_QTY_WIDTH;
-    let amount=theme::RECEPTION_ITEMS_AMOUNT_MAX_WIDTH;
-    let name_right=rect.right()-qty-amount;
-    let qty_right=name_right+qty;
-    [
-        Rect::from_min_max(rect.min,egui::pos2(name_right,rect.bottom())),
-        Rect::from_min_max(egui::pos2(name_right,rect.top()),
-            egui::pos2(qty_right,rect.bottom())),
-        Rect::from_min_max(egui::pos2(qty_right,rect.top()),rect.max),
-    ]
-}
 
 /// Ellipsize only the displayed product label, using the exact 16pt glyph
 /// width. This does not alter the Rust item title, matching key or hover text.
@@ -3092,63 +2933,8 @@ pub struct ReceptionItemCells {
     pub remove_clicked: bool,
 }
 
-/// Product text needs equal breathing room on both sides of the blue
-/// outline. Header and rows use the same 4pt extra horizontal inset;
-/// quantity/amount alignment and highlight geometry remain untouched.
-fn reception_item_text_clip(rect:Rect,index:usize)->Rect {
-    if index==0 {
-        rect.shrink2(egui::vec2(theme::SPACE_4,0.0))
-    }else{rect}
-}
 
-/// One shared item header; remove_slot preserves the action-column footprint.
-pub fn reception_items_header(ui:&mut Ui,remove_slot:bool)->Rect{
-    let action_width=if remove_slot{theme::RECEPTION_ITEM_REMOVE_WIDTH}else{0.0};
-    let width=management_table_data_width(
-        ui.available_width(),0.0,theme::RECEPTION_ITEMS_MIN_TABLE_WIDTH+action_width
-    );
-    let (rect, _) = ui.allocate_exact_size(
-        Vec2::new(width, theme::RECEPTION_ITEMS_HEADER_HEIGHT), Sense::hover()
-    );
-    // The reception list has its own approved 32pt compact header, but
-    // follows the master's raised header surface and INSIDE bottom band.
-    // No extra layout height or clipped 1pt edge is introduced.
-    let text_rect=crate::table::header_begin(ui,rect,rect);
-    let columns = reception_item_columns(Rect::from_min_max(
-        rect.min,egui::pos2(rect.right()-action_width,rect.bottom())
-    ));
-    for (index, label) in ["품목", "수량", "금액"].iter().enumerate() {
-        // Header and value cells use identical text start coordinates.
-        let cell = reception_item_text_clip(
-            columns[index].shrink2(egui::vec2(theme::SPACE_8, 0.0)),index
-        );
-        let galley = typography::management_table_header_galley(ui, label);
-        // The product header starts at the same LEFT edge as product text;
-        // quantity and amount end at the same RIGHT edges as their values.
-        let x = if index == 0 {
-            cell.left()
-        } else {
-            cell.right() - galley.size().x
-        };
-        let text_center_y = text_rect.center().y;
-        ui.painter().with_clip_rect(cell).galley(
-            egui::pos2(x, text_center_y - galley.size().y / 2.0),
-            galley, theme::SECONDARY,
-        );
-    }
-    crate::table::header_finish(ui,rect);
-    rect
-}
 
-/// Use the actual laid-out glyph box for all value cells.
-/// Product text is left aligned; quantity and amount share a right edge and
-/// the exact same vertical midpoint independently of their string length.
-fn reception_item_value_origin(cell:Rect,glyphs:Vec2,right:bool)->egui::Pos2 {
-    egui::pos2(
-        if right {cell.right()-glyphs.x} else {cell.left()},
-        cell.center().y-glyphs.y/2.0,
-    )
-}
 
 fn reception_pending_money_marker(value:&str)->bool{
     matches!(value.trim(), "-" | "–" | "—")
@@ -7795,7 +7581,7 @@ mod shared_ui_base_113_contract_tests {
     fn standard_text_cells_and_history_header_use_shared_painters(){
         for source in [include_str!("product_manager.rs"),include_str!("excel_manager.rs"),
             include_str!("daily_settlement_manager.rs")]{
-            assert!(production_source_for_contract(source).contains("components::paint_management_text_cell("));
+            assert!(production_source_for_contract(source).contains("crate::table::paint_management_text_cell("));
         }
         for source in [include_str!("order_history_manager.rs"),include_str!("excel_manager.rs"),
             include_str!("daily_settlement_manager.rs")]{
@@ -7804,6 +7590,6 @@ mod shared_ui_base_113_contract_tests {
             assert!(!production.contains("components::management_master_header_finish("));
         }
         let history=production_source_for_contract(include_str!("order_history_manager.rs"));
-        assert!(history.contains("components::paint_table_galley("));
+        assert!(history.contains("crate::table::paint_table_galley("));
     }
 }

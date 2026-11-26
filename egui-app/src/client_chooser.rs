@@ -355,7 +355,7 @@ impl ClientChooser {
                             let header_left=first_row_left.unwrap_or(
                                 header_rect.left()-output.state.offset.x
                             );
-                            if let Some(column)=components::management_client_header(
+                            if let Some(column)=crate::table::management_client_header(
                                 results_panel,header_rect,header_content,
                                 header_left,table_width,self.sort
                             ){
