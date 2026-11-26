@@ -283,5 +283,20 @@ mod tests {
         assert_eq!(value["products"][0]["cells"][0],"p7");
         assert_eq!(value["options"][0]["cells"][2],"v7");
         assert_eq!(value["options"][0]["cells"][5],"5000");
+        // Check the actual exported XLSX -> parser -> native business preview,
+        // not merely the visible IDs and numbers in the parsed cells.
+        let review=bando_data_access::preview_unified_product_workbook(&state,&value).unwrap();
+        assert_eq!(review["products"],state["products"]);
+        assert_eq!(review["updatedProducts"],0);
+        assert_eq!(review["updatedOptions"],0);
+        assert_eq!(review["rows"][0]["status"],"UNCHANGED");
+        let mut edited=value;
+        edited["options"][0]["cells"][5]=json!("5,500");
+        let changed=bando_data_access::preview_unified_product_workbook(&state,&edited).unwrap();
+        assert_eq!(changed["updatedProducts"],1);
+        assert_eq!(changed["products"][0]["variants"][0]["wholesale"],5500);
+        assert_eq!(changed["products"][0]["defaultColor"],"검정");
+        assert_eq!(changed["products"][0]["variants"][0]["color"],"검정");
+        assert_eq!(changed["products"][0]["variants"][0]["retail"],8000);
     }
 }
