@@ -44,7 +44,7 @@ pub fn modal_scope(ctx:&Context)->Option<LayerId>{
 }
 /// Page transitions explicitly retire native popup memory, including a
 /// menu whose trigger was virtualized away before the next render.
-pub fn begin_page(ctx:&Context,page:&'static str){
+pub fn begin_page(ctx:&Context,page:&'static str)->bool{
     let changed=with_scope(ctx,|s|{
         let changed=s.page.is_some_and(|old|old!=page);
         s.page=Some(page);
@@ -52,6 +52,7 @@ pub fn begin_page(ctx:&Context,page:&'static str){
         changed
     });
     if changed{egui::Popup::close_all(ctx);}
+    changed
 }
 pub fn page_epoch(ctx:&Context)->u64{with_scope(ctx,|s|s.page_epoch)}
 fn owner_in_scope(s:&FrameScope,mut layer:LayerId)->Option<LayerId>{
@@ -248,7 +249,11 @@ mod modal_input_routing_tests{
         });
         let _=ctx.run(egui::RawInput::default(),|ctx|{
             egui::Popup::open_id(ctx,popup.id);
-            begin_page(ctx,"History");
+            let old_epoch=page_epoch(ctx);
+            assert!(begin_page(ctx,"History"));
+            assert_eq!(page_epoch(ctx),old_epoch.wrapping_add(1));
+            assert!(!begin_page(ctx,"History"));
+            assert_eq!(page_epoch(ctx),old_epoch.wrapping_add(1));
             assert!(!egui::Popup::is_id_open(ctx,popup.id));
         });
     }

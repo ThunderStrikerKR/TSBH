@@ -9940,7 +9940,9 @@ impl eframe::App for BandoEgui {
         let frame_started=Instant::now();
         self.window_state.update(ctx);
         overlay::begin_frame(ctx);
-        overlay::begin_page(ctx,self.page.label());
+        if overlay::begin_page(ctx,self.page.label()){
+            self.workflow_ui.stop_preview();
+        }
         floating_notice::begin_page(ctx,self.page.label());
         if let Some(page)=self.client_pending_page{
             let approved=self.client_manager.as_mut()
@@ -9966,6 +9968,10 @@ impl eframe::App for BandoEgui {
                 // User cancelled a pending category leave confirmation.
                 self.product_pending_page=None;
             }
+        }
+        if overlay::begin_page(ctx,self.page.label()){
+            floating_notice::begin_page(ctx,self.page.label());
+            self.workflow_ui.stop_preview();
         }
         self.poll_source_analysis(ctx);
         self.poll_auto_client_change();
@@ -10084,7 +10090,10 @@ impl eframe::App for BandoEgui {
             self.guided_inline_target=None;
         }
         self.top_bar(ctx);
-        overlay::begin_page(ctx,self.page.label());
+        if overlay::begin_page(ctx,self.page.label()){
+            floating_notice::begin_page(ctx,self.page.label());
+            self.workflow_ui.stop_preview();
+        }
         if self.page == Page::Reception {
             self.reception(ctx);
         } else {
@@ -10172,6 +10181,10 @@ impl eframe::App for BandoEgui {
         floating_notice::sync(ctx,"workflow_board_read_error","reception.workflow.read",
             floating_notice::Tone::Error,
             if self.page==Page::Reception{self.workflow_read_error.as_deref()}else{None});
+        if overlay::begin_page(ctx,self.page.label()){
+            floating_notice::begin_page(ctx,self.page.label());
+            self.workflow_ui.stop_preview();
+        }
         overlay::finish_frame(ctx);
         floating_notice::show(ctx);
         // Developer console only; never expose performance diagnostics as
