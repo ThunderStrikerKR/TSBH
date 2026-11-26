@@ -1737,14 +1737,6 @@ impl ProductManager {
         let usable=(available-4.0*theme::SPACE_8).max(5.0);
         [0.27,0.13,0.19,0.19,0.22].into_iter().map(|ratio|usable*ratio).collect()
     }
-    /// Both cards share the taller natural body, with each gap counted once.
-    fn detail_section_body_height()->f32{
-        let image=theme::PRODUCT_DETAIL_IMAGE_SIZE+theme::SPACING
-            +theme::ACTION_STANDARD_HEIGHT;
-        let fields=8.0*theme::INPUT_HEIGHT+6.0*theme::SPACING
-            +2.0*theme::MODAL_MASTER_WORKSPACE_GAP+theme::SOFT_DIVIDER_WIDTH;
-        image.max(fields)
-    }
     fn detail_wide_text(
         ui:&mut Ui,draft:&mut Value,key:&str,label:&str,enabled:bool
     ){
@@ -2018,52 +2010,24 @@ impl ProductManager {
                         if let Some((overview_width,image_width))=
                             Self::detail_columns(content_width)
                         {
-                            // Use the measured natural content heights from the
-                            // previous frame, not the height of already padded cards.
-                            let height_id=body.id().with("product-detail-paired-height");
-                            let previous=body.ctx().data(|data|data.get_temp::<(f32,f32)>(height_id));
-                            let target=previous.filter(|(width,_)|(width-content_width).abs()<0.5)
-                                .map(|(_,height)|height).unwrap_or_else(Self::detail_section_body_height);
-                            let mut natural_image=0.0_f32;
-                            let mut natural_overview=0.0_f32;
-                            // Image first; all eight editable fields share one overview.
-                            body.horizontal(|top|{
-                                top.spacing_mut().item_spacing.x=theme::MODAL_MASTER_WORKSPACE_GAP;
-                                top.vertical(|media|{
-                                    media.set_width(image_width);
-                                    let section=crate::popup::modal_section_measured(
-                                        media,"상품 이미지",|photos|{
-                                            self.detail_image_column(
-                                                photos,&mut draft,editable,busy,&mut photo_error
-                                            );
-                                            natural_image=photos.min_rect().height();
-                                            photos.set_min_height(target);
-                                        }
-                                    );
-                                    measured.cards.push(section.response.rect);
-                                });
-                                top.vertical(|overview|{
-                                    overview.set_width(overview_width);
-                                    let section=crate::popup::modal_section_measured(
-                                        overview,"상품 개요",|fields|{
-                                            Self::detail_information_column(
-                                                fields,&mut draft,&mut prices,&brands,&categories,
-                                                &category_nodes,editable,busy
-                                            );
-                                            natural_overview=fields.min_rect().height();
-                                            fields.set_min_height(target);
-                                        }
-                                    );
-                                    measured.cards.push(section.response.rect);
-                                });
-                            });
-                            let measured_height=natural_image.max(natural_overview);
-                            if (measured_height-target).abs()>0.25{
-                                body.ctx().request_repaint();
-                            }
-                            body.ctx().data_mut(|data|data.insert_temp(
-                                height_id,(content_width,measured_height)
-                            ));
+                            // Same-frame content measurement is owned by the shared card module.
+                            // Render each interactive column exactly once; no cached height.
+                            measured.cards=crate::popup::modal_parallel_sections(
+                                body,&[("상품 이미지",image_width),("상품 개요",overview_width)],
+                                crate::card::CardHeightPolicy::MatchTallest,
+                                |index,content|{
+                                    if index==0{
+                                        self.detail_image_column(
+                                            content,&mut draft,editable,busy,&mut photo_error
+                                        );
+                                    }else{
+                                        Self::detail_information_column(
+                                            content,&mut draft,&mut prices,&brands,&categories,
+                                            &category_nodes,editable,busy
+                                        );
+                                    }
+                                }
+                            );
                         }else{
                             body.vertical(|stack|{
                                 let section=crate::popup::modal_section_measured(
@@ -2363,13 +2327,14 @@ mod tests {
         assert!(!rendered.contains("unwrap_or((0,0,0,0))"));
     }
     #[test]
-    fn product_detail_inline_rows_fit_with_fixed_320_image(){
-        let body=ProductManager::detail_section_body_height();
-        let rows=8.0*theme::INPUT_HEIGHT+6.0*theme::SPACING
-            +2.0*theme::MODAL_MASTER_WORKSPACE_GAP+theme::SOFT_DIVIDER_WIDTH;
-        assert!(body>=theme::PRODUCT_DETAIL_IMAGE_SIZE);
-        assert_eq!(body,rows.max(theme::PRODUCT_DETAIL_IMAGE_SIZE
-            +theme::SPACING+theme::ACTION_STANDARD_HEIGHT));
+    fn product_detail_uses_current_content_height_policy(){
+        let source=include_str!("product_manager.rs");
+        let composition=source.split("    pub fn show_detail(").nth(1).unwrap()
+            .split("        self.selected=Some(draft.clone());").next().unwrap();
+        assert!(composition.contains("crate::popup::modal_parallel_sections("));
+        assert!(composition.contains("CardHeightPolicy::MatchTallest"));
+        assert!(!composition.contains("product-detail-paired-height"));
+        assert!(!composition.contains("set_min_height("));
         assert_eq!(theme::PRODUCT_DETAIL_IMAGE_SIZE,320.0);
     }
     #[test]
@@ -2383,7 +2348,7 @@ mod tests {
         assert!(composition.contains("workspace.footer("));
         assert!(composition.contains("ModalEditorBodyGeometry::default()"));
         assert!(composition.contains("section_divider(body)"));
-        assert!(composition.contains("top.spacing_mut().item_spacing.x="));
+        assert!(composition.contains("crate::popup::modal_parallel_sections("));
         assert!(!composition.contains("top.add_space(theme::SPACE_12)"));
         assert!(!composition.contains("modal.add_space(theme::SPACE_12)"));
         assert!(!composition.contains("crate::ui_primitives::soft_divider(body)"));
@@ -2436,7 +2401,7 @@ mod tests {
         let source=include_str!("product_manager.rs");
         let composition=source.split("    pub fn show_detail(").nth(1).unwrap()
             .split("        self.selected=Some(draft.clone());").next().unwrap();
-        let horizontal=composition.split("body.horizontal(|top|{").nth(1).unwrap()
+        let horizontal=composition.split("measured.cards=crate::popup::modal_parallel_sections(").nth(1).unwrap()
             .split("                        }else{").next().unwrap();
         let stacked=composition.split("body.vertical(|stack|{").nth(1).unwrap()
             .split("                        // A single shared structural separator").next().unwrap();
@@ -2448,7 +2413,7 @@ mod tests {
             assert!(!section.contains("\"판매 · 가격\""));
         }
         assert_eq!(theme::PRODUCT_DETAIL_IMAGE_SIZE,320.0);
-        assert!(horizontal.contains("theme::MODAL_MASTER_WORKSPACE_GAP"));
+        assert!(horizontal.contains("CardHeightPolicy::MatchTallest"));
     }
     #[test]
     fn brand_selector_supports_korean_names_and_registered_aliases(){
@@ -2925,6 +2890,14 @@ mod tests {
             assert!(text.iter().any(|(s,rect)|s==label&&cards[1].contains(rect.center())),
                 "field {label} must stay inside the compact overview");
         }
+        // The last visible field/action must remain near the bottom of
+        // at least one card, not hundreds of points above both borders.
+        let last=text.iter().filter(|(label,rect)|
+            ["이미지 등록","이미지 제거","소매가"].contains(&label.as_str())
+            && cards.iter().any(|card|card.contains(rect.center()))
+        ).map(|(_,rect)|rect.bottom()).fold(f32::NEG_INFINITY,f32::max);
+        assert!(last.is_finite());
+        assert!(cards[0].bottom()-last<=40.0,"excess card tail: {cards:?}, last={last}");
         assert!(geometry.header.is_some()&&geometry.footer.is_some());
         assert!(geometry.content.divider.is_some()&&geometry.content.advanced_header.is_some());
         let gaps=geometry.gaps();

@@ -225,3 +225,42 @@ mod shared_card_scroll_rendering_tests {
         }
     }
 }
+
+
+#[test]
+fn shared_parallel_cards_fit_current_content_and_shrink_without_cached_height(){
+    use super::{parallel_frames,CardHeightPolicy};
+    let ctx=egui::Context::default();
+    for (left,right) in [(240.0,100.0),(40.0,80.0),(120.0,20.0)]{
+        for policy in [CardHeightPolicy::MatchTallest,CardHeightPolicy::FitContent]{
+            let mut rects=Vec::new();
+            let mut calls=[0;2];
+            let _=ctx.run(egui::RawInput{
+                screen_rect:Some(Rect::from_min_size(egui::Pos2::ZERO,Vec2::new(900.0,700.0))),
+                ..Default::default()
+            },|ctx|{
+                egui::CentralPanel::default().show(ctx,|ui|{
+                    ui.spacing_mut().item_spacing.y=0.0;
+                    rects=parallel_frames(ui,&[180.0,220.0],12.0,Frame::NONE,
+                        policy,|index,body|{
+                            calls[index]+=1;
+                            body.allocate_exact_size(Vec2::new(100.0,[left,right][index]),Sense::hover());
+                        });
+                    assert!((ui.cursor().top()-rects[0].bottom().max(rects[1].bottom())).abs()<1.0);
+                });
+            });
+            assert_eq!(calls,[1,1]);
+            assert_eq!(rects.len(),2);
+            assert!((rects[0].top()-rects[1].top()).abs()<1.0);
+            assert!((rects[1].left()-rects[0].right()-12.0).abs()<1.0);
+            for (index,natural) in [left,right].into_iter().enumerate(){
+                let expected=if policy==CardHeightPolicy::MatchTallest{left.max(right)}else{natural};
+                assert!((rects[index].height()-expected).abs()<1.0,"{policy:?}: {rects:?}");
+            }
+        }
+    }
+    assert_eq!(CardHeightPolicy::default(),CardHeightPolicy::FitContent);
+    assert_eq!(CardHeightPolicy::FillAvailable.resolve(40.0,80.0,160.0),160.0);
+    assert_eq!(CardHeightPolicy::FillAvailable.resolve(200.0,80.0,160.0),200.0);
+    assert_eq!(CardHeightPolicy::FillAvailable.resolve(40.0,80.0,f32::INFINITY),40.0);
+}

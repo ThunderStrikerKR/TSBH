@@ -5,6 +5,72 @@ use crate::theme::*;
 use crate::scrollbar::{scroll_area,ScrollAxes};
 #[cfg(test)]
 use crate::ui_test_support::record;
+/// Height policy for reusable card groups. Content fitting is the default;
+/// growing to a sibling or viewport is always an explicit choice.
+#[derive(Clone,Copy,Debug,Default,PartialEq,Eq)]
+pub(crate) enum CardHeightPolicy {
+    #[default]
+    FitContent,
+    MatchTallest,
+    FillAvailable,
+}
+impl CardHeightPolicy {
+    pub(crate) fn resolve(self,natural:f32,tallest:f32,available:f32)->f32{
+        match self {
+            Self::FitContent=>natural,
+            Self::MatchTallest=>natural.max(tallest),
+            Self::FillAvailable if available.is_finite()=>natural.max(available),
+            Self::FillAvailable=>natural,
+        }
+    }
+}
+
+/// Render each card once in an independent top-aligned, content-sized UI.
+/// Finalize the shared frame only after all natural heights are known.
+/// A zero-height soft layout bound prevents the scroll viewport or sibling
+/// from becoming an accidental minimum; widgets may grow it as needed.
+/// No previous-frame cache or second execution of interactive contents.
+pub(crate) fn parallel_frames(
+    ui:&mut Ui,widths:&[f32],gap:f32,frame:Frame,policy:CardHeightPolicy,
+    mut contents:impl FnMut(usize,&mut Ui),
+)->Vec<Rect>{
+    if widths.is_empty(){return Vec::new();}
+    let origin=ui.available_rect_before_wrap().min;
+    let available=ui.available_height();
+    let mut x=origin.x;
+    let mut prepared=Vec::with_capacity(widths.len());
+    for (index,&width) in widths.iter().enumerate(){
+        let width=width.max(1.0);
+        let mut column=ui.new_child(UiBuilder::new()
+            .id_salt(("parallel-card",index))
+            .max_rect(Rect::from_min_size(egui::pos2(x,origin.y),Vec2::new(width,0.0)))
+            .layout(Layout::top_down(Align::Min)));
+        column.spacing_mut().item_spacing.y=0.0;
+        column.set_width(width);
+        let mut card=frame.clone().begin(&mut column);
+        let inner_width=card.content_ui.available_width().max(1.0);
+        card.content_ui.set_min_width(inner_width);
+        contents(index,&mut card.content_ui);
+        let natural=card.content_ui.min_rect().height();
+        prepared.push((column,card,natural));
+        x+=width+gap;
+    }
+    let tallest=prepared.iter().map(|(_,_,height)|*height).fold(0.0_f32,f32::max);
+    // The frame includes margins and stroke; the policy resolves body height.
+    let mut rects=Vec::with_capacity(prepared.len());
+    let mut bounds=Rect::NOTHING;
+    for (mut column,mut card,natural) in prepared{
+        let overhead=card.frame.total_margin().sum().y;
+        let target=policy.resolve(natural,tallest,(available-overhead).max(0.0));
+        card.content_ui.set_min_height(target);
+        let rect=card.end(&mut column).rect;
+        bounds=bounds.union(rect);
+        rects.push(rect);
+    }
+    ui.advance_cursor_after_rect(bounds);
+    rects
+}
+
 /// Selected/hovered list-row surface; callers own content and selection.
 pub(crate) fn selectable_list_row(ui:&mut Ui,height:f32,selected:bool,enabled:bool)->(Rect,Response){
     let (rect,response)=ui.allocate_exact_size(Vec2::new(ui.available_width(),height),Sense::click());

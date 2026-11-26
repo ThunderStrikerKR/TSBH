@@ -872,6 +872,27 @@ pub(crate) fn modal_section_measured<R>(
         })
 }
 
+/// Parallel modal cards use the same heading, frame and body spacing as
+/// single sections. Height decisions belong to the common card owner.
+pub(crate) fn modal_parallel_sections(
+    ui:&mut Ui,sections:&[(&str,f32)],policy:crate::card::CardHeightPolicy,
+    mut contents:impl FnMut(usize,&mut Ui),
+)->Vec<Rect>{
+    let widths:Vec<f32>=sections.iter().map(|(_,width)|*width).collect();
+    crate::card::parallel_frames(
+        ui,&widths,theme::MODAL_MASTER_WORKSPACE_GAP,
+        theme::bordered_surface(theme::MODAL_SECTION_BG,theme::DIVIDER,theme::MODAL_SECTION_RADIUS)
+            .inner_margin(theme::MODAL_SECTION_PADDING),
+        policy,|index,section|{
+            modal_section_heading_with_rule(section,sections[index].0);
+            section.scope(|body|{
+                body.spacing_mut().item_spacing.y=theme::SPACING;
+                contents(index,body);
+            });
+        }
+    )
+}
+
 /// Structural spacing for an explicitly managed modal workspace.
 ///
 /// Eguis default item_spacing is additive to manual add_space() calls.
