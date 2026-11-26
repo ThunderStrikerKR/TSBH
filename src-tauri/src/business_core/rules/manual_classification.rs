@@ -294,9 +294,7 @@ pub(super) fn apply(payload: &Value) -> Result<Value, String> {
         let rid=required_str(cell,"recipientId")?;
         let iid=required_str(cell,"itemId")?;
         let value=payload.get("value").ok_or("수정 단가 입력이 없습니다.")?;
-        let parsed=if value.is_null(){None}
-            else{Some(super::safe(value)
-                .ok_or("단가는 0 이상의 안전한 정수여야 합니다.")?)};
+        let parsed=super::manual_amount(value)?;
         let row=model["rows"].as_array_mut().ok_or("배송 행 목록 오류")?
             .iter_mut().find(|r|str_field(r,"id")==rid)
             .ok_or("수취인 ID를 확인하세요.")?;
@@ -420,10 +418,7 @@ pub(super) fn apply(payload: &Value) -> Result<Value, String> {
                 // The same native reducer replays an employee's persisted
                 // base charge inside the SQLite transaction. This is not an
                 // applied (possibly doubled) UI amount; do not halve twice.
-                let amount=if value.is_null(){None}else{
-                    Some(super::safe(value)
-                        .ok_or("저장할 기본 운임은 안전한 정수여야 합니다.")?)
-                };
+                let amount=super::manual_amount(value)?;
                 let origin=recipient.get("dispatchOrigin")
                     .and_then(Value::as_str).unwrap_or("FACTORY").to_owned();
                 if !matches!(origin.as_str(),"FACTORY"|"STORE"){
@@ -439,9 +434,7 @@ pub(super) fn apply(payload: &Value) -> Result<Value, String> {
                 set(recipient,"shippingCharges",Value::Object(charges))?;
             },
             "shippingCharge" => {
-                if value.as_i64().is_none() && !value.is_null(){
-                    return Err("운임은 0 이상의 정수로 입력하세요.".into());
-                }
+                super::manual_amount(value)?;
                 let origin=recipient.get("dispatchOrigin")
                     .and_then(Value::as_str).unwrap_or("FACTORY").to_owned();
                 if !matches!(origin.as_str(),"FACTORY"|"STORE"){
