@@ -719,7 +719,7 @@ mod reception_state_layout_invariance_tests{
                     ("amount",cells.amount.rect)]);
                 ui.add_space(theme::SPACE_8);
                 let freight=reception_freight_row_controls(
-                    ui,"운임",Some(3000),Some(false),Some(false),true,editable,editable,editable,true
+                    ui,"운임",Some(3000),Some(false),Some(false),true,editable,editable,editable,true,false
                 );
                 rects.push(("freight amount",freight.amount_rect.expect("freight amount slot")));
                 ui.add_space(theme::SPACE_8);
