@@ -67,6 +67,11 @@ pub fn reveal_target(ui:&Ui,expected:Stage,rect:Rect){
         ui.scroll_to_rect(rect,None);
     }
 }
+/// Shared read-only value emphasis: pad the measured text bounds on all
+/// sides, with the allocated control slot (not the text clip) as the limit.
+pub fn value_rect(ink:Rect,slot:Rect)->Rect{
+    ink.expand(theme::SPACE_4).intersect(slot)
+}
 fn background_shape(rect:Rect)->egui::Shape{
     egui::Shape::rect_filled(rect,theme::CONTROL_RADIUS,theme::ONE_TOUCH_BG)
 }
@@ -197,6 +202,14 @@ pub fn payment_message(ui:&mut Ui,text:&str,signature:&str,emphasis:bool){
 #[cfg(test)]
 mod tests{
     use super::*;
+    #[test] fn value_emphasis_reserves_equal_padding_inside_control_slot(){
+        let slot=Rect::from_min_size(egui::pos2(0.0,0.0),egui::vec2(120.0,42.0));
+        let ink=Rect::from_min_size(egui::pos2(25.0,18.0),egui::vec2(91.0,16.0));
+        let frame=value_rect(ink,slot);
+        assert_eq!(frame,ink.expand(theme::SPACE_4));
+        assert_eq!(frame.center(),ink.center());
+        assert_eq!(frame.right(),slot.right());
+    }
     #[test] fn one_touch_palette_keeps_orange_fill_and_tint(){
         assert_eq!(theme::ONE_TOUCH_BG,Color32::from_rgb(59,43,27));
         assert_ne!(theme::ONE_TOUCH_BG,theme::PANEL);
