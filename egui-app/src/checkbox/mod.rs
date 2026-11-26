@@ -26,7 +26,7 @@ pub(crate) fn management_table_checkbox_rect(
 /// Render either a fixed-header select-all checkbox or a body-row checkbox
 /// with identical centering, clipping, stable identity and enabled semantics.
 /// Keep selection business rules at the call site.
-pub fn management_table_checkbox(
+pub(crate) fn management_table_checkbox(
     ui:&mut Ui,cell:Rect,vertical_area:Rect,
     checked:&mut bool,enabled:bool,id:impl std::hash::Hash
 )->Response {
@@ -50,7 +50,7 @@ pub fn management_table_checkbox(
 /// Shared checkbox control. The caller owns the checked state and its
 /// business transition; enabled state, widget construction and future visual
 /// policy are centralized here.
-pub fn checkbox(
+pub(crate) fn checkbox(
     ui:&mut Ui,checked:&mut bool,label:&str,enabled:bool
 )->Response{
     let response=ui.add_enabled(enabled,egui::Checkbox::new(checked,label));
@@ -60,7 +60,7 @@ pub fn checkbox(
 
 /// One full-width, fixed-height checkbox-list row with stable identity.
 /// The row layout is shared while the caller retains domain-specific updates.
-pub fn checkbox_list_row(
+pub(crate) fn checkbox_list_row(
     ui:&mut Ui,id:impl std::hash::Hash,
     checked:&mut bool,label:&str,enabled:bool,height:f32
 )->Response{

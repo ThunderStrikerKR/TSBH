@@ -7,7 +7,7 @@ use crate::ui_primitives::{management_body_state_inline,text_exceeds_rect,overfl
 
 /// Configure the shared SINGLE-SELECT popup only. Never recolor
 /// unrelated checkboxes, tables, global widget hover, or order selection.
-pub(crate) fn management_dropdown_option_palette(ui:&mut Ui){
+fn management_dropdown_option_palette(ui:&mut Ui){
     let visuals=ui.visuals_mut();
     // egui::selectable_value uses selection.bg_fill for the current value.
     // Keep that persistent state darker than the pointer's transient hover.
@@ -27,14 +27,14 @@ pub(crate) fn management_dropdown_option_palette(ui:&mut Ui){
 /// right-hand chevron, 1pt outline, 6pt corner radius. This replaces native
 /// ComboBox triggers where management screens need the same visual language.
 /// The caller retains its existing option values and change handling.
-pub fn management_dropdown(
+pub(crate) fn management_dropdown(
     ui:&mut Ui,label:&str,width:f32,enabled:bool,
     options:impl FnOnce(&mut Ui)
 )->Response {
     management_dropdown_inner(ui,label,label,width,enabled,false,None,None,options)
 }
 /// Pre-fitted category paths retain the original text as the single tooltip.
-pub fn management_dropdown_full_label(
+pub(crate) fn management_dropdown_full_label(
     ui:&mut Ui,label:&str,full_label:&str,width:f32,enabled:bool,
     options:impl FnOnce(&mut Ui)
 )->Response{
@@ -43,7 +43,7 @@ pub fn management_dropdown_full_label(
 /// Same management dropdown master, with an optional colored status mark.
 /// This only changes the glyph painting; popup placement, hover and row
 /// selection remain owned by the shared management dropdown.
-pub fn management_status_dropdown(
+pub(crate) fn management_status_dropdown(
     ui:&mut Ui,label:&str,width:f32,enabled:bool,
     status_color:Color32,options:impl FnOnce(&mut Ui)
 )->Response {
@@ -54,7 +54,7 @@ pub fn management_status_dropdown(
 
 /// Compact, two-option menus such as 선불 / 착불 never grow wider than their
 /// own trigger. Other selectors may expand to fit longer catalog names.
-pub fn management_dropdown_compact(
+pub(crate) fn management_dropdown_compact(
     ui:&mut Ui,label:&str,width:f32,enabled:bool,
     options:impl FnOnce(&mut Ui)
 )->Response {
@@ -63,7 +63,7 @@ pub fn management_dropdown_compact(
 
 /// A mixed label keeps the common trigger, menu, selection and overflow
 /// behavior. Callers supply semantic value spans, never a local painter.
-pub fn management_dropdown_values(
+pub(crate) fn management_dropdown_values(
     ui:&mut Ui,label:&egui::text::LayoutJob,width:f32,enabled:bool,
     options:impl FnOnce(&mut Ui)
 )->Response{
@@ -196,18 +196,18 @@ fn management_dropdown_inner(
 /// Its stable ID is the value passed to the existing catalog/filter workflow;
 /// search_text can additionally contain localized names and registry aliases.
 #[derive(Clone,Debug,PartialEq,Eq)]
-pub struct ManagementSearchChoice {
-    pub value:String,
-    pub label:String,
-    pub search_text:String,
+pub(crate) struct ManagementSearchChoice {
+    pub(crate) value:String,
+    pub(crate) label:String,
+    pub(crate) search_text:String,
 }
 impl ManagementSearchChoice {
-    pub fn new(value:String,label:String,search_text:String)->Self{
+    pub(crate) fn new(value:String,label:String,search_text:String)->Self{
         Self{value,label,search_text}
     }
 }
 
-pub(crate) fn management_search_choice_matches(
+fn management_search_choice_matches(
     choice:&ManagementSearchChoice,query:&str
 )->bool{
     let query=query.trim().to_lowercase();
@@ -220,7 +220,7 @@ pub(crate) fn management_search_choice_matches(
 /// palette, selection semantics, 28pt option rows, click-to-close and toast
 /// anchor all remain shared; only a 36pt search field is added above the
 /// internally scrolling choices. Search never changes the selected value.
-pub fn management_searchable_dropdown(
+pub(crate) fn management_searchable_dropdown(
     ui:&mut Ui,label:&str,width:f32,enabled:bool,
     current:&mut String,options:&[ManagementSearchChoice],hint:&str,
 )->Response{
@@ -341,28 +341,28 @@ fn management_dropdown_option_inner<T:PartialEq>(
     response
 }
 
-pub fn management_dropdown_option<T:PartialEq>(
+pub(crate) fn management_dropdown_option<T:PartialEq>(
     ui:&mut Ui,current:&mut T,value:T,label:&str
 )->Response {
     management_dropdown_option_inner(ui,current,value,label,
         ManagementDropdownOptionStyle::Standard,None)
 }
 
-pub fn management_dropdown_option_values<T:PartialEq>(
+pub(crate) fn management_dropdown_option_values<T:PartialEq>(
     ui:&mut Ui,current:&mut T,value:T,label:&egui::text::LayoutJob
 )->Response{
     management_dropdown_option_inner(ui,current,value,&label.text,
         ManagementDropdownOptionStyle::Standard,Some(label))
 }
 
-pub fn management_status_dropdown_option<T:PartialEq>(
+pub(crate) fn management_status_dropdown_option<T:PartialEq>(
     ui:&mut Ui,current:&mut T,value:T,label:&str,color:Color32
 )->Response {
     management_dropdown_option_inner(ui,current,value,label,
         ManagementDropdownOptionStyle::Status(color),None)
 }
 
-pub fn management_dropdown_compact_option<T:PartialEq>(
+pub(crate) fn management_dropdown_compact_option<T:PartialEq>(
     ui:&mut Ui,current:&mut T,value:T,label:&str,width:f32
 )->Response {
     management_dropdown_option_inner(ui,current,value,label,

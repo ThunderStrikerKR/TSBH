@@ -7,7 +7,7 @@ use crate::ui_primitives::{navigation_segment_child,date_navigation_segmented_su
 use crate::ui_test_support::test_context;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum FieldKind {
+pub(crate) enum FieldKind {
     Text,
     #[cfg(test)]
     Telephone,
@@ -19,7 +19,7 @@ pub enum FieldKind {
 }
 
 impl FieldKind {
-    pub fn preferred_width(self) -> f32 {
+    pub(crate) fn preferred_width(self) -> f32 {
         match self {
             Self::Text => 180.0,
             #[cfg(test)]
@@ -65,7 +65,7 @@ fn form_field_width(ui:&Ui,preferred:f32)->f32{
 /// Short body-text input (for rates and percentages): same caret, selection,
 /// margins and row height as every form editor. Font remains proportional,
 /// so the independent Consolas +2.5pt data-value tweak is not involved.
-pub fn compact_text_field(
+pub(crate) fn compact_text_field(
     ui:&mut Ui,value:&mut String,width:f32,enabled:bool
 )->Response{
     let width=width.min(ui.available_width().max(1.0)).max(1.0);
@@ -76,7 +76,7 @@ pub fn compact_text_field(
 
 /// Uses the same height, font and focus styling for every single-line field.
 /// Disabled preview controls cannot edit business data.
-pub fn field(ui: &mut Ui, value: &mut String, kind: FieldKind, enabled: bool) -> Response {
+pub(crate) fn field(ui: &mut Ui, value: &mut String, kind: FieldKind, enabled: bool) -> Response {
     let width=form_field_width(ui,kind.preferred_width());
     let semantic=match kind {
         FieldKind::Money=>Some(typography::DataValueKind::Money),
@@ -101,7 +101,7 @@ pub fn field(ui: &mut Ui, value: &mut String, kind: FieldKind, enabled: bool) ->
 /// UI-only money input: keep the 36pt shared money field and semantic font.
 /// Thousands separators are visible during typing, not only after blur.
 /// The native business command remains responsible for validating saved values.
-pub fn parse_money_input(raw:&str)->Option<i64>{
+pub(crate) fn parse_money_input(raw:&str)->Option<i64>{
     let digits=raw.trim().replace(',',"");
     if digits.is_empty() || !digits.bytes().all(|b|b.is_ascii_digit()){
         return None;
@@ -112,7 +112,7 @@ pub fn parse_money_input(raw:&str)->Option<i64>{
 
 /// Format digits without changing their numeric meaning or stripping leading
 /// zeros while the employee is still typing. Empty is an unset price.
-pub(crate) fn formatted_money_input(raw:&str)->Option<String>{
+fn formatted_money_input(raw:&str)->Option<String>{
     let digits=raw.trim().replace(',',"");
     if digits.is_empty(){return Some(String::new());}
     parse_money_input(&digits)?;
@@ -129,7 +129,7 @@ pub(crate) fn formatted_money_input(raw:&str)->Option<String>{
 /// Remap a caret or selection endpoint using the number of digits before it.
 /// This works when a separator appears *before* a selection, so inserting
 /// digits in the middle does not jump the cursor to the end of the input.
-pub(crate) fn money_cursor_after_format(raw:&str,formatted:&str,old_index:usize)->usize{
+fn money_cursor_after_format(raw:&str,formatted:&str,old_index:usize)->usize{
     let before=raw.chars().take(old_index).filter(char::is_ascii_digit).count();
     if before==0{return 0;}
     let mut seen=0;
@@ -150,7 +150,7 @@ pub(crate) fn money_cursor_after_format(raw:&str,formatted:&str,old_index:usize)
     }
     target
 }
-pub fn money_field(ui:&mut Ui,value:&mut String,enabled:bool)->Response {
+pub(crate) fn money_field(ui:&mut Ui,value:&mut String,enabled:bool)->Response {
     let before=value.clone();
     let response=field(ui,value,FieldKind::Money,enabled);
     normalize_money_edit(ui,value,&before,&response);
@@ -158,7 +158,7 @@ pub fn money_field(ui:&mut Ui,value:&mut String,enabled:bool)->Response {
 }
 
 /// One live formatting/caret path for forms and exact-rect worksheet cells.
-pub(crate) fn normalize_money_edit(ui:&Ui,value:&mut String,before:&str,response:&Response){
+fn normalize_money_edit(ui:&Ui,value:&mut String,before:&str,response:&Response){
     // Never persist display punctuation as an alternative business value.
     let formatted=formatted_money_input(value);
     let next=formatted.unwrap_or_else(||before.to_owned());
@@ -189,7 +189,7 @@ pub(crate) fn normalize_money_edit(ui:&Ui,value:&mut String,before:&str,response
 
 /// Canonical numeric draft text, shared by resting and focused cells.
 /// No currency suffix enters the native business value.
-pub fn money_edit_text(amount:i64)->String{
+pub(crate) fn money_edit_text(amount:i64)->String{
     formatted_money_input(&amount.to_string()).unwrap_or_else(||amount.to_string())
 }
 
@@ -201,7 +201,7 @@ pub(crate) fn money_unit_left(right:f32,right_inset:f32,unit_width:f32)->f32{
     right-right_inset-unit_width
 }
 
-pub(crate) fn money_unit_margin(
+fn money_unit_margin(
     ui:&Ui,unit:&str,font:egui::FontId,right_inset:f32,unit_gap:f32,
     mut margin:egui::Margin
 )->(egui::Margin,std::sync::Arc<egui::Galley>){
@@ -212,7 +212,7 @@ pub(crate) fn money_unit_margin(
     (margin,galley)
 }
 
-pub(crate) fn paint_money_unit(ui:&Ui,rect:Rect,galley:std::sync::Arc<egui::Galley>,right_inset:f32){
+fn paint_money_unit(ui:&Ui,rect:Rect,galley:std::sync::Arc<egui::Galley>,right_inset:f32){
     let pos=egui::pos2(money_unit_left(rect.right(),right_inset,galley.size().x),
         rect.center().y-galley.size().y/2.0);
     ui.painter().with_clip_rect(rect.intersect(ui.clip_rect()))
@@ -221,7 +221,7 @@ pub(crate) fn paint_money_unit(ui:&Ui,rect:Rect,galley:std::sync::Arc<egui::Gall
 
 /// Shared money widget construction. Both allocated form fields and
 /// exact-rectangle worksheet overlays use the same text and suffix geometry.
-pub(crate) fn money_text_edit_with_unit<'a>(
+fn money_text_edit_with_unit<'a>(
     ui:&Ui,value:&'a mut String,font:egui::FontId,width:f32,
     unit:&str,right_inset:f32,unit_gap:f32,margin:egui::Margin
 )->(egui::TextEdit<'a>,std::sync::Arc<egui::Galley>){
@@ -238,7 +238,7 @@ pub(crate) fn money_text_edit_with_unit<'a>(
 ///
 /// `unit_right_inset` is relative to the field's right edge (6pt in the
 /// product grid, whose field ends 2pt before the 8pt read-only money anchor).
-pub fn money_field_with_unit(
+pub(crate) fn money_field_with_unit(
     ui:&mut Ui,value:&mut String,enabled:bool,
     unit:&str,unit_right_inset:f32
 )->Response{
@@ -256,7 +256,7 @@ pub fn money_field_with_unit(
 
 /// Shared single-line free-text editor for inline manual cells and search.
 /// Uses the same font, internal margin and height as the standard field role.
-pub fn flexible_text_field(
+pub(crate) fn flexible_text_field(
     ui:&mut Ui, value:&mut String, width:f32, placeholder:&str
 )->Response {
     let width=form_field_width(ui,width);
@@ -268,7 +268,7 @@ pub fn flexible_text_field(
 /// Shared date text field used inside the management date-group master.
 /// The caller owns navigation, parsing and validation; this component owns
 /// the centered, frameless editor, proportional date face and caret margin.
-pub fn management_date_text_field(
+pub(crate) fn management_date_text_field(
     ui:&mut Ui,value:&mut String,width:f32,height:f32,hint:&str
 )->Response{
     management_date_text_field_impl(ui,value,width,height,hint,None)
@@ -332,7 +332,7 @@ fn multiline_editor<'a>(
 /// Shared multiline editor for long-form messages and management memos.
 /// Screens provide only the existing width, row count and optional hint; the
 /// native TextEdit retains its standard click, selection and keyboard behavior.
-pub fn multiline_text_field(
+pub(crate) fn multiline_text_field(
     ui:&mut Ui,value:&mut String,enabled:bool,
     desired_width:f32,desired_rows:usize,hint:Option<&str>
 )->Response{
@@ -347,7 +347,7 @@ pub fn multiline_text_field(
 /// Shared exact-viewport multiline editor for content-specific text roles.
 /// The caller may supply a dedicated font and inset without rebuilding the
 /// native TextEdit or bypassing the common input layer.
-pub fn multiline_text_field_sized(
+pub(crate) fn multiline_text_field_sized(
     ui:&mut Ui,value:&mut String,enabled:bool,size:Vec2,
     font:egui::FontId,frame:bool,margin:egui::Margin,desired_rows:usize
 )->Response{
@@ -362,7 +362,7 @@ pub fn multiline_text_field_sized(
 
 /// Source-document text styling is shared while the caller supplies its
 /// custom layout job and immutable or editable buffer.
-pub fn reception_source_text_edit<'a>(
+pub(crate) fn reception_source_text_edit<'a>(
     buffer:&'a mut dyn egui::TextBuffer,width:f32
 )->egui::TextEdit<'a>{
     multiline_editor(buffer,width).frame(false)
@@ -399,7 +399,7 @@ fn management_search_append_click(response:&Response,ui:&Ui,text:&str){
 
 /// Same shared 36pt search field geometry, but a deliberate end-of-query
 /// caret policy instead of TextEdit's pointer-position-based initial caret.
-pub fn management_search_field(
+pub(crate) fn management_search_field(
     ui:&mut Ui,text:&mut String,width:f32,placeholder:&str
 )->Response {
     let response=flexible_text_field(ui,text,width,placeholder);
@@ -434,7 +434,7 @@ pub(crate) fn reception_recipient_text_edit(
 /// Place an inline editor in the same exact frame as Ui::place, while
 /// retaining its native galley so the initial pointer position becomes a
 /// real character cursor instead of forcing the end of the text.
-pub(crate) fn reception_text_editor_at_click(
+fn reception_text_editor_at_click(
     ui:&mut Ui,cell:Rect,edit:egui::TextEdit<'_>,
     request_focus:bool,click_at:Option<egui::Pos2>
 )->Response{
@@ -483,7 +483,7 @@ pub(crate) fn reception_text_editor_at_click(
 /// Ui::place never advances the parent layout cursor (Ui::put does).
 /// The readonly control and focused control share the same builder, so the text
 /// baseline, inset and phone font do not change when focus is acquired.
-pub fn reception_recipient_inline_cell_editor(
+pub(crate) fn reception_recipient_inline_cell_editor(
     ui:&mut Ui,cell:Rect,value:&mut String,request_focus:bool,
     click_at:Option<egui::Pos2>,phone_number:bool,active:bool
 )->Response{
@@ -496,7 +496,7 @@ pub fn reception_recipient_inline_cell_editor(
 
 /// Actual editor rendered IN the already allocated input cell; no dialog,
 /// detached form, or second layout row. Focus and response are owned by egui.
-pub fn reception_inline_cell_editor(
+pub(crate) fn reception_inline_cell_editor(
     ui:&mut Ui,cell:Rect,value:&mut String,request_focus:bool,
     click_at:Option<egui::Pos2>,numeric:bool
 )->Response{
@@ -519,7 +519,7 @@ pub fn reception_inline_cell_editor(
 
 /// Money variant of the exact-rect editor: preserve the native caret,
 /// table footprint and shared live separator/suffix behavior.
-pub(crate) fn reception_money_inline_cell_editor(
+fn reception_money_inline_cell_editor(
     ui:&mut Ui,cell:Rect,value:&mut String,request_focus:bool,
     click_at:Option<egui::Pos2>
 )->Response{
@@ -529,7 +529,7 @@ pub(crate) fn reception_money_inline_cell_editor(
     )
 }
 
-pub(crate) fn reception_money_font()->egui::FontId{
+fn reception_money_font()->egui::FontId{
     typography::data_value_font(
         typography::DataValueKind::Money,typography::DataValueContext::Reception
     )
@@ -575,7 +575,7 @@ pub(crate) fn reception_freight_money_readonly(ui:&mut Ui,value:&mut String)->Re
     response
 }
 
-pub fn reception_freight_inline_cell_editor(
+pub(crate) fn reception_freight_inline_cell_editor(
     ui:&mut Ui,cell:Rect,value:&mut String,request_focus:bool,
     click_at:Option<egui::Pos2>
 )->Response{
@@ -597,9 +597,9 @@ fn reception_quantity_step(value:&str,delta:i64)->Option<String>{
     }
 }
 
-pub struct ReceptionQuantityEditorResponse{
-    pub input:Response,
-    pub step_interaction:bool,
+pub(crate) struct ReceptionQuantityEditorResponse{
+    pub(crate) input:Response,
+    pub(crate) step_interaction:bool,
 }
 
 fn reception_quantity_editor(
@@ -712,15 +712,15 @@ fn reception_quantity_step_keeps_unit_out_of_native_draft_and_respects_bounds(){
 }
 
 #[derive(Clone,Copy)]
-pub enum ReceptionNumericCell{Quantity,Money}
+pub(crate) enum ReceptionNumericCell{Quantity,Money}
 
 /// A stepper click may temporarily move the text focus. Both consumers
 /// must retain the draft until that click resolves.
-pub fn reception_numeric_edit_finished(response:&Response,step_interaction:bool)->bool{
+pub(crate) fn reception_numeric_edit_finished(response:&Response,step_interaction:bool)->bool{
     crate::cell_navigation::worksheet_blur_finished(response,step_interaction)
 }
 
-pub fn reception_item_numeric_editor(
+pub(crate) fn reception_item_numeric_editor(
     ui:&mut Ui,rect:Rect,value:&mut String,focus:bool,
     click_at:Option<egui::Pos2>,kind:ReceptionNumericCell
 )->(Response,bool){
@@ -737,7 +737,7 @@ pub fn reception_item_numeric_editor(
 
 /// Persistent required-input accent. Paint on the already allocated cell,
 /// after any inline editor and blue/orange hover decoration. No layout space.
-pub fn paint_required_input(ui:&Ui,rect:Rect){
+pub(crate) fn paint_required_input(ui:&Ui,rect:Rect){
     if !rect.is_positive() || !rect.intersects(ui.clip_rect()){return;}
     let painter=ui.painter().with_clip_rect(ui.clip_rect().intersect(rect));
     painter.rect_filled(rect,theme::CONTROL_RADIUS,theme::REQUIRED_INPUT_TINT);
@@ -763,7 +763,7 @@ pub(crate) fn reception_recipient_value_hit(ui:&mut Ui,display:&Response)->Respo
 
 /// OCR image zoom uses a fixed control width and a separate formatted label.
 /// Keep the native slider's keyboard and drag behavior.
-pub fn ocr_zoom_slider(ui:&mut Ui,zoom:&mut f32)->Response{
+pub(crate) fn ocr_zoom_slider(ui:&mut Ui,zoom:&mut f32)->Response{
     ui.add_sized(
         Vec2::new(118.0,24.0),
         egui::Slider::new(zoom,0.5..=4.0).show_value(false)

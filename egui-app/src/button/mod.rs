@@ -5,25 +5,25 @@ use crate::theme::*;
 use crate::ui_primitives::{paint_workflow_icon,WorkflowIcon,ManagementChevronDirection,paint_management_chevron,paint_management_chevron_with_color,paint_chevron_at_angle_scaled};
 
 /// Register an actual interaction, then paint using the shared primitive.
-pub fn paint_button_hover_corners(ui:&Ui,response:&Response,corners:egui::CornerRadius){
+fn paint_button_hover_corners(ui:&Ui,response:&Response,corners:egui::CornerRadius){
     crate::floating_notice::remember_response(ui.ctx(),response);
     crate::ui_primitives::paint_action_hover_corners(ui,response,corners);
 }
 
 /// Existing buttons keep their uniform corner radius. Segmented controls can
 /// use paint_button_hover_corners without altering other components.
-pub fn paint_button_hover(ui:&Ui,response:&Response,radius:f32){
+pub(crate) fn paint_button_hover(ui:&Ui,response:&Response,radius:f32){
     let radius=egui::CornerRadius::same(radius.round().clamp(0.0,255.0) as u8);
     paint_button_hover_corners(ui,response,radius);
 }
 
-pub fn action(ui: &mut Ui, label: &str, role: ButtonRole, enabled: bool) -> Response {
+pub(crate) fn action(ui: &mut Ui, label: &str, role: ButtonRole, enabled: bool) -> Response {
     action_with_min_width(ui, label, role, enabled, 0.0)
 }
 
 /// Reuse the exact same action design, filling only the column assigned by a
 /// shared button-group component. The surrounding pane geometry is untouched.
-pub fn action_full_width(
+pub(crate) fn action_full_width(
     ui: &mut Ui, label: &str, role: ButtonRole, enabled: bool,
 ) -> Response {
     let width = ui.available_width();
@@ -32,7 +32,7 @@ pub fn action_full_width(
 
 /// Shared fixed-minimum-width action, for select triggers that must match
 /// the 34pt management controls rather than egui's shorter default ComboBox.
-pub fn action_with_min_width(
+pub(crate) fn action_with_min_width(
     ui: &mut Ui, label: &str, role: ButtonRole, enabled: bool, min_width: f32,
 ) -> Response {
     action_with_palette(ui, label, role, enabled, min_width, false)
@@ -40,7 +40,7 @@ pub fn action_with_min_width(
 
 /// Actions embedded in colored review cards retain their original role geometry
 /// and hover behavior, but use the shared white action palette when enabled.
-pub fn review_action(ui: &mut Ui, label: &str, role: ButtonRole, enabled: bool) -> Response {
+pub(crate) fn review_action(ui: &mut Ui, label: &str, role: ButtonRole, enabled: bool) -> Response {
     action_with_palette(ui, label, role, enabled, 0.0, true)
 }
 
@@ -168,13 +168,13 @@ fn action_with_palette(
 /// Frameless Windows controls share a single 32pt hit area and precise
 /// vector marks. Unicode "-", "□" and "×" had different font baselines.
 #[derive(Clone, Copy)]
-pub enum WindowControl {
+pub(crate) enum WindowControl {
     Minimize,
     Maximize,
     Close,
 }
 
-pub fn window_control(ui: &mut Ui, control: WindowControl) -> Response {
+pub(crate) fn window_control(ui: &mut Ui, control: WindowControl) -> Response {
     let response = ui.scope(|ui| {
         ui.spacing_mut().button_padding = Vec2::ZERO;
         ui.add(
@@ -237,7 +237,7 @@ fn compact_action_surface(ui:&mut Ui,enabled:bool,button:egui::Button<'_>)->Resp
 /// Shared compact icon-only action. Its 28pt hit target follows the
 /// management date-navigation control; glyph and enabled state are
 /// supplied by the caller while hover paint stays in the common layer.
-pub fn icon_action_button(
+pub(crate) fn icon_action_button(
     ui:&mut Ui,label:&str,enabled:bool
 )->Response{
     let response=compact_action_surface(ui,enabled,egui::Button::new(label)
@@ -253,7 +253,7 @@ pub fn icon_action_button(
 
 /// Native navigation buttons retain their existing optional permission
 /// scope. Fixed-rectangle step buttons deliberately use interact instead.
-pub(crate) fn navigation_native_button(
+fn navigation_native_button(
     ui:&mut Ui,size:Vec2,button:egui::Button<'_>,enabled:Option<bool>
 )->Response{
     let place=|slot:&mut Ui|slot.add_sized(size,button);
@@ -267,14 +267,14 @@ pub(crate) fn navigation_native_button(
 /// Neutral secondary actions inside a workflow card share one compact
 /// Standard-size control. Keep their existing disabled functionality.
 #[derive(Clone, Copy)]
-pub enum WorkflowAuxiliaryAction {
+pub(crate) enum WorkflowAuxiliaryAction {
     Manage,
     Delete,
     PreviousStage,
 }
 
 /// Shared label and glyph painting for allocated and fixed-rectangle workflow controls.
-pub fn paint_workflow_auxiliary_content(
+fn paint_workflow_auxiliary_content(
     painter:&egui::Painter,center:egui::Pos2,
     action:WorkflowAuxiliaryAction,ink:Color32
 ){
@@ -294,12 +294,12 @@ pub fn paint_workflow_auxiliary_content(
 /// and business transitions. Stage controls keep hover when disabled because
 /// they also open the existing order preview.
 #[derive(Clone, Copy)]
-pub enum WorkflowFixedAction<'a> {
+pub(crate) enum WorkflowFixedAction<'a> {
     Auxiliary(WorkflowAuxiliaryAction),
     Stage(&'a str),
 }
 
-pub fn workflow_fixed_action(
+pub(crate) fn workflow_fixed_action(
     ui:&mut Ui,id:egui::Id,rect:Rect,
     action:WorkflowFixedAction<'_>,enabled:bool
 )->Response{
@@ -339,9 +339,9 @@ pub fn workflow_fixed_action(
 /// asymmetric end caps, divider-safe hover geometry and arrow rendering.
 /// Consumers own only the date value, callbacks and calendar popup.
 #[derive(Clone,Copy,Debug,PartialEq,Eq)]
-pub enum ManagementDateSegmentEdge{Leading,Middle,Trailing}
+pub(crate) enum ManagementDateSegmentEdge{Leading,Middle,Trailing}
 
-pub fn management_date_segment_corners(
+fn management_date_segment_corners(
     edge:ManagementDateSegmentEdge
 )->egui::CornerRadius{
     let r=theme::CONTROL_RADIUS.saturating_sub(
@@ -360,7 +360,7 @@ pub fn management_date_segment_corners(
 
 /// Keep the date segment's hit target, fill, asymmetric rounding and hover
 /// tied to one component. The caller must not paint a second hover layer.
-pub fn management_date_segment(
+pub(crate) fn management_date_segment(
     ui:&mut Ui,label:&str,width:f32,edge:ManagementDateSegmentEdge
 )->Response{
     let corners=management_date_segment_corners(edge);
@@ -599,7 +599,7 @@ mod shared_action_style_tests{
 // Shared controls and presentation profiles.
 /// A compact KakaoTalk identity mark, used only as a visual menu prefix.
 /// The native Kakao HWND and order-matching logic remain unchanged.
-pub fn kakao_menu_icon(ui:&mut Ui) -> Response {
+pub(crate) fn kakao_menu_icon(ui:&mut Ui) -> Response {
     let side=theme::KAKAO_MENU_ICON_SIZE;
     let (rect,response)=ui.allocate_exact_size(Vec2::splat(side),Sense::hover());
     let painter=ui.painter();
@@ -626,7 +626,7 @@ pub fn kakao_menu_icon(ui:&mut Ui) -> Response {
 /// Keep paired reception actions at their content widths. Available pane
 /// space stays empty rather than stretching two buttons to the pane edges.
 /// The row wraps only if Korean labels cannot fit without clipping.
-pub fn paired_actions(
+pub(crate) fn paired_actions(
     ui: &mut Ui,
     left: (&str, theme::ButtonRole, bool),
     right: (&str, theme::ButtonRole, bool),
@@ -640,7 +640,7 @@ pub fn paired_actions(
 }
 
 /// Shared management tab roles (content width, no full-page stretching).
-pub fn management_tabs(ui:&mut Ui,labels:&[(&str,bool,bool)]) -> Option<usize> {
+pub(crate) fn management_tabs(ui:&mut Ui,labels:&[(&str,bool,bool)]) -> Option<usize> {
     let mut pressed=None;
     ui.horizontal(|bar|{
         bar.spacing_mut().item_spacing.x=theme::SPACE_4;
@@ -657,7 +657,7 @@ pub fn management_tabs(ui:&mut Ui,labels:&[(&str,bool,bool)]) -> Option<usize> {
 
 /// The add/rollback modes occupy exactly the same header action slot.
 /// Never insert a pending-assignment action between the item and freight rows.
-pub fn reception_item_header_action(ui:&mut Ui,rollback:bool,enabled:bool)->Response{
+pub(crate) fn reception_item_header_action(ui:&mut Ui,rollback:bool,enabled:bool)->Response{
     action_with_min_width(
         ui,if rollback{"선택 취소"}else{"＋ 상품 추가"},
         theme::ButtonRole::Standard,enabled,112.0
@@ -668,7 +668,7 @@ pub fn reception_item_header_action(ui:&mut Ui,rollback:bool,enabled:bool)->Resp
 /// Native CollapsingHeader keeps its original click/keyboard/state/indent
 /// behavior; only its default filled triangle becomes the common line icon.
 /// Rotate smoothly with egui's animated openness (0 = right, 1 = down).
-pub fn collapsing_header(title:impl Into<egui::WidgetText>)->egui::CollapsingHeader{
+pub(crate) fn collapsing_header(title:impl Into<egui::WidgetText>)->egui::CollapsingHeader{
     egui::CollapsingHeader::new(title).icon(paint_collapsing_header_icon)
 }
 

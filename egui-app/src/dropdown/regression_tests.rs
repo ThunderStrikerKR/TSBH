@@ -123,7 +123,7 @@ mod management_dropdown_unification_tests {
     #[test]
     fn searchable_dropdown_keeps_shared_trigger_and_one_line_options(){
         let source=include_str!("../dropdown/mod.rs");
-        let block=source.split("pub fn management_searchable_dropdown(").nth(1).unwrap()
+        let block=source.split("fn management_searchable_dropdown(").nth(1).unwrap()
             .split("/// All menu options").next().unwrap();
         for required in [
             "management_dropdown_trigger(",
@@ -310,7 +310,7 @@ mod management_dropdown_unification_tests {
         // popup item's pointer for a result bubble.
         let source=include_str!("../dropdown/mod.rs");
         let inner=source.find("fn management_dropdown_option_inner<T:PartialEq>").unwrap();
-        let first=source.find("pub fn management_dropdown_option<T:PartialEq>").unwrap();
+        let first=source.find("fn management_dropdown_option<T:PartialEq>").unwrap();
         let end=source.len();
         assert_eq!(source[inner..first].matches("dropdown_option_selected(ui.ctx())").count(),1);
         assert_eq!(source[first..end].matches("management_dropdown_option_inner(").count(),4);
