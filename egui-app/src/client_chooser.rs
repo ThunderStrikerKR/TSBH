@@ -3,7 +3,7 @@
 //! list, text entry and selection. Neither operational DB nor order history
 //! is modified by searching.
 
-use std::{collections::HashMap,sync::{Arc,mpsc::{self,Receiver}}, thread};
+use std::{collections::HashMap,sync::Arc};
 use eframe::egui::{self, Context};
 use serde_json::{json,Value};
 use crate::{gateway::{BandoGateway,ReadOperation},
@@ -15,8 +15,6 @@ pub enum Choice {
     Closed,
 }
 
-type Directory = Result<Vec<Value>,String>;
-type Search = Result<Vec<String>,String>;
 
 pub struct ClientChooser {
     pub order_id: String,
@@ -24,10 +22,8 @@ pub struct ClientChooser {
     clients: Vec<Value>,
     results: Vec<String>,
     loaded: bool,
-    loading: Receiver<Directory>,
-    search_result: Option<Receiver<(u64,Search)>>,
-    generation: u64,
-    searching: bool,
+    loading: crate::screen_refresh::ReadRefresh<Vec<Value>>,
+    search_result: crate::screen_refresh::ReadRefresh<Vec<String>>,
     error: Option<String>,
     focus_search: bool,
     sort: Option<(usize,bool)>,
@@ -110,9 +106,9 @@ impl ClientChooser {
             &ctx,"reception.client_chooser.error",
             "reception.client_chooser",Tone::Error,None
         );
-        let (sender, receiver) = mpsc::channel();
-        thread::spawn(move || {
-            let result = gateway.load_catalog().and_then(|state| {
+        let mut loading=crate::screen_refresh::ReadRefresh::default();
+        loading.submit_required(ctx,move || {
+            gateway.load_catalog().and_then(|state| {
                 let clients = state.get("clients").and_then(Value::as_array)
                     .ok_or("거래처 목록을 가져오지 못했습니다.")?;
                 // Retain ONLY the customer index. Product and other catalog
@@ -127,93 +123,59 @@ impl ClientChooser {
                     clients.retain(active);
                 }
                 Ok(clients)
-            });
-            let _ = sender.send(result);
-            ctx.request_repaint();
+            })
         });
         Self {
             order_id, query:String::new(),
             clients:Vec::new(),results:Vec::new(),loaded:false,
-            loading:receiver,search_result:None,generation:0,
-            searching:false,error:None,
+            loading,search_result:Default::default(),error:None,
             focus_search:true,sort:None,
         }
     }
 
     pub fn contains(&self, id:&str)->bool {
-        self.loaded && self.clients.iter().any(|c| text(c,"id")==id && active(c))
+        self.loaded && !self.loading.required() && !self.search_result.required() && self.clients.iter().any(|c| text(c,"id")==id && active(c))
     }
     // A verified row click emits Selected once; the owning reception closes
     // this modal immediately. Native calculation never owns dialog lifetime.
 
     fn search(&mut self, gateway:Arc<dyn BandoGateway>, ctx:Context) {
-        self.generation=self.generation.wrapping_add(1);
-        self.search_result=None;
+        self.search_result.cancel();
         self.error=None;
         self.results.clear();
-        if self.query.trim().is_empty() {
-            self.searching=false;
+        if self.query.trim().is_empty(){
+            self.search_result.reset();
             return;
         }
-        self.searching=true;
-        let generation=self.generation;
         let query=self.query.clone();
         let clients=self.clients.clone();
-        let (sender,receiver)=mpsc::channel();
-        self.search_result=Some(receiver);
-        thread::spawn(move || {
-            let result=gateway.execute(ReadOperation::ClientCandidates, json!({
-                "state": {"clients":clients}, "query":query, "raw":""
-            })).and_then(|value| {
+        self.search_result.submit_required(ctx,move||{
+            gateway.execute(ReadOperation::ClientCandidates,json!({
+                "state":{"clients":clients},"query":query,"raw":""
+            })).and_then(|value|{
                 let ids=value.get("ids").and_then(Value::as_array)
                     .ok_or("거래처 검색 결과가 잘못되었습니다.")?;
                 ids.iter().map(|entry|entry.as_str().map(str::to_owned)
-                    .ok_or_else(||"거래처 검색 ID가 잘못되었습니다.".to_owned()))
-                    .collect()
-            });
-            let _=sender.send((generation,result));
-            ctx.request_repaint();
+                    .ok_or_else(||"거래처 검색 ID가 잘못되었습니다.".to_owned())).collect()
+            })
         });
     }
 
-    fn poll(&mut self, gateway:Arc<dyn BandoGateway>, ctx:&Context) {
-        if !self.loaded {
-            match self.loading.try_recv() {
-                Ok(Ok(clients))=>{
-                    self.clients=clients;
-                    self.loaded=true;
-                    if !self.query.trim().is_empty() {self.search(gateway,ctx.clone());}
-                }
-                Ok(Err(e))=>{
-                    self.loaded=true;
-                    self.error=Some(e);
-                }
-                Err(mpsc::TryRecvError::Disconnected)=>{
-                    self.loaded=true;
-                    self.error=Some("거래처 명단 조회가 중단되었습니다.".into());
-                }
-                _=>{}
+    fn poll(&mut self,gateway:Arc<dyn BandoGateway>,ctx:&Context){
+        match self.loading.poll(){
+            Some(Ok(clients))=>{
+                self.clients=clients;
+                self.loaded=true;
+                self.loading.verified();
+                if !self.query.trim().is_empty(){self.search(gateway,ctx.clone());}
             }
+            Some(Err(error))=>{self.loaded=true;self.error=Some(error);}
+            None=>{}
         }
-        if let Some(rx)=self.search_result.as_ref() {
-            match rx.try_recv() {
-                Ok((generation, result))=>{
-                    if generation==self.generation {
-                        self.searching=false;
-                        match result {
-                            Ok(ids)=>self.results=ids,
-                            Err(e)=>self.error=Some(e),
-                        }
-                    }
-                    self.search_result=None;
-                }
-                Err(mpsc::TryRecvError::Disconnected)=>{
-                    self.search_result=None;
-                    self.searching=false;
-                    self.error=Some("거래처 검색이 중단되었습니다.".into());
-                }
-                _=>{}
-            }
+        match self.search_result.poll(){
+            Some(Ok(ids))=>{self.results=ids;self.search_result.verified();}
+            Some(Err(error))=>self.error=Some(error),
+            None=>{}
         }
     }
 
@@ -275,9 +237,9 @@ impl ClientChooser {
                             );
                              let clients=visible_clients(
                                 &self.clients,&self.results,&self.query,
-                                self.searching,self.sort
+                                self.search_result.pending(),self.sort
                             );
-                            let loading=!self.loaded||self.searching;
+                            let loading=!self.loaded||self.search_result.pending();
                             let count_label=if loading{
                                 "검색 중".to_owned()
                             }else{
@@ -342,7 +304,7 @@ impl ClientChooser {
                             );
                             if clients.is_empty(){
                                 let status=if !self.loaded{"거래처 명단을 불러오는 중…"}
-                                    else if self.searching{"검색 중…"}
+                                    else if self.search_result.pending(){"검색 중…"}
                                     else if self.clients.is_empty(){"등록된 거래처가 없습니다."}
                                     else{"검색 결과가 없습니다."};
                                 crate::status_notice::management_body_state_overlay(results_panel,output.inner_rect,Some(status));
