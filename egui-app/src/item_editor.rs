@@ -253,7 +253,7 @@ impl ItemEditor{
         let price=if edited {
             "가격 확인 필요".to_owned()
         }else{
-            self.initial_price.map(components::display_won)
+            self.initial_price.map(crate::display_format::display_won)
                 .unwrap_or_else(||"가격 확인 필요".into())
         };
         let allow_apply=!busy && self.can_apply();

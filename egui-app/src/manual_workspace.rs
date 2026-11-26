@@ -1971,7 +1971,7 @@ impl ManualWorkspace {
                             };
                             status.with_layout(
                                 egui::Layout::right_to_left(egui::Align::Center),|right|{
-                                    components::form_field_label(right,"건");
+                                    crate::ui_primitives::form_field_label(right,"건");
                                     let current_count=header_row_count;
                                     let can_resize=header_has_model && !header_busy
                                         && !header_pending_quantity_active
@@ -2029,7 +2029,7 @@ impl ManualWorkspace {
                                         }
                                         count_resize_requested=true;
                                     }
-                                    components::form_field_label(right,"배송 건수");
+                                    crate::ui_primitives::form_field_label(right,"배송 건수");
                                 }
                             );
                         }
@@ -2305,7 +2305,7 @@ impl ManualWorkspace {
                                                                 let price=quote_index.as_deref()
                                                                     .and_then(|quote|quote.item(item_id))
                                                                     .and_then(|line|line["amount"].as_i64())
-                                                                    .map(components::display_won)
+                                                                    .map(crate::display_format::display_won)
                                                                     .unwrap_or_else(||"—".into());
                                                                 let product_key=source_highlight::key(
                                                                     rid,item_id,"product"
@@ -3657,7 +3657,7 @@ mod manual_workspace_modal_routing_tests {
 
     #[test]
     fn manual_source_palette_cache_reuses_frames_and_refreshes_after_assignment_release_and_undo(){
-        let ctx=components::test_context();
+        let ctx=crate::ui_test_support::test_context();
         let mut workspace=palette_test_workspace();
         let empty=palette_model(json!({}));
         let assigned=palette_model(json!({"source-a":{"recipientId":"r2","field":"name"}}));
@@ -4217,7 +4217,7 @@ mod manual_workspace_layout_tests{
 
     #[test]
     fn measured_recipient_card_height_matches_manual_workspace_budget(){
-        let ctx=components::test_context();
+        let ctx=crate::ui_test_support::test_context();
         let mut height=0.0;
         for _ in 0..3 {
             let _=ctx.run(egui::RawInput{
@@ -4311,7 +4311,7 @@ mod manual_workspace_layout_tests{
         assert!(!render[body_start..]
             .contains("components::date_navigation_count_control("));
         assert!(!render[body_start..columns_start]
-            .contains("components::section_divider("));
+            .contains("crate::ui_primitives::section_divider("));
         assert!(render[toolbar_start..body_start]
             .contains("status.set_min_height(theme::MODAL_MASTER_WORKSPACE_TOOLBAR_HEIGHT)"));
         assert!(render.contains("crate::card::source_document_frame().show(body"));

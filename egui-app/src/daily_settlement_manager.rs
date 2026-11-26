@@ -21,7 +21,7 @@ fn rows(value:&Value)->&[Value]{
     value.as_array().map(Vec::as_slice).unwrap_or(&[])
 }
 fn won(value:&Value)->String{
-    value.as_i64().map(components::display_won)
+    value.as_i64().map(crate::display_format::display_won)
         .unwrap_or_else(||"확인 필요".to_owned())
 }
 fn seoul_today()->String{
@@ -50,7 +50,7 @@ fn settlement_date_toolbar(
     let mut changed=false;
     ui.horizontal_wrapped(|controls|{
         controls.spacing_mut().item_spacing.x=theme::SPACE_8;
-        components::form_field_label(controls,"결산 날짜");
+        crate::ui_primitives::form_field_label(controls,"결산 날짜");
         if crate::button::action(controls,"‹",theme::ButtonRole::Standard,true).clicked(){
             *date=move_date(date,-1);
             *date_input=date.clone();
@@ -225,7 +225,7 @@ fn kpi(ui:&mut Ui,label:&str,value:&str){
                 let label_galley=typography::freight_summary_small_label_galley(
                     cell,label
                 );
-                let overflow=components::text_exceeds_rect(value_galley.size(),number_rect.intersect(cell.clip_rect()));
+                let overflow=crate::ui_primitives::text_exceeds_rect(value_galley.size(),number_rect.intersect(cell.clip_rect()));
                 cell.painter().with_clip_rect(number_rect).galley(
                     egui::pos2(
                         number_rect.center().x-value_galley.size().x/2.0,
@@ -238,7 +238,7 @@ fn kpi(ui:&mut Ui,label:&str,value:&str){
                         label_rect.center().y-label_galley.size().y/2.0,
                     ),label_galley,theme::SECONDARY
                 );
-                components::overflow_tooltip(number_response,overflow,value);
+                crate::ui_primitives::overflow_tooltip(number_response,overflow,value);
             });
         }
     );
@@ -304,7 +304,7 @@ fn report_table<const N:usize>(
             for index in visible_rows{
                 let rect=crate::table::fixed_row_rect(origin,index,first,width,ROW_HEIGHT);
                 #[cfg(test)]
-                components::general_screen_geometry_tests::record(if id=="settlement-orders"{"settlement order row"}else{"settlement payment row"},rect);
+                crate::ui_test_support::record(if id=="settlement-orders"{"settlement order row"}else{"settlement payment row"},rect);
                 first_x.get_or_insert(rect.left());
                 crate::table::fixed_row(list,(id,index),rect,index,&widths,COL_GAP,crate::table::RowTone::Alternating,|row,row_cells|{
                         let data=format_row(indices[index]);
@@ -487,7 +487,7 @@ impl DailySettlementManager{
                         section,&mut self.date,&mut self.date_input,
                         &mut self.calendar_month
                     );
-                    components::section_divider(section);
+                    crate::ui_primitives::section_divider(section);
                     if date_changed{visible_report=None;}
                     let report=visible_report.unwrap_or(&missing);
                     let orders=rows(&report["orderRows"]);
@@ -523,7 +523,7 @@ impl DailySettlementManager{
                         )));
                         settings_help::icon(review,"미수금과 실제 운임");
                     });
-                    components::section_divider(section);
+                    crate::ui_primitives::section_divider(section);
                     let indices=sorted_indices(orders,self.order_sort,false);
                     report_table(
                         section,"settlement-orders",
@@ -568,7 +568,7 @@ impl DailySettlementManager{
                     section.label(typography::section_heading(
                         "실제 입금 내역 / 입금 일시 기준"
                     ));
-                    components::section_divider(section);
+                    crate::ui_primitives::section_divider(section);
                     section.horizontal_wrapped(|line|{
                         line.spacing_mut().item_spacing=Vec2::new(
                             theme::SPACE_12,theme::SPACE_8
@@ -581,7 +581,7 @@ impl DailySettlementManager{
                             metric(line,title,if visible_report.is_some(){won(&report[key])}else{"—".to_owned()});
                         }
                     });
-                    components::section_divider(section);
+                    crate::ui_primitives::section_divider(section);
                     let indices=sorted_indices(payments,self.payment_sort,true);
                     report_table(
                         section,"settlement-payments",
@@ -617,7 +617,7 @@ impl DailySettlementManager{
                     review.set_width(section_inner_max_width);
                     review.set_max_width(section_inner_max_width);
                     review.label(typography::section_heading("결산 검토 사항"));
-                    components::section_divider(review);
+                    crate::ui_primitives::section_divider(review);
                     components::fixed_result_viewport(review,"settlement-warnings",100.0,|list|{
                         for warning in rows(&report["warnings"]){
                             if let Some(message)=warning.as_str(){

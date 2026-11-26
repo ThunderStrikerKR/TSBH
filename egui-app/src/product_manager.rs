@@ -102,7 +102,7 @@ fn brand_search_choices(
     choices
 }
 fn price(value: &Value) -> String {
-    value.as_i64().map(components::display_won)
+    value.as_i64().map(crate::display_format::display_won)
         .unwrap_or_else(|| "—".to_owned())
 }
 fn price_history_row(entry:&Value)->Vec<String>{
@@ -116,7 +116,7 @@ fn price_history_row(entry:&Value)->Vec<String>{
         .map(|date|date.with_timezone(&chrono::Local).format("%Y.%m.%d %H:%M").to_string())
         .unwrap_or_else(|_|raw_at.to_owned());
     let amount=|value:&Value|if value.is_null(){"미등록".to_owned()}else{
-        value.as_i64().map(components::display_won).unwrap_or_else(||
+        value.as_i64().map(crate::display_format::display_won).unwrap_or_else(||
             value.as_str().map(str::to_owned).unwrap_or_else(||value.to_string()))
     };
     let source=match field(entry,"source"){
@@ -1287,7 +1287,7 @@ impl ProductManager {
                         let product_id=field(product,"id");
                         let row_rect=crate::table::fixed_row_rect(origin,row_index,first,table_width,theme::PRODUCT_TABLE_ROW_HEIGHT);
                         #[cfg(test)]
-                        components::general_screen_geometry_tests::record("data row",row_rect);
+                        crate::ui_test_support::record("data row",row_rect);
                         row_left.get_or_insert(row_rect.left());
                         crate::table::fixed_row(table,("product-table-fixed-row",product_id),row_rect,row_index,&widths,theme::SPACE_8,crate::table::RowTone::Alternating,|row,cells|{
                         let row_clip=row.clip_rect();
@@ -1880,7 +1880,7 @@ impl ProductManager {
             group.spacing_mut().item_spacing.y=theme::SPACING;
             Self::detail_overview_column(group,draft,brands,categories,category_nodes,editable,busy);
         });
-        components::section_divider(ui);
+        crate::ui_primitives::section_divider(ui);
         ui.scope(|group|{
             group.spacing_mut().item_spacing.y=theme::SPACING;
             Self::detail_price_column(group,draft,prices,editable,busy);
@@ -2051,7 +2051,7 @@ impl ProductManager {
                         // A single shared structural separator reserves
                         // exactly 12pt on both sides of its divider.
                         measured.divider=Some(
-                            components::section_divider(body)
+                            crate::ui_primitives::section_divider(body)
                         );
                         let advanced=components::collapsing_header(
                             "고급 정보"
@@ -2124,7 +2124,7 @@ impl ProductManager {
                                         &format!("가격 변경 이력 {}건",history.len())
                                     ));
                                     if history.is_empty(){
-                                        components::management_body_state_inline(advanced,"가격 변경 이력이 없습니다.");
+                                        crate::ui_primitives::management_body_state_inline(advanced,"가격 변경 이력이 없습니다.");
                                     }else{
                                         let entries=history.iter().rev()
                                             .map(price_history_row).collect::<Vec<_>>();
@@ -2348,7 +2348,7 @@ mod tests {
         assert!(composition.contains("top.spacing_mut().item_spacing.x="));
         assert!(!composition.contains("top.add_space(theme::SPACE_12)"));
         assert!(!composition.contains("modal.add_space(theme::SPACE_12)"));
-        assert!(!composition.contains("components::soft_divider(body)"));
+        assert!(!composition.contains("crate::ui_primitives::soft_divider(body)"));
         assert_eq!(theme::MODAL_MASTER_WORKSPACE_GAP,12.0);
         assert_eq!(theme::MODAL_SECTION_PADDING,12.0);
         assert_eq!(theme::MODAL_SECTION_HEADER_RULE_GAP,12.0);
@@ -2644,7 +2644,7 @@ mod tests {
     }
     fn price_test_manager()->(ProductManager,Context,Receiver<PriceTestRequest>){
         let (requests,receiver)=mpsc::channel();
-        let ctx=components::test_context();
+        let ctx=crate::ui_test_support::test_context();
         let mut manager=ProductManager::new(Arc::new(PriceTestGateway{requests}),ctx.clone());
         poll_price_until(&mut manager,&ctx,|m|m.catalog.is_some()&&!m.result.pending());
         assert_eq!(manager.products.len(),1);

@@ -203,7 +203,7 @@ impl ReviewPanel {
         }
         let info_count=self.fact_indices.len()+self.inherited_indices.len()
             +usize::from(remote_notice(analysis,selected_recipient).is_some());
-        ui.add(crate::components::truncated_label(typography::caption(&format!(
+        ui.add(crate::ui_primitives::truncated_label(typography::caption(&format!(
             "조치 {}건 / 안내 {}건",self.action_indices.len(),info_count
         ))));
     }

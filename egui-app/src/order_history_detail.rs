@@ -28,7 +28,7 @@ fn kst(raw:&str)->String{
         .unwrap_or_else(||raw.to_owned())
 }
 fn money(value:&Value)->String{
-    value.as_i64().map(components::display_won)
+    value.as_i64().map(crate::display_format::display_won)
         .unwrap_or_else(||"미확정".to_owned())
 }
 fn display_or<'a>(value:&'a str,fallback:&'a str)->&'a str{
@@ -130,10 +130,10 @@ fn payment_panel(
     text_kv(ui,"입금 확인일",display_or(field(staff,"date"),"미확인"));
     ui.add_space(theme::SPACE_4);
     if payments.is_empty(){
-        components::management_body_state_inline(ui,"해당 주문에 연결된 실제 입금 기록이 없습니다.");
+        crate::ui_primitives::management_body_state_inline(ui,"해당 주문에 연결된 실제 입금 기록이 없습니다.");
     }
     for (i,payment) in payments.iter().enumerate(){
-        if i>0{components::soft_divider(ui);}
+        if i>0{crate::ui_primitives::soft_divider(ui);}
         text_kv(ui,"입금 처리일시",&kst(field(payment,"recordedAt")));
         text_kv(ui,"실제 입금일시",&kst(field(payment,"paidAt")));
         money_kv(ui,"입금액",&money(&payment["amount"]));
@@ -183,7 +183,7 @@ fn billing_panel(ui:&mut Ui,order:&Value,billing:&Value){
             });
         });
     }
-    components::section_divider(ui);
+    crate::ui_primitives::section_divider(ui);
     ui.horizontal(|line|{
         line.label(typography::section_heading("청구 합계"));
         line.with_layout(Layout::right_to_left(Align::Center),|right|{
@@ -198,7 +198,7 @@ fn shipment_values(ship:&Value)->(String,String){
     let freight=ship["actualFreight"].as_object().into_iter()
         .flat_map(|o|o.values())
         .filter_map(Value::as_i64)
-        .map(components::display_won).collect::<Vec<_>>();
+        .map(crate::display_format::display_won).collect::<Vec<_>>();
     let tracking=ship["tracking"].as_object().into_iter()
         .flat_map(|o|o.values()).filter_map(Value::as_str)
         .filter(|s|!s.is_empty()).collect::<Vec<_>>();
@@ -244,7 +244,7 @@ fn shipment_entry(
             let qty=item["quantity"].as_i64().map(|v|v.to_string())
                 .unwrap_or_else(||"미확인".into());
             let prefix=format!("◆ {name} × ");
-            let price=item["unitPrice"].as_i64().map(components::display_won);
+            let price=item["unitPrice"].as_i64().map(crate::display_format::display_won);
             let job=if let Some(price)=price.as_deref(){
                 typography::inline_body_values(&[
                     (prefix.as_str(),None),
@@ -261,7 +261,7 @@ fn shipment_entry(
             card.add(egui::Label::new(job));
         }
         if rows(&recipient["items"]).is_empty(){
-            components::management_body_state_inline(card,"품목 정보 없음");
+            crate::ui_primitives::management_body_state_inline(card,"품목 정보 없음");
         }
         card.add_space(theme::SPACE_4);
         if let Some(ship)=ship{
@@ -272,7 +272,7 @@ fn shipment_entry(
             text_kv(card,"관리 메모",display_or(note,"없음"));
             text_kv(card,"메모 최종 갱신",&kst(field(ship,"managementMemoUpdatedAt")));
         }else{
-            components::management_body_state_inline(card,"현재 연결된 운송장과 발송 건 메모가 없습니다.");
+            crate::ui_primitives::management_body_state_inline(card,"현재 연결된 운송장과 발송 건 메모가 없습니다.");
         }
     });
 }
@@ -299,7 +299,7 @@ fn shipment_panel(ui:&mut Ui,order:&Value,shipments:&[&Value]){
         }
     }
     if recipients.is_empty(){
-        components::management_body_state_inline(ui,"저장된 수취인 및 발송 건 정보가 없습니다.");
+        crate::ui_primitives::management_body_state_inline(ui,"저장된 수취인 및 발송 건 정보가 없습니다.");
     }
 }
 struct AuditEntry {at:String,title:String,detail:String}
@@ -376,7 +376,7 @@ fn change_entries(order:&Value,state:&Value,shipment_ids:&HashSet<&str>)->Vec<Au
 }
 fn audit_panel(ui:&mut Ui,changes:&[AuditEntry]){
     if changes.is_empty(){
-        components::management_body_state_inline(ui,"현재 저장된 관련 변경 기록이 없습니다.");
+        crate::ui_primitives::management_body_state_inline(ui,"현재 저장된 관련 변경 기록이 없습니다.");
     }
     for change in changes{
         ui.label(typography::subsection_heading(&change.title));
@@ -481,7 +481,7 @@ pub fn show(ctx:&egui::Context,work_area:Rect,row:&Value,state:&Value)->bool{
                     let panes=dashboard_grid(grid_rect);
                     section_panel(ui,panes.raw,raw_title,"raw",order_id,|panel|{
                         if raw.is_empty(){
-                            components::management_body_state_inline(panel,"보존된 텍스트 원문이 없습니다.");
+                            crate::ui_primitives::management_body_state_inline(panel,"보존된 텍스트 원문이 없습니다.");
                         }else{
                             panel.label(typography::body(raw));
                         }
@@ -493,7 +493,7 @@ pub fn show(ctx:&egui::Context,work_area:Rect,row:&Value,state:&Value)->bool{
                         }
                         let attachments=rows(&order["photos"]).len();
                         if attachments>0{
-                            components::section_divider(panel);
+                            crate::ui_primitives::section_divider(panel);
                             panel.label(typography::caption(&format!(
                                 "첨부 이미지 {}건 · 이미지 미리보기는 아직 연결되지 않았습니다.",
                                 attachments

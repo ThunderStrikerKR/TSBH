@@ -365,8 +365,8 @@ impl AliasManager {
                             });
                         });
                         #[cfg(test)]
-                        components::general_screen_geometry_tests::record("catalog data row",_row.response.rect);
-                        components::soft_divider(list);
+                        crate::ui_test_support::record("catalog data row",_row.response.rect);
+                        crate::ui_primitives::soft_divider(list);
                     }
                 });
             
@@ -427,7 +427,7 @@ impl AliasManager {
                                                 let response=crate::dropdown::management_dropdown_option(
                                                     choice,&mut value,id.clone(),&visible
                                                 );
-                                                components::shortened_text_tooltip(response,&visible,name.as_str());
+                                                crate::ui_primitives::shortened_text_tooltip(response,&visible,name.as_str());
                                             }
                                         });
                                     if value!=selected{
@@ -467,7 +467,7 @@ impl AliasManager {
                             });
                             self.request_picker(ctx);
                             let found=self.picker_result.clone();
-                            components::section_divider(modal);
+                            crate::ui_primitives::section_divider(modal);
                             let results_height=crate::popup::modal_list_max_height(
                                 modal,work_area.height(),theme::MANAGEMENT_MODAL_BODY_MAX_HEIGHT,false
                             );
@@ -484,7 +484,7 @@ impl AliasManager {
                                                 .filter_map(Value::as_str).take(100)
                                                 .collect::<Vec<_>>();
                                             if ids.is_empty(){
-                                                components::management_body_state_inline(results,"검색 결과가 없습니다.");
+                                                crate::ui_primitives::management_body_state_inline(results,"검색 결과가 없습니다.");
                                             }
                                             for id in ids{
                                                 if let Some(p)=product(catalog,id){
@@ -507,7 +507,7 @@ impl AliasManager {
                                                             }
                                                         }
                                                     });
-                                                    components::soft_divider(results);
+                                                    crate::ui_primitives::soft_divider(results);
                                                 }
                                             }
                                         }
@@ -656,7 +656,7 @@ mod tests {
                                 );
                             });
                         });
-                        components::soft_divider(ui);
+                        crate::ui_primitives::soft_divider(ui);
                     }
                     measured=Some((slots,second_row_top));
                 });

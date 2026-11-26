@@ -585,7 +585,7 @@ impl ClientManager {
                                 row.set_clip_rect(rows_clip);
                                 if let Some(client)=rows.get(index){
                                     #[cfg(test)]
-                                    components::general_screen_geometry_tests::record("data row",row_rect);
+                                    crate::ui_test_support::record("data row",row_rect);
                                     let display=components::ClientDisplaySummary::from_client(client);
                                     let name=display.name.as_str();
                                     let description="";
@@ -707,14 +707,14 @@ impl ClientManager {
         ui.label(typography::section_heading("거래처 식별"));
         label_edit(ui,draft,"name","거래처명");
         self.search_tag_editor(ui,draft);
-        components::section_divider(ui);
+        crate::ui_primitives::section_divider(ui);
         ui.label(typography::section_heading("주소 / 전화번호"));
         label_edit(ui,draft,"address","주소");
         ui.columns(2,|cols|{
             label_edit(&mut cols[0],draft,"phone","전화번호");
             label_edit(&mut cols[1],draft,"mobile","휴대폰번호");
         });
-        components::section_divider(ui);
+        crate::ui_primitives::section_divider(ui);
         ui.label(typography::section_heading("거래 조건"));
         ui.columns(2,|cols|{
             cols[0].label(typography::field_label("가격 등급"));
@@ -775,7 +775,7 @@ impl ClientManager {
             bool_edit(flags,draft,"defaultApplyVat","부가세 포함");
         });
         if field(draft,"tier")=="special" {
-            components::section_divider(ui);
+            crate::ui_primitives::section_divider(ui);
             ui.label(typography::section_heading("특수 / 예외 품목 단가"));
             let mut remove=None;
             if let Some(overrides)=draft.get("overrides").and_then(Value::as_object) {
@@ -824,7 +824,7 @@ impl ClientManager {
                                 ui,&mut self.exception_id,id.clone(),label);
                         }
                     });
-                components::form_field_label(row,"특수 단가");
+                crate::ui_primitives::form_field_label(row,"특수 단가");
                 crate::input::money_field(row,&mut self.exception_price,true);
                 // The common editor formats even while focused; the
                 // business override still receives an unpunctuated integer.
@@ -851,7 +851,7 @@ impl ClientManager {
         let history=draft.get("history").and_then(Value::as_array)
             .cloned().unwrap_or_default();
         if !aliases.is_empty() || !history.is_empty() {
-            components::section_divider(ui);
+            crate::ui_primitives::section_divider(ui);
             components::collapsing_header("상품 별칭 / 변경 이력")
                 .show(ui,|ui|{
                 for alias in &aliases {

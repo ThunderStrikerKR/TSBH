@@ -413,10 +413,10 @@ fn workflow_header(
     debug_assert!((manage.left()-signal.right()-gap).abs()<=0.01);
     debug_assert!((delete.left()-manage.right()-gap).abs()<=0.01);
 
-    components::paint_workflow_icon(
+    crate::ui_primitives::paint_workflow_icon(
         ui.painter(),arrow.center(),
-        if open{components::WorkflowIcon::Expanded}
-        else{components::WorkflowIcon::Collapsed},theme::SECONDARY
+        if open{crate::ui_primitives::WorkflowIcon::Expanded}
+        else{crate::ui_primitives::WorkflowIcon::Collapsed},theme::SECONDARY
     );
     let text_rect=Rect::from_min_max(
         Pos2::new(title_rect.left()+2.0,title_rect.top()),
@@ -436,7 +436,7 @@ fn workflow_header(
         arrow.union(title_rect),
         workflow_widget_id("workflow-header",id,in_preview),egui::Sense::click()
     );
-    let title_response=components::shortened_text_tooltip(title_response,&visible,title);
+    let title_response=crate::ui_primitives::shortened_text_tooltip(title_response,&visible,title);
 
     let block=workflow_control_rect(signal);
     theme::paint_bordered_surface(ui.painter(),block,5.0,
@@ -565,15 +565,15 @@ fn workflow_action_line(
         egui::FontId::proportional(theme::WORKFLOW_VAT_FONT_SIZE),
         theme::SECONDARY
     );
-    let shipping_clipped=components::text_exceeds_rect(ship_galley.size(),shipping.intersect(ui.clip_rect()));
+    let shipping_clipped=crate::ui_primitives::text_exceeds_rect(ship_galley.size(),shipping.intersect(ui.clip_rect()));
     ui.painter().with_clip_rect(shipping).galley(
         Pos2::new(shipping.left(),bottom_y-ship_galley.size().y),
         ship_galley,theme::SECONDARY
     );
-    components::overflow_region_tooltip(ui,shipping,
+    crate::ui_primitives::overflow_region_tooltip(ui,shipping,
         workflow_widget_id("workflow-shipping",id,in_preview),shipping_clipped,&shipping_text);
 
-    let amount=total.map(components::display_won)
+    let amount=total.map(crate::display_format::display_won)
         .unwrap_or_else(||"금액 미확정".to_owned());
     // Keep the text clip and the highlight slot distinct; the common
     // renderer preserves the full currency padding within the price slot.
@@ -593,7 +593,7 @@ fn workflow_action_line(
             vat_galley,theme::WORKFLOW_VAT_TEXT
         );
     }
-    components::overflow_region_tooltip(ui,price,
+    crate::ui_primitives::overflow_region_tooltip(ui,price,
         workflow_widget_id("workflow-money",id,in_preview),money_clipped,&amount);
 
     // A pending dealer match is automatic. The existing disabled controls
@@ -680,7 +680,7 @@ fn row(
     }else{ship.recipient_name.as_str()};
     let freight={
         if ship.collect{"착불".to_owned()}else{
-        let values=["FACTORY","STORE"].into_iter().filter_map(|origin|ship.display_charges.get(origin)).map(|amount|amount.map(components::display_won).unwrap_or_else(||"—".into())).collect::<Vec<_>>();
+        let values=["FACTORY","STORE"].into_iter().filter_map(|origin|ship.display_charges.get(origin)).map(|amount|amount.map(crate::display_format::display_won).unwrap_or_else(||"—".into())).collect::<Vec<_>>();
         if values.is_empty(){"—".to_owned()}else{values.join(" / ")}
         }
     };
@@ -732,7 +732,7 @@ fn group_frame(
         }
         if open || in_preview{
             workflow_details(ui,|ui|{
-                components::soft_divider(ui);
+                crate::ui_primitives::soft_divider(ui);
                 ui.add_space(theme::SPACE_4);
                 crate::table::inline(ui,crate::table::InlineHeader::Shipment,|ui|{
             for ship in &group.shipments{
@@ -928,7 +928,7 @@ fn pending_frame(
         }
         if open{
             workflow_details(ui,|ui|{
-                components::soft_divider(ui);
+                crate::ui_primitives::soft_divider(ui);
                 ui.add_space(theme::SPACE_4);
                 crate::table::inline(ui,crate::table::InlineHeader::Shipment,|ui|{
             if recipients.is_empty(){
@@ -973,7 +973,7 @@ fn pending_frame(
                         let values=["FACTORY","STORE"].into_iter().filter_map(|origin|
                             quote.and_then(|q|crate::quoted_freight_line(q,recipient_id,Some(origin)))
                                 .map(|line|line.get("billableCharge").unwrap_or(&line["appliedCharge"])
-                                    .as_i64().map(components::display_won).unwrap_or_else(||"—".to_owned())))
+                                    .as_i64().map(crate::display_format::display_won).unwrap_or_else(||"—".to_owned())))
                             .collect::<Vec<_>>();
                         if values.is_empty(){"—".to_owned()}else{values.join(" / ")}
                     }else{"—".to_owned()};
@@ -1394,7 +1394,7 @@ mod pending_matching_tests {
 
     #[test]
     fn pending_receipt_never_emits_a_fake_dealer_confirmation_action(){
-        let ctx=components::test_context();
+        let ctx=crate::ui_test_support::test_context();
         let mut tapped=None;
         let draft=WorkingReception{
             id:"egui-pending-test".to_owned(),
@@ -1909,7 +1909,7 @@ mod compact_virtualization_tests{
                         None,None,false,false,false,hover,None);
                 });
             });
-            let amount=components::display_won(total);
+            let amount=crate::display_format::display_won(total);
             let ink=output.shapes.iter().find_map(|s|match &s.shape{
                 egui::Shape::Text(t) if t.galley.text()==amount.as_str()=>
                     Some(Rect::from_min_size(t.pos,t.galley.size())),

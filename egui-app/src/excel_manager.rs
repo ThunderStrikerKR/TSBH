@@ -29,7 +29,7 @@ fn datetime(raw:&str)->String{
     raw.to_owned()
 }
 fn amount(v:&Value)->String{
-    v.as_i64().map(components::display_won)
+    v.as_i64().map(crate::display_format::display_won)
         .unwrap_or_else(||"확인 필요".to_owned())
 }
 #[derive(Clone,Copy,PartialEq,Eq)]
@@ -349,7 +349,7 @@ fn table<const N:usize>(
             for index in range{
                 let r=crate::table::fixed_row_rect(origin,index,first,width,HEIGHT);
                 #[cfg(test)]
-                components::general_screen_geometry_tests::record("data row",r);
+                crate::ui_test_support::record("data row",r);
                 left.get_or_insert(r.left());
                 crate::table::fixed_row(body,(id,index),r,index,&widths,GAP,crate::table::RowTone::Alternating,|row,cols|{
                         render(row,cols,index);
@@ -683,9 +683,9 @@ impl ExcelManager{
                         crate::popup::modal_editor_body_max_height(area.height()),|ui|{
                         ui.label(typography::field_label(&format!("미해결 회신 {count}행")));
                         ui.label(typography::caption("정상 회신은 자동 저장됩니다. 충돌 건은 기존 값과 회신 값을 확인한 후 한 행씩 정정하세요."));
-                        if count==0{components::management_body_state_inline(ui,if busy{"조회 중"}else{"검토할 회신이 없습니다."});}
+                        if count==0{crate::ui_primitives::management_body_state_inline(ui,if busy{"조회 중"}else{"검토할 회신이 없습니다."});}
                         for row in self.reply_rows.iter().skip(self.reply_page*50).take(50){
-                            components::soft_divider(ui);
+                            crate::ui_primitives::soft_divider(ui);
                             ui.horizontal_wrapped(|line|{
                                 line.label(typography::field_label(&format!("{} / {}행 / {}",
                                     text(row,"filename"),row["row"],text(row,"name"))));
@@ -1116,7 +1116,7 @@ impl ExcelManager{
                                     .unwrap_or_default();
                                 let draft=self.freight_drafts.entry(id.to_owned())
                                     .or_insert_with(||source.clone());
-                                components::form_field_label(
+                                crate::ui_primitives::form_field_label(
                                     line,if self.tab==Tab::Factory{
                                         "공장 실제 출고 운임"
                                     }else{"매장 실제 출고 운임"}

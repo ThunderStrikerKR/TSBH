@@ -4,6 +4,11 @@
 use eframe::egui::{self, Align, Color32, Frame, Layout, Rect, Response, Sense, Stroke, Ui, UiBuilder, Vec2};
 use chrono::{Datelike, Duration as Days, Months, NaiveDate};
 use crate::{source_highlight, theme, typography};
+use crate::ui_primitives::*;
+use crate::display_format::{display_won,display_money_number};
+use crate::card::paint_shipment_detail_surface;
+#[cfg(test)]
+use crate::ui_test_support::test_context;
 use crate::checkbox::*;
 use crate::scrollbar::*;
 use crate::popup::*;
@@ -33,15 +38,6 @@ use crate::table::{management_table_scroll_track_rect,management_readonly_table_
 use crate::table::{management_master_column_rules,management_table_data_width,management_inline_list_table_header};
 #[cfg(test)]
 use crate::table::{virtual_fixed_rows,management_fixed_table_scroll_area,management_sticky_table_header,management_table_scroll_track_geometry,management_remaining_predivider_gap};
-
-#[cfg(test)]
-pub(crate) fn test_context()->egui::Context {
-    let ctx=egui::Context::default();
-    theme::install(&ctx);
-    typography::install(&ctx);
-    ctx
-}
-
 
 #[cfg(test)]
 mod management_table_container_style_tests{
@@ -128,66 +124,6 @@ pub fn management_body_state_overlay(
         egui::FontId::proportional(typography::FONT_METADATA),
         theme::MUTED
     );
-}
-
-/// Shared state caption for content-sized lists and menus with no reserved body.
-/// Fixed viewports use management_body_state_overlay instead.
-pub fn management_body_state_inline(ui:&mut Ui,caption:&str){
-    ui.label(typography::caption(caption));
-}
-
-/// Draw an error within an existing body rectangle without advancing its
-/// layout cursor. The full translated text is also available on hover when
-/// the visible rectangle is too short to contain the wrapped text.
-pub fn text_exceeds_rect(size:Vec2,rect:Rect)->bool{
-    size.x>rect.width()+0.5 || size.y>rect.height()+0.5
-}
-
-/// One eligibility rule for all explicit overflow tooltips.
-fn overflow_tooltip_needed(overflow:bool,full:&str)->bool{
-    overflow&&!full.trim().is_empty()
-}
-
-/// Labels with only native elision feedback use the native owner; labels
-/// with explicit full text/overflow feedback MUST turn the native owner off.
-/// Both paths keep identical label sizing, painting and interaction.
-pub fn truncated_label(text:impl Into<egui::WidgetText>)->egui::Label{
-    egui::Label::new(text).truncate()
-}
-pub fn label_for_explicit_tooltip(text:impl Into<egui::WidgetText>)->egui::Label{
-    egui::Label::new(text).show_tooltip_when_elided(false)
-}
-pub fn truncated_label_for_explicit_tooltip(text:impl Into<egui::WidgetText>)->egui::Label{
-    label_for_explicit_tooltip(text).truncate()
-}
-
-/// Attach a tooltip to an existing interactive widget without changing its sense.
-pub fn overflow_tooltip(response:Response,overflow:bool,full:&str)->Response{
-    if overflow_tooltip_needed(overflow,full)
-        && response.rect.width()>0.0 && response.rect.height()>0.0{
-        if crate::overlay::tooltip_allowed(&response){response.on_hover_text(full)}else{response}
-    }else{response}
-}
-
-/// Deliberately shortened text is also overflow, even if its ellipsis fits.
-pub fn shortened_text_tooltip(response:Response,visible:&str,full:&str)->Response{
-    overflow_tooltip(response,visible!=full,full)
-}
-
-/// Only create a hover widget for a nonempty, visible overflowing region.
-/// Existing click responses should instead use overflow_tooltip.
-pub fn overflow_region_tooltip(
-    ui:&Ui,rect:Rect,id:egui::Id,overflow:bool,full:&str
-){
-    if !overflow_tooltip_needed(overflow,full){return;}
-    let visible=rect.intersect(ui.clip_rect());
-    if visible.width()<=0.0||visible.height()<=0.0{return;}
-    overflow_tooltip(ui.interact(visible,id,Sense::hover()),overflow,full);
-}
-
-/// Compare the actual positioned text rectangle, including native elision.
-pub fn positioned_text_overflow(text:Rect,visible:Rect,elided:bool)->bool{
-    elided || !visible.expand(0.5).contains_rect(text)
 }
 
 /// Shared clipped single-line management cell. Callers choose semantic role,
@@ -682,7 +618,7 @@ mod management_async_layout_contract_tests {
         assert!(settlement.contains("let values=["));
         assert!(settlement.contains("for (name,value) in ["));
         let model_groups=include_str!("model_group_manager.rs");
-        assert!(!model_groups.contains("if self.dirty(){\n                                components::soft_divider(right);"));
+        assert!(!model_groups.contains("if self.dirty(){\n                                crate::ui_primitives::soft_divider(right);"));
         let aliases=include_str!("alias_manager.rs");
         assert!(aliases.contains("fn alias_diagnostic_slot("));
         assert!(aliases.contains("alias_diagnostic_slot(info,item,&warnings);"));
@@ -940,14 +876,6 @@ impl ManagementTableColumnLabel {
     }
 }
 
-#[derive(Clone, Copy)]
-pub enum WorkflowIcon {
-    Collapsed,
-    Expanded,
-    PreviousStage,
-    Trash,
-}
-
 /// Compact workflow money uses the shared semantic font and one-touch
 /// geometry. The allocated price slot, rather than its text clip, bounds
 /// the highlight so the currency suffix retains the same 4pt clearance.
@@ -1023,11 +951,6 @@ pub fn paint_shipment_detail_products(
         cell.intersect(ui.clip_rect()),galley.elided);
     paint_table_galley(ui,cell,x,galley,ink);
     overflow
-}
-pub fn paint_shipment_detail_surface(ui:&Ui,block:Rect,fill:Color32,chosen:bool){
-    let style=crate::card::workflow_shipment_row_frame(fill,chosen);
-    theme::paint_bordered_surface(ui.painter(),block,
-        theme::ORDER_HISTORY_RECIPIENT_BLOCK_RADIUS,style.fill,style.stroke.color);
 }
 /// Only the responsive widths differ from History: this nested list has
 /// no tracking column or management action column.
@@ -1254,47 +1177,6 @@ mod common_action_tooltip_tests{
                 }
             });
         });
-    }
-}
-
-/// Draw workflow glyphs as stable vectors; the UI font may not contain
-/// Unicode chevrons, trash or curved-arrow symbols on Windows.
-pub fn paint_workflow_icon(
-    painter: &egui::Painter,
-    center: egui::Pos2,
-    icon: WorkflowIcon,
-    ink: Color32,
-) {
-    let stroke = Stroke::new(1.55_f32, ink);
-    let p = |x: f32, y: f32| egui::pos2(center.x + x, center.y + y);
-    match icon {
-        WorkflowIcon::Collapsed => {
-            paint_chevron_at_angle(painter,center,0.0,0.0,ink);
-        }
-        WorkflowIcon::Expanded => {
-            paint_chevron_at_angle(
-                painter,center,std::f32::consts::FRAC_PI_2,1.0,ink
-            );
-        }
-        WorkflowIcon::PreviousStage => {
-            painter.line_segment([p(-5.3, -1.6), p(-1.5, -5.2)], stroke);
-            painter.line_segment([p(-5.3, -1.6), p(-1.0, 1.8)], stroke);
-            painter.add(egui::Shape::line(
-                vec![p(-4.4,-1.6), p(1.2,-1.6), p(4.2,1.0),p(4.2,5.0)],
-                stroke
-            ));
-        }
-        WorkflowIcon::Trash => {
-            for (a,b) in [
-                (p(-5.0,-4.1),p(5.0,-4.1)),
-                (p(-2.9,-6.9),p(2.9,-6.9)),
-                (p(-4.3,-1.5),p(-3.4,6.2)),
-                (p(4.3,-1.5),p(3.4,6.2)),
-                (p(-3.4,6.2),p(3.4,6.2)),
-                (p(-1.3,-1.2),p(-1.3,3.9)),
-                (p(1.3,-1.2),p(1.3,3.9))
-            ] {painter.line_segment([a,b],stroke);}
-        }
     }
 }
 
@@ -1540,25 +1422,6 @@ pub fn reception_docked_goods_scroll(
     });
 }
 
-/// A 36pt inline form label. Unlike natural-height ui.label(), the text is
-/// measured and painted inside the SAME row height as its sibling TextEdit.
-/// Optical adjustment comes from the typography layer, not each screen.
-pub fn form_field_label_sized(ui:&mut Ui,label:&str,width:f32)->Response {
-    let galley=typography::field_label_galley(ui,label);
-    let width=width.max(1.0).min(ui.available_width().max(1.0));
-    let (rect,response)=ui.allocate_exact_size(
-        Vec2::new(width,theme::INPUT_HEIGHT),Sense::hover()
-    );
-    let pos=egui::pos2(rect.left(),
-        rect.top()+typography::form_label_text_y(rect.height(),galley.size().y));
-    ui.painter().with_clip_rect(rect).galley(pos,galley,theme::SECONDARY);
-    response
-}
-pub fn form_field_label(ui:&mut Ui,label:&str)->Response {
-    let width=typography::field_label_galley(ui,label).size().x;
-    form_field_label_sized(ui,label,width)
-}
-
 /// Shared compact spreadsheet cell. Selection is an inset border;
 /// hovered cells do not resize the row, and a selected cell does not
 /// borrow the main navigation style.
@@ -1754,7 +1617,7 @@ pub fn reception_section_with_header(
     header_right:impl FnOnce(&mut Ui),content:impl FnOnce(&mut Ui),
 ){
     let width=ui.available_width();
-    let _card=theme::docked_pane_frame().show(ui,|ui|{
+    let _card=crate::card::docked_pane_frame().show(ui,|ui|{
         let width_inset=2.0*theme::SECTION_PADDING;
         let height_inset=theme::RECEPTION_SECTION_HEADER_TOP+theme::RECEPTION_PANE_PADDING_Y;
         ui.set_min_width((width-width_inset).max(60.0));
@@ -1770,19 +1633,19 @@ pub fn reception_section_with_header(
             }
         );
         #[cfg(test)]
-        general_screen_geometry_tests::record(reception_geometry_role(title,true),_header.response.rect);
+        crate::ui_test_support::record(reception_geometry_role(title,true),_header.response.rect);
         let (_transition,_divider)=section_divider_with_top_gap(ui,theme::SECTION_DIVIDER_GAP);
         #[cfg(test)]
-        general_screen_geometry_tests::record("source divider",_divider);
+        crate::ui_test_support::record("source divider",_divider);
         let _body=ui.scope(|body|{
             body.spacing_mut().item_spacing.y=body_item_spacing;
             content(body);
         });
         #[cfg(test)]
-        general_screen_geometry_tests::record("source body",_body.response.rect);
+        crate::ui_test_support::record("source body",_body.response.rect);
     });
     #[cfg(test)]
-    general_screen_geometry_tests::record(reception_geometry_role(title,false),_card.response.rect);
+    crate::ui_test_support::record(reception_geometry_role(title,false),_card.response.rect);
 }
 
 #[cfg(test)]
@@ -1954,7 +1817,7 @@ pub fn reception_recipient_fields(
     }).inner;
     #[cfg(test)]
     for (name,response) in ["recipient name","recipient address","recipient mobile","recipient phone","recipient note"].into_iter().zip(responses.iter()){
-        general_screen_geometry_tests::record(name,response.rect);
+        crate::ui_test_support::record(name,response.rect);
     }
     crate::one_touch::reveal_target(ui,crate::one_touch::Stage::Review,responses[0].rect);
     responses
@@ -1973,36 +1836,6 @@ pub fn paint_source_document_surface(ui: &Ui, rect: Rect) {
 pub fn paint_reception_client_summary_surface(ui:&Ui,rect:Rect){
     theme::paint_bordered_surface(ui.painter(),rect,theme::CONTROL_RADIUS,
         theme::RECEPTION_CLIENT_SUMMARY_BG,theme::RECEPTION_CLIENT_SUMMARY_BORDER);
-}
-
-/// Structural section divider: one 12/1/12pt allocation, separate from row rules.
-/// Ordinary vertical layouts already reserve item_spacing on both sides.
-/// Count that spacing toward the 12pt clearance, not on top of it.
-pub fn section_divider(ui:&mut Ui)->Rect{
-    let implicit=ui.spacing().item_spacing.y;
-    debug_assert!(implicit>=0.0 && implicit<=theme::SECTION_DIVIDER_GAP);
-    let gap=(theme::SECTION_DIVIDER_GAP-implicit).max(0.0);
-    allocate_section_divider(ui,gap,gap).0
-}
-
-/// Shared renderer also supports a preceding inset already consumed by the
-/// toolbar, or a reserved missing-toolbar slot. The bottom gap never varies.
-pub(crate) fn section_divider_with_top_gap(ui:&mut Ui,top_gap:f32)->(Rect,Rect){
-    debug_assert!(ui.spacing().item_spacing.y.abs()<0.01);
-    allocate_section_divider(ui,top_gap,theme::SECTION_DIVIDER_GAP)
-}
-
-fn allocate_section_divider(ui:&mut Ui,top_gap:f32,bottom_gap:f32)->(Rect,Rect){
-    let (strip,_)=ui.allocate_exact_size(
-        Vec2::new(ui.available_width(),top_gap+theme::SOFT_DIVIDER_WIDTH
-            +bottom_gap),Sense::hover()
-    );
-    let rule=Rect::from_min_size(
-        egui::pos2(strip.left(),strip.top()+top_gap),
-        Vec2::new(strip.width(),theme::SOFT_DIVIDER_WIDTH)
-    );
-    ui.painter().rect_filled(rule,0.0,theme::DIVIDER);
-    (strip,rule)
 }
 
 /// Untyped recognition/workflow notices retain informational coloring.
@@ -2054,12 +1887,6 @@ pub fn reception_message_copy_actions(ui:&mut Ui,enabled:bool)->Option<bool>{
         });
     }
     greeting
-}
-
-/// A subtle separation between data belonging to the same record.
-/// Sections themselves are framed by the caller.
-pub fn soft_divider(ui: &mut Ui) {
-    theme::soft_rule(ui);
 }
 
 /// The 6pt split interaction region is always the workspace (CANVAS)
@@ -2187,45 +2014,6 @@ pub fn management_date_group<R>(
         ui,("management-date-group",id),Vec2::new(width,theme::INPUT_HEIGHT),
         add_contents
     ).1
-}
-
-/// A single outer frame with zero-gap internal segments. Both the recipient
-/// navigator and shipment-count editor use this exact date-selector surface.
-pub(crate) fn date_navigation_segmented_surface<R>(
-    ui:&mut Ui,id_salt:impl std::hash::Hash,size:Vec2,
-    add_segments:impl FnOnce(&mut Ui,Rect)->R
-)->(Rect,R){
-    let (outer,_)=ui.allocate_exact_size(size,Sense::hover());
-    let inner=outer.shrink(theme::FRAME_STROKE_WIDTH);
-    ui.painter().rect_filled(
-        outer,theme::CONTROL_RADIUS as f32,theme::INPUT
-    );
-    // The parent has already allocated the complete frame. A scoped UI
-    // would advance its cursor again using the children's expanded bounds.
-    let mut segments=navigation_segment_child(
-        ui,id_salt,inner,Layout::left_to_right(Align::Center)
-    );
-    segments.set_width(inner.width());
-    segments.set_height(inner.height());
-    segments.spacing_mut().item_spacing=Vec2::ZERO;
-    let content=add_segments(&mut segments,inner);
-    ui.painter().rect_stroke(
-        outer.shrink(0.5),theme::CONTROL_RADIUS as f32,
-        Stroke::new(theme::SOFT_DIVIDER_WIDTH,theme::BORDER),
-        egui::StrokeKind::Inside
-    );
-    (outer,content)
-}
-
-/// A fixed segment gets its own child ID and clipped rectangle without
-/// advancing the parent layout. The caller retains the appropriate layout.
-pub(crate) fn navigation_segment_child(
-    parent:&mut Ui,id:impl std::hash::Hash,rect:Rect,layout:Layout
-)->Ui{
-    let mut child=parent.new_child(UiBuilder::new().id_salt(id)
-        .max_rect(rect).layout(layout));
-    child.set_clip_rect(rect.intersect(parent.clip_rect()));
-    child
 }
 
 fn paint_navigation_vertical_rules(
@@ -2444,7 +2232,7 @@ pub fn management_top_content<R>(
             add(inset)
         });
     #[cfg(test)]
-    general_screen_geometry_tests::record("top content",output.response.rect);
+    crate::ui_test_support::record("top content",output.response.rect);
     output.inner
 }
 
@@ -2480,65 +2268,6 @@ fn management_table_outline_keeps_header_width_and_viewport_bottom(){
     assert_eq!(crate::table::outline_bounds(header,body),
         Rect::from_min_max(header.min,egui::pos2(420.0,300.0)));
     assert_eq!(crate::table::outline_bounds(header,header),header);
-}
-
-/// One 10pt / 1.8pt-stroke chevron for selectors, date stepping and
-/// expand/collapse affordances. Rotate this same vector for every screen.
-/// Draw the TWO diagonal arms as ONE continuous path. Separate
-/// line_segment() calls blend anti-aliased coverage twice at their shared
-/// corner, making the arrow tip darker and giving inconsistent edge colors
-/// on Windows / fractional DPI. A single path has one joined stroke.
-#[derive(Clone,Copy)]
-pub(crate) enum ManagementChevronDirection { Down, Left, Right }
-
-fn paint_chevron_at_angle(
-    painter:&egui::Painter,center:egui::Pos2,angle:f32,optical_raise:f32,
-    ink:Color32
-){
-    paint_chevron_at_angle_scaled(painter,center,angle,optical_raise,ink,1.0);
-}
-
-/// Shared chevron geometry, scaled only for constrained half-height segments.
-pub(crate) fn paint_chevron_at_angle_scaled(
-    painter:&egui::Painter,center:egui::Pos2,angle:f32,optical_raise:f32,
-    ink:Color32,scale:f32
-){
-    let half_span=5.0*scale;
-    let depth=2.5*scale;
-    let stroke=(1.8*scale).max(1.0);
-    let (s,c)=angle.sin_cos();
-    let rotated=|x:f32,y:f32|egui::pos2(
-        center.x+x*c-y*s,
-        center.y+x*s+y*c-optical_raise
-    );
-    let a=rotated(-depth,-half_span);
-    let tip=rotated(depth,0.0);
-    let b=rotated(-depth,half_span);
-    // One tessellated stroke owns the corner, diagonal edges and caps.
-    // Preserve the approved 10pt shape, rotation and 1.8pt thickness.
-    painter.add(egui::Shape::line(
-        vec![a,tip,b],Stroke::new(stroke,ink)
-    ));
-}
-
-pub(crate) fn paint_management_chevron_with_color(
-    painter:&egui::Painter,center:egui::Pos2,
-    direction:ManagementChevronDirection,color:Color32
-){
-    let (angle,raise)=match direction {
-        ManagementChevronDirection::Right=>(0.0,0.0),
-        ManagementChevronDirection::Down=>(std::f32::consts::FRAC_PI_2,1.0),
-        ManagementChevronDirection::Left=>(std::f32::consts::PI,0.0),
-    };
-    paint_chevron_at_angle(painter,center,angle,raise,color);
-}
-
-pub(crate) fn paint_management_chevron(
-    painter:&egui::Painter,center:egui::Pos2,direction:ManagementChevronDirection
-){
-    paint_management_chevron_with_color(
-        painter,center,direction,theme::SECONDARY
-    );
 }
 
 /// CategoryTree presentation contract. The caller owns data, selection and
@@ -3280,27 +3009,6 @@ mod client_display_summary_tests{
     }
 }
 
-/// Display-only won formatting. No business price or rounding decisions live
-/// in the UI layer; amounts are supplied by the Rust business engine.
-pub fn display_won(amount: i64) -> String {
-    format!("{}원",display_money_number(amount))
-}
-
-fn display_money_number(amount:i64)->String{
-    let digits = amount.to_string();
-    let (sign, positive) = if let Some(text) = digits.strip_prefix('-') {
-        ("-", text)
-    } else { ("", digits.as_str()) };
-    let mut groups = String::new();
-    for (index, character) in positive.chars().enumerate() {
-        if index > 0 && (positive.len() - index) % 3 == 0 {
-            groups.push(',');
-        }
-        groups.push(character);
-    }
-    format!("{sign}{groups}")
-}
-
 /// Geometry shared by recognized working orders and native workflow rows.
 /// The name receives all width not reserved for the two narrow numeric columns.
 /// Stable grid geometry for both the item header and rows.
@@ -3637,7 +3345,7 @@ fn reception_item_row_with_mode(
     }
     #[cfg(test)]
     for (name,response) in [("item product",&product),("item quantity",&quantity),("item amount",&amount)]{
-        general_screen_geometry_tests::record(name,response.rect);
+        crate::ui_test_support::record(name,response.rect);
     }
     ReceptionItemCells { product, quantity, amount, remove_clicked }
 }
@@ -3810,7 +3518,7 @@ pub fn reception_freight_row_controls(
         crate::one_touch::reveal_target(ui,crate::one_touch::Stage::Freight,rect);
     }
     #[cfg(test)]
-    if let Some(rect)=amount_rect{general_screen_geometry_tests::record("freight amount",rect);}
+    if let Some(rect)=amount_rect{crate::ui_test_support::record("freight amount",rect);}
     ReceptionFreightEdit {
         amount_rect,amount_clicked:clicked,amount_click_pos,
         remote_clicked,collect_clicked,
@@ -4023,7 +3731,7 @@ pub fn reception_total_footer(
         Sense::hover(),
     );
     #[cfg(test)]
-    general_screen_geometry_tests::record("order total footer",rect);
+    crate::ui_test_support::record("order total footer",rect);
     let left = rect.left() + theme::SPACE_8;
     let right = rect.right() - theme::SPACE_8;
     let right_start = (right - 148.0).max(left + 50.0);
@@ -4122,8 +3830,8 @@ mod shared_detail_divider_contract_tests {
     #[test]
     fn order_history_detail_uses_shared_soft_dividers(){
         let source=include_str!("order_history_detail.rs");
-        assert_eq!(source.matches("components::soft_divider(").count(),1);
-        assert_eq!(source.matches("components::section_divider(").count(),2);
+        assert_eq!(source.matches("crate::ui_primitives::soft_divider(").count(),1);
+        assert_eq!(source.matches("crate::ui_primitives::section_divider(").count(),2);
         assert!(!source.contains(".separator("));
     }
 }
@@ -4455,7 +4163,7 @@ mod shared_ghost_action_contract_tests {
         assert!(!back.contains("egui::Button::new("));
 
         let explorer=source.split("if state.ancestors_open && state.path.len()>1")
-            .nth(1).unwrap().split("components::soft_divider(menu);")
+            .nth(1).unwrap().split("crate::ui_primitives::soft_divider(menu);")
             .next().unwrap();
         assert!(explorer.contains("crate::card::category_ancestor_frame()"));
         assert!(!explorer.contains("egui::Frame::new()"));
@@ -5739,7 +5447,7 @@ mod management_dropdown_unification_tests {
         assert!(!source[first..end].contains("dropdown_option_selected(ui.ctx())"));
         let popup=source.find("fn management_dropdown_inner(").unwrap();
         assert!(source[popup..inner].contains("crate::overlay::show_menu("));
-        assert!(include_str!("overlay.rs").contains("dropdown_popup_trigger_response(owner)"));
+        assert!(include_str!("overlay.rs").contains("s.popup_trigger=Some(origin)"));
     }
 
     #[test]
@@ -5849,7 +5557,7 @@ mod money_live_format_tests{
     }
     #[test]
     fn reception_money_cell_formats_without_storing_suffix_or_changing_layout(){
-        let ctx=crate::components::test_context();
+        let ctx=crate::ui_test_support::test_context();
         let mut amount="59000".to_owned();
         let mut observed=None;
         let _=ctx.run(egui::RawInput::default(),|ctx|{
@@ -7262,17 +6970,11 @@ mod shared_general_screen_audit_tests {
 #[cfg(test)]
 pub(crate) mod general_screen_geometry_tests {
     use super::*;
-    use std::{cell::RefCell,sync::Arc};
+    use std::sync::Arc;
+    use crate::ui_test_support::{Sample,TRACE,record};
     use crate::gateway::{BandoGateway,ReadOperation};
     use crate::preview_store::WorkingSource;
     use serde_json::Value;
-    type Sample=(&'static str,Rect);
-    thread_local!{
-        static TRACE:RefCell<Option<Vec<Sample>>>=RefCell::new(None);
-    }
-    pub(crate) fn record(name:&'static str,rect:Rect){
-        TRACE.with(|trace|{if let Some(samples)=trace.borrow_mut().as_mut(){samples.push((name,rect));}});
-    }
     // No files, network or database are accessed by fixture read workers.
     struct GeometryGateway;
     impl BandoGateway for GeometryGateway{

@@ -182,7 +182,7 @@ fn menu_body(
         path.pop();
         navigate(state,path);
     }
-    components::soft_divider(menu);
+    crate::ui_primitives::soft_divider(menu);
     let searching=!state.search.trim().is_empty();
     let current=state.path.last().and_then(|id|index.get(id.as_str())).copied();
     let items=if searching{
@@ -266,7 +266,7 @@ fn menu_body(
             if let Some(path)=next{navigate(state,path);}
         });
     }
-    components::soft_divider(menu);
+    crate::ui_primitives::soft_divider(menu);
     let mut applied=false;
     menu.scope(|footer|{
         footer.spacing_mut().item_spacing.y=theme::SPACE_4;

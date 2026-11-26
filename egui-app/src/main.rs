@@ -9,6 +9,11 @@ mod typography;
 mod layout;
 mod window_state;
 mod components;
+mod ui_primitives;
+mod display_format;
+mod ui_tokens;
+#[cfg(test)]
+mod ui_test_support;
 mod table;
 mod button;
 mod checkbox;
@@ -4024,7 +4029,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                     // The tax rate applies to the whole order and precedes
                     // both the bulk and the per-recipient VAT selections.
                     ui.horizontal(|row|{
-                        components::form_field_label(row,"부가세율");
+                        crate::ui_primitives::form_field_label(row,"부가세율");
                         // Three-digit compact field; decimals remain supported by
                         // native VAT parser. The 36pt shared TextEdit centers caret,
                         // selection and glyphs together.
@@ -4162,13 +4167,13 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                     typography::body(&serde_json::to_string_pretty(&original)
                                         .unwrap_or_default())
                                 ).selectable(true));
-                                components::section_divider(body);
+                                crate::ui_primitives::section_divider(body);
                                 body.label(typography::section_heading("현재 수정 결과"));
                                 body.add(egui::Label::new(
                                     typography::body(&serde_json::to_string_pretty(&latest)
                                         .unwrap_or_default())
                                 ).selectable(true));
-                                components::section_divider(body);
+                                crate::ui_primitives::section_divider(body);
                                 for (index,event) in receipt.edit_history.iter().enumerate().rev(){
                                     components::collapsing_header(format!(
                                         "수정 {} · {}",index+1,
@@ -5217,7 +5222,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                             // experimental option in a distinct RIGHT-anchored
                             // slot. The checkbox never consumes the heading's
                             // leading edge or gets pushed outside its clip.
-                            toolbar.add(components::truncated_label(
+                            toolbar.add(crate::ui_primitives::truncated_label(
                                 typography::subsection_heading("인식된 텍스트 · 직접 수정")
                             ));
                             let mut changed=false;
@@ -6019,7 +6024,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                 },
                             );
                             #[cfg(test)]
-                            components::general_screen_geometry_tests::record(
+                            crate::ui_test_support::record(
                                 ["kakao pane","source pane","details pane","orders pane"][index],
                                 _pane_output.response.rect
                             );
@@ -7011,7 +7016,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                         }
                         intake.add_space(theme::SPACE_8);
                         components::reception_capture_shortcut_hint(intake);
-                        components::section_divider(intake);
+                        crate::ui_primitives::section_divider(intake);
                         intake.label(typography::subsection_heading("다른 방법으로 접수"));
                         intake.add_space(theme::SPACE_8);
                         let (direct,capture) = components::paired_actions(
@@ -7028,7 +7033,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                         if capture.clicked(){
                             start_region_capture=true;
                         }
-                        components::section_divider(intake);
+                        crate::ui_primitives::section_divider(intake);
                         let folder_heading=intake.label(
                             typography::subsection_heading("폴더 자동 인식")
                         );
@@ -7584,7 +7589,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                                 let amount=item.get("lineAmount")
                                                     .or_else(||item.get("amount"))
                                                     .and_then(serde_json::Value::as_i64)
-                                                    .map(components::display_won)
+                                                    .map(crate::display_format::display_won)
                                                     .unwrap_or_else(||"—".into());
                                                 let item_id=reception_service::text(item,"id");
                                                 let fields=["product","quantity","price"];
@@ -8002,7 +8007,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                                         let amount=quote_index.as_deref()
                                                             .and_then(|quote|quote.item(item_id))
                                                             .and_then(|line|line["amount"].as_i64())
-                                                            .map(components::display_won)
+                                                            .map(crate::display_format::display_won)
                                                             .unwrap_or_else(||"—".into());
                                                         let recipient_id=reception_service::text(row,"id");
                                                         let fields=["product","quantity","price"];
@@ -8372,7 +8377,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                                     .and_then(|quote|quote.item(item_id))
                                                     .and_then(|line|line.get("amount"))
                                                     .and_then(serde_json::Value::as_i64)
-                                                    .map(components::display_won)
+                                                    .map(crate::display_format::display_won)
                                                     .unwrap_or_else(||"—".to_owned());
                                                 let board_preview=self.workflow_ui.pending_preview()
                                                     .is_some_and(|target|
@@ -9357,7 +9362,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                     &format!("발주 {number} / {} / 배송 ",group.dealer_name),
                                     group.shipments.len(),"건 / ",group.total,"금액 미확정",false
                                 ));
-                                components::section_divider(ui);
+                                crate::ui_primitives::section_divider(ui);
                                 if !targets.is_empty(){
                                     let caption=targets.iter().find(|g|g.id==target)
                                         .map(|g|g.management_target_label())
@@ -9392,7 +9397,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                     .auto_shrink([false,true])
                                     .show(ui,|list|{
                                         for (index,ship) in group.shipments.iter().enumerate(){
-                                            if index>0{components::soft_divider(list);}
+                                            if index>0{crate::ui_primitives::soft_divider(list);}
                                             list.push_id(&ship.id,|list|{
                                             list.label(typography::body(
                                                 if ship.recipient_name.is_empty(){
@@ -9458,7 +9463,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                             );
                             decision.body(|ui|{
                                 ui.label(typography::body("거래처와 주문 내용을 확인한 후 주문 확인을 완료하면 배송 건을 분리하거나 다시 묶을 수 있습니다."));
-                                components::section_divider(ui);
+                                crate::ui_primitives::section_divider(ui);
                                 let rows=workflow_board_ui::pending_recipients(&draft);
                                 if rows.is_empty(){
                                     ui.label(typography::body("수취인 확인"));

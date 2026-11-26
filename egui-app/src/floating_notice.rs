@@ -56,7 +56,6 @@ struct State {
     active: Option<Notice>,
     // Transient option-click origin for the currently open shared dropdown.
     // It is never carried to a later frame or a different user action.
-    dropdown_popup_trigger: Option<ElementOrigin>,
     dropdown_selected_trigger: Option<ElementOrigin>,
     last_element: Option<ElementOrigin>,
 }
@@ -74,10 +73,10 @@ fn with_state<R>(ctx: &Context, f: impl FnOnce(&mut State) -> R) -> R {
 /// Call once at the beginning of each frame. Do not carry an anchor from one
 /// management page to another; a delayed result must not point to unrelated UI.
 pub fn begin_page(ctx: &Context, page: &'static str) {
+    crate::overlay::clear_popup_trigger(ctx);
     with_state(ctx, |state| {
         // One-shot UI dispatch information is valid for the click frame only.
         // An uncommitted filter choice must not relocate a later button notice.
-        state.dropdown_popup_trigger = None;
         state.dropdown_selected_trigger = None;
         state.last_element = None;
         if state.page != page {
@@ -155,28 +154,17 @@ pub fn inherit_origin(ctx:&Context,from:&'static str,to:&'static str){
         else{s.anchors.remove(to);}});
 }
 
-/// The visible dropdown button, rather than a row in its popup, owns any
-/// operation feedback triggered by the selected option. Set this only while
-/// the shared popup is being rendered, immediately before its options.
-pub fn dropdown_popup_trigger_response(response:&Response){
-    let origin=response_origin(response);
-    with_state(&response.ctx,|state|state.dropdown_popup_trigger=Some(origin));
-}
 #[cfg(test)]
-fn dropdown_popup_trigger(ctx: &Context, trigger: Rect) {
-    let owner=crate::overlay::modal_scope(ctx);
-    with_state(ctx, |state| {
-        state.dropdown_popup_trigger = Some(ElementOrigin{rect:trigger,owner});
-    });
+fn dropdown_popup_trigger(ctx:&Context,trigger:Rect){
+    crate::overlay::set_popup_trigger_for_test(ctx,trigger);
 }
 
 /// A selected common option reserves its parent dropdown's anchor for the
 /// NEXT action dispatch in THIS frame. Pure filter choices have no dispatch;
 /// begin_page clears their unused anchor at the next frame.
 pub fn dropdown_option_selected(ctx: &Context) {
-    with_state(ctx, |state| {
-        state.dropdown_selected_trigger = state.dropdown_popup_trigger;
-    });
+    let origin=crate::overlay::popup_trigger_origin(ctx).map(|(rect,owner)|ElementOrigin{rect,owner});
+    with_state(ctx, |state| { state.dropdown_selected_trigger=origin; });
 }
 
 /// For jobs dispatched by several nested buttons that share an async receiver.
@@ -553,7 +541,8 @@ pub fn show(ctx: &Context) {
                 let response=ui.interact(
                     hit,Id::new(NOTICE_ID).with("close"),Sense::click()
                 );
-                crate::button::paint_button_hover(ui,&response,4.0);
+                remember_response(ui.ctx(),&response);
+                crate::ui_primitives::paint_action_hover_corners(ui,&response,egui::CornerRadius::same(4));
                 paint_close(&painter,center);
                 close=response.clicked();
             }
@@ -610,7 +599,7 @@ mod tests {
         dropdown_option_selected(&ctx);
         begin_page(&ctx,"Freight");
         assert!(with_state(&ctx,|state|state.dropdown_selected_trigger.is_none()));
-        assert!(with_state(&ctx,|state|state.dropdown_popup_trigger.is_none()));
+        assert!(crate::overlay::popup_trigger_origin(&ctx).is_none());
     }
 
     #[test]

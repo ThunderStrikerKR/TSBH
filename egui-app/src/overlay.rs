@@ -12,6 +12,7 @@ struct FrameScope {
     popup_owners:HashMap<LayerId,LayerId>,
     seen_popups:HashSet<LayerId>,
     popup_at_start:bool,
+    popup_trigger:Option<(egui::Rect,Option<LayerId>)>,
     escape_claimed:bool,
 }
 fn with_scope<R>(ctx:&Context,f:impl FnOnce(&mut FrameScope)->R)->R{
@@ -75,7 +76,18 @@ fn record_popup(owner:&Response,popup:&Ui){
         s.seen_popups.insert(child);
     });
     attach_popup(popup.ctx(),owner.layer_id,child);
-    crate::floating_notice::dropdown_popup_trigger_response(owner);
+    let origin=(owner.rect,response_owner(owner));
+    with_scope(&owner.ctx,|s|s.popup_trigger=Some(origin));
+}
+/// Origin of the currently rendered popup; notification consumers may read it.
+pub(crate) fn popup_trigger_origin(ctx:&Context)->Option<(egui::Rect,Option<LayerId>)>{
+    with_scope(ctx,|s|s.popup_trigger)
+}
+pub(crate) fn clear_popup_trigger(ctx:&Context){with_scope(ctx,|s|s.popup_trigger=None);}
+#[cfg(test)]
+pub(crate) fn set_popup_trigger_for_test(ctx:&Context,rect:egui::Rect){
+    let owner=modal_scope(ctx);
+    with_scope(ctx,|s|s.popup_trigger=Some((rect,owner)));
 }
 /// egui owns native outside-click and option-close behavior; all callers
 /// use the same owner registration and close policy.

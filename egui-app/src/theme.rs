@@ -8,9 +8,6 @@
 use eframe::egui::{
     self, Color32, CornerRadius, Frame, Stroke, Ui, Vec2,
 };
-use crate::typography;
-#[cfg(test)]
-use crate::button::{action_style,field_action_palette,button_hover_palette};
 
 pub const CANVAS: Color32 = Color32::from_rgb(16, 16, 16);
 pub const HEADER_BG: Color32 = Color32::from_rgb(27, 27, 27);
@@ -40,7 +37,7 @@ pub const FLOATING_NOTICE_ANCHOR_GAP: f32 = SPACE_8;
 pub const FLOATING_NOTICE_PADDING_X: i8 = 12;
 pub const FLOATING_NOTICE_PADDING_Y: i8 = 8;
 pub const FLOATING_NOTICE_ICON_SIZE: f32 = 16.0;
-pub const FLOATING_NOTICE_TEXT_SIZE: f32 = typography::FONT_FIELD_LABEL;
+pub const FLOATING_NOTICE_TEXT_SIZE: f32 = crate::ui_tokens::FONT_FIELD_LABEL;
 pub const FLOATING_NOTICE_CLOSE_HIT_SIZE: f32 = 20.0;
 pub const FLOATING_NOTICE_POINTER_HALF_WIDTH: f32 = 6.0;
 pub const FLOATING_NOTICE_POINTER_HEIGHT: f32 = 7.0;
@@ -370,9 +367,9 @@ pub const FREIGHT_SUMMARY_CARD_WIDTH: f32 = 228.0;
 // Size all geometry from the two text roles: 28pt value, 13pt label.
 // Number line 34 + label line 18 + gap 2 + padding 12*2 + border 2 = 80pt.
 pub const FREIGHT_SUMMARY_NUMBER_LINE_HEIGHT: f32 =
-    typography::FONT_FREIGHT_SUMMARY_NUMBER + 6.0;
+    crate::ui_tokens::FONT_FREIGHT_SUMMARY_NUMBER + 6.0;
 pub const FREIGHT_SUMMARY_LABEL_LINE_HEIGHT: f32 =
-    typography::FONT_FREIGHT_SUMMARY_LABEL + 5.0;
+    crate::ui_tokens::FONT_FREIGHT_SUMMARY_LABEL + 5.0;
 pub const FREIGHT_SUMMARY_TEXT_GAP: f32 = 2.0;
 pub const FREIGHT_SUMMARY_PADDING_X: f32 = SPACE_12;
 pub const FREIGHT_SUMMARY_PADDING_Y: f32 = 12.0;
@@ -427,7 +424,7 @@ pub const MANAGEMENT_TAB_HEIGHT: f32 = 38.0;
 // The three top-content frames also each advance the parent by the default
 // 8pt item spacing. Do not revive the older 12pt/16pt pre-title-inset layout.
 pub const MANAGEMENT_REFERENCE_HEADING_LINE_HEIGHT: f32 =
-    typography::FONT_PAGE_HEADING + 8.0;
+    crate::ui_tokens::FONT_PAGE_HEADING + 8.0;
 pub fn management_primary_card_top_offset(available_width: f32) -> f32 {
     // KPIs are inset 12pt on each side. Wrapped rows must use this same
     // interior width or the reference card jumps at narrow split widths.
@@ -908,20 +905,6 @@ pub fn workspace_shell_frame() -> Frame {
         })
 }
 
-/// Return reception panes to the Settings-inspired PANEL card tier.
-/// No outer margin: the 6pt splitter hit area is the only reserved gutter.
-/// Compensate the 1pt outline in inner margins; the shared header owns
-/// its separate optical top clearance.
-pub fn docked_pane_frame() -> Frame {
-    crate::card::section_frame()
-        .inner_margin(egui::Margin {
-            left: (SECTION_PADDING - FRAME_STROKE_WIDTH) as i8,
-            right: (SECTION_PADDING - FRAME_STROKE_WIDTH) as i8,
-            top: (RECEPTION_SECTION_HEADER_TOP - FRAME_STROKE_WIDTH) as i8,
-            bottom: (RECEPTION_PANE_PADDING_Y - FRAME_STROKE_WIDTH) as i8,
-        })
-}
-
 /// The reserved KakaoTalk area is also workspace, whether connected or
 /// empty. Preserve its full slot geometry for the native HWND docking.
 pub fn kakao_slot_frame() -> Frame {
@@ -1040,53 +1023,3 @@ mod management_primary_card_geometry_tests {
     }
 }
 
-#[cfg(test)]
-mod shared_action_style_tests{
-    use super::*;
-
-    #[test]
-    fn blue_pointer_hover_and_keyboard_focus_have_independent_paint(){
-        let hover_border=Stroke::new(SOFT_DIVIDER_WIDTH,SELECTION.linear_multiply(0.82));
-        let focus_border=Stroke::new(SOFT_DIVIDER_WIDTH,SELECTION);
-        assert_eq!(button_hover_palette(false,false),(None,None));
-        assert_eq!(button_hover_palette(true,false),(Some(BUTTON_HOVER_TINT),Some(hover_border)));
-        assert_eq!(button_hover_palette(false,true),(None,Some(focus_border)));
-        assert_eq!(button_hover_palette(true,true),(Some(BUTTON_HOVER_TINT),Some(focus_border)));
-        let ctx=egui::Context::default();
-        install(&ctx);
-        let style=ctx.style();
-        assert_eq!(style.visuals.widgets.hovered.bg_fill,BUTTON_HOVER_BG);
-        assert_eq!(style.visuals.widgets.hovered.weak_bg_fill,BUTTON_HOVER_BG);
-        assert_eq!(style.visuals.widgets.hovered.bg_stroke,
-            Stroke::new(SOFT_DIVIDER_WIDTH,SELECTION.linear_multiply(0.72)));
-        assert_eq!(style.visuals.widgets.hovered.expansion,0.0);
-    }
-
-    #[test]
-    fn fixed_and_native_actions_use_the_same_standard_and_emphasized_palette(){
-        let (_,fill,ink,stroke)=action_style(ButtonRole::Standard,true,false);
-        assert_eq!((fill,ink,stroke),(RAISED,TEXT,Stroke::new(FRAME_STROKE_WIDTH,BORDER)));
-        let (_,fill,ink,stroke)=action_style(ButtonRole::Emphasized,true,false);
-        assert_eq!((fill,ink,stroke),(BRIGHT,BRIGHT_TEXT,Stroke::NONE));
-        for role in [ButtonRole::Standard,ButtonRole::Emphasized,ButtonRole::TableSecondary]{
-            let (_,fill,ink,stroke)=action_style(role,false,false);
-            assert_eq!((fill,ink,stroke),(DISABLED_ACTION_BG,DISABLED_ACTION_TEXT,
-                Stroke::new(FRAME_STROKE_WIDTH,DISABLED_ACTION_BORDER)));
-        }
-    }
-
-    #[test]
-    fn special_review_and_field_roles_retain_their_own_appearance(){
-        let (_,fill,ink,stroke)=action_style(ButtonRole::Standard,true,true);
-        assert_eq!((fill,ink,stroke),(BRIGHT,BRIGHT_TEXT,Stroke::new(1.0,BORDER)));
-        let (_,fill,ink,stroke)=action_style(ButtonRole::Standard,false,true);
-        assert_eq!((fill,ink,stroke),(DISABLED_ACTION_BG,DISABLED_ACTION_TEXT,Stroke::new(1.0,BORDER)));
-        let (_,fill,ink,stroke)=action_style(ButtonRole::Ghost,false,false);
-        assert_eq!((fill,ink,stroke),(Color32::TRANSPARENT,DISABLED_ACTION_TEXT,Stroke::NONE));
-        for ink in [TEXT,SECONDARY]{
-            assert_eq!(field_action_palette(true,ink),(INPUT,ink,Stroke::new(SOFT_DIVIDER_WIDTH,BORDER)));
-            assert_eq!(field_action_palette(false,ink),(DISABLED_ACTION_BG,DISABLED_ACTION_TEXT,
-                Stroke::new(FRAME_STROKE_WIDTH,DISABLED_ACTION_BORDER)));
-        }
-    }
-}

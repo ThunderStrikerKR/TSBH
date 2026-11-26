@@ -154,7 +154,7 @@ impl ProductSearch{
                                                     let response=crate::dropdown::management_dropdown_option(
                                                         choices,&mut value,id.to_owned(),&visible
                                                     );
-                                                    components::shortened_text_tooltip(response,&visible,full);
+                                                    crate::ui_primitives::shortened_text_tooltip(response,&visible,full);
                                                 }
                                             }
                                         });
@@ -244,7 +244,7 @@ impl ProductSearch{
                                                 }
                                             );
                                         });
-                                        components::soft_divider(ui);
+                                        crate::ui_primitives::soft_divider(ui);
                                     }
 
                                         }

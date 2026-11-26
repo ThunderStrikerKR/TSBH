@@ -3,7 +3,7 @@
 use eframe::egui::{self,Color32,Rect,Stroke,Ui,Vec2};
 use crate::{theme,typography};
 use eframe::egui::{Sense,Align};
-use crate::components::{truncated_label,soft_divider};
+use crate::ui_primitives::{truncated_label,soft_divider};
 
 pub(crate) fn header_begin(ui:&Ui,header:Rect,content:Rect)->Rect{
     let text=Rect::from_min_max(content.min,egui::pos2(
@@ -333,7 +333,7 @@ pub(crate) fn history_row<const N:usize>(
         row.allocate_exact_size(rect.size(),egui::Sense::hover());
         if let Some(block)=detail{
             row.painter().rect_filled(rect,0.0,theme::CANVAS);
-            crate::components::paint_shipment_detail_surface(row,block,theme::PANEL,false);
+            crate::card::paint_shipment_detail_surface(row,block,theme::PANEL,false);
         }else{
             paint_management_table_row_background(row.painter(),rect,index);
             paint_management_table_row_rule(row.painter(),rect);
@@ -418,10 +418,10 @@ pub fn virtual_fixed_rows<R>(
     });
     #[cfg(test)]
     {
-        crate::components::general_screen_geometry_tests::record("row viewport",output.inner_rect);
+        crate::ui_test_support::record("row viewport",output.inner_rect);
         // Retain the measured content extent so transient failures can
         // distinguish native scrollbar reservation from card/layout drift.
-        crate::components::general_screen_geometry_tests::record("row content extent",
+        crate::ui_test_support::record("row content extent",
             Rect::from_min_size(output.inner_rect.min,output.content_size));
     }
     output
@@ -455,7 +455,7 @@ pub fn management_table_scroll_track_rect(
         ui.available_rect_before_wrap(),scroll_height
     );
     #[cfg(test)]
-    crate::components::general_screen_geometry_tests::record("scroll rail",track);
+    crate::ui_test_support::record("scroll rail",track);
     track
 }
 
@@ -521,9 +521,9 @@ fn management_sticky_table_header_with_top_gap(
         "table toolbar and header must use zero implicit vertical spacing");
     let viewport_width=ui.available_width().max(1.0);
     // One allocation for the full toolbar-to-header separator strip.
-    let (_transition,_rule)=crate::components::section_divider_with_top_gap(ui,top_gap);
+    let (_transition,_rule)=crate::ui_primitives::section_divider_with_top_gap(ui,top_gap);
     #[cfg(test)]
-    crate::components::general_screen_geometry_tests::record("toolbar transition",_transition);
+    crate::ui_test_support::record("toolbar transition",_transition);
     allocate_management_table_header(ui,viewport_width,min_table_width)
 }
 
@@ -581,7 +581,7 @@ fn allocate_management_table_header_with_gutter(
             "header's data right edge must exclude the table scrollbar gutter");
     }
     #[cfg(test)]
-    crate::components::general_screen_geometry_tests::record("table header",header_rect);
+    crate::ui_test_support::record("table header",header_rect);
     ManagementTableHeader{
         header_rect,header_content_rect,viewport_width,
         scrollbar_gutter,table_width

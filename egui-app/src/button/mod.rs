@@ -2,39 +2,12 @@
 use eframe::egui::{self,Color32,CornerRadius,Rect,Response,Sense,Stroke,Ui,Vec2};
 use crate::{theme,typography};
 use crate::theme::*;
-use crate::components::{paint_workflow_icon,WorkflowIcon,ManagementChevronDirection,paint_management_chevron,paint_management_chevron_with_color,paint_chevron_at_angle_scaled};
+use crate::ui_primitives::{paint_workflow_icon,WorkflowIcon,ManagementChevronDirection,paint_management_chevron,paint_management_chevron_with_color,paint_chevron_at_angle_scaled};
 
-pub(crate) fn button_hover_palette(hovered:bool,focused:bool)->(Option<Color32>,Option<Stroke>){
-    let fill=hovered.then_some(BUTTON_HOVER_TINT);
-    let border=if focused{Some(Stroke::new(SOFT_DIVIDER_WIDTH,SELECTION))}
-        else if hovered{Some(Stroke::new(SOFT_DIVIDER_WIDTH,SELECTION.linear_multiply(0.82)))}
-        else{None};
-    (fill,border)
-}
-
-/// Paint-only hover emphasis for every actionable rectangular control,
-/// including buttons with explicit fills that bypass egui's hovered fill.
-//// No layout, font metrics, border rect or hit area changes on hover.
-/// Hover paint must use the SAME corner geometry as its button.
-/// A rectangular highlight inside a rounded date group leaves blue diagonal
-/// slivers and gets clipped by the group's outer border.
-pub fn paint_button_hover_corners(
-    ui:&Ui,response:&Response,corners:egui::CornerRadius
-){
+/// Register an actual interaction, then paint using the shared primitive.
+pub fn paint_button_hover_corners(ui:&Ui,response:&Response,corners:egui::CornerRadius){
     crate::floating_notice::remember_response(ui.ctx(),response);
-    if !response.hovered() && !response.has_focus(){return;}
-    let rect=response.rect.shrink(0.5);
-    if rect.width()<=1.0 || rect.height()<=1.0{return;}
-    let paint=ui.painter().with_clip_rect(
-        ui.clip_rect().intersect(response.rect)
-    );
-    let (fill,border)=button_hover_palette(response.hovered(),response.has_focus());
-    if let Some(fill)=fill{
-        paint.rect_filled(rect,corners,fill);
-    }
-    if let Some(stroke)=border{
-        paint.rect_stroke(rect,corners,stroke,egui::StrokeKind::Inside);
-    }
+    crate::ui_primitives::paint_action_hover_corners(ui,response,corners);
 }
 
 /// Existing buttons keep their uniform corner radius. Segmented controls can
@@ -569,4 +542,56 @@ pub(crate) fn dispatch_origin(right:&mut Ui,label:&str,selected:bool,editable:bo
         right,&response,theme::CONTROL_RADIUS as f32
     );
     response
+}
+
+#[cfg(test)]
+mod shared_action_style_tests{
+    use super::*;
+    use crate::ui_primitives::button_hover_palette;
+
+    #[test]
+    fn blue_pointer_hover_and_keyboard_focus_have_independent_paint(){
+        let hover_border=Stroke::new(SOFT_DIVIDER_WIDTH,SELECTION.linear_multiply(0.82));
+        let focus_border=Stroke::new(SOFT_DIVIDER_WIDTH,SELECTION);
+        assert_eq!(button_hover_palette(false,false),(None,None));
+        assert_eq!(button_hover_palette(true,false),(Some(BUTTON_HOVER_TINT),Some(hover_border)));
+        assert_eq!(button_hover_palette(false,true),(None,Some(focus_border)));
+        assert_eq!(button_hover_palette(true,true),(Some(BUTTON_HOVER_TINT),Some(focus_border)));
+        let ctx=egui::Context::default();
+        theme::install(&ctx);
+        let style=ctx.style();
+        assert_eq!(style.visuals.widgets.hovered.bg_fill,BUTTON_HOVER_BG);
+        assert_eq!(style.visuals.widgets.hovered.weak_bg_fill,BUTTON_HOVER_BG);
+        assert_eq!(style.visuals.widgets.hovered.bg_stroke,
+            Stroke::new(SOFT_DIVIDER_WIDTH,SELECTION.linear_multiply(0.72)));
+        assert_eq!(style.visuals.widgets.hovered.expansion,0.0);
+    }
+
+    #[test]
+    fn fixed_and_native_actions_use_the_same_standard_and_emphasized_palette(){
+        let (_,fill,ink,stroke)=action_style(ButtonRole::Standard,true,false);
+        assert_eq!((fill,ink,stroke),(RAISED,TEXT,Stroke::new(FRAME_STROKE_WIDTH,BORDER)));
+        let (_,fill,ink,stroke)=action_style(ButtonRole::Emphasized,true,false);
+        assert_eq!((fill,ink,stroke),(BRIGHT,BRIGHT_TEXT,Stroke::NONE));
+        for role in [ButtonRole::Standard,ButtonRole::Emphasized,ButtonRole::TableSecondary]{
+            let (_,fill,ink,stroke)=action_style(role,false,false);
+            assert_eq!((fill,ink,stroke),(DISABLED_ACTION_BG,DISABLED_ACTION_TEXT,
+                Stroke::new(FRAME_STROKE_WIDTH,DISABLED_ACTION_BORDER)));
+        }
+    }
+
+    #[test]
+    fn special_review_and_field_roles_retain_their_own_appearance(){
+        let (_,fill,ink,stroke)=action_style(ButtonRole::Standard,true,true);
+        assert_eq!((fill,ink,stroke),(BRIGHT,BRIGHT_TEXT,Stroke::new(1.0,BORDER)));
+        let (_,fill,ink,stroke)=action_style(ButtonRole::Standard,false,true);
+        assert_eq!((fill,ink,stroke),(DISABLED_ACTION_BG,DISABLED_ACTION_TEXT,Stroke::new(1.0,BORDER)));
+        let (_,fill,ink,stroke)=action_style(ButtonRole::Ghost,false,false);
+        assert_eq!((fill,ink,stroke),(Color32::TRANSPARENT,DISABLED_ACTION_TEXT,Stroke::NONE));
+        for ink in [TEXT,SECONDARY]{
+            assert_eq!(field_action_palette(true,ink),(INPUT,ink,Stroke::new(SOFT_DIVIDER_WIDTH,BORDER)));
+            assert_eq!(field_action_palette(false,ink),(DISABLED_ACTION_BG,DISABLED_ACTION_TEXT,
+                Stroke::new(FRAME_STROKE_WIDTH,DISABLED_ACTION_BORDER)));
+        }
+    }
 }

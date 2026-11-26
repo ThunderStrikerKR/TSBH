@@ -1,0 +1,83 @@
+{
+  "schemaVersion": 1,
+  "id": "shared-ui-dependencies-129",
+  "screen": "공통 UI 모듈 의존 방향 정리",
+  "files": [
+    "egui-app/src/components.rs",
+    "egui-app/src/theme.rs",
+    "egui-app/src/typography.rs",
+    "egui-app/src/button/mod.rs",
+    "egui-app/src/card/mod.rs",
+    "egui-app/src/floating_notice.rs",
+    "egui-app/src/main.rs",
+    "egui-app/src/ui_primitives.rs",
+    "egui-app/src/display_format.rs",
+    "egui-app/src/ui_tokens.rs",
+    "egui-app/src/ui_test_support.rs",
+    "egui-app/src/input/mod.rs",
+    "egui-app/src/dropdown/mod.rs",
+    "egui-app/src/table/mod.rs",
+    "egui-app/src/popup/mod.rs",
+    "egui-app/src/alias_manager.rs",
+    "egui-app/src/automatic_message_manager.rs",
+    "egui-app/src/brand_manager.rs",
+    "egui-app/src/category_dropdown.rs",
+    "egui-app/src/category_manager.rs",
+    "egui-app/src/client_manager.rs",
+    "egui-app/src/daily_settlement_manager.rs",
+    "egui-app/src/excel_manager.rs",
+    "egui-app/src/freight_manager.rs",
+    "egui-app/src/item_editor.rs",
+    "egui-app/src/manual_workspace.rs",
+    "egui-app/src/manual_product_search.rs",
+    "egui-app/src/model_group_manager.rs",
+    "egui-app/src/order_history_manager.rs",
+    "egui-app/src/order_history_detail.rs",
+    "egui-app/src/product_excel_ui.rs",
+    "egui-app/src/product_manager.rs",
+    "egui-app/src/review_panel.rs",
+    "egui-app/src/settings_view.rs",
+    "egui-app/src/workflow_board_ui.rs",
+    "egui-app/src/source_highlight.rs",
+    "egui-app/src/overlay.rs"
+  ],
+  "visualStatus": "NOT_VERIFIED",
+  "reason": "공통 컴포넌트의 composite 역참조 제거, 하위 렌더링·금액 표시·폰트 토큰·테스트 지원 분리, 카드 프레임 및 팝업 시작 위치의 실제 소유권 이동. 기존 UI 수치와 상호작용 보존 의도. Windows 실화면 증거 없음.",
+  "defects": [],
+  "releaseDecision": "NOT_APPROVED",
+  "verification": {
+    "static": "SCOPED_SOURCE_REVIEW",
+    "rustTests": "NOT_EXECUTED",
+    "githubCI": "NOT_VERIFIED",
+    "windowsVisual": "NOT_VERIFIED"
+  },
+  "nextVerification": {
+    "requiredViewports": [
+      {
+        "width": 1920,
+        "height": 1080,
+        "scalePercent": 100
+      },
+      {
+        "width": 1366,
+        "height": 768,
+        "scalePercent": 100
+      }
+    ],
+    "checks": [
+      "noClipping",
+      "footerVisible",
+      "scrollReachable",
+      "inputReadable",
+      "alignment",
+      "interaction",
+      "hoverAndFocus"
+    ],
+    "focus": [
+      "기존 버튼·입력·표·팝업 배치 유지",
+      "아이콘/구분선/툴팁 공통 렌더링",
+      "드롭다운 선택 후 안내 기준점과 페이지 전환",
+      "기존 기하 테스트의 동일한 trace 수집"
+    ]
+  }
+}

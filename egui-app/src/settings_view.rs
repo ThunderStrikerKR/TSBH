@@ -753,7 +753,7 @@ impl SettingsView{
                             self.show_account_rows(rows);
                         });
                     #[cfg(test)]
-                    components::general_screen_geometry_tests::record("account viewport",_account_viewport.inner_rect);
+                    crate::ui_test_support::record("account viewport",_account_viewport.inner_rect);
                     form.add_space(theme::SPACE_8);
                     if crate::button::action(
                         form,"＋ 계좌 추가",ButtonRole::Standard,true
@@ -767,7 +767,7 @@ impl SettingsView{
                         }));
                         self.draft["accounts"]=json!(accounts);
                     }
-                    components::section_divider(form);
+                    crate::ui_primitives::section_divider(form);
                     let recommendations=[
                         ("BANDOSTAND","반도스탠드 추천 계좌"),
                         ("BANDOMALL","반도몰 추천 계좌")
@@ -862,7 +862,7 @@ impl SettingsView{
             }
             if index+1<account_count{
                 ui.add_space(theme::SPACE_8);
-                components::soft_divider(ui);
+                crate::ui_primitives::soft_divider(ui);
                 ui.add_space(theme::SPACE_8);
             }
         }
@@ -906,12 +906,12 @@ impl SettingsView{
         crate::card::measured_management_section_card(ui,|form|{
         for (index,(key,title,empty,button)) in sections.iter().enumerate(){
             if index>0{
-                components::section_divider(form);
+                crate::ui_primitives::section_divider(form);
             }
             section(form,title,|area|{
                 let value=field(&self.draft,key);
                 let displayed=if value.is_empty(){*empty}else{value.as_str()};
-                area.add(components::truncated_label(typography::body(displayed)));
+                area.add(crate::ui_primitives::truncated_label(typography::body(displayed)));
                 area.add_space(theme::SPACE_8);
                 area.horizontal_wrapped(|buttons|{
                     if crate::button::action(
@@ -985,7 +985,7 @@ impl SettingsView{
             });
             for filename in self.backups.clone(){
                 panel.add_space(theme::SPACE_8);
-                components::soft_divider(panel);
+                crate::ui_primitives::soft_divider(panel);
                 panel.add_space(theme::SPACE_8);
                 let name=std::path::Path::new(&filename).file_name()
                     .and_then(|p|p.to_str()).unwrap_or(&filename);

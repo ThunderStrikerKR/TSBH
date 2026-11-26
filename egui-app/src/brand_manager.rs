@@ -201,8 +201,8 @@ impl BrandManager {
                             });
                         });
                         #[cfg(test)]
-                        components::general_screen_geometry_tests::record("catalog data row",_row.response.rect);
-                        components::soft_divider(list);
+                        crate::ui_test_support::record("catalog data row",_row.response.rect);
+                        crate::ui_primitives::soft_divider(list);
                     }
                 });
             

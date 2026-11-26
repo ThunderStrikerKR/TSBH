@@ -3,7 +3,7 @@ use eframe::egui::{self,Color32,Rect,Response,Stroke,Ui,Vec2};
 use crate::{theme,typography};
 use crate::input::management_search_field;
 use crate::scrollbar::{scroll_area,ScrollAxes};
-use crate::components::{management_body_state_inline,text_exceeds_rect,overflow_tooltip,ManagementChevronDirection,paint_management_chevron_with_color};
+use crate::ui_primitives::{management_body_state_inline,text_exceeds_rect,overflow_tooltip,ManagementChevronDirection,paint_management_chevron_with_color};
 
 /// Configure the shared SINGLE-SELECT popup only. Never recolor
 /// unrelated checkboxes, tables, global widget hover, or order selection.

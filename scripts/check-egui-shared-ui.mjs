@@ -230,6 +230,7 @@ const paletteConstructors = ["from_rgb","from_rgba_unmultiplied",
   "from_rgb_additive","from_rgba_premultiplied_const"];
 const retiredControlAliases = {
   "theme": [
+    "docked_pane_frame",
     "modal_frame",
     "ModalNestedRole",
     "modal_nested_role_frame",
@@ -258,6 +259,33 @@ const retiredControlAliases = {
     "field_action_palette"
   ],
   "components": [
+    "management_body_state_inline",
+    "text_exceeds_rect",
+    "overflow_tooltip_needed",
+    "truncated_label",
+    "label_for_explicit_tooltip",
+    "truncated_label_for_explicit_tooltip",
+    "overflow_tooltip",
+    "shortened_text_tooltip",
+    "overflow_region_tooltip",
+    "positioned_text_overflow",
+    "WorkflowIcon",
+    "paint_workflow_icon",
+    "ManagementChevronDirection",
+    "paint_chevron_at_angle",
+    "paint_chevron_at_angle_scaled",
+    "paint_management_chevron_with_color",
+    "paint_management_chevron",
+    "date_navigation_segmented_surface",
+    "navigation_segment_child",
+    "section_divider",
+    "section_divider_with_top_gap",
+    "soft_divider",
+    "form_field_label_sized",
+    "form_field_label",
+    "display_won",
+    "display_money_number",
+    "paint_shipment_detail_surface",
     "checkbox",
     "checkbox_list_row",
     "management_table_checkbox",
@@ -467,7 +495,8 @@ export function audit(source,file,checkTableContracts=false){
       flag(i,"global font installation outside typography");
     if(is(i,". set_style (")&&file!=="typography.rs"&&file!=="theme.rs")
       flag(i,"global style installation outside shared theme");
-    if((is(i,"table ::")||(is(i,"components ::")&&!tableOnlyCalls.has(v[i+2])))&&v[i+3]==="("){
+    if((is(i,"table ::")||(is(i,"components ::")&&!tableOnlyCalls.has(v[i+2]))||
+        (is(i,"card ::")&&v[i+2]==="paint_shipment_detail_surface"))&&v[i+3]==="("){
       const key=file+":"+fn+":"+v[i+2];
       sharedCalls.set(key,(sharedCalls.get(key)||0)+1);
     }
@@ -481,7 +510,7 @@ export function audit(source,file,checkTableContracts=false){
         // declaration, unrelated method, or arbitrary namespace.
         const matches=name.startsWith(".")||name.includes("::")?is(i,pattern):
           is(i,pattern)&&(!["fn",".","::"].includes(v[i-1])||
-            (v[i-1]==="::"&&v[i-2]==="components"&&name==="paint_shipment_detail_surface"));
+            (v[i-1]==="::"&&v[i-2]==="card"&&name==="paint_shipment_detail_surface"));
         if(matches){
           const key=scope+":"+name;
           if(!(name==="paint_shipment_detail_surface"&&v[i-1]==="::"))
@@ -549,8 +578,11 @@ export function audit(source,file,checkTableContracts=false){
         flag(i,"raw shared control: "+pattern);
       for(const pattern of ["theme :: soft_rule (","theme :: divider (",". separator (",
         ". on_hover_text (",". on_hover_text_at_pointer ("])
-        if(is(i,pattern))flag(i,"raw divider/tooltip: "+pattern);
-      if(is(i,"components :: soft_divider (")){
+        if(is(i,pattern)&&!(file==="ui_primitives.rs"&&
+          ((fn==="soft_divider"&&pattern==="theme :: soft_rule (")||
+           (fn==="overflow_tooltip"&&pattern===". on_hover_text ("))))
+          flag(i,"raw divider/tooltip: "+pattern);
+      if(is(i,"ui_primitives :: soft_divider (")){
         const key=file+":"+fn+":"+v[i+4];
         const count=(used.get(key)||0)+1;used.set(key,count);
         if(count>(compact.get(key)||0))flag(i,"unreviewed compact divider: "+key);
@@ -562,7 +594,7 @@ export function audit(source,file,checkTableContracts=false){
        !(file==="scrollbar/mod.rs"&&fn==="scroll_area"))
       flag(i,"raw scroll constructor outside shared scroll_area");
     if(file==="components.rs"){
-      if((is(i,". on_hover_text (")||is(i,". on_hover_text_at_pointer ("))&&fn!=="overflow_tooltip")
+      if(is(i,". on_hover_text (")||is(i,". on_hover_text_at_pointer ("))
         flag(i,"tooltip outside shared overflow policy");
     }
   }
@@ -665,15 +697,17 @@ function selfTest(){
     ["new_screen.rs","fn render(){memory.set_modal_layer(layer);}",1],
     ["overlay.rs","fn activate_modal(){memory.set_modal_layer(layer);}",0],
     ["components.rs","fn nested(){modal_window(ctx,title,id,area).order(egui::Order::Foreground);}",1],
-    ["new_screen.rs","fn render(){components::section_divider(ui);}",0],
-    ["new_screen.rs","fn render(){components::soft_divider(ui);}",1],
-    ["settings_view.rs","fn show_account_rows(){components::soft_divider(ui);}",0],
-    ["settings_view.rs","fn show_account_rows(){components::soft_divider(ui);components::soft_divider(ui);}",1],
-    ["settings_view.rs","fn other(){components::soft_divider(ui);}",1],
+    ["new_screen.rs","fn render(){ui_primitives::section_divider(ui);}",0],
+    ["new_screen.rs","fn render(){ui_primitives::soft_divider(ui);}",1],
+    ["settings_view.rs","fn show_account_rows(){ui_primitives::soft_divider(ui);}",0],
+    ["settings_view.rs","fn show_account_rows(){ui_primitives::soft_divider(ui);ui_primitives::soft_divider(ui);}",1],
+    ["settings_view.rs","fn other(){ui_primitives::soft_divider(ui);}",1],
     ["components.rs","fn wrong(){egui::TextEdit::singleline(value);}",1],
     ["components.rs","fn singleline_editor(){egui::TextEdit::singleline(value);}",1],
     ["components.rs","fn multiline_editor(){egui::TextEdit::multiline(value);}",1],
-    ["components.rs","fn overflow_tooltip(){response.on_hover_text(full);}",0],
+    ["ui_primitives.rs","fn overflow_tooltip(){response.on_hover_text(full);}",0],
+    ["components.rs","fn overflow_tooltip(){response.on_hover_text(full);}",1],
+    ["new_screen.rs","fn wrong(){components::section_divider(ui);}",1],
     ["components.rs","fn wrong(){response.on_hover_text(full);}",1],
     ["new_screen.rs","// egui::Button::new(\nfn a(){let x=r#\"ui.on_hover_text(x)\"#;}",0],
     ["new_screen.rs","#[cfg(test)] mod tests {fn a(){egui::Button::new(\"x\");}} fn render(){ui.checkbox(x);}",1],
@@ -684,7 +718,7 @@ function selfTest(){
     ["product_manager.rs","fn render(){theme::paint_bordered_surface(p,r,0,c,b);}",1],
     ["product_manager.rs","fn render(){theme::paint_soft_rule(p,r);}",1],
     ["order_history_manager.rs","fn show_page(){theme::paint_bordered_surface(row_ui.painter(),block_rect,theme::ORDER_HISTORY_RECIPIENT_BLOCK_RADIUS,theme::PANEL,theme::DIVIDER);}",1],
-    ["order_history_manager.rs","fn show_page(){components::paint_shipment_detail_surface(row_ui,block_rect,theme::PANEL,false);}",0],
+    ["order_history_manager.rs","fn show_page(){card::paint_shipment_detail_surface(row_ui,block_rect,theme::PANEL,false);}",0],
     ["new_screen.rs","fn render(){components::shipment_detail_cells(b,w,g);painter.rect_filled(r,0.0,ink);}",1],
     ["excel_manager.rs","fn render(){painter.rect_filled(r,0.0,theme::DIVIDER);}",1],
     ["product_manager.rs","fn render(){let c=theme::TABLE_ROW_ALT_BG;}",1],
@@ -733,7 +767,46 @@ function selfTest(){
   assert.equal(missing("fn finish(){outline_bounds(h,b);painter.rect_stroke(r,x,s,k);}","table/mod.rs","table/mod.rs:finish").length,0);
   assert.equal(missing("fn finish(){outline_bounds(h,b);}","table/mod.rs","table/mod.rs:finish").length,1);
   assert.equal(missing("fn show_page(){components::show();}","product_manager.rs","product_manager.rs:show_page").length,8);
-  console.log("EGUI_SHARED_UI_SELFTEST_PASS",cases.length+18);
+  assert.deepEqual([...sharedDependencies("use crate::{theme, typography}; fn a(){crate::overlay::x();}","button")],["theme","typography","overlay"]);
+  assert.equal(sharedDependencies("// crate::components::x();\nfn a(){let s=\"components::x()\";}","button").size,0);
+  assert.equal(dependencyCycles(new Map([["button",new Set(["theme"])],["theme",new Set()]])).length,0);
+  assert.equal(dependencyCycles(new Map([["button",new Set(["components"])],["components",new Set(["button"])]] )).length,1);
+  console.log("EGUI_SHARED_UI_SELFTEST_PASS",cases.length+22);
+}
+
+// The shared UI dependency graph excludes business screens and test-only support.
+// Parse Rust code tokens (not comments/strings), including grouped crate imports.
+const dependencyOwners=new Set(["components","theme","typography","ui_tokens","ui_primitives",
+  "display_format","button","input","dropdown","table","checkbox","scrollbar","popup",
+  "card","overlay","floating_notice","source_highlight","cell_navigation","one_touch","layout"]);
+function sharedDependencies(source,owner){
+  const v=productionTokens(source).map(t=>t.v),out=new Set();
+  const add=name=>{if(name!==owner&&dependencyOwners.has(name))out.add(name);};
+  for(let i=0;i<v.length;i++){
+    if(v[i+1]==="::"&&v[i-1]!=="mod")add(v[i]);
+    if(v[i]==="crate"&&v[i+1]==="::"&&v[i+2]==="{"){
+      let depth=1,entry=true;
+      for(let j=i+3;j<v.length&&depth;j++){
+        if(v[j]==="{"){depth++;continue;}
+        if(v[j]==="}"){depth--;continue;}
+        if(depth===1&&v[j]===","){entry=true;continue;}
+        if(depth===1&&entry){add(v[j]);entry=false;}
+      }
+    }
+  }
+  return out;
+}
+function dependencyCycles(graph){
+  const visited=new Set(),active=new Set(),stack=[],cycles=[];
+  function visit(name){
+    if(active.has(name)){cycles.push([...stack.slice(stack.indexOf(name)),name]);return;}
+    if(visited.has(name))return;
+    visited.add(name);active.add(name);stack.push(name);
+    for(const next of graph.get(name)||[])visit(next);
+    stack.pop();active.delete(name);
+  }
+  for(const name of graph.keys())visit(name);
+  return cycles;
 }
 
 function main(){
@@ -744,10 +817,22 @@ function main(){
     e.isDirectory()?walk(resolve(p,e.name)):e.name.endsWith(".rs")?[resolve(p,e.name)]:[]);
   const files=walk(resolve(root,"egui-app/src"));
   let failures=0;
+  const graph=new Map();
   for(const path of files){
     const file=relative(resolve(root,"egui-app/src"),path).replaceAll("\\","/");
-    for(const hit of audit(readFileSync(path,"utf8"),file,true)){
+    const source=readFileSync(path,"utf8");
+    const owner=file.endsWith("/mod.rs")?file.split("/")[0]:file.replace(/\.rs$/,"");
+    if(dependencyOwners.has(owner))graph.set(owner,sharedDependencies(source,owner));
+    for(const hit of audit(source,file,true)){
       failures++;console.error(file+":"+hit.line+" "+hit.rule);
+    }
+  }
+  for(const cycle of dependencyCycles(graph)){
+    failures++;console.error("shared UI dependency cycle: "+cycle.join(" -> "));
+  }
+  for(const [owner,deps] of graph){
+    if(owner!=="components"&&deps.has("components")){
+      failures++;console.error(owner+": reverse dependency on composite components");
     }
   }
   console.log("EGUI_SHARED_UI_AUDIT",JSON.stringify({files:files.length,failures}));

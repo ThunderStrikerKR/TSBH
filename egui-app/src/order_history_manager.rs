@@ -76,7 +76,7 @@ fn rows(row: &Value) -> &[Value] {
     row.as_array().map(Vec::as_slice).unwrap_or(&[])
 }
 fn won(value:&Value)->String {
-    value.as_i64().map(components::display_won)
+    value.as_i64().map(crate::display_format::display_won)
         .unwrap_or_else(||"확인 필요".to_owned())
 }
 fn seoul_today()->String{
@@ -397,7 +397,7 @@ fn history_scrolled_header_row(
 }
 fn history_text_overflow(ui:&Ui,rect:Rect,value:&str,role:typography::ManagementTableCellRole)->bool{
     let content=Rect::from_min_max(egui::pos2(rect.left()+6.0,rect.top()),rect.right_bottom());
-    components::text_exceeds_rect(typography::management_table_cell_galley(ui,value,role).size(),
+    crate::ui_primitives::text_exceeds_rect(typography::management_table_cell_galley(ui,value,role).size(),
         content.intersect(ui.clip_rect()))
 }
 fn paint_text(ui:&Ui,rect:Rect,value:&str,
@@ -485,7 +485,7 @@ fn history_shipment_logistics(shipment:Option<&Value>)->(String,String){
     let freight=shipment.into_iter()
         .flat_map(|s|s["actualFreight"].as_object().into_iter())
         .flat_map(|values|values.values())
-        .filter_map(Value::as_i64).map(components::display_won)
+        .filter_map(Value::as_i64).map(crate::display_format::display_won)
         .collect::<Vec<_>>();
     let tracking=shipment.into_iter()
         .flat_map(|s|s["tracking"].as_object().into_iter())
@@ -514,7 +514,7 @@ fn draw_line(ui:&mut Ui,rect:Rect,line:HistoryLine,snapshot:&HistorySnapshot,
             paint_text(ui,columns[0],&order_date(row),typography::ManagementTableCellRole::Description,false);
             paint_text(ui,columns[1],&display_client_name(order_client(row)),
                 typography::ManagementTableCellRole::ClientName,false);
-            components::overflow_region_tooltip(ui,columns[1].intersect(area),
+            crate::ui_primitives::overflow_region_tooltip(ui,columns[1].intersect(area),
                 ui.make_persistent_id(("history-client-name",id)),
                 display_client_name(order_client(row))!=order_client(row) ||
                     history_text_overflow(ui,columns[1],order_client(row),typography::ManagementTableCellRole::ClientName),
@@ -526,12 +526,12 @@ fn draw_line(ui:&mut Ui,rect:Rect,line:HistoryLine,snapshot:&HistorySnapshot,
             // workflow cards, category trees, date arrows and dropdowns.
             // Keep the existing chevron center and the row's click area.
             let center=egui::pos2(columns[2].left()+11.0,columns[2].center().y);
-            components::paint_management_chevron(
+            crate::ui_primitives::paint_management_chevron(
                 &ui.painter().with_clip_rect(columns[2].intersect(area)),
                 center,
                 if expanded.contains(id){
-                    components::ManagementChevronDirection::Down
-                }else{components::ManagementChevronDirection::Right}
+                    crate::ui_primitives::ManagementChevronDirection::Down
+                }else{crate::ui_primitives::ManagementChevronDirection::Right}
             );
             // The 10pt arrow reaches 16pt from the cell's left edge when
             // expanded. Reserve a 4pt text gap without changing column or row.
@@ -545,7 +545,7 @@ fn draw_line(ui:&mut Ui,rect:Rect,line:HistoryLine,snapshot:&HistorySnapshot,
             ).intersect(area);
             let response=ui.interact(open_area,
                 ui.make_persistent_id(("order-history-toggle",id)),Sense::click());
-            let response=components::overflow_tooltip(response,
+            let response=crate::ui_primitives::overflow_tooltip(response,
                 history_text_overflow(ui,summary_rect,&summary,typography::ManagementTableCellRole::ProductName),&summary);
             crate::button::paint_button_hover(ui,&response,0.0);
             if response.clicked(){*pending_toggle=Some(id.to_owned());}
@@ -570,12 +570,12 @@ fn draw_line(ui:&mut Ui,rect:Rect,line:HistoryLine,snapshot:&HistorySnapshot,
                 let warning_rect=Rect::from_min_max(
                     egui::pos2(lower.left()+6.0,lower.top()),lower.right_bottom()
                 ).intersect(area);
-                let overflow=components::text_exceeds_rect(
+                let overflow=crate::ui_primitives::text_exceeds_rect(
                     typography::client_table_metadata_galley(ui,&warning,theme::MUTED).size(),
                     warning_rect
                 );
                 paint_caption(ui,lower,&warning);
-                components::overflow_region_tooltip(ui,lower.intersect(area),
+                crate::ui_primitives::overflow_region_tooltip(ui,lower.intersect(area),
                     ui.make_persistent_id(("history-billing-caution",id)),overflow,&warning);
             }
             // Staff confirmation is NOT the bank transfer's paidAt date.
@@ -646,14 +646,14 @@ fn draw_line(ui:&mut Ui,rect:Rect,line:HistoryLine,snapshot:&HistorySnapshot,
             let products_overflow=paint_detail_products(ui,columns[1],&products);
             paint_text(ui,columns[2],&freight_label,typography::ManagementTableCellRole::Description,false);
             paint_text(ui,columns[3],&tracking_label,typography::ManagementTableCellRole::Description,false);
-            components::overflow_region_tooltip(ui,columns[0].intersect(area),
+            crate::ui_primitives::overflow_region_tooltip(ui,columns[0].intersect(area),
                 ui.make_persistent_id(("history-recipient",id,recipient_index,shipment_index)),
                 history_text_overflow(ui,columns[0],name,typography::ManagementTableCellRole::ClientName),name);
-            components::overflow_region_tooltip(ui,columns[1].intersect(area),
+            crate::ui_primitives::overflow_region_tooltip(ui,columns[1].intersect(area),
                 ui.make_persistent_id(("history-recipient-products",id,recipient_index,shipment_index)),
                 products_overflow,&products);
             for (index,display) in [(2,&freight_label),(3,&tracking_label)]{
-                components::overflow_region_tooltip(ui,columns[index].intersect(area),
+                crate::ui_primitives::overflow_region_tooltip(ui,columns[index].intersect(area),
                     ui.make_persistent_id(("history-recipient-value",id,recipient_index,shipment_index,index)),
                     history_text_overflow(ui,columns[index],display,typography::ManagementTableCellRole::Description),
                     display);
@@ -1408,10 +1408,10 @@ impl OrderHistoryManager {
                                     Vec2::new(table_width,line_heights[line_index])
                                 );
                                 #[cfg(test)]
-                                components::general_screen_geometry_tests::record("data row",row_rect);
+                                crate::ui_test_support::record("data row",row_rect);
                                 #[cfg(test)]
                                 if matches!(line,HistoryLine::Recipient(_,_,_)){
-                                    components::general_screen_geometry_tests::record("history detail row",row_rect);
+                                    crate::ui_test_support::record("history detail row",row_rect);
                                 }
                                 header_origin.get_or_insert(row_rect.left());
                                 let detail=match line{
@@ -1449,7 +1449,7 @@ impl OrderHistoryManager {
                 components::management_body_state_overlay(section,notice_rect,notice);
             }
             #[cfg(test)]
-            components::general_screen_geometry_tests::record("row viewport",output.inner_rect);
+            crate::ui_test_support::record("row viewport",output.inner_rect);
             let left=header_origin.unwrap_or(head_rect.left()-output.state.offset.x);
             let scrolled_header=history_scrolled_header_row(
                 head_rect,left,table_width

@@ -10,6 +10,8 @@ use eframe::egui::{
     self, Color32, FontData, FontDefinitions, FontFamily, FontId, RichText, TextStyle,
 };
 use crate::theme::{MUTED, SECONDARY, TEXT};
+// Canonical font metrics are shared with theme geometry; no reverse import.
+pub use crate::ui_tokens::{FONT_FIELD_LABEL,FONT_FREIGHT_SUMMARY_NUMBER,FONT_FREIGHT_SUMMARY_LABEL,FONT_PAGE_HEADING};
 
 // Caps height is visually close to the 38pt brand icon (whose bitmap
 // includes transparent margins). Do not alter overall header geometry.
@@ -18,7 +20,6 @@ pub const FONT_BRAND: f32 = 28.0;
 /// places the visible capital letters above the icon and navigation center.
 /// Compensate in this one typography token without moving the header row.
 pub const BRAND_OPTICAL_CENTER_Y: f32 = 5.0;
-pub const FONT_PAGE_HEADING: f32 = 20.0;
 // Centered, full-pane native OCR blocking state in Reception.
 pub const FONT_OCR_PROGRESS_TITLE: f32 = 28.0;
 // Readable side-by-side OCR source verification. All reception source
@@ -36,15 +37,12 @@ pub const FONT_MODAL_TITLE: f32 = 18.0;
 pub const FONT_SECTION_HEADING: f32 = 16.0;
 pub const FONT_SUBSECTION_HEADING: f32 = 14.0;
 pub const FONT_BODY: f32 = 14.0;
-pub const FONT_FIELD_LABEL: f32 = 13.0;
 pub const FONT_METADATA: f32 = 12.0;
 pub const FONT_MAIN_NAV: f32 = 18.0;
 /// Second-level management tabs remain full-size controls, visually
 /// subordinate through position and neutral styling rather than tiny text.
 pub const FONT_MANAGEMENT_TAB: f32 = 16.0;
 /// Visual hierarchy of freight KPI cards: prominent value, supporting caption.
-pub const FONT_FREIGHT_SUMMARY_NUMBER: f32 = 28.0;
-pub const FONT_FREIGHT_SUMMARY_LABEL: f32 = 13.0;
 pub const FONT_PRIMARY_ACTION: f32 = 14.0;
 pub const FONT_STANDARD_ACTION: f32 = 13.0;
 
@@ -147,7 +145,7 @@ pub fn inline_quantity_amount(
     prefix:&str,count:usize,between:&str,amount:Option<i64>,missing:&str,metadata:bool
 )->egui::text::LayoutJob{
     let count=count.to_string();
-    let amount=amount.map(crate::components::display_won);
+    let amount=amount.map(crate::display_format::display_won);
     let (value,kind,unit)=match amount.as_deref(){
         Some(value)=>(value.strip_suffix("원").unwrap_or(value),Some(DataValueKind::Money),"원"),
         None=>(missing,None,""),
@@ -198,7 +196,7 @@ pub const MANAGEMENT_DATE_TEXT_OPTICAL_SHIFT_Y: i8 = -1;
 /// Common form rows: label glyphs in the 19pt emphasized Korean line box
 /// look above the optical center of a 36pt field. Apply the adjustment only
 /// to inline *form labels*, never table headers, navigation or body text.
-/// The position is shared by every form using components::form_field_label.
+/// The position is shared by every form using crate::ui_primitives::form_field_label.
 pub const FORM_LABEL_OPTICAL_CENTER_Y: f32 = 2.0;
 /// Move form-editing ink and its caret together. Never use the Consolas
 /// numeric glyph tweak to fix a proportional Body TextEdit baseline.

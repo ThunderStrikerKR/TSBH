@@ -2,7 +2,7 @@
 use eframe::egui::{self,Align,Color32,Frame,Layout,Rect,Response,Sense,Stroke,Ui,UiBuilder,Vec2};
 use crate::{theme,typography};
 use crate::theme::*;
-use crate::components::{truncated_label,section_divider,form_field_label_sized};
+use crate::ui_primitives::{truncated_label,section_divider,form_field_label_sized};
 use crate::scrollbar::{scroll_area,ScrollAxes};
 pub fn modal_frame() -> Frame {
     bordered_surface(PANEL,BORDER,PANEL_RADIUS)

@@ -193,7 +193,7 @@ impl ModelGroupManager {
         let (rect,response)=ui.allocate_exact_size(
             Vec2::new(ui.available_width(),theme::FAMILY_ROW_HEIGHT),Sense::click());
         #[cfg(test)]
-        components::general_screen_geometry_tests::record("catalog data row",rect);
+        crate::ui_test_support::record("catalog data row",rect);
         if self.selected==id||response.hovered(){
             ui.painter().rect_filled(rect,theme::CONTROL_RADIUS as f32,
                 if self.selected==id{theme::RAISED}else{theme::INPUT});
@@ -261,7 +261,7 @@ impl ModelGroupManager {
                         left.label(typography::caption(
                             "색상, 크기, 규격, 타공 여부가 다른 상품을 직원이 직접 묶고 그중 대표모델을 정합니다. 자동으로 묶거나 주문에 자동 적용하지 않습니다."
                         ));
-                        components::section_divider(left);
+                        crate::ui_primitives::section_divider(left);
                         left.label(typography::field_label("새 그룹 이름"));
                         left.horizontal(|form|{
                             form.add_enabled_ui(writable&&!busy,|entry|{
@@ -282,9 +282,9 @@ impl ModelGroupManager {
                                 self.create();
                             }
                         });
-                        components::section_divider(left);
+                        crate::ui_primitives::section_divider(left);
                         left.horizontal(|search|{
-                            components::form_field_label(search,"상품 검색");
+                            crate::ui_primitives::form_field_label(search,"상품 검색");
                             crate::input::management_search_field(search,&mut self.query,
                                 theme::MANAGEMENT_SEARCH_MIN_WIDTH,
                                 "그룹 이름 또는 상품명 검색");
@@ -335,7 +335,7 @@ impl ModelGroupManager {
                                     }
                                 });
                             });
-                            let divider=components::section_divider(right);
+                            let divider=crate::ui_primitives::section_divider(right);
                             let extra_divider_height=(divider.height()-theme::SOFT_DIVIDER_WIDTH).max(0.0);
                             crate::scrollbar::scroll_area(crate::scrollbar::ScrollAxes::Vertical).id_salt("family-editor")
                                 .auto_shrink([false,false])
@@ -352,7 +352,7 @@ impl ModelGroupManager {
                                         self.draft[&self.selected]["name"]=json!(name);
                                         self.status.clear();
                                     }
-                                    components::section_divider(body);
+                                    crate::ui_primitives::section_divider(body);
                                     body.label(typography::subsection_heading("상품 추가"));
                                     body.add_enabled_ui(writable&&!busy,|search|{
                                         crate::input::management_search_field(search,&mut self.search,
@@ -404,11 +404,11 @@ impl ModelGroupManager {
                                                         }
                                                     });
                                             });
-                                            components::soft_divider(results);
+                                            crate::ui_primitives::soft_divider(results);
                                         }
                                     }
                                     });
-                                    components::section_divider(body);
+                                    crate::ui_primitives::section_divider(body);
                                     body.horizontal(|heading|{
                                         heading.label(typography::subsection_heading("등록한 상품"));
                                         heading.label(typography::caption(
@@ -479,11 +479,11 @@ impl ModelGroupManager {
                                                     }
                                                 });
                                         });
-                                        components::soft_divider(registered);
+                                        crate::ui_primitives::soft_divider(registered);
                                     }
                                     });
                                 });
-                            components::soft_divider(right);
+                            crate::ui_primitives::soft_divider(right);
                             right.horizontal(|footer|{
                                 footer.label(typography::caption(if self.dirty(){"저장하지 않은 변경사항 있음"} else {"변경사항 없음"}));
                                 footer.with_layout(Layout::right_to_left(Align::Center),|buttons|{
@@ -504,7 +504,7 @@ impl ModelGroupManager {
                                 "모델군을 만든 다음 상품을 추가하고 대표모델을 직접 지정하세요."));
                             // Keep the footer, both actions and their hit
                             // rectangles stable when dirty state changes.
-                            components::soft_divider(right);
+                            crate::ui_primitives::soft_divider(right);
                             right.horizontal(|footer|{
                                 footer.label(typography::caption(
                                     if self.dirty(){"저장하지 않은 변경사항 있음"}

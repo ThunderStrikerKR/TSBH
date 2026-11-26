@@ -221,9 +221,9 @@ fn freight_assignment_text(
         }
         _=>unreachable!("non-category cells use the common painter"),
     }
-    let overflow=value!=full_text || components::text_exceeds_rect(
+    let overflow=value!=full_text || crate::ui_primitives::text_exceeds_rect(
         typography::management_table_cell_galley(ui,value,role).size(),clipped.intersect(ui.clip_rect()));
-    components::overflow_region_tooltip(ui,clipped,ui.make_persistent_id(("freight-cell",id)),
+    crate::ui_primitives::overflow_region_tooltip(ui,clipped,ui.make_persistent_id(("freight-cell",id)),
         overflow,full_text);
 }
 
@@ -255,7 +255,7 @@ fn model_label(name:&str)->&str {
 }
 use crate::product_option_display::{product_label as variant_colors, variant_label};
 fn as_fee(value: &Value) -> String {
-    value.as_i64().map(components::display_won)
+    value.as_i64().map(crate::display_format::display_won)
         .unwrap_or_else(|| "미등록".to_owned())
 }
  // Text, numeric, status and metadata share one fixed-height cell geometry.
@@ -1131,7 +1131,7 @@ impl FreightManager {
                                     warning_width,typography::METADATA_LINE_HEIGHT
                                 ),egui::Layout::left_to_right(egui::Align::Center),|row|{
                                     let response=row.add(
-                                        components::truncated_label(typography::body(warning))
+                                        crate::ui_primitives::truncated_label(typography::body(warning))
                                     );
                                     let _=response;
                                 }
@@ -1508,7 +1508,7 @@ impl FreightManager {
                         let product_id=text(filtered[row_index],"id");
                         let row_rect=crate::table::fixed_row_rect(row_origin,row_index,first_visible_row,table_width,theme::FREIGHT_ASSIGNMENT_ROW_HEIGHT);
                         #[cfg(test)]
-                        components::general_screen_geometry_tests::record("data row",row_rect);
+                        crate::ui_test_support::record("data row",row_rect);
                         first_row_left.get_or_insert(row_rect.left());
                         crate::table::fixed_row(table,("freight-fixed-row",product_id),row_rect,row_index,&widths,theme::FREIGHT_ASSIGNMENT_COL_GAP,crate::table::RowTone::SelectedIf(selected.contains(product_id)),|row,cells|{
                         let product=filtered[row_index];
@@ -1934,7 +1934,7 @@ impl FreightManager {
                         let id=text(group,"id");
                         let row_rect=crate::table::fixed_row_rect(origin,index,first_index,table_width,theme::FREIGHT_ASSIGNMENT_ROW_HEIGHT);
                         #[cfg(test)]
-                        components::general_screen_geometry_tests::record("data row",row_rect);
+                        crate::ui_test_support::record("data row",row_rect);
                         first_row_left.get_or_insert(row_rect.left());
                         crate::table::fixed_row(table,("freight-rate-row",id),row_rect,index,&widths,theme::FREIGHT_ASSIGNMENT_COL_GAP,crate::table::RowTone::Alternating,|row,cells|{
                         // Name owns its own column. Membership is
@@ -2136,7 +2136,7 @@ impl FreightManager {
         );
         ui.add_space(theme::SPACE_8);
         ui.horizontal(|line|{
-            components::form_field_label(line,"최대 묶음포장 수량");
+            crate::ui_primitives::form_field_label(line,"최대 묶음포장 수량");
             line.add_enabled_ui(enabled,|input|{
                 let caption=editor.max_bundle.map(|n|bundle_quantity_label(&n.to_string()))
                     .unwrap_or_else(||typography::inline_body_values(&[("미확정",None)]));
@@ -2163,7 +2163,7 @@ impl FreightManager {
         );
         for (count,amount) in editor.fees.iter_mut(){
             ui.horizontal(|line|{
-                components::form_field_label(line,&format!("{count}개 묶음"));
+                crate::ui_primitives::form_field_label(line,&format!("{count}개 묶음"));
                 let id=count.to_string();
                 navigation.before(line.ctx(),&id,amount);
                 let response=crate::input::money_field(line,amount,enabled);
@@ -2385,7 +2385,7 @@ impl FreightManager {
                                         )));
                                     }
                                     menu.add_space(theme::SPACE_8);
-                                    components::soft_divider(menu);
+                                    crate::ui_primitives::soft_divider(menu);
                                     menu.add_space(theme::SPACE_8);
                                     if crate::button::action_full_width(
                                         menu,"예외 운임 변경",
@@ -2409,7 +2409,7 @@ impl FreightManager {
             section.spacing_mut().item_spacing.y=prior_gap;
         });
         #[cfg(test)]
-        components::general_screen_geometry_tests::record(if single_list{"master card"}else{"section card"},_history_card.response.rect);
+        crate::ui_test_support::record(if single_list{"master card"}else{"section card"},_history_card.response.rect);
         // Hidden by user request; do not move the feature to group management
         // or disable Rust history persistence. The 12pt gap is also conditional
         // so no empty block remains below the combination table.
@@ -2417,7 +2417,7 @@ impl FreightManager {
             ui.add_space(theme::SPACE_12);
             crate::card::measured_management_section_card(ui,|section| {
                 section.label(typography::section_heading("이전 그룹 운임 기준"));
-            components::section_divider(section);
+            crate::ui_primitives::section_divider(section);
             // Preserve the existing group-by-group expand/collapse behavior.
             // Expanded histories become one-row-per-version fixed tables,
             // rather than unaligned long sentences.
@@ -2429,7 +2429,7 @@ impl FreightManager {
                 )).id_salt(("freight-history",group_id))
                     .show(section,|body|{
                         if history.is_empty(){
-                            components::management_body_state_inline(body,"이전 기준이 없습니다.");
+                            crate::ui_primitives::management_body_state_inline(body,"이전 기준이 없습니다.");
                             return;
                         }
                         let table_id=format!("freight-history-group-{group_id}");
@@ -2563,7 +2563,7 @@ fn freight_history_table<const N:usize>(
             for index in visible_rows {
                 let row_rect=crate::table::fixed_row_rect(origin,index,first,width,theme::FREIGHT_ASSIGNMENT_ROW_HEIGHT);
                 #[cfg(test)]
-                components::general_screen_geometry_tests::record("data row",row_rect);
+                crate::ui_test_support::record("data row",row_rect);
                 first_row_left.get_or_insert(row_rect.left());
                 crate::table::fixed_row(table,(id,index),row_rect,index,&widths,theme::FREIGHT_ASSIGNMENT_COL_GAP,crate::table::RowTone::Alternating,|row,cells|{
                         render_row(row,&cells,index);

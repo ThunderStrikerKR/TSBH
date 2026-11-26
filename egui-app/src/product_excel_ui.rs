@@ -313,7 +313,7 @@ impl ProductExcelUi {
                                 ).clicked(){self.filter=value;}
                             }
                         });
-                        components::section_divider(ui);
+                        crate::ui_primitives::section_divider(ui);
                         // Review-only. The original React limits the visible audit
                         // table to 500 records while validating every source row.
                         let full=review["rows"].as_array().map(Vec::as_slice).unwrap_or(&[]);
@@ -502,7 +502,7 @@ mod tests {
             let (tx,rx)=mpsc::channel();
             let (folders,folder_rx)=mpsc::channel();
             let gateway:Arc<dyn BandoGateway>=Arc::new(ArchiveGateway{requests:tx,folders});
-            let ctx=components::test_context();
+            let ctx=crate::ui_test_support::test_context();
             let mut ui=if client{ProductExcelUi::for_clients()}else{ProductExcelUi::default()};
             let export=if client{"현재 거래처 전체 Excel 다운로드"}else{"현재 상품 전체 Excel 다운로드"};
             let upload="Excel 업로드 / 전체 변경 검토";
@@ -544,14 +544,14 @@ mod tests {
             let gateway:Arc<dyn BandoGateway>=Arc::new(ArchiveGateway{requests:tx,folders});
             let export=if client{"현재 거래처 전체 Excel 다운로드"}else{"현재 상품 전체 Excel 다운로드"};
             let mut ui=if client{ProductExcelUi::for_clients()}else{ProductExcelUi::default()};
-            let ctx=components::test_context();
+            let ctx=crate::ui_test_support::test_context();
             let denied=open_menu(&mut ui,&ctx,&gateway,false);
             option_rect(&denied,"Excel 업로드 / 전체 변경 검토");
             menu_click(&mut ui,&ctx,&gateway,false,option_rect(&denied,export).center());
             assert!(!ui.busy()&&!ui.blocks_navigation());
             assert!(rx.try_recv().is_err(),"permission denial must not dispatch");
             // Fresh UI context avoids retaining the previous popup's open ID.
-            let ctx=components::test_context();
+            let ctx=crate::ui_test_support::test_context();
             let allowed=open_menu(&mut ui,&ctx,&gateway,true);
             menu_click(&mut ui,&ctx,&gateway,true,option_rect(&allowed,export).center());
             let request=rx.recv_timeout(std::time::Duration::from_secs(10)).unwrap();
@@ -568,7 +568,7 @@ mod tests {
         for folder in [Some(Ok(())),Some(Err("synthetic folder failure".into())),None]{
             let should_minimize=matches!(&folder,Some(Ok(())));
             let should_warn=matches!(&folder,Some(Err(_)));
-            let ctx=components::test_context();
+            let ctx=crate::ui_test_support::test_context();
             let mut ui=ProductExcelUi::default();
             let (tx,rx)=mpsc::channel();
             ui.job=Some(rx);
@@ -586,7 +586,7 @@ mod tests {
     #[test]
     fn excel_preview_completion_and_cancellation_preserve_review_safety(){
         for client in [false,true]{
-            let ctx=components::test_context();
+            let ctx=crate::ui_test_support::test_context();
             let mut ui=if client{ProductExcelUi::for_clients()}else{ProductExcelUi::default()};
             ui.error=Some("previous failure".into());
             ui.start(&ctx,||Ok(JobResult::Cancelled));

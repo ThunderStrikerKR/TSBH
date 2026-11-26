@@ -4,7 +4,7 @@ use crate::{theme,typography};
 use crate::theme::*;
 use crate::scrollbar::{scroll_area,ScrollAxes};
 #[cfg(test)]
-use crate::components::general_screen_geometry_tests;
+use crate::ui_test_support::record;
 pub fn workflow_group_card_frame(highlighted:bool)->Frame{
     bordered_surface(if highlighted{WORKFLOW_SELECTED_BG}else{WORKFLOW_CARD_BG},WORKFLOW_CARD_BORDER,WORKFLOW_CARD_RADIUS)
         .inner_margin(0)
@@ -209,13 +209,13 @@ pub fn management_summary_card_value(ui:&mut Ui,label:&str,value:&str){
 pub fn measured_management_master_card<R>(ui:&mut Ui,body:impl FnOnce(&mut Ui)->R)->egui::InnerResponse<R>{
     let output=crate::card::management_master_table_frame().show(ui,body);
     #[cfg(test)]
-    general_screen_geometry_tests::record("master card",output.response.rect);
+    record("master card",output.response.rect);
     output
 }
 pub fn measured_management_section_card<R>(ui:&mut Ui,body:impl FnOnce(&mut Ui)->R)->egui::InnerResponse<R>{
     let output=crate::card::section_frame().show(ui,body);
     #[cfg(test)]
-    general_screen_geometry_tests::record("section card",output.response.rect);
+    record("section card",output.response.rect);
     output
 }
 
@@ -263,3 +263,24 @@ pub fn fill_management_primary_card(ui: &mut Ui, min_inner_height: f32) {
     ui.set_min_height(min_inner_height);
 }
 
+
+/// Return reception panes to the Settings-inspired PANEL card tier.
+/// No outer margin: the 6pt splitter hit area is the only reserved gutter.
+/// Compensate the 1pt outline in inner margins; the shared header owns
+/// its separate optical top clearance.
+pub fn docked_pane_frame() -> Frame {
+    section_frame()
+        .inner_margin(egui::Margin {
+            left: (SECTION_PADDING - FRAME_STROKE_WIDTH) as i8,
+            right: (SECTION_PADDING - FRAME_STROKE_WIDTH) as i8,
+            top: (RECEPTION_SECTION_HEADER_TOP - FRAME_STROKE_WIDTH) as i8,
+            bottom: (RECEPTION_PANE_PADDING_Y - FRAME_STROKE_WIDTH) as i8,
+        })
+}
+
+
+pub fn paint_shipment_detail_surface(ui:&Ui,block:Rect,fill:Color32,chosen:bool){
+    let style=workflow_shipment_row_frame(fill,chosen);
+    theme::paint_bordered_surface(ui.painter(),block,
+        theme::ORDER_HISTORY_RECIPIENT_BLOCK_RADIUS,style.fill,style.stroke.color);
+}

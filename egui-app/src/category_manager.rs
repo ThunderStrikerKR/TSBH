@@ -435,7 +435,7 @@ impl CategoryManager {
         });
         #[cfg(test)]
         if item.id.starts_with("geometry-cat-"){
-            components::general_screen_geometry_tests::record("catalog data row",response.rect);
+            crate::ui_test_support::record("catalog data row",response.rect);
         }
         if response.clicked(){
             self.selected=item.id.clone();
@@ -562,7 +562,7 @@ impl CategoryManager {
                 );
             }
             // The same structural divider as Reception and management tables.
-            components::section_divider(panel);
+            crate::ui_primitives::section_divider(panel);
             let index=CategoryMapIndex::new(&cats,catalog,&self.query);
             crate::scrollbar::scroll_area(crate::scrollbar::ScrollAxes::Vertical)
                 .id_salt("category-map-tree")
@@ -622,17 +622,17 @@ impl CategoryManager {
                                             .max(0.0),
                                         typography::CategoryPathFont::Subsection
                                     );
-                                    let name_response=body.add(components::label_for_explicit_tooltip(
+                                    let name_response=body.add(crate::ui_primitives::label_for_explicit_tooltip(
                                         typography::subsection_heading(&name_display)
                                     ));
-                                    components::overflow_tooltip(name_response,name_display!=current.name,&current.name);
+                                    crate::ui_primitives::overflow_tooltip(name_response,name_display!=current.name,&current.name);
                                     let breadcrumb=path_text(&cats,&current.id);
                                     let visible=typography::fit_category_path(
                                         body,&breadcrumb,body.available_width(),
                                         typography::CategoryPathFont::Metadata
                                     );
-                                    let breadcrumb_response=body.add(components::label_for_explicit_tooltip(typography::caption(&visible)));
-                                    components::overflow_tooltip(breadcrumb_response,visible!=breadcrumb,&breadcrumb);
+                                    let breadcrumb_response=body.add(crate::ui_primitives::label_for_explicit_tooltip(typography::caption(&visible)));
+                                    crate::ui_primitives::overflow_tooltip(breadcrumb_response,visible!=breadcrumb,&breadcrumb);
                                     // Compact context for an editor, not KPI cards.
                                     // Keep a single divider between context and fields.
                                     body.label(typography::caption(&format!(
@@ -640,7 +640,7 @@ impl CategoryManager {
                                         direct_count(catalog,&current.id),
                                         children(&cats,&current.id).len()
                                     )));
-                                    components::section_divider(body);
+                                    crate::ui_primitives::section_divider(body);
                                     crate::popup::modal_labeled_row(body,"분류 이름",|row|{
                                         row.add_enabled_ui(
                                             editable && !busy && !is_root(&current.id),
@@ -682,7 +682,7 @@ impl CategoryManager {
                                                 text_rect.center().y-galley.size().y/2.0),
                                             galley,theme::TEXT
                                         );
-                                        components::overflow_tooltip(text_response,visible!=parent_label,&parent_label);
+                                        crate::ui_primitives::overflow_tooltip(text_response,visible!=parent_label,&parent_label);
                                         if crate::button::action(location,"위치 변경",
                                             theme::ButtonRole::Standard,
                                             editable&&!busy&&!is_root(&current.id)
@@ -768,12 +768,12 @@ impl CategoryManager {
                                                 );
                                                 let response=line.add_sized(
                                                     [path_width,theme::INPUT_HEIGHT],
-                                                    components::truncated_label_for_explicit_tooltip(typography::body(&visible))
+                                                    crate::ui_primitives::truncated_label_for_explicit_tooltip(typography::body(&visible))
                                                 );
-                                                components::overflow_tooltip(response,visible!=location_path,&location_path);
+                                                crate::ui_primitives::overflow_tooltip(response,visible!=location_path,&location_path);
                                             }
                                         );
-                                        components::section_divider(modal);
+                                        crate::ui_primitives::section_divider(modal);
                                         crate::popup::modal_labeled_row(
                                             modal,"새 분류 이름",|line|{
                                                 let input_width=line.available_width().max(1.0);
@@ -1000,7 +1000,7 @@ mod modal_layout_contract_tests{
         assert!(page.contains("management_toolbar_trailing_rect("));
         assert!(page.contains("theme::CATALOG_MAP_TOOLBAR_STACK_WIDTH"));
         assert!(page.contains("self.map_toolbar_actions("));
-        assert!(page.contains("components::section_divider(panel)"));
+        assert!(page.contains("crate::ui_primitives::section_divider(panel)"));
         assert!(!page.contains("panel.add_space(theme::SPACE_8);\n            panel.horizontal_wrapped"));
         assert_eq!(
             theme::SECTION_DIVIDER_HEIGHT,

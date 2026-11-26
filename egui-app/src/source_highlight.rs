@@ -1185,7 +1185,7 @@ mod tests {
             source(raw,"가나다 2개","address","r1")
         ]}]});
         let spans=collect(raw,&recognition);
-        let ctx=crate::components::test_context();
+        let ctx=crate::ui_test_support::test_context();
         let _=ctx.run(egui::RawInput::default(),|ctx|{
             let font=FontId::proportional(typography::FONT_RECEPTION_SOURCE_TEXT);
             let assigned=HashSet::new();

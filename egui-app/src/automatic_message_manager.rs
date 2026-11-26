@@ -480,7 +480,7 @@ impl AutomaticMessageManager {
             .show(ui,|list|{
                 list.spacing_mut().item_spacing.y=theme::SPACE_4;
                 if visible.is_empty(){
-                    components::management_body_state_inline(list,if self.product_search.trim().is_empty(){
+                    crate::ui_primitives::management_body_state_inline(list,if self.product_search.trim().is_empty(){
                         "아직 등록된 안내문이 없습니다. 상품을 검색해 추가하세요."
                     }else{"검색 결과가 없습니다."});
                 }
@@ -493,7 +493,7 @@ impl AutomaticMessageManager {
                         list,product_name(product),caption,self.selected_product==id
                     );
                     #[cfg(test)]
-                    components::general_screen_geometry_tests::record("notice product row",choice.rect);
+                    crate::ui_test_support::record("notice product row",choice.rect);
                     if choice.clicked(){
                         *target=Some(Destination::Product(id.to_owned()));
                     }
@@ -515,7 +515,7 @@ impl AutomaticMessageManager {
             });
         });
         ui.label(typography::caption(def.description));
-        components::section_divider(ui);
+        crate::ui_primitives::section_divider(ui);
         ui.label(typography::field_label("복사용 자동 메시지 편집"));
         let mut content=Self::template_value(&self.draft_templates,def);
         let width=ui.available_width();
@@ -561,7 +561,7 @@ impl AutomaticMessageManager {
                     }
                 });
             });
-            components::section_divider(ui);
+            crate::ui_primitives::section_divider(ui);
             ui.label(typography::field_label(
                 "잠정 선택 시 복사용 계좌안내에 추가할 문구"
             ));
@@ -666,7 +666,7 @@ impl AutomaticMessageManager {
                                 }else{self.provisional_editor(fields);}
                             });
                         body.add_space(theme::SPACE_12);
-                        components::soft_divider(body);
+                        crate::ui_primitives::soft_divider(body);
                         body.horizontal(|footer|{
                             footer.with_layout(Layout::right_to_left(Align::Center),|right|{
                                 let action=crate::button::action(right,

@@ -2,9 +2,9 @@
 use eframe::egui::{self,Align,Layout,Rect,Response,Stroke,Ui,Vec2};
 use crate::{source_highlight,theme,typography};
 use crate::button::{date_navigation_segment_button,DateNavigationSegmentGlyph};
-use crate::components::{navigation_segment_child,date_navigation_segmented_surface};
+use crate::ui_primitives::{navigation_segment_child,date_navigation_segmented_surface};
 #[cfg(test)]
-use crate::components::test_context;
+use crate::ui_test_support::test_context;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum FieldKind {
