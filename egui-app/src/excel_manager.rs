@@ -328,7 +328,7 @@ fn table<const N:usize>(
     let header_content=layout.header_content_rect;
     let scroll_max_height=match height_policy {
         ExcelTableHeightPolicy::FillCard{card_min_height}=>
-            components::management_single_list_scroll_height(
+            crate::scrollbar::management_single_list_scroll_height(
                 ui,card_min_height,0.0
             ),
         ExcelTableHeightPolicy::LegacyForExpandedDetails=>
@@ -395,7 +395,7 @@ fn table<const N:usize>(
     
     if let Some((all,enabled))=header_selection{
         let mut checked=all;
-        if components::management_table_checkbox(
+        if crate::checkbox::management_table_checkbox(
             ui,heads[0],header_text_rect,&mut checked,enabled,
             (id,"select-all")
         ).changed(){
@@ -673,14 +673,14 @@ impl ExcelManager{
         let busy=self.operation.is_some()||self.receiver.is_some();
         let mut close=false;let mut selected:Option<Value>=None;
         let count=self.reply_rows.len();
-        components::modal_backdrop(ctx,"factory-reply-review-backdrop",false);
-        components::modal_window(ctx,"공장 회신 검토","factory-reply-review",area)
+        crate::popup::modal_backdrop(ctx,"factory-reply-review-backdrop",false);
+        crate::popup::modal_window(ctx,"공장 회신 검토","factory-reply-review",area)
             .default_width(area.width().min(900.0)).show(ctx,|ui|{
-                components::modal_flow_workspace(ui,|workspace|{
+                crate::popup::modal_flow_workspace(ui,|workspace|{
                     close=workspace.header("공장 회신 검토","닫기",!busy&&self.reply_confirm.is_none());
                     if self.reply_confirm.is_some(){workspace.disable();}
                     workspace.scroll_region("factory-reply-review-body",
-                        components::modal_editor_body_max_height(area.height()),|ui|{
+                        crate::popup::modal_editor_body_max_height(area.height()),|ui|{
                         ui.label(typography::field_label(&format!("미해결 회신 {count}행")));
                         ui.label(typography::caption("정상 회신은 자동 저장됩니다. 충돌 건은 기존 값과 회신 값을 확인한 후 한 행씩 정정하세요."));
                         if count==0{components::management_body_state_inline(ui,if busy{"조회 중"}else{"검토할 회신이 없습니다."});}
@@ -720,10 +720,10 @@ impl ExcelManager{
             }
         }
         if let Some(review)=self.reply_confirm.clone(){
-            components::modal_backdrop(ctx,"factory-reply-confirm-backdrop",true);
+            crate::popup::modal_backdrop(ctx,"factory-reply-confirm-backdrop",true);
             let mut cancel=false;let mut approve=false;
-            components::show_decision_window(ctx,"공장 회신 한 행 정정","factory-reply-confirm",area,|dialog|{
-                components::decision_workspace(dialog,|decision|{
+            crate::popup::show_decision_window(ctx,"공장 회신 한 행 정정","factory-reply-confirm",area,|dialog|{
+                crate::popup::decision_workspace(dialog,|decision|{
                     cancel=decision.header("공장 회신 한 행 정정","취소",!busy);
                     decision.body(|body|{body.label(typography::table_cell(text(&review,"confirmedText")));});
                     decision.actions(|bar|{
@@ -754,7 +754,7 @@ impl ExcelManager{
         // Also consume worker results when this page is hosted independently.
         self.poll(ui.ctx());
         let page_origin_y=ui.cursor().top();
-        ui.spacing_mut().scroll=theme::management_scroll_style();
+        ui.spacing_mut().scroll=crate::scrollbar::management_scroll_style();
         if self.reply_refresh_pending&&self.operation.is_none()&&self.receiver.is_none(){
             self.refresh(ui.ctx().clone());
         }
@@ -818,11 +818,11 @@ impl ExcelManager{
         if self.tab!=Tab::History{
             self.selected.retain(|id|visible.contains(id));
         }
-        components::align_management_primary_card(ui,page_origin_y);
+        crate::card::align_management_primary_card(ui,page_origin_y);
         // Exact same 16pt interior inset and frame as the approved master.
-        let card_min_height=components::management_master_table_card_min_inner_height(ui);
-        components::measured_management_master_card(ui,|section|{
-            components::fill_management_primary_card(section,card_min_height);
+        let card_min_height=crate::card::management_master_table_card_min_inner_height(ui);
+        crate::card::measured_management_master_card(ui,|section|{
+            crate::card::fill_management_primary_card(section,card_min_height);
             // Allocate a true 36pt master toolbar. Search and trailing
             // actions use the SAME 16pt card interior width as the header.
             crate::table::management_table_container_style(section);
@@ -1055,7 +1055,7 @@ impl ExcelManager{
                         let id=entry.id().to_owned();
                         let mut checked=self.selected.contains(&id);
                         let selectable=!entry.legacy;
-                        let checked_response=components::management_table_checkbox(
+                        let checked_response=crate::checkbox::management_table_checkbox(
                             row,cells[0],cells[0],&mut checked,selectable,
                             ("excel-queue-checkbox",id.clone())
                         );

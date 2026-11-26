@@ -492,12 +492,12 @@ impl ProductManager {
     )->(bool,Option<Value>){
         let mut cancelled=false;
         let width=(work_area.width()-theme::SPACE_12*2.0).clamp(1.0,1120.0);
-        let height=components::modal_body_height_budget(work_area.height(),false).min(650.0);
-        components::modal_window(ctx,"상품 선택",window_id,work_area)
+        let height=crate::popup::modal_body_height_budget(work_area.height(),false).min(650.0);
+        crate::popup::modal_window(ctx,"상품 선택",window_id,work_area)
             .default_width(width).show(ctx,|ui|{
 
                 ui.set_width(width);
-                components::modal_flow_workspace(ui,|workspace|{
+                crate::popup::modal_flow_workspace(ui,|workspace|{
                     cancelled=workspace.header("상품 선택","취소",true);
                     workspace.body_region(|ui|{
                         ui.allocate_ui_with_layout(
@@ -1002,13 +1002,13 @@ impl ProductManager {
                         theme::SPACE_8,theme::SPACE_8
                     );
                     if let Some([products,model_groups,aliases,brands])=counts{
-                        components::management_summary_card(strip,"등록 상품",products);
-                        components::management_summary_card(strip,"모델군",model_groups);
-                        components::management_summary_card(strip,"별칭",aliases);
-                        components::management_summary_card(strip,"브랜드",brands);
+                        crate::card::management_summary_card(strip,"등록 상품",products);
+                        crate::card::management_summary_card(strip,"모델군",model_groups);
+                        crate::card::management_summary_card(strip,"별칭",aliases);
+                        crate::card::management_summary_card(strip,"브랜드",brands);
                     }else{
                         for label in ["등록 상품","모델군","별칭","브랜드"]{
-                            components::management_summary_card_value(strip,label,"—");
+                            crate::card::management_summary_card_value(strip,label,"—");
                         }
                     }
                 });
@@ -1026,7 +1026,7 @@ impl ProductManager {
         // Category/model/alias/brand views own one primary section each.
         // Only the product-list tab has extra actions above its table card.
         if self.tab!=0 {
-            components::align_management_primary_card(ui,page_origin_y);
+            crate::card::align_management_primary_card(ui,page_origin_y);
         }
         if self.tab==4 {
             if let Some(catalog)=self.catalog.as_ref(){
@@ -1034,7 +1034,7 @@ impl ProductManager {
                     self.start_write("upsert_brand",data,None,ui.ctx().clone());
                 }
             }else{
-                components::management_pending_primary_card(ui);
+                crate::card::management_pending_primary_card(ui);
             }
             return;
         }
@@ -1046,7 +1046,7 @@ impl ProductManager {
                     self.start_write("save_alias",data,None,ui.ctx().clone());
                 }
             }else{
-                components::management_pending_primary_card(ui);
+                crate::card::management_pending_primary_card(ui);
             }
             return;
         }
@@ -1054,7 +1054,7 @@ impl ProductManager {
             if let Some(catalog)=self.catalog.as_ref(){
                 self.model_groups.show_page(ui,catalog,Arc::clone(&self.gateway));
             }else{
-                components::management_pending_primary_card(ui);
+                crate::card::management_pending_primary_card(ui);
             }
             return;
         }
@@ -1062,16 +1062,16 @@ impl ProductManager {
             if let Some(catalog)=self.catalog.as_ref(){
                 self.category_manager.show_page(ui,catalog,can_edit,saving);
             }else{
-                components::management_pending_primary_card(ui);
+                crate::card::management_pending_primary_card(ui);
             }
             return;
         }
         // Product list starts at the exact Freight Assignment card anchor.
         // Actions and optional Excel/registration editors stay INSIDE the card.
-        components::align_management_primary_card(ui,page_origin_y);
-        let card_min_height=components::management_master_table_card_min_inner_height(ui);
-        components::measured_management_master_card(ui,|panel|{
-            components::fill_management_primary_card(panel,card_min_height);
+        crate::card::align_management_primary_card(ui,page_origin_y);
+        let card_min_height=crate::card::management_master_table_card_min_inner_height(ui);
+        crate::card::measured_management_master_card(ui,|panel|{
+            crate::card::fill_management_primary_card(panel,card_min_height);
             panel.spacing_mut().item_spacing.y=0.0;
             // Freight-style dual-slot toolbar at wide widths. Only when
             // product filters genuinely need the space do actions wrap onto
@@ -1135,7 +1135,7 @@ impl ProductManager {
                     }
                     if !selecting{
                     let before_missing=self.missing;
-                    if components::checkbox(
+                    if crate::checkbox::checkbox(
                         filter,&mut self.missing,"가격 미등록만",true
                     ).changed(){
                         if self.has_pending_prices(){
@@ -1266,7 +1266,7 @@ impl ProductManager {
             // asynchronous loading, and saving never do.
             // Pending, empty and populated results share ONE table height.
             // Never subtract an empty-state row from the scroll viewport.
-            let scroll_max_height=components::management_single_list_scroll_height(
+            let scroll_max_height=crate::scrollbar::management_single_list_scroll_height(
                 panel,card_min_height,0.0
             );
             // The shared component owns the 7pt rail extension.
@@ -1718,7 +1718,7 @@ impl ProductManager {
     fn detail_wide_text_with_width(
         ui:&mut Ui,draft:&mut Value,key:&str,label:&str,enabled:bool,label_width:f32
     ){
-        components::modal_labeled_row_with_width(ui,label,label_width,|line|{
+        crate::popup::modal_labeled_row_with_width(ui,label,label_width,|line|{
             let mut value=field(draft,key).to_owned();
             line.add_enabled_ui(enabled,|input|{
                 let width=input.available_width().max(1.0);
@@ -1774,7 +1774,7 @@ impl ProductManager {
         Self::detail_wide_text(
             ui,draft,"subtitle","상품 옵션",editable&&!busy
         );
-        components::modal_labeled_row(ui,"카테고리",|row|{
+        crate::popup::modal_labeled_row(ui,"카테고리",|row|{
             let before=draft["categories"].as_array()
                 .and_then(|ids|ids.last())
                 .and_then(Value::as_str).unwrap_or("").to_owned();
@@ -1795,7 +1795,7 @@ impl ProductManager {
                     .unwrap_or(""));
             }
         });
-        components::modal_labeled_row(ui,"브랜드",|row|{
+        crate::popup::modal_labeled_row(ui,"브랜드",|row|{
             let before=field(draft,"brandId").to_owned();
             let mut brand_id=before.clone();
             let label=brands.iter().find(|b|field(b,"id")==brand_id)
@@ -1819,7 +1819,7 @@ impl ProductManager {
         ui:&mut Ui,draft:&mut Value,
         prices:&mut HashMap<String,String>,editable:bool,busy:bool
     ){
-        components::modal_labeled_row(ui,"판매 상태",|line|{
+        crate::popup::modal_labeled_row(ui,"판매 상태",|line|{
             let current=displayed_sale_status(draft);
             let mut selected=current.to_owned();
             line.add_enabled_ui(editable&&!busy,|input|{
@@ -1845,7 +1845,7 @@ impl ProductManager {
             ("도매가","wholesale"),("반도매가","semi"),
             ("소매가","retail")
         ]{
-            components::modal_labeled_row(ui,label,|line|{
+            crate::popup::modal_labeled_row(ui,label,|line|{
                 let value=prices.entry(tier.to_owned())
                     .or_insert_with(String::new);
                 // Reserve the '원' unit inside the same row rather than
@@ -1875,7 +1875,7 @@ impl ProductManager {
     ){
         // The shared divider owns its full 12pt on each side; group scopes
         // own only their internal 8pt row gaps, not the structural gap.
-        components::modal_master_controlled_spacing(ui);
+        crate::popup::modal_master_controlled_spacing(ui);
         ui.scope(|group|{
             group.spacing_mut().item_spacing.y=theme::SPACING;
             Self::detail_overview_column(group,draft,brands,categories,category_nodes,editable,busy);
@@ -1955,8 +1955,8 @@ impl ProductManager {
         let mut request_archive=false;
         let mut photo_error=None;
         let modal_width=Self::detail_modal_width(work_area.width());
-        components::modal_backdrop(ctx,"egui-product-detail-backdrop",false);
-        components::modal_window(ctx,
+        crate::popup::modal_backdrop(ctx,"egui-product-detail-backdrop",false);
+        crate::popup::modal_window(ctx,
             if is_new {"상품 등록"} else {"상품 상세 관리"},
             "egui-product-detail",work_area
         ).resizable(false)
@@ -1969,13 +1969,13 @@ impl ProductManager {
                 let dialog_title=if is_new{"상품 등록"}else{"상품 상세 관리"};
                 // One shared owner allocates the true header, scrolling
                 // body, and footer. Every boundary can now be measured.
-                let (closed,_,geometry)=components::modal_editor_workspace(
+                let (closed,_,geometry)=crate::popup::modal_editor_workspace(
                     modal,dialog_title,"취소",!busy,|workspace|{
                         workspace.body(
-                            components::modal_editor_body_max_height(
+                            crate::popup::modal_editor_body_max_height(
                                 work_area.height()
                             ),|body|{
-                        let mut measured=components::ModalEditorBodyGeometry::default();
+                        let mut measured=crate::popup::ModalEditorBodyGeometry::default();
                         let content_width=body.available_width().max(1.0);
                         if let Some((overview_width,image_width))=
                             Self::detail_columns(content_width)
@@ -1993,7 +1993,7 @@ impl ProductManager {
                                 top.spacing_mut().item_spacing.x=theme::MODAL_MASTER_WORKSPACE_GAP;
                                 top.vertical(|media|{
                                     media.set_width(image_width);
-                                    let section=components::modal_section_measured(
+                                    let section=crate::popup::modal_section_measured(
                                         media,"상품 이미지",|photos|{
                                             self.detail_image_column(
                                                 photos,&mut draft,editable,busy,&mut photo_error
@@ -2006,7 +2006,7 @@ impl ProductManager {
                                 });
                                 top.vertical(|overview|{
                                     overview.set_width(overview_width);
-                                    let section=components::modal_section_measured(
+                                    let section=crate::popup::modal_section_measured(
                                         overview,"상품 개요",|fields|{
                                             Self::detail_information_column(
                                                 fields,&mut draft,&mut prices,&brands,&categories,
@@ -2028,7 +2028,7 @@ impl ProductManager {
                             ));
                         }else{
                             body.vertical(|stack|{
-                                let section=components::modal_section_measured(
+                                let section=crate::popup::modal_section_measured(
                                     stack,"상품 이미지",|photos|{
                                         self.detail_image_column(
                                             photos,&mut draft,editable,busy,&mut photo_error
@@ -2037,7 +2037,7 @@ impl ProductManager {
                                 );
                                 measured.cards.push(section.response.rect);
                                 stack.add_space(theme::SPACE_12);
-                                let section=components::modal_section_measured(
+                                let section=crate::popup::modal_section_measured(
                                     stack,"상품 개요",|fields|{
                                         Self::detail_information_column(
                                             fields,&mut draft,&mut prices,&brands,&categories,
@@ -2065,7 +2065,7 @@ impl ProductManager {
                                 let label_width=typography::field_label_galley(
                                     advanced,"홈페이지 상품 연결"
                                 ).size().x.ceil().max(theme::MODAL_FORM_LABEL_WIDTH);
-                                components::modal_labeled_row_with_width(
+                                crate::popup::modal_labeled_row_with_width(
                                     advanced,"배송 그룹",label_width,|group_ui|{
                                         let before=field(&draft,"shippingGroupId").to_owned();
                                         let mut group=before.clone();
@@ -2091,7 +2091,7 @@ impl ProductManager {
                                         }
                                     }
                                 );
-                                components::modal_labeled_row_with_width(
+                                crate::popup::modal_labeled_row_with_width(
                                     advanced,"발송지",label_width,|origin_ui|{
                                         let before=field(&draft,"origin").to_owned();
                                         let mut origin=before.clone();
@@ -2219,9 +2219,9 @@ impl ProductManager {
         if self.confirm_archive{
             let mut cancel=false;
             let mut archive=false;
-            components::modal_backdrop(ctx,"egui-product-archive-nested",true);
-            components::show_decision_window(ctx,"상품 삭제","egui-product-archive-confirm",work_area,|dialog|{
-                components::decision_workspace(dialog,|decision|{
+            crate::popup::modal_backdrop(ctx,"egui-product-archive-nested",true);
+            crate::popup::show_decision_window(ctx,"상품 삭제","egui-product-archive-confirm",work_area,|dialog|{
+                crate::popup::decision_workspace(dialog,|decision|{
                     cancel=decision.header("상품 삭제","취소",!busy
                     );
                     decision.body(|dialog|{
@@ -2246,9 +2246,9 @@ impl ProductManager {
         }else if self.confirm_discard {
             let mut keep=false;
             let mut discard=false;
-            components::modal_backdrop(ctx,"egui-product-discard-nested",true);
-            components::show_decision_window(ctx,"저장하지 않은 상품","egui-product-discard-confirm",work_area,|dialog|{
-                components::decision_workspace(dialog,|decision|{
+            crate::popup::modal_backdrop(ctx,"egui-product-discard-nested",true);
+            crate::popup::show_decision_window(ctx,"저장하지 않은 상품","egui-product-discard-confirm",work_area,|dialog|{
+                crate::popup::decision_workspace(dialog,|decision|{
                     keep=decision.header("저장하지 않은 상품","취소",!busy
                     );
                     decision.body(|dialog|{
@@ -2303,7 +2303,7 @@ mod tests {
         assert!(!list.contains("self.excel.open()"));
         assert!(!list.contains("let empty_reserve=if self.products.is_empty(){"));
         assert!(list.contains("components::management_body_state_overlay("));
-        assert!(list.contains("let scroll_max_height=components::management_single_list_scroll_height("));
+        assert!(list.contains("let scroll_max_height=crate::scrollbar::management_single_list_scroll_height("));
     }
     #[test]
     fn product_summary_distinguishes_unloaded_catalog_from_real_zero_counts(){
@@ -2320,7 +2320,7 @@ mod tests {
             .split("let can_edit=").next().unwrap();
         assert!(rendered.contains("product_summary_counts(self.catalog.as_ref())"));
         assert!(rendered.contains(
-            "components::management_summary_card_value(strip,label,\"—\")"
+            "crate::card::management_summary_card_value(strip,label,\"—\")"
         ));
         assert!(!rendered.contains("unwrap_or((0,0,0,0))"));
     }
@@ -2340,7 +2340,7 @@ mod tests {
         let composition=source.split("    pub fn show_detail(").nth(1).unwrap()
             .split("        self.selected=Some(draft.clone());").next().unwrap();
         assert!(!composition.contains("modal_header_with_workspace_gap("));
-        assert!(composition.contains("components::modal_editor_workspace("));
+        assert!(composition.contains("crate::popup::modal_editor_workspace("));
         assert!(composition.contains("workspace.body("));
         assert!(composition.contains("workspace.footer("));
         assert!(composition.contains("ModalEditorBodyGeometry::default()"));
@@ -2442,7 +2442,7 @@ mod tests {
         let source=include_str!("product_manager.rs");
         let detail=source.split("    fn detail_columns(").nth(1).unwrap()
             .split("    pub fn show_detail(").next().unwrap();
-        assert!(detail.contains("components::modal_labeled_row("));
+        assert!(detail.contains("crate::popup::modal_labeled_row("));
         assert!(!detail.contains("ui.vertical(|row|"));
         assert!(!detail.contains("● 판매중"));
         assert!(detail.contains("crate::dropdown::management_status_dropdown("));
@@ -2453,7 +2453,7 @@ mod tests {
             .split("        self.selected=Some(draft.clone());").next().unwrap();
         for heading in ["상품 개요","상품 이미지"]{
             assert!(composition.contains(&format!(
-                "components::modal_section_measured("
+                "crate::popup::modal_section_measured("
             )) && composition.contains(heading));
         }
     }
@@ -2866,7 +2866,7 @@ mod tests {
             text.clear();
             for shape in &output.shapes{collect_product_text(&shape.shape,&mut text);}
         }
-        let geometry=ctx.data(|data|data.get_temp::<components::ModalEditorGeometry>(
+        let geometry=ctx.data(|data|data.get_temp::<crate::popup::ModalEditorGeometry>(
             egui::Id::new("test-product-detail-geometry")
         )).expect("actual product detail geometry");
         let header=geometry.header.expect("actual modal header");

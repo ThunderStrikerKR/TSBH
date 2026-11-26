@@ -148,13 +148,13 @@ impl ItemEditor{
     ){
         let top=ui.cursor().top();
         ui.spacing_mut().item_spacing.y=theme::SPACE_8;
-        components::modal_labeled_row(ui,"상품명",|row|{
+        crate::popup::modal_labeled_row(ui,"상품명",|row|{
             row.label(typography::subsection_heading(name));
         });
-        components::modal_labeled_row(ui,"카테고리",|row|{
+        crate::popup::modal_labeled_row(ui,"카테고리",|row|{
             row.label(typography::body(category));
         });
-        components::modal_labeled_row(ui,"가격",|row|{
+        crate::popup::modal_labeled_row(ui,"가격",|row|{
             row.label(typography::data_value_text(
                 price,typography::DataValueKind::Money,
                 typography::DataValueContext::Form
@@ -262,14 +262,14 @@ impl ItemEditor{
         let mut apply_clicked=false;
         let needs_customer=self.initial["modelProposal"]["required"]==true;
         let safe_width=work_area.width()-theme::MANUAL_DIALOG_SIDE_GAP;
-        components::modal_window(ctx,
+        crate::popup::modal_window(ctx,
             "상품 상세 수정","reception-item-detail",work_area
         )
             .default_width(740.0_f32.min(safe_width).max(0.0))
             .constrain_to(work_area)
             .show(ctx,|ui|{
 
-                components::modal_flow_workspace(ui,|workspace|{
+                crate::popup::modal_flow_workspace(ui,|workspace|{
                     if workspace.header("상품 상세 수정","닫기",!busy && self.search.is_none()
                     ){
                         result=self.close();
@@ -277,7 +277,7 @@ impl ItemEditor{
                     if self.search.is_some() || self.confirm_delete || self.confirm_discard{
                         workspace.disable();
                     }
-                    workspace.scroll_region("reception-item-detail-body",components::modal_editor_body_max_height(work_area.height()),|ui|{
+                    workspace.scroll_region("reception-item-detail-body",crate::popup::modal_editor_body_max_height(work_area.height()),|ui|{
                         let outer_width=ui.available_width().max(1.0);
                         // The approved nested frame has an 8pt internal inset on
                         // each side. Its content fills the whole modal, not just
@@ -287,7 +287,7 @@ impl ItemEditor{
                         let photo_side=item_detail_photo_side(
                             content_width,work_area.height()
                         );
-                        theme::modal_nested_role_frame(theme::ModalNestedRole::Standard).show(ui,|body|{
+                        crate::popup::modal_nested_role_frame(crate::popup::ModalNestedRole::Standard).show(ui,|body|{
                             body.set_min_width(content_width);
                             // Own the display snapshot so search and selection
                             // actions can mutate ItemEditor during this same frame.
@@ -380,7 +380,7 @@ impl ItemEditor{
         if delete_clicked{self.confirm_delete=true;}
         if apply_clicked{result=self.replacement.clone().map(Event::Apply);}
         if self.search.is_some() || self.confirm_delete || self.confirm_discard{
-            components::modal_backdrop(ctx,"reception-item-nested-backdrop",true);
+            crate::popup::modal_backdrop(ctx,"reception-item-nested-backdrop",true);
         }
         if let Some(event)=self.search.as_mut().and_then(|search|
             search.show(ctx,Arc::clone(&gateway),work_area)
@@ -400,8 +400,8 @@ impl ItemEditor{
             if remove && !cancel{result=Some(Event::Remove);}
         }
         if self.confirm_discard{
-            components::show_decision_window(ctx,"변경사항 확인","reception-item-discard-confirm",work_area,|ui|{
-                components::decision_workspace(ui,|decision|{
+            crate::popup::show_decision_window(ctx,"변경사항 확인","reception-item-discard-confirm",work_area,|ui|{
+                crate::popup::decision_workspace(ui,|decision|{
                     if decision.header("변경사항 확인","돌아가기",true){
                         self.confirm_discard=false;
                     }
@@ -457,12 +457,12 @@ mod tests{
         assert!(!modal.contains("ui.horizontal(|controls|"));
         let details=source.split("    fn detail_information(").nth(1).unwrap()
             .split("    fn poll_catalog_photo(").next().unwrap();
-        assert!(details.contains("components::modal_labeled_row(ui"));
+        assert!(details.contains("crate::popup::modal_labeled_row(ui"));
         for label in ["상품명","카테고리","가격"]{
             assert!(details.contains(label));
         }
         assert!(details.contains("상품 변경"));
-        assert!(modal.contains("components::modal_flow_workspace("));
+        assert!(modal.contains("crate::popup::modal_flow_workspace("));
         assert!(modal.contains("workspace.scroll_region("));
         assert!(modal.contains("workspace.footer("));
         assert!(!modal.contains("components::modal_action_row_split("));

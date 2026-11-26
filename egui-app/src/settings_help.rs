@@ -395,10 +395,10 @@ pub fn icon(heading:&mut Ui,title:&str){
                 .movable(false)
                 .show(&ctx,|popup|{
                     crate::overlay::attach_popup(popup.ctx(),response.layer_id,popup.layer_id());
-                    theme::settings_help_surface_frame()
+                    crate::card::settings_help_surface_frame()
                         .show(popup,|panel|{
                             panel.set_width(width-theme::SPACE_24);
-                            crate::components::scroll_area(crate::components::ScrollAxes::Vertical)
+                            crate::scrollbar::scroll_area(crate::scrollbar::ScrollAxes::Vertical)
                                 .max_height(viewport.height().min(500.0)*0.7)
                                 .show(panel,|details|{
                                     details.set_width(width-theme::SPACE_24);

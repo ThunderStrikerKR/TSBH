@@ -64,7 +64,7 @@ fn label_edit(ui:&mut Ui,draft:&mut Value,key:&str,label:&str) {
 }
 fn bool_edit(ui:&mut Ui,draft:&mut Value,key:&str,title:&str) {
     let mut selected=draft.get(key).and_then(Value::as_bool).unwrap_or(false);
-    if components::checkbox(ui,&mut selected,title,true).changed(){
+    if crate::checkbox::checkbox(ui,&mut selected,title,true).changed(){
         draft[key]=json!(selected);
     }
 }
@@ -346,7 +346,7 @@ impl ClientManager {
         );
         // The client directory uses the same always-readable 10pt solid
         // scrollbar track as the approved Freight Assignment screen.
-        ui.spacing_mut().scroll=theme::management_scroll_style();
+        ui.spacing_mut().scroll=crate::scrollbar::management_scroll_style();
         components::management_page_title_top_gap(ui);
         // The four actual client tiers fill the same four KPI slots as
         // Freight > Shipping Group Assignment. These counts intentionally
@@ -437,7 +437,7 @@ impl ClientManager {
                 for (label,value) in [
                     "도매","반도매","소매","특수"
                 ].into_iter().zip(values.iter()){
-                    components::management_summary_card_value(strip,label,value);
+                    crate::card::management_summary_card_value(strip,label,value);
                 }
             });
         });
@@ -474,11 +474,11 @@ impl ClientManager {
         // Same FULL master table frame as Freight Assignment: one 16pt
         // inset on every edge, one 36pt toolbar, one 33pt transition and
         // one fixed 36pt header. No extra '등록 거래처' title row/card.
-        components::align_management_primary_card(ui,page_origin_y);
+        crate::card::align_management_primary_card(ui,page_origin_y);
         let card_min_height=
-            components::management_master_table_card_min_inner_height(ui);
-        components::measured_management_master_card(ui,|section|{
-            components::fill_management_primary_card(section,card_min_height);
+            crate::card::management_master_table_card_min_inner_height(ui);
+        crate::card::measured_management_master_card(ui,|section|{
+            crate::card::fill_management_primary_card(section,card_min_height);
             crate::table::management_table_container_style(section);
             let toolbar_width=section.available_width().max(1.0);
             if toolbar_width<theme::MANAGEMENT_CLIENT_TOOLBAR_STACK_WIDTH {
@@ -562,7 +562,7 @@ impl ClientManager {
             let header_content_rect=layout.header_content_rect;
             // This is the only large list in its card; no footer follows.
             // Measure after the title, toolbar and pinned 36pt header.
-            let scroll_max_height=components::management_single_list_scroll_height(
+            let scroll_max_height=crate::scrollbar::management_single_list_scroll_height(
                 section,card_min_height,0.0
             );
             let mut chosen=None;
@@ -898,15 +898,15 @@ impl ClientManager {
         let mut close=false;
         let editable=self.editable();
         let busy=self.saving.is_some();
-        components::modal_window(ctx,title,"native-client-manager-editor",work_area)
+        crate::popup::modal_window(ctx,title,"native-client-manager-editor",work_area)
             .default_width(theme::MODAL_DEFAULT_MAX_WIDTH.min(work_area.width()))
             .show(ctx,|ui|{
 
-                components::modal_flow_workspace(ui,|workspace|{
+                crate::popup::modal_flow_workspace(ui,|workspace|{
                     if workspace.header(title,"취소",!busy){
                         close=true;
                     }
-                    let body_height=components::modal_editor_body_max_height(work_area.height());
+                    let body_height=crate::popup::modal_editor_body_max_height(work_area.height());
                     workspace.scroll_region("native-client-manager-fields",body_height,|body|{
                                 body.add_enabled_ui(editable && !busy,|form|{
                                     self.editor_fields(form,&mut draft);
@@ -954,9 +954,9 @@ impl ClientManager {
         if delete {self.confirm_delete=true;}
         if close {self.request_close();}
         if self.confirm_delete {
-            components::modal_backdrop(ctx,"client-manager-delete-backdrop",true);
-            components::show_decision_window(ctx,"거래처 삭제","client-manager-delete-confirm",work_area,|ui|{
-                components::decision_workspace(ui,|decision|{
+            crate::popup::modal_backdrop(ctx,"client-manager-delete-backdrop",true);
+            crate::popup::show_decision_window(ctx,"거래처 삭제","client-manager-delete-confirm",work_area,|ui|{
+                crate::popup::decision_workspace(ui,|decision|{
                     let cancel=decision.header("거래처 삭제","취소",true);
                     decision.body(|ui|{
                         ui.label("거래처를 삭제할까요? 기존 주문의 송하인과 금액은 그대로 보존합니다.");
@@ -976,9 +976,9 @@ impl ClientManager {
             });
         }
         if self.confirm_discard {
-            components::modal_backdrop(ctx,"client-manager-discard-backdrop",true);
-            components::show_decision_window(ctx,"변경사항 확인","client-manager-discard-confirm",work_area,|ui|{
-                components::decision_workspace(ui,|decision|{
+            crate::popup::modal_backdrop(ctx,"client-manager-discard-backdrop",true);
+            crate::popup::show_decision_window(ctx,"변경사항 확인","client-manager-discard-confirm",work_area,|ui|{
+                crate::popup::decision_workspace(ui,|decision|{
                     let cancel=decision.header("변경사항 확인","취소",true);
                     decision.body(|ui|{
                         ui.label("거래처의 수정 내용을 버릴까요?");
@@ -1025,7 +1025,7 @@ mod client_async_kpi_tests{
             "client_tier_kpi_values(self.state.is_object(),tier_counts)"
         ));
         assert!(page.contains(
-            "components::management_summary_card_value(strip,label,value)"
+            "crate::card::management_summary_card_value(strip,label,value)"
         ));
     }
 }

@@ -117,9 +117,9 @@ impl BrandManager {
         ->Option<Value>{
         let mut save=false;
         let mut select=None;
-        let card_min_height=components::management_master_table_card_min_inner_height(ui);
-        components::measured_management_master_card(ui,|card|{
-            components::fill_management_primary_card(card,card_min_height);
+        let card_min_height=crate::card::management_master_table_card_min_inner_height(ui);
+        crate::card::measured_management_master_card(ui,|card|{
+            crate::card::fill_management_primary_card(card,card_min_height);
             card.label(typography::section_heading("브랜드 관리"));
             card.add_space(theme::SPACE_8);
             card.label(typography::body(
@@ -172,7 +172,7 @@ impl BrandManager {
             // fixed 36pt register header and 10pt solid scroll rail.
             crate::table::management_table_container_style(card);
             crate::table::show(card,crate::table::Header::Register{primary:"브랜드명 / 한글 표기 / 검색 별칭",action:"관리",action_width:132.0},|card,header|{
-            let scroll_height=components::management_single_list_scroll_height(
+            let scroll_height=crate::scrollbar::management_single_list_scroll_height(
                 card,card_min_height,0.0
             );
             let output=crate::table::register_rows(card,scroll_height,header.table_width,"brand-registry-list",|list|{
@@ -219,9 +219,9 @@ impl BrandManager {
         let mut cancel=false;
         let mut discard=false;
         let mut save=false;
-        components::modal_backdrop(ctx,"brand-unsaved-dim",true);
-        components::show_decision_window(ctx,"브랜드","brand-unsaved-confirm",work_area,|dialog|{
-                components::decision_workspace(dialog,|decision|{
+        crate::popup::modal_backdrop(ctx,"brand-unsaved-dim",true);
+        crate::popup::show_decision_window(ctx,"브랜드","brand-unsaved-confirm",work_area,|dialog|{
+                crate::popup::decision_workspace(dialog,|decision|{
                     cancel=decision.header("브랜드","취소",!busy);
                     decision.body(|dialog|{
                         dialog.label(typography::body("브랜드 변경사항을 저장할까요?"));

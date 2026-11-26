@@ -243,11 +243,11 @@ impl ModelGroupManager {
         let groups=self.draft.as_object().map(|m|
             m.iter().map(|(id,g)|(id.clone(),g.clone())).collect::<Vec<_>>())
             .unwrap_or_default();
-        let card_min_height=components::management_master_table_card_min_inner_height(ui);
+        let card_min_height=crate::card::management_master_table_card_min_inner_height(ui);
         let mut save=false;
-        components::measured_management_master_card(ui,|outer|{
-            components::fill_management_primary_card(outer,card_min_height);
-            outer.spacing_mut().scroll=theme::management_table_scroll_style();
+        crate::card::measured_management_master_card(ui,|outer|{
+            crate::card::fill_management_primary_card(outer,card_min_height);
+            outer.spacing_mut().scroll=crate::scrollbar::management_table_scroll_style();
             let available=outer.available_width();
             let left_width=theme::FAMILY_LIST_WIDTH.min(available*0.45);
             let height=outer.available_height().max(
@@ -337,7 +337,7 @@ impl ModelGroupManager {
                             });
                             let divider=components::section_divider(right);
                             let extra_divider_height=(divider.height()-theme::SOFT_DIVIDER_WIDTH).max(0.0);
-                            components::scroll_area(components::ScrollAxes::Vertical).id_salt("family-editor")
+                            crate::scrollbar::scroll_area(crate::scrollbar::ScrollAxes::Vertical).id_salt("family-editor")
                                 .auto_shrink([false,false])
                                 .max_height((height-theme::FAMILY_FOOTER_HEIGHT-extra_divider_height).max(
                                     theme::MANAGEMENT_TABLE_ROW_HEIGHT))
@@ -545,9 +545,9 @@ impl ModelGroupManager {
         gateway:Arc<dyn BandoGateway>){
         if self.confirm_delete{
             let mut delete=false;let mut cancel=false;
-            components::modal_backdrop(ctx,"family-delete-dim",false);
-            components::show_decision_window(ctx,"그룹 삭제","family-delete-confirm",rect,|dialog|{
-                    components::decision_workspace(dialog,|decision|{
+            crate::popup::modal_backdrop(ctx,"family-delete-dim",false);
+            crate::popup::show_decision_window(ctx,"그룹 삭제","family-delete-confirm",rect,|dialog|{
+                    crate::popup::decision_workspace(dialog,|decision|{
                         cancel=decision.header("그룹 삭제","취소",true);
                         decision.body(|dialog|{
                             dialog.label(typography::body(
@@ -570,9 +570,9 @@ impl ModelGroupManager {
         }
         if let Some(pending)=self.confirm.clone(){
             let mut cancel=false;let mut discard=false;let mut save=false;
-            components::modal_backdrop(ctx,"family-unsaved-dim",true);
-            components::show_decision_window(ctx,"모델군 관리","family-unsaved-confirm",rect,|dialog|{
-                    components::decision_workspace(dialog,|decision|{
+            crate::popup::modal_backdrop(ctx,"family-unsaved-dim",true);
+            crate::popup::show_decision_window(ctx,"모델군 관리","family-unsaved-confirm",rect,|dialog|{
+                    crate::popup::decision_workspace(dialog,|decision|{
                         cancel=decision.header("모델군 관리","취소",!self.busy()
                         );
                         decision.body(|dialog|{

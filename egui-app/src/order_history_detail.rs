@@ -65,7 +65,7 @@ fn section_panel(
     // This module supplies only order/pane identity and approved geometry.
     // Frame paint, title clipping and independent scrolling belong to the
     // shared component so every fixed detail pane behaves identically.
-    components::fixed_scroll_panel(
+    crate::card::fixed_scroll_panel(
         ui,rect,title,
         ("history-detail-heading",order_id,id),
         ("history-detail-pane",order_id,id),
@@ -211,7 +211,7 @@ fn shipment_entry(
     ui:&mut Ui,order:&Value,recipient:&Value,ship:Option<&Value>,index:usize
 ){
     let label=display_or(field(recipient,"name"),"수취인 미확인");
-    theme::modal_nested_role_frame(theme::ModalNestedRole::Standard).show(ui,|card|{
+    crate::popup::modal_nested_role_frame(crate::popup::ModalNestedRole::Standard).show(ui,|card|{
         card.horizontal_wrapped(|header|{
             header.label(typography::subsection_heading(&format!(
                 "발송 건 {} · {}",index+1,label
@@ -453,8 +453,8 @@ pub fn show(ctx:&egui::Context,work_area:Rect,row:&Value,state:&Value)->bool{
         (work_area.height()-2.0*theme::SPACE_8).max(1.0)
     );
     let mut close=false;
-    components::modal_backdrop(ctx,"history-order-detail-backdrop",false);
-    components::modal_window(ctx,"발주서 상세","history-order-detail",work_area)
+    crate::popup::modal_backdrop(ctx,"history-order-detail-backdrop",false);
+    crate::popup::modal_window(ctx,"발주서 상세","history-order-detail",work_area)
         .fixed_size(modal_size)
         .show(ctx,|ui|{
 
@@ -463,7 +463,7 @@ pub fn show(ctx:&egui::Context,work_area:Rect,row:&Value,state:&Value)->bool{
             ui.set_width(
                 (modal_size.x-2.0*theme::MODAL_PANEL_PADDING_X-2.0).max(1.0)
             );
-            components::modal_flow_workspace(ui,|workspace|{
+            crate::popup::modal_flow_workspace(ui,|workspace|{
                 close=workspace.header("발주서 상세","닫기",true);
                 workspace.body_region(|ui|{
                     let body=ui.available_rect_before_wrap();

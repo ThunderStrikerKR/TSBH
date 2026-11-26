@@ -233,13 +233,13 @@ impl ClientChooser {
             theme::CLIENT_CHOOSER_DIALOG_HEIGHT
                 .min((work_area.height()-gutter).max(1.0))
         );
-        components::modal_window(ctx,"거래처 찾기","egui-reception-client-chooser",work_area)
+        crate::popup::modal_window(ctx,"거래처 찾기","egui-reception-client-chooser",work_area)
             .fixed_size(dialog_size)
             .show(ctx,|ui|{
-                components::modal_flow_workspace(ui,|master|{
+                crate::popup::modal_flow_workspace(ui,|master|{
                     if master.header("거래처 찾기","닫기",true){is_open=false;}
                     master.framed_region(|workspace|{
-                    components::modal_master_body_section(
+                    crate::popup::modal_master_body_section(
                         workspace,"거래처 검색",|search_panel|{
                             let response=search_panel.add_enabled_ui(true,|field|{
                                 let width=field.available_width();
@@ -258,7 +258,7 @@ impl ClientChooser {
                         }
                     );
                     workspace.add_space(theme::SPACE_12);
-                    components::modal_master_body_section(
+                    crate::popup::modal_master_body_section(
                         workspace,"검색 결과",|results_panel|{
                             crate::table::management_table_container_style(results_panel);
                             // Errors belong to the shared floating toast,

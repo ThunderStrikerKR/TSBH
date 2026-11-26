@@ -736,7 +736,7 @@ impl FreightManager {
         let page_origin_y=ui.cursor().top();
         // Non-floating, always legible scrollbar geometry for every freight
         // management tab. This is scoped to the freight page, not global nav.
-        ui.spacing_mut().scroll=theme::management_scroll_style();
+        ui.spacing_mut().scroll=crate::scrollbar::management_scroll_style();
         self.poll(ui.ctx().clone());
         crate::floating_notice::sync(
             ui.ctx(),"freight.result","freight.action",
@@ -809,13 +809,13 @@ impl FreightManager {
                     for label in [
                         "등록 상품","그룹 지정 완료","그룹 미지정","배송 그룹"
                     ]{
-                        components::management_summary_card_value(strip,label,"—");
+                        crate::card::management_summary_card_value(strip,label,"—");
                     }
                 });
             });
             ui.add_space(theme::SPACE_12);
-            components::align_management_primary_card(ui,page_origin_y);
-            components::management_pending_primary_card(ui);
+            crate::card::align_management_primary_card(ui,page_origin_y);
+            crate::card::management_pending_primary_card(ui);
             return;
         };
         let shipping = &state["shipping"];
@@ -847,7 +847,7 @@ impl FreightManager {
         ui.add_space(theme::SPACE_12);
         // Keep the approved Freight Assignment as the layout reference,
         // including when the four KPIs wrap in narrower workspaces.
-        components::align_management_primary_card(ui,page_origin_y);
+        crate::card::align_management_primary_card(ui,page_origin_y);
         let enabled=self.gateway.shipping_write_enabled()&&self.write_receiver.is_none();
         let mut action:Option<(String,Value)>=None;
         // The assignment tab owns its own scrollable *rows*. Do not wrap
@@ -878,7 +878,7 @@ impl FreightManager {
                     if SHOW_PREVIOUS_GROUP_FREIGHT_HISTORY {
                         // Only a deliberately restored multi-card report may
                         // scroll the full page. This feature is currently off.
-                        components::scroll_area(components::ScrollAxes::Vertical)
+                        crate::scrollbar::scroll_area(crate::scrollbar::ScrollAxes::Vertical)
                             .id_salt(("freight-management",self.tab as u8))
                             .auto_shrink([false,false])
                             .show(ui,|scroll|Self::show_history(
@@ -912,9 +912,9 @@ impl FreightManager {
             let mut close_delete=false;
             let mut close_product_reset=false;
             if self.tab==FreightTab::Rates && self.create_group_open {
-                components::modal_backdrop(ctx,"freight-create-backdrop",false);
-                components::show_decision_window(ctx,"배송 그룹 추가","freight-create",area,|modal|{
-                    components::decision_workspace(modal,|decision|{
+                crate::popup::modal_backdrop(ctx,"freight-create-backdrop",false);
+                crate::popup::show_decision_window(ctx,"배송 그룹 추가","freight-create",area,|modal|{
+                    crate::popup::decision_workspace(modal,|decision|{
                         if decision.header("배송 그룹 추가","취소",enabled
                         ){close_create=true;}
                         decision.body(|modal|{
@@ -940,9 +940,9 @@ impl FreightManager {
                     });
                 });
             }else if let Some((id,name))=self.rename_target.as_mut(){
-                components::modal_backdrop(ctx,"freight-rename-backdrop",false);
-                components::show_decision_window(ctx,"배송 그룹명","freight-rename",area,|modal|{
-                        components::decision_workspace(modal,|decision|{
+                crate::popup::modal_backdrop(ctx,"freight-rename-backdrop",false);
+                crate::popup::show_decision_window(ctx,"배송 그룹명","freight-rename",area,|modal|{
+                        crate::popup::decision_workspace(modal,|decision|{
                             if decision.header("배송 그룹명","취소",enabled){
                                 close_rename=true;
                             }
@@ -963,13 +963,13 @@ impl FreightManager {
                 let affected=products.iter().copied().filter(|p|
                     text(p,"shippingGroupId")==id.as_str()).collect::<Vec<_>>();
                 let name=group_name(&groups,id);
-                components::modal_backdrop(ctx,"freight-delete-backdrop",false);
-                components::show_decision_window(ctx,"배송 그룹 삭제","freight-delete",area,|modal|{
-                        components::decision_workspace(modal,|decision|{
+                crate::popup::modal_backdrop(ctx,"freight-delete-backdrop",false);
+                crate::popup::show_decision_window(ctx,"배송 그룹 삭제","freight-delete",area,|modal|{
+                        crate::popup::decision_workspace(modal,|decision|{
                             if decision.header("배송 그룹 삭제","취소",enabled
                             ){close_delete=true;}
                             decision.framed_body(|workspace|{
-                                components::modal_master_body_section(
+                                crate::popup::modal_master_body_section(
                                     workspace,"삭제 대상",|details|{
                                     details.label(typography::section_heading(name));
                                     if !affected.is_empty(){
@@ -977,7 +977,7 @@ impl FreightManager {
                                             "사용 중인 상품이 있습니다. 상품을 다른 그룹으로 옮기거나 미지정으로 변경한 후 삭제해야 합니다.",
                                             theme::SELECTED_ORDER
                                         ));
-                                        components::scroll_area(components::ScrollAxes::Vertical)
+                                        crate::scrollbar::scroll_area(crate::scrollbar::ScrollAxes::Vertical)
                                             .id_salt("freight-delete-affected-products")
                                             .max_height((area.height()-310.0).max(70.0)
                                                 .min(theme::MANAGEMENT_MODAL_BODY_MAX_HEIGHT))
@@ -1014,9 +1014,9 @@ impl FreightManager {
                         });
                     });
             }else if let Some(pid)=self.product_reset_target.as_ref(){
-                components::modal_backdrop(ctx,"freight-reset-backdrop",false);
-                components::show_decision_window(ctx,"운임 기준 변경","freight-product-reset",area,|dialog|{
-                    components::decision_workspace(dialog,|decision|{
+                crate::popup::modal_backdrop(ctx,"freight-reset-backdrop",false);
+                crate::popup::show_decision_window(ctx,"운임 기준 변경","freight-product-reset",area,|dialog|{
+                    crate::popup::decision_workspace(dialog,|decision|{
                         if decision.header("운임 기준 변경","취소",enabled
                         ){close_product_reset=true;}
                         decision.body(|dialog|{
@@ -1049,20 +1049,20 @@ impl FreightManager {
             let mut close_editor=false;
             let mut close_basis=false;
             if let Some(editor)=self.rate_editor.as_mut(){
-                components::modal_backdrop(ctx,"freight-rate-backdrop",false);
-                components::modal_window(ctx,if editor.product{"기본 운임 설정"}else{"배송 그룹 운임 수정"},"freight-rate-modal",area)
+                crate::popup::modal_backdrop(ctx,"freight-rate-backdrop",false);
+                crate::popup::modal_window(ctx,if editor.product{"기본 운임 설정"}else{"배송 그룹 운임 수정"},"freight-rate-modal",area)
                     .resizable(false).show(ctx,|modal|{
 
                         let title=if editor.product{
                             "기본 운임 설정"
                         }else{"배송 그룹 운임 수정"};
-                        components::modal_flow_workspace(modal,|workspace|{
+                        crate::popup::modal_flow_workspace(modal,|workspace|{
                             if workspace.header(title,"취소",enabled
                             ){
                                 if editor.dirty(){editor.ask_discard=true;}
                                 else{close_editor=true;}
                             }
-                            workspace.scroll_region("freight-rate-editor-scroll",components::modal_editor_body_max_height(area.height()),|body|{
+                            workspace.scroll_region("freight-rate-editor-scroll",crate::popup::modal_editor_body_max_height(area.height()),|body|{
                                         Self::rate_dialog(body,editor,enabled);
                             });
                             workspace.footer_single(|bar|{
@@ -1081,9 +1081,9 @@ impl FreightManager {
                         });
                     });
                 if editor.ask_discard {
-                    components::modal_backdrop(ctx,"freight-discard-backdrop",true);
-                    components::show_decision_window(ctx,"저장하지 않은 운임","freight-discard-confirm",area,|dialog|{
-                        components::decision_workspace(dialog,|decision|{
+                    crate::popup::modal_backdrop(ctx,"freight-discard-backdrop",true);
+                    crate::popup::show_decision_window(ctx,"저장하지 않은 운임","freight-discard-confirm",area,|dialog|{
+                        crate::popup::decision_workspace(dialog,|decision|{
                             if decision.header("저장하지 않은 운임","취소",enabled
                             ){editor.ask_discard=false;}
                             decision.body(|dialog|{
@@ -1115,9 +1115,9 @@ impl FreightManager {
                 }
             }else if let Some(target)=self.basis_target.as_ref(){
                 let name=target.as_deref().map(|id|group_name(&groups,id));
-                components::modal_backdrop(ctx,"freight-basis-backdrop",false);
-                components::show_decision_window(ctx,"운임 기준 변경","freight-basis-confirm",area,|dialog|{
-                    components::decision_workspace(dialog,|decision|{
+                crate::popup::modal_backdrop(ctx,"freight-basis-backdrop",false);
+                crate::popup::show_decision_window(ctx,"운임 기준 변경","freight-basis-confirm",area,|dialog|{
+                    crate::popup::decision_workspace(dialog,|decision|{
                         if decision.header("운임 기준 변경","취소",enabled
                         ){close_basis=true;}
                         decision.body(|dialog|{
@@ -1156,9 +1156,9 @@ impl FreightManager {
             let mut close=false;
             if let Some((id,amount))=self.exception_target.as_mut(){
                 let ctx=ui.ctx();
-                components::modal_backdrop(ctx,"freight-exception-backdrop",false);
-                components::show_decision_window(ctx,"새로 확인된 청구 운임 (원)","freight-exception",ui.max_rect(),|dialog|{
-                    components::decision_workspace(dialog,|decision|{
+                crate::popup::modal_backdrop(ctx,"freight-exception-backdrop",false);
+                crate::popup::show_decision_window(ctx,"새로 확인된 청구 운임 (원)","freight-exception",ui.max_rect(),|dialog|{
+                    crate::popup::decision_workspace(dialog,|decision|{
                         if decision.header("새로 확인된 청구 운임 (원)","취소",enabled
                         ){close=true;}
                         decision.body(|dialog|{
@@ -1188,10 +1188,10 @@ impl FreightManager {
             let mut save=false;
             let can_save=self.can_save_dirty();
             let ctx=ui.ctx();
-            components::modal_backdrop(ctx,"freight-tab-leave-backdrop",
+            crate::popup::modal_backdrop(ctx,"freight-tab-leave-backdrop",
                 self.rate_editor.is_some());
-            components::show_decision_window(ctx,"저장하지 않은 변경사항","freight-tab-leave",ui.max_rect(),|dialog|{
-                components::decision_workspace(dialog,|decision|{
+            crate::popup::show_decision_window(ctx,"저장하지 않은 변경사항","freight-tab-leave",ui.max_rect(),|dialog|{
+                crate::popup::decision_workspace(dialog,|decision|{
                     cancel=decision.header("저장하지 않은 변경사항","취소",enabled
                     );
                     decision.body(|dialog|{
@@ -1245,9 +1245,9 @@ impl FreightManager {
         // Full-height SINGLE table: preserve 12pt padding on all four sides.
         // The data viewport AND the scrollbar rail stop above the same
         // bottom inset. Neither may reach the card's outer border.
-        let card_min_height=components::management_master_table_card_min_inner_height(ui);
-        components::measured_management_master_card(ui,|section| {
-            components::fill_management_primary_card(section,card_min_height);
+        let card_min_height=crate::card::management_master_table_card_min_inner_height(ui);
+        crate::card::measured_management_master_card(ui,|section| {
+            crate::card::fill_management_primary_card(section,card_min_height);
             // Assignment is one continuous zebra table. The standard solid
             // scrollbar reserves 4pt of margin on EACH side of its rail,
             // creating a dark detached strip after the "설정" column.
@@ -1480,7 +1480,7 @@ impl FreightManager {
             // Preserve the row viewport and card's full 16pt lower inset.
             // The rail connects to the header and extends 4pt past rows,
             // stopping 12pt short of the outer card border.
-            let scroll_max_height=components::management_single_list_scroll_height(
+            let scroll_max_height=crate::scrollbar::management_single_list_scroll_height(
                 section,card_min_height,0.0
             );
             let scroll_track=crate::table::management_table_scroll_track_rect(
@@ -1517,7 +1517,7 @@ impl FreightManager {
                         let mut checked=selected.contains(id);
                         // Shared centered checkbox: same placement as Excel
                         // regardless of each table's first-column width.
-                        if components::management_table_checkbox(
+                        if crate::checkbox::management_table_checkbox(
                             row,cells[0],cells[0],&mut checked,enabled,
                             ("freight-checkbox",id)
                         ).changed(){
@@ -1777,7 +1777,7 @@ impl FreightManager {
             // It replaces the redundant checkbox in the bulk-action toolbar.
             let mut all_filtered=!filtered.is_empty()
                 && filtered.iter().all(|p|selected.contains(text(p,"id")));
-            if components::management_table_checkbox(
+            if crate::checkbox::management_table_checkbox(
                 section,header_cells[0],header_text_rect,
                 &mut all_filtered,enabled&&!filtered.is_empty(),
                 "freight-select-all-filtered"
@@ -1873,9 +1873,9 @@ impl FreightManager {
         let group_rules=&projection["editableRules"];
         // A single group table replaces the duplicate group cards + audit grid.
         // Its actions still use the original Rust write paths and modal editors.
-        let card_min_height=components::management_master_table_card_min_inner_height(ui);
-        components::measured_management_master_card(ui,|section| {
-            components::fill_management_primary_card(section,card_min_height);
+        let card_min_height=crate::card::management_master_table_card_min_inner_height(ui);
+        crate::card::measured_management_master_card(ui,|section| {
+            crate::card::fill_management_primary_card(section,card_min_height);
             // Search and group creation share one fixed 36pt toolbar.
             // The global rate-basis action is now on the dedicated Basis tab.
             let old_gap=crate::table::management_table_container_style(section);
@@ -1912,7 +1912,7 @@ impl FreightManager {
             let header_rect=rate_layout.header_rect;
             // No footer allocation for empty/search-miss states; their
             // persistent D-type message is painted in the data viewport.
-            let scroll_max_height=components::management_single_list_scroll_height(
+            let scroll_max_height=crate::scrollbar::management_single_list_scroll_height(
                 section,card_min_height,0.0
             );
             // Footer reservation determines viewport height, not rail offset.
@@ -2227,11 +2227,11 @@ impl FreightManager {
         ui:&mut Ui,shipping:&Value,enabled:bool,
         basis:&mut Option<Option<String>>,
     ){
-        let card_min_height=components::management_primary_card_min_inner_height(
+        let card_min_height=crate::card::management_primary_card_min_inner_height(
             ui,theme::SECTION_PADDING
         );
-        components::measured_management_section_card(ui,|section|{
-            components::fill_management_primary_card(section,card_min_height);
+        crate::card::measured_management_section_card(ui,|section|{
+            crate::card::fill_management_primary_card(section,card_min_height);
             section.label(typography::section_heading("전체 운임 기준"));
             section.add_space(theme::SPACE_12);
             let epoch=shipping["epoch"].as_i64().unwrap_or(1);
@@ -2269,14 +2269,14 @@ impl FreightManager {
         // history is explicitly restored, retain the multi-card behavior.
         let single_list=!SHOW_PREVIOUS_GROUP_FREIGHT_HISTORY;
         let card_min_height=if single_list{
-            components::management_master_table_card_min_inner_height(ui)
+            crate::card::management_master_table_card_min_inner_height(ui)
         }else{0.0};
         let frame=if single_list{
-            theme::management_master_table_frame()
-        }else{theme::section_frame()};
+            crate::card::management_master_table_frame()
+        }else{crate::card::section_frame()};
         let _history_card=frame.show(ui, |section| {
             if single_list{
-                components::fill_management_primary_card(section,card_min_height);
+                crate::card::fill_management_primary_card(section,card_min_height);
             }
             // A missing toolbar is represented by one shared 69pt master
             // transition, not an inert 36pt widget plus a second divider.
@@ -2415,7 +2415,7 @@ impl FreightManager {
         // so no empty block remains below the combination table.
         if SHOW_PREVIOUS_GROUP_FREIGHT_HISTORY {
             ui.add_space(theme::SPACE_12);
-            components::measured_management_section_card(ui,|section| {
+            crate::card::measured_management_section_card(ui,|section| {
                 section.label(typography::section_heading("이전 그룹 운임 기준"));
             components::section_divider(section);
             // Preserve the existing group-by-group expand/collapse behavior.
@@ -2541,7 +2541,7 @@ fn freight_history_table<const N:usize>(
     let header_rect=layout.header_rect;
     let scroll_max_height=if let Some(card_min_height)=single_list_card_min_height{
         // Same remaining-card-height calculation used by assignment/rates.
-        components::management_single_list_scroll_height(
+        crate::scrollbar::management_single_list_scroll_height(
             ui,card_min_height,0.0
         )
     }else{
@@ -2660,7 +2660,7 @@ fn freight_top_content<R>(ui:&mut Ui,add:impl FnOnce(&mut Ui)->R)->R{
 /// numeric-first: 28pt value, then a muted 13pt label, both centered.
 /// The card itself stays fixed at 228pt wide, with proportional internal spacing.
 fn summary(ui:&mut Ui,label:&str,count:usize){
-    components::management_summary_card(ui,label,count);
+    crate::card::management_summary_card(ui,label,count);
 }
 
 
@@ -2679,7 +2679,7 @@ mod rate_toolbar_tests{
         let mut measured=None;
         let _=ctx.run(input,|ctx|{
             egui::CentralPanel::default().show(ctx,|ui|{
-                theme::management_master_table_frame().show(ui,|section|{
+                crate::card::management_master_table_frame().show(ui,|section|{
                     section.spacing_mut().item_spacing.y=0.0;
                     let top=section.cursor().top();
                     let layout=crate::table::management_sticky_table_header_without_toolbar(

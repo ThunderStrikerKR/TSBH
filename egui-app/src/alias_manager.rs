@@ -265,9 +265,9 @@ impl AliasManager {
         let mut choose=None;
         self.poll_diagnostics();
         let warnings=Arc::clone(&self.warnings);
-        let card_min_height=components::management_master_table_card_min_inner_height(ui);
-        components::measured_management_master_card(ui,|card|{
-            components::fill_management_primary_card(card,card_min_height);
+        let card_min_height=crate::card::management_master_table_card_min_inner_height(ui);
+        crate::card::measured_management_master_card(ui,|card|{
+            crate::card::fill_management_primary_card(card,card_min_height);
             card.label(typography::section_heading("공통 / 거래처 별칭 관리"));
             card.add_space(theme::SPACE_8);
             card.label(typography::body(
@@ -334,7 +334,7 @@ impl AliasManager {
             // fixed 36pt register header and 10pt solid scroll rail.
             crate::table::management_table_container_style(card);
             crate::table::show(card,crate::table::Header::Register{primary:"별칭 / 적용 범위 / 연결 상품",action:"관리",action_width:132.0},|card,header|{
-            let scroll_height=components::management_single_list_scroll_height(
+            let scroll_height=crate::scrollbar::management_single_list_scroll_height(
                 card,card_min_height,0.0
             );
             let output=crate::table::register_rows(card,scroll_height,header.table_width,"alias-registered-list",|list|{
@@ -384,12 +384,12 @@ impl AliasManager {
         if self.product_search{
             let mut close=false;
             let mut chosen=None;
-            components::modal_backdrop(ctx,"alias-product-search-dim",false);
-            components::modal_window(ctx,"상품 검색","alias-product-search",work_area)
+            crate::popup::modal_backdrop(ctx,"alias-product-search-dim",false);
+            crate::popup::modal_window(ctx,"상품 검색","alias-product-search",work_area)
                 .default_width(theme::MODAL_DEFAULT_MAX_WIDTH.min(work_area.width()))
                 .show(ctx,|modal|{
 
-                    components::modal_flow_workspace(modal,|workspace|{
+                    crate::popup::modal_flow_workspace(modal,|workspace|{
                         if workspace.header("상품 검색","닫기",!busy){
                             close=true;
                         }
@@ -468,10 +468,10 @@ impl AliasManager {
                             self.request_picker(ctx);
                             let found=self.picker_result.clone();
                             components::section_divider(modal);
-                            let results_height=components::modal_list_max_height(
+                            let results_height=crate::popup::modal_list_max_height(
                                 modal,work_area.height(),theme::MANAGEMENT_MODAL_BODY_MAX_HEIGHT,false
                             );
-                            components::scroll_area(components::ScrollAxes::Vertical)
+                            crate::scrollbar::scroll_area(crate::scrollbar::ScrollAxes::Vertical)
                                 .id_salt("alias-product-results")
                                 .max_height(results_height)
                                 .show(modal,|results|{
@@ -527,9 +527,9 @@ impl AliasManager {
             let mut cancel=false;
             let mut discard=false;
             let mut save_now=false;
-            components::modal_backdrop(ctx,"alias-unsaved-dim",true);
-            components::show_decision_window(ctx,"상품 별칭","alias-unsaved-confirm",work_area,|dialog|{
-                components::decision_workspace(dialog,|decision|{
+            crate::popup::modal_backdrop(ctx,"alias-unsaved-dim",true);
+            crate::popup::show_decision_window(ctx,"상품 별칭","alias-unsaved-confirm",work_area,|dialog|{
+                crate::popup::decision_workspace(dialog,|decision|{
                     cancel=decision.header("상품 별칭","취소",!busy
                     );
                     decision.body(|dialog|{

@@ -11,6 +11,10 @@ mod window_state;
 mod components;
 mod table;
 mod button;
+mod checkbox;
+mod scrollbar;
+mod popup;
+mod card;
 mod input;
 mod dropdown;
 mod overlay;
@@ -4012,8 +4016,8 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
         let busy=self.vat_change.is_some();
         let mut cancel=false;
         let mut apply=false;
-        components::show_decision_window(ctx,"부가세 설정","egui-order-vat-settings",work_area,|ui|{
-            components::decision_workspace(ui,|decision|{
+        crate::popup::show_decision_window(ctx,"부가세 설정","egui-order-vat-settings",work_area,|ui|{
+            crate::popup::decision_workspace(ui,|decision|{
                 cancel=decision.header("부가세 설정","취소",!busy
                 );
                 decision.body(|ui|{
@@ -4039,7 +4043,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                         // not a separate 3-state mode. Their checked state
                         // always follows the visible recipient checkboxes.
                         let mut none=dialog.scope(&recipients)==VatScope::None;
-                        if components::checkbox(
+                        if crate::checkbox::checkbox(
                             row,&mut none,"전체 미적용",!busy
                         ).changed() && none {
                             // Unchecking an active global shortcut is a no-op.
@@ -4047,7 +4051,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                             dialog.set_all_checked(&recipients,false);
                         }
                         let mut all=dialog.scope(&recipients)==VatScope::All;
-                        if components::checkbox(
+                        if crate::checkbox::checkbox(
                             row,&mut all,"전체 적용",!busy
                         ).changed() && all {
                             dialog.set_all_checked(&recipients,true);
@@ -4060,9 +4064,9 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                     // The tinted bordered surface marks the exact scrollable region.
                     // Reserve five rows for short orders, expand to ten recipients,
                     // then scroll within the same surface for additional orders.
-                    theme::modal_nested_role_frame(theme::ModalNestedRole::RecipientChecklist)
+                    crate::popup::modal_nested_role_frame(crate::popup::ModalNestedRole::RecipientChecklist)
                         .show(ui,|panel|{
-                            components::scroll_area(components::ScrollAxes::Vertical)
+                            crate::scrollbar::scroll_area(crate::scrollbar::ScrollAxes::Vertical)
                                 .max_height(list_height)
                                 .auto_shrink([false,false])
                                 .id_salt("order-vat-select-recipients")
@@ -4080,7 +4084,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                             "{} · {}",index+1,
                                             if name.is_empty(){"수취인 확인"}else{name}
                                         );
-                                        if components::checkbox_list_row(
+                                        if crate::checkbox::checkbox_list_row(
                                             list,("order-vat-recipient",id),
                                             &mut checked,&label,!busy,
                                             theme::RECEPTION_VAT_LIST_ROW_HEIGHT
@@ -4144,15 +4148,15 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
             .and_then(|m|m.pointer("/model/rows"))
             .cloned().unwrap_or_else(||original.clone());
         let mut close=false;
-        components::modal_window(ctx,"최초 분석 및 수정 이력",
+        crate::popup::modal_window(ctx,"최초 분석 및 수정 이력",
             "reception-correction-history",work_area)
             .default_width(work_area.width().min(860.0))
             .show(ctx,|ui|{
 
-                components::modal_flow_workspace(ui,|workspace|{
+                crate::popup::modal_flow_workspace(ui,|workspace|{
                     close=workspace.header("최초 분석 및 수정 이력","닫기",true
                     );
-                    workspace.scroll_region("reception-correction-history-body",(work_area.height()*0.6).min(components::modal_body_height_budget(work_area.height(),false)),|body|{
+                    workspace.scroll_region("reception-correction-history-body",(work_area.height()*0.6).min(crate::popup::modal_body_height_budget(work_area.height(),false)),|body|{
                                 body.label(typography::section_heading("최초 분석"));
                                 body.add(egui::Label::new(
                                     typography::body(&serde_json::to_string_pretty(&original)
@@ -5094,10 +5098,10 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
         // The KakaoTalk dock is an externally owned foreground window.
         // Like every other modal, OCR must be centered inside the remaining
         // approved work area and must never overlap the KakaoTalk reserve.
-        let dialog_rect=components::modal_ocr_review_rect(work_area);
+        let dialog_rect=crate::popup::modal_ocr_review_rect(work_area);
         let dialog_size=dialog_rect.size();
         if let Some(review)=self.ocr_review.as_mut() {
-            components::modal_window(ctx,
+            crate::popup::modal_window(ctx,
                 "OCR 문자 인식 검토","egui-ocr-review",work_area
             )
                 .pivot(egui::Align2::LEFT_TOP)
@@ -5109,10 +5113,10 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                     // Paint clips are NOT layout measurements. During egui's
                     // window sizing pass an empty clip can collapse the body
                     // to 1pt, causing a -26pt image viewport and a panic.
-                    let body_size=components::modal_master_content_from_ui(
+                    let body_size=crate::popup::modal_master_content_from_ui(
                         ui.available_rect_before_wrap(),dialog_size
                     );
-                    if !components::modal_master_ocr_body_is_usable(body_size){
+                    if !crate::popup::modal_master_ocr_body_is_usable(body_size){
                         // Do not construct split viewports from tiny sizing
                         // frames. The next layout pass will have valid space.
                         ui.ctx().request_repaint();
@@ -5125,10 +5129,10 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                     // content rect above. Painting the split master inside an
                     // independent child prevents its positioned widgets from
                     // expanding Window::min_rect past the fixed lower edge.
-                    let mut master_ui=components::modal_master_overlay_ui(
+                    let mut master_ui=crate::popup::modal_master_overlay_ui(
                         ui,bounds,"ocr-review-fixed-master"
                     );
-                    let master=components::modal_master_layout(
+                    let master=crate::popup::modal_master_layout(
                         bounds,
                         theme::MODAL_MASTER_DESCRIPTIVE_HEADER_HEIGHT,
                         theme::MODAL_FOOTER_HEIGHT,
@@ -5138,16 +5142,16 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                     // same device-pixel grid. Fractional work-area sizes must
                     // not introduce fuzzy header rules or rounded corners.
                     let ppp=master_ui.ctx().pixels_per_point();
-                    let header_rect=components::modal_master_pixel_aligned_rect(
+                    let header_rect=crate::popup::modal_master_pixel_aligned_rect(
                         master.header,ppp
                     );
-                    let footer_rect=components::modal_master_pixel_aligned_rect(
+                    let footer_rect=crate::popup::modal_master_pixel_aligned_rect(
                         master.footer,ppp
                     );
-                    let compare_rect=components::modal_master_pixel_aligned_rect(
+                    let compare_rect=crate::popup::modal_master_pixel_aligned_rect(
                         master.workspace,ppp
                     );
-                    close=components::modal_master_header_in_rect(
+                    close=crate::popup::modal_master_header_in_rect(
                         &mut master_ui,header_rect,"OCR 문자 인식 검토",
                         "원본 이미지와 인식된 텍스트를 대조하고 오타를 수정한 뒤 반영하세요.",
                         "취소",true
@@ -5155,7 +5159,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
 
                     // Common popup master owns the ONE workspace frame and
                     // both divider lines. The OCR pane ratio is content-specific.
-                    let frame=components::modal_master_workspace_background(
+                    let frame=crate::popup::modal_master_workspace_background(
                         &master_ui,compare_rect,theme::MODAL_MASTER_WORKSPACE_TOOLBAR_HEIGHT,
                         Some(2.0/3.0)
                     );
@@ -5220,7 +5224,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                             toolbar.with_layout(
                                 Layout::right_to_left(Align::Center),
                                 |option|{
-                                    let response=components::checkbox(
+                                    let response=crate::checkbox::checkbox(
                                         option,
                                         &mut review.learned_analysis_enabled,
                                         "학습된 분석 사용 (시험 기능)",true
@@ -5335,7 +5339,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                             viewport.set_clip_rect(image_clip);
                             viewport.set_width(image_scroll_rect.width());
                             viewport.set_height(image_scroll_rect.height());
-                            let image_scroll=components::scroll_area(components::ScrollAxes::Both)
+                            let image_scroll=crate::scrollbar::scroll_area(crate::scrollbar::ScrollAxes::Both)
                                 .id_salt("ocr-original-image-scroll")
                                 .max_width(image_scroll_rect.width())
                                 .max_height(image_scroll_rect.height())
@@ -5412,13 +5416,13 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                     // The final master pass sits above both pane fills.
                     // Its flat, pixel-snapped dividers and single rounded
                     // outline repair the tiny overhangs and corner seams.
-                    components::modal_master_workspace_finish(
+                    crate::popup::modal_master_workspace_finish(
                         &master_ui,compare_rect,frame
                     );
 
                     let edited=review.edited_text.trim();
                     let valid=!edited.is_empty() && edited.chars().count()<=20_000;
-                    components::modal_master_footer_in_rect(
+                    crate::popup::modal_master_footer_in_rect(
                         &mut master_ui,footer_rect,|buttons|{
                             if crate::button::action(
                                 buttons,"적용",ButtonRole::Primary,valid
@@ -5492,11 +5496,11 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
             }
         }
         if self.discard_ocr_confirm {
-            components::modal_backdrop(
+            crate::popup::modal_backdrop(
                 ctx,"ocr-discard-nested-backdrop",true
             );
-            components::show_decision_window(ctx,"변경사항 확인","ocr-review-discard-confirm",work_area,|ui|{
-                components::decision_workspace(ui,|decision|{
+            crate::popup::show_decision_window(ctx,"변경사항 확인","ocr-review-discard-confirm",work_area,|ui|{
+                crate::popup::decision_workspace(ui,|decision|{
                     if decision.header("변경사항 확인","돌아가기",true
                     ) {
                         self.discard_ocr_confirm=false;
@@ -5540,8 +5544,8 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
         if self.pending_replace.is_none() { return; }
         let mut accept = false;
         let mut cancel = false;
-        components::show_decision_window(ctx,"발주원문 교체 확인","egui-replace-source-confirm",work_area,|ui|{
-                components::decision_workspace(ui,|decision|{
+        crate::popup::show_decision_window(ctx,"발주원문 교체 확인","egui-replace-source-confirm",work_area,|ui|{
+                crate::popup::decision_workspace(ui,|decision|{
                     cancel=decision.header("발주원문 교체 확인","취소",true
                     );
                     decision.body(|ui|{
@@ -6096,7 +6100,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                     };
                 if content_width > viewport_width + 0.5 {
                     // Small windows must still be able to reach every pane.
-                    components::scroll_area(components::ScrollAxes::Horizontal)
+                    crate::scrollbar::scroll_area(crate::scrollbar::ScrollAxes::Horizontal)
                         .scroll_source(egui::scroll_area::ScrollSource::SCROLL_BAR | egui::scroll_area::ScrollSource::MOUSE_WHEEL)
                         .id_salt("reception_four_columns")
                         .auto_shrink([false, false])
@@ -6283,7 +6287,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                             canvas.set_clip_rect(inner);
                             canvas.set_width(inner.width());
                             canvas.set_height(inner.height());
-                            components::scroll_area(components::ScrollAxes::Vertical)
+                            crate::scrollbar::scroll_area(crate::scrollbar::ScrollAxes::Vertical)
                                 .id_salt(("pending-hover-source-scroll",draft.id.as_str()))
                                 .max_height(inner.height())
                                 .auto_shrink([false,false])
@@ -6419,7 +6423,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                             canvas.set_clip_rect(inner);
                             canvas.set_width(inner.width());
                             canvas.set_height(inner.height());
-                            components::scroll_area(components::ScrollAxes::Vertical)
+                            crate::scrollbar::scroll_area(crate::scrollbar::ScrollAxes::Vertical)
                                 .id_salt(("workflow-source-lines",shipment.order_id.as_str()))
                                 .max_height(inner.height()).auto_shrink([false,false])
                                 .show(canvas,|content|{
@@ -6777,8 +6781,8 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                             editor_ui.set_clip_rect(clip);
                             editor_ui.set_width(viewport.width());
                             editor_ui.set_height(viewport.height());
-                            theme::source_document_frame().show(editor_ui, |document_ui| {
-                            components::scroll_area(components::ScrollAxes::Vertical)
+                            crate::card::source_document_frame().show(editor_ui, |document_ui| {
+                            crate::scrollbar::scroll_area(crate::scrollbar::ScrollAxes::Vertical)
                             .id_salt("source-editor-vertical-scroll")
                             // The frame border/padding occupies the outer
                             // editor slot; only the text contents scroll.
@@ -6982,7 +6986,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                 let balanced_gap = ((intake_height - clipboard_group_height
                     - manual_group_height - folder_group_height - dividers_height)
                     / 2.0).max(theme::SPACE_8);
-                components::scroll_area(components::ScrollAxes::Vertical)
+                crate::scrollbar::scroll_area(crate::scrollbar::ScrollAxes::Vertical)
                     .id_salt("source-intake-instructions")
                     .max_height(intake_height)
                     .auto_shrink([false, false])
@@ -7150,7 +7154,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
             let has_links=group.has_message_links();
             Self::section_with_header(ui,"복사용 자동 메시지",height,|header|{
                 let mut checked=include_link.get() && has_links;
-                if components::checkbox(header,&mut checked,"링크 포함",has_links).changed(){
+                if crate::checkbox::checkbox(header,&mut checked,"링크 포함",has_links).changed(){
                     include_link.set(checked);
                     header.ctx().data_mut(|d|d.insert_temp(link_preference,checked));
                 }
@@ -7182,7 +7186,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                             canvas.set_clip_rect(inner);
                             canvas.set_width(inner.width());
                             canvas.set_height(inner.height());
-                            components::scroll_area(components::ScrollAxes::Vertical)
+                            crate::scrollbar::scroll_area(crate::scrollbar::ScrollAxes::Vertical)
                                 .id_salt(("native-workflow-message",group.id.as_str()))
                                 .max_height(inner.height())
                                 .auto_shrink([false,false])
@@ -7276,7 +7280,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
         Self::section_with_header(ui, "복사용 자동 메시지", height, |ui| {
             if !awaiting_order {
                 let mut include_link = false;
-                components::checkbox(ui,&mut include_link,"링크 포함",false);
+                crate::checkbox::checkbox(ui,&mut include_link,"링크 포함",false);
             }
         }, |ui| {
             if awaiting_order { return; }
@@ -7423,7 +7427,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                     pane.set_width(review_rect.width());
                     pane.set_height(review_rect.height());
                     Self::section(pane,"확인할 내용",review_height,|ui|{
-                        components::scroll_area(components::ScrollAxes::Vertical)
+                        crate::scrollbar::scroll_area(crate::scrollbar::ScrollAxes::Vertical)
                             .max_height(components::docked_section_body_height(review_height))
                             .id_salt(("native-workflow-issues",group.id.as_str()))
                             .show(ui,|issues|{
@@ -7434,7 +7438,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                         Some("ERROR")=>theme::ReviewTone::Error,
                                         _=>theme::ReviewTone::Info,
                                     };
-                                    theme::review_issue_card(issues,tone,|content|{
+                                    crate::card::review_issue_card(issues,tone,|content|{
                                         content.add(egui::Label::new(typography::body(&label)
                                             .color(tone.text_color())).wrap());
                                         if let Some((target,origin))=workflow_board::missing_freight_target(group,issue,&ship.id){
@@ -7476,7 +7480,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                 header,name,index,count,confirmed_cell_idle
                             );
                         },|ui|{
-                        components::scroll_area(components::ScrollAxes::Vertical)
+                        crate::scrollbar::scroll_area(crate::scrollbar::ScrollAxes::Vertical)
                             .max_height(components::docked_section_body_height(recipient_height))
                             .auto_shrink([false,false])
                             .id_salt(("native-workflow-recipient-readonly",ship.id.as_str()))
@@ -7901,7 +7905,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                     pane.set_width(review_rect.width());
                     pane.set_height(review_rect.height());
                     Self::section(pane,"확인할 내용",review_height,|ui|{
-                        components::scroll_area(components::ScrollAxes::Vertical)
+                        crate::scrollbar::scroll_area(crate::scrollbar::ScrollAxes::Vertical)
                             .max_height(components::docked_section_body_height(review_height))
                             .show(ui,|issues|{
                                 if let Some(rows)=recognition.get("issues")
@@ -7941,7 +7945,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                             }
                         },|ui|{
                             if let Some(row)=recipient{
-                                components::scroll_area(components::ScrollAxes::Vertical)
+                                crate::scrollbar::scroll_area(crate::scrollbar::ScrollAxes::Vertical)
                                     .max_height(components::docked_section_body_height(recipient_height))
                                     .id_salt(("pending-hover-recipient",draft.id.as_str()))
                                     .auto_shrink([false,false])
@@ -8119,7 +8123,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                         self.review_panel.show_header_summary(header,analysis,visible_index);
                     }
                 }, |ui| {
-                    components::scroll_area(components::ScrollAxes::Vertical)
+                    crate::scrollbar::scroll_area(crate::scrollbar::ScrollAxes::Vertical)
                         .id_salt("reception-review-content-scroll")
                         .max_height(components::docked_section_body_height(review_height))
                         .auto_shrink([false, false])
@@ -8219,7 +8223,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                             let recipient_id = reception_service::text(recipient, "id");
                             // Match the React contact grid and allow only its
                             // content to scroll when the user narrows this pane.
-                            components::scroll_area(components::ScrollAxes::Vertical)
+                            crate::scrollbar::scroll_area(crate::scrollbar::ScrollAxes::Vertical)
                                 .id_salt("recognized-recipient-fields")
                                 .max_height(components::docked_section_body_height(recipient_height)
                                     .min(ui.available_height().max(0.0)))
@@ -9343,8 +9347,8 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                         target.clear();ack=false;
                     }
                     let applying=self.workflow_action.is_some();
-                    components::show_decision_window(ctx,"배송 건 묶음 관리","egui-workflow-group-manage",work_area,|ui|{
-                        components::decision_workspace(ui,|decision|{
+                    crate::popup::show_decision_window(ctx,"배송 건 묶음 관리","egui-workflow-group-manage",work_area,|ui|{
+                        crate::popup::decision_workspace(ui,|decision|{
                             close=decision.header("배송 건 묶음 관리","닫기",!applying);
                             decision.body(|ui|{
                                 let number=group.source_number.map(|n|format!("{n:03}"))
@@ -9361,7 +9365,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                             ("같은 최초 발주서의 묶음 선택",None)
                                         ]));
                                     let previous=target.clone();
-                                    components::modal_labeled_row_with_width(ui,"다시 묶을 대상",112.0,|line|{
+                                    crate::popup::modal_labeled_row_with_width(ui,"다시 묶을 대상",112.0,|line|{
                                         crate::dropdown::management_dropdown_values(
                                             line,&caption,
                                             line.available_width().max(1.0),!applying,|list|{
@@ -9376,13 +9380,13 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                             })
                                     });
                                     if target!=previous{ack=false;}
-                                    components::checkbox(
+                                    crate::checkbox::checkbox(
                                         ui,&mut ack,
                                         "기존 안내액 / 입금 배분 / 변경 합계를 확인했습니다.",
                                         !applying
                                     );
                                 }
-                                components::scroll_area(components::ScrollAxes::Vertical)
+                                crate::scrollbar::scroll_area(crate::scrollbar::ScrollAxes::Vertical)
                                     .id_salt("workflow-manage-confirmed-shipments")
                                     .max_height((work_area.height()*0.45).max(1.0))
                                     .auto_shrink([false,true])
@@ -9448,8 +9452,8 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
             WorkflowDialog::ManagePending(id)=>{
                 let draft=self.drafts.iter().find(|row|row.id==id).cloned();
                 if let Some(draft)=draft{
-                    components::show_decision_window(ctx,"배송 건 묶음 관리","egui-workflow-pending-manage",work_area,|ui|{
-                        components::decision_workspace(ui,|decision|{
+                    crate::popup::show_decision_window(ctx,"배송 건 묶음 관리","egui-workflow-pending-manage",work_area,|ui|{
+                        crate::popup::decision_workspace(ui,|decision|{
                             close=decision.header("배송 건 묶음 관리","닫기",true
                             );
                             decision.body(|ui|{
@@ -9459,7 +9463,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                 if rows.is_empty(){
                                     ui.label(typography::body("수취인 확인"));
                                 }
-                                components::scroll_area(components::ScrollAxes::Vertical)
+                                crate::scrollbar::scroll_area(crate::scrollbar::ScrollAxes::Vertical)
                                     .id_salt("workflow-manage-pending-recipients")
                                     .max_height((work_area.height()*0.45).max(1.0))
                                     .auto_shrink([false,true])
@@ -9496,8 +9500,8 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                     board.groups.iter().find(|g|g.id==id)
                 ).cloned();
                 if let Some(group)=group{
-                    components::show_decision_window(ctx,"주문 묶음 삭제","egui-workflow-delete-group",work_area,|ui|{
-                        components::decision_workspace(ui,|decision|{
+                    crate::popup::show_decision_window(ctx,"주문 묶음 삭제","egui-workflow-delete-group",work_area,|ui|{
+                        crate::popup::decision_workspace(ui,|decision|{
                             close=decision.header("주문 묶음 삭제","취소",true
                             );
                             decision.body(|ui|{
@@ -9524,8 +9528,8 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
             }
             WorkflowDialog::DeletePending(id)=>{
                 if self.drafts.iter().any(|d|d.id==id){
-                    components::show_decision_window(ctx,"미확정 발주서 삭제","egui-workflow-delete-pending",work_area,|ui|{
-                        components::decision_workspace(ui,|decision|{
+                    crate::popup::show_decision_window(ctx,"미확정 발주서 삭제","egui-workflow-delete-pending",work_area,|ui|{
+                        crate::popup::decision_workspace(ui,|decision|{
                             close=decision.header("미확정 발주서 삭제","취소",true
                             );
                             decision.body(|ui|{
@@ -9544,8 +9548,8 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                 }else{close=true;}
             }
             WorkflowDialog::PaymentNotice(id)=>{
-                components::show_decision_window(ctx,"계좌 안내 완료 확인","egui-workflow-payment-confirm",work_area,|ui|{
-                    components::decision_workspace(ui,|decision|{
+                crate::popup::show_decision_window(ctx,"계좌 안내 완료 확인","egui-workflow-payment-confirm",work_area,|ui|{
+                    crate::popup::decision_workspace(ui,|decision|{
                         close=decision.header("계좌 안내 완료 확인","돌아가기",true
                         );
                         decision.body(|ui|{
@@ -9647,8 +9651,8 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
             floating_notice::section(ui.ctx(),"reception.workflow.read",ui.clip_rect());
             // A continuous order-card list needs the same 10pt solid
             // scrollbar that management lists use, never a floating thumb.
-            ui.spacing_mut().scroll=theme::management_table_scroll_style();
-            components::scroll_area(components::ScrollAxes::Vertical)
+            ui.spacing_mut().scroll=crate::scrollbar::management_table_scroll_style();
+            crate::scrollbar::scroll_area(crate::scrollbar::ScrollAxes::Vertical)
                 .scroll_bar_visibility(
                     egui::containers::scroll_area::ScrollBarVisibility::VisibleWhenNeeded
                 )
@@ -9822,10 +9826,10 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
             self.freight_pending_page=None;
             return;
         }
-        components::modal_backdrop(ctx,"freight-global-leave-backdrop",
+        crate::popup::modal_backdrop(ctx,"freight-global-leave-backdrop",
             manager.has_rate_modal());
-        components::show_decision_window(ctx,"저장하지 않은 변경사항","freight-global-leave",work_area,|dialog|{
-            components::decision_workspace(dialog,|decision|{
+        crate::popup::show_decision_window(ctx,"저장하지 않은 변경사항","freight-global-leave",work_area,|dialog|{
+            crate::popup::decision_workspace(dialog,|decision|{
                 if decision.header("저장하지 않은 변경사항","취소",!manager.busy()
                 ){
                     self.freight_pending_page=None;
@@ -9872,9 +9876,9 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
             // A failed save keeps the editor open and the user's draft.
             self.settings_pending_save=false;
         }
-        components::modal_backdrop(ctx,"settings-page-leave-backdrop",false);
-        components::show_decision_window(ctx,"저장하지 않은 변경사항","settings-global-leave",work_area,|ui|{
-            components::decision_workspace(ui,|decision|{
+        crate::popup::modal_backdrop(ctx,"settings-page-leave-backdrop",false);
+        crate::popup::show_decision_window(ctx,"저장하지 않은 변경사항","settings-global-leave",work_area,|ui|{
+            crate::popup::decision_workspace(ui,|decision|{
                 if decision.header("저장하지 않은 변경사항","취소",!view.busy()
                 ){self.settings_pending_page=None;}
                 decision.body(|ui|{
@@ -10073,7 +10077,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                         );
                     };
                 if content_width > viewport_width + 0.5 {
-                    components::scroll_area(components::ScrollAxes::Horizontal)
+                    crate::scrollbar::scroll_area(crate::scrollbar::ScrollAxes::Horizontal)
                         .id_salt("kakao-management-shell")
                         .auto_shrink([false,false])
                         .show(ui,&mut draw_management);
@@ -10269,7 +10273,7 @@ impl eframe::App for BandoEgui {
                 self.edit_history_open || self.workflow_dialog.is_some()
                  || self.vat_dialog.is_some() || self.item_editor.is_some()
                  || self.product_picker.is_some())) {
-            components::modal_backdrop(
+            crate::popup::modal_backdrop(
                 ctx,"bando-workspace-modal-backdrop",false
             );
         }
@@ -10325,7 +10329,7 @@ impl eframe::App for BandoEgui {
                 }else if manager.has_excel_review(){
                     manager.show_excel_review(ctx,work_area,Arc::clone(&self.gateway));
                 }else if manager.has_modal(){
-                    components::modal_backdrop(
+                    crate::popup::modal_backdrop(
                         ctx,"client-manager-modal-backdrop",false
                     );
                     manager.show_editor(ctx,work_area,Arc::clone(&self.gateway));

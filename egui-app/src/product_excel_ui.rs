@@ -260,7 +260,7 @@ impl ProductExcelUi {
         // A reviewed workbook can contain up to 20,000 rows. Clone only its
         // Arc handle per frame, never the full validated JSON projection.
         let Some(review)=self.review.as_ref().cloned() else{return;};
-        components::modal_backdrop(ctx,"egui-product-excel-review-backdrop",false);
+        crate::popup::modal_backdrop(ctx,"egui-product-excel-review-backdrop",false);
         let missing=review[if self.client{"missing"}else{"missingProducts"}].as_u64().unwrap_or(0);
         let entity=self.entity();
         let title=if self.client{"거래처 전체 Excel 변경 검토"}else{"상품 전체 Excel 변경 검토"};
@@ -272,7 +272,7 @@ impl ProductExcelUi {
         let errors=review_count(&review,"ERROR");
         let mut close=false;
         let mut request_commit=false;
-        components::modal_window(ctx,title,
+        crate::popup::modal_window(ctx,title,
             if self.client{"egui-client-excel-review"}else{"egui-product-excel-review"},work_area)
             .default_width(work_area.width().min(1070.0))
             .show(ctx,|ui|{
@@ -280,12 +280,12 @@ impl ProductExcelUi {
                 let inner_width=(work_area.width()-2.0*(theme::MODAL_PANEL_PADDING_X
                     +theme::FRAME_STROKE_WIDTH)).max(1.0);
                 ui.set_min_width(inner_width.min(900.0));
-                components::modal_flow_workspace(ui,|workspace|{
+                crate::popup::modal_flow_workspace(ui,|workspace|{
                     close=workspace.header(title,"취소",!self.busy()&&!self.confirming
                     );
                     if self.confirming{workspace.disable();}
                     workspace.scroll_region("product-excel-review-body",
-                        components::modal_editor_body_max_height(work_area.height()),|ui|{
+                        crate::popup::modal_editor_body_max_height(work_area.height()),|ui|{
                         ui.label(typography::table_cell(&self.filename));
                         ui.horizontal_wrapped(|counts|{
                             for (title,value) in [
@@ -341,7 +341,7 @@ impl ProductExcelUi {
                         ui.label(typography::caption(
                             if self.client{"기존 거래처 ID, 특수 단가 및 주문 이력을 유지합니다. 누락 행은 삭제하지 않습니다."}else{"홈페이지 등록 여부와 관계없이 신규 등록 및 수정할 수 있습니다. 기존 상품 ID와 가격 기록 ID, 주문 이력, 이미지 및 홈페이지 연결 정보는 보존됩니다."}
                         ));
-                        components::checkbox(
+                        crate::checkbox::checkbox(
                             ui,&mut self.approved,
                             "Excel 변경사항과 오류를 확인했고, 누락 행은 보존한 채 변경사항만 반영하는 데 동의합니다.",
                             true
@@ -363,11 +363,11 @@ impl ProductExcelUi {
         if close{self.dismiss();}
         if request_commit{self.confirming=true;}
         if self.confirming{
-            components::modal_backdrop(ctx,"egui-product-excel-confirm-backdrop",true);
+            crate::popup::modal_backdrop(ctx,"egui-product-excel-confirm-backdrop",true);
             let mut cancel=false;
             let mut approve=false;
-            components::show_decision_window(ctx,confirm_title,if self.client{"egui-client-excel-confirm"}else{"egui-product-excel-confirm"},work_area,|modal|{
-                components::decision_workspace(modal,|decision|{
+            crate::popup::show_decision_window(ctx,confirm_title,if self.client{"egui-client-excel-confirm"}else{"egui-product-excel-confirm"},work_area,|modal|{
+                crate::popup::decision_workspace(modal,|decision|{
                     cancel=decision.header(confirm_title,"취소",!self.busy()
                     );
                     decision.body(|modal|{
@@ -643,7 +643,7 @@ mod tests {
         let source=include_str!("product_excel_ui.rs");
         let production=components::production_source_for_contract(source);
         assert!(production.contains("crate::table::management_readonly_table("));
-        assert!(production.contains("components::checkbox("));
+        assert!(production.contains("crate::checkbox::checkbox("));
         assert!(!production.contains("egui::ScrollArea::both()"));
         assert!(!production.contains("table.horizontal(|line|"));
         assert!(!production.contains("ui.checkbox("));

@@ -1135,18 +1135,18 @@ impl OrderHistoryManager {
 
     pub fn show_memo_modal(&mut self,ctx:&egui::Context,work_area:Rect){
         if self.memo_editor.is_none(){return;}
-        components::modal_backdrop(ctx,"history-memo-modal-backdrop",false);
+        crate::popup::modal_backdrop(ctx,"history-memo-modal-backdrop",false);
         let busy=self.memo_save_job.is_some();
         let writable=self.gateway.shipment_memo_write_enabled();
         let mut cancel=false;
         let mut save=false;
-        components::modal_window(ctx,"관리 메모","history-shipment-memo",work_area)
+        crate::popup::modal_window(ctx,"관리 메모","history-shipment-memo",work_area)
             .default_width(520.0_f32.min(work_area.width()))
             .show(ctx,|ui|{
 
-                components::modal_flow_workspace(ui,|workspace|{
+                crate::popup::modal_flow_workspace(ui,|workspace|{
                     cancel=workspace.header("관리 메모","취소",!busy);
-                    let Some(can_save)=workspace.scroll_region("history-memo-body",components::modal_editor_body_max_height(work_area.height()),|ui|{
+                    let Some(can_save)=workspace.scroll_region("history-memo-body",crate::popup::modal_editor_body_max_height(work_area.height()),|ui|{
                             if let Some(editor)=self.memo_editor.as_mut(){
                             ui.label(typography::caption(&format!(
                                 "마지막 갱신: {}",
@@ -1224,7 +1224,7 @@ impl OrderHistoryManager {
 
     pub fn show_page(&mut self,ui:&mut Ui){
         let page_origin_y=ui.cursor().top();
-        ui.spacing_mut().scroll=theme::management_scroll_style();
+        ui.spacing_mut().scroll=crate::scrollbar::management_scroll_style();
         self.poll_memo_save(ui.ctx().clone());
         self.poll();
         components::management_page_title_top_gap(ui);
@@ -1238,13 +1238,13 @@ impl OrderHistoryManager {
         // area below this genuine title, without creating placeholder cards.
         ui.add_space(theme::SPACE_12);
         let mut changed=false;
-        components::align_management_primary_card(ui,page_origin_y);
+        crate::card::align_management_primary_card(ui,page_origin_y);
         // Same full-height single-table card as Freight Assignment:
         // preserve 12pt clearance on all four sides and keep both the
         // scrolling rows and the native rail within the inner card.
-        let card_min_height=components::management_master_table_card_min_inner_height(ui);
-        components::measured_management_master_card(ui,|section|{
-            components::fill_management_primary_card(section,card_min_height);
+        let card_min_height=crate::card::management_master_table_card_min_inner_height(ui);
+        crate::card::measured_management_master_card(ui,|section|{
+            crate::card::fill_management_primary_card(section,card_min_height);
             // Use the identical zero-implicit-gap toolbar-to-header
             // allocator as Freight Assignment. Do not inject extra space
             // or move the header independently on either screen.
@@ -1369,7 +1369,7 @@ impl OrderHistoryManager {
             // Keep the body 16pt above the card's lower border. Only the
             // rail extends 4pt into the inset, leaving 12pt below it;
             // the scroll viewport and the displayed data rows are unchanged.
-            let scroll_max_height=components::management_single_list_scroll_height(
+            let scroll_max_height=crate::scrollbar::management_single_list_scroll_height(
                 section,card_min_height,0.0
             );
             let scroll_bounds=section.available_rect_before_wrap();

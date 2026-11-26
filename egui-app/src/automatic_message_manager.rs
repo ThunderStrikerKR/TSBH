@@ -438,7 +438,7 @@ impl AutomaticMessageManager {
             settings_help::icon(heading,"상황별 자동 메시지");
         });
         ui.add_space(theme::SPACE_8);
-        components::scroll_area(components::ScrollAxes::Vertical).id_salt("auto-template-types")
+        crate::scrollbar::scroll_area(crate::scrollbar::ScrollAxes::Vertical).id_salt("auto-template-types")
             .scroll_bar_visibility(egui::containers::scroll_area::ScrollBarVisibility::VisibleWhenNeeded)
             .max_height(Self::list_height(ui))
             .show(ui,|list|{
@@ -473,7 +473,7 @@ impl AutomaticMessageManager {
         );
         ui.add_space(theme::SPACE_8);
         let visible=self.provisional_visible();
-        components::scroll_area(components::ScrollAxes::Vertical).id_salt("provisional-notice-products")
+        crate::scrollbar::scroll_area(crate::scrollbar::ScrollAxes::Vertical).id_salt("provisional-notice-products")
             .scroll_bar_visibility(egui::containers::scroll_area::ScrollBarVisibility::VisibleWhenNeeded)
             .max_height((Self::list_height(ui)-theme::INPUT_HEIGHT
                 -theme::SPACE_24).max(1.0))
@@ -538,7 +538,7 @@ impl AutomaticMessageManager {
         });
         ui.add_space(theme::SPACE_8);
         ui.label(typography::subsection_heading("예시 미리보기"));
-        theme::preview_surface_frame().show(ui,|preview|{
+        crate::card::preview_surface_frame().show(ui,|preview|{
                 preview.label(typography::body(&preview_message(def,&content)));
             });
     }
@@ -576,7 +576,7 @@ impl AutomaticMessageManager {
             }
             ui.add_space(theme::SPACE_8);
             ui.label(typography::subsection_heading("계좌안내에 표시될 위치"));
-            theme::preview_surface_frame().show(ui,|preview|{
+            crate::card::preview_surface_frame().show(ui,|preview|{
                     for item in [
                         "상품명, 수량, 금액",
                         "운임 및 부가세",
@@ -614,8 +614,8 @@ impl AutomaticMessageManager {
         );
         ui.add_space(theme::SPACE_12);
         if !self.loaded{
-            components::align_management_primary_card(ui,page_origin_y);
-            components::management_pending_primary_card(ui);
+            crate::card::align_management_primary_card(ui,page_origin_y);
+            crate::card::management_pending_primary_card(ui);
             return;
         }
         let mut target=tab.map(|index|Destination::Subtab(
@@ -624,7 +624,7 @@ impl AutomaticMessageManager {
         // Two functional regions, matching the original left-list/right-edit
         // workspace. Do not import Freight's large KPI cards into this editor.
         // The extra message sub-tab stays above the shared primary card line.
-        components::align_management_primary_card(ui,page_origin_y);
+        crate::card::align_management_primary_card(ui,page_origin_y);
         let width=ui.available_width().max(1.0);
         let gap=theme::SPACE_12;
         let left_width=(width*0.35).clamp(250.0,theme::FAMILY_LIST_WIDTH)
@@ -642,8 +642,8 @@ impl AutomaticMessageManager {
                 Vec2::new(left_width,height),Layout::top_down(Align::Min),
                 |list|{
                     list.set_width(left_width);
-                    components::measured_management_section_card(list,|body|{
-                        components::fill_management_primary_card(body,card_min_height);
+                    crate::card::measured_management_section_card(list,|body|{
+                        crate::card::fill_management_primary_card(body,card_min_height);
                         if self.section==Section::General{
                             self.general_list(body,&mut target);
                         }else{self.provisional_list(body,&mut target);}
@@ -654,9 +654,9 @@ impl AutomaticMessageManager {
                 Vec2::new(right_width,height),Layout::top_down(Align::Min),
                 |editor|{
                     editor.set_width(right_width);
-                    components::measured_management_section_card(editor,|body|{
-                        components::fill_management_primary_card(body,card_min_height);
-                        components::scroll_area(components::ScrollAxes::Vertical)
+                    crate::card::measured_management_section_card(editor,|body|{
+                        crate::card::fill_management_primary_card(body,card_min_height);
+                        crate::scrollbar::scroll_area(crate::scrollbar::ScrollAxes::Vertical)
                             .id_salt("automatic-message-editor-fields")
                             .max_height((height-theme::INPUT_HEIGHT
                                 -theme::SPACE_24*2.0).max(1.0))
@@ -699,9 +699,9 @@ impl AutomaticMessageManager {
     ){
         let Some(destination)=self.pending.clone()else{return;};
         let mut cancel=false;let mut discard=false;let mut save=false;
-        components::modal_backdrop(ctx,"message-editor-leave-backdrop",false);
-        components::show_decision_window(ctx,"저장하지 않은 변경사항","message-editor-leave",area,|dialog|{
-            components::decision_workspace(dialog,|decision|{
+        crate::popup::modal_backdrop(ctx,"message-editor-leave-backdrop",false);
+        crate::popup::show_decision_window(ctx,"저장하지 않은 변경사항","message-editor-leave",area,|dialog|{
+            crate::popup::decision_workspace(dialog,|decision|{
                 cancel=decision.header("저장하지 않은 변경사항","취소",!self.busy()
                 );
                 decision.body(|dialog|{

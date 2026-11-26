@@ -206,7 +206,7 @@ fn kpi(ui:&mut Ui,label:&str,value:&str){
         egui::Layout::top_down(Align::Min),
         |slot|{
             slot.set_width(width);
-            theme::freight_summary_frame().show(slot,|cell|{
+            crate::card::freight_summary_frame().show(slot,|cell|{
                 cell.spacing_mut().item_spacing.y=0.0;
                 let content_width=width-2.0*theme::FREIGHT_SUMMARY_PADDING_X
                     -2.0*theme::FRAME_STROKE_WIDTH;
@@ -417,7 +417,7 @@ impl DailySettlementManager{
     }
     pub fn show_page(&mut self,ui:&mut Ui){
         let page_origin_y=ui.cursor().top();
-        ui.spacing_mut().scroll=theme::management_scroll_style();
+        ui.spacing_mut().scroll=crate::scrollbar::management_scroll_style();
         self.poll();
         components::management_page_title_top_gap(ui);
         components::management_top_content(ui,|top|{
@@ -451,7 +451,7 @@ impl DailySettlementManager{
             });
         });
         ui.add_space(theme::SPACE_12);
-        components::align_management_primary_card(ui,page_origin_y);
+        crate::card::align_management_primary_card(ui,page_origin_y);
         let missing=Value::Null;
         let mut visible_report=self.report.as_ref();
         let mut date_changed=false;
@@ -468,12 +468,12 @@ impl DailySettlementManager{
             -ui.spacing().scroll.allocated_width()
             -2.0*theme::SECTION_PADDING
             -2.0*theme::FRAME_STROKE_WIDTH).max(1.0);
-        components::scroll_area(components::ScrollAxes::Vertical)
+        crate::scrollbar::scroll_area(crate::scrollbar::ScrollAxes::Vertical)
             .id_salt("daily-settlement-sections")
             .max_width(section_viewport_width)
             .auto_shrink([false,false])
             .show(ui,|body|{
-                components::measured_management_section_card(body,|section|{
+                crate::card::measured_management_section_card(body,|section|{
                     // Keep the section inside the bounded vertical viewport;
                     // its report rows own their independent horizontal scroll.
                     section.set_width(section_inner_max_width);
@@ -559,7 +559,7 @@ impl DailySettlementManager{
                 let report=visible_report.unwrap_or(&missing);
                 let payments=rows(&report["paymentRows"]);
                 body.add_space(theme::SPACE_12);
-                components::measured_management_section_card(body,|section|{
+                crate::card::measured_management_section_card(body,|section|{
                     // Keep the section inside the bounded vertical viewport;
                     // its report rows own their independent horizontal scroll.
                     section.set_width(section_inner_max_width);
@@ -613,7 +613,7 @@ impl DailySettlementManager{
                     );
                 });
                 body.add_space(theme::SPACE_12);
-                components::measured_management_section_card(body,|review|{
+                crate::card::measured_management_section_card(body,|review|{
                     review.set_width(section_inner_max_width);
                     review.set_max_width(section_inner_max_width);
                     review.label(typography::section_heading("결산 검토 사항"));

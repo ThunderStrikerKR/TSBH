@@ -324,7 +324,7 @@ fn paint_manual_source_drag_preview(
     let translation=desired_block_min-original_bounds.min;
     let galley_pos=egui::Pos2::ZERO+translation;
     let Some(painter)=crate::overlay::drag_painter(ctx,
-        components::modal_window_layer("bando-native-manual-classification"),
+        crate::popup::modal_window_layer("bando-native-manual-classification"),
         egui::Id::new("manual-source-drag-preview")) else{return;};
     for rect in &original_geometry.rects {
         painter.rect_filled(
@@ -1023,7 +1023,7 @@ fn manual_recipient_card_height()->f32{
 }
 
 fn manual_workspace_header_height()->f32{
-    components::modal_master_header_with_toolbar_height()
+    crate::popup::modal_master_header_with_toolbar_height()
 }
 
 fn manual_workspace_columns_height()->f32{
@@ -1930,12 +1930,12 @@ impl ManualWorkspace {
         let mut add_product:Option<String>=None;
         let mut remove_item:Option<(String,String)>=None;
         let workspace_title=if self.direct_input{"직접 입력"}else{"수동 분류"};
-        components::modal_window(ctx,workspace_title,"bando-native-manual-classification",work_area)
+        crate::popup::modal_window(ctx,workspace_title,"bando-native-manual-classification",work_area)
             .fixed_size(manual_workspace_dialog_size(work_area))
             .show(ctx,|ui|{
                 crate::floating_notice::section(ctx,"reception.manual",ui.available_rect_before_wrap());
 
-                components::modal_flow_workspace(ui,|workspace|{
+                crate::popup::modal_flow_workspace(ui,|workspace|{
                     // The status and shipment controls belong to the shared
                     // modal header, not to a separate row above the card body.
                     let header_busy=self.busy();
@@ -2072,7 +2072,7 @@ impl ManualWorkspace {
                         // Keep the worksheet at its natural one-recipient / one-item
                         // height. More items remain reachable through the existing
                         // nested vertical scroll area; the footer stays in the modal.
-                        let footer_clearance=components::modal_workspace_footer_reserve();
+                        let footer_clearance=crate::popup::modal_workspace_footer_reserve();
                         let available_content_height=(ui.available_height().min(work_area.height())
                             -footer_clearance).max(1.0);
                         let content_height=available_content_height
@@ -2100,8 +2100,8 @@ impl ManualWorkspace {
                                             // divider, and 12pt inset on all four sides
                                             // as the intake source pane.
                                             body.spacing_mut().item_spacing.y=0.0;
-                                            theme::source_document_frame().show(body,|document|{
-                                                components::scroll_area(components::ScrollAxes::Vertical)
+                                            crate::card::source_document_frame().show(body,|document|{
+                                                crate::scrollbar::scroll_area(crate::scrollbar::ScrollAxes::Vertical)
                                                     .id_salt("manual-source-blocks")
                                                     .max_height((
                                                         components::docked_section_body_height(height)
@@ -2165,7 +2165,7 @@ impl ManualWorkspace {
                                         // The count control now lives in the fixed
                                         // toolbar; only the recipient/item cards scroll.
                                         let body_height=panel.available_height().max(1.0);
-                                        components::scroll_area(components::ScrollAxes::Vertical)
+                                        crate::scrollbar::scroll_area(crate::scrollbar::ScrollAxes::Vertical)
                                             .id_salt("manual-reception-style-cards")
                                             .scroll_bar_visibility(
                                                 egui::containers::scroll_area::ScrollBarVisibility::VisibleWhenNeeded
@@ -2522,7 +2522,7 @@ impl ManualWorkspace {
                                 });
                         };
                         if manual_workspace_needs_horizontal_scroll(viewport_width,content_width){
-                            components::scroll_area(components::ScrollAxes::Horizontal)
+                            crate::scrollbar::scroll_area(crate::scrollbar::ScrollAxes::Horizontal)
                                 .scroll_source(egui::scroll_area::ScrollSource::SCROLL_BAR | egui::scroll_area::ScrollSource::MOUSE_WHEEL)
                                 .id_salt("manual-columns-horizontal-scroll")
                                 .max_height(content_height)
@@ -2824,8 +2824,8 @@ impl ManualWorkspace {
             }else{
                 format!("마지막 {removing_count}개 배송 건의 입력값과 원문 배정을 제거할까요?")
             };
-            components::show_decision_window(ctx,"배송 건수 줄이기","manual-shipment-removal",work_area,|ui|{
-                    components::decision_workspace(ui,|decision|{
+            crate::popup::show_decision_window(ctx,"배송 건수 줄이기","manual-shipment-removal",work_area,|ui|{
+                    crate::popup::decision_workspace(ui,|decision|{
                         cancel=decision.header("배송 건수 줄이기","취소",true
                         );
                         decision.body(|ui|{
@@ -2875,8 +2875,8 @@ impl ManualWorkspace {
             }else{
                 "구성표와 배정을 초기화할까요? 최초 원문과 마스터는 보존됩니다."
             };
-            components::show_decision_window(ctx,reset_title,"manual-reset-confirm",work_area,|ui|{
-                    components::decision_workspace(ui,|decision|{
+            crate::popup::show_decision_window(ctx,reset_title,"manual-reset-confirm",work_area,|ui|{
+                    crate::popup::decision_workspace(ui,|decision|{
                         cancel=decision.header(reset_title,"취소",true
                         );
                         decision.body(|ui|{
@@ -2915,8 +2915,8 @@ impl ManualWorkspace {
         if self.confirm_discard {
             let mut keep_editing=false;
             let discard_title=if self.direct_input{"직접 입력 나가기"}else{"수동 분류 나가기"};
-            components::show_decision_window(ctx,discard_title,"manual-discard-prompt",work_area,|ui|{
-                    components::decision_workspace(ui,|decision|{
+            crate::popup::show_decision_window(ctx,discard_title,"manual-discard-prompt",work_area,|ui|{
+                    crate::popup::decision_workspace(ui,|decision|{
                         keep_editing=decision.header(discard_title,"계속 편집",true
                         );
                         decision.body(|ui|{
@@ -2950,8 +2950,8 @@ impl ManualWorkspace {
             }else{
                 "수동 분류 결과를 발주서에 반영할까요?"
             };
-            components::show_decision_window(ctx,apply_title,"manual-completion-prompt",work_area,|ui|{
-                components::decision_workspace(ui,|decision|{
+            crate::popup::show_decision_window(ctx,apply_title,"manual-completion-prompt",work_area,|ui|{
+                crate::popup::decision_workspace(ui,|decision|{
                     cancel=decision.header(apply_title,"취소",true
                     );
                     decision.body(|ui|{
@@ -2977,7 +2977,7 @@ impl ManualWorkspace {
         // disabled state plus the main Middle backdrop already protect
         // background controls; avoid a pointer-blocking Foreground overlay.
         if let Some(window_id)=self.nested_modal_window_id(){
-            components::modal_foreground_for_window(ctx,window_id);
+            crate::popup::modal_foreground_for_window(ctx,window_id);
         }
         let hovered=manual_hover_target(
             hovered_detail,hovered_source.clone(),&spans
@@ -4314,8 +4314,8 @@ mod manual_workspace_layout_tests{
             .contains("components::section_divider("));
         assert!(render[toolbar_start..body_start]
             .contains("status.set_min_height(theme::MODAL_MASTER_WORKSPACE_TOOLBAR_HEIGHT)"));
-        assert!(render.contains("theme::source_document_frame().show(body"));
-        assert!(!render.contains("theme::modal_nested_role_frame(theme::ModalNestedRole::Standard).show(source_ui"));
+        assert!(render.contains("crate::card::source_document_frame().show(body"));
+        assert!(!render.contains("crate::popup::modal_nested_role_frame(crate::popup::ModalNestedRole::Standard).show(source_ui"));
         assert!(render.contains("components::docked_section_body_height(height)"));
         assert!(render.contains("sheet.spacing_mut().item_spacing.y=0.0;"));
         assert!(render.contains("ui.spacing_mut().item_spacing.x=if self.direct_input{"));

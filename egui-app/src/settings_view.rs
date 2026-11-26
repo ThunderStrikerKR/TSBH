@@ -126,7 +126,7 @@ fn section(ui:&mut Ui,title:&str,body:impl FnOnce(&mut Ui)){
     body(ui);
 }
 fn card(ui:&mut Ui,title:&str,body:impl FnOnce(&mut Ui)){
-    components::measured_management_section_card(ui,|content|{
+    crate::card::measured_management_section_card(ui,|content|{
         section(content,title,body);
     });
 }
@@ -430,9 +430,9 @@ impl SettingsView{
         &mut self,ctx:&Context,area:egui::Rect,gateway:Arc<dyn BandoGateway>
     ){
         if self.requested_tab.is_none(){return;}
-        components::modal_backdrop(ctx,"settings-tab-changes-backdrop",false);
-        components::show_decision_window(ctx,"저장하지 않은 변경사항","settings-tab-unsaved",area,|ui|{
-            components::decision_workspace(ui,|decision|{
+        crate::popup::modal_backdrop(ctx,"settings-tab-changes-backdrop",false);
+        crate::popup::show_decision_window(ctx,"저장하지 않은 변경사항","settings-tab-unsaved",area,|ui|{
+            crate::popup::decision_workspace(ui,|decision|{
                 if decision.header("저장하지 않은 변경사항","취소",!self.busy()
                 ){self.requested_tab=None;}
                 decision.body(|ui|{
@@ -549,22 +549,22 @@ impl SettingsView{
         ui.add_space(theme::SPACE_12);
         if !self.loaded || self.source.is_null(){
             if self.tab!=SettingsTab::Basic{
-                components::align_management_primary_card(ui,page_origin_y);
+                crate::card::align_management_primary_card(ui,page_origin_y);
             }
-            components::management_pending_primary_card(ui);
+            crate::card::management_pending_primary_card(ui);
             return;
         }
         // Basic needs no KPI-alignment spacer above its compact cards.
         // Other management tabs retain their master-card alignment.
         if self.tab!=SettingsTab::Basic{
-            components::align_management_primary_card(ui,page_origin_y);
+            crate::card::align_management_primary_card(ui,page_origin_y);
         }
         let editable=!self.read_only() && !self.busy();
         if self.tab==SettingsTab::Basic{
             self.show_basic(ui,editable,Arc::clone(&gateway));
         }else{
-            ui.spacing_mut().scroll=theme::management_scroll_style();
-            components::scroll_area(components::ScrollAxes::Vertical)
+            ui.spacing_mut().scroll=crate::scrollbar::management_scroll_style();
+            crate::scrollbar::scroll_area(crate::scrollbar::ScrollAxes::Vertical)
                 .id_salt(("settings-view",self.tab.label()))
                 .auto_shrink([false,false])
                 .show(ui,|scroll|{
@@ -619,7 +619,7 @@ impl SettingsView{
     fn show_work_settings(
         &mut self,ui:&mut Ui,editable:bool,gateway:Arc<dyn BandoGateway>
     ){
-        components::measured_management_section_card(ui,|card|{
+        crate::card::measured_management_section_card(ui,|card|{
             card.add_enabled_ui(editable,|form|{
                 section(form,"작업 환경",|content|{
                     content.horizontal(|row|{
@@ -638,7 +638,7 @@ impl SettingsView{
         });
     }
     fn show_sender_settings(&mut self,ui:&mut Ui,editable:bool){
-        components::measured_management_section_card(ui,|card|{
+        crate::card::measured_management_section_card(ui,|card|{
             card.add_enabled_ui(editable,|form|{
                 section(form,"반도스탠드 정보",|content|{
                     let width=content.available_width();
@@ -731,7 +731,7 @@ impl SettingsView{
         }
     }
     fn show_accounts(&mut self,ui:&mut Ui,editable:bool,card_budget:f32){
-        components::measured_management_section_card(ui,|card|{
+        crate::card::measured_management_section_card(ui,|card|{
             section(card,"입금 계좌",|content|{
                 content.add_enabled_ui(editable,|form|{
                     let wide_recommendations=form.available_width()
@@ -744,8 +744,8 @@ impl SettingsView{
                         theme::SETTINGS_ACCOUNT_LIST_MIN_HEIGHT,
                         theme::SETTINGS_ACCOUNT_LIST_MAX_HEIGHT
                     );
-                    form.spacing_mut().scroll=theme::management_scroll_style();
-                    let _account_viewport=components::scroll_area(components::ScrollAxes::Vertical)
+                    form.spacing_mut().scroll=crate::scrollbar::management_scroll_style();
+                    let _account_viewport=crate::scrollbar::scroll_area(crate::scrollbar::ScrollAxes::Vertical)
                         .id_salt("settings-bank-account-list")
                         .max_height(list_height)
                         .auto_shrink([false,true])
@@ -903,7 +903,7 @@ impl SettingsView{
         ];
         // React files tab has ONE section.card with three consecutive
         // information groups separated by whitespace, not three boxes.
-        components::measured_management_section_card(ui,|form|{
+        crate::card::measured_management_section_card(ui,|form|{
         for (index,(key,title,empty,button)) in sections.iter().enumerate(){
             if index>0{
                 components::section_divider(form);
@@ -1025,9 +1025,9 @@ impl SettingsView{
         &mut self,ctx:&Context,area:egui::Rect,gateway:Arc<dyn BandoGateway>
     ){
         if self.reload_confirmation{
-            components::modal_backdrop(ctx,"settings-reload-backdrop",false);
-            components::show_decision_window(ctx,"저장된 설정 불러오기","settings-reload-confirm",area,|ui|{
-                components::decision_workspace(ui,|decision|{
+            crate::popup::modal_backdrop(ctx,"settings-reload-backdrop",false);
+            crate::popup::show_decision_window(ctx,"저장된 설정 불러오기","settings-reload-confirm",area,|ui|{
+                crate::popup::decision_workspace(ui,|decision|{
                     if decision.header("저장된 설정 불러오기","취소",true
                     ){self.reload_confirmation=false;}
                     decision.body(|ui|{
@@ -1048,16 +1048,16 @@ impl SettingsView{
             return;
         }
         if self.archive_open{
-            components::modal_backdrop(ctx,"settings-audit-backdrop",false);
-            components::modal_window(ctx,
+            crate::popup::modal_backdrop(ctx,"settings-audit-backdrop",false);
+            crate::popup::modal_window(ctx,
                 "접수 원문 감사 보관함","settings-audit-records",area
             ).default_width(720.0).show(ctx,|ui|{
 
-                components::modal_flow_workspace(ui,|workspace|{
+                crate::popup::modal_flow_workspace(ui,|workspace|{
                     if workspace.header("접수 원문 감사 보관함","닫기",true
                     ){self.archive_open=false;}
                     workspace.body_region(|ui|{
-                        ui.spacing_mut().scroll=theme::management_scroll_style();
+                        ui.spacing_mut().scroll=crate::scrollbar::management_scroll_style();
                         let search_width=ui.available_width();
                         crate::input::management_search_field(
                             ui,&mut self.archive_query,search_width,
@@ -1069,10 +1069,10 @@ impl SettingsView{
                                     &self.archive_query.trim().to_lowercase()
                                 )).collect::<Vec<_>>();
                         ui.label(typography::caption(&format!("{}건 조회",matches.len())));
-                        let results_height=components::modal_list_max_height(
+                        let results_height=crate::popup::modal_list_max_height(
                             ui,area.height(),area.height()*0.62,false
                         );
-                        components::scroll_area(components::ScrollAxes::Vertical).id_salt("settings-audit-records-scroll")
+                        crate::scrollbar::scroll_area(crate::scrollbar::ScrollAxes::Vertical).id_salt("settings-audit-records-scroll")
                             .max_height(results_height)
                             .show(ui,|entries|{
                                 for row in matches{
@@ -1128,9 +1128,9 @@ impl SettingsView{
             });
         }
         if let Some(filename)=self.restore_target.clone(){
-            components::modal_backdrop(ctx,"settings-restore-backdrop",false);
-            components::show_decision_window(ctx,"데이터 복구 확인","settings-restore-confirm",area,|ui|{
-                components::decision_workspace(ui,|decision|{
+            crate::popup::modal_backdrop(ctx,"settings-restore-backdrop",false);
+            crate::popup::show_decision_window(ctx,"데이터 복구 확인","settings-restore-confirm",area,|ui|{
+                crate::popup::decision_workspace(ui,|decision|{
                     if decision.header("데이터 복구 확인","취소",!self.busy()
                     ){self.restore_target=None;}
                     decision.body(|ui|{

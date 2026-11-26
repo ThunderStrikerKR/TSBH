@@ -47,7 +47,7 @@ fn finish_inline(ui:&Ui,header:Rect){
 /// Column widths, row heights, table IDs and header positions stay unchanged.
 pub fn management_table_container_style(ui:&mut Ui)->f32{
     let previous_gap=ui.spacing().item_spacing.y;
-    ui.spacing_mut().scroll=theme::management_table_scroll_style();
+    ui.spacing_mut().scroll=crate::scrollbar::management_table_scroll_style();
     ui.spacing_mut().item_spacing.y=0.0;
     previous_gap
 }
@@ -368,7 +368,7 @@ fn management_master_header_sort_hover(ui:&Ui,hit:Rect){
 /// Fixed-header register lists retain a vertical-only rail and fixed viewport.
 /// The caller already installs the management table style and owns the height.
 pub fn management_register_list_scroll_area(ui:&Ui,height:f32)->egui::ScrollArea{
-    crate::components::scroll_area(crate::components::ScrollAxes::Vertical)
+    crate::scrollbar::scroll_area(crate::scrollbar::ScrollAxes::Vertical)
         .scroll_bar_rect(management_table_scroll_track_rect(ui,height))
         .scroll_bar_visibility(egui::containers::scroll_area::ScrollBarVisibility::VisibleWhenNeeded)
         .max_height(height)
@@ -437,7 +437,7 @@ pub fn management_fixed_table_scroll_area(ui:&Ui,content_width:f32)->egui::Scrol
     use egui::containers::scroll_area::ScrollBarVisibility;
     let data_width=(ui.available_width()-ui.spacing().scroll.allocated_width()).max(1.0);
     let horizontal=content_width>data_width+0.01;
-    crate::components::scroll_area(if horizontal{crate::components::ScrollAxes::Both}else{crate::components::ScrollAxes::Vertical}).scroll_bar_visibility(if horizontal{
+    crate::scrollbar::scroll_area(if horizontal{crate::scrollbar::ScrollAxes::Both}else{crate::scrollbar::ScrollAxes::Vertical}).scroll_bar_visibility(if horizontal{
         ScrollBarVisibility::AlwaysVisible
     }else{
         ScrollBarVisibility::VisibleWhenNeeded
@@ -659,7 +659,7 @@ pub fn management_readonly_table(
 ){
     assert!(!headings.is_empty(),"a management table needs at least one column");
     let original_scroll=ui.spacing().scroll.clone();
-    ui.spacing_mut().scroll=theme::management_table_scroll_style();
+    ui.spacing_mut().scroll=crate::scrollbar::management_table_scroll_style();
     let viewport_width=ui.available_rect_before_wrap()
         .intersect(ui.clip_rect()).width().max(1.0);
     let available_data_width=(viewport_width

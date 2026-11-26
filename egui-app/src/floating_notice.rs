@@ -530,7 +530,7 @@ pub fn show(ctx: &Context) {
                     |inner| {
                         inner.set_clip_rect(text_rect);
                         inner.set_width(text_rect.width());
-                        crate::components::scroll_area(crate::components::ScrollAxes::Vertical)
+                        crate::scrollbar::scroll_area(crate::scrollbar::ScrollAxes::Vertical)
                             .id_salt("floating-notice-scroll")
                             .auto_shrink([false,false])
                             .max_height(text_rect.height())

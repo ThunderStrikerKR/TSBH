@@ -480,11 +480,11 @@ impl CategoryManager {
     }
     pub fn show_page(&mut self,ui:&mut Ui,catalog:&Value,editable:bool,busy:bool){
         let cats=categories(catalog);
-        let card_min_height=components::management_primary_card_min_inner_height(
+        let card_min_height=crate::card::management_primary_card_min_inner_height(
             ui,theme::SECTION_PADDING
         );
-        components::measured_management_section_card(ui,|panel|{
-            components::fill_management_primary_card(panel,card_min_height);
+        crate::card::measured_management_section_card(ui,|panel|{
+            crate::card::fill_management_primary_card(panel,card_min_height);
             // No vacated heading or help-text rows. Reserve one 36pt
             // search-and-actions toolbar, exactly as the management master.
             panel.spacing_mut().item_spacing.y=0.0;
@@ -564,7 +564,7 @@ impl CategoryManager {
             // The same structural divider as Reception and management tables.
             components::section_divider(panel);
             let index=CategoryMapIndex::new(&cats,catalog,&self.query);
-            components::scroll_area(components::ScrollAxes::Vertical)
+            crate::scrollbar::scroll_area(crate::scrollbar::ScrollAxes::Vertical)
                 .id_salt("category-map-tree")
                 .auto_shrink([false,false])
                 .max_height(panel.available_height().max(theme::MANAGEMENT_TABLE_ROW_HEIGHT))
@@ -597,21 +597,21 @@ impl CategoryManager {
         let mut write=None;
         if self.editor{
             let nested_dialog=self.operation.is_some()||self.confirm.is_some();
-            components::modal_backdrop(ctx,"category-editor-dim",false);
+            crate::popup::modal_backdrop(ctx,"category-editor-dim",false);
             // The category editor uses the same centered, Kakao-safe modal
             // geometry as other native dialogs, not a right-side drawer.
-            components::modal_window(ctx,
+            crate::popup::modal_window(ctx,
                 "선택 분류 편집","native-category-editor",work_area
             )
                 .default_width(theme::MODAL_DECISION_MAX_WIDTH.min(work_area.width()))
                 .show(ctx,|modal|{
 
-                    components::modal_flow_workspace(modal,|workspace|{
+                    crate::popup::modal_flow_workspace(modal,|workspace|{
                         if workspace.header("선택 분류 편집","취소",!busy&&!nested_dialog
                         ){
                             self.request_close_editor(&cats);
                         }
-                        workspace.scroll_region("native-category-editor-fields",components::modal_editor_body_max_height(
+                        workspace.scroll_region("native-category-editor-fields",crate::popup::modal_editor_body_max_height(
                             work_area.height()
                         ),|scroll|{
                                     scroll.add_enabled_ui(!nested_dialog,|body|{
@@ -641,7 +641,7 @@ impl CategoryManager {
                                         children(&cats,&current.id).len()
                                     )));
                                     components::section_divider(body);
-                                    components::modal_labeled_row(body,"분류 이름",|row|{
+                                    crate::popup::modal_labeled_row(body,"분류 이름",|row|{
                                         row.add_enabled_ui(
                                             editable && !busy && !is_root(&current.id),
                                             |field_ui|{
@@ -653,7 +653,7 @@ impl CategoryManager {
                                         );
                                     });
                                     body.add_space(theme::SPACE_12);
-                                    components::modal_labeled_row(body,"상위 분류",|location|{
+                                    crate::popup::modal_labeled_row(body,"상위 분류",|location|{
                                         // Align category text to the button's vertical
                                         // center; keep them adjacent at a shared 8pt gap.
                                         location.spacing_mut().item_spacing.x=theme::SPACE_8;
@@ -741,14 +741,14 @@ impl CategoryManager {
         if let Some(operation)=self.operation{
             let mut cancel=false;
             let mut submit=false;
-            components::modal_backdrop(ctx,"category-operation-dim",self.editor);
+            crate::popup::modal_backdrop(ctx,"category-operation-dim",self.editor);
             let title=match operation {
                 Operation::Add=>"하위 카테고리 추가",
                 Operation::Move=>"상위 카테고리 변경",
                 Operation::Delete=>"분류 삭제 확인",
             };
-            components::show_decision_window(ctx,title,"category-operation-modal",work_area,|modal|{
-                    components::decision_workspace(modal,|decision|{
+            crate::popup::show_decision_window(ctx,title,"category-operation-modal",work_area,|modal|{
+                    crate::popup::decision_workspace(modal,|decision|{
                         cancel=decision.header(title,"취소",!busy);
                         decision.body(|modal|{
                             if let Some(current)=self.current(&cats){
@@ -759,7 +759,7 @@ impl CategoryManager {
                                         // and keep the mandatory consent as its own
                                         // clearly separated information block.
                                         let location_path=path_text(&cats,&current.id);
-                                        components::modal_labeled_row(
+                                        crate::popup::modal_labeled_row(
                                             modal,"생성 위치",|line|{
                                                 let path_width=line.available_width().max(1.0);
                                                 let visible=typography::fit_category_path(
@@ -774,7 +774,7 @@ impl CategoryManager {
                                             }
                                         );
                                         components::section_divider(modal);
-                                        components::modal_labeled_row(
+                                        crate::popup::modal_labeled_row(
                                             modal,"새 분류 이름",|line|{
                                                 let input_width=line.available_width().max(1.0);
                                                 crate::input::flexible_text_field(
@@ -786,13 +786,13 @@ impl CategoryManager {
                                         let count=direct_count(catalog,&current.id);
                                         if count>0{
                                             modal.add_space(theme::SPACE_12);
-                                            theme::modal_nested_role_frame(theme::ModalNestedRole::Standard).show(modal,|notice|{
+                                            crate::popup::modal_nested_role_frame(crate::popup::ModalNestedRole::Standard).show(modal,|notice|{
                                                 let transfer_label=if children(&cats,&current.id).is_empty(){
                                                     format!("직접 연결된 상품 {count}개를 새 하위 분류로 이전하는 데 동의합니다.")
                                                 }else{
                                                     format!("기존 직접 연결 상품 {count}개는 현재 분류에 남습니다. 하위 분류 추가를 확인했습니다.")
                                                 };
-                                                components::checkbox(
+                                                crate::checkbox::checkbox(
                                                     notice,&mut self.transfer,&transfer_label,true
                                                 );
                                             });
@@ -819,7 +819,7 @@ impl CategoryManager {
                                             .into_iter()
                                             .filter(|node|allowed.contains(node.id.as_str()))
                                             .collect::<Vec<_>>();
-                                        components::modal_labeled_row(
+                                        crate::popup::modal_labeled_row(
                                             modal,"상위 분류",|line|{
                                                 let picker_width=line.available_width()
                                                     .min(theme::CATEGORY_PATH_PICKER_WIDTH).max(1.0);
@@ -872,9 +872,9 @@ impl CategoryManager {
             let mut cancel=false;
             let mut discard=false;
             let mut save=false;
-            components::modal_backdrop(ctx,"category-pending-dim",true);
-            components::show_decision_window(ctx,"저장하지 않은 카테고리","category-unsaved-confirm",work_area,|modal|{
-                components::decision_workspace(modal,|decision|{
+            crate::popup::modal_backdrop(ctx,"category-pending-dim",true);
+            crate::popup::show_decision_window(ctx,"저장하지 않은 카테고리","category-unsaved-confirm",work_area,|modal|{
+                crate::popup::decision_workspace(modal,|decision|{
                     cancel=decision.header("저장하지 않은 카테고리","취소",!busy
                     );
                     decision.body(|modal|{
@@ -1016,16 +1016,16 @@ mod modal_layout_contract_tests{
         let source=include_str!("category_manager.rs");
         let production=components::production_source_for_contract(source);
         let dialogs=production.split("    pub fn show_overlays(").nth(1).unwrap();
-        let count=dialogs.matches("components::modal_labeled_row(").count();
+        let count=dialogs.matches("crate::popup::modal_labeled_row(").count();
         assert_eq!(count,5,"category modal has a nonstandard field stack");
         assert!(!dialogs.contains("body.label(typography::field_label("));
         assert!(!dialogs.contains("modal.label(typography::field_label("));
         assert!(dialogs.contains("category_dropdown::category_dropdown("));
-        assert!(dialogs.contains("components::modal_flow_workspace("));
+        assert!(dialogs.contains("crate::popup::modal_flow_workspace("));
         assert!(dialogs.contains("workspace.footer("));
-        assert!(dialogs.contains("components::decision_workspace("));
+        assert!(dialogs.contains("crate::popup::decision_workspace("));
         assert!(dialogs.contains("decision.actions("));
         assert!(!dialogs.contains("components::modal_action_row_split("));
-        assert!(!dialogs.contains("components::modal_action_row("));
+        assert!(!dialogs.contains("crate::popup::modal_action_row("));
     }
 }

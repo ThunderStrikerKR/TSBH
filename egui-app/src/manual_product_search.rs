@@ -103,14 +103,14 @@ impl ProductSearch{
         let mut open=true;
         let mut chosen=None;
         let mut changed=false;
-        components::nested_modal_window(ctx,"상품 검색","native-manual-product-search",work_area)
+        crate::popup::nested_modal_window(ctx,"상품 검색","native-manual-product-search",work_area)
             
             .default_width(theme::MANUAL_SEARCH_DIALOG_WIDTH
                 .min((work_area.width()-theme::MANUAL_DIALOG_SIDE_GAP).max(0.0)))
             .constrain_to(work_area)
             .show(ctx,|ui|{
 
-                components::modal_flow_workspace(ui,|workspace|{
+                crate::popup::modal_flow_workspace(ui,|workspace|{
                     if workspace.header("상품 검색","닫기",true){
                         open=false;
                     }
@@ -189,7 +189,7 @@ impl ProductSearch{
                         }
                         // Always allocate one result viewport. The search state
                         // changes inside it, never shrinking or jumping the modal.
-                        let results_height=components::modal_list_max_height(
+                        let results_height=crate::popup::modal_list_max_height(
                             ui,work_area.height(),theme::MANUAL_SEARCH_RESULTS_HEIGHT,false
                         );
                         ui.allocate_ui_with_layout(
@@ -198,7 +198,7 @@ impl ProductSearch{
                             |pane|{
                                 let results_rect=egui::Rect::from_min_size(
                                     pane.cursor().min,egui::vec2(pane.available_width(),results_height));
-                                components::scroll_area(components::ScrollAxes::Vertical)
+                                crate::scrollbar::scroll_area(crate::scrollbar::ScrollAxes::Vertical)
                                     .id_salt("manual-product-search-results")
                                     .max_height(results_height)
                                     .show(pane,|ui|{
@@ -262,7 +262,7 @@ impl ProductSearch{
                     });
                 });
             });
-        components::modal_foreground_for_window(ctx,"native-manual-product-search");
+        crate::popup::modal_foreground_for_window(ctx,"native-manual-product-search");
         if changed{self.reload(gateway,ctx.clone());}
         if let Some(row)=chosen{return Some(Event::Chosen(row));}
         if !open{return Some(Event::Cancelled);}

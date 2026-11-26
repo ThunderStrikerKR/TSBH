@@ -196,7 +196,7 @@ fn menu_body(
         .min((menu.ctx().content_rect().height()-270.0).max(100.0));
     let mut next_path=None;
     let mut next_has_children=false;
-    components::scroll_area(components::ScrollAxes::Vertical)
+    crate::scrollbar::scroll_area(crate::scrollbar::ScrollAxes::Vertical)
         .id_salt(("category-explorer-list",state.path.clone(),state.search.clone()))
         .max_height(list_height)
         .auto_shrink([false,false])
@@ -245,11 +245,11 @@ fn menu_body(
     // Omitted ancestors are a separate, bounded navigation panel. They do
     // not affect selection or replace the current category until clicked.
     if state.ancestors_open && state.path.len()>1{
-        theme::category_ancestor_frame().show(menu,|ancestor_menu|{
+        crate::card::category_ancestor_frame().show(menu,|ancestor_menu|{
             ancestor_menu.label(typography::caption("생략된 상위 경로"));
             let path=state.path.clone();
             let mut next=None;
-            components::scroll_area(components::ScrollAxes::Vertical)
+            crate::scrollbar::scroll_area(crate::scrollbar::ScrollAxes::Vertical)
                 .id_salt("category-explorer-ancestors")
                 .max_height(theme::CATEGORY_EXPLORER_ANCESTOR_MAX_HEIGHT)
                 .show(ancestor_menu,|rows|{

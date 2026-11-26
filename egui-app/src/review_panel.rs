@@ -242,7 +242,7 @@ impl ReviewPanel {
         }
         if let Some(remote)=remote{
             let tone=ReviewTone::Info;
-            theme::review_issue_card(ui,tone,|content|{
+            crate::card::review_issue_card(ui,tone,|content|{
                     content.add(egui::Label::new(typography::review_title("도서·산간 지역 확인",tone)).wrap());
                     content.add(egui::Label::new(typography::review_detail(
                         if text(remote,"status")=="auto" {
@@ -382,7 +382,7 @@ fn issue_card(
     let severity=text(issue,"severity");
     let link_key=issue.get("linkKey").and_then(Value::as_str);
     let tone=issue_tone(issue);
-    theme::review_issue_card(ui,tone,|cell|{
+    crate::card::review_issue_card(ui,tone,|cell|{
             cell.add(egui::Label::new(typography::review_title(
                 if kind=="QUANTITY_MISSING"
                     &&text(issue,"resolution")=="PROVISIONALLY_APPROVED"{

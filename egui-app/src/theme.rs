@@ -841,79 +841,6 @@ pub fn navigation_header_frame()->Frame{
 pub fn management_page_host_frame()->Frame{
     Frame::new().inner_margin(0)
 }
-pub fn workflow_group_card_frame(highlighted:bool)->Frame{
-    bordered_surface(if highlighted{WORKFLOW_SELECTED_BG}else{WORKFLOW_CARD_BG},WORKFLOW_CARD_BORDER,WORKFLOW_CARD_RADIUS)
-        .inner_margin(0)
-}
-pub fn workflow_shipment_row_frame(fill:Color32,chosen:bool)->Frame{
-    // Keep the existing stroke width and inner margin in every state.
-    bordered_surface(fill,if chosen{WORKFLOW_SELECTED_ROW_BORDER}else{WORKFLOW_DETAIL_ROW_BORDER},ORDER_HISTORY_RECIPIENT_BLOCK_RADIUS as u8)
-        .inner_margin(egui::Margin::symmetric(
-            WORKFLOW_DETAIL_ROW_PADDING_X as i8,SPACE_4 as i8
-        ))
-}
-pub fn settings_help_surface_frame()->Frame{
-    bordered_surface(INPUT,BORDER,CONTROL_RADIUS)
-        .inner_margin(egui::Margin::symmetric(SPACE_12 as i8,SPACE_12 as i8))
-}
-
-pub fn modal_frame() -> Frame {
-    bordered_surface(PANEL,BORDER,PANEL_RADIUS)
-        .inner_margin(egui::Margin {
-            left: MODAL_PANEL_PADDING_X as i8,
-            right: MODAL_PANEL_PADDING_X as i8,
-            top: MODAL_PANEL_PADDING_Y as i8,
-            bottom: MODAL_PANEL_PADDING_Y as i8,
-        })
-}
-
-/// Compact ancestor-path surface in the category explorer. Its stronger
-/// BORDER outline is intentional; do not replace it with the softer modal
-/// nested-frame stroke.
-pub fn category_ancestor_frame()->Frame{
-    bordered_surface(INPUT,BORDER,CONTROL_RADIUS)
-        .inner_margin(SPACE_8)
-}
-
-/// Nested surface variants describe a content role, not a screen-specific
-/// style override. All variants inherit identical fill, border and rounding.
-#[derive(Clone,Copy,Debug,Eq,PartialEq)]
-pub enum ModalNestedRole {
-    Standard,
-    RecipientChecklist,
-    CompactTag,
-}
-
-pub fn modal_nested_role_frame(role:ModalNestedRole)->Frame{
-    let margin=match role{
-        ModalNestedRole::Standard=>egui::Margin::same(SPACE_8 as i8),
-        ModalNestedRole::RecipientChecklist=>egui::Margin::symmetric(SPACE_12 as i8,SPACE_8 as i8),
-        ModalNestedRole::CompactTag=>egui::Margin::symmetric(SPACE_8 as i8,SPACE_2 as i8),
-    };
-    bordered_surface(INPUT,DIVIDER,CONTROL_RADIUS).inner_margin(margin)
-}
-
-#[cfg(test)]
-mod modal_nested_role_tests{
-    use super::*;
-
-    #[test]
-    fn nested_roles_preserve_approved_margins_and_shared_surface(){
-        let standard=modal_nested_role_frame(ModalNestedRole::Standard);
-        for (role,x,y) in [
-            (ModalNestedRole::Standard,8,8),
-            (ModalNestedRole::RecipientChecklist,12,8),
-            (ModalNestedRole::CompactTag,8,2),
-        ]{
-            let frame=modal_nested_role_frame(role);
-            assert_eq!(frame.inner_margin,egui::Margin::symmetric(x,y));
-            assert_eq!(frame.fill,standard.fill);
-            assert_eq!(frame.stroke,standard.stroke);
-            assert_eq!(frame.corner_radius,standard.corner_radius);
-        }
-    }
-}
-
 /// Base visual surface shared by cards and modal sections. Role wrappers
 /// retain their approved radius, padding, fill and border color.
 pub(crate) fn bordered_surface(fill:Color32,border:Color32,radius:u8)->Frame{
@@ -942,32 +869,7 @@ pub(crate) fn paint_surface_outline(
     painter.rect_stroke(rect,radius,surface_stroke(border),egui::StrokeKind::Inside);
 }
 
-pub fn section_frame() -> Frame {
-    bordered_surface(PANEL,CARD_BORDER,SECTION_RADIUS).inner_margin(SECTION_PADDING)
-}
-
-/// Full-height master table cards keep the same 12pt interior clearance on
-/// all four sides. Row rendering ends above the bottom inset; the scrollbar
-/// rail is independent and remains visually centered in that inset rather
-/// than touching the outer border. Only the two single-table masters use it.
 pub const MANAGEMENT_MASTER_TABLE_BOTTOM_PADDING:f32=SECTION_PADDING;
-pub fn management_master_table_frame()->Frame{
-    section_frame().inner_margin(egui::Margin{
-        left:SECTION_PADDING as i8,
-        right:SECTION_PADDING as i8,
-        top:SECTION_PADDING as i8,
-        bottom:MANAGEMENT_MASTER_TABLE_BOTTOM_PADDING as i8,
-    })
-}
-
-/// Overview card keeps the shared frame identity with proportional padding.
-/// Only the freight KPI's vertical inset differs from standard section cards.
-pub fn freight_summary_frame() -> Frame {
-    bordered_surface(PANEL,BORDER,PANEL_RADIUS)
-        .inner_margin(egui::Margin::symmetric(
-            FREIGHT_SUMMARY_PADDING_X as i8, FREIGHT_SUMMARY_PADDING_Y as i8
-        ))
-}
 
 /// Management tables use a permanent, non-overlay scrollbar track.
 /// Solid scrollbars remain visible while a list has overflow and never
@@ -988,26 +890,6 @@ pub const MANAGEMENT_TABLE_SCROLL_TRACK_BOTTOM_INSET:f32=3.0;
 /// All management tables consume this value via components.rs only.
 pub const MANAGEMENT_TABLE_SCROLL_RAIL_EXTENSION:f32=
     MANAGEMENT_TABLE_SCROLL_TRACK_BOTTOM_INSET+SPACE_4;
-
-pub fn management_scroll_style() -> egui::style::ScrollStyle {
-    let mut style=egui::style::ScrollStyle::solid();
-    style.bar_width=10.0;
-    style.handle_min_length=44.0;
-    style.bar_inner_margin=SPACE_4;
-    style.bar_outer_margin=SPACE_4;
-    style.foreground_color=true;
-    style
-}
-
-/// CONFLICT-003=A: table rails use the same 10pt solid style but WITHOUT
-/// independent 4pt inner/outer margins. Non-table scroll areas keep the
-/// original management_scroll_style until their role is reviewed.
-pub fn management_table_scroll_style()->egui::style::ScrollStyle{
-    let mut style=management_scroll_style();
-    style.bar_inner_margin=0.0;
-    style.bar_outer_margin=0.0;
-    style
-}
 
 /// The same outer gutter for Reception and every management page:
 /// 6pt CANVAS above, right and below; the KakaoTalk reservation stays
@@ -1031,7 +913,7 @@ pub fn workspace_shell_frame() -> Frame {
 /// Compensate the 1pt outline in inner margins; the shared header owns
 /// its separate optical top clearance.
 pub fn docked_pane_frame() -> Frame {
-    section_frame()
+    crate::card::section_frame()
         .inner_margin(egui::Margin {
             left: (SECTION_PADDING - FRAME_STROKE_WIDTH) as i8,
             right: (SECTION_PADDING - FRAME_STROKE_WIDTH) as i8,
@@ -1096,37 +978,6 @@ fn review_action_and_one_touch_share_orange_palette(){
     assert_eq!((background,border,text),(ONE_TOUCH_BG,ONE_TOUCH_BORDER,ONE_TOUCH_TEXT));
     assert_eq!(detail,ONE_TOUCH_TEXT);
     assert_ne!(background,PANEL);
-}
-
-pub fn review_issue_frame(tone: ReviewTone) -> Frame {
-    let (background, border, _, _) = tone.palette();
-    bordered_surface(background,border,CONTROL_RADIUS)
-        .inner_margin(egui::Margin::symmetric(
-            SPACE_8 as i8, SPACE_8 as i8
-        ))
-}
-
-/// Fill the available row width rather than sizing the notice to its text.
-/// The frame owns its insets; the parent owns scrolling and clipping.
-pub fn review_issue_card(ui: &mut Ui, tone: ReviewTone, add_contents: impl FnOnce(&mut Ui)) {
-    review_issue_frame(tone).show(ui, |content| {
-        content.set_min_width(content.available_width().max(0.0));
-        add_contents(content);
-    });
-}
-
-/// Unbordered preview surface for generated or copy-ready text. Keep the
-/// INPUT fill and 12pt inset shared instead of rebuilding a local Frame.
-pub fn preview_surface_frame()->Frame{
-    Frame::new().fill(INPUT).inner_margin(SPACE_12 as i8)
-}
-
-/// Border and rounding belong to the reusable source-document surface.
-/// The editor's own frame is disabled so its square corners cannot cover
-/// the approved rounded rect below the dealer card.
-pub fn source_document_frame() -> Frame {
-    bordered_surface(INPUT,BORDER,CONTROL_RADIUS)
-        .inner_margin(SPACE_4)
 }
 
 /// Shared solid divider surface for horizontal and vertical rules.

@@ -1,0 +1,78 @@
+{
+  "schemaVersion": 1,
+  "id": "shared-ui-secondary-controls-129",
+  "screen": "공통 체크박스·스크롤바·팝업·카드 독립화",
+  "files": [
+    "egui-app/src/checkbox/mod.rs",
+    "egui-app/src/scrollbar/mod.rs",
+    "egui-app/src/popup/mod.rs",
+    "egui-app/src/card/mod.rs",
+    "egui-app/src/components.rs",
+    "egui-app/src/theme.rs",
+    "egui-app/src/main.rs",
+    "egui-app/src/alias_manager.rs",
+    "egui-app/src/automatic_message_manager.rs",
+    "egui-app/src/brand_manager.rs",
+    "egui-app/src/category_dropdown.rs",
+    "egui-app/src/category_manager.rs",
+    "egui-app/src/client_chooser.rs",
+    "egui-app/src/client_manager.rs",
+    "egui-app/src/daily_settlement_manager.rs",
+    "egui-app/src/excel_manager.rs",
+    "egui-app/src/floating_notice.rs",
+    "egui-app/src/freight_manager.rs",
+    "egui-app/src/item_editor.rs",
+    "egui-app/src/manual_workspace.rs",
+    "egui-app/src/manual_product_search.rs",
+    "egui-app/src/model_group_manager.rs",
+    "egui-app/src/order_history_manager.rs",
+    "egui-app/src/product_excel_ui.rs",
+    "egui-app/src/product_manager.rs",
+    "egui-app/src/review_panel.rs",
+    "egui-app/src/settings_view.rs",
+    "egui-app/src/workflow_board_ui.rs",
+    "egui-app/src/dropdown/mod.rs",
+    "egui-app/src/table/mod.rs",
+    "egui-app/src/settings_help.rs",
+    "egui-app/src/order_history_detail.rs"
+  ],
+  "visualStatus": "NOT_VERIFIED",
+  "reason": "기존 공유 구현을 네 독립 모듈로 이동하고 운영 화면 호출 경로 및 소유권 검사 수정. 레이어/입력 정책은 overlay, 표 행·뷰포트 정책은 table에 보존. 디자인 및 업무 동작 유지 의도. Windows 실화면 증거 없음.",
+  "defects": [],
+  "releaseDecision": "NOT_APPROVED",
+  "verification": {
+    "static": "SCOPED_SOURCE_REVIEW",
+    "rustTests": "NOT_EXECUTED",
+    "githubCI": "NOT_VERIFIED",
+    "windowsVisual": "NOT_VERIFIED"
+  },
+  "nextVerification": {
+    "requiredViewports": [
+      {
+        "width": 1920,
+        "height": 1080,
+        "scalePercent": 100
+      },
+      {
+        "width": 1366,
+        "height": 768,
+        "scalePercent": 100
+      }
+    ],
+    "checks": [
+      "noClipping",
+      "footerVisible",
+      "scrollReachable",
+      "inputReadable",
+      "alignment",
+      "interaction",
+      "hoverAndFocus"
+    ],
+    "focus": [
+      "체크박스 선택·비활성·표 헤더 중심 정렬",
+      "스크롤바 레일·폭·스크롤 위치 및 표 하단 여백",
+      "OCR 및 일반·중첩 팝업의 dim·중앙·입력 우선순위·닫기",
+      "카드 배경·테두리·여백·기존 선택 상태"
+    ]
+  }
+}

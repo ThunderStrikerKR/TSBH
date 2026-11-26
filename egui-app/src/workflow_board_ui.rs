@@ -261,7 +261,7 @@ fn workflow_card<R>(
     ui:&mut Ui,selected:bool,preview:bool,body:impl FnOnce(&mut Ui)->R
 )->R{
     let outer=ui.available_width();
-    let frame=theme::workflow_group_card_frame(selected||preview);
+    let frame=crate::card::workflow_group_card_frame(selected||preview);
     let response=frame.show(ui,|card|{
         // The 42pt upper/lower bands and 1pt divider own all vertical
         // spacing. No additional automatic gap between the compact rows.
@@ -1839,8 +1839,8 @@ mod linked_highlight_palette_tests {
         assert_eq!(theme::INPUT,Color32::from_rgb(34,34,34));
         assert_eq!(theme::RAISED,Color32::from_rgb(41,41,41));
         assert_eq!(shipment_row_fill(true,false),Color32::from_rgb(48,42,34));
-        let selected=theme::workflow_shipment_row_frame(shipment_row_fill(true,false),true);
-        let normal=theme::workflow_shipment_row_frame(shipment_row_fill(false,false),false);
+        let selected=crate::card::workflow_shipment_row_frame(shipment_row_fill(true,false),true);
+        let normal=crate::card::workflow_shipment_row_frame(shipment_row_fill(false,false),false);
         assert_eq!(selected.fill,Color32::from_rgb(48,42,34));
         assert_eq!(selected.stroke.color,Color32::TRANSPARENT);
         assert_eq!(normal.stroke.color,theme::DIVIDER);
