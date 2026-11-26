@@ -7150,12 +7150,9 @@ pub fn management_readonly_table(
 
     let row_height=theme::MANAGEMENT_COMPACT_ROW_HEIGHT;
     let row_advance=management_readonly_table_row_advance();
-    let scroll=management_fixed_table_scroll_area(ui,layout.table_width)
-        .id_salt(id)
-        .max_height(max_height)
-        .auto_shrink([false,false]);
-    let output=virtual_fixed_rows(
-        scroll,ui,layout.table_width,row_advance,rows.len(),
+    let output=crate::table::fixed_rows(
+        ui,crate::table::Viewport{width:layout.table_width,height:max_height,rail:None},
+        id,row_advance,rows.len(),
         |body,range|{
             for index in range{
                 let values=&rows[index];
@@ -11259,7 +11256,7 @@ mod shared_ui_base_113_contract_tests {
             ("history",include_str!("order_history_manager.rs")),
         ]{
             let production=production_source_for_contract(source);
-            assert!(production.contains("components::management_fixed_table_scroll_area("),"{name}");
+            assert!(production.contains("crate::table::fixed_rows(")||production.contains("crate::table::variable_rows("),"{name}");
             assert!(!production.contains("egui::ScrollArea::both()"),"{name}: local table scroll");
         }
     }
@@ -11293,8 +11290,8 @@ mod shared_ui_base_113_contract_tests {
         for source in [include_str!("order_history_manager.rs"),include_str!("excel_manager.rs"),
             include_str!("daily_settlement_manager.rs")]{
             let production=production_source_for_contract(source);
-            assert!(production.contains("components::management_master_header_begin("));
-            assert!(production.contains("components::management_master_header_finish("));
+            assert!(production.contains("crate::table::header_columns("));
+            assert!(!production.contains("components::management_master_header_finish("));
         }
         let history=production_source_for_contract(include_str!("order_history_manager.rs"));
         assert!(history.contains("components::paint_table_galley("));

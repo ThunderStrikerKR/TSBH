@@ -175,10 +175,7 @@ impl BrandManager {
             let scroll_height=components::management_single_list_scroll_height(
                 card,card_min_height,0.0
             );
-            let output=components::management_register_list_scroll_area(card,scroll_height)
-                .id_salt("brand-registry-list")
-                .show(card,|list|{
-                    list.set_min_width(header.table_width);
+            let output=crate::table::register_rows(card,scroll_height,header.table_width,"brand-registry-list",|list|{
                     for brand in rows(&catalog["brands"]){
                         let id=field(brand,"id");
                         let _row=list.horizontal(|line|{

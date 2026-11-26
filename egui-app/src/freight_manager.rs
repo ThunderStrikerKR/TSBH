@@ -1487,16 +1487,9 @@ impl FreightManager {
                 section,scroll_max_height
             );
             let mut first_row_left=None;
-            let scroll_output=components::virtual_fixed_rows(
-                components::management_fixed_table_scroll_area(section,table_width)
-                    .scroll_bar_rect(scroll_track)
-                    .id_salt("freight-assignment-rows")
-                    // The solid track stays visible without hovering and
-                    // takes its own space rather than covering row controls.
-                    .max_height(scroll_max_height)
-                    .auto_shrink([false,false]),
-                section,table_width,theme::FREIGHT_ASSIGNMENT_ROW_HEIGHT,
-                filtered.len(),
+            let scroll_output=crate::table::fixed_rows(
+                section,crate::table::Viewport{width:table_width,height:scroll_max_height,rail:Some(scroll_track)},
+                "freight-assignment-rows",theme::FREIGHT_ASSIGNMENT_ROW_HEIGHT,filtered.len(),
                 |table,visible_rows|{
                     components::management_table_row_body(table,table_width);
                     theme::apply_table_row_colors(table);
@@ -1513,53 +1506,15 @@ impl FreightManager {
                     let row_origin=table.max_rect().min;
                     for row_index in visible_rows{
                         let product_id=text(filtered[row_index],"id");
-                        let row_rect=egui::Rect::from_min_size(
-                            egui::pos2(
-                                row_origin.x,
-                                row_origin.y+
-                                    (row_index-first_visible_row) as f32
-                                        *theme::FREIGHT_ASSIGNMENT_ROW_HEIGHT
-                            ),
-                            egui::vec2(
-                                table_width,theme::FREIGHT_ASSIGNMENT_ROW_HEIGHT
-                            )
-                        );
+                        let row_rect=crate::table::fixed_row_rect(row_origin,row_index,first_visible_row,table_width,theme::FREIGHT_ASSIGNMENT_ROW_HEIGHT);
                         #[cfg(test)]
                         components::general_screen_geometry_tests::record("data row",row_rect);
                         first_row_left.get_or_insert(row_rect.left());
-                        table.scope_builder(
-                            egui::UiBuilder::new()
-                                .id_salt(("freight-fixed-row",product_id))
-                                .max_rect(row_rect)
-                                .layout(egui::Layout::top_down(egui::Align::Min)),
-                            |row|{
-                                // Reserve one full logical row before painting.
-                                // Descendant controls are anchored to cells,
-                                // never used to determine the next row's y.
-                                let (_reserved,_)=row.allocate_exact_size(
-                                    egui::vec2(
-                                        table_width,theme::FREIGHT_ASSIGNMENT_ROW_HEIGHT
-                                    ),
-                                    egui::Sense::hover()
-                                );
+                        crate::table::fixed_row(table,("freight-fixed-row",product_id),row_rect,row_index,&widths,theme::FREIGHT_ASSIGNMENT_COL_GAP,crate::table::RowTone::SelectedIf(selected.contains(product_id)),|row,cells|{
                         let product=filtered[row_index];
                         let id=text(product,"id");
                         let committed=text(product,"shippingGroupId");
                         let mut checked=selected.contains(id);
-                        let cells=components::management_table_cells(
-                            row_rect.min,&widths,theme::FREIGHT_ASSIGNMENT_ROW_HEIGHT,theme::FREIGHT_ASSIGNMENT_COL_GAP);
-                        let background=if checked {theme::WORKFLOW_SELECTED_BG}
-                            else {components::management_table_row_fill(row_index)};
-                        row.painter().rect_filled(row_rect,0.0,background);
-                        if checked {
-                            row.painter().rect_filled(
-                                egui::Rect::from_min_size(
-                                    row_rect.min,
-                                    egui::vec2(theme::WORKFLOW_SELECTED_STRIPE,row_rect.height())
-                                ),0.0,theme::SELECTION
-                            );
-                        }
-
                         // Shared centered checkbox: same placement as Excel
                         // regardless of each table's first-column width.
                         if components::management_table_checkbox(
@@ -1757,8 +1712,7 @@ impl FreightManager {
                         // of the column gaps. No opacity multiplication:
                         // 0.30 × DIVIDER was darker than the row background,
                         // which made the separators effectively invisible.
-                        components::management_table_column_rules(row,row_rect,&cells,theme::FREIGHT_ASSIGNMENT_COL_GAP);
-                        components::paint_management_table_row_rule(row.painter(),row_rect);
+                        
                             }
                         );
                     }
@@ -1781,9 +1735,7 @@ impl FreightManager {
             // Paint the header background through the complete table viewport,
             // including the scrollbar rail. Only text/checkbox interaction
             // stays inside the column content rect, not the scrollbar.
-            let header_text_rect=components::management_master_header_begin(
-                section,header_rect,header_content_rect
-            );
+            let (header_text_rect,_)=crate::table::header_columns(section,header_rect,header_content_rect,&header_cells,theme::FREIGHT_ASSIGNMENT_COL_GAP,|section,header_text_rect|{
             let header_text_center_y=header_text_rect.center().y;
             let header_painter=section.painter().with_clip_rect(header_rect);
             for (i,title) in titles.iter().enumerate(){
@@ -1850,9 +1802,11 @@ impl FreightManager {
                     }
                 }
             }
-            components::management_table_column_rules(section,header_text_rect,&header_cells,theme::FREIGHT_ASSIGNMENT_COL_GAP);
+            
             // This shared painter preserves the exact master 2pt bottom band.
-            components::management_master_header_finish(section,header_rect);
+            
+                ()
+            });
             
 
             // This is the single "select all" control for the currently
@@ -2005,49 +1959,22 @@ impl FreightManager {
             );
             let by_group=group_product_labels(products);
             let mut first_row_left=None;
-            let scroll_output=components::virtual_fixed_rows(
-                components::management_fixed_table_scroll_area(section,table_width)
-                    .scroll_bar_rect(scroll_track)
-                    .id_salt("freight-group-rates-rows")
-                    .max_height(scroll_max_height)
-                    .auto_shrink([false,false]),
-                section,table_width,theme::FREIGHT_ASSIGNMENT_ROW_HEIGHT,
-                ordered.len(),|table,visible_rows|{
+            let scroll_output=crate::table::fixed_rows(
+                section,crate::table::Viewport{width:table_width,height:scroll_max_height,rail:Some(scroll_track)},
+                "freight-group-rates-rows",theme::FREIGHT_ASSIGNMENT_ROW_HEIGHT,ordered.len(),
+                |table,visible_rows|{
                     components::management_table_row_body(table,table_width);
                     let origin=table.max_rect().min;
                     let first_index=visible_rows.start;
                     for index in visible_rows {
                         let group=ordered[index];
                         let id=text(group,"id");
-                        let row_rect=egui::Rect::from_min_size(
-                            egui::pos2(
-                                origin.x,
-                                origin.y+(index-first_index) as f32
-                                    *theme::FREIGHT_ASSIGNMENT_ROW_HEIGHT
-                            ),
-                            egui::vec2(
-                                table_width,theme::FREIGHT_ASSIGNMENT_ROW_HEIGHT
-                            )
-                        );
+                        let row_rect=crate::table::fixed_row_rect(origin,index,first_index,table_width,theme::FREIGHT_ASSIGNMENT_ROW_HEIGHT);
                         #[cfg(test)]
                         components::general_screen_geometry_tests::record("data row",row_rect);
                         first_row_left.get_or_insert(row_rect.left());
-                        table.scope_builder(
-                            egui::UiBuilder::new()
-                                .id_salt(("freight-rate-row",id))
-                                .max_rect(row_rect)
-                                .layout(egui::Layout::top_down(egui::Align::Min)),
-                            |row|{
-                                let _=row.allocate_exact_size(
-                                    egui::vec2(
-                                        table_width,theme::FREIGHT_ASSIGNMENT_ROW_HEIGHT
-                                    ),
-                                    egui::Sense::hover()
-                                );
-                                let cells=components::management_table_cells(
-                                    row_rect.min,&widths,theme::FREIGHT_ASSIGNMENT_ROW_HEIGHT,theme::FREIGHT_ASSIGNMENT_COL_GAP);
-                                components::paint_management_table_row_background(row.painter(),row_rect,index);
-                                // Name owns its own column. Membership is
+                        crate::table::fixed_row(table,("freight-rate-row",id),row_rect,index,&widths,theme::FREIGHT_ASSIGNMENT_COL_GAP,crate::table::RowTone::Alternating,|row,cells|{
+                        // Name owns its own column. Membership is
                                 // shown separately from the rate rule and
                                 // matches the registered product assignments.
                                 freight_rate_cell(
@@ -2149,8 +2076,7 @@ impl FreightManager {
                                             });
                                     }
                                 );
-                                components::management_table_column_rules(row,row_rect,&cells,theme::FREIGHT_ASSIGNMENT_COL_GAP);
-                                components::paint_management_table_row_rule(row.painter(),row_rect);
+                                
                             }
                         );
                     }
@@ -2162,9 +2088,7 @@ impl FreightManager {
             );
             let header_cells=components::management_table_cells(
                 egui::pos2(left,header_rect.top()),&widths,header_rect.height(),theme::FREIGHT_ASSIGNMENT_COL_GAP);
-            let header_text_rect=components::management_master_header_begin(
-                section,header_rect,rate_layout.header_content_rect
-            );
+            crate::table::header_columns(section,header_rect,rate_layout.header_content_rect,&header_cells,theme::FREIGHT_ASSIGNMENT_COL_GAP,|section,header_text_rect|{
             let painter=section.painter().with_clip_rect(header_rect);
             for (index,title) in titles.iter().enumerate(){
                 let cell=header_cells[index];
@@ -2218,8 +2142,10 @@ impl FreightManager {
                     );
                 }
             }
-            components::management_table_column_rules(section,header_text_rect,&header_cells,theme::FREIGHT_ASSIGNMENT_COL_GAP);
-            components::management_master_header_finish(section,header_rect);
+            
+            
+                ()
+            });
             
             if ordered.is_empty(){
                 let caption=if groups.is_empty(){
@@ -2688,46 +2614,21 @@ fn freight_history_table<const N:usize>(
         ui,scroll_max_height
     );
     let mut first_row_left=None;
-    let scroll=components::virtual_fixed_rows(
-        components::management_fixed_table_scroll_area(ui,width)
-            .scroll_bar_rect(scroll_track)
-            .id_salt(id)
-            .max_height(scroll_max_height)
-            .auto_shrink([false,false]),
-        ui,width,theme::FREIGHT_ASSIGNMENT_ROW_HEIGHT,total_rows,
-        |table,visible_rows|{
+    let scroll=crate::table::fixed_rows(
+                ui,crate::table::Viewport{width:width,height:scroll_max_height,rail:Some(scroll_track)},
+                id,theme::FREIGHT_ASSIGNMENT_ROW_HEIGHT,total_rows,
+                |table,visible_rows|{
             components::management_table_row_body(table,width);
             let first=visible_rows.start;
             let origin=table.max_rect().min;
             for index in visible_rows {
-                let row_rect=egui::Rect::from_min_size(
-                    egui::pos2(
-                        origin.x,
-                        origin.y+(index-first) as f32
-                            *theme::FREIGHT_ASSIGNMENT_ROW_HEIGHT
-                    ),
-                    egui::vec2(width,theme::FREIGHT_ASSIGNMENT_ROW_HEIGHT)
-                );
+                let row_rect=crate::table::fixed_row_rect(origin,index,first,width,theme::FREIGHT_ASSIGNMENT_ROW_HEIGHT);
                 #[cfg(test)]
                 components::general_screen_geometry_tests::record("data row",row_rect);
                 first_row_left.get_or_insert(row_rect.left());
-                table.scope_builder(
-                    egui::UiBuilder::new()
-                        .id_salt((id,index))
-                        .max_rect(row_rect)
-                        .layout(egui::Layout::top_down(egui::Align::Min)),
-                    |row|{
-                        let _=row.allocate_exact_size(
-                            egui::vec2(width,theme::FREIGHT_ASSIGNMENT_ROW_HEIGHT),
-                            egui::Sense::hover()
-                        );
-                        let cells=components::management_table_cells(
-                            row_rect.min,&widths,
-                            theme::FREIGHT_ASSIGNMENT_ROW_HEIGHT,theme::FREIGHT_ASSIGNMENT_COL_GAP);
-                        components::paint_management_table_row_background(row.painter(),row_rect,index);
+                crate::table::fixed_row(table,(id,index),row_rect,index,&widths,theme::FREIGHT_ASSIGNMENT_COL_GAP,crate::table::RowTone::Alternating,|row,cells|{
                         render_row(row,&cells,index);
-                        components::management_table_column_rules(row,row_rect,&cells,theme::FREIGHT_ASSIGNMENT_COL_GAP);
-                        components::paint_management_table_row_rule(row.painter(),row_rect);
+                        
                     }
                 );
             }
@@ -2739,9 +2640,7 @@ fn freight_history_table<const N:usize>(
     );
     let columns=components::management_table_cells(
         egui::pos2(left,header_rect.top()),&widths,header_rect.height(),theme::FREIGHT_ASSIGNMENT_COL_GAP);
-    let header_text_rect=components::management_master_header_begin(
-        ui,header_rect,layout.header_content_rect
-    );
+    crate::table::header_columns(ui,header_rect,layout.header_content_rect,&columns,theme::FREIGHT_ASSIGNMENT_COL_GAP,|ui,header_text_rect|{
     let painter=ui.painter().with_clip_rect(header_rect);
     for (index,title) in titles.iter().enumerate(){
         let cell=columns[index];
@@ -2811,8 +2710,10 @@ fn freight_history_table<const N:usize>(
             );
         }
     }
-    components::management_table_column_rules(ui,header_text_rect,&columns,theme::FREIGHT_ASSIGNMENT_COL_GAP);
-    components::management_master_header_finish(ui,header_rect);
+    
+    
+                ()
+            });
     
     if total_rows==0 {
         if let Some(message)=empty_message {

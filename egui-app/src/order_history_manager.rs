@@ -1398,13 +1398,9 @@ impl OrderHistoryManager {
             // ScrollArea exposed a bottom scrollbar even at desktop widths.
             // Only allow horizontal scrolling if the viewport is actually
             // narrower than the seven-column minimum.
-            let table_scroll=components::management_fixed_table_scroll_area(section,table_width);
-            let output=table_scroll
-                .scroll_bar_rect(scroll_track)
-                .id_salt("order-history-table-rows")
-                .max_height(scroll_max_height)
-                .auto_shrink([false,false])
-                .show_viewport(section,|body,viewport|{
+            let output=crate::table::variable_rows(
+                section,crate::table::Viewport{width:table_width,height:scroll_max_height,rail:Some(scroll_track)},
+                "order-history-table-rows",|body,viewport|{
                     components::management_table_row_body(body,table_width);
                     body.set_min_height(total_height);
                     let first=offsets.partition_point(|value|*value<=viewport.top())
@@ -1498,9 +1494,7 @@ impl OrderHistoryManager {
             );
             let header_cells=components::management_table_cells(scrolled_header.min,&widths,HEADER_HEIGHT,COL_GAP);
             let painter=section.painter().with_clip_rect(head_rect);
-            let header_text_rect=components::management_master_header_begin(
-                section,head_rect,header_content_rect
-            );
+            crate::table::header_columns(section,head_rect,header_content_rect,&header_cells,COL_GAP,|section,header_text_rect|{
             // Header labels AND column separators must use the same
             // horizontally scrolled origin as the data rows. The viewport
             // background, bottom outline and scrollbar rail remain fixed.
@@ -1553,9 +1547,11 @@ impl OrderHistoryManager {
                     }
                 }
             }
-            components::management_table_column_rules(section,header_text_rect,&header_cells,COL_GAP);
+            
             if let Some(sort)=next_sort {self.sort=sort;}
-            components::management_master_header_finish(section,head_rect);
+            
+                ()
+            });
             
             section.spacing_mut().item_spacing.y=old_gap;
             if let Some(order_id)=pending_toggle {

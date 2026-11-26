@@ -340,27 +340,20 @@ fn table<const N:usize>(
         ui,scroll_max_height
     );
     let mut left=None;
-    let output=components::virtual_fixed_rows(
-        components::management_fixed_table_scroll_area(ui,width).scroll_bar_rect(scroll_track).id_salt(id)
-            .max_height(scroll_max_height)
-            .auto_shrink([false,false]),
-        ui,width,HEIGHT,rows,|body,range|{
+    let output=crate::table::fixed_rows(
+                ui,crate::table::Viewport{width:width,height:scroll_max_height,rail:Some(scroll_track)},
+                id,HEIGHT,rows,
+                |body,range|{
             let first=range.start;
             let origin=body.max_rect().min;
             for index in range{
-                let r=Rect::from_min_size(egui::pos2(origin.x,
-                    origin.y+(index-first) as f32*HEIGHT),Vec2::new(width,HEIGHT));
+                let r=crate::table::fixed_row_rect(origin,index,first,width,HEIGHT);
                 #[cfg(test)]
                 components::general_screen_geometry_tests::record("data row",r);
                 left.get_or_insert(r.left());
-                body.scope_builder(UiBuilder::new().id_salt((id,index)).max_rect(r)
-                    .layout(egui::Layout::top_down(Align::Min)),|row|{
-                    row.allocate_exact_size(Vec2::new(width,HEIGHT),Sense::hover());
-                    components::paint_management_table_row_background(row.painter(),r,index);
-                    let cols=components::management_table_cells(r.min,&widths,HEIGHT,GAP);
-                    render(row,cols,index);
-                    components::management_table_column_rules(row,r,&cols,GAP);
-                    components::paint_management_table_row_rule(row.painter(),r);
+                crate::table::fixed_row(body,(id,index),r,index,&widths,GAP,crate::table::RowTone::Alternating,|row,cols|{
+                        render(row,cols,index);
+                    
                 });
             }
         });
@@ -368,7 +361,7 @@ fn table<const N:usize>(
     let left=left.unwrap_or(header.left()-output.state.offset.x);
     let heads=components::management_table_cells(egui::pos2(left,header.top()),&widths,HEADER,GAP);
     let painter=ui.painter().with_clip_rect(header);
-    let header_text_rect=components::management_master_header_begin(ui,header,header_content);
+    let (header_text_rect,_)=crate::table::header_columns(ui,header,header_content,&heads,GAP,|ui,header_text_rect|{
     let mut clicked=None;
     for (i,title) in titles.iter().enumerate(){
         let h=heads[i];
@@ -423,8 +416,10 @@ fn table<const N:usize>(
     }
     if let Some(next)=clicked{*sort=next;}
     // Paint the very same column separators as the data rows.
-    components::management_table_column_rules(ui,header_text_rect,&heads,GAP);
-    components::management_master_header_finish(ui,header);
+    
+    
+                ()
+            });
     
     if let Some((all,enabled))=header_selection{
         let mut checked=all;

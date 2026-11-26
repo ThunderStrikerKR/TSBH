@@ -182,3 +182,76 @@ pub(crate) fn inline<R>(
     finish_inline(ui,rect);
     result
 }
+
+/// Body policies preserve rail behavior and existing scroll IDs.
+#[derive(Clone,Copy)]
+pub(crate) struct Viewport {
+    pub width:f32,
+    pub height:f32,
+    pub rail:Option<Rect>,
+}
+fn viewport_scroll(ui:&Ui,viewport:Viewport,id:impl std::hash::Hash)->egui::ScrollArea{
+    let mut scroll=crate::components::management_fixed_table_scroll_area(ui,viewport.width);
+    if let Some(rail)=viewport.rail{scroll=scroll.scroll_bar_rect(rail);}
+    scroll.id_salt(id).max_height(viewport.height).auto_shrink([false,false])
+}
+pub(crate) fn fixed_rows<R>(
+    ui:&mut Ui,viewport:Viewport,id:impl std::hash::Hash,
+    row_height:f32,count:usize,draw:impl FnOnce(&mut Ui,std::ops::Range<usize>)->R,
+)->egui::containers::scroll_area::ScrollAreaOutput<R>{
+    let scroll=viewport_scroll(ui,viewport,id);
+    crate::components::virtual_fixed_rows(scroll,ui,viewport.width,row_height,count,draw)
+}
+pub(crate) fn variable_rows<R>(
+    ui:&mut Ui,viewport:Viewport,id:impl std::hash::Hash,
+    draw:impl FnOnce(&mut Ui,Rect)->R,
+)->egui::containers::scroll_area::ScrollAreaOutput<R>{
+    viewport_scroll(ui,viewport,id).show_viewport(ui,draw)
+}
+pub(crate) fn register_rows<R>(
+    ui:&mut Ui,height:f32,width:f32,id:impl std::hash::Hash,
+    draw:impl FnOnce(&mut Ui)->R,
+)->egui::containers::scroll_area::ScrollAreaOutput<R>{
+    crate::components::management_register_list_scroll_area(ui,height).id_salt(id)
+        .show(ui,|body|{body.set_min_width(width);draw(body)})
+}
+pub(crate) fn fixed_row_rect(origin:egui::Pos2,index:usize,first:usize,width:f32,height:f32)->Rect{
+    Rect::from_min_size(egui::pos2(origin.x,origin.y+(index-first) as f32*height),
+        Vec2::new(width,height))
+}
+pub(crate) fn row_scope<R>(
+    ui:&mut Ui,id:impl std::hash::Hash,rect:Rect,draw:impl FnOnce(&mut Ui)->R,
+)->egui::InnerResponse<R>{
+    ui.scope_builder(egui::UiBuilder::new().id_salt(id).max_rect(rect)
+        .layout(egui::Layout::top_down(egui::Align::Min)),draw)
+}
+#[derive(Clone,Copy)]
+pub(crate) enum RowTone{Alternating,SelectedIf(bool)}
+pub(crate) fn fixed_row<const N:usize>(
+    ui:&mut Ui,id:impl std::hash::Hash,rect:Rect,index:usize,
+    widths:&[f32;N],gap:f32,tone:RowTone,draw:impl FnOnce(&mut Ui,[Rect;N]),
+){
+    row_scope(ui,id,rect,|row|{
+        row.allocate_exact_size(rect.size(),egui::Sense::hover());
+        if matches!(tone,RowTone::SelectedIf(true)){
+            row.painter().rect_filled(rect,0.0,theme::WORKFLOW_SELECTED_BG);
+            row.painter().rect_filled(Rect::from_min_size(rect.min,
+                Vec2::new(theme::WORKFLOW_SELECTED_STRIPE,rect.height())),0.0,theme::SELECTION);
+        }else{paint_management_table_row_background(row.painter(),rect,index);}
+        let cells=management_table_cells(rect.min,widths,rect.height(),gap);
+        draw(row,cells);
+        management_table_column_rules(row,rect,&cells,gap);
+        paint_management_table_row_rule(row.painter(),rect);
+    });
+}
+/// Only column content and business sort state are supplied by the caller.
+pub(crate) fn header_columns<R>(
+    ui:&mut Ui,header:Rect,content:Rect,cells:&[Rect],gap:f32,
+    draw:impl FnOnce(&mut Ui,Rect)->R,
+)->(Rect,R){
+    let text=header_begin(ui,header,content);
+    let result=draw(ui,text);
+    management_table_column_rules(ui,text,cells,gap);
+    header_finish(ui,header);
+    (text,result)
+}

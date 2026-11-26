@@ -1274,13 +1274,9 @@ impl ProductManager {
                 panel,scroll_max_height
             );
             let mut row_left=None;
-            let scroll_output=components::virtual_fixed_rows(
-                components::management_fixed_table_scroll_area(panel,table_width)
-                    .scroll_bar_rect(scroll_track)
-                    .id_salt("egui-product-price-grid")
-                    .max_height(scroll_max_height)
-                    .auto_shrink([false,false]),
-                panel,table_width,theme::PRODUCT_TABLE_ROW_HEIGHT,ordered.len(),
+            let scroll_output=crate::table::fixed_rows(
+                panel,crate::table::Viewport{width:table_width,height:scroll_max_height,rail:Some(scroll_track)},
+                "egui-product-price-grid",theme::PRODUCT_TABLE_ROW_HEIGHT,ordered.len(),
                 |table,visible_rows|{
                     components::management_table_row_body(table,table_width);
                     theme::apply_table_row_colors(table);
@@ -1289,35 +1285,12 @@ impl ProductManager {
                     for row_index in visible_rows {
                         let product=&self.products[ordered[row_index]];
                         let product_id=field(product,"id");
-                        let row_rect=Rect::from_min_size(
-                            egui::pos2(
-                                origin.x,
-                                origin.y+(row_index-first) as f32
-                                    *theme::PRODUCT_TABLE_ROW_HEIGHT
-                            ),
-                            Vec2::new(table_width,theme::PRODUCT_TABLE_ROW_HEIGHT)
-                        );
+                        let row_rect=crate::table::fixed_row_rect(origin,row_index,first,table_width,theme::PRODUCT_TABLE_ROW_HEIGHT);
                         #[cfg(test)]
                         components::general_screen_geometry_tests::record("data row",row_rect);
                         row_left.get_or_insert(row_rect.left());
-                        table.scope_builder(
-                            UiBuilder::new()
-                                .id_salt(("product-table-fixed-row",product_id))
-                                .max_rect(row_rect)
-                                .layout(Layout::top_down(Align::Min)),
-                            |row|{
-                                // All child widgets are anchored to shared
-                                // column rectangles. No Grid intrinsic widths
-                                // or conditional controls can move the next row.
-                                row.allocate_exact_size(
-                                    Vec2::new(table_width,theme::PRODUCT_TABLE_ROW_HEIGHT),
-                                    Sense::hover()
-                                );
-                                components::paint_management_table_row_background(row.painter(),row_rect,row_index);
-                                let cells=components::management_table_cells(
-                                    row_rect.min,&widths,theme::PRODUCT_TABLE_ROW_HEIGHT,theme::SPACE_8);
-                                // Capture before descendant scope borrows row mutably.
-                                let row_clip=row.clip_rect();
+                        crate::table::fixed_row(table,("product-table-fixed-row",product_id),row_rect,row_index,&widths,theme::SPACE_8,crate::table::RowTone::Alternating,|row,cells|{
+                        let row_clip=row.clip_rect();
                                 let name=field(product,"name");
                                 let subtitle=field(product,"subtitle");
                                 let display=if subtitle.is_empty(){name.to_owned()}
@@ -1591,8 +1564,7 @@ impl ProductManager {
                                         }
                                     }
                                 );
-                                components::management_table_column_rules(row,row_rect,&cells,theme::SPACE_8);
-                                components::paint_management_table_row_rule(row.painter(),row_rect);
+                                
                             }
                         );
                     }
@@ -1608,9 +1580,7 @@ impl ProductManager {
                 &widths,header_rect.height(),theme::SPACE_8);
             // Master header owns the same 34pt text area and inset 2pt
             // bottom rule as Freight Assignment; no clipped 1pt edge stroke.
-            let header_text_rect=components::management_master_header_begin(
-                panel,header_rect,layout.header_content_rect
-            );
+            let (_,clicked_sort)=crate::table::header_columns(panel,header_rect,layout.header_content_rect,&header_cells,theme::SPACE_8,|panel,header_text_rect|{
             let painter=panel.painter().with_clip_rect(header_rect);
             let mut clicked_sort=None;
             for (index,title) in headings.iter().enumerate(){
@@ -1661,8 +1631,10 @@ impl ProductManager {
                     if response.clicked(){clicked_sort=Some(ProductSort::next(self.sort,column));}
                 }
             }
-            components::management_table_column_rules(panel,header_text_rect,&header_cells,theme::SPACE_8);
-            components::management_master_header_finish(panel,header_rect);
+            
+            
+                clicked_sort
+            });
             
             if let Some(next)=clicked_sort{
                 self.sort=next;

@@ -294,33 +294,19 @@ fn report_table<const N:usize>(
         ui,scroll_max_height
     );
     let mut first_x=None;
-    let scroll=components::virtual_fixed_rows(
-        components::management_fixed_table_scroll_area(ui,width).scroll_bar_rect(scroll_track).id_salt(id)
-            .max_height(scroll_max_height)
-            .auto_shrink([false,false]),
-        ui,width,ROW_HEIGHT,indices.len(),
-        |list,visible_rows|{
+    let scroll=crate::table::fixed_rows(
+                ui,crate::table::Viewport{width:width,height:scroll_max_height,rail:Some(scroll_track)},
+                id,ROW_HEIGHT,indices.len(),
+                |list,visible_rows|{
             components::management_table_row_body(list,width);
             let first=visible_rows.start;
             let origin=list.max_rect().min;
             for index in visible_rows{
-                let rect=Rect::from_min_size(
-                    egui::pos2(origin.x,origin.y+(index-first) as f32*ROW_HEIGHT),
-                    Vec2::new(width,ROW_HEIGHT)
-                );
+                let rect=crate::table::fixed_row_rect(origin,index,first,width,ROW_HEIGHT);
                 #[cfg(test)]
                 components::general_screen_geometry_tests::record(if id=="settlement-orders"{"settlement order row"}else{"settlement payment row"},rect);
                 first_x.get_or_insert(rect.left());
-                list.scope_builder(
-                    UiBuilder::new().id_salt((id,index))
-                        .max_rect(rect)
-                        .layout(egui::Layout::top_down(Align::Min)),
-                    |row|{
-                        row.allocate_exact_size(
-                            Vec2::new(width,ROW_HEIGHT),Sense::hover()
-                        );
-                        let row_cells=components::management_table_cells(rect.min,&widths,ROW_HEIGHT,COL_GAP);
-                        components::paint_management_table_row_background(row.painter(),rect,index);
+                crate::table::fixed_row(list,(id,index),rect,index,&widths,COL_GAP,crate::table::RowTone::Alternating,|row,row_cells|{
                         let data=format_row(indices[index]);
                         for (column,cell) in row_cells.iter().enumerate(){
                             paint_cell(
@@ -328,8 +314,7 @@ fn report_table<const N:usize>(
                                 roles[column],(id,indices[index],column),
                             );
                         }
-                        components::management_table_column_rules(row,rect,&row_cells,COL_GAP);
-                        components::paint_management_table_row_rule(row.painter(),rect);
+                        
                     }
                 );
             }
@@ -340,9 +325,7 @@ fn report_table<const N:usize>(
     let left=first_x.unwrap_or(header.left()-scroll.state.offset.x);
     let header_cells=components::management_table_cells(egui::pos2(left,header.top()),&widths,HEADER_HEIGHT,COL_GAP);
     let painter=ui.painter().with_clip_rect(header);
-    let header_text_rect=components::management_master_header_begin(
-        ui,header,layout.header_content_rect
-    );
+    crate::table::header_columns(ui,header,layout.header_content_rect,&header_cells,COL_GAP,|ui,header_text_rect|{
     let mut sort_change=None;
     for (column,title) in headings.iter().enumerate(){
         let cell=header_cells[column];
@@ -379,9 +362,11 @@ fn report_table<const N:usize>(
             }
         }
     }
-    components::management_table_column_rules(ui,header_text_rect,&header_cells,COL_GAP);
+    
     if let Some(next)=sort_change{*sort=next;}
-    components::management_master_header_finish(ui,header);
+    
+                ()
+            });
     
             (scroll.inner_rect,())
         });

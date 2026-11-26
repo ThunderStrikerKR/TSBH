@@ -295,10 +295,7 @@ impl ModelGroupManager {
                         crate::table::show(left,crate::table::Header::Register{primary:"모델군",action:"상품 수",action_width:104.0},|left,header|{
                         let list_height=left.available_height().max(1.0);
                         let mut has_visible=false;
-                        let output=components::management_register_list_scroll_area(left,list_height)
-                            .id_salt("family-list")
-                            .show(left,|list|{
-                            list.set_min_width(header.table_width);
+                        let output=crate::table::register_rows(left,list_height,header.table_width,"family-list",|list|{
                             for (id,g) in &groups{
                                 let names=items(&g["productIds"]).iter()
                                     .filter_map(Value::as_str).filter_map(|pid|product(catalog,pid))

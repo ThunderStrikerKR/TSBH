@@ -570,37 +570,18 @@ impl ClientManager {
             let scroll_track=components::management_table_scroll_track_rect(
                 section,scroll_max_height
             );
-            let scroll_output=components::virtual_fixed_rows(
-                components::management_fixed_table_scroll_area(section,table_width)
-                    .scroll_bar_rect(scroll_track)
-                    .id_salt("client-management-table-rows")
-                    .max_height(scroll_max_height)
-                    .auto_shrink([false,false]),
-                section,table_width,theme::MANAGEMENT_CLIENT_ROW_HEIGHT,
-                rows.len(),
+            let scroll_output=crate::table::fixed_rows(
+                section,crate::table::Viewport{width:table_width,height:scroll_max_height,rail:Some(scroll_track)},
+                "client-management-table-rows",theme::MANAGEMENT_CLIENT_ROW_HEIGHT,rows.len(),
                 |table,visible_rows|{
                     components::management_table_row_body(table,table_width);
                     let first=visible_rows.start;
                     let origin=table.max_rect().min;
                     let rows_clip=table.clip_rect();
                     for index in visible_rows{
-                        let row_rect=egui::Rect::from_min_size(
-                            egui::pos2(
-                                origin.x,
-                                origin.y+(index-first) as f32
-                                    *theme::MANAGEMENT_CLIENT_ROW_HEIGHT
-                            ),
-                            egui::vec2(
-                                table_width,theme::MANAGEMENT_CLIENT_ROW_HEIGHT
-                            )
-                        );
+                        let row_rect=crate::table::fixed_row_rect(origin,index,first,table_width,theme::MANAGEMENT_CLIENT_ROW_HEIGHT);
                         first_row_left.get_or_insert(row_rect.left());
-                        table.scope_builder(
-                            egui::UiBuilder::new()
-                                .id_salt(("client-management-fixed-row",index))
-                                .max_rect(row_rect)
-                                .layout(Layout::top_down(Align::Min)),
-                            |row|{
+                        crate::table::row_scope(table,("client-management-fixed-row",index),row_rect,|row|{
                                 row.set_clip_rect(rows_clip);
                                 if let Some(client)=rows.get(index){
                                     #[cfg(test)]

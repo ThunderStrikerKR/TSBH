@@ -295,36 +295,18 @@ impl ClientChooser {
                                 results_panel,height
                             );
                             let mut first_row_left=None;
-                            let output=components::virtual_fixed_rows(
-                                components::management_fixed_table_scroll_area(results_panel,table_width)
-                                    .id_salt("egui-all-clients-scroll")
-                                    .scroll_bar_rect(scroll_track)
-                                    .max_height(height)
-                                    .auto_shrink([false,false]),
-                                results_panel,table_width,
-                                theme::MANAGEMENT_CLIENT_ROW_HEIGHT,
-                                clients.len(),
-                                |table,visible_rows|{
+                            let output=crate::table::fixed_rows(
+                results_panel,crate::table::Viewport{width:table_width,height:height,rail:Some(scroll_track)},
+                "egui-all-clients-scroll",theme::MANAGEMENT_CLIENT_ROW_HEIGHT,clients.len(),
+                |table,visible_rows|{
                                     components::management_table_row_body(table,table_width);
                                     let first=visible_rows.start;
                                     let origin=table.max_rect().min;
                                     let clip=table.clip_rect();
                                     for index in visible_rows {
-                                        let rect=egui::Rect::from_min_size(
-                                            egui::pos2(origin.x,origin.y+
-                                                (index-first) as f32*
-                                                theme::MANAGEMENT_CLIENT_ROW_HEIGHT),
-                                            egui::vec2(
-                                                table_width,theme::MANAGEMENT_CLIENT_ROW_HEIGHT
-                                            )
-                                        );
+                                        let rect=crate::table::fixed_row_rect(origin,index,first,table_width,theme::MANAGEMENT_CLIENT_ROW_HEIGHT);
                                         first_row_left.get_or_insert(rect.left());
-                                        table.scope_builder(
-                                            egui::UiBuilder::new()
-                                                .id_salt(("client-chooser-row",index))
-                                                .max_rect(rect)
-                                                .layout(egui::Layout::top_down(egui::Align::Min)),
-                                            |row_ui|{
+                                        crate::table::row_scope(table,("client-chooser-row",index),rect,|row_ui|{
                                                 row_ui.set_clip_rect(clip);
                                                 if let Some(client)=clients.get(index){
                                                     let client_id=text(client,"id");
