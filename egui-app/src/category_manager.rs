@@ -747,7 +747,7 @@ impl CategoryManager {
                     self.focus.search=self.query.clone();
                 }
                 let height=(panel.available_height()-theme::CATEGORY_EXPLORER_CRUMB_HEIGHT-theme::SECTION_DIVIDER_HEIGHT)
-                    .max(theme::MANAGEMENT_TABLE_ROW_HEIGHT);
+                    .max(theme::CATALOG_TREE_ROW_HEIGHT);
                 let search_focused=panel.ctx().memory(|mem|mem.focused().is_some());
                 category_dropdown::explorer_body(panel,&nodes,&node_index,&mut self.focus,
                     !busy,height,search_focused,Some(&index.totals));
@@ -787,7 +787,7 @@ impl CategoryManager {
             let output=crate::scrollbar::scroll_area(crate::scrollbar::ScrollAxes::Vertical)
                 .id_salt(("category-map-tree",self.scroll_epoch))
                 .auto_shrink([false,false])
-                .max_height(panel.available_height().max(theme::MANAGEMENT_TABLE_ROW_HEIGHT))
+                .max_height(panel.available_height().max(theme::CATALOG_TREE_ROW_HEIGHT))
                 .show(panel,|tree|{
                     // Adjacent rows must touch so parent/child guide lines
                     // form one continuous tree rather than broken dashes.
