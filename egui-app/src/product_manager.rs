@@ -1951,7 +1951,9 @@ impl ProductManager {
             return;
         }
         if self.tab==2{
-            self.model_groups.show_dialogs(ctx,work_area,Arc::clone(&self.gateway));
+            if let Some(catalog)=self.catalog.clone(){
+                self.model_groups.show_dialogs(ctx,work_area,&catalog,Arc::clone(&self.gateway));
+            }
             return;
         }
         if self.tab==1 {
