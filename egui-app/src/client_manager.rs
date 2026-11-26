@@ -92,6 +92,7 @@ pub struct ClientManager {
     search_rx:Option<SearchState>,
     generation:u64,
     matches:Vec<String>,
+    matches_query:String,
     search:String,
     searching:bool,
     // None = Rust/source order; false = ascending; true = descending.
@@ -130,7 +131,7 @@ impl ClientManager {
         });
         Self {
             state:Value::Null,ready:false,loading:Some(rx),saving:None,
-            search_rx:None,generation:0,matches:Vec::new(),search:String::new(),
+            search_rx:None,generation:0,matches:Vec::new(),matches_query:String::new(),search:String::new(),
             searching:false,sort:None,error:None,changed:false,
             draft:None,original:None,confirm_delete:false,confirm_discard:false,
             exception_id:String::new(),exception_price:String::new(),
@@ -220,7 +221,11 @@ impl ClientManager {
     fn query(&mut self,gateway:Arc<dyn BandoGateway>,ctx:Context) {
         self.generation=self.generation.wrapping_add(1);
         self.search_rx=None;
-        self.matches.clear();
+        // Retain the same-query result during master refresh, never across a changed search.
+        if self.matches_query!=self.search{
+            self.matches.clear();
+            self.matches_query=self.search.clone();
+        }
         if self.search.trim().is_empty() {
             self.searching=false;
             return;
@@ -387,7 +392,7 @@ impl ClientManager {
                 _=>{},
             }
             if self.search.trim().is_empty() ||
-                (!self.searching && self.matches.iter()
+                (self.matches.iter()
                     .any(|id|id==field(client,"id"))){
                 filtered_count+=1;
             }
@@ -474,7 +479,7 @@ impl ClientManager {
         let mut rows=self.clients().iter()
             .filter(|row|field(row,"deletedAt").is_empty())
             .filter(|row|self.search.trim().is_empty() ||
-                (!self.searching && self.matches.iter()
+                (self.matches.iter()
                     .any(|id|id==field(row,"id"))))
             .cloned().collect::<Vec<_>>();
         if let Some((column,descending))=self.sort{
@@ -631,7 +636,7 @@ impl ClientManager {
                                             (shown_phone,extra_mobile),
                                             (crate::composite_client::client_tier_label(&display.tier),conditions)
                                         ],field(client,"tier"),index
-                                    ).clicked(){
+                                    ).clicked() && !self.searching{
                                         chosen=Some(client.clone());
                                     }
                                 }
