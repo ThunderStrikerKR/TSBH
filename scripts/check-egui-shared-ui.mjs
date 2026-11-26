@@ -15,7 +15,7 @@ const compact = new Map(Object.entries({
 
   "automatic_message_manager.rs:show:body":1,
   "order_history_detail.rs:payment_panel:ui":1,
-  "freight_manager.rs:show_history:menu":1,
+  "popup/mod.rs:detail_divider:self":1,
   "excel_manager.rs:show_reply_review:ui":1,
   "workflow_board_ui.rs:group_frame:ui":1,
   "workflow_board_ui.rs:pending_frame:ui":1,
@@ -1259,7 +1259,48 @@ function designTokenSelfTest(){
   assert.equal(designTokenViolations("fn icon(){Stroke::new(1.0,ink);}","screen.rs").length,0);
 }
 
+// New managed form/menu callbacks may supply data and controls, but
+// may not replace layout/style policy. Token-based, excluding tests/comments.
+export function auditManagedLayout(source,file){
+  if(file==="popup/mod.rs")return [];
+  const tokens=productionTokens(source),v=tokens.map(t=>t.v),hits=[];
+  const entries=new Set(["modal_form_stack","show_management_menu"]);
+  const forbidden=new Set(["spacing_mut","style_mut","visuals_mut","set_style",
+    "set_min_width","set_max_width","set_width","set_min_height","set_max_height","set_height",
+    "add_space","set_clip_rect","set_opacity","multiply_opacity","set_visuals"]);
+  for(let i=0;i<v.length-1;i++){
+    if(!entries.has(v[i])||v[i+1]!=="("||v[i-1]==="fn")continue;
+    let depth=1,end=i+2;
+    for(;end<v.length&&depth;end++){if(v[end]==="(")depth++;else if(v[end]===")")depth--;}
+    for(let j=i+2;j<end-1;j++){
+      if(v[j]==="."&&forbidden.has(v[j+1])&&v[j+2]==="(")
+        hits.push({line:tokens[j].line,rule:"managed layout override: "+v[j+1]+"; use a shared role"});
+    }
+  }
+  // The freight migration is explicit: don't allow a screen to swap the
+  // typed wrappers back to the old raw callback APIs.
+  if(file==="freight_manager.rs"){
+    const count=name=>v.filter((x,i)=>x===name&&v[i+1]==="("&&v[i-1]!=="fn").length;
+    if(count("modal_form_stack")<1||count("show_management_menu")<2)
+      hits.push({line:1,rule:"freight managed form/menu entry missing"});
+    if(count("show_menu")>0)
+      hits.push({line:1,rule:"freight raw menu bypass; use show_management_menu"});
+  }
+  return hits;
+}
+function managedLayoutSelfTest(){
+  const audit=s=>auditManagedLayout(s,"screen.rs");
+  assert.equal(audit("fn show(){modal_form_stack(ui,|form|{form.section(title,|ui|{ui.label(x);});});}").length,0);
+  assert.equal(audit("fn show(){modal_form_stack(ui,|form|{form.section(title,|ui|{ui.spacing_mut().item_spacing.y=2.0;});});}").length,1);
+  assert.equal(audit("fn show(){show_management_menu(a,b,c,|menu|{menu.set_min_width(300.0);});}").length,1);
+  assert.equal(audit("fn show(){modal_form_stack(ui,|form|{form.compact_group(|ui|{ui.add_space(4.0);});});}").length,1);
+  assert.equal(audit("fn show(){modal_form_stack(ui,|form|{form.named_text_field(a,b,c,d);});ui.add_space(4.0);}").length,0);
+  assert.equal(audit("fn show(){modal_form_stack(ui,|form|{/* ui.add_space(4.0); */form.named_text_field(a,b,c,d);});}").length,0);
+  assert.equal(auditManagedLayout("fn show(){show_menu(a,b,c);}","freight_manager.rs").length,2);
+}
+
 function main(){
+  managedLayoutSelfTest();
   selfTest();
   designTokenSelfTest();
   compositeSelfTest();
@@ -1280,7 +1321,7 @@ function main(){
     const owner=file.endsWith("/mod.rs")?file.split("/")[0]:file.replace(/\.rs$/,"");
     if(dependencyOwners.has(owner))graph.set(owner,sharedDependencies(source,owner));
     for(const rule of designTokenViolations(source,file)){failures++;console.error(file+": "+rule);}
-    for(const hit of [...audit(source,file,true),...auditComposite(source,file,true),...auditContextLocks(source,file),...auditCardHeights(source,file),...auditIndirectCardHeights(source,file)]){
+    for(const hit of [...audit(source,file,true),...auditComposite(source,file,true),...auditContextLocks(source,file),...auditCardHeights(source,file),...auditIndirectCardHeights(source,file),...auditManagedLayout(source,file)]){
       failures++;console.error(file+":"+hit.line+" "+hit.rule);
     }
   }

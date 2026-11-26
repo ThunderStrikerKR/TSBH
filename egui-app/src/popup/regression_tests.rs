@@ -1209,10 +1209,15 @@ fn freight_modal_content_uses_shared_layout_and_controls(){
     let rate=source.split("    fn rate_dialog(").nth(1).unwrap()
         .split("    /// Global rate-basis changes").next().unwrap();
     assert!(rate.contains("crate::popup::modal_form_stack("));
-    assert!(rate.contains("crate::popup::modal_master_body_section("));
+    assert!(rate.contains("form.section("));
+    assert!(rate.contains("form.compact_group("));
+    assert!(rate.contains("form.named_text_field("));
+    assert!(!rate.contains("spacing_mut("));
     assert!(rate.contains("crate::table::registry_table("));
     assert!(!rate.contains("ui.add_space("));
-    assert_eq!(source.matches("crate::popup::modal_named_text_field(").count(),3);
+    assert_eq!(source.matches("crate::popup::modal_named_text_field(").count(),2);
+    assert_eq!(source.matches("crate::popup::show_management_menu(").count(),2);
+    assert!(!source.contains("menu.close("));
     assert!(source.contains("crate::popup::modal_compact_table_height("));
     assert!(source.contains("그룹을 삭제하면 연결된 상품의 배송 그룹이 미지정으로 변경됩니다."));
     assert!(!source.contains("area.height()-310.0"));

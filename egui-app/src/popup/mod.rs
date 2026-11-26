@@ -813,10 +813,30 @@ pub(crate) fn modal_compact_table_height(
 
 /// Standard vertical form groups: the caller supplies content, never
 /// additional inter-section spacing. Each group occupies a single child scope.
-pub(crate) fn modal_form_stack<R>(ui:&mut Ui,contents:impl FnOnce(&mut Ui)->R)->R{
+pub(crate) struct ModalFormStack<'a>{ui:&'a mut Ui}
+impl ModalFormStack<'_>{
+    // No Deref, public raw UI field or setter for the stack geometry.
+    pub(crate) fn compact_group<R>(&mut self,contents:impl FnOnce(&mut Ui)->R)->R{
+        self.ui.scope(|group|{
+            group.spacing_mut().item_spacing.y=theme::SPACING;
+            contents(group)
+        }).inner
+    }
+    pub(crate) fn section<R>(&mut self,title:&str,contents:impl FnOnce(&mut Ui)->R)->R{
+        modal_master_body_section(self.ui,title,contents)
+    }
+    pub(crate) fn named_text_field(
+        &mut self,label:&str,value:&mut String,hint:&str,enabled:bool
+    )->Response{
+        modal_named_text_field(self.ui,label,value,hint,enabled)
+    }
+}
+pub(crate) fn modal_form_stack<R>(
+    ui:&mut Ui,contents:impl FnOnce(&mut ModalFormStack<'_>)->R
+)->R{
     ui.scope(|form|{
         form.spacing_mut().item_spacing.y=theme::MODAL_MASTER_WORKSPACE_GAP;
-        contents(form)
+        contents(&mut ModalFormStack{ui:form})
     }).inner
 }
 
@@ -833,6 +853,48 @@ pub(crate) fn modal_named_text_field(
             )
         }).inner
     }).inner
+}
+
+/// A management menu exposes content roles, not its raw UI or style.
+/// Native popup ownership and outside-click behavior stay in overlay.
+#[derive(Clone,Copy)]
+pub(crate) enum ManagementMenuRole{Actions,Details}
+pub(crate) struct ManagementMenu<'a>{ui:&'a mut Ui}
+impl ManagementMenu<'_>{
+    fn action_with_role(&mut self,label:&str,role:theme::ButtonRole,enabled:bool)->bool{
+        let clicked=crate::button::action_full_width(self.ui,label,role,enabled).clicked();
+        if clicked{self.ui.close();}
+        clicked
+    }
+    pub(crate) fn action(&mut self,label:&str,enabled:bool)->bool{
+        self.action_with_role(label,theme::ButtonRole::TableSecondary,enabled)
+    }
+    pub(crate) fn danger_action(&mut self,label:&str,enabled:bool)->bool{
+        self.action_with_role(label,theme::ButtonRole::Danger,enabled)
+    }
+    pub(crate) fn detail(&mut self,label:&str,value:&str){
+        self.ui.label(typography::field_label(label));
+        self.ui.label(typography::body(value));
+        self.ui.add_space(theme::SPACE_8);
+    }
+    pub(crate) fn detail_divider(&mut self){
+        crate::ui_primitives::soft_divider(self.ui);
+        self.ui.add_space(theme::SPACE_8);
+    }
+}
+pub(crate) fn show_management_menu<R>(
+    owner:&Response,align:Option<egui::RectAlign>,role:ManagementMenuRole,
+    content:impl FnOnce(&mut ManagementMenu<'_>)->R
+)->Option<egui::InnerResponse<R>>{
+    crate::overlay::show_menu(owner,align,|menu|{
+        let (width,gap)=match role{
+            ManagementMenuRole::Actions=>(148.0,theme::SPACE_4),
+            ManagementMenuRole::Details=>(280.0,theme::SPACING),
+        };
+        menu.set_min_width(width);
+        menu.spacing_mut().item_spacing.y=gap;
+        content(&mut ManagementMenu{ui:menu})
+    })
 }
 
 /// Single plain-body inset for both decision and editor workspaces.

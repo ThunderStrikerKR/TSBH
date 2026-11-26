@@ -2054,12 +2054,9 @@ impl FreightManager {
                                             buttons,"관리",
                                             theme::ButtonRole::TableSecondary,enabled
                                         );
-                                        crate::overlay::show_management_menu(
-                                            &trigger,None,crate::overlay::ManagementMenuRole::Actions,|menu|{
-                                                if crate::button::action_full_width(
-                                                    menu,"운임 수정",
-                                                    theme::ButtonRole::TableSecondary,enabled
-                                                ).clicked(){
+                                        crate::popup::show_management_menu(
+                                            &trigger,None,crate::popup::ManagementMenuRole::Actions,|menu|{
+                                                if menu.action("운임 수정",enabled){
                                                     match group_rules.get(id)
                                                         .filter(|rule|rule.is_object()){
                                                         Some(rule)=>*editor=Some(
@@ -2071,30 +2068,17 @@ impl FreightManager {
                                                             "그룹 운임 기준을 읽지 못했습니다. 새로고침 후 확인하세요.".into()
                                                         ),
                                                     }
-                                                    menu.close();
                                                 }
-                                                if crate::button::action_full_width(
-                                                    menu,"기준 변경",
-                                                    theme::ButtonRole::TableSecondary,enabled
-                                                ).clicked(){
+                                                if menu.action("기준 변경",enabled){
                                                     *basis=Some(Some(id.to_owned()));
-                                                    menu.close();
                                                 }
-                                                if crate::button::action_full_width(
-                                                    menu,"이름 수정",
-                                                    theme::ButtonRole::TableSecondary,enabled
-                                                ).clicked(){
+                                                if menu.action("이름 수정",enabled){
                                                     *rename_target=Some((
                                                         id.to_owned(),text(group,"name").to_owned()
                                                     ));
-                                                    menu.close();
                                                 }
-                                                if crate::button::action_full_width(
-                                                    menu,"삭제",
-                                                    theme::ButtonRole::Danger,enabled
-                                                ).clicked(){
+                                                if menu.danger_action("삭제",enabled){
                                                     *delete_target=Some(id.to_owned());
-                                                    menu.close();
                                                 }
                                             });
                                     }
@@ -2178,9 +2162,8 @@ impl FreightManager {
     fn rate_dialog(
         ui:&mut Ui,editor:&mut RateEditor,enabled:bool,
     ){
-        crate::popup::modal_form_stack(ui,|ui|{
-        ui.scope(|ui|{
-        ui.spacing_mut().item_spacing.y=theme::SPACING;
+        crate::popup::modal_form_stack(ui,|form|{
+        form.compact_group(|ui|{
         ui.horizontal(|title|{
             title.label(typography::subsection_heading(&format!("{} 운임",editor.name)));
             settings_help::icon(title,if editor.product {
@@ -2199,7 +2182,7 @@ impl FreightManager {
             if editor.max_bundle_text!=before{editor.sync_max_bundle();}
         });
         });
-        crate::popup::modal_master_body_section(ui,"수량별 운임",|ui|{
+        form.section("수량별 운임",|ui|{
         let count=editor.visible_count();
         let fee_ids=(1..=count).map(|count|count.to_string()).collect::<Vec<_>>();
         let mut navigation=cell_navigation::WorksheetFocus::new(
@@ -2232,8 +2215,8 @@ impl FreightManager {
             navigation.finish(ui.ctx());
         }
         });
-        crate::popup::modal_named_text_field(
-            ui,"사용자 참고 메모",&mut editor.notes,"포장할 때 참고할 사항 (선택)",enabled
+        form.named_text_field(
+            "사용자 참고 메모",&mut editor.notes,"포장할 때 참고할 사항 (선택)",enabled
         );
         });
     }
@@ -2381,34 +2364,21 @@ impl FreightManager {
                             // Registration and verification are retained in
                             // the record, but are no longer table columns.
                             // Popup lives above the virtualized row layout.
-                            crate::overlay::show_management_menu(
-                                &trigger,None,crate::overlay::ManagementMenuRole::Details,|menu|{
-                                    menu.label(typography::field_label("등록일"));
+                            crate::popup::show_management_menu(
+                                &trigger,None,crate::popup::ManagementMenuRole::Details,|menu|{
                                     let at=text(record,"at");
-                                    menu.label(typography::body(
-                                        if at.is_empty(){"등록일 미확인"}else{at}
-                                    ));
-                                    menu.add_space(theme::SPACE_8);
-                                    menu.label(typography::field_label("검증 이력"));
+                                    menu.detail("등록일",if at.is_empty(){"등록일 미확인"}else{at});
                                     let verified_at=text(record,"verifiedAt");
                                     if verified_at.is_empty(){
-                                        menu.label(typography::body(
-                                            "실배송 검증 기록 없음 (사용자 등록)"
-                                        ));
+                                        menu.detail("검증 이력","실배송 검증 기록 없음 (사용자 등록)");
                                     }else{
-                                        let samples=record["sampleCount"].as_u64()
-                                            .unwrap_or(1);
-                                        menu.label(typography::body(&format!(
+                                        let samples=record["sampleCount"].as_u64().unwrap_or(1);
+                                        menu.detail("검증 이력",&format!(
                                             "{verified_at} · 실배송 검증 {samples}회"
-                                        )));
+                                        ));
                                     }
-                                    menu.add_space(theme::SPACE_8);
-                                    crate::ui_primitives::soft_divider(menu);
-                                    menu.add_space(theme::SPACE_8);
-                                    if crate::button::action_full_width(
-                                        menu,"예외 운임 변경",
-                                        theme::ButtonRole::TableSecondary,enabled
-                                    ).clicked(){
+                                    menu.detail_divider();
+                                    if menu.action("예외 운임 변경",enabled){
                                         // Existing revise_combination modal
                                         // and Rust mutation path are preserved.
                                         *exception=Some((
@@ -2417,7 +2387,6 @@ impl FreightManager {
                                                 .map(|n|n.to_string())
                                                 .unwrap_or_default()
                                         ));
-                                        menu.close();
                                     }
                                 });
                         }
