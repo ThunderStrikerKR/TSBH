@@ -233,7 +233,8 @@ impl ModelGroupManager {
                     let body_height=(panel.available_height()-theme::MANAGEMENT_TABLE_HEADER_HEIGHT).max(1.0);
                     let selected_id=self.selected.clone();
                     let rect=crate::table::registry_table(panel,"family-list",["모델군","대표모델","상품 수","관리"],
-                        [240.0,220.0,96.0,108.0],body_height,visible.len(),
+                        crate::table::RegistryColumns::balanced_text([240.0,220.0,96.0,108.0],2),
+                        body_height,visible.len(),
                         |i|visible[i].0==selected_id,|row,cells,i,rect|{
                             let (id,g)=visible[i];
                             let selected=self.selected==*id;
@@ -329,7 +330,7 @@ impl ModelGroupManager {
                                 .filter(|p|format!("{} {}",text(p,"name"),text(p,"subtitle")).to_lowercase().contains(&query))
                                 .take(30).collect::<Vec<_>>();
                             body.label(typography::subsection_heading("상품 검색 결과"));
-                            let result_height=(body_height*0.25).min(theme::MANAGEMENT_TABLE_ROW_HEIGHT*3.0).max(theme::MANAGEMENT_TABLE_ROW_HEIGHT);
+                            let result_height=(body_height*0.25).min(theme::MANAGEMENT_COMPACT_ROW_HEIGHT*3.0).max(theme::MANAGEMENT_COMPACT_ROW_HEIGHT);
                             let rect=crate::table::registry_table(body,"model-group-search-results",
                                 ["상품명","상세 정보","소속 모델군","추가"],[140.0,100.0,110.0,80.0],
                                 result_height,choices.len(),|_|false,|row,cells,i,_|{
@@ -360,7 +361,7 @@ impl ModelGroupManager {
                         if !text(&g,"representativeColor").is_empty()&&text(&g,"representativeProductId").is_empty(){
                             body.label(typography::caption(&format!("이전 대표색상: {} · 대표모델 재지정 필요",text(&g,"representativeColor"))));
                         }
-                        let body_height=(body_height-(body.cursor().top()-body_top)-theme::MANAGEMENT_TABLE_HEADER_HEIGHT-theme::SPACE_8).max(theme::MANAGEMENT_TABLE_ROW_HEIGHT);
+                        let body_height=(body_height-(body.cursor().top()-body_top)-theme::MANAGEMENT_TABLE_HEADER_HEIGHT-theme::SPACE_8).max(theme::MANAGEMENT_COMPACT_ROW_HEIGHT);
                         let rect=crate::table::registry_table(body,("model-group-registered-products",self.selected.clone()),
                             ["상품명","상세 정보","대표모델","관리"],[140.0,100.0,96.0,176.0],
                             body_height,ids.len(),|_|false,|row,cells,i,_|{
