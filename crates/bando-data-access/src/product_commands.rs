@@ -97,9 +97,8 @@ pub fn patch_model_groups_v2(
         [],|row|row.get(0),
     ).map_err(|_|"운영 DB 스키마를 확인할 수 없습니다.".to_owned())?;
     if !crate::supported_relational_version(version){return Err("지원하지 않는 운영 DB 버전입니다.".into());}
-    let mut state=crate::read_v2_snapshot(conn)?;
-    let revision=state["revision"].as_u64()
-        .ok_or("운영 DB revision 오류")?;
+    crate::storage::update_v2_entity_if_changed(conn,true,|before|{
+    let mut state=before.clone();
     let settings=state["settings"].as_object_mut()
         .ok_or("설정 데이터 오류")?;
     let prior=settings.get("colorGuidanceGroups").unwrap_or(&Value::Null);
@@ -110,8 +109,8 @@ pub fn patch_model_groups_v2(
     catalog_clients::execute(
         "validate_model_groups",json!({"state":&state})
     )?;
-    let saved=crate::write_v2_snapshot(conn,state,revision,true)?;
-    Ok(json!({"revision":saved["revision"]}))
+    Ok((state!=*before).then_some(state))
+    })
 }
 
 fn required<'a>(value:&'a Value,key:&str)->Result<&'a str,String>{
@@ -151,6 +150,34 @@ pub fn preview_unified_product_workbook(
     }))
 }
 
+// Price cells already carry an exact field CAS. Editor commands carry
+// the original entity; older callers without an entity retain global CAS.
+// Bulk workbook review deliberately keeps its reviewed revision boundary.
+fn check_catalog_write_scope(before:&Value,action:&str,data:&Value,
+    expected:u64,current:u64)->Result<(),String>{
+    if action=="set_price"{return Ok(());}
+    if let Some(original)=data.get("expectedEntity"){
+        let (collection,id)=match action{
+            "upsert_product"=>("products",data["product"]["id"].as_str().unwrap_or("")),
+            "archive_product"=>("products",data["productId"].as_str().unwrap_or("")),
+            "upsert_brand"=>("brands",data["editing"].as_str().unwrap_or("")),
+            "save_alias"=>("aliases",data["record"]["id"].as_str().unwrap_or("")),
+            _=>return Err("지원하지 않는 개별 저장 기준입니다.".into())
+        };
+        let actual=before[collection].as_array().into_iter().flatten()
+            .find(|row|!id.is_empty() && row["id"].as_str()==Some(id))
+            .unwrap_or(&Value::Null);
+        if actual!=original{
+            return Err("편집 중인 항목이 변경되었습니다. 입력 내용을 유지합니다.".into());
+        }
+        return Ok(());
+    }
+    if expected!=current{
+        return Err("다른 작업에서 상품 데이터가 수정되었습니다. 새로고침 후 다시 저장하세요.".into());
+    }
+    Ok(())
+}
+
 pub fn patch_product_v2(conn:&mut Connection, request:&Value)->Result<Value,String>{
     let expected=request.get("expectedRevision").and_then(Value::as_u64)
         .ok_or("상품 변경 비교 리비전이 없습니다.")?;
@@ -161,12 +188,10 @@ pub fn patch_product_v2(conn:&mut Connection, request:&Value)->Result<Value,Stri
         [],|row|row.get(0),
     ).map_err(|_|"운영 DB 스키마를 확인할 수 없습니다.".to_owned())?;
     if !crate::supported_relational_version(version){return Err("지원하지 않는 운영 DB 버전입니다.".into());}
-    let before=crate::read_v2_snapshot(conn)?;
-    let current=before["revision"].as_u64().ok_or("운영 DB revision 오류")?;
-    if expected!=current {
-        return Err("다른 작업에서 상품 데이터가 수정되었습니다. 새로고침 후 다시 저장하세요.".into());
-    }
     let data=request.get("data").ok_or("상품 변경 입력이 없습니다.")?;
+    crate::storage::update_v2_entity_if_changed(conn,true,|before|{
+    let current=before["revision"].as_u64().ok_or("운영 DB revision 오류")?;
+    check_catalog_write_scope(before,action,data,expected,current)?;
     let mut next=match action {
         "apply_product_workbook"=>{
             let preview=data.get("preview").filter(|value|value.is_object())
@@ -332,9 +357,9 @@ pub fn patch_product_v2(conn:&mut Connection, request:&Value)->Result<Value,Stri
         }
         _=>return Err("허용되지 않은 상품관리 저장 명령입니다.".into()),
     };
-    next["revision"]=json!(expected);
-    let saved=crate::write_v2_snapshot(conn,next,expected,true)?;
-    Ok(json!({"revision":saved["revision"]}))
+    next["revision"]=json!(current);
+    Ok((next!=*before).then_some(next))
+    })
 }
 
 
