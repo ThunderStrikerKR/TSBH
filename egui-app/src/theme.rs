@@ -61,6 +61,9 @@ pub const MANUAL_ASSIGNMENT_TINT:Color32=Color32::from_rgba_unmultiplied_const(1
 pub const MANUAL_ASSIGNMENT_HOVER_TINT:Color32=Color32::from_rgba_unmultiplied_const(112,180,255,42);
 pub const CARD_BORDER:Color32=DIVIDER;
 pub const NEUTRAL_HOVER:Color32=RAISED;
+// Restore the original shared blue pointer feedback; focus stays independent.
+pub const BUTTON_HOVER_BG:Color32=Color32::from_rgb(47,62,74);
+pub const BUTTON_HOVER_TINT:Color32=Color32::from_rgba_unmultiplied_const(112,180,255,20);
 pub const LINKED_PREVIEW_BG:Color32=Color32::from_rgb(23,67,109);
 pub const LINKED_PREVIEW_TEXT:Color32=Color32::from_rgb(234,244,255);
 pub const LINKED_PREVIEW_BORDER:Color32=Color32::from_rgb(117,181,255);
@@ -800,10 +803,10 @@ pub fn install(ctx: &egui::Context) {
     // Native egui controls, selectables, toggles and pop-up options inherit
     // the same clearly visible hover feedback as our authored buttons.
     // Keep hover blue distinct from committed orange order selection.
-    style.visuals.widgets.hovered.bg_fill = NEUTRAL_HOVER;
-    style.visuals.widgets.hovered.weak_bg_fill = NEUTRAL_HOVER;
+    style.visuals.widgets.hovered.bg_fill = BUTTON_HOVER_BG;
+    style.visuals.widgets.hovered.weak_bg_fill = BUTTON_HOVER_BG;
     style.visuals.widgets.hovered.bg_stroke = Stroke::new(
-        SOFT_DIVIDER_WIDTH,BORDER
+        SOFT_DIVIDER_WIDTH,SELECTION.linear_multiply(0.72)
     );
     style.visuals.widgets.hovered.fg_stroke=Stroke::new(
         1.5_f32,TEXT
@@ -1118,6 +1121,14 @@ pub fn source_document_frame() -> Frame {
         .inner_margin(SPACE_4)
 }
 
+fn button_hover_palette(hovered:bool,focused:bool)->(Option<Color32>,Option<Stroke>){
+    let fill=hovered.then_some(BUTTON_HOVER_TINT);
+    let border=if focused{Some(Stroke::new(SOFT_DIVIDER_WIDTH,SELECTION))}
+        else if hovered{Some(Stroke::new(SOFT_DIVIDER_WIDTH,SELECTION.linear_multiply(0.82)))}
+        else{None};
+    (fill,border)
+}
+
 /// Paint-only hover emphasis for every actionable rectangular control,
 /// including buttons with explicit fills that bypass egui's hovered fill.
 //// No layout, font metrics, border rect or hit area changes on hover.
@@ -1134,10 +1145,12 @@ pub fn paint_button_hover_corners(
     let paint=ui.painter().with_clip_rect(
         ui.clip_rect().intersect(response.rect)
     );
-    if response.has_focus(){
-        paint.rect_stroke(rect,corners,Stroke::new(SOFT_DIVIDER_WIDTH,SELECTION),egui::StrokeKind::Inside);
-    }else if response.hovered(){
-        paint.rect_filled(rect,corners,Color32::from_rgba_unmultiplied(255,255,255,16));
+    let (fill,border)=button_hover_palette(response.hovered(),response.has_focus());
+    if let Some(fill)=fill{
+        paint.rect_filled(rect,corners,fill);
+    }
+    if let Some(stroke)=border{
+        paint.rect_stroke(rect,corners,stroke,egui::StrokeKind::Inside);
     }
 }
 
@@ -1420,6 +1433,24 @@ mod management_primary_card_geometry_tests {
 #[cfg(test)]
 mod shared_action_style_tests{
     use super::*;
+
+    #[test]
+    fn blue_pointer_hover_and_keyboard_focus_have_independent_paint(){
+        let hover_border=Stroke::new(SOFT_DIVIDER_WIDTH,SELECTION.linear_multiply(0.82));
+        let focus_border=Stroke::new(SOFT_DIVIDER_WIDTH,SELECTION);
+        assert_eq!(button_hover_palette(false,false),(None,None));
+        assert_eq!(button_hover_palette(true,false),(Some(BUTTON_HOVER_TINT),Some(hover_border)));
+        assert_eq!(button_hover_palette(false,true),(None,Some(focus_border)));
+        assert_eq!(button_hover_palette(true,true),(Some(BUTTON_HOVER_TINT),Some(focus_border)));
+        let ctx=egui::Context::default();
+        install(&ctx);
+        let style=ctx.style();
+        assert_eq!(style.visuals.widgets.hovered.bg_fill,BUTTON_HOVER_BG);
+        assert_eq!(style.visuals.widgets.hovered.weak_bg_fill,BUTTON_HOVER_BG);
+        assert_eq!(style.visuals.widgets.hovered.bg_stroke,
+            Stroke::new(SOFT_DIVIDER_WIDTH,SELECTION.linear_multiply(0.72)));
+        assert_eq!(style.visuals.widgets.hovered.expansion,0.0);
+    }
 
     #[test]
     fn fixed_and_native_actions_use_the_same_standard_and_emphasized_palette(){
