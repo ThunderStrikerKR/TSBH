@@ -1020,6 +1020,7 @@ struct BandoEgui {
     discard_ocr_confirm: bool,
     pending_replace: Option<PendingReplace>,
     pending_clipboard_clear: Option<PendingClipboardClear>,
+    pending_draft_deletes: Vec<(String,bool)>,
     source_autosave: Option<source_autosave::SourceAutosave>,
     source_save_error: Option<String>,
     client_chooser: Option<ClientChooser>,
@@ -1160,6 +1161,7 @@ impl BandoEgui {
             discard_ocr_confirm: false,
             pending_replace: None,
             pending_clipboard_clear: None,
+            pending_draft_deletes: Vec::new(),
             source_autosave: None,
             source_save_error: None,
             client_chooser: None,
@@ -4360,7 +4362,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
         self.select_reception(&id, ctx);
     }
 
-    fn poll_source_saves(&mut self) {
+    fn poll_source_saves(&mut self,ctx:&egui::Context) {
         let mut events = Vec::new();
         if let Some(worker) = &self.source_autosave {
             while let Some(status) = worker.try_status() {
@@ -4369,9 +4371,22 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
         }
         for event in events {
             match event {
-                source_autosave::SaveStatus::Saved{revision,active_id,raw,order_type}=>{
+                source_autosave::SaveStatus::Saved{revision,active_id,raw,order_type,draft_ids}=>{
                     let _=revision;
                     self.source_save_error=None;
+                    // Old acknowledgements may still contain a just-deleted
+                    // draft. Announce only after a committed snapshot omits it.
+                    let mut committed=Vec::new();
+                    self.pending_draft_deletes.retain(|(id,legacy)|{
+                        if draft_ids.contains(id){true}else{committed.push(*legacy);false}
+                    });
+                    if !committed.is_empty(){
+                        let legacy=committed.iter().any(|v|*v);
+                        floating_notice::publish(ctx,"reception.workflow",
+                            if legacy{floating_notice::Tone::Info}else{floating_notice::Tone::Success},
+                            if legacy{"접수 목록에서 발주서를 삭제했습니다. 이전 저장 기록은 보존됩니다."}
+                            else{"미확정 발주서를 삭제했습니다."});
+                    }
                     let saved_import=self.pending_clipboard_clear.as_ref()
                         .is_some_and(|pending|
                             active_id.as_deref()==Some(pending.order_id.as_str())
@@ -4395,6 +4410,10 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                 source_autosave::SaveStatus::Failed(error) => {
                     // The order was NOT stored. Keep the clipboard unchanged.
                     self.pending_clipboard_clear=None;
+                    if !self.pending_draft_deletes.is_empty(){
+                        floating_notice::publish(ctx,"reception.workflow",floating_notice::Tone::Error,
+                            format!("발주서 삭제 저장 실패: {error}"));
+                    }
                     self.source_save_error=Some(error);
                 }
                 source_autosave::SaveStatus::FeedbackFailed(error) => {
@@ -9292,6 +9311,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
         // confirmation that just authorized the delete.
         self.workflow_dialog=None;
         let was_active=self.active_id.as_deref()==Some(id);
+        self.pending_draft_deletes.push((id.to_owned(),prior_bridge_copy));
         self.drafts.retain(|row|row.id!=id);
         if was_active{
             // Native dealer/analysis workers are advisory for an unconfirmed
@@ -9315,16 +9335,10 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
             self.queue_source_save();
         }
         self.workflow_ui.stop_preview();
-        floating_notice::publish(
-            ctx,"reception.workflow",
-            if prior_bridge_copy {floating_notice::Tone::Error}
-            else {floating_notice::Tone::Success},
-            if prior_bridge_copy {
-                "접수 목록에서 발주서를 삭제했습니다. 이전 저장 기록은 보존됩니다."
-            }else{
-                "미확정 발주서를 삭제했습니다."
-            }
-        );
+        if let Some(error)=self.source_save_error.as_ref(){
+            floating_notice::publish(ctx,"reception.workflow",floating_notice::Tone::Error,
+                format!("발주서 삭제 저장 실패: {error}"));
+        }
         true
     }
 
@@ -10286,7 +10300,7 @@ impl eframe::App for BandoEgui {
             self.analysis.is_some(){
             self.start_remote_recheck(ctx);
         }
-        self.poll_source_saves();
+        self.poll_source_saves(ctx);
         self.poll_clipboard_intake(ctx);
         if self.page==Page::Reception &&
             self.client_manager.as_mut().is_some_and(|manager|manager.take_changed()) {
