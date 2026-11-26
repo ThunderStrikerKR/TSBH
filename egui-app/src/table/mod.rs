@@ -245,6 +245,59 @@ pub(crate) fn show<R>(
     result
 }
 
+/// Compact registry tables share one fixed header, row viewport and cell policy.
+pub(crate) fn registry_table<const N:usize>(
+    ui:&mut Ui,id:impl std::hash::Hash,labels:[&str;N],base:[f32;N],
+    height:f32,count:usize,selected:impl Fn(usize)->bool,
+    mut draw:impl FnMut(&mut Ui,[Rect;N],usize,Rect),
+)->Rect{
+    let gap=theme::SPACE_8;
+    let minimum=base.iter().sum::<f32>()+N.saturating_sub(1) as f32*gap;
+    let spacing=crate::table::management_table_container_style(ui);
+    let inner=crate::table::show(ui,crate::table::Header::WithoutToolbar(minimum),|ui,layout|{
+        let mut widths=base;
+        widths[0]+=(layout.table_width-minimum).max(0.0);
+        let cells=crate::table::management_table_cells(
+            layout.header_content_rect.min,&widths,layout.header_content_rect.height(),gap);
+        crate::table::header_columns(ui,layout.header_rect,layout.header_content_rect,&cells,gap,|ui,area|{
+            for (i,cell) in cells.iter().enumerate(){
+                crate::table::heading(ui,*cell,area,cell.intersect(area),
+                    if i==0{crate::table::HeadingAlign::Left(theme::SPACE_8)}
+                    else{crate::table::HeadingAlign::Center{min_left:None}},
+                    typography::management_table_header_galley(ui,labels[i]),None);
+            }
+        });
+        let output=crate::table::fixed_rows(ui,crate::table::Viewport{
+            width:layout.table_width,height:height.max(1.0),rail:None
+        },id,theme::MANAGEMENT_TABLE_ROW_HEIGHT,count,|body,visible|{
+            let origin=body.max_rect().min;
+            let first=visible.start;
+            for index in visible{
+                let rect=crate::table::fixed_row_rect(origin,index,first,layout.table_width,
+                    theme::MANAGEMENT_TABLE_ROW_HEIGHT);
+                crate::table::fixed_row(body,index,rect,index,&widths,gap,
+                    crate::table::RowTone::SelectedIf(selected(index)),|row,cells|draw(row,cells,index,rect));
+            }
+        });
+        (output.inner_rect,output.inner_rect)
+    });
+    ui.spacing_mut().item_spacing.y=spacing;
+    inner
+}
+pub(crate) fn registry_cell(ui:&Ui,rect:Rect,value:&str,role:typography::ManagementTableCellRole,
+    center:bool,id:impl std::hash::Hash){
+    crate::table::paint_management_text_cell(ui,rect.shrink2(Vec2::new(theme::SPACE_8,0.0)),
+        value,value,role,if center{egui::Align2::CENTER_CENTER}else{egui::Align2::LEFT_CENTER},
+        id,false);
+}
+pub(crate) fn registry_actions<R>(ui:&mut Ui,cell:Rect,draw:impl FnOnce(&mut Ui)->R)->R{
+    ui.scope_builder(egui::UiBuilder::new().max_rect(cell.shrink2(Vec2::new(theme::SPACE_4,0.0)))
+        .layout(egui::Layout::right_to_left(Align::Center)),|actions|{
+            actions.set_clip_rect(actions.clip_rect().intersect(cell));
+            draw(actions)
+        }).inner
+}
+
 pub(crate) enum InlineHeader{
     Reception{editable:bool},
     Shipment,
