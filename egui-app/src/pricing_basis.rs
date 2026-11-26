@@ -55,7 +55,7 @@ pub fn snapshot(state:&Value,client:&Value,order:&Value)->Value{
                 let vid=text(item,"variantId");
                 if pid.is_empty() || vid.is_empty(){continue;}
                 used.entry(pid.to_owned()).or_default().insert(vid.to_owned());
-                if value(item,"manualUnitPrice").as_i64().is_none(){
+                if !matches!(crate::gateway::rules::manual_amount(value(item,"manualUnitPrice")),Ok(Some(_))){
                     catalog_priced.insert((pid.into(),vid.into()));
                 }
                 if text(item,"origin")!=origin{continue;}
