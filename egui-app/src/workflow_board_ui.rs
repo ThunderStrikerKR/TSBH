@@ -380,9 +380,12 @@ struct HeaderActions {
     manage: bool,
     delete: bool,
 }
-/// No stage is active while the dealer is still unconfirmed.
+/// Before the first order confirmation the four slots are always visible,
+/// with neutral outlines only. A later independent approval remains colored.
 fn workflow_signal_palette(stages:Option<[bool;4]>,index:usize)->(egui::Color32,egui::Color32){
     match stages{
+        None | Some([false,false,false,false])=>
+            (theme::WORKFLOW_SIGNAL_EMPTY,theme::WORKFLOW_SIGNAL_EMPTY_BORDER),
         Some(stages) if stages[index]=>(theme::WORKFLOW_SIGNAL_DONE,theme::WORKFLOW_SIGNAL_DONE_BORDER),
         Some(stages) if stages.iter().position(|done|!*done)==Some(index)=>
             (theme::WORKFLOW_SIGNAL_CURRENT,theme::WORKFLOW_SIGNAL_CURRENT_BORDER),
@@ -1351,14 +1354,16 @@ mod pending_matching_tests {
     }
 
     #[test]
-    fn unconfirmed_dealer_has_four_gray_lamps(){
+    fn unconfirmed_order_has_four_visible_outline_only_lamps(){
+        let empty=(theme::WORKFLOW_SIGNAL_EMPTY,theme::WORKFLOW_SIGNAL_EMPTY_BORDER);
         let pending=(theme::WORKFLOW_SIGNAL_PENDING,theme::WORKFLOW_SIGNAL_PENDING_BORDER);
         let current=(theme::WORKFLOW_SIGNAL_CURRENT,theme::WORKFLOW_SIGNAL_CURRENT_BORDER);
         let done=(theme::WORKFLOW_SIGNAL_DONE,theme::WORKFLOW_SIGNAL_DONE_BORDER);
+        assert_eq!(empty.0,egui::Color32::TRANSPARENT);
+        assert!(empty.1.r().saturating_sub(theme::WORKFLOW_SIGNAL_BLOCK_BG.r())>=80);
         for index in 0..STEP_NAMES.len(){
-            assert_eq!(workflow_signal_palette(None,index),pending);
-            assert_eq!(workflow_signal_palette(Some([false;4]),index),
-                if index==0{current}else{pending});
+            assert_eq!(workflow_signal_palette(None,index),empty);
+            assert_eq!(workflow_signal_palette(Some([false;4]),index),empty);
             assert_eq!(workflow_signal_palette(Some([true,false,false,false]),index),
                 if index==0{done}else if index==1{current}else{pending});
         }

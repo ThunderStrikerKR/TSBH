@@ -160,6 +160,9 @@ pub const WORKFLOW_SIGNAL_DONE: Color32 = Color32::from_rgb(73, 166, 106);
 pub const WORKFLOW_SIGNAL_DONE_BORDER: Color32 = Color32::from_rgb(105, 198, 136);
 pub const WORKFLOW_SIGNAL_CURRENT: Color32 = Color32::from_rgb(233, 154, 53);
 pub const WORKFLOW_SIGNAL_CURRENT_BORDER: Color32 = Color32::from_rgb(245, 183, 96);
+// Initial order review: keep all four outlines visible with no status fill.
+pub const WORKFLOW_SIGNAL_EMPTY: Color32 = Color32::TRANSPARENT;
+pub const WORKFLOW_SIGNAL_EMPTY_BORDER: Color32 = DISABLED_ACTION_TEXT;
 pub const WORKFLOW_SIGNAL_PENDING: Color32 = Color32::from_rgb(51, 51, 51);
 pub const WORKFLOW_SIGNAL_PENDING_BORDER: Color32 = Color32::from_rgb(85, 85, 85);
 pub const WORKFLOW_VAT_TEXT: Color32 = Color32::from_rgb(185, 215, 246);
