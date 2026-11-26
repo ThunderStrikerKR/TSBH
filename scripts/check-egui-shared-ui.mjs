@@ -42,6 +42,20 @@ const retiredTable = new Set(["ManagementRowRule","management_row_striped",
 const tablePaintMethods = new Set(["rect_filled","rect_stroke","rect",
   "line_segment","hline","vline"]);
 const paintExceptions = [
+  // These pre-existing non-table surfaces occur in mixed-purpose files.
+  // Keep each exact call and occurrence count; never exempt an entire screen.
+  ["main.rs","show_ocr_review",1,
+    "rect_filled(image_view_rect,egui::CornerRadius{nw:0,ne:0,sw:inner_radius,se:0},theme::CANVAS)"],
+  ["main.rs","show_ocr_review",1,
+    "rect_filled(text_view_rect,egui::CornerRadius{nw:0,ne:0,sw:0,se:inner_radius},theme::INPUT)"],
+  ["main.rs","show_ocr_review",1,
+    "paint_surface_outline(line.painter(),image.rect,0.0,edge)"],
+  ["main.rs","source_section",1,
+    "rect_filled(body_rect,0.0,theme::CANVAS)"],
+  ["model_group_manager.rs","row",1,
+    "rect_filled(rect,theme::CONTROL_RADIUS as f32,if self.selected==id{theme::RAISED}else{theme::INPUT})"],
+  ["model_group_manager.rs","show_page",1,
+    "rect_filled(separator,0.0,theme::BORDER)"],
   // History branch glyphs and date navigation, not table dividers.
   ["order_history_manager.rs","paint_history_branch",1,
     "line_segment([egui::pos2(x,center),egui::pos2(x,row_rect.bottom())],stroke)"],
@@ -587,10 +601,20 @@ function selfTest(){
     ["order_history_manager.rs","fn paint_history_branch(){painter.line_segment([a,b],stroke);}",1],
     ["freight_manager.rs","fn show_groups(){painter.rect_filled(row_rect,0.0,background);}",1],
     ["freight_manager.rs","fn other(){painter.rect_filled(row_rect,0.0,background);}",1],
+    ["main.rs","fn a(){table::fixed_row();} fn source_section(){painter.rect_filled(body_rect,0.0,theme::CANVAS);}",0],
+    ["main.rs","fn a(){table::fixed_row();} fn source_section(){painter.rect_filled(body_rect,0.0,theme::CANVAS);painter.rect_filled(body_rect,0.0,theme::CANVAS);}",1],
+    ["main.rs","fn a(){table::fixed_row();} fn source_section(){painter.rect_filled(body_rect,0.0,theme::INPUT);}",1],
+    ["main.rs","fn a(){table::fixed_row();} fn other(){painter.rect_filled(body_rect,0.0,theme::CANVAS);}",1],
+    ["model_group_manager.rs","fn show_page(){table::register_rows();painter.rect_filled(separator,0.0,theme::BORDER);}",0],
+    ["model_group_manager.rs","fn show_page(){table::register_rows();painter.rect_filled(separator,0.0,theme::BORDER);painter.rect_filled(row_rect,0.0,theme::BORDER);}",1],
     ["product_manager.rs","#[cfg(test)] fn t(){painter.rect_filled(r,0.0,c);} fn render(){crate::table::management_table_cells(p,w,h,g);}",0],
   ];
   for(const [file,source,count] of cases)assert.equal(audit(source,file).length,count,source);
-  assert.equal(audit("fn show_page(){}","product_manager.rs",true).length,8);
+  // This synthetic file omits both the list and the detail renderer.
+  const missingProduct=audit("fn show_page(){}","product_manager.rs",true);
+  assert.equal(missingProduct.filter(hit=>hit.rule.includes("product_manager.rs:show_page requires ")).length,8);
+  assert.equal(missingProduct.filter(hit=>hit.rule.includes("product_manager.rs:show_detail requires ")).length,1);
+  assert.equal(missingProduct.length,9);
   assert.equal(audit("fn show(){crate::table::show(ui,h,c);crate::table::fixed_rows(ui,v,id,h,n,c);crate::table::row_scope(ui,id,r,c);components::management_row(ui,id,c,t,i);components::management_client_header(ui,h,c,l,w,s);}","client_chooser.rs",true).length,0);
   assert.equal(audit("fn workflow_primary_at(){}","workflow_board_ui.rs",true).length,5);
   assert.equal(audit("fn workflow_auxiliary_at(){crate::button::workflow_fixed_action(ui,id,r,a,e);} fn workflow_primary_at(){crate::button::workflow_fixed_action(ui,id,r,a,e);} fn workflow_header(){workflow_auxiliary_at();workflow_auxiliary_at();} fn workflow_action_line(){workflow_primary_at();workflow_auxiliary_at();}","workflow_board_ui.rs",true).length,0);
@@ -612,7 +636,7 @@ function selfTest(){
   assert.equal(missing("fn finish(){outline_bounds(h,b);painter.rect_stroke(r,x,s,k);}","table/mod.rs","table/mod.rs:finish").length,0);
   assert.equal(missing("fn finish(){outline_bounds(h,b);}","table/mod.rs","table/mod.rs:finish").length,1);
   assert.equal(missing("fn show_page(){components::show();}","product_manager.rs","product_manager.rs:show_page").length,8);
-  console.log("EGUI_SHARED_UI_SELFTEST_PASS",cases.length+16);
+  console.log("EGUI_SHARED_UI_SELFTEST_PASS",cases.length+18);
 }
 
 function main(){

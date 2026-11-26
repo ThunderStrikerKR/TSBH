@@ -31,7 +31,29 @@ function scan(source) {
   for(let j=0;j<v.length;j++){if(tokens[j].kind==="literal")continue;if(["(","[","{"].includes(v[j]))stack.push(j);else if([")","]","}"].includes(v[j])){const a=stack.pop();if(a!==undefined&&{"(":")","[":"]","{":"}"}[v[a]]===v[j]){pairs.set(a,j);pairs.set(j,a);}}}
   const state=/^(?:.*(?:error|warning|notice|guidance|feedback|status|pending|busy|loading|ready|dirty|conflict|unassigned|blocked|validation|issues|receiver|empty|retry|edited|failure|success|can_apply|can_save|can_mutate).*)$/i;
   const guarded=(a,b)=>v.slice(a,b).some((t,j)=>tokens[a+j].kind==="code"&&state.test(t));
-  const norm=(a,b)=>v.slice(a,b).join(" ");
+  // Match the same shared rendering call across a namespace-only extraction.
+  // Keep the guard, arguments, literals and occurrence counts intact. Only
+  // reviewed old/new shared function names may be canonicalized.
+  const actionNames=new Set(["action","action_with_min_width","action_full_width","review_action"]);
+  const dropdownNames=new Set(["management_dropdown_values","management_dropdown_option_values"]);
+  const norm=(a,b)=>{
+    const out=[];
+    for(let i=a;i<b;i++){
+      let start=i;
+      if(v[i]==="crate"&&v[i+1]==="::")start=i+2;
+      if(start+2<b&&tokens[start].kind==="code"&&v[start+1]==="::"){
+        const module=v[start],name=v[start+2];
+        if((module==="theme"||module==="button")&&actionNames.has(name)){
+          out.push("shared_button","::",name);i=start+2;continue;
+        }
+        if((module==="components"||module==="dropdown")&&dropdownNames.has(name)){
+          out.push("shared_dropdown","::",name);i=start+2;continue;
+        }
+      }
+      out.push(v[i]);
+    }
+    return out.join(" ");
+  };
   const tests=[],safe=[],guards=[];
   const safeNames=new Set(["fixed_row","fixed_status_slot","fixed_result_viewport","context_menu","on_hover_ui","on_hover_ui_at_pointer"]);
   for(let j=0;j<v.length;j++){
@@ -122,7 +144,17 @@ function selfTest(){
   assert.equal(additions(one,[...one,...one]).length,1);
   assert.equal(additions([],one).length,1);
   assert.equal(additions(one,[]).length,0);
-  console.log("EGUI_STATE_LAYOUT_SELFTEST_PASS",cases.length+4);
+  const prior=scan('if pending && theme::action(ui,"save",role,enabled).clicked(){submit();}');
+  const moved=scan('if pending && crate::button::action(ui,"save",role,enabled).clicked(){submit();}');
+  assert.equal(additions(prior,moved).length,0);
+  assert.equal(additions(prior,scan('if pending && crate::button::action(ui,"delete",role,enabled).clicked(){submit();}')).length,1);
+  assert.equal(additions(prior,scan('if pending && retry && crate::button::action(ui,"save",role,enabled).clicked(){submit();}')).length,1);
+  assert.equal(additions(prior,[...moved,...moved]).length,1);
+  const oldDropdown=scan('if ready { ui.horizontal(|line|{components::management_dropdown_values(line,a,b,c,d);}); }');
+  const newDropdown=scan('if ready { ui.horizontal(|line|{crate::dropdown::management_dropdown_values(line,a,b,c,d);}); }');
+  assert.equal(additions(oldDropdown,newDropdown).length,0);
+  assert.equal(additions(oldDropdown,scan('if ready { ui.horizontal(|line|{crate::dropdown::management_dropdown_values(line,a,b,c,e);}); }')).length,1);
+  console.log("EGUI_STATE_LAYOUT_SELFTEST_PASS",cases.length+10);
 }
 
 function main(){
