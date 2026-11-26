@@ -100,7 +100,8 @@ fn merge_command(
 
 #[derive(Debug)]
 pub enum SaveStatus {
-    Saved { revision:u64, active_id:Option<String>, raw:String, order_type:String },
+    Saved { revision:u64, active_id:Option<String>, raw:String, order_type:String,
+        draft_ids:Vec<String> },
     Failed(String),
     FeedbackFailed(String),
 }
@@ -239,6 +240,7 @@ impl SourceAutosave {
                             active_id:source.active_id.clone(),
                             raw:source.raw.clone(),
                             order_type:source.order_type.clone(),
+                            draft_ids:source.drafts.iter().map(|row|row.id.clone()).collect(),
                         }
                     }
                     Ok(_) => SaveStatus::Failed(
