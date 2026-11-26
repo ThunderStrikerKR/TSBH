@@ -101,6 +101,38 @@ mod tests {
         assert!(refresh.required());
     }
     #[test]
+    fn migrated_read_only_views_do_not_create_independent_workers(){
+        for (name,source) in [
+            ("client chooser",include_str!("client_chooser.rs")),
+            ("product search",include_str!("manual_product_search.rs")),
+            ("item editor",include_str!("item_editor.rs")),
+            ("review panel",include_str!("review_panel.rs")),
+        ]{
+            assert!(source.contains("screen_refresh::ReadRefresh"),"{name}: shared refresh missing");
+            assert!(!source.contains(concat!("mpsc::","channel()")),"{name}: private read channel");
+            assert!(!source.contains(concat!("thread::","spawn(")),"{name}: private read worker");
+        }
+    }
+    #[test]
+    fn management_views_do_not_bypass_refresh_coordinator(){
+        for (name,source) in [
+            ("reception",include_str!("main.rs")),
+            ("history",include_str!("order_history_manager.rs")),
+            ("settlement",include_str!("daily_settlement_manager.rs")),
+            ("excel",include_str!("excel_manager.rs")),
+            ("freight",include_str!("freight_manager.rs")),
+            ("products",include_str!("product_manager.rs")),
+            ("clients",include_str!("client_manager.rs")),
+            ("settings",include_str!("settings_view.rs")),
+            ("automatic messages",include_str!("automatic_message_manager.rs")),
+            ("model groups",include_str!("model_group_manager.rs")),
+            ("aliases",include_str!("alias_manager.rs")),
+        ]{
+            assert!(source.contains("ReadRefresh"),"{name}: shared refresh missing");
+            assert!(!source.contains(concat!("latest_job::","LatestJob")),"{name}: direct low-level worker");
+        }
+    }
+    #[test]
     fn changed_scope_only_clears_the_previous_result(){
         let mut value=Some(1);
         retain_scope(&mut value,true);
