@@ -597,9 +597,9 @@ mod shared_ui_base_113_contract_tests {
             ("history",include_str!("../order_history_manager.rs"),"crate::table::show("),
             ("settlement",include_str!("../daily_settlement_manager.rs"),"crate::table::show("),
             ("excel",include_str!("../excel_manager.rs"),"crate::table::show("),
-            ("brand",include_str!("../brand_manager.rs"),"crate::table::show("),
-            ("alias",include_str!("../alias_manager.rs"),"crate::table::show("),
-            ("model",include_str!("../model_group_manager.rs"),"crate::table::show("),
+            ("brand",include_str!("../brand_manager.rs"),"crate::table::registry_table("),
+            ("alias",include_str!("../alias_manager.rs"),"crate::table::registry_table("),
+            ("model",include_str!("../model_group_manager.rs"),"crate::table::registry_table("),
             ("freight",include_str!("../freight_manager.rs"),"crate::table::show("),
             ("workflow",include_str!("../workflow_board_ui.rs"),"crate::table::inline("),
             ("reception",include_str!("../main.rs"),"crate::table::inline("),
@@ -607,6 +607,23 @@ mod shared_ui_base_113_contract_tests {
         ]{
             assert!(source.contains(entry),"{name}: missing common table container");
             assert!(!source.contains("::finish_reception_items_table("),"{name}: local table finalization");
+        }
+    }
+    #[test]
+    fn registry_tables_share_fixed_column_geometry(){
+        let shared=include_str!("mod.rs");
+        let registry=shared.split("pub(crate) fn registry_table<").nth(1).unwrap()
+            .split("pub(crate) enum InlineHeader").next().unwrap();
+        for required in ["crate::table::show(","crate::table::header_columns(",
+            "crate::table::fixed_rows(","crate::table::fixed_row(",
+            "crate::table::paint_management_text_cell("]{
+            assert!(registry.contains(required),"{required}");
+        }
+        for source in [include_str!("../brand_manager.rs"),include_str!("../alias_manager.rs"),
+            include_str!("../model_group_manager.rs")]{
+            let production=production_source_for_contract(source);
+            assert!(production.contains("crate::table::registry_table("));
+            assert!(!production.contains("crate::table::register_rows("));
         }
     }
     #[test]
