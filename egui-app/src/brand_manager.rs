@@ -243,3 +243,24 @@ impl BrandManager {
         }else{None}
     }
 }
+
+#[cfg(test)]
+mod modal_lifecycle_tests{
+    use super::*;
+    #[test]
+    fn correction_and_close_preserve_catalog_and_clear_editor(){
+        let catalog=json!({"brands":[{"id":"b","name":"BANDO","korean":"반도","aliases":["반도스탠드"],"evidenceUrl":"https://example.com"}]});
+        let mut manager=BrandManager::default();
+        manager.choose("b".into(),&catalog);
+        assert!(manager.has_overlay());assert!(!manager.dirty());
+        manager.form.name="Changed".into();
+        manager.on_failed("test error".into());
+        assert!(manager.has_overlay());assert!(manager.dirty());
+        manager.apply_exit(Exit::Close,&catalog);
+        assert!(!manager.has_overlay());assert!(!manager.dirty());
+        assert_eq!(catalog["brands"][0]["name"],"BANDO");
+        manager.choose("b".into(),&catalog);
+        manager.on_saved(&catalog);
+        assert!(!manager.has_overlay());assert!(!manager.dirty());
+    }
+}
