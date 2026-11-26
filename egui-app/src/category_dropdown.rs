@@ -672,6 +672,7 @@ mod tests{
     #[test]
     fn category_search_and_navigation_share_actual_tree_row_height(){
         let ctx=egui::Context::default();
+        crate::typography::install(&ctx);
         let mut heights=Vec::new();
         let _=ctx.run(egui::RawInput::default(),|ctx|{
             egui::CentralPanel::default().show(ctx,|ui|{
