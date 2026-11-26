@@ -239,6 +239,9 @@ pub fn load() -> Result<Value,String> {
 pub fn load_catalog() -> Result<Value,String> {
     load_projection(ReadScope::Catalog)
 }
+pub fn load_reception_catalog()->Result<Value,String>{
+    load_projection(ReadScope::ReceptionCatalog)
+}
 
 pub fn load_settings_metadata()->Result<Value,String>{
     load_projection(ReadScope::Settings)
@@ -248,7 +251,7 @@ pub fn load_export_metadata()->Result<Value,String>{
     load_projection(ReadScope::Exports)
 }
 
-enum ReadScope{Full,Catalog,Settings,Exports}
+enum ReadScope{Full,Catalog,ReceptionCatalog,Settings,Exports}
 
 fn load_projection(scope:ReadScope) -> Result<Value,String> {
     let path=std::env::var_os("BANDO_EGUI_BUSINESS_DB")
@@ -279,6 +282,30 @@ fn load_projection(scope:ReadScope) -> Result<Value,String> {
     let state=match scope{
         ReadScope::Full=>bando_data_access::read_v2_snapshot(&conn)?,
         ReadScope::Catalog=>bando_data_access::read_v2_catalog_snapshot(&conn)?,
+        ReadScope::ReceptionCatalog=>{
+            let mut catalog=bando_data_access::read_v2_catalog_snapshot(&conn)?;
+            // Only compact match metadata, not recipients/items or raw orders.
+            let mut stmt=conn.prepare("SELECT json_extract(payload,'$.clientId'),
+                json_extract(payload,'$.clientMatch.chatTitle'), COUNT(*)
+                FROM core_orders
+                WHERE coalesce(json_extract(payload,'$.confirmedAt'),'')<>'' 
+                AND coalesce(json_extract(payload,'$.deletedAt'),'')=''
+                AND json_extract(payload,'$.clientMatch.source') IN ('KAKAO_TITLE','KAKAO_REMEMBERED')
+                AND coalesce(json_extract(payload,'$.clientMatch.chatTitle'),'')<>''
+                GROUP BY 1,2").map_err(|e|e.to_string())?;
+            let records=stmt.query_map([],|row|Ok((row.get::<_,String>(0)?,
+                row.get::<_,String>(1)?,row.get::<_,u64>(2)?))).map_err(|e|e.to_string())?;
+            let mut counts=serde_json::Map::new();
+            for record in records{
+                let (id,title,count)=record.map_err(|e|e.to_string())?;
+                let title=crate::gateway::kakao_title_key(&title);
+                let entry=counts.entry(title).or_insert_with(||serde_json::json!({}));
+                let previous=entry.get(&id).and_then(Value::as_u64).unwrap_or(0);
+                entry[&id]=serde_json::json!(previous.saturating_add(count));
+            }
+            catalog["confirmedTitleCounts"]=Value::Object(counts);
+            catalog
+        },
         ReadScope::Settings=>bando_data_access::read_v2_settings_snapshot(&conn)?,
         ReadScope::Exports=>bando_data_access::read_v2_export_metadata(&conn)?,
     };
