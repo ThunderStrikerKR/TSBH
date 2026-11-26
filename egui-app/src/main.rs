@@ -316,6 +316,68 @@ fn inline_navigation_entries(recipient:&serde_json::Value,editable:bool)->Vec<In
         editable && recipient["freightCode"].as_str()!=Some("020"));
     entries
 }
+// Confirmed rows reuse the worksheet grid; each dispatch origin has its own freight cell.
+fn confirmed_freight_origins(ship:&workflow_board::ShipmentRow)->Vec<String>{
+    let mut origins=Vec::<String>::new();
+    if let Some(items)=ship.recipient["items"].as_array(){
+        for item in items{
+            let origin=reception_service::text(item,"origin");
+            if ["FACTORY","STORE"].contains(&origin) &&
+                !origins.iter().any(|saved|saved.as_str()==origin){
+                origins.push(origin.to_owned());
+            }
+        }
+    }
+    origins
+}
+fn confirmed_freight_target(ship:&workflow_board::ShipmentRow,origin:&str)->InlineTarget{
+    InlineTarget{recipient_id:ship.recipient_id.clone(),item_id:Some(origin.to_owned()),field:"shippingCharge"}
+}
+fn confirmed_navigation_entries(ship:&workflow_board::ShipmentRow,editable:bool,freight_editable:bool)
+    ->Vec<InlineNavigationEntry>{
+    let mut entries=inline_navigation_entries(&ship.recipient,editable);
+    entries.retain(|entry|entry.target.field!="shippingCharge");
+    for entry in &mut entries{
+        entry.target.recipient_id=ship.recipient_id.clone();
+        entry.cell.id=inline_target_key(&entry.target);
+    }
+    let count=ship.recipient["items"].as_array().map_or(0,Vec::len);
+    for (index,origin) in confirmed_freight_origins(ship).iter().enumerate(){
+        let target=confirmed_freight_target(ship,origin);
+        entries.push(InlineNavigationEntry{cell:CellNavigationCell{
+            id:inline_target_key(&target),row:count+1+index,column:2,
+            order:5+count*2+index,enabled:freight_editable
+        },target});
+    }
+    entries
+}
+fn resolve_inline_navigation(entries:&[InlineNavigationEntry],current:&InlineTarget,key:CellNavigationKey)
+    ->Option<InlineTarget>{
+    let cells:Vec<CellNavigationCell>=entries.iter().filter(|entry|
+        matches!(key,CellNavigationKey::Next|CellNavigationKey::Previous)
+            ||inline_same_visible_grid(current,&entry.target)
+    ).map(|entry|entry.cell.clone()).collect();
+    let current_id=inline_target_key(current);
+    if !cells.iter().any(|cell|cell.id==current_id && cell.enabled){return None;}
+    if current.item_id.is_none(){
+        if let Some(next)=inline_phone_vertical_destination(current.field,key)
+            .and_then(|field|entries.iter().find(|entry|
+                entry.cell.enabled && entry.target.item_id.is_none() && entry.target.field==field)){
+            return Some(next.target.clone());
+        }
+    }
+    let id=cell_navigation::resolve_cell_navigation_target(&cells,&current_id,key)?;
+    entries.iter().find(|entry|entry.cell.id==id).map(|entry|entry.target.clone())
+}
+fn confirmed_editor_slot(shipment_id:&str,target:&InlineTarget)->egui::Id{
+    egui::Id::new(("confirmed-inline-grid",shipment_id,inline_target_key(target)))
+}
+fn confirmed_navigation_key(ctx:&egui::Context,shipment_id:&str,target:&InlineTarget)
+    ->Option<CellNavigationKey>{
+    if overlay::popup_blocks_shortcuts(ctx){return None;}
+    cell_navigation::consume_worksheet_navigation_before_editor(ctx,
+        confirmed_editor_slot(shipment_id,target),CellNavigationKey::Next,CellNavigationKey::Previous)
+}
 fn inline_target_key(target:&InlineTarget)->String{
     format!("{}:{}:{}",target.recipient_id,
         target.item_id.as_deref().unwrap_or(""),target.field)
@@ -390,6 +452,33 @@ fn reception_arrow_navigation_keeps_visible_grid_sections_separate(){
     assert_eq!(inline_phone_vertical_destination(
         "mobile",CellNavigationKey::Up
     ),None);
+}
+
+#[cfg(test)]
+#[test]
+fn confirmed_navigation_uses_shared_geometry_and_skips_ineligible_freight(){
+    let ship=workflow_board::ShipmentRow{
+        id:"s1".into(),order_id:"o1".into(),recipient_id:"r1".into(),
+        transferred:false,recipient_name:String::new(),products:vec![],
+        completed_step:Some(1),paid:None,source_raw:String::new(),
+        recipient:serde_json::json!({"id":"r1","items":[
+            {"id":"i1","origin":"FACTORY"},{"id":"i2","origin":"STORE"}]}),
+        remote:None,display_charges:Default::default(),freight_editing_blocked:false,
+        collect:false,shipment_count:1,order_total:None
+    };
+    let entries=confirmed_navigation_entries(&ship,true,true);
+    let phone=InlineTarget{recipient_id:"r1".into(),item_id:None,field:"phone"};
+    assert_eq!(resolve_inline_navigation(&entries,&phone,CellNavigationKey::Up).unwrap().field,"address");
+    let price=InlineTarget{recipient_id:"r1".into(),item_id:Some("i2".into()),field:"unitPrice"};
+    let factory=confirmed_freight_target(&ship,"FACTORY");
+    let store=confirmed_freight_target(&ship,"STORE");
+    assert_eq!(resolve_inline_navigation(&entries,&price,CellNavigationKey::Down),Some(factory.clone()));
+    assert_eq!(resolve_inline_navigation(&entries,&factory,CellNavigationKey::Down),Some(store));
+    let collect=confirmed_navigation_entries(&ship,true,false);
+    assert_eq!(resolve_inline_navigation(&collect,&price,CellNavigationKey::Next),None);
+    assert_eq!(resolve_inline_navigation(&collect,&price,CellNavigationKey::Down),None);
+    let locked=confirmed_navigation_entries(&ship,false,false);
+    assert_eq!(resolve_inline_navigation(&locked,&phone,CellNavigationKey::Up),None);
 }
 
 #[derive(Clone)]
@@ -1001,6 +1090,7 @@ struct BandoEgui {
     workflow_freight_editor:Option<WorkflowFreightEditor>,
     confirmed_cell:Option<ConfirmedCellEditor>,
     submitted_confirmed_cell:Option<ConfirmedCellEditor>,
+    confirmed_next_cell:Option<(workflow_board_ui::Selection,InlineTarget)>,
     confirmed_modal_target:Option<ConfirmedEditTarget>,
     workflow_freight_next_selection:Option<workflow_board_ui::Selection>,
     submitted_workflow_freight:Option<WorkflowFreightEditor>,
@@ -1132,6 +1222,7 @@ impl BandoEgui {
             workflow_freight_editor:None,
             confirmed_cell:None,
             submitted_confirmed_cell:None,
+            confirmed_next_cell:None,
             confirmed_modal_target:None,
             workflow_freight_next_selection:None,
             submitted_workflow_freight:None,
@@ -2590,6 +2681,55 @@ impl BandoEgui {
             editor.cell.focus_next=true;
             self.confirmed_cell=Some(editor);
         }
+    }
+
+    // Open the next cell only after the authoritative post-save projection.
+    fn resume_confirmed_navigation(&mut self,ctx:&egui::Context){
+        if self.confirmed_next_cell.is_none(){return;}
+        if self.page!=Page::Reception || self.workflow_error.is_some(){
+            self.confirmed_next_cell=None;return;
+        }
+        if self.workflow_action.is_some() || self.workflow_refresh_required{return;}
+        let Some((selection,target))=self.confirmed_next_cell.take()else{return;};
+        if !self.workflow_mutation_ready() || !self.gateway.workflow_write_enabled()
+            || self.workflow_ui.selection.as_ref()!=Some(&selection)
+            || self.confirmed_cell.is_some() || self.workflow_freight_editor.is_some()
+            || self.reception_modal_open(){return;}
+        let Some(board)=self.workflow_snapshot.clone()else{return;};
+        let Some(group)=board.groups.iter().find(|g|g.id==selection.group_id)else{return;};
+        let Some(ship)=group.shipments.iter().find(|s|
+            s.id==selection.shipment_id && s.order_id==selection.order_id)else{return;};
+        let editable=!board.groups.iter().flat_map(|g|g.shipments.iter())
+            .any(|s|s.order_id==ship.order_id && s.transferred);
+        let freight_editable=!ship.transferred && !ship.freight_editing_blocked && !ship.collect;
+        if !confirmed_navigation_entries(ship,editable,freight_editable).iter()
+            .any(|entry|entry.cell.enabled && entry.target==target){return;}
+        let original=if target.field=="shippingCharge"{
+            let Some(origin)=target.item_id.as_deref()else{return;};
+            ship.display_charges.get(origin).copied().flatten().map(|n|n.to_string()).unwrap_or_default()
+        }else if let Some(item_id)=target.item_id.as_deref(){
+            let Some(item)=ship.recipient["items"].as_array().and_then(|items|
+                items.iter().find(|item|reception_service::text(item,"id")==item_id))else{return;};
+            let value=item[target.field].as_i64();
+            if target.field=="unitPrice"{value.map(components::money_edit_text).unwrap_or_default()}
+            else{value.map(|n|n.to_string()).unwrap_or_default()}
+        }else{
+            reception_service::text(&ship.recipient,target.field).to_owned()
+        };
+        let Some(bound)=self.confirmed_edit_target(&board,group,ship)else{return;};
+        if target.field=="shippingCharge"{
+            let Some(origin)=target.item_id else{return;};
+            self.workflow_freight_editor=Some(WorkflowFreightEditor{
+                group_id:group.id.clone(),shipment_id:ship.id.clone(),origin,
+                original:original.clone(),text:original,focus_next:true,click_at:None
+            });
+        }else{
+            self.confirmed_cell=Some(ConfirmedCellEditor{target:bound,cell:InlineReceptionEditor{
+                source_id:ship.order_id.clone(),target,original:original.clone(),text:original,
+                focus_next:true,click_at:None
+            }});
+        }
+        ctx.request_repaint();
     }
 
     fn show_product_picker(&mut self,ctx:&egui::Context,work_area:Rect){
@@ -7223,6 +7363,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
             let mut confirmed_open:Option<(InlineTarget,String,Option<egui::Pos2>)>=None;
             let mut confirmed_commit=false;
             let mut confirmed_cancel=false;
+            let mut confirmed_navigation_request:Option<(InlineTarget,CellNavigationKey)>=None;
             let mut confirmed_add=false;
             let mut confirmed_vat=false;
             let mut confirmed_item:Option<(serde_json::Value,bool)>=None;
@@ -7326,14 +7467,18 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                     }
                                     if let Some(editor)=self.confirmed_cell.as_mut().filter(|e|
                                         e.target.selection.shipment_id==ship.id && e.cell.target==target){
+                                        let navigation=confirmed_navigation_key(contents.ctx(),&ship.id,&target);
                                         let result=components::reception_recipient_inline_cell_editor(
                                             contents,response.rect,&mut editor.cell.text,editor.cell.focus_next,
                                             editor.cell.click_at.take(),matches!(field,"mobile"|"phone"),
                                             source_highlight::is_active(linked_active.as_ref(),&key));
+                                        cell_navigation::remember_worksheet_editor(contents.ctx(),
+                                            confirmed_editor_slot(&ship.id,&target),result.id);
                                         editor.cell.focus_next=false;
                                         if overlay::take_cell_escape(&result,false){confirmed_cancel=true;}
-                                        else if result.lost_focus() || (result.has_focus() &&
-                                            contents.input(|i|i.key_pressed(egui::Key::Enter))){confirmed_commit=true;}
+                                        else if let Some(key)=navigation{
+                                            confirmed_navigation_request=Some((target.clone(),key));
+                                        }else if result.lost_focus(){confirmed_commit=true;}
                                     }
                                 }
                             });
@@ -7436,14 +7581,19 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                                     }
                                                     if let Some(editor)=self.confirmed_cell.as_mut().filter(|e|
                                                         e.target.selection.shipment_id==ship.id && e.cell.target==target){
+                                                        let navigation=confirmed_navigation_key(contents.ctx(),&ship.id,&target);
                                                         let (result,step)=components::reception_item_numeric_editor(
                                                             contents,response.rect,&mut editor.cell.text,editor.cell.focus_next,
                                                             editor.cell.click_at.take(),if field=="quantity"{
                                                                 components::ReceptionNumericCell::Quantity
                                                             }else{components::ReceptionNumericCell::Money});
+                                                        cell_navigation::remember_worksheet_editor(contents.ctx(),
+                                                            confirmed_editor_slot(&ship.id,&target),result.id);
                                                         editor.cell.focus_next=false;
                                                         if overlay::take_cell_escape(&result,false){confirmed_cancel=true;}
-                                                        else if components::reception_numeric_edit_finished(&result,step){confirmed_commit=true;}
+                                                        else if let Some(key)=navigation{
+                                                            confirmed_navigation_request=Some((target.clone(),key));
+                                                        }else if components::reception_numeric_edit_finished(&result,step){confirmed_commit=true;}
                                                     }
                                                 }
                                             }
@@ -7453,17 +7603,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                         // amount per actual dispatch origin. The displayed
                                         // amount is the Rust-applied value (including the
                                         // locality multiplier), never the saved base charge.
-                                        let mut origins=Vec::<String>::new();
-                                        if let Some(items)=ship.recipient.get("items")
-                                            .and_then(serde_json::Value::as_array){
-                                            for item in items{
-                                                let origin=reception_service::text(item,"origin");
-                                                if ["FACTORY","STORE"].contains(&origin) &&
-                                                    !origins.iter().any(|saved|saved.as_str()==origin){
-                                                    origins.push(origin.to_owned());
-                                                }
-                                            }
-                                        }
+                                        let origins=confirmed_freight_origins(ship);
                                         let remote_origin=if origins.iter().any(|origin|origin.as_str()=="FACTORY"){
                                             Some("FACTORY".to_owned())
                                         }else{origins.first().cloned()};
@@ -7528,10 +7668,14 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                                 ){
                                                     let guide_focus=editor.focus_next &&
                                                         self.workflow_freight_guidance.as_deref()==Some(group.id.as_str());
+                                                    let target=confirmed_freight_target(ship,origin);
+                                                    let navigation=confirmed_navigation_key(contents.ctx(),&ship.id,&target);
                                                     let response=components::reception_freight_inline_cell_editor(
                                                         contents,rect,&mut editor.text,
                                                         editor.focus_next,editor.click_at.take()
                                                     );
+                                                    cell_navigation::remember_worksheet_editor(contents.ctx(),
+                                                        confirmed_editor_slot(&ship.id,&target),response.id);
                                                     editor.focus_next=false;
                                                     if guide_focus{
                                                         Self::publish_validation_focus(&response,contents.ctx(),"reception.freight",
@@ -7539,10 +7683,8 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                                     }
                                                     if overlay::take_cell_escape(&response,false){
                                                         workflow_freight_cancel=true;
-                                                    }else if response.has_focus() && contents.input(|input|
-                                                        input.key_pressed(egui::Key::Enter)
-                                                    ){
-                                                        workflow_freight_commit=true;
+                                                    }else if let Some(key)=navigation{
+                                                        confirmed_navigation_request=Some((target,key));
                                                     }else if response.lost_focus(){
                                                         workflow_freight_commit=true;
                                                     }
@@ -7600,6 +7742,29 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                 hovered_detail.or_else(||self.source_hover.clone()),ui.ctx()
             );
             if confirmed_cancel{self.confirmed_cell=None;}
+            else if let Some((current,key))=confirmed_navigation_request{
+                let editable=self.gateway.workflow_write_enabled() && self.workflow_mutation_ready()
+                    && !self.reception_modal_open()
+                    && !board.groups.iter().flat_map(|g|g.shipments.iter())
+                        .any(|other|other.order_id==ship.order_id && other.transferred);
+                let freight_editable=self.gateway.workflow_write_enabled() && self.workflow_mutation_ready()
+                    && !ship.transferred && !ship.freight_editing_blocked && !ship.collect;
+                let entries=confirmed_navigation_entries(ship,editable,freight_editable);
+                let next=resolve_inline_navigation(&entries,&current,key);
+                if next.is_some() || matches!(key,CellNavigationKey::Next|CellNavigationKey::Previous){
+                    self.confirmed_next_cell=next.map(|target|(workflow_board_ui::Selection{
+                        group_id:group.id.clone(),order_id:ship.order_id.clone(),shipment_id:ship.id.clone()
+                    },target));
+                    if current.field=="shippingCharge"{
+                        if self.confirmed_next_cell.is_some(){self.workflow_freight_guidance=None;}
+                        if !self.submit_workflow_freight_edit(ui.ctx()){self.confirmed_next_cell=None;}
+                    }else{
+                        self.submit_confirmed_cell(ui.ctx());
+                        if self.confirmed_cell.is_some(){self.confirmed_next_cell=None;}
+                    }
+                    ui.ctx().request_repaint();
+                }
+            }
             else if confirmed_commit{self.submit_confirmed_cell(ui.ctx());}
             else if let Some((target,original,click_at))=confirmed_open{
                 if let Some(bound)=self.confirmed_edit_target(&board,group,ship){
@@ -8516,36 +8681,15 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
             let inline_navigation=self.analysis.as_ref()
                 .and_then(|analysis|reception_service::recipients(analysis).get(visible_index))
                 .map(|recipient|inline_navigation_entries(recipient,editable)).unwrap_or_default();
-            let cells:Vec<CellNavigationCell>=inline_navigation.iter()
-                .filter(|entry|{
-                    matches!(key,CellNavigationKey::Next|CellNavigationKey::Previous)
-                        ||inline_same_visible_grid(&current,&entry.target)
-                })
-                .map(|entry|entry.cell.clone()).collect();
-            let current_id=inline_target_key(&current);
-            let phone_target=if current.item_id.is_none(){
-                inline_phone_vertical_destination(current.field,key)
-                    .and_then(|field|inline_navigation.iter().find(|entry|
-                        entry.cell.enabled && entry.target.item_id.is_none()
-                        && entry.target.field==field
-                    )).map(|entry|inline_target_key(&entry.target))
-            }else{None};
-            let next_id=phone_target.or_else(||
-                crate::cell_navigation::resolve_cell_navigation_target(
-                    &cells,&current_id,key
-                )
-            );
-            if let Some(next_id)=next_id{
-                if let Some(next)=inline_navigation.iter().find(|entry|entry.cell.id==next_id){
-                    let quote=self.active_id.as_deref()
-                        .and_then(|id|self.drafts.iter().find(|draft|draft.id==id))
-                        .and_then(|draft|draft.pricing_preview.as_ref())
-                        .filter(|quote|quote["sourceRaw"].as_str()==Some(self.raw_source.as_str()));
-                    let original=self.analysis.as_ref().and_then(|analysis|
-                        current_inline_value(&analysis.recognition,quote,&next.target)
-                    ).unwrap_or_default();
-                    self.switch_inline_edit(next.target.clone(),original,None,ui.ctx());
-                }
+            if let Some(next)=resolve_inline_navigation(&inline_navigation,&current,key){
+                let quote=self.active_id.as_deref()
+                    .and_then(|id|self.drafts.iter().find(|draft|draft.id==id))
+                    .and_then(|draft|draft.pricing_preview.as_ref())
+                    .filter(|quote|quote["sourceRaw"].as_str()==Some(self.raw_source.as_str()));
+                let original=self.analysis.as_ref().and_then(|analysis|
+                    current_inline_value(&analysis.recognition,quote,&next)
+                ).unwrap_or_default();
+                self.switch_inline_edit(next,original,None,ui.ctx());
             }else if matches!(key,CellNavigationKey::Next|CellNavigationKey::Previous){
                 self.submit_inline_edit(ui.ctx());
             }
@@ -9029,6 +9173,9 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
             }
             Ok(Err(error))=>{
                 self.workflow_action=None;
+                if matches!(action.as_str(),"edit_confirmed_recipient"|"set_shipment_freight"){
+                    self.confirmed_next_cell=None;
+                }
                 if action=="edit_confirmed_recipient"{
                     if let Some(mut editor)=self.submitted_confirmed_cell.take(){
                         editor.cell.focus_next=true;
@@ -9052,6 +9199,9 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
             }
             Err(mpsc::TryRecvError::Disconnected)=>{
                 self.workflow_action=None;
+                if matches!(action.as_str(),"edit_confirmed_recipient"|"set_shipment_freight"){
+                    self.confirmed_next_cell=None;
+                }
                 if action=="edit_confirmed_recipient"{
                     if let Some(mut editor)=self.submitted_confirmed_cell.take(){
                         editor.cell.focus_next=true;
@@ -10005,6 +10155,7 @@ impl eframe::App for BandoEgui {
             self.workflow_freight_editor=None;
             self.confirmed_cell=None;
             self.submitted_confirmed_cell=None;
+            self.confirmed_next_cell=None;
             self.confirmed_modal_target=None;
             self.submitted_workflow_freight=None;
             self.workflow_stage_after_freight=None;
@@ -10038,6 +10189,7 @@ impl eframe::App for BandoEgui {
         self.poll_workflow_action(ctx);
         self.poll_reception_metadata(ctx);
         self.poll_workflow_board(ctx);
+        self.resume_confirmed_navigation(ctx);
         self.poll_client_change(ctx);
         self.poll_working_sync();
         self.poll_inline_change(ctx);
