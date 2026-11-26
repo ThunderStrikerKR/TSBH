@@ -7404,8 +7404,9 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                 && !self.reception_modal_open()
                 && !board.groups.iter().flat_map(|g|g.shipments.iter())
                     .any(|other|other.order_id==ship.order_id && other.transferred);
-            let confirmed_cell_idle=self.confirmed_cell.is_none() && self.workflow_freight_editor.is_none();
-            let origin_editable=confirmed_editable && confirmed_cell_idle;
+            let confirmed_cell_idle=self.confirmed_cell.is_none();
+            let confirmed_controls_idle=confirmed_cell_idle && self.workflow_freight_editor.is_none();
+            let origin_editable=confirmed_editable && confirmed_controls_idle;
             // The same preallocated review/recipient/items rectangles are
             // used for real workflow rows. No source replacement, false
             // editing actions or section boundary changes on hover.
@@ -7554,7 +7555,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                     Self::section_with_header(pane,"품목 및 운임",bottom_rect.height(),
                         |header|{
                             confirmed_add=components::reception_item_add_action_editable(
-                                header,confirmed_editable && confirmed_cell_idle);
+                                header,confirmed_editable && confirmed_controls_idle);
                         },|ui|{
                         components::reception_docked_goods_scroll(
                             ui,bottom_rect.height(),("native-workflow-products",ship.id.as_str()),
@@ -7585,7 +7586,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                                     contents,reception_service::item_title_ref(item),
                                                     &quantity,&amount,highlighted,confirmed_editable
                                                 );
-                                                if cells.remove_clicked && confirmed_cell_idle{
+                                                if cells.remove_clicked && confirmed_controls_idle{
                                                     confirmed_item=Some((item.clone(),true));
                                                 }
                                                 for (response,field) in [
@@ -7604,7 +7605,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                                         }};
                                                     if confirmed_editable && response.clicked() && !self.confirmed_cell.as_ref().is_some_and(|e|e.cell.target==target){
                                                         if field=="product"{
-                                                            if confirmed_cell_idle{confirmed_item=Some((item.clone(),false));}
+                                                            if confirmed_controls_idle{confirmed_item=Some((item.clone(),false));}
                                                         }else{
                                                             let original=item.get(target.field).and_then(serde_json::Value::as_i64)
                                                                 .map(|n|n.to_string()).unwrap_or_default();
@@ -7656,8 +7657,9 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                             let remote=if remote_origin.as_deref()==Some(origin.as_str()){
                                                 Some(remote_checked)
                                             }else{None};
-                                            let amount_editable=confirmed_editable && !ship.transferred
-                                                && !ship.freight_editing_blocked && !ship.collect
+                                            let amount_editable=self.gateway.workflow_write_enabled()
+                                                && self.workflow_mutation_ready() && !self.reception_modal_open()
+                                                && !ship.transferred && !ship.freight_editing_blocked && !ship.collect
                                                 && !self.workflow_freight_editor.as_ref().is_some_and(|e|
                                                     e.shipment_id==ship.id && e.origin==*origin);
                                             let freight_actions=components::reception_freight_row_controls(
@@ -7752,7 +7754,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                     Self::section_with_header(
                         pane,"발주서 합계",summary_rect.height(),
                         |header|{let response=theme::action(
-                            header,"부가세 설정",ButtonRole::Standard,confirmed_editable && confirmed_cell_idle
+                            header,"부가세 설정",ButtonRole::Standard,confirmed_editable && confirmed_controls_idle
                         );confirmed_vat=response.clicked();if one_touch::stage(header)==one_touch::Stage::Review{one_touch::mark(header,response.rect);}},
                         |body|{
                             let mut included=false;
@@ -9056,7 +9058,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
             self.submitted_workflow_freight=Some(editor);
         }else{
             editor.focus_next=true;
-                self.workflow_freight_editor=Some(editor);
+            self.workflow_freight_editor=Some(editor);
             self.workflow_freight_next_selection=None;
         }
         started
