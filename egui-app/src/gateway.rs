@@ -678,6 +678,7 @@ impl BandoGateway for LocalGateway {
         };
         let scoped_freight=action=="set_shipment_freight" && args.get("draft").is_none();
         let scoped_group_move=matches!(action,"detach_shipment"|"regroup_shipment");
+        let scoped_shipment=scoped_freight || scoped_group_move;
         let confirmed_order_edit=matches!(action,"change_confirmed_dispatch_origin"|"edit_confirmed_recipient");
         let mutate=|before:&Value|->Result<Value,String>{
         checkpoint("read_snapshot");
@@ -781,7 +782,7 @@ impl BandoGateway for LocalGateway {
             // Reconcile changes to prices, tariff signatures and late
             // corrections before attempting the transition. The native
             // reducer produces all immutable audit entries and validations.
-            let reconciled=if scoped_freight || scoped_group_move{
+            let reconciled=if scoped_shipment{
                 // The native engine resolves the order from the shipment,
                 // not from a UI-provided order ID. Reconcile only that order
                 // and its split groups; global validation and CAS remain.
@@ -893,7 +894,7 @@ impl BandoGateway for LocalGateway {
         checkpoint("apply_action");
         let changed=result.get("state")
             .ok_or("업무 처리 결과에 상태가 없습니다.")?.clone();
-        if !scoped_freight && !scoped_group_move{
+        if !scoped_shipment{
             rules::execute("validate_workflow",serde_json::json!({
                 "state":&changed,"before":&before
             }))?;
@@ -904,7 +905,7 @@ impl BandoGateway for LocalGateway {
         }
         Ok(changed)
         };
-        let verified=if scoped_freight || scoped_group_move{
+        let verified=if scoped_shipment{
             let shipment_id=args["shipmentId"].as_str().ok_or("배송 건 ID 누락")?;
             let group_id=args["groupId"].as_str().ok_or("주문 묶음 ID 누락")?;
             let (mut state,stable)=bando_data_access::update_v2_shipment_snapshot(
