@@ -1020,7 +1020,7 @@ struct BandoEgui {
     discard_ocr_confirm: bool,
     pending_replace: Option<PendingReplace>,
     pending_clipboard_clear: Option<PendingClipboardClear>,
-    pending_draft_deletes: Vec<(String,bool)>,
+    pending_draft_delete: Option<(String,bool)>,
     source_autosave: Option<source_autosave::SourceAutosave>,
     source_save_error: Option<String>,
     client_chooser: Option<ClientChooser>,
@@ -1161,7 +1161,7 @@ impl BandoEgui {
             discard_ocr_confirm: false,
             pending_replace: None,
             pending_clipboard_clear: None,
-            pending_draft_deletes: Vec::new(),
+            pending_draft_delete: None,
             source_autosave: None,
             source_save_error: None,
             client_chooser: None,
@@ -1310,9 +1310,19 @@ impl BandoEgui {
         self.confirming_order().is_some_and(|id|self.active_id.as_deref()==Some(id))
     }
 
+    fn active_delete_locked(&self)->bool{
+        self.pending_draft_delete.as_ref().is_some_and(|(id,_)|
+            self.active_id.as_deref()==Some(id.as_str()))
+    }
+
     fn reception_job_admission(
         &self,request:ReceptionJob,same_request:bool
     )->JobAdmission{
+        if self.pending_draft_delete.is_some() &&
+            (request==ReceptionJob::DeleteReception ||
+                (self.active_delete_locked() && request!=ReceptionJob::NavigateReception)){
+            return JobAdmission::Conflict(ReceptionJob::DeleteReception);
+        }
         // Keep this exact draft immutable while its native confirmation or
         // mandatory projection is pending; unrelated drafts retain admission.
         if self.active_confirmation_locked() &&
@@ -1444,12 +1454,10 @@ impl BandoEgui {
         self.queue_source_save_with_feedback(None);
     }
 
-    fn queue_source_save_with_feedback(&mut self, feedback:Option<OcrFeedback>) {
-        self.source_save_error = None;
+    fn source_snapshot(&mut self)->Result<WorkingSource,String>{
         if let Some(active_id) = self.active_id.as_deref() {
             let Some(active) = self.drafts.iter_mut().find(|item| item.id == active_id) else {
-                self.source_save_error = Some("활성 발주서를 찾을 수 없습니다.".to_owned());
-                return;
+                return Err("활성 발주서를 찾을 수 없습니다.".to_owned());
             };
             if source_autosave::update_draft_source(
                 active,&self.raw_source,self.order_type.as_str()
@@ -1471,12 +1479,20 @@ impl BandoEgui {
                 row.analysis_view=Some(analysis.cached_view());
             }
         }
-        let source = WorkingSource {
+        Ok(WorkingSource {
             raw: self.raw_source.clone(),
             order_type: self.order_type.as_str().to_owned(),
             revision: 0, // The serialized autosave worker owns the latest revision.
             active_id: self.active_id.clone(),
             drafts: self.drafts.clone(),
+        })
+    }
+
+    fn queue_source_save_with_feedback(&mut self, feedback:Option<OcrFeedback>) {
+        self.source_save_error = None;
+        let source=match self.source_snapshot(){
+            Ok(source)=>source,
+            Err(error)=>{self.source_save_error=Some(error);return;}
         };
         if let Some(worker) = &self.source_autosave {
             if let Err(error) = worker.queue_with_feedback(
@@ -2057,6 +2073,7 @@ impl BandoEgui {
     /// Bind only an OS-verified KakaoTalk chat to the ACTIVE unconfirmed
     /// reception. A changed/closed handle is not reused as evidence.
     fn bind_chat_to_active(&mut self, chat: ChatWindow, ctx: &egui::Context) {
+        if self.active_delete_locked(){return;}
         // A different chat can imply a different dealer. Preserve an
         // employee-approved manual model rather than silently discarding it.
         if self.active_id.as_deref().and_then(|id|
@@ -4371,22 +4388,9 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
         }
         for event in events {
             match event {
-                source_autosave::SaveStatus::Saved{revision,active_id,raw,order_type,draft_ids}=>{
+                source_autosave::SaveStatus::Saved{revision,active_id,raw,order_type,draft_ids:_}=>{
                     let _=revision;
                     self.source_save_error=None;
-                    // Old acknowledgements may still contain a just-deleted
-                    // draft. Announce only after a committed snapshot omits it.
-                    let mut committed=Vec::new();
-                    self.pending_draft_deletes.retain(|(id,legacy)|{
-                        if draft_ids.contains(id){true}else{committed.push(*legacy);false}
-                    });
-                    if !committed.is_empty(){
-                        let legacy=committed.iter().any(|v|*v);
-                        floating_notice::publish(ctx,"reception.workflow",
-                            if legacy{floating_notice::Tone::Info}else{floating_notice::Tone::Success},
-                            if legacy{"접수 목록에서 발주서를 삭제했습니다. 이전 저장 기록은 보존됩니다."}
-                            else{"미확정 발주서를 삭제했습니다."});
-                    }
                     let saved_import=self.pending_clipboard_clear.as_ref()
                         .is_some_and(|pending|
                             active_id.as_deref()==Some(pending.order_id.as_str())
@@ -4410,11 +4414,10 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                 source_autosave::SaveStatus::Failed(error) => {
                     // The order was NOT stored. Keep the clipboard unchanged.
                     self.pending_clipboard_clear=None;
-                    if !self.pending_draft_deletes.is_empty(){
-                        floating_notice::publish(ctx,"reception.workflow",floating_notice::Tone::Error,
-                            format!("발주서 삭제 저장 실패: {error}"));
-                    }
                     self.source_save_error=Some(error);
+                }
+                source_autosave::SaveStatus::DeleteFinished{id,result}=>{
+                    self.finish_pending_draft_delete(&id,result,ctx);
                 }
                 source_autosave::SaveStatus::FeedbackFailed(error) => {
                     // Source storage succeeded but the separate, private OCR
@@ -4423,6 +4426,12 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                         "OCR 정정 원본/수정본 보관 실패: {error}"
                     ));
                 }
+            }
+        }
+        if self.source_autosave.as_ref().is_none_or(|worker|worker.is_finished()){
+            if let Some((id,_))=self.pending_draft_delete.clone(){
+                self.finish_pending_draft_delete(&id,
+                    Err("자동저장 작업이 중단되었습니다.".into()),ctx);
             }
         }
     }
@@ -6866,7 +6875,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                 .layouter(&mut layouter)
                                 .show(scroll_ui)
                         };
-                        let output=if self.direct_source_entry {
+                        let output=if self.direct_source_entry && !self.active_delete_locked() {
                             show_source(&mut self.raw_source)
                         }else{
                             let mut read_only=self.raw_source.as_str();
@@ -6958,7 +6967,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                     // A blur is an explicit end of this editing session.
                     // Empty input returns to intake options; nonempty input
                     // becomes immutable and is analyzed just once afterward.
-                    if self.direct_source_entry && editor.as_ref().is_some_and(|response|response.lost_focus()){
+                    if self.direct_source_entry && !self.active_delete_locked() && editor.as_ref().is_some_and(|response|response.lost_focus()){
                         self.direct_source_entry=false;
                         if self.raw_source.trim().is_empty(){
                             self.source_editing=false;
@@ -8167,7 +8176,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                             &&self.client_change.is_none()
                             &&self.working_sync.is_none()
                             &&self.workflow_ui.pending_preview().is_none();
-                        let other_ready=other_ready && !self.active_confirmation_locked();
+                        let other_ready=other_ready && !self.active_confirmation_locked() && !self.active_delete_locked();
                         let can_act=other_ready && self.inline_change.is_none();
                         let client_can_act=other_ready && (self.inline_change.is_none() ||
                             self.inline_change.as_ref().is_some_and(|p|p.is_delivery_command() &&
@@ -8204,6 +8213,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
             })
             && visible_index==self.selected_recipient
             && !self.active_confirmation_locked()
+            && !self.active_delete_locked()
             && self.workflow_ui.pending_preview().is_none()
             && self.manual_workspace.is_none()
             && self.client_change.is_none()
@@ -8775,6 +8785,11 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
     /// stale quote: submit the cell, wait for its native reducer result, then
     /// continue through start_draft_confirmation().
     fn request_draft_confirmation(&mut self,order_id:&str,ctx:&egui::Context){
+        if self.pending_draft_delete.as_ref().is_some_and(|(id,_)|id==order_id){
+            floating_notice::publish(ctx,"reception.workflow",floating_notice::Tone::Info,
+                "발주서 삭제를 저장하고 있습니다.");
+            return;
+        }
         if self.confirming_order().is_some(){return;}
         // The pending marker is valid only while its matching native cell
         // reducer is still alive. Recover stale markers for ANY order rather
@@ -9306,17 +9321,38 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
             );
             return false;
         }
-        // The approved delete owns this modal. Release it before selecting
-        // the next receipt, otherwise navigation would conflict with the
-        // confirmation that just authorized the delete.
+        let queued=self.source_snapshot().and_then(|source|{
+            self.source_autosave.as_ref()
+                .ok_or_else(||"격리 원문 저장소가 초기화되지 않았습니다.".to_owned())?
+                .queue_delete(source,id.to_owned())
+        });
+        if let Err(error)=queued{
+            self.source_save_error=Some(error.clone());
+            floating_notice::publish(ctx,"reception.workflow",floating_notice::Tone::Error,
+                format!("발주서 삭제 저장 실패: {error}"));
+            return false;
+        }
+        // The draft remains visible and intact while the worker commits.
+        // This also preserves the exact active input on a write failure.
+        self.pending_draft_delete=Some((id.to_owned(),prior_bridge_copy));
         self.workflow_dialog=None;
+        self.workflow_ui.stop_preview();
+        true
+    }
+
+    fn finish_pending_draft_delete(&mut self,id:&str,result:Result<(),String>,ctx:&egui::Context){
+        if !self.pending_draft_delete.as_ref().is_some_and(|(pending,_)|pending==id){return;}
+        let (_,prior_bridge_copy)=self.pending_draft_delete.take().expect("matched deletion");
+        if let Err(error)=result{
+            self.source_save_error=Some(error.clone());
+            floating_notice::publish(ctx,"reception.workflow",floating_notice::Tone::Error,
+                format!("발주서 삭제 저장 실패: {error}"));
+            return;
+        }
         let was_active=self.active_id.as_deref()==Some(id);
-        self.pending_draft_deletes.push((id.to_owned(),prior_bridge_copy));
         self.drafts.retain(|row|row.id!=id);
+        self.pending_display=None;
         if was_active{
-            // Native dealer/analysis workers are advisory for an unconfirmed
-            // draft. Discard their receivers so they cannot block the next
-            // intake after this employee-approved deletion.
             self.client_change=None;
             self.inline_editor=None;
             self.item_editor=None;
@@ -9328,18 +9364,14 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
             self.clear_source_analysis();
             if let Some(next)=self.drafts.last().map(|row|row.id.clone()){
                 self.select_reception(&next,ctx);
-            }else{
-                self.queue_source_save();
             }
-        }else{
-            self.queue_source_save();
         }
         self.workflow_ui.stop_preview();
-        if let Some(error)=self.source_save_error.as_ref(){
-            floating_notice::publish(ctx,"reception.workflow",floating_notice::Tone::Error,
-                format!("발주서 삭제 저장 실패: {error}"));
-        }
-        true
+        floating_notice::publish(ctx,"reception.workflow",
+            if prior_bridge_copy{floating_notice::Tone::Info}else{floating_notice::Tone::Success},
+            if prior_bridge_copy{"접수 목록에서 발주서를 삭제했습니다. 이전 저장 기록은 보존됩니다."}
+            else{"미확정 발주서를 삭제했습니다."});
+        ctx.request_repaint();
     }
 
     /// Use the common centered/dimmed popup for every card action. The
@@ -11071,6 +11103,80 @@ mod reception_workflow_admission_integration_tests {
         app.raw_source="원문".into();
         app
     }
+    struct DeleteGateway{fail:bool}
+    impl gateway::BandoGateway for DeleteGateway{
+        fn label(&self)->&'static str{"draft-delete-test"}
+        fn load_catalog(&self)->Result<serde_json::Value,String>{Err("fixture".into())}
+        fn load_working_source(&self)->Result<WorkingSource,String>{Err("fixture".into())}
+        fn save_working_source(&self,source:&WorkingSource)->Result<u64,String>{
+            if self.fail{Err("synthetic save failure".into())}else{Ok(source.revision+1)}
+        }
+        fn execute(&self,_op:gateway::ReadOperation,_request:serde_json::Value)
+            ->Result<serde_json::Value,String>{Err("fixture".into())}
+    }
+    fn enable_delete_worker(app:&mut BandoEgui,ctx:&egui::Context,fail:bool){
+        let gateway:Arc<dyn gateway::BandoGateway>=Arc::new(DeleteGateway{fail});
+        let mut source=app.source_snapshot().unwrap();
+        source.revision=12;
+        app.source_autosave=Some(source_autosave::SourceAutosave::new(gateway,source,ctx.clone()));
+    }
+    fn wait_delete(app:&mut BandoEgui,ctx:&egui::Context){
+        for _ in 0..500{
+            app.poll_source_saves(ctx);
+            if app.pending_draft_delete.is_none(){return;}
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        panic!("draft delete worker did not acknowledge");
+    }
+    #[test]
+    fn failed_delete_preserves_active_draft_and_does_not_retry_on_autosave(){
+        let ctx=egui::Context::default();
+        let mut app=app();
+        app.drafts[0].client_id=Some("dealer".into());
+        app.drafts[0].pricing_preview=Some(serde_json::json!({"total":104720}));
+        app.drafts[0].edit_history.push(serde_json::json!({"id":"audit"}));
+        app.selected_recipient=2;
+        enable_delete_worker(&mut app,&ctx,true);
+        assert!(app.delete_pending_reception("draft-1",&ctx));
+        assert_eq!(app.active_id.as_deref(),Some("draft-1"));
+        assert_eq!(app.drafts.len(),2);
+        assert!(!app.delete_pending_reception("draft-2",&ctx));
+        app.finish_pending_draft_delete("unrelated",Ok(()),&ctx);
+        assert!(app.pending_draft_delete.is_some());
+        wait_delete(&mut app,&ctx);
+        assert_eq!(app.active_id.as_deref(),Some("draft-1"));
+        assert_eq!(app.raw_source,"원문");
+        assert_eq!(app.selected_recipient,2);
+        assert_eq!(app.drafts[0].client_id.as_deref(),Some("dealer"));
+        assert_eq!(app.drafts[0].pricing_preview.as_ref().unwrap()["total"],104720);
+        assert_eq!(app.drafts[0].edit_history[0]["id"],"audit");
+        assert_eq!(app.drafts.len(),2);
+        assert!(app.source_save_error.as_deref().is_some_and(|e|e.contains("synthetic save failure")));
+    }
+    #[test]
+    fn unavailable_delete_worker_leaves_draft_and_confirmation_intact(){
+        let ctx=egui::Context::default();
+        let mut app=app();
+        app.workflow_dialog=Some(WorkflowDialog::DeletePending("draft-1".into()));
+        assert!(!app.delete_pending_reception("draft-1",&ctx));
+        assert!(app.workflow_dialog.is_some());
+        assert_eq!(app.drafts.len(),2);
+        assert!(app.pending_draft_delete.is_none());
+    }
+    #[test]
+    fn deleting_inactive_draft_preserves_other_active_edits(){
+        let ctx=egui::Context::default();
+        let mut app=app();
+        enable_delete_worker(&mut app,&ctx,false);
+        assert!(app.delete_pending_reception("draft-2",&ctx));
+        app.raw_source="다른 발주서 수정".into();
+        app.queue_source_text_edit();
+        wait_delete(&mut app,&ctx);
+        assert_eq!(app.drafts.len(),1);
+        assert_eq!(app.active_id.as_deref(),Some("draft-1"));
+        assert_eq!(app.drafts[0].raw,"다른 발주서 수정");
+    }
+
     fn vat_worker(app:&mut BandoEgui){
         let (_tx,rx)=mpsc::channel();
         app.vat_change=Some(PendingVatChange{
@@ -11178,8 +11284,11 @@ mod reception_workflow_admission_integration_tests {
         assert!(app.workflow_dialog.is_some());
         assert_eq!(app.drafts.len(),2);
         app.vat_change=None;
+        enable_delete_worker(&mut app,&ctx,false);
         assert!(app.delete_pending_reception("draft-1",&ctx));
         assert!(app.workflow_dialog.is_none());
+        assert_eq!(app.drafts.len(),2);
+        wait_delete(&mut app,&ctx);
         assert_eq!(app.drafts.len(),1);
     }
 
@@ -11189,8 +11298,10 @@ mod reception_workflow_admission_integration_tests {
         let mut app=app();
         app.drafts[0].working_version=Some(2);
         app.drafts[0].working_synced=true;
+        enable_delete_worker(&mut app,&ctx,false);
         app.workflow_dialog=Some(WorkflowDialog::DeletePending("draft-1".into()));
         assert!(app.delete_pending_reception("draft-1",&ctx));
+        wait_delete(&mut app,&ctx);
         assert_eq!(app.active_id.as_deref(),Some("draft-2"));
         assert_eq!(app.drafts.len(),1);
         assert!(app.workflow_dialog.is_none());
@@ -11200,8 +11311,11 @@ mod reception_workflow_admission_integration_tests {
     fn approved_delete_closes_its_modal_before_switching_to_next_draft(){
         let ctx=egui::Context::default();
         let mut app=app();
+        enable_delete_worker(&mut app,&ctx,false);
         app.workflow_dialog=Some(WorkflowDialog::DeletePending("draft-1".into()));
         app.delete_pending_reception("draft-1",&ctx);
+        assert!(app.workflow_dialog.is_none());
+        wait_delete(&mut app,&ctx);
         assert_eq!(app.drafts.len(),1);
         assert_eq!(app.active_id.as_deref(),Some("draft-2"));
         assert!(app.workflow_dialog.is_none());
@@ -11434,7 +11548,9 @@ mod reception_workflow_admission_integration_tests {
         app.analysis_running_key=Some((
             "draft-1".into(),"원문".into(),"AGENCY".into()
         ));
+        enable_delete_worker(&mut app,&ctx,false);
         app.delete_pending_reception("draft-1",&ctx);
+        wait_delete(&mut app,&ctx);
         assert_eq!(app.drafts.len(),1);
         assert_eq!(app.active_id.as_deref(),Some("draft-2"));
         assert!(!app.analysis_pending);

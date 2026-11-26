@@ -74,6 +74,7 @@ impl SourceTextEdit{
 enum Command {
     Save { source: WorkingSource, feedback: Vec<OcrFeedback> },
     Edit(SourceTextEdit),
+    Delete { source: WorkingSource, id:String },
     Shutdown,
 }
 impl Command{
@@ -94,8 +95,46 @@ fn merge_command(
             Ok(true)
         }
         Command::Edit(edit)=>{edit.apply(snapshot)?;Ok(true)}
+        Command::Delete{..}=>Err("삭제 요청은 전용 저장 경로를 사용해야 합니다.".into()),
         Command::Shutdown=>Ok(false),
     }
+}
+
+// Retire only the requested draft. The remaining active selection and all
+// unrelated edits survive both a failed write and a later stale snapshot.
+fn remove_draft(source:&mut WorkingSource,id:&str){
+    source.drafts.retain(|row|row.id!=id);
+    if source.active_id.as_deref()==Some(id){
+        source.active_id=source.drafts.last().map(|row|row.id.clone());
+        if let Some(row)=source.drafts.last(){
+            source.raw=row.raw.clone();
+            source.order_type=row.order_type.clone();
+        }else{
+            source.raw.clear();
+        }
+    }
+}
+
+fn merge_worker_command(
+    source:&mut WorkingSource,feedback:&mut Vec<OcrFeedback>,command:Command,
+    deletion:&mut Option<String>,committed:&std::collections::HashSet<String>
+)->Result<bool,String>{
+    let full_snapshot=matches!(&command,Command::Save{..}|Command::Delete{..});
+    let dirty=match command{
+        Command::Delete{source:snapshot,id}=>{
+            if deletion.is_some(){return Err("발주서 삭제가 이미 진행 중입니다.".into());}
+            *source=snapshot;
+            *deletion=Some(id);
+            true
+        }
+        // A pre-acknowledgement keystroke cannot resurrect a committed draft.
+        Command::Edit(edit) if committed.contains(&edit.order_id)=>true,
+        command=>merge_command(source,feedback,command)?,
+    };
+    if dirty && full_snapshot{
+        for id in committed{remove_draft(source,id);}
+    }
+    Ok(dirty)
 }
 
 #[derive(Debug)]
@@ -103,6 +142,7 @@ pub enum SaveStatus {
     Saved { revision:u64, active_id:Option<String>, raw:String, order_type:String,
         draft_ids:Vec<String> },
     Failed(String),
+    DeleteFinished { id:String, result:Result<(),String> },
     FeedbackFailed(String),
 }
 
@@ -123,13 +163,15 @@ impl SourceAutosave {
         let worker = thread::spawn(move || {
             let mut revision = initial_source.revision;
             let mut source=initial_source;
+            let mut committed_deletes=std::collections::HashSet::new();
             loop {
                 let Ok(command)=rx.recv() else{break};
                 let mut feedback=Vec::new();
                 let mut dirty=false;
                 let mut shutdown=false;
+                let mut deletion=None;
                 let mut bind_ocr_clients=command.needs_ocr_client_bind();
-                match merge_command(&mut source,&mut feedback,command){
+                match merge_worker_command(&mut source,&mut feedback,command,&mut deletion,&committed_deletes){
                     Ok(true)=>dirty=true,
                     Ok(false)=>shutdown=true,
                     Err(error)=>{let _=updates.send(SaveStatus::Failed(error));}
@@ -141,7 +183,7 @@ impl SourceAutosave {
                     match rx.recv_timeout(Duration::from_millis(180)){
                         Ok(command)=>{
                             bind_ocr_clients|=command.needs_ocr_client_bind();
-                            match merge_command(&mut source,&mut feedback,command){
+                            match merge_worker_command(&mut source,&mut feedback,command,&mut deletion,&committed_deletes){
                                 Ok(true)=>dirty=true,
                                 Ok(false)=>shutdown=true,
                                 Err(error)=>{
@@ -161,9 +203,21 @@ impl SourceAutosave {
                     continue;
                 }
                 source.revision = revision;
-                let status = match gateway.save_working_source(&source) {
+                // The live worker snapshot remains intact until SQLite
+                // acknowledges the candidate. Failure never queues a retry
+                // of the destructive change through ordinary autosave.
+                let candidate=deletion.as_ref().map(|id|{
+                    let mut next=source.clone();
+                    remove_draft(&mut next,id);
+                    next
+                });
+                let status = match gateway.save_working_source(candidate.as_ref().unwrap_or(&source)) {
                     Ok(next) if next > revision => {
                         revision = next;
+                        if let Some(candidate)=candidate{
+                            source=candidate;
+                            if let Some(id)=deletion.as_ref(){committed_deletes.insert(id.clone());}
+                        }
                         // Never collect corrections for an unpersisted
                         // reception. This local-only write is separate from
                         // production orders and has no network fallback.
@@ -248,7 +302,15 @@ impl SourceAutosave {
                     ),
                     Err(error) => SaveStatus::Failed(error),
                 };
+                let delete_status=deletion.map(|id|SaveStatus::DeleteFinished{
+                    id,result:match &status{
+                        SaveStatus::Saved{..}=>Ok(()),
+                        SaveStatus::Failed(error)=>Err(error.clone()),
+                        _=>Err("발주서 삭제 저장 결과를 확인하지 못했습니다.".into()),
+                    }
+                });
                 let _ = updates.send(status);
+                if let Some(status)=delete_status{let _=updates.send(status);}
                 ctx.request_repaint();
                 if shutdown { break; }
             }
@@ -267,6 +329,15 @@ impl SourceAutosave {
     ) -> Result<(),String> {
         self.sender.send(Command::Save { source, feedback })
             .map_err(|_| "egui 원문 자동저장 작업이 중단되었습니다.".to_owned())
+    }
+
+    pub fn queue_delete(&self,source:WorkingSource,id:String)->Result<(),String>{
+        self.sender.send(Command::Delete{source,id})
+            .map_err(|_|"egui 원문 자동저장 작업이 중단되었습니다.".to_owned())
+    }
+
+    pub fn is_finished(&self)->bool{
+        self.thread.as_ref().is_none_or(|worker|worker.is_finished())
     }
 
     pub fn try_status(&self) -> Option<SaveStatus> {
@@ -409,7 +480,8 @@ mod source_delta_tests{
     /// A real worker-thread test, not just a model-level merge assertion.
     /// Only the last source is written despite several queued keystrokes.
     struct MockAutosaveGateway{
-        saved:std::sync::Mutex<Vec<WorkingSource>>
+        saved:std::sync::Mutex<Vec<WorkingSource>>,
+        fail_next:std::sync::atomic::AtomicBool,
     }
     impl BandoGateway for MockAutosaveGateway{
         fn label(&self)->&'static str{"source-autosave-test"}
@@ -420,6 +492,9 @@ mod source_delta_tests{
             Err("not needed for source-only autosave".into())
         }
         fn save_working_source(&self,source:&WorkingSource)->Result<u64,String>{
+            if self.fail_next.swap(false,std::sync::atomic::Ordering::SeqCst){
+                return Err("synthetic deletion write failure".into());
+            }
             let mut saved=self.saved.lock().unwrap();
             let expected=saved.last().map(|previous|previous.revision+1)
                 .unwrap_or(12);
@@ -439,7 +514,8 @@ mod source_delta_tests{
     #[test]
     fn real_worker_coalesces_source_edits_and_flushes_on_drop(){
         let gateway=Arc::new(MockAutosaveGateway{
-            saved:std::sync::Mutex::new(Vec::new())
+            saved:std::sync::Mutex::new(Vec::new()),
+            fail_next:std::sync::atomic::AtomicBool::new(false),
         });
         let adapter:Arc<dyn BandoGateway>=gateway.clone();
         let worker=SourceAutosave::new(
@@ -455,6 +531,88 @@ mod source_delta_tests{
         assert_eq!(saved[0].drafts[0].raw,"완료");
         assert_eq!(saved[0].revision,12);
         assert_eq!(saved[0].drafts[1].raw,"old");
+    }
+
+    fn wait_status(worker:&SourceAutosave,delete:bool)->SaveStatus{
+        for _ in 0..500{
+            while let Some(status)=worker.try_status(){
+                if (delete && matches!(&status,SaveStatus::DeleteFinished{..})) ||
+                   (!delete && matches!(&status,SaveStatus::Saved{..})){
+                    return status;
+                }
+            }
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        panic!("source worker acknowledgement timed out");
+    }
+
+    #[test]
+    fn failed_delete_is_not_replayed_and_successful_retry_cannot_be_undone_by_stale_save(){
+        let gateway=Arc::new(MockAutosaveGateway{
+            saved:std::sync::Mutex::new(Vec::new()),
+            fail_next:std::sync::atomic::AtomicBool::new(true),
+        });
+        let adapter:Arc<dyn BandoGateway>=gateway.clone();
+        let worker=SourceAutosave::new(adapter,snapshot(),egui::Context::default());
+        worker.queue_delete(snapshot(),"first".into()).unwrap();
+        assert!(matches!(wait_status(&worker,true),SaveStatus::DeleteFinished{id,result:Err(_)} if id=="first"));
+        worker.queue_source_edit(edit("after failure")).unwrap();
+        let _=wait_status(&worker,false);
+        {
+            let saved=gateway.saved.lock().unwrap();
+            assert_eq!(saved.len(),1);
+            assert_eq!(saved[0].drafts.len(),2);
+            assert_eq!(saved[0].drafts[0].raw,"after failure");
+        }
+        let mut current=snapshot();
+        current.raw="after failure".into();
+        current.drafts[0].raw=current.raw.clone();
+        worker.queue_delete(current.clone(),"first".into()).unwrap();
+        assert!(matches!(wait_status(&worker,true),SaveStatus::DeleteFinished{id,result:Ok(())} if id=="first"));
+        // This snapshot represents a normal save queued before UI observed
+        // the deletion acknowledgement. It may carry unrelated newer edits.
+        current.drafts[1].raw="other draft updated".into();
+        worker.queue_with_feedback(current,Vec::new()).unwrap();
+        let _=wait_status(&worker,false);
+        drop(worker);
+        let saved=gateway.saved.lock().unwrap();
+        assert_eq!(saved.len(),3);
+        assert_eq!(saved[1].drafts.len(),1);
+        assert_eq!(saved[2].drafts.len(),1);
+        assert_eq!(saved[2].drafts[0].id,"second");
+        assert_eq!(saved[2].raw,"other draft updated");
+        assert_eq!(saved[2].active_id.as_deref(),Some("second"));
+    }
+
+    #[test]
+    fn committed_delete_filters_stale_snapshots_and_keeps_unrelated_edits(){
+        let mut source=snapshot();
+        let mut feedback=Vec::new();
+        let mut deletion=None;
+        let mut committed=std::collections::HashSet::new();
+        merge_worker_command(&mut source,&mut feedback,Command::Delete{
+            source:snapshot(),id:"first".into()
+        },&mut deletion,&committed).unwrap();
+        assert_eq!(source.drafts.len(),2,"intent alone cannot remove the draft");
+        let mut candidate=source.clone();
+        remove_draft(&mut candidate,deletion.as_deref().unwrap());
+        assert_eq!(candidate.active_id.as_deref(),Some("second"));
+        // A failed attempt discards candidate; the normal snapshot is intact.
+        deletion=None;
+        merge_worker_command(&mut source,&mut feedback,Command::Edit(edit("after failure")),
+            &mut deletion,&committed).unwrap();
+        assert_eq!(source.drafts[0].raw,"after failure");
+        assert_eq!(source.drafts.len(),2);
+        // A successful retry tombstones only the committed identity.
+        committed.insert("first".into());
+        let mut stale=snapshot();
+        stale.drafts[1].raw="unrelated edit".into();
+        merge_worker_command(&mut source,&mut feedback,Command::Save{
+            source:stale,feedback:Vec::new()
+        },&mut deletion,&committed).unwrap();
+        assert_eq!(source.drafts.len(),1);
+        assert_eq!(source.active_id.as_deref(),Some("second"));
+        assert_eq!(source.raw,"unrelated edit");
     }
 
     #[test]
