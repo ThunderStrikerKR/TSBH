@@ -94,7 +94,17 @@ pub fn data_value_font(kind:DataValueKind,context:DataValueContext)->FontId {
 /// Do not split the text into separate widgets: doing so adds egui spacing
 /// and moves the following inline action button.
 pub fn inline_body_values(parts:&[(&str,Option<DataValueKind>)])->egui::text::LayoutJob {
-    let body=spec(Role::Body);
+    inline_role_values(Role::Body,parts)
+}
+
+/// Metadata retains the caption line height and contrast while using the
+/// same semantic numeric family as the body, not a second text renderer.
+pub fn inline_metadata_values(parts:&[(&str,Option<DataValueKind>)])->egui::text::LayoutJob {
+    inline_role_values(Role::Metadata,parts)
+}
+
+fn inline_role_values(role:Role,parts:&[(&str,Option<DataValueKind>)])->egui::text::LayoutJob {
+    let body=spec(role);
     let regular=egui::TextFormat{
         font_id:FontId::proportional(body.size),
         color:body.color,
@@ -107,6 +117,7 @@ pub fn inline_body_values(parts:&[(&str,Option<DataValueKind>)])->egui::text::La
         let mut format=regular.clone();
         if let Some(kind)=kind {
             format.font_id=data_value_font(kind,DataValueContext::Form);
+            format.font_id.size=body.size;
         }
         job.append(value,0.0,format);
     }
