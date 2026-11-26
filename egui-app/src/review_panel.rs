@@ -1,7 +1,7 @@
 //! Staff review: the same Rust issue projection consumed by React StaffChecks.
 //! No local validation or approval decisions. Each input has a source-bound
 //! background request; older results cannot replace a changed order or edit.
-use std::{sync::{mpsc::{self,Receiver},Arc},thread};
+use std::sync::Arc;
 use eframe::egui::{self,Ui};
 use serde_json::{json,Value};
 use crate::{
@@ -44,7 +44,7 @@ impl ReviewKey {
 #[derive(Default)]
 pub struct ReviewPanel {
     key:Option<ReviewKey>,
-    pending:Option<Receiver<Result<Vec<Value>,String>>>,
+    pending:crate::screen_refresh::ReadRefresh<Vec<Value>>,
     issues:Vec<Value>,
     action_indices:Vec<usize>,
     fact_indices:Vec<usize>,
@@ -105,11 +105,7 @@ impl ReviewPanel {
             self.ready=false;
             self.key=Some(key.clone());
             let saved=source.clone();
-            let (sender,receiver)=mpsc::channel();
-            self.pending=Some(receiver);
-            let context=ctx.clone();
-            thread::spawn(move||{
-                let result=(||->Result<Vec<Value>,String>{
+            self.pending.submit_required(ctx.clone(),move||->Result<Vec<Value>,String>{
                     let mut order=if direct{
                         manual_workspace::native_direct_order(gateway.as_ref(),&saved)?
                     }else{
@@ -156,27 +152,20 @@ impl ReviewPanel {
                     response.get("issues").and_then(Value::as_array)
                         .cloned().ok_or_else(||
                             "확인할 내용을 불러오지 못했습니다.".into())
-                })();
-                let _=sender.send(result);
-                context.request_repaint();
             });
         }
-        let done=self.pending.as_ref().map(|rx|rx.try_recv());
-        match done{
-            Some(Ok(Ok(items)))=>{
-                self.pending=None;self.replace_issues(items);self.ready=true;self.error=None;
+        match self.pending.poll(){
+            Some(Ok(items))=>{
+                self.replace_issues(items);self.pending.verified();self.ready=true;self.error=None;
             }
-            Some(Ok(Err(error)))=>{
-                self.pending=None;self.replace_issues(Vec::new());self.ready=false;self.error=Some(error);
+            Some(Err(error))=>{
+                // A failed projection cannot authorize an action against old issues.
+                self.ready=false;self.error=Some(error);
             }
-            Some(Err(mpsc::TryRecvError::Disconnected))=>{
-                self.pending=None;self.replace_issues(Vec::new());self.ready=false;
-                self.error=Some("확인할 내용 조회가 중단되었습니다.".into());
-            }
-            _=>{}
+            None=>{}
         }
     }
-    pub fn ready(&self)->bool{self.ready && self.error.is_none()}
+    pub fn ready(&self)->bool{self.ready && !self.pending.required() && self.error.is_none()}
     /// None means the exact current native projection is not ready.
     pub fn input_targets(&self,source:&WorkingReception,
         analysis:&ReceptionAnalysis,error:Option<&str>)->Option<Vec<(String,Option<String>,&'static str,String)>>{
@@ -198,7 +187,7 @@ impl ReviewPanel {
     }
     pub fn show_header_summary(&self,ui:&mut Ui,analysis:&ReceptionAnalysis,
         selected_recipient:usize){
-        if self.error.is_some() || (self.pending.is_some() && self.issues.is_empty()){
+        if self.error.is_some() || (self.pending.pending() && self.issues.is_empty()){
             return;
         }
         let info_count=self.fact_indices.len()+self.inherited_indices.len()
@@ -219,7 +208,7 @@ impl ReviewPanel {
                 "reception.review",error);
             return None;
         }
-        if self.pending.is_some() && self.issues.is_empty(){
+        if self.pending.pending() && self.issues.is_empty(){
             return None;
         }
         let actions=&self.action_indices;
