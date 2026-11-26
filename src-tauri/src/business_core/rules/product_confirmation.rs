@@ -345,6 +345,7 @@ fn resolve(payload:&Value)->Result<Value,String>{
     if let Some(origin)=dispatch_origin.filter(|v|!v.is_null()){
         set(updated,"origin",origin)?;
     }
+    super::pricing::retain_manual_unit_price(updated,&old)?;
     if changed{updated.as_object_mut().ok_or("상품 데이터 오류")?.remove("quantityApproval");}
     if needs_customer{
         set(updated,"modelProposal",json!({"original":field(&old,"raw"),"required":true}))?;
