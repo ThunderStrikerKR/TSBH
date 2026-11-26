@@ -790,6 +790,10 @@ pub(crate) fn indexed_quote(quote:&serde_json::Value)->Arc<QuoteDisplayIndex>{
     })
 }
 fn clear_quote_display_cache(){QUOTE_DISPLAY_CACHE.with(|cache|cache.borrow_mut().clear());}
+pub(crate) fn indexed_freight_exempt(quote:Option<&QuoteDisplayIndex>,recipient:&serde_json::Value)->bool{
+    quote.and_then(|q|q.freight(recipient["id"].as_str()?,recipient["dispatchOrigin"].as_str()))
+        .is_some_and(|line|line["billingReason"].as_str()==Some("EXEMPT"))
+}
 fn indexed_billable_freight(quote:Option<&QuoteDisplayIndex>,recipient:&serde_json::Value)->Option<i64>{
     if recipient["freightCode"].as_str()==Some("020"){return Some(0);}
     let line=quote?.freight(recipient["id"].as_str()?,recipient["dispatchOrigin"].as_str())?;
@@ -7682,7 +7686,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                             let freight_actions=crate::composite_reception::reception_freight_row_controls(
                                                 contents,label,amount,Some(ship.collect),remote,
                                                 origin.as_str()=="FACTORY",amount_editable,
-                                                controls_editable,controls_editable,remote.is_some()
+                                                controls_editable,controls_editable,remote.is_some(),ship.freight_exempt
                                             );
                                             if freight_actions.amount_clicked{
                                                 workflow_freight_open=Some((
@@ -8046,7 +8050,8 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                                     contents,"운임",
                                                     fee,
                                                     Some(collect),remote,
-                                                    origin==Some("FACTORY"),false,false,false,true
+                                                    origin==Some("FACTORY"),false,false,false,true,
+                                                    indexed_freight_exempt(quote_index.as_deref(),row)
                                                 );
                                                 contents.add_space(theme::SPACE_8);
                                                 crate::composite_reception::reception_item_origin_action_editable(
@@ -8517,7 +8522,8 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                         // not to the scrollable freight and item content.
                                         let freight_actions=crate::composite_reception::reception_freight_row_controls(
                                             items_ui,"운임",line_fee,cod,remote,
-                                            true,editable,editable,editable,true
+                                            true,editable,editable,editable,true,
+                                            indexed_freight_exempt(quote_index.as_deref(),recipient)
                                         );
                                         if freight_actions.amount_clicked{
                                             inline_open=Some((
