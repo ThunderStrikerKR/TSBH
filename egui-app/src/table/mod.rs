@@ -3,7 +3,7 @@
 use eframe::egui::{self,Color32,Rect,Stroke,Ui,Vec2};
 use crate::{theme,typography};
 use eframe::egui::{Sense,Align};
-use crate::ui_primitives::{truncated_label,soft_divider,overflow_region_tooltip,text_exceeds_rect,positioned_text_overflow};
+use crate::ui_primitives::{overflow_region_tooltip,text_exceeds_rect,positioned_text_overflow};
 
 /// Shared editable-cell text placement, clipping and overflow measurement.
 pub(crate) fn paint_editable_cell_text(
@@ -319,7 +319,7 @@ pub(crate) fn registry_cell(ui:&Ui,rect:Rect,value:&str,role:typography::Managem
         id,false);
 }
 pub(crate) fn registry_actions<R>(ui:&mut Ui,cell:Rect,draw:impl FnOnce(&mut Ui)->R)->R{
-    ui.scope_builder(egui::UiBuilder::new().max_rect(cell.shrink2(Vec2::new(theme::SPACE_4,0.0)))
+    ui.scope_builder(egui::UiBuilder::new().max_rect(cell.shrink2(Vec2::new(theme::MANAGEMENT_TABLE_ACTION_INSET,0.0)))
         .layout(egui::Layout::right_to_left(Align::Center)),|actions|{
             actions.set_clip_rect(actions.clip_rect().intersect(cell));
             draw(actions)
@@ -893,6 +893,8 @@ pub(crate) fn management_readonly_table(
                     }
                     management_table_column_rules(row,row_rect,&columns,theme::SPACE_8);
                     paint_management_table_row_rule(row.painter(),row_rect);
+                    #[cfg(test)]
+                    crate::ui_test_support::record("readonly data row",row_rect);
                 });
             }
         }
