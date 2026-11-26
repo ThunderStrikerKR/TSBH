@@ -20,7 +20,7 @@ fn truthy(v:Option<&Value>)->bool {
         _=>true,
     }
 }
-fn key(value:&str)->String {
+pub(crate) fn key(value:&str)->String {
     // JS: normalize("NFKC").trim().toLocaleLowerCase().replace(/\s+/g," ")
     value.nfkc().flat_map(char::to_lowercase).collect::<String>()
         .trim().split_whitespace().collect::<Vec<_>>().join(" ")
