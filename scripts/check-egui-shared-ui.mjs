@@ -60,8 +60,6 @@ const paintExceptions = [
   // Expanded shipment card and chooser selection outline.
   ["order_history_manager.rs","show_page",1,
     "rect_filled(row_rect,0.0,theme::CANVAS)"],
-  ["order_history_manager.rs","show_page",1,
-    "paint_bordered_surface(row_ui.painter(),block_rect,theme::ORDER_HISTORY_RECIPIENT_BLOCK_RADIUS,theme::PANEL,theme::DIVIDER)"],
   ["client_chooser.rs","show",1,
     "rect_stroke(response.rect.shrink(1.0),0.0,egui::Stroke::new(theme::SOFT_DIVIDER_WIDTH,theme::SELECTION),egui::StrokeKind::Inside)"],
 ];
@@ -81,16 +79,36 @@ const tableContracts = {
   "freight_manager.rs:freight_history_table":masterContract,
   "excel_manager.rs:table":masterContract,
   "daily_settlement_manager.rs:report_table":masterContract,
-  "order_history_manager.rs:show_page":masterContract,
+  "order_history_manager.rs:show_page":{...masterContract,paint_shipment_detail_surface:1},
   "order_history_manager.rs:draw_line":{management_table_cells:1},
-  "order_history_manager.rs:history_detail_cells":{management_table_cells:1},
+  "order_history_manager.rs:history_detail_cells":{shipment_detail_cells:1},
+  "order_history_manager.rs:history_line_height":{shipment_detail_product_galley:1,shipment_detail_block_height:1},
+  "order_history_manager.rs:paint_detail_products":{shipment_detail_product_galley:1,paint_shipment_detail_products:1},
+  // Check the common layer itself: a wrapper must still delegate to the
+  // original master, rather than merely retaining the expected name.
+  "components.rs:shipment_detail_cells":{management_table_cells:1,shipment_detail_content:1},
+  "components.rs:paint_shipment_detail_products":{paint_table_galley:1},
+  "components.rs:workflow_shipment_header":{
+    management_inline_list_table_header:1,management_master_header_begin:1,
+    shipment_detail_cells:1,paint_table_galley:1,management_table_column_rules:1,
+    management_master_header_finish:1
+  },
+  "components.rs:workflow_shipment_row":{
+    shipment_detail_cells:1,shipment_detail_product_galley:2,
+    shipment_detail_block_height:1,paint_shipment_detail_surface:1,
+    paint_shipment_detail_products:2,paint_table_galley:1
+  },
   "client_manager.rs:show_page":{management_row:1,management_client_header:1},
   "client_chooser.rs:show":{management_row:1,management_client_header:1},
   "product_manager.rs:show_detail":{management_readonly_table:1},
   "product_excel_ui.rs:show_review":{management_readonly_table:1},
 };
 const tableMarkers = new Set(["management_table_cells","management_table_column_rules",
-  "management_master_header_begin","management_row","management_readonly_table"]);
+  "management_master_header_begin","management_row","management_readonly_table",
+  "shipment_detail_cells"]);
+const componentContractCalls = new Set(Object.entries(tableContracts)
+  .filter(([scope])=>scope.startsWith("components.rs:"))
+  .flatMap(([,entries])=>Object.keys(entries)));
 
 // Fixed workflow actions must be rendered by components::workflow_fixed_action.
 // Existing non-button painting is reviewed by exact function/call/count.
@@ -239,6 +257,13 @@ export function audit(source,file,checkTableContracts=false){
       flag(i,"global style installation outside shared theme");
     if(is(i,"components ::")&&v[i+3]==="("){
       const key=file+":"+fn+":"+v[i+2];
+      sharedCalls.set(key,(sharedCalls.get(key)||0)+1);
+    }
+    // Within the shared module, count direct unqualified calls as well.
+    // Exclude declarations, methods and qualified calls (already counted above).
+    if(file==="components.rs"&&componentContractCalls.has(v[i])&&v[i+1]==="("
+      &&!["fn",".","::"].includes(v[i-1])){
+      const key=file+":"+fn+":"+v[i];
       sharedCalls.set(key,(sharedCalls.get(key)||0)+1);
     }
     if(workflow){
@@ -397,7 +422,9 @@ function selfTest(){
     ["product_manager.rs","fn render(){painter.line_segment([r.left_bottom(),r.right_bottom()],stroke);}",1],
     ["product_manager.rs","fn render(){theme::paint_bordered_surface(p,r,0,c,b);}",1],
     ["product_manager.rs","fn render(){theme::paint_soft_rule(p,r);}",1],
-    ["order_history_manager.rs","fn show_page(){theme::paint_bordered_surface(row_ui.painter(),block_rect,theme::ORDER_HISTORY_RECIPIENT_BLOCK_RADIUS,theme::PANEL,theme::DIVIDER);}",0],
+    ["order_history_manager.rs","fn show_page(){theme::paint_bordered_surface(row_ui.painter(),block_rect,theme::ORDER_HISTORY_RECIPIENT_BLOCK_RADIUS,theme::PANEL,theme::DIVIDER);}",1],
+    ["order_history_manager.rs","fn show_page(){components::paint_shipment_detail_surface(row_ui,block_rect,theme::PANEL,false);}",0],
+    ["new_screen.rs","fn render(){components::shipment_detail_cells(b,w,g);painter.rect_filled(r,0.0,ink);}",1],
     ["excel_manager.rs","fn render(){painter.rect_filled(r,0.0,theme::DIVIDER);}",1],
     ["product_manager.rs","fn render(){let c=theme::TABLE_ROW_ALT_BG;}",1],
     ["product_manager.rs","fn render(){let c=std::array::from_fn(|i|Rect::from_min_size(p,w));}",1],
@@ -417,7 +444,15 @@ function selfTest(){
   assert.equal(audit("fn show(){components::management_row(ui,id,c,t,i);components::management_client_header(ui,h,c,l,w,s);}","client_chooser.rs",true).length,0);
   assert.equal(audit("fn workflow_primary_at(){}","workflow_board_ui.rs",true).length,5);
   assert.equal(audit("fn workflow_auxiliary_at(){components::workflow_fixed_action(ui,id,r,a,e);} fn workflow_primary_at(){components::workflow_fixed_action(ui,id,r,a,e);} fn workflow_header(){workflow_auxiliary_at();workflow_auxiliary_at();} fn workflow_action_line(){workflow_primary_at();workflow_auxiliary_at();}","workflow_board_ui.rs",true).length,0);
-  console.log("EGUI_SHARED_UI_SELFTEST_PASS",cases.length+4);
+  const missing=(source,file,scope)=>audit(source,file,true)
+    .filter(hit=>hit.rule.startsWith("missing shared table contract: "+scope+" requires "));
+  const historyScope="order_history_manager.rs:history_detail_cells";
+  assert.equal(missing("fn history_detail_cells(){components::shipment_detail_cells(b,w,g);}","order_history_manager.rs",historyScope).length,0);
+  assert.equal(missing("fn history_detail_cells(){components::management_table_cells(p,w,h,g);}","order_history_manager.rs",historyScope).length,1);
+  const commonScope="components.rs:shipment_detail_cells";
+  assert.equal(missing("fn shipment_detail_cells(){let c=shipment_detail_content(b);management_table_cells(p,w,h,g);}","components.rs",commonScope).length,0);
+  assert.equal(missing("fn shipment_detail_cells(){shipment_detail_content(b);} fn management_table_cells(){}","components.rs",commonScope).length,1);
+  console.log("EGUI_SHARED_UI_SELFTEST_PASS",cases.length+8);
 }
 
 function main(){
