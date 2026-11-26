@@ -570,27 +570,12 @@ fn workflow_action_line(
 
     let amount=total.map(components::display_won)
         .unwrap_or_else(||"금액 미확정".to_owned());
-    let money_color=if payment_emphasis{crate::one_touch::INK}else{theme::TEXT};
-    let money_galley=ui.painter().layout_no_wrap(
-        amount.clone(),
-        typography::data_value_font(
-            typography::DataValueKind::Money,
-            typography::DataValueContext::CompactCard
-        ),money_color
-    );
-    // The text clip and the highlight slot must be different: clipping
-    // against the text's right edge used to erase all currency padding.
+    // Keep the text clip and the highlight slot distinct; the common
+    // renderer preserves the full currency padding within the price slot.
     let price_ink=price.shrink2(Vec2::new(theme::SPACE_4.min(price.width()/2.0),0.0));
-    let money_pos=Pos2::new(price_ink.right()-money_galley.size().x,
-        bottom_y-money_galley.size().y);
-    let money_bounds=Rect::from_min_size(money_pos,money_galley.size());
-    let amount_rect=crate::one_touch::value_rect(money_bounds,price);
-    if payment_emphasis{crate::one_touch::background(ui,amount_rect);}
-    let money_clipped=components::text_exceeds_rect(money_galley.size(),price_ink.intersect(ui.clip_rect()));
-    ui.painter().with_clip_rect(price_ink.intersect(ui.clip_rect())).galley(
-        money_pos,money_galley,money_color
+    let money_clipped=components::workflow_compact_money(
+        ui,price,price_ink,bottom_y,&amount,payment_emphasis
     );
-    if payment_emphasis{crate::one_touch::outline(ui,amount_rect);}
     if let Some(vat)=vat{
         let visible=if vat.starts_with('('){vat.to_owned()}
             else{format!("({vat})")};
