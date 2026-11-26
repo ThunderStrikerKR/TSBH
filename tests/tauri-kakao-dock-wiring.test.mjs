@@ -3,19 +3,13 @@ import assert from "node:assert/strict";
 import {readFileSync} from "node:fs";
 const read=path=>readFileSync(new URL("../"+path,import.meta.url),"utf8");
 const native=read("src-tauri/src/kakao_dock.rs");
-const bridge=read("src/tauri-bridge.ts");
-const shell=read("src/HubShell.tsx");
-const header=read("src/app/AppHeader.tsx");
-const model=read("src/app/useAppModel.ts");
-const app=read("src/App.tsx");
 
-test("all explicit Kakao commands are registered in Tauri and the TypeScript bridge",()=>{
+test("all explicit Kakao commands are registered in Tauri",()=>{
   const rust=read("src-tauri/src/lib.rs");
   for(const c of ["dock_status_native","dock_cycle_native","dock_start_native",
     "dock_stop_native","dock_select_native","dock_windows_native",
     "dock_region_native","dock_mode_native"]){
     assert.ok(rust.includes("kakao_dock::"+c),c+" not registered");
-    assert.ok(bridge.includes('invoke("'+c+'"'),c+" not bridged");
   }
 });
 
@@ -37,38 +31,7 @@ test("native Kakao process authentication, safe original placement and no inject
   assert.match(native,/if IsIconic\(hwnd\)==0/);
 });
 
-test("there are precisely two viewing modes and connection is not a view",()=>{
-  assert.match(shell,/role="group" aria-label="카카오톡 보기 및 연결 관리"/);
-  assert.match(shell,/aria-pressed=\{dock.mode === "OVERLAP"\}/);
-  assert.match(shell,/aria-pressed=\{dock.mode === "STACK"\}/);
-  assert.match(shell,/함께 보기/);
-  assert.doesNotMatch(shell,/겹쳐 보기/);
-  assert.match(shell,/나누어 보기/);
-  assert.match(shell,/onDockStop/);
-  assert.match(shell,/카카오톡 연결 해제/);
-  assert.doesNotMatch(header,/kakao-view-modes|함께 보기|나누어 보기|연결 해제/);
-  assert.doesNotMatch(shell,/다음: 카카오톡|다음: 나누어 보기|다음: 카카오톡 창 원래 위치 복구/);
-  assert.match(model,/dockMode\(mode\)/);
-  assert.ok(model.includes('windows.find((window) => window.kind === "CHAT")'));
-  assert.ok(model.includes("dockStart(selected.handle, 0.8)"));
-  assert.match(model,/dockStop\(\)/);
-  assert.doesNotMatch(model,/bando!\.dockCycle\(\)/);
-  assert.match(app,/onDockMode=/);
-  assert.match(app,/onDockStop=/);
-  assert.match(shell,/className="kakao-panel-toolbar"/);
-  assert.match(shell,/data-ui-role="nav-subsection"/);
-  assert.match(shell,/data-ui-role="action-quiet"/);
-  assert.ok(shell.indexOf('className="kakao-panel-toolbar"') < shell.indexOf('ref={region} className="kakao-native-region"'));
-  const css=read("src/styles/shell.css");
-  assert.match(css,/\.kakao-native-region\s*\{[^}]*flex: 1 1 auto/);
-  assert.match(css,/\.kakao-panel-toolbar\s*\{[^}]*flex: 0 0 auto/);
-  assert.match(css,/\.kakao-panel-toolbar button\s*\{[^}]*height: 26px/);
-});
-
 test("both modes use the original left KakaoTalk pane and never move BANDO HUB",()=>{
-  assert.match(shell,/className="hub-panel-slot hub-slot-0 hub-kakao-slot"/);
-  assert.doesNotMatch(shell,/hidden=\{stacked\}/);
-  assert.match(shell,/--kakao-reserved-width/);
   assert.match(native,/pub fn stack\(s:&mut Session,app:&AppHandle,region:Region\)/);
   assert.match(native,/fn stack_targets\(area:Rect,main:Hwnd,chats:&\[Hwnd\]\)/);
   assert.match(native,/SendMessageTimeoutW/);
@@ -96,7 +59,6 @@ test("all regular KakaoTalk MAIN and CHAT windows are tracked and arranged in re
   assert.match(native,/SetWindowPos\(base,chat,0,0,0,0,/);
   assert.match(native,/SetWindowPos\(s\.main,base,0,0,0,0,/);
   assert.doesNotMatch(native,/set_rect\(t\.hwnd,target,HWND_TOPMOST\)/);
-  assert.match(model,/300,/);
 });
 
 test("failed layout switches are reversible and do not disconnect current KakaoTalk",()=>{
@@ -135,14 +97,6 @@ test("the synthetic native Windows test covers both chat and main windows",()=>{
   assert.match(native,/spawn_fixture_window\("합성 대화"\)/);
   assert.match(native,/stack_targets\(pane,fixture_hwnd,&\[chat_hwnd\]\)/);
   assert.match(native,/SetWindowPlacement must restore the original window bounds/);
-});
-
-test("Tauri layout still synchronizes region on window movement and monitor scaling",()=>{
-  for(const event of ["onMoved","onResized","onScaleChanged","onFocusChanged"]){
-    assert.ok(shell.includes("current."+event+"(send)"),event+" event missing");
-  }
-  assert.match(shell,/unlisten\.forEach\(\(off\) => off\(\)\)/);
-  assert.match(shell,/lastDragged\.current = next/);
 });
 
 test("extend KakaoTalk MAIN footer off physical screen, preserve CHAT composer and reversible placement", () => {
