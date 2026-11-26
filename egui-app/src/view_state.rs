@@ -110,7 +110,6 @@ pub(crate) fn remember_search_focus(response:&Response){
 
 // Presentation-only state lifetime. Expiration is checked on re-entry;
 // no timer task, persistence, or business mutation is needed.
-use crate::ui_tokens::NAVIGATION_SNAPSHOT_TTL;
 pub(crate) struct NavigationSnapshots<const N:usize>{
     active:usize,
     paused:bool,
@@ -157,7 +156,7 @@ mod navigation_snapshot_tests{
     #[test]
     fn repeated_page_and_tab_expiry_does_not_grow_fixed_slots(){
         let t=std::time::Instant::now();
-        let ttl=NAVIGATION_SNAPSHOT_TTL;
+        let ttl=crate::ui_tokens::NAVIGATION_SNAPSHOT_TTL;
         let mut pages=NavigationSnapshots::<8>::new(0);
         let mut tabs=NavigationSnapshots::<5>::new(0);
         let bytes=std::mem::size_of_val(&pages)+std::mem::size_of_val(&tabs);
@@ -188,5 +187,51 @@ mod navigation_snapshot_tests{
         assert_eq!(cache.epoch(1),1);
         assert!(cache.visit(2,t+seconds(10802)));
         assert_eq!(cache.epoch(2),1);
+    }
+}
+
+#[cfg(test)]
+mod view_state_tests{
+    use super::*;
+    use std::collections::BTreeSet;
+    #[test]
+    fn selection_survives_unverified_refresh_and_reconciles_verified_ids(){
+        let mut selected=BTreeSet::from(["a","b"]);
+        let mut target=Some("b");
+        let valid=BTreeSet::from(["a"]);
+        retain_selection(&mut selected,&valid,false);
+        retain_target(&mut target,|id|valid.contains(id),false);
+        assert_eq!(selected,BTreeSet::from(["a","b"]));
+        assert_eq!(target,Some("b"));
+        retain_selection(&mut selected,&valid,true);
+        retain_target(&mut target,|id|valid.contains(id),true);
+        assert_eq!(selected,valid);
+        assert_eq!(target,None);
+    }
+    #[test]
+    fn tab_slots_keep_independent_values(){
+        let mut slots=[String::new(),String::new()];
+        let mut current="factory".to_owned();
+        exchange_tab(&mut slots,&mut current,0,1);
+        assert!(current.is_empty());
+        current="store".into();
+        exchange_tab(&mut slots,&mut current,1,0);
+        assert_eq!(current,"factory");
+        exchange_tab(&mut slots,&mut current,0,1);
+        assert_eq!(current,"store");
+    }
+    #[test]
+    fn timed_cache_keeps_visible_entries_and_expires_hidden_entries(){
+        let start=Instant::now();
+        let ttl=crate::ui_tokens::NAVIGATION_SNAPSHOT_TTL;
+        let visible=Id::new("visible");
+        let hidden=Id::new("hidden");
+        let mut store=TimedViewStore::default();
+        store.advance_frame(1,start);
+        store.put(visible,(1,start));
+        store.entries.insert(hidden,(2,start));
+        store.advance_frame(2,start+ttl);
+        assert_eq!(store.sweep(start+ttl),vec![(2,start)]);
+        assert_eq!(store.take(visible,start+ttl),Some((1,start+ttl)));
     }
 }
