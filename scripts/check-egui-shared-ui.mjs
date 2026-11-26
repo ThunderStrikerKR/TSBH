@@ -54,8 +54,6 @@ const paintExceptions = [
     "paint_surface_outline(line.painter(),image.rect,0.0,edge)"],
   ["main.rs","source_section",1,
     "rect_filled(body_rect,0.0,theme::CANVAS)"],
-  ["model_group_manager.rs","row",1,
-    "rect_filled(rect,theme::CONTROL_RADIUS as f32,if self.selected==id{theme::RAISED}else{theme::INPUT})"],
   ["model_group_manager.rs","show_page",1,
     "rect_filled(separator,0.0,theme::BORDER)"],
   // History branch glyphs and date navigation, not table dividers.
@@ -167,10 +165,8 @@ const workflowPaintAllowance = new Map([
   ["workflow_compact_rows:rect_filled ( divider , 0.0 , theme :: WORKFLOW_CARD_BORDER )",1],
   ["workflow_compact_rows:rect_filled ( lower , 0.0 , theme :: WORKFLOW_CARD_LOWER_BG )",1],
   ["workflow_header:galley ( Pos2 :: new ( text_rect . left ( ) , text_rect . center ( ) . y - galley . size ( ) . y / 2.0 ) , galley , theme :: TEXT )",1],
-  ["workflow_header:interact ( arrow . union ( title_rect ) , workflow_widget_id ( <literal> , id , in_preview ) , egui :: Sense :: click ( ) )",1],
   ["workflow_header:paint_bordered_surface ( ui . painter ( ) , block , theme :: WORKFLOW_SIGNAL_BLOCK_RADIUS , theme :: WORKFLOW_SIGNAL_BLOCK_BG , theme :: WORKFLOW_SIGNAL_BLOCK_BORDER )",1],
   ["workflow_header:paint_bordered_surface ( ui . painter ( ) , lamp , theme :: WORKFLOW_SIGNAL_RADIUS , fill , border )",1],
-  ["workflow_header:paint_button_hover ( ui , & title_response , theme :: CONTROL_RADIUS as f32 )",1],
   ["workflow_action_line:layout_no_wrap ( shipping_text . clone ( ) , egui :: FontId :: proportional ( typography :: WORKFLOW_VAT_FONT_SIZE ) , theme :: SECONDARY )",1],
   ["workflow_action_line:galley ( Pos2 :: new ( shipping . left ( ) , bottom_y - ship_galley . size ( ) . y ) , ship_galley , theme :: SECONDARY )",1],
   ["workflow_action_line:layout_no_wrap ( amount . clone ( ) , typography :: data_value_font ( typography :: DataValueKind :: Money , typography :: DataValueContext :: CompactCard ) , theme :: TEXT )",1],
@@ -628,6 +624,116 @@ export function audit(source,file,checkTableContracts=false){
   return hits;
 }
 
+// Composite controls have a stricter scoped contract than generic primitive
+// searches. Required calls are counted by file, function and namespace;
+// a replacement elsewhere or in a test cannot satisfy the contract.
+const compositeContracts = {
+  "main.rs:source_section":{"card::reception_document_viewport":3},
+  "main.rs:message_section":{"card::reception_document_viewport":2},
+  "manual_workspace.rs:show":{"card::reception_document_viewport":1},
+  "composite_reception.rs:reception_item_row":{
+    "button::remove_at":1,"table::paint_editable_cell_text":1,"table::editable_cell_hit":3
+  },
+  "model_group_manager.rs:row":{"card::selectable_list_row":1},
+  "workflow_board_ui.rs:workflow_header":{"button::disclosure_at":1},
+  "order_history_manager.rs:draw_line":{"button::disclosure_at":1},
+  "composite_workflow.rs:workflow_shipment_row":{"source_highlight::paint_active_outline":1},
+  // Check the owners as well, so a hollow wrapper cannot satisfy the gate.
+  "card/mod.rs:reception_document_viewport":{
+    "paint_source_document_surface":1,"reception_document_inner_rect":1,
+    ".intersect":1,".set_clip_rect":1,"scroll_area":1,".auto_shrink":1
+  },
+  "button/mod.rs:remove_at":{".interact":1,"paint_button_hover":1,".line_segment":1},
+  "button/mod.rs:disclosure_at":{
+    "paint_management_chevron":1,".interact":1,"ui_primitives::overflow_tooltip":1,"paint_button_hover":1
+  },
+  "card/mod.rs:selectable_list_row":{
+    ".allocate_exact_size":1,".rect_filled":1,"button::paint_button_hover":1
+  },
+  "table/mod.rs:paint_editable_cell_text":{
+    ".layout_no_wrap":1,"reception_item_value_origin":1,".with_clip_rect":1,".galley":1
+  },
+  "table/mod.rs:editable_cell_hit":{
+    ".interact":1,"ui_primitives::overflow_tooltip":1,".on_hover_cursor":1
+  },
+  "source_highlight.rs:paint_active_if":{"paint_active_outline":1},
+  "source_highlight.rs:paint_active_outline":{".rect_stroke":1}
+};
+const compositeRawBans = {
+  "composite_reception.rs:reception_item_row":[
+    ".interact",".line_segment",".layout_no_wrap",".galley",".on_hover_cursor","ui_primitives::overflow_tooltip"
+  ],
+  "model_group_manager.rs:row":[".allocate_exact_size",".rect_filled",".interact","button::paint_button_hover"],
+  "workflow_board_ui.rs:workflow_header":[".interact","button::paint_button_hover","ui_primitives::paint_workflow_icon"],
+  "order_history_manager.rs:draw_line":[".interact","button::paint_button_hover","ui_primitives::paint_management_chevron"],
+  "composite_workflow.rs:workflow_shipment_row":[".rect_stroke"],
+  "main.rs:message_section":["scroll_area","scrollbar::scroll_area",".set_clip_rect",".scope_builder"]
+};
+
+export function auditComposite(source,file,requireCalls=false){
+  const tokens=productionTokens(source),v=tokens.map(t=>t.v);
+  const hits=[],seen=new Map();
+  const flag=(i,rule)=>hits.push({line:tokens[i]?.line||1,rule});
+  const match=(i,name)=>{
+    if(name.startsWith("."))return v[i]==="."&&v[i+1]===name.slice(1)&&v[i+2]==="(";
+    if(name.includes("::")){
+      const [owner,call]=name.split("::");
+      return v[i]===owner&&v[i+1]==="::"&&v[i+2]===call&&v[i+3]==="(";
+    }
+    return v[i]===name&&v[i+1]==="("&&!["fn",".","::"].includes(v[i-1]);
+  };
+  let fn="";
+  for(let i=0;i<v.length;i++){
+    if(v[i]==="fn"&&/^[A-Za-z_]\w*$/.test(v[i+1]??""))fn=v[i+1];
+    const scope=file+":"+fn;
+    for(const name of Object.keys(compositeContracts[scope]||{})){
+      if(match(i,name)){
+        const key=scope+":"+name;
+        const count=(seen.get(key)||0)+1;seen.set(key,count);
+        if(count>compositeContracts[scope][name])
+          flag(i,"unexpected composite call: "+key);
+      }
+    }
+    for(const name of compositeRawBans[scope]||[]){
+      if(match(i,name))flag(i,"raw composite renderer: "+scope+" "+name);
+    }
+    // Document geometry must never be exposed as a second screen API.
+    if(v[i]==="source_document_frame")
+      flag(i,"retired document frame; use card::reception_document_viewport");
+    if(file!=="card/mod.rs"&&["paint_source_document_surface","reception_document_inner_rect"].includes(v[i]))
+      flag(i,"document surface/geometry outside card owner: "+v[i]);
+  }
+  if(requireCalls){
+    for(const [scope,required] of Object.entries(compositeContracts)){
+      if(!scope.startsWith(file+":"))continue;
+      for(const [name,min] of Object.entries(required)){
+        const count=seen.get(scope+":"+name)||0;
+        if(count<min)flag(0,"missing composite contract: "+scope+" requires "+name+" ("+count+"/"+min+")");
+      }
+    }
+  }
+  return hits;
+}
+function compositeSelfTest(){
+  const file="composite_reception.rs";
+  const good="fn reception_item_row(){button::remove_at();table::paint_editable_cell_text();table::editable_cell_hit();table::editable_cell_hit();table::editable_cell_hit();}";
+  assert.equal(auditComposite(good,file,true).length,0);
+  assert.equal(auditComposite(good.replace("button::remove_at();","ui.interact(r,id,sense);"),file,true).length,2);
+  assert.equal(auditComposite(good.replace("table::editable_cell_hit();","fake::editable_cell_hit();"),file,true).length,1);
+  assert.equal(auditComposite(good.replace("table::editable_cell_hit();","table::editable_cell_hit();table::editable_cell_hit();"),file,true).length,1);
+  assert.equal(auditComposite(good.replace("button::remove_at();","")+" fn unrelated(){button::remove_at();}",file,true).length,1);
+  assert.equal(auditComposite(good+" #[cfg(test)] mod tests{fn reception_item_row(){ui.interact(r,id,sense);}}",file,true).length,0);
+  assert.equal(auditComposite("fn render(){card::source_document_frame();}","new_screen.rs").length,1);
+  assert.equal(auditComposite("fn render(){card::paint_source_document_surface(ui,r);}","new_screen.rs").length,1);
+  assert.equal(auditComposite("fn render(){card::reception_document_viewport(ui,r,a,b,f);}","new_screen.rs").length,0);
+  assert.equal(auditComposite("fn render(){/* card::source_document_frame(); */ let s=\"source_document_frame\";}","new_screen.rs").length,0);
+  assert.equal(auditComposite("fn paint_active_outline(){p.rect_stroke(r,a,b,c);} fn paint_active_if(){paint_active_outline();}","source_highlight.rs",true).length,0);
+  assert.equal(auditComposite("fn paint_active_outline(){} fn paint_active_if(){paint_active_outline();}","source_highlight.rs",true).length,1);
+  assert.equal(auditComposite("fn message_section(){ui.scope_builder(a,b);}","main.rs").length,1);
+  assert.equal(auditComposite("fn source_section(){ui.scope_builder(a,b);}","main.rs").length,0);
+  console.log("EGUI_COMPOSITE_UI_SELFTEST_PASS",14);
+}
+
 function selfTest(){
   const cases=[
     ["workflow_board_ui.rs","fn workflow_auxiliary_at(){crate::button::workflow_fixed_action(ui,id,rect,action,enabled);}",0],
@@ -873,6 +979,7 @@ function designTokenSelfTest(){
 function main(){
   selfTest();
   designTokenSelfTest();
+  compositeSelfTest();
   if(process.argv.includes("--self-test"))return;
   const root=resolve(fileURLToPath(new URL("..",import.meta.url)));
   const walk=p=>readdirSync(p,{withFileTypes:true}).flatMap(e=>
@@ -887,7 +994,7 @@ function main(){
     const owner=file.endsWith("/mod.rs")?file.split("/")[0]:file.replace(/\.rs$/,"");
     if(dependencyOwners.has(owner))graph.set(owner,sharedDependencies(source,owner));
     for(const rule of designTokenViolations(source,file)){failures++;console.error(file+": "+rule);}
-    for(const hit of audit(source,file,true)){
+    for(const hit of [...audit(source,file,true),...auditComposite(source,file,true)]){
       failures++;console.error(file+":"+hit.line+" "+hit.rule);
     }
   }
