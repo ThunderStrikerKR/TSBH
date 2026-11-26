@@ -133,7 +133,6 @@ enum Destination {
     Template(usize),
     Product(String),
 }
-type Initial=Receiver<Result<(Value,Value),String>>;
 type Saved=Receiver<Result<Value,String>>;
 
 pub struct AutomaticMessageManager {
@@ -144,7 +143,7 @@ pub struct AutomaticMessageManager {
     product_search:String,
     settings:Value,
     products:Vec<Value>,
-    loading:Option<Initial>,
+    loading:crate::screen_refresh::ReadRefresh<(Value,Value)>,
     saving:Option<Saved>,
     loaded:bool,
     base_templates:Map<String,Value>,
@@ -219,21 +218,17 @@ fn preview_message(def:TemplateDef,body:&str)->String{
 }
 impl AutomaticMessageManager {
     pub fn new(gateway:Arc<dyn BandoGateway>,ctx:Context)->Self{
-        let (tx,rx)=mpsc::channel();
-        thread::spawn(move||{
-            let result=(||{
-                let settings=gateway.load_settings()?;
-                let catalog=gateway.load_catalog()?;
-                Ok((settings,catalog))
-            })();
-            let _=tx.send(result);
-            ctx.request_repaint();
+        let mut loading=crate::screen_refresh::ReadRefresh::default();
+        loading.submit_required(ctx,move||{
+            let settings=gateway.load_settings()?;
+            let catalog=gateway.load_catalog()?;
+            Ok((settings,catalog))
         });
         Self{
             section:Section::General,tab_snapshots:crate::navigation::NavigationSnapshots::new(0),selected:TEMPLATES.iter()
                 .position(|def|def.id=="colorDefault").unwrap_or(0),
             selected_product:String::new(),product_search:String::new(),
-            settings:Value::Null,products:Vec::new(),loading:Some(rx),
+            settings:Value::Null,products:Vec::new(),loading,
             saving:None,loaded:false,
             base_templates:Map::new(),draft_templates:Map::new(),
             base_notices:Map::new(),draft_notices:Map::new(),
@@ -243,23 +238,15 @@ impl AutomaticMessageManager {
         }
     }
     pub fn poll(&mut self){
-        if let Some(rx)=self.loading.as_ref(){
-            match rx.try_recv(){
-                Ok(Ok((settings,catalog)))=>{
-                    self.products=catalog["products"].as_array()
-                        .cloned().unwrap_or_default();
-                    self.set_saved(settings);
-                    self.loaded=true;self.loading=None;self.error=None;
-                },
-                Ok(Err(message))=>{
-                    self.error=Some(message);self.loading=None;
-                },
-                Err(mpsc::TryRecvError::Disconnected)=>{
-                    self.error=Some("자동 메시지 설정 조회가 중단되었습니다.".into());
-                    self.loading=None;
-                },
-                Err(mpsc::TryRecvError::Empty)=>{}
+        match self.loading.poll(){
+            Some(Ok((settings,catalog)))=>{
+                self.products=catalog["products"].as_array().cloned().unwrap_or_default();
+                self.set_saved(settings);
+                self.loading.verified();
+                self.loaded=true;self.error=None;
             }
+            Some(Err(message))=>self.error=Some(message),
+            None=>{}
         }
         if let Some(rx)=self.saving.as_ref(){
             match rx.try_recv(){
@@ -319,7 +306,7 @@ impl AutomaticMessageManager {
             Section::Provisional=>self.base_notices!=self.draft_notices,
         }
     }
-    pub fn busy(&self)->bool{self.saving.is_some() || self.loading.is_some()}
+    pub fn busy(&self)->bool{self.saving.is_some() || self.loading.pending()}
     fn writable(&self)->bool{
         self.loaded && self.settings["readOnly"]!=Value::Bool(true)
             && (self.settings["mode"].as_str()!=Some("business")
@@ -751,13 +738,12 @@ impl AutomaticMessageManager {
 impl AutomaticMessageManager {
     pub(crate) fn geometry_fixture(gateway:Arc<dyn BandoGateway>,ctx:egui::Context,tab:usize,loaded:bool)->Self{
         let mut page=Self::new(gateway,ctx);
-        page.loading=None;page.section=if tab==0{Section::General}else{Section::Provisional};if loaded{page.set_saved(serde_json::json!({"settings":{}}));page.loaded=true;}
+        page.loading.reset();page.section=if tab==0{Section::General}else{Section::Provisional};if loaded{page.set_saved(serde_json::json!({"settings":{}}));page.loaded=true;}
         page
     }
 
     pub(crate) fn geometry_begin_read(&mut self)->Box<dyn FnOnce(Result<usize,String>)>{
-        let (tx,rx)=std::sync::mpsc::channel();
-        self.loading=Some(rx);
+        let finish=self.loading.geometry_begin_read();
         self.error=None;
         Box::new(move |answer|{
             let result=answer.map(|count|{
@@ -767,7 +753,7 @@ impl AutomaticMessageManager {
                 (serde_json::json!({"settings":{"provisionalProductNotices":notices}}),
                  serde_json::json!({"products":products}))
             });
-            assert!(tx.send(result).is_ok());
+            finish(result);
         })
     }
     pub(crate) fn geometry_read_failed(&self)->bool{self.error.is_some()}
