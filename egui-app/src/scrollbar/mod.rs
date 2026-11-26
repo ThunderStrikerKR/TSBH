@@ -69,14 +69,15 @@ mod regression_tests;
 #[derive(Clone,Debug,Default)]
 struct ScrollSnapshot{
     offset:egui::Vec2,
-    anchor:Option<(String,f32)>,
+    anchor:Option<(egui::Id,f32)>,
     pending:bool,
 }
 #[derive(Clone,Copy)]
 pub(crate) enum RowGeometry<'a>{Fixed(f32),Variable(&'a [f32])}
 #[derive(Clone,Copy)]
 pub(crate) struct ScrollRows<'a>{
-    pub keys:&'a [String],
+    pub count:usize,
+    pub key:&'a dyn Fn(usize)->Option<egui::Id>,
     pub geometry:RowGeometry<'a>,
 }
 impl ScrollRows<'_>{
@@ -84,18 +85,16 @@ impl ScrollRows<'_>{
         match self.geometry{RowGeometry::Fixed(h)=>index as f32*h,
             RowGeometry::Variable(offsets)=>offsets.get(index).copied().unwrap_or(0.0)}
     }
-    fn anchor(self,y:f32)->Option<(String,f32)>{
-        if self.keys.is_empty(){return None;}
+    fn anchor(self,y:f32)->Option<(egui::Id,f32)>{
+        if self.count==0{return None;}
         let index=match self.geometry{
             RowGeometry::Fixed(h)=>(y/h.max(1.0)).floor().max(0.0) as usize,
             RowGeometry::Variable(offsets)=>offsets.partition_point(|v|*v<=y).saturating_sub(1),
-        }.min(self.keys.len()-1);
-        let key=&self.keys[index];
-        if key.is_empty(){return None;}
-        Some((key.clone(),(y-self.top(index)).max(0.0)))
+        }.min(self.count-1);
+        Some(((self.key)(index)?,(y-self.top(index)).max(0.0)))
     }
-    fn restore(self,anchor:&(String,f32))->Option<f32>{
-        let i=self.keys.iter().position(|key|key==&anchor.0)?;
+    fn restore(self,anchor:&(egui::Id,f32))->Option<f32>{
+        let i=(0..self.count).find(|&i|(self.key)(i)==Some(anchor.0))?;
         let height=(self.top(i+1)-self.top(i)).max(0.0);
         Some(self.top(i)+anchor.1.min((height-0.01).max(0.0)))
     }
@@ -115,6 +114,68 @@ impl ScrollSnapshot{
         self.pending=false;
     }
 }
+pub(crate) fn row_key(id:&str)->Option<egui::Id>{
+    (!id.is_empty()).then(||egui::Id::new(id))
+}
+#[derive(Clone,Default)]
+struct ScrollStore{
+    entries:std::collections::HashMap<egui::Id,ScrollEntry>,
+    last_sweep:Option<std::time::Instant>,
+    frame:Option<u64>,
+    seen:std::collections::HashSet<egui::Id>,
+}
+#[derive(Clone)]
+struct ScrollEntry{
+    snapshot:ScrollSnapshot,
+    touched:std::time::Instant,
+    native:egui::Id,
+}
+impl ScrollStore{
+    // The UI may sleep for hours while the same screen remains visible.
+    // Renew the previous frame's visible IDs before checking idle expiry.
+    fn advance_frame(&mut self,frame:u64,now:std::time::Instant){
+        if self.frame==Some(frame){return;}
+        for id in self.seen.drain(){
+            if let Some(entry)=self.entries.get_mut(&id){entry.touched=now;}
+        }
+        self.frame=Some(frame);
+    }
+    fn sweep(&mut self,now:std::time::Instant)->Vec<egui::Id>{
+        let mut retired=Vec::new();
+        self.entries.retain(|_,entry|{
+            let keep=now.saturating_duration_since(entry.touched)<crate::navigation::NAVIGATION_SNAPSHOT_TTL;
+            if !keep{retired.push(entry.native);}
+            keep
+        });
+        self.last_sweep=Some(now);
+        retired
+    }
+}
+fn store_id()->egui::Id{egui::Id::new("navigation-scroll-store")}
+pub(crate) fn sweep_snapshots(ctx:&egui::Context,now:std::time::Instant){
+    let frame=ctx.cumulative_frame_nr();
+    ctx.data_mut(|data|{
+        let retired={
+            let store=data.get_temp_mut_or_default::<ScrollStore>(store_id());
+            store.advance_frame(frame,now);
+            if store.last_sweep.is_some_and(|last|now.saturating_duration_since(last)<std::time::Duration::from_secs(60)){return;}
+            store.sweep(now)
+        };
+        for id in retired{data.remove::<egui::containers::scroll_area::State>(id);}
+    });
+}
+// Non-table scrollers that have their own viewport restoration still
+// register native state for the same expiration and reclamation policy.
+pub(crate) fn track_native<R>(ui:&Ui,output:&egui::containers::scroll_area::ScrollAreaOutput<R>){
+    let now=std::time::Instant::now();
+    sweep_snapshots(ui.ctx(),now);
+    ui.ctx().data_mut(|data|{
+        let store=data.get_temp_mut_or_default::<ScrollStore>(store_id());
+        let id=output.id.with("native-only");
+        store.seen.insert(id);
+        store.entries.insert(id,ScrollEntry{snapshot:Default::default(),touched:now,native:output.id});
+    });
+}
 pub(crate) struct ScrollCapture{
     id:egui::Id,
     state:ScrollSnapshot,
@@ -124,7 +185,16 @@ impl ScrollCapture{
     pub(crate) fn begin(ui:&Ui,id:impl std::hash::Hash,scroll:egui::ScrollArea,
         ready:bool,rows:Option<ScrollRows<'_>>)->(egui::ScrollArea,Self){
         let id=ui.make_persistent_id(("navigation-scroll-snapshot",id));
-        let state=ui.ctx().data_mut(|data|data.get_temp::<ScrollSnapshot>(id).unwrap_or_default());
+        let now=std::time::Instant::now();
+        sweep_snapshots(ui.ctx(),now);
+        let state=ui.ctx().data_mut(|data|{
+            let entry=data.get_temp_mut_or_default::<ScrollStore>(store_id()).entries.remove(&id);
+            match entry{
+                Some(entry) if now.saturating_duration_since(entry.touched)<crate::navigation::NAVIGATION_SNAPSHOT_TTL=>entry.snapshot,
+                Some(entry)=>{data.remove::<egui::containers::scroll_area::State>(entry.native);ScrollSnapshot::default()}
+                None=>ScrollSnapshot::default(),
+            }
+        });
         // A worker can complete before the first returning frame. Resolve
         // changed row positions even when no loading frame was painted.
         let moved=ready&&rows.zip(state.anchor.as_ref()).is_some_and(|(rows,anchor)|
@@ -135,7 +205,13 @@ impl ScrollCapture{
     pub(crate) fn finish<R>(mut self,ui:&Ui,
         output:&egui::containers::scroll_area::ScrollAreaOutput<R>,rows:Option<ScrollRows<'_>>){
         self.state.observe(self.ready,output.state.offset,rows);
-        ui.ctx().data_mut(|data|data.insert_temp(self.id,self.state));
+        ui.ctx().data_mut(|data|{
+            let store=data.get_temp_mut_or_default::<ScrollStore>(store_id());
+            store.seen.insert(self.id);
+            store.entries.insert(self.id,ScrollEntry{
+                snapshot:self.state,touched:std::time::Instant::now(),native:output.id,
+            });
+        });
     }
 }
 #[cfg(test)]
@@ -143,14 +219,16 @@ mod snapshot_tests{
     use super::*;
     #[test]
     fn transient_empty_preserves_both_axes_and_row_anchor(){
-        let keys=["a","b","c"].map(str::to_owned);
-        let rows=ScrollRows{keys:&keys,geometry:RowGeometry::Fixed(40.0)};
+        let keys=["a","b","c"];
+        let key=|i:usize|row_key(keys[i]);
+        let rows=ScrollRows{count:keys.len(),key:&key,geometry:RowGeometry::Fixed(40.0)};
         let mut s=ScrollSnapshot::default();
         s.observe(true,egui::vec2(22.0,45.0),Some(rows));
         s.observe(false,egui::Vec2::ZERO,None);
         s.observe(false,egui::Vec2::ZERO,None);
-        let new=["new","a","b","c"].map(str::to_owned);
-        let rows=ScrollRows{keys:&new,geometry:RowGeometry::Fixed(40.0)};
+        let new=["new","a","b","c"];
+        let key=|i:usize|row_key(new[i]);
+        let rows=ScrollRows{count:new.len(),key:&key,geometry:RowGeometry::Fixed(40.0)};
         assert_eq!(s.restore(Some(rows)),egui::vec2(22.0,85.0));
         s.observe(true,egui::vec2(22.0,85.0),Some(rows));
         assert!(!s.pending);
@@ -158,13 +236,44 @@ mod snapshot_tests{
         assert_eq!(s.offset,egui::Vec2::ZERO);
     }
     #[test]
+    fn expired_entries_are_removed_and_recent_entries_survive(){
+        let now=std::time::Instant::now();
+        let mut store=ScrollStore::default();
+        let a=egui::Id::new("a");let b=egui::Id::new("b");
+        store.entries.insert(a,ScrollEntry{snapshot:Default::default(),touched:now,native:a});
+        store.entries.insert(b,ScrollEntry{snapshot:Default::default(),touched:now+std::time::Duration::from_secs(1),native:b});
+        assert_eq!(store.sweep(now+crate::navigation::NAVIGATION_SNAPSHOT_TTL),vec![a]);
+        assert!(store.entries.contains_key(&b));assert_eq!(store.entries.len(),1);
+    }
+    #[test]
+    fn idle_visible_viewport_is_not_expired(){
+        let now=std::time::Instant::now();
+        let mut store=ScrollStore::default();
+        let id=egui::Id::new("visible");
+        store.frame=Some(1);store.seen.insert(id);
+        store.entries.insert(id,ScrollEntry{snapshot:Default::default(),touched:now,native:id});
+        let later=now+crate::navigation::NAVIGATION_SNAPSHOT_TTL;
+        store.advance_frame(2,later);
+        assert!(store.sweep(later).is_empty());
+        assert_eq!(store.sweep(later+crate::navigation::NAVIGATION_SNAPSHOT_TTL),vec![id]);
+    }
+    #[test]
+    fn ordinary_anchor_reads_only_one_key(){
+        let calls=std::cell::Cell::new(0);
+        let key=|i:usize|{calls.set(calls.get()+1);Some(egui::Id::new(i))};
+        let rows=ScrollRows{count:100_000,key:&key,geometry:RowGeometry::Fixed(40.0)};
+        assert_eq!(rows.anchor(400.0),Some((egui::Id::new(10),0.0)));
+        assert_eq!(calls.get(),1);
+    }
+    #[test]
     fn deleted_anchor_falls_back_to_offset_and_variable_height_is_resolved(){
-        let keys=["a","b"].map(str::to_owned);
+        let keys=["a","b"];
+        let key=|i:usize|row_key(keys[i]);
         let mut s=ScrollSnapshot::default();
         s.observe(true,egui::vec2(8.0,56.0),Some(ScrollRows{
-            keys:&keys,geometry:RowGeometry::Variable(&[0.0,50.0,90.0])}));
+            count:keys.len(),key:&key,geometry:RowGeometry::Variable(&[0.0,50.0,90.0])}));
         s.observe(false,egui::Vec2::ZERO,None);
-        assert_eq!(s.restore(Some(ScrollRows{keys:&keys,geometry:RowGeometry::Variable(&[0.0,70.0,90.0])})).y,76.0);
-        assert_eq!(s.restore(Some(ScrollRows{keys:&keys[..1],geometry:RowGeometry::Fixed(40.0)})).y,56.0);
+        assert_eq!(s.restore(Some(ScrollRows{count:keys.len(),key:&key,geometry:RowGeometry::Variable(&[0.0,70.0,90.0])})).y,76.0);
+        assert_eq!(s.restore(Some(ScrollRows{count:1,key:&key,geometry:RowGeometry::Fixed(40.0)})).y,56.0);
     }
 }

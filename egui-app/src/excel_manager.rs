@@ -310,7 +310,7 @@ fn table_state_body_rect(
 fn table<const N:usize>(
     ui:&mut Ui,id:&str,titles:[&str;N],base:[f32;N],
     align:[Align2;N],stretch:usize,rows:usize,
-    ready:bool,scroll_keys:&[String],
+    ready:bool,scroll_keys:&dyn Fn(usize)->Option<egui::Id>,
     height_policy:ExcelTableHeightPolicy,
     sort:&mut Option<Sort>,sort_enabled:[bool;N],
     header_selection:Option<(bool,bool)>,
@@ -1025,7 +1025,7 @@ impl ExcelManager{
                     self.tab,&self.query,history.len(),self.refresh_job.pending(),
                     self.error.is_some()
                 );
-                let scroll_keys=order_list.iter().map(|entry|text(&entry.export,"id").to_owned()).collect::<Vec<_>>();
+                let scroll_keys=|i:usize|crate::scrollbar::row_key(text(&order_list[i].export,"id"));
                 let _=table(section,"excel-history-table",
                     ["작성 일시","거래처","상품 목록","조회"],
                     HISTORY,[Align2::LEFT_CENTER,Align2::LEFT_CENTER,
@@ -1075,7 +1075,7 @@ impl ExcelManager{
                     self.tab,&self.query,records.len(),self.refresh_job.pending(),
                     self.error.is_some()
                 );
-                let scroll_keys=records.iter().map(|entry|entry.id().to_owned()).collect::<Vec<_>>();
+                let scroll_keys=|i:usize|crate::scrollbar::row_key(records[i].id());
                 let toggle_all=table(section,"excel-queue-table",
                     ["선택","거래처 / 발주","수취인 / 배송 품목","금액","처리"],
                     QUEUE,[Align2::CENTER_CENTER,Align2::LEFT_CENTER,

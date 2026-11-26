@@ -19,7 +19,9 @@ pub(crate) struct ExplorerState {
     ancestors_open:bool,
     motion:Option<Motion>,
     pub(crate) scroll_epoch:u64,
-    scroll_positions:HashMap<Vec<String>,f32>,
+    scroll_positions:HashMap<String,f32>,
+    rendered_context:Option<String>,
+    rendered_query:String,
     restore_scroll:Option<f32>,
 }
 
@@ -180,16 +182,16 @@ fn begin_move(state:&mut ExplorerState,path:Vec<String>,nodes:&[CategoryNode],
     let source_index=if source_depth==0{0}else{
         direct_children(nodes,index,old_parent).iter().position(|n|Some(&n.id)==source_path.last()).unwrap_or(0)+1
     };
-    let previous=state.scroll_positions.get(&old_context).copied().unwrap_or(0.0);
+    let previous=state.scroll_positions.get(old_parent).copied().unwrap_or(0.0);
     let (source_y,source_scroll)=source.unwrap_or((source_index as f32*row_h-previous,previous));
-    state.scroll_positions.insert(old_context.clone(),source_scroll);
+    state.scroll_positions.insert(old_parent.to_owned(),source_scroll);
     let (target_y,target_depth,target_scroll)=if reverse{
         let dest=path.last().map(String::as_str).unwrap_or("");
         let branch=state.path.get(path.len());
         let pos=direct_children(nodes,index,dest).iter().position(|n|Some(&n.id)==branch).unwrap_or(0)+1;
         let raw=pos as f32*row_h;
         // Keep the last parent viewport unless the returning branch is outside it.
-        let saved=state.scroll_positions.get(&new_context).copied().unwrap_or(0.0);
+        let saved=state.scroll_positions.get(dest).copied().unwrap_or(0.0);
         let scroll=saved.clamp((raw+row_h-height.max(row_h)).max(0.0),raw.max(0.0));
         (raw-scroll,1,scroll)
     }else{(0.0,0,0.0)};
@@ -323,10 +325,8 @@ pub(crate) fn explorer_body(menu:&mut Ui,nodes:&[CategoryNode],index:&HashMap<&s
     state:&mut ExplorerState,enabled:bool,list_height:f32,search_focused:bool,
     totals:Option<&HashMap<String,usize>>){
     let now=menu.input(|i|i.time);
-    if let Some(m)=state.motion.clone(){
-        if m.elapsed(now)>=450.0{state.finish_motion();menu.ctx().request_repaint();}
-        else{menu.ctx().request_repaint();}
-    }
+    if state.motion.as_ref().is_some_and(|m|m.elapsed(now)>=450.0){state.finish_motion();menu.ctx().request_repaint();}
+    else if state.motion.is_some(){menu.ctx().request_repaint();}
     let motion=state.motion.clone();
     let busy=motion.is_some();
     let mut next_path=None;
@@ -352,6 +352,15 @@ pub(crate) fn explorer_body(menu:&mut Ui,nodes:&[CategoryNode],index:&HashMap<&s
     let current=context.last().map(String::as_str).unwrap_or("");
     let items=if searching{search_results(nodes,index,&state.search)}else{direct_children(nodes,index,current)};
     let row_h=theme::CATALOG_TREE_ROW_HEIGHT;
+    let mut child_counts=HashMap::<&str,usize>::new();
+    for node in nodes{*child_counts.entry(node.parent.as_str()).or_default()+=1;}
+    let context_changed=state.rendered_context.as_deref()!=Some(current);
+    let query_changed=state.rendered_query!=state.search;
+    if context_changed{
+        state.scroll_positions.retain(|id,_|id.is_empty()||index.contains_key(id.as_str()));
+        state.rendered_context=Some(current.to_owned());
+    }
+    if query_changed{state.rendered_query.clone_from(&state.search);}
     menu.horizontal_top(|body|{
         body.spacing_mut().item_spacing.x=theme::SPACE_8;
         if category_back_button(body,enabled&&!busy&&!state.path.is_empty()).clicked(){
@@ -359,10 +368,14 @@ pub(crate) fn explorer_body(menu:&mut Ui,nodes:&[CategoryNode],index:&HashMap<&s
         }
         body.vertical(|tree_ui|{
             let mut scroll=crate::scrollbar::scroll_area(crate::scrollbar::ScrollAxes::Vertical)
-                .id_salt(("category-explorer-list",state.scroll_epoch,context.clone(),state.search.clone(),busy))
+                .id_salt(("category-explorer-list",state.scroll_epoch,searching,busy))
                 .max_height(list_height).auto_shrink([false,false]);
             if let Some(m)=&motion{scroll=scroll.vertical_scroll_offset(if final_phase{m.target_scroll}else{m.source_scroll});}
             else if let Some(offset)=state.restore_scroll.take(){scroll=scroll.vertical_scroll_offset(offset);}
+            else if searching&&query_changed{scroll=scroll.vertical_scroll_offset(0.0);}
+            else if !searching&&(context_changed||query_changed){
+                scroll=scroll.vertical_scroll_offset(state.scroll_positions.get(current).copied().unwrap_or(0.0));
+            }
             let output=scroll.show(tree_ui,|list|{
                 list.spacing_mut().item_spacing.y=0.0;
                 let top=list.next_widget_position().y;
@@ -377,7 +390,7 @@ pub(crate) fn explorer_body(menu:&mut Ui,nodes:&[CategoryNode],index:&HashMap<&s
                             let id=path.last().map(String::as_str).unwrap_or("");
                             let summary=if id.is_empty(){String::new()}else{
                                 let count=totals.get(id).copied().unwrap_or(0);
-                                let children=nodes.iter().filter(|n|n.parent==id).count();
+                                let children=child_counts.get(id).copied().unwrap_or(0);
                                 if children==0{format!("(상품 {count})")}else{format!("(상품 {count} · 하위 분류 {children})")}
                             };
                             category_tree::category_tree_row(row,category_tree::CategoryTreeRow{
@@ -400,13 +413,19 @@ pub(crate) fn explorer_body(menu:&mut Ui,nodes:&[CategoryNode],index:&HashMap<&s
                     if items.is_empty(){crate::category_tree::empty_search_row(list,message);}
                 }
                 for (i,node) in items.iter().enumerate(){
-                    let path=chain(index,&node.id);
-                    let has_children=nodes.iter().any(|child|child.parent==node.id);
+                    let path=if searching{chain(index,&node.id)}else{
+                        let mut path=context.clone();path.push(node.id.clone());path
+                    };
+                    let has_children=child_counts.contains_key(node.id.as_str());
                     let label=if searching{full_name(index,&path)}else{node.name.clone()};
                     paint_row(list,&label,path,usize::from(!searching),i+1==items.len(),has_children,false);
                 }
             });
-            if !busy&&!searching{state.scroll_positions.insert(context.clone(),output.state.offset.y);}
+            crate::scrollbar::track_native(tree_ui,&output);
+            if !busy&&!searching{
+                if let Some(offset)=state.scroll_positions.get_mut(current){*offset=output.state.offset.y;}
+                else{state.scroll_positions.insert(current.to_owned(),output.state.offset.y);}
+            }
             if let Some(m)=&motion{
                 let (x,y)=motion_pose(m,t);
                 let clip=output.inner_rect.intersect(tree_ui.clip_rect());
@@ -426,6 +445,29 @@ pub(crate) fn explorer_body(menu:&mut Ui,nodes:&[CategoryNode],index:&HashMap<&s
     }
 }
 
+#[derive(Clone,Default)]
+struct PopupStates{
+    entries:HashMap<Id,(ExplorerState,std::time::Instant)>,
+    frame:Option<u64>,
+    seen:HashSet<Id>,
+    last_sweep:Option<std::time::Instant>,
+}
+fn popup_states_id()->Id{Id::new("category-explorer-popup-states")}
+pub(crate) fn sweep_popup_states(ctx:&Context,now:std::time::Instant){
+    let frame=ctx.cumulative_frame_nr();
+    ctx.data_mut(|data|{
+        let states=data.get_temp_mut_or_default::<PopupStates>(popup_states_id());
+        if states.frame==Some(frame){return;}
+        states.frame=Some(frame);
+        for id in states.seen.drain(){
+            if let Some(entry)=states.entries.get_mut(&id){entry.1=now;}
+        }
+        if states.last_sweep.is_none_or(|last|now.saturating_duration_since(last)>=std::time::Duration::from_secs(60)){
+            states.entries.retain(|_,entry|now.saturating_duration_since(entry.1)<crate::navigation::NAVIGATION_SNAPSHOT_TTL);
+            states.last_sweep=Some(now);
+        }
+    });
+}
 /// Same trigger, same popup owner, same hover and one-shot feedback anchor as
 /// the management dropdown; only its *contents* implement hierarchical
 /// navigation and a fixed, explicitly committed category ID.
@@ -447,12 +489,6 @@ pub fn category_dropdown(
     );
     let state_id:Id=trigger.id.with("hierarchical-category-explorer");
     let ctx:Context=ui.ctx().clone();
-    let mut state=ctx.data_mut(|data|
-        data.get_temp::<ExplorerState>(state_id).unwrap_or_default()
-    );
-    if trigger.clicked(){
-        navigate(&mut state,chain(&index,selected));
-    }
     let mut changed=false;
     // Fixed width across the product list, detail editor, and category
     // manager. Never grow with the trigger width or breadcrumb text.
@@ -460,12 +496,28 @@ pub fn category_dropdown(
     let popup_width=theme::CATEGORY_EXPLORER_POPUP_WIDTH
         .min((ui.ctx().content_rect().width()-theme::SPACE_24).max(1.0));
     crate::overlay::show_menu(&trigger,None,|menu|{
+            let mut state=ctx.data_mut(|data|{
+                let states=data.get_temp_mut_or_default::<PopupStates>(popup_states_id());
+                let now=std::time::Instant::now();
+                states.entries.remove(&state_id).filter(|entry|
+                    now.saturating_duration_since(entry.1)<crate::navigation::NAVIGATION_SNAPSHOT_TTL)
+                    .map(|entry|entry.0).unwrap_or_default()
+            });
+            if trigger.clicked(){
+                navigate(&mut state,chain(&index,selected));
+                state.rendered_context=None;
+                state.scroll_positions.retain(|id,_|id.is_empty()||index.contains_key(id.as_str()));
+            }
             menu_body(
                 menu,nodes,&index,&mut state,selected,enabled,allow_empty,
                 &mut changed,popup_width
             );
+            ctx.data_mut(|data|{
+                let states=data.get_temp_mut_or_default::<PopupStates>(popup_states_id());
+                states.seen.insert(state_id);
+                states.entries.insert(state_id,(state,std::time::Instant::now()));
+            });
         });
-    ctx.data_mut(|data|data.insert_temp(state_id,state));
     if changed{trigger.mark_changed();}
     trigger
 }
@@ -554,12 +606,12 @@ mod tests{
         let mut state=ExplorerState::default();
         let root=vec!["root".to_owned()];
         navigate(&mut state,chain(&index,"node-0"));
-        state.scroll_positions.insert(root.clone(),20.0);
+        state.scroll_positions.insert(root[0].clone(),20.0);
         begin_move(&mut state,root.clone(),&nodes,&index,0.0,None,252.0);
         assert_eq!(state.motion.as_ref().unwrap().target_scroll,20.0);
         state.finish_motion();
         assert_eq!(state.restore_scroll,Some(20.0));
-        assert_eq!(state.scroll_positions.get(&root),Some(&20.0));
+        assert_eq!(state.scroll_positions.get(&root[0]),Some(&20.0));
     }
     #[test]
     fn leaf_selection_is_pending_and_retains_siblings(){

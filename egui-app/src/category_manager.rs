@@ -5,8 +5,6 @@ use crate::{category_dropdown,category_tree,theme,typography};
 use eframe::egui::{self,Align,Context,Layout,Rect,Sense,Ui,Vec2};
 use serde_json::{json,Value};
 use std::collections::{HashMap,HashSet};
-use std::time::{Duration,Instant};
-const SNAPSHOT_TTL:Duration=crate::navigation::NAVIGATION_SNAPSHOT_TTL;
 #[derive(Clone,Debug)]
 struct TreeMotion{id:String,opening:bool,started:f64,duration:f64}
 #[derive(Clone,Debug)]
@@ -45,7 +43,7 @@ pub struct CategoryManager {
     crumbs:category_dropdown::ExplorerState,
     tree_motion:Option<TreeMotion>,
     nav_motion:Option<NavMotion>,
-    left_at:Option<Instant>,
+    map_cache:Option<(u64,String,std::sync::Arc<CategoryMapIndex>)>,
     scroll_epoch:u64,
     scroll_to:Option<String>,
     name:String,
@@ -67,7 +65,7 @@ impl Default for CategoryManager {
             selected:ROOTS[0].0.into(),
             expanded:ROOTS.iter().map(|(id,_)|(*id).to_owned()).collect(),
             query:String::new(),focused:false,focus:Default::default(),crumbs:Default::default(),
-            tree_motion:None,nav_motion:None,left_at:None,scroll_epoch:0,scroll_to:None,
+            tree_motion:None,nav_motion:None,map_cache:None,scroll_epoch:0,scroll_to:None,
             name:String::new(),editor:false,
             operation:None,new_name:String::new(),target:String::new(),
             transfer:false,confirm:None,after_save:None,
@@ -166,9 +164,10 @@ fn direct_count(catalog:&Value,id:&str)->usize{
 /// search visibility ONCE per map render. The old row renderer scanned every
 /// product and walked its entire category ancestry for EACH visible row,
 /// multiplying the work by the number of expanded categories every frame.
+#[derive(Clone)]
 struct CategoryMapIndex {
-    children:HashMap<String,Vec<usize>>,
-    totals:HashMap<String,usize>,
+    children:std::sync::Arc<HashMap<String,Vec<usize>>>,
+    totals:std::sync::Arc<HashMap<String,usize>>,
     visible:Option<HashSet<String>>,
 }
 impl CategoryMapIndex {
@@ -204,23 +203,30 @@ impl CategoryMapIndex {
                 }
             }
         }
+        Self{children:std::sync::Arc::new(children),totals:std::sync::Arc::new(totals),
+            visible:Self::visibility(cats,query)}
+    }
+    fn visibility(cats:&[Category],query:&str)->Option<HashSet<String>>{
         let q=query.trim().to_lowercase();
-        let visible=if q.is_empty(){None}else{
-            let mut visible=HashSet::new();
-            // A matching path shows its ancestors; a matching ancestor's
-            // name is already included in every descendant's full path.
-            // This is equivalent to the old recursive matches() but avoids
-            // scanning the whole tree once per rendered child.
-            for item in cats{
-                let ancestors=path(cats,&item.id);
-                if ancestors.iter().map(|c|c.name.as_str())
-                    .collect::<Vec<_>>().join(" > ").to_lowercase().contains(&q){
-                    visible.extend(ancestors.into_iter().map(|c|c.id));
-                }
+        if q.is_empty(){return None;}
+        let mut by_id=HashMap::new();
+        for item in cats{by_id.entry(item.id.as_str()).or_insert(item);}
+        let mut visible=HashSet::new();
+        for item in cats{
+            let mut ancestors=Vec::new();
+            let mut seen=HashSet::new();
+            let mut current=item.id.as_str();
+            while !current.is_empty()&&seen.insert(current){
+                let Some(node)=by_id.get(current)else{break;};
+                ancestors.push(*node);
+                current=node.parent.as_str();
             }
-            Some(visible)
-        };
-        Self{children,totals,visible}
+            if ancestors.iter().rev().map(|c|c.name.as_str()).collect::<Vec<_>>()
+                .join(" > ").to_lowercase().contains(&q){
+                visible.extend(ancestors.iter().map(|c|c.id.clone()));
+            }
+        }
+        Some(visible)
     }
     fn branches(&self,id:&str)->&[usize]{
         self.children.get(id).map(Vec::as_slice).unwrap_or(&[])
@@ -287,7 +293,6 @@ impl CategoryManager {
             self.focus.finish_motion();self.selected=self.focus.path.last().cloned().unwrap_or_default();
         }
         self.tree_motion=None;self.nav_motion=None;
-        self.left_at=Some(Instant::now());
         self.editor=false;
         self.operation=None;
         self.confirm=None;
@@ -446,12 +451,27 @@ impl CategoryManager {
         self.expanded=ROOTS.iter().map(|(id,_)|(*id).to_owned()).collect();
         self.query.clear();self.focused=false;self.focus=Default::default();self.crumbs=Default::default();
         self.scroll_epoch=epoch;self.focus.scroll_epoch=epoch;self.tree_motion=None;self.nav_motion=None;self.scroll_to=None;
-        self.left_at=None;
+        self.map_cache=None;
     }
-    fn restore_snapshot(&mut self,now:Instant){
-        if self.left_at.take().is_some_and(|left|now.saturating_duration_since(left)>=SNAPSHOT_TTL){
-            self.reset_navigation();
+    pub(crate) fn invalidate_map_cache(&mut self){self.map_cache=None;}
+    fn map_index(&mut self,cats:&[Category],catalog:&Value)->std::sync::Arc<CategoryMapIndex>{
+        let Some(revision)=catalog["revision"].as_u64()else{
+            return std::sync::Arc::new(CategoryMapIndex::new(cats,catalog,&self.query));
+        };
+        if let Some((cached,query,index))=&mut self.map_cache{
+            if *cached==revision{
+                if *query!=self.query{
+                    let mut updated=index.as_ref().clone();
+                    updated.visible=CategoryMapIndex::visibility(cats,&self.query);
+                    *index=std::sync::Arc::new(updated);
+                    query.clone_from(&self.query);
+                }
+                return std::sync::Arc::clone(index);
+            }
         }
+        let index=std::sync::Arc::new(CategoryMapIndex::new(cats,catalog,&self.query));
+        self.map_cache=Some((revision,self.query.clone(),std::sync::Arc::clone(&index)));
+        index
     }
     fn select_map(&mut self,cats:&[Category],target:&str,now:f64){
         if self.selected==target{return;}
@@ -556,7 +576,6 @@ impl CategoryManager {
         }
     }
     pub fn show_page(&mut self,ui:&mut Ui,catalog:&Value,editable:bool,busy:bool){
-        self.restore_snapshot(Instant::now());
         let cats=categories(catalog);
         if !self.selected.is_empty()&&!cats.iter().any(|c|c.id==self.selected){self.selected=ROOTS[0].0.to_owned();}
         if let Some(m)=&self.tree_motion{
@@ -669,7 +688,7 @@ impl CategoryManager {
                 }
             }
             if self.focused{
-                let index=CategoryMapIndex::new(&cats,catalog,&self.query);
+                let index=self.map_index(&cats,catalog);
                 if !self.focus.moving(){
                     let current=category_dropdown::chain(&node_index,&self.selected);
                     if self.focus.path!=current{category_dropdown::navigate(&mut self.focus,current);}
@@ -712,8 +731,8 @@ impl CategoryManager {
                 }
             // The same structural divider as Reception and management tables.
             crate::ui_primitives::section_divider(panel);
-            let index=CategoryMapIndex::new(&cats,catalog,&self.query);
-            crate::scrollbar::scroll_area(crate::scrollbar::ScrollAxes::Vertical)
+            let index=self.map_index(&cats,catalog);
+            let output=crate::scrollbar::scroll_area(crate::scrollbar::ScrollAxes::Vertical)
                 .id_salt(("category-map-tree",self.scroll_epoch))
                 .auto_shrink([false,false])
                 .max_height(panel.available_height().max(theme::MANAGEMENT_TABLE_ROW_HEIGHT))
@@ -746,6 +765,7 @@ impl CategoryManager {
                         }
                     }
                 });
+            crate::scrollbar::track_native(panel,&output);
             }
         });
     }
@@ -1074,17 +1094,20 @@ impl CategoryManager {
 mod modal_layout_contract_tests{
     use super::*;
     #[test]
-    fn category_map_snapshot_expires_only_after_leaving(){
+    fn navigation_reset_clears_cached_map_and_focus(){
         let mut manager=CategoryManager::default();
         manager.focused=true;manager.query="보면대".into();
-        let now=Instant::now();
-        manager.left_at=Some(now);
-        manager.restore_snapshot(now+Duration::from_secs(1799));
-        assert!(manager.focused);assert_eq!(manager.query,"보면대");
-        manager.left_at=Some(now);
-        manager.restore_snapshot(now+SNAPSHOT_TTL);
+        let catalog=json!({"revision":1,"products":[]});
+        let cats=categories(&catalog);
+        let first=manager.map_index(&cats,&catalog);
+        let second=manager.map_index(&cats,&catalog);
+        assert!(std::sync::Arc::ptr_eq(&first,&second));
+        manager.query.clear();
+        let changed=manager.map_index(&cats,&catalog);
+        assert!(std::sync::Arc::ptr_eq(&first.totals,&changed.totals));
+        manager.reset_navigation();
         assert!(!manager.focused);assert!(manager.query.is_empty());
-        assert_eq!(manager.selected,ROOTS[0].0);
+        assert!(manager.map_cache.is_none());
         assert_eq!(manager.scroll_epoch,1);
     }
     #[test]

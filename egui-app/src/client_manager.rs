@@ -568,7 +568,7 @@ impl ClientManager {
             let scroll_track=crate::table::management_table_scroll_track_rect(
                 section,scroll_max_height
             );
-            let scroll_keys=rows.iter().map(|row|field(row,"id").to_owned()).collect::<Vec<_>>();
+            let scroll_keys=|i:usize|crate::scrollbar::row_key(field(&rows[i],"id"));
             let scroll_output=crate::table::fixed_rows_snapshot(
                 section,crate::table::Viewport{width:table_width,height:scroll_max_height,rail:Some(scroll_track)},
                 "client-management-table-rows",theme::MANAGEMENT_CLIENT_ROW_HEIGHT,rows.len(),

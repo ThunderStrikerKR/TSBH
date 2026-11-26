@@ -692,12 +692,14 @@ impl ProductManager {
         if let Some(catalog)=self.excel.poll(ctx){
             self.model_groups.set_catalog(&catalog,ctx);
             self.aliases.set_catalog(&catalog,ctx);
+            if self.catalog.as_ref()!=Some(&catalog){self.category_manager.invalidate_map_cache();}
             self.catalog=Some(catalog);
             self.reload(ctx.clone());
         }
         if let Some(catalog)=self.model_groups.poll(ctx){
             self.model_groups.set_catalog(&catalog,ctx);
             self.aliases.set_catalog(&catalog,ctx);
+            if self.catalog.as_ref()!=Some(&catalog){self.category_manager.invalidate_map_cache();}
             self.catalog=Some(catalog);
             self.reload(ctx.clone());
         }
@@ -759,7 +761,8 @@ impl ProductManager {
                     };
                     self.model_groups.set_catalog(&catalog,ctx);
                     self.aliases.set_catalog(&catalog,ctx);
-                    self.catalog=Some(catalog);
+                    if self.catalog.as_ref()!=Some(&catalog){self.category_manager.invalidate_map_cache();}
+            self.catalog=Some(catalog);
                     if price_job&&!self.price_write_queue.is_empty(){
                         self.launch_next_price_write(ctx.clone());
                     }else{
@@ -819,6 +822,7 @@ impl ProductManager {
                     if accepts_catalog_revision(current_revision,incoming_revision){
                         self.model_groups.set_catalog(&result.catalog,ctx);
                         self.aliases.set_catalog(&result.catalog,ctx);
+                        if self.catalog.as_ref()!=Some(&result.catalog){self.category_manager.invalidate_map_cache();}
                         self.catalog=Some(result.catalog);
                         self.result.verified();
                         self.products=result.products;
@@ -1292,7 +1296,8 @@ impl ProductManager {
                 panel,scroll_max_height
             );
             let mut row_left=None;
-            let scroll_keys=ordered.iter().map(|i|field(&self.products[*i],"id").to_owned()).collect::<Vec<_>>();
+            let products=&self.products;
+            let scroll_keys=|i:usize|crate::scrollbar::row_key(field(&products[ordered[i]],"id"));
             let scroll_output=crate::table::fixed_rows_snapshot(
                 panel,crate::table::Viewport{width:table_width,height:scroll_max_height,rail:Some(scroll_track)},
                 "egui-product-price-grid",theme::PRODUCT_TABLE_ROW_HEIGHT,ordered.len(),

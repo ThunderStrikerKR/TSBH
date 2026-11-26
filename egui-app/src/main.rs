@@ -5640,6 +5640,8 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
     }
 
     fn sync_navigation_snapshot(&mut self,ctx:&egui::Context,now:Instant){
+        crate::scrollbar::sweep_snapshots(ctx,now);
+        crate::category_dropdown::sweep_popup_states(ctx,now);
         let previous=self.navigation_snapshots.active();
         if previous!=self.page as usize{
             match Page::ALL[previous]{

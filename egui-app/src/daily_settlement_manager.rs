@@ -273,7 +273,7 @@ fn paint_cell(
 fn report_table<const N:usize>(
     ui:&mut Ui,id:&str,headings:[&str;N],base:[f32;N],
     align:[Align2;N],roles:[typography::ManagementTableCellRole;N],
-    stretch_column:usize,indices:&[usize],ready:bool,scroll_keys:&[String],
+    stretch_column:usize,indices:&[usize],ready:bool,scroll_keys:&dyn Fn(usize)->Option<egui::Id>,
     sort:&mut Option<Sort>,empty_notice:Option<&str>,format_row:impl Fn(usize)->[String;N],
 ){
     let previous_gap=crate::table::management_table_container_style(ui);
@@ -523,7 +523,7 @@ impl DailySettlementManager{
                     });
                     crate::ui_primitives::section_divider(section);
                     let indices=sorted_indices(orders,self.order_sort,false);
-                    let scroll_keys=indices.iter().map(|i|field(&orders[*i],"orderId").to_owned()).collect::<Vec<_>>();
+                    let scroll_keys=|i:usize|crate::scrollbar::row_key(field(&orders[indices[i]],"orderId"));
                     report_table(
                         section,"settlement-orders",
                         ["거래처 / 상태","결제 방식","상품대금","청구 배송비",
@@ -582,7 +582,7 @@ impl DailySettlementManager{
                     });
                     crate::ui_primitives::section_divider(section);
                     let indices=sorted_indices(payments,self.payment_sort,true);
-                    let scroll_keys=indices.iter().map(|i|field(&payments[*i],"id").to_owned()).collect::<Vec<_>>();
+                    let scroll_keys=|i:usize|crate::scrollbar::row_key(field(&payments[indices[i]],"id"));
                     report_table(
                         section,"settlement-payments",
                         ["입금 일시","거래처","계좌","실제 입금액",
