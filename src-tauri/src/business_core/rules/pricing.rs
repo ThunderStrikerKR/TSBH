@@ -302,10 +302,8 @@ pub(super) fn reception_quote(payload:&Value)->Result<Value,String>{
 }
 
 fn finish_reception_quote(mut order:Value,state:&Value,client:&Value)->Result<Value,String>{
-    let freight=super::shipping::reception_recommend(&order,state)?;
-    let shipping=if flag(client,"shippingFeeExcluded"){json!(0)}else{
-        field(&freight,"total").clone()
-    };
+    let freight=super::shipping::reception_recommend_for_client(&order,state,client)?;
+    let shipping=field(&freight,"total").clone();
     set(&mut order,"shippingFee",shipping)?;
     set(&mut order,"shippingVersion",field(&freight,"version").clone())?;
     let amounts=reception_totals(&order,client,&freight)?;
@@ -334,6 +332,7 @@ fn finish_reception_quote(mut order:Value,state:&Value,client:&Value)->Result<Va
         "origin":field(bundle,"origin"),
         "appliedCharge":field(bundle,"appliedCharge"),
         "billableCharge":field(bundle,"billableCharge"),
+        "billingReason":field(bundle,"billingReason"),
         "freightCode":field(bundle,"freightCode"),
         "source":field(bundle,"source"),
     })).collect::<Vec<_>>();
