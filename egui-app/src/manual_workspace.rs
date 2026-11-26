@@ -2324,9 +2324,9 @@ impl ManualWorkspace {
                                                                         active_link.as_ref(),&key
                                                                     )
                                                                 );
-                                                                let cells=components::reception_item_row_with_remove(
+                                                                let cells=components::reception_item_row(
                                                                     items_ui,crate::reception_service::item_title_ref(item),
-                                                                    &quantity,&price,active_fields,can_switch
+                                                                    &quantity,&price,active_fields,can_switch,true
                                                                 );
                                                                 if cells.remove_clicked && can_mutate{
                                                                     remove_item=Some((rid.to_owned(),item_id.to_owned()));
@@ -2444,12 +2444,12 @@ impl ManualWorkspace {
                                                                 .and_then(|value|value["checked"].as_bool())
                                                                 .unwrap_or(false);
                                                             let remote_ready=remote_value.is_some();
-                                                            let freight=components::reception_freight_row_editable(
+                                                            let freight=components::reception_freight_row_controls(
                                                                 items_ui,"운임",
                                                                 crate::indexed_billable_freight(quote_index.as_deref(),row),
                                                                 Some(code=="020"),
                                                                 remote_ready.then_some(remote),
-                                                                true,can_mutate
+                                                                true,can_mutate,can_mutate,can_mutate,true
                                                             );
                                                             if freight.amount_clicked {
                                                                 self.queue_cell_selection(
@@ -3459,7 +3459,7 @@ mod manual_workspace_modal_routing_tests {
         assert!(layout.contains("manual-reception-style-cards"),
             "all cards must be in the right independent scroll area");
         assert!(layout.contains("ScrollBarVisibility::VisibleWhenNeeded"));
-        assert!(layout.contains("reception_freight_row_editable("),
+        assert!(layout.contains("reception_freight_row_controls("),
             "freight controls must use the Reception component in the scroll");
         assert!(layout.contains("reception_item_origin_action_editable("),
             "dispatch origin must stay inside the product/freight card");
@@ -3489,9 +3489,9 @@ mod manual_workspace_modal_routing_tests {
         for common in [
             "reception_recipient_fields(",
             "crate::table::inline(",
-            "reception_item_row_with_remove(",
+            "reception_item_row(",
             "reception_item_header_action(",
-            "reception_freight_row_editable(",
+            "reception_freight_row_controls(",
             "reception_item_origin_action_editable(",
             "reception_recipient_navigator("
         ] {
@@ -3500,8 +3500,8 @@ mod manual_workspace_modal_routing_tests {
         // Compare the CURRENT intake master, not merely the presence of a
         // legacy helper that happens to share a lower-level painter.
         let intake=include_str!("main.rs");
-        for shared in ["crate::table::inline(","reception_item_row_with_remove(",
-            "reception_item_numeric_editor(","reception_freight_row_editable(",
+        for shared in ["crate::table::inline(","reception_item_row(",
+            "reception_item_numeric_editor(","reception_freight_row_controls(",
             "show_selection_modal("]{
             assert!(intake.contains(shared)&&source.contains(shared),
                 "intake/manual editable contract drift: {shared}");

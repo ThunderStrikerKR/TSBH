@@ -174,8 +174,7 @@ pub(crate) fn inline<R>(
 )->R{
     use crate::components as c;
     let rect=match header{
-        InlineHeader::Reception{editable:true}=>c::reception_editable_items_header(ui),
-        InlineHeader::Reception{editable:false}=>c::reception_items_header(ui),
+        InlineHeader::Reception{editable}=>c::reception_items_header(ui,editable),
         InlineHeader::Shipment=>c::workflow_shipment_header(ui),
     };
     let result=draw(ui);

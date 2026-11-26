@@ -3130,16 +3130,8 @@ fn reception_item_text_clip(rect:Rect,index:usize)->Rect {
     }else{rect}
 }
 
-pub fn reception_editable_items_header(ui:&mut Ui)->Rect{
-    reception_items_header_with_actions(ui,"금액",true)
-}
-
-pub fn reception_items_header(ui:&mut Ui)->Rect{
-    reception_items_header_with_actions(ui,"금액",false)
-}
-
-// Only these two fixed public headers may be used: read-only or editable.
-fn reception_items_header_with_actions(ui:&mut Ui,amount_heading:&str,remove_slot:bool)->Rect{
+/// One shared item header; remove_slot preserves the action-column footprint.
+pub fn reception_items_header(ui:&mut Ui,remove_slot:bool)->Rect{
     let action_width=if remove_slot{theme::RECEPTION_ITEM_REMOVE_WIDTH}else{0.0};
     let width=ui.available_width().max(theme::RECEPTION_ITEMS_MIN_TABLE_WIDTH+action_width);
     let (rect, _) = ui.allocate_exact_size(
@@ -3152,7 +3144,7 @@ fn reception_items_header_with_actions(ui:&mut Ui,amount_heading:&str,remove_slo
     let columns = reception_item_columns(Rect::from_min_max(
         rect.min,egui::pos2(rect.right()-action_width,rect.bottom())
     ));
-    for (index, label) in ["품목", "수량", amount_heading].iter().enumerate() {
+    for (index, label) in ["품목", "수량", "금액"].iter().enumerate() {
         // Header and value cells use identical text start coordinates.
         let cell = reception_item_text_clip(
             columns[index].shrink2(egui::vec2(theme::SPACE_8, 0.0)),index
@@ -3195,19 +3187,8 @@ pub fn reception_items_to_freight_gap(ui:&mut Ui){
     ui.add_space(theme::RECEPTION_ITEMS_TO_FREIGHT_GAP);
 }
 
+/// Render one item row; editability and action-column allocation are independent.
 pub fn reception_item_row(
-    ui: &mut Ui, name: &str, quantity: &str, amount: &str,
-    active: [bool; 3],
-) -> ReceptionItemCells {
-    reception_item_row_with_mode(ui,name,quantity,amount,active,false,false)
-}
-pub fn reception_item_row_with_remove(
-    ui:&mut Ui,name:&str,quantity:&str,amount:&str,active:[bool;3],editable:bool,
-)->ReceptionItemCells{
-    reception_item_row_with_mode(ui,name,quantity,amount,active,editable,true)
-}
-
-fn reception_item_row_with_mode(
     ui: &mut Ui, name: &str, quantity: &str, amount: &str,
     active: [bool; 3],editable:bool,remove_slot:bool,
 ) -> ReceptionItemCells {
@@ -3352,14 +3333,6 @@ pub struct ReceptionFreightEdit {
     #[cfg(test)]
     pub remote_rect:Option<Rect>,
 }
-pub fn reception_freight_row(
-    ui: &mut Ui, label: &str, amount: Option<i64>, collect: Option<bool>,
-    remote: Option<bool>, inquiry_visible: bool,
-) {
-    let _=reception_freight_row_editable(
-        ui,label,amount,collect,remote,inquiry_visible,false
-    );
-}
 /// Do not swap the COD selector for a textual caption during a Rust save.
 /// The shared dropdown keeps its width, baseline, outline and chevron in
 /// BOTH states; only hit-testing is disabled while another edit is pending.
@@ -3386,16 +3359,6 @@ fn reception_cod_dropdown(
 const RECEPTION_FREIGHT_INLINE_MIN_WIDTH:f32=560.0;
 fn freight_actions_need_second_row(available_width:f32)->bool{
     available_width<RECEPTION_FREIGHT_INLINE_MIN_WIDTH
-}
-
-pub fn reception_freight_row_editable(
-    ui:&mut Ui,label:&str,amount:Option<i64>,collect:Option<bool>,
-    remote:Option<bool>,inquiry_visible:bool,editable:bool
-)->ReceptionFreightEdit{
-    reception_freight_row_controls(
-        ui,label,amount,collect,remote,inquiry_visible,
-        editable,editable,editable,true
-    )
 }
 
 /// Workflow freight rows have independent permissions: the amount can be
@@ -3545,8 +3508,8 @@ mod reception_cod_selector_tests {
                 },|ctx|{
                     egui::CentralPanel::default().show(ctx,|ui|{
                         ui.set_width(width);
-                        let row=reception_freight_row_editable(ui,"운임",
-                            Some(3000),Some(false),Some(false),visible,true);
+                        let row=reception_freight_row_controls(ui,"운임",
+                            Some(3000),Some(false),Some(false),visible,true,true,true,true);
                         rects=Some([("remote",row.remote_rect.unwrap()),
                             ("amount",row.amount_rect.unwrap())]);
                     });
@@ -3624,15 +3587,15 @@ mod reception_state_layout_invariance_tests{
             egui::CentralPanel::default().show(ctx,|ui|{
                 let header=reception_item_header_action(ui,pending,editable);
                 rects.push(("header action",header.rect));
-                reception_editable_items_header(ui);
-                let cells=reception_item_row_with_remove(
-                    ui,"BD 709-1",if pending{"—"}else{"1개"},"—",[false;3],editable
+                reception_items_header(ui,true);
+                let cells=reception_item_row(
+                    ui,"BD 709-1",if pending{"—"}else{"1개"},"—",[false;3],editable,true
                 );
                 rects.extend([("product",cells.product.rect),("quantity",cells.quantity.rect),
                     ("amount",cells.amount.rect)]);
                 ui.add_space(theme::SPACE_8);
-                let freight=reception_freight_row_editable(
-                    ui,"운임",Some(3000),Some(false),Some(false),true,editable
+                let freight=reception_freight_row_controls(
+                    ui,"운임",Some(3000),Some(false),Some(false),true,editable,editable,editable,true
                 );
                 rects.push(("freight amount",freight.amount_rect.expect("freight amount slot")));
                 ui.add_space(theme::SPACE_8);
@@ -7657,7 +7620,7 @@ pub(crate) mod general_screen_geometry_tests {
                 reception_docked_goods_scroll(body,320.0,"goods-regression",true,|items|{
                     assert_eq!(items.spacing().item_spacing.y,0.0);
                     assert!(items.available_width()+0.5>=theme::RECEPTION_ITEMS_MIN_TABLE_WIDTH+theme::RECEPTION_ITEM_REMOVE_WIDTH);
-                    reception_editable_items_header(items);
+                    reception_items_header(items,true);
                     items.allocate_exact_size(Vec2::new(200.0,if overflow{900.0}else{20.0}),Sense::hover());
                 });
             });

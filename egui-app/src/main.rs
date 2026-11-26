@@ -7596,9 +7596,9 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                                 let highlighted=fields.map(|field|
                                                     source_highlight::is_active_field(linked_active.as_ref(),&ship.recipient_id,item_id,field)
                                                 );
-                                                let cells=components::reception_item_row_with_remove(
+                                                let cells=components::reception_item_row(
                                                     contents,reception_service::item_title_ref(item),
-                                                    &quantity,&amount,highlighted,confirmed_editable
+                                                    &quantity,&amount,highlighted,confirmed_editable,true
                                                 );
                                                 if cells.remove_clicked && confirmed_controls_idle{
                                                     confirmed_item=Some((item.clone(),true));
@@ -8017,7 +8017,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                                         let cells=components::reception_item_row(
                                                             contents,
                                                             reception_service::item_title_ref(item),
-                                                            &quantity,&amount,active_fields
+                                                            &quantity,&amount,active_fields,false,false
                                                         );
                                                         for (response,field) in [
                                                             (&cells.product,"product"),
@@ -8040,11 +8040,11 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                                 let collect=row["freightCode"].as_str()
                                                     .map(|code|code=="020").unwrap_or(false);
                                                 let remote=row["remoteDelivery"]["checked"].as_bool();
-                                                components::reception_freight_row(
+                                                let _=components::reception_freight_row_controls(
                                                     contents,"운임",
                                                     fee,
                                                     Some(collect),remote,
-                                                    origin==Some("FACTORY")
+                                                    origin==Some("FACTORY"),false,false,false,true
                                                 );
                                                 contents.add_space(theme::SPACE_8);
                                                 components::reception_item_origin_action_editable(
@@ -8388,9 +8388,9 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                                     "product","quantity","price"
                                                 ].map(|field|(board_preview && field=="product") ||
                                                     source_highlight::is_active_field(linked_active.as_ref(),recipient_id,item_id,field));
-                                                let cells=components::reception_item_row_with_remove(
+                                                let cells=components::reception_item_row(
                                                     items_ui,reception_service::item_title_ref(item),
-                                                    &quantity,&amount,active_fields,editable
+                                                    &quantity,&amount,active_fields,editable,true
                                                 );
                                                 if cells.remove_clicked{
                                                     item_remove_popup=Some((recipient_id.to_owned(),item_id.to_owned()));
@@ -8512,9 +8512,9 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                         };
                                         // Adding products belongs to the section header,
                                         // not to the scrollable freight and item content.
-                                        let freight_actions=components::reception_freight_row_editable(
+                                        let freight_actions=components::reception_freight_row_controls(
                                             items_ui,"운임",line_fee,cod,remote,
-                                            true,editable
+                                            true,editable,editable,editable,true
                                         );
                                         if freight_actions.amount_clicked{
                                             inline_open=Some((
