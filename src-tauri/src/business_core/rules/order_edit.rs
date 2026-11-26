@@ -136,12 +136,7 @@ fn prepare_save(payload:&Value)->Result<Value,String>{
 fn reprice_for_new_dealer(order:&mut Value,state:&Value,selected:&Value)->Result<(),String>{
     for recipient in order["recipients"].as_array_mut().ok_or("수취인 목록 오류")?{
         for item in recipient["items"].as_array_mut().ok_or("상품 목록 오류")?{
-            if let Some(manual)=item.get("manualUnitPrice"){
-                let price=super::safe(manual)
-                    .ok_or("직접 수정한 상품 단가가 0 이상의 안전한 정수가 아닙니다.")?;
-                set(item,"unitPrice",json!(price))?;
-                continue;
-            }
+            if super::pricing::apply_manual_unit_price(item)? {continue;}
             let pid=str_field(item,"productId").to_owned();
             let vid=str_field(item,"variantId").to_owned();
             if vid.is_empty(){continue;}
