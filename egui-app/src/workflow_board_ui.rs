@@ -580,7 +580,7 @@ fn workflow_action_line(
     );
     // The text clip and the highlight slot must be different: clipping
     // against the text's right edge used to erase all currency padding.
-    let price_ink=price.shrink2(Vec2::new(theme::SPACE_4,0.0));
+    let price_ink=price.shrink2(Vec2::new(theme::SPACE_4.min(price.width()/2.0),0.0));
     let money_pos=Pos2::new(price_ink.right()-money_galley.size().x,
         bottom_y-money_galley.size().y);
     let money_bounds=Rect::from_min_size(money_pos,money_galley.size());
@@ -1838,6 +1838,42 @@ mod widget_id_tests {
 #[cfg(test)]
 mod compact_virtualization_tests{
     use super::*;
+    #[test]
+    fn compact_amount_hover_uses_common_padding_without_moving_text(){
+        fn render(hover:bool,total:i64)->(Rect,Option<Rect>){
+            let ctx=egui::Context::default();
+            typography::install(&ctx);
+            theme::install(&ctx);
+            let output=ctx.run(egui::RawInput::default(),|ctx|{
+                egui::CentralPanel::default().show(ctx,|ui|{
+                    let (lower,_)=ui.allocate_exact_size(
+                        Vec2::new(420.0,theme::WORKFLOW_BOTTOM_HEIGHT),egui::Sense::hover());
+                    workflow_action_line(ui,lower,"synthetic",1,Some(total),
+                        None,None,false,false,false,hover,None);
+                });
+            });
+            let amount=components::display_won(total);
+            let ink=output.shapes.iter().find_map(|s|match &s.shape{
+                egui::Shape::Text(t) if t.galley.text()==amount.as_str()=>
+                    Some(Rect::from_min_size(t.pos,t.galley.size())),
+                _=>None
+            }).expect("visible compact amount");
+            let frame=output.shapes.iter().find_map(|s|match &s.shape{
+                egui::Shape::Rect(r) if r.stroke.color==theme::ONE_TOUCH_BORDER
+                    && r.stroke.width==theme::ONE_TOUCH_BORDER_WIDTH=>Some(r.rect),
+                _=>None
+            });
+            (ink,frame)
+        }
+        for total in [3_000,3_775_000,12_345_678]{
+            let (normal,none)=render(false,total);
+            let (hover,frame)=render(true,total);
+            assert!(none.is_none());
+            assert_eq!(normal,hover);
+            assert_eq!(frame.unwrap(),hover.expand(theme::SPACE_4));
+        }
+    }
+
     #[test]
     fn compact_placeholder_preserves_exact_card_scroll_extent(){
         let ctx=egui::Context::default();
