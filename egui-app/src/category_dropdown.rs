@@ -211,7 +211,7 @@ fn crumb_text(ui:&mut Ui,name:&str,width:f32,current:bool,enabled:bool)->Respons
     if enabled&&!current{crate::button::paint_button_hover(ui,&response,theme::CONTROL_RADIUS as f32);}
     let visible=typography::fit_category_path(ui,name,(width-12.0).max(0.0),typography::CategoryPathFont::Body);
     let galley=typography::category_tree_name_galley(ui,&visible,false);
-    let pos=egui::pos2(rect.left()+6.0,rect.center().y-galley.size().y/2.0);
+    let pos=egui::pos2(rect.left()+theme::CATEGORY_EXPLORER_CRUMB_TEXT_INSET,rect.center().y-galley.size().y/2.0);
     ui.painter().with_clip_rect(rect).galley_with_override_text_color(pos,galley,
         if current{theme::CATALOG_TREE_SELECTED_INK}else{theme::TEXT});
     crate::ui_primitives::overflow_tooltip(response,visible!=name,name)

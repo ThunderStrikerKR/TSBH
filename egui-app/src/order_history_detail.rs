@@ -4,7 +4,7 @@
 //! historical data. Only content-heavy panes have their own scroll areas.
 use crate::{theme,typography};
 use chrono::{DateTime,FixedOffset};
-use eframe::egui::{self,Align,Layout,Rect,Sense,Stroke,Ui,UiBuilder,Vec2};
+use eframe::egui::{self,Align,Layout,Rect,Sense,Ui,UiBuilder,Vec2};
 use serde_json::Value;
 use std::collections::HashSet;
 
@@ -74,10 +74,7 @@ fn section_panel(
     );
 }
 fn overview(ui:&mut Ui,rect:Rect,row:&Value,shipment_count:usize){
-    ui.painter().rect(
-        rect,theme::CONTROL_RADIUS as f32,theme::RAISED,
-        Stroke::new(1.0_f32,theme::DIVIDER),egui::StrokeKind::Inside
-    );
+    theme::paint_bordered_surface(ui.painter(),rect,theme::CONTROL_RADIUS as f32,theme::RAISED,theme::DIVIDER);
     let inner=rect.shrink2(Vec2::new(theme::SPACE_12,theme::SPACE_8));
     let clip=inner.intersect(ui.clip_rect());
     let order=&row["order"];

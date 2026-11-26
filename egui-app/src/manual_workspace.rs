@@ -264,7 +264,7 @@ fn paint_manual_assignment_recommendation(
     painter.rect_filled(rect,theme::CONTROL_RADIUS,fill);
     painter.rect_stroke(
         rect,theme::CONTROL_RADIUS,
-        egui::Stroke::new(if hovered{2.0}else{1.25_f32},color),
+        egui::Stroke::new(if hovered{theme::MANUAL_ASSIGNMENT_HOVER_STROKE_WIDTH}else{theme::MANUAL_ASSIGNMENT_STROKE_WIDTH},color),
         egui::StrokeKind::Inside
     );
 }

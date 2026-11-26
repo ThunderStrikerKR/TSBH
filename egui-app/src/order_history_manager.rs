@@ -396,7 +396,7 @@ fn history_scrolled_header_row(
     )
 }
 fn history_text_overflow(ui:&Ui,rect:Rect,value:&str,role:typography::ManagementTableCellRole)->bool{
-    let content=Rect::from_min_max(egui::pos2(rect.left()+6.0,rect.top()),rect.right_bottom());
+    let content=Rect::from_min_max(egui::pos2(rect.left()+theme::MANAGEMENT_TABLE_TEXT_LEADING_INSET,rect.top()),rect.right_bottom());
     crate::ui_primitives::text_exceeds_rect(typography::management_table_cell_galley(ui,value,role).size(),
         content.intersect(ui.clip_rect()))
 }
@@ -407,7 +407,7 @@ fn paint_text(ui:&Ui,rect:Rect,value:&str,
     let galley=typography::management_table_cell_galley(ui,value,role);
     // Freight table's text columns use a 6pt leading guide; monetary
     // figures keep their 8pt trailing guide for right alignment.
-    let inset=if right{theme::SPACE_8}else{6.0};
+    let inset=if right{theme::SPACE_8}else{theme::MANAGEMENT_TABLE_TEXT_LEADING_INSET};
     let x=if right{
         (rect.right()-inset-galley.size().x).max(rect.left()+inset)
     }else{rect.left()+inset};
@@ -418,12 +418,12 @@ fn paint_center(ui:&Ui,rect:Rect,value:&str){
         ui,value,typography::ManagementTableCellRole::Status
     );
     let x=(rect.center().x-galley.size().x/2.0)
-        .max(rect.left()+6.0);
+        .max(rect.left()+theme::MANAGEMENT_TABLE_TEXT_LEADING_INSET);
     crate::table::paint_table_galley(ui,rect,x,galley,theme::SECONDARY);
 }
 fn paint_caption(ui:&Ui,rect:Rect,value:&str){
     let galley=typography::client_table_metadata_galley(ui,value,theme::MUTED);
-    crate::table::paint_table_galley(ui,rect,rect.left()+6.0,galley,theme::MUTED);
+    crate::table::paint_table_galley(ui,rect,rect.left()+theme::MANAGEMENT_TABLE_TEXT_LEADING_INSET,galley,theme::MUTED);
 }
 // One distinct product per line in EXPANDED shipment detail only.
 // The parent order summary retains its compact single-line formatter.
@@ -568,7 +568,7 @@ fn draw_line(ui:&mut Ui,rect:Rect,line:HistoryLine,snapshot:&HistorySnapshot,
                 paint_text(ui,upper,&total,typography::ManagementTableCellRole::RowTotal,true);
                 let warning=cautions.join(" / ");
                 let warning_rect=Rect::from_min_max(
-                    egui::pos2(lower.left()+6.0,lower.top()),lower.right_bottom()
+                    egui::pos2(lower.left()+theme::MANAGEMENT_TABLE_TEXT_LEADING_INSET,lower.top()),lower.right_bottom()
                 ).intersect(area);
                 let overflow=crate::ui_primitives::text_exceeds_rect(
                     typography::client_table_metadata_galley(ui,&warning,theme::MUTED).size(),

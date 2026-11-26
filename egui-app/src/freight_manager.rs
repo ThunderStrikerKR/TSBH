@@ -264,7 +264,7 @@ fn freight_rate_cell(
     full_tooltip:Option<&str>
 ){
     crate::table::paint_management_text_cell(
-        ui,rect.shrink2(egui::vec2(6.0,0.0)),value,full_tooltip.unwrap_or(value),
+        ui,rect.shrink2(egui::vec2(theme::MANAGEMENT_TABLE_TEXT_LEADING_INSET,0.0)),value,full_tooltip.unwrap_or(value),
         role,align,("freight-rate-cell",id),false
     );
 }
@@ -1994,7 +1994,7 @@ impl FreightManager {
                                 // Group operations are one compact trigger.
                                 // The popup is an independent overlay and never
                                 // changes the virtualized row or scrollbar height.
-                                let rect=cells[3].shrink2(egui::vec2(6.0,0.0));
+                                let rect=cells[3].shrink2(egui::vec2(theme::MANAGEMENT_TABLE_ACTION_INSET,0.0));
                                 row.scope_builder(
                                     egui::UiBuilder::new()
                                         .id_salt(("freight-rate-actions",id))
@@ -2535,7 +2535,7 @@ fn history_cell(
     id:impl std::hash::Hash
 ){
     crate::table::paint_management_text_cell(
-        ui,rect.shrink2(egui::vec2(6.0,0.0)),visible,full,role,align,
+        ui,rect.shrink2(egui::vec2(theme::MANAGEMENT_TABLE_TEXT_LEADING_INSET,0.0)),visible,full,role,align,
         ("freight-history-cell",id),visible!=full
     );
 }

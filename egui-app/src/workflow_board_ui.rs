@@ -419,8 +419,8 @@ fn workflow_header(
         else{crate::ui_primitives::WorkflowIcon::Collapsed},theme::SECONDARY
     );
     let text_rect=Rect::from_min_max(
-        Pos2::new(title_rect.left()+2.0,title_rect.top()),
-        Pos2::new((title_rect.right()-4.0).max(title_rect.left()+2.0),
+        Pos2::new(title_rect.left()+theme::WORKFLOW_TITLE_LEADING_INSET,title_rect.top()),
+        Pos2::new((title_rect.right()-theme::WORKFLOW_TITLE_TRAILING_INSET).max(title_rect.left()+theme::WORKFLOW_TITLE_LEADING_INSET),
             title_rect.bottom()),
     );
     // Fit the actual allocated title slot; never limit by character count.
@@ -439,7 +439,7 @@ fn workflow_header(
     let title_response=crate::ui_primitives::shortened_text_tooltip(title_response,&visible,title);
 
     let block=workflow_control_rect(signal);
-    theme::paint_bordered_surface(ui.painter(),block,5.0,
+    theme::paint_bordered_surface(ui.painter(),block,theme::WORKFLOW_SIGNAL_BLOCK_RADIUS,
         theme::WORKFLOW_SIGNAL_BLOCK_BG,theme::WORKFLOW_SIGNAL_BLOCK_BORDER);
     let lamp_width=theme::WORKFLOW_SIGNAL_SIZE;
     let lamp_height=theme::WORKFLOW_SIGNAL_HEIGHT;
@@ -557,7 +557,7 @@ fn workflow_action_line(
         +theme::WORKFLOW_MANAGE_WIDTH+theme::WORKFLOW_TRASH_WIDTH+2.0*gap;
     let lower_right_width=action_width+undo_width+gap;
     debug_assert!((upper_right_width-lower_right_width).abs()<=0.01);
-    let bottom_y=lower.bottom()-7.0;
+    let bottom_y=lower.bottom()-theme::WORKFLOW_SUMMARY_BOTTOM_INSET;
 
     let shipping_text=format!("배송 {shipments}건");
     let ship_galley=ui.painter().layout_no_wrap(
@@ -589,7 +589,7 @@ fn workflow_action_line(
             theme::WORKFLOW_VAT_TEXT
         );
         ui.painter().with_clip_rect(price_ink).galley(
-            Pos2::new(price_ink.right()-vat_galley.size().x,price.top()+3.0),
+            Pos2::new(price_ink.right()-vat_galley.size().x,price.top()+theme::WORKFLOW_VAT_TOP_INSET),
             vat_galley,theme::WORKFLOW_VAT_TEXT
         );
     }

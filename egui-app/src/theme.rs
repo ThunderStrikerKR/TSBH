@@ -59,6 +59,8 @@ pub const SOURCE_BLOCK_FILL:Color32=Color32::from_rgb(66,66,66);
 pub const SOURCE_CONTEXT_FILL:Color32=Color32::from_rgb(73,73,73);
 pub const MANUAL_ASSIGNMENT_TINT:Color32=INTERACTION_BLUE_TINT;
 pub const MANUAL_ASSIGNMENT_HOVER_TINT:Color32=Color32::from_rgba_unmultiplied_const(112,180,255,42);
+pub const MANUAL_ASSIGNMENT_STROKE_WIDTH:f32=1.25;
+pub const MANUAL_ASSIGNMENT_HOVER_STROKE_WIDTH:f32=2.0;
 pub const CARD_BORDER:Color32=DIVIDER;
 pub const NEUTRAL_HOVER:Color32=RAISED;
 // Restore the original shared blue pointer feedback; focus stays independent.
@@ -156,6 +158,11 @@ pub const WORKFLOW_SIGNAL_BLOCK_BORDER: Color32 = DIVIDER;
 pub const WORKFLOW_SIGNAL_SIZE: f32 = 21.0;
 pub const WORKFLOW_SIGNAL_HEIGHT: f32 = 20.0;
 pub const WORKFLOW_SIGNAL_RADIUS: f32 = 4.0;
+pub const WORKFLOW_SIGNAL_BLOCK_RADIUS:f32=5.0;
+pub const WORKFLOW_TITLE_LEADING_INSET:f32=SPACE_2;
+pub const WORKFLOW_TITLE_TRAILING_INSET:f32=SPACE_4;
+pub const WORKFLOW_SUMMARY_BOTTOM_INSET:f32=7.0;
+pub const WORKFLOW_VAT_TOP_INSET:f32=3.0;
 pub const WORKFLOW_SIGNAL_GAP: f32 = 3.0;
 pub const WORKFLOW_SIGNAL_DONE: Color32 = Color32::from_rgb(73, 166, 106);
 pub const WORKFLOW_SIGNAL_DONE_BORDER: Color32 = Color32::from_rgb(105, 198, 136);
@@ -491,6 +498,7 @@ pub const MODAL_NESTED_BACKDROP_ALPHA: u8 = 94;
 pub const CATALOG_TREE_ROW_HEIGHT:f32 = 42.0;
 pub const CATALOG_TREE_INDENT:f32 = 24.0;
 pub const CATALOG_TREE_INSET:f32 = SPACE_12;
+pub const CATEGORY_EXPLORER_CRUMB_TEXT_INSET:f32=SPACE_6;
 pub const CATALOG_TREE_CHEVRON_SIZE:f32 = SPACE_16;
 pub const CATALOG_TREE_FOLDER_SIZE:f32 = 20.0;
 pub const CATALOG_TREE_GAP:f32 = SPACE_8;
@@ -721,7 +729,8 @@ pub const MANAGEMENT_CLIENT_TOOLBAR_STACK_WIDTH: f32 = 700.0;
 /// management toolbar. Stack below search only in genuinely narrow panes.
 pub const MANAGEMENT_EXCEL_TOOLBAR_ACTIONS_WIDTH: f32 = 330.0;
 /// Consistent leading inset for text columns in master headers and rows.
-pub const MANAGEMENT_TABLE_TEXT_LEADING_INSET: f32 = 6.0;
+pub const MANAGEMENT_TABLE_TEXT_LEADING_INSET: f32 = SPACE_6;
+pub const MANAGEMENT_TABLE_ACTION_INSET:f32=SPACE_6;
 // Existing React TierBadge palette; color is display-only, never a pricing rule.
 pub const CLIENT_TIER_WHOLESALE_BG: Color32 = Color32::from_rgb(35,76,55);
 pub const CLIENT_TIER_WHOLESALE_TEXT: Color32 = Color32::from_rgb(166,237,192);
