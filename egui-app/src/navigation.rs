@@ -577,7 +577,7 @@ mod date_navigation_segmented_control_tests{
 
 // Presentation-only state lifetime. Expiration is checked on re-entry;
 // no timer task, persistence, or business mutation is needed.
-pub(crate) const NAVIGATION_SNAPSHOT_TTL:std::time::Duration=std::time::Duration::from_secs(30*60);
+use crate::ui_tokens::NAVIGATION_SNAPSHOT_TTL;
 pub(crate) struct NavigationSnapshots<const N:usize>{
     active:usize,
     paused:bool,
@@ -620,6 +620,24 @@ mod navigation_snapshot_tests{
         tabs.suspend(t+sec(1802));
         assert!(tabs.visit(0,t+sec(3602)));
         assert_eq!(tabs.epoch(0),2);
+    }
+    #[test]
+    fn repeated_page_and_tab_expiry_does_not_grow_fixed_slots(){
+        let t=std::time::Instant::now();
+        let ttl=NAVIGATION_SNAPSHOT_TTL;
+        let mut pages=NavigationSnapshots::<8>::new(0);
+        let mut tabs=NavigationSnapshots::<5>::new(0);
+        let bytes=std::mem::size_of_val(&pages)+std::mem::size_of_val(&tabs);
+        for cycle in 0..4096_u32{
+            let now=t+ttl*(cycle*2);
+            pages.visit(1,now);
+            tabs.suspend(now);
+            assert!(pages.visit(0,now+ttl));
+            assert!(tabs.visit(0,now+ttl));
+            assert_eq!(pages.epoch(0),u64::from(cycle)+1);
+            assert_eq!(tabs.epoch(0),u64::from(cycle)+1);
+            assert_eq!(std::mem::size_of_val(&pages)+std::mem::size_of_val(&tabs),bytes);
+        }
     }
     #[test]
     fn expiry_is_per_page_and_starts_on_departure(){

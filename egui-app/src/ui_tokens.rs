@@ -14,3 +14,7 @@ pub const FONT_PAGE_HEADING: f32 = 20.0;
 // Geometry and glyph layout use the same line boxes.
 pub const FREIGHT_SUMMARY_NUMBER_LINE_HEIGHT:f32=FONT_FREIGHT_SUMMARY_NUMBER+6.0;
 pub const FREIGHT_SUMMARY_LABEL_LINE_HEIGHT:f32=FONT_FREIGHT_SUMMARY_LABEL+5.0;
+
+// Shared presentation-state lifetime; dependency-free so primitive UI
+// components never depend on navigation widgets.
+pub(crate) const NAVIGATION_SNAPSHOT_TTL:std::time::Duration=std::time::Duration::from_secs(30*60);

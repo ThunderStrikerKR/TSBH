@@ -452,20 +452,24 @@ struct PopupStates{
     seen:HashSet<Id>,
     last_sweep:Option<std::time::Instant>,
 }
+impl PopupStates{
+    fn advance(&mut self,frame:u64,now:std::time::Instant){
+        if self.frame==Some(frame){return;}
+        self.frame=Some(frame);
+        for id in self.seen.drain(){
+            if let Some(entry)=self.entries.get_mut(&id){entry.1=now;}
+        }
+        if self.last_sweep.is_none_or(|last|now.saturating_duration_since(last)>=std::time::Duration::from_secs(60)){
+            self.entries.retain(|_,entry|now.saturating_duration_since(entry.1)<crate::ui_tokens::NAVIGATION_SNAPSHOT_TTL);
+            self.last_sweep=Some(now);
+        }
+    }
+}
 fn popup_states_id()->Id{Id::new("category-explorer-popup-states")}
 pub(crate) fn sweep_popup_states(ctx:&Context,now:std::time::Instant){
     let frame=ctx.cumulative_frame_nr();
     ctx.data_mut(|data|{
-        let states=data.get_temp_mut_or_default::<PopupStates>(popup_states_id());
-        if states.frame==Some(frame){return;}
-        states.frame=Some(frame);
-        for id in states.seen.drain(){
-            if let Some(entry)=states.entries.get_mut(&id){entry.1=now;}
-        }
-        if states.last_sweep.is_none_or(|last|now.saturating_duration_since(last)>=std::time::Duration::from_secs(60)){
-            states.entries.retain(|_,entry|now.saturating_duration_since(entry.1)<crate::navigation::NAVIGATION_SNAPSHOT_TTL);
-            states.last_sweep=Some(now);
-        }
+        data.get_temp_mut_or_default::<PopupStates>(popup_states_id()).advance(frame,now);
     });
 }
 /// Same trigger, same popup owner, same hover and one-shot feedback anchor as
@@ -500,7 +504,7 @@ pub fn category_dropdown(
                 let states=data.get_temp_mut_or_default::<PopupStates>(popup_states_id());
                 let now=std::time::Instant::now();
                 states.entries.remove(&state_id).filter(|entry|
-                    now.saturating_duration_since(entry.1)<crate::navigation::NAVIGATION_SNAPSHOT_TTL)
+                    now.saturating_duration_since(entry.1)<crate::ui_tokens::NAVIGATION_SNAPSHOT_TTL)
                     .map(|entry|entry.0).unwrap_or_default()
             });
             if trigger.clicked(){
@@ -538,6 +542,36 @@ mod tests{
             parent=id;
         }
         nodes
+    }
+    #[test]
+    fn repeated_popup_navigation_reclaims_old_explorers_and_folder_offsets(){
+        let start=std::time::Instant::now();
+        let step=std::time::Duration::from_secs(60);
+        let ttl=crate::ui_tokens::NAVIGATION_SNAPSHOT_TTL;
+        let mut states=PopupStates::default();
+        let active=Id::new("always-open-explorer");
+        let mut explorer=ExplorerState::default();
+        explorer.scroll_positions.insert("active-folder".into(),77.0);
+        states.entries.insert(active,(explorer,start));
+        for n in 0..2048_u32{
+            let now=start+step*n;
+            states.advance(u64::from(n),now);
+            let id=Id::new(("transient-explorer",n));
+            let mut state=ExplorerState::default();
+            for folder in 0..32{
+                state.scroll_positions.insert(format!("folder-{folder}"),folder as f32);
+            }
+            states.entries.insert(id,(state,now));
+            states.seen.insert(id);
+            states.seen.insert(active);
+            assert!(states.entries.len()<=32,"expired explorer retained at {n}");
+            assert_eq!(states.entries[&active].0.scroll_positions["active-folder"],77.0);
+        }
+        let closed=start+step*2048;
+        states.advance(2048,closed);
+        states.advance(2049,closed+ttl);
+        assert!(states.entries.is_empty());
+        assert!(states.seen.is_empty());
     }
     #[test]
     fn thirty_levels_can_go_to_any_ancestor_without_recursive_rendering(){

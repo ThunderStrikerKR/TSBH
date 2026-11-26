@@ -143,7 +143,7 @@ impl ScrollStore{
     fn sweep(&mut self,now:std::time::Instant)->Vec<egui::Id>{
         let mut retired=Vec::new();
         self.entries.retain(|_,entry|{
-            let keep=now.saturating_duration_since(entry.touched)<crate::navigation::NAVIGATION_SNAPSHOT_TTL;
+            let keep=now.saturating_duration_since(entry.touched)<crate::ui_tokens::NAVIGATION_SNAPSHOT_TTL;
             if !keep{retired.push(entry.native);}
             keep
         });
@@ -190,7 +190,7 @@ impl ScrollCapture{
         let state=ui.ctx().data_mut(|data|{
             let entry=data.get_temp_mut_or_default::<ScrollStore>(store_id()).entries.remove(&id);
             match entry{
-                Some(entry) if now.saturating_duration_since(entry.touched)<crate::navigation::NAVIGATION_SNAPSHOT_TTL=>entry.snapshot,
+                Some(entry) if now.saturating_duration_since(entry.touched)<crate::ui_tokens::NAVIGATION_SNAPSHOT_TTL=>entry.snapshot,
                 Some(entry)=>{data.remove::<egui::containers::scroll_area::State>(entry.native);ScrollSnapshot::default()}
                 None=>ScrollSnapshot::default(),
             }
@@ -242,7 +242,7 @@ mod snapshot_tests{
         let a=egui::Id::new("a");let b=egui::Id::new("b");
         store.entries.insert(a,ScrollEntry{snapshot:Default::default(),touched:now,native:a});
         store.entries.insert(b,ScrollEntry{snapshot:Default::default(),touched:now+std::time::Duration::from_secs(1),native:b});
-        assert_eq!(store.sweep(now+crate::navigation::NAVIGATION_SNAPSHOT_TTL),vec![a]);
+        assert_eq!(store.sweep(now+crate::ui_tokens::NAVIGATION_SNAPSHOT_TTL),vec![a]);
         assert!(store.entries.contains_key(&b));assert_eq!(store.entries.len(),1);
     }
     #[test]
@@ -252,10 +252,78 @@ mod snapshot_tests{
         let id=egui::Id::new("visible");
         store.frame=Some(1);store.seen.insert(id);
         store.entries.insert(id,ScrollEntry{snapshot:Default::default(),touched:now,native:id});
-        let later=now+crate::navigation::NAVIGATION_SNAPSHOT_TTL;
+        let later=now+crate::ui_tokens::NAVIGATION_SNAPSHOT_TTL;
         store.advance_frame(2,later);
         assert!(store.sweep(later).is_empty());
-        assert_eq!(store.sweep(later+crate::navigation::NAVIGATION_SNAPSHOT_TTL),vec![id]);
+        assert_eq!(store.sweep(later+crate::ui_tokens::NAVIGATION_SNAPSHOT_TTL),vec![id]);
+    }
+    #[test]
+    fn repeated_generations_reclaim_native_scroll_entries(){
+        let ctx=egui::Context::default();
+        let start=std::time::Instant::now();
+        let ttl=crate::ui_tokens::NAVIGATION_SNAPSHOT_TTL;
+        let mut previous=Vec::new();
+        // Exercise the production context sweep, including native egui
+        // state removal, for 1,024 generations of 16 viewports.
+        for generation in 0..1024_u32{
+            let now=start+ttl*generation;
+            sweep_snapshots(&ctx,now);
+            ctx.data_mut(|data|{
+                for id in &previous{
+                    assert!(data.get_persisted::<egui::containers::scroll_area::State>(*id).is_none());
+                }
+                let store=data.get_temp_mut_or_default::<ScrollStore>(store_id());
+                assert!(store.entries.is_empty());
+            });
+            previous.clear();
+            for pane in 0..16{
+                let id=egui::Id::new(("navigation-generation",generation,pane));
+                let mut snapshot=ScrollSnapshot::default();
+                snapshot.observe(true,egui::vec2(12.0,240.0),None);
+                ctx.data_mut(|data|{
+                    data.get_temp_mut_or_default::<ScrollStore>(store_id()).entries
+                        .insert(id,ScrollEntry{snapshot,touched:now,native:id});
+                    data.insert_persisted(id,egui::containers::scroll_area::State::default());
+                });
+                previous.push(id);
+            }
+            ctx.data_mut(|data|{
+                let store=data.get_temp_mut_or_default::<ScrollStore>(store_id());
+                assert_eq!(store.entries.len(),16);
+            });
+        }
+        sweep_snapshots(&ctx,start+ttl*1024);
+        ctx.data_mut(|data|{
+            for id in previous{assert!(data.get_persisted::<egui::containers::scroll_area::State>(id).is_none());}
+            assert!(data.get_temp_mut_or_default::<ScrollStore>(store_id()).entries.is_empty());
+        });
+    }
+    #[test]
+    fn repeated_navigation_keeps_recent_offsets_and_retires_old_ones(){
+        let start=std::time::Instant::now();
+        let ttl=crate::ui_tokens::NAVIGATION_SNAPSHOT_TTL;
+        let step=std::time::Duration::from_secs(60);
+        let mut store=ScrollStore::default();
+        for n in 0..10_000_u32{
+            let now=start+step*n;
+            store.advance_frame(u64::from(n),now);
+            let id=egui::Id::new(("viewport",n));
+            let mut snapshot=ScrollSnapshot::default();
+            snapshot.observe(true,egui::vec2(3.0,n as f32),None);
+            store.entries.insert(id,ScrollEntry{snapshot,touched:now,native:id});
+            store.seen.insert(id);
+            store.sweep(now);
+            assert_eq!(store.entries[&id].snapshot.offset.y,n as f32);
+            assert!(store.entries.len()<=31,"expired viewport retained at {n}");
+            if n>31{
+                assert!(!store.entries.contains_key(&egui::Id::new(("viewport",n-31))));
+            }
+        }
+        let end=start+step*10_000;
+        store.advance_frame(10_000,end);
+        store.sweep(end+ttl);
+        assert!(store.entries.is_empty());
+        assert!(store.seen.is_empty());
     }
     #[test]
     fn ordinary_anchor_reads_only_one_key(){
