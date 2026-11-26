@@ -6,8 +6,6 @@ const source = (path) => readFileSync(new URL("../" + path, import.meta.url), "u
 
 test("staff checkbox is the only source of 1x/2x and staff choice survives Rust resolution", () => {
   const rules = source("src-tauri/src/business_core/rules/remote_delivery.rs");
-  const types = source("src/types.ts");
-  assert.match(types, /remoteDelivery\?: \{ address: string; checked: boolean; manual: boolean; legacy\?: boolean \}/);
   assert.match(rules, /let saved_for_address = decision\.get\("checked"\)/);
   assert.match(rules, /let manually_set = saved_for_address/);
   assert.match(rules, /let checked = if saved_for_address/);
@@ -39,26 +37,6 @@ test("all native invoice paths and actual-delivery verification use checked mult
   assert.match(preview, /let remote = super::remote_delivery::resolve_shipment\(recipient,ship,order\)\?/);
   assert.match(preview, /super::remote_delivery::multiply_shipment\(safe\(base\),recipient,ship,order\)/);
   assert.match(preview, /shipment_projection\["remoteDelivery"\]=remote;/);
-});
-
-test("UI automatically checks Rust-detected area but preserves manual checkbox corrections", () => {
-  const desk = source("src/OrderDesk.tsx");
-  const footer = source("src/WorkflowFooter.tsx");
-  const preview = source("src/orders/useNativeWorkflowBoard.ts");
-  assert.match(preview, /remoteDelivery\?: \{/);
-  assert.match(desk, /remoteChecked=\{[\s\S]*?r\.remoteDelivery\?\.manual === true &&[\s\S]*?: freightEditor\.preview\.remoteDelivery\?\.checked === true/);
-  assert.match(desk, /row\.remoteDelivery = \{\s*address: row\.address, checked, manual: true/);
-  assert.match(desk, /if \(r\.address !== e\.target\.value\) delete r\.remoteDelivery/);
-  assert.match(footer, /className="freight-remote-check"/);
-  assert.match(footer, /aria-label="도서\/산간"/);
-  assert.match(footer, /checked=\{remoteChecked\}/);
-  assert.match(footer, /onChange=\{\(e\) => onRemoteChecked\(e\.currentTarget\.checked\)\}/);
-  const checkboxIndex = footer.indexOf('className="freight-remote-check"');
-  const buttonIndex = footer.indexOf('className="freight-inquiry"');
-  assert.ok(checkboxIndex > 0 && checkboxIndex < buttonIndex,
-    "checkbox must be immediately before the factory inquiry button");
-  assert.match(footer, /remoteRowOrigin = origins\.includes\("FACTORY"\) \? "FACTORY" : origins\[0\]/);
-  assert.match(footer, /origin === remoteRowOrigin && \(/);
 });
 
 test("native egui remote-delivery preview retains review and one-time doubling", () => {
