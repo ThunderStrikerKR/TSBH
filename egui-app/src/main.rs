@@ -7509,7 +7509,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                         if overlay::take_cell_escape(&result,false){confirmed_cancel=true;}
                                         else if let Some(key)=navigation{
                                             confirmed_navigation_request=Some((target.clone(),key));
-                                        }else if result.lost_focus(){confirmed_commit=true;}
+                                        }else if cell_navigation::worksheet_blur_finished(&result,false){confirmed_commit=true;}
                                     }
                                 }
                             });
@@ -7718,7 +7718,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                                         workflow_freight_cancel=true;
                                                     }else if let Some(key)=navigation{
                                                         confirmed_navigation_request=Some((target,key));
-                                                    }else if response.lost_focus(){
+                                                    }else if cell_navigation::worksheet_blur_finished(&response,false){
                                                         workflow_freight_commit=true;
                                                     }
                                                 }
@@ -8279,7 +8279,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                                 inline_cancel=true;
                                             }else if let Some(key)=navigation{
                                                 inline_navigation_request=Some((target.clone(),key));
-                                            }else if edit_response.lost_focus(){
+                                            }else if cell_navigation::worksheet_blur_finished(&edit_response,false){
                                                 inline_commit=true;
                                             }
                                         }
@@ -8539,7 +8539,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                                 inline_cancel=true;
                                             }else if let Some(key)=navigation{
                                                 inline_navigation_request=Some((freight_target.clone(),key));
-                                            }else if result.lost_focus(){
+                                            }else if cell_navigation::worksheet_blur_finished(&result,false){
                                                 inline_commit=true;
                                             }
                                         }
