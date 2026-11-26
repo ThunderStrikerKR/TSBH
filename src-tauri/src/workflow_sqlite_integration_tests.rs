@@ -1097,6 +1097,63 @@ fn native_workflow_confirmed_origin_edit_preserves_first_receipt_and_rechecks(){
 }
 
 #[test]
+fn native_workflow_confirmed_recipient_item_edit_preserves_receipt_prices_and_ids(){
+    let (isolated,mut conn)=IsolatedDatabase::open();
+    let mut base=get_snapshot(&conn).unwrap();
+    base["products"][0]["variants"][0]["wholesale"]=json!(30000);
+    let initial=stage_three(&base,"POSTPAID");
+    let saved=write_snapshot(&mut conn,initial,0,true).unwrap();
+    let mut current=saved.clone();
+    let product_id=current["orders"][0]["recipients"][0]["items"][0]["productId"].clone();
+    let variant_id=current["orders"][0]["recipients"][0]["items"][0]["variantId"].clone();
+    let command=|state:&Value,field:&str,item:Value,value:Value,seed:&str|json!({
+        "action":"edit_confirmed_recipient","state":state,
+        "shipmentId":"shipment:synthetic","groupId":"group:synthetic",
+        "now":"2026-11-26T09:05:00+09:00","eventSeed":seed,
+        "change":{"recipientId":"recipient:synthetic","field":field,"itemId":item,"value":value}
+    });
+    let invalid=command(&current,"quantity",json!("item:synthetic"),json!("0"),"invalid");
+    assert!(rust("order_edit_rules",invalid).is_err());
+    let mut wrong=command(&current,"name",Value::Null,json!("잘못된 대상"),"invalid");
+    wrong["change"]["recipientId"]=json!("wrong");
+    assert!(rust("order_edit_rules",wrong).is_err());
+    for (index,(field,item,value)) in [
+        ("name",Value::Null,json!("수정 수취인")),
+        ("note",Value::Null,json!("수정 배송 요청")),
+        ("quantity",json!("item:synthetic"),json!("2")),
+        ("unitPrice",json!("item:synthetic"),json!(31000)),
+        ("addItem",Value::Null,json!({"productId":product_id,"variantId":variant_id})),
+    ].into_iter().enumerate(){
+        let result=rust("order_edit_rules",command(&current,field,item,value,
+            &format!("confirmed-edit-{index}"))).expect("confirmed edit");
+        current=write_snapshot(&mut conn,result["state"].clone(),
+            current["revision"].as_u64().unwrap(),true).expect("commit exact operational edit");
+        for key in ["id","raw","confirmedAt","confirmationSnapshot","receipt","senderSnapshot"]{
+            assert_eq!(current["orders"][0][key],saved["orders"][0][key],"immutable {key}");
+        }
+        assert_eq!(current["workflow"]["shipments"][0]["completedAt"],
+            saved["workflow"]["shipments"][0]["completedAt"]);
+        if index<3{assert_eq!(current["orders"][0]["recipients"][0]["items"][0]["unitPrice"],30000);}
+    }
+    let row=&current["orders"][0]["recipients"][0];
+    assert_eq!(row["name"],"수정 수취인");
+    assert_eq!(row["items"][0]["quantity"],2);
+    assert_eq!(row["items"][0]["unitPrice"],31000);
+    assert_eq!(row["items"].as_array().unwrap().len(),2);
+    let added=row["items"][1]["id"].clone();
+    let result=rust("order_edit_rules",command(&current,"removeItem",added,Value::Null,"remove-item")).unwrap();
+    current=write_snapshot(&mut conn,result["state"].clone(),current["revision"].as_u64().unwrap(),true).unwrap();
+    assert_eq!(current["orders"][0]["recipients"][0]["items"].as_array().unwrap().len(),1);
+    assert_eq!(current["workflow"]["shipments"][0]["step"],0);
+    assert_eq!(current["workflow"]["groups"][0]["needsNotice"],true);
+    assert_eq!(current["workflow"]["events"].as_array().unwrap().iter()
+        .filter(|e|e["action"]=="확정 주문 수정").count(),6);
+    drop(conn);
+    let reopened=initialize_database(&isolated.root.join("state.sqlite")).unwrap();
+    assert_eq!(get_snapshot(&reopened).unwrap(),current);
+}
+
+#[test]
 fn scoped_freight_reconciliation_matches_full_for_target_and_preserves_other_order(){
     let (_isolated,conn)=IsolatedDatabase::open();
     let before=get_snapshot(&conn).unwrap();

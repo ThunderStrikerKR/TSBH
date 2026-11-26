@@ -1708,6 +1708,7 @@ impl BandoEgui {
                                 ship.id==selected.shipment_id &&
                                 ship.order_id==selected.order_id)))
                     {
+                        self.confirmed_cell=None;
                         self.workflow_ui.selection=None;
                         self.workflow_ui.folded=None;
                         self.workflow_ui.stop_preview();
@@ -1761,7 +1762,8 @@ impl BandoEgui {
         }
         if self.workflow_receiver.is_some() ||
             self.workflow_action.is_some() ||
-            (self.workflow_freight_editor.is_some() && self.workflow_error.is_none()) ||
+            ((self.workflow_freight_editor.is_some() || self.confirmed_cell.is_some()
+                || self.confirmed_product_target.is_some()) && self.workflow_error.is_none()) ||
             !std::env::var_os("BANDO_EGUI_BUSINESS_DB")
                 .is_some_and(|p|!p.is_empty()) {return;}
         let current=self.workflow_snapshot.as_ref().and_then(|board|board.revision);
@@ -6172,7 +6174,8 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
             let mut clicked_source=None;
             let mut new_clicked=false;
             Self::section_with_header(ui,"발주 원문",height,|header|{
-                if theme::action(header,"+ 새 주문",ButtonRole::Emphasized,true).clicked(){
+                if theme::action(header,"+ 새 주문",ButtonRole::Emphasized,
+                    self.confirmed_cell.is_none() && self.confirmed_product_target.is_none()).clicked(){
                     new_clicked=true;
                 }
             },|body|{
@@ -7201,7 +7204,8 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                         if let Some((target,origin))=workflow_board::missing_freight_target(group,issue,&ship.id){
                                             let enabled=self.gateway.workflow_write_enabled()
                                                 && self.workflow_mutation_ready()
-                                                && self.workflow_freight_editor.is_none();
+                                                && self.workflow_freight_editor.is_none()
+                                                && self.confirmed_cell.is_none();
                                             if theme::review_action(content,"운임 입력",theme::ButtonRole::Standard,enabled).clicked(){
                                                 workflow_freight_open=Some((target.id.clone(),origin,String::new(),None,true));
                                             }
