@@ -6,7 +6,7 @@ use eframe::egui::{self,Align,Context,Layout,Rect,Ui};
 use serde_json::{json,Value};
 use std::collections::{HashMap,HashSet};
 use std::sync::Arc;
-use crate::latest_job::LatestJob;
+use crate::screen_refresh::ReadRefresh;
 
 type Warnings=HashMap<String,Vec<String>>;
 #[derive(Clone,PartialEq,Eq)]
@@ -116,11 +116,11 @@ pub struct AliasManager{
     global_approved:bool,
     error:Option<String>,
     catalog_snapshot:Option<Arc<Value>>,
-    diagnostics:LatestJob<Warnings>,
+    diagnostics:ReadRefresh<Warnings>,
     warnings:Arc<Warnings>,
     picker_catalog:Option<Arc<Value>>,
     picker_key:Option<PickerKey>,
-    picker:LatestJob<PickerResult>,
+    picker:ReadRefresh<PickerResult>,
     picker_result:Option<Arc<PickerResult>>,
 }
 impl AliasManager {
@@ -130,7 +130,7 @@ impl AliasManager {
             self.picker_catalog=Some(Arc::new(catalog.clone()));
             self.picker_key=None;
             self.picker_result=None;
-            self.picker.invalidate();
+            self.picker.reset();
         }
         let snapshot=json!({"products":catalog["products"],"aliases":catalog["aliases"]});
         if self.catalog_snapshot.as_deref()==Some(&snapshot){return;}
@@ -191,7 +191,7 @@ impl AliasManager {
     }
     pub fn take_tab(&mut self)->Option<usize>{self.next_tab.take()}
     pub fn reset_navigation(&mut self){
-        self.picker.invalidate();
+        self.picker.reset();
         self.picker_key=None;
         self.picker_result=None;
         self.product_search=false;
