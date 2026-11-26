@@ -2,7 +2,7 @@
 //! The dialog only stages employee intent. Catalog search is Rust-backed;
 //! the native manual reducer validates the actual item and recalculates price.
 
-use std::{sync::{Arc,mpsc::{self,Receiver,TryRecvError}},thread};
+use std::sync::Arc;
 use eframe::egui::{self,Context,Vec2};
 use serde_json::Value;
 use crate::{
@@ -59,7 +59,7 @@ pub struct ItemEditor{
     replacement:Option<Value>,
     search:Option<ProductSearch>,
     original_catalog_product:Option<Value>,
-    photo_receiver:Option<Receiver<Result<Option<Value>,String>>>,
+    photo_read:crate::screen_refresh::ReadRefresh<Option<Value>>,
     photo_requested:bool,
     photos:ProductImageCache,
     confirm_delete:bool,
@@ -77,7 +77,7 @@ impl ItemEditor{
             order_id,source_raw,recipient_id,item_id,client_id,
             initial:item,initial_price:price,manual_draft:false,replacement:None,
             search:None,original_catalog_product:None,
-            photo_receiver:None,photo_requested:false,
+            photo_read:Default::default(),photo_requested:false,
             photos:ProductImageCache::default(),
             confirm_delete:false,delete_only:false,confirm_discard:false,
             error:None,
@@ -188,33 +188,16 @@ impl ItemEditor{
             self.photo_requested=true;
             let id=field(&self.initial,"productId").to_owned();
             if !id.is_empty(){
-                let (tx,rx)=mpsc::channel();
-                self.photo_receiver=Some(rx);
-                let context=ctx.clone();
-                thread::spawn(move||{
-                    // Catalog reads run off the UI thread. Product details
-                    // and the image are projected from the same saved ID.
-                    let result=gateway.load_catalog().map(|catalog|
+                self.photo_read.submit(ctx.clone(),move||{
+                    gateway.load_catalog().map(|catalog|
                         catalog.get("products").and_then(Value::as_array)
-                            .and_then(|products|products.iter().find(|p|
-                                field(p,"id")==id
-                            )).cloned()
-                    );
-                    let _=tx.send(result);
-                    context.request_repaint();
+                            .and_then(|products|products.iter().find(|p|field(p,"id")==id)).cloned())
                 });
             }
         }
-        let event=self.photo_receiver.as_ref().map(Receiver::try_recv);
-        match event{
-            Some(Ok(Ok(product)))=>{
-                self.original_catalog_product=product;
-                self.photo_receiver=None;
-            }
-            Some(Ok(Err(_))) | Some(Err(TryRecvError::Disconnected))=>{
-                self.photo_receiver=None;
-            }
-            _=>{}
+        if let Some(Ok(product))=self.photo_read.poll(){
+            self.original_catalog_product=product;
+            self.photo_read.verified();
         }
     }
     // Both entry points use the same common modal header, footer and action.
