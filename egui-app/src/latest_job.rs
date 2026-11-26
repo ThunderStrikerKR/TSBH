@@ -6,6 +6,16 @@ use std::sync::{
     Arc, Mutex,
 };
 
+// Swapping ownership is the only operation allowed under these locks.
+// Superseded closures/results may run arbitrary Drop implementations.
+fn replace_slot<T>(slot:&Mutex<Option<T>>,value:Option<T>){
+    let retired={
+        let mut guard=slot.lock().unwrap();
+        std::mem::replace(&mut *guard,value)
+    };
+    drop(retired);
+}
+
 type Answer<T> = (u64, Result<T, String>);
 struct Job<T> {
     generation: u64,
@@ -43,8 +53,8 @@ impl<T: Send + 'static> LatestJob<T> {
         self.generation = self.generation.wrapping_add(1);
         self.pending = false;
         if let Some(worker) = &self.worker {
-            worker.next.lock().unwrap().take();
-            worker.answer.lock().unwrap().take();
+            replace_slot(&worker.next,None);
+            replace_slot(&worker.answer,None);
         }
     }
     pub fn submit(
@@ -72,7 +82,7 @@ impl<T: Send + 'static> LatestJob<T> {
                         let result =
                             std::panic::catch_unwind(std::panic::AssertUnwindSafe(job.work))
                                 .unwrap_or_else(|_| Err("조회 작업이 중단되었습니다.".into()));
-                        *completed.lock().unwrap() = Some((job.generation, result));
+                        replace_slot(&completed,Some((job.generation,result)));
                         job.context.request_repaint();
                     }
                 }
@@ -80,11 +90,11 @@ impl<T: Send + 'static> LatestJob<T> {
             self.worker = Some(Worker { next, answer, wake });
         }
         let worker = self.worker.as_ref().unwrap();
-        *worker.next.lock().unwrap() = Some(Job {
+        replace_slot(&worker.next,Some(Job {
             generation: self.generation,
             context,
             work: Box::new(work),
-        });
+        }));
         self.pending = true;
         // A full wake channel already guarantees the latest pending job runs.
         let _ = worker.wake.try_send(());
@@ -125,7 +135,7 @@ struct StagedAnswer<T>{
 #[cfg(test)]
 impl<T> StagedAnswer<T>{
     fn complete(mut self,result:Result<T,String>){
-        *self.answer.lock().unwrap()=Some((self.generation,result));
+        replace_slot(&self.answer,Some((self.generation,result)));
         self.completed=true;
     }
 }
@@ -133,7 +143,7 @@ impl<T> StagedAnswer<T>{
 impl<T> Drop for StagedAnswer<T>{
     fn drop(&mut self){
         if !self.completed{
-            *self.answer.lock().unwrap()=Some((self.generation,Err("조회 작업이 중단되었습니다.".into())));
+            replace_slot(&self.answer,Some((self.generation,Err("조회 작업이 중단되었습니다.".into()))));
         }
     }
 }
@@ -151,6 +161,19 @@ mod tests {
             assert!(Instant::now() < deadline, "worker did not finish");
             std::thread::sleep(Duration::from_millis(1));
         }
+    }
+    #[test]
+    fn superseded_payload_is_dropped_after_slot_unlock(){
+        struct CheckDrop(Arc<Mutex<Option<CheckDrop>>>);
+        impl Drop for CheckDrop{
+            fn drop(&mut self){
+                assert!(self.0.try_lock().is_ok(),"payload destructor ran under its own slot lock");
+            }
+        }
+        let slot=Arc::new(Mutex::new(None));
+        replace_slot(&slot,Some(CheckDrop(Arc::clone(&slot))));
+        replace_slot(&slot,Some(CheckDrop(Arc::clone(&slot))));
+        replace_slot(&slot,None);
     }
     #[test]
     fn staged_disconnect_is_consumed_and_real_worker_can_restart(){
