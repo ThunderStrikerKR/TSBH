@@ -1,7 +1,7 @@
 //! Staff-driven model families. React oracle: ColorGuidanceManager.tsx.
 //! Saved data stays in settings.colorGuidanceGroups, never product/order rows.
 //! Rust catalog_clients::model_groups validates; Tauri settings_patch CAS saves.
-use crate::{catalog_query_bridge,components, gateway::BandoGateway, theme, typography};
+use crate::{catalog_query_bridge,gateway::BandoGateway, theme, typography};
 use crate::latest_job::LatestJob;
 use eframe::egui::{self, Align, Context, Layout, Rect, Sense, Ui, UiBuilder, Vec2};
 use serde_json::{json, Value};

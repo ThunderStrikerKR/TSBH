@@ -7,7 +7,7 @@ use std::{collections::HashMap,sync::{Arc,mpsc::{self,Receiver}}, thread};
 use eframe::egui::{self, Context};
 use serde_json::{json,Value};
 use crate::{gateway::{BandoGateway,ReadOperation},
-    theme, typography, components,
+    theme, typography, 
     floating_notice::{self,Tone}};
 
 pub enum Choice {

@@ -2,7 +2,7 @@
 //! order-history -> output.prepare_settlement pipeline.
 //! No egui totals, duplicate accounting, local receipt cache or mutations.
 use crate::{
-    components, gateway::{BandoGateway,ReadOperation},
+    gateway::{BandoGateway,ReadOperation},
     settings_help,theme,typography,
 };
 use chrono::{DateTime,Duration as Days,FixedOffset,NaiveDate,Utc};

@@ -2,7 +2,7 @@
 //! All business values come from the saved order-history projection and its
 //! matching workflow records. This module never recalculates prices or writes
 //! historical data. Only content-heavy panes have their own scroll areas.
-use crate::{components,theme,typography};
+use crate::{theme,typography};
 use chrono::{DateTime,FixedOffset};
 use eframe::egui::{self,Align,Layout,Rect,Sense,Stroke,Ui,UiBuilder,Vec2};
 use serde_json::Value;

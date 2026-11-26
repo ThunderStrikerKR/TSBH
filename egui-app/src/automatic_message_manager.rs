@@ -2,7 +2,7 @@
 //! The 20 template labels/defaults below are DISPLAY metadata only, copied
 //! from src/automatic-message-templates.ts. Validation, business message
 //! generation, settings CAS and SQLite stay in the existing Rust services.
-use crate::{components,gateway::{BandoGateway,ReadOperation},
+use crate::{gateway::{BandoGateway,ReadOperation},
     settings_help,theme::{self,ButtonRole},typography};
 use eframe::egui::{self,Align,Context,Layout,Ui,Vec2};
 use serde_json::{json,Map,Value};

@@ -6,7 +6,6 @@ use std::{sync::{Arc,mpsc::{self,Receiver,TryRecvError}},thread};
 use eframe::egui::{self,Context,Vec2};
 use serde_json::Value;
 use crate::{
-    components,
     gateway::BandoGateway,
     manual_product_search::{Event as SearchEvent, ProductSearch},
     product_images::ProductImageCache,

@@ -2,7 +2,7 @@
 //! Native Rust provides groups, amounts, freight, stage and shipment identity.
 use eframe::egui::{self, Id, Pos2, Rect, Ui, Vec2};
 use std::time::{Duration, Instant};
-use crate::{components, preview_store::WorkingReception, source_highlight, theme, typography};
+use crate::{preview_store::WorkingReception, source_highlight, theme, typography};
 use std::collections::{HashMap,HashSet};
 use crate::workflow_board::{BoardSnapshot, GroupRow, ShipmentRow};
 

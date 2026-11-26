@@ -14,7 +14,7 @@ use crate::{
         rules::{scope_manual_model_ids,scope_recognition_rows_for_order,scope_reception_edit_ids}},
     preview_store::WorkingReception,
     theme::{self,ButtonRole},
-    typography,components,source_highlight,
+    typography,source_highlight,
     item_editor::{self,ItemEditor,ProductClickIntent},
 };
 

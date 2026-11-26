@@ -5,7 +5,6 @@
 use crate::{
     category_manager::ProductCategoryPaths,
     cell_navigation,
-    components,
     gateway::{BandoGateway, ReadOperation},
     management_queries,
     settings_help, theme, typography,

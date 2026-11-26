@@ -3,7 +3,6 @@
 //! The native egui view owns only date/search presentation, sort, expansion,
 //! clipboard copy and virtualized fixed-height rows.
 use crate::{
-    components,
     navigation::calendar_month_start as month_start,
     gateway::{BandoGateway, ReadOperation},
     settings_help, theme, typography,

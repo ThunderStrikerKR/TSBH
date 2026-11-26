@@ -4,7 +4,7 @@
 use eframe::egui::{self,Context};
 use serde_json::Value;
 use std::{sync::{mpsc::{self,Receiver},Arc},thread};
-use crate::{gateway::BandoGateway,management_queries::{self,ManualProductRows},theme::{self,ButtonRole},typography,components};
+use crate::{gateway::BandoGateway,management_queries::{self,ManualProductRows},theme::{self,ButtonRole},typography};
 
 fn field<'a>(v:&'a Value,key:&str)->&'a str{
     v.get(key).and_then(Value::as_str).unwrap_or("")

@@ -8,7 +8,6 @@ use crate::{
     alias_manager::AliasManager,
     brand_manager::BrandManager,
     model_group_manager::ModelGroupManager,
-    components,
     gateway::BandoGateway,
     management_queries::{self, ManagementProductRows},
     latest_job::LatestJob,

@@ -1,7 +1,7 @@
 //! React SettingsView + SettingsPanel native UI. Controls, field keys,
  //! section order, dirty-tab guard and CAS saves match the original React
  //! implementation. The shared theme/components own visual tokens.
-use crate::{components, gateway::BandoGateway, settings_store, theme::{self,ButtonRole}, typography};
+use crate::{gateway::BandoGateway, settings_store, theme::{self,ButtonRole}, typography};
 use eframe::egui::{self,Align,Context,Layout,Ui,Vec2};
 use serde_json::{json,Map,Value};
 use std::{sync::{mpsc::{self,Receiver},Arc},thread};

@@ -1,7 +1,7 @@
 //! React Classification.tsx::RegistrySettings (categories=false).
 //! Only the four explicit brand edit fields live here; normalize/validate
 //! and mutate catalog brands with original Rust catalog_clients::upsert_brand.
-use crate::{components,theme,typography};
+use crate::{theme,typography};
 use eframe::egui::{Vec2,Align,Context,Layout,Rect,Ui};
 use serde_json::{json,Value};
 
