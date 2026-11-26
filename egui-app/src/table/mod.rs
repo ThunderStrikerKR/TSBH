@@ -245,20 +245,42 @@ pub(crate) fn show<R>(
     result
 }
 
+/// Registry column minima plus the number of leading text columns that
+/// share surplus space. Numeric/action columns keep their fixed geometry.
+pub(crate) struct RegistryColumns<const N:usize>{
+    base:[f32;N],
+    stretch:usize,
+}
+impl<const N:usize> From<[f32;N]> for RegistryColumns<N>{
+    fn from(base:[f32;N])->Self{Self{base,stretch:1}}
+}
+impl<const N:usize> RegistryColumns<N>{
+    pub(crate) fn balanced_text(base:[f32;N],stretch:usize)->Self{
+        Self{base,stretch:stretch.clamp(1,N)}
+    }
+    fn widths(&self,available:f32,gap:f32)->[f32;N]{
+        let mut widths=self.base;
+        let minimum=widths.iter().sum::<f32>()+N.saturating_sub(1) as f32*gap;
+        let extra=(available-minimum).max(0.0)/self.stretch as f32;
+        for width in widths.iter_mut().take(self.stretch){*width+=extra;}
+        widths
+    }
+}
+
 /// Single-line registry tables share the 42pt compact management row policy.
 /// Callers already lay out their toolbar divider or section heading; use a
 /// bare header here, never the history-only missing-toolbar reservation.
 pub(crate) fn registry_table<const N:usize>(
-    ui:&mut Ui,id:impl std::hash::Hash,labels:[&str;N],base:[f32;N],
+    ui:&mut Ui,id:impl std::hash::Hash,labels:[&str;N],columns:impl Into<RegistryColumns<N>>,
     height:f32,count:usize,selected:impl Fn(usize)->bool,
     mut draw:impl FnMut(&mut Ui,[Rect;N],usize,Rect),
 )->Rect{
     let gap=theme::SPACE_8;
-    let minimum=base.iter().sum::<f32>()+N.saturating_sub(1) as f32*gap;
+    let columns=columns.into();
+    let minimum=columns.base.iter().sum::<f32>()+N.saturating_sub(1) as f32*gap;
     let spacing=crate::table::management_table_container_style(ui);
     let inner=crate::table::show(ui,crate::table::Header::List(minimum),|ui,layout|{
-        let mut widths=base;
-        widths[0]+=(layout.table_width-minimum).max(0.0);
+        let widths=columns.widths(layout.table_width,gap);
         let cells=crate::table::management_table_cells(
             layout.header_content_rect.min,&widths,layout.header_content_rect.height(),gap);
         crate::table::header_columns(ui,layout.header_rect,layout.header_content_rect,&cells,gap,|ui,area|{
@@ -269,8 +291,9 @@ pub(crate) fn registry_table<const N:usize>(
                     typography::management_table_header_galley(ui,labels[i]),None);
             }
         });
+        let viewport_height=height.min(ui.available_height()).max(1.0);
         let output=crate::table::fixed_rows(ui,crate::table::Viewport{
-            width:layout.table_width,height:height.min(ui.available_height()).max(1.0),rail:None
+            width:layout.table_width,height:viewport_height,rail:None
         },id,theme::MANAGEMENT_COMPACT_ROW_HEIGHT,count,|body,visible|{
             let origin=body.max_rect().min;
             let first=visible.start;
@@ -1159,6 +1182,15 @@ impl ManagementTableColumnLabel {
             Self::ProductName => "상품명",
         }
     }
+}
+
+#[cfg(test)]
+#[test]
+fn registry_balances_text_columns_without_widening_actions(){
+    let columns=RegistryColumns::balanced_text([240.0,220.0,96.0,108.0],2);
+    let widths=columns.widths(1200.0,theme::SPACE_8);
+    assert_eq!(widths,[496.0,476.0,96.0,108.0]);
+    assert_eq!(columns.widths(500.0,theme::SPACE_8),columns.base);
 }
 
 #[cfg(test)]
