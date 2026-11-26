@@ -61,6 +61,7 @@ pub struct CategoryManager {
     scroll_to:Option<String>,
     name:String,
     editor:bool,
+    expected_scope:Option<String>,
     operation:Option<Operation>,
     new_name:String,
     target:String,
@@ -79,7 +80,7 @@ impl Default for CategoryManager {
             expanded:ROOTS.iter().map(|(id,_)|(*id).to_owned()).collect(),
             query:String::new(),focused:false,focus:Default::default(),crumbs:Default::default(),
             tree_motion:None,nav_motion:None,mode_motion:None,map_cache:None,node_cache:Default::default(),scroll_epoch:0,scroll_to:None,
-            name:String::new(),editor:false,
+            name:String::new(),editor:false,expected_scope:None,
             operation:None,new_name:String::new(),target:String::new(),
             transfer:false,confirm:None,after_save:None,
             switch_to_list:false,global_leave_approved:false,
@@ -333,6 +334,9 @@ impl CategoryManager {
             self.error=Some("연결 상품이나 하위 분류가 있는 경우 먼저 소속을 정리하세요.".into());
             return;
         }
+        if !self.editor || self.expected_scope.is_none(){
+            self.expected_scope=Some(bando_data_access::management_scope_token(catalog,"categories"));
+        }
         self.operation=Some(op);
         if op==Operation::Delete {
             self.delete_parent=Some(if current.parent.is_empty(){ROOTS[0].0.to_owned()}
@@ -358,13 +362,13 @@ impl CategoryManager {
     fn write_request(&self,cats:&[Category],catalog:&Value)
         ->Result<CategoryWrite,String>{
         let current=self.current(cats).ok_or("분류가 선택되지 않았습니다.")?;
-        match self.operation {
+        let mut request:CategoryWrite=match self.operation {
             Some(Operation::Add)=>{
                 if self.new_name.trim().is_empty() ||
                    (direct_count(catalog,&current.id)>0 && !self.transfer){
                     return Err("분류 이름과 상품 이전 확인을 완료해 주세요.".into());
                 }
-                Ok(CategoryWrite{
+                Ok::<CategoryWrite,String>(CategoryWrite{
                     action:"change_category",
                     data:json!({
                         "categoryId":"","name":self.new_name.trim(),
@@ -376,7 +380,7 @@ impl CategoryManager {
             }
             Some(Operation::Move)=>{
                 if self.target.is_empty(){return Err("이동할 상위 분류를 선택하세요.".into());}
-                Ok(CategoryWrite{
+                Ok::<CategoryWrite,String>(CategoryWrite{
                     action:"change_category",
                     data:json!({
                         "categoryId":current.id,
@@ -389,14 +393,14 @@ impl CategoryManager {
                 })
             }
             Some(Operation::Delete)=>{
-                Ok(CategoryWrite{
+                Ok::<CategoryWrite,String>(CategoryWrite{
                     action:"delete_category",
                     data:json!({"categoryId":current.id}),
                 })
             }
             None=>{
                 if !self.rename_dirty(cats){return Err("저장할 분류 변경사항이 없습니다.".into());}
-                Ok(CategoryWrite{
+                Ok::<CategoryWrite,String>(CategoryWrite{
                     action:"change_category",
                     data:json!({
                         "categoryId":current.id,
@@ -407,9 +411,12 @@ impl CategoryManager {
                     }),
                 })
             }
-        }
+        }?;
+        if let Some(token)=self.expected_scope.as_ref(){request.data["expectedScope"]=json!(token);}
+        Ok(request)
     }
     pub fn on_saved(&mut self,kind:&str,catalog:&Value)->&'static str{
+        self.expected_scope=Some(bando_data_access::management_scope_token(catalog,"categories"));
         let success=match (kind,self.operation){
             ("delete_category",_)=>"빈 분류를 삭제했습니다.",
             ("change_category",Some(Operation::Add))=>"하위 분류를 추가했습니다.",
@@ -592,6 +599,7 @@ impl CategoryManager {
             if let Some(current)=self.current(cats){
                 self.name=current.name;
                 self.editor=true;
+                self.expected_scope=Some(bando_data_access::management_scope_token(catalog,"categories"));
             }
         }
         // This toolbar flows right-to-left: the checkbox is immediately
