@@ -122,10 +122,6 @@ impl BrandManager {
             crate::card::fill_management_primary_card(card,card_min_height);
             card.label(typography::section_heading("브랜드 관리"));
             card.add_space(theme::SPACE_8);
-            card.label(typography::body(
-                "공식명, 한글명, 검색 별칭을 직접 연결합니다. 유사한 이름은 자동 병합하지 않습니다."
-            ));
-            card.add_space(theme::SPACE_12);
             // React registry-edit-form uses auto-fit columns >=240px,
             // with a right-aligned primary action at the field baseline.
             // Reserve actual bounded field columns BEFORE allocating their
@@ -168,46 +164,34 @@ impl BrandManager {
                     }
                 });
             }
-            // Shared Freight master: toolbar-to-header transition,
-            // fixed 36pt register header and 10pt solid scroll rail.
-            crate::table::management_table_container_style(card);
-            crate::table::show(card,crate::table::Header::Register{primary:"브랜드명 / 한글 표기 / 검색 별칭",action:"관리",action_width:132.0},|card,header|{
-            let scroll_height=crate::scrollbar::management_single_list_scroll_height(
-                card,card_min_height,0.0
-            );
-            let output=crate::table::register_rows(card,scroll_height,header.table_width,"brand-registry-list",|list|{
-                    for brand in rows(&catalog["brands"]){
-                        let id=field(brand,"id");
-                        let _row=list.horizontal(|line|{
-                            line.vertical(|description|{
-                                description.label(typography::body(field(brand,"name")));
-                                description.label(typography::caption(&format!(
-                                    "한글 표기: {}",if field(brand,"korean").is_empty(){
-                                        "없음"
-                                    }else{field(brand,"korean")})));
-                                let aliases=rows(&brand["aliases"]).iter()
-                                    .filter_map(Value::as_str)
-                                    .collect::<Vec<_>>().join(", ");
-                                description.label(typography::caption(&format!(
-                                    "검색 별칭: {}",if aliases.is_empty(){
-                                        "없음"
-                                    }else{&aliases})));
-                            });
-                            line.with_layout(Layout::right_to_left(Align::Center),|actions|{
-                                if crate::button::action(actions,"정정",
-                                    theme::ButtonRole::Standard,!busy).clicked(){
-                                    select=Some(id.to_owned());
-                                }
-                            });
-                        });
-                        #[cfg(test)]
-                        crate::ui_test_support::record("catalog data row",_row.response.rect);
-                        crate::ui_primitives::soft_divider(list);
-                    }
+            crate::ui_primitives::section_divider(card);
+            use typography::ManagementTableCellRole as Role;
+            let brands=rows(&catalog["brands"]);
+            let height=(card.available_height()-theme::MANAGEMENT_TABLE_HEADER_HEIGHT).max(1.0);
+            let rect=crate::table::registry_table(card,"brand-registry-list",
+                ["공식 브랜드명","한글 표기","검색 별칭","관리"],
+                [180.0,180.0,220.0,108.0],height,brands.len(),
+                |i|self.form.editing.as_deref()==Some(field(&brands[i],"id")),
+                |row,cells,i,rect|{
+                    let brand=&brands[i];
+                    let id=field(brand,"id");
+                    let aliases=rows(&brand["aliases"]).iter().filter_map(Value::as_str)
+                        .collect::<Vec<_>>().join(", ");
+                    crate::table::registry_cell(row,cells[0],field(brand,"name"),Role::Text,false,(id,0));
+                    crate::table::registry_cell(row,cells[1],field(brand,"korean"),Role::Text,false,(id,1));
+                    crate::table::registry_cell(row,cells[2],&aliases,Role::Description,false,(id,2));
+                    crate::table::registry_actions(row,cells[3],|actions|{
+                        if crate::button::action(actions,"정정",theme::ButtonRole::Standard,!busy).clicked(){
+                            select=Some(id.to_owned());
+                        }
+                    });
+                    #[cfg(test)]
+                    crate::ui_test_support::record("catalog data row",rect);
+                    let _=rect;
                 });
-            
-            (output.inner_rect,())
-        });
+            if brands.is_empty(){
+                crate::status_notice::management_body_state_overlay(card,rect,Some("등록된 브랜드가 없습니다."));
+            }
 
         });
         if let Some(id)=select{self.choose(id,catalog);}
