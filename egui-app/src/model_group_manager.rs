@@ -147,8 +147,8 @@ impl ModelGroupManager {
                 }else{json!({})};
                 self.groups_cache.invalidate();
                 self.new_name.clear();
-                self.status="모델군 설정을 저장했습니다. 기존 상품과 주문은 변경하지 않았습니다.".into();
                 if let Some(exit)=self.after_save.take(){self.finish_exit(exit);}
+                self.status="모델군 설정을 저장했습니다. 기존 상품과 주문은 변경하지 않았습니다.".into();
                 Some(catalog)
             }
             Some(Ok(Err(e)))=>{
@@ -294,15 +294,15 @@ impl ModelGroupManager {
                 let body_height=crate::popup::modal_editor_body_max_height(rect.height());
                 crate::popup::modal_flow_workspace(modal,|workspace|{
                     close=workspace.header(title,"닫기",!busy&&!nested);
-                    workspace.scroll_region("model-group-editor-body",body_height,|body|{
+                    workspace.body_region(|body|{
                         body.add_enabled_ui(!nested,|body|{
                             let body_top=body.cursor().top();
                             if let Some(g)=self.draft.get(&self.selected).cloned(){
-                                body.with_layout(Layout::right_to_left(Align::Center),|actions|{
+                                body.horizontal(|toolbar|toolbar.with_layout(Layout::right_to_left(Align::Center),|actions|{
                                     if crate::button::action(actions,"그룹 삭제",theme::ButtonRole::Danger,writable&&!busy).clicked(){
                                         self.confirm_delete=true;
                                     }
-                                });
+                                }));
                         let mut name=text(&g,"name").to_owned();
                         body.horizontal(|form|{
                             crate::ui_primitives::form_field_label(form,"모델군 이름");
@@ -509,6 +509,10 @@ mod responsiveness_tests{
         assert!(body.contains("[\"상품명\",\"상세 정보\",\"대표모델\",\"관리\"]"));
         assert!(body.contains("[\"상품명\",\"상세 정보\",\"소속 모델군\",\"추가\"]"));
         assert!(!body.contains("직원"));
+        let list=body.split("    fn show_editor(").next().unwrap();
+        assert!(!list.contains("allocate_ui_with_layout("));
+        assert!(body.contains("crate::popup::modal_window("));
+        assert!(body.contains("crate::popup::modal_flow_workspace("));
     }
     #[test]
     fn eligibility_tracks_product_edits_and_avoids_repainting_queries(){
