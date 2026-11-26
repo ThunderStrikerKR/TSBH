@@ -26,12 +26,62 @@ pub(crate) fn outline_bounds(header:Rect,body:Rect)->Rect{
 }
 
 fn finish(ui:&Ui,header:Rect,body:Rect){
-    let bounds=outline_bounds(header,body);
+    paint_frame(ui,outline_bounds(header,body));
+}
+
+fn paint_frame(ui:&Ui,bounds:Rect){
     if bounds.width()>0.0 && bounds.height()>0.0{
-        ui.painter().rect_stroke(bounds,0.0,
-            Stroke::new(theme::FRAME_STROKE_WIDTH,theme::BORDER),
+        ui.painter().with_clip_rect(bounds.intersect(ui.clip_rect())).rect_stroke(
+            bounds,0.0,Stroke::new(theme::FRAME_STROKE_WIDTH,theme::BORDER),
             egui::StrokeKind::Inside);
     }
+}
+
+/// The measured native viewport is the single source of truth for the
+/// frame and the fixed separator. The right gutter is never a data column.
+#[derive(Clone,Copy,Debug)]
+struct TableGeometry{
+    frame:Rect,
+    separator:Option<Rect>,
+}
+
+impl TableGeometry{
+    fn new(layout:ManagementTableHeader,body:Rect,clip:Rect)->Self{
+        let header=layout.header_rect;
+        let mut frame=outline_bounds(header,body);
+        // A horizontal native rail lives below inner_rect, inside the frame.
+        // Both rails are reserved by management_fixed_table_scroll_area.
+        if layout.table_width>layout.header_content_rect.width()+0.01{
+            frame.max.y=(frame.bottom()+layout.scrollbar_gutter).min(clip.bottom())
+                .max(header.bottom());
+        }
+        let x=layout.header_content_rect.right();
+        let half=theme::FRAME_STROKE_WIDTH*0.5;
+        let separator=(layout.scrollbar_gutter>0.0&&x>frame.left()+half&&x<frame.right()-half)
+            .then(||Rect::from_min_max(
+                egui::pos2(x-half,header.top()+theme::FRAME_STROKE_WIDTH),
+                egui::pos2(x+half,body.bottom().max(header.bottom()))
+            ));
+        Self{frame,separator}
+    }
+    fn paint(self,ui:&Ui){
+        if let Some(rect)=self.separator{
+            let clip=self.frame.intersect(ui.clip_rect());
+            ui.painter().with_clip_rect(clip).rect_filled(rect,0.0,theme::BORDER);
+            #[cfg(test)]
+            crate::ui_test_support::record("table scrollbar separator",rect);
+        }
+        paint_frame(ui,self.frame);
+        #[cfg(test)]
+        crate::ui_test_support::record("table perimeter",self.frame);
+    }
+}
+
+/// ScrollArea supplies viewport coordinates relative to its content origin.
+/// Intersect with the actual physical viewport, not egui's expanded clip
+/// margin: overscan rows must never paint past the table frame.
+fn strict_viewport_clip(body:&Ui,viewport:Rect)->Rect{
+    viewport.translate(body.max_rect().min.to_vec2()).intersect(body.clip_rect())
 }
 
 /// Inline tables share the parent's scroll; stop at the current row cursor,
@@ -161,7 +211,7 @@ pub(crate) fn show<R>(
     // Draw directly on the existing UI; do not allocate a scope or alter
     // persistent widget IDs, the scroll salt, or keyboard focus.
     let (body,result)=draw(ui,layout);
-    finish(ui,layout.header_rect,body);
+    TableGeometry::new(layout,body,ui.clip_rect()).paint(ui);
     result
 }
 
@@ -190,8 +240,11 @@ pub(crate) struct Viewport {
     pub rail:Option<Rect>,
 }
 fn viewport_scroll(ui:&Ui,viewport:Viewport,id:impl std::hash::Hash)->egui::ScrollArea{
-    let mut scroll=management_fixed_table_scroll_area(ui,viewport.width);
-    if let Some(rail)=viewport.rail{scroll=scroll.scroll_bar_rect(rail);}
+    let scroll=management_fixed_table_scroll_area(ui,viewport.width);
+    // Native scrollbars are measured against the actual inner viewport.
+    // A caller's requested rail is only a layout/trace hint, not an override
+    // of the native track (especially when both axes are active).
+    let _=viewport.rail;
     scroll.id_salt(id).max_height(viewport.height).auto_shrink([false,false])
 }
 pub(crate) fn fixed_rows<R>(
@@ -218,7 +271,7 @@ pub(crate) fn variable_rows<R>(
         let visible_rect=Rect::from_min_size(
             egui::pos2(origin.x,origin.y+offsets[first]),
             Vec2::new(viewport.width,(offsets[last]-offsets[first]).max(0.0)));
-        let clip=body.clip_rect();
+        let clip=strict_viewport_clip(body,visible);
         body.scope_builder(egui::UiBuilder::new().id_salt(rows_id).max_rect(visible_rect),|visible|{
             visible.spacing_mut().item_spacing.y=0.0;
             visible.set_clip_rect(clip);
@@ -232,7 +285,12 @@ pub(crate) fn register_rows<R>(
     draw:impl FnOnce(&mut Ui)->R,
 )->egui::containers::scroll_area::ScrollAreaOutput<R>{
     management_register_list_scroll_area(ui,height).id_salt(id)
-        .show(ui,|body|{body.set_min_width(width);draw(body)})
+        .show_viewport(ui,|body,viewport|{
+            let clip=strict_viewport_clip(body,viewport);
+            body.set_clip_rect(clip);
+            body.set_min_width(width);
+            draw(body)
+        })
 }
 pub(crate) fn fixed_row_rect(origin:egui::Pos2,index:usize,first:usize,width:f32,height:f32)->Rect{
     Rect::from_min_size(egui::pos2(origin.x,origin.y+(index-first) as f32*height),
@@ -251,6 +309,7 @@ pub(crate) fn fixed_row<const N:usize>(
     widths:&[f32;N],gap:f32,tone:RowTone,draw:impl FnOnce(&mut Ui,[Rect;N]),
 ){
     row_scope(ui,id,rect,|row|{
+        row.set_clip_rect(row.clip_rect().intersect(rect));
         row.allocate_exact_size(rect.size(),egui::Sense::hover());
         if matches!(tone,RowTone::SelectedIf(true)){
             row.painter().rect_filled(rect,0.0,theme::WORKFLOW_SELECTED_BG);
@@ -367,8 +426,8 @@ fn management_master_header_sort_hover(ui:&Ui,hit:Rect){
 /// Fixed-header register lists retain a vertical-only rail and fixed viewport.
 /// The caller already installs the management table style and owns the height.
 pub fn management_register_list_scroll_area(ui:&Ui,height:f32)->egui::ScrollArea{
+    let _=management_table_scroll_track_rect(ui,height);
     crate::scrollbar::scroll_area(crate::scrollbar::ScrollAxes::Vertical)
-        .scroll_bar_rect(management_table_scroll_track_rect(ui,height))
         .scroll_bar_visibility(egui::containers::scroll_area::ScrollBarVisibility::VisibleWhenNeeded)
         .max_height(height)
         .auto_shrink([false,false])
@@ -402,7 +461,7 @@ pub fn virtual_fixed_rows<R>(
             egui::pos2(body.max_rect().left(),top),
             egui::vec2(content_width,(last-first) as f32*row_height),
         );
-        let clip=body.clip_rect();
+        let clip=strict_viewport_clip(body,viewport);
         body.scope_builder(
             egui::UiBuilder::new()
                 .id_salt("virtual-fixed-rows")
@@ -443,10 +502,8 @@ pub fn management_fixed_table_scroll_area(ui:&Ui,content_width:f32)->egui::Scrol
     })
 }
 
-/// One shared 7pt rail extension for EVERY management table, regardless of
-/// its page, outer frame or footer. Each caller owns ONLY the viewport height
-/// (and reserves its footer separately); the scrollbar offset is not a
-/// per-page layout policy. The native 3pt bottom inset leaves 4pt beyond rows.
+/// Requested viewport bounds for management-table layout and test traces.
+/// Native scrollbars use their actual viewport, never an extended rail.
 pub fn management_table_scroll_track_rect(
     ui:&Ui,scroll_height:f32
 )->Rect {
@@ -458,20 +515,15 @@ pub fn management_table_scroll_track_rect(
     track
 }
 
-/// The only place that computes top/bottom of a management table rail.
-/// The rail starts exactly below its fixed header (0pt gap); 7pt of common
-/// extension minus 3pt optical shortening puts its end 4pt past the body.
-/// The row viewport, data columns and any reserved footer stay unchanged.
+/// Requested rail coincides with the body viewport: no independent bottom
+/// extension or inset. The native scroll area handles horizontal reservation.
 pub(crate) fn management_table_scroll_track_geometry(
     bounds:Rect,scroll_height:f32
 )->Rect {
     debug_assert!(scroll_height.is_finite()&&scroll_height>=0.0);
     let rows_bottom=(bounds.top()+scroll_height).min(bounds.bottom());
-    let track_bottom=(rows_bottom+theme::MANAGEMENT_TABLE_SCROLL_RAIL_EXTENSION
-        -theme::MANAGEMENT_TABLE_SCROLL_TRACK_BOTTOM_INSET)
-        .max(bounds.top()+1.0);
-    let track_top=(bounds.top()+theme::MANAGEMENT_TABLE_SCROLL_TRACK_TOP_INSET)
-        .min(track_bottom-1.0);
+    let track_bottom=rows_bottom.max(bounds.top());
+    let track_top=bounds.top();
     Rect::from_min_max(
         egui::pos2(bounds.left(),track_top),
         egui::pos2(bounds.right(),track_bottom)

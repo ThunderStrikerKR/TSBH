@@ -876,17 +876,9 @@ pub const MANAGEMENT_MASTER_TABLE_BOTTOM_PADDING:f32=SECTION_PADDING;
 /// inset left a visible break beneath the full-width fixed-header border.
 /// Keep this zero for all management tables sharing that header role.
 pub const MANAGEMENT_TABLE_SCROLL_TRACK_TOP_INSET:f32=0.0;
-/// Retain a small clearance at the BOTTOM of the rail within the body
-/// viewport. This does not alter row clipping or the card's 12pt padding.
-pub const MANAGEMENT_TABLE_SCROLL_TRACK_BOTTOM_INSET:f32=3.0;
-
-/// One bottom extension for EVERY management-table scrollbar. The
-/// 3pt optical shortening is canceled and the rail extends 4pt beyond
-/// the rows' viewport. This applies to full-height and embedded tables;
-/// their viewport height / footer reservation remain independent.
-/// All management tables consume this value via components.rs only.
-pub const MANAGEMENT_TABLE_SCROLL_RAIL_EXTENSION:f32=
-    MANAGEMENT_TABLE_SCROLL_TRACK_BOTTOM_INSET+SPACE_4;
+/// Table rails end at the body boundary. Card padding is independent.
+pub const MANAGEMENT_TABLE_SCROLL_TRACK_BOTTOM_INSET:f32=0.0;
+pub const MANAGEMENT_TABLE_SCROLL_RAIL_EXTENSION:f32=0.0;
 
 /// The same outer gutter for Reception and every management page:
 /// 6pt CANVAS above, right and below; the KakaoTalk reservation stays

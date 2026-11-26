@@ -4567,7 +4567,7 @@ mod shared_card_scroll_rendering_tests {
                 (many.toolbar.top()-many.card.top(),edge,"card top"),
                 (many.card.bottom()-many.footer.bottom(),edge,"card bottom"),
                 (many.rail.top()-many.header.bottom(),0.0,"rail starts at header"),
-                (many.rail.bottom()-many.viewport.bottom(),4.0,"rail extension"),
+                (many.rail.bottom()-many.viewport.bottom(),0.0,"rail/body bottom"),
                 (many.header.height(),36.0,"header height"),
                 (many.header.right()-many.header_data.right(),10.0,"data gutter"),
                 (many.header_data.right()-many.viewport.right(),0.0,"header/rows edge"),
@@ -4933,18 +4933,19 @@ mod management_toolbar_geometry_tests {
         );
         let rows_bottom=bounds.bottom();
         let rail=management_table_scroll_track_geometry(bounds,bounds.height());
-        assert_eq!(theme::MANAGEMENT_TABLE_SCROLL_RAIL_EXTENSION,7.0);
+        assert_eq!(theme::MANAGEMENT_TABLE_SCROLL_RAIL_EXTENSION,0.0);
+        assert_eq!(theme::MANAGEMENT_TABLE_SCROLL_TRACK_BOTTOM_INSET,0.0);
         assert_eq!(theme::MANAGEMENT_TABLE_SCROLL_TRACK_TOP_INSET,0.0);
         assert_eq!(rail.top(),bounds.top()); // no gap under the header
-        assert_eq!(rail.bottom(),rows_bottom+theme::SPACE_4);
-        assert_eq!(rail.bottom(),788.0);
+        assert_eq!(rail.bottom(),rows_bottom);
+        assert_eq!(rail.bottom(),784.0);
 
         // Neither a list's footer nor a master card's 12pt lower inset
         // changes the shared rail offset. The scroll viewport is unchanged.
         for height in [120.0,400.0,484.0,1200.0] {
             let track=management_table_scroll_track_geometry(bounds,height);
             let viewport_bottom=(bounds.top()+height).min(bounds.bottom());
-            assert_eq!(track.bottom(),viewport_bottom+theme::SPACE_4);
+            assert_eq!(track.bottom(),viewport_bottom);
         }
         let tiny=management_table_scroll_track_geometry(bounds,1.0);
         assert!(tiny.height()>=1.0);
@@ -6877,7 +6878,8 @@ mod shared_general_screen_audit_tests {
         assert_eq!(theme::MANAGEMENT_TABLE_HEADER_OUTLINE_HEIGHT,2.0);
         assert_eq!(theme::SECTION_DIVIDER_GAP,12.0);
         assert_eq!(theme::SECTION_DIVIDER_HEIGHT,25.0);
-        assert_eq!(theme::MANAGEMENT_TABLE_SCROLL_RAIL_EXTENSION,7.0);
+        assert_eq!(theme::MANAGEMENT_TABLE_SCROLL_RAIL_EXTENSION,0.0);
+        assert_eq!(theme::MANAGEMENT_TABLE_SCROLL_TRACK_BOTTOM_INSET,0.0);
         let standard=crate::scrollbar::management_scroll_style();
         let table=crate::scrollbar::management_table_scroll_style();
         assert_eq!(standard.bar_width,10.0);
@@ -7030,8 +7032,13 @@ pub(crate) mod general_screen_geometry_tests {
             let header=first(&trace,"table header");
             let rail=first(&trace,"scroll rail");
             let rows=first(&trace,"row viewport");
+            let perimeter=first(&trace,"table perimeter");
+            let separator=first(&trace,"table scrollbar separator");
             for (a,b) in [(transition.bottom(),header.top()),(header.bottom(),rail.top()),
-                (header.bottom(),rows.top()),(card.left()+theme::SECTION_PADDING+theme::FRAME_STROKE_WIDTH,header.left()),
+                (header.bottom(),rows.top()),(rail.bottom(),rows.bottom()),
+                (perimeter.bottom(),rows.bottom()),(separator.bottom(),rows.bottom()),
+                (separator.center().x,header.right()-10.0),
+                (card.left()+theme::SECTION_PADDING+theme::FRAME_STROKE_WIDTH,header.left()),
                 (card.right()-theme::SECTION_PADDING-theme::FRAME_STROKE_WIDTH,header.right())]{
                 assert!((a-b).abs()<=0.5,"{name}: master boundary drift {a} -> {b}");
             }
