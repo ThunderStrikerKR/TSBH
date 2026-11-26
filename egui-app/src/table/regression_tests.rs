@@ -582,7 +582,9 @@ mod shared_ui_base_113_contract_tests {
             ("history",include_str!("../order_history_manager.rs")),
         ]{
             let production=production_source_for_contract(source);
-            assert!(production.contains("crate::table::fixed_rows(")||production.contains("crate::table::variable_rows("),"{name}");
+            assert!(["crate::table::fixed_rows(","crate::table::variable_rows(",
+                "crate::table::fixed_rows_snapshot(","crate::table::variable_rows_snapshot("]
+                .iter().any(|call|production.contains(*call)),"{name}");
             assert!(!production.contains("egui::ScrollArea::both()"),"{name}: local table scroll");
         }
     }

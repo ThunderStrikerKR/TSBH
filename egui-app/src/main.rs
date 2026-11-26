@@ -6834,7 +6834,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                             editor_ui.set_height(viewport.height());
                             crate::card::source_document_frame().show(editor_ui, |document_ui| {
                             crate::scrollbar::scroll_area(crate::scrollbar::ScrollAxes::Vertical)
-                            .id_salt("source-editor-vertical-scroll")
+                            .id_salt(("source-editor-vertical-scroll",self.active_id.as_deref()))
                             // The frame border/padding occupies the outer
                             // editor slot; only the text contents scroll.
                             .max_height((editor_height-theme::SPACE_8
@@ -8175,7 +8175,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                     }
                 }, |ui| {
                     crate::scrollbar::scroll_area(crate::scrollbar::ScrollAxes::Vertical)
-                        .id_salt("reception-review-content-scroll")
+                        .id_salt(("reception-review-content-scroll",self.active_id.as_deref()))
                         .max_height(crate::card::docked_section_body_height(review_height))
                         .auto_shrink([false, false])
                         .show(ui, |ui| {
@@ -8275,7 +8275,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                             // Match the React contact grid and allow only its
                             // content to scroll when the user narrows this pane.
                             crate::scrollbar::scroll_area(crate::scrollbar::ScrollAxes::Vertical)
-                                .id_salt("recognized-recipient-fields")
+                                .id_salt(("recognized-recipient-fields",self.active_id.as_deref(),recipient_id))
                                 .max_height(crate::card::docked_section_body_height(recipient_height)
                                     .min(ui.available_height().max(0.0)))
                                 .auto_shrink([false, false])
@@ -8403,7 +8403,8 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                             ==Some(self.raw_source.as_str()));
                     let quote_index=preview.map(indexed_quote);
                     crate::ui_layout::reception_docked_goods_scroll(
-                        ui,remaining,"recognized-items",true,|items_ui|{
+                        ui,remaining,("recognized-items",self.active_id.clone(),
+                            selected.map(|r|reception_service::text(r,"id").to_owned())),true,|items_ui|{
                                     crate::table::inline(items_ui,crate::table::InlineHeader::Reception{editable:true},|items_ui|{
                                     if let Some(recipient)=selected {
                                         let recipient_id=reception_service::text(recipient,"id");

@@ -498,7 +498,7 @@ impl CategoryManager {
             crate::ui_test_support::record("catalog data row",response.rect);
         }
         if self.scroll_to.as_deref()==Some(item.id.as_str()){
-            response.scroll_to_me(Some(Align::Center));self.scroll_to=None;
+            response.scroll_to_me(None);self.scroll_to=None;
         }
         if response.clicked()&&!locked{
             self.select_map(cats,&item.id,ui.input(|i|i.time));

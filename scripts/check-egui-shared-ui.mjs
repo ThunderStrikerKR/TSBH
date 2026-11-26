@@ -78,14 +78,16 @@ const masterContract = {
   show:1,fixed_rows:1,fixed_row:1,fixed_row_rect:1,
   management_table_cells:1,header_columns:1,heading:1,sort_clicked:1,
 };
+const {fixed_rows: _fixedRows,...masterOtherCalls}=masterContract;
+const snapshotMasterContract={...masterOtherCalls,fixed_rows_snapshot:1};
 const tableContracts = {
-  "product_manager.rs:show_page":masterContract,
+  "product_manager.rs:show_page":snapshotMasterContract,
   "freight_manager.rs:show_groups":masterContract,
   "freight_manager.rs:show_rates":masterContract,
   "freight_manager.rs:freight_history_table":masterContract,
-  "excel_manager.rs:table":masterContract,
-  "daily_settlement_manager.rs:report_table":masterContract,
-  "order_history_manager.rs:show_page":{show:1,variable_rows:1,history_row:1,
+  "excel_manager.rs:table":snapshotMasterContract,
+  "daily_settlement_manager.rs:report_table":snapshotMasterContract,
+  "order_history_manager.rs:show_page":{show:1,variable_rows_snapshot:1,history_row:1,
     management_table_cells:1,header_columns:1,heading:1,sort_clicked:1},
   "order_history_manager.rs:draw_line":{management_table_cells:1},
   "order_history_manager.rs:history_detail_cells":{shipment_detail_cells:1},
@@ -98,7 +100,7 @@ const tableContracts = {
     shipment_detail_block_height:1,paint_shipment_detail_surface:1,
     paint_shipment_detail_products:2,paint_table_galley:1
   },
-  "client_manager.rs:show_page":{show:1,fixed_rows:1,row_scope:1,management_row:1,management_client_header:1},
+  "client_manager.rs:show_page":{show:1,fixed_rows_snapshot:1,row_scope:1,management_row:1,management_client_header:1},
   "client_chooser.rs:show":{show:1,fixed_rows:1,row_scope:1,management_row:1,management_client_header:1},
   "alias_manager.rs:show_page":{show:1,register_rows:1},
   "brand_manager.rs:show_page":{show:1,register_rows:1},
@@ -139,17 +141,19 @@ const tableOwnerContracts = {
   "table/mod.rs:paint_management_table_row_background":{management_table_row_fill:1,".rect_filled":1},
   "table/mod.rs:paint_management_table_row_rule":{"theme::paint_soft_rule":1},
   "table/mod.rs:management_master_column_rules":{"theme::paint_soft_rule":1},
-  "table/mod.rs:fixed_rows":{viewport_scroll:1,virtual_fixed_rows:1},
-  "table/mod.rs:variable_rows":{viewport_scroll:1,management_table_row_body:1,strict_viewport_clip:1,".set_clip_rect":1},
+  "table/mod.rs:fixed_rows":{fixed_rows_snapshot:1},
+  "table/mod.rs:fixed_rows_snapshot":{viewport_scroll:1,virtual_fixed_rows:1,"ScrollCapture::begin":1,".finish":1},
+  "table/mod.rs:variable_rows":{variable_rows_snapshot:1},
+  "table/mod.rs:variable_rows_snapshot":{viewport_scroll:1,management_table_row_body:1,strict_viewport_clip:1,".set_clip_rect":1,"ScrollCapture::begin":1,".finish":1},
   "table/mod.rs:viewport_scroll":{management_fixed_table_scroll_area:1},
   "table/mod.rs:register_rows":{management_register_list_scroll_area:1,strict_viewport_clip:1,".set_clip_rect":1},
 };
-const tableOnlyCalls = new Set(["show","fixed_rows","fixed_row","fixed_row_rect",
-  "variable_rows","history_row","header_columns","heading","sort_clicked","row_scope",
+const tableOnlyCalls = new Set(["show","fixed_rows","fixed_rows_snapshot","fixed_row","fixed_row_rect",
+  "variable_rows","variable_rows_snapshot","history_row","header_columns","heading","sort_clicked","row_scope",
   "register_rows","master_header_begin","header_finish"]);
 const tableMarkers = new Set(["management_table_cells","management_table_column_rules",
   "management_row","management_readonly_table","shipment_detail_cells",
-  "fixed_rows","variable_rows","fixed_row","history_row","header_columns","register_rows"]);
+  "fixed_rows","fixed_rows_snapshot","variable_rows","variable_rows_snapshot","fixed_row","history_row","header_columns","register_rows"]);
 const componentContractCalls = new Set(Object.entries(tableContracts)
   .filter(([scope])=>scope.startsWith("composite_workflow.rs:"))
   .flatMap(([,entries])=>Object.keys(entries)));

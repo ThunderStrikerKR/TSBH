@@ -257,16 +257,39 @@ pub(crate) fn fixed_rows<R>(
     ui:&mut Ui,viewport:Viewport,id:impl std::hash::Hash,
     row_height:f32,count:usize,draw:impl FnOnce(&mut Ui,std::ops::Range<usize>)->R,
 )->egui::containers::scroll_area::ScrollAreaOutput<R>{
-    let scroll=viewport_scroll(ui,viewport,id);
-    virtual_fixed_rows(scroll,ui,viewport.width,row_height,count,draw)
+    fixed_rows_snapshot(ui,viewport,id,row_height,count,true,None,draw)
+}
+pub(crate) fn fixed_rows_snapshot<R>(
+    ui:&mut Ui,viewport:Viewport,id:impl std::hash::Hash,
+    row_height:f32,count:usize,ready:bool,keys:Option<&[String]>,
+    draw:impl FnOnce(&mut Ui,std::ops::Range<usize>)->R,
+)->egui::containers::scroll_area::ScrollAreaOutput<R>{
+    let rows=keys.map(|keys|crate::scrollbar::ScrollRows{keys,
+        geometry:crate::scrollbar::RowGeometry::Fixed(row_height)});
+    let scroll=viewport_scroll(ui,viewport,&id);
+    let (scroll,capture)=crate::scrollbar::ScrollCapture::begin(ui,&id,scroll,ready,rows);
+    let output=virtual_fixed_rows(scroll,ui,viewport.width,row_height,count,draw);
+    capture.finish(ui,&output,rows);
+    output
 }
 pub(crate) fn variable_rows<R>(
     ui:&mut Ui,viewport:Viewport,id:impl std::hash::Hash,rows_id:impl std::hash::Hash,
     offsets:&[f32],draw:impl FnOnce(&mut Ui,egui::Pos2,std::ops::Range<usize>)->R,
 )->egui::containers::scroll_area::ScrollAreaOutput<R>{
+    variable_rows_snapshot(ui,viewport,id,rows_id,offsets,true,None,draw)
+}
+pub(crate) fn variable_rows_snapshot<R>(
+    ui:&mut Ui,viewport:Viewport,id:impl std::hash::Hash,rows_id:impl std::hash::Hash,
+    offsets:&[f32],ready:bool,keys:Option<&[String]>,
+    draw:impl FnOnce(&mut Ui,egui::Pos2,std::ops::Range<usize>)->R,
+)->egui::containers::scroll_area::ScrollAreaOutput<R>{
     debug_assert!(!offsets.is_empty());
     let count=offsets.len().saturating_sub(1);
-    viewport_scroll(ui,viewport,id).show_viewport(ui,|body,visible|{
+    let rows=keys.map(|keys|crate::scrollbar::ScrollRows{keys,
+        geometry:crate::scrollbar::RowGeometry::Variable(offsets)});
+    let scroll=viewport_scroll(ui,viewport,&id);
+    let (scroll,capture)=crate::scrollbar::ScrollCapture::begin(ui,&id,scroll,ready,rows);
+    let output=scroll.show_viewport(ui,|body,visible|{
         management_table_row_body(body,viewport.width);
         body.set_min_height(*offsets.last().unwrap_or(&0.0));
         let first=offsets.partition_point(|value|*value<=visible.top())
@@ -284,19 +307,24 @@ pub(crate) fn variable_rows<R>(
             visible.skip_ahead_auto_ids(first);
             draw(visible,origin,first..last)
         }).inner
-    })
+    });
+    capture.finish(ui,&output,rows);
+    output
 }
 pub(crate) fn register_rows<R>(
     ui:&mut Ui,height:f32,width:f32,id:impl std::hash::Hash,
     draw:impl FnOnce(&mut Ui)->R,
 )->egui::containers::scroll_area::ScrollAreaOutput<R>{
-    management_register_list_scroll_area(ui,height).id_salt(id)
-        .show_viewport(ui,|body,viewport|{
+    let scroll=management_register_list_scroll_area(ui,height).id_salt(&id);
+    let (scroll,capture)=crate::scrollbar::ScrollCapture::begin(ui,&id,scroll,true,None);
+    let output=scroll.show_viewport(ui,|body,viewport|{
             let clip=strict_viewport_clip(body,viewport);
             body.set_clip_rect(clip);
             body.set_min_width(width);
             draw(body)
-        })
+        });
+    capture.finish(ui,&output,None);
+    output
 }
 pub(crate) fn fixed_row_rect(origin:egui::Pos2,index:usize,first:usize,width:f32,height:f32)->Rect{
     Rect::from_min_size(egui::pos2(origin.x,origin.y+(index-first) as f32*height),

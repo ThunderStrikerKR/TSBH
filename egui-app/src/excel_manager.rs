@@ -310,6 +310,7 @@ fn table_state_body_rect(
 fn table<const N:usize>(
     ui:&mut Ui,id:&str,titles:[&str;N],base:[f32;N],
     align:[Align2;N],stretch:usize,rows:usize,
+    ready:bool,scroll_keys:&[String],
     height_policy:ExcelTableHeightPolicy,
     sort:&mut Option<Sort>,sort_enabled:[bool;N],
     header_selection:Option<(bool,bool)>,
@@ -340,9 +341,9 @@ fn table<const N:usize>(
         ui,scroll_max_height
     );
     let mut left=None;
-    let output=crate::table::fixed_rows(
+    let output=crate::table::fixed_rows_snapshot(
                 ui,crate::table::Viewport{width:width,height:scroll_max_height,rail:Some(scroll_track)},
-                id,HEIGHT,rows,
+                id,HEIGHT,rows,ready,Some(scroll_keys),
                 |body,range|{
             let first=range.start;
             let origin=body.max_rect().min;
@@ -1029,11 +1030,12 @@ impl ExcelManager{
                     self.tab,&self.query,history.len(),self.receiver.is_some(),
                     self.error.is_some()
                 );
+                let scroll_keys=order_list.iter().map(|entry|text(&entry.export,"id").to_owned()).collect::<Vec<_>>();
                 let _=table(section,"excel-history-table",
                     ["작성 일시","거래처","상품 목록","조회"],
                     HISTORY,[Align2::LEFT_CENTER,Align2::LEFT_CENTER,
                         Align2::LEFT_CENTER,Align2::CENTER_CENTER],
-                    2,indexes.len(),
+                    2,indexes.len(),state.is_some(),&scroll_keys,
                     ExcelTableHeightPolicy::FillCard{card_min_height},
                     &mut self.sort_history,
                     [true,true,true,false],None,empty_message,|row,cells,i|{
@@ -1078,12 +1080,13 @@ impl ExcelManager{
                     self.tab,&self.query,records.len(),self.receiver.is_some(),
                     self.error.is_some()
                 );
+                let scroll_keys=records.iter().map(|entry|entry.id().to_owned()).collect::<Vec<_>>();
                 let toggle_all=table(section,"excel-queue-table",
                     ["선택","거래처 / 발주","수취인 / 배송 품목","금액","처리"],
                     QUEUE,[Align2::CENTER_CENTER,Align2::LEFT_CENTER,
                         Align2::LEFT_CENTER,Align2::RIGHT_CENTER,
                         Align2::CENTER_CENTER],
-                    2,records.len(),queue_height_policy,
+                    2,records.len(),state.is_some(),&scroll_keys,queue_height_policy,
                     &mut self.sort_queue,
                     [false,true,true,true,false],Some((all,!visible.is_empty())),
                     empty_message,|row,cells,index|{

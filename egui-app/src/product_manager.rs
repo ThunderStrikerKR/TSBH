@@ -1293,9 +1293,11 @@ impl ProductManager {
                 panel,scroll_max_height
             );
             let mut row_left=None;
-            let scroll_output=crate::table::fixed_rows(
+            let scroll_keys=ordered.iter().map(|i|field(&self.products[*i],"id").to_owned()).collect::<Vec<_>>();
+            let scroll_output=crate::table::fixed_rows_snapshot(
                 panel,crate::table::Viewport{width:table_width,height:scroll_max_height,rail:Some(scroll_track)},
                 "egui-product-price-grid",theme::PRODUCT_TABLE_ROW_HEIGHT,ordered.len(),
+                self.catalog.is_some()&&!self.result.pending()&&self.next_query.is_none(),Some(&scroll_keys),
                 |table,visible_rows|{
                     crate::table::management_table_row_body(table,table_width);
                     theme::apply_table_row_colors(table);

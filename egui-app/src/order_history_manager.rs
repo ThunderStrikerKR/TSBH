@@ -1408,9 +1408,22 @@ impl OrderHistoryManager {
             // ScrollArea exposed a bottom scrollbar even at desktop widths.
             // Only allow horizontal scrolling if the viewport is actually
             // narrower than the seven-column minimum.
-            let output=crate::table::variable_rows(
+            let scroll_keys=lines.iter().map(|line|{
+                let Some(data)=snapshot else{return String::new();};
+                match *line{
+                    HistoryLine::Order(i)=>format!("order:{}",field(&data.rows[i]["order"],"id")),
+                    HistoryLine::Recipient(i,j,k)=>{
+                        let order=&data.rows[i];
+                        let recipient=rows(&order["recipients"]).get(j).map(|r|field(r,"id")).unwrap_or("");
+                        let shipment=k.and_then(|i|rows(&data.state["workflow"]["shipments"]).get(i))
+                            .map(|r|field(r,"id")).unwrap_or("");
+                        format!("recipient:{}:{recipient}:{shipment}",field(&order["order"],"id"))
+                    }
+                }
+            }).collect::<Vec<_>>();
+            let output=crate::table::variable_rows_snapshot(
                 section,crate::table::Viewport{width:table_width,height:scroll_max_height,rail:Some(scroll_track)},
-                "order-history-table-rows","history-variable-rows",&offsets,|visible,origin,range|{
+                "order-history-table-rows","history-variable-rows",&offsets,snapshot.is_some(),Some(&scroll_keys),|visible,origin,range|{
                             for line_index in range {
                                 let line=lines[line_index];
                                 let spacing=detail_spacings[line_index];

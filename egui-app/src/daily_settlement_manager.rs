@@ -273,7 +273,7 @@ fn paint_cell(
 fn report_table<const N:usize>(
     ui:&mut Ui,id:&str,headings:[&str;N],base:[f32;N],
     align:[Align2;N],roles:[typography::ManagementTableCellRole;N],
-    stretch_column:usize,indices:&[usize],
+    stretch_column:usize,indices:&[usize],ready:bool,scroll_keys:&[String],
     sort:&mut Option<Sort>,empty_notice:Option<&str>,format_row:impl Fn(usize)->[String;N],
 ){
     let previous_gap=crate::table::management_table_container_style(ui);
@@ -294,9 +294,9 @@ fn report_table<const N:usize>(
         ui,scroll_max_height
     );
     let mut first_x=None;
-    let scroll=crate::table::fixed_rows(
+    let scroll=crate::table::fixed_rows_snapshot(
                 ui,crate::table::Viewport{width:width,height:scroll_max_height,rail:Some(scroll_track)},
-                id,ROW_HEIGHT,indices.len(),
+                id,ROW_HEIGHT,indices.len(),ready,Some(scroll_keys),
                 |list,visible_rows|{
             crate::table::management_table_row_body(list,width);
             let first=visible_rows.start;
@@ -476,11 +476,13 @@ impl DailySettlementManager{
             -ui.spacing().scroll.allocated_width()
             -2.0*theme::SECTION_PADDING
             -2.0*theme::FRAME_STROKE_WIDTH).max(1.0);
-        crate::scrollbar::scroll_area(crate::scrollbar::ScrollAxes::Vertical)
+        let scroll=crate::scrollbar::scroll_area(crate::scrollbar::ScrollAxes::Vertical)
             .id_salt("daily-settlement-sections")
             .max_width(section_viewport_width)
-            .auto_shrink([false,false])
-            .show(ui,|body|{
+            .auto_shrink([false,false]);
+        let (scroll,capture)=crate::scrollbar::ScrollCapture::begin(ui,"daily-settlement-sections",
+            scroll,visible_report.is_some(),None);
+        let output=scroll.show(ui,|body|{
                 crate::card::measured_management_section_card(body,|section|{
                     // Keep the section inside the bounded vertical viewport;
                     // its report rows own their independent horizontal scroll.
@@ -533,6 +535,7 @@ impl DailySettlementManager{
                     });
                     crate::ui_primitives::section_divider(section);
                     let indices=sorted_indices(orders,self.order_sort,false);
+                    let scroll_keys=indices.iter().map(|i|field(&orders[*i],"orderId").to_owned()).collect::<Vec<_>>();
                     report_table(
                         section,"settlement-orders",
                         ["거래처 / 상태","결제 방식","상품대금","청구 배송비",
@@ -545,7 +548,7 @@ impl DailySettlementManager{
                         [typography::ManagementTableCellRole::ClientName,typography::ManagementTableCellRole::Status,
                          typography::ManagementTableCellRole::Money,typography::ManagementTableCellRole::Money,typography::ManagementTableCellRole::Money,typography::ManagementTableCellRole::RowTotal,
                          typography::ManagementTableCellRole::Money,typography::ManagementTableCellRole::Money],
-                        0,&indices,&mut self.order_sort,
+                        0,&indices,visible_report.is_some(),&scroll_keys,&mut self.order_sort,
                         if visible_report.is_none(){
                             if date_changed||loading{None}else{Some(unavailable.as_ref())}
                         }else if orders.is_empty(){Some("해당 날짜에 접수한 주문이 없습니다.")}else{None},
@@ -591,6 +594,7 @@ impl DailySettlementManager{
                     });
                     crate::ui_primitives::section_divider(section);
                     let indices=sorted_indices(payments,self.payment_sort,true);
+                    let scroll_keys=indices.iter().map(|i|field(&payments[*i],"id").to_owned()).collect::<Vec<_>>();
                     report_table(
                         section,"settlement-payments",
                         ["입금 일시","거래처","계좌","실제 입금액",
@@ -602,7 +606,7 @@ impl DailySettlementManager{
                         [typography::ManagementTableCellRole::Text,typography::ManagementTableCellRole::ClientName,typography::ManagementTableCellRole::Description,
                          typography::ManagementTableCellRole::Money,typography::ManagementTableCellRole::Money,typography::ManagementTableCellRole::Money,
                          typography::ManagementTableCellRole::Description],
-                        6,&indices,&mut self.payment_sort,
+                        6,&indices,visible_report.is_some(),&scroll_keys,&mut self.payment_sort,
                         if visible_report.is_some()&&payments.is_empty(){
                             Some("해당 날짜의 실제 입금 기록이 없습니다.")
                         }else{None},
@@ -635,6 +639,7 @@ impl DailySettlementManager{
                     });
                 });
             });
+        capture.finish(ui,&output,None);
         if date_changed{self.refresh(ui.ctx().clone());}
     }
 }

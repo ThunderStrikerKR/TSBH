@@ -19,6 +19,8 @@ pub(crate) struct ExplorerState {
     ancestors_open:bool,
     motion:Option<Motion>,
     pub(crate) scroll_epoch:u64,
+    scroll_positions:HashMap<Vec<String>,f32>,
+    restore_scroll:Option<f32>,
 }
 
 pub fn nodes_from_catalog(catalog:&Value)->Vec<CategoryNode>{
@@ -96,6 +98,7 @@ pub(crate) fn navigate(state:&mut ExplorerState,path:Vec<String>){
     state.search.clear();
     state.ancestors_open=false;
     state.motion=None;
+    state.restore_scroll=None;
 }
 fn commit_path(state:&ExplorerState,selected:&mut String,changed:&mut bool,
     enabled:bool,allow_empty:bool)->bool{
@@ -177,13 +180,17 @@ fn begin_move(state:&mut ExplorerState,path:Vec<String>,nodes:&[CategoryNode],
     let source_index=if source_depth==0{0}else{
         direct_children(nodes,index,old_parent).iter().position(|n|Some(&n.id)==source_path.last()).unwrap_or(0)+1
     };
-    let (source_y,source_scroll)=source.unwrap_or((source_index as f32*row_h,0.0));
+    let previous=state.scroll_positions.get(&old_context).copied().unwrap_or(0.0);
+    let (source_y,source_scroll)=source.unwrap_or((source_index as f32*row_h-previous,previous));
+    state.scroll_positions.insert(old_context.clone(),source_scroll);
     let (target_y,target_depth,target_scroll)=if reverse{
         let dest=path.last().map(String::as_str).unwrap_or("");
         let branch=state.path.get(path.len());
         let pos=direct_children(nodes,index,dest).iter().position(|n|Some(&n.id)==branch).unwrap_or(0)+1;
         let raw=pos as f32*row_h;
-        let scroll=(raw+row_h-height).max(0.0);
+        // Keep the last parent viewport unless the returning branch is outside it.
+        let saved=state.scroll_positions.get(&new_context).copied().unwrap_or(0.0);
+        let scroll=saved.clamp((raw+row_h-height.max(row_h)).max(0.0),raw.max(0.0));
         (raw-scroll,1,scroll)
     }else{(0.0,0,0.0)};
     let m=Motion{from:state.path.clone(),to:path,started:now,
@@ -276,7 +283,11 @@ pub(crate) fn crumbs_row(ui:&mut Ui,state:&mut ExplorerState,index:&HashMap<&str
 impl ExplorerState{
     pub(crate) fn moving(&self)->bool{self.motion.is_some()}
     pub(crate) fn finish_motion(&mut self){
-        if let Some(m)=self.motion.take(){navigate(self,m.to);}
+        if let Some(m)=self.motion.take(){
+            let offset=m.target_scroll;
+            navigate(self,m.to);
+            self.restore_scroll=Some(offset);
+        }
     }
 }
 fn menu_body(
@@ -313,7 +324,7 @@ pub(crate) fn explorer_body(menu:&mut Ui,nodes:&[CategoryNode],index:&HashMap<&s
     totals:Option<&HashMap<String,usize>>){
     let now=menu.input(|i|i.time);
     if let Some(m)=state.motion.clone(){
-        if m.elapsed(now)>=450.0{navigate(state,m.to);menu.ctx().request_repaint();}
+        if m.elapsed(now)>=450.0{state.finish_motion();menu.ctx().request_repaint();}
         else{menu.ctx().request_repaint();}
     }
     let motion=state.motion.clone();
@@ -348,9 +359,10 @@ pub(crate) fn explorer_body(menu:&mut Ui,nodes:&[CategoryNode],index:&HashMap<&s
         }
         body.vertical(|tree_ui|{
             let mut scroll=crate::scrollbar::scroll_area(crate::scrollbar::ScrollAxes::Vertical)
-                .id_salt(("category-explorer-list",state.scroll_epoch,context.clone(),state.search.clone()))
+                .id_salt(("category-explorer-list",state.scroll_epoch,context.clone(),state.search.clone(),busy))
                 .max_height(list_height).auto_shrink([false,false]);
             if let Some(m)=&motion{scroll=scroll.vertical_scroll_offset(if final_phase{m.target_scroll}else{m.source_scroll});}
+            else if let Some(offset)=state.restore_scroll.take(){scroll=scroll.vertical_scroll_offset(offset);}
             let output=scroll.show(tree_ui,|list|{
                 list.spacing_mut().item_spacing.y=0.0;
                 let top=list.next_widget_position().y;
@@ -394,6 +406,7 @@ pub(crate) fn explorer_body(menu:&mut Ui,nodes:&[CategoryNode],index:&HashMap<&s
                     paint_row(list,&label,path,usize::from(!searching),i+1==items.len(),has_children,false);
                 }
             });
+            if !busy&&!searching{state.scroll_positions.insert(context.clone(),output.state.offset.y);}
             if let Some(m)=&motion{
                 let (x,y)=motion_pose(m,t);
                 let clip=output.inner_rect.intersect(tree_ui.clip_rect());
@@ -534,6 +547,19 @@ mod tests{
         assert_eq!(m.duration,1.0);
         assert_eq!(motion_pose(&m,260.0),(0.0,42.0));
         assert_eq!(motion_pose(&m,360.0),(theme::CATALOG_TREE_INDENT,42.0));
+    }
+    #[test]
+    fn reverse_motion_reuses_parent_viewport_without_overwriting_it(){
+        let nodes=fixture();let index=tree_index(&nodes);
+        let mut state=ExplorerState::default();
+        let root=vec!["root".to_owned()];
+        navigate(&mut state,chain(&index,"node-0"));
+        state.scroll_positions.insert(root.clone(),20.0);
+        begin_move(&mut state,root.clone(),&nodes,&index,0.0,None,252.0);
+        assert_eq!(state.motion.as_ref().unwrap().target_scroll,20.0);
+        state.finish_motion();
+        assert_eq!(state.restore_scroll,Some(20.0));
+        assert_eq!(state.scroll_positions.get(&root),Some(&20.0));
     }
     #[test]
     fn leaf_selection_is_pending_and_retains_siblings(){
