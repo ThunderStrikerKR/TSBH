@@ -401,7 +401,7 @@ pub struct ProductManager {
     order_cache:crate::screen_refresh::ViewProjectionCache<Option<ProductSort>,Vec<usize>>,
     query:String,
     tab:usize,
-    tab_snapshots:crate::navigation::NavigationSnapshots<5>,
+    tab_snapshots:crate::view_state::NavigationSnapshots<5>,
     category_manager:CategoryManager,
     model_groups:ModelGroupManager,
     aliases:AliasManager,
@@ -459,7 +459,7 @@ impl ProductManager {
         let mut page=Self {
             gateway,selection_client:None,selection_result:None,focus_search:false,
             catalog:None,products:Vec::new(),order_cache:Default::default(),
-            query:String::new(),tab:0,tab_snapshots:crate::navigation::NavigationSnapshots::new(0),
+            query:String::new(),tab:0,tab_snapshots:crate::view_state::NavigationSnapshots::new(0),
             category_manager:CategoryManager::default(),
             model_groups:ModelGroupManager::default(),
             aliases:AliasManager::default(),
@@ -535,7 +535,7 @@ impl ProductManager {
     }
     pub(crate) fn reset_navigation(&mut self,ctx:Context){
         if self.writing.is_some()||self.has_pending_prices()||self.excel.blocks_navigation()||self.selected.is_some(){return;}
-        self.tab=0;self.tab_snapshots=crate::navigation::NavigationSnapshots::new(0);
+        self.tab=0;self.tab_snapshots=crate::view_state::NavigationSnapshots::new(0);
         self.query.clear();self.category.clear();self.brand.clear();self.missing=false;
         self.sort=None;self.selected_variants.clear();self.order_cache.invalidate();self.price_mode=false;
         self.category_manager.reset_navigation();
