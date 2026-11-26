@@ -141,6 +141,24 @@ pub fn dropdown_value_job(source:&egui::text::LayoutJob,option:bool,color:Color3
     job
 }
 
+/// Shared count + optional won label. Keep zero distinct from missing,
+/// and never put units or unconfirmed placeholders in the numeric font.
+pub fn inline_quantity_amount(
+    prefix:&str,count:usize,between:&str,amount:Option<i64>,missing:&str,metadata:bool
+)->egui::text::LayoutJob{
+    let count=count.to_string();
+    let amount=amount.map(crate::components::display_won);
+    let (value,kind,unit)=match amount.as_deref(){
+        Some(value)=>(value.strip_suffix("원").unwrap_or(value),Some(DataValueKind::Money),"원"),
+        None=>(missing,None,""),
+    };
+    let parts=[
+        (prefix,None),(&count,Some(DataValueKind::Quantity)),
+        (between,None),(value,kind),(unit,None)
+    ];
+    if metadata{inline_metadata_values(&parts)}else{inline_body_values(&parts)}
+}
+
 pub fn inline_body_money(prefix:&str,amount:&str)->egui::text::LayoutJob {
     inline_body_values(&[
         (prefix,None),(amount,Some(DataValueKind::Money))
@@ -969,6 +987,26 @@ mod management_table_type_roles_tests {
                     else{FontId::proportional(size)};
                 assert_eq!(section.format.font_id,expected);
                 assert_eq!(section.format.color,egui::Color32::TRANSPARENT);
+            }
+        }
+    }
+
+    #[test]
+    fn quantity_amount_label_preserves_units_missing_zero_and_metadata(){
+        for metadata in [false,true]{
+            let size=if metadata{FONT_METADATA}else{FONT_BODY};
+            for (amount,expected) in [(Some(73700),"73,700원"),(Some(0),"0원"),(None,"—")]{
+                let job=inline_quantity_amount("709 / 배송 ",2,"건 / ",amount,"—",metadata);
+                assert_eq!(job.text,format!("709 / 배송 2건 / {expected}"));
+                assert_eq!(job.sections[0].format.font_id,FontId::proportional(size));
+                assert_eq!(job.sections[1].format.font_id,FontId::monospace(size));
+                assert_eq!(job.sections[2].format.font_id,FontId::proportional(size));
+                assert_eq!(job.sections[3].format.font_id,if amount.is_some(){
+                    FontId::monospace(size)
+                }else{FontId::proportional(size)});
+                if amount.is_some(){
+                    assert_eq!(job.sections[4].format.font_id,FontId::proportional(size));
+                }
             }
         }
     }
