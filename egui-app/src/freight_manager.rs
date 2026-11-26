@@ -276,6 +276,13 @@ fn group_name<'a>(groups: &'a [Value], id: &str) -> &'a str {
 
 /// The read-only tariff summary is derived from the group's effective Rust
 /// record, never independently recomputed at the product level.
+/// Both quantity selectors in the freight editor share one semantic label.
+fn bundle_quantity_label(count:&str)->egui::text::LayoutJob{
+    typography::inline_body_values(&[
+        (count,Some(typography::DataValueKind::Quantity)),("개",None)
+    ])
+}
+
 fn group_bundle_summary(rule: &Value) -> String {
     if rule["maxConfirmed"] == true {
         rule["maxBundle"].as_i64()
@@ -2261,15 +2268,16 @@ impl FreightManager {
         ui.horizontal(|line|{
             components::form_field_label(line,"최대 묶음포장 수량");
             line.add_enabled_ui(enabled,|input|{
-                components::management_dropdown(
-                    input,&editor.max_bundle
-                        .map(|v|format!("{v}개")).unwrap_or_else(||"미확정".into()),
+                let caption=editor.max_bundle.map(|n|bundle_quantity_label(&n.to_string()))
+                    .unwrap_or_else(||typography::inline_body_values(&[("미확정",None)]));
+                components::management_dropdown_values(
+                    input,&caption,
                     theme::MANAGEMENT_FILTER_DROPDOWN_WIDTH,true,|choice|{
                         components::management_dropdown_option(
                             choice,&mut editor.max_bundle,None,"미확정");
                         for n in 1..=6 {
-                            components::management_dropdown_option(
-                                choice,&mut editor.max_bundle,Some(n),&format!("{n}개"));
+                            components::management_dropdown_option_values(
+                                choice,&mut editor.max_bundle,Some(n),&bundle_quantity_label(&n.to_string()));
                         }
                     });
             });
@@ -2301,15 +2309,15 @@ impl FreightManager {
         if !available.is_empty(){
             ui.horizontal(|line|{
                 line.add_enabled_ui(enabled,|input|{
-                    components::management_dropdown(
-                        input,&editor.add_count
-                            .map(|n|format!("{n}개"))
-                            .unwrap_or_else(||"묶음 수량 선택".into()),
+                    let caption=editor.add_count.map(|n|bundle_quantity_label(&n.to_string()))
+                        .unwrap_or_else(||typography::inline_body_values(&[("묶음 수량 선택",None)]));
+                    components::management_dropdown_values(
+                        input,&caption,
                         theme::MANAGEMENT_FILTER_DROPDOWN_WIDTH,true,|choice|{
                             for count in &available{
-                                components::management_dropdown_option(
+                                components::management_dropdown_option_values(
                                     choice,&mut editor.add_count,
-                                    Some(*count),&format!("{count}개")
+                                    Some(*count),&bundle_quantity_label(&count.to_string())
                                 );
                             }
                         });
