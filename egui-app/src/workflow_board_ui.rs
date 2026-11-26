@@ -633,12 +633,10 @@ fn workflow_details<R>(
     ui.add_space(theme::WORKFLOW_CARD_PADDING_Y);
     result
 }
-/// This expanded view is an intentionally plain shipment LIST, not the
-/// management master table. The products are ordinary single-line text,
-/// without the previous chip fill/border or three-column freight header.
+/// Like order-history detail, keep each product independently visible.
 fn shipment_product_summary(products:&[String])->String{
     if products.is_empty(){"◆ 상품 확인".to_owned()}
-    else{format!("◆ {}",products.join("  ·  ◆ "))}
+    else{format!("◆ {}",products.join("\n◆ "))}
 }
 
 /// Native shipment rows share the SAME linked-preview fill, ink and inset
@@ -731,6 +729,7 @@ fn group_frame(
             workflow_details(ui,|ui|{
                 components::soft_divider(ui);
                 ui.add_space(theme::SPACE_4);
+                components::workflow_shipment_header(ui);
             for ship in &group.shipments{
                 // Orange means committed selection ONLY on the base card.
                 // Blue means the temporarily hovered row ONLY in the clone.
@@ -925,6 +924,7 @@ fn pending_frame(
             workflow_details(ui,|ui|{
                 components::soft_divider(ui);
                 ui.add_space(theme::SPACE_4);
+                components::workflow_shipment_header(ui);
             if recipients.is_empty(){
                 let excerpt=draft.raw.lines().find(|s|!s.trim().is_empty())
                     .unwrap_or("새 발주서");
@@ -961,7 +961,17 @@ fn pending_frame(
                     );
                     let previewed=displayed==Some(recipient_id)
                         && !recipient_id.is_empty() && !chosen;
-                    let response=shipment_line(ui,name,&products,chosen,previewed);
+                    let freight=if recipient["freightCode"].as_str()==Some("020"){
+                        "착불".to_owned()
+                    }else if quote_ready{
+                        let values=["FACTORY","STORE"].into_iter().filter_map(|origin|
+                            quote.and_then(|q|crate::quoted_freight_line(q,recipient_id,Some(origin)))
+                                .map(|line|line.get("billableCharge").unwrap_or(&line["appliedCharge"])
+                                    .as_i64().map(components::display_won).unwrap_or_else(||"—".to_owned())))
+                            .collect::<Vec<_>>();
+                        if values.is_empty(){"—".to_owned()}else{values.join(" / ")}
+                    }else{"—".to_owned()};
+                    let response=shipment_line_with_freight(ui,name,&products,chosen,previewed,Some(&freight),false);
                     let action=ui.interact(response.rect,
                         Id::new(("pending-reception-row",draft.id.as_str(),index,in_preview)),
                         egui::Sense::click());
@@ -1226,10 +1236,38 @@ mod shipment_list_tests {
             shipment_product_summary(&[
                 "BD 709 × 4".into(),"BD 뮤직 트레이 × 1".into()
             ]),
-            "◆ BD 709 × 4  ·  ◆ BD 뮤직 트레이 × 1"
+            "◆ BD 709 × 4\n◆ BD 뮤직 트레이 × 1"
         );
     }
 
+    #[test]
+    fn shipment_details_show_all_items_and_one_freight_value(){
+        let ctx=egui::Context::default();
+        typography::install(&ctx);
+        theme::install(&ctx);
+        let mut sizes=Vec::new();
+        let output=ctx.run(egui::RawInput::default(),|ctx|{
+            egui::CentralPanel::default().show(ctx,|ui|{
+                ui.set_width(390.0);
+                components::workflow_shipment_header(ui);
+                for (chosen,previewed) in [(false,false),(true,false),(false,true)]{
+                    let response=shipment_line_with_freight(ui,"수취인", &[
+                        "BD 709 × 4".into(),"BD Cart-10 × 2".into(),"BD Conductor × 1".into()
+                    ],chosen,previewed,Some("10,000원"),false);
+                    sizes.push(response.rect.size());
+                }
+            });
+        });
+        assert!(sizes.iter().all(|size|*size==sizes[0]));
+        assert!(sizes[0].y>theme::WORKFLOW_DETAIL_ROW_CONTENT_HEIGHT*2.0);
+        let labels=output.shapes.iter().filter_map(|s|match &s.shape{
+            egui::Shape::Text(t)=>Some(t.galley.text()),_=>None
+        }).collect::<Vec<_>>();
+        for label in ["수취인","품목","운임"]{assert!(labels.contains(&label));}
+        for label in ["◆ BD 709 × 4","◆ BD Cart-10 × 2","◆ BD Conductor × 1","10,000원"]{
+            assert_eq!(labels.iter().filter(|text|**text==label).count(),3);
+        }
+    }
     #[test]
     fn shipment_freight_hover_does_not_resize_row(){
         let ctx=egui::Context::default();
@@ -1268,7 +1306,7 @@ mod shipment_list_tests {
         for rect in &measured{
             assert_eq!(rect.width(),measured[0].width());
             assert_eq!(rect.height(),measured[0].height());
-            assert!(rect.height()>=40.0 && rect.height()<=46.0);
+            assert!(rect.height()>=40.0);
         }
         assert_eq!(theme::WORKFLOW_DETAIL_ROW_BG,theme::WORKFLOW_CARD_BG);
     }
