@@ -281,16 +281,7 @@ pub(crate) fn registry_table<const N:usize>(
     let spacing=crate::table::management_table_container_style(ui);
     let inner=crate::table::show(ui,crate::table::Header::List(minimum),|ui,layout|{
         let widths=columns.widths(layout.table_width,gap);
-        let cells=crate::table::management_table_cells(
-            layout.header_content_rect.min,&widths,layout.header_content_rect.height(),gap);
-        crate::table::header_columns(ui,layout.header_rect,layout.header_content_rect,&cells,gap,|ui,area|{
-            for (i,cell) in cells.iter().enumerate(){
-                crate::table::heading(ui,*cell,area,cell.intersect(area),
-                    if i==0{crate::table::HeadingAlign::Left(theme::SPACE_8)}
-                    else{crate::table::HeadingAlign::Center{min_left:None}},
-                    typography::management_table_header_galley(ui,labels[i]),None);
-            }
-        });
+        let mut row_left=None;
         let viewport_height=height.min(ui.available_height()).max(1.0);
         let output=crate::table::fixed_rows(ui,crate::table::Viewport{
             width:layout.table_width,height:viewport_height,rail:None
@@ -300,8 +291,20 @@ pub(crate) fn registry_table<const N:usize>(
             for index in visible{
                 let rect=crate::table::fixed_row_rect(origin,index,first,layout.table_width,
                     theme::MANAGEMENT_COMPACT_ROW_HEIGHT);
+                row_left.get_or_insert(rect.left());
                 crate::table::fixed_row(body,index,rect,index,&widths,gap,
                     crate::table::RowTone::SelectedIf(selected(index)),|row,cells|draw(row,cells,index,rect));
+            }
+        });
+        let cells=crate::table::management_table_cells(
+            egui::pos2(row_left.unwrap_or(layout.header_rect.left()-output.state.offset.x),
+                layout.header_rect.top()),&widths,layout.header_rect.height(),gap);
+        crate::table::header_columns(ui,layout.header_rect,layout.header_content_rect,&cells,gap,|ui,area|{
+            for (i,cell) in cells.iter().enumerate(){
+                crate::table::heading(ui,*cell,area,cell.intersect(area),
+                    if i==0{crate::table::HeadingAlign::Left(theme::SPACE_8)}
+                    else{crate::table::HeadingAlign::Center{min_left:None}},
+                    typography::management_table_header_galley(ui,labels[i]),None);
             }
         });
         (output.inner_rect,output.inner_rect)
@@ -669,7 +672,7 @@ fn management_table_scroll_track_geometry(
 ///
 /// Call with `item_spacing.y == 0` *from the toolbar allocation onward*.
 /// This owns the symmetric 12pt toolbar-to-divider breathing room,
-/// 1pt divider, 4pt after it, and 36pt sticky header. Screens must
+/// 1pt divider, 12pt after it, and 36pt sticky header. Screens must
 /// not add a separate `add_space` or rely on egui's preceding item spacing.
 #[derive(Clone,Copy,Debug)]
 pub(crate) struct ManagementTableHeader {
@@ -845,7 +848,7 @@ pub(crate) fn management_readonly_table(
 ){
     assert!(!headings.is_empty(),"a management table needs at least one column");
     let original_scroll=ui.spacing().scroll.clone();
-    ui.spacing_mut().scroll=crate::scrollbar::management_table_scroll_style();
+    let original_spacing=management_table_container_style(ui);
     let viewport_width=ui.available_rect_before_wrap()
         .intersect(ui.clip_rect()).width().max(1.0);
     let available_data_width=(viewport_width
@@ -858,41 +861,43 @@ pub(crate) fn management_readonly_table(
     let minimum_width=management_readonly_table_content_width(&widths);
     crate::table::show(ui,crate::table::Header::List(minimum_width),|ui,layout|{
 
-    let row_height=theme::MANAGEMENT_COMPACT_ROW_HEIGHT;
-    let row_advance=management_readonly_table_row_advance();
+    let row_height=management_readonly_table_row_advance();
+    let mut row_left=None;
     let output=crate::table::fixed_rows(
         ui,crate::table::Viewport{width:layout.table_width,height:max_height,rail:None},
-        id,row_advance,rows.len(),
+        id,row_height,rows.len(),
         |body,range|{
+            let origin=body.max_rect().min;
+            let first=range.start;
             for index in range{
                 let values=&rows[index];
                 debug_assert_eq!(values.len(),widths.len(),
                     "management table row must match its column count");
-                let row_rect=Rect::from_min_size(body.cursor().min,
-                    Vec2::new(layout.table_width,row_advance));
-                paint_management_table_row_background(body.painter(),row_rect,index);
-                let mut x=row_rect.left();
-                let columns=widths.iter().map(|width|{
-                    let cell=Rect::from_min_size(egui::pos2(x,row_rect.top()),Vec2::new(*width,row_height));
-                    x+=*width+theme::SPACE_8;
-                    cell
-                }).collect::<Vec<_>>();
-                body.horizontal(|line|{
-                    line.spacing_mut().item_spacing.x=theme::SPACE_8;
-                    for (index,(value,width)) in values.iter().zip(&widths).enumerate(){
-                        let label=truncated_label(typography::table_cell(value));
-                        let label=if right_aligned.contains(&index){
-                            label.halign(Align::RIGHT)
-                        }else{label};
-                        line.add_sized(Vec2::new(*width,row_height),label);
+                let row_rect=fixed_row_rect(origin,index,first,layout.table_width,row_height);
+                row_left.get_or_insert(row_rect.left());
+                row_scope(body,index,row_rect,|row|{
+                    row.set_clip_rect(row.clip_rect().intersect(row_rect));
+                    row.allocate_exact_size(row_rect.size(),Sense::hover());
+                    paint_management_table_row_background(row.painter(),row_rect,index);
+                    let mut x=row_rect.left();
+                    let columns=widths.iter().map(|width|{
+                        let cell=Rect::from_min_size(egui::pos2(x,row_rect.top()),Vec2::new(*width,row_height));
+                        x+=*width+theme::SPACE_8;
+                        cell
+                    }).collect::<Vec<_>>();
+                    for (column,(value,cell)) in values.iter().zip(&columns).enumerate(){
+                        paint_management_text_cell(row,cell.shrink2(Vec2::new(theme::SPACE_8,0.0)),
+                            value,value,typography::ManagementTableCellRole::Text,
+                            if right_aligned.contains(&column){egui::Align2::RIGHT_CENTER}else{egui::Align2::LEFT_CENTER},
+                            (index,column),false);
                     }
+                    management_table_column_rules(row,row_rect,&columns,theme::SPACE_8);
+                    paint_management_table_row_rule(row.painter(),row_rect);
                 });
-                management_table_column_rules(body,row_rect,&columns,theme::SPACE_8);
-                soft_divider(body);
             }
         }
     );
-    let mut x=layout.header_rect.left()-output.state.offset.x;
+    let mut x=row_left.unwrap_or(layout.header_rect.left()-output.state.offset.x);
     let columns=widths.iter().map(|width|{
         let cell=Rect::from_min_size(egui::pos2(x,layout.header_rect.top()),
             Vec2::new(*width,layout.header_rect.height()-theme::MANAGEMENT_TABLE_HEADER_OUTLINE_HEIGHT));
@@ -902,8 +907,8 @@ pub(crate) fn management_readonly_table(
     crate::table::header_columns(ui,layout.header_rect,layout.header_content_rect,&columns,theme::SPACE_8,|ui,area|{
         for (index,(heading,cell)) in headings.iter().zip(&columns).enumerate(){
             let alignment=if right_aligned.contains(&index){
-                crate::table::HeadingAlign::Right{inset:0.0,min_left:None}
-            }else{crate::table::HeadingAlign::Left(0.0)};
+                crate::table::HeadingAlign::Right{inset:theme::SPACE_8,min_left:None}
+            }else{crate::table::HeadingAlign::Left(theme::SPACE_8)};
             let label=typography::management_table_header_galley(ui,heading);
             crate::table::heading(ui,*cell,area,cell.intersect(area),alignment,label,None);
         }
@@ -913,6 +918,7 @@ pub(crate) fn management_readonly_table(
         });
 
     ui.spacing_mut().scroll=original_scroll;
+    ui.spacing_mut().item_spacing.y=original_spacing;
 }
 
 fn management_readonly_table_content_width(widths:&[f32])->f32{
@@ -921,7 +927,7 @@ fn management_readonly_table_content_width(widths:&[f32])->f32{
 }
 
 fn management_readonly_table_row_advance()->f32{
-    theme::MANAGEMENT_COMPACT_ROW_HEIGHT+theme::SOFT_DIVIDER_WIDTH
+    theme::MANAGEMENT_COMPACT_ROW_HEIGHT
 }
 
 
