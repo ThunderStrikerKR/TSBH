@@ -333,9 +333,7 @@ impl AliasManager {
             // Shared Freight master: toolbar-to-header transition,
             // fixed 36pt register header and 10pt solid scroll rail.
             components::management_table_container_style(card);
-            let header=components::management_master_register_header(
-                card,"별칭 / 적용 범위 / 연결 상품","관리",132.0
-            );
+            crate::table::show(card,crate::table::Header::Register{primary:"별칭 / 적용 범위 / 연결 상품",action:"관리",action_width:132.0},|card,header|{
             let scroll_height=components::management_single_list_scroll_height(
                 card,card_min_height,0.0
             );
@@ -374,7 +372,10 @@ impl AliasManager {
                         components::soft_divider(list);
                     }
                 });
-            header.finish(card,output.inner_rect);
+            
+            (output.inner_rect,())
+        });
+
         });
         if let Some(id)=choose{self.choose(id,catalog);}
         save.then(||self.save_request())

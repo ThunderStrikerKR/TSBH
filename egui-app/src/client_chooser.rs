@@ -284,10 +284,7 @@ impl ClientChooser {
                                 format!("{}개 거래처",clients.len())
                             };
                             results_panel.label(typography::caption(&count_label));
-                            let viewport_width=results_panel.available_width().max(1.0);
-                            let layout=components::allocate_management_table_header(
-                                results_panel,viewport_width,theme::MANAGEMENT_CLIENT_TABLE_MIN_WIDTH
-                            );
+                            crate::table::show(results_panel,crate::table::Header::AvailableWidth(theme::MANAGEMENT_CLIENT_TABLE_MIN_WIDTH),|results_panel,layout|{
                             let table_width=layout.table_width;
                             let header_rect=layout.header_rect;
                             let header_content=layout.header_content_rect;
@@ -387,7 +384,10 @@ impl ClientChooser {
                                 };
                                 ctx.request_repaint();
                             }
-                            layout.finish(results_panel,output.inner_rect);
+                            
+            (output.inner_rect,())
+        });
+
                         }
                     );
                     });

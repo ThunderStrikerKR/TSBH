@@ -24,7 +24,7 @@ pub(crate) fn outline_bounds(header:Rect,body:Rect)->Rect{
         egui::pos2(header.right(),body.bottom().max(header.bottom())))
 }
 
-pub(crate) fn finish(ui:&Ui,header:Rect,body:Rect){
+fn finish(ui:&Ui,header:Rect,body:Rect){
     let bounds=outline_bounds(header,body);
     if bounds.width()>0.0 && bounds.height()>0.0{
         ui.painter().rect_stroke(bounds,0.0,
@@ -35,7 +35,7 @@ pub(crate) fn finish(ui:&Ui,header:Rect,body:Rect){
 
 /// Inline tables share the parent's scroll; stop at the current row cursor,
 /// not the parent's minimum/maximum rectangle or the following freight form.
-pub(crate) fn finish_inline(ui:&Ui,header:Rect){
+fn finish_inline(ui:&Ui,header:Rect){
     let bottom=ui.cursor().top().max(header.bottom());
     finish(ui,header,Rect::from_min_max(header.min,
         egui::pos2(header.right(),bottom)));
@@ -131,3 +131,54 @@ pub fn management_table_column_rules(ui:&Ui,region:Rect,cells:&[Rect],gap:f32){
         cells.iter().take(cells.len().saturating_sub(1)).map(|cell|cell.right()+gap/2.0));
 }
 
+
+/// The existing header/viewport policies are mutually exclusive, not separate
+/// table designs. Only this entry point owns perimeter finalization.
+pub(crate) enum Header<'a>{
+    Sticky(f32),
+    List(f32),
+    WithoutToolbar(f32),
+    AvailableWidth(f32),
+    Register{primary:&'a str,action:&'a str,action_width:f32},
+}
+
+pub(crate) fn show<R>(
+    ui:&mut Ui,header:Header<'_>,
+    draw:impl FnOnce(&mut Ui,crate::components::ManagementTableHeader)->(Rect,R),
+)->R{
+    use crate::components as c;
+    let layout=match header{
+        Header::Sticky(width)=>c::management_sticky_table_header(ui,width),
+        Header::List(width)=>c::management_list_table_header(ui,width),
+        Header::WithoutToolbar(width)=>c::management_sticky_table_header_without_toolbar(ui,width),
+        Header::AvailableWidth(width)=>{
+            let viewport=ui.available_width().max(1.0);
+            c::allocate_management_table_header(ui,viewport,width)
+        },
+        Header::Register{primary,action,action_width}=>
+            c::management_master_register_header(ui,primary,action,action_width),
+    };
+    // Draw directly on the existing UI; do not allocate a scope or alter
+    // persistent widget IDs, the scroll salt, or keyboard focus.
+    let (body,result)=draw(ui,layout);
+    finish(ui,layout.header_rect,body);
+    result
+}
+
+pub(crate) enum InlineHeader{
+    Reception{editable:bool},
+    Shipment,
+}
+pub(crate) fn inline<R>(
+    ui:&mut Ui,header:InlineHeader,draw:impl FnOnce(&mut Ui)->R
+)->R{
+    use crate::components as c;
+    let rect=match header{
+        InlineHeader::Reception{editable:true}=>c::reception_editable_items_header(ui),
+        InlineHeader::Reception{editable:false}=>c::reception_items_header(ui),
+        InlineHeader::Shipment=>c::workflow_shipment_header(ui),
+    };
+    let result=draw(ui);
+    finish_inline(ui,rect);
+    result
+}

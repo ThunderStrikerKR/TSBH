@@ -1218,9 +1218,7 @@ impl ProductManager {
             let base=product_table_base_widths();
             let min_width=base.iter().sum::<f32>()+5.0*theme::SPACE_8;
             let min_table_width=theme::PRODUCT_TABLE_MIN_WIDTH.max(min_width);
-            let layout=components::management_sticky_table_header(
-                panel,min_table_width
-            );
+            crate::table::show(panel,crate::table::Header::Sticky(min_table_width),|panel,layout|{
             let table_width=layout.table_width;
             let widths=product_table_column_widths(table_width);
             let headings=[
@@ -1665,7 +1663,7 @@ impl ProductManager {
             }
             components::management_table_column_rules(panel,header_text_rect,&header_cells,theme::SPACE_8);
             components::management_master_header_finish(panel,header_rect);
-            layout.finish(panel,scroll_output.inner_rect);
+            
             if let Some(next)=clicked_sort{
                 self.sort=next;
                 panel.ctx().request_repaint();
@@ -1691,6 +1689,9 @@ impl ProductManager {
             components::management_body_state_overlay(
                 panel,body_rect,empty_state
             );
+
+            (scroll_output.inner_rect,())
+        });
         });
         // Capture focus after the entire grid (including a later cell's
         // click or keyboard handoff) has been rendered. This identifies
@@ -2340,7 +2341,7 @@ mod tests {
         assert!(!list.contains("상품 가격표 조회 중"));
         assert!(!list.contains("상품 변경 저장 중"));
         assert!(!list.contains("if self.result.pending(){\n                theme::management_list_strip_frame()"));
-        assert!(list.contains("components::management_sticky_table_header("));
+        assert!(list.contains("crate::table::Header::Sticky("));
         assert!(!list.contains(concat!("self.", "adding")));
         assert!(!list.contains(concat!("직접", " 등록")));
         assert!(!list.contains("components::management_list_table_header("));

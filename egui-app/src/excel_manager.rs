@@ -321,7 +321,7 @@ fn table<const N:usize>(
     let minimum=base.iter().sum::<f32>()+(N-1) as f32*GAP;
     // The toolbar and 36pt header always share the two-master 16+1+4
     // transition. No status or error line may change their coordinates.
-    let layout=components::management_sticky_table_header(ui,minimum);
+    crate::table::show(ui,crate::table::Header::Sticky(minimum),|ui,layout|{
     let width=layout.table_width;
     let widths=theme::management_single_stretch_columns(base,width,GAP,stretch);
     let header=layout.header_rect;
@@ -425,14 +425,14 @@ fn table<const N:usize>(
     // Paint the very same column separators as the data rows.
     components::management_table_column_rules(ui,header_text_rect,&heads,GAP);
     components::management_master_header_finish(ui,header);
-    layout.finish(ui,output.inner_rect);
+    
     if let Some((all,enabled))=header_selection{
         let mut checked=all;
         if components::management_table_checkbox(
             ui,heads[0],header_text_rect,&mut checked,enabled,
             (id,"select-all")
         ).changed(){
-            return Some(checked);
+            return (output.inner_rect,Some(checked));
         }
     }
     if let Some(message)=empty_message.filter(|_|rows==0){
@@ -446,7 +446,9 @@ fn table<const N:usize>(
             components::management_body_state_overlay(ui,visible,Some(message));
         }
     }
-    None
+
+            (output.inner_rect,None)
+        })
 }
 #[derive(Default)]
 struct Snapshot{state:Value,shipments:Value}

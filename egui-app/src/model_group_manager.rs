@@ -292,9 +292,7 @@ impl ModelGroupManager {
                         // Fixed register header and one local scroll
                         // viewport, as in the Shipping Assignment master.
                         components::management_table_container_style(left);
-                        let header=components::management_master_register_header(
-                            left,"모델군","상품 수",104.0
-                        );
+                        crate::table::show(left,crate::table::Header::Register{primary:"모델군",action:"상품 수",action_width:104.0},|left,header|{
                         let list_height=left.available_height().max(1.0);
                         let mut has_visible=false;
                         let output=components::management_register_list_scroll_area(left,list_height)
@@ -311,12 +309,15 @@ impl ModelGroupManager {
                                 self.row(list,id,g,catalog);
                             }
                         });
-                        header.finish(left,output.inner_rect);
+                        
                         if !has_visible{
                             let caption=if groups.is_empty(){"등록된 모델군이 없습니다."}
                                 else{"검색 결과가 없습니다."};
                             components::management_body_state_overlay(left,output.inner_rect,Some(caption));
                         }
+
+            (output.inner_rect,())
+        });
                     }
                 );
                 // React .family-list-panel has a single border-right;

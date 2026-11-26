@@ -4663,12 +4663,6 @@ pub struct ManagementTableHeader {
     pub scrollbar_gutter:f32,
     pub table_width:f32,
 }
-impl ManagementTableHeader {
-    /// Close the table surface at the visible body, without allocating a widget.
-    pub fn finish(self,ui:&Ui,body:Rect){
-        crate::table::finish(ui,self.header_rect,body);
-    }
-}
 
 /// Standard 25pt transition for a toolbar that touches the card cursor.
 /// Existing inset panels can consume part of the 12pt pre-divider margin.
@@ -6433,10 +6427,6 @@ pub fn reception_items_header(ui:&mut Ui)->Rect{
     reception_items_header_with_actions(ui,"금액",false)
 }
 
-pub fn finish_reception_items_table(ui:&Ui,header:Rect){
-    crate::table::finish_inline(ui,header);
-}
-
 // Only these two fixed public headers may be used: read-only or editable.
 fn reception_items_header_with_actions(ui:&mut Ui,amount_heading:&str,remove_slot:bool)->Rect{
     let action_width=if remove_slot{theme::RECEPTION_ITEM_REMOVE_WIDTH}else{0.0};
@@ -7156,7 +7146,7 @@ pub fn management_readonly_table(
     assert!(widths.iter().all(|width|width.is_finite()&&*width>0.0),
         "management table column widths must be finite and positive");
     let minimum_width=management_readonly_table_content_width(&widths);
-    let layout=management_list_table_header(ui,minimum_width);
+    crate::table::show(ui,crate::table::Header::List(minimum_width),|ui,layout|{
 
     let row_height=theme::MANAGEMENT_COMPACT_ROW_HEIGHT;
     let row_advance=management_readonly_table_row_advance();
@@ -7211,7 +7201,10 @@ pub fn management_readonly_table(
     }
     management_table_column_rules(ui,header_text,&columns,theme::SPACE_8);
     management_master_header_finish(ui,layout.header_rect);
-    layout.finish(ui,output.inner_rect);
+    
+            (output.inner_rect,())
+        });
+
     ui.spacing_mut().scroll=original_scroll;
 }
 
@@ -11271,23 +11264,24 @@ mod shared_ui_base_113_contract_tests {
         }
     }
     #[test]
-    fn all_live_table_surfaces_close_through_shared_chrome(){
-        for (name,source,finish) in [
-            ("client chooser",include_str!("client_chooser.rs"),"layout.finish(results_panel,output.inner_rect)"),
-            ("client",include_str!("client_manager.rs"),"layout.finish(section,scroll_output.inner_rect)"),
-            ("product",include_str!("product_manager.rs"),"layout.finish(panel,scroll_output.inner_rect)"),
-            ("history",include_str!("order_history_manager.rs"),"table_header.finish(section,output.inner_rect)"),
-            ("settlement",include_str!("daily_settlement_manager.rs"),"layout.finish(ui,scroll.inner_rect)"),
-            ("excel",include_str!("excel_manager.rs"),"layout.finish(ui,output.inner_rect)"),
-            ("brand",include_str!("brand_manager.rs"),"header.finish(card,output.inner_rect)"),
-            ("alias",include_str!("alias_manager.rs"),"header.finish(card,output.inner_rect)"),
-            ("model",include_str!("model_group_manager.rs"),"header.finish(left,output.inner_rect)"),
-            ("freight",include_str!("freight_manager.rs"),"table_header.finish(section,scroll_output.inner_rect)"),
-            ("workflow",include_str!("workflow_board_ui.rs"),"crate::table::finish_inline(ui,header)"),
-            ("reception",include_str!("main.rs"),"components::finish_reception_items_table("),
-            ("manual",include_str!("manual_workspace.rs"),"components::finish_reception_items_table("),
+    fn all_live_table_surfaces_use_common_container(){
+        for (name,source,entry) in [
+            ("client chooser",include_str!("client_chooser.rs"),"crate::table::show("),
+            ("client",include_str!("client_manager.rs"),"crate::table::show("),
+            ("product",include_str!("product_manager.rs"),"crate::table::show("),
+            ("history",include_str!("order_history_manager.rs"),"crate::table::show("),
+            ("settlement",include_str!("daily_settlement_manager.rs"),"crate::table::show("),
+            ("excel",include_str!("excel_manager.rs"),"crate::table::show("),
+            ("brand",include_str!("brand_manager.rs"),"crate::table::show("),
+            ("alias",include_str!("alias_manager.rs"),"crate::table::show("),
+            ("model",include_str!("model_group_manager.rs"),"crate::table::show("),
+            ("freight",include_str!("freight_manager.rs"),"crate::table::show("),
+            ("workflow",include_str!("workflow_board_ui.rs"),"crate::table::inline("),
+            ("reception",include_str!("main.rs"),"crate::table::inline("),
+            ("manual",include_str!("manual_workspace.rs"),"crate::table::inline("),
         ]{
-            assert!(source.contains(finish),"{name}: missing common table surface finish");
+            assert!(source.contains(entry),"{name}: missing common table container");
+            assert!(!source.contains("::finish_reception_items_table("),"{name}: local table finalization");
         }
     }
     #[test]

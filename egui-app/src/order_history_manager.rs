@@ -1325,9 +1325,7 @@ impl OrderHistoryManager {
             crate::floating_notice::section(
                 section.ctx(),"history.query",toolbar_rect
             );
-            let table_header=components::management_sticky_table_header(
-                section,MIN_WIDTH
-            );
+            crate::table::show(section,crate::table::Header::Sticky(MIN_WIDTH),|section,table_header|{
             let viewport=table_header.viewport_width;
             let gutter=table_header.scrollbar_gutter;
             let table_width=table_header.table_width;
@@ -1558,7 +1556,7 @@ impl OrderHistoryManager {
             components::management_table_column_rules(section,header_text_rect,&header_cells,COL_GAP);
             if let Some(sort)=next_sort {self.sort=sort;}
             components::management_master_header_finish(section,head_rect);
-            table_header.finish(section,output.inner_rect);
+            
             section.spacing_mut().item_spacing.y=old_gap;
             if let Some(order_id)=pending_toggle {
                 toggle_history_expansion(&mut self.expanded,&order_id);
@@ -1570,6 +1568,9 @@ impl OrderHistoryManager {
             if let Some(order_id)=pending_detail {
                 self.detail_order_id=Some(order_id);
             }
+
+            (output.inner_rect,())
+        });
         });
     }
 }

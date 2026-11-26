@@ -556,9 +556,7 @@ impl ClientManager {
                     }
                 );
             }
-            let layout=components::management_sticky_table_header(
-                section,theme::MANAGEMENT_CLIENT_TABLE_MIN_WIDTH
-            );
+            crate::table::show(section,crate::table::Header::Sticky(theme::MANAGEMENT_CLIENT_TABLE_MIN_WIDTH),|section,layout|{
             let table_width=layout.table_width;
             let header_rect=layout.header_rect;
             let header_content_rect=layout.header_content_rect;
@@ -654,8 +652,11 @@ impl ClientManager {
                 };
                 section.ctx().request_repaint();
             }
-            layout.finish(section,scroll_output.inner_rect);
+            
             if !self.excel.blocks_navigation(){if let Some(client)=chosen{self.begin(client);}}
+
+            (scroll_output.inner_rect,())
+        });
         });
     }
     fn accept_tag_text(&mut self,draft:&mut Value,text:&str){

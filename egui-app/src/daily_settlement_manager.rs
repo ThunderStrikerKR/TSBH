@@ -280,7 +280,7 @@ fn report_table<const N:usize>(
     let minimum=base.iter().sum::<f32>()+(N.saturating_sub(1)) as f32*COL_GAP;
     // Keep existing column minima; the shared 36pt header now uses the
     // same zero-extra scrollbar reservation as both master tables.
-    let layout=components::management_list_table_header(ui,minimum);
+    crate::table::show(ui,crate::table::Header::List(minimum),|ui,layout|{
     let width=layout.table_width;
     let widths=theme::management_single_stretch_columns(
         base,width,COL_GAP,stretch_column
@@ -382,7 +382,10 @@ fn report_table<const N:usize>(
     components::management_table_column_rules(ui,header_text_rect,&header_cells,COL_GAP);
     if let Some(next)=sort_change{*sort=next;}
     components::management_master_header_finish(ui,header);
-    layout.finish(ui,scroll.inner_rect);
+    
+            (scroll.inner_rect,())
+        });
+
 }
 
 pub struct DailySettlementManager{

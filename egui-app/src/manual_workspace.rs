@@ -2294,7 +2294,7 @@ impl ManualWorkspace {
                                                             }
                                                         },|items_ui|{
                                                             components::reception_worksheet_items_body(items_ui);
-                                                            let items_header=components::reception_editable_items_header(items_ui);
+                                                            crate::table::inline(items_ui,crate::table::InlineHeader::Reception{editable:true},|items_ui|{
                                                             for item in list(row,"items"){
                                                                 let item_id=text(item,"id");
                                                                 let quantity=item.get("quantity")
@@ -2430,7 +2430,7 @@ impl ManualWorkspace {
                                                                 }
                                                             }
                                                             // Pending assignment rollback lives in the fixed header action.
-                                                            components::finish_reception_items_table(items_ui,items_header);
+                                                            });
                                                             components::reception_items_to_freight_gap(items_ui);
                                                             let code=if text(row,"freightCode")=="020"{
                                                                 "020"
@@ -3486,7 +3486,7 @@ mod manual_workspace_modal_routing_tests {
         }
         for common in [
             "reception_recipient_fields(",
-            "reception_editable_items_header(",
+            "crate::table::inline(",
             "reception_item_row_with_remove(",
             "reception_item_add_action_editable(",
             "reception_freight_row_editable(",
@@ -3498,7 +3498,7 @@ mod manual_workspace_modal_routing_tests {
         // Compare the CURRENT intake master, not merely the presence of a
         // legacy helper that happens to share a lower-level painter.
         let intake=include_str!("main.rs");
-        for shared in ["reception_editable_items_header(","reception_item_row_with_remove(",
+        for shared in ["crate::table::inline(","reception_item_row_with_remove(",
             "reception_item_numeric_editor(","reception_freight_row_editable(",
             "show_selection_modal("]{
             assert!(intake.contains(shared)&&source.contains(shared),

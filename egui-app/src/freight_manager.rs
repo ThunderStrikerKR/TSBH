@@ -1465,9 +1465,7 @@ impl FreightManager {
             }
             // Shared transition: 16pt after the 36pt toolbar, 1pt divider,
             // 4pt before the full-width sticky header, on the same cursor.
-            let table_header=components::management_sticky_table_header(
-                section,theme::FREIGHT_ASSIGNMENT_TABLE_MIN_WIDTH
-            );
+            crate::table::show(section,crate::table::Header::Sticky(theme::FREIGHT_ASSIGNMENT_TABLE_MIN_WIDTH),|section,table_header|{
             let table_width=table_header.table_width;
             let header_rect=table_header.header_rect;
             let header_content_rect=table_header.header_content_rect;
@@ -1855,7 +1853,7 @@ impl FreightManager {
             components::management_table_column_rules(section,header_text_rect,&header_cells,theme::FREIGHT_ASSIGNMENT_COL_GAP);
             // This shared painter preserves the exact master 2pt bottom band.
             components::management_master_header_finish(section,header_rect);
-            table_header.finish(section,scroll_output.inner_rect);
+            
 
             // This is the single "select all" control for the currently
             // filtered product list (not only the virtualized visible rows).
@@ -1881,6 +1879,9 @@ impl FreightManager {
             // Assignment is persisted immediately from the product selector
             // or the single bulk Apply button above. Do not render a second
             // save footer, a redundant 'reset drafts' action, or guidance text.
+
+            (scroll_output.inner_rect,())
+        });
         });
     }
 
@@ -1966,9 +1967,7 @@ impl FreightManager {
             if create.clicked(){*create_group_open=true;}
             // Shared master: exactly 16pt + 1pt divider + 4pt before
             // the fixed 36pt rate-table header, irrespective of modal state.
-            let rate_layout=components::management_sticky_table_header(
-                section,theme::FREIGHT_RATE_TABLE_MIN_WIDTH
-            );
+            crate::table::show(section,crate::table::Header::Sticky(theme::FREIGHT_RATE_TABLE_MIN_WIDTH),|section,rate_layout|{
             let table_width=rate_layout.table_width;
             let widths=theme::management_weighted_columns(
                 theme::FREIGHT_RATE_COL_WIDTHS,
@@ -2221,7 +2220,7 @@ impl FreightManager {
             }
             components::management_table_column_rules(section,header_text_rect,&header_cells,theme::FREIGHT_ASSIGNMENT_COL_GAP);
             components::management_master_header_finish(section,header_rect);
-            rate_layout.finish(section,scroll_output.inner_rect);
+            
             if ordered.is_empty(){
                 let caption=if groups.is_empty(){
                     "등록된 배송 그룹이 없습니다."
@@ -2245,6 +2244,9 @@ impl FreightManager {
                     );
                 }
             }
+
+            (scroll_output.inner_rect,())
+        });
         });
     }
 
@@ -2666,13 +2668,7 @@ fn freight_history_table<const N:usize>(
     let old_spacing=components::management_table_container_style(ui);
     let minimum=bases.iter().sum::<f32>()
         +N.saturating_sub(1) as f32*theme::FREIGHT_ASSIGNMENT_COL_GAP;
-    let layout=if follows_master_toolbar {
-        // No phantom toolbar widget. The common 69pt reserved transition
-        // keeps this header exactly level with assignment and rate management.
-        components::management_sticky_table_header_without_toolbar(ui,minimum)
-    }else{
-        components::management_list_table_header(ui,minimum)
-    };
+    crate::table::show(ui,if follows_master_toolbar{crate::table::Header::WithoutToolbar(minimum)}else{crate::table::Header::List(minimum)},|ui,layout|{
     let width=layout.table_width;
     let widths=theme::management_weighted_columns(
         bases,shares,width,theme::FREIGHT_ASSIGNMENT_COL_GAP
@@ -2817,7 +2813,7 @@ fn freight_history_table<const N:usize>(
     }
     components::management_table_column_rules(ui,header_text_rect,&columns,theme::FREIGHT_ASSIGNMENT_COL_GAP);
     components::management_master_header_finish(ui,header_rect);
-    layout.finish(ui,scroll.inner_rect);
+    
     if total_rows==0 {
         if let Some(message)=empty_message {
             // D-type state paints in the body, with no extra title/footer
@@ -2838,6 +2834,9 @@ fn freight_history_table<const N:usize>(
             }
         }
     }
+
+            (scroll.inner_rect,())
+        });
 }
 
 /// Only Freight management currently trials the 16pt page-title inset.

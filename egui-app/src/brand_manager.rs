@@ -171,9 +171,7 @@ impl BrandManager {
             // Shared Freight master: toolbar-to-header transition,
             // fixed 36pt register header and 10pt solid scroll rail.
             components::management_table_container_style(card);
-            let header=components::management_master_register_header(
-                card,"브랜드명 / 한글 표기 / 검색 별칭","관리",132.0
-            );
+            crate::table::show(card,crate::table::Header::Register{primary:"브랜드명 / 한글 표기 / 검색 별칭",action:"관리",action_width:132.0},|card,header|{
             let scroll_height=components::management_single_list_scroll_height(
                 card,card_min_height,0.0
             );
@@ -210,7 +208,10 @@ impl BrandManager {
                         components::soft_divider(list);
                     }
                 });
-            header.finish(card,output.inner_rect);
+            
+            (output.inner_rect,())
+        });
+
         });
         if let Some(id)=select{self.choose(id,catalog);}
         save.then(||self.request())
