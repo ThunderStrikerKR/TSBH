@@ -214,7 +214,7 @@ mod management_async_layout_contract_tests {
     fn fixed_list_states_use_shared_overlay(){
         for source in [include_str!("order_history_manager.rs"),include_str!("excel_manager.rs"),
             include_str!("client_manager.rs"),include_str!("client_chooser.rs"),
-            include_str!("manual_product_search.rs"),include_str!("model_group_manager.rs")]{
+            include_str!("product_manager.rs"),include_str!("model_group_manager.rs")]{
             assert!(source.contains("crate::status_notice::management_body_state_overlay("));
         }
         let history=include_str!("order_history_manager.rs");
@@ -535,7 +535,6 @@ mod shared_screen_component_contract_tests {
             ("workflow_board.rs",include_str!("workflow_board.rs")),
             ("manual_workspace.rs",include_str!("manual_workspace.rs")),
             ("catalog_query_bridge.rs",include_str!("catalog_query_bridge.rs")),
-            ("manual_product_search.rs",include_str!("manual_product_search.rs")),
             ("item_editor.rs",include_str!("item_editor.rs")),
             ("product_images.rs",include_str!("product_images.rs")),
             ("manual_source_view.rs",include_str!("manual_source_view.rs")),
@@ -1932,7 +1931,6 @@ mod structural_divider_contract_tests {
             ("freight_manager.rs",1), // compact context menu
             ("excel_manager.rs",1), // repeated reply rows
             ("workflow_board_ui.rs",2), // compact expanded card boundaries
-            ("manual_product_search.rs",1), // repeated search rows
             ("category_dropdown.rs",2), // compact menu
         ];
         let root=std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
