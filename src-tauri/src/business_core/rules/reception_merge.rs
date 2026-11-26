@@ -246,6 +246,7 @@ fn apply(payload:&Value)->Result<Value,String>{
                 set(span,"recipientId",json!(old_id))?;
             }
         }
+        let same_address=field(recipient,"address")==field(prior,"address");
         for confirmed in rows(field(prior,"confirmedFields")){
             let key=confirmed.as_str().unwrap_or("");
             if ["name","address","phone","mobile","note"].contains(&key){
@@ -257,6 +258,10 @@ fn apply(payload:&Value)->Result<Value,String>{
             clone_field(recipient,prior,key)?;
         }
         if rows(field(prior,"confirmedFields")).iter().any(|v|v=="address"){
+            if prior.get("postcode").is_some(){clone_field(recipient,prior,"postcode")?;}
+            else if !same_address{
+                recipient.as_object_mut().ok_or("수취인 데이터 오류")?.remove("postcode");
+            }
             clone_field(recipient,prior,"addressStatus")?;
             if !field(prior,"addressParts").is_null(){
                 clone_field(recipient,prior,"addressParts")?;

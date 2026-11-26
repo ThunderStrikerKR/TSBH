@@ -3,6 +3,8 @@
 mod model;
 mod quantity;
 mod ts_semantics;
+#[path = "../postcode.rs"]
+mod postcode;
 
 use regex::Regex;
 use serde_json::{json, Value};
@@ -806,6 +808,10 @@ fn analyze(raw: &str, state: &Value, client: Option<&Value>) -> Result<Value, St
             sender_section = true;
         }
         if sender_section { continue; }
+        if postcode::labelled_line(text).is_some() {
+            note_continuation=None;
+            continue;
+        }
         if is_money_or_header(text) { continue; }
         // The TS recognizer extends a memo through subsequent non-field
         // lines in the same paragraph, stopping at any contact/address/item.
@@ -868,6 +874,8 @@ fn analyze(raw: &str, state: &Value, client: Option<&Value>) -> Result<Value, St
         // contact field, not part of the recipient's delivery address.
         if let Some(start) = address {
             let original=&line.text[start..];
+            let original=postcode::labelled_suffix(original)
+                .map_or(original,|(end,_)|&original[..end]);
             let mut without_phones=original.to_owned();
             let spans:Vec<_>=phone.find_iter(original)
                 .map(|m|(m.start(),m.end())).collect();
@@ -1071,12 +1079,39 @@ fn analyze(raw: &str, state: &Value, client: Option<&Value>) -> Result<Value, St
     if recipients.is_empty() {
         recipients.push(blank_recipient("recognition:recipient:0","",None,raw));
     }
+    let mut postcodes=vec![HashSet::<String>::new();recipients.len()];
     for index in 0..events.len() {
         if events[index].kind == "product" || events[index].kind == "quantity" { continue; }
         let row_index = recipient_owner_index(&anchors,&events,index,raw);
         let rid = recipients[row_index]["id"].as_str().unwrap_or("").to_owned();
         let e = &events[index];
         let kind = e.kind;
+        if kind=="address" {
+            if let Some((line_index,line))=lines.iter().enumerate()
+                .find(|(_,line)|line.number==e.line){
+                let prefix=&raw[line.start..e.start];
+                if let Some(code)=postcode::before_address(prefix){
+                    postcodes[row_index].insert(code.to_owned());
+                }
+                let tail=&line.text[e.start-line.start..];
+                if let Some((_,code))=postcode::labelled_suffix(tail){
+                    postcodes[row_index].insert(code.to_owned());
+                }
+                // A standalone labelled code belongs only to an unambiguous
+                // immediately adjacent address in the same paragraph.
+                for adjacent in [line_index.checked_sub(1),line_index.checked_add(1)]
+                    .into_iter().flatten().filter_map(|i|lines.get(i)){
+                    if adjacent.paragraph!=line.paragraph ||
+                        adjacent.number.abs_diff(line.number)!=1{continue;}
+                    if let Some(code)=postcode::labelled_line(adjacent.text){
+                        let owners=events.iter().filter(|other|other.kind=="address"
+                            && other.paragraph==adjacent.paragraph
+                            && other.line.abs_diff(adjacent.number)==1).count();
+                        if owners==1{postcodes[row_index].insert(code.to_owned());}
+                    }
+                }
+            }
+        }
         let v = e.value.clone();
         let previous = recipients[row_index][kind].as_str().unwrap_or("").to_owned();
         if previous.is_empty() {
@@ -1109,7 +1144,10 @@ fn analyze(raw: &str, state: &Value, client: Option<&Value>) -> Result<Value, St
                 "start":utf16(raw,e.start),"end":utf16(raw,e.end)}));
         events[index].recipient = Some(row_index);
     }
-    for row in &mut recipients {
+    for (row,codes) in recipients.iter_mut().zip(postcodes) {
+        if codes.len()==1 {
+            row["postcode"]=json!(codes.into_iter().next().unwrap());
+        }
         if let Some(address) = row["address"].as_str().filter(|s| !s.is_empty()) {
             let (kind,status,parts) = address_info(address);
             row["addressKind"] = json!(kind);
@@ -1404,8 +1442,11 @@ fn reanalyze(payload: &Value) -> Result<Value, String> {
         }
         for field in confirmed.iter().filter_map(Value::as_str) {
             if ["name","address","phone","mobile","note"].contains(&field) {
+                let same_address=field=="address" && row["address"]==old_row["address"];
                 if let Some(value)=old_row.get(field) { row[field]=value.clone(); }
                 if field=="address" {
+                    if let Some(v)=old_row.get("postcode"){row["postcode"]=v.clone();}
+                    else if !same_address{row.as_object_mut().unwrap().remove("postcode");}
                     if let Some(v)=old_row.get("addressStatus"){row["addressStatus"]=v.clone();}
                     if let Some(v)=old_row.get("addressParts"){row["addressParts"]=v.clone();}
                 }
@@ -1808,6 +1849,7 @@ mod tests {
         let rows=result["recipients"].as_array().unwrap();
         assert_eq!(rows.len(),1,"A postcode must not create another recipient: {result}");
         assert_eq!(rows[0]["address"],address);
+        assert_eq!(rows[0]["postcode"],"63644");
         assert_eq!(rows[0]["addressKind"],"ROAD");
         assert_eq!(rows[0]["addressParts"]["province"],"제주특별자치도");
         assert_eq!(rows[0]["addressParts"]["detail"],
@@ -2182,5 +2224,30 @@ mod tests {
         order["recipients"][0]["items"][0]["productId"]=json!("staff-picked");
         let out=execute("reanalyze_order",json!({"order":order,"state":state()})).unwrap();
         assert_eq!(out["recipients"][0]["items"][0]["productId"],"staff-picked");
+    }
+}
+
+#[cfg(test)]
+mod recipient_postcode_tests{
+    use super::*;
+    #[test]
+    fn postal_codes_follow_their_address_not_the_order(){
+        let state=json!({"products":[],"aliases":[],"clients":[]});
+        let raw="수령자: 가상 수취인 A\n주소: [21534] 인천광역시 남동구 테스트로 1\n\n수령자: 가상 수취인 B\n주소: (12416) 경기도 가평군 테스트로 2\n\n수령자: 가상 수취인 C\n주소: 01234 서울특별시 중구 테스트로 3";
+        let out=analyze(raw,&state,None).unwrap();
+        let rows=out["recipients"].as_array().unwrap();
+        assert_eq!(rows.len(),3);
+        for (row,code) in rows.iter().zip(["21534","12416","01234"]){
+            assert_eq!(row["postcode"],code);
+            assert!(!row["address"].as_str().unwrap().contains(code));
+        }
+    }
+    #[test]
+    fn separately_labelled_code_is_not_a_product_or_recipient(){
+        let state=json!({"products":[],"aliases":[],"clients":[]});
+        let out=analyze("수령자: 가상\n우편번호: 01234\n주소: 서울특별시 중구 테스트로 1",&state,None).unwrap();
+        assert_eq!(out["recipients"].as_array().unwrap().len(),1);
+        assert_eq!(out["recipients"][0]["postcode"],"01234");
+        assert!(out["recipients"][0]["items"].as_array().unwrap().is_empty());
     }
 }

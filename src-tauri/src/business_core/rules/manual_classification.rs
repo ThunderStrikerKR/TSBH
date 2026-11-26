@@ -2,6 +2,8 @@
 //! The grid keeps local UI draft state; this reducer exclusively owns the
 //! application of rows, evidence ownership and issue resolution updates.
 use serde_json::{json, Value, Map};
+#[path = "../postcode.rs"]
+mod postcode;
 use super::{field, has_value, req, required_str, rows, set, str_field};
 
 // Exact single-cell quantity syntax from parser.ts::quantities and
@@ -269,14 +271,24 @@ pub(super) fn apply(payload: &Value) -> Result<Value, String> {
         let row = model["rows"].as_array_mut().ok_or("배송 행을 선택하세요.")?
             .iter_mut().find(|r|str_field(r,"id")==rid)
             .ok_or("배송 행을 선택하세요.")?;
-        set(row,field_name,json!(value))?;
         if field_name=="address" {
-            set(row,"addressParts",manual_address_parts(value))?;
+            let (address,code)=postcode::manual_address(value);
+            let changed=str_field(row,"address")!=address;
+            set(row,field_name,json!(address))?;
+            if let Some(code)=code{
+                set(row,"postcode",json!(code))?;
+            }else if changed{
+                // An old postal code must not travel with a corrected address.
+                row.as_object_mut().ok_or("수취인 데이터 오류")?.remove("postcode");
+            }
+            set(row,"addressParts",manual_address_parts(address))?;
             let fields=row.as_object_mut().ok_or("수취인 데이터 오류")?;
             fields.remove("addressStatus");
             // A manual remote-delivery decision belongs to the exact
             // address. The previous checkbox must never survive a new one.
             fields.remove("remoteDelivery");
+        }else{
+            set(row,field_name,json!(value))?;
         }
         if !field(row,"confirmedFields").is_array() {
             set(row,"confirmedFields",json!([]))?;
