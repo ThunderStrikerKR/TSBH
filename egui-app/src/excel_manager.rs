@@ -432,7 +432,7 @@ pub struct ExcelManager{
     notice:Option<String>,
     tab:Tab,
     tab_snapshots:crate::view_state::NavigationSnapshots<3>,
-    tab_filters:[(String,Option<Sort>);3],
+    tab_filters:[(String,Option<Sort>,BTreeSet<String>);3],
     query:String,
     selected:BTreeSet<String>,
     sort_queue:Option<Sort>,
@@ -483,11 +483,16 @@ impl ExcelManager{
         let next=self.tab as usize;
         let previous=self.tab_snapshots.active();
         if next!=previous{
-            self.tab_filters[previous]=(std::mem::take(&mut self.query),self.sort_queue.take());
-            (self.query,self.sort_queue)=std::mem::take(&mut self.tab_filters[next]);
+            let mut current=(std::mem::take(&mut self.query),self.sort_queue.take(),std::mem::take(&mut self.selected));
+            crate::view_state::exchange_tab(&mut self.tab_filters,&mut current,previous,next);
+            (self.query,self.sort_queue,self.selected)=current;
+            // An actual-freight edit panel is not a read-only navigation snapshot.
+            self.managed_queue=None;
+            self.freight_drafts.clear();
         }
         if !self.tab_snapshots.visit(next,std::time::Instant::now()){return;}
-        self.query.clear();self.sort_queue=None;
+        self.query.clear();self.sort_queue=None;self.selected.clear();self.managed_queue=None;
+        self.freight_drafts.clear();
         if self.tab==Tab::History{
             let today=Utc::now().with_timezone(&FixedOffset::east_opt(9*3600).expect("Seoul offset")).date_naive();
             let (from,to)=default_export_date_range(today);
@@ -504,6 +509,7 @@ impl ExcelManager{
         let (from,to)=default_export_date_range(today);
         self.tab=Tab::Factory;self.tab_snapshots=crate::view_state::NavigationSnapshots::new(0);self.tab_filters=Default::default();
         self.query.clear();self.selected.clear();self.sort_queue=None;self.sort_history=None;
+        self.managed_queue=None;self.freight_drafts.clear();
         self.export_from=from.clone();self.export_to=to.clone();
         self.export_from_input=from;self.export_to_input=to;
         self.export_from_month=crate::navigation::calendar_month_start(today);
@@ -839,8 +845,6 @@ impl ExcelManager{
             let selected=Tab::ALL[next];
             if selected!=self.tab{
                 self.tab=selected;
-                self.selected.clear();
-                self.managed_queue=None;
             }
         }
         ui.add_space(theme::SPACE_12);
@@ -857,8 +861,10 @@ impl ExcelManager{
         // toolbar: its right-hand action caption and enabled state must use
         // the same visible selection as the table below.
         let mut queued=self.queue_projection();
-        if self.tab!=Tab::History && self.result.is_some() && !self.refresh_job.required(){
-            self.selected.retain(|id|queued.1.contains(id));
+        if self.tab!=Tab::History{
+            let verified=self.result.is_some()&&!self.refresh_job.required();
+            crate::view_state::retain_selection(&mut self.selected,&queued.1,verified);
+            crate::view_state::retain_target(&mut self.managed_queue,|id|queued.1.contains(id),verified);
         }
         crate::card::align_management_primary_card(ui,page_origin_y);
         // Exact same 16pt interior inset and frame as the approved master.
