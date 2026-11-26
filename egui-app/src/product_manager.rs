@@ -439,6 +439,16 @@ fn selectable_order_product(product:&Value)->bool{
         && rows(&product["variants"]).len()==1
 }
 
+fn selected_product_snapshot(products:&[Value],selection:&Value)->Option<Value>{
+    let id=field(selection,"productId");
+    let variant_id=field(selection,"variantId");
+    if id.is_empty()||variant_id.is_empty(){return None;}
+    products.iter().find(|product|
+        field(product,"id")==id && selectable_order_product(product)
+        && rows(&product["variants"]).first().is_some_and(|v|field(v,"id")==variant_id)
+    ).cloned()
+}
+
 fn product_summary_counts(catalog:Option<&Value>)->Option<[usize;4]>{
     let catalog=catalog?;
     Some([
@@ -455,8 +465,8 @@ impl ProductManager {
         ["상품 목록","카테고리 관리","모델군 관리","별칭 관리","브랜드 관리"]
             .get(self.tab).copied().unwrap_or("상품 관리")
     }
-    pub fn new(gateway:Arc<dyn BandoGateway>,ctx:Context)->Self {
-        let mut page=Self {
+    fn new_unloaded(gateway:Arc<dyn BandoGateway>)->Self {
+        Self {
             gateway,selection_client:None,selection_result:None,focus_search:false,
             catalog:None,products:Vec::new(),order_cache:Default::default(),
             query:String::new(),tab:0,tab_snapshots:crate::view_state::NavigationSnapshots::new(0),
@@ -478,16 +488,30 @@ impl ProductManager {
             photos:ProductImageCache::default(),
             writing:None,notice:None,
             result:ReadRefresh::default(),next_query:None,error:None,
-        };
+        }
+    }
+    pub fn new(gateway:Arc<dyn BandoGateway>,ctx:Context)->Self{
+        let mut page=Self::new_unloaded(gateway);
         page.reload(ctx);
         page
     }
     pub fn new_selection(gateway:Arc<dyn BandoGateway>,ctx:Context,client_id:String)->Self{
-        let mut page=Self::new(gateway,ctx.clone());
+        Self::new_selection_with_query(gateway,ctx,client_id,String::new())
+    }
+    pub(crate) fn new_selection_with_query(
+        gateway:Arc<dyn BandoGateway>,ctx:Context,client_id:String,query:String
+    )->Self{
+        let mut page=Self::new_unloaded(gateway);
         page.selection_client=Some(client_id);
+        page.query=query;
         page.focus_search=true;
         page.reload(ctx);
         page
+    }
+    /// Resolve the exact selected independent catalog product for the staged
+    /// item editor. Addition callers still receive only product/variant IDs.
+    pub(crate) fn selection_product(&self,selection:&Value)->Option<Value>{
+        selected_product_snapshot(&self.products,selection)
     }
     pub fn show_selection_modal(
         &mut self,ctx:&Context,work_area:Rect,window_id:&'static str
@@ -509,8 +533,10 @@ impl ProductManager {
                     });
                 });
             });
-        (cancelled || crate::overlay::take_modal_escape(ctx),
-            self.take_selection())
+        crate::popup::modal_foreground_for_window(ctx,window_id);
+        let cancelled=cancelled || crate::overlay::take_modal_escape(ctx);
+        let chosen=self.take_selection();
+        (cancelled,if cancelled{None}else{chosen})
     }
     pub fn take_selection(&mut self)->Option<Value>{
         self.selection_result.take()
