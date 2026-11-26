@@ -292,7 +292,7 @@ mod management_toolbar_geometry_tests {
         let _=ctx.run(egui::RawInput::default(),|ctx|{
             egui::CentralPanel::default().show(ctx,|ui|{
                 let mut readonly="6,000".to_owned();
-                let original=reception_freight_money_readonly(ui,&mut readonly);
+                let original=reception_freight_money_readonly(ui,&mut readonly,false);
                 let before=ui.available_rect_before_wrap().min;
                 let mut editing="6000".to_owned();
                 let active=reception_freight_inline_cell_editor(
