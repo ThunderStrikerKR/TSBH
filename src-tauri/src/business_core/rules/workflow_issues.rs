@@ -205,6 +205,7 @@ pub(super) fn stage_issues(state:&Value,group_id:&str,next:i64)->Result<Vec<Stri
     }).ok_or("배송 건의 발주서 / 수취인 / 거래처 연결을 확인하세요.")?;
     let wf_issues=workflow_issues(state,group_id)?;
     let mut messages=Vec::new();
+    let mut group_due=Some(0_i64);
     for issue in wf_issues {
         if str_field(&issue,"severity")!="ACTION"||
             field(&issue,"blockingStage").as_i64().unwrap_or(i64::MAX)>next {continue;}
@@ -234,9 +235,10 @@ pub(super) fn stage_issues(state:&Value,group_id:&str,next:i64)->Result<Vec<Stri
                 }
                 if str_field(client,"payment")=="PREPAID"&&!flag(ship,"legacyApproval"){
                     let due=w::payment_due(state,ship,order,client)?;
-                    if due!=Some(0){
-                        messages.push(format!("{prefix}입금 부족 {}",won(due)));
-                    }
+                    group_due=match (group_due,due){
+                        (Some(sum),Some(amount))=>sum.checked_add(amount),
+                        _=>None,
+                    };
                 }
             }
         }
@@ -249,6 +251,16 @@ pub(super) fn stage_issues(state:&Value,group_id:&str,next:i64)->Result<Vec<Stri
                     str_field(item,"name")));
             }
         }
+    }
+    // Payment is requested from the dealer, not each delivery recipient.
+    // Keep the same approval blocker: only the label and aggregation change.
+    if group_due!=Some(0){
+        let dealer=["displayName","name"].iter().map(|key|str_field(client,key).trim())
+            .find(|name|!name.is_empty()).unwrap_or("거래처");
+        messages.push(match group_due{
+            Some(due)=>format!("{dealer} 입금 청구 {}",won(Some(due))),
+            None=>format!("{dealer} 입금 청구액 확인 필요"),
+        });
     }
     let mut seen=HashSet::new();
     Ok(messages.into_iter().filter(|m|seen.insert(m.clone())).collect())
