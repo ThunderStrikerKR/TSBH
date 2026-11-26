@@ -70,7 +70,7 @@ pub fn load()->Result<Value,String>{
 
 /// Update the canonical business master only. The common service re-reads
 /// authoritative SQLite values and checks revision again inside the transaction.
-pub fn mutate(expected:u64,action:&str,client:Value)->Result<Value,String>{
+pub fn mutate(expected:Value,action:&str,client:Value)->Result<Value,String>{
     if !editable(){
         return Err("거래처 저장 권한이 없거나 실제 업무 DB가 연결되지 않았습니다.".into());
     }
@@ -82,30 +82,25 @@ pub fn mutate(expected:u64,action:&str,client:Value)->Result<Value,String>{
     conn.execute_batch("PRAGMA foreign_keys=ON;")
         .map_err(|e|e.to_string())?;
 
-    let committed=bando_data_access::mutate_client_v2(
-        &mut conn,expected,action,&client
+    let committed=bando_data_access::mutate_client_checked_v2(
+        &mut conn,&expected,action,&client
     )?;
-    let revision=committed["revision"].as_u64()
-        .ok_or("거래처 저장 결과의 revision을 확인할 수 없습니다.")?;
     drop(conn);
-    // Never present an optimistic form draft as committed customer data.
-    let current=load()?;
-    if current["revision"].as_u64()!=Some(revision){
-        return Err("거래처는 저장됐지만 이후 다른 작업에서 자료가 수정됐습니다. 최신 상태를 다시 확인하세요.".into());
+    // The shared writer already verified and committed this authoritative
+    // snapshot. A later unrelated commit is not a failed customer save.
+    // If the refresh itself fails, still report the successful commit.
+    let projection=||json!({
+        "revision":committed["revision"],
+        "clients":committed["clients"].as_array().into_iter().flatten()
+            .map(bando_data_access::client_names::normalized).collect::<Vec<_>>(),
+        "products":committed["products"],"aliases":committed["aliases"],
+        "settings":{"accounts":committed.pointer("/settings/accounts").cloned().unwrap_or_else(||json!([]))},
+        "readOnly":!editable()
+    });
+    match load(){
+        Ok(current)=>Ok(current),
+        Err(_)=>Ok(projection()),
     }
-    let id=client.get("id").and_then(Value::as_str)
-        .ok_or("거래처 ID가 없습니다.")?;
-    let saved=current["clients"].as_array().into_iter().flatten()
-        .find(|row|row["id"].as_str()==Some(id))
-        .ok_or("거래처 저장 후 실제 목록에서 대상을 찾지 못했습니다.")?;
-    if action=="upsert_client" &&
-        saved!=&bando_data_access::client_names::normalized(&client) {
-        return Err("거래처는 저장됐지만 최신 데이터가 입력 내용과 일치하지 않습니다. 다시 확인하세요.".into());
-    }
-    if action=="archive_client" && saved["deletedAt"].is_null(){
-        return Err("거래처 보관 후 변경 상태를 확인하지 못했습니다.".into());
-    }
-    Ok(current)
 }
 
 pub fn archive_workbook()->Result<String,String>{
