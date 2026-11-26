@@ -153,6 +153,7 @@ fn merge_parsed_item(incoming:&Value,previous:&Value)->Result<Value,String>{
     let mut item=if manual{previous.clone()}else{incoming.clone()};
     if manual{set_if_present(&mut item,"sources",incoming)?;}
     set(&mut item,"id",json!(id))?;
+    super::pricing::retain_manual_unit_price(&mut item,previous)?;
     if changed {
         set_if_present(&mut item,"quantity",incoming)?;
         set_if_present(&mut item,"quantityConfirmed",incoming)?;
@@ -271,6 +272,13 @@ pub(super) fn apply_raw_edit(payload:&Value)->Result<Value,String>{
             set(&mut row,"id",json!(previous_id))?;
             set_if_present(&mut row,"vatDefault",previous)?;
             set_if_present(&mut row,"vatOverride",previous)?;
+            // Carry commercial overrides only across a real identity match,
+            // never a positional fallback for a different recipient.
+            if contact_match.is_some() || name_match.is_some(){
+                for key in ["shippingCharges","dispatchOrigin","freightCode","remoteDelivery"]{
+                    set_if_present(&mut row,key,previous)?;
+                }
+            }
             let mut used_items=HashSet::<String>::new();
             let items=rows(field(&row,"items")).to_vec();
             let mut merged=Vec::new();
@@ -293,6 +301,9 @@ pub(super) fn apply_raw_edit(payload:&Value)->Result<Value,String>{
                     retarget_sources(&mut item,&item_id)?;
                     merged.push(item);
                 }
+            }
+            if let Some(origin)=row.get("dispatchOrigin").filter(|v|!v.is_null()).cloned(){
+                for item in &mut merged{set(item,"origin",origin.clone())?;}
             }
             set(&mut row,"items",json!(merged))?;
         }
