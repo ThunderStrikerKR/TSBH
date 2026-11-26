@@ -272,6 +272,7 @@ pub(super) fn apply_raw_edit(payload:&Value)->Result<Value,String>{
             set(&mut row,"id",json!(previous_id))?;
             set_if_present(&mut row,"vatDefault",previous)?;
             set_if_present(&mut row,"vatOverride",previous)?;
+            set_if_present(&mut row,"vatRateBps",previous)?;
             // Carry commercial overrides only across a real identity match,
             // never a positional fallback for a different recipient.
             if contact_match.is_some() || name_match.is_some(){
