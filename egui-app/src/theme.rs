@@ -489,19 +489,21 @@ pub const MODAL_VIEWPORT_GUTTER: f32 = 18.0;
 pub const MODAL_BACKDROP_ALPHA: u8 = 144;
 pub const MODAL_NESTED_BACKDROP_ALPHA: u8 = 94;
 // Shared management list roles; the client page does not invent row geometry.
-// React CategoryManager effective CSS: 43pt rows, 50pt roots,
-// 24pt nesting and a 430pt right-side editor overlay.
-pub const CATALOG_TREE_ROW_HEIGHT:f32 = 43.0;
-pub const CATALOG_ROOT_ROW_HEIGHT:f32 = 50.0;
+// CategoryTree master: every depth uses the same row, slots and guide geometry.
+pub const CATALOG_TREE_ROW_HEIGHT:f32 = 42.0;
 pub const CATALOG_TREE_INDENT:f32 = 24.0;
-// Explorer-style category hierarchy: understated connectors and row rules.
-// Keep these separate from the generic table zebra/section colors.
+pub const CATALOG_TREE_INSET:f32 = SPACE_12;
+pub const CATALOG_TREE_CHEVRON_SIZE:f32 = SPACE_16;
+pub const CATALOG_TREE_FOLDER_SIZE:f32 = 20.0;
+pub const CATALOG_TREE_GAP:f32 = SPACE_8;
+pub const CATALOG_TREE_TERMINAL_GAP:f32 = SPACE_4;
 pub const CATALOG_TREE_GUIDE_COLOR:Color32 = Color32::from_rgb(74,74,74);
-pub const CATALOG_TREE_ROW_RULE_COLOR:Color32 = Color32::from_rgb(40,40,40);
 pub const CATALOG_TREE_GUIDE_WIDTH:f32 = 1.0;
-pub const CATALOG_TREE_ROW_RULE_WIDTH:f32 = 1.0;
-pub const CATALOG_TREE_FOLDER_WIDTH:f32 = 14.0;
-pub const CATALOG_TREE_FOLDER_HEIGHT:f32 = 12.0;
+pub const CATALOG_TREE_FOLDER_STROKE:f32 = 1.5;
+pub const CATALOG_TREE_FOLDER_COLOR:Color32 = SECONDARY;
+pub const CATALOG_TREE_SELECTED_BG:Color32 = ORANGE_EMPHASIS_BG;
+pub const CATALOG_TREE_SELECTED_BORDER:Color32 = SELECTED_ORDER;
+pub const CATALOG_TREE_SELECTED_INK:Color32 = ORANGE_EMPHASIS_TEXT;
 // Keep category search useful without stretching a single field across
 // the full management panel width.
 pub const CATALOG_SEARCH_WIDTH:f32 = 560.0;

@@ -1,5 +1,5 @@
-//! Native CategoryManager. React CategoryManager.tsx / applied
-//! tauri-stage2-products.css own the interaction and overlay layout.
+//! Native CategoryManager: tree presentation is owned by components::category_tree_row.
+//! Category selection, search, expansion and operations remain in this manager.
 //! All add/rename/move/delete decisions are delegated to catalog_clients.
 use crate::{category_dropdown,components,theme,typography};
 use eframe::egui::{self,Align,Context,Layout,Rect,Sense,Ui,Vec2};
@@ -422,150 +422,21 @@ impl CategoryManager {
         if !index.shows(&item.id){return;}
         let branches=index.branches(&item.id);
         let open=self.expanded.contains(&item.id)||!self.query.trim().is_empty();
-        let width=ui.available_width();
-        let height=if is_root(&item.id){
-            theme::CATALOG_ROOT_ROW_HEIGHT
-        }else{theme::CATALOG_TREE_ROW_HEIGHT};
-        let (rect,response)=ui.allocate_exact_size(Vec2::new(width,height),Sense::click());
-        #[cfg(test)]
-        if item.id.starts_with("geometry-cat-"){components::general_screen_geometry_tests::record("catalog data row",rect);}
-        if self.selected==item.id || response.hovered(){
-            ui.painter().rect_filled(
-                rect,theme::CONTROL_RADIUS as f32,
-                if self.selected==item.id {theme::RAISED}else{theme::INPUT}
-            );
-        }
-        if self.selected!=item.id{
-            theme::paint_button_hover(
-                ui,&response,theme::CONTROL_RADIUS as f32
-            );
-        }
-        // A very faint row rule groups one category and its counts without
-        // creating table-like zebra bands. Root boundaries are a little firmer.
-        let row_rule=if is_root(&item.id){theme::DIVIDER}
-            else{theme::CATALOG_TREE_ROW_RULE_COLOR};
-        ui.painter().line_segment([
-            egui::pos2(rect.left()+theme::SPACE_12,rect.bottom()-0.5),
-            egui::pos2(rect.right()-theme::SPACE_12,rect.bottom()-0.5),
-        ],egui::Stroke::new(theme::CATALOG_TREE_ROW_RULE_WIDTH,row_rule));
-
-        let icon_x=rect.left()+theme::SPACE_12
-            +theme::CATALOG_TREE_INDENT*depth as f32;
-        let icon_rect=egui::Rect::from_min_size(
-            egui::pos2(icon_x,rect.center().y-theme::SPACE_8),
-            Vec2::splat(theme::SPACE_16)
-        );
-        let tree_stroke=egui::Stroke::new(
-            theme::CATALOG_TREE_GUIDE_WIDTH,theme::CATALOG_TREE_GUIDE_COLOR
-        );
-        // TreeView-style continuation guides (│): a guide persists through
-        // descendants only when that ancestor has a following visible sibling.
-        let guide_root_x=rect.left()+theme::SPACE_12+theme::SPACE_8;
-        for (level,continued) in ancestor_guides.iter().enumerate(){
-            if *continued{
-                let x=guide_root_x+theme::CATALOG_TREE_INDENT*level as f32;
-                ui.painter().line_segment([
-                    egui::pos2(x,rect.top()),egui::pos2(x,rect.bottom())
-                ],tree_stroke);
-            }
-        }
-        if depth>0{
-            // An elbow joins the immediate parent to this category.
-            // Last siblings end at the center instead of leaving a
-            // dangling vertical line below the final child.
-            let parent_x=guide_root_x
-                +theme::CATALOG_TREE_INDENT*(depth-1) as f32;
-            ui.painter().line_segment([
-                egui::pos2(parent_x,rect.top()),
-                egui::pos2(parent_x,if is_last{rect.center().y}else{rect.bottom()})
-            ],tree_stroke);
-            ui.painter().line_segment([
-                egui::pos2(parent_x,rect.center().y),
-                egui::pos2((icon_rect.left()-theme::SPACE_4).max(parent_x),
-                    rect.center().y)
-            ],tree_stroke);
-        }
-        if open && !branches.is_empty(){
-            // Continue below an expanded parent into the first child row.
-            ui.painter().line_segment([
-                egui::pos2(icon_rect.center().x,
-                    (icon_rect.bottom()+theme::SPACE_4).min(rect.bottom())),
-                egui::pos2(icon_rect.center().x,rect.bottom())
-            ],tree_stroke);
-        }
-        if !branches.is_empty(){
-            // Match the same vector-chevron geometry used by order history,
-            // workflow cards and management dropdowns. Tree guides remain.
-            components::paint_management_chevron(
-                ui.painter(),icon_rect.center(),
-                if open{components::ManagementChevronDirection::Down}
-                else{components::ManagementChevronDirection::Right}
-            );
-        }
-        // A small monochrome folder icon mirrors the Explorer navigation
-        // pane without introducing bright decorative color or font glyphs.
-        let folder_x=icon_rect.right()+theme::SPACE_8;
-        let folder_y=rect.center().y-theme::CATALOG_TREE_FOLDER_HEIGHT/2.0;
-        let folder_right=folder_x+theme::CATALOG_TREE_FOLDER_WIDTH;
-        let folder_bottom=folder_y+theme::CATALOG_TREE_FOLDER_HEIGHT;
-        ui.painter().add(egui::Shape::closed_line(vec![
-            egui::pos2(folder_x,folder_y+theme::SPACE_4),
-            egui::pos2(folder_x,folder_y+1.0),
-            egui::pos2(folder_x+theme::SPACE_4,folder_y+1.0),
-            egui::pos2(folder_x+theme::SPACE_8-2.0,folder_y+theme::SPACE_4),
-            egui::pos2(folder_right,folder_y+theme::SPACE_4),
-            egui::pos2(folder_right,folder_bottom),
-            egui::pos2(folder_x,folder_bottom)
-        ],egui::Stroke::new(1.0_f32,theme::SECONDARY)));
         let count=index.total(&item.id);
-        // Show totals immediately after the category name, not in a
-        // spreadsheet-style column at the far right of the workspace.
-        // Count includes this category and every descendant; the child
-        // count is the number of immediate subcategories.
         let summary=if branches.is_empty(){
             format!("(상품 {count})")
         }else{
             format!("(상품 {count} · 하위 분류 {})",branches.len())
         };
-        let summary_galley=typography::client_table_metadata_galley(
-            ui,&summary,theme::SECONDARY
-        );
-        let name_x=folder_right+theme::SPACE_8;
-        let right_edge=rect.right()-theme::SPACE_12;
-        // Reserve the count before fitting the name. Only the name loses
-        // its earliest characters when the tree becomes deeply nested.
-        let name_width=(right_edge-name_x-theme::SPACE_8
-            -summary_galley.size().x).max(0.0);
-        let font=if is_root(&item.id){
-            typography::CategoryPathFont::Subsection
-        }else{typography::CategoryPathFont::Body};
-        let visible=typography::fit_category_path(
-            ui,&item.name,name_width,font
-        );
-        let name_galley=typography::category_tree_name_galley(
-            ui,&visible,is_root(&item.id)
-        );
-        let name_end=name_x+name_galley.size().x.min(name_width);
-        let name_clip=egui::Rect::from_min_max(
-            egui::pos2(name_x,rect.top()),
-            egui::pos2(name_end.max(name_x),rect.bottom())
-        );
-        ui.painter().with_clip_rect(name_clip).galley(
-            egui::pos2(name_x,rect.center().y-name_galley.size().y/2.0),
-            name_galley,theme::TEXT
-        );
-        let summary_x=name_end+theme::SPACE_8;
-        // Never let count glyphs paint beyond the row's right inset,
-        // including in unusually narrow/deeply indented tree views.
-        let summary_clip=egui::Rect::from_min_max(
-            egui::pos2(summary_x.min(right_edge),rect.top()),
-            egui::pos2(right_edge,rect.bottom())
-        );
-        ui.painter().with_clip_rect(summary_clip).galley(
-            egui::pos2(summary_x,rect.center().y-summary_galley.size().y/2.0),
-            summary_galley,theme::SECONDARY
-        );
-        let response=components::overflow_tooltip(response,visible!=item.name.as_str(),&item.name);
+        let response=components::category_tree_row(ui,components::CategoryTreeRow{
+            name:&item.name,summary:&summary,depth,ancestor_guides,is_last,
+            root:is_root(&item.id),has_children:!branches.is_empty(),open,
+            selected:self.selected==item.id,
+        });
+        #[cfg(test)]
+        if item.id.starts_with("geometry-cat-"){
+            components::general_screen_geometry_tests::record("catalog data row",response.rect);
+        }
         if response.clicked(){
             self.selected=item.id.clone();
             self.name=item.name.clone();

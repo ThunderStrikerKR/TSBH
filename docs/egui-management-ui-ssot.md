@@ -92,7 +92,7 @@
 | EX-PRODUCT-001 | 상품 관리 → 상품 목록 | 공동 마스터 4개 KPI의 실제 수치를 상품·모델군·별칭·브랜드 등록 수로 구성. 주 카드 16pt 전방향, 고정 표 헤더 36pt(본문 유효 34pt·하단 경계 2pt), 42pt 단일 상품행과 10pt solid 레일을 공유. 280pt 카테고리 경로 필터와 3개 기존 관리 버튼이 있어 가용 폭 1320pt 이상에서는 필터 좌측·작업 버튼 우측 **동일 36pt 도구줄**, 그보다 좁으면 작업 버튼을 우측 정렬한 다음 행으로 이동 | 카드 상단 기준선·표 스크롤/열좌표·작업 버튼 우측 끝·공통 KPI 카드 |
 | EX-PRODUCT-002 | 상품 관리 → 모델군 관리 | 단일 목록 대신 기존 **좌측 모델군·우측 선택 그룹 편집**의 2영역을 유지. 좌측 목록에 공통 고정 헤더와 내부 스크롤을 적용하되 모델군 상세 행 52pt 및 우측 편집 스크롤은 유지 | 마스터 외곽 카드·헤더/레일·상태 저장 동작 |
 | EX-PRODUCT-003 | 상품 관리 → 별칭/브랜드 관리 | 상단 입력 폼은 업무 필드 개수가 달라 유지, 등록 목록만 36pt 고정 헤더·10pt 독립 스크롤. 충돌 정보·한글 표기 등 다중 설명 행은 42pt로 강제하지 않음 | 마스터 외곽 카드·헤더 경계·스크롤 하단 여백 |
-| EX-PRODUCT-004 | 상품 관리 → 카테고리 관리 | 카테고리 트리/계층 구조는 이번 마스터 복제 대상에서 제외. 화면 제목·탭 내비게이션만 기존 공통을 유지하며 별도 KPI를 삽입하지 않음 | 기존 카테고리 편집 기능과 배치 |
+| EX-PRODUCT-004 | 상품 관리 → 카테고리 관리 | 표 대신 공통 CategoryTree 행을 사용. 기존 화면 제목·탭·주 카드 기준선 및 KPI 미삽입 유지 | 검색·선택·펼침·추가·이동·편집·삭제 기능 유지 |
 | EX-RECEPTION-001 | 접수 화면 테마 정합성 1차 | 기존 카카오톡 도킹·4패널 비율·8pt 상하/16pt 좌우 외곽·34pt 제목줄·32pt 품목 헤더·42pt 품목 행 등 **업무 구조 및 좌표 보존**. 현재 거래처 요약만 `TABLE_ROW_ALT_BG` + `DIVIDER`로 낮춰 입력 편집창(`INPUT`+`BORDER`)보다 가볍게 표현. 주문 카드·상품 칩은 기존 좌표/상태색을 유지하면서 보조 테두리/교차 배경 역할을 참조. 품목 표 헤더는 기존 32pt 안에 `RAISED` 배경과 마스터와 동일한 **내부 2pt** 하단선을 적용. 비활성 주문 보조버튼은 공통 비활성 3토큰 사용 | `theme::{RECEPTION_CLIENT_SUMMARY_*,WORKFLOW_CARD_BORDER,WORKFLOW_CHIP_*,DISABLED_ACTION_*}`, `components::{paint_reception_client_summary_surface,reception_items_header,workflow_auxiliary_button}` |
 | EX-RECEPTION-002 | 접수 화면 미적용 레이아웃 2차 | 34pt 섹션 제목줄·고정 4열 도킹은 유지하면서 제목→구분선 8pt, 헤더 아래 기존 4pt 간격 보존. 섹션 경계는 관리 마스터 강조선 1pt 재사용. `확인할 내용`은 가변 높이·줄바꿈 가능한 중요 정보줄, 수취인 입력은 36pt 읽기 전용(비활성 대비 편차 제거). 메시지 편집영역/복사 버튼 사이 8pt 고정 슬롯의 중앙 구분선과 우측 정렬, 주문 카드간 간격 8pt, 요약 운임/금액 시각 위계와 24pt 주문 상세 헤더 및 교차 행 배경 반영. 4단계 신호등 18pt와 원터치·관리·삭제·이전 버튼 크기 및 기능/저장 호출 변경 없음 | `theme::{SECTION_CONTENT_GAP,WORKFLOW_CARD_GAP,WORKFLOW_DETAIL_*}`; `components::{reception_section_divider,reception_review_status,reception_message_footer_gap,reception_message_copy_actions,reception_recipient_fields}`; `workflow_board_ui::{workflow_action_line,workflow_table_header,shipment_line}` |
 | EX-RECEPTION-003 | 접수 화면 64차 불일치 보정 | 품목 32pt·주문 상세 28pt 헤더는 각각 역할 높이를 유지하면서 **마스터 14pt 강조 헤더 글꼴**과 내부 2pt 하단선을 공유. 주문 카드 바탕 `INPUT(#292929)`보다 교차 행은 밝은 `RAISED(#303030)`, 상품 칩은 `DISABLED_ACTION_BORDER(#373737)`로 별도 구분. 폭 부족 시 184pt 거래처명 슬롯을 우선 확보하도록 좁은 폭에서 거래처명·신호등 헤더, 배송/금액 요약, 원터치·이전 단계·관리·삭제가 함께 있는 하단 작업줄로 그룹화, 18pt 신호등·82pt 슬롯 불변. 섹션 구분선 `DIVIDER` 1pt, 수취인 라벨·행 간격 8pt, 접수 주문/품목 목록 10pt solid 예약 레일, 메시지 편집창→버튼 간격 12pt로 수정. 나머지 도킹·업무 판단·읽기 전용·클립보드·저장 기능 변경 없음 | `theme::{WORKFLOW_DETAIL_*,WORKFLOW_TITLE_MIN_WIDTH,WORKFLOW_CHIP_FILL,RECIPIENT_*_GAP,RECEPTION_MESSAGE_ACTION_GAP}`; `components::{reception_section_divider,reception_items_header,reception_message_footer_gap}`; `workflow_board_ui::{workflow_header,workflow_table_header,shipment_line}`; `main::{message_section,orders_pane,details_and_freight}` |
@@ -237,3 +237,11 @@
 - 화면 개별 패치 대신 승인된 공통 소유자를 수정한다. 예외가 실제로 존재하면 문서와 코드의 역할 정책을 함께 유지한다.
 - **정식 기준은 코드의 현재 토큰**이며, 이 문서는 의도·예외·검증 방법의 규범이다. 숫자 복사본을 다른 문서에 다시 추가하지 않는다.
 - 새로운 레이아웃을 마스터에 반영하기 전, 기존 구조·클릭 영역·스크롤·표 헤더 오프셋·업무 흐름을 그대로 보존할 수 있는지 검사한다.
+
+### CategoryTree 공통 규격 (2026-11-26)
+
+- `components::category_tree_row` / `CategoryTreeGeometry`가 행, 선택·호버, 폴더, 화살표, 연결선, 이름·보조 수치 및 클리핑을 단일 관리한다. 카테고리 관리자는 데이터·검색·펼침·선택 상태와 업무 동작만 관리한다.
+- 모든 깊이 42pt 행, 24pt 들여쓰기, 좌우 12pt 인셋, 16pt 공통 화살표 슬롯, 20pt 폴더 슬롯(1.5pt 선), 슬롯 및 이름 간격 8pt. 연결선 1pt, 화살표/폴더 슬롯 경계 전 4pt에서 종료. 말단은 빈 화살표 슬롯을 통과하여 폴더 직전까지 연결한다. 마지막 형제의 세로선은 행 중앙에서 끝난다.
+- 접힘/펼침 폴더 벡터 형상 분리, 말단은 닫힌 폴더. 일반/최상위 행 모두 수평 구분선을 제거하고 계층 연결선으로 그룹을 표현한다. 미선택 호버는 기존 공통 파란색 배경·테두리, 선택은 기존 주황색 강조 배경·테두리·폴더 색상을 재사용한다. 선택 상태가 호버보다 우선한다.
+- 기존 루트 제목 글꼴 및 보조 수치 글꼴을 유지하고, 좁은 폭에서는 텍스트를 잘라 표시한다. 행 클릭의 선택·펼침 전환 규칙과 검색 중 동작은 변경하지 않는다.
+- `category_tree_geometry_tests`는 슬롯 크기, 중심선, 깊이, 말단 연결선, 마지막 형제 및 조상 레일을 검증한다.
