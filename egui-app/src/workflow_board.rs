@@ -55,22 +55,13 @@ pub struct GroupRow {
 }
 impl GroupRow {
     pub fn management_target_label(&self)->eframe::egui::text::LayoutJob{
-        use crate::typography::{inline_body_values,DataValueKind};
         let names=self.shipments.iter().map(|s|{
             if s.recipient_name.is_empty(){"수취인 확인"}else{s.recipient_name.as_str()}
         }).collect::<Vec<_>>().join(", ");
-        let prefix=format!("{names} / 배송 ");
-        let count=self.shipments.len().to_string();
-        let stage=format!("건 / {}/4 / ",self.step);
-        let amount=self.total.map(crate::components::display_won);
-        let (value,kind,unit)=match amount.as_deref(){
-            Some(value)=>(value.strip_suffix("원").unwrap_or(value),Some(DataValueKind::Money),"원"),
-            None=>("금액 미확정",None,""),
-        };
-        inline_body_values(&[
-            (&prefix,None),(&count,Some(DataValueKind::Quantity)),
-            (&stage,None),(value,kind),(unit,None)
-        ])
+        crate::typography::inline_quantity_amount(
+            &format!("{names} / 배송 "),self.shipments.len(),
+            &format!("건 / {}/4 / ",self.step),self.total,"금액 미확정",false
+        )
     }
 }
 
