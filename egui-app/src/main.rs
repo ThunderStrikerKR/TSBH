@@ -1760,7 +1760,8 @@ impl BandoEgui {
         };
         let order_id=order_id.to_owned();
         let keep_selected=clicked.is_some() || (was_active&&self.workflow_ui.selection.is_none());
-        let was_folded=self.workflow_ui.folded.as_deref()==Some(format!("pending:{order_id}").as_str());
+        let was_folded=self.workflow_ui.folded.as_deref()==Some(format!("pending:{order_id}").as_str()) ||
+            (clicked.is_some() && (!was_active || self.workflow_ui.selection.is_some()));
         self.drafts.retain(|d|d.id!=order_id);
         self.committed_draft_handoff=None;
         self.pending_stage_display=None;
@@ -1796,12 +1797,18 @@ impl BandoEgui {
             .and_then(|group|group.shipments.iter().find(|ship|
                 ship.id==selected.shipment_id && ship.order_id==selected.order_id))
             .map(|ship|ship.recipient_id.as_str());
-        let mut candidates=snapshot.groups.iter().flat_map(|group|
+        let candidates=||snapshot.groups.iter().flat_map(|group|
             group.shipments.iter().map(move |ship|(group,ship)))
             .filter(|(_,ship)|ship.order_id==selected.order_id);
-        let replacement=candidates.clone().find(|(_,ship)|ship.id==selected.shipment_id)
-            .or_else(||candidates.find(|(_,ship)|
-                old_recipient.is_some_and(|id|ship.recipient_id==id)))
+        let replacement=candidates().find(|(_,ship)|ship.id==selected.shipment_id)
+            .or_else(||{
+                let mut matches=candidates().filter(|(_,ship)|
+                    old_recipient.is_some_and(|id|ship.recipient_id==id));
+                let first=matches.next()?;
+                // A split can create several deliveries for one recipient.
+                // Without a stable shipment ID, do not guess between them.
+                matches.next().is_none().then_some(first)
+            })
             .map(|(group,ship)|workflow_board_ui::Selection{
                 group_id:group.id.clone(),order_id:ship.order_id.clone(),shipment_id:ship.id.clone()
             });
@@ -1967,7 +1974,7 @@ impl BandoEgui {
         // preview, while the committed selection remains below both.
         let pinned=self.pending_stage_target();
         if pinned.is_none() && self.workflow_ui.active_preview().is_some(){return None;}
-        let preview=pinned.or_else(||self.workflow_ui.pending_preview())?;
+        let preview=pinned.or_else(||self.workflow_ui.pending_preview())?.clone();
         if self.active_id.as_deref()==Some(preview.order_id.as_str()){return None;}
         let draft=self.drafts.iter().find(|row|row.id==preview.order_id)?;
         let display=Self::pending_projection(&mut self.pending_display,draft)?;
@@ -1975,7 +1982,7 @@ impl BandoEgui {
         let linked=self.link_hover.scoped_active()
             .map(|(order,key)|(order,key.recipient_id.as_str()));
         let index=workflow_board_ui::visible_pending_recipient(
-            &draft.id,Some(preview),linked
+            &draft.id,Some(&preview),linked
         ).and_then(|id|recipients.iter().position(|row|
                 reception_service::text(row,"id")==id)).unwrap_or(0);
         Some((display,index))
@@ -3821,6 +3828,7 @@ impl BandoEgui {
             self.source_save_error=Some(message.into());
             if confirm_order_id.is_some(){
                 self.pending_draft_confirmation=None;
+                self.pending_stage_display=None;
                 floating_notice::publish(
                     ctx,"reception.workflow",floating_notice::Tone::Error,
                     format!("셀 저장이 취소되어 주문 확정을 중단했습니다. {message}")
@@ -3942,6 +3950,9 @@ impl BandoEgui {
                 }
             }else{
                 self.start_draft_confirmation(&order_id,ctx);
+            }
+            if self.pending_stage_target().is_none(){
+                self.restore_failed_stage_target(&format!("group:{order_id}"),ctx);
             }
         }else if let Some(action)=pending.next_client_review{
             // The completed delivery command no longer owns the draft. On
@@ -7373,7 +7384,10 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
         // order. Display only the section chrome, just like the empty review
         // and recipient panes. Once input arrives, restore the existing
         // message canvas and both copy actions without resetting any state.
-        let awaiting_order = self.raw_source.trim().is_empty()
+        let pending_order_visible=self.pending_stage_target()
+            .or_else(||self.workflow_ui.pending_preview())
+            .is_some_and(|target|self.drafts.iter().any(|draft|draft.id==target.order_id));
+        let awaiting_order = !pending_order_visible && self.raw_source.trim().is_empty()
             && self.analysis.is_none();
         Self::section_with_header(ui, "복사용 자동 메시지", height, |ui| {
             if !awaiting_order {
@@ -11650,6 +11664,100 @@ mod reception_workflow_admission_integration_tests {
         assert!(app.reception_metadata_last_probe.is_none());
     }
 
+    fn stage_test_board()->workflow_board::BoardSnapshot{
+        let ship=workflow_board::ShipmentRow{
+            id:"s1".into(),order_id:"draft-1".into(),recipient_id:"r1".into(),
+            transferred:false,recipient_name:"synthetic".into(),products:vec![],
+            completed_step:Some(1),paid:None,
+            source_raw:"원문".into(),recipient:serde_json::json!({}),remote:None,
+            display_charges:HashMap::new(),freight_editing_blocked:false,
+            collect:false,shipment_count:1,order_total:None
+        };
+        workflow_board::BoardSnapshot{revision:Some(8),groups:vec![workflow_board::GroupRow{
+            id:"group:draft-1".into(),created_at:String::new(),dealer_name:String::new(),
+            source_id:String::new(),source_number:None,dealer_id:String::new(),transferred:false,step:1,
+            stage_validity:[true,false,false,false],needs_notice:false,total:None,vat_included:0,vat_excluded:0,shipments:vec![ship],
+            automatic_text:None,automatic_text_with_links:None,automatic_error:None,automatic_phase:None,automatic_signature:None,
+            payment_copied:false,automatic_payment_issues:vec![],issues:vec![]
+        }]}
+    }
+
+    #[test]
+    fn explicit_stage_click_retains_group_without_pointer_preview(){
+        let mut app=app();
+        let mut board=stage_test_board();
+        let mut second=board.groups[0].shipments[0].clone();
+        second.id="s2".into();
+        second.recipient_id="r2".into();
+        board.groups[0].shipments.push(second);
+        app.workflow_snapshot=Some(Arc::new(board));
+        app.workflow_ui.selection=Some(workflow_board_ui::Selection{
+            group_id:"group:draft-1".into(),order_id:"draft-1".into(),shipment_id:"s2".into()
+        });
+        app.workflow_ui.folded=Some("group:draft-1".into());
+        app.retain_workflow_stage_target("group:draft-1");
+        app.workflow_ui.stop_preview();
+        assert_eq!(app.visible_workflow_group().map(|(b,g,s)|b.groups[g].shipments[s].id.clone()),Some("s2".into()));
+        assert_eq!(app.workflow_ui.folded.as_deref(),Some("group:draft-1"));
+        app.workflow_ui.selection=None;
+        app.retain_workflow_stage_target("group:draft-1");
+        assert!(app.visible_workflow_group().is_some());
+        assert_eq!(app.workflow_ui.folded.as_deref(),Some("group:draft-1"));
+    }
+
+    #[test]
+    fn refreshed_projection_preserves_same_shipment_across_regrouping(){
+        let mut app=app();
+        let old=stage_test_board();
+        app.workflow_snapshot=Some(Arc::new(old.clone()));
+        app.retain_workflow_stage_target("group:draft-1");
+        let mut refreshed=old;
+        refreshed.groups[0].id="regrouped".into();
+        app.reconcile_workflow_selection(&refreshed);
+        let selected=app.workflow_ui.selection.as_ref().unwrap();
+        assert_eq!(selected.group_id,"regrouped");
+        assert_eq!(selected.shipment_id,"s1");
+        assert_eq!(app.workflow_ui.folded.as_deref(),Some("regrouped"));
+        refreshed.groups[0].shipments[0].order_id="another-order".into();
+        app.reconcile_workflow_selection(&refreshed);
+        assert!(app.workflow_ui.selection.is_none());
+    }
+
+    #[test]
+    fn nonactive_draft_stage_click_survives_preview_clear_and_handoff(){
+        let mut app=app();
+        let ctx=egui::Context::default();
+        app.active_id=Some("draft-2".into());
+        app.pending_stage_display=Some(workflow_board_ui::PendingTarget{
+            order_id:"draft-1".into(),recipient_id:Some("r1".into())
+        });
+        let (tx,rx)=mpsc::channel();
+        app.workflow_action=Some(PendingWorkflowAction{group_id:"group:draft-1".into(),
+            action:"confirm_reception".into(),notice_origin:None,receiver:rx});
+        app.workflow_ui.stop_preview();
+        assert_eq!(app.pending_stage_target().map(|t|t.order_id.as_str()),Some("draft-1"));
+        tx.send(Ok(serde_json::json!({}))).unwrap();
+        app.poll_workflow_action(&ctx);
+        assert_eq!(app.pending_stage_target().map(|t|t.order_id.as_str()),Some("draft-1"));
+        assert!(app.finish_confirmed_draft_handoff(&stage_test_board(),&ctx));
+        assert_eq!(app.active_id.as_deref(),Some("draft-2"));
+        assert_eq!(app.workflow_ui.selection.as_ref().unwrap().shipment_id,"s1");
+        assert_eq!(app.workflow_ui.folded.as_deref(),Some("group:draft-1"));
+        assert!(app.pending_stage_target().is_none());
+    }
+
+    #[test]
+    fn rejected_new_order_keeps_current_workflow_selection(){
+        let mut app=app();
+        let ctx=egui::Context::default();
+        app.workflow_snapshot=Some(Arc::new(stage_test_board()));
+        app.retain_workflow_stage_target("group:draft-1");
+        app.workflow_refresh_required=true;
+        app.new_reception(&ctx);
+        assert_eq!(app.workflow_ui.selection.as_ref().unwrap().shipment_id,"s1");
+        assert_eq!(app.drafts.len(),2);
+    }
+
     #[test]
     fn committed_confirmation_keeps_draft_until_matching_board_is_ready(){
         let mut app=app();
@@ -11666,21 +11774,7 @@ mod reception_workflow_admission_integration_tests {
         assert!(!app.delete_pending_reception("draft-1",&ctx));
         assert!(!app.finish_confirmed_draft_handoff(&workflow_board::BoardSnapshot::default(),&ctx));
         assert_eq!(app.drafts.len(),2);
-        let ship=workflow_board::ShipmentRow{
-            id:"s1".into(),order_id:"draft-1".into(),recipient_id:"r1".into(),
-            transferred:false,recipient_name:"synthetic".into(),products:vec![],
-            completed_step:Some(1),paid:None,
-            source_raw:"원문".into(),recipient:serde_json::json!({}),remote:None,
-            display_charges:HashMap::new(),freight_editing_blocked:false,
-            collect:false,shipment_count:1,order_total:None
-        };
-        let board=workflow_board::BoardSnapshot{revision:Some(8),groups:vec![workflow_board::GroupRow{
-            id:"group:draft-1".into(),created_at:String::new(),dealer_name:String::new(),
-            source_id:String::new(),source_number:None,dealer_id:String::new(),transferred:false,step:1,
-            stage_validity:[true,false,false,false],needs_notice:false,total:None,vat_included:0,vat_excluded:0,shipments:vec![ship],
-            automatic_text:None,automatic_text_with_links:None,automatic_error:None,automatic_phase:None,automatic_signature:None,
-            payment_copied:false,automatic_payment_issues:vec![],issues:vec![]
-        }]};
+        let board=stage_test_board();
         assert!(app.finish_confirmed_draft_handoff(&board,&ctx));
         assert_eq!(app.drafts.len(),1);
         assert!(app.active_id.is_none());
