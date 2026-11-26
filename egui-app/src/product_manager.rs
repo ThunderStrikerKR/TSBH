@@ -394,6 +394,7 @@ pub struct ProductManager {
     gateway:Arc<dyn BandoGateway>,
     selection_client:Option<String>,
     selection_result:Option<Value>,
+    selection_detail_ids:Vec<String>,
     focus_search:bool,
     catalog:Option<Value>,
     // Force an authoritative read while keeping the last projection visible.
@@ -429,7 +430,7 @@ pub struct ProductManager {
     photos:ProductImageCache,
     writing:Option<ProductWrite>,
     notice:Option<String>,
-    result:ReadRefresh<ManagementProductRows>,
+    result:ReadRefresh<(ManagementProductRows,Vec<String>)>,
     next_query:Option<Instant>,
     error:Option<String>,
 }
@@ -467,7 +468,7 @@ impl ProductManager {
     }
     fn new_unloaded(gateway:Arc<dyn BandoGateway>)->Self {
         Self {
-            gateway,selection_client:None,selection_result:None,focus_search:false,
+            gateway,selection_client:None,selection_result:None,selection_detail_ids:Vec::new(),focus_search:false,
             catalog:None,products:Vec::new(),order_cache:Default::default(),
             query:String::new(),tab:0,tab_snapshots:crate::view_state::NavigationSnapshots::new(0),
             category_manager:CategoryManager::default(),
@@ -590,11 +591,11 @@ impl ProductManager {
                 let result=management_queries::query_manual_products(
                     gateway.as_ref(),cached,&query,&client,&category,&brand
                 )?;
-                Ok(ManagementProductRows{catalog:result.catalog,products:result.products})
+                Ok((ManagementProductRows{catalog:result.catalog,products:result.products},result.detail_ids))
             }else{
                 management_queries::query_management_products(
                     gateway.as_ref(),cached,&query,&category,&brand,missing,
-                )
+                ).map(|result|(result,Vec::new()))
             }
         });
     }
@@ -845,7 +846,7 @@ impl ProductManager {
         }
         if let Some(result)=self.result.poll(){
             match result{
-                Ok(result)=>{
+                Ok((result,detail_ids))=>{
                     let current_revision=self.catalog.as_ref()
                         .and_then(|catalog|catalog["revision"].as_u64())
                         .unwrap_or(0);
@@ -857,7 +858,7 @@ impl ProductManager {
                         if self.catalog.as_ref()!=Some(&result.catalog){self.category_manager.invalidate_map_cache();}
                         self.catalog=Some(result.catalog);
                         self.result.verified();
-                        self.products=result.products;self.order_cache.invalidate();
+                        self.products=result.products;self.selection_detail_ids=detail_ids;self.order_cache.invalidate();
                         if !self.has_pending_prices(){self.error=None;}
                     }else{
                         // A query started before a price write may finish
@@ -1615,6 +1616,13 @@ impl ProductManager {
                                                 picked=Some(serde_json::json!({
                                                     "productId":product_id,"variantId":selected_id
                                                 }));
+                                            }
+                                            if selection_ready && self.selection_detail_ids.iter().any(|id|id==product_id){
+                                                if let Some(url)=variants.first().map(|v|field(v,"url")).filter(|url|!url.is_empty()){
+                                                    if crate::button::icon_action_button(actions,"↗",true).clicked(){
+                                                        actions.ctx().open_url(egui::OpenUrl::new_tab(url.to_owned()));
+                                                    }
+                                                }
                                             }
                                         }else if crate::button::action(
                                             actions,"상세 관리",
@@ -3463,7 +3471,7 @@ impl ProductManager {
             let brands=(0..count).map(|i|json!({"id":format!("geometry-brand-{i}"),"name":format!("검증 브랜드 {i}"),"korean":"합성","aliases":["검증 검색어"]})).collect::<Vec<_>>();
             let aliases=(0..count).map(|i|json!({"id":format!("geometry-alias-{i}"),"text":format!("검증 별칭 {i}"),"productId":format!("geometry-p-{i}")})).collect::<Vec<_>>();
             let groups=(0..count).map(|i|(format!("geometry-model-{i}"),json!({"name":format!("검증 모델군 {i}"),"productIds":[format!("geometry-p-{i}")],"representativeProductId":format!("geometry-p-{i}")}))).collect::<serde_json::Map<String,Value>>();
-            ManagementProductRows{catalog:json!({"revision":1,"products":products.clone(),"categories":categories,"brands":brands,"aliases":aliases,"settings":{"colorGuidanceGroups":groups}}),products}
+            (ManagementProductRows{catalog:json!({"revision":1,"products":products.clone(),"categories":categories,"brands":brands,"aliases":aliases,"settings":{"colorGuidanceGroups":groups}}),products},Vec::new())
         })))
     }
     pub(crate) fn geometry_read_failed(&self)->bool{self.error.is_some()}
