@@ -1044,6 +1044,7 @@ impl OrderHistoryManager {
         self.from_month=month_start(NaiveDate::parse_from_str(&today,"%Y-%m-%d").expect("today in YYYY-MM-DD"));
         self.to_month=self.from_month;
         self.expanded.clear();self.sort=None;self.detail_order_id=None;
+        self.snapshot=None; // explicit navigation expiry resets the query
         self.refresh(ctx);
     }
     /// Excel rows navigate by the order's reception date. A single-day
@@ -1066,11 +1067,12 @@ impl OrderHistoryManager {
         // Navigating from Excel must not leave another order expanded.
         self.expanded.clear();
         self.expanded.insert(id.to_owned());
+        self.snapshot=None; // explicit navigation to a different query
         self.refresh(ctx);
     }
     pub fn refresh(&mut self,ctx:egui::Context){
         self.error=None;
-        self.snapshot=None;
+        // Same-query refresh keeps the last verified rows until replacement.
         let (sender,receiver)=mpsc::channel();
         self.receiver=Some(receiver);
         let gateway=Arc::clone(&self.gateway);
@@ -1091,10 +1093,10 @@ impl OrderHistoryManager {
                 self.snapshot=Some(snapshot);self.error=None;self.receiver=None;
             },
             Some(Ok(Err(error)))=>{
-                self.snapshot=None;self.error=Some(error);self.receiver=None;
+                self.error=Some(error);self.receiver=None;
             },
             Some(Err(TryRecvError::Disconnected))=>{
-                self.snapshot=None;self.receiver=None;
+                self.receiver=None;
                 self.error=Some("주문내역 조회 연결이 중단되었습니다.".into());
             },
             _=>{}
@@ -1148,7 +1150,7 @@ impl OrderHistoryManager {
         if self.memo_editor.is_none(){return;}
         crate::popup::modal_backdrop(ctx,"history-memo-modal-backdrop",false);
         let busy=self.memo_save_job.is_some();
-        let writable=self.gateway.shipment_memo_write_enabled();
+        let writable=self.gateway.shipment_memo_write_enabled() && self.receiver.is_none() && self.error.is_none();
         let mut cancel=false;
         let mut save=false;
         crate::popup::modal_window(ctx,"관리 메모","history-shipment-memo",work_area)
@@ -1210,7 +1212,7 @@ impl OrderHistoryManager {
             self.memo_editor=None;
             self.memo_error=None;
         }
-        if save && !busy {
+        if save && !busy && writable {
             if let Some(editor)=self.memo_editor.as_ref(){
                 let (sender,receiver)=mpsc::channel();
                 let gateway=Arc::clone(&self.gateway);
@@ -1326,6 +1328,7 @@ impl OrderHistoryManager {
             ).is_none(){
                 self.date_from=self.from_input.clone();
                 self.date_to=self.to_input.clone();
+                self.snapshot=None; // do not display rows for a different search/date
                 self.refresh(section.ctx().clone());
             }
             // Same measured transition as Freight > Shipping Group
@@ -1368,7 +1371,7 @@ impl OrderHistoryManager {
             );
             // Empty, loading and no-result states remain in the table body.
             // Input/server errors are floating notices anchored to the toolbar.
-            let notice=if self.receiver.is_some(){
+            let notice=if self.receiver.is_some() && snapshot.is_none(){
                 Some("주문 이력을 확인 중입니다.")
             }else if snapshot.is_some_and(|data|data.rows.is_empty()){
                 Some(if self.query.is_empty()
@@ -1526,7 +1529,7 @@ impl OrderHistoryManager {
             if let Some(order_id)=pending_toggle {
                 toggle_history_expansion(&mut self.expanded,&order_id);
             }
-            if let Some(editor)=pending_memo {
+            if let Some(editor)=pending_memo.filter(|_|self.receiver.is_none()&&self.error.is_none()) {
                 self.memo_editor=Some(editor);
                 self.memo_error=None;
             }
