@@ -245,7 +245,9 @@ pub(crate) fn show<R>(
     result
 }
 
-/// Compact registry tables share one fixed header, row viewport and cell policy.
+/// Single-line registry tables share the 42pt compact management row policy.
+/// Callers already lay out their toolbar divider or section heading; use a
+/// bare header here, never the history-only missing-toolbar reservation.
 pub(crate) fn registry_table<const N:usize>(
     ui:&mut Ui,id:impl std::hash::Hash,labels:[&str;N],base:[f32;N],
     height:f32,count:usize,selected:impl Fn(usize)->bool,
@@ -254,7 +256,7 @@ pub(crate) fn registry_table<const N:usize>(
     let gap=theme::SPACE_8;
     let minimum=base.iter().sum::<f32>()+N.saturating_sub(1) as f32*gap;
     let spacing=crate::table::management_table_container_style(ui);
-    let inner=crate::table::show(ui,crate::table::Header::WithoutToolbar(minimum),|ui,layout|{
+    let inner=crate::table::show(ui,crate::table::Header::List(minimum),|ui,layout|{
         let mut widths=base;
         widths[0]+=(layout.table_width-minimum).max(0.0);
         let cells=crate::table::management_table_cells(
@@ -268,13 +270,13 @@ pub(crate) fn registry_table<const N:usize>(
             }
         });
         let output=crate::table::fixed_rows(ui,crate::table::Viewport{
-            width:layout.table_width,height:height.max(1.0),rail:None
-        },id,theme::MANAGEMENT_TABLE_ROW_HEIGHT,count,|body,visible|{
+            width:layout.table_width,height:height.min(ui.available_height()).max(1.0),rail:None
+        },id,theme::MANAGEMENT_COMPACT_ROW_HEIGHT,count,|body,visible|{
             let origin=body.max_rect().min;
             let first=visible.start;
             for index in visible{
                 let rect=crate::table::fixed_row_rect(origin,index,first,layout.table_width,
-                    theme::MANAGEMENT_TABLE_ROW_HEIGHT);
+                    theme::MANAGEMENT_COMPACT_ROW_HEIGHT);
                 crate::table::fixed_row(body,index,rect,index,&widths,gap,
                     crate::table::RowTone::SelectedIf(selected(index)),|row,cells|draw(row,cells,index,rect));
             }
@@ -1157,6 +1159,32 @@ impl ManagementTableColumnLabel {
             Self::ProductName => "상품명",
         }
     }
+}
+
+#[cfg(test)]
+#[test]
+fn registry_uses_compact_rows_without_a_phantom_toolbar(){
+    let ctx=crate::ui_test_support::test_context();
+    let _=ctx.run(egui::RawInput{
+        screen_rect:Some(Rect::from_min_size(egui::Pos2::ZERO,Vec2::new(900.0,500.0))),
+        ..Default::default()
+    },|ctx|{
+        egui::CentralPanel::default().show(ctx,|ui|{
+            let top=ui.cursor().top();
+            let mut rows=Vec::new();
+            let viewport=registry_table(ui,"registry-compact-geometry",
+                ["name","action"],[240.0,100.0],160.0,3,|_|false,
+                |_,_,_,rect|rows.push(rect));
+            assert_eq!(rows.len(),3);
+            assert!((viewport.top()-top-theme::MANAGEMENT_TABLE_HEADER_HEIGHT).abs()<=0.5);
+            for rect in &rows{
+                assert!((rect.height()-theme::PRODUCT_TABLE_ROW_HEIGHT).abs()<=0.5);
+            }
+            for pair in rows.windows(2){
+                assert!((pair[1].top()-pair[0].bottom()).abs()<=0.5);
+            }
+        });
+    });
 }
 
 #[cfg(test)]
