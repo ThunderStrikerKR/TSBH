@@ -264,3 +264,36 @@ fn shared_parallel_cards_fit_current_content_and_shrink_without_cached_height(){
     assert_eq!(CardHeightPolicy::FillAvailable.resolve(200.0,80.0,160.0),200.0);
     assert_eq!(CardHeightPolicy::FillAvailable.resolve(40.0,80.0,f32::INFINITY),40.0);
 }
+
+#[test]
+fn card_height_policy_preserves_natural_growth_and_only_explicitly_expands(){
+    let ctx=egui::Context::default();
+    for (policy,target,expected) in [
+        (CardHeightPolicy::FitContent,240.0,40.0),
+        (CardHeightPolicy::MatchTallest,120.0,120.0),
+        (CardHeightPolicy::FillAvailable,180.0,180.0),
+        (CardHeightPolicy::FillAvailable,20.0,40.0),
+    ]{
+        let _=ctx.run(egui::RawInput::default(),|ctx|{
+            egui::CentralPanel::default().show(ctx,|ui|{
+                ui.spacing_mut().item_spacing.y=0.0;
+                let measured=ui.scope(|body|{
+                    body.allocate_exact_size(Vec2::new(100.0,40.0),Sense::hover());
+                    apply_height_policy(body,policy,target);
+                });
+                assert!((measured.response.rect.height()-expected).abs()<1.0);
+            });
+        });
+    }
+}
+
+#[test]
+fn screen_card_height_reservations_use_the_common_policy(){
+    let item=include_str!("../item_editor.rs");
+    assert!(!item.contains("details.set_min_height("));
+    assert!(item.contains("crate::card::CardHeightPolicy::MatchTallest,photo_side"));
+    let messages=include_str!("../automatic_message_manager.rs");
+    assert!(messages.contains("crate::card::management_card_min_height_for_insets("));
+    let cards=include_str!("mod.rs");
+    assert!(cards.contains("apply_height_policy(ui,CardHeightPolicy::FillAvailable,min_inner_height)"));
+}

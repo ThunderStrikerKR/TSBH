@@ -25,6 +25,17 @@ impl CardHeightPolicy {
     }
 }
 
+/// Single owner for vertical expansion of a card or its aligned content.
+/// The target is a minimum, not a maximum: long content must never clip.
+/// FitContent does not reserve unused vertical space.
+pub(crate) fn apply_height_policy(ui:&mut Ui,policy:CardHeightPolicy,target:f32){
+    let natural=ui.min_rect().height();
+    let height=policy.resolve(natural,target,target);
+    if height>natural{
+        ui.set_min_height(height);
+    }
+}
+
 /// Render each card once in an independent top-aligned, content-sized UI.
 /// Finalize the shared frame only after all natural heights are known.
 /// A zero-height soft layout bound prevents the scroll viewport or sibling
@@ -62,7 +73,7 @@ pub(crate) fn parallel_frames(
     for (mut column,mut card,natural) in prepared{
         let overhead=card.frame.total_margin().sum().y;
         let target=policy.resolve(natural,tallest,(available-overhead).max(0.0));
-        card.content_ui.set_min_height(target);
+        apply_height_policy(&mut card.content_ui,policy,target);
         let rect=card.end(&mut column).rect;
         bounds=bounds.union(rect);
         rects.push(rect);
@@ -331,7 +342,7 @@ pub(crate) fn management_master_table_card_min_inner_height(ui:&Ui)->f32{
 }
 pub(crate) fn fill_management_primary_card(ui: &mut Ui, min_inner_height: f32) {
     ui.set_min_width(ui.available_width().max(1.0));
-    ui.set_min_height(min_inner_height);
+    apply_height_policy(ui,CardHeightPolicy::FillAvailable,min_inner_height);
 }
 
 
@@ -377,7 +388,10 @@ pub(crate) fn reception_section_with_header(
         let width_inset=2.0*theme::SECTION_PADDING;
         let height_inset=theme::RECEPTION_SECTION_HEADER_TOP+theme::RECEPTION_PANE_PADDING_Y;
         ui.set_min_width((width-width_inset).max(60.0));
-        ui.set_min_height((minimum_height-height_inset).max(48.0));
+        // Docked panes have an explicit viewport budget; zero requests a natural card.
+        let policy=if minimum_height>0.0{CardHeightPolicy::FillAvailable}
+            else{CardHeightPolicy::FitContent};
+        apply_height_policy(ui,policy,(minimum_height-height_inset).max(48.0));
         let body_item_spacing=theme::SPACING;
         ui.spacing_mut().item_spacing.y=0.0;
         let _header=ui.allocate_ui_with_layout(

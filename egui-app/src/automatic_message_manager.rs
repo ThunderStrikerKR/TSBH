@@ -642,8 +642,9 @@ impl AutomaticMessageManager {
         // Use the actual remaining management pane height. A 340pt
         // minimum previously forced the footer below short windows.
         let height=(ui.available_height()-theme::SPACE_8).max(1.0);
-        let card_min_height=(height-2.0*(theme::SECTION_PADDING
-            +theme::FRAME_STROKE_WIDTH)).max(0.0);
+        let card_min_height=crate::card::management_card_min_height_for_insets(
+            height,theme::SECTION_PADDING,theme::SECTION_PADDING
+        );
         let mut save=false;
         ui.horizontal(|panes|{
             panes.spacing_mut().item_spacing.x=gap;

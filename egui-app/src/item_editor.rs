@@ -303,7 +303,9 @@ impl ItemEditor{
                                         -ITEM_DETAIL_PANEL_GAP).max(1.0);
                                     line.vertical(|details|{
                                         details.set_width(detail_width);
-                                        details.set_min_height(photo_side);
+                                        crate::card::apply_height_policy(
+                                            details,crate::card::CardHeightPolicy::MatchTallest,photo_side
+                                        );
                                         self.detail_information(
                                             details,name,category,&price,
                                             Arc::clone(&gateway),ctx,
