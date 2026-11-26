@@ -308,7 +308,7 @@ impl AutomaticMessageManager {
     }
     pub fn busy(&self)->bool{self.saving.is_some() || self.loading.pending()}
     fn writable(&self)->bool{
-        self.loaded && self.settings["readOnly"]!=Value::Bool(true)
+        self.loaded && !self.loading.required() && self.settings["readOnly"]!=Value::Bool(true)
             && (self.settings["mode"].as_str()!=Some("business")
                 ||self.settings["dataAvailable"]==Value::Bool(true))
     }
