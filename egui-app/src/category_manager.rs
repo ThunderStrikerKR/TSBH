@@ -9,6 +9,17 @@ use std::collections::{HashMap,HashSet};
 struct TreeMotion{id:String,opening:bool,started:f64,duration:f64}
 #[derive(Clone,Debug)]
 struct NavMotion{from:Vec<String>,started:f64,duration:f64,reverse:bool}
+#[derive(Clone,Debug)]
+struct ModeMotion{target:bool,started:f64,duration:f64}
+impl ModeMotion{
+    // Match the shared breadcrumb transition: fade the old view out, then
+    // fade the destination in, without moving the fixed toolbar.
+    fn phase(&self,now:f64)->(bool,f32,bool){
+        let t=((now-self.started)/self.duration).clamp(0.0,1.0) as f32;
+        if t<0.5{(!self.target,1.0-category_dropdown::ease(t*2.0),false)}
+        else{(self.target,category_dropdown::ease((t-0.5)*2.0),t>=1.0)}
+    }
+}
 impl TreeMotion{
     fn progress(&self,now:f64)->f32{category_dropdown::ease(((now-self.started)/self.duration).clamp(0.0,1.0) as f32)}
 }
@@ -43,6 +54,7 @@ pub struct CategoryManager {
     crumbs:category_dropdown::ExplorerState,
     tree_motion:Option<TreeMotion>,
     nav_motion:Option<NavMotion>,
+    mode_motion:Option<ModeMotion>,
     map_cache:Option<(u64,String,std::sync::Arc<CategoryMapIndex>)>,
     node_cache:crate::screen_refresh::ViewProjectionCache<Option<u64>,(Vec<Category>,Vec<category_dropdown::CategoryNode>)>,
     scroll_epoch:u64,
@@ -66,7 +78,7 @@ impl Default for CategoryManager {
             selected:ROOTS[0].0.into(),
             expanded:ROOTS.iter().map(|(id,_)|(*id).to_owned()).collect(),
             query:String::new(),focused:false,focus:Default::default(),crumbs:Default::default(),
-            tree_motion:None,nav_motion:None,map_cache:None,node_cache:Default::default(),scroll_epoch:0,scroll_to:None,
+            tree_motion:None,nav_motion:None,mode_motion:None,map_cache:None,node_cache:Default::default(),scroll_epoch:0,scroll_to:None,
             name:String::new(),editor:false,
             operation:None,new_name:String::new(),target:String::new(),
             transfer:false,confirm:None,after_save:None,
@@ -458,7 +470,7 @@ impl CategoryManager {
         self.selected=ROOTS[0].0.to_owned();
         self.expanded=ROOTS.iter().map(|(id,_)|(*id).to_owned()).collect();
         self.query.clear();self.focused=false;self.focus=Default::default();self.crumbs=Default::default();
-        self.scroll_epoch=epoch;self.focus.scroll_epoch=epoch;self.tree_motion=None;self.nav_motion=None;self.scroll_to=None;
+        self.scroll_epoch=epoch;self.focus.scroll_epoch=epoch;self.tree_motion=None;self.nav_motion=None;self.mode_motion=None;self.scroll_to=None;
         self.invalidate_map_cache();
     }
     pub(crate) fn invalidate_map_cache(&mut self){self.map_cache=None;self.node_cache.invalidate();}
@@ -509,7 +521,7 @@ impl CategoryManager {
         let branches=index.branches(&item.id);
         let open=self.expanded.contains(&item.id)||!self.query.trim().is_empty();
         let motion=self.tree_motion.clone().filter(|m|m.id==item.id);
-        let locked=self.tree_motion.is_some()||self.nav_motion.is_some();
+        let locked=self.tree_motion.is_some()||self.nav_motion.is_some()||self.mode_motion.is_some();
         let count=index.total(&item.id);
         let summary=if branches.is_empty(){
             format!("(상품 {count})")
@@ -582,6 +594,15 @@ impl CategoryManager {
                 self.editor=true;
             }
         }
+        // This toolbar flows right-to-left: the checkbox is immediately
+        // left of Edit, and uses the same shared control as other screens.
+        let mut focused=self.mode_motion.as_ref().map(|m|m.target).unwrap_or(self.focused);
+        if crate::checkbox::checkbox(actions,&mut focused,"집중 탐색",!busy).changed(){
+            let depth=path(cats,&self.selected).len();
+            self.mode_motion=Some(ModeMotion{target:focused,started:actions.input(|i|i.time),
+                duration:category_dropdown::motion_ms(depth)/1000.0});
+            actions.ctx().request_repaint();
+        }
     }
     pub fn show_page(&mut self,ui:&mut Ui,catalog:&Value,editable:bool,busy:bool){
         let revision=catalog["revision"].as_u64();
@@ -603,7 +624,7 @@ impl CategoryManager {
             if ui.input(|i|i.time)>=n.started+n.duration{self.nav_motion=None;}
             else{ui.ctx().request_repaint();}
         }
-        let busy=busy||self.tree_motion.is_some()||self.nav_motion.is_some()||self.focus.moving();
+        let busy=busy||self.tree_motion.is_some()||self.nav_motion.is_some()||self.focus.moving()||self.mode_motion.is_some();
         let card_min_height=crate::card::management_primary_card_min_inner_height(
             ui,theme::SECTION_PADDING
         );
@@ -613,7 +634,9 @@ impl CategoryManager {
             // search-and-actions toolbar, exactly as the management master.
             panel.spacing_mut().item_spacing.y=0.0;
             let width=panel.available_width().max(1.0);
-            if width<theme::CATALOG_MAP_TOOLBAR_STACK_WIDTH{
+            // Reserve the checkbox label and shared inter-control gap in both layouts.
+            let focus_action_width=theme::INPUT_HEIGHT*3.0+theme::SPACE_12;
+            if width<theme::CATALOG_MAP_TOOLBAR_STACK_WIDTH+focus_action_width{
                 // On a narrow pane, preserve usable search and button hit
                 // targets instead of squeezing them into clipped columns.
                 let (actions_rect,_)=panel.allocate_exact_size(
@@ -651,7 +674,7 @@ impl CategoryManager {
                 let (toolbar_rect,_)=panel.allocate_exact_size(
                     Vec2::new(width,theme::INPUT_HEIGHT),Sense::hover()
                 );
-                let actions_width=theme::CATALOG_MAP_TOOLBAR_ACTIONS_WIDTH;
+                let actions_width=theme::CATALOG_MAP_TOOLBAR_ACTIONS_WIDTH+focus_action_width;
                 let search_width=theme::CATALOG_SEARCH_WIDTH.min(
                     (toolbar_rect.width()-actions_width-theme::SPACE_12).max(1.0)
                 );
@@ -688,19 +711,22 @@ impl CategoryManager {
             // The mode switch and path both use the existing shared controls.
             let nodes=&projection.1;
             let node_index=category_dropdown::tree_index(&nodes);
-            let mut focused=self.focused;
-            panel.horizontal(|bar|{
-                crate::checkbox::checkbox(bar,&mut focused,"집중 탐색",!busy&&!self.focus.moving()&&self.tree_motion.is_none());
-            });
-            if focused!=self.focused{
-                self.focused=focused;
-                if focused{
-                    category_dropdown::navigate(&mut self.focus,category_dropdown::chain(&node_index,&self.selected));
-                    self.focus.search=self.query.clone();
-                }else{
-                    for ancestor in path(&cats,&self.selected){self.expanded.insert(ancestor.id);}
-                    self.scroll_to=Some(self.selected.clone());
+            let busy=busy||self.mode_motion.is_some();
+            if let Some(motion)=self.mode_motion.clone(){
+                let (focused,alpha,done)=motion.phase(panel.input(|i|i.time));
+                if focused!=self.focused{
+                    self.focused=focused;
+                    if focused{
+                        category_dropdown::navigate(&mut self.focus,category_dropdown::chain(&node_index,&self.selected));
+                        self.focus.search=self.query.clone();
+                    }else{
+                        for ancestor in path(&cats,&self.selected){self.expanded.insert(ancestor.id);}
+                        self.scroll_to=Some(self.selected.clone());
+                    }
                 }
+                panel.set_opacity(alpha);
+                if done{self.mode_motion=None;}
+                panel.ctx().request_repaint();
             }
             if self.focused{
                 let index=self.map_index(&cats,catalog);
@@ -1120,10 +1146,34 @@ mod modal_layout_contract_tests{
         manager.query.clear();
         let changed=manager.map_index(&cats,&catalog);
         assert!(std::sync::Arc::ptr_eq(&first.totals,&changed.totals));
+        manager.mode_motion=Some(ModeMotion{target:false,started:0.0,duration:0.45});
         manager.reset_navigation();
+        assert!(manager.mode_motion.is_none());
         assert!(!manager.focused);assert!(manager.query.is_empty());
         assert!(manager.map_cache.is_none());
         assert_eq!(manager.scroll_epoch,1);
+    }
+    #[test]
+    fn mode_transition_fades_out_then_in_for_both_directions(){
+        for target in [true,false]{
+            let m=ModeMotion{target,started:0.0,duration:1.0};
+            assert_eq!(m.phase(0.0),(!target,1.0,false));
+            assert!(m.phase(0.25).1<1.0);
+            assert_eq!(m.phase(0.5),(target,0.0,false));
+            assert!(m.phase(0.75).1>0.0);
+            assert_eq!(m.phase(1.0),(target,1.0,true));
+        }
+    }
+    #[test]
+    fn category_map_focus_switch_is_in_the_shared_trailing_toolbar(){
+        let source=include_str!("category_manager.rs");
+        let toolbar=source.split("    fn map_toolbar_actions(").nth(1).unwrap()
+            .split("    pub fn show_page(").next().unwrap();
+        assert!(toolbar.find("선택 분류 편집").unwrap()<toolbar.find("crate::checkbox::checkbox(actions").unwrap());
+        let page=source.split("    pub fn show_page(").nth(1).unwrap()
+            .split("    pub fn show_overlays(").next().unwrap();
+        assert!(!page.contains("crate::checkbox::checkbox("));
+        assert!(page.contains("panel.set_opacity(alpha)"));
     }
     #[test]
     fn category_map_index_counts_each_product_once_per_ancestor(){
