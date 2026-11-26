@@ -36,7 +36,7 @@ fn edit_optional_text(target:&mut Value,key:&str,raw:&str){
 fn edit_color(target:&mut Value,key:&str,raw:&str)->bool{
     if unchanged_text(raw,field(target,key)){return false;}
     let color=normalized_color(&optional(raw,field(target,key)));
-    if color==normalized_color(field(target,key)){return false;}
+    if color==normalized_color(field(target,key)) && raw!=EMPTY{return false;}
     target[key]=json!(color);
     true
 }
@@ -503,4 +503,85 @@ pub(super) fn preview(payload:&Value)->Result<Value,String>{
         "createdProducts":new_p,"updatedProducts":updated_p,
         "createdOptions":new_v,"updatedOptions":updated_v
     }))
+}
+
+#[cfg(test)]
+mod workbook_exact_delta_tests{
+    use super::*;
+    fn sample()->Value{
+        json!({"revision":7,"categories":[],"brands":[],"products":[
+            {"id":"p1","name":"모델 A ","subtitle":" 설명 ","catalog":"BANDOSTAND",
+             "origin":"FACTORY","defaultColor":"검정","colorStatus":"MISSING",
+             "saleUnit":false,"updatedAt":"old","brandId":"legacy-brand",
+             "variants":[{"id":"v1","color":"검정","option":" 기본 ","source":"OFFICIAL",
+                 "wholesale":1000,"semi":null,"retail":3000}]},
+            {"id":"p2","name":"모델 B","catalog":"BANDOSTAND","origin":"FACTORY",
+             "defaultColor":"색상 미표기","updatedAt":"old","active":true,
+             "variants":[{"id":"v2","color":"색상 미표기","source":"MANUAL",
+                 "wholesale":2000,"semi":null,"retail":4000}]},
+            {"id":"p3","name":"모델 C","catalog":"BANDOSTAND","origin":"FACTORY",
+             "defaultColor":"","updatedAt":"old","active":true,
+             "variants":[{"id":"v3","color":"","source":"MANUAL",
+                 "wholesale":null,"semi":null,"retail":5000}]}
+        ]})
+    }
+    fn source(state:&Value,indices:&[usize])->Value{
+        let mut products=vec![];
+        let mut options=vec![];
+        for (index,i) in indices.iter().enumerate(){
+            let p=&state["products"][*i];
+            let trimmed=|cells:Vec<String>|cells.into_iter().map(|s|s.trim().to_owned())
+                .collect::<Vec<_>>();
+            products.push(json!({"row":index+2,"cells":trimmed(product_row(p))}));
+            options.push(json!({"row":index+2,"cells":trimmed(variant_row(p,&p["variants"][0]))}));
+        }
+        json!({"revision":7,"products":products,"options":options})
+    }
+    fn review(state:&Value,source:&Value)->Value{
+        preview(&json!({"state":state,"source":source,"now":"new","unified":true})).unwrap()
+    }
+    #[test]
+    fn unedited_full_or_partial_workbook_preserves_exact_records(){
+        let state=sample();
+        for indices in [&[0,1,2][..],&[0,2][..]]{
+            let result=review(&state,&source(&state,indices));
+            assert_eq!(result["products"],state["products"]);
+            assert_eq!(result["updatedProducts"],0);
+            assert_eq!(result["updatedOptions"],0);
+            assert!(items(&result,"rows").iter().all(|row|field(row,"status")=="UNCHANGED"));
+        }
+    }
+    #[test]
+    fn one_price_change_changes_only_that_product_and_keeps_legacy_metadata(){
+        let state=sample();
+        let mut input=source(&state,&[0,1,2]);
+        input["options"][0]["cells"][5]=json!("1,200");
+        let result=review(&state,&input);
+        assert_eq!(result["updatedProducts"],1);
+        assert_eq!(result["updatedOptions"],1);
+        assert_eq!(result["products"][1],state["products"][1]);
+        assert_eq!(result["products"][2],state["products"][2]);
+        let mut expected=state["products"][0].clone();
+        expected["variants"][0]["wholesale"]=json!(1200);
+        expected["updatedAt"]=json!("new");
+        expected["priceHistory"]=json!([{"at":"new","field":"v1.wholesale",
+            "before":1000,"after":1200,"source":"MANUAL_EXCEL"}]);
+        assert_eq!(result["products"][0],expected);
+        assert_eq!(result["rows"][0]["status"],"UPDATE");
+        assert_eq!(result["rows"][1]["status"],"UNCHANGED");
+    }
+    #[test]
+    fn blank_zero_and_explicit_clear_are_distinct(){
+        let state=sample();
+        let mut input=source(&state,&[2]);
+        input["options"][0]["cells"][5]=json!("0");
+        input["options"][0]["cells"][7]=json!("[비우기]");
+        let result=review(&state,&input);
+        assert_eq!(result["updatedProducts"],1);
+        assert_eq!(result["products"][2]["variants"][0]["wholesale"],0);
+        assert_eq!(result["products"][2]["variants"][0]["semi"],Value::Null);
+        assert_eq!(result["products"][2]["variants"][0]["retail"],Value::Null);
+        assert_eq!(result["products"][2]["priceHistory"].as_array().unwrap().len(),2);
+        assert_eq!(result["products"][0],state["products"][0]);
+    }
 }
