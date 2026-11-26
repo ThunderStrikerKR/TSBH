@@ -1230,77 +1230,114 @@ fn workflow_freight_text_job(text:&str,ink:Color32)->egui::text::LayoutJob{
     job
 }
 
-/// Shared shipment row renderer. Selection changes only its own surface;
-/// content widths, label positions and one-touch freight emphasis are stable.
+/// One column contract for the shipment list header and every delivery row.
+/// The product column absorbs remaining width; names and amounts never move
+/// neighboring columns when their content or highlight state changes.
+fn workflow_shipment_columns(outer:f32)->(f32,f32,f32,f32){
+    let inset=theme::WORKFLOW_DETAIL_ROW_PADDING_X+theme::SOFT_DIVIDER_WIDTH;
+    let inside=(outer-2.0*inset).max(0.0);
+    let gap=theme::SPACE_8.min(inside*0.04);
+    let name=theme::WORKFLOW_DETAIL_NAME_WIDTH.min(inside*0.27);
+    let freight=(theme::WORKFLOW_DETAIL_NAME_WIDTH-theme::SPACE_8).min(inside*0.25);
+    let product=(inside-name-freight-2.0*gap).max(0.0);
+    (name,product,freight,gap)
+}
+pub fn workflow_shipment_header(ui:&mut Ui){
+    let outer=ui.available_width();
+    let (name,product,freight,gap)=workflow_shipment_columns(outer);
+    let (rect,_)=ui.allocate_exact_size(Vec2::new(outer,24.0),Sense::hover());
+    let x=rect.left()+theme::WORKFLOW_DETAIL_ROW_PADDING_X+theme::SOFT_DIVIDER_WIDTH;
+    let painter=ui.painter().with_clip_rect(rect.intersect(ui.clip_rect()));
+    let font=egui::FontId::proportional(typography::FONT_FIELD_LABEL);
+    painter.text(egui::pos2(x,rect.center().y),egui::Align2::LEFT_CENTER,
+        "수취인",font.clone(),theme::SECONDARY);
+    painter.text(egui::pos2(x+name+gap,rect.center().y),egui::Align2::LEFT_CENTER,
+        "품목",font.clone(),theme::SECONDARY);
+    painter.text(egui::pos2(x+name+product+freight+2.0*gap-theme::SPACE_4,rect.center().y),
+        egui::Align2::RIGHT_CENTER,"운임",font,theme::SECONDARY);
+}
+/// The history detail uses the same diamond and semantic quantity role.
+/// Keep one item per line, including unknown quantities, without truncation.
+fn workflow_product_text_job(text:&str,ink:Color32)->egui::text::LayoutJob{
+    let mut job=if let Some((prefix,quantity))=text.rsplit_once(" × "){
+        if quantity=="?" || quantity.chars().all(|c|c.is_ascii_digit()){
+            typography::inline_body_values(&[
+                (prefix,None),(" × ",None),(quantity,if quantity=="?"{None}else{Some(typography::DataValueKind::Quantity)})
+            ])
+        }else{typography::inline_body_values(&[(text,None)])}
+    }else{typography::inline_body_values(&[(text,None)])};
+    for section in &mut job.sections{section.format.color=ink;}
+    job
+}
+
+/// Shared shipment group renderer. Each product is measured independently;
+/// one group selection/hover hit rect still owns all of its wrapped lines.
 pub fn workflow_shipment_row(
     ui:&mut Ui,name:&str,summary:&str,fill:Color32,chosen:bool,previewed:bool,freight:Option<&str>,freight_emphasis:bool
 )->egui::Response{
     let outer=ui.available_width();
-    let preview_ink=if chosen{
-        theme::WORKFLOW_SELECTED_ROW_TEXT
-    }else if previewed{
-        source_highlight::ACTIVE_TEXT
-    }else{theme::TEXT};
-    let response=theme::workflow_shipment_row_frame(fill,chosen)
-        .show(ui,|row|{
-            // Inner margins do not include the 1pt frame stroke on either
-            // edge. Reserve both strokes so neighboring rows have exactly
-            // the same width and the list never grows a horizontal rail.
-            let inside=(outer-2.0*theme::WORKFLOW_DETAIL_ROW_PADDING_X
-                -2.0*theme::SOFT_DIVIDER_WIDTH).max(0.0);
-            row.set_min_width(inside);
-            row.horizontal(|cols|{
-                cols.spacing_mut().item_spacing.x=theme::SPACE_8;
-                let name_natural=cols.painter().layout_no_wrap(name.to_owned(),
-                    egui::FontId::proportional(typography::FONT_BODY),preview_ink).size().x;
-                let name_width=theme::WORKFLOW_DETAIL_NAME_WIDTH.max(name_natural)
-                    .min((inside*0.36).max(0.0));
-                let freight_ink=if freight_emphasis{crate::one_touch::INK}else{theme::TEXT};
-                let freight_galley=freight.map(|text|{
-                    let job=workflow_freight_text_job(text,freight_ink);
-                    cols.fonts_mut(|fonts|fonts.layout_job(job))
-                });
-                let freight_width=freight_galley.as_ref().map_or(0.0,|galley|galley.size().x+12.0).min(inside*0.42);
-                let product_width=(inside-name_width-theme::SPACE_8-if freight.is_some(){freight_width+theme::SPACE_8}else{0.0}).max(0.0);
-                let name_response=cols.add_sized(
-                    [name_width,theme::WORKFLOW_DETAIL_ROW_CONTENT_HEIGHT],
-                    truncated_label_for_explicit_tooltip(typography::body(name).color(preview_ink))
-                );
-                let name_overflow=name_natural>name_width+0.5;
-                let _=overflow_tooltip(name_response,name_overflow,name);
-                let summary_ink=if chosen{theme::TEXT}else{preview_ink};
-                let summary_natural=cols.painter().layout_no_wrap(summary.to_owned(),
-                    egui::FontId::proportional(typography::FONT_BODY),summary_ink).size().x;
-                let summary_response=cols.add_sized(
-                    [product_width,theme::WORKFLOW_DETAIL_ROW_CONTENT_HEIGHT],
-                    truncated_label_for_explicit_tooltip(typography::body(summary).color(summary_ink))
-                );
-                let _=overflow_tooltip(summary_response,summary_natural>product_width+0.5,summary);
-                if let (Some(freight),Some(galley))=(freight,freight_galley){
-                    let (rect,hit)=cols.allocate_exact_size(Vec2::new(freight_width,theme::WORKFLOW_DETAIL_ROW_CONTENT_HEIGHT),egui::Sense::hover());
-                    if freight_emphasis{
-                        crate::one_touch::background(cols,rect);
-                        crate::one_touch::outline(cols,rect);
-                    }
-                    let overflow=galley.size().x+12.0>rect.width()+0.5;
-                    let x=(rect.right()-6.0-galley.size().x).max(rect.left()+6.0);
-                    cols.painter().with_clip_rect(rect.intersect(cols.clip_rect())).galley(egui::Pos2::new(x,rect.center().y-galley.size().y/2.0),galley,freight_ink);
-                    let _=overflow_tooltip(hit,overflow,freight);
-                }
-            });
-        });
-    // Preview keeps its existing linked blue highlight. Committed selection
-    // is rendered entirely by the row frame above, with no overlaid stripe.
-    if previewed && !chosen {
-        let rect=response.response.rect;
-        ui.painter().rect_stroke(
-            rect.shrink(0.5),theme::CONTROL_RADIUS as f32,
-            egui::Stroke::new(
-                source_highlight::ACTIVE_BORDER_WIDTH,
-                source_highlight::ACTIVE_BORDER
-            ),
-            egui::StrokeKind::Inside,
-        );
+    let (name_width,product_width,freight_width,gap)=workflow_shipment_columns(outer);
+    let preview_ink=if chosen{theme::WORKFLOW_SELECTED_ROW_TEXT}
+        else if previewed{source_highlight::ACTIVE_TEXT}else{theme::TEXT};
+    let summary_ink=if chosen{theme::TEXT}else{preview_ink};
+    let freight_ink=if freight_emphasis{crate::one_touch::INK}else{theme::TEXT};
+    let response=theme::workflow_shipment_row_frame(fill,chosen).show(ui,|row|{
+        let mut name_job=typography::inline_body_values(&[(name,None)]);
+        name_job.wrap.max_width=name_width.max(1.0);
+        for section in &mut name_job.sections{section.format.color=preview_ink;}
+        let name_galley=row.fonts_mut(|fonts|fonts.layout_job(name_job));
+        let products=summary.lines().map(|line|{
+            let mut job=workflow_product_text_job(line,summary_ink);
+            job.wrap.max_width=product_width.max(1.0);
+            row.fonts_mut(|fonts|fonts.layout_job(job))
+        }).collect::<Vec<_>>();
+        let freight_text=freight.unwrap_or("—");
+        let freight_galleys=freight_text.split(" / ").map(|line|{
+            let mut job=workflow_freight_text_job(line,freight_ink);
+            job.wrap.max_width=(freight_width-2.0*theme::SPACE_4).max(1.0);
+            row.fonts_mut(|fonts|fonts.layout_job(job))
+        }).collect::<Vec<_>>();
+        let product_height=products.iter().map(|g|g.size().y).sum::<f32>()
+            +theme::SPACE_4*products.len().saturating_sub(1) as f32;
+        let freight_height=freight_galleys.iter().map(|g|g.size().y).sum::<f32>()
+            +theme::SPACE_4*freight_galleys.len().saturating_sub(1) as f32;
+        let content_height=name_galley.size().y.max(product_height).max(freight_height)
+            .max(theme::WORKFLOW_DETAIL_ROW_CONTENT_HEIGHT);
+        let (rect,_)=row.allocate_exact_size(
+            Vec2::new(name_width+product_width+freight_width+2.0*gap,content_height),Sense::hover());
+        let name_rect=Rect::from_min_size(rect.min,Vec2::new(name_width,content_height));
+        let product_rect=Rect::from_min_size(
+            egui::pos2(name_rect.right()+gap,rect.top()),Vec2::new(product_width,content_height));
+        let freight_rect=Rect::from_min_size(
+            egui::pos2(product_rect.right()+gap,rect.top()),Vec2::new(freight_width,content_height));
+        let first_line_inset=(theme::WORKFLOW_DETAIL_ROW_CONTENT_HEIGHT-22.0).max(0.0)/2.0;
+        let y=rect.top()+first_line_inset.min((content_height-name_galley.size().y).max(0.0));
+        row.painter().with_clip_rect(name_rect.intersect(row.clip_rect()))
+            .galley(egui::pos2(name_rect.left(),y),name_galley,preview_ink);
+        let mut y=rect.top()+first_line_inset.min((content_height-product_height).max(0.0));
+        for galley in products{
+            let height=galley.size().y;
+            row.painter().with_clip_rect(product_rect.intersect(row.clip_rect()))
+                .galley(egui::pos2(product_rect.left(),y),galley,summary_ink);
+            y+=height+theme::SPACE_4;
+        }
+        let mut y=rect.top()+first_line_inset.min((content_height-freight_height).max(0.0));
+        for galley in freight_galleys{
+            let pos=egui::pos2(freight_rect.right()-theme::SPACE_4-galley.size().x,y);
+            let bounds=Rect::from_min_size(pos,galley.size());
+            let highlight=crate::one_touch::value_rect(bounds,freight_rect);
+            if freight_emphasis{crate::one_touch::background(row,highlight);}
+            row.painter().with_clip_rect(freight_rect.intersect(row.clip_rect()))
+                .galley(pos,galley.clone(),freight_ink);
+            if freight_emphasis{crate::one_touch::outline(row,highlight);}
+            y+=galley.size().y+theme::SPACE_4;
+        }
+    });
+    if previewed && !chosen{
+        ui.painter().rect_stroke(response.response.rect.shrink(0.5),
+            theme::CONTROL_RADIUS as f32,
+            egui::Stroke::new(source_highlight::ACTIVE_BORDER_WIDTH,source_highlight::ACTIVE_BORDER),
+            egui::StrokeKind::Inside);
     }
     response.response
 }
