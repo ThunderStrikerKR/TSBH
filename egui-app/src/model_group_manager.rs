@@ -196,7 +196,8 @@ impl ModelGroupManager {
     // in their column data and actions, never their header or row geometry.
     fn table<const N:usize>(
         ui:&mut Ui,id:impl std::hash::Hash,labels:[&str;N],base:[f32;N],
-        height:f32,count:usize,mut draw:impl FnMut(&mut Ui,[Rect;N],usize,Rect),
+        height:f32,count:usize,selected:impl Fn(usize)->bool,
+        mut draw:impl FnMut(&mut Ui,[Rect;N],usize,Rect),
     )->Rect{
         let gap=theme::SPACE_8;
         let minimum=base.iter().sum::<f32>()+N.saturating_sub(1) as f32*gap;
@@ -223,7 +224,7 @@ impl ModelGroupManager {
                     let rect=crate::table::fixed_row_rect(origin,index,first,layout.table_width,
                         theme::MANAGEMENT_TABLE_ROW_HEIGHT);
                     crate::table::fixed_row(body,index,rect,index,&widths,gap,
-                        crate::table::RowTone::Alternating,|row,cells|draw(row,cells,index,rect));
+                        crate::table::RowTone::SelectedIf(selected(index)),|row,cells|draw(row,cells,index,rect));
                 }
             });
             (output.inner_rect,output.inner_rect)
@@ -300,18 +301,15 @@ impl ModelGroupManager {
                             .any(|p|text(p,"name").to_lowercase().contains(&query))
                     }).collect::<Vec<_>>();
                     let body_height=(left.available_height()-theme::MANAGEMENT_TABLE_HEADER_HEIGHT).max(1.0);
+                    let selected_id=self.selected.clone();
                     let rect=Self::table(left,"family-list",["모델군","대표모델","상품 수"],
-                        [160.0,156.0,76.0],body_height,visible.len(),|row,cells,i,rect|{
+                        [160.0,156.0,76.0],body_height,visible.len(),
+                        |i|visible[i].0==selected_id,|row,cells,i,rect|{
                             let (id,g)=visible[i];
                             let selected=self.selected==*id;
-                            if selected{
-                                row.painter().rect_filled(rect,0.0,theme::WORKFLOW_SELECTED_BG);
-                                row.painter().rect_filled(Rect::from_min_size(rect.min,
-                                    Vec2::new(theme::WORKFLOW_SELECTED_STRIPE,rect.height())),0.0,theme::SELECTION);
-                            }
                             let response=row.interact(rect,row.make_persistent_id(id),if busy{Sense::hover()}else{Sense::click()});
                             if response.hovered()&&!selected&&!busy{
-                                row.painter().rect_filled(rect,0.0,theme::INPUT);
+                                crate::table::paint_management_interactive_row_background(row.painter(),rect,i,true);
                             }
                             let rep=products.get(text(g,"representativeProductId"))
                                 .map(|p|text(p,"name")).unwrap_or(if text(g,"representativeColor").is_empty(){
@@ -367,7 +365,7 @@ impl ModelGroupManager {
                             let result_height=(right.available_height()*0.30).min(theme::MANAGEMENT_TABLE_ROW_HEIGHT*3.0).max(1.0);
                             let rect=Self::table(right,"model-group-search-results",
                                 ["상품명","상세 정보","소속 모델군","추가"],[140.0,100.0,110.0,80.0],
-                                result_height,choices.len(),|row,cells,i,_|{
+                                result_height,choices.len(),|_|false,|row,cells,i,_|{
                                     let p=choices[i];let id=text(p,"id");
                                     Self::cell(row,cells[0],text(p,"name"),Role::ProductName,false,(id,0));
                                     Self::cell(row,cells[1],text(p,"subtitle"),Role::Description,false,(id,1));
@@ -398,7 +396,7 @@ impl ModelGroupManager {
                         let body_height=(right.available_height()-theme::FAMILY_FOOTER_HEIGHT-theme::MANAGEMENT_TABLE_HEADER_HEIGHT).max(1.0);
                         let rect=Self::table(right,("model-group-registered-products",self.selected.clone()),
                             ["상품명","상세 정보","대표모델","관리"],[140.0,100.0,96.0,176.0],
-                            body_height,ids.len(),|row,cells,i,_|{
+                            body_height,ids.len(),|_|false,|row,cells,i,_|{
                                 let id=ids[i];
                                 let p=products.get(id).copied();
                                 let rep=text(&g,"representativeProductId")==id;
@@ -536,6 +534,20 @@ mod responsiveness_tests{
             assert!(std::time::Instant::now()<deadline);
             std::thread::sleep(Duration::from_millis(1));
         }
+    }
+    #[test]
+    fn model_group_tables_share_fixed_rows_and_independent_columns(){
+        let source=include_str!("model_group_manager.rs");
+        let body=source.split("    fn table<const N:usize>(").nth(1).unwrap()
+            .split("    pub fn show_dialogs(").next().unwrap();
+        assert!(body.contains("crate::table::header_columns("));
+        assert!(body.contains("crate::table::fixed_rows("));
+        assert!(body.contains("crate::table::fixed_row("));
+        assert!(body.contains("crate::table::paint_management_text_cell("));
+        assert!(body.contains("[\"모델군\",\"대표모델\",\"상품 수\"]"));
+        assert!(body.contains("[\"상품명\",\"상세 정보\",\"대표모델\",\"관리\"]"));
+        assert!(body.contains("[\"상품명\",\"상세 정보\",\"소속 모델군\",\"추가\"]"));
+        assert!(!body.contains("직원"));
     }
     #[test]
     fn eligibility_tracks_product_edits_and_avoids_repainting_queries(){
