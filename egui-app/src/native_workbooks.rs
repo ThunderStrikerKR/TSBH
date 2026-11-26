@@ -175,7 +175,7 @@ pub fn read_clients(bytes:&[u8])->Result<Value,String>{
 }
 
 /// Shared instructions for reply review and contextual help.
-pub const FACTORY_REPLY_FORMAT_GUIDANCE:&str="회신 Excel: G열에 실제 택배운임(0 이상의 정수), Q열에 운송장번호(텍스트 8~30자리)를 입력하세요. A/C/D·E열의 수하인 정보는 유지하세요. R열 등 다른 열의 운임은 반영되지 않습니다.";
+pub const FACTORY_REPLY_FORMAT_GUIDANCE:&str="회신 Excel: G열에 실제 택배운임(0 이상의 정수), Q열에 운송장번호(텍스트 8~30자리)를 입력하세요. A열 수하인명으로 최근 출력 주문을 찾고, 같은 날짜에 이름이 중복되면 I열 품목을 비교합니다. R열 등 다른 열의 운임은 반영되지 않습니다.";
 
 pub fn read_factory_reply(filename:&str,bytes:&[u8])->Result<Value,String>{
     if !filename.to_ascii_lowercase().ends_with(".xlsx")||
@@ -197,7 +197,7 @@ pub fn read_factory_reply(filename:&str,bytes:&[u8])->Result<Value,String>{
     for r in 1..=last{
         let mut values=Vec::new();
         let mut problems=Vec::new();
-        for (col,label) in [(0,"A"),(2,"C"),(3,"D"),(4,"E"),(6,"G"),(16,"Q")]{
+        for (col,label) in [(0,"A"),(6,"G"),(16,"Q")]{
             let v=sheet.get_value((r,col)).unwrap_or(&Data::Empty);
             if formulas.get_value((r,col)).is_some_and(|s|!s.trim().is_empty()){
                 problems.push(format!("{label}열 수식"));
@@ -208,8 +208,13 @@ pub fn read_factory_reply(filename:&str,bytes:&[u8])->Result<Value,String>{
         // Calamine's cell value alone cannot prove that a numeric tracking
         // cell had no leading-zero number format. Hold it rather than guess.
         if tracking_numeric{problems.push("Q열 숫자형 운송장번호 원본 서식 확인 필요".into());}
-        let mut row=json!({"row":r+1,"name":values[0],"address":values[1],
-            "phone":values[2],"mobile":values[3],"rawFreight":values[4],"tracking":values[5],
+        // I is optional corroboration only. An unreadable product cell
+        // cannot block an otherwise uniquely named dispatch.
+        let goods=if formulas.get_value((r,8)).is_some_and(|s|!s.trim().is_empty()){
+            String::new()
+        }else{text(sheet.get_value((r,8)).unwrap_or(&Data::Empty)).unwrap_or_default()};
+        let mut row=json!({"row":r+1,"name":values[0],"goods":goods,
+            "rawFreight":values[1],"tracking":values[2],
             "trackingNumeric":tracking_numeric,"trackingNumberFormat":"",
             "reservedJ":false,"extraAfterQ":false});
         if !problems.is_empty(){row["sourceIssue"]=json!(format!("{}행: {}",r+1,problems.join("; ")));}

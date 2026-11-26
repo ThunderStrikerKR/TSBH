@@ -36,48 +36,64 @@ fn parse_freight(input:&str)->Option<i64>{
     input.replace(',',"").parse::<i64>().ok()
         .filter(|n|(0..=9_007_199_254_740_991).contains(n))
 }
-type QueueMatchIndex<'a> = HashMap<(String,String),Vec<&'a Value>>;
+type QueueMatchIndex<'a> = HashMap<String,Vec<(Option<chrono::NaiveDate>,&'a Value)>>;
 
-fn match_key(recipient:&Value)->(String,String){
-    (normalized(s(recipient,"name")),normalized(s(recipient,"address")))
+fn match_key(recipient:&Value)->String{
+    normalized(s(recipient,"name"))
 }
-fn contacts_match(row:&Value,recipient:&Value)->bool{
-    rows(row,"contacts").iter().filter_map(Value::as_str).any(|contact|{
-        ["phone","mobile"].iter().any(|key|{
-            let saved=s(recipient,key);
-            !saved.is_empty() && normalized(saved)==normalized(contact)
-        })
-    })
+fn business_day(value:&str)->Option<chrono::NaiveDate>{
+    chrono::DateTime::parse_from_rfc3339(value).ok()
+        .map(|at|at.with_timezone(&chrono::FixedOffset::east_opt(9*3600).unwrap()).date_naive())
+        .or_else(||chrono::NaiveDate::parse_from_str(value,"%Y-%m-%d").ok())
 }
 fn queue_match_index(state:&Value)->QueueMatchIndex<'_>{
+    let export_days:HashMap<&str,Option<chrono::NaiveDate>>=rows(state,"exports").iter()
+        .map(|e|(s(e,"id"),business_day(s(e,"at")))).collect();
     let mut index=HashMap::new();
     for queue in rows(field(state,"workflow"),"queue").iter().filter(|q|
         s(q,"origin")=="FACTORY" && s(q,"status")=="EXPORTED"
         && !field(q,"snapshot").is_null()){
         let key=match_key(field(field(queue,"snapshot"),"recipient"));
-        index.entry(key).or_insert_with(Vec::new).push(queue);
+        if key.is_empty(){continue;}
+        let day=business_day(s(queue,"exportedAt"))
+            .or_else(||export_days.get(s(queue,"exportId")).copied().flatten());
+        index.entry(key).or_insert_with(Vec::new).push((day,queue));
     }
     index
 }
-fn matching_queues<'a>(index:&QueueMatchIndex<'a>,row:&Value)->Vec<&'a Value>{
-    index.get(&match_key(row)).into_iter().flatten().copied()
-        .filter(|q|contacts_match(row,field(field(q,"snapshot"),"recipient")))
-        .collect()
+fn goods_key(value:&str)->Vec<String>{
+    let mut parts=value.split('◆').map(normalized).filter(|x|!x.is_empty()).collect::<Vec<_>>();
+    parts.sort();
+    parts
 }
-// Independent pre-index matching path retained only for differential tests.
+fn queue_goods(queue:&Value)->Vec<String>{
+    let recipient=field(field(queue,"snapshot"),"recipient");
+    let goods=rows(recipient,"items").iter().filter(|i|s(i,"origin")=="FACTORY")
+        .filter_map(|i|field(i,"quantity").as_i64().map(|qty|
+            format!("◆ {} {}개",s(i,"name").trim(),qty))).collect::<Vec<_>>().join(" ");
+    goods_key(&goods)
+}
+fn matching_queues<'a>(index:&QueueMatchIndex<'a>,row:&Value)->Vec<&'a Value>{
+    let Some(entries)=index.get(&match_key(row)) else{return Vec::new();};
+    let cutoff=business_day(s(row,"matchDate"));
+    let latest=entries.iter().filter_map(|(day,_)|*day)
+        .filter(|day|cutoff.is_none_or(|max|*day<=max)).max();
+    // Search dates newest first, never skip a same-day ambiguity to guess
+    // an older order. Undated legacy exports are a last-resort group.
+    let candidates=entries.iter().filter(|(day,_)|*day==latest)
+        .map(|(_,q)|*q).collect::<Vec<_>>();
+    let unique=candidates.iter().map(|q|s(q,"shipmentId")).collect::<HashSet<_>>();
+    if unique.len()<=1{return candidates;}
+    let wanted=goods_key(s(row,"goods"));
+    if wanted.is_empty(){return candidates;}
+    let narrowed=candidates.iter().copied().filter(|q|queue_goods(q)==wanted).collect::<Vec<_>>();
+    // A missing or changed description cannot pick an unrelated older date.
+    if narrowed.is_empty(){candidates}else{narrowed}
+}
+// Independent linear baseline for the undated, unique-name performance fixture.
 #[cfg(test)]
 fn row_matches(row:&Value,queue:&Value)->bool{
-    let recipient=field(field(queue,"snapshot"),"recipient");
-    let name=s(row,"name");
-    let address=s(row,"address");
-    if normalized(name)!=normalized(s(recipient,"name"))
-        || normalized(address)!=normalized(s(recipient,"address")){return false}
-    rows(row,"contacts").iter().filter_map(Value::as_str).any(|contact|{
-        ["phone","mobile"].iter().any(|key|{
-            let saved=s(recipient,key);
-            !saved.is_empty() && normalized(saved)==normalized(contact)
-        })
-    })
+    match_key(row)==match_key(field(field(queue,"snapshot"),"recipient"))
 }
 // Shipment positions never change during connect(). Keep the first position
 // for an ID, just like the original find(), and all tracking owners.
@@ -144,8 +160,7 @@ fn connect(input:&Value,source:&Value,approve:bool,context:&Value)->Result<Value
     for index in 0..count {
         let current=reply["rows"][index].clone();
         if !s(&current,"issue").is_empty(){continue}
-        let valid=!s(&current,"name").is_empty() && !s(&current,"address").is_empty()
-            && !rows(&current,"contacts").is_empty()
+        let valid=!match_key(&current).is_empty()
             && valid_tracking(s(&current,"tracking"))
             && field(&current,"actual").as_i64().is_some_and(|n|
                 (0..=9_007_199_254_740_991).contains(&n));
@@ -318,9 +333,10 @@ fn parse_reply(payload:&Value)->Result<Value,String>{
         let address=s(source,"address");
         let phone=s(source,"phone");
         let mobile=s(source,"mobile");
+        let goods=s(source,"goods");
         let raw_freight=s(source,"rawFreight");
         let raw_tracking=s(source,"tracking");
-        if [name,address,phone,mobile,raw_freight,raw_tracking].iter().all(|t|t.is_empty())
+        if [name,address,phone,mobile,goods,raw_freight,raw_tracking].iter().all(|t|t.is_empty())
             && s(source,"sourceIssue").is_empty(){continue}
         let tracking=raw_tracking.chars()
             .filter(|c|*c!='-'&&!c.is_whitespace()).collect::<String>();
@@ -341,15 +357,16 @@ fn parse_reply(payload:&Value)->Result<Value,String>{
             Some(source_issue)
         }else if numeric_risk{
             Some("Q열 숫자형 운송장번호의 정확성을 보장할 수 없습니다. 15자리 초과·정밀도 또는 앞자리 0 손실 가능성이 있으므로 원본을 확인하세요.")
-        }else if name.is_empty()||address.is_empty()||contacts.is_empty(){
-            Some("수하인 이름, 주소 또는 연락처 누락")
+        }else if normalized(name).is_empty(){
+            Some("수하인 이름 누락")
         }else if !valid_tracking(&tracking){
             Some("Q열 운송장번호가 없거나 올바르지 않습니다.")
         }else if freight.is_none(){
             Some("G열 실제 택배운임은 0 이상의 정수로 입력하세요.")
         }else{None};
         let mut row=json!({"row":n,"name":name,"address":address,
-            "contacts":contacts,"tracking":tracking,"actual":freight});
+            "contacts":contacts,"goods":goods,"matchDate":field(payload,"businessDate"),
+            "tracking":tracking,"actual":freight});
         if let Some(issue)=issue{row["issue"]=json!(issue)}
         parsed.push(row);
     }
@@ -389,9 +406,8 @@ fn analyze(payload:&Value)->Result<Value,String>{
 pub(crate) fn import_automatic_factory_reply(state:&Value,payload:&Value)->Result<Value,String>{
     apply_prepared_factory_reply(state,&parse_reply(payload)?,payload)
 }
-/// Derive a conservative order scope from the full exported queue using
-/// name/address keys. Contact, ambiguity and global waybill checks stay in
-/// the actual reducer. A superset is safe; never omit a possible match.
+/// Scope hydration by the same name/date/product matcher used by connect.
+/// It must include every possible selected shipment, not address/contact matches.
 pub(crate) fn prepare_automatic_factory_reply(state:&Value,payload:&Value)
     ->Result<(Value,Vec<String>),String>{
     let reply=parse_reply(payload)?;
@@ -400,20 +416,12 @@ pub(crate) fn prepare_automatic_factory_reply(state:&Value,payload:&Value)
     for ship in rows(workflow,"shipments"){
         shipments.entry(s(ship,"id")).or_insert(ship);
     }
-    let keys=rows(&reply,"rows").iter().filter(|row|s(row,"issue").is_empty())
-        .map(|row|(normalized(s(row,"name")),normalized(s(row,"address"))))
-        .collect::<HashSet<_>>();
+    let index=queue_match_index(state);
     let mut orders=std::collections::BTreeSet::new();
-    for queue in rows(workflow,"queue").iter().filter(|q|
-        s(q,"origin")=="FACTORY" && s(q,"status")=="EXPORTED" &&
-        !field(q,"snapshot").is_null()){
-        let recipient=field(field(queue,"snapshot"),"recipient");
-        if keys.contains(&(normalized(s(recipient,"name")),normalized(s(recipient,"address")))){
+    for row in rows(&reply,"rows").iter().filter(|row|s(row,"issue").is_empty()){
+        for queue in matching_queues(&index,row){
             if let Some(ship)=shipments.get(s(queue,"shipmentId")){
-                let order_id=s(ship,"orderId");
-                // An empty ID is malformed, but the full reducer may still
-                // reach that exact payload. Include it rather than guess.
-                orders.insert(order_id.to_owned());
+                orders.insert(s(ship,"orderId").to_owned());
             }
         }
     }
@@ -809,7 +817,7 @@ mod tests {
     }
 
     #[test]
-    fn indexed_queue_matching_preserves_contact_filter_and_original_candidate_order(){
+    fn indexed_queue_matching_ignores_address_and_contact_and_preserves_candidate_order(){
         let mut state=fixture();
         let original=state["workflow"]["queue"][0].clone();
         let mut same=original.clone();
@@ -821,6 +829,7 @@ mod tests {
         let mut wrong_contact=original.clone();
         wrong_contact["shipmentId"]=json!("s3");
         wrong_contact["snapshot"]["recipient"]["phone"]=json!("010-9999-9999");
+        let wrong_contact_copy=wrong_contact.clone();
         let mut store=original.clone();
         store["origin"]=json!("STORE");
         let mut pending=original.clone();
@@ -840,7 +849,7 @@ mod tests {
             assert_eq!(matching_queues(&index,&row),legacy_matching_queues(&state,&row));
         }
         let row=json!({"name":"김수취","address":"서울 종로구 10","contacts":["01012345678"]});
-        assert_eq!(matching_queues(&index,&row),vec![&original,&same,&original]);
+        assert_eq!(matching_queues(&index,&row),vec![&original,&wrong_contact_copy,&same,&original]);
     }
 
     #[test]
@@ -938,11 +947,11 @@ mod tests {
         assert_eq!(result["next"]["workflow"]["shipments"][0]["actualFreight"]["FACTORY"],4000);
         assert_eq!(result["next"]["workflow"]["events"].as_array().unwrap().len(),2);
     }
-    #[test] fn mismatched_address_and_duplicate_number_never_apply(){
+    #[test] fn mismatched_address_is_ignored_but_duplicate_number_never_applies(){
         let s=fixture();
         let mut req=input(s.clone(),"001234567890","4000");
         req["sourceRows"][0]["address"]=json!("서울 다른 구 22");
-        assert_eq!(analyze(&req).unwrap()["held"],1);
+        assert_eq!(analyze(&req).unwrap()["applied"],1);
         let mut duplicate=input(s,"001234567890","4000");
         let another=duplicate["sourceRows"][0].clone();
         duplicate["sourceRows"].as_array_mut().unwrap().push(another);
@@ -1002,7 +1011,7 @@ mod tests {
     }
 
     #[test]
-    fn operational_reply_matches_normalized_frozen_recipient_not_live_address(){
+    fn operational_reply_matches_normalized_name_independent_of_address_and_contact(){
         let mut state=fixture();
         state["orders"][0]["recipients"][0]["address"]=json!("서울 다른 주소 20");
         let mut request=input(state.clone(),"001234567890","4000");
@@ -1011,9 +1020,14 @@ mod tests {
         request["sourceRows"][0]["phone"]=json!("010 (1234)-5678");
         assert_eq!(analyze(&request).unwrap()["applied"],1);
         request["sourceRows"][0]["address"]=json!("서울 다른 주소 20");
-        assert_eq!(analyze(&request).unwrap()["held"],1);
+        assert_eq!(analyze(&request).unwrap()["applied"],1);
         request["sourceRows"][0]["address"]=json!("서울 종로구 10");
         request["sourceRows"][0]["phone"]=json!("010-0000-0000");
+        assert_eq!(analyze(&request).unwrap()["applied"],1);
+        request["sourceRows"][0]["address"]=json!("");
+        request["sourceRows"][0]["phone"]=json!("");
+        assert_eq!(analyze(&request).unwrap()["applied"],1);
+        request["sourceRows"][0]["name"]=json!("다른 수하인");
         assert_eq!(analyze(&request).unwrap()["held"],1);
     }
     #[test]
@@ -1090,7 +1104,7 @@ mod ambiguity_selection_tests{
             "tracking":"000099990001"}],"id":"reply","filename":"reply.xlsx",
             "businessDate":"2026-11-27","at":"2026-11-27T00:00:00Z"});
         state=import_automatic_factory_reply(&state,&request).unwrap()["next"].clone();
-        assert_eq!(state["factoryReplies"][0]["rows"][0]["applied"],false);
+        assert_ne!(state["factoryReplies"][0]["rows"][0]["applied"],true);
         let mut review=json!({"id":"reply","rowNumber":2,"revision":3,
             "selectedShipmentId":"s2","correctionId":"correction","businessDate":"2026-11-27",
             "freightAt":"2026-11-27T00:00:00Z","freightEventIds":["f"],"replyEventIds":["r"]});
@@ -1112,5 +1126,36 @@ mod ambiguity_selection_tests{
         }
         review["selectedShipmentId"]=json!("s2");
         assert!(approve_factory_conflict_for_state(&next,&review).is_err());
+    }
+}
+
+#[cfg(test)]
+mod date_name_matching_tests{
+    use super::*;
+    #[test]
+    fn newest_korea_export_day_first_and_goods_only_for_same_day_duplicates(){
+        fn queue(id:&str,at:&str,goods:&str)->Value{
+            json!({"shipmentId":id,"origin":"FACTORY","status":"EXPORTED","exportedAt":at,
+                "snapshot":{"recipient":{"name":"가상 수하인","items":[
+                    {"origin":"FACTORY","name":goods,"quantity":1}]}}})
+        }
+        let state=json!({"workflow":{"queue":[
+            queue("old","2026-11-25T04:00:00Z","BD 709"),
+            queue("today","2026-11-26T15:01:00Z","BD 709"),
+            queue("other","2026-11-27T03:00:00Z","BD 710"),
+            queue("future","2026-11-28T03:00:00Z","BD 709")
+        ]}});
+        let index=queue_match_index(&state);
+        let mut row=json!({"name":"가상수하인","matchDate":"2026-11-27","goods":"◆ BD 709 1개"});
+        let ids=|row:&Value|matching_queues(&index,row).into_iter().map(|q|s(q,"shipmentId")).collect::<Vec<_>>();
+        assert_eq!(ids(&row),vec!["today"]);
+        row["goods"]=json!("◆ BD 710 1개");
+        assert_eq!(ids(&row),vec!["other"]);
+        row["goods"]=json!("다른 품목");
+        assert_eq!(ids(&row),vec!["today","other"]);
+        row["matchDate"]=json!("2026-11-26");
+        assert_eq!(ids(&row),vec!["old"]);
+        row["matchDate"]=json!("2026-11-24");
+        assert!(ids(&row).is_empty());
     }
 }
