@@ -414,6 +414,8 @@ pub fn patch_product_v2(conn:&mut Connection, request:&Value)->Result<Value,Stri
     };
     if action=="apply_product_workbook"{
         crate::storage::update_v2_reviewed_workbook(conn,mutate)
+    }else if action=="delete_brand"{
+        crate::storage::update_v2_brand_delete(conn,mutate)
     }else{
         crate::storage::update_v2_entity_if_changed(conn,true,mutate)
     }
