@@ -41,7 +41,9 @@ jobs:
             'blend_registry_stores_immutable_revisions_and_separate_selection',
             'governance_never_promotes_on_missing_coverage_or_normal_case_regression',
             'learning_lifecycle_excludes_cancelled_deleted_and_partial_orders',
-            'document_pattern_candidate_preserves_order_and_ignores_item_count'
+            'document_pattern_candidate_preserves_order_and_ignores_item_count',
+            'document_features_preserve_exact_unicode_distance_and_boundaries',
+            'shared_source_geometry_preserves_legacy_line_ranges_and_direction'
           )
           foreach ($test in $expected) {
             $pattern = '(^|::)' + [regex]::Escape($test) + ': test$'
@@ -118,6 +120,8 @@ jobs:
           cargo test --manifest-path egui-app/Cargo.toml recognition::observations::tests -- --nocapture
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           cargo test --manifest-path egui-app/Cargo.toml recognition::learning_context::tests -- --nocapture
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cargo test --manifest-path egui-app/Cargo.toml shared_source_geometry_preserves_legacy_line_ranges_and_direction -- --nocapture
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           cargo test --manifest-path egui-app/Cargo.toml learning_lifecycle_excludes_cancelled_deleted_and_partial_orders -- --nocapture
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
