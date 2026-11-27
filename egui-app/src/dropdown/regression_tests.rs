@@ -349,3 +349,49 @@ mod management_dropdown_unification_tests {
         });
     }
 }
+
+
+#[cfg(test)]
+mod shared_dropdown_rendered_geometry_tests{
+    use crate::theme;
+    use eframe::egui::{self,Rect};
+    use crate::ui_test_support::{test_context,assert_geometry_value,assert_rect_geometry,
+        assert_painted_caption,painted_text_rects,assert_rect_inside};
+    #[test]
+    fn dropdown_caption_clip_excludes_arrow_and_state_does_not_resize_trigger(){
+        let ctx=test_context();
+        for width in [180.0,90.0,180.0]{
+            let mut baseline:Option<(Rect,Rect)>=None;
+            for (label,enabled) in [("선불",true),("아주 긴 상품 분류 이름입니다",true),("선불",false)]{
+                let mut actual=None;
+                let output=ctx.run(egui::RawInput{
+                    screen_rect:Some(Rect::from_min_size(egui::Pos2::ZERO,egui::vec2(800.0,500.0))),
+                    ..Default::default()
+                },|ctx|{
+                    egui::CentralPanel::default().show(ctx,|ui|{
+                        ui.spacing_mut().interact_size.y=theme::ACTION_STANDARD_HEIGHT;
+                        let response=crate::dropdown::management_dropdown_trigger(ui,label,width,enabled,None);
+                        let next=ui.allocate_exact_size(egui::vec2(60.0,20.0),egui::Sense::hover()).0;
+                        actual=Some((response.rect,next));
+                        assert_eq!(response.enabled(),enabled);
+                    });
+                });
+                let (rect,next)=actual.expect("dropdown response");
+                assert_geometry_value("dropdown","width",rect.width(),width,1.0);
+                assert_geometry_value("dropdown","height",rect.height(),theme::ACTION_STANDARD_HEIGHT,1.0);
+                let (ink,clip)=painted_text_rects(&output,label).into_iter()
+                    .find(|(_,clip)|clip.intersect(rect).is_positive())
+                    .expect("painted dropdown label");
+                assert_rect_inside("dropdown caption clip",clip,rect,1.0);
+                assert_geometry_value("dropdown","left caption inset",clip.left()-rect.left(),theme::SPACE_12,1.0);
+                assert!(clip.right()<=rect.right()-30.0+1.0,"caption clip enters arrow slot");
+                assert!(ink.intersect(clip).is_positive());
+                if label=="선불"{assert_painted_caption(&output,label,rect);}
+                if let Some((old,following))=baseline{
+                    assert_rect_geometry("dropdown state",rect,old,0.5);
+                    assert_rect_geometry("following widget",next,following,0.5);
+                }else{baseline=Some((rect,next));}
+            }
+        }
+    }
+}
