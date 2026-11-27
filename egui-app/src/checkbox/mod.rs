@@ -1,4 +1,5 @@
 //! Shared checkbox rendering and fixed list/table placement; callers own selection.
+use crate::ui_layout::AlignedUiBuilderExt as _;
 use eframe::egui::{self,Align,Layout,Rect,Response,Ui,Vec2};
 use crate::theme;
 /**
@@ -37,7 +38,7 @@ pub(crate) fn management_table_checkbox(
     let clip=cell.intersect(vertical_area).intersect(ui.clip_rect());
     let mut builder=egui::UiBuilder::new()
         .id_salt(id)
-        .max_rect(rect)
+        .aligned_max_rect(rect)
         .layout(egui::Layout::left_to_right(egui::Align::Center));
     if !enabled {
         builder=builder.disabled();
