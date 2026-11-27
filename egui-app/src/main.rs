@@ -1147,14 +1147,14 @@ struct BandoEgui {
     analysis_pending: bool,
     analysis_due_at: Option<Instant>,
     analysis_running_key: Option<(String,String,String)>,
-    analysis_receiver: Option<Receiver<(u64, Result<reception_service::ReceptionAnalysis, String>, Option<InitialAnalysisTiming>)>>,
+    analysis_receiver: Option<Receiver<(u64, Result<reception_service::ReceptionAnalysis, String>, Option<InitialAnalysisTiming>, Option<serde_json::Value>)>>,
 }
 
 // Worker-local times, never reconstructed from confirmation or restore.
 type InitialAnalysisTiming=(chrono::DateTime<chrono::Utc>,chrono::DateTime<chrono::Utc>);
 
 fn preserve_first_recognition(item:&mut WorkingReception,raw:&str,mut evidence:serde_json::Value,
-    timing:Option<InitialAnalysisTiming>){
+    timing:Option<InitialAnalysisTiming>,shadow:Option<serde_json::Value>){
     if item.raw!=raw || raw.trim().is_empty(){return;}
     if item.analysis_raw.as_deref()==Some(raw) && item.analysis_evidence.is_some(){
         // Legacy evidence is deliberately NOT assigned a new prediction time.
@@ -1171,7 +1171,8 @@ fn preserve_first_recognition(item:&mut WorkingReception,raw:&str,mut evidence:s
                 "analysisCompletedAt":completed.to_rfc3339(),
                 "clientBuildVersion":env!("CARGO_PKG_VERSION"),
                 "predictionKind":"legacy_recognition",
-                "learningSupportEvaluated":false,
+                "learningSupportEvaluated":shadow.as_ref().is_some_and(|v|v["status"]=="captured_shadow_support"),
+                "learningShadow":shadow,
                 "frozenModelVerified":false
             }));
         }
@@ -4563,18 +4564,27 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
         let manual_receipt=association.filter(|draft|
             draft.manual_model.is_some()
         ).cloned();
+        let first_target=association.filter(|draft|draft.raw==source &&
+            (draft.analysis_raw.as_deref()!=Some(source.as_str())||draft.analysis_evidence.is_none()))
+            .map(|draft|draft.id.clone());
         let (sender, receiver) = mpsc::channel();
         self.analysis_receiver = Some(receiver);
         std::thread::spawn(move || {
             let record_timing=manual_receipt.is_none() && manual_client_id.is_none();
             let mut timing=None;
+            let mut shadow=None;
             let result=(|| -> Result<reception_service::ReceptionAnalysis,String> {
                 let started=chrono::Utc::now();
                 let mut analysis=reception_service::analyze_raw(
                     gateway.as_ref(), &source, windows, active_chat_handle, manual_client_id
                 )?;
                 let completed=chrono::Utc::now();
-                if record_timing{timing=Some((started,completed));}
+                if record_timing{
+                    timing=Some((started,completed));
+                    if let Some(id)=first_target.as_deref(){
+                        shadow=gateway.capture_recognition_learning(id,&source,&analysis.recognition);
+                    }
+                }
                 if let Some(row)=manual_receipt {
                     // Reapply employee-confirmed assignments through Rust,
                     // not a fresh UI parser. The source must still be exact.
@@ -4609,7 +4619,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                 }
                 Ok(analysis)
             })();
-            let _ = sender.send((request, result, timing));
+            let _ = sender.send((request, result, timing, shadow));
             context.request_repaint();
         });
     }
@@ -4812,7 +4822,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
             self.analysis_error = Some("발주서 분석이 중단되었습니다.".to_owned());
             return;
         }
-        if let Some(Ok((request, result, timing))) = complete {
+        if let Some(Ok((request, result, timing, shadow))) = complete {
             self.analysis_receiver = None;
             let started=self.analysis_running_key.take();
             let is_current=started.as_ref().is_some_and(|(id,raw,kind)|
@@ -4857,7 +4867,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                             // An employee-corrected manual model can be
                             // projected onto the new read result. The immutable
                             // first recognition is kept separately for audit.
-                            preserve_first_recognition(item,&self.raw_source,original_evidence,timing);
+                            preserve_first_recognition(item,&self.raw_source,original_evidence,timing,shadow);
                             item.analysis_raw = Some(self.raw_source.clone());
                             item.client_match = Some(analysis.client_match.clone());
                             if item.client_selection.as_deref()==Some("MANUAL") &&
@@ -11650,36 +11660,36 @@ mod reception_workflow_admission_integration_tests {
         let raw=row.raw.clone();
         let evidence=serde_json::json!({"recipients":[],"candidates":[],"unassigned":[],
             "initialPredictionCapture":{"origin":"untrusted"}});
-        preserve_first_recognition(&mut row,&raw,evidence.clone(),Some(first.clone()));
+        preserve_first_recognition(&mut row,&raw,evidence.clone(),Some(first.clone()),None);
         row.analysis_raw=Some(raw.clone());
         let stored=row.analysis_evidence.clone().unwrap();
         assert_eq!(stored["initialPredictionCapture"]["orderId"],"synthetic");
         assert_eq!(stored["initialPredictionCapture"]["analysisStartedAt"],"2026-11-27T00:00:00+00:00");
         assert_eq!(stored["initialPredictionCapture"]["learningSupportEvaluated"],false);
-        preserve_first_recognition(&mut row,&raw,serde_json::json!({"recipients":[1]}),Some(later.clone()));
+        preserve_first_recognition(&mut row,&raw,serde_json::json!({"recipients":[1]}),Some(later.clone()),None);
         assert_eq!(row.analysis_evidence.as_ref(),Some(&stored));
         let mut order=serde_json::json!({"id":row.id,"raw":raw});
         native_order_change::attach_recognition_baseline(&mut order,&row);
         assert_eq!(order["recognitionBaseline"]["initialAnalysis"],stored);
-        preserve_first_recognition(&mut row,"other",evidence.clone(),Some(later.clone()));
+        preserve_first_recognition(&mut row,"other",evidence.clone(),Some(later.clone()),None);
         assert_eq!(row.analysis_evidence.as_ref(),Some(&stored));
         row.raw="changed".into();
-        preserve_first_recognition(&mut row,"changed",evidence.clone(),Some(later.clone()));
+        preserve_first_recognition(&mut row,"changed",evidence.clone(),Some(later.clone()),None);
         assert_eq!(row.analysis_evidence.as_ref().unwrap()["initialPredictionCapture"]["analysisStartedAt"],
             "2026-11-27T00:01:00+00:00");
         let mut legacy=draft("legacy");
         legacy.analysis_raw=Some(legacy.raw.clone());
         legacy.analysis_evidence=Some(serde_json::json!({"recipients":[]}));
         let raw=legacy.raw.clone();
-        preserve_first_recognition(&mut legacy,&raw,evidence.clone(),Some(later.clone()));
+        preserve_first_recognition(&mut legacy,&raw,evidence.clone(),Some(later.clone()),None);
         assert!(legacy.analysis_evidence.as_ref().unwrap().get("initialPredictionCapture").is_none());
         let mut manual=draft("manual");
         let raw=manual.raw.clone();
-        preserve_first_recognition(&mut manual,&raw,evidence.clone(),None);
+        preserve_first_recognition(&mut manual,&raw,evidence.clone(),None,None);
         assert!(manual.analysis_evidence.as_ref().unwrap().get("initialPredictionCapture").is_none());
         let mut reversed=draft("reversed");
         let raw=reversed.raw.clone();
-        preserve_first_recognition(&mut reversed,&raw,evidence,Some((later.1,first.0)));
+        preserve_first_recognition(&mut reversed,&raw,evidence,Some((later.1,first.0)),None);
         assert!(reversed.analysis_evidence.as_ref().unwrap().get("initialPredictionCapture").is_none());
     }
 

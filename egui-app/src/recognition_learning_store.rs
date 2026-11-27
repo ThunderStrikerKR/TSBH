@@ -274,6 +274,28 @@ pub(super) fn assess_support(tx:&Transaction<'_>,scope:&str,input:&Value)->Resul
     recognition_support::assess(tx,scope,input)
 }
 
+// Bound foreground shadow capture before reading and verifying any full facts.
+pub(super) fn owner_capture_ids(tx:&Transaction<'_>,scope:&str,target:&str,keys:&BTreeSet<String>)
+    ->Result<Vec<String>,String>{
+    if keys.is_empty()||keys.len()>8{return Err("실시간 학습 문맥 한도 오류".into());}
+    let pending:i64=tx.query_row("SELECT count(*) FROM recognition_learning_pending WHERE scope=?1 AND feature_version=?2",
+        params![scope,FEATURE_VERSION],|r|r.get(0)).map_err(|e|e.to_string())?;
+    if pending!=0{return Err("복구 대기 학습 주문".into());}
+    let mut stmt=tx.prepare("SELECT DISTINCT order_id FROM recognition_learning_facts
+        WHERE scope=?1 AND feature_version=?2 AND family='statistics' AND context_key=?3
+        AND order_id<>?4 ORDER BY order_id LIMIT 251").map_err(|e|e.to_string())?;
+    let mut ids=BTreeSet::new();
+    for key in keys{
+        let rows=stmt.query_map(params![scope,FEATURE_VERSION,key,target],|r|r.get::<_,String>(0))
+            .map_err(|e|e.to_string())?;
+        for id in rows{
+            ids.insert(id.map_err(|e|e.to_string())?);
+            if ids.len()>250{return Err("실시간 학습 주문 한도 초과".into());}
+        }
+    }
+    Ok(ids.into_iter().collect())
+}
+
 pub(super) fn assess_local_replay(tx:&Transaction<'_>,scope:&str,input:&Value,
     orders:&[Value],digests:&BTreeMap<String,String>)->Result<Value,String>{
     recognition_support::local_replay(tx,scope,input,orders,digests)

@@ -130,6 +130,8 @@ pub trait BandoGateway: Send + Sync {
     /// This method does not persist or mutate anything.
     fn load_catalog(&self) -> Result<Value, String>;
     fn load_reception_catalog(&self)->Result<Value,String>{self.load_catalog()}
+    // Optional shadow-only prediction. Test/remote adapters never touch local DB.
+    fn capture_recognition_learning(&self,_order:&str,_raw:&str,_first:&Value)->Option<Value>{None}
     /// Client management uses only the authoritative Tauri v2 business DB.
     /// Upsert/archive requires explicit write authorization; no egui shadow DB.
     fn load_client_master(&self) -> Result<Value, String> {
@@ -321,6 +323,18 @@ fn read_reception_metadata(conn:&rusqlite::Connection,known:Option<u64>)
 pub struct LocalGateway;
 
 impl BandoGateway for LocalGateway {
+    fn capture_recognition_learning(&self,order:&str,raw:&str,first:&Value)->Option<Value>{
+        if crate::business_state::authorized_business_write_path().is_err(){return None;}
+        let result=(||->Result<Value,String>{
+            let contexts=recognition::execute("project_owner_contexts",
+                serde_json::json!({"raw":raw,"initialAnalysis":first}))?;
+            PreviewStore::capture_owner_learning(order,&contexts)
+        })();
+        Some(result.unwrap_or_else(|_|serde_json::json!({
+            "status":"unavailable","reason":"unverified_or_unavailable_ledger",
+            "decisionChanged":false,"calibratedProbability":null
+        })))
+    }
 
     fn reception_metadata(&self,known:Option<u64>)
         ->Result<(Option<u64>,Option<ReceptionMetadata>),String>{
