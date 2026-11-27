@@ -120,6 +120,44 @@ mod shared_checkbox_rendered_geometry_tests{
     }
 
     #[test]
+    fn checked_table_checkbox_paints_high_contrast_orange_without_leaking_style(){
+        fn has_fill(shape:&egui::Shape,hit:Rect,fill:egui::Color32)->bool{
+            match shape{
+                egui::Shape::Rect(r)=>r.fill==fill&&hit.contains(r.rect.center()),
+                egui::Shape::Vec(shapes)=>shapes.iter().any(|s|has_fill(s,hit,fill)),
+                _=>false,
+            }
+        }
+        let ctx=test_context();
+        let mut baseline=None;
+        for (width,height) in [(44.0,34.0),(48.0,42.0)]{
+            for checked in [false,true,false]{
+                let mut value=checked;
+                let mut hit=Rect::NOTHING;
+                let output=ctx.run(egui::RawInput{
+                    screen_rect:Some(Rect::from_min_size(egui::Pos2::ZERO,Vec2::new(800.0,500.0))),
+                    ..Default::default()
+                },|ctx|{
+                    egui::CentralPanel::default().show(ctx,|ui|{
+                        let before=ui.visuals().widgets.inactive.bg_fill;
+                        let cell=ui.allocate_exact_size(Vec2::new(width,height),Sense::hover()).0;
+                        hit=checkbox::management_table_checkbox(ui,cell,cell,&mut value,true,"contrast-check").rect;
+                        assert_eq!(ui.visuals().widgets.inactive.bg_fill,before);
+                    });
+                });
+                assert_eq!(output.shapes.iter().any(|s|has_fill(&s.shape,hit,theme::CHECKBOX_CHECKED_BG)),checked);
+                assert_eq!(value,checked);
+                if let Some((old_width,old_height,old_hit))=baseline{
+                    if old_width==width&&old_height==height{
+                        assert_rect_geometry("checked checkbox",hit,old_hit,0.5);
+                    }
+                }
+                baseline=Some((width,height,hit));
+            }
+        }
+    }
+
+    #[test]
     fn rendered_table_checkbox_stays_in_header_and_body_cells(){
         let ctx=test_context();
         for (width,height) in [(44.0,34.0),(48.0,42.0)]{
