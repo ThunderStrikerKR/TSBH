@@ -2,6 +2,7 @@
 //! All spans exposed to TypeScript use UTF-16 offsets, not Rust byte positions.
 mod model;
 mod quantity;
+mod corrections;
 mod ts_semantics;
 #[path = "../postcode.rs"]
 mod postcode;
@@ -83,6 +84,7 @@ pub fn execute(operation: &str, payload: Value) -> Result<Value, String> {
             Ok(result)
         }
         "reanalyze_order" => reanalyze(&payload),
+        "extract_correction_candidates" => corrections::extract(&payload),
         _ => Err(format!("unknown recognition operation: {operation}")),
     }
 }
