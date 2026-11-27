@@ -2210,14 +2210,12 @@ impl FreightManager {
             ui.make_persistent_id(("freight-rate-cells",editor.id.as_str(),editor.product)),
             cell_navigation::vertical_worksheet_cells(fee_ids.iter().map(String::as_str),enabled)
         );
-        // The common compact table owns header, row rules, clipping and
-        // scroll geometry. Ten rows is a viewport limit, not a fee limit.
-        if count>0{
-            crate::table::registry_table(
+        // Keep the ten-row worksheet visible from the first frame, including
+        // an unset quantity. Only real fee rows own editable cells and focus.
+            crate::table::registry_table_min_rows(
                 ui,("freight-rate-worksheet",editor.id.as_str(),editor.product),
                 ["묶음 수량","운임 (원)"],[92.0,140.0],
-                count.min(10) as f32*theme::MANAGEMENT_COMPACT_ROW_HEIGHT,
-                count,|_|false,|row,cells,index,_|{
+                10,count,|_|false,|row,cells,index,_|{
                     let quantity=index as i64+1;
                     crate::table::registry_cell(
                         row,cells[0],&format!("{quantity}개"),
@@ -2233,8 +2231,7 @@ impl FreightManager {
                     });
                 }
             );
-            navigation.finish(ui.ctx());
-        }
+            if count>0{navigation.finish(ui.ctx());}
         });
         form.named_text_field(
             "사용자 참고 메모",&mut editor.notes,"포장할 때 참고할 사항 (선택)",enabled

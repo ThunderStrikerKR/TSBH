@@ -98,6 +98,39 @@ mod management_table_container_style_tests{
     }
 }
 
+
+#[test]
+fn minimum_row_worksheet_preserves_viewport_and_never_dispatches_placeholder_cells(){
+    let ctx=test_context();
+    let screen=Rect::from_min_size(egui::Pos2::ZERO,Vec2::new(900.0,900.0));
+    let height=10.0*theme::MANAGEMENT_COMPACT_ROW_HEIGHT;
+    let mut baseline:Option<Rect>=None;
+    for count in [0usize,0,1,5,10,11,20,10,1,0]{
+        let _=ctx.run(egui::RawInput{screen_rect:Some(screen),..Default::default()},|ctx|{
+            egui::CentralPanel::default().show(ctx,|ui|{
+                ui.allocate_ui_with_layout(Vec2::new(440.0,600.0),Layout::top_down(Align::Min),|slot|{
+                    slot.set_width(440.0);
+                    slot.set_max_width(440.0);
+                    let mut real_rows=Vec::new();
+                    let viewport=crate::table::registry_table_min_rows(
+                        slot,"minimum-worksheet",["수량","운임"],[92.0,140.0],10,count,
+                        |index|{assert!(index<count);false},
+                        |_,_,index,_|{assert!(index<count);real_rows.push(index);}
+                    );
+                    assert!((viewport.height()-height).abs()<=1.0,
+                        "count {count}: {viewport:?}");
+                    if let Some(old)=baseline{
+                        assert!((old.top()-viewport.top()).abs()<=1.0);
+                        assert!((old.bottom()-viewport.bottom()).abs()<=1.0);
+                    }else{baseline=Some(viewport);}
+                    if count<=10{assert_eq!(real_rows,(0..count).collect::<Vec<_>>());}
+                    else{assert!(real_rows.len()>=10);}
+                });
+            });
+        });
+    }
+}
+
 #[cfg(test)]
 #[test]
 fn management_table_outline_keeps_header_width_and_viewport_bottom(){

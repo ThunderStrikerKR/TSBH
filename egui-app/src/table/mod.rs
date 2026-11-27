@@ -331,6 +331,26 @@ impl<const N:usize> RegistryColumns<N>{
 pub(crate) fn registry_table<const N:usize>(
     ui:&mut Ui,id:impl std::hash::Hash,labels:[&str;N],columns:impl Into<RegistryColumns<N>>,
     height:f32,count:usize,selected:impl Fn(usize)->bool,
+    draw:impl FnMut(&mut Ui,[Rect;N],usize,Rect),
+)->Rect{
+    registry_table_inner(ui,id,labels,columns,height,count,count,selected,draw)
+}
+
+/// A worksheet reserves a fixed number of row slots even before data exists.
+/// Placeholder slots paint only the shared row/grid geometry: they never invoke
+/// selection or business cell callbacks, nor receive the row hover highlight.
+pub(crate) fn registry_table_min_rows<const N:usize>(
+    ui:&mut Ui,id:impl std::hash::Hash,labels:[&str;N],columns:impl Into<RegistryColumns<N>>,
+    minimum_rows:usize,count:usize,selected:impl Fn(usize)->bool,
+    draw:impl FnMut(&mut Ui,[Rect;N],usize,Rect),
+)->Rect{
+    let height=minimum_rows as f32*theme::MANAGEMENT_COMPACT_ROW_HEIGHT;
+    registry_table_inner(ui,id,labels,columns,height,count,count.max(minimum_rows),selected,draw)
+}
+
+fn registry_table_inner<const N:usize>(
+    ui:&mut Ui,id:impl std::hash::Hash,labels:[&str;N],columns:impl Into<RegistryColumns<N>>,
+    height:f32,count:usize,display_count:usize,selected:impl Fn(usize)->bool,
     mut draw:impl FnMut(&mut Ui,[Rect;N],usize,Rect),
 )->Rect{
     let gap=theme::SPACE_8;
@@ -343,15 +363,19 @@ pub(crate) fn registry_table<const N:usize>(
         let viewport_height=height.min(ui.available_height()).max(1.0);
         let output=crate::table::fixed_rows(ui,crate::table::Viewport{
             width:layout.table_width,height:viewport_height,rail:None
-        },id,theme::MANAGEMENT_COMPACT_ROW_HEIGHT,count,|body,visible|{
+        },id,theme::MANAGEMENT_COMPACT_ROW_HEIGHT,display_count,|body,visible|{
             let origin=body.max_rect().min;
             let first=visible.start;
             for index in visible{
                 let rect=crate::table::fixed_row_rect(origin,index,first,layout.table_width,
                     theme::MANAGEMENT_COMPACT_ROW_HEIGHT);
                 row_left.get_or_insert(rect.left());
-                crate::table::fixed_row(body,index,rect,index,&widths,gap,
-                    crate::table::RowTone::SelectedIf(selected(index)),|row,cells|draw(row,cells,index,rect));
+                let real=index<count;
+                let tone=if real{crate::table::RowTone::SelectedIf(selected(index))}
+                    else{crate::table::RowTone::Alternating};
+                crate::table::fixed_row(body,index,rect,index,&widths,gap,tone,|row,cells|{
+                    if real{draw(row,cells,index,rect);}
+                });
             }
         });
         let cells=crate::table::management_table_cells(

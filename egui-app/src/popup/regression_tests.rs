@@ -1210,7 +1210,9 @@ fn freight_modal_content_uses_shared_layout_and_controls(){
     assert!(rate.contains("form.compact_group("));
     assert!(rate.contains("form.named_text_field("));
     assert!(!rate.contains("spacing_mut("));
-    assert!(rate.contains("crate::table::registry_table("));
+    assert!(rate.contains("crate::table::registry_table_min_rows("));
+    assert!(rate.contains("10,count,"));
+    assert!(!rate.contains("count.min(10)"));
     assert!(!rate.contains("ui.add_space("));
     assert_eq!(source.matches("crate::popup::show_name_confirmation(").count(),1);
     assert_eq!(source.matches("crate::popup::show_management_menu(").count(),0);
