@@ -638,10 +638,19 @@ fn name_beats_partial_alias(text:&str,inline_delivery:bool,matched:&CachedProduc
     if model::category(text).is_some(){return false;}
     let Some(stem)=text.strip_suffix('님')else{return false;};
     if !ts_semantics::person(stem.trim_end()){return false;}
-    // Initial type weights: structural delivery 30, honorific 24, person
-    // form 16 versus partial alias 40 and legacy support 12. Not calibrated.
+    // A partial alias has variable strength according to Unicode
+    // coverage. Do not reintroduce a constant score after the gates.
+    let total=text.chars().count() as i64;
+    let mut coverage=0;
+    for c in &matched.candidates{
+        let Some(span)=text.get(c.span.0..c.span.1)else{return false;};
+        if span.is_empty(){return false;}
+        coverage=coverage.max(span.chars().count() as i64);
+    }
+    // Initial type weights: delivery 30, honorific 24, person form 16;
+    // alias evidence 30, legacy support 12, coverage up to 24.
     let name_score=30+24+16;
-    let product_score=40+12;
+    let product_score=30+12+24*coverage/total.max(1);
     exceeds_margin(name_score,product_score,OWNER_WEIGHTS.margin)
 }
 fn unlabelled_recipient_span<'a>(
@@ -2686,6 +2695,15 @@ mod tests {
         assert_eq!(result["recipients"][0]["name"],"김가상님");
         assert_eq!(result["recipients"][0]["items"].as_array().unwrap().len(),1);
         assert_eq!(result["recipients"][0]["items"][0]["productId"],"p709");
+    }
+    #[test]
+    fn type_score_changes_with_partial_alias_coverage(){
+        for (text,alias,expected) in [("김가상님","김가상",true),("김가상민님","김가상민",false)]{
+            let matched=CachedProductDecision{output:Value::Null,
+                candidates:vec![model::SourceCandidate{product_id:"pgt".into(),span:(0,alias.len()),literal:false}],truncated:false};
+            assert_eq!(name_beats_partial_alias(text,true,&matched),expected);
+            assert!(!name_beats_partial_alias(text,false,&matched));
+        }
     }
     #[test]
     fn exact_alias_and_literal_model_are_not_overridden_by_type_scoring(){
