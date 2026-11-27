@@ -45,6 +45,51 @@ concurrency:
   group: egui-manual-classification-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 jobs:
+  recognition-core:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: tests/rust-migration/recognition -> target
+      - name: Compile and discover existing recognition regressions
+        shell: bash
+        run: |
+          set -euo pipefail
+          manifest=tests/rust-migration/recognition/Cargo.toml
+          cargo test --manifest-path "$manifest" --no-run
+          cargo test --manifest-path "$manifest" -- --list > /tmp/recognition-tests.txt
+          for n in $(seq -w 1 20); do
+            test "$(grep -Ec "^regressions::order_${n}: test$" /tmp/recognition-tests.txt || true)" -eq 1
+          done
+          test "$(grep -Ec "^regressions::recognition_baseline_report: test$" /tmp/recognition-tests.txt || true)" -eq 1
+      - name: Capture baseline metrics from the existing fixture set
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo test --manifest-path tests/rust-migration/recognition/Cargo.toml --lib regressions::recognition_baseline_report -- --exact --nocapture > /tmp/recognition-baseline.log 2>&1 || {
+            echo "Baseline execution failed; raw parser output withheld."
+            exit 1
+          }
+          grep '^RECOGNITION_BASELINE ' /tmp/recognition-baseline.log | sed 's/^RECOGNITION_BASELINE //' > recognition-baseline.json
+          python3 -c 'import json; r=json.load(open("recognition-baseline.json")); assert r["fixtureCount"]==20 and r["timing"]["measurements"]==100'
+      - name: Upload baseline report without order text or contact values
+        uses: actions/upload-artifact@v4
+        with:
+          name: recognition-baseline
+          path: recognition-baseline.json
+          retention-days: 7
+      - name: Run native recognition regression suite
+        shell: bash
+        run: |
+          set -euo pipefail
+          result=0
+          cargo test --manifest-path tests/rust-migration/recognition/Cargo.toml > /tmp/recognition-regressions.log 2>&1 || result=$?
+          # Do not publish arbitrary fixture text from failed assertions.
+          grep -E '^test [a-zA-Z0-9_:]+ \.\.\. (ok|FAILED|ignored)$|^test result:' /tmp/recognition-regressions.log || true
+          exit "$result"
   manual-classification:
     runs-on: windows-latest
     timeout-minutes: 50
