@@ -480,7 +480,7 @@ pub fn show(ctx: &Context) {
                 offset:theme::FLOATING_NOTICE_SHADOW_OFFSET,
                 blur:theme::FLOATING_NOTICE_SHADOW_BLUR,
                 spread:0,
-                color:egui::Color32::from_black_alpha(
+                color:theme::shadow_ink(
                     theme::FLOATING_NOTICE_SHADOW_ALPHA
                 ),
             }.as_shape(rect,theme::CONTROL_RADIUS));

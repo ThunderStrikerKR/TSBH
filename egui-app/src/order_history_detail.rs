@@ -94,7 +94,7 @@ fn overview(ui:&mut Ui,rect:Rect,row:&Value,shipment_count:usize){
                 ));
                 line.label(typography::status(
                     display_or(field(row,"status"),"상태 미확인"),
-                    theme::SECONDARY
+                    theme::text_ink(theme::TextRole::Label,theme::TextState::Normal)
                 ));
                 line.label(typography::caption(&format!(
                     "{} · 발송 건 {}건",

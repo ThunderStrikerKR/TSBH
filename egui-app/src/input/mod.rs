@@ -766,7 +766,7 @@ fn reception_quantity_editor(
                     if let Some(next)=next{*value=next;clicked=true;}
                 }
             }
-            let stroke=Stroke::new(theme::SOFT_DIVIDER_WIDTH,theme::DIVIDER);
+            let stroke=Stroke::new(theme::SOFT_DIVIDER_WIDTH,theme::border_ink(theme::BorderRole::Divider));
             segments.painter().line_segment(
                 [arrow_rect.right_top(),arrow_rect.right_bottom()],stroke
             );

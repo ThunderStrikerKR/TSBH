@@ -5282,7 +5282,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                     );
                     let divider_x=frame.divider_x.expect("OCR has two panes");
                     let toolbar_bottom=frame.toolbar_bottom;
-                    let edge=theme::DIVIDER;
+                    let edge=theme::border_ink(theme::BorderRole::Divider);
 
                     let inset=theme::MODAL_MASTER_CONTENT_INSET;
                     let left_header=Rect::from_min_size(
@@ -5792,7 +5792,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                 Rect::from_min_max(
                                     egui::Pos2::ZERO, egui::pos2(1.0, 1.0),
                                 ),
-                                egui::Color32::WHITE,
+                                theme::image_tint(),
                             );
                         }
                         bar.painter().galley(
@@ -6705,7 +6705,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                     egui::pos2(0.0,0.0),
                                     egui::pos2(1.0,1.0)
                                 ),
-                                egui::Color32::WHITE
+                                theme::image_tint()
                             );
                             progress.add_space(theme::SPACE_12);
                         }

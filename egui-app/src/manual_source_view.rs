@@ -45,7 +45,7 @@ pub fn source_document(
     let job=source_highlight::layout_manual(
         raw,spans,selected_recipient,active,assigned_ids,content_width,
         FontId::proportional(typography::FONT_RECEPTION_SOURCE_TEXT),
-        theme::TEXT,
+        theme::text_ink(theme::TextRole::Value,theme::TextState::Normal),
     );
     let galley=ui.fonts_mut(|fonts|fonts.layout_job(job));
     let content_height=galley.size().y+2.0*text_inset;

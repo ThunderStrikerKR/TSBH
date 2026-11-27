@@ -290,10 +290,10 @@ fn paint_history_branch(ui:&Ui,row_rect:Rect,widths:&[f32;7],
     }else{
         detail.center().y
     };
-    let stroke=Stroke::new(1.25_f32,theme::MUTED);
+    let stroke=Stroke::new(1.25_f32,theme::text_ink(theme::TextRole::Metadata,theme::TextState::Normal));
     match branch{
         HistoryBranch::Root=>{
-            painter.circle_filled(egui::pos2(x,center),2.0,theme::MUTED);
+            painter.circle_filled(egui::pos2(x,center),2.0,theme::text_ink(theme::TextRole::Metadata,theme::TextState::Normal));
             painter.line_segment([
                 egui::pos2(x,center),egui::pos2(x,row_rect.bottom())],stroke);
         },
@@ -566,7 +566,7 @@ fn draw_line(ui:&mut Ui,rect:Rect,line:HistoryLine,snapshot:&HistorySnapshot,
                     egui::pos2(lower.left()+theme::MANAGEMENT_TABLE_TEXT_LEADING_INSET,lower.top()),lower.right_bottom()
                 ).intersect(area);
                 let overflow=crate::ui_primitives::text_exceeds_rect(
-                    typography::client_table_metadata_galley(ui,&warning,theme::MUTED).size(),
+                    typography::client_table_metadata_galley(ui,&warning,theme::text_ink(theme::TextRole::Metadata,theme::TextState::Normal)).size(),
                     warning_rect
                 );
                 paint_caption(ui,lower,&warning);
@@ -991,7 +991,7 @@ impl OrderHistoryManager {
                             let status_text=status_messages.join(" · ");
                             let status_color=if self.memo_error.is_some(){
                                 theme::DANGER
-                            }else{theme::MUTED};
+                            }else{theme::text_ink(theme::TextRole::Metadata,theme::TextState::Normal)};
                             let status_width=ui.available_width();
                             crate::ui_layout::fixed_status_slot(
                                 ui,status_width,typography::METADATA_LINE_HEIGHT,

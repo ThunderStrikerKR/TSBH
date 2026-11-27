@@ -904,6 +904,16 @@ pub(crate) const fn surface_palette(role:SurfaceRole,state:VisualState)->Surface
 }
 
 #[derive(Clone,Copy,Debug,PartialEq,Eq)]
+pub(crate) enum BorderRole{Standard,Divider,Focus}
+pub(crate) const fn border_ink(role:BorderRole)->Color32{
+    match role{BorderRole::Standard=>BORDER,BorderRole::Divider=>DIVIDER,BorderRole::Focus=>SELECTION}
+}
+
+/// Opaque white is the identity tint, not a UI foreground color.
+pub(crate) const fn image_tint()->Color32{Color32::WHITE}
+pub(crate) fn shadow_ink(alpha:u8)->Color32{Color32::from_black_alpha(alpha)}
+
+#[derive(Clone,Copy,Debug,PartialEq,Eq)]
 pub(crate) enum IconRole{Secondary,Interactive,Navigation,SortIndicator}
 pub(crate) const fn icon_ink(role:IconRole,state:VisualState)->Color32{
     match (role,state){

@@ -56,7 +56,7 @@ fn finish(ui:&Ui,header:Rect,body:Rect){
 fn paint_frame(ui:&Ui,bounds:Rect){
     if bounds.width()>0.0 && bounds.height()>0.0{
         ui.painter().with_clip_rect(bounds.intersect(ui.clip_rect())).rect_stroke(
-            bounds,0.0,Stroke::new(theme::FRAME_STROKE_WIDTH,theme::BORDER),
+            bounds,0.0,Stroke::new(theme::FRAME_STROKE_WIDTH,theme::border_ink(theme::BorderRole::Standard)),
             egui::StrokeKind::Inside);
     }
 }
@@ -91,7 +91,7 @@ impl TableGeometry{
     fn paint(self,ui:&Ui){
         if let Some(rect)=self.separator{
             let clip=self.frame.intersect(ui.clip_rect());
-            ui.painter().with_clip_rect(clip).rect_filled(rect,0.0,theme::BORDER);
+            ui.painter().with_clip_rect(clip).rect_filled(rect,0.0,theme::border_ink(theme::BorderRole::Standard));
             #[cfg(test)]
             crate::ui_test_support::record("table scrollbar separator",rect);
         }

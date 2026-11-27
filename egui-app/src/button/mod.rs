@@ -194,7 +194,7 @@ pub(crate) fn window_control(ui: &mut Ui, control: WindowControl) -> Response {
     // control, without shifting the 32pt hit rectangle or painted glyph.
     paint_button_hover(ui,&response,4.0);
     let center = response.rect.center();
-    let ink = if response.hovered() { TEXT } else { SECONDARY };
+    let ink = theme::icon_ink(theme::IconRole::Interactive,theme::VisualState::pointer(true,response.hovered()));
     let line = Stroke::new(1.35_f32, ink);
     let painter = ui.painter();
     match control {
@@ -428,9 +428,9 @@ pub(crate) fn management_date_segment(
     let response=navigation_native_button(
         ui,Vec2::new(width,theme::ACTION_STANDARD_HEIGHT),
         egui::Button::new(typography::action_label(
-            display,typography::FONT_STANDARD_ACTION,false,theme::TEXT
+            display,typography::FONT_STANDARD_ACTION,false,theme::text_ink(theme::TextRole::Value,theme::TextState::Normal)
         ))
-            .fill(theme::INPUT)
+            .fill(theme::surface_palette(theme::SurfaceRole::Input,theme::VisualState::Normal).fill)
             .stroke(Stroke::NONE)
             .corner_radius(corners),
         None
@@ -542,7 +542,7 @@ pub(crate) fn date_navigation_button_surface(
     ui:&mut Ui,enabled:bool
 )->(Response,Color32){
     let effective_enabled=enabled && ui.is_enabled();
-    let (fill,ink,stroke)=crate::button::field_action_palette(effective_enabled,theme::SECONDARY);
+    let (fill,ink,stroke)=crate::button::field_action_palette(effective_enabled,theme::text_ink(theme::TextRole::Label,theme::TextState::Normal));
     let response=ui.scope(|ui|{
         let mut button=egui::Button::new("").corner_radius(crate::highlight::CONTROL_RADIUS);
         if effective_enabled{
@@ -551,7 +551,7 @@ pub(crate) fn date_navigation_button_surface(
         navigation_native_button(ui,Vec2::splat(theme::CALENDAR_NAV_SIZE),button,Some(effective_enabled))
     }).inner;
     let ink=if effective_enabled && response.hovered(){
-        theme::TEXT
+        theme::text_ink(theme::TextRole::Value,theme::TextState::Normal)
     }else{ink};
     if effective_enabled{
         crate::floating_notice::remember_response(ui.ctx(),&response);
@@ -575,12 +575,12 @@ pub(crate) fn calendar_day(grid:&mut Ui,day:&str,width:f32,selected:bool,today:b
 pub(crate) fn dispatch_origin(right:&mut Ui,label:&str,selected:bool,editable:bool,emphasis:Option<crate::highlight::Role>)->Response{
     let effective_enabled=editable&&right.is_enabled();
     let response=right.scope(|ui|{
-        let fill=if selected{theme::RAISED}else{theme::PANEL};
+        let fill=if selected{theme::surface_palette(theme::SurfaceRole::Button,theme::VisualState::Normal).fill}else{theme::surface_palette(theme::SurfaceRole::Panel,theme::VisualState::Normal).fill};
         let stroke=Stroke::new(theme::FRAME_STROKE_WIDTH,
-            if selected{theme::SELECTION}else{theme::DIVIDER});
+            if selected{theme::border_ink(theme::BorderRole::Focus)}else{theme::border_ink(theme::BorderRole::Divider)});
         let mut button=egui::Button::new(typography::action_label(
             label,typography::FONT_STANDARD_ACTION,false,
-            if selected{theme::TEXT}else{theme::SECONDARY}
+            if selected{theme::text_ink(theme::TextRole::Value,theme::TextState::Normal)}else{theme::text_ink(theme::TextRole::Label,theme::TextState::Normal)}
         )).min_size(Vec2::new(42.0,theme::ACTION_STANDARD_HEIGHT))
          .corner_radius(crate::highlight::CONTROL_RADIUS);
         if effective_enabled{crate::highlight::action_widget(ui,fill,stroke,(false,emphasis));}
@@ -737,7 +737,7 @@ fn paint_collapsing_header_icon(
     let t=openness.clamp(0.0,1.0);
     crate::ui_primitives::paint_chevron_at_angle(
         ui.painter(),response.rect.center(),
-        t*std::f32::consts::FRAC_PI_2,t,theme::SECONDARY
+        t*std::f32::consts::FRAC_PI_2,t,theme::text_ink(theme::TextRole::Label,theme::TextState::Normal)
     );
 }
 

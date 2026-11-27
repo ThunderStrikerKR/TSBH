@@ -25,7 +25,7 @@ fn paint_windows_key_glyph(painter:&egui::Painter,face:Rect){
             let y=top+row as f32*(pane+gap);
             painter.rect_filled(
                 Rect::from_min_size(egui::pos2(x,y),Vec2::splat(pane)),
-                0.5,theme::TEXT
+                0.5,theme::text_ink(theme::TextRole::Value,theme::TextState::Normal)
             );
         }
     }
@@ -38,7 +38,7 @@ fn reception_keycap(ui:&mut Ui,key:&str){
     let font=egui::FontId::proportional(typography::FONT_FIELD_LABEL);
     let galley=ui.painter().layout_no_wrap(
         if key=="Win"{String::new()}else{key.to_owned()},
-        font,theme::TEXT
+        font,theme::text_ink(theme::TextRole::Value,theme::TextState::Normal)
     );
     let width=if key=="Win"{30.0}else{
         (galley.size().x+2.0*theme::SPACE_8).ceil().max(26.0)
@@ -68,7 +68,7 @@ fn reception_keycap(ui:&mut Ui,key:&str){
         Stroke::NONE
     ));
     painter.rect_stroke(
-        rect,radius,Stroke::new(1.0_f32,theme::BORDER),
+        rect,radius,Stroke::new(1.0_f32,theme::border_ink(theme::BorderRole::Standard)),
         egui::StrokeKind::Inside
     );
     // Recessed upper rim and light-catching front face.
@@ -99,7 +99,7 @@ fn reception_keycap(ui:&mut Ui,key:&str){
                 (face.center().x-galley.size().x*0.5).round(),
                 (face.center().y-galley.size().y*0.5).round()
             ),
-            galley,theme::TEXT
+            galley,theme::text_ink(theme::TextRole::Value,theme::TextState::Normal)
         );
     }
 }

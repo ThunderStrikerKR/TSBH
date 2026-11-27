@@ -524,7 +524,7 @@ pub(crate) fn modal_master_workspace_finish(
             painter.rect_filled(
                 Rect::from_min_max(
                     egui::pos2(left,y),egui::pos2(right,y+line_width)
-                ),0.0,theme::DIVIDER
+                ),0.0,theme::border_ink(theme::BorderRole::Divider)
             );
         }
         if let Some(divider_x)=geometry.divider_x {
@@ -533,13 +533,13 @@ pub(crate) fn modal_master_workspace_finish(
             painter.rect_filled(
                 Rect::from_min_max(
                     egui::pos2(x,top),egui::pos2(x+line_width,bottom)
-                ),0.0,theme::DIVIDER
+                ),0.0,theme::border_ink(theme::BorderRole::Divider)
             );
         }
     }
     painter.rect_stroke(
         rect,theme::CONTROL_RADIUS,
-        Stroke::new(outer_width,theme::DIVIDER),
+        Stroke::new(outer_width,theme::border_ink(theme::BorderRole::Divider)),
         egui::StrokeKind::Inside
     );
 }
@@ -619,7 +619,7 @@ pub(crate) fn modal_master_header_in_rect(
     // A centered line at rect.bottom() is half clipped and can appear
     // darker at one end. Fill exactly one pixel-aligned INNER rule instead.
     ui.painter().rect_filled(
-        modal_master_rule_rect(rect,ppp,true),0.0,theme::DIVIDER
+        modal_master_rule_rect(rect,ppp,true),0.0,theme::border_ink(theme::BorderRole::Divider)
     );
     modal_master_header_content_in_rect(
         ui,rect,title,description,close_label,enabled
@@ -667,7 +667,7 @@ pub(crate) fn modal_master_header_with_toolbar_in_rect<R>(
     let rect=modal_master_pixel_aligned_rect(rect,ppp);
     ui.painter().rect_filled(rect,0.0,theme::surface_palette(theme::SurfaceRole::Panel,theme::VisualState::Normal).fill);
     ui.painter().rect_filled(
-        modal_master_toolbar_rule_rect(rect,ppp),0.0,theme::DIVIDER
+        modal_master_toolbar_rule_rect(rect,ppp),0.0,theme::border_ink(theme::BorderRole::Divider)
     );
     let title_rect=Rect::from_min_size(
         rect.min,Vec2::new(rect.width(),theme::MODAL_HEADER_HEIGHT)
@@ -695,7 +695,7 @@ fn paint_modal_master_footer_surface(ui:&Ui,rect:Rect) {
     let rect=modal_master_pixel_aligned_rect(rect,ppp);
     ui.painter().rect_filled(rect,0.0,theme::surface_palette(theme::SurfaceRole::Panel,theme::VisualState::Normal).fill);
     ui.painter().rect_filled(
-        modal_master_rule_rect(rect,ppp,false),0.0,theme::DIVIDER
+        modal_master_rule_rect(rect,ppp,false),0.0,theme::border_ink(theme::BorderRole::Divider)
     );
 }
 
@@ -1299,7 +1299,7 @@ pub(crate) fn modal_backdrop(
             viewport.size(),egui::Sense::hover()
         );
         ui.painter().rect_filled(
-            rect,0.0,egui::Color32::from_black_alpha(alpha)
+            rect,0.0,theme::shadow_ink(alpha)
         );
     });
 }

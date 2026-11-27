@@ -211,7 +211,7 @@ pub fn reception_message_footer_gap(ui:&mut Ui){
 /// between PANEL cards, including the Kakao reservation boundary.
 /// Only hover/drag shows an axis cue; drag targets and saved sizing persist.
 pub fn paint_dock_splitter(ui: &Ui, rect: Rect, vertical: bool, active: bool) {
-    ui.painter().rect_filled(rect, 0.0, theme::CANVAS);
+    ui.painter().rect_filled(rect, 0.0, theme::surface_palette(theme::SurfaceRole::Workspace,theme::VisualState::Normal).fill);
     paint_dock_axis_line(ui, rect, vertical, active);
 }
 
@@ -263,7 +263,7 @@ pub fn paint_dock_axis_line(ui: &Ui, rect: Rect, vertical: bool, active: bool) {
     };
     ui.painter().rect_filled(
         line, 0.0,
-        if active { theme::BORDER } else { theme::DIVIDER },
+        if active { theme::border_ink(theme::BorderRole::Standard) } else { theme::border_ink(theme::BorderRole::Divider) },
     );
 }
 

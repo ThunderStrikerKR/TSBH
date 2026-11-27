@@ -133,7 +133,7 @@ fn payment_job(text:&str,signature:&str,emphasis:bool,width:f32)->egui::text::La
     let format=|active|egui::TextFormat{
         font_id:egui::FontId::proportional(typography::FONT_RECEPTION_SOURCE_TEXT),
         line_height:Some(typography::RECEPTION_SOURCE_LINE_HEIGHT),
-        color:if active{INK}else{theme::TEXT},
+        color:if active{INK}else{theme::text_ink(theme::TextRole::Value,theme::TextState::Normal)},
         ..Default::default()};
     let mut start=0;
     for (a,b) in payment_ranges(text,signature){

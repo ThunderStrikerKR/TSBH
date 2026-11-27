@@ -41,13 +41,13 @@ const paintExceptions = [
   // These pre-existing non-table surfaces occur in mixed-purpose files.
   // Keep each exact call and occurrence count; never exempt an entire screen.
   ["main.rs","show_ocr_review",1,
-    "rect_filled(image_view_rect,egui::CornerRadius{nw:0,ne:0,sw:inner_radius,se:0},theme::CANVAS)"],
+    "rect_filled(image_view_rect,egui::CornerRadius{nw:0,ne:0,sw:inner_radius,se:0},theme::surface_palette(theme::SurfaceRole::Workspace,theme::VisualState::Normal).fill)"],
   ["main.rs","show_ocr_review",1,
-    "rect_filled(text_view_rect,egui::CornerRadius{nw:0,ne:0,sw:0,se:inner_radius},theme::INPUT)"],
+    "rect_filled(text_view_rect,egui::CornerRadius{nw:0,ne:0,sw:0,se:inner_radius},theme::surface_palette(theme::SurfaceRole::Input,theme::VisualState::Normal).fill)"],
   ["main.rs","show_ocr_review",1,
     "paint_surface_outline(line.painter(),image.rect,0.0,edge)"],
   ["main.rs","source_section",1,
-    "rect_filled(body_rect,0.0,theme::CANVAS)"],
+    "rect_filled(body_rect,0.0,theme::surface_palette(theme::SurfaceRole::Workspace,theme::VisualState::Normal).fill)"],
 
   // History branch glyphs and date navigation, not table dividers.
   ["order_history_manager.rs","paint_history_branch",1,
@@ -59,7 +59,7 @@ const paintExceptions = [
   ["order_history_manager.rs","paint_history_branch",1,
     "line_segment([egui::pos2(x,row_rect.top()),egui::pos2(x,center)],stroke)"],
   ["order_history_manager.rs","range_date_picker_rtl",1,
-    "line_segment([egui::pos2(x,inner.top()+4.0),egui::pos2(x,inner.bottom()-4.0)],Stroke::new(theme::SOFT_DIVIDER_WIDTH,theme::DIVIDER))"],
+    "line_segment([egui::pos2(x,inner.top()+4.0),egui::pos2(x,inner.bottom()-4.0)],Stroke::new(theme::SOFT_DIVIDER_WIDTH,theme::border_ink(theme::BorderRole::Divider)))"],
   // Chooser selection outline now delegates to ui_primitives::paint_selection_outline.
 ];
 const normalized = source=>tokenizeRust(source).map(t=>t.kind==="literal"?"<literal>":t.v).join(" ");
@@ -158,13 +158,13 @@ const workflowPaintAllowance = new Map([
   ["workflow_card:rect_filled ( Rect :: from_min_max ( Pos2 :: new ( r . left ( ) , r . top ( ) + theme :: SOFT_DIVIDER_WIDTH ) , Pos2 :: new ( r . left ( ) + theme :: WORKFLOW_SELECTED_STRIPE , r . bottom ( ) - theme :: SOFT_DIVIDER_WIDTH ) , ) , 0.0 , if preview { source_highlight :: ACTIVE_BORDER } else { theme :: WORKFLOW_SELECTED_BORDER } )",1],
   ["workflow_compact_rows:rect_filled ( divider , 0.0 , theme :: WORKFLOW_CARD_BORDER )",1],
   ["workflow_compact_rows:rect_filled ( lower , 0.0 , theme :: WORKFLOW_CARD_LOWER_BG )",1],
-  ["workflow_header:galley ( Pos2 :: new ( text_rect . left ( ) , text_rect . center ( ) . y - galley . size ( ) . y / 2.0 ) , galley , theme :: TEXT )",1],
+  ["workflow_header:galley ( Pos2 :: new ( text_rect . left ( ) , text_rect . center ( ) . y - galley . size ( ) . y / 2.0 ) , galley , theme :: text_ink ( theme :: TextRole :: Value , theme :: TextState :: Normal ) )",1],
   ["workflow_header:paint_bordered_surface ( ui . painter ( ) , block , theme :: WORKFLOW_SIGNAL_BLOCK_RADIUS , theme :: WORKFLOW_SIGNAL_BLOCK_BG , theme :: WORKFLOW_SIGNAL_BLOCK_BORDER )",1],
   ["workflow_header:paint_bordered_surface ( ui . painter ( ) , lamp , theme :: WORKFLOW_SIGNAL_RADIUS , fill , border )",1],
-  ["workflow_action_line:layout_no_wrap ( shipping_text . clone ( ) , egui :: FontId :: proportional ( typography :: WORKFLOW_VAT_FONT_SIZE ) , theme :: SECONDARY )",1],
-  ["workflow_action_line:galley ( Pos2 :: new ( shipping . left ( ) , bottom_y - ship_galley . size ( ) . y ) , ship_galley , theme :: SECONDARY )",1],
+  ["workflow_action_line:layout_no_wrap ( shipping_text . clone ( ) , egui :: FontId :: proportional ( typography :: WORKFLOW_VAT_FONT_SIZE ) , theme :: text_ink ( theme :: TextRole :: Label , theme :: TextState :: Normal ) )",1],
+  ["workflow_action_line:galley ( Pos2 :: new ( shipping . left ( ) , bottom_y - ship_galley . size ( ) . y ) , ship_galley , theme :: text_ink ( theme :: TextRole :: Label , theme :: TextState :: Normal ) )",1],
   ["workflow_action_line:layout_no_wrap ( amount . clone ( ) , typography :: data_value_font ( typography :: DataValueKind :: Money , typography :: DataValueContext :: CompactCard ) , theme :: TEXT )",1],
-  ["workflow_action_line:galley ( Pos2 :: new ( price_ink . right ( ) - money_galley . size ( ) . x , bottom_y - money_galley . size ( ) . y ) , money_galley , theme :: TEXT )",1],
+  ["workflow_action_line:galley ( Pos2 :: new ( price_ink . right ( ) - money_galley . size ( ) . x , bottom_y - money_galley . size ( ) . y ) , money_galley , theme :: text_ink ( theme :: TextRole :: Value , theme :: TextState :: Normal ) )",1],
   ["workflow_action_line:layout_no_wrap ( visible , egui :: FontId :: proportional ( typography :: WORKFLOW_VAT_FONT_SIZE ) , theme :: WORKFLOW_VAT_TEXT )",1],
   ["workflow_action_line:galley ( Pos2 :: new ( price_ink . right ( ) - vat_galley . size ( ) . x , price . top ( ) + theme :: WORKFLOW_VAT_TOP_INSET ) , vat_galley , theme :: WORKFLOW_VAT_TEXT )",1],
   ["shipment_line:rect_filled ( Rect :: from_min_max ( Pos2 :: new ( rect . left ( ) , rect . top ( ) ) , Pos2 :: new ( rect . left ( ) + theme :: WORKFLOW_SELECTED_STRIPE , rect . bottom ( ) ) ) , 0.0 , color )",1],
@@ -597,7 +597,7 @@ const indirectHeightAllowances=new Map([
   ["item_editor.rs:show:line.add_space(ITEM_DETAIL_PANEL_GAP)",1],
   ["manual_workspace.rs:show:sheet.add_space(crate::ui_layout::RECEPTION_STACKED_CARD_GAP)",1],
   ["card/mod.rs:parallel_frames:ui.advance_cursor_after_rect(bounds)",1],
-  ["card/mod.rs:management_summary_card_with_role:cell.add_space(theme::FREIGHT_SUMMARY_TEXT_GAP)",1],
+  ["card/mod.rs:management_summary_card_with_role_and_state:cell.add_space(theme::FREIGHT_SUMMARY_TEXT_GAP)",1],
   ["card/mod.rs:align_management_primary_card:ui.add_space(remaining)",1],
   ["popup/mod.rs:before_body:ui.add_space((target-top).max(0.0))",1],
   ["popup/mod.rs:before_footer:ui.add_space((target-top).max(0.0))",1],
@@ -822,7 +822,7 @@ export function audit(source,file,checkTableContracts=false){
     // existing semantic tokens rather than an authored screen-local palette.
     const derivedHighlightColor=file==="highlight/mod.rs"&&fn==="composite_opaque"&&
       is(i,"Color32 :: from_rgb ( mix ( r , rest . r ( ) ) , mix ( g , rest . g ( ) ) , mix ( b , rest . b ( ) ) )");
-    if(file!=="theme.rs"&&!derivedHighlightColor&&paletteConstructors.some(name=>is(i,"Color32 :: "+name+" (")))
+    if(file!=="theme.rs"&&!(file==="highlight/mod.rs"&&fn==="composite_opaque"&&is(i,"Color32 :: from_rgb ("))&&!derivedHighlightColor&&paletteConstructors.some(name=>is(i,"Color32 :: "+name+" (")))
       flag(i,"local color construction; define a semantic theme token");
     if(file!=="typography.rs"){
       if(is(i,"RichText :: new ("))
@@ -1189,10 +1189,10 @@ function selfTest(){
     ["order_history_manager.rs","fn paint_history_branch(){painter.line_segment([a,b],stroke);}",1],
     ["freight_manager.rs","fn show_groups(){painter.rect_filled(row_rect,0.0,background);}",1],
     ["freight_manager.rs","fn other(){painter.rect_filled(row_rect,0.0,background);}",1],
-    ["main.rs","fn a(){table::fixed_row();} fn source_section(){painter.rect_filled(body_rect,0.0,theme::CANVAS);}",0],
-    ["main.rs","fn a(){table::fixed_row();} fn source_section(){painter.rect_filled(body_rect,0.0,theme::CANVAS);painter.rect_filled(body_rect,0.0,theme::CANVAS);}",1],
-    ["main.rs","fn a(){table::fixed_row();} fn source_section(){painter.rect_filled(body_rect,0.0,theme::INPUT);}",1],
-    ["main.rs","fn a(){table::fixed_row();} fn other(){painter.rect_filled(body_rect,0.0,theme::CANVAS);}",1],
+    ["main.rs","fn a(){table::fixed_row();} fn source_section(){painter.rect_filled(body_rect,0.0,theme::surface_palette(theme::SurfaceRole::Workspace,theme::VisualState::Normal).fill);}",0],
+    ["main.rs","fn a(){table::fixed_row();} fn source_section(){painter.rect_filled(body_rect,0.0,theme::surface_palette(theme::SurfaceRole::Workspace,theme::VisualState::Normal).fill);painter.rect_filled(body_rect,0.0,theme::surface_palette(theme::SurfaceRole::Workspace,theme::VisualState::Normal).fill);}",1],
+    ["main.rs","fn a(){table::fixed_row();} fn source_section(){painter.rect_filled(body_rect,0.0,theme::surface_palette(theme::SurfaceRole::Input,theme::VisualState::Normal).fill);}",1],
+    ["main.rs","fn a(){table::fixed_row();} fn other(){painter.rect_filled(body_rect,0.0,theme::surface_palette(theme::SurfaceRole::Workspace,theme::VisualState::Normal).fill);}",1],
     ["model_group_manager.rs","fn show_page(){table::registry_table();painter.rect_filled(separator,0.0,theme::BORDER);}",1],
     ["model_group_manager.rs","fn show_page(){table::registry_table();painter.rect_filled(separator,0.0,theme::BORDER);painter.rect_filled(row_rect,0.0,theme::BORDER);}",2],
     ["product_manager.rs","#[cfg(test)] fn t(){painter.rect_filled(r,0.0,c);} fn render(){crate::table::management_table_cells(p,w,h,g);}",0],
@@ -1342,7 +1342,7 @@ export function designTokenViolations(source,file){
       "FORM_INPUT_OPTICAL_SHIFT_Y : i8 = INPUT_TEXT_OPTICAL_SHIFT_Y",
       "MANAGEMENT_DATE_TEXT_OPTICAL_SHIFT_Y : i8 = INPUT_TEXT_OPTICAL_SHIFT_Y"
     ],
-    "button/mod.rs":["ButtonRole :: Danger => ( ACTION_STANDARD_HEIGHT"],
+    "button/mod.rs":["theme :: button_visual ("],
     "input/mod.rs":["highlight :: States","focused : input . has_focus ( )","highlight :: Role :: RequiredInput"],
     "layout.rs":["SPLITTER : f32 = crate :: ui_tokens :: WORKSPACE_SPLITTER_WIDTH"],
     "ui_tokens.rs":["WORKSPACE_SPLITTER_WIDTH : f32 = SPACE_6"],
@@ -1404,7 +1404,7 @@ export function auditManagedLayout(source,file){
     hits.push({line:1,rule:"local spacing override in migrated management screen"});
   if(file==="category_dropdown.rs"&&/menu \. (?:set_min_width|set_max_width|set_width|spacing_mut) \(/.test(code))
     hits.push({line:1,rule:"category explorer menu geometry belongs to category_tree"});
-  if(file==="daily_settlement_manager.rs"&&(!code.includes("card :: management_summary_card_with_role (")||
+  if(file==="daily_settlement_manager.rs"&&(!code.includes("card :: management_summary_card_with_role_and_state (")||
       code.includes("FREIGHT_SUMMARY_NUMBER_LINE_HEIGHT")))
     hits.push({line:1,rule:"settlement KPI geometry belongs to shared summary card"});
   // The freight migration is explicit: don't allow a screen to swap the
@@ -1560,7 +1560,7 @@ export function auditHighlight(source,file,requireCalls=false){
     if(!explicit&&!migrated&&!localHover)continue;
     const fingerprint=v.slice(i,end+1).join(" ");
     if(file==="composite_client.rs"&&fn==="management_chooser_row"&&
-       fingerprint==="rect_filled ( rect , theme :: CONTROL_RADIUS , theme :: PANEL )"){
+       fingerprint==="rect_filled ( rect , theme :: CONTROL_RADIUS , theme :: surface_palette ( theme :: SurfaceRole :: Panel , theme :: VisualState :: Normal ) . fill )"){
       const key=file+":"+fn+":"+fingerprint;
       const n=(used.get(key)||0)+1;used.set(key,n);
       if(n===1)continue;
@@ -1604,7 +1604,50 @@ function highlightSelfTest(){
   console.log("EGUI_HIGHLIGHT_SELFTEST_PASS",18);
 }
 
+
+// Base colors are policy. Business-specific named tokens retain their
+// existing independent ownership contracts.
+const baseColorTokens=new Set(["TEXT","SECONDARY","MUTED","INPUT","PANEL","RAISED",
+  "BORDER","DIVIDER","CANVAS","DISABLED_ACTION_TEXT","SELECTION","PLACEHOLDER_TEXT"]);
+const basePaletteOwners=new Set(["theme.rs","typography.rs","highlight/mod.rs"]);
+export function auditColorOwnership(source,file){
+  if(source.startsWith("#![cfg(test)]")||/(?:^|\/)(?:regression_tests|tests)\.rs$/.test(file)
+     ||["ui_regressions.rs","ui_test_support.rs","test_workspace_init.rs"].includes(file))return [];
+  const tokens=productionTokens(source),v=tokens.map(t=>t.v),hits=[];
+  let fn="<root>";
+  const flag=(i,rule)=>hits.push({line:tokens[i].line,rule:fn+": "+rule});
+  for(let i=0;i<v.length;i++){
+    if(v[i]==="fn"&&/^[A-Za-z_]\w*$/.test(v[i+1]??""))fn=v[i+1];
+    if(!basePaletteOwners.has(file)&&baseColorTokens.has(v[i]))
+      flag(i,"direct base color "+v[i]+"; use text_ink/icon_ink/surface_palette/border_ink");
+    if(v[i]==="Color32"&&v[i+1]==="::"&&
+      (/^from_/.test(v[i+2]??"")||["WHITE","BLACK","GRAY","LIGHT_GRAY","DARK_GRAY","RED","GREEN","BLUE","YELLOW","GOLD","BROWN","KHAKI","LIGHT_BLUE","LIGHT_GREEN","LIGHT_RED"].includes(v[i+2]))){
+      if(file==="theme.rs"||(file==="highlight/mod.rs"&&fn==="composite_opaque"&&v[i+2]==="from_rgb"))continue;
+      flag(i,"direct Color32 palette construction; use a semantic theme role");
+    }
+  }
+  return hits;
+}
+function colorOwnershipSelfTest(){
+  const audit=(s,f="screen.rs")=>auditColorOwnership(s,f);
+  assert.equal(audit("fn x(){let ink=theme::TEXT;}").length,1);
+  assert.equal(audit("use crate::theme::{TEXT as INK}; fn x(){let ink=INK;}").length,1);
+  assert.equal(audit("use crate::theme::*; fn x(){let ink=SECONDARY;}").length,1);
+  assert.equal(audit("fn x(){let ink=Color32::from_gray(99);}").length,1);
+  assert.equal(audit("fn x(){let ink=Color32::WHITE;}").length,1);
+  assert.equal(audit("fn x(){let ink=theme::text_ink(theme::TextRole::Value,theme::TextState::Normal);}").length,0);
+  assert.equal(audit("fn x(){let ink=theme::image_tint();}").length,0);
+  assert.equal(audit("fn x(){let ink=theme::CLIENT_TIER_WHOLESALE_BG;}").length,0);
+  assert.equal(audit("fn x(){let ink=Color32::TRANSPARENT;}").length,0);
+  assert.equal(audit("// theme::TEXT\nfn x(){let message=\"theme::TEXT\";}").length,0);
+  assert.equal(audit("#[cfg(test)] mod tests {fn x(){let ink=Color32::WHITE;}}").length,0);
+  assert.equal(audit("fn composite_opaque(){Color32::from_rgb(r,g,b);}","highlight/mod.rs").length,0);
+  assert.equal(audit("fn other(){Color32::from_rgb(r,g,b);}","highlight/mod.rs").length,1);
+  console.log("EGUI_COLOR_OWNERSHIP_SELFTEST_PASS",13);
+}
+
 function main(){
+  colorOwnershipSelfTest();
   highlightSelfTest();
   managedLayoutSelfTest();
   dependencyBoundarySelfTest();
@@ -1635,7 +1678,7 @@ function main(){
       graph.set(owner,deps);
     }
     for(const rule of designTokenViolations(source,file)){failures++;console.error(file+": "+rule);}
-    for(const hit of [...audit(source,file,true),...auditComposite(source,file,true),...auditContextLocks(source,file),...auditCardHeights(source,file),...auditIndirectCardHeights(source,file),...auditCardWidths(source,file),...auditManagedLayout(source,file),...auditHighlight(source,file,true)]){
+    for(const hit of [...audit(source,file,true),...auditComposite(source,file,true),...auditContextLocks(source,file),...auditCardHeights(source,file),...auditIndirectCardHeights(source,file),...auditCardWidths(source,file),...auditManagedLayout(source,file),...auditHighlight(source,file,true),...auditColorOwnership(source,file)]){
       failures++;console.error(file+":"+hit.line+" "+hit.rule);
     }
   }

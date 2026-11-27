@@ -109,7 +109,7 @@ fn client_tier_colors(tier:&str)->(Color32,Color32) {
         "semi"=>(theme::CLIENT_TIER_SEMI_BG,theme::CLIENT_TIER_SEMI_TEXT),
         "retail"=>(theme::CLIENT_TIER_RETAIL_BG,theme::CLIENT_TIER_RETAIL_TEXT),
         "special"=>(theme::CLIENT_TIER_SPECIAL_BG,theme::CLIENT_TIER_SPECIAL_TEXT),
-        _=>(theme::RAISED,theme::SECONDARY),
+        _=>(theme::surface_palette(theme::SurfaceRole::Button,theme::VisualState::Normal).fill,theme::text_ink(theme::TextRole::Label,theme::TextState::Normal)),
     }
 }
 

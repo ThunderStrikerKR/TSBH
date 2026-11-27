@@ -235,8 +235,8 @@ pub(crate) fn fixed_scroll_panel(
 ){
     if rect.width()<2.0||rect.height()<2.0{return;}
     ui.painter().rect(
-        rect,theme::CONTROL_RADIUS as f32,theme::INPUT,
-        Stroke::new(theme::FRAME_STROKE_WIDTH,theme::DIVIDER),
+        rect,theme::CONTROL_RADIUS as f32,theme::surface_palette(theme::SurfaceRole::Input,theme::VisualState::Normal).fill,
+        Stroke::new(theme::FRAME_STROKE_WIDTH,theme::border_ink(theme::BorderRole::Divider)),
         egui::StrokeKind::Inside
     );
     let inner=rect.shrink2(inset);

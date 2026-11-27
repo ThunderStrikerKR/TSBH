@@ -112,7 +112,7 @@ pub fn reception_recipient_navigator(
             let natural_width=segments.painter().layout_no_wrap(
                 display.to_owned(),
                 egui::FontId::proportional(typography::FONT_BODY),
-                theme::TEXT
+                theme::text_ink(theme::TextRole::Value,theme::TextState::Normal)
             ).size().x;
             let content_width=(name_width-2.0*theme::SPACE_8).max(0.0);
             let clipped=natural_width>content_width;
@@ -148,7 +148,7 @@ pub fn reception_recipient_navigator(
                 inner.left()+arrow_width,
                 inner.left()+arrow_width+name_width,
                 inner.left()+2.0*arrow_width+name_width
-            ],theme::DIVIDER);
+            ],theme::border_ink(theme::BorderRole::Divider));
             selected
         }
     );
@@ -276,7 +276,7 @@ pub fn date_navigation_count_control(
                 paint_navigation_vertical_rules(segments,inner,[
                     inner.left()+arrow_width,
                     inner.left()+arrow_width+input_width
-                ],theme::BORDER);
+                ],theme::border_ink(theme::BorderRole::Standard));
                 (decrement,input,increment)
             }
         );
@@ -593,7 +593,7 @@ pub(crate) fn compact_date_range_rows(ui:&mut Ui,first_width:f32,second_width:f3
 pub(crate) fn date_range_separator(ui:&mut Ui){
     let (rect,_)=ui.allocate_exact_size(Vec2::new(theme::MANAGEMENT_DATE_RANGE_SEPARATOR_WIDTH,theme::INPUT_HEIGHT),Sense::hover());
     ui.painter().text(rect.center(),egui::Align2::CENTER_CENTER,"~",
-        typography::metadata_font(),theme::MUTED);
+        typography::metadata_font(),theme::text_ink(theme::TextRole::Metadata,theme::TextState::Normal));
 }
 
 const MANAGEMENT_RANGE_DATE_FIELD_WIDTH:f32=106.0;
@@ -674,7 +674,7 @@ pub(crate) fn range_date_picker(
                 row.painter().line_segment(
                     [egui::pos2(x,inner.top()+4.0),
                      egui::pos2(x,inner.bottom()-4.0)],
-                    Stroke::new(theme::SOFT_DIVIDER_WIDTH,theme::DIVIDER)
+                    Stroke::new(theme::SOFT_DIVIDER_WIDTH,theme::border_ink(theme::BorderRole::Divider))
                 );
             }
         }

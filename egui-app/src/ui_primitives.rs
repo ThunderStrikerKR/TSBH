@@ -191,7 +191,7 @@ pub(crate) fn date_navigation_segmented_surface_with_state<R>(
     if let Some(role)=base_role{
         crate::highlight::field_background(ui,outer,role,true);
     }else{
-        ui.painter().rect_filled(outer,theme::CONTROL_RADIUS as f32,theme::INPUT);
+        ui.painter().rect_filled(outer,theme::CONTROL_RADIUS as f32,theme::surface_palette(theme::SurfaceRole::Input,theme::VisualState::Normal).fill);
     }
     // The parent has already allocated the complete frame. A scoped UI
     // would advance its cursor again using the children's expanded bounds.
@@ -203,7 +203,7 @@ pub(crate) fn date_navigation_segmented_surface_with_state<R>(
     segments.spacing_mut().item_spacing=Vec2::ZERO;
     let content=add_segments(&mut segments,inner);
     let stroke=crate::highlight::prioritized_stroke(
-        Stroke::new(theme::SOFT_DIVIDER_WIDTH,theme::BORDER),state(&content));
+        Stroke::new(theme::SOFT_DIVIDER_WIDTH,theme::border_ink(theme::BorderRole::Standard)),state(&content));
     crate::highlight::paint_parts(ui.painter(),outer.shrink(0.5),
         crate::highlight::CONTROL_RADIUS,None,Some(stroke));
     (outer,content)
@@ -274,7 +274,7 @@ pub fn form_field_label_sized(ui:&mut Ui,label:&str,width:f32)->Response {
     let pos=egui::pos2(rect.left(),
         rect.top()+typography::form_label_text_y(rect.height(),galley.size().y));
     let overflow=galley.size().x>rect.width()+0.5;
-    ui.painter().with_clip_rect(rect.intersect(ui.clip_rect())).galley(pos,galley,theme::SECONDARY);
+    ui.painter().with_clip_rect(rect.intersect(ui.clip_rect())).galley(pos,galley,theme::text_ink(theme::TextRole::Label,theme::TextState::Normal));
     overflow_tooltip(response,overflow,label)
 }
 pub fn form_field_label(ui:&mut Ui,label:&str)->Response {
