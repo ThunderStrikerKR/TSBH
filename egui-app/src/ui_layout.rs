@@ -281,18 +281,25 @@ pub fn fixed_status_slot(
 pub fn reception_goods_viewport(
     ui:&mut Ui,height:f32,content:impl FnOnce(&mut Ui)
 ){
+    if let Some(mut child)=reception_fixed_viewport(ui,height,"reception-goods-viewport"){
+        child.spacing_mut().item_spacing.y=0.0;
+        content(&mut child);
+    }
+}
+
+/// Shared detached viewport geometry. Distinct caller IDs and spacing
+/// policies are deliberately retained; a child cannot reflow its parent.
+fn reception_fixed_viewport(ui:&mut Ui,height:f32,id:&'static str)->Option<Ui>{
     let size=Vec2::new(ui.available_width().max(0.0),height.max(0.0));
     let (rect,_)=ui.shared_allocate_exact_size(size,Sense::hover());
     let rect=aligned_rect(rect);
-    if !rect.is_positive(){return;}
-    let mut child=ui.new_child(UiBuilder::new()
-        .id_salt("reception-goods-viewport")
+    if !rect.is_positive(){return None;}
+    let mut child=ui.new_child(UiBuilder::new().id_salt(id)
         .aligned_max_rect(rect).layout(Layout::top_down(Align::Min)));
-    child.restrict_shared_clip(rect.intersect(ui.clip_rect()));
+    child.restrict_shared_clip(rect);
     child.apply_shared_width(CardWidthPolicy::Fixed,rect.width());
     set_fixed_height(&mut child,rect.height());
-    child.spacing_mut().item_spacing.y=0.0;
-    content(&mut child);
+    Some(child)
 }
 
 /// Review and recipient content scroll within the reserved body without
@@ -303,18 +310,10 @@ pub fn reception_section_scroll(
 ){
     let height=docked_section_body_height(section_height)
         .min(ui.available_height().max(0.0));
-    let (rect,_)=ui.shared_allocate_exact_size(
-        Vec2::new(ui.available_width().max(0.0),height),Sense::hover()
-    );
-    let rect=aligned_rect(rect);
-    if !rect.is_positive(){return;}
-    let mut child=ui.new_child(UiBuilder::new().id_salt("reception-section-viewport")
-        .aligned_max_rect(rect).layout(Layout::top_down(Align::Min)));
-    child.restrict_shared_clip(rect.intersect(ui.clip_rect()));
-    child.apply_shared_width(CardWidthPolicy::Fixed,rect.width());
-    set_fixed_height(&mut child,rect.height());
-    scroll_area(ScrollAxes::Vertical).id_salt(id_salt)
-        .max_height(height).auto_shrink([false,false]).show(&mut child,content);
+    if let Some(mut child)=reception_fixed_viewport(ui,height,"reception-section-viewport"){
+        scroll_area(ScrollAxes::Vertical).id_salt(id_salt)
+            .max_height(height).auto_shrink([false,false]).show(&mut child,content);
+    }
 }
 
 /// Docked reception goods own their fixed viewport; the manual worksheet
