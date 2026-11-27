@@ -1267,7 +1267,7 @@ fn registry_expands_fixed_columns_and_keeps_remainder_positive(){
     let old=RegistryColumns::from([150.0,160.0,150.0,220.0,120.0]);
     let new=RegistryColumns::from([150.0,160.0,150.0,220.0,120.0])
         .redistribute_with_minimum([0.5,1.7,2.0,1.0,1.0],4,48.0);
-    for available in [600.0,1100.0,1400.0,1800.0]{
+    for available in [600.0_f32,1100.0,1400.0,1800.0]{
         let effective=available.max(new.minimum_width(theme::SPACE_8));
         let prior=old.widths(effective,theme::SPACE_8);
         let widths=new.widths(available,theme::SPACE_8);

@@ -68,7 +68,7 @@ fn manual_linked_table_cell(
     if linked {
         source_highlight::paint_active_if(ui,&response,true);
     } else {
-        crate::button::paint_button_hover(ui,&response,0.0);
+        crate::button::paint_button_hover(ui,&response,crate::highlight::Geometry::TableRow);
     }
     response
 }

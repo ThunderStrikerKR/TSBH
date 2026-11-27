@@ -1630,9 +1630,9 @@ function highlightSelfTest(){
   assert.equal(audit("/* painter.rect_filled(r,0.0,theme::BUTTON_HOVER_TINT); */ fn show(){}").length,0);
   assert.equal(audit("#[cfg(test)] mod tests {fn x(){painter.rect_filled(r,0.0,theme::BUTTON_HOVER_TINT);}}").length,0);
   assert.equal(audit("fn management_master_header_sort_hover(){painter.rect_filled(r,0.0,local);}","table/mod.rs").length,1);
-  assert.equal(audit("fn management_dropdown_option_palette(){crate::highlight::dropdown_options(ui);}","dropdown/mod.rs",true).length,0);
-  assert.equal(audit("fn management_dropdown_option_palette(){} fn other(){crate::highlight::dropdown_options(ui);}","dropdown/mod.rs",true).length,1);
-  assert.equal(audit("fn management_dropdown_option_palette(){crate::highlight::dropdown_options(ui);crate::highlight::dropdown_options(ui);}","dropdown/mod.rs",true).length,1);
+  assert.equal(audit("fn management_dropdown_option_palette(){crate::highlight::dropdown_options(ui);} fn management_dropdown_trigger_inner(){crate::highlight::action_widget(ui,fill,stroke,false);}","dropdown/mod.rs",true).length,0);
+  assert.equal(audit("fn management_dropdown_option_palette(){} fn other(){crate::highlight::dropdown_options(ui);} fn management_dropdown_trigger_inner(){crate::highlight::action_widget(ui,fill,stroke,false);}","dropdown/mod.rs",true).length,1);
+  assert.equal(audit("fn management_dropdown_option_palette(){crate::highlight::dropdown_options(ui);crate::highlight::dropdown_options(ui);} fn management_dropdown_trigger_inner(){crate::highlight::action_widget(ui,fill,stroke,false);}","dropdown/mod.rs",true).length,1);
   assert.equal(audit("fn action_with_palette(){crate::highlight::action_widget(ui,fill,stroke,false);paint_button_hover(ui,r,6.0);}","button/mod.rs").length,1);
   assert.equal(audit("fn workflow_fixed_action(){crate::highlight::fixed_action_surface(ui,r,crate::highlight::Geometry::Navigation,fill,stroke,false,true);painter.rect_stroke(r,6,local,kind);}","button/mod.rs").length,1);
   assert.equal(audit("fn management_dropdown_trigger_inner(){crate::highlight::action_widget(ui,fill,stroke,false);paint_button_hover(ui,r,6.0);}","dropdown/mod.rs").length,1);

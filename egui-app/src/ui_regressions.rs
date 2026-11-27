@@ -2196,7 +2196,7 @@ mod inline_labeled_form_contract_tests{
                 };
                 for token in allowed{compact=compact.replacen(token,"",1);}
                 if compact.contains(".label(typography::field_label("){
-                    violations.push(name.into_owned());
+                    violations.push(name);
                 }
             }
         }

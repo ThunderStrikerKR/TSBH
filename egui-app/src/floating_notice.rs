@@ -547,7 +547,7 @@ pub fn show(ctx: &Context) {
                     hit,Id::new(NOTICE_ID).with("close"),Sense::click()
                 );
                 remember_response(ui.ctx(),&response);
-                crate::ui_primitives::paint_action_hover_corners(ui,&response,egui::CornerRadius::same(4));
+                crate::ui_primitives::paint_action_hover_corners(ui,&response,crate::highlight::Geometry::Compact);
                 paint_close(&painter,center);
                 close=response.clicked();
             }

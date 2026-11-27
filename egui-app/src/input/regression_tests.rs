@@ -652,7 +652,7 @@ fn tag_blocks_share_top_bottom_and_vertical_centers_even_when_wrapped(){
         crate::ui_test_support::TRACE.with(|trace|*trace.borrow_mut()=Some(Vec::new()));
         let output=ctx.run(egui::RawInput{screen_rect:Some(screen),..Default::default()},|ctx|{
             egui::CentralPanel::default().show(ctx,|ui|{
-                crate::input::tag_block_editor(ui,&tags,&mut entry,"검색 태그 입력");
+                crate::ui_layout::tag_block_editor(ui,&tags,&mut entry,"검색 태그 입력");
             });
         });
         let measured=crate::ui_test_support::TRACE.with(|trace|trace.borrow_mut().take().unwrap());
