@@ -272,7 +272,7 @@ pub(crate) fn money_field_with_unit(
     let before=value.clone();
     let width=form_field_width(ui,FieldKind::Money.preferred_width());
     let (edit,unit_galley)=money_text_edit_with_unit(
-        ui,value,typography::numeric_editor_font(),width,unit,unit_right_inset,
+        ui,value,typography::data_value_font(typography::DataValueKind::Money,typography::DataValueContext::Form),width,unit,unit_right_inset,
         0.0,typography::form_input_text_margin()
     );
     let response=allocate_singleline_field(ui,Vec2::new(width,theme::INPUT_HEIGHT),edit,Some(enabled));
@@ -326,7 +326,7 @@ mod shared_singleline_allocation_tests{
                 let _=ctx.run(egui::RawInput::default(),|ctx|{
                     egui::CentralPanel::default().show(ctx,|ui|{
                         let size=Vec2::new(112.0,theme::INPUT_HEIGHT);
-                        let edit=singleline_editor(&mut value,typography::numeric_editor_font(),
+                        let edit=singleline_editor(&mut value,typography::data_value_font(typography::DataValueKind::Money,typography::DataValueContext::Form),
                             size.x,Align::RIGHT,typography::form_input_text_margin());
                         let response=if shared{
                             allocate_singleline_field(ui,size,edit,permission)

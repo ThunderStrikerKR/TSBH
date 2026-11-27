@@ -1,6 +1,6 @@
 //! Shared selection triggers, option rows and searchable menus; overlay owns popup lifetime.
 use eframe::egui::{self,Color32,Rect,Response,Stroke,Ui,Vec2};
-use crate::card::UiWidthPolicyExt;
+use crate::ui_primitives::UiWidthPolicyExt;
 use crate::{theme,typography};
 use crate::input::management_search_field;
 use crate::theme::{text_ink,TextRole,TextState};
@@ -187,8 +187,8 @@ fn management_dropdown_inner(
     crate::overlay::show_menu(&trigger,None,|menu|{
             // Every selectable row reports its parent trigger, never its
             // popup-row pointer, to the shared action-notice origin.
-            menu.apply_shared_width(crate::card::CardWidthPolicy::FillAvailable,width);
-            if compact {menu.apply_shared_width(crate::card::CardWidthPolicy::UpperLimit,width);}
+            menu.apply_shared_width(crate::ui_primitives::CardWidthPolicy::FillAvailable,width);
+            if compact {menu.apply_shared_width(crate::ui_primitives::CardWidthPolicy::UpperLimit,width);}
             configure_option_menu(menu);
             // The popup frame owns its 4pt inset. Use full-height selectable
             // rows, so Hangul glyph ink has space above AND below its center.
@@ -200,7 +200,7 @@ fn management_dropdown_inner(
             let scroll=if compact {scroll.max_width(width)}else{scroll};
             scroll.show(menu,|choices|{
                 configure_option_rows(choices);
-                if compact{choices.apply_shared_width(crate::card::CardWidthPolicy::Fixed,width);}
+                if compact{choices.apply_shared_width(crate::ui_primitives::CardWidthPolicy::Fixed,width);}
                 options(choices);
             });
         });
@@ -251,7 +251,7 @@ pub(crate) fn management_searchable_dropdown<'a>(
     let popup_width=width.max(theme::MANAGEMENT_SEARCHABLE_POPUP_MIN_WIDTH)
         .min((ctx.content_rect().width()-theme::SPACE_24).max(1.0));
     crate::overlay::show_menu(&trigger,None,|menu|{
-            menu.apply_shared_width(crate::card::CardWidthPolicy::Bounded,popup_width);
+            menu.apply_shared_width(crate::ui_primitives::CardWidthPolicy::Bounded,popup_width);
             configure_option_menu(menu);
             let input_width=menu.available_width().max(1.0);
             management_search_field(menu,&mut search,input_width,hint);

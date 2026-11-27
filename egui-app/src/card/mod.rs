@@ -42,8 +42,7 @@ pub(crate) fn apply_height_policy(ui:&mut Ui,policy:CardHeightPolicy,target:f32)
     }
 }
 
-// Compatibility exports: one implementation in low-level primitives.
-pub(crate) use crate::ui_primitives::{CardWidthPolicy,UiWidthPolicyExt,apply_width_policy};
+use crate::ui_primitives::{CardWidthPolicy,UiWidthPolicyExt,apply_width_policy};
 
 /// Width arithmetic for the outer card, its horizontal frame insets and
 /// optional scrollbar reservation. Preserve caller-approved minimum widths.
@@ -542,7 +541,7 @@ pub(crate) fn workflow_group_card<R>(
         // spacing. No additional automatic gap between the compact rows.
         crate::ui_layout::apply_spacing_role(card,crate::ui_layout::SpacingRole::ExplicitVertical);
         let width=crate::card::inner_width_for_insets(outer,0.0,0.0,theme::SOFT_DIVIDER_WIDTH,0.0,0.0);
-        crate::card::apply_width_policy(card,crate::card::CardWidthPolicy::FillAvailable,width);
+        crate::ui_primitives::apply_width_policy(card,crate::ui_primitives::CardWidthPolicy::FillAvailable,width);
         body(card)
     });
     #[cfg(test)]

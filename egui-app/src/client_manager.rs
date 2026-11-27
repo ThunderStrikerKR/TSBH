@@ -4,7 +4,7 @@
 use crate::{automatic_message_manager::AutomaticMessageManager,
     client_search_tags, gateway::{BandoGateway,ReadOperation},
     theme::{self,ButtonRole}, typography};
-use crate::card::UiWidthPolicyExt;
+use crate::ui_primitives::UiWidthPolicyExt;
 use eframe::egui::{self,Align,Context,Layout,Ui};
 use serde_json::{json,Value};
 use std::{sync::{mpsc::{self,Receiver},Arc},thread,time::{SystemTime,UNIX_EPOCH}};

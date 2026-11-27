@@ -1,6 +1,6 @@
 //! Modal presentation and geometry. Overlay owns window layers, input priority and lifetime.
 use eframe::egui::{self,Align,Frame,Layout,Rect,Response,Sense,Stroke,Ui,Vec2};
-use crate::card::UiWidthPolicyExt;
+use crate::ui_primitives::UiWidthPolicyExt;
 use crate::{theme,typography};
 use crate::theme::*;
 use crate::ui_primitives::{truncated_label,section_divider,form_field_label_sized};
@@ -596,7 +596,7 @@ fn modal_master_header_content_in_rect(
                 .max_rect(subtitle),
             |details|{
                 details.set_clip_rect(subtitle_clip);
-                details.apply_shared_width(crate::card::CardWidthPolicy::Fixed,subtitle.width());
+                details.apply_shared_width(crate::ui_primitives::CardWidthPolicy::Fixed,subtitle.width());
                 details.add(truncated_label(typography::caption(description)))
                     ;
             },
@@ -718,7 +718,7 @@ pub(crate) fn modal_master_footer_in_rect(
             .layout(Layout::right_to_left(Align::Center)),
         |footer|{
             footer.set_clip_rect(clip);
-            footer.apply_shared_width(crate::card::CardWidthPolicy::Fixed,content.width());
+            footer.apply_shared_width(crate::ui_primitives::CardWidthPolicy::Fixed,content.width());
             actions(footer);
         },
     );
@@ -753,7 +753,7 @@ fn modal_action_row_measured<R>(
             .layout(Layout::right_to_left(Align::Center)),
         |buttons|{
             buttons.set_clip_rect(clip);
-            buttons.apply_shared_width(crate::card::CardWidthPolicy::Fixed,area.width());
+            buttons.apply_shared_width(crate::ui_primitives::CardWidthPolicy::Fixed,area.width());
             actions(buttons)
         }
     );
@@ -926,11 +926,11 @@ pub(crate) fn show_management_menu<R>(
             ),theme::SPACE_4),
         };
         let policy=if matches!(role,ManagementMenuRole::Workbook){
-            crate::card::CardWidthPolicy::Bounded
+            crate::ui_primitives::CardWidthPolicy::Bounded
         }else{
-            crate::card::CardWidthPolicy::FillAvailable
+            crate::ui_primitives::CardWidthPolicy::FillAvailable
         };
-        crate::card::apply_width_policy(menu,policy,width);
+        crate::ui_primitives::apply_width_policy(menu,policy,width);
         menu.spacing_mut().item_spacing.y=gap;
         content(&mut ManagementMenu{ui:menu})
     })
@@ -945,7 +945,7 @@ fn modal_plain_body_region<R>(
     let width=(ui.available_width()-2.0*inset).max(1.0);
     Frame::NONE.inner_margin(egui::Margin::symmetric(inset as i8,0))
         .show(ui,|content|{
-            content.apply_shared_width(crate::card::CardWidthPolicy::Fixed,width);
+            content.apply_shared_width(crate::ui_primitives::CardWidthPolicy::Fixed,width);
             modal_form_row_spacing(content);
             contents(content)
         })
@@ -962,7 +962,7 @@ pub(crate) fn modal_master_body<R>(
     theme::role_surface_frame(theme::SurfaceRole::Section,theme::VisualState::Normal,theme::CONTROL_RADIUS)
         .inner_margin(inset)
         .show(ui,|body|{
-            body.apply_shared_width(crate::card::CardWidthPolicy::FillAvailable,width);
+            body.apply_shared_width(crate::ui_primitives::CardWidthPolicy::FillAvailable,width);
             contents(body)
         }).inner
 }
@@ -1005,7 +1005,7 @@ pub(crate) fn modal_section_measured<R>(
         theme::MODAL_SECTION_PADDING,theme::MODAL_SECTION_PADDING,
         theme::FRAME_STROKE_WIDTH,0.0,1.0);
     modal_section_frame().show(ui,|section|{
-            crate::card::apply_width_policy(section,crate::card::CardWidthPolicy::FillAvailable,inner_width);
+            crate::ui_primitives::apply_width_policy(section,crate::ui_primitives::CardWidthPolicy::FillAvailable,inner_width);
             modal_section_heading_with_rule(section,title);
             section.scope(|body|{
                 modal_form_row_spacing(body);

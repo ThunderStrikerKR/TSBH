@@ -284,15 +284,6 @@ pub fn form_field_label(ui:&mut Ui,label:&str)->Response {
     form_field_label_sized(ui,label,width)
 }
 
-pub(crate) use crate::highlight::button_hover_palette;
-pub(crate) fn paint_action_hover_corners(ui:&Ui,response:&Response,geometry:crate::highlight::Geometry){
-    crate::highlight::action_hover(ui,response,geometry,false);
-}
-pub(crate) fn paint_action_hover_surface(ui:&Ui,response:&Response,geometry:crate::highlight::Geometry,light_surface:bool){
-    crate::highlight::action_hover(ui,response,geometry,light_surface);
-}
-pub(crate) use crate::highlight::painter as highlight_painter;
-
 #[cfg(test)]
 mod shared_hover_clip_tests{
     use super::*;
@@ -302,10 +293,10 @@ mod shared_hover_clip_tests{
         let _=ctx.run(egui::RawInput::default(),|ctx|{
             egui::CentralPanel::default().show(ctx,|ui|{
                 let widget=Rect::from_min_size(ui.min_rect().min,Vec2::splat(16.0));
-                let painter=highlight_painter(ui,widget).unwrap();
+                let painter=crate::highlight::painter(ui,widget).unwrap();
                 assert_eq!(painter.clip_rect(),ui.clip_rect());
                 assert_ne!(painter.clip_rect(),widget);
-                assert!(highlight_painter(ui,Rect::NOTHING).is_none());
+                assert!(crate::highlight::painter(ui,Rect::NOTHING).is_none());
             });
         });
     }

@@ -7,7 +7,7 @@ use crate::{
     gateway::{BandoGateway, ReadOperation},
     settings_help, theme, typography,
 };
-use crate::card::UiWidthPolicyExt;
+use crate::ui_primitives::UiWidthPolicyExt;
 use chrono::{DateTime, Duration as Days, FixedOffset, NaiveDate, Utc};
 use eframe::egui::{self, Align, Align2, Rect, Sense, Stroke, Ui, UiBuilder, Vec2};
 use serde_json::{json, Value};
@@ -598,7 +598,7 @@ fn draw_line(ui:&mut Ui,rect:Rect,line:HistoryLine,snapshot:&HistorySnapshot,
                 .max_rect(control)
                 .layout(egui::Layout::left_to_right(Align::Center)),|actions|{
                     actions.set_clip_rect(control.intersect(area));
-                    actions.apply_shared_width(crate::card::CardWidthPolicy::Fixed,control.width());
+                    actions.apply_shared_width(crate::ui_primitives::CardWidthPolicy::Fixed,control.width());
                     crate::ui_layout::apply_spacing_role(actions,crate::ui_layout::SpacingRole::CompactActions);
                     // Copy the FULL order's existing Rust-generated message.
                     if crate::button::action_with_min_width(actions,"운송장 복사",
@@ -775,7 +775,7 @@ fn history_date_controls(
             .layout(egui::Layout::left_to_right(Align::Center)
                 .with_main_align(Align::Max)),
             |line|{
-                line.apply_shared_width(crate::card::CardWidthPolicy::Fixed,first.width());
+                line.apply_shared_width(crate::ui_primitives::CardWidthPolicy::Fixed,first.width());
                 line.set_height(first.height());
                 crate::navigation::apply_management_date_control_spacing(line);
                 changed|=history_date_range_start(
@@ -788,7 +788,7 @@ fn history_date_controls(
             .layout(egui::Layout::left_to_right(Align::Center)
                 .with_main_align(Align::Max)),
             |line|{
-                line.apply_shared_width(crate::card::CardWidthPolicy::Fixed,second.width());
+                line.apply_shared_width(crate::ui_primitives::CardWidthPolicy::Fixed,second.width());
                 line.set_height(second.height());
                 crate::navigation::apply_management_date_control_spacing(line);
                 changed|=history_date_range_end(

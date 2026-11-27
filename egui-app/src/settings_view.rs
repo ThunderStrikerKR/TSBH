@@ -2,7 +2,7 @@
  //! section order, dirty-tab guard and CAS saves match the original React
  //! implementation. The shared theme/components own visual tokens.
 use crate::{gateway::BandoGateway, settings_store, theme::{self,ButtonRole}, typography};
-use crate::card::UiWidthPolicyExt;
+use crate::ui_primitives::UiWidthPolicyExt;
 use eframe::egui::{self,Align,Context,Layout,Ui,Vec2};
 use serde_json::{json,Map,Value};
 use std::{sync::{mpsc::{self,Receiver},Arc},thread};
@@ -576,13 +576,13 @@ impl SettingsView{
             ui.horizontal(|row|{
                 crate::ui_layout::apply_spacing_role(row,crate::ui_layout::SpacingRole::FormColumns);
                 row.vertical(|left|{
-                    crate::card::apply_width_policy(left,crate::card::CardWidthPolicy::Fixed,left_width);
+                    crate::ui_primitives::apply_width_policy(left,crate::ui_primitives::CardWidthPolicy::Fixed,left_width);
                     self.show_work_settings(left,editable,Arc::clone(&gateway));
                     left.add_space(theme::SPACE_12);
                     self.show_sender_settings(left,editable);
                 });
                 row.vertical(|right|{
-                    crate::card::apply_width_policy(right,crate::card::CardWidthPolicy::Fixed,right_width);
+                    crate::ui_primitives::apply_width_policy(right,crate::ui_primitives::CardWidthPolicy::Fixed,right_width);
                     self.show_accounts(
                         right,editable,
                         (available_height-theme::SETTINGS_BASIC_SAVE_RESERVE).max(0.0)
@@ -701,7 +701,7 @@ impl SettingsView{
                             crate::ui_layout::apply_spacing_role(row,crate::ui_layout::SpacingRole::FormColumns);
                             for (key,label) in recommendations{
                                 row.vertical(|col|{
-                                    col.apply_shared_width(crate::card::CardWidthPolicy::Fixed,theme::SETTINGS_ACCOUNT_PICKER_MAX_WIDTH+
+                                    col.apply_shared_width(crate::ui_primitives::CardWidthPolicy::Fixed,theme::SETTINGS_ACCOUNT_PICKER_MAX_WIDTH+
                                         theme::MODAL_FORM_WIDE_LABEL_WIDTH+theme::SPACE_8);
                                     recommendation_picker(
                                         col,&mut self.draft,key,label
@@ -742,7 +742,7 @@ impl SettingsView{
                         row.allocate_ui_with_layout(
                             Vec2::new(width+label_space,theme::INPUT_HEIGHT),
                             Layout::top_down(Align::Min),|input|{
-                                input.apply_shared_width(crate::card::CardWidthPolicy::Fixed,width+label_space);
+                                input.apply_shared_width(crate::ui_primitives::CardWidthPolicy::Fixed,width+label_space);
                                 edit_input_width(input,account,key,label,width);
                             });
                     }

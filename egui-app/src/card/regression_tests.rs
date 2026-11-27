@@ -300,7 +300,8 @@ fn screen_card_height_reservations_use_the_common_policy(){
 
 #[test]
 fn card_width_policies_preserve_natural_and_reserved_widths(){
-    use super::{UiWidthPolicyExt,CardWidthPolicy,inner_width_for_insets,fixed_and_remaining_columns};
+    use crate::ui_primitives::{UiWidthPolicyExt,CardWidthPolicy};
+    use super::{inner_width_for_insets,fixed_and_remaining_columns};
     let ctx=egui::Context::default();
     for (policy,target,expected) in [
         (CardWidthPolicy::FitContent,240.0,40.0),

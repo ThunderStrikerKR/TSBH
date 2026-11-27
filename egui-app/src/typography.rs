@@ -712,11 +712,6 @@ pub fn freight_summary_small_label_galley(
     ))
 }
 
-/// Compatibility shim for existing money/quantity editor call sites.
-pub fn numeric_editor_font() -> FontId {
-    data_value_font(DataValueKind::Money,DataValueContext::Form)
-}
-
 /// A missing product photo is ordinary body-size proportional text.
 pub fn product_image_placeholder_font()->FontId{
     FontId::proportional(FONT_BODY)
@@ -978,8 +973,6 @@ mod management_table_type_roles_tests {
         assert_eq!(data_value_align(DataValueKind::Date),egui::Align::LEFT);
         assert_eq!(data_value_align(DataValueKind::Phone),egui::Align::LEFT);
         assert_eq!(DATA_NUMERIC_GLYPH_OFFSET_Y,2.5);
-        assert_eq!(numeric_editor_font(),
-            data_value_font(DataValueKind::Money,DataValueContext::Form));
         assert_eq!(management_table_money_font(),
             data_value_font(DataValueKind::Money,DataValueContext::Table));
         assert_eq!(spec(Role::SummaryValue).weight as u8,
@@ -1135,7 +1128,7 @@ mod management_table_type_roles_tests {
         assert_eq!(management_table_cell_color(ManagementTableCellRole::Quantity),TEXT);
         assert_eq!(management_table_cell_color(ManagementTableCellRole::RowTotal),TEXT);
         assert_eq!(management_table_cell_color(ManagementTableCellRole::Category),SECONDARY);
-        assert_eq!(management_table_money_font(),numeric_editor_font());
+        assert_eq!(management_table_money_font(),data_value_font(DataValueKind::Money,DataValueContext::Form));
     }
 }
 

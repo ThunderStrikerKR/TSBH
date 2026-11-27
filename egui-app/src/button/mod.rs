@@ -4,16 +4,10 @@ use crate::{theme,typography};
 use crate::theme::*;
 use crate::ui_primitives::{paint_workflow_icon,WorkflowIcon,ManagementChevronDirection,paint_management_chevron,paint_management_chevron_with_color,paint_chevron_at_angle_scaled};
 
-/// Register an actual interaction, then paint using the shared primitive.
-fn paint_button_hover_corners(ui:&Ui,response:&Response,geometry:crate::highlight::Geometry){
-    crate::floating_notice::remember_response(ui.ctx(),response);
-    crate::ui_primitives::paint_action_hover_corners(ui,response,geometry);
-}
-
-/// Existing buttons keep their uniform corner radius. Segmented controls can
-/// use paint_button_hover_corners without altering other components.
+/// Register the interaction, then delegate painting to the highlight owner.
 pub(crate) fn paint_button_hover(ui:&Ui,response:&Response,geometry:crate::highlight::Geometry){
-    paint_button_hover_corners(ui,response,geometry);
+    crate::floating_notice::remember_response(ui.ctx(),response);
+    crate::highlight::action_hover(ui,response,geometry,false);
 }
 
 /// Fixed-rectangle remove action for compact rows.
@@ -435,7 +429,7 @@ pub(crate) fn management_date_segment(
     );
     #[cfg(test)]
     crate::ui_test_support::record_highlight_target("date segment",response.rect,ui.clip_rect());
-    crate::button::paint_button_hover_corners(ui,&response,geometry);
+    paint_button_hover(ui,&response,geometry);
     if let Some(direction)=direction{
         let painter=ui.painter().with_clip_rect(response.rect);
         paint_management_chevron(
@@ -524,7 +518,7 @@ pub(crate) fn date_navigation_segment_button(
         DateNavigationSegmentGlyph::Chevron(_)=>unreachable!("handled above"),
     };
     if let Some(fill)=fill{painter.rect_filled(rect,corners,fill);}
-    if enabled{crate::button::paint_button_hover_corners(ui,&response,geometry);}
+    if enabled{paint_button_hover(ui,&response,geometry);}
     match glyph{
         DateNavigationSegmentGlyph::CompactVerticalChevron{up}=>{
             let angle=if up{-std::f32::consts::FRAC_PI_2}else{std::f32::consts::FRAC_PI_2};
@@ -599,7 +593,7 @@ pub(crate) fn dispatch_origin(right:&mut Ui,label:&str,selected:bool,editable:bo
 #[cfg(test)]
 mod shared_action_style_tests{
     use super::*;
-    use crate::ui_primitives::button_hover_palette;
+    use crate::highlight::button_hover_palette;
 
     #[test]
     fn blue_pointer_hover_and_keyboard_focus_have_independent_paint(){

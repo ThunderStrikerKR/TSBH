@@ -2,7 +2,7 @@
 //! Presentation-only: selection writes an existing category ID, never a new
 //! category, product edit, or implicit business transaction.
 use std::collections::{HashMap,HashSet};
-use crate::card::UiWidthPolicyExt;
+use crate::ui_primitives::UiWidthPolicyExt;
 use eframe::egui::{self,Context,Id,Response,Ui,Vec2};
 use serde_json::Value;
 use crate::{category_manager::ROOTS,category_tree,floating_notice,theme,typography};
@@ -279,7 +279,7 @@ pub(crate) fn crumbs_row(ui:&mut Ui,state:&mut ExplorerState,index:&HashMap<&str
         let pos=rect.left_bottom();
         crate::overlay::area(id,crate::overlay::AreaRole::Help).fixed_pos(pos).show(ui.ctx(),|area|{
             crate::card::category_ancestor_frame().show(area,|rows|{
-                rows.apply_shared_width(crate::card::CardWidthPolicy::UpperLimit,width);
+                rows.apply_shared_width(crate::ui_primitives::CardWidthPolicy::UpperLimit,width);
                 crate::scrollbar::scroll_area(crate::scrollbar::ScrollAxes::Vertical)
                     .id_salt("category-explorer-ancestors")
                     .max_height(theme::CATEGORY_EXPLORER_ANCESTOR_MAX_HEIGHT)

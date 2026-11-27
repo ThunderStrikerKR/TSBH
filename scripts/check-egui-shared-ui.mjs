@@ -742,7 +742,7 @@ export function auditCardWidths(source,file){
     used.set(key,count);
     if(count>(widthWriteAllowances.get(key)||0)){
       hits.push({line:tokens[i].line,rule:"raw UI width write: "+call+
-        "; use card::apply_width_policy / shared card or viewport geometry"});
+        "; use ui_primitives::apply_width_policy / shared card or viewport geometry"});
     }
   }
   return hits;
@@ -755,7 +755,7 @@ function cardWidthSelfTest(){
     ["fn show(){egui::Ui::set_width(ui,w);}",1],
     ["fn show(){let write=Ui::set_width;}",1],
     ["fn show(){ui.r#set_width(w);}",1],
-    ["fn show(){crate::card::apply_width_policy(ui,CardWidthPolicy::FillAvailable,w);}",0],
+    ["fn show(){crate::ui_primitives::apply_width_policy(ui,CardWidthPolicy::FillAvailable,w);}",0],
     ["fn show(){scroll_area(axes).max_width(w);}",0],
     ['fn show(){/* ui.set_width(w); */ let s="ui.set_width(w)";}',0],
     ["#[cfg(test)] mod tests{fn t(){ui.set_width(w);}} fn show(){}",0],
@@ -1450,10 +1450,10 @@ const highlightContracts = {
   "main.rs":{"<root>":{"mod highlight ;":1,"mod highlight_native ;":1}},
   "theme.rs":{"install":{"highlight_native :: native_widgets (":1}},
   "ui_primitives.rs":{
-    "paint_action_hover_corners":{"highlight :: action_hover (":1},
-    "paint_action_hover_surface":{"highlight :: action_hover (":1},
     "date_navigation_segmented_surface_with_state":{"highlight :: prioritized_stroke (":1,"highlight :: paint_parts (":1,"highlight :: segment_outline_rect (":1}},
+  "floating_notice.rs":{"show":{"highlight :: action_hover (":1}},
   "button/mod.rs":{
+    "paint_button_hover":{"highlight :: action_hover (":1},
     "action_with_palette":{"highlight :: action_widget (":1,"highlight :: button_geometry (":1},
     "workflow_fixed_action":{"highlight :: fixed_action_surface (":1},
     "date_navigation_button_surface":{"highlight :: action_widget (":1},
@@ -1694,9 +1694,34 @@ const internalUiFunctions={
   "ui_primitives.rs":["overflow_tooltip_needed"],
 };
 const retiredProductionUiFunctions={
-  "typography.rs":["management_table_cell_color","freight_summary_large_number_galley"],
-  "ui_primitives.rs":["paint_selection_outline"],
+  "typography.rs":["management_table_cell_color","freight_summary_large_number_galley","numeric_editor_font"],
+  "ui_primitives.rs":["paint_selection_outline","paint_action_hover_corners","paint_action_hover_surface"],
+  "button/mod.rs":["paint_button_hover_corners"],
 };
+// Removed forwarding routes cannot be recreated or called by new screens.
+function forwardingContractViolations(source,file){
+  const code=productionTokens(source).map(t=>t.v).join(" ");
+  const hits=[];
+  const paths=[
+    /\bcard :: (?:CardWidthPolicy|UiWidthPolicyExt|apply_width_policy)\b/,
+    /\bui_primitives :: (?:button_hover_palette|highlight_painter|paint_action_hover_corners|paint_action_hover_surface)\b/,
+    /\btypography :: numeric_editor_font\b/,
+    /\bbutton :: paint_button_hover_corners\b/,
+  ];
+  for(const path of paths)if(path.test(code))hits.push("obsolete forwarding route: "+code.match(path)[0]);
+  if(file==="card/mod.rs"&&/\bpub(?: \( [^)]* \))? use crate :: ui_primitives :: \{[^}]*\b(?:CardWidthPolicy|UiWidthPolicyExt|apply_width_policy)\b/.test(code))
+    hits.push("card must not re-export primitive width policy");
+  if(file==="ui_primitives.rs"&&/\bpub(?: \( [^)]* \))? use crate :: highlight :: (?:button_hover_palette|painter)\b/.test(code))
+    hits.push("UI primitives must not re-export highlight internals");
+  return hits;
+}
+function forwardingContractSelfTest(){
+  assert.equal(forwardingContractViolations("use crate::card::UiWidthPolicyExt;","screen.rs").length,1);
+  assert.equal(forwardingContractViolations("use crate::ui_primitives::UiWidthPolicyExt;","screen.rs").length,0);
+  assert.equal(forwardingContractViolations("pub(crate) use crate::ui_primitives::{CardWidthPolicy,UiWidthPolicyExt,apply_width_policy};","card/mod.rs").length,1);
+  assert.equal(forwardingContractViolations("pub(crate) use crate::highlight::painter as highlight_painter;","ui_primitives.rs").length,1);
+  assert.equal(forwardingContractViolations("fn show(){crate::typography::numeric_editor_font();}","screen.rs").length,1);
+}
 function visibilityContractViolations(source,file){
   const code=productionTokens(source).map(t=>t.v).join(" ");
   const hits=[];
@@ -1722,6 +1747,7 @@ function visibilityContractSelfTest(){
   assert.equal(visibilityContractViolations("#[cfg(test)] fn management_table_cell_color(){}","typography.rs").length,0);
 }
 function main(){
+  forwardingContractSelfTest();
   visibilityContractSelfTest();
   colorOwnershipSelfTest();
   highlightSelfTest();
@@ -1753,6 +1779,7 @@ function main(){
       for(const dep of sharedDependencies(source,owner,true))deps.add(dep);
       graph.set(owner,deps);
     }
+    for(const rule of forwardingContractViolations(source,file)){failures++;console.error(file+": "+rule);}
     for(const rule of visibilityContractViolations(source,file)){failures++;console.error(file+": "+rule);}
     for(const rule of designTokenViolations(source,file)){failures++;console.error(file+": "+rule);}
     for(const hit of [...audit(source,file,true),...auditComposite(source,file,true),...auditContextLocks(source,file),...auditCardHeights(source,file),...auditIndirectCardHeights(source,file),...auditCardWidths(source,file),...auditManagedLayout(source,file),...auditHighlight(source,file,true),...auditColorOwnership(source,file)]){

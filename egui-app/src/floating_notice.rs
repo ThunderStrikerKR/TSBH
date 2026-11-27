@@ -549,7 +549,7 @@ pub fn show(ctx: &Context) {
                 #[cfg(test)]
                 crate::ui_test_support::record_highlight_target("notice close",response.rect,ui.clip_rect());
                 remember_response(ui.ctx(),&response);
-                crate::ui_primitives::paint_action_hover_corners(ui,&response,crate::highlight::Geometry::Compact);
+                crate::highlight::action_hover(ui,&response,crate::highlight::Geometry::Compact,false);
                 paint_close(&painter,center);
                 close=response.clicked();
             }

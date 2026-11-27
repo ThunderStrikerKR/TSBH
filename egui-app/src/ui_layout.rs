@@ -1,7 +1,7 @@
 //! Shared UI layout allocations, reserved geometry and dock rendering.
 //! Business state and persisted window/split sizes remain in layout.rs.
 use eframe::egui::{self,Align,Color32,Layout,Rect,Sense,Ui,UiBuilder,Vec2};
-use crate::card::UiWidthPolicyExt;
+use crate::ui_primitives::UiWidthPolicyExt;
 use crate::{theme,typography};
 use crate::ui_primitives::{text_exceeds_rect,truncated_label_for_explicit_tooltip,truncated_label,overflow_tooltip};
 use crate::scrollbar::{scroll_area,ScrollAxes};
@@ -133,7 +133,7 @@ pub fn reception_goods_viewport(
         .id_salt("reception-goods-viewport")
         .max_rect(rect).layout(Layout::top_down(Align::Min)));
     child.set_clip_rect(rect.intersect(ui.clip_rect()));
-    child.apply_shared_width(crate::card::CardWidthPolicy::Fixed,rect.width());
+    child.apply_shared_width(crate::ui_primitives::CardWidthPolicy::Fixed,rect.width());
     child.set_height(rect.height());
     child.spacing_mut().item_spacing.y=0.0;
     content(&mut child);
@@ -154,7 +154,7 @@ pub fn reception_section_scroll(
     let mut child=ui.new_child(UiBuilder::new().id_salt("reception-section-viewport")
         .max_rect(rect).layout(Layout::top_down(Align::Min)));
     child.set_clip_rect(rect.intersect(ui.clip_rect()));
-    child.apply_shared_width(crate::card::CardWidthPolicy::Fixed,rect.width());
+    child.apply_shared_width(crate::ui_primitives::CardWidthPolicy::Fixed,rect.width());
     child.set_height(rect.height());
     scroll_area(ScrollAxes::Vertical).id_salt(id_salt)
         .max_height(height).auto_shrink([false,false]).show(&mut child,content);
@@ -164,7 +164,7 @@ pub fn reception_section_scroll(
 /// scrolls its complete card stack instead. Both use the same item table
 /// spacing and minimum-width rules without introducing another child ID.
 pub fn reception_items_body(ui:&mut Ui,width:f32,exact_width:bool){
-    if exact_width{ui.apply_shared_width(crate::card::CardWidthPolicy::Fixed,width);}else{ui.apply_shared_width(crate::card::CardWidthPolicy::FillAvailable,width);}
+    if exact_width{ui.apply_shared_width(crate::ui_primitives::CardWidthPolicy::Fixed,width);}else{ui.apply_shared_width(crate::ui_primitives::CardWidthPolicy::FillAvailable,width);}
     ui.spacing_mut().item_spacing.y=0.0;
 }
 
@@ -313,7 +313,7 @@ pub fn management_top_content<R>(
 )->R{
     let output=theme::management_top_content_frame()
         .show(ui,|inset|{
-            inset.apply_shared_width(crate::card::CardWidthPolicy::FillAvailable,inset.available_width());
+            inset.apply_shared_width(crate::ui_primitives::CardWidthPolicy::FillAvailable,inset.available_width());
             add(inset)
         });
     #[cfg(test)]
@@ -369,7 +369,7 @@ pub(crate) fn management_toolbar_slot<R>(
 )->R{
     ui.scope_builder(UiBuilder::new().id_salt(id).max_rect(rect).layout(layout),|slot|{
         if clip{slot.set_clip_rect(rect.intersect(slot.clip_rect()));}
-        slot.apply_shared_width(crate::card::CardWidthPolicy::Fixed,rect.width());
+        slot.apply_shared_width(crate::ui_primitives::CardWidthPolicy::Fixed,rect.width());
         if fixed_height{slot.set_height(rect.height());}
         draw(slot)
     }).inner
@@ -414,7 +414,7 @@ pub(crate) fn management_toolbar_pair(ui:&mut Ui,policy:ToolbarPair,
 pub(crate) fn workspace_pane<R>(ui:&mut Ui,width:f32,height:f32,fixed_width:bool,
     draw:impl FnOnce(&mut Ui)->R)->R{
     ui.allocate_ui_with_layout(Vec2::new(width,height),Layout::top_down(Align::Min),|pane|{
-        if fixed_width{pane.apply_shared_width(crate::card::CardWidthPolicy::Fixed,width);}
+        if fixed_width{pane.apply_shared_width(crate::ui_primitives::CardWidthPolicy::Fixed,width);}
         draw(pane)
     }).inner
 }

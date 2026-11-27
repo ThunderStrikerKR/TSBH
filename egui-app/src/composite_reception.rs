@@ -1,6 +1,6 @@
 //! Shared reception forms, item and freight rows, actions and totals.
 use eframe::egui::{self,Align,Layout,Rect,Response,Sense,Stroke,Ui,Vec2};
-use crate::card::UiWidthPolicyExt;
+use crate::ui_primitives::UiWidthPolicyExt;
 use crate::{theme,typography,source_highlight};
 use crate::input::{reception_recipient_text_edit,allocate_singleline_field,reception_recipient_value_hit,money_edit_text,reception_freight_money_readonly,money_unit_left,RECEPTION_MONEY_PENDING,RECEPTION_MONEY_UNIT_GAP};
 use crate::table::{management_table_data_width,reception_item_columns,reception_item_text_clip,paint_management_table_row_rule};
@@ -213,7 +213,7 @@ pub fn reception_recipient_fields(
             .scroll_source(egui::scroll_area::ScrollSource::SCROLL_BAR | egui::scroll_area::ScrollSource::MOUSE_WHEEL)
             .auto_shrink([false, true])
             .show(fields, |contacts| {
-                contacts.apply_shared_width(crate::card::CardWidthPolicy::FillAvailable,row_width);
+                contacts.apply_shared_width(crate::ui_primitives::CardWidthPolicy::FillAvailable,row_width);
                 contacts.horizontal(|line| {
                     line.spacing_mut().item_spacing.y = 0.0;
                     line.spacing_mut().item_spacing.x =

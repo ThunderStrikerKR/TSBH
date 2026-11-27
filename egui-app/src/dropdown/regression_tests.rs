@@ -208,7 +208,7 @@ mod management_dropdown_unification_tests {
         assert_eq!(response_rect.width(),FieldKind::Money.preferred_width());
         assert_eq!(amount,"26,000");
         assert!(!amount.contains('원'));
-        assert_eq!(typography::numeric_editor_font(),
+        assert_eq!(typography::data_value_font(typography::DataValueKind::Money,typography::DataValueContext::Form),
             typography::management_table_money_font());
     }
 

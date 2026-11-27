@@ -9,7 +9,7 @@ use crate::{
     management_queries,
     settings_help, theme, typography,
 };
-use crate::card::UiWidthPolicyExt;
+use crate::ui_primitives::UiWidthPolicyExt;
 use eframe::egui::{self, Ui};
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 use serde_json::{json, Value};
@@ -1420,7 +1420,7 @@ impl FreightManager {
                     .layout(egui::Layout::left_to_right(egui::Align::Center)),
                 |tools|{
                     tools.set_clip_rect(left_rect);
-                    tools.apply_shared_width(crate::card::CardWidthPolicy::Fixed,left_rect.width());
+                    tools.apply_shared_width(crate::ui_primitives::CardWidthPolicy::Fixed,left_rect.width());
                     tools.set_height(left_rect.height());
                     crate::ui_layout::apply_spacing_role(tools,crate::ui_layout::SpacingRole::ToolbarInput);
                     // Search stays at 36pt; the shared 34pt dropdown trigger
@@ -1519,7 +1519,7 @@ impl FreightManager {
                     // Clip to the trailing card-inner slot, not the
                     // independent table scrollbar gutter.
                     bulk.set_clip_rect(right_rect);
-                    bulk.apply_shared_width(crate::card::CardWidthPolicy::Fixed,right_controls_rect.width());
+                    bulk.apply_shared_width(crate::ui_primitives::CardWidthPolicy::Fixed,right_controls_rect.width());
                     bulk.set_height(right_controls_rect.height());
                     crate::ui_layout::apply_spacing_role(bulk,crate::ui_layout::SpacingRole::ToolbarInput);
                     // Bulk selection uses the same 34pt split-chevron
@@ -1714,7 +1714,7 @@ impl FreightManager {
                         }
                         row.scope_builder(selector_builder,|control|{
                                 control.set_clip_rect(selector_clip);
-                                control.apply_shared_width(crate::card::CardWidthPolicy::Fixed,selector_rect.width());
+                                control.apply_shared_width(crate::ui_primitives::CardWidthPolicy::Fixed,selector_rect.width());
                                 crate::dropdown::management_dropdown(
                                     control,
                                     crate::dropdown::DropdownCaption::new(if current.is_empty() {
@@ -1785,7 +1785,7 @@ impl FreightManager {
                                 actions.set_clip_rect(
                                     actions_clip
                                 );
-                                actions.apply_shared_width(crate::card::CardWidthPolicy::Fixed,actions_rect.width());
+                                actions.apply_shared_width(crate::ui_primitives::CardWidthPolicy::Fixed,actions_rect.width());
                                 crate::ui_layout::apply_spacing_role(actions,crate::ui_layout::SpacingRole::Toolbar);
                                 let editable=enabled&&!changed&&ready;
                                 // Only an unassigned product can edit its

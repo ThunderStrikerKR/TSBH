@@ -1,7 +1,7 @@
 //! Shared table renderer: surface, header, row/viewport geometry and sort hit testing.
 //! Screens retain column data, stable IDs and business sort state.
 use eframe::egui::{self,Color32,Rect,Stroke,Ui,Vec2};
-use crate::card::UiWidthPolicyExt;
+use crate::ui_primitives::UiWidthPolicyExt;
 use crate::{theme,typography};
 use eframe::egui::{Sense,Align};
 use crate::ui_primitives::{overflow_region_tooltip,text_exceeds_rect,positioned_text_overflow};
@@ -174,7 +174,7 @@ pub(crate) fn paint_management_table_row_rule(painter:&egui::Painter,rect:Rect){
 /// Fixed and variable row viewports share the minimum-width and zero-gap
 /// rules. Retain the caller's existing width and height calculations.
 pub(crate) fn management_table_row_body(ui:&mut Ui,width:f32){
-    ui.apply_shared_width(crate::card::CardWidthPolicy::FillAvailable,width);
+    ui.apply_shared_width(crate::ui_primitives::CardWidthPolicy::FillAvailable,width);
     ui.spacing_mut().item_spacing.y=0.0;
 }
 
@@ -1356,7 +1356,7 @@ pub(crate) fn control_cell<R>(ui:&mut Ui,id:impl std::hash::Hash,rect:Rect,clip:
     if !enabled{builder=builder.disabled();}
     ui.scope_builder(builder,|control|{
         control.set_clip_rect(clip.intersect(control.clip_rect()));
-        if fixed_width{control.apply_shared_width(crate::card::CardWidthPolicy::Fixed,rect.width());}
+        if fixed_width{control.apply_shared_width(crate::ui_primitives::CardWidthPolicy::Fixed,rect.width());}
         draw(control)
     }).inner
 }

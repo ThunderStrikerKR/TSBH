@@ -270,7 +270,7 @@ impl ItemEditor{
                             content_width,work_area.height()
                         );
                         crate::popup::modal_nested_role_frame(crate::popup::ModalNestedRole::Standard).show(ui,|body|{
-                            crate::card::apply_width_policy(body,crate::card::CardWidthPolicy::FillAvailable,content_width);
+                            crate::ui_primitives::apply_width_policy(body,crate::ui_primitives::CardWidthPolicy::FillAvailable,content_width);
                             // Own the display snapshot so search and selection
                             // actions can mutate ItemEditor during this same frame.
                             let product=self.replacement.as_ref()
@@ -302,7 +302,7 @@ impl ItemEditor{
                                     let detail_width=(content_width-photo_side
                                         -ITEM_DETAIL_PANEL_GAP).max(1.0);
                                     line.vertical(|details|{
-                                        crate::card::apply_width_policy(details,crate::card::CardWidthPolicy::Fixed,detail_width);
+                                        crate::ui_primitives::apply_width_policy(details,crate::ui_primitives::CardWidthPolicy::Fixed,detail_width);
                                         crate::card::apply_height_policy(
                                             details,crate::card::CardHeightPolicy::MatchTallest,photo_side
                                         );
@@ -444,7 +444,7 @@ mod tests{
         let source=include_str!("item_editor.rs");
         let modal=source.split("    pub fn show(").nth(1).unwrap()
             .split("        if delete_clicked{").next().unwrap();
-        assert!(modal.contains("crate::card::apply_width_policy(body,crate::card::CardWidthPolicy::FillAvailable,content_width)"));
+        assert!(modal.contains("crate::ui_primitives::apply_width_policy(body,crate::ui_primitives::CardWidthPolicy::FillAvailable,content_width)"));
         assert!(modal.contains("line.add_space(ITEM_DETAIL_PANEL_GAP)"));
         assert!(modal.contains("Vec2::splat(photo_side)"));
         assert!(modal.contains("self.detail_information("));

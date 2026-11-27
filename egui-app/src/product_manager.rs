@@ -15,7 +15,7 @@ use crate::{
     product_images::{self,ProductImageCache},
     theme, typography,
 };
-use crate::card::UiWidthPolicyExt;
+use crate::ui_primitives::UiWidthPolicyExt;
 #[cfg(test)]
 use crate::cell_navigation::CellNavigationKey;
 use eframe::egui::{self, Align, Context, Layout, Sense, Ui, UiBuilder, Rect, Vec2};
@@ -606,7 +606,7 @@ impl ProductManager {
         crate::popup::modal_window(ctx,"상품 선택",window_id,work_area)
             .default_width(width).show(ctx,|ui|{
 
-                ui.apply_shared_width(crate::card::CardWidthPolicy::Fixed,width);
+                ui.apply_shared_width(crate::ui_primitives::CardWidthPolicy::Fixed,width);
                 crate::popup::modal_flow_workspace(ui,|workspace|{
                     cancelled=workspace.header("상품 선택","취소",true);
                     workspace.body_region(|ui|{
@@ -1240,7 +1240,7 @@ impl ProductManager {
         crate::card::measured_management_master_card(ui,|panel|{
             if selecting{
                 let width=panel.available_width().max(1.0);
-                crate::card::apply_width_policy(panel,crate::card::CardWidthPolicy::FillAvailable,width);
+                crate::ui_primitives::apply_width_policy(panel,crate::ui_primitives::CardWidthPolicy::FillAvailable,width);
                 crate::card::apply_height_policy(panel,crate::card::CardHeightPolicy::FillAvailable,card_min_height);
             }else{
                 crate::card::fill_management_primary_card(panel,card_min_height);
@@ -1608,7 +1608,7 @@ impl ProductManager {
                                                             }
                                                             crate::floating_notice::sized_text_caret(
                                                                 inputs,"products.price",&response,
-                                                                &entry.input,typography::numeric_editor_font(),
+                                                                &entry.input,typography::data_value_font(typography::DataValueKind::Money,typography::DataValueContext::Form),
                                                                 false,8.0
                                                             );
                                                             // Excel-style cell editing: blur commits
@@ -3564,7 +3564,7 @@ mod tests {
             "normal and edit mode won units must share the exact x coordinate");
         assert_eq!(editor.center().y,cell.center().y,
             "editable numbers and read-only amounts must share vertical center");
-        assert_eq!(typography::numeric_editor_font(),
+        assert_eq!(typography::data_value_font(typography::DataValueKind::Money,typography::DataValueContext::Form),
             typography::management_table_money_font());
         let source=include_str!("product_manager.rs");
         let table=source.split("let selected_variant=variants.iter().find(")

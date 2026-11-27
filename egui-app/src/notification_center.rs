@@ -79,7 +79,7 @@ impl Center{
                                 let text=|k:&str|n[k].as_str().unwrap_or("");
                                 crate::card::section_frame().show(list,|card|{
                                     let width=card.available_width();
-                                    crate::card::apply_width_policy(card,crate::card::CardWidthPolicy::FillAvailable,width);
+                                    crate::ui_primitives::apply_width_policy(card,crate::ui_primitives::CardWidthPolicy::FillAvailable,width);
                                     // The action column has a stable width for both read states.
                                     card.horizontal(|row|{
                                         row.with_layout(egui::Layout::right_to_left(egui::Align::Center),|bar|{
@@ -91,7 +91,7 @@ impl Center{
                                     card.label(typography::caption(text("at")));
                                     crate::card::preview_surface_frame().show(card,|detail|{
                                         let width=detail.available_width();
-                                        crate::card::apply_width_policy(detail,crate::card::CardWidthPolicy::FillAvailable,width);
+                                        crate::ui_primitives::apply_width_policy(detail,crate::ui_primitives::CardWidthPolicy::FillAvailable,width);
                                         detail.add(egui::Label::new(typography::body(text("detail"))).wrap());
                                     });
                                 });
