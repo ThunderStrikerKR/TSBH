@@ -920,8 +920,12 @@ pub(crate) fn show_management_menu<R>(
                 (menu.ctx().content_rect().width()-theme::SPACE_24).max(1.0)
             ),theme::SPACE_4),
         };
-        menu.set_min_width(width);
-        if matches!(role,ManagementMenuRole::Workbook){menu.set_max_width(width);}
+        let policy=if matches!(role,ManagementMenuRole::Workbook){
+            crate::card::CardWidthPolicy::Bounded
+        }else{
+            crate::card::CardWidthPolicy::FillAvailable
+        };
+        crate::card::apply_width_policy(menu,policy,width);
         menu.spacing_mut().item_spacing.y=gap;
         content(&mut ManagementMenu{ui:menu})
     })
