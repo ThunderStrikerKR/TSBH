@@ -1,5 +1,6 @@
 //! Shared table renderer: surface, header, row/viewport geometry and sort hit testing.
 //! Screens retain column data, stable IDs and business sort state.
+use crate::ui_layout::SharedAllocationExt as _;
 use crate::ui_layout::AlignedUiBuilderExt as _;
 use eframe::egui::{self,Color32,Rect,Stroke,Ui,Vec2};
 use crate::ui_primitives::UiWidthPolicyExt;
@@ -523,7 +524,7 @@ pub(crate) fn fixed_row<const N:usize>(
 ){
     row_scope(ui,id,rect,|row|{
         row.set_clip_rect(row.clip_rect().intersect(rect));
-        row.allocate_exact_size(rect.size(),egui::Sense::hover());
+        row.shared_allocate_exact_size(rect.size(),egui::Sense::hover());
         #[cfg(test)]
         crate::ui_test_support::record_highlight_target("table row",rect,row.clip_rect());
         let selected=matches!(tone,RowTone::SelectedIf(true));
@@ -612,7 +613,7 @@ pub(crate) fn history_row<const N:usize>(
     draw:impl FnOnce(&mut Ui),overlay:impl FnOnce(&mut Ui),
 ){
     row_scope(ui,id,rect,|row|{
-        row.allocate_exact_size(rect.size(),egui::Sense::hover());
+        row.shared_allocate_exact_size(rect.size(),egui::Sense::hover());
         #[cfg(test)]
         crate::ui_test_support::record_highlight_target("history row",rect,row.clip_rect());
         if let Some(block)=detail{
@@ -814,7 +815,7 @@ fn allocate_management_table_header_with_gutter(
     let table_width=management_table_data_width(
         viewport_width,scrollbar_gutter,min_table_width
     );
-    let (header_rect,_)=ui.allocate_exact_size(
+    let (header_rect,_)=ui.shared_allocate_exact_size(
         Vec2::new(viewport_width,theme::MANAGEMENT_TABLE_HEADER_HEIGHT),
         Sense::hover()
     );
@@ -908,7 +909,7 @@ pub(crate) fn management_readonly_table(
                 row_left.get_or_insert(row_rect.left());
                 row_scope(body,index,row_rect,|row|{
                     row.set_clip_rect(row.clip_rect().intersect(row_rect));
-                    row.allocate_exact_size(row_rect.size(),Sense::hover());
+                    row.shared_allocate_exact_size(row_rect.size(),Sense::hover());
                     paint_management_table_row_background(row.painter(),row_rect,index);
                     let mut x=row_rect.left();
                     let columns=widths.iter().map(|width|{
@@ -1195,7 +1196,7 @@ pub(crate) fn reception_items_header(ui:&mut Ui,remove_slot:bool)->Rect{
     let width=management_table_data_width(
         ui.available_width(),0.0,theme::RECEPTION_ITEMS_MIN_TABLE_WIDTH+action_width
     );
-    let (rect, _) = ui.allocate_exact_size(
+    let (rect, _) = ui.shared_allocate_exact_size(
         Vec2::new(width, theme::RECEPTION_ITEMS_HEADER_HEIGHT), Sense::hover()
     );
     // The reception list has its own approved 32pt compact header, but
@@ -1339,7 +1340,7 @@ mod tag_block_table_tests{
             crate::ui_test_support::TRACE.with(|trace|*trace.borrow_mut()=Some(Vec::new()));
             let output=ctx.run(egui::RawInput::default(),|ctx|{
                 egui::CentralPanel::default().show(ctx,|ui|{
-                    cell=ui.allocate_exact_size(Vec2::new(width,theme::MANAGEMENT_COMPACT_ROW_HEIGHT),Sense::hover()).0;
+                    cell=ui.shared_allocate_exact_size(Vec2::new(width,theme::MANAGEMENT_COMPACT_ROW_HEIGHT),Sense::hover()).0;
                     paint_tag_blocks(ui,cell,&tags,"test-table-tags");
                 });
             });
