@@ -1,4 +1,5 @@
 //! Shared native button rendering and hover/focus policy.
+use crate::ui_layout::SharedPainterClipExt as _;
 use crate::ui_layout::SharedAllocationExt as _;
 use eframe::egui::{self,Color32,Rect,Response,Sense,Stroke,Ui,Vec2};
 use crate::{theme,typography};
@@ -30,7 +31,7 @@ pub(crate) fn remove_at_response(ui:&Ui,hit:Rect,id:egui::Id,enabled:bool)->Resp
     let center=hit.center();
     let stroke=Stroke::new(1.5_f32,ink);
     for sign in [-1.0_f32,1.0]{
-        ui.painter().with_clip_rect(hit.intersect(ui.clip_rect())).line_segment([
+        ui.painter().with_shared_clip(hit.intersect(ui.clip_rect())).line_segment([
             center+egui::vec2(-4.0,-4.0*sign),
             center+egui::vec2(4.0,4.0*sign)
         ],stroke);
@@ -43,7 +44,7 @@ pub(crate) fn disclosure_at(
     ui:&Ui,hit:Rect,id:egui::Id,center:egui::Pos2,arrow_clip:Option<Rect>,
     open:bool,overflow:bool,full:&str,geometry:crate::highlight::Geometry
 )->Response{
-    let painter=ui.painter().with_clip_rect(arrow_clip.unwrap_or(ui.clip_rect()));
+    let painter=ui.painter().with_shared_clip(arrow_clip.unwrap_or(ui.clip_rect()));
     paint_management_chevron(&painter,center,if open{
         ManagementChevronDirection::Down
     }else{ManagementChevronDirection::Right});
@@ -252,7 +253,7 @@ pub(crate) fn notification_button(ui:&mut Ui,unread:usize)->Response{
         let label=if unread>99{"99+".to_owned()}else{unread.to_string()};
         let galley=typography::client_table_metadata_galley(ui,&label,ERROR_TEXT);
         let origin=count.center()-galley.size()/2.0;
-        painter.with_clip_rect(count.intersect(ui.clip_rect())).galley(origin,galley,ERROR_TEXT);
+        painter.with_shared_clip(count.intersect(ui.clip_rect())).galley(origin,galley,ERROR_TEXT);
     }
     response
 }
@@ -370,7 +371,7 @@ pub(crate) fn workflow_fixed_action(
                 text.to_owned(),
                 egui::FontId::proportional(typography::FONT_STANDARD_ACTION),ink
             );
-            painter.with_clip_rect(rect.shrink2(Vec2::new(theme::SPACE_8,0.0)))
+            painter.with_shared_clip(rect.shrink2(Vec2::new(theme::SPACE_8,0.0)))
                 .galley(egui::Pos2::new(
                     rect.center().x-galley.size().x/2.0,
                     rect.center().y-galley.size().y/2.0
@@ -429,7 +430,7 @@ pub(crate) fn management_date_segment(
     crate::ui_test_support::record_highlight_target("date segment",response.rect,ui.clip_rect());
     paint_button_hover(ui,&response,geometry);
     if let Some(direction)=direction{
-        let painter=ui.painter().with_clip_rect(response.rect);
+        let painter=ui.painter().with_shared_clip(response.rect);
         paint_management_chevron(
             &painter,response.rect.center(),direction
         );
@@ -482,7 +483,7 @@ pub(crate) fn date_navigation_segment_button(
         crate::ui_test_support::record_highlight_target("navigation segment",response.rect,ui.clip_rect());
         let ink=theme::icon_ink(theme::IconRole::Navigation,theme::VisualState::pointer(enabled,response.hovered()));
         if enabled{crate::button::paint_button_hover(ui,&response,crate::highlight::Geometry::TableRow);}
-        let painter=ui.painter().with_clip_rect(response.rect);
+        let painter=ui.painter().with_shared_clip(response.rect);
         paint_management_chevron_with_color(&painter,response.rect.center(),direction,ink);
         return response;
     }
@@ -503,7 +504,7 @@ pub(crate) fn date_navigation_segment_button(
         if enabled{Sense::click()}else{Sense::hover()});
     #[cfg(test)]
     crate::ui_test_support::record_highlight_target("step segment",response.rect,ui.clip_rect());
-    let painter=ui.painter().with_clip_rect(rect);
+    let painter=ui.painter().with_shared_clip(rect);
     let (fill,ink)=match glyph{
         DateNavigationSegmentGlyph::CompactVerticalChevron{..}=>{
             let ink=theme::icon_ink(theme::IconRole::Navigation,theme::VisualState::pointer(enabled,response.hovered()));
