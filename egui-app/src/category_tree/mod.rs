@@ -1,4 +1,5 @@
 //! Shared category tree geometry, rendering and interaction surface.
+use crate::ui_layout::SharedAllocationExt as _;
 use eframe::egui::{self,Color32,Rect,Response,Sense,Stroke,Ui,Vec2};
 use crate::{theme,typography};
 use crate::ui_primitives::{overflow_tooltip,paint_management_chevron,ManagementChevronDirection};
@@ -96,7 +97,7 @@ fn paint_category_tree_folder(painter:&egui::Painter,rect:Rect,open:bool,ink:Col
 }
 
 pub(crate) fn category_tree_row(ui:&mut Ui,item:CategoryTreeRow<'_>)->Response{
-    let (rect,response)=ui.allocate_exact_size(
+    let (rect,response)=ui.shared_allocate_exact_size(
         Vec2::new(ui.available_width().max(1.0),theme::CATALOG_TREE_ROW_HEIGHT),Sense::click()
     );
     #[cfg(test)]
