@@ -465,6 +465,24 @@ impl RateEditor {
 
 #[cfg(test)]
 #[test]
+fn group_editor_renames_and_changes_rates_in_one_command(){
+    let rule=json!({"maxBundle":1,"fees":{"1":2900},"notes":""});
+    let mut editor=RateEditor::new("g","old",&rule);
+    assert!(!editor.dirty());
+    editor.name="new".into();
+    let (action,data)=editor.write_action().unwrap();
+    assert_eq!(action,"edit_group");
+    assert_eq!(data,json!({"groupId":"g","name":"new"}));
+    editor.fees.insert(1,"3500".into());
+    let (action,data)=editor.write_action().unwrap();
+    assert_eq!(action,"edit_group");
+    assert_eq!(data["name"],"new");
+    assert_eq!(data["rule"]["fees"]["1"],3500);
+    editor.name.clear();
+    assert!(editor.write_action().is_err());
+}
+#[cfg(test)]
+#[test]
 fn rate_editor_generates_ranges_preserves_drafts_and_saves_only_active_counts(){
     let rule=json!({"maxBundle":4,"fees":{"1":2900,"2":3600,"4":4750},"notes":""});
     let mut editor=RateEditor::new("g","test",&rule);
@@ -2575,7 +2593,7 @@ mod rate_toolbar_tests{
                     let layout=crate::table::management_sticky_table_header_without_toolbar(
                         section,theme::FREIGHT_COMBINATION_HISTORY_COL_WIDTHS
                             .iter().sum::<f32>()
-                            +4.0*theme::FREIGHT_ASSIGNMENT_COL_GAP
+                            +3.0*theme::FREIGHT_ASSIGNMENT_COL_GAP
                     );
                     measured=Some((top,layout.header_rect,layout.header_content_rect));
                 });
@@ -2600,7 +2618,7 @@ mod rate_toolbar_tests{
         // The single-list card chooses the common remaining-height helper,
         // while the 60% viewport cap is ONLY for a future multi-card report.
         let widths=theme::FREIGHT_COMBINATION_HISTORY_COL_WIDTHS;
-        assert_eq!(widths.len(),5);
+        assert_eq!(widths.len(),4);
         assert_eq!(theme::MANAGEMENT_MASTER_TABLE_BOTTOM_PADDING,
             theme::SECTION_PADDING);
     }
@@ -2613,11 +2631,11 @@ mod rate_toolbar_tests{
     }
 
     #[test]
-    fn five_column_combination_history_preserves_existing_table_width(){
+    fn four_column_combination_history_preserves_existing_table_width(){
         let widths=theme::FREIGHT_COMBINATION_HISTORY_COL_WIDTHS;
         let gap=theme::FREIGHT_ASSIGNMENT_COL_GAP;
-        assert_eq!(widths.len(),5);
-        assert!((widths.iter().sum::<f32>()+4.0*gap-1229.0).abs()<0.01);
+        assert_eq!(widths.len(),4);
+        assert!((widths.iter().sum::<f32>()+3.0*gap-1229.0).abs()<0.01);
         assert!(matches!(
             HistorySort::column_at(0),Some(HistorySortColumn::Combination)
         ));
@@ -2631,7 +2649,7 @@ mod rate_toolbar_tests{
             HistorySort::column_at(3),Some(HistorySortColumn::Basis)
         ));
         assert!(HistorySort::column_at(4).is_none(),
-            "details is an action, not a sortable registration column");
+            "no redundant action column remains");
         let expanded=theme::FREIGHT_GROUP_HISTORY_COL_WIDTHS;
         assert_eq!(expanded.len(),6,"archived group history retains its columns");
     }
@@ -2764,23 +2782,21 @@ mod rate_toolbar_tests{
     }
 
     #[test]
-    fn four_column_rate_table_prioritizes_group_name_and_membership(){
+    fn three_column_rate_table_prioritizes_group_name_and_membership(){
         let base=theme::FREIGHT_RATE_COL_WIDTHS;
         let gap=theme::FREIGHT_ASSIGNMENT_COL_GAP;
-        assert_eq!(base.len(),4);
-        assert!((base.iter().sum::<f32>()+3.0*gap-
+        assert_eq!(base.len(),3);
+        assert!((base.iter().sum::<f32>()+2.0*gap-
             theme::FREIGHT_RATE_TABLE_MIN_WIDTH).abs()<0.01);
-        assert_eq!(base,[450.0,112.0,551.0,128.0]);
+        assert_eq!(base,[450.0,112.0,687.0]);
         assert!(base[0]>=450.0,"group name must be nearly twice as wide");
         assert!(base[1]<=120.0,"bundle limit needs only a compact column");
         assert!(base[2]>=500.0,"membership should display multiple names");
-        assert!(base[3]<=148.0,"one Manage trigger does not need four buttons");
         let wide=theme::management_weighted_columns(
-            base,[0.0,0.0,1.0,0.0],
+            base,[0.0,0.0,1.0],
             theme::FREIGHT_RATE_TABLE_MIN_WIDTH+120.0,gap
         );
         assert!((wide[2]-base[2]-120.0).abs()<0.01);
-        assert!((wide[3]-base[3]).abs()<0.01);
     }
 
     #[test]
