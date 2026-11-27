@@ -1477,3 +1477,83 @@ fn shared_editor_footer_keeps_delete_left_and_save_right(){
     let root=std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
     scan(&root,&root,&direct_delete,&footer_start,&right_start);
 }
+
+
+// Run the actual shared Window/decision entrypoints, not a second layout
+// formula. Content changes are intentionally excluded: this is a feedback/
+// permission-state transition with the same underlying records and controls.
+#[test]
+fn actual_common_popup_families_keep_geometry_during_feedback_and_permissions(){
+    use crate::ui_test_support::{begin_component_geometry,finish_component_geometry};
+    for width in [720.0,1200.0]{
+        for kind in 0..7{
+            let ctx=test_context();
+            let screen=Rect::from_min_size(egui::Pos2::ZERO,Vec2::new(width,850.0));
+            let area=screen.shrink(24.0);
+            let mut value="검증 입력".to_owned();
+            let mut baseline:Option<Vec<(&'static str,Rect)>>=None;
+            for phase in 0..5{
+                let enabled=phase!=2&&phase!=3;
+                let message=match phase{1=>Some("검증 안내"),2=>Some("저장 중"),3=>Some("오류 안내"),_=>None};
+                for frame in 0..6{
+                    begin_component_geometry();
+                    let _=ctx.run(egui::RawInput{screen_rect:Some(screen),..Default::default()},|ctx|{
+                        crate::floating_notice::begin_page(ctx,"popup family geometry");
+                        match kind{
+                            0|1|2=>{
+                                modal_window(ctx,"편집","common-family-editor",area)
+                                    .default_width(520.0).show(ctx,|ui|{
+                                    modal_flow_workspace(ui,|owner|{
+                                        owner.header("편집","닫기",enabled);
+                                        let body=|body:&mut Ui|{
+                                            modal_compact_text_field(body,"이름",&mut value,"입력");
+                                            crate::floating_notice::section(ctx,"popup.family.feedback",body.min_rect());
+                                        };
+                                        match kind{
+                                            0=>owner.body_region(body),
+                                            1=>owner.scroll_region("common-family-scroll",180.0,body),
+                                            _=>owner.framed_region(body),
+                                        }
+                                        owner.footer(|left|{
+                                            crate::button::action(left,"삭제",theme::ButtonRole::Danger,enabled);
+                                        },|right|{
+                                            crate::button::action(right,"저장",theme::ButtonRole::Primary,enabled);
+                                        });
+                                        crate::floating_notice::sync(ctx,"popup.family.signal","popup.family.feedback",
+                                            crate::floating_notice::Tone::Info,message);
+                                    });
+                                });
+                            }
+                            3=>{
+                                show_name_confirmation(ctx,area,"common-family-name","이름 편집","이름",
+                                    &mut value,"입력","저장",enabled);
+                            }
+                            4|5=>{
+                                show_delete_confirmation(ctx,area,"common-family-delete","삭제 확인","삭제",
+                                    enabled,enabled,if kind==4{DeleteBody::Plain}else{DeleteBody::Framed},
+                                    |body|{body.label("고정된 삭제 대상");});
+                            }
+                            _=>{
+                                show_save_confirmation(ctx,area,"common-family-save","편집",
+                                    "변경사항을 저장할까요?","저장",enabled,enabled);
+                            }
+                        }
+                        crate::floating_notice::show(ctx);
+                    });
+                    let slots=finish_component_geometry(screen).into_iter()
+                        .filter(|sample|matches!(sample.role,"input"|"button"|"dropdown"|"popup"|"scrollbar"))
+                        .map(|sample|(sample.role,sample.rect)).collect::<Vec<_>>();
+                    if phase==0{
+                        if frame==5{
+                            assert!(slots.iter().any(|(role,_)|*role=="button"),
+                                "family {kind}: no actual button geometry");
+                            baseline=Some(slots);
+                        }
+                    }else{
+                        assert_layout_rects_invariant(baseline.as_ref().unwrap(),&slots);
+                    }
+                }
+            }
+        }
+    }
+}
