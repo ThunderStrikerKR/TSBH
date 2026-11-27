@@ -36,3 +36,5 @@
 ## 150차 CI 오류 및 추가 미추적 경로
 
 기준 d7ec7135에서 static 자체검사 실패(새 dropdown trigger 계약 누락), Windows 및 native 컴파일 실패(Geometry 이전 누락, test API 이동, String/float 유형)를 로그로 확인하여 27dabc08에서 수정. 추가 hit trace: 편집 셀/정렬 헤더/주문 이력 행/드롭다운 옵션/다중행 입력/수취인 hit/OCR slider/경로 crumb/수동 원문/알림 닫기/태그 라벨/패널 splitter, 고정행과 분할형 프레임 component rect. 실제 draw list 짧은 대각선 glyph 선분도 pointer sweep에 비교하고 음성 테스트 추가. 메뉴 옵션 및 태그의 실제 공통 renderer fixture 추가. 전체 운영 팝업, 비선분 도형 및 실제 GPU 검증은 미완료.
+
+정적 CI 22건: 이전 리스트 편집 버튼 계약을 직접 행/셀 연결 계약으로 갱신, 공통 입력/태그/툴팁 소유권 정리, 카드->상위 ui_layout 순환 제거. 151차 병행 커밋 보존한 57e4e017에서 egui conditional layout allocation gate 실제 성공(45941469777). 27dabc08 Rust 테스트 빌드에 남은 삭제된 manual_product_search.rs 3개 include_str!를 현재 통합 ProductManager chooser 계약으로 수정. 최종 Rust/GUI 테스트 실행 결과 미확인.

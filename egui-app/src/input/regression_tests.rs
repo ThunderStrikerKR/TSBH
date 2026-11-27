@@ -112,15 +112,24 @@ mod management_search_caret_tests {
             ("automatic messages",include_str!("../automatic_message_manager.rs"),1),
             ("audit archive",include_str!("../settings_view.rs"),1),
             ("client chooser",include_str!("../client_chooser.rs"),1),
-            ("manual product chooser",include_str!("../manual_product_search.rs"),1),
         ];
         for (screen,source,expected) in surfaces {
             let count=source.matches("crate::input::management_search_field(").count();
             assert_eq!(count,expected,"{screen} query did not use the shared field");
         }
+        // Manual classification uses the same product selector, not a
+        // separate screen-local query or a second product search implementation.
+        let manual=include_str!("../manual_workspace.rs");
+        assert!(manual.contains(".show_selection_modal("));
+        let products=include_str!("../product_manager.rs");
+        let chooser=products.split("pub fn show_selection_modal(").nth(1).unwrap()
+            .split("pub fn refresh(").next().unwrap();
+        assert!(chooser.contains("show_catalog_surface("));
         // Search-tag entry is an editor, not a query field.
         let clients=include_str!("../client_manager.rs");
-        assert!(clients.contains("entry,&mut self.tag_input,width"));
+        let layout=include_str!("../ui_layout.rs");
+        assert!(clients.contains("crate::ui_layout::tag_block_editor("));
+        assert!(layout.contains("flexible_text_field("));
         assert!(clients.contains("crate::input::flexible_text_field("));
     }
 

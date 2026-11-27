@@ -145,16 +145,16 @@ mod management_dropdown_unification_tests {
     fn all_ordinary_egui_single_selectors_use_the_shared_component() {
         // These screens previously owned their own ComboBox triggers.
         // Keep UI choice styling and popup lifecycle in one component.
-        let screens:[(&str,&str,usize);6]=[
+        let screens:[(&str,&str,usize);5]=[
             ("alias_manager",include_str!("../alias_manager.rs"),3),
             ("client_manager",include_str!("../client_manager.rs"),4),
             ("freight_manager",include_str!("../freight_manager.rs"),5),
             // Two product brand selectors now use this shared searchable
             // variant; four ordinary product selectors retain the original.
             ("product_manager",include_str!("../product_manager.rs"),4),
-            ("manual_product_search",include_str!("../manual_product_search.rs"),2),
             ("main",include_str!("../main.rs"),1),
         ];
+        assert!(include_str!("../manual_workspace.rs").contains(".show_selection_modal("));
         // Both category selectors moved to the shared hierarchical
         // component; the six remaining standard product selectors still use
         // the original management-dropdown master.

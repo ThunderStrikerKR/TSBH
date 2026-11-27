@@ -25,8 +25,11 @@
     "egui-app/src/manual_source_view.rs",
     "egui-app/src/ui_layout.rs",
     "egui-app/src/floating_notice.rs",
-    "egui-app/src/popup/tag.rs"
+    "egui-app/src/popup/tag.rs",
+    "egui-app/src/input/regression_tests.rs",
+    "egui-app/src/dropdown/regression_tests.rs",
+    "egui-app/src/screen_refresh.rs"
   ],
   "visualStatus": "NOT_VERIFIED",
-  "reason": "CI 실패 로그 기반 수정 및 추가 hit target/대각선 vector icon 추적. 수정 후 CI 및 실제 Windows GPU 스크린샷은 미검증."
+  "reason": "정적 검사 22건 수정 후 57e4e017 기준 정적 CI 실제 통과. 삭제 모듈 참조 수정 후 최종 Rust/GUI CI 및 Windows GPU 실화면은 미검증."
 }

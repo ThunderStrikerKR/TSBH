@@ -102,9 +102,13 @@ mod tests {
     }
     #[test]
     fn migrated_read_only_views_do_not_create_independent_workers(){
+        // The retired manual product-search module has been replaced by the
+        // ProductManager chooser. ProductManager's coordinator is checked by
+        // the management-view contract below (it also has write workers).
+        assert!(include_str!("manual_workspace.rs").contains(".show_selection_modal("));
+        assert!(include_str!("product_manager.rs").contains("ReadRefresh"));
         for (name,source) in [
             ("client chooser",include_str!("client_chooser.rs")),
-            ("product search",include_str!("manual_product_search.rs")),
             ("item editor",include_str!("item_editor.rs")),
             ("review panel",include_str!("review_panel.rs")),
         ]{
