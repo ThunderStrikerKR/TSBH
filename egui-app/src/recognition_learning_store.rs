@@ -199,10 +199,19 @@ fn fingerprint(order:&Value)->Result<String,String>{
 }
 
 fn fact_proof(facts:&[Fact])->Result<String,String>{
-    // Sorted, typed tuples with an unambiguous JSON encoding.
-    let encoded=serde_json::to_vec(facts).map_err(|_|"학습 기여 지문 생성 실패")?;
-    let mut hash=Sha256::new();hash.update(b"bando-learning-facts-v1\0");hash.update(encoded);
-    Ok(format!("{:x}",hash.finalize()))
+    // Preserve the exact v1 JSON byte stream without allocating its
+    // complete serialized copy for each verified order.
+    struct HashWriter(Sha256);
+    impl std::io::Write for HashWriter{
+        fn write(&mut self,buf:&[u8])->std::io::Result<usize>{
+            self.0.update(buf);Ok(buf.len())
+        }
+        fn flush(&mut self)->std::io::Result<()>{Ok(())}
+    }
+    let mut writer=HashWriter(Sha256::new());
+    writer.0.update(b"bando-learning-facts-v1\0");
+    serde_json::to_writer(&mut writer,facts).map_err(|_|"학습 기여 지문 생성 실패")?;
+    Ok(format!("{:x}",writer.0.finalize()))
 }
 
 pub(super) fn cached_count(tx:&Transaction<'_>,scope:&str,id:&str,digest:&str)->Result<Option<i64>,String>{
@@ -737,6 +746,17 @@ mod recognition_learning_store_tests{
             "weakCandidates":{"address":n},"weakCandidateOrders":{"address":1},
             "explicitPositiveCandidates":{},"explicitNegativeCandidates":{},
             "explicitPositiveCandidateOrders":{},"explicitNegativeCandidateOrders":{}}}]})
+    }
+    #[test]
+    fn performance_streamed_fact_proof_preserves_v1_bytes(){
+        let samples=vec![Vec::<Fact>::new(),vec![
+            ("fieldContextStatistics".into(),"한글😀\n\"".into(),"weakCandidates".into(),"709".into(),1),
+            ("statistics".into(),"key".into(),"independentOrders".into(),"".into(),i64::MAX)]];
+        for sample in samples{
+            let mut old=Sha256::new();old.update(b"bando-learning-facts-v1\0");
+            old.update(serde_json::to_vec(&sample).unwrap());
+            assert_eq!(fact_proof(&sample).unwrap(),format!("{:x}",old.finalize()));
+        }
     }
     #[test]
     fn performance_shared_context_benchmark(){
