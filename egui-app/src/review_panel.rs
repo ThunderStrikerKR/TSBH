@@ -185,7 +185,9 @@ impl ReviewPanel {
                     // Sale status requires the live catalog; do not infer it
                     // from a previously recognized product label.
                     if let Ok(catalog)=gateway.load_catalog(){request["state"]=catalog;}
-                    let response=gateway.execute(ReadOperation::OrderIssuesWithActions,request.clone())?;
+                    let target_catalog=gateway.shipping_write_enabled()
+                        .then(||notice::freight_target_catalog(&request["state"],&order));
+                    let response=gateway.execute(ReadOperation::OrderIssuesWithActions,request)?;
                     let mut issues=response.get("issues").and_then(Value::as_array)
                         .cloned().ok_or("확인할 내용을 불러오지 못했습니다.")?;
                     let message=if render_message{(||->Result<String,String>{
@@ -198,13 +200,13 @@ impl ReviewPanel {
                         rendered["requestText"].as_str().map(str::to_owned)
                             .ok_or_else(||"문의 메시지 생성 결과를 확인할 수 없습니다.".into())
                     })()}else{Ok(String::new())};
-                    if gateway.shipping_write_enabled(){
+                    if let Some(target_catalog)=target_catalog.as_ref(){
                         for issue in &mut issues{
                             if text(issue,"kind")!="FREIGHT"{continue;}
                             let rid=text(issue,"recipientId");
                             if let Some(recipient)=order["recipients"].as_array().and_then(|rows|
                                 rows.iter().find(|row|text(row,"id")==rid)){
-                                let targets=notice::freight_rate_targets(&request["state"],recipient,&[],
+                                let targets=notice::freight_rate_targets(target_catalog,recipient,&[],
                                     issue["itemId"].as_str().filter(|id|!id.is_empty()));
                                 issue["freightRateTargets"]=json!(targets);
                             }

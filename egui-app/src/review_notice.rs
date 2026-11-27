@@ -9,6 +9,28 @@ fn text<'a>(row:&'a Value,key:&str)->&'a str {
 }
 
 
+/// Retain only the fields used by the existing target resolver, from the
+/// exact catalog sent to native issue generation. Preserve row order and
+/// eligibility flags; never retain prices, variants, histories or settings.
+pub(crate) fn freight_target_catalog(state:&Value,order:&Value)->Value{
+    let used:std::collections::HashSet<&str>=order["recipients"].as_array().into_iter().flatten()
+        .flat_map(|recipient|recipient["items"].as_array().into_iter().flatten())
+        .map(|item|text(item,"productId")).filter(|id|!id.is_empty()).collect();
+    let products=state["products"].as_array().into_iter().flatten()
+        .filter(|product|used.contains(text(product,"id")))
+        .map(|product|json!({
+            "id":product["id"],"name":product["name"],"shippingGroupId":product["shippingGroupId"],
+            "deletedAt":product["deletedAt"],"active":product["active"],"supersededBy":product["supersededBy"]
+        })).collect::<Vec<_>>();
+    let groups_used:std::collections::HashSet<&str>=products.iter()
+        .map(|product|text(product,"shippingGroupId")).filter(|id|!id.is_empty()).collect();
+    let groups=state["shipping"]["groups"].as_array().into_iter().flatten()
+        .filter(|group|groups_used.contains(text(group,"id")))
+        .map(|group|json!({"id":group["id"],"name":group["name"],"deletedAt":group["deletedAt"]}))
+        .collect::<Vec<_>>();
+    json!({"products":products,"shipping":{"groups":groups}})
+}
+
 pub(crate) fn freight_rate_targets(state:&Value,recipient:&Value,origins:&[&str],item_id:Option<&str>)->Vec<Value>{
     let Some(products)=state["products"].as_array() else{return Vec::new()};
     let Some(items)=recipient["items"].as_array() else{return Vec::new()};
@@ -73,6 +95,49 @@ fn freight_rate_targets_deduplicate_groups_and_respect_origin_and_identity(){
     let store=freight_rate_targets(&state,&recipient,&["STORE"],None);
     assert_eq!(store,vec![json!({"productId":"p3","groupId":"","name":"C"})]);
     assert!(freight_rate_targets(&state,&recipient,&["FACTORY"],Some("i3")).is_empty());
+}
+
+#[cfg(test)]
+#[test]
+fn compact_freight_catalog_preserves_existing_target_resolution(){
+    let state=json!({"products":[
+        {"id":"p1","name":"A","shippingGroupId":"g","variants":[{"price":3000}]},
+        {"id":"p2","name":"B","shippingGroupId":"g"},
+        {"id":"p3","name":"C"},
+        {"id":"p4","name":"D","active":false},
+        {"id":"p5","name":"E","shippingGroupId":"deleted-group"},
+        {"id":"p6","name":"F","supersededBy":"p3"},
+        {"id":"p7","name":"G","deletedAt":"yesterday"},
+        {"id":"unrelated","name":"unrelated"}
+    ],"shipping":{"groups":[
+        {"id":"g","name":"그룹","current":{"fees":{"1":3000}},"history":[{}]},
+        {"id":"deleted-group","name":"삭제","deletedAt":"yesterday"},
+        {"id":"unrelated-group","name":"무관"}
+    ],"combinations":[{}]},"clients":[{}],"settings":{}});
+    let recipient=json!({"items":[
+        {"id":"i1","productId":"p1","origin":"FACTORY"},
+        {"id":"i2","productId":"p2","origin":"FACTORY"},
+        {"id":"i3","productId":"p3","origin":"STORE"},
+        {"id":"i4","productId":"p4","origin":"STORE"},
+        {"id":"i5","productId":"p5","origin":"STORE"},
+        {"id":"i6","productId":"p6","origin":"STORE"},
+        {"id":"i7","productId":"p7","origin":"FACTORY"}
+    ]});
+    let order=json!({"recipients":[recipient]});
+    let recipient=&order["recipients"][0];
+    let compact=freight_target_catalog(&state,&order);
+    assert_eq!(compact["products"].as_array().unwrap().len(),7);
+    assert_eq!(compact["shipping"]["groups"].as_array().unwrap().len(),2);
+    assert!(compact.get("clients").is_none());
+    assert!(compact["products"][0].get("variants").is_none());
+    assert!(compact["shipping"]["groups"][0].get("history").is_none());
+    for origins in [&[][..],&["FACTORY"][..],&["STORE"][..]]{
+        for item in [None,Some("i1"),Some("i2"),Some("i3"),Some("i4"),Some("i5"),Some("i6"),Some("i7"),Some("missing")]{
+            assert_eq!(freight_rate_targets(&compact,recipient,origins,item),
+                freight_rate_targets(&state,recipient,origins,item));
+        }
+    }
+    assert_eq!(freight_rate_targets(&compact,recipient,&[],None).len(),2);
 }
 
 pub(crate) const PRODUCT_ACTION:&str="상품 확인";

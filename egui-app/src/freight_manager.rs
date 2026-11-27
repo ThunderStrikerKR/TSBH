@@ -317,6 +317,22 @@ fn group_product_labels(products:&[&Value])->BTreeMap<String,Vec<String>>{
     result
 }
 
+/// The same membership labels as the management table, restricted to the
+/// opened group. The existing projection cache is invalidated on publication.
+fn rate_editor_members(
+    cache:&mut crate::screen_refresh::ViewProjectionCache<String,Vec<String>>,
+    state:Option<&Value>,group_id:Option<&str>
+)->Option<Arc<Vec<String>>>{
+    let group_id=group_id?;
+    let state=state?;
+    Some(cache.get(group_id.to_owned(),||{
+        let products=rows(&state["products"]).iter()
+            .filter(|product|text(product,"shippingGroupId")==group_id&&registered(product))
+            .collect::<Vec<_>>();
+        group_product_labels(&products).remove(group_id).unwrap_or_default()
+    }))
+}
+
 /// Fit as many actual product names as possible on the unwrapped table row.
 /// Any remainder is explicitly counted. Hover shows the COMPLETE membership
 /// list rather than a truncated cell string. The estimate uses egui's exact
@@ -593,6 +609,7 @@ pub struct FreightManager {
     refresh_job: crate::screen_refresh::ReadRefresh<(Value,Value)>,
     state: Option<Value>,
     display_cache:crate::screen_refresh::ViewProjectionCache<(),(Vec<Value>,Vec<usize>,ProductCategoryPaths,usize)>,
+    rate_members_cache:crate::screen_refresh::ViewProjectionCache<String,Vec<String>>,
     assignment_cache:crate::screen_refresh::ViewProjectionCache<(String,String,Option<FreightSort>),Vec<usize>>,
     projection: Option<Value>,
     error: Option<String>,
@@ -653,11 +670,12 @@ impl ReceptionRateEditor{
         }
         crate::floating_notice::sync(ctx,"freight.error","freight.action",
             crate::floating_notice::Tone::Error,manager.error.as_deref());
-        let products=manager.state.as_ref().map(|state|rows(&state["products"]).iter()
-            .filter(|p|registered(p)).collect::<Vec<_>>()).unwrap_or_default();
+        let editor=manager.rate_editor.as_mut().expect("open rate editor");
+        let members=rate_editor_members(&mut manager.rate_members_cache,manager.state.as_ref(),
+            (!editor.product).then_some(editor.id.as_str()));
         let mut action=None;
-        let (close,_,_)=FreightManager::render_rate_editor(ctx,area,
-            manager.rate_editor.as_mut().expect("open rate editor"),&products,enabled,writing,false,&mut action);
+        let (close,_,_)=FreightManager::render_rate_editor(ctx,area,editor,
+            members.as_deref().map(Vec::as_slice).unwrap_or(&[]),enabled,writing,false,&mut action);
         if close{return Some(false);}
         if let Some((kind,data))=action{manager.write(kind,data,ctx.clone());}
         None
@@ -710,6 +728,7 @@ impl FreightManager {
             refresh_job,
             state: None,
             display_cache:Default::default(),assignment_cache:Default::default(),
+            rate_members_cache:Default::default(),
             projection: None,
             error: None,
             search: String::new(),
@@ -858,7 +877,7 @@ impl FreightManager {
                 // A delayed refresh must not replace the baseline of an
                 // open editor or a pending assignment draft.
                 if self.state.is_none() || (!self.dirty() && !self.has_other_modal() && !self.has_rate_modal()){
-                    self.state=Some(state);self.display_cache.invalidate();self.assignment_cache.invalidate();
+                    self.state=Some(state);self.display_cache.invalidate();self.assignment_cache.invalidate();self.rate_members_cache.invalidate();
                     self.projection=Some(projection);
                 }
                 self.refresh_job.verified();
@@ -870,7 +889,7 @@ impl FreightManager {
             match receiver.try_recv(){
                 Ok(Ok(result))=>{
                     if result["state"].is_object() && result["projection"].is_object(){
-                        self.state=Some(result["state"].clone());self.display_cache.invalidate();self.assignment_cache.invalidate();
+                        self.state=Some(result["state"].clone());self.display_cache.invalidate();self.assignment_cache.invalidate();self.rate_members_cache.invalidate();
                         self.projection=Some(result["projection"].clone());
                         self.error=None;
                         let action=self.write_action.take().unwrap_or_default();
@@ -1256,8 +1275,11 @@ impl FreightManager {
             let mut close_basis=false;
             let confirmation_open=self.delete_target.is_some()||self.basis_target.is_some();
             if let Some(editor)=self.rate_editor.as_mut().filter(|_|!confirmation_open){
+                let members=rate_editor_members(&mut self.rate_members_cache,Some(state),
+                    (!editor.product).then_some(editor.id.as_str()));
                 let (close,request_delete,request_basis)=Self::render_rate_editor(
-                    ctx,area,editor,&products,enabled,self.write_receiver.is_some(),true,&mut action);
+                    ctx,area,editor,members.as_deref().map(Vec::as_slice).unwrap_or(&[]),
+                    enabled,self.write_receiver.is_some(),true,&mut action);
                 close_editor=close;
                 if request_delete{self.delete_target=Some(editor.id.clone());}
                 if request_basis{self.basis_target=Some(Some(editor.id.clone()));}
@@ -2199,7 +2221,7 @@ impl FreightManager {
     }
 
     fn render_rate_editor(ctx:&egui::Context,area:egui::Rect,editor:&mut RateEditor,
-        products:&[&Value],enabled:bool,writing:bool,allow_admin:bool,
+        members:&[String],enabled:bool,writing:bool,allow_admin:bool,
         action:&mut Option<(String,Value)>)->(bool,bool,bool){
         let mut close_editor=false;
                 crate::popup::modal_backdrop(ctx,"freight-rate-backdrop",false);
@@ -2230,9 +2252,7 @@ impl FreightManager {
                                 if editor.product{
                                     Self::rate_dialog(body,editor,enabled);
                                 }else{
-                                    let members=group_product_labels(products);
-                                    let names=members.get(&editor.id).map(Vec::as_slice).unwrap_or(&[]);
-                                    Self::group_rate_dialog(body,editor,names,enabled,allow_admin);
+                                    Self::group_rate_dialog(body,editor,members,enabled,allow_admin);
                                 }
                             });
                             crate::floating_notice::sync(ctx,"freight.editor.validation","freight.action",
@@ -2883,6 +2903,29 @@ mod rate_toolbar_tests{
         assert!(search.right()+theme::SPACE_12<=add.left()+0.01,
             "search must not overlap group addition");
         assert!((add.right()-toolbar.right()).abs()<0.01);
+    }
+
+    #[test]
+    fn rate_editor_members_reuse_snapshot_until_publication_and_skip_product_editor(){
+        let mut cache=crate::screen_refresh::ViewProjectionCache::default();
+        let mut state=json!({"products":[
+            {"id":"p1","name":"709","subtitle":"민판","shippingGroupId":"a"},
+            {"id":"p2","name":"GT-1","shippingGroupId":"a"},
+            {"id":"p3","name":"TS","shippingGroupId":"b"},
+            {"id":"p4","name":"hidden","shippingGroupId":"a","active":false},
+            {"id":"p5","name":"demo","shippingGroupId":"a","catalog":"DEMO"}
+        ]});
+        assert!(rate_editor_members(&mut cache,Some(&state),None).is_none());
+        let first=rate_editor_members(&mut cache,Some(&state),Some("a")).unwrap();
+        assert_eq!(&*first,&["709 / 민판","GT-1"]);
+        for _ in 0..100{
+            assert!(Arc::ptr_eq(&first,&rate_editor_members(&mut cache,Some(&state),Some("a")).unwrap()));
+        }
+        assert_eq!(&*rate_editor_members(&mut cache,Some(&state),Some("b")).unwrap(),&["TS"]);
+        state["products"][0]["shippingGroupId"]=json!("b");
+        cache.invalidate();
+        assert_eq!(&*rate_editor_members(&mut cache,Some(&state),Some("a")).unwrap(),&["GT-1"]);
+        assert_eq!(&*rate_editor_members(&mut cache,Some(&state),Some("b")).unwrap(),&["709 / 민판","TS"]);
     }
 
     #[test]
