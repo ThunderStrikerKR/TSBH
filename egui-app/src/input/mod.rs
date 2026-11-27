@@ -114,7 +114,11 @@ pub(crate) fn compact_text_field(
 /// Uses the same height, font and focus styling for every single-line field.
 /// Disabled preview controls cannot edit business data.
 pub(crate) fn field(ui: &mut Ui, value: &mut String, kind: FieldKind, enabled: bool) -> Response {
-    let width=form_field_width(ui,kind.preferred_width());
+    field_with_width(ui,value,kind,enabled,kind.preferred_width())
+}
+
+fn field_with_width(ui:&mut Ui,value:&mut String,kind:FieldKind,enabled:bool,preferred:f32)->Response{
+    let width=form_field_width(ui,preferred);
     let semantic=match kind {
         FieldKind::Money=>Some(typography::DataValueKind::Money),
         #[cfg(test)]
@@ -191,6 +195,15 @@ fn money_cursor_after_format(raw:&str,formatted:&str,old_index:usize)->usize{
 pub(crate) fn money_field(ui:&mut Ui,value:&mut String,enabled:bool)->Response {
     let before=value.clone();
     let response=field(ui,value,FieldKind::Money,enabled);
+    normalize_money_edit(ui,value,&before,&response);
+    response
+}
+
+/// Explicit-width money field for forms that align unlike control types.
+/// Formatting, typography and focus behavior are identical to money_field.
+pub(crate) fn money_field_sized(ui:&mut Ui,value:&mut String,width:f32,enabled:bool)->Response{
+    let before=value.clone();
+    let response=field_with_width(ui,value,FieldKind::Money,enabled,width);
     normalize_money_edit(ui,value,&before,&response);
     response
 }
