@@ -58,7 +58,7 @@ mod shared_card_scroll_rendering_tests {
     fn collect_rules(shape:&egui::Shape,out:&mut Vec<(Color32,Rect)>){
         match shape{
             egui::Shape::Rect(rect) if
-                (rect.fill==theme::DIVIDER||rect.fill==theme::TABLE_HEADER_OUTLINE)
+                (rect.fill==theme::border_ink(theme::BorderRole::Divider)||rect.fill==theme::border_ink(theme::BorderRole::TableHeader))
                 &&rect.rect.height()<=2.0&&rect.rect.width()>100.0=>{
                 out.push((rect.fill,rect.rect));
             },
@@ -175,13 +175,13 @@ mod shared_card_scroll_rendering_tests {
                     "{label}: {actual} != {expected}");
             }
             assert!(many.footer.top()>many.rail.bottom(),"rail overlaps footer");
-            let transition=rules.iter().filter(|(color,r)|*color==theme::DIVIDER
+            let transition=rules.iter().filter(|(color,r)|*color==theme::border_ink(theme::BorderRole::Divider)
                 &&r.top()>=many.toolbar.bottom()&&r.bottom()<=many.header.top())
                 .map(|(_,r)|*r).collect::<Vec<_>>();
             assert_eq!(transition.len(),1,"one real toolbar divider");
             assert!((transition[0].top()-many.toolbar.bottom()-12.0).abs()<=0.5);
             assert!((many.header.top()-transition[0].bottom()-12.0).abs()<=0.5);
-            let outlines=rules.iter().filter(|(color,r)|*color==theme::TABLE_HEADER_OUTLINE
+            let outlines=rules.iter().filter(|(color,r)|*color==theme::border_ink(theme::BorderRole::TableHeader)
                 &&many.header.contains(r.center())).map(|(_,r)|*r).collect::<Vec<_>>();
             assert_eq!(outlines.len(),1,"one painted header outline");
             assert!((outlines[0].height()-2.0).abs()<=0.5);
@@ -396,7 +396,7 @@ mod shared_card_rendered_geometry_tests {
             assert_card_content_insets("natural card",card,content,[pad;4],TOL);
             assert_geometry_value("natural card","width",card.width(),w+2.0*pad,TOL);
             assert_geometry_value("natural card","height",card.height(),h+2.0*pad,TOL);
-            assert_painted(&output,"natural card border",theme::PANEL,card);
+            assert_painted(&output,"natural card border",theme::surface_palette(theme::SurfaceRole::Panel,theme::VisualState::Normal).fill,card);
             assert_painted(&output,"natural card content",PROBE,content);
             if w==124.0{
                 let old=previous.expect("preceding larger card");
@@ -434,7 +434,7 @@ mod shared_card_rendered_geometry_tests {
                 [left,left,left,bottom+budget-40.0],TOL);
             assert_geometry_value("master fill","width",card.width(),available,TOL);
             assert_geometry_value("master fill","height",card.height(),budget+left+bottom,TOL);
-            assert_painted(&output,"master card border",theme::PANEL,card);
+            assert_painted(&output,"master card border",theme::surface_palette(theme::SurfaceRole::Panel,theme::VisualState::Normal).fill,card);
             assert_painted(&output,"master card content",PROBE,content);
         }
     }

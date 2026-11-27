@@ -796,7 +796,7 @@ mod tests{
     #[test]
     fn breadcrumb_palette_keeps_only_current_folder_prominent(){
         assert!(theme::CATEGORY_EXPLORER_BACK_WIDTH>theme::CATEGORY_EXPLORER_CRUMB_HEIGHT);
-        assert_eq!(theme::category_ink(theme::CategoryInkRole::Ancestor),theme::MUTED);
+        assert_eq!(theme::category_ink(theme::CategoryInkRole::Ancestor),theme::text_ink(theme::TextRole::Metadata,theme::TextState::Normal));
         assert!(theme::category_ink(theme::CategoryInkRole::Separator).r()<theme::category_ink(theme::CategoryInkRole::Ancestor).r());
         assert!(theme::category_ink(theme::CategoryInkRole::Current).r()>theme::category_ink(theme::CategoryInkRole::Ancestor).r());
         let source=include_str!("category_dropdown.rs");

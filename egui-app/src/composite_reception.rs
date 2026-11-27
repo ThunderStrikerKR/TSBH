@@ -312,7 +312,7 @@ pub fn reception_item_delete_confirmation(
             )).wrap());
             let width=body.available_width();
             fixed_status_slot(body,width,typography::METADATA_LINE_HEIGHT,
-                error,error,theme::DANGER);
+                error,error,theme::message_ink(theme::MessageInkRole::Danger));
         }
     );
     (decision==crate::popup::ConfirmDecision::Cancel,decision==crate::popup::ConfirmDecision::Confirm)
@@ -625,7 +625,7 @@ pub fn reception_total_footer(
     let right = rect.right() - theme::SPACE_8;
     let right_start = (right - 148.0).max(left + 50.0);
     let review=crate::one_touch::stage(ui)==crate::one_touch::Stage::Review;
-    let value_color=if review{crate::one_touch::INK}else{theme::text_ink(theme::TextRole::Value,theme::TextState::Normal)};
+    let value_color=if review{crate::theme::one_touch_palette().text}else{theme::text_ink(theme::TextRole::Value,theme::TextState::Normal)};
     let amount = total.map(display_money_number)
         .unwrap_or_else(||RECEPTION_MONEY_PENDING.to_owned());
     let first_amount = Rect::from_min_max(
@@ -665,7 +665,7 @@ pub fn reception_total_footer(
     let center_y=second_left.center().y;
     if let Some(n)=count{
         let prefix=count_painter.layout_no_wrap("배송".to_owned(),metadata_font.clone(),theme::text_ink(theme::TextRole::Label,theme::TextState::Normal));
-        let count_color=if review{crate::one_touch::INK}else{theme::text_ink(theme::TextRole::Label,theme::TextState::Normal)};
+        let count_color=if review{crate::theme::one_touch_palette().text}else{theme::text_ink(theme::TextRole::Label,theme::TextState::Normal)};
         let value=count_painter.layout_no_wrap(format!("{n}건"),metadata_font.clone(),count_color);
         let prefix_pos=egui::pos2(left,center_y-prefix.size().y/2.0);
         let value_pos=egui::pos2(left+prefix.size().x+theme::SPACE_8,center_y-value.size().y/2.0);

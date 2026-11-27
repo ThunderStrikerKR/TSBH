@@ -734,7 +734,7 @@ pub fn ocr_zoom_label(zoom:f32)->RichText{
 }
 
 pub fn ocr_validation_hint(text:&str)->RichText{
-    RichText::new(text).color(crate::theme::message_ink(theme::MessageInkRole::Danger))
+    RichText::new(text).color(crate::theme::message_ink(crate::theme::MessageInkRole::Danger))
 }
 
 pub fn ocr_progress_title(text:&str)->RichText{
@@ -772,7 +772,7 @@ mod extracted_text_role_tests{
 }
 
 pub fn status(text: &str, color: Color32) -> RichText {
-    let display=if color==crate::theme::message_ink(theme::MessageInkRole::Danger){
+    let display=if color==crate::theme::message_ink(crate::theme::MessageInkRole::Danger){
         crate::user_error::display("status",text)
     }else{std::borrow::Cow::Borrowed(text)};
     render(display.as_ref(), Role::Status).color(color)

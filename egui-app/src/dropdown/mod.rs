@@ -328,7 +328,7 @@ fn management_dropdown_option_inner<T:PartialEq>(
     crate::ui_test_support::record_highlight_target("dropdown option",row,ui.clip_rect());
     let caption_ink=match style{
         ManagementDropdownOptionStyle::Status(color)=>color,
-        _ if selected=>theme::ORANGE_EMPHASIS_TEXT,
+        _ if selected=>theme::selected_palette().text,
         _=>theme::text_ink(theme::TextRole::Value,theme::TextState::Normal),
     };
     let galley=if let Some(values)=values{

@@ -15,7 +15,7 @@ const CATALOG_TREE_TERMINAL_GAP:f32 = theme::SPACE_4;
 const CATALOG_TREE_GUIDE_COLOR:Color32 = Color32::from_rgb(74,74,74);
 const CATALOG_TREE_GUIDE_WIDTH:f32 = 1.0;
 const CATALOG_TREE_FOLDER_STROKE:f32 = 1.5;
-const CATALOG_TREE_FOLDER_COLOR:Color32 = theme::SECONDARY;
+const CATALOG_TREE_FOLDER_COLOR:Color32 = theme::text_ink(theme::TextRole::Label,theme::TextState::Normal);
 
 /// CategoryTree presentation contract. The caller owns data, selection and
 /// expansion; all tree row geometry and painting are centralized here.
