@@ -495,6 +495,15 @@ mod manual_rebind_tests {
             edit_history:vec![]
         };
         let result=prepare(&PreviewGateway,&source,"new").unwrap();
+        let mut confirmation=result.order.clone().unwrap();
+        attach_recognition_baseline(&mut confirmation,&source);
+        assert_eq!(confirmation["recognitionBaseline"]["initialAnalysis"],
+            source.analysis_evidence.clone().unwrap());
+        let mut stale=source.clone();
+        stale.analysis_raw=Some("이전 원문".into());
+        let mut rejected=result.order.clone().unwrap();
+        attach_recognition_baseline(&mut rejected,&stale);
+        assert!(rejected.get("recognitionBaseline").is_none());
         assert_eq!(result.order.as_ref().and_then(|order|order["id"].as_str()),
             Some("order-1"),"the explicit confirmation path needs the exact native Order");
         assert_eq!(result.recognition,Some(json!({
