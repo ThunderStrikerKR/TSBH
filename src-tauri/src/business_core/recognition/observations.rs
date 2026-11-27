@@ -1955,6 +1955,156 @@ pub(super) fn evaluate_combined_confirmation(order:&Value)->Result<Value,String>
         "representativeLabelsVerified":false,"eligibleForAutomaticDecision":false,"decisionChanged":false}))
 }
 
+// Same frozen first-analysis input, same verified operational label, both
+// model revisions. Retrospective replay is not a prospective A/B test.
+#[derive(Default)]
+struct ModelPairCounts{
+    eligible:u64,baseline_covered:u64,candidate_covered:u64,paired:u64,
+    both_agree:u64,baseline_only:u64,candidate_only:u64,both_disagree:u64,
+    fallback_baseline_agrees:u64,fallback_candidate_agrees:u64,
+    orders:u64,paired_orders:u64,macro_baseline:f64,macro_candidate:f64,
+}
+impl ModelPairCounts{
+    fn observe(&mut self,old:&str,actual:&str,a:Option<&str>,b:Option<&str>){
+        self.eligible+=1;
+        self.baseline_covered+=u64::from(a.is_some());self.candidate_covered+=u64::from(b.is_some());
+        self.fallback_baseline_agrees+=u64::from(a.unwrap_or(old)==actual);
+        self.fallback_candidate_agrees+=u64::from(b.unwrap_or(old)==actual);
+        if let (Some(a),Some(b))=(a,b){
+            self.paired+=1;
+            match (a==actual,b==actual){
+                (true,true)=>self.both_agree+=1,(true,false)=>self.baseline_only+=1,
+                (false,true)=>self.candidate_only+=1,(false,false)=>self.both_disagree+=1,
+            }
+        }
+    }
+    fn merge_order(&mut self,o:Self){
+        if o.eligible==0{return;}
+        self.orders+=1;self.eligible+=o.eligible;self.baseline_covered+=o.baseline_covered;
+        self.candidate_covered+=o.candidate_covered;self.paired+=o.paired;
+        self.both_agree+=o.both_agree;self.baseline_only+=o.baseline_only;
+        self.candidate_only+=o.candidate_only;self.both_disagree+=o.both_disagree;
+        self.fallback_baseline_agrees+=o.fallback_baseline_agrees;
+        self.fallback_candidate_agrees+=o.fallback_candidate_agrees;
+        if o.paired>0{self.paired_orders+=1;
+            self.macro_baseline+=(o.both_agree+o.baseline_only) as f64/o.paired as f64;
+            self.macro_candidate+=(o.both_agree+o.candidate_only) as f64/o.paired as f64;}
+    }
+    fn wire(&self)->Value{
+        let div=|v:f64,n:u64|(n>0).then(||v/n as f64);
+        json!({"eligibleObservations":self.eligible,"baselineCovered":self.baseline_covered,
+            "candidateCovered":self.candidate_covered,"pairedObservations":self.paired,
+            "pairedCoverage":div(self.paired as f64,self.eligible),
+            "bothAgree":self.both_agree,"baselineOnlyAgrees":self.baseline_only,
+            "candidateOnlyAgrees":self.candidate_only,"bothDisagree":self.both_disagree,
+            "baselineAgreement":div((self.both_agree+self.baseline_only) as f64,self.paired),
+            "candidateAgreement":div((self.both_agree+self.candidate_only) as f64,self.paired),
+            "pairedDelta":div(self.candidate_only as f64-self.baseline_only as f64,self.paired),
+            "fallbackBaselineAgreement":div(self.fallback_baseline_agrees as f64,self.eligible),
+            "fallbackCandidateAgreement":div(self.fallback_candidate_agrees as f64,self.eligible),
+            "independentOrders":self.orders,"pairedOrders":self.paired_orders,
+            "orderMacroBaselineAgreement":div(self.macro_baseline,self.paired_orders),
+            "orderMacroCandidateAgreement":div(self.macro_candidate,self.paired_orders)})
+    }
+}
+fn paired_decision<'a>(result:&'a Value,units:&[u16],s:Span,old:&'a str)->Option<&'a str>{
+    let mut rows=rows(&result["decisions"]).filter(|d|position(units,d)==Some(s));
+    let d=rows.next()?;
+    if rows.next().is_some()||d["legacyCandidate"].as_str()!=Some(old)||
+        d["decisionChanged"]!=false||d["eligibleForAutomaticDecision"]!=false||
+        d["candidateOrder"]!=json!(["next","previous","outside"]){return None;}
+    if d["status"]=="diagnostic_proposal_only"{
+        d["diagnosticCandidate"].as_str().filter(|c|matches!(*c,"next"|"previous")&&*c!=old)
+    }else if d["diagnosticCandidate"].is_null()&&d["combinedProxy"].as_array().is_some_and(|v|v.len()==3){
+        Some(old)
+    }else{None}
+}
+pub(super) fn compare_registered_models(payload:&Value)->Result<Value,String>{
+    let a=&payload["baseline"];let b=&payload["candidate"];
+    let date=|v:&Value|v.as_str().and_then(|s|chrono::DateTime::parse_from_rfc3339(s).ok());
+    let a_time=date(&a["createdAt"]).ok_or("기존 모델 생성 시각 오류")?;
+    let b_time=date(&b["createdAt"]).ok_or("신규 모델 생성 시각 오류")?;
+    let am=&a["model"];let bm=&b["model"];
+    let cutoff=a_time.max(b_time).max(date(&am["availableAfter"]).ok_or("기존 모델 사용 시각 오류")?)
+        .max(date(&bm["availableAfter"]).ok_or("신규 모델 사용 시각 오류")?);
+    let as_of=date(&payload["evaluationAsOf"]).ok_or("독립 평가 시각 오류")?;
+    if cutoff>=as_of||a["modelId"]==b["modelId"]||am["clientBuildVersion"]!=bm["clientBuildVersion"]{
+        return Err("독립 평가 모델 또는 시각 불일치".into());
+    }
+    let orders=payload["orders"].as_array().filter(|v|!v.is_empty()&&v.len()<=250).ok_or("독립 평가 주문 한도 오류")?;
+    let mut seen=BTreeSet::new();
+    let mut totals=BTreeMap::<(String,String,String,String),ModelPairCounts>::new();
+    let mut statuses=BTreeMap::<&str,u64>::new();
+    for order in orders{
+        let id=order["id"].as_str().filter(|s|!s.is_empty()).ok_or("독립 평가 주문 ID 오류")?;
+        if !seen.insert(id){return Err("독립 평가 주문 중복".into());}
+        if [am,bm].iter().any(|m|m["sourceDigests"].as_object().is_none_or(|v|v.contains_key(id))){
+            *statuses.entry("model_source_overlap").or_default()+=1;continue;
+        }
+        let snap=&order["confirmationSnapshot"];let first=&snap["recognitionBaseline"]["initialAnalysis"];
+        let cap=&first["initialPredictionCapture"];let shadow=&cap["learningShadow"];
+        let (Some(start),Some(end),Some(predicted),Some(confirmed))=(date(&cap["analysisStartedAt"]),
+            date(&cap["analysisCompletedAt"]),date(&shadow["capturedAt"]),date(&order["confirmedAt"]))
+            else{*statuses.entry("missing_time").or_default()+=1;continue;};
+        if order["learningActive"]!=true||order["deletedAt"].as_str().is_some_and(|s|!s.is_empty())||
+            cap["origin"]!="native_reception_worker"||cap["schemaVersion"]!=1||cap["orderId"]!=order["id"]||
+            cap["clientBuildVersion"]!=am["clientBuildVersion"]||snap["at"]!=order["confirmedAt"]||
+            !(cutoff<start&&start<=end&&end<=predicted&&predicted<confirmed&&confirmed<=as_of){
+            *statuses.entry("outside_independent_window_or_invalid_capture").or_default()+=1;continue;
+        }
+        let Some(events)=order["recognitionAuditEvents"].as_array()else{*statuses.entry("missing_audit").or_default()+=1;continue;};
+        if events.iter().any(|v|date(&v["at"]).is_none_or(|t|t<=predicted||t>confirmed)){
+            *statuses.entry("audit_time_invalid").or_default()+=1;continue;
+        }
+        let compared=compare(order)?;
+        if compared["auditCoverage"]!="verified_manifest"{*statuses.entry("unverified_audit").or_default()+=1;continue;}
+        let raw=snap["raw"].as_str().ok_or("독립 평가 원문 누락")?;
+        let units=raw.encode_utf16().collect::<Vec<_>>();
+        // Inference receives no final recipient rows, corrections or labels.
+        let replay=|model:&Value|run_blend_shadow(&json!({"raw":raw,"initialAnalysis":first,
+            "learningShadow":shadow,"model":model,"predictionAt":shadow["capturedAt"],
+            "clientBuildVersion":cap["clientBuildVersion"]})).unwrap_or_else(|_|json!({"decisions":[]}));
+        let ar=replay(am);let br=replay(bm);
+        let mut local=BTreeMap::<(String,String,String,String),ModelPairCounts>::new();
+        let mut used=BTreeSet::new();
+        for obs in rows(&compared["observations"]).filter(|v|v["task"]=="recipient_ownership"){
+            let label=match obs["outcome"].as_str(){
+                Some("explicit_correction_observed") if obs["eligibleForCandidateLearning"]==true=>"explicit_correction",
+                Some("unchanged_observed") if obs["eligibleForCandidateLearning"]==true=>"unchanged_proxy",
+                _=>continue,
+            };
+            let (Some(old),Some(actual),Some(s))=(singleton(&obs["initialCandidates"]),singleton(&obs["finalCandidates"]),
+                position(&units,&obs["source"]))else{continue;};
+            if !matches!(old,"next"|"previous")||!matches!(actual,"next"|"previous"|"outside_traced_candidates")||
+                (label=="explicit_correction"&&(old==actual||singleton(&obs["positiveCandidates"])!=Some(actual)||
+                singleton(&obs["negativeCandidates"])!=Some(old)))||(label=="unchanged_proxy"&&old!=actual){continue;}
+            if !used.insert(s){return Err("독립 평가 관측 위치 중복".into());}
+            let x=paired_decision(&ar,&units,s,old);let y=paired_decision(&br,&units,s,old);
+            let kind=match obs["sourceKind"].as_str(){Some("address")=>"address",Some("phone"|"mobile")=>"contact",_=>"unknown"};
+            let mut traces=rows(&first["recipientOwnerTrace"]["decisions"]).filter(|v|position(&units,&v["source"])==Some(s));
+            let route=match (traces.next(),traces.next()){
+                (Some(d),None)=>if d["legacyFirstBlockingReason"].is_null(){"score"}else{"gate"},_=>"unknown"};
+            let mut selections=rows(&shadow["contextSelection"]).filter(|v|v["task"]=="recipient_ownership"&&position(&units,v)==Some(s));
+            let level=match (selections.next(),selections.next()){
+                (Some(v),None)=>v["selectedContextKey"].as_str().and_then(|s|serde_json::from_str::<Value>(s).ok())
+                    .and_then(|v|v[2].as_str().map(str::to_owned)).unwrap_or_else(||"unselected".into()),
+                _=>"unselected".into()};
+            for key in [("all".to_owned(),"all".to_owned(),"all".to_owned(),label.to_owned()),
+                (kind.to_owned(),route.to_owned(),level,label.to_owned())]{
+                local.entry(key).or_default().observe(old,actual,x,y);
+            }
+        }
+        *statuses.entry(if used.is_empty(){"no_verified_labels"}else{"evaluated"}).or_default()+=1;
+        for (key,value) in local{totals.entry(key).or_default().merge_order(value);}
+    }
+    let groups=totals.into_iter().map(|((kind,route,level,label),v)|json!({
+        "sourceKind":kind,"legacyRoute":route,"contextLevel":level,"labelKind":label,"metrics":v.wire()})).collect::<Vec<_>>();
+    Ok(json!({"status":"paired_model_replay_diagnostic_only","baselineModelId":a["modelId"],"candidateModelId":b["modelId"],
+        "cutoff":cutoff.to_rfc3339(),"evaluationAsOf":payload["evaluationAsOf"],"requestedOrders":orders.len(),
+        "orderStatuses":statuses,"groups":groups,"sameFrozenInputs":true,"prospectiveTrialVerified":false,
+        "representativeLabelsVerified":false,"winner":null,"eligibleForAutomaticDecision":false,"decisionChanged":false}))
+}
+
 #[cfg(test)]
 mod tests{
     use super::*;
@@ -2189,6 +2339,21 @@ mod tests{
         let r=evaluate_combined_confirmation(&p).unwrap();
         assert_eq!(r["status"],"unverified_prediction_time");
         assert_eq!(r["groups"],json!([]));assert_eq!(r["decisionChanged"],false);
+    }
+    #[test]
+    fn paired_registered_model_metrics_preserve_abstention_and_order_weighting(){
+        let mut first=ModelPairCounts::default();
+        first.observe("previous","next",Some("previous"),Some("next"));
+        first.observe("previous","previous",None,Some("next"));
+        let mut second=ModelPairCounts::default();
+        second.observe("previous","previous",Some("previous"),None);
+        let mut total=ModelPairCounts::default();total.merge_order(first);total.merge_order(second);
+        let v=total.wire();
+        assert_eq!(v["eligibleObservations"],3);assert_eq!(v["pairedObservations"],1);
+        assert_eq!(v["candidateOnlyAgrees"],1);assert_eq!(v["pairedDelta"],1.0);
+        assert_eq!(v["pairedOrders"],1);assert_eq!(v["independentOrders"],2);
+        assert!((v["fallbackBaselineAgreement"].as_f64().unwrap()-2.0/3.0).abs()<1e-10);
+        assert!((v["fallbackCandidateAgreement"].as_f64().unwrap()-2.0/3.0).abs()<1e-10);
     }
     fn owner_fixture()->Value{
         // Emoji makes the UTF-16 positions differ from byte offsets.

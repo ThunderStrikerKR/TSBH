@@ -1223,6 +1223,56 @@ impl PreviewStore {
         Ok(result)
     }
 
+    /// Explicit, bounded, read-only paired replay of two immutable registry
+    /// revisions. Source orders of either revision cannot be test orders.
+    pub(crate) fn paired_blend_evaluation(input:&Value,evaluate:impl Fn(&Value)->Result<Value,String>)->Result<Value,String>{
+        let a=input["baselineModelId"].as_str().ok_or("기존 모델 ID 누락")?;
+        let b=input["candidateModelId"].as_str().ok_or("신규 모델 ID 누락")?;
+        if a==b||input.get("samples").is_some()||input.get("model").is_some(){return Err("독립 평가 입력 오류".into());}
+        let ids=input["orderIds"].as_array().filter(|v|!v.is_empty()&&v.len()<=250).ok_or("독립 평가 주문 한도 오류")?
+            .iter().map(|v|v.as_str().filter(|s|!s.is_empty()&&s.len()<=1024).map(str::to_owned).ok_or("주문 ID 오류"))
+            .collect::<Result<Vec<_>,_>>()?;
+        if ids.iter().collect::<std::collections::BTreeSet<_>>().len()!=ids.len(){return Err("독립 평가 주문 중복".into());}
+        let (mut conn,business,scope)=Self::learning_connection()?;
+        let tx=conn.transaction().map_err(|e|e.to_string())?;
+        let load=|id:&str|->Result<Value,String>{
+            let model=read_registered_blend_model(&tx,&scope,id)?;
+            verify_blend_model_sources(&tx,&scope,&business,&model,None)?;
+            let created:String=tx.query_row("SELECT created_at FROM recognition_blend_models WHERE scope=?1 AND model_id=?2",
+                params![scope,id],|r|r.get(0)).map_err(|e|e.to_string())?;
+            Ok(json!({"modelId":id,"createdAt":created,"model":model}))
+        };
+        let baseline=load(a)?;let candidate=load(b)?;
+        let (frozen,mut orders,digests)=crate::business_state::read_learning_inputs(&ids,|sources|{
+            let (misses,digests)=select_learning_changes(&tx,&scope,sources)?;
+            if !misses.is_empty(){return Err("독립 평가 원본 동기화 필요".into());}
+            let active=sources.iter().filter(|(_,s)|s.active).map(|(id,_)|id.clone()).collect();
+            Ok((active,digests))
+        })?;
+        if orders.is_empty(){return Err("독립 평가 활성 주문 없음".into());}
+        let audit_ids=orders.iter().filter_map(|o|o["id"].as_str()).filter(|id|frozen.get(*id).is_some_and(|s|s.audit_needed))
+            .map(str::to_owned).collect::<Vec<_>>();
+        let mut audit=if audit_ids.is_empty(){std::collections::BTreeMap::new()}else{query_reception_audit_batch(&tx,&audit_ids)?};
+        for order in &mut orders{
+            let id=order["id"].as_str().ok_or("독립 평가 주문 ID 누락")?;
+            if let Some(events)=audit.remove(id){order["recognitionAuditEvents"]=json!(events);}
+        }
+        let mut report=evaluate(&json!({"orders":orders,"baseline":baseline,"candidate":candidate,
+            "evaluationAsOf":chrono::Utc::now().to_rfc3339()}))?;
+        if crate::business_state::read_learning_sources(&ids)?!=frozen||
+            crate::business_state::authorized_business_write_path()?.canonicalize().map_err(|_|"업무 DB 식별 실패")?!=business{
+            return Err("독립 평가 중 원본 변경".into());
+        }
+        verify_blend_model_sources(&tx,&scope,&business,&baseline["model"],None)?;
+        verify_blend_model_sources(&tx,&scope,&business,&candidate["model"],None)?;
+        report["requestedOrders"]=json!(ids.len());
+        report["missingOrInactiveOrders"]=json!(ids.len()-digests.len());
+        report["currentSourceDigestsVerified"]=json!(true);
+        report["crossDatabaseAtomicSnapshot"]=json!(false);
+        tx.commit().map_err(|e|e.to_string())?;
+        Ok(report)
+    }
+
     pub(crate) fn recognition_learning_support(input:&Value,
         evaluate:impl Fn(&[Value])->Result<Value,String>)->Result<Value,String>{
         if let Some(performance)=input.get("combinedModelPerformance"){
