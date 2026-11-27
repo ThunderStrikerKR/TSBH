@@ -2342,25 +2342,17 @@ impl ProductManager {
             }
         }
         if self.confirm_archive{
-            let mut cancel=false;
-            let mut archive=false;
             crate::popup::modal_backdrop(ctx,"egui-product-archive-nested",true);
-            crate::popup::show_decision_window(ctx,"상품 삭제","egui-product-archive-confirm",work_area,|dialog|{
-                crate::popup::decision_workspace(dialog,|decision|{
-                    cancel=decision.header("상품 삭제","취소",!busy
-                    );
-                    decision.body(|dialog|{
-                        dialog.label(typography::body(
-                            "등록된 상품을 삭제하시겠습니까?\n\n삭제 후에도 기존 주문내역과 가격 기록은 보존됩니다."
-                        ));
-                    });
-                    decision.actions(|actions|{
-                            if crate::button::action(actions,"상품 삭제",theme::ButtonRole::Danger,
-                                editable&&!busy).clicked(){archive=true;}
-                        }
-                    );
-                });
-            });
+            let decision=crate::popup::show_delete_confirmation(
+                ctx,work_area,"egui-product-archive-confirm","상품 삭제","상품 삭제",
+                !busy,editable&&!busy,crate::popup::DeleteBody::Plain,|dialog|{
+                    dialog.label(typography::body(
+                        "등록된 상품을 삭제하시겠습니까?\n\n삭제 후에도 기존 주문내역과 가격 기록은 보존됩니다."
+                    ));
+                }
+            );
+            let cancel=decision==crate::popup::ConfirmDecision::Cancel;
+            let archive=decision==crate::popup::ConfirmDecision::Confirm;
             if cancel{self.confirm_archive=false;}
             else if archive{
                 self.confirm_archive=false;
