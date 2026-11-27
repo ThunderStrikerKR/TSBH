@@ -668,3 +668,64 @@ mod shared_ui_base_113_contract_tests {
         assert!(history.contains("crate::table::paint_table_galley("));
     }
 }
+
+
+#[cfg(test)]
+mod shared_table_rendered_geometry_tests{
+    use crate::theme;
+    use eframe::egui::{self,Align,Layout,Rect,Vec2};
+    use crate::ui_test_support::{test_context,TRACE,assert_geometry_value,assert_rect_geometry,assert_rect_inside};
+    #[test]
+    fn registry_rows_keep_cell_edges_and_clipping_inside_the_painted_table(){
+        let ctx=test_context();
+        for width in [640.0,440.0,640.0]{
+            let mut baseline:Option<Rect>=None;
+            for (count,selected) in [(1,false),(30,false),(30,true),(1,true)]{
+                let mut measured=Rect::NOTHING;
+                let mut rows=Vec::new();
+                TRACE.with(|trace|*trace.borrow_mut()=Some(Vec::new()));
+                let output=ctx.run(egui::RawInput{
+                    screen_rect:Some(Rect::from_min_size(egui::Pos2::ZERO,Vec2::new(900.0,700.0))),
+                    ..Default::default()
+                },|ctx|{
+                    egui::CentralPanel::default().show(ctx,|ui|{
+                        ui.allocate_ui_with_layout(Vec2::new(width,300.0),Layout::top_down(Align::Min),|slot|{
+                            slot.set_width(width);
+                            slot.set_max_width(width);
+                            measured=crate::table::registry_table(slot,"geometry-registry",["상품","수량"],
+                                [200.0,90.0],180.0,count,|i|selected&&i==0,
+                                |row,cells,index,rect|{
+                                    rows.push((index,rect,cells,row.clip_rect()));
+                                    row.painter().rect_filled(cells[0].shrink(3.0),0.0,
+                                        egui::Color32::from_rgb(73,147,211));
+                                });
+                        });
+                    });
+                });
+                let trace=TRACE.with(|trace|trace.borrow_mut().take()).expect("table trace");
+                let frame=trace.iter().rev().find(|(name,_)|*name=="table perimeter")
+                    .expect("table perimeter").1;
+                assert!(frame.is_positive()&&measured.is_positive()&&!rows.is_empty());
+                assert_geometry_value("table","viewport bottom",measured.bottom(),frame.bottom(),1.0);
+                assert!(measured.right()<=frame.right()+1.0);
+                if let Some(old)=baseline{assert_rect_geometry("table row count/selection",frame,old,1.0);}
+                else{baseline=Some(frame);}
+                for (_,rect,cells,clip) in &rows{
+                    assert_geometry_value("table row","height",rect.height(),theme::MANAGEMENT_COMPACT_ROW_HEIGHT,1.0);
+                    assert_rect_inside("first cell",cells[0],*rect,1.0);
+                    assert_rect_inside("second cell",cells[1],*rect,1.0);
+                    assert_geometry_value("table cells","gap",cells[1].left()-cells[0].right(),theme::SPACE_8,1.0);
+                    if clip.is_positive(){assert_rect_inside("row paint clip",*clip,*rect,1.0);}
+                }
+                for pair in rows.windows(2){
+                    assert_geometry_value("table rows","row spacing",pair[1].1.top()-pair[0].1.bottom(),0.0,1.0);
+                }
+                assert!(output.shapes.iter().any(|shape|matches!(&shape.shape,egui::Shape::Rect(r)
+                    if r.stroke.color==theme::BORDER && r.stroke.width>0.0
+                    && (r.rect.min-frame.min).length()<=1.5
+                    && (r.rect.max-frame.max).length()<=1.5)),
+                    "missing painted table perimeter: {frame:?}");
+            }
+        }
+    }
+}
