@@ -473,6 +473,43 @@ mod tests {
 mod modal_lifecycle_tests{
     use super::*;
     #[test]
+    fn actual_alias_popup_feedback_and_permissions_keep_rects(){
+        use crate::ui_test_support::{begin_component_geometry,finish_component_geometry,
+            assert_layout_rects_invariant,test_context};
+        let catalog=json!({"aliases":[{"id":"a","text":"709","productId":"p","clientId":"c"}]});
+        for width in [800.0,1400.0]{
+            let ctx=test_context();
+            let work=Rect::from_min_size(eframe::egui::Pos2::ZERO,eframe::egui::vec2(width,900.0));
+            let mut manager=AliasManager::default();
+            manager.choose("a".into(),&catalog);
+            let mut baseline:Option<Vec<(&'static str,Rect)>>=None;
+            for (phase,enabled,busy) in [(0,true,false),(1,true,false),(2,false,false),(3,true,true),(4,true,false)]{
+                manager.error=if phase==1||phase==2{Some("synthetic save error".into())}else{None};
+                for frame in 0..6{
+                    begin_component_geometry();
+                    let _=ctx.run(eframe::egui::RawInput{screen_rect:Some(work),..Default::default()},|ctx|{
+                        crate::floating_notice::begin_page(ctx,"alias geometry");
+                        manager.show_editor(ctx,work,&catalog,enabled,busy);
+                        crate::floating_notice::show(ctx);
+                    });
+                    let slots=finish_component_geometry(work).into_iter()
+                        .filter(|sample|matches!(sample.role,"input"|"button"|"dropdown"|"popup"|"scrollbar"))
+                        .map(|sample|(sample.role,sample.rect)).collect::<Vec<_>>();
+                    if phase==0{
+                        if frame==5{
+                            assert!(slots.iter().any(|(role,_)|*role=="input"));
+                            assert!(slots.iter().any(|(role,_)|*role=="popup"));
+                            baseline=Some(slots);
+                        }
+                    }else{
+                        assert_layout_rects_invariant(baseline.as_ref().unwrap(),&slots);
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
     fn delete_request_uses_original_entity_and_requires_existing_alias(){
         let catalog=json!({"aliases":[{"id":"a","text":"709","productId":"p","clientId":"c"}]});
         let mut manager=AliasManager::default();
