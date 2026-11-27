@@ -1198,6 +1198,32 @@ mod tests{
         assert_eq!(compare(&other).unwrap()["auditCoverage"],"incomplete_history");
     }
     #[test]
+    fn option_proof_handles_abbreviations_compounds_and_rejects_ambiguity(){
+        let check=|raw:&str,token:&str,name:&str,color:&str|{
+            let a=raw.find(token).unwrap();
+            let start=raw[..a].encode_utf16().count();
+            let end=start+token.encode_utf16().count();
+            let item=json!({"name":name,"color":color,"sources":[
+                {"start":start,"end":end,"text":token,"field":"product"}]});
+            verified_variant(&raw.encode_utf16().collect::<Vec<_>>(),(start,end),
+                &json!([{"items":[item]}]),&item,None)
+        };
+        assert!(check("709W","709W","BD 709","White"));
+        assert!(check("BK 709","709","BD 709","Black"));
+        assert!(!check("709 B 타입","709","BD 709","Black"));
+        assert!(!check("709W BK","709W","BD 709","White"));
+        assert!(check("709 로즈골드","709","BD 709","Rose Gold"));
+        assert!(check("709 코스모블랙","709","BD 709","Cosmo Black"));
+        assert!(!check("709 화이트 블랙","709","BD 709","White"));
+        assert!(check("709 화이트 가방 미포함 바퀴 장착 무타공","709",
+            "BD 709 / White / 가방 미포함 / 바퀴 장착 / 민판","White"));
+        assert!(!check("709 화이트 가방 미포함 가방 포함","709",
+            "BD 709 / White / 가방 포함","White"));
+        assert!(!check("709 화이트","709","BD 709 / White / 가방 포함","White"));
+        assert!(!check("709 화이트","709","BD 709 / White / 고급형","White"));
+        assert!(check("709 화이트 고급형","709","BD 709 / White / 고급형","White"));
+    }
+    #[test]
     fn external_product_substitution_cannot_become_a_model_correction(){
         let p=field_audit_fixture("709","709","product","product",
             json!({"name":"BD 708","productId":"old"}),
