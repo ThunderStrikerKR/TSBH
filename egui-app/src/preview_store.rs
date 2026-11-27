@@ -1479,6 +1479,17 @@ impl PreviewStore {
                 .iter().any(|key|input.get(*key).is_some()){return Err("모델 관리와 평가 요청을 분리하세요.".into());}
             return Self::blend_model_registry(registry);
         }
+        if let Some(registry)=input.get("fieldBlendRegistry"){
+            if input.as_object().is_none_or(|o|o.len()!=1)||registry["action"]!="list"{
+                return Err("필드 모델 후보 조회는 별도 list 요청만 지원합니다.".into());
+            }
+            let (conn,_,scope)=Self::learning_connection()?;
+            return list_field_blend_candidates(&conn,&scope);
+        }
+        if input.get("fieldBlendWeightLearning").is_some()&&input.as_object().is_none_or(|o|o.len()!=1){
+            return Err("필드 결합 학습 요청을 분리하세요.".into());
+        }
+        let persist_field=input["fieldBlendWeightLearning"]["persistModel"]==true;
         let persist=input["blendWeightLearning"]["persistModel"]==true;
         let (mut conn,business,scope)=Self::learning_connection()?;
         let mut tx=conn.transaction().map_err(|e|e.to_string())?;
@@ -1494,7 +1505,6 @@ impl PreviewStore {
             return Err("평가와 재현 요청을 분리하세요.".into());
         }
         let report=if let Some(config)=evaluation.or(combined_evaluation).or(calibration).or(shadow_calibration).or(blend).or(field_blend).or_else(||input.get("localChronologicalReplay")){
-            if field_blend.is_some()&&config["persistModel"]==true{return Err("필드 결합 모델은 독립 검증 전 저장·선택할 수 없습니다.".into());}
             if input.get("chronologicalValidation").is_some() || config.get("samples").is_some() ||
                 config.get("frozenModelId").is_some(){
                 return Err("로컬 재현에 외부 예측·정답·모델을 혼합할 수 없습니다.".into());
@@ -1524,7 +1534,7 @@ impl PreviewStore {
             }else if evaluation.is_some()||calibration.is_some()||shadow_calibration.is_some()||blend.is_some()||field_blend.is_some(){
                 tx.commit().map_err(|e|e.to_string())?;
                 let mut value=evaluate(&orders)?;
-                tx=if persist{conn.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)}
+                tx=if persist||persist_field{conn.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)}
                     else{conn.transaction()}.map_err(|e|e.to_string())?;
                 let current=crate::business_state::read_learning_sources(&ids)?;
                 verify_learning_sync_sources(&tx,&frozen,&digests,&current)?;
@@ -1551,6 +1561,13 @@ impl PreviewStore {
                 prepare_blend_registry(&tx)?;
                 let id=store_blend_model(&tx,&scope,model)?;
                 result["storedModelId"]=json!(id);
+                result["modelAutomaticallySelected"]=json!(false);
+            }
+            if persist_field{
+                if orders.len()!=ids.len()||digests.len()!=ids.len()||result["status"]!="field_blend_diagnostic_only"{
+                    return Err("필드 모델 후보 저장에 필요한 확정 원본 누락".into());
+                }
+                result["storedCandidateModelIds"]=json!(store_field_blend_candidates(&tx,&scope,&digests,config,&result)?);
                 result["modelAutomaticallySelected"]=json!(false);
             }
             result["requestedOrders"]=json!(ids.len());
@@ -1908,6 +1925,76 @@ fn verify_blend_model_sources(tx:&rusqlite::Transaction<'_>,scope:&str,business:
         return Err("결합 모델 원본 변경".into());
     }
     Ok(())
+}
+
+// R06 candidate registry: independent immutable revisions, not the owner
+// registry or its selection state. Only derived parameters are retained.
+fn field_blend_registry_exists(conn:&Connection)->Result<bool,String>{
+    conn.query_row("SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type='table' AND name='recognition_field_blend_candidates')",[],|r|r.get(0))
+        .map_err(|e|e.to_string())
+}
+fn field_candidate_identity(payload:&Value)->Result<(String,String),String>{
+    use sha2::{Digest,Sha256};
+    let text=serde_json::to_string(payload).map_err(|_|"필드 모델 후보 직렬화 오류")?;
+    if text.len()>256*1024{return Err("필드 모델 후보 용량 초과".into());}
+    Ok((format!("field-blend-{:x}",Sha256::digest(text.as_bytes())),text))
+}
+fn store_field_blend_candidates(conn:&Connection,scope:&str,digests:&LearningDigests,config:&Value,report:&Value)->Result<Vec<String>,String>{
+    if digests.is_empty()||digests.len()>250||report["schemaVersion"]!=1||
+        report["status"]!="field_blend_diagnostic_only"||report["automaticChangeAuthorized"]!=false||
+        report["eligibleForAutomaticDecision"]!=false||report["decisionChanged"]!=false||
+        report["currentSourceDigestsVerified"]!=true||report["clientBuildVersion"].as_str()!=Some(env!("CARGO_PKG_VERSION")){
+        return Err("필드 모델 후보 저장 규격 오류".into());
+    }
+    let models=report["models"].as_array().filter(|m|m.len()<=12).ok_or("필드 모델 목록 오류")?;
+    conn.execute_batch("CREATE TABLE IF NOT EXISTS recognition_field_blend_candidates(
+        scope TEXT NOT NULL, model_id TEXT NOT NULL, task TEXT NOT NULL,
+        payload TEXT NOT NULL, created_at TEXT NOT NULL,
+        PRIMARY KEY(scope,model_id))").map_err(|e|e.to_string())?;
+    let mut ids=Vec::new();
+    for task in ["type","product","variant","quantity"]{
+        let valid=models.iter().filter(|m|m["task"]==task&&
+            m["learningWeight"].as_f64().is_some_and(|v|v.is_finite()&&(0.0..=1.0).contains(&v))&&
+            m["automaticChangeAuthorized"]==false).collect::<Vec<_>>();
+        if valid.is_empty(){continue;}
+        let payload=json!({"schemaVersion":1,"task":task,"businessScope":scope,
+            "clientBuildVersion":report["clientBuildVersion"],"sourceDigests":digests,
+            "fitStart":config["fitStart"],"weightStart":config["weightStart"],"testStart":config["testStart"],
+            "testEnd":config["testEnd"],"evaluationAsOf":config["evaluationAsOf"],"models":valid,
+            "automaticChangeAuthorized":false,"selectionAuthorized":false});
+        let (id,encoded)=field_candidate_identity(&payload)?;
+        conn.execute("INSERT OR IGNORE INTO recognition_field_blend_candidates(scope,model_id,task,payload,created_at)
+            VALUES(?1,?2,?3,?4,?5)",params![scope,id,task,encoded,chrono::Utc::now().to_rfc3339()]).map_err(|e|e.to_string())?;
+        let existing:String=conn.query_row("SELECT payload FROM recognition_field_blend_candidates WHERE scope=?1 AND model_id=?2",
+            params![scope,id],|r|r.get(0)).map_err(|e|e.to_string())?;
+        if existing!=encoded{return Err("필드 모델 후보 식별 충돌".into());}
+        ids.push(id);
+    }
+    Ok(ids)
+}
+fn list_field_blend_candidates(conn:&Connection,scope:&str)->Result<Value,String>{
+    let mut models=Vec::new();
+    if field_blend_registry_exists(conn)?{
+        let mut stmt=conn.prepare("SELECT model_id,task,payload,created_at FROM recognition_field_blend_candidates
+            WHERE scope=?1 ORDER BY created_at DESC,model_id LIMIT 250").map_err(|e|e.to_string())?;
+        let mut rows=stmt.query([scope]).map_err(|e|e.to_string())?;
+        while let Some(row)=rows.next().map_err(|e|e.to_string())?{
+            let id:String=row.get(0).map_err(|e|e.to_string())?;
+            let task:String=row.get(1).map_err(|e|e.to_string())?;
+            let encoded:String=row.get(2).map_err(|e|e.to_string())?;
+            if encoded.len()>256*1024{return Err("필드 모델 후보 용량 초과".into());}
+            let payload:Value=serde_json::from_str(&encoded).map_err(|_|"필드 모델 후보 JSON 오류")?;
+            if field_candidate_identity(&payload)?.0!=id||payload["task"]!=task||payload["businessScope"]!=scope||
+                payload["schemaVersion"]!=1||payload["automaticChangeAuthorized"]!=false||payload["selectionAuthorized"]!=false{
+                return Err("필드 모델 후보 지문 또는 규격 불일치".into());
+            }
+            let created:String=row.get(3).map_err(|e|e.to_string())?;
+            models.push(json!({"modelId":id,"task":task,"createdAt":created,
+                "clientBuildVersion":payload["clientBuildVersion"],"selectionAuthorized":false}));
+        }
+    }
+    Ok(json!({"status":"field_candidates_only","models":models,"automaticChangeAuthorized":false,
+        "selectedModelId":null,"sourceDigestsCurrentlyVerified":false}))
 }
 
 fn select_learning_changes(tx:&rusqlite::Transaction<'_>,scope:&str,
