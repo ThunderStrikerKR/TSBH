@@ -705,6 +705,18 @@ fn assign_new_manual_product(
     Ok(result)
 }
 
+fn unresolved_assigned_product_source(model:&Value,rid:&str,iid:&str)->Option<String>{
+    let item=list(model,"rows").iter().find(|row|text(row,"id")==rid)
+        .and_then(|row|list(row,"items").iter().find(|item|text(item,"id")==iid))?;
+    if !text(item,"productId").is_empty() && !text(item,"variantId").is_empty(){
+        return None;
+    }
+    model["assignments"].as_object()?.iter().find(|(_,cell)|
+        text(cell,"recipientId")==rid && text(cell,"itemId")==iid
+            && text(cell,"field")=="product")
+        .map(|(id,_)|id.clone())
+}
+
 /// Resolve an ambiguous dropped product using the shared item editor without
 /// losing its source ownership. Both native steps are committed as one outcome.
 fn resolve_dropped_manual_product(
@@ -727,7 +739,13 @@ fn resolve_dropped_manual_product(
     assign["action"]=json!("assign_manual_block");
     assign["model"]=released["model"].clone();
     assign["assignmentOrder"]=released["assignmentOrder"].clone();
-    rule(gateway,assign)
+    let result=rule(gateway,assign)?;
+    let bound=&result["model"]["assignments"][id];
+    if text(bound,"recipientId")!=text(cell,"recipientId")
+        || text(bound,"itemId")!=text(cell,"itemId") || text(bound,"field")!="product"{
+        return Err("상품 선택 후 원문 연결을 유지하지 못했습니다.".into());
+    }
+    Ok(result)
 }
 
 fn add_selected_manual_product(
@@ -1271,10 +1289,11 @@ impl ManualWorkspace {
     fn busy(&self)->bool {self.receiver.is_some()}
 
     fn open_item_detail(&mut self,rid:&str,iid:&str,ctx:&Context){
-        let resolving_drop=self.last_action.as_deref()==Some("assign_new_manual_product")
-            && self.selected_item.as_deref()==Some(iid)
-            && self.model.as_ref().and_then(|model|list(model,"rows").get(self.selected_recipient))
-                .is_some_and(|row|text(row,"id")==rid);
+        let resolving_drop=self.selected_item.as_deref()==Some(iid)
+            && self.model.as_ref().is_some_and(|model|
+                list(model,"rows").get(self.selected_recipient).is_some_and(|row|text(row,"id")==rid)
+                    && unresolved_assigned_product_source(model,rid,iid).is_some()
+            );
         if self.busy() || self.nested_modal_window_id().is_some() ||
             (self.pending_quantity_cell().is_some() && !resolving_drop)
             || self.edit_text!=self.current_value(){return;}
@@ -2484,7 +2503,15 @@ impl ManualWorkspace {
                                                                         if field=="product"{
                                                                             let assignment_requested=self.assignment_gesture.source.is_some()
                                                                                 || items_ui.input(|input|input.modifiers.shift);
-                                                                            match item_editor::product_click_intent(response.clicked(),can_switch,assignment_requested){
+                                                                            // Reopen unresolved product selection after cancellation,
+                                                                            // without unlocking any other pending-quantity cell.
+                                                                            let resolving_drop=!busy && !count_resize_requested
+                                                                                && self.selected_recipient==index
+                                                                                && self.selected_item.as_deref()==Some(item_id)
+                                                                                && unresolved_assigned_product_source(model,rid,item_id).is_some()
+                                                                                && self.edit_text==self.current_value()
+                                                                                && !assignment_requested;
+                                                                            match item_editor::product_click_intent(response.clicked(),can_switch || resolving_drop,assignment_requested){
                                                                                 ProductClickIntent::OpenDetail=>{
                                                                                     lookup=Some((rid.to_owned(),item_id.to_owned()));
                                                                                 }
@@ -2838,13 +2865,8 @@ impl ManualWorkspace {
                             let title=text(&product,"name").to_owned();
                             self.select_cell(index,Some(iid.clone()),"quantity");
                             self.detail_write_pending=true;
-                            let dropped_source=if self.last_action.as_deref()==Some("assign_new_manual_product"){
-                                self.model.as_ref().and_then(|model|model["assignments"].as_object())
-                                    .and_then(|assignments|assignments.iter().find(|(_,cell)|
-                                        text(cell,"recipientId")==rid && text(cell,"itemId")==iid
-                                            && text(cell,"field")=="product"))
-                                    .map(|(id,_)|id.clone())
-                            }else{None};
+                            let dropped_source=self.model.as_ref().and_then(|model|
+                                unresolved_assigned_product_source(model,&rid,&iid));
                             let mut payload=json!({
                                 "cell":{"recipientId":rid,"itemId":iid,"field":"product"},
                                 "value":title,"product":product,"preserveExistingQuantity":preserve
@@ -3208,6 +3230,44 @@ mod manual_assignment_gesture_tests{
         let mut assigned=model.clone();
         assigned["assignments"]["block"]=json!({"recipientId":"r","field":"name"});
         assert!(manual_assignment_payload(&assigned,"block",&target(),None).is_err());
+    }
+
+    #[test]
+    fn new_product_drop_native_reducers_create_and_bind_one_row_then_resolve(){
+        let gateway=crate::gateway::LocalGateway;
+        let model=json!({"rows":[{"id":"r1","items":[]},{"id":"r2","items":[]}],
+            "blocks":[{"id":"p","field":"product","text":"270"},
+                {"id":"q","field":"quantity","text":"2개"}],"assignments":{}});
+        let state=json!({"clients":[{"id":"c1","tier":"wholesale"}],"products":[]});
+        let order=json!({"clientId":"c1"});
+        let mut payload=json!({"model":model,"order":order,"state":state,
+            "assignmentOrder":[],"id":"p","recipientId":"r1","itemId":"i1"});
+        let assigned=assign_new_manual_product(&gateway,&payload).expect("native product drop");
+        assert_eq!(list(&assigned["model"]["rows"][0],"items").len(),1);
+        assert!(list(&assigned["model"]["rows"][1],"items").is_empty());
+        assert_eq!(assigned["model"]["rows"][0]["items"][0]["raw"],"270");
+        assert_eq!(assigned["model"]["assignments"]["p"]["itemId"],"i1");
+        assert_eq!(assigned["assignmentOrder"],json!(["p"]));
+        assert_eq!(unresolved_assigned_product_source(&assigned["model"],"r1","i1").as_deref(),Some("p"));
+        assert!(list(&model["rows"][0],"items").is_empty());
+        payload["model"]=assigned["model"].clone();
+        payload["assignmentOrder"]=assigned["assignmentOrder"].clone();
+        assert!(assign_new_manual_product(&gateway,&payload).is_err());
+        payload["cell"]=json!({"recipientId":"r1","itemId":"i1","field":"product"});
+        payload["product"]=json!({"id":"p270","name":"BD 270","origin":"FACTORY",
+            "variants":[{"id":"v270","color":"Black","wholesale":52000}],"requiresOption":false});
+        let resolved=resolve_dropped_manual_product(&gateway,&payload).expect("resolve native product");
+        assert_eq!(resolved["model"]["rows"][0]["items"][0]["productId"],"p270");
+        assert_eq!(resolved["model"]["rows"][0]["items"][0]["raw"],"270");
+        assert_eq!(resolved["model"]["assignments"]["p"]["itemId"],"i1");
+        assert_eq!(resolved["assignmentOrder"],json!(["p"]));
+        let quantified=rule(&gateway,json!({"action":"assign_manual_block",
+            "model":resolved["model"],"assignmentOrder":resolved["assignmentOrder"],
+            "id":"q","cell":{"recipientId":"r1","itemId":"i1","field":"quantity"}
+        })).expect("assign quantity after product drop");
+        assert_eq!(quantified["model"]["rows"][0]["items"][0]["quantity"],2);
+        assert_eq!(quantified["model"]["rows"][0]["items"][0]["quantityConfirmed"],true);
+        assert_eq!(quantified["assignmentOrder"],json!(["p","q"]));
     }
 
     #[test]
