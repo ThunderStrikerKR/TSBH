@@ -61,6 +61,27 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           cargo test --manifest-path egui-app/Cargo.toml governance_never_promotes_on_missing_coverage_or_normal_case_regression -- --nocapture
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Field blend models and dependency protection
+        shell: pwsh
+        run: |
+          $listed = cargo test --manifest-path egui-app/Cargo.toml -- --list
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $expected = @(
+            'type_baseline_requires_unique_original_kind_and_exact_source_link',
+            'type_comparison_requires_traced_candidates_and_qualified_context',
+            'field_blend_calibration_weights_and_outside_are_independent',
+            'field_blend_rejects_overlapping_time_windows_and_duplicate_orders',
+            'field_dependency_contract_blocks_joint_edits_and_preserves_owner_selection',
+            'field_blend_registry_keeps_tasks_and_revisions_separate'
+          )
+          foreach ($test in $expected) {
+            $pattern = '(^|::)' + [regex]::Escape($test) + ': test$'
+            if (@($listed | Where-Object { $_ -match $pattern }).Count -ne 1) {
+              throw "Expected exactly one field regression test: $test"
+            }
+            cargo test --manifest-path egui-app/Cargo.toml $test -- --nocapture
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          }
       - name: First analysis and correction regressions
         run: |
           cargo test --manifest-path egui-app/Cargo.toml recognition::observations::tests -- --nocapture
