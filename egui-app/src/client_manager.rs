@@ -540,7 +540,7 @@ impl ClientManager {
                     }
                 );
             }
-            crate::table::show(section,crate::table::Header::Sticky(theme::MANAGEMENT_CLIENT_TABLE_MIN_WIDTH),|section,layout|{
+            crate::table::show(section,crate::table::Header::Sticky(theme::MANAGEMENT_CLIENT_TAG_TABLE_MIN_WIDTH),|section,layout|{
             let table_width=layout.table_width;
             let header_rect=layout.header_rect;
             let header_content_rect=layout.header_content_rect;
@@ -583,13 +583,14 @@ impl ClientManager {
                                     }else{phone};
                                     let extra_mobile=display.secondary_mobile();
                                     let conditions=display.conditions.as_str();
-                                    if crate::composite_client::management_row(
+                                    let tags=client_search_tags::labels(client);
+                                    if crate::composite_client::management_row_with_tags(
                                         row,field(client,"id"),[
                                             (name,description),
                                             (address,""),
                                             (shown_phone,extra_mobile),
                                             (crate::composite_client::client_tier_label(&display.tier),conditions)
-                                        ],field(client,"tier"),index
+                                        ],field(client,"tier"),index,Some(&tags)
                                     ).clicked() && !self.search_job.required(){
                                         chosen=Some(client.clone());
                                     }
@@ -609,9 +610,9 @@ impl ClientManager {
             let header_left=first_row_left.unwrap_or(
                 header_rect.left()-scroll_output.state.offset.x
             );
-            if let Some(column)=crate::table::management_client_header(
+            if let Some(column)=crate::table::management_client_header_with_tags(
                 section,header_rect,header_content_rect,
-                header_left,table_width,self.sort
+                header_left,table_width,self.sort,true
             ){
                 self.sort=match self.sort{
                     Some((old,false)) if old==column=>Some((column,true)),

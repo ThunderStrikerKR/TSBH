@@ -258,7 +258,15 @@ pub fn reception_client_summary_card_editable(
 pub fn management_row(
     ui:&mut Ui,row_id:&str,columns:[(&str,&str);4],tier:&str,visible_index:usize
 ) -> Response {
-    let width=ui.available_width().max(theme::MANAGEMENT_CLIENT_TABLE_MIN_WIDTH);
+    management_row_with_tags(ui,row_id,columns,tier,visible_index,None)
+}
+pub fn management_row_with_tags(
+    ui:&mut Ui,row_id:&str,columns:[(&str,&str);4],tier:&str,visible_index:usize,
+    tags:Option<&[String]>
+) -> Response {
+    let tag_width=if tags.is_some(){theme::MANAGEMENT_CLIENT_TAG_COLUMN_WIDTH}else{0.0};
+    let width=ui.available_width().max(theme::MANAGEMENT_CLIENT_TABLE_MIN_WIDTH+tag_width);
+    let base_width=width-tag_width;
     let (rect,response)=ui.allocate_exact_size(
         Vec2::new(width,theme::MANAGEMENT_CLIENT_ROW_HEIGHT),Sense::click()
     );
@@ -269,7 +277,7 @@ pub fn management_row(
     paint_management_table_row_rule(ui.painter(),rect);
 
     let mut x=rect.left();
-    let column_widths=management_client_column_widths(rect.width());
+    let column_widths=management_client_column_widths(base_width);
     for (i,(primary,secondary)) in columns.iter().enumerate() {
         let col_width=column_widths[i];
         let cell=Rect::from_min_max(
@@ -323,10 +331,14 @@ pub fn management_row(
         }
         x+=col_width;
     }
-    management_master_column_rules(
-        ui,rect,
-        management_client_column_edges(rect.left(),rect.width())
-    );
+    let mut edges=management_client_column_edges(rect.left(),base_width).to_vec();
+    if let Some(tags)=tags{
+        let cell=Rect::from_min_max(egui::pos2(x+theme::SPACE_12,rect.top()),
+            egui::pos2(rect.right()-theme::SPACE_12,rect.bottom()));
+        crate::table::paint_tag_blocks(ui,cell,tags,(row_id,"search-tags"));
+        edges.push(rect.left()+base_width);
+    }
+    management_master_column_rules(ui,rect,edges);
     crate::button::paint_button_hover(ui,&response,0.0);
     response
 }

@@ -177,10 +177,10 @@ impl BrandManager {
                         crate::table::paint_management_interactive_row_background(row.painter(),rect,i,true);
                     }
                     let aliases=rows(&brand["aliases"]).iter().filter_map(Value::as_str)
-                        .collect::<Vec<_>>().join(", ");
+                        .map(str::to_owned).collect::<Vec<_>>();
                     crate::table::registry_cell(row,cells[0],field(brand,"name"),Role::Text,false,(id,0));
                     crate::table::registry_cell(row,cells[1],field(brand,"korean"),Role::Text,false,(id,1));
-                    crate::table::registry_cell(row,cells[2],&aliases,Role::Description,false,(id,2));
+                    crate::table::registry_tag_cell(row,cells[2],&aliases,(id,2));
                     if hit.clicked()&&enabled{select=Some(id.to_owned());}
                     #[cfg(test)]
                     crate::ui_test_support::record("catalog data row",rect);

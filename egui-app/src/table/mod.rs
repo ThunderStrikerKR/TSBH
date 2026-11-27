@@ -361,6 +361,51 @@ pub(crate) fn registry_cell(ui:&Ui,rect:Rect,value:&str,role:typography::Managem
         value,value,role,if center{egui::Align2::CENTER_CENTER}else{egui::Align2::LEFT_CENTER},
         id,false);
 }
+/// Read-only chips use the same CompactTag surface as the editor, with
+/// no delete icon or nested layout. The table owns its fixed row and click.
+pub(crate) fn paint_tag_blocks(ui:&Ui,cell:Rect,tags:&[String],id:impl std::hash::Hash){
+    if tags.is_empty()||!cell.is_positive(){return;}
+    let clip=cell.intersect(ui.clip_rect());
+    if !clip.is_positive(){return;}
+    let frame=crate::popup::modal_nested_role_frame(crate::popup::ModalNestedRole::CompactTag);
+    let inset=frame.inner_margin.left as f32+frame.stroke.width;
+    let height=(theme::MANAGEMENT_DATE_NAV_BUTTON_WIDTH+
+        2.0*(frame.inner_margin.top as f32+frame.stroke.width)).min(cell.height());
+    let gap=theme::SPACE_8;
+    let make=|text:&str|typography::management_control_text_galley(ui,text,theme::TEXT);
+    let width=|galley:&egui::Galley|galley.size().x.ceil()+2.0*inset;
+    let draw=|x:f32,galley:std::sync::Arc<egui::Galley>|{
+        let rect=Rect::from_min_size(egui::pos2(x,cell.center().y-height*0.5),
+            Vec2::new(width(&galley),height));
+        let painter=ui.painter().with_clip_rect(clip);
+        theme::paint_bordered_surface(&painter,rect,frame.corner_radius,frame.fill,frame.stroke.color);
+        let pos=egui::pos2(rect.left()+inset,rect.center().y-galley.size().y*0.5);
+        painter.with_clip_rect(rect.intersect(clip)).galley(pos,galley,theme::TEXT);
+        #[cfg(test)]
+        crate::ui_test_support::record("table tag chip",rect);
+    };
+    let mut x=cell.left();
+    let mut shown=0;
+    for (index,tag) in tags.iter().enumerate(){
+        let galley=make(tag);
+        let remaining=tags.len()-index-1;
+        let reserve=if remaining>0{gap+width(&make(&format!("+{remaining}")))}else{0.0};
+        if x+width(&galley)+reserve>cell.right(){break;}
+        let advance=width(&galley)+gap;
+        draw(x,galley);
+        x+=advance;
+        shown+=1;
+    }
+    if shown<tags.len(){
+        let marker=make(&format!("+{}",tags.len()-shown));
+        if x+width(&marker)<=cell.right(){draw(x,marker);}
+    }
+    overflow_region_tooltip(ui,cell,ui.make_persistent_id(id),
+        shown<tags.len()||clip.width()+0.5<cell.width(),&tags.join("\n"));
+}
+pub(crate) fn registry_tag_cell(ui:&Ui,rect:Rect,tags:&[String],id:impl std::hash::Hash){
+    paint_tag_blocks(ui,rect.shrink2(Vec2::new(theme::SPACE_8,0.0)),tags,id);
+}
 pub(crate) fn registry_actions<R>(ui:&mut Ui,cell:Rect,draw:impl FnOnce(&mut Ui)->R)->R{
     ui.scope_builder(egui::UiBuilder::new().max_rect(cell.shrink2(Vec2::new(theme::MANAGEMENT_TABLE_ACTION_INSET,0.0)))
         .layout(egui::Layout::right_to_left(Align::Center)),|actions|{
@@ -1035,23 +1080,31 @@ pub(crate) fn management_client_header(
     ui:&mut Ui,header:Rect,header_content_rect:Rect,
     table_left:f32,table_width:f32,current_sort:Option<(usize,bool)>
 )->Option<usize>{
-    let titles=["거래처","주소","전화번호","거래 조건"];
+    management_client_header_with_tags(ui,header,header_content_rect,table_left,table_width,current_sort,false)
+}
+pub(crate) fn management_client_header_with_tags(
+    ui:&mut Ui,header:Rect,header_content_rect:Rect,
+    table_left:f32,table_width:f32,current_sort:Option<(usize,bool)>,show_tags:bool
+)->Option<usize>{
+    let titles=["거래처","주소","전화번호","거래 조건","검색 태그"];
+    let tag_width=if show_tags{theme::MANAGEMENT_CLIENT_TAG_COLUMN_WIDTH}else{0.0};
+    let base_width=table_width-tag_width;
 
     let text_row=master_header_begin(
         ui,header,header_content_rect
     );
-    let column_widths=management_client_column_widths(table_width);
+    let mut column_widths=management_client_column_widths(base_width).to_vec();
+    if show_tags{column_widths.push(tag_width);}
     let mut x=table_left;
     let mut selected=None;
-    for (i,title) in titles.iter().enumerate(){
-        let col_width=column_widths[i];
+    for (i,(title,col_width)) in titles.iter().zip(column_widths).enumerate(){
         let column=Rect::from_min_max(
             egui::pos2(x,text_row.top()),
             egui::pos2(x+col_width,text_row.bottom())
         );
         let visible=column.intersect(text_row);
         if visible.width()>0.0 {
-            if sort_clicked(ui,visible,("client-management-sort",i)){
+            if i<4 && sort_clicked(ui,visible,("client-management-sort",i)){
                 selected=Some(i);
             }
             let text_rect=Rect::from_min_max(
@@ -1067,15 +1120,14 @@ pub(crate) fn management_client_header(
                 };
                 let arrow_galley=typography::management_table_header_galley(ui,arrow);
                 heading(ui,column,text_row,text_rect,
-                    HeadingAlign::Left(theme::SPACE_12),title_galley,Some((arrow_galley,color)));
+                    HeadingAlign::Left(theme::SPACE_12),title_galley,(i<4).then_some((arrow_galley,color)));
             }
         }
         x+=col_width;
     }
-    management_master_column_rules(
-        ui,text_row,
-        management_client_column_edges(table_left,table_width)
-    );
+    let mut edges=management_client_column_edges(table_left,base_width).to_vec();
+    if show_tags{edges.push(table_left+base_width);}
+    management_master_column_rules(ui,text_row,edges);
     header_finish(ui,header);
     selected
 }
@@ -1239,3 +1291,37 @@ fn registry_uses_compact_rows_without_a_phantom_toolbar(){
 
 #[cfg(test)]
 mod regression_tests;
+
+#[cfg(test)]
+mod tag_block_table_tests{
+    use super::*;
+    #[test]
+    fn readonly_tag_blocks_fit_cell_and_keep_fixed_center(){
+        let ctx=crate::ui_test_support::test_context();
+        let tags=["가상06","테스트거래처06","테스트 납품처 06","UI-SAMPLE-C06"].map(str::to_owned);
+        for width in [140.0,800.0]{
+            let mut cell=Rect::NOTHING;
+            crate::ui_test_support::TRACE.with(|trace|*trace.borrow_mut()=Some(Vec::new()));
+            let output=ctx.run(egui::RawInput::default(),|ctx|{
+                egui::CentralPanel::default().show(ctx,|ui|{
+                    cell=ui.allocate_exact_size(Vec2::new(width,theme::MANAGEMENT_COMPACT_ROW_HEIGHT),Sense::hover()).0;
+                    paint_tag_blocks(ui,cell,&tags,"test-table-tags");
+                });
+            });
+            let chips=crate::ui_test_support::TRACE.with(|trace|trace.borrow_mut().take().unwrap());
+            assert!(!chips.is_empty());
+            for (_,rect) in &chips{
+                assert!(cell.contains_rect(*rect));
+                assert!((rect.center().y-cell.center().y).abs()<0.5);
+                assert!((rect.height()-34.0).abs()<0.5);
+            }
+            if width==800.0{assert_eq!(chips.len(),tags.len());}
+            else{
+                assert!(chips.len()<tags.len());
+                assert!((1..=tags.len()).any(|n|!crate::ui_test_support::painted_text_rects(&output,&format!("+{n}")).is_empty()));
+            }
+        }
+        assert_eq!(theme::MANAGEMENT_CLIENT_TAG_TABLE_MIN_WIDTH-theme::MANAGEMENT_CLIENT_TAG_COLUMN_WIDTH,
+            theme::MANAGEMENT_CLIENT_TABLE_MIN_WIDTH);
+    }
+}

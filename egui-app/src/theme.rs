@@ -704,6 +704,9 @@ pub const SETTLEMENT_DATE_FIELD_WIDTH:f32 = 132.0;
 // Client name, phone and terms stay compact; the address takes remaining
 // width. Do not force freight/product's 1320pt grid on the client list.
 pub const MANAGEMENT_CLIENT_TABLE_MIN_WIDTH: f32 = 900.0;
+pub const MANAGEMENT_CLIENT_TAG_COLUMN_WIDTH:f32=280.0;
+pub const MANAGEMENT_CLIENT_TAG_TABLE_MIN_WIDTH:f32=
+    MANAGEMENT_CLIENT_TABLE_MIN_WIDTH+MANAGEMENT_CLIENT_TAG_COLUMN_WIDTH;
 // React shipping.css constrains lengthy freight lists to a 60vh scroll
 // region; native management tables keep both axes inside that region.
 pub const MANAGEMENT_TABLE_VIEWPORT_FRACTION: f32 = 0.60;
