@@ -615,7 +615,6 @@ pub(crate) fn management_fixed_table_scroll_area(ui:&Ui,content_width:f32)->egui
 
 /// Requested viewport bounds for management-table layout and test traces.
 /// Native scrollbars use their actual viewport, never an extended rail.
-#[cfg(test)]
 pub(crate) fn management_table_scroll_track_rect(
     ui:&Ui,scroll_height:f32
 )->Rect {
@@ -629,7 +628,6 @@ pub(crate) fn management_table_scroll_track_rect(
 
 /// Requested rail coincides with the body viewport: no independent bottom
 /// extension or inset. The native scroll area handles horizontal reservation.
-#[cfg(test)]
 fn management_table_scroll_track_geometry(
     bounds:Rect,scroll_height:f32
 )->Rect {
