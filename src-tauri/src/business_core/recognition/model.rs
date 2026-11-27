@@ -531,9 +531,12 @@ pub(super) fn decide_with_trace(text:&str,state:&Value,client_id:&str,mut trace:
     let aliases = alias_entries(text, state, client_id, &ps);
     if let Some(out)=trace.as_deref_mut(){
         out.push(json!({"stage":"matched_aliases","count":aliases.len(),"truncated":aliases.len()>128,
-            "candidates":aliases.iter().take(128).map(|(a,p)|json!({
-                "productId":str_field(p,"id"),"aliasId":str_field(a,"id"),
-                "clientScoped":a["clientId"].is_string()})).collect::<Vec<_>>()}));
+            "candidates":aliases.iter().take(128).map(|(a,p)|{
+                let span=find_term(text,str_field(a,"text"),true);
+                json!({"productId":str_field(p,"id"),"aliasId":str_field(a,"id"),
+                    "byteStart":span.map(|s|s.0),"byteEnd":span.map(|s|s.1),
+                    "clientScoped":a["clientId"].is_string()})
+            }).collect::<Vec<_>>()}));
     }
     let mut hint=code_color_hint(text,&ps);
     if let Some((base,_,term))=hint.clone() {
