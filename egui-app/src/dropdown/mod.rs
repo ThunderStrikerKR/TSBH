@@ -1,4 +1,5 @@
 //! Shared selection triggers, option rows and searchable menus; overlay owns popup lifetime.
+use crate::ui_layout::SharedPainterClipExt as _;
 use crate::ui_layout::SharedAllocationExt as _;
 use eframe::egui::{self,Color32,Rect,Response,Stroke,Ui,Vec2};
 use crate::ui_primitives::UiWidthPolicyExt;
@@ -118,7 +119,7 @@ fn management_dropdown_trigger_inner(
     let rect=trigger.rect;
     #[cfg(test)]
     crate::ui_test_support::record_component_geometry("dropdown",rect,ui.clip_rect(),Some(height));
-    let painter=ui.painter().with_clip_rect(rect);
+    let painter=ui.painter().with_shared_clip(rect);
     let arrow_left=rect.right()-30.0;
     let caption_ink=if placeholder{text_ink(TextRole::Value,TextState::Placeholder)}
         else if interactive{indicator.unwrap_or(text_ink(TextRole::Value,TextState::Normal))}
@@ -144,7 +145,7 @@ fn management_dropdown_trigger_inner(
         );
     }
     let overflow=text_exceeds_rect(caption.size(),text_clip.intersect(ui.clip_rect()));
-    painter.with_clip_rect(text_clip).galley(
+    painter.with_shared_clip(text_clip).galley(
         egui::pos2(caption_x,
             rect.center().y-caption.size().y/2.0
                 +typography::MANAGEMENT_DROPDOWN_TEXT_OPTICAL_Y),
@@ -318,7 +319,7 @@ fn management_dropdown_option_inner<T:PartialEq>(
         _=>ui.selectable_value(current,value,invisible),
     };
     let row=response.rect;
-    let painter=ui.painter().with_clip_rect(row.shrink(2.0));
+    let painter=ui.painter().with_shared_clip(row.shrink(2.0));
     #[cfg(test)]
     crate::ui_test_support::record_highlight_target("dropdown option",row,ui.clip_rect());
     let caption_ink=match style{
