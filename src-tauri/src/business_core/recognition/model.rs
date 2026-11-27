@@ -435,7 +435,24 @@ fn strongest<'a>(text: &str, entries: Vec<Entry<'a>>) -> Vec<Entry<'a>> {
         let max = xs.iter().map(|e| option_score(text, e.p)).max().unwrap_or(0);
         if max > 0 { xs.retain(|e| option_score(text, e.p) == max); }
     }
-    if priority == 1 && xs.len() > 1 { return vec![]; }
+    if priority == 1 && xs.len() > 1 {
+        // Weak descriptive names may be nested in a more specific phrase.
+        // Do not choose between separate occurrences (possibly two items),
+        // equally specific descriptions, or incompatible explicit options.
+        let proof=qualifiers(text);
+        if !proof.is_empty()||written_color(text).is_some(){return vec![];}
+        let size=|e:&Entry<'_>|text[e.span.0..e.span.1].chars()
+            .filter(|c|!c.is_whitespace()).count();
+        let Some(best)=xs.iter().max_by_key(|e|size(e))else{return vec![];};
+        let best_size=size(best);
+        let score=|e:&Entry<'_>|100*size(e) as i64/best_size.max(1) as i64;
+        let wins=xs.iter().filter(|e|str_field(e.p,"id")!=str_field(best.p,"id"))
+            .all(|e|best.span.0<=e.span.0&&e.span.1<=best.span.1
+                &&best_size.saturating_sub(size(e))>=3
+                &&super::exceeds_margin(score(best),score(e),20));
+        if wins{return vec![best.clone()];}
+        return vec![];
+    }
     xs
 }
 fn name_entries<'a>(text: &str, mut entries:Vec<Entry<'a>>,
@@ -722,6 +739,26 @@ pub(crate) fn decision_json(decision: &Decision) -> Value {
 #[cfg(test)]
 mod option_boundary_tests {
     use super::*;
+    #[test]
+    fn descriptive_product_rank_requires_nested_and_distinct_evidence(){
+        let a=json!({"id":"a","name":"A / 접이식 탁상용 기타 스탠드"});
+        let b=json!({"id":"b","name":"B / 탁상용 기타 스탠드"});
+        let text="접이식 탁상용 기타 스탠드";
+        let short=text.find("탁상용").unwrap();
+        let entries=vec![Entry{p:&a,priority:1,span:(0,text.len())},
+            Entry{p:&b,priority:1,span:(short,text.len())}];
+        let ranked=strongest(text,entries);
+        assert_eq!(ranked.len(),1);
+        assert_eq!(str_field(ranked[0].p,"id"),"a");
+        let tied=vec![Entry{p:&a,priority:1,span:(0,text.len())},
+            Entry{p:&b,priority:1,span:(0,text.len())}];
+        assert!(strongest(text,tied).is_empty());
+        let disjoint="접이식 탁상용 기타 스탠드 / 탁상용 기타 스탠드";
+        let other=disjoint.rfind("탁상용").unwrap();
+        let separate=vec![Entry{p:&a,priority:1,span:(0,text.len())},
+            Entry{p:&b,priority:1,span:(other,disjoint.len())}];
+        assert!(strongest(disjoint,separate).is_empty());
+    }
     #[test]
     fn retained_term_occurrences_share_first_match_boundary(){
         let text="709 709 7090 709";
