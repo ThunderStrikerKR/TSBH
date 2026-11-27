@@ -454,7 +454,9 @@ fn contributions(order:&Value,filter:&BTreeSet<&str>)->Result<Option<(BTreeMap<S
     }
     let mut compared=super::observations::compare(order)?;
     if compared["status"]!="compared"{return Ok(None);}
-    if compared["auditCoverage"]=="missing_history"{
+    // Legacy comparisons remain accessible through compare(), but must
+    // never populate the same candidate counts as manifest-verified orders.
+    if compared["auditCoverage"]!="verified_manifest"{
         if let Some(observations)=compared["observations"].as_array_mut(){
             for o in observations{
                 if o["eligibleForCandidateLearning"]==true{
@@ -613,7 +615,7 @@ mod tests{
         let order=json!({"id":"order","confirmedAt":"2026-11-27T00:00:00Z","recognitionAuditEvents":[],
             "confirmationSnapshot":{"at":"2026-11-27T00:00:00Z","raw":raw,
                 "data":{"clientId":"client-a"},"recipients":first["recipients"],
-                "recognitionBaseline":{"schemaVersion":1,"initialAnalysis":first,
+                "recognitionBaseline":{"schemaVersion":1,"auditEventIds":[],"initialAnalysis":first,
                     "finalClientId":"client-a","finalClientSelection":"MANUAL"}}});
         let report=statistics(&json!({"orders":[order.clone(),order.clone()]})).unwrap();
         assert_eq!(report["uniqueOrders"],1);
@@ -629,6 +631,12 @@ mod tests{
         changed["confirmationSnapshot"]["data"]["clientId"]=json!("other");
         let report=statistics(&json!({"orders":[changed]})).unwrap();
         assert_eq!(report["fieldContextStatistics"].as_array().unwrap().len(),10);
+        let mut legacy=order.clone();
+        legacy["confirmationSnapshot"]["recognitionBaseline"].as_object_mut().unwrap().remove("auditEventIds");
+        let report=statistics(&json!({"orders":[legacy]})).unwrap();
+        assert_eq!(report["auditCoverage"]["legacyUnverifiedOrders"],1);
+        assert!(rows(&report["fieldContextStatistics"]).all(|r|
+            r["counts"]["weakUnchangedCount"]==0&&r["counts"]["explicitCorrectionCount"]==0));
     }
     #[test]
     fn field_evidence_keeps_candidate_polarity_and_distinct_order_counts(){
