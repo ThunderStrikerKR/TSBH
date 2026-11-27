@@ -453,7 +453,7 @@ pub(crate) fn record_control_response(role:&'static str,response:&egui::Response
         if let Some(samples)=trace.borrow_mut().as_mut(){
             samples.push(ComponentGeometry{role,rect:response.rect,clip,minimum_height,
                 hit:Some(ControlHit{id:response.id,layer:response.layer_id,
-                    rect:response.interact_rect,enabled:response.enabled(),clicked:response.clicked()})});
+                    rect:response.interact_rect,enabled:response.enabled()&&(response.sense.clicks()||response.sense.drags()),clicked:response.clicked()})});
         }
     });
 }
@@ -475,8 +475,14 @@ pub(crate) fn assert_independent_control_hits(samples:&[ComponentGeometry],scree
                     "{case}: reused control ID {:?} at different positions: {} {:?}, {} {:?}",ah.id,a.role,ar,b.role,br);
                 continue;
             }
+            // Only explicit registry row/child containment is intentional.
+            let row_contains=|role:&str,parent:Rect,child:Rect|
+                role=="registry row"&&parent.expand(0.5).contains_rect(child)
+                    &&!edges_near(parent,child);
+            let nested=(a.role!="registry row"&&row_contains(b.role,*br,*ar))
+                ||(b.role!="registry row"&&row_contains(a.role,*ar,*br));
             let overlap=ar.intersect(*br);
-            assert!(overlap.width()<=1.0||overlap.height()<=1.0,
+            assert!(nested||overlap.width()<=1.0||overlap.height()<=1.0,
                 "{case}: independent hit collision {} {:?} with {} {:?}; overlap={overlap:?}",a.role,ar,b.role,br);
             assert!(!(ah.clicked&&bh.clicked),
                 "{case}: two independent controls activated on the same frame: {} {:?}, {} {:?}",a.role,ar,b.role,br);
@@ -528,6 +534,20 @@ mod shared_component_screen_trace_tests{
             hit_sample("checkbox","d",a,egui::Order::Middle,false,false),
         ];
         assert_independent_control_hits(&samples,screen,"intentional overlaps");
+    }
+    #[test]
+    fn registry_row_allows_contained_child_but_not_duplicate_activation_or_partial_overlap(){
+        let screen=Rect::from_min_size(egui::Pos2::ZERO,egui::vec2(400.0,300.0));
+        let row=Rect::from_min_size(egui::pos2(20.0,20.0),egui::vec2(200.0,40.0));
+        let child=Rect::from_min_size(egui::pos2(170.0,25.0),egui::vec2(30.0,30.0));
+        let parent=hit_sample("registry row","row",row,egui::Order::Middle,true,false);
+        let leaf=hit_sample("remove action","remove",child,egui::Order::Middle,true,true);
+        assert_independent_control_hits(&[parent,leaf],screen,"nested child");
+        let active_parent=hit_sample("registry row","row",row,egui::Order::Middle,true,true);
+        let protruding=hit_sample("remove action","remove",child.translate(egui::vec2(30.0,0.0)),egui::Order::Middle,true,false);
+        for pair in [[active_parent,leaf],[parent,protruding]]{
+            assert!(std::panic::catch_unwind(||assert_independent_control_hits(&pair,screen,"invalid nested child")).is_err());
+        }
     }
     #[test]
     fn hit_detector_rejects_overlap_duplicate_id_and_duplicate_activation(){

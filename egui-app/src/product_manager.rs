@@ -1510,6 +1510,8 @@ impl ProductManager {
                                         if !hit.is_positive(){continue;}
                                         let response=row.interact(hit,row.make_persistent_id(("product-detail-row",column)),Sense::click())
                                             .on_hover_cursor(egui::CursorIcon::PointingHand);
+                                        #[cfg(test)]
+                                        crate::ui_test_support::record_control_response("product detail cell",&response,row.clip_rect(),None);
                                         if response.clicked(){open_detail=Some(product.clone());}
                                     }
                                 }

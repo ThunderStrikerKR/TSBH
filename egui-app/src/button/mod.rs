@@ -26,6 +26,8 @@ pub(crate) fn remove_at_response(ui:&Ui,hit:Rect,id:egui::Id,enabled:bool)->Resp
     let response=ui.interact(hit,id,if enabled{Sense::click()}else{Sense::hover()});
     #[cfg(test)]
     crate::ui_test_support::record_highlight_target("remove action",response.rect,ui.clip_rect());
+    #[cfg(test)]
+    crate::ui_test_support::record_control_response("remove action",&response,ui.clip_rect(),None);
     let ink=theme::icon_ink(theme::IconRole::Secondary,theme::VisualState::enabled(enabled));
     if enabled{paint_button_hover(ui,&response,crate::highlight::Geometry::Control);}
     let center=hit.center();
@@ -51,6 +53,8 @@ pub(crate) fn disclosure_at(
     let response=ui.interact(hit,id,Sense::click());
     #[cfg(test)]
     crate::ui_test_support::record_highlight_target("disclosure action",response.rect,ui.clip_rect());
+    #[cfg(test)]
+    crate::ui_test_support::record_control_response("disclosure action",&response,ui.clip_rect(),None);
     let response=crate::ui_primitives::overflow_tooltip(response,overflow,full);
     paint_button_hover(ui,&response,geometry);
     response
@@ -184,6 +188,8 @@ pub(crate) fn window_control(ui: &mut Ui, control: WindowControl) -> Response {
     // control, without shifting the 32pt hit rectangle or painted glyph.
     #[cfg(test)]
     crate::ui_test_support::record_highlight_target("window action",response.rect,ui.clip_rect());
+    #[cfg(test)]
+    crate::ui_test_support::record_control_response("window action",&response,ui.clip_rect(),None);
     paint_button_hover(ui,&response,crate::highlight::Geometry::Compact);
     let center = response.rect.center();
     let ink = theme::icon_ink(theme::IconRole::Interactive,theme::VisualState::pointer(true,response.hovered()));
@@ -291,6 +297,8 @@ pub(crate) fn icon_action_button(
         .min_size(Vec2::splat(theme::MANAGEMENT_DATE_NAV_BUTTON_WIDTH)));
     #[cfg(test)]
     crate::ui_test_support::record_highlight_target("icon action",response.rect,ui.clip_rect());
+    #[cfg(test)]
+    crate::ui_test_support::record_control_response("icon action",&response,ui.clip_rect(),None);
     if enabled{
         crate::button::paint_button_hover(
             ui,&response,crate::highlight::Geometry::Control
@@ -356,6 +364,8 @@ pub(crate) fn workflow_fixed_action(
     );
     #[cfg(test)]
     crate::ui_test_support::record_highlight_target("workflow action",response.rect,ui.clip_rect());
+    #[cfg(test)]
+    crate::ui_test_support::record_control_response("workflow action",&response,ui.clip_rect(),None);
     let stage=matches!(action,WorkflowFixedAction::Stage(_));
     let role=if stage{theme::ButtonRole::Emphasized}else{theme::ButtonRole::Standard};
     let (_,fill,ink,stroke)=crate::button::action_style(role,enabled,false);
@@ -428,6 +438,8 @@ pub(crate) fn management_date_segment(
     );
     #[cfg(test)]
     crate::ui_test_support::record_highlight_target("date segment",response.rect,ui.clip_rect());
+    #[cfg(test)]
+    crate::ui_test_support::record_control_response("date segment",&response,ui.clip_rect(),None);
     paint_button_hover(ui,&response,geometry);
     if let Some(direction)=direction{
         let painter=ui.painter().with_shared_clip(response.rect);
@@ -481,6 +493,8 @@ pub(crate) fn date_navigation_segment_button(
         );
         #[cfg(test)]
         crate::ui_test_support::record_highlight_target("navigation segment",response.rect,ui.clip_rect());
+        #[cfg(test)]
+        crate::ui_test_support::record_control_response("navigation segment",&response,ui.clip_rect(),None);
         let ink=theme::icon_ink(theme::IconRole::Navigation,theme::VisualState::pointer(enabled,response.hovered()));
         if enabled{crate::button::paint_button_hover(ui,&response,crate::highlight::Geometry::TableRow);}
         let painter=ui.painter().with_shared_clip(response.rect);
@@ -504,6 +518,8 @@ pub(crate) fn date_navigation_segment_button(
         if enabled{Sense::click()}else{Sense::hover()});
     #[cfg(test)]
     crate::ui_test_support::record_highlight_target("step segment",response.rect,ui.clip_rect());
+    #[cfg(test)]
+    crate::ui_test_support::record_control_response("step segment",&response,ui.clip_rect(),None);
     let painter=ui.painter().with_shared_clip(rect);
     let (fill,ink)=match glyph{
         DateNavigationSegmentGlyph::CompactVerticalChevron{..}=>{
@@ -544,6 +560,8 @@ pub(crate) fn date_navigation_button_surface(
     }).inner;
     #[cfg(test)]
     crate::ui_test_support::record_highlight_target("date navigation",response.rect,ui.clip_rect());
+    #[cfg(test)]
+    crate::ui_test_support::record_control_response("date navigation",&response,ui.clip_rect(),None);
     let ink=if effective_enabled && response.hovered(){
         theme::text_ink(theme::TextRole::Value,theme::TextState::Normal)
     }else{ink};
@@ -563,6 +581,8 @@ pub(crate) fn calendar_day(grid:&mut Ui,day:&str,width:f32,selected:bool,today:b
     }).inner;
     #[cfg(test)]
     crate::ui_test_support::record_highlight_target("calendar day",response.rect,grid.clip_rect());
+    #[cfg(test)]
+    crate::ui_test_support::record_control_response("calendar day",&response,grid.clip_rect(),None);
     if grid.is_enabled(){crate::floating_notice::remember_response(grid.ctx(),&response);}
     response
 }
@@ -585,6 +605,8 @@ pub(crate) fn dispatch_origin(right:&mut Ui,label:&str,selected:bool,editable:bo
     }).inner;
     #[cfg(test)]
     crate::ui_test_support::record_highlight_target("dispatch origin",response.rect,right.clip_rect());
+    #[cfg(test)]
+    crate::ui_test_support::record_control_response("dispatch origin",&response,right.clip_rect(),None);
     if effective_enabled{crate::floating_notice::remember_response(right.ctx(),&response);}
     response
 }

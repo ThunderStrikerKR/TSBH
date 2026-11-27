@@ -420,6 +420,8 @@ pub(crate) fn multiline_text_field_sized(
     let response=ui.shared_add_sized(size,editor);
     #[cfg(test)]
     crate::ui_test_support::record_highlight_target("multiline input",response.rect,ui.clip_rect());
+    #[cfg(test)]
+    crate::ui_test_support::record_control_response("multiline input",&response,ui.clip_rect(),None);
     response
 }
 
@@ -864,6 +866,8 @@ pub(crate) fn reception_recipient_value_hit(ui:&mut Ui,display:&Response)->Respo
     );
     #[cfg(test)]
     crate::ui_test_support::record_highlight_target("recipient field hit",hit.rect,ui.clip_rect());
+    #[cfg(test)]
+    crate::ui_test_support::record_control_response("recipient field hit",&hit,ui.clip_rect(),None);
     if hit.hovered(){
         ui.ctx().set_cursor_icon(egui::CursorIcon::Text);
     }
@@ -879,6 +883,8 @@ pub(crate) fn ocr_zoom_slider(ui:&mut Ui,zoom:&mut f32)->Response{
     );
     #[cfg(test)]
     crate::ui_test_support::record_highlight_target("OCR slider",response.rect,ui.clip_rect());
+    #[cfg(test)]
+    crate::ui_test_support::record_control_response("OCR slider",&response,ui.clip_rect(),None);
     response
 }
 

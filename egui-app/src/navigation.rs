@@ -130,6 +130,8 @@ pub fn reception_recipient_navigator(
                     .halign(Align::Center)
                     .sense(if clipped{Sense::click()}else{Sense::hover()})
             );
+            #[cfg(test)]
+            crate::ui_test_support::record_control_response("recipient navigation label",&label,segments.clip_rect(),None);
             let label=overflow_tooltip(label,clipped,display);
             if clipped{
                 crate::overlay::show_menu(&label,None,|popup|{

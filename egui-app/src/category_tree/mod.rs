@@ -262,6 +262,8 @@ fn tree_row(ui:&mut Ui,item:CategoryTreeRow<'_>,product:bool,enabled:bool,dragga
     );
     #[cfg(test)]
     if !product{crate::ui_test_support::record_highlight_target("category row",rect,ui.clip_rect());}
+    #[cfg(test)]
+    crate::ui_test_support::record_control_response(if product{"category product row"}else{"category folder row"},&response,ui.clip_rect(),None);
     let geo=CategoryTreeGeometry::new(rect,item.depth);
     let painter=ui.painter().with_shared_clip(rect);
     if item.selected{

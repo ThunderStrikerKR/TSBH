@@ -523,6 +523,8 @@ pub fn reception_freight_row_controls(
                         price.make_persistent_id(("edit-applied-freight",label)),
                         Sense::click()
                     );
+                    #[cfg(test)]
+                    crate::ui_test_support::record_control_response("freight value hit",&hit,price.clip_rect(),None);
                     if hit.hovered() {
                         price.ctx().set_cursor_icon(egui::CursorIcon::Text);
                     }

@@ -756,6 +756,8 @@ fn group_frame(
                     label.rect,Id::new(("workflow-shipment",ship.id.as_str(),in_preview)),
                     egui::Sense::click()
                 );
+                #[cfg(test)]
+                crate::ui_test_support::record_control_response("workflow shipment row",&response,ui.clip_rect(),None);
                 if in_preview && response.hovered(){
                     *hovered_row=Some(ship.id.clone());
                 }
@@ -953,6 +955,8 @@ fn pending_frame(
                 let action=ui.interact(response.rect,
                     Id::new(("pending-reception-row",draft.id.as_str(),0usize,in_preview)),
                     egui::Sense::click());
+                #[cfg(test)]
+                crate::ui_test_support::record_control_response("pending shipment row",&action,ui.clip_rect(),None);
                 crate::composite_workflow::workflow_shipment_hover(ui,&action,false,false);
                 if action.hovered() {
                     *hovered_pending=Some(PendingTarget::order(&draft.id));
@@ -995,6 +999,8 @@ fn pending_frame(
                     let action=ui.interact(response.rect,
                         Id::new(("pending-reception-row",draft.id.as_str(),index,in_preview)),
                         egui::Sense::click());
+                    #[cfg(test)]
+                    crate::ui_test_support::record_control_response("pending shipment row",&action,ui.clip_rect(),None);
                     crate::composite_workflow::workflow_shipment_hover(ui,&action,chosen,previewed);
                     if action.hovered(){
                         *hovered_pending=Some(
