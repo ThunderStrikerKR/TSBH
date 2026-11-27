@@ -1,5 +1,6 @@
 //! The right-hand workflow board. Layout/hover/selection only; no business rules.
 //! Native Rust provides groups, amounts, freight, stage and shipment identity.
+use crate::ui_layout::SharedAllocationExt as _;
 use eframe::egui::{self, Id, Pos2, Rect, Ui, Vec2};
 use crate::ui_primitives::UiWidthPolicyExt;
 use std::time::{Duration, Instant};
@@ -363,7 +364,7 @@ fn workflow_compact_rows(ui:&mut Ui)->(Rect,Rect){
     let total=theme::WORKFLOW_TITLE_HEIGHT
         +theme::WORKFLOW_BAND_DIVIDER_HEIGHT
         +theme::WORKFLOW_BOTTOM_HEIGHT;
-    let (card,_)=ui.allocate_exact_size(
+    let (card,_)=ui.shared_allocate_exact_size(
         Vec2::new(ui.available_width(),total),egui::Sense::hover()
     );
     let (upper,divider,lower)=workflow_compact_band_rects(card);
@@ -1027,7 +1028,7 @@ fn compact_card_visible(top:f32,clip:Rect)->bool{
 fn reserve_compact_card(ui:&mut Ui){
     // Reserve the exact same width and height as workflow_card's compact
     // frame. No buttons, text shaping, recipient projection or hover tests.
-    ui.allocate_space(Vec2::new(ui.available_width(),compact_card_height()));
+    ui.shared_allocate_space(Vec2::new(ui.available_width(),compact_card_height()));
     ui.add_space(theme::WORKFLOW_CARD_GAP);
 }
 
@@ -1961,7 +1962,7 @@ mod compact_virtualization_tests{
             theme::install(&ctx);
             let output=ctx.run(egui::RawInput::default(),|ctx|{
                 egui::CentralPanel::default().show(ctx,|ui|{
-                    let (lower,_)=ui.allocate_exact_size(
+                    let (lower,_)=ui.shared_allocate_exact_size(
                         Vec2::new(420.0,theme::WORKFLOW_BOTTOM_HEIGHT),egui::Sense::hover());
                     workflow_action_line(ui,lower,"synthetic",1,Some(total),
                         None,None,false,false,false,hover,None);
