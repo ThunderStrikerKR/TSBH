@@ -108,6 +108,7 @@ pub fn execute(operation: &str, payload: Value) -> Result<Value, String> {
         "evaluate_combined_confirmation" => observations::evaluate_combined_confirmation(&payload),
         "compare_registered_models" => observations::compare_registered_models(&payload),
         "project_owner_contexts" => learning_context::lookup(&payload),
+        "evaluate_owner_weights" => evaluate_owner_weights(&payload),
         "summarize_owner_statistics" => learning_context::statistics(&payload),
         "summarize_learning_confirmation" => learning_context::summarize_confirmation(&payload),
         _ => Err(format!("unknown recognition operation: {operation}")),
@@ -794,6 +795,108 @@ fn owner_weight_choice(previous:i32,next:i32,margin:i32)->Option<&'static str>{
 #[cfg(test)]
 fn owner_comparison_choice(previous:i32,next:i32)->Option<&'static str>{
     owner_weight_choice(previous,next,OWNER_PROVISIONAL_WEIGHTS.margin)
+}
+// Explicit offline evaluator. Accept only pre-extracted, independently
+// labelled observations; this operation never writes a model or changes
+// the operational policy. An abstention counts as incorrect unless the
+// expected outcome itself is abstention.
+#[derive(Clone)]
+struct OwnerWeightSample<'a>{
+    order:&'a str,pattern:&'a str,kind:&'a str,expected:&'a str,legacy:&'a str,
+    previous:OwnerWeightFeatures,next:OwnerWeightFeatures,
+}
+fn parse_owner_weight_features(v:&Value)->Option<OwnerWeightFeatures>{
+    let order_level=u8::try_from(v["orderLevel"].as_u64()?).ok()?;
+    if !matches!(order_level,0|3|4){return None;}
+    Some(OwnerWeightFeatures{same_paragraph:v["sameParagraph"].as_bool()?,
+        distance:v["lineDistance"].as_u64()?,
+        blank_lines:usize::try_from(v["blankLines"].as_u64()?).ok()?,order_level})
+}
+fn weight_samples(v:&Value)->Result<Vec<OwnerWeightSample<'_>>,String>{
+    let rows=v.as_array().filter(|a|!a.is_empty()&&a.len()<=8192)
+        .ok_or("비교 표본은 1~8192개여야 합니다.")?;
+    let mut seen=HashSet::new();
+    let mut order_patterns=std::collections::BTreeMap::new();
+    let mut out=Vec::with_capacity(rows.len());
+    for r in rows{
+        let order=r["orderId"].as_str().filter(|v|!v.is_empty()&&v.len()<=128).ok_or("주문 식별자 오류")?;
+        let pattern=r["patternKey"].as_str().filter(|v|!v.is_empty()&&v.len()<=1024).ok_or("패턴 식별자 오류")?;
+        let source=r["sourceId"].as_str().filter(|v|!v.is_empty()&&v.len()<=128).ok_or("원문 식별자 오류")?;
+        let kind=r["kind"].as_str().filter(|v|matches!(*v,"address"|"phone"|"mobile"|"product")).ok_or("평가 유형 오류")?;
+        let expected=r["expected"].as_str().filter(|v|matches!(*v,"previous"|"next"|"abstain")).ok_or("기대 정답 오류")?;
+        let legacy=r["legacy"].as_str().filter(|v|matches!(*v,"previous"|"next"|"abstain")).ok_or("기준선 정답 오류")?;
+        if !seen.insert((order,source,kind)){return Err("중복 평가 표본".into());}
+        if order_patterns.insert(order,pattern).is_some_and(|p|p!=pattern){return Err("주문별 패턴 식별자 충돌".into());}
+        let previous=parse_owner_weight_features(&r["previous"]).ok_or("선행 특징 오류")?;
+        let next=parse_owner_weight_features(&r["next"]).ok_or("후행 특징 오류")?;
+        out.push(OwnerWeightSample{order,pattern,kind,expected,legacy,previous,next});
+    }
+    Ok(out)
+}
+fn weight_metrics(samples:&[OwnerWeightSample<'_>],profile:Option<OwnerWeightProfile>)->Value{
+    use std::collections::BTreeMap;
+    let mut patterns=BTreeMap::<&str,(usize,usize)>::new();
+    let mut kinds=BTreeMap::<&str,(usize,usize)>::new();
+    let mut orders=BTreeMap::<&str,(usize,usize)>::new();
+    let mut correct=0usize;let mut abstained=0usize;
+    for s in samples{
+        let prediction=profile.map_or(s.legacy,|w|{
+            let a=s.previous.components(w).iter().sum();
+            let b=s.next.components(w).iter().sum();
+            owner_weight_choice(a,b,w.margin).unwrap_or("abstain")
+        });
+        let ok=if prediction==s.expected{1}else{0};
+        correct+=ok;
+        if prediction=="abstain"{abstained+=1;}
+        for entry in [patterns.entry(s.pattern).or_default(),kinds.entry(s.kind).or_default(),orders.entry(s.order).or_default()]{
+            entry.0+=ok;entry.1+=1;
+        }
+    }
+    let macro_accuracy=|m:&BTreeMap<&str,(usize,usize)>|
+        m.values().map(|(a,b)|*a as f64 / *b as f64).sum::<f64>()/m.len() as f64;
+    json!({"correct":correct,"total":samples.len(),"abstained":abstained,
+        "microAccuracy":correct as f64/samples.len() as f64,
+        "macroPatternAccuracy":macro_accuracy(&patterns),"macroKindAccuracy":macro_accuracy(&kinds),
+        "macroOrderAccuracy":macro_accuracy(&orders),"independentOrders":orders.len(),
+        "patternCounts":patterns.len(),"kindCounts":kinds.len()})
+}
+fn owner_weight_wire(w:OwnerWeightProfile)->Value{
+    json!({"paragraph":w.paragraph,"distance":w.distance,"blank":w.blank,"order":w.order,"margin":w.margin})
+}
+fn evaluate_owner_weights(payload:&Value)->Result<Value,String>{
+    let fit=weight_samples(&payload["fit"])?;
+    let holdout=weight_samples(&payload["holdout"])?;
+    let fit_orders=fit.iter().map(|s|s.order).collect::<HashSet<_>>();
+    if holdout.iter().any(|s|fit_orders.contains(s.order)){return Err("학습·검증 주문 중복".into());}
+    let fit_patterns=fit.iter().map(|s|s.pattern).collect::<HashSet<_>>();
+    let unseen=holdout.iter().filter(|s|!fit_patterns.contains(s.pattern)).cloned().collect::<Vec<_>>();
+    // Finite predefined grid; fit selection only, never inspect holdout
+    // to choose a profile. Keep the initial profile on a tie.
+    let mut best=OWNER_PROVISIONAL_WEIGHTS;
+    let objective=|m:&Value|m["microAccuracy"].as_f64().unwrap_or(0.0)*0.5+
+        m["macroPatternAccuracy"].as_f64().unwrap_or(0.0)*0.5;
+    let mut best_score=objective(&weight_metrics(&fit,Some(best)));
+    for paragraph in [12,24,36]{
+        for distance in [12,24,36]{
+            for blank in [12,24,36]{
+                for order in [0,8,16]{
+                    for margin in [4,8,12]{
+                        let w=OwnerWeightProfile{paragraph,distance,blank,order,margin};
+                        let score=objective(&weight_metrics(&fit,Some(w)));
+                        if score>best_score+1e-12{best=w;best_score=score;}
+                    }
+                }
+            }
+        }
+    }
+    Ok(json!({"status":"offline_comparison_only","profile":owner_weight_wire(best),
+        "fit":{"legacy":weight_metrics(&fit,None),"initial":weight_metrics(&fit,Some(OWNER_PROVISIONAL_WEIGHTS)),
+            "selected":weight_metrics(&fit,Some(best))},
+        "holdout":{"legacy":weight_metrics(&holdout,None),"initial":weight_metrics(&holdout,Some(OWNER_PROVISIONAL_WEIGHTS)),
+            "selected":weight_metrics(&holdout,Some(best))},
+        "unseenPatterns":if unseen.is_empty(){Value::Null}else{json!({"legacy":weight_metrics(&unseen,None),
+            "selected":weight_metrics(&unseen,Some(best))})},
+        "labelProvenanceVerified":false,"productionAuthorized":false}))
 }
 fn compare_owner_candidates(candidate:&Evidence,preceding:&Evidence,following:&Evidence,
     previous_relation:&SourceRelation,following_relation:&SourceRelation,
@@ -2470,6 +2573,22 @@ mod tests {
             r.as_object_mut().unwrap().remove("candidatePolicyComparison");
         }
         assert_eq!(baseline,compared);
+    }
+    #[test]
+    fn owner_weight_evaluation_separates_fit_holdout_and_unseen_patterns(){
+        let sample=|id:&str,pattern:&str|json!({"orderId":id,"sourceId":"s1","patternKey":pattern,
+            "kind":"address","expected":"next","legacy":"previous",
+            "previous":{"sameParagraph":false,"lineDistance":5,"blankLines":1,"orderLevel":0},
+            "next":{"sameParagraph":true,"lineDistance":1,"blankLines":0,"orderLevel":3}});
+        let fit=sample("fit","A");let holdout=sample("holdout","B");
+        let report=evaluate_owner_weights(&json!({"fit":[fit],"holdout":[holdout]})).unwrap();
+        assert_eq!(report["holdout"]["legacy"]["microAccuracy"],0.0);
+        assert_eq!(report["holdout"]["selected"]["microAccuracy"],1.0);
+        assert_eq!(report["unseenPatterns"]["selected"]["independentOrders"],1);
+        assert_eq!(report["profile"],owner_weight_wire(OWNER_PROVISIONAL_WEIGHTS));
+        assert_eq!(report["productionAuthorized"],false);
+        assert!(evaluate_owner_weights(&json!({"fit":[fit],"holdout":[fit]})).is_err());
+        assert!(evaluate_owner_weights(&json!({"fit":[fit,fit],"holdout":[holdout]})).is_err());
     }
     #[test]
     fn symmetric_owner_comparison_can_choose_either_candidate_or_abstain(){
