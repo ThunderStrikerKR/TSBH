@@ -243,7 +243,7 @@ pub fn execute(operation: &str, payload: Value) -> Result<Value, String> {
         "client_candidates" | "classified_products" | "category_ids" |
         "management_products" | "search_products" | "search_products_with_urls" | "representative_products" | "suggest_group_representative" |
         "official_links" => queries::execute(operation, &payload),
-        "upsert_brand" | "validate_brands" => brands::execute(operation, &payload),
+        "upsert_brand" | "delete_brand" | "validate_brands" => brands::execute(operation, &payload),
         "change_category" | "delete_category" | "legacy_add_category" |
         "legacy_rename_category" | "validate_categories" => categories::execute(operation, &payload),
         "apply_official_product_import" => official_import::apply(&payload),
