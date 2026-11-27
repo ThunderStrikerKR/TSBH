@@ -7508,11 +7508,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                             .map(|s|serde_json::json!({"recipients":[&s.recipient]})).unwrap_or(serde_json::Value::Null)
                                     }else{serde_json::Value::Null};
                                     let label=review_panel::workflow_review_text(issue,&label,&recognition);
-                                    let tone=match issue["severity"].as_str(){
-                                        Some("ACTION")=>theme::ReviewTone::Action,
-                                        Some("ERROR")=>theme::ReviewTone::Error,
-                                        _=>theme::ReviewTone::Info,
-                                    };
+                                    let tone=review_panel::issue_tone(issue);
                                     crate::card::review_issue_card(issues,tone,|content|{
                                         content.add(egui::Label::new(typography::body(&label)
                                             .color(tone.text_color())).wrap());
