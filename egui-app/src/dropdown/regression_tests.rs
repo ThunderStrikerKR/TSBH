@@ -449,7 +449,13 @@ mod shared_dropdown_rendered_geometry_tests{
                 assert_geometry_value("dropdown","left caption inset",clip.left()-rect.left(),theme::SPACE_12,1.0);
                 assert!(clip.right()<=rect.right()-30.0+1.0,"caption clip enters arrow slot");
                 assert!(ink.intersect(clip).is_positive());
-                if label=="선불"{assert_painted_caption(&output,label,rect);}
+                if label=="선불"{
+                    assert_painted_caption(&output,label,rect);
+                }else{
+                    // Long selected values may overflow horizontally, but
+                    // never disappear or lose the top/bottom of their glyphs.
+                    crate::ui_test_support::assert_caption_visibility(&output,label,rect,true);
+                }
                 if let Some((old,following))=baseline{
                     assert_rect_geometry("dropdown state",rect,old,0.5);
                     assert_rect_geometry("following widget",next,following,0.5);
