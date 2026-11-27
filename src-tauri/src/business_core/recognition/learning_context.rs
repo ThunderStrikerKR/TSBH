@@ -767,12 +767,24 @@ mod tests{
         assert_eq!(field_shadow_candidates(&units,&first,(0,3),"variant"),vec!["v","v2"]);
         assert_eq!(field_shadow_candidates(&units,&first,(4,6),"quantity"),vec!["3"]);
         assert_eq!(field_shadow_candidates(&units,&first,(0,3),"type"),vec!["name","product"]);
+        let index=ShadowIndex::new(&units,&first);
+        for (s,task) in [((0,3),"product"),((0,3),"variant"),((4,6),"quantity"),((0,3),"type")]{
+            assert_eq!(field_shadow_from_index(&units,&index,s,task),
+                field_shadow_projection(&units,&first,s,task));
+        }
+        assert_eq!(index.products.len(),2);
+        assert_eq!(index.links.len(),2);
         let mut bad=first.clone();
         bad["classificationCandidateTrace"]["itemDecisions"][0]["productTraceStart"]=json!(1);
         assert_eq!(field_shadow_candidates(&units,&bad,(0,3),"product"),vec!["p"]);
         let duplicate=bad["classificationCandidateTrace"]["itemDecisions"][0].clone();
         bad["classificationCandidateTrace"]["itemDecisions"].as_array_mut().unwrap().push(duplicate);
         assert_eq!(field_shadow_candidates(&units,&bad,(0,3),"variant"),vec!["v"]);
+        // The shared index must retain duplicates as ambiguity, not choose
+        // the first hit or overwrite it with the last one.
+        let index=ShadowIndex::new(&units,&bad);
+        assert_eq!(index.items["i"].len(),2);
+        assert_eq!(field_shadow_from_index(&units,&index,(0,3),"variant")["candidates"],json!(["v"]));
     }
     #[test]
     fn field_shadow_candidates_are_original_span_bound_and_never_final_labels(){

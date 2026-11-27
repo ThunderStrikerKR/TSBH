@@ -1658,7 +1658,6 @@ pub(super) fn learn_blend_weights(payload:&Value)->Result<Value,String>{
         if compared["auditCoverage"]!="verified_manifest"{excluded+=1;continue;}
         let raw=snap["raw"].as_str().ok_or("결합 원문 누락")?;
         let units=raw.encode_utf16().collect::<Vec<_>>();
-        let projection=super::learning_context::lookup(&json!({"raw":raw,"initialAnalysis":first}))?;
         let owner_index=OwnerIndex::new(&units,&first["recipients"]);
         let mut local=BTreeMap::<BlendGroup,Vec<BlendSample>>::new();
         let mut used=BTreeSet::new();let mut eligible=0usize;
@@ -1692,9 +1691,7 @@ pub(super) fn learn_blend_weights(payload:&Value)->Result<Value,String>{
                 let sel=selections.next()?;if selections.next().is_some()||
                     sel["status"]!="diagnostic_context_selected"||sel["contextConflict"]!=false{return None;}
                 let key=sel["selectedContextKey"].as_str()?;
-                let mut entries=rows(&projection["entries"]).filter(|r|position(&units,&r["source"])==Some(s));
-                let entry=entries.next()?;if entries.next().is_some(){return None;}
-                let mut contexts=rows(&entry["contexts"]).filter(|c|c["key"].as_str()==Some(key));
+                let mut contexts=rows(&obs["contexts"]).filter(|c|c["key"].as_str()==Some(key));
                 let context=contexts.next()?;if contexts.next().is_some(){return None;}
                 let level=context["level"].as_str()?;
                 let mut locs=rows(&shadow["locations"]).filter(|r|r["task"]=="recipient_ownership"&&position(&units,r)==Some(s));
