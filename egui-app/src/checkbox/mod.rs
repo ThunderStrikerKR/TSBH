@@ -57,13 +57,7 @@ pub(crate) fn checkbox(
     // keyboard handling, text layout and disabled-state dimming unchanged.
     let original_style=ui.style().clone();
     if *checked&&enabled&&ui.is_enabled(){
-        let widgets=&mut ui.visuals_mut().widgets;
-        for visual in [&mut widgets.inactive,&mut widgets.hovered,&mut widgets.active,&mut widgets.open]{
-            visual.bg_fill=theme::CHECKBOX_CHECKED_BG;
-            visual.weak_bg_fill=theme::CHECKBOX_CHECKED_BG;
-            visual.bg_stroke=egui::Stroke::new(theme::FRAME_STROKE_WIDTH,theme::SELECTED_ORDER);
-            visual.fg_stroke=egui::Stroke::new(theme::CHECKBOX_CHECKED_STROKE_WIDTH,theme::CHECKBOX_CHECKED_MARK);
-        }
+        crate::highlight::checked_checkbox(ui);
     }
     let response=ui.add_enabled(enabled,egui::Checkbox::new(checked,label));
     ui.set_style(original_style);
