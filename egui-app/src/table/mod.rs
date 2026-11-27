@@ -483,7 +483,7 @@ pub(crate) fn variable_rows_snapshot<R>(
     let (scroll,capture)=crate::scrollbar::ScrollCapture::begin(ui,&id,scroll,ready,rows);
     let output=scroll.show_viewport(ui,|body,visible|{
         management_table_row_body(body,viewport.width);
-        body.set_min_height(*offsets.last().unwrap_or(&0.0));
+        crate::ui_layout::reserve_min_height(body,*offsets.last().unwrap_or(&0.0));
         let first=offsets.partition_point(|value|*value<=visible.top())
             .saturating_sub(1).min(count);
         let last=offsets.partition_point(|value|*value<=visible.bottom())
@@ -656,7 +656,7 @@ pub(crate) fn virtual_fixed_rows<R>(
     debug_assert!(row_height>0.0 && row_height.is_finite());
     let output=scroll.show_viewport(ui,move |body,viewport|{
         management_table_row_body(body,content_width);
-        body.set_min_height(row_height*total_rows as f32);
+        crate::ui_layout::reserve_min_height(body,row_height*total_rows as f32);
         let first=((viewport.top()/row_height).floor().max(0.0) as usize)
             .saturating_sub(1).min(total_rows);
         let last=((viewport.bottom()/row_height).ceil().max(0.0) as usize)
