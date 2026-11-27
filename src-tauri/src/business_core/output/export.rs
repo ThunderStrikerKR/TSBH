@@ -129,7 +129,7 @@ fn validate_factory_product(state: &Value, item: &Value) -> Result<(), String> {
         if let Some(expected) = regex_capture(stored_name, &expression) {
             let actual = regex_capture(frozen_name, &expression);
             if equipment_group(&expected) != equipment_group(actual.as_deref().unwrap_or("")) {
-                return Err(format!("{} 포함 / 미포함 정보가 실제 출고 구성과 다릅니다. 주문을 확인하세요.", component));
+                return Err(format!("{} 포함 / 미포함 정보가 출고 구성과 다릅니다. 주문을 확인하세요.", component));
             }
         }
     }

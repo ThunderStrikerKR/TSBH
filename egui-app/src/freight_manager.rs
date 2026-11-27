@@ -559,7 +559,7 @@ fn group_and_combination_tables_open_details_without_action_columns(){
     let history=source.split("\n    fn show_history(").nth(1).unwrap().split("\nfn group_history_fee_summary(").next().unwrap();
     assert!(rate.contains("\"그룹명\",\"묶음 한도\",\"소속 상품\""));
     assert!(rate.contains("freight-group-detail"));
-    assert!(history.contains("\"조합\",\"청구 운임\",\"실제 운임\",\"기준\""));
+    assert!(history.contains("\"조합\",\"청구 운임\",\"출고 운임\",\"기준\""));
     assert!(history.contains("freight-history-detail"));
     for table in [rate,history]{assert!(!table.contains("show_management_menu("));}
 }
@@ -1351,7 +1351,7 @@ impl FreightManager {
                                     for (label,value) in [
                                         ("조합",text(record,"description").to_owned()),
                                         ("현재 청구 운임",as_fee(&record["charge"])),
-                                        ("실제 운임",as_fee(&record["actual"])),
+                                        ("출고 운임",as_fee(&record["actual"])),
                                         ("기준",status.to_owned()),
                                         ("등록일",if at.is_empty(){"등록일 미확인".into()}else{at.into()}),
                                         ("검증 이력",verified),
@@ -2486,7 +2486,7 @@ impl FreightManager {
             }
             freight_history_table(
                 section,"freight-verified-combinations",
-                ["조합","청구 운임","실제 운임","기준"],
+                ["조합","청구 운임","출고 운임","기준"],
                 theme::FREIGHT_COMBINATION_HISTORY_COL_WIDTHS,
                 [1.0,0.0,0.0,0.0],ordered.len(),Some(sort),
                 if single_list{Some(card_min_height)}else{None},

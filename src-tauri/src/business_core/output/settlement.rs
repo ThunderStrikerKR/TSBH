@@ -98,13 +98,13 @@ fn receipt_rows(state: &Value, date: &str) -> Result<Vec<Value>, String> {
         if !seen.insert(s(payment,"id")) {
             return Err("입금 기록 ID가 중복되었습니다. 결산 전에 확인하세요.".into());
         }
-        let amount = safe(&payment["amount"]).ok_or("실제 입금액이 올바르지 않습니다.")?;
+        let amount = safe(&payment["amount"]).ok_or("입금액이 올바르지 않습니다.")?;
         let mut allocations = vec![];
         for item in list(payment,"allocations") {
             allocations.push(safe(&item["amount"]).ok_or("입금 배분액이 올바르지 않습니다.")?);
         }
         let allocated = sum(allocations)?;
-        if allocated > amount { return Err("입금 배분액이 실제 입금액보다 큽니다.".into()); }
+        if allocated > amount { return Err("입금 배분액이 입금액보다 큽니다.".into()); }
         let dealer_id = s(payment,"dealerId");
         let dealer = list(state,"clients").iter()
             .find(|client|s(client,"id")==dealer_id)
@@ -193,19 +193,19 @@ pub(super) fn prepare(state: &Value, date: &str, history_rows: &Value) -> Result
         warnings.push("확정일이 없는 과거 주문은 최초 작성일을 기준으로 분류했습니다.".into());
     }
     if orders.iter().any(|r|r["cashEvidenceMissing"]==true) {
-        warnings.push("기존 입금 완료 표시는 실제 입금 기록이 아니므로 수입에 포함하지 않았습니다.".into());
+        warnings.push("기존 입금 완료 표시는 입금 기록이 아니므로 수입에 포함하지 않았습니다.".into());
     }
     if orders.iter().any(|r|r["paymentApproved"].as_i64().unwrap_or(0)>0) {
-        warnings.push("입금 승인 기록은 실제 계좌 입금액과 구별하며 현금 입금액에 포함하지 않았습니다.".into());
+        warnings.push("입금 승인 기록은 계좌 입금액과 구별하며 현금 입금액에 포함하지 않았습니다.".into());
     }
     if orders.iter().any(|r|s(r,"paymentTerms")=="소매") {
-        warnings.push("소매 주문은 이 결산에 실제 결제 수단 기록이 없어 별도 입금으로 추정하지 않습니다.".into());
+        warnings.push("소매 주문은 이 결산에 결제 수단 기록이 없어 별도 입금으로 추정하지 않습니다.".into());
     }
     if orders.iter().any(|r|r["freightComplete"]==false) {
-        warnings.push("실제 운임은 현재 기록된 값이며 해당 날짜의 현금 지출액을 의미하지 않습니다.".into());
+        warnings.push("출고 운임은 현재 기록된 값이며 해당 날짜의 현금 지출액을 의미하지 않습니다.".into());
     }
     if orders.iter().any(|r|r["paymentApproved"].as_i64().unwrap_or(0)>0 && r["paidAllocated"].as_i64().unwrap_or(0)>0){
-        warnings.push("입금 승인과 실제 입금이 함께 있는 경우 배송 건별 큰 금액만 미수 차감에 반영합니다. 별도 입금 여부는 실제 배분 기록으로 확인하세요.".into());
+        warnings.push("입금 승인과 계좌 입금이 함께 있는 경우 배송 건별 큰 금액만 미수 차감에 반영합니다. 별도 입금 여부는 입금 배분 기록으로 확인하세요.".into());
     }
     let billed_orders=orders.iter().filter(|r|r["total"].as_i64().is_some()).collect::<Vec<_>>();
     let billed_component=|key:&str|->Result<Value,String>{

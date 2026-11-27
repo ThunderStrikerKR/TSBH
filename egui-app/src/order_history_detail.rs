@@ -136,12 +136,12 @@ fn payment_panel(
         display_or(field(staff,"date"),"미확인")));
     ui.add_space(theme::SPACE_4);
     if payments.is_empty(){
-        crate::ui_primitives::management_body_state_inline(ui,"해당 주문에 연결된 실제 입금 기록이 없습니다.");
+        crate::ui_primitives::management_body_state_inline(ui,"해당 주문에 연결된 입금 기록이 없습니다.");
     }
     for (i,payment) in payments.iter().enumerate(){
         if i>0{crate::ui_primitives::soft_divider(ui);}
         text_kv(ui,"입금 처리일시",&kst(field(payment,"recordedAt")));
-        text_kv(ui,"실제 입금일시",&kst(field(payment,"paidAt")));
+        text_kv(ui,"입금 일시",&kst(field(payment,"paidAt")));
         money_kv(ui,"입금액",&money(&payment["amount"]),theme::TextState::value(payment["amount"].as_i64().is_some()));
         let account=&payment["account"];
         let bank=field(account,"bank");
@@ -272,11 +272,11 @@ fn shipment_entry(
         card.add_space(theme::SPACE_4);
         if let Some(ship)=ship{
             let (freight,tracking)=shipment_values(ship);
-            money_kv(card,"실제 운임",&freight,theme::TextState::value(ship["actualFreight"].as_object().is_some_and(|o|o.values().any(|v|v.as_i64().is_some()))));
+            money_kv(card,"출고 운임",&freight,theme::TextState::value(ship["actualFreight"].as_object().is_some_and(|o|o.values().any(|v|v.as_i64().is_some()))));
             text_kv_with_state(card,"운송장번호",&tracking,theme::TextState::optional(ship["tracking"].as_object().is_some_and(|o|o.values().any(|v|v.as_str().is_some_and(|s|!s.is_empty())))));
             let note=field(ship,"managementMemo");
             text_kv_with_state(card,"관리 메모",display_or(note,"없음"),theme::TextState::optional(!note.trim().is_empty()));
-            text_kv(card,"메모 최종 갱신",&kst(field(ship,"managementMemoUpdatedAt")));
+            text_kv(card,"최근 메모 갱신",&kst(field(ship,"managementMemoUpdatedAt")));
         }else{
             crate::ui_primitives::management_body_state_inline(card,"현재 연결된 운송장과 발송 건 메모가 없습니다.");
         }

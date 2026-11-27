@@ -363,11 +363,11 @@ pub(crate) fn review_instruction(kind:&str)->Option<&'static str>{
             Some("올바른 후보를 적용하거나 입력 위치에서 직접 수정하세요."),
         "ITEM"=>Some("배송할 상품과 수량을 추가하세요."),
         "MODEL"|"MODEL_CHOICE"=>Some("발주원문에 맞는 상품 모델을 선택하세요."),
-        "ALIAS_CONFLICT"=>Some("서로 다른 상품으로 연결된 별칭입니다. 실제 주문 상품을 선택하세요."),
-        "CATEGORY_CONFLICT"=>Some("발주서의 상품 종류와 인식된 모델이 다릅니다. 실제 상품을 선택하세요."),
+        "ALIAS_CONFLICT"=>Some("서로 다른 상품으로 연결된 별칭입니다. 발주서에 맞는 상품을 선택하세요."),
+        "CATEGORY_CONFLICT"=>Some("발주서의 상품 종류와 인식된 모델이 다릅니다. 발주서에 맞는 상품을 선택하세요."),
         "QUANTITY_LINK"=>Some("원문의 수량이 어느 상품에 해당하는지 확인하고 연결하세요."),
-        "OPTION"=>Some("색상과 옵션을 확인하고 실제 주문 정보로 수정하세요."),
-        "MODEL_CONFIRM"=>Some("추천 상품이 실제 주문 상품과 일치하는지 확인하세요."),
+        "OPTION"=>Some("색상과 옵션을 확인하고 발주서에 맞게 수정하세요."),
+        "MODEL_CONFIRM"=>Some("추천 상품이 발주서와 일치하는지 확인하세요."),
         "SALE_STATUS"=>Some("상품 관리에서 판매 상태를 확인하세요."),
         "ORIGIN"=>Some("품목의 발송지를 매장 또는 공장으로 지정하세요."),
         "ACCOUNT"=>Some("사용할 입금 계좌를 등록하거나 선택하세요."),
@@ -424,13 +424,13 @@ pub(crate) fn issue_instruction(issue:&Value)->Option<&'static str>{
             return Some("청구 금액과 기존 입금 내역을 확인한 뒤 입금 확인 단계를 진행하세요.");
         }
         if waiting_payment_amount(detail){
-            return Some("거래처의 미입금 금액입니다. 실제 입금액을 확인한 뒤 입금 확인 단계를 진행하세요.");
+            return Some("거래처의 미입금 금액입니다. 입금액을 확인한 뒤 입금 확인 단계를 진행하세요.");
         }
         return match problem{
             "청구액 미확정"=>Some("품목 단가, 수량 및 운임을 확인하여 청구액을 확정하세요."),
             "운임 적용 필요"=>Some("배송 운임을 확인하고 운임 적용 단계를 완료하세요."),
             "계좌 안내 완료 필요"=>Some("입금 계좌와 청구액을 확인하고 계좌 안내 단계를 완료하세요."),
-            "입금 부족"|"입금액이 부족합니다"=>Some("청구액과 실제 입금액을 대조하고 부족한 금액의 입금을 확인하세요."),
+            "입금 부족"|"입금액이 부족합니다"=>Some("청구액과 입금액을 대조하고 부족한 금액의 입금을 확인하세요."),
             _=>None,
         };
     }

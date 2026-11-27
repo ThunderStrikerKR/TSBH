@@ -393,7 +393,7 @@ impl DailySettlementManager{
                 crate::ui_layout::apply_spacing_role(strip,crate::ui_layout::SpacingRole::SummaryStrip);
                 for (index,(name,value)) in [
                     "접수 주문","청구 합계 확인분",
-                    "실제 계좌 입금","미확정 청구 주문"
+                    "계좌 입금","미확정 청구 주문"
                 ].into_iter().zip(values.iter()).enumerate(){
                     let state=match report{
                         None=>theme::TextState::Pending,
@@ -467,7 +467,7 @@ impl DailySettlementManager{
                         }
                     });
                     section.label(typography::caption(
-                        "미수·실제 입금 배분 누계·공장 운임은 현재 조회 시점 기준"
+                        "미수·입금 배분 누계·공장 운임은 현재 조회 시점 기준"
                     ));
                     section.horizontal_wrapped(|review|{
                         crate::ui_layout::apply_spacing_role(review,crate::ui_layout::SpacingRole::FormColumns);
@@ -476,17 +476,17 @@ impl DailySettlementManager{
                             report["outstandingUnknown"].as_u64().map(|n|format!("{n}건")).unwrap_or_else(||"—".into())
                         )));
                         review.label(typography::caption(&format!(
-                            "실제 운임 미확정 {}",
+                            "공장 운임 미확정 {}",
                             report["freightUnknown"].as_u64().map(|n|format!("{n}건")).unwrap_or_else(||"—".into())
                         )));
-                        settings_help::icon(review,"미수금과 실제 운임");
+                        settings_help::icon(review,"미수금과 출고 운임");
                     });
                     let indices=self.order_cache.get((self.order_sort,visible_report.is_some()),||sorted_indices(orders,self.order_sort,false));
                     let scroll_keys=|i:usize|crate::scrollbar::row_key(field(&orders[indices[i]],"orderId"));
                     report_table(
                         section,"settlement-orders",
                         ["거래처","관리 상태","결제 방식","상품대금","청구 배송비",
-                         "부가세","청구 합계","실제 입금 배분 누계","현재 미수"],
+                         "부가세","청구 합계","입금 배분 누계","현재 미수"],
                         theme::SETTLEMENT_ORDER_COL_WIDTHS,
                         [Align2::LEFT_CENTER,Align2::CENTER_CENTER,Align2::CENTER_CENTER,
                          Align2::RIGHT_CENTER,Align2::RIGHT_CENTER,
@@ -531,13 +531,13 @@ impl DailySettlementManager{
                     // its report rows own their independent horizontal scroll.
                     section.apply_shared_width(crate::ui_layout::geometry::CardWidthPolicy::Bounded,section_inner_max_width);
                     section.label(typography::section_heading(
-                        "실제 입금 내역 / 입금 일시 기준"
+                        "입금 내역 / 입금 일시 기준"
                     ));
                     crate::ui_primitives::section_divider(section);
                     section.horizontal_wrapped(|line|{
                         crate::ui_layout::apply_spacing_role(line,crate::ui_layout::SpacingRole::ReportMetrics);
                         for (title,key) in [
-                            ("실제 입금 합계","paidCash"),
+                            ("입금 합계","paidCash"),
                             ("배송 건 배분액","allocatedCash"),
                             ("미배분 입금액","unallocatedCash"),
                         ]{
@@ -549,7 +549,7 @@ impl DailySettlementManager{
                     let scroll_keys=|i:usize|crate::scrollbar::row_key(field(&payments[indices[i]],"id"));
                     report_table(
                         section,"settlement-payments",
-                        ["입금 일시","거래처","계좌","실제 입금액",
+                        ["입금 일시","거래처","계좌","입금액",
                          "배분액","미배분","메모"],
                         theme::SETTLEMENT_PAYMENT_COL_WIDTHS,
                         [Align2::LEFT_CENTER,Align2::LEFT_CENTER,Align2::LEFT_CENTER,
@@ -560,7 +560,7 @@ impl DailySettlementManager{
                          typography::ManagementTableCellRole::Description],
                         6,&indices,visible_report.is_some(),&scroll_keys,&mut self.payment_sort,
                         if visible_report.is_some()&&payments.is_empty(){
-                            Some("해당 날짜의 실제 입금 기록이 없습니다.")
+                            Some("해당 날짜의 입금 기록이 없습니다.")
                         }else{None},
                         |index|{
                             let payment=&payments[index];

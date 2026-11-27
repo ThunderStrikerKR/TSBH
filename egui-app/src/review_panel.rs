@@ -510,7 +510,7 @@ fn issue_card(
             }
             if kind=="UNASSIGNED_EVIDENCE" {
                 cell.add(egui::Label::new(typography::review_detail(
-                    "상품 또는 수량으로 인식된 문구입니다. 수동 분류에서 실제 주문 내용과 연결할지 확인하세요.",tone
+                    "상품 또는 수량으로 인식된 문구입니다. 수동 분류에서 발주서 내용과 연결할지 확인하세요.",tone
                 )).wrap());
             }
             if issue["inquiryRequested"]==true{
@@ -525,7 +525,7 @@ fn issue_card(
             if kind=="QUANTITY_MISSING"
                 &&text(issue,"resolution")=="PROVISIONALLY_APPROVED"{
                 cell.add(egui::Label::new(typography::review_detail(
-                    "1개 발송 예정 안내가 복사용 메시지에 포함됩니다. 실제 수량이 확인되면 수량을 수정하세요.",tone
+                    "1개 발송 예정 안내가 복사용 메시지에 포함됩니다. 수량을 확인한 후 수량을 수정하세요.",tone
                 )).wrap());
             }
             let is_client=kind=="CLIENT" || kind.starts_with("CLIENT_MATCH_");

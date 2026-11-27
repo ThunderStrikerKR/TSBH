@@ -744,7 +744,7 @@ impl ExcelManager{
                                         legacy_conflict&&writable_snapshot&&self.gateway.excel_write_enabled()).clicked(){selected=Some(row.clone());}
                                 });
                             });
-                            ui.label(typography::table_cell(&format!("송장 {} / 실제 운임 {} / {}",
+                            ui.label(typography::table_cell(&format!("송장 {} / 출고 운임 {} / {}",
                                 text(row,"tracking"),amount(&row["actual"]),text(row,"issue").replace("직원 확인 필요","확인 필요"))));
                             for candidate in rows(&row["candidates"]){
                                 let row_number=candidate["exportRow"].as_u64().map(|n|n.to_string())
@@ -759,7 +759,7 @@ impl ExcelManager{
                                         selected=Some(chosen);
                                     }
                                 });
-                                ui.label(typography::table_cell(&format!("품목: {} / 기존 송장: {} / 실제 운임: {}",
+                                ui.label(typography::table_cell(&format!("품목: {} / 기존 송장: {} / 출고 운임: {}",
                                     text(candidate,"items"),text(candidate,"tracking"),amount(&candidate["actual"]))));
                                 if candidate["eligible"]!=true{
                                     ui.label(typography::caption("기존 회신 또는 배송 상태로 인해 연결할 수 없습니다."));
@@ -1173,8 +1173,8 @@ impl ExcelManager{
                                     .or_insert_with(||source.clone());
                                 crate::ui_primitives::form_field_label(
                                     line,if self.tab==Tab::Factory{
-                                        "공장 실제 출고 운임"
-                                    }else{"매장 실제 출고 운임"}
+                                        "공장 출고 운임"
+                                    }else{"매장 출고 운임"}
                                 );
                                 crate::input::money_field(
                                     line,draft,writable_snapshot&&self.gateway.excel_write_enabled()
@@ -1186,7 +1186,7 @@ impl ExcelManager{
                                 };
                                 let dirty=parsed!=Some(saved);
                                 if crate::button::action(
-                                    line,"실제 운임 저장",
+                                    line,"출고 운임 저장",
                                     theme::ButtonRole::Primary,
                                     dirty&&writable_snapshot&&self.gateway.excel_write_enabled()
                                 ).clicked(){
@@ -1204,7 +1204,7 @@ impl ExcelManager{
                                         ));
                                     }else{
                                         self.error=Some(
-                                            "올바른 실제 운임을 입력하세요.".into()
+                                            "출고 운임을 확인하세요.".into()
                                         );
                                     }
                                 }

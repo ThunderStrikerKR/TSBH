@@ -595,7 +595,7 @@ fn draw_line(ui:&mut Ui,rect:Rect,line:HistoryLine,snapshot:&HistorySnapshot,
                 cautions.push("소매 주문 / 결제 증빙 별도 확인");
             }
             if row["display"]["paymentEvidenceMissing"]==true{
-                cautions.push("기존 입금 표시 / 실제 입금 기록 미확인");
+                cautions.push("기존 입금 표시 / 입금 기록 미확인");
             }
             if cautions.is_empty(){
                 paint_text_with_state(ui,columns[4],&total,typography::ManagementTableCellRole::RowTotal,true,

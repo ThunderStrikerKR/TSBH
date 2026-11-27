@@ -840,15 +840,15 @@ pub(super) fn apply(payload:&Value)->Result<Value,String> {
             let ship_id=required_str(payload,"shipmentId")?;
             let origin=required_str(payload,"origin")?;
             if !["FACTORY","STORE"].contains(&origin) {
-                return Err("실제 운임은 0 이상의 원 단위 정수로 입력하세요.".into());
+                return Err("출고 운임은 0 이상의 원 단위 정수로 입력하세요.".into());
             }
             let value=req(payload,"value")?;
             if !value.is_null() && safe(value).is_none() {
-                return Err("실제 운임은 0 이상의 원 단위 정수로 입력하세요.".into());
+                return Err("출고 운임은 0 이상의 원 단위 정수로 입력하세요.".into());
             }
             let (si,oi,ri)=shipment_indices(&state,ship_id)?;
             if !row_origins(&state["orders"][oi]["recipients"][ri]).contains(&origin) {
-                return Err("실제 출고지와 배송 건을 확인하세요.".into());
+                return Err("출고지와 배송 건을 확인하세요.".into());
             }
             let ship=&state["workflow"]["shipments"][si];
             let group_id=str_field(ship,"groupId").to_string();
@@ -959,15 +959,15 @@ pub(super) fn apply(payload:&Value)->Result<Value,String> {
             let order=&state["orders"][oi];
             let client=party(&state,order).ok_or("거래처 정보를 확인하세요.")?;
             let account=account_for(&state,group,order,client)
-                .ok_or("실제 입금액과 입금 계좌를 확인하세요.")?.clone();
+                .ok_or("입금액과 입금 계좌를 확인하세요.")?.clone();
             if ["number","bank","holder"].iter().any(|key|str_field(&account,key).trim().is_empty()) {
-                return Err("실제 입금액과 입금 계좌를 확인하세요.".into());
+                return Err("입금액과 입금 계좌를 확인하세요.".into());
             }
             let paid=safe(req(payload,"paidAmount")?)
-                .filter(|v|*v>0).ok_or("실제 입금액과 입금 계좌를 확인하세요.")?;
+                .filter(|v|*v>0).ok_or("입금액과 입금 계좌를 확인하세요.")?;
             let paid_at=required_str(payload,"paidAt")?;
             if paid_at.len()<10 || !(paid_at.contains('T') || paid_at.contains(' ')) {
-                return Err("실제 입금 일시를 입력하세요.".into());
+                return Err("입금 일시를 입력하세요.".into());
             }
             let allocations=rows(req(payload,"allocations")?);
             let ids=rows(req(payload,"allocationIds")?);
@@ -1006,7 +1006,7 @@ pub(super) fn apply(payload:&Value)->Result<Value,String> {
                 }
             }
             if checked_sum(total).is_none_or(|sum|sum>paid) {
-                return Err("배분액이 실제 입금액을 초과합니다.".into());
+                return Err("배분액이 입금액을 초과합니다.".into());
             }
             let payment_id=required_str(payload,"paymentId")?;
             if find_by_id(field(&state["workflow"],"payments"),payment_id).is_some() {
@@ -1311,7 +1311,7 @@ pub(super) fn apply(payload:&Value)->Result<Value,String> {
             let actual=req(payload,"actual")?;
             for origin in &origins {
                 if safe(field(actual,origin)).is_none() {
-                    return Err("출고지별 실제 택배 운임을 확인하세요.".into());
+                    return Err("출고지별 택배 운임을 확인하세요.".into());
                 }
             }
             if !has_value(field(&state,"shipping")) {
@@ -1338,7 +1338,7 @@ pub(super) fn apply(payload:&Value)->Result<Value,String> {
             for (index,bundle) in bundles.iter().enumerate() {
                 let origin=str_field(bundle,"origin");
                 let amount=safe(field(actual,origin))
-                    .ok_or("출고지별 실제 택배 운임을 확인하세요.")?;
+                    .ok_or("출고지별 택배 운임을 확인하세요.")?;
                 let exempt=party(&state,&order).is_some_and(|client|flag(client,"shippingFeeExcluded"));
                 let applied=super::remote_delivery::multiply_shipment(
                     safe(field(field(&ship,"charges"),origin)),&recipient,&ship,&order);
