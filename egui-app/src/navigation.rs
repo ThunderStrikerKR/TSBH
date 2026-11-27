@@ -1,4 +1,5 @@
 //! Shared date selection, segmented navigation and recipient/count traversal.
+use crate::ui_layout::AlignedUiBuilderExt as _;
 use chrono::{Datelike,Duration as Days,Months,NaiveDate};
 use crate::ui_primitives::UiWidthPolicyExt;
 use eframe::egui::{self,Align,Color32,Layout,Rect,Response,Sense,Stroke,Ui,Vec2};
@@ -410,7 +411,7 @@ mod date_navigation_segmented_control_tests{
                         navigation_segment_child(ui,"geometry",slot,Layout::top_down(Align::Center))
                     }else{
                         let mut child=ui.new_child(UiBuilder::new().id_salt("geometry")
-                            .max_rect(slot).layout(Layout::top_down(Align::Center)));
+                            .aligned_max_rect(slot).layout(Layout::top_down(Align::Center)));
                         child.set_clip_rect(slot.intersect(ui.clip_rect()));
                         child
                     };
@@ -696,7 +697,7 @@ pub(crate) fn excel_export_date_controls(
     if compact{
         let (first,second)=crate::navigation::compact_date_range_rows(ui,f32::INFINITY,f32::INFINITY);
         ui.scope_builder(egui::UiBuilder::new().id_salt("excel-export-from-line")
-            .max_rect(first)
+            .aligned_max_rect(first)
             .layout(egui::Layout::left_to_right(Align::Center)
                 .with_main_align(Align::Max)),|line|{
                 line.apply_shared_width(crate::ui_primitives::CardWidthPolicy::Fixed,first.width());
@@ -706,7 +707,7 @@ pub(crate) fn excel_export_date_controls(
                     "excel-export-from-calendar");
             });
         ui.scope_builder(egui::UiBuilder::new().id_salt("excel-export-to-line")
-            .max_rect(second)
+            .aligned_max_rect(second)
             .layout(egui::Layout::left_to_right(Align::Center)
                 .with_main_align(Align::Max)),|line|{
                 line.apply_shared_width(crate::ui_primitives::CardWidthPolicy::Fixed,second.width());
