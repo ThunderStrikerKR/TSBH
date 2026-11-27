@@ -448,12 +448,7 @@ pub(crate) struct ModalMasterWorkspace {
 /// every edge moves by at most half a device pixel. All strokes and pane fills
 /// must use the SAME aligned rect so anti-aliasing cannot expose a seam.
 fn modal_master_pixel_aligned_rect(rect:Rect,pixels_per_point:f32)->Rect {
-    let scale=pixels_per_point.max(1.0);
-    let snap=|v:f32|(v*scale).round()/scale;
-    Rect::from_min_max(
-        egui::pos2(snap(rect.left()),snap(rect.top())),
-        egui::pos2(snap(rect.right()),snap(rect.bottom()))
-    )
+    crate::ui_layout::pixel_paint::snap_paint_rect(rect,pixels_per_point)
 }
 
 /// One horizontal content grid for the modal title, toolbar, body, rules and footer.
@@ -469,8 +464,7 @@ fn modal_master_content_rect(rect:Rect)->Rect {
 
 /// Pixel-aligned rule using the same left/right edges as modal content.
 fn modal_master_rule_rect(rect:Rect,ppp:f32,at_bottom:bool)->Rect {
-    let scale=ppp.max(1.0);
-    let height=(theme::SOFT_DIVIDER_WIDTH*scale).round().max(1.0)/scale;
+    let height=crate::ui_layout::pixel_paint::paint_stroke_width(theme::SOFT_DIVIDER_WIDTH,ppp);
     let content=modal_master_content_rect(rect);
     let top=if at_bottom {rect.bottom()-height}else{rect.top()};
     Rect::from_min_max(
@@ -526,9 +520,9 @@ pub(crate) fn modal_master_workspace_finish(
     let painter=ui.painter();
     let ppp=ui.ctx().pixels_per_point().max(1.0);
     let rect=modal_master_pixel_aligned_rect(rect,ppp);
-    let snap=|v:f32|(v*ppp).round()/ppp;
-    let line_width=(theme::SOFT_DIVIDER_WIDTH*ppp).round().max(1.0)/ppp;
-    let outer_width=(theme::FRAME_STROKE_WIDTH*ppp).round().max(1.0)/ppp;
+    let snap=|v:f32|crate::ui_layout::pixel_paint::snap_paint_coordinate(v,ppp);
+    let line_width=crate::ui_layout::pixel_paint::paint_stroke_width(theme::SOFT_DIVIDER_WIDTH,ppp);
+    let outer_width=crate::ui_layout::pixel_paint::paint_stroke_width(theme::FRAME_STROKE_WIDTH,ppp);
     let inset=outer_width.max(line_width);
     let left=snap(rect.left()+inset);
     let right=snap(rect.right()-inset);

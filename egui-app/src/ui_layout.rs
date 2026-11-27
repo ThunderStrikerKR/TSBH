@@ -8,6 +8,7 @@ use crate::card::docked_section_body_height;
 use crate::table::management_table_data_width;
 
 pub(crate) mod geometry;
+pub(crate) mod pixel_paint;
 use geometry::{aligned_rect,AlignedUiBuilderExt,SharedAllocationExt,SharedUiClipExt,
     set_fixed_height,reserve_min_height,CardWidthPolicy,UiWidthPolicyExt};
 
@@ -388,43 +389,13 @@ fn paint_dock_axis_line(ui: &Ui, rect: Rect, vertical: bool, active: bool) {
     // No permanent 1-2pt splitter bar: section/card strokes are enough.
     // A thin resize cue appears only when the pointer is over its hit zone.
     if !active { return; }
-    let scale = ui.ctx().pixels_per_point().max(1.0);
-    let (low, high) = if vertical {
-        (rect.left(), rect.right())
-    } else {
-        (rect.top(), rect.bottom())
-    };
-    let start_px = (low * scale).round() as i32;
-    let end_px = (high * scale).round() as i32;
-    let span_px = (end_px - start_px).max(1);
-    // Honor the 1pt / 2pt design tokens where they can be truly centered.
-    // For a 6px gutter, a requested 1px rule must expand to the middle 2px.
-    let logical_width = if active {
+    let scale=ui.ctx().pixels_per_point();
+    let logical_width=if active {
         theme::DOCK_SPLITTER_HOVER_LINE
-    } else {
+    }else{
         theme::DOCK_SPLITTER_LINE
     };
-    let mut line_width_px = ((logical_width * scale).round() as i32)
-        .clamp(1, span_px);
-    if (span_px - line_width_px) % 2 != 0 {
-        // Match slot-width parity so left/right margins are always equal.
-        line_width_px += if line_width_px < span_px { 1 } else { -1 };
-    }
-    let line_start = start_px + (span_px - line_width_px) / 2;
-    let line_end = line_start + line_width_px;
-
-    let snapped = |n: f32| (n * scale).round() / scale;
-    let line = if vertical {
-        Rect::from_min_max(
-            egui::pos2(line_start as f32 / scale, snapped(rect.top())),
-            egui::pos2(line_end as f32 / scale, snapped(rect.bottom())),
-        )
-    } else {
-        Rect::from_min_max(
-            egui::pos2(snapped(rect.left()), line_start as f32 / scale),
-            egui::pos2(snapped(rect.right()), line_end as f32 / scale),
-        )
-    };
+    let line=pixel_paint::centered_paint_axis_rect(rect,vertical,logical_width,scale);
     ui.painter().rect_filled(
         line, 0.0,
         if active { theme::border_ink(theme::BorderRole::Standard) } else { theme::border_ink(theme::BorderRole::Divider) },

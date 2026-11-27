@@ -98,12 +98,13 @@ PIXEL_RECT_HELPER = "modal_master_pixel_aligned_rect"
 PIXEL_RULE_HELPER = "modal_master_rule_rect"
 PIXEL_TOOLBAR_HELPER = "modal_master_toolbar_rule_rect"
 
-def function_regions(code):
+def function_regions(code, names=None):
     # These named popup functions have conventional signatures. Balance
     # braces after literal masking so nested paint/closure bodies stay intact.
-    names = PIXEL_MIXED | PIXEL_PAINT_ONLY | {
-        PIXEL_RECT_HELPER, PIXEL_RULE_HELPER, PIXEL_TOOLBAR_HELPER,
-    }
+    if names is None:
+        names = PIXEL_MIXED | PIXEL_PAINT_ONLY | {
+            PIXEL_RECT_HELPER, PIXEL_RULE_HELPER, PIXEL_TOOLBAR_HELPER,
+        }
     for match in re.finditer(r"\bfn\s+(\w+)\b[^{};]*\{", code):
         name = match.group(1)
         if name not in names:
@@ -181,9 +182,67 @@ def pixel_paint_violations(name, code):
         report(match.start(), "physical pixel helper used outside approved paint function")
     return findings
 
+
+# Shared physical-pixel math has a single owner. The only production
+# consumers are the paint wrappers below; no import alias or layout caller.
+PIXEL_MATH_OWNER = "ui_layout/pixel_paint.rs"
+PIXEL_MATH_NAMES = r"(?:snap_paint_coordinate|snap_paint_rect|paint_stroke_width|centered_paint_axis_rect)"
+PIXEL_MATH_REF = re.compile(r"\b(?:pixel_paint|" + PIXEL_MATH_NAMES + r")\b")
+PIXEL_MATH_CALLS = {
+    "popup/mod.rs": {
+        PIXEL_RECT_HELPER: {"snap_paint_rect"},
+        PIXEL_RULE_HELPER: {"paint_stroke_width"},
+        "modal_master_workspace_finish": {"snap_paint_coordinate", "paint_stroke_width"},
+    },
+    "ui_layout.rs": {"paint_dock_axis_line": {"centered_paint_axis_rect"}},
+}
+DPI_READERS = {
+    "popup/mod.rs": PIXEL_MIXED | PIXEL_PAINT_ONLY,
+    "ui_layout.rs": {"paint_dock_axis_line"},
+    # Native HWND boundary, not egui layout or paint geometry.
+    "main.rs": {"kakao_pane"},
+}
+DPI_READ = re.compile(r"\b(?:pixels_per_point|native_pixels_per_point)\s*\(")
+RAW_PIXEL_ROUND = re.compile(
+    r"\b(?:round_to_pixel(?:s)?|round_to_pixel_center|snap_to_pixel(?:s)?)\b"
+    r"|\*\s*(?P<scale>scale|ppp|dpi_scale|pixels_per_point)\s*\)\s*"
+    r"\.\s*round\s*\(\s*\)(?:\s*\.\s*max\s*\([^)]*\))?\s*/\s*(?P=scale)\b"
+    r"|\b(?P<reverse>scale|ppp|dpi_scale|pixels_per_point)\s*\*\s*[^;{}]+?\)\s*"
+    r"\.\s*round\s*\(\s*\)(?:\s*\.\s*max\s*\([^)]*\))?\s*/\s*(?P=reverse)\b"
+)
+def pixel_math_violations(name, code):
+    if name == PIXEL_MATH_OWNER:
+        return []
+    findings = []
+    def report(offset, rule):
+        findings.append((code.count("\n", 0, offset) + 1, rule))
+    remaining = code
+    dpi_remaining = code
+    calls = PIXEL_MATH_CALLS.get(name, {})
+    readers = DPI_READERS.get(name, set())
+    for fn, start, body_start, end in function_regions(code, set(calls) | readers):
+        body = code[body_start:end]
+        allowed = calls.get(fn, set())
+        if allowed:
+            prefix = r"crate\s*::\s*ui_layout\s*::\s*" if name == "popup/mod.rs" else ""
+            pattern = r"\b" + prefix + r"pixel_paint\s*::\s*(?:" + "|".join(sorted(allowed)) + r")\s*\("
+            body = mask_matches(body, pattern)
+            remaining = remaining[:body_start] + body + remaining[end:]
+        if fn in readers:
+            dpi_remaining = dpi_remaining[:body_start] + mask(dpi_remaining[body_start:end]) + dpi_remaining[end:]
+    if name == "ui_layout.rs":
+        remaining = mask_matches(remaining, r"\bpub\s*\(\s*crate\s*\)\s+mod\s+pixel_paint\s*;")
+    for match in PIXEL_MATH_REF.finditer(remaining):
+        report(match.start(), "shared physical pixel math used outside approved paint path")
+    for match in DPI_READ.finditer(dpi_remaining):
+        report(match.start(), "DPI read outside approved paint or native OS boundary")
+    for match in RAW_PIXEL_ROUND.finditer(code):
+        report(match.start(), "independent physical pixel rounding formula; use shared paint math")
+    return findings
+
 def violations(name, source):
     code = production(source)
-    findings = pixel_paint_violations(name, code)
+    findings = pixel_paint_violations(name, code) + pixel_math_violations(name, code)
     owner_calls = 0
     if name == OWNER:
         for match in re.finditer(r"\b(?:crate|super)\s*::", code):
@@ -204,7 +263,7 @@ def violations(name, source):
             findings.append((code.count("\n", 0, match.start()) + 1,
                              "geometry forwarding exports are prohibited"))
     if name in CORE_COMPONENTS:
-        for match in re.finditer(r"\bcrate\s*::\s*ui_layout\s*::\s*(?!geometry\b)\w+", code):
+        for match in re.finditer(r"\bcrate\s*::\s*ui_layout\s*::\s*(?!(?:geometry|pixel_paint)\b)\w+", code):
             findings.append((code.count("\n", 0, match.start()) + 1,
                              "component must use geometry, not layout composition"))
     for rule, regex in RULES:
@@ -305,7 +364,19 @@ def self_test():
     assert violations(PIXEL_OWNER, paint + "other(ui,rect);}")
     assert violations(PIXEL_OWNER, "fn paint_modal_master_footer_surface(ui:&Ui,rect:Rect)->Rect { rect }")
     assert not violations("screen.rs", "// modal_master_pixel_aligned_rect(rect,ppp)\n#[cfg(test)] mod t { fn f() { modal_master_rule_rect(rect,ppp,true); } }")
-    assert not violations("main.rs", "let scale=ui.ctx().pixels_per_point(); dock.connect(region,scale);")
+    assert not violations("main.rs", "fn kakao_pane() { let scale=ui.ctx().pixels_per_point(); dock.connect(region,scale); }")
+    assert violations("main.rs", "fn layout() { let ppp=ui.ctx().pixels_per_point(); }")
+    assert violations("screen.rs", "let x=(value*scale).round()/scale;")
+    assert violations("screen.rs", "let x=(width*ppp).round().max(1.0)/ppp;")
+    assert violations("screen.rs", "let x=(ppp*width).round()/ppp;")
+    assert violations("screen.rs", "rect.round_to_pixel(ppp);")
+    assert violations("screen.rs", "use crate::ui_layout::pixel_paint::snap_paint_rect as snap;")
+    assert violations("popup/mod.rs", "fn modal_master_header_in_rect() { crate::ui_layout::pixel_paint::snap_paint_rect(rect,ppp); }")
+    assert not violations("popup/mod.rs", "fn modal_master_pixel_aligned_rect(rect:Rect,pixels_per_point:f32)->Rect { crate::ui_layout::pixel_paint::snap_paint_rect(rect,pixels_per_point) }")
+    assert not violations("ui_layout.rs", "fn paint_dock_axis_line() { let scale=ui.ctx().pixels_per_point(); let line=pixel_paint::centered_paint_axis_rect(rect,true,width,scale); }")
+    assert not violations("ui_layout.rs", "pub(crate) mod pixel_paint;")
+    assert not violations(PIXEL_MATH_OWNER, "let x=(value*scale).round()/scale;")
+    assert not violations("kakao_dock.rs", "let to_px=|v:f32|->i32{(v*scale).round() as i32};")
 
 def main():
     self_test()
