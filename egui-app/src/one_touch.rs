@@ -73,28 +73,22 @@ pub fn value_rect(ink:Rect,slot:Rect)->Rect{
     ink.expand(theme::SPACE_4).intersect(slot)
 }
 fn background_shape(rect:Rect)->egui::Shape{
-    egui::Shape::rect_filled(rect,theme::CONTROL_RADIUS,theme::ONE_TOUCH_BG)
+    crate::highlight::fill_shape(rect,theme::CONTROL_RADIUS,
+        crate::highlight::palette(crate::highlight::Role::RequiredReview).fill.unwrap_or(theme::ONE_TOUCH_BG))
 }
 fn outline_shape(rect:Rect)->egui::Shape{
-    egui::Shape::rect_stroke(rect,theme::CONTROL_RADIUS,
-        Stroke::new(theme::ONE_TOUCH_BORDER_WIDTH,theme::ONE_TOUCH_BORDER),egui::StrokeKind::Inside)
+    crate::highlight::outline_shape(rect,theme::CONTROL_RADIUS,
+        crate::highlight::palette(crate::highlight::Role::RequiredReview).stroke.unwrap_or(Stroke::NONE))
 }
 pub fn background(ui:&Ui,rect:Rect){
-    if let Some(painter)=crate::ui_primitives::highlight_painter(ui,rect){
-        painter.add(background_shape(rect));
-    }
+    crate::highlight::paint_fill(ui.painter(),rect,theme::CONTROL_RADIUS,crate::highlight::Role::RequiredReview);
 }
 pub fn outline(ui:&Ui,rect:Rect){
-    if let Some(painter)=crate::ui_primitives::highlight_painter(ui,rect){
-        painter.add(outline_shape(rect));
-    }
+    crate::highlight::paint_outline(ui.painter(),rect,theme::CONTROL_RADIUS,crate::highlight::Role::RequiredReview);
 }
 /// Existing widgets with their own fill: tint lightly without covering text.
 pub fn mark(ui:&Ui,rect:Rect){
-    if let Some(painter)=crate::ui_primitives::highlight_painter(ui,rect){
-        painter.rect_filled(rect,theme::CONTROL_RADIUS,theme::ONE_TOUCH_TINT);
-    }
-    outline(ui,rect);
+    crate::highlight::paint(ui,rect,theme::CONTROL_RADIUS,crate::highlight::Role::ReviewTint);
 }
 /// Byte ranges of the exact printed total, tax label, and native account.
 /// Never infer a bank or calculate a monetary value.
