@@ -248,8 +248,8 @@ pub const SECTION_PADDING: f32 = SPACE_12;
 // One structural section-divider geometry across Reception, management and modal sections.
 pub const SECTION_DIVIDER_GAP: f32 = SPACE_12;
 pub const SECTION_DIVIDER_HEIGHT: f32 = 2.0 * SECTION_DIVIDER_GAP + SOFT_DIVIDER_WIDTH;
-// Reception card insets share the same 12pt structural spacing.
-pub const RECEPTION_PANE_PADDING_Y: f32 = SECTION_PADDING;
+// Reception cards use one 8pt vertical inset on both edges.
+pub const RECEPTION_PANE_PADDING_Y: f32 = SPACE_8;
 // The outer source frame owns the 4pt document inset. Both native TextEdit
 // and the manual Galley renderer use this same additional text margin.
 pub const SOURCE_DOCUMENT_TEXT_MARGIN: i8 = 0;
@@ -277,8 +277,8 @@ pub const RECEPTION_RECIPIENT_NAV_WIDTH:f32 =
     +RECEPTION_RECIPIENT_NAV_NAME_WIDTH
     +RECEPTION_RECIPIENT_NAV_COUNT_WIDTH
     +2.0*FRAME_STROKE_WIDTH;
-// Reception card title top inset follows the shared section padding.
-pub const RECEPTION_SECTION_HEADER_TOP: f32 = SPACE_8;
+// The header and the bottom edge must use the same vertical inset.
+pub const RECEPTION_SECTION_HEADER_TOP: f32 = RECEPTION_PANE_PADDING_Y;
 // Compact reception header only; ordinary management/modal rules stay 12pt.
 pub const RECEPTION_SECTION_DIVIDER_GAP: f32 = SPACE_8;
 pub const RECEPTION_SECTION_DIVIDER_HEIGHT: f32 =
@@ -392,7 +392,7 @@ pub const RECEPTION_ITEMS_MIN_TABLE_WIDTH: f32 =
 // A shipment's items/freight and the order-wide VAT/total are separate cards.
 // Single source of truth for section height budgeting (including the rule).
 pub const RECEPTION_SECTION_CHROME_HEIGHT: f32 =
-    RECEPTION_SECTION_HEADER_TOP + RECEPTION_PANE_PADDING_Y
+    2.0 * RECEPTION_PANE_PADDING_Y
     + SECTION_HEADER_HEIGHT + RECEPTION_SECTION_DIVIDER_HEIGHT;
 pub const RECEPTION_RECIPIENT_BODY_HEIGHT: f32 =
     4.0 * INPUT_HEIGHT + 3.0 * RECIPIENT_ROW_GAP;

@@ -414,14 +414,13 @@ pub(crate) fn fill_management_primary_card(ui: &mut Ui, min_inner_height: f32) {
 
 /// Return reception panes to the Settings-inspired PANEL card tier.
 /// No outer margin: the 6pt splitter hit area is the only reserved gutter.
-/// Compensate the 1pt outline in inner margins; the shared header owns
-/// its separate optical top clearance.
+/// Compensate the 1pt outline in inner margins on both vertical edges.
 pub(crate) fn docked_pane_frame() -> Frame {
     section_frame()
         .inner_margin(egui::Margin {
             left: (SECTION_PADDING - FRAME_STROKE_WIDTH) as i8,
             right: (SECTION_PADDING - FRAME_STROKE_WIDTH) as i8,
-            top: (RECEPTION_SECTION_HEADER_TOP - FRAME_STROKE_WIDTH) as i8,
+            top: (RECEPTION_PANE_PADDING_Y - FRAME_STROKE_WIDTH) as i8,
             bottom: (RECEPTION_PANE_PADDING_Y - FRAME_STROKE_WIDTH) as i8,
         })
 }
@@ -443,7 +442,7 @@ pub(crate) fn docked_section_body_height(section_height: f32) -> f32 {
 }
 
 /// The approved Reception card chrome is shared with the manual worksheet.
-/// The same 16pt card heading, compact 8pt header clearance and 12pt body inset
+/// The same 16pt card heading, symmetric 8pt vertical inset and 8pt divider clearance
 /// now render in both screens; business actions stay in their callers.
 pub(crate) fn reception_section_with_header(
     ui:&mut Ui,title:&str,minimum_height:f32,
@@ -451,7 +450,7 @@ pub(crate) fn reception_section_with_header(
 ){
     let width=ui.available_width();
     let _card=docked_pane_frame().show(ui,|ui|{
-        let height_inset=theme::RECEPTION_SECTION_HEADER_TOP+theme::RECEPTION_PANE_PADDING_Y;
+        let height_inset=2.0*theme::RECEPTION_PANE_PADDING_Y;
         let inner_width=inner_width_for_insets(width,theme::SECTION_PADDING,
             theme::SECTION_PADDING,0.0,0.0,60.0);
         apply_width_policy(ui,CardWidthPolicy::FillAvailable,inner_width);

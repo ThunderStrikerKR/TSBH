@@ -1074,7 +1074,9 @@ mod shared_general_screen_audit_tests {
             ".margin(egui::Margin::same(theme::SOURCE_DOCUMENT_TEXT_MARGIN))"
         ));
         assert!(manual.contains("theme::SOURCE_DOCUMENT_TEXT_MARGIN"));
-        assert_eq!(theme::RECEPTION_PANE_PADDING_Y,theme::SECTION_PADDING);
+        assert_eq!(theme::RECEPTION_PANE_PADDING_Y,8.0);
+        assert_eq!(theme::RECEPTION_SECTION_HEADER_TOP,theme::RECEPTION_PANE_PADDING_Y);
+        assert_eq!(theme::SECTION_PADDING,12.0);
         assert_eq!(theme::SOURCE_DOCUMENT_TEXT_MARGIN,0);
     }
 }
@@ -1927,6 +1929,28 @@ pub(crate) mod general_screen_geometry_tests {
             +17.0;
         assert!((docked_section_body_height(320.0)-(320.0-expected_chrome)).abs()<=0.5,
             "fixed-height body calculator does not reserve both divider gaps");
+    }
+
+    #[test]
+    fn reception_card_uses_equal_eight_point_vertical_insets(){
+        let ctx=test_context();
+        let screen=Vec2::new(900.0,700.0);
+        let work=Rect::from_min_max(egui::pos2(24.0,24.0),egui::pos2(876.0,676.0));
+        let trace=render(&ctx,screen,work,|ui|{
+            reception_section_with_header(ui,"발주 원문",280.0,|_|{},|body|{
+                body.spacing_mut().item_spacing.y=0.0;
+                let (rect,_)=body.allocate_exact_size(
+                    Vec2::new(body.available_width(),docked_section_body_height(280.0)),Sense::hover());
+                record("full reception body",rect);
+            });
+        });
+        let card=first(&trace,"source card");
+        let header=first(&trace,"source header");
+        let body=first(&trace,"full reception body");
+        assert!((header.top()-card.top()-8.0).abs()<=0.5);
+        assert!((card.bottom()-body.bottom()-8.0).abs()<=0.5,
+            "card bottom inset drifted: card={card:?}, body={body:?}");
+        assert!((card.height()-280.0).abs()<=0.5);
     }
 
     #[test]
