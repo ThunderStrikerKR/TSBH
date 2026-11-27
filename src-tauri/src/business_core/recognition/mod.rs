@@ -948,12 +948,31 @@ fn field_weight_prediction<'a>(task:&str,candidates:&[FieldWeightCandidate<'a>],
     if task=="type"&&candidates.iter().filter(|c|!c.blocked).count()<2{return "abstain";}
     field_weight_choice(candidates,weights,margin).unwrap_or("abstain")
 }
+// A single quantity token is exclusive within an order. If independent
+// local winners collide, abstain for all claimants; never use iteration
+// order to decide the winner. Common per-recipient rules are evaluated
+// separately, outside this exclusive-candidate experiment.
+fn exclusive_quantity_predictions<'a>(rows:impl IntoIterator<Item=(&'a str,&'a str)>)->Vec<&'a str>{
+    let rows=rows.into_iter().collect::<Vec<_>>();
+    let mut counts=HashMap::new();
+    for &(order,choice) in &rows{
+        if choice!="abstain"{*counts.entry((order,choice)).or_insert(0usize)+=1;}
+    }
+    rows.into_iter().map(|(order,choice)|{
+        if choice!="abstain"&&counts.get(&(order,choice)).copied().unwrap_or(0)>1{"abstain"}else{choice}
+    }).collect()
+}
+fn field_weight_predictions<'a>(task:&str,samples:&[FieldWeightSample<'a>],profile:Option<([i32;3],i32)>)->Vec<&'a str>{
+    let choices=samples.iter().map(|s|(s.order,profile.map_or(s.legacy,|(w,m)|
+        field_weight_prediction(task,&s.candidates,w,m))));
+    if task=="quantity_link"&&profile.is_some(){exclusive_quantity_predictions(choices)}
+    else{choices.map(|(_,choice)|choice).collect()}
+}
 fn field_weight_metrics(task:&str,samples:&[FieldWeightSample<'_>],profile:Option<([i32;3],i32)>)->Value{
     let mut patterns=std::collections::BTreeMap::<&str,(usize,usize)>::new();
     let mut orders=std::collections::BTreeMap::<&str,(usize,usize)>::new();
     let mut correct=0;let mut absent=0;let mut abstain=0;
-    for s in samples{
-        let prediction=profile.map_or(s.legacy,|(w,m)|field_weight_prediction(task,&s.candidates,w,m));
+    for (s,prediction) in samples.iter().zip(field_weight_predictions(task,samples,profile)){
         let ok=if prediction==s.expected{1}else{0};
         correct+=ok;
         if prediction=="abstain"{abstain+=1;}
@@ -982,7 +1001,8 @@ fn evaluate_field_weights(payload:&Value)->Result<Value,String>{
         let next=objective(&field_weight_metrics(task,&fit,Some(profile)));
         if next>score+1e-12{best=profile;score=next;}
     }}}}
-    let unseen_correct=unseen.iter().filter(|s|field_weight_prediction(task,&s.candidates,best.0,best.1)==s.expected).count();
+    let unseen_correct=holdout.iter().zip(field_weight_predictions(task,&holdout,Some(best)))
+        .filter(|(s,prediction)|!patterns.contains(s.pattern)&&*prediction==s.expected).count();
     Ok(json!({"task":task,"status":"offline_comparison_only","profile":{"weights":best.0,"margin":best.1},
         "fit":{"legacy":field_weight_metrics(task,&fit,None),"selected":field_weight_metrics(task,&fit,Some(best))},
         "holdout":{"legacy":field_weight_metrics(task,&holdout,None),"selected":field_weight_metrics(task,&holdout,Some(best))},
@@ -2678,6 +2698,13 @@ mod tests {
             r.as_object_mut().unwrap().remove("candidatePolicyComparison");
         }
         assert_eq!(baseline,compared);
+    }
+    #[test]
+    fn exclusive_quantity_predictions_abstain_on_all_same_order_claims(){
+        assert_eq!(exclusive_quantity_predictions([("A","5:6"),("A","5:6"),("A","7:8"),("B","5:6")]),
+            vec!["abstain","abstain","7:8","5:6"]);
+        assert_eq!(exclusive_quantity_predictions([("A","7:8"),("A","5:6"),("A","5:6")]),
+            vec!["7:8","abstain","abstain"]);
     }
     #[test]
     fn field_weight_evaluation_preserves_constraints_and_missing_candidates(){
