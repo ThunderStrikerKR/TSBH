@@ -625,10 +625,16 @@ mod shared_ui_base_113_contract_tests {
     }
     #[test]
     fn standard_text_cells_and_history_header_use_shared_painters(){
-        for source in [include_str!("../product_manager.rs"),include_str!("../excel_manager.rs"),
-            include_str!("../daily_settlement_manager.rs")]{
-            assert!(production_source_for_contract(source).contains("crate::table::paint_management_text_cell("));
+        for (name,source) in [("product_manager",include_str!("../product_manager.rs")),
+            ("excel_manager",include_str!("../excel_manager.rs"))]{
+            assert!(production_source_for_contract(source).contains("crate::table::paint_management_text_cell("),
+                "{name} must use the shared management text painter");
         }
+        // Settlement rows explicitly select semantic text state. The
+        // state-aware API is the common implementation, not a local painter.
+        let settlement=production_source_for_contract(include_str!("../daily_settlement_manager.rs"));
+        assert!(settlement.contains("crate::table::paint_management_text_cell_with_state("),
+            "settlement must use the shared state-aware management text painter");
         for source in [include_str!("../order_history_manager.rs"),include_str!("../excel_manager.rs"),
             include_str!("../daily_settlement_manager.rs")]{
             let production=production_source_for_contract(source);
