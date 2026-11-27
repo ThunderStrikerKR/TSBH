@@ -1,0 +1,116 @@
+name: Register audited Rust locks
+on:
+  push:
+    branches: [security/v0.8.0-pre-release]
+    paths:
+      - '.github/workflows/security-register-audited-locks.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/security-register-audited-locks.yml'
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: audited-rust-lock-registration-${{ github.event_name }}
+  cancel-in-progress: false
+jobs:
+  recover:
+    if: >-
+      github.ref == 'refs/heads/security/v0.8.0-pre-release' ||
+      (github.event_name == 'pull_request' &&
+      github.head_ref == 'security/v0.8.0-pre-release' &&
+      github.event.pull_request.head.repo.full_name == github.repository)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: resolved-cargo-locks
+          run-id: 46039713364
+          github-token: ${{ github.token }}
+          path: audited-locks
+      - name: Verify audited bytes and unchanged manifests
+        shell: bash
+        run: |
+          set -euo pipefail
+          git diff --exit-code c0d9e8469455f4c183c97c0d4fe991017e389ef0 HEAD -- egui-app/Cargo.toml crates/bando-data-access/Cargo.toml src-tauri/Cargo.toml
+          (
+            cd audited-locks
+            sha256sum --check <<'SHA'
+          c7ed66745c71547c73b4c81968e61c66d99373378d9db47704a490046c87c55d  egui-app/Cargo.lock
+          b840ab173904019991a121abc40dbcfb01468b900eab1f864be7a346f7b28a1e  crates/bando-data-access/Cargo.lock
+          7d7bfc18e6399237bfebe3100c0ab28e100b512db544a548a11ebefb030f269a  src-tauri/Cargo.lock
+          SHA
+          )
+          for dir in egui-app crates/bando-data-access src-tauri; do
+            test -f "audited-locks/$dir/Cargo.lock"
+            test ! -L "audited-locks/$dir/Cargo.lock"
+            cp "audited-locks/$dir/Cargo.lock" "$dir/Cargo.lock"
+            cargo metadata --locked --no-deps --format-version 1 --manifest-path "$dir/Cargo.toml" >/dev/null
+          done
+          python3 scripts/verify-patched-rust-locks.py
+      - name: Read-only recovery log for connector registration
+        if: github.event_name == 'pull_request'
+        shell: bash
+        run: |
+          set -euo pipefail
+          for dir in egui-app crates/bando-data-access src-tauri; do
+            printf 'LOCK_BEGIN:%s/Cargo.lock\n' "$dir"
+            base64 -w 1000 "$dir/Cargo.lock" | sed 's/^/LOCK_CHUNK:/'
+            printf 'LOCK_END:%s/Cargo.lock\n' "$dir"
+          done
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: audited-registration-locks
+          path: |
+            egui-app/Cargo.lock
+            crates/bando-data-access/Cargo.lock
+            src-tauri/Cargo.lock
+          if-no-files-found: error
+          retention-days: 3
+  register:
+    needs: recover
+    if: github.event_name == 'push' && github.ref == 'refs/heads/security/v0.8.0-pre-release'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.sha }}
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: audited-registration-locks
+          path: audited-locks
+      - name: Register exactly three audited locks
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF" = refs/heads/security/v0.8.0-pre-release
+          git fetch origin refs/heads/security/v0.8.0-pre-release
+          test "$(git rev-parse FETCH_HEAD)" = "$GITHUB_SHA"
+          (
+            cd audited-locks
+            sha256sum --check <<'SHA'
+          c7ed66745c71547c73b4c81968e61c66d99373378d9db47704a490046c87c55d  egui-app/Cargo.lock
+          b840ab173904019991a121abc40dbcfb01468b900eab1f864be7a346f7b28a1e  crates/bando-data-access/Cargo.lock
+          7d7bfc18e6399237bfebe3100c0ab28e100b512db544a548a11ebefb030f269a  src-tauri/Cargo.lock
+          SHA
+          )
+          for dir in egui-app crates/bando-data-access src-tauri; do
+            cp "audited-locks/$dir/Cargo.lock" "$dir/Cargo.lock"
+          done
+          python3 scripts/verify-patched-rust-locks.py
+          git add -- egui-app/Cargo.lock crates/bando-data-access/Cargo.lock src-tauri/Cargo.lock
+          if git diff --cached --quiet; then exit 0; fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git -c core.hooksPath=/dev/null commit -m 'security: register RustSec-audited SQLite and XLSX locks'
+          git push origin HEAD:refs/heads/security/v0.8.0-pre-release
