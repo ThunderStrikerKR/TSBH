@@ -328,7 +328,28 @@ impl BandoGateway for LocalGateway {
         let result=(||->Result<Value,String>{
             let contexts=recognition::execute("project_owner_contexts",
                 serde_json::json!({"raw":raw,"initialAnalysis":first}))?;
-            PreviewStore::capture_recognition_learning(order,&contexts)
+            let mut shadow=PreviewStore::capture_recognition_learning(order,&contexts)?;
+            // Always preserve the original recognition. An absent or rejected
+            // developer model is a recorded abstention, never a parser error.
+            let combined=(||->Result<Value,String>{
+                let Some(model)=PreviewStore::read_blend_shadow_model(order)?else{
+                    return Ok(serde_json::json!({"status":"no_configured_model","decisionChanged":false,
+                        "eligibleForAutomaticDecision":false}));
+                };
+                use sha2::{Digest,Sha256};
+                let model_id=format!("blend-{:x}",Sha256::digest(serde_json::to_vec(&model).map_err(|_|"결합 모델 지문 오류")?));
+                let mut result=recognition::execute("run_blend_shadow",serde_json::json!({
+                    "raw":raw,"initialAnalysis":first,"learningShadow":shadow,"model":model,
+                    "predictionAt":chrono::Utc::now().to_rfc3339(),"clientBuildVersion":env!("CARGO_PKG_VERSION")}))?;
+                result["modelId"]=serde_json::json!(model_id);
+                result["currentModelSourceDigestsMatched"]=serde_json::json!(true);
+                result["modelIndependentlyApproved"]=serde_json::json!(false);
+                Ok(result)
+            })();
+            shadow["combinedShadow"]=combined.unwrap_or_else(|_|serde_json::json!({
+                "status":"unavailable_or_incompatible_model","decisionChanged":false,
+                "eligibleForAutomaticDecision":false}));
+            Ok(shadow)
         })();
         Some(result.unwrap_or_else(|_|serde_json::json!({
             "status":"unavailable","reason":"unverified_or_unavailable_ledger",

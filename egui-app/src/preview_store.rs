@@ -1000,6 +1000,36 @@ impl PreviewStore {
         Ok(result)
     }
 
+    // Explicit developer opt-in; read-only model and current source check.
+    // A file is not a signed or independently approved model registry.
+    pub(crate) fn read_blend_shadow_model(target:&str)->Result<Option<Value>,String>{
+        use std::io::Read;
+        let Some(path)=std::env::var_os("BANDO_EGUI_BLEND_SHADOW_MODEL").filter(|p|!p.is_empty())else{return Ok(None);};
+        let file=std::fs::File::open(path).map_err(|_|"그림자 결합 모델 열기 실패")?;
+        let mut bytes=Vec::new();
+        file.take(256*1024+1).read_to_end(&mut bytes).map_err(|_|"그림자 결합 모델 읽기 실패")?;
+        if bytes.len()>256*1024{return Err("그림자 결합 모델 한도 초과".into());}
+        let model:Value=serde_json::from_slice(&bytes).map_err(|_|"그림자 결합 모델 형식 오류")?;
+        let (mut conn,business,scope)=Self::learning_connection()?;
+        if model["businessScope"].as_str()!=Some(scope.as_str()){return Err("그림자 결합 모델 업무 DB 불일치".into());}
+        let expected=model["sourceDigests"].as_object().filter(|m|!m.is_empty()&&m.len()<=250)
+            .ok_or("그림자 결합 모델 원본 지문 누락")?;
+        if expected.contains_key(target){return Err("그림자 결합 모델 자기 주문 포함".into());}
+        let ids=expected.keys().cloned().collect::<Vec<_>>();
+        let tx=conn.transaction().map_err(|e|e.to_string())?;
+        let (frozen,_,digests)=crate::business_state::read_learning_inputs(&ids,|sources|{
+            let (misses,digests)=select_learning_changes(&tx,&scope,sources)?;
+            if !misses.is_empty(){return Err("그림자 결합 모델 원본 동기화 필요".into());}
+            Ok((Vec::new(),digests))
+        })?;
+        if json!(digests)!=model["sourceDigests"]||crate::business_state::read_learning_sources(&ids)?!=frozen||
+            crate::business_state::authorized_business_write_path()?.canonicalize().map_err(|_|"업무 DB 식별 실패")?!=business{
+            return Err("그림자 결합 모델 원본 변경".into());
+        }
+        tx.commit().map_err(|e|e.to_string())?;
+        Ok(Some(model))
+    }
+
     pub(crate) fn recognition_learning_support(input:&Value,
         evaluate:impl Fn(&[Value])->Result<Value,String>)->Result<Value,String>{
         let (mut conn,business,scope)=Self::learning_connection()?;
@@ -1046,6 +1076,12 @@ impl PreviewStore {
             }else{recognition_learning_store::assess_local_replay(&tx,&scope,input,&orders,&digests)?};
             if crate::business_state::read_learning_sources(&ids)?!=frozen{
                 return Err("로컬 재현 중 확정 주문이 변경되었습니다.".into());
+            }
+            if blend.is_some()&&result["runtimeParameters"].is_object(){
+                // Optional developer handoff only. No source text or recipient
+                // data; model is never installed or enabled by this query.
+                result["runtimeParameters"]["businessScope"]=json!(scope);
+                result["runtimeParameters"]["sourceDigests"]=json!(digests);
             }
             result["requestedOrders"]=json!(ids.len());
             result["missingOrInactiveSourceOrders"]=json!(ids.len()-orders.len());

@@ -1757,6 +1757,13 @@ pub(super) fn learn_blend_weights(payload:&Value)->Result<Value,String>{
         "unavailableBothModelsObservations":unavailable,"excludedOrders":excluded,"lateLabelOrders":late,
         "overallTestCoverage":(eligible_test>0).then(||covered as f64/eligible_test as f64),
         "models":models,"testGroups":groups,"outsideBucketSelectable":false,
+        "runtimeParameters":{"schemaVersion":1,"clientBuildVersion":build,
+            "scorePolicyVersion":OWNER_SCORE_POLICY,"captureVersion":4,"supportVersion":4,
+            "featureVersion":1,"contributionVersion":2,"explicitToWeakRatio":3.0,
+            "safetyPolicyVersion":1,"availableAfter":config["evaluationAsOf"],
+            "legacyBins":legacy["bins"],"legacyGates":legacy["gateCalibration"]["groups"],
+            "shadowModels":shadow_model["models"],"blendModels":models,
+            "automaticChangeAuthorized":false},
         "changeSafety":{"policyVersion":1,"status":"diagnostic_only",
             "minimumCombinedProxySupport":MIN_CHANGE_PROXY,"minimumCombinedMargin":MIN_CHANGE_MARGIN,
             "maximumOutsideProxySupport":MAX_CHANGE_OUTSIDE,"requiresShadowAgreement":true,
@@ -1768,6 +1775,98 @@ pub(super) fn learn_blend_weights(payload:&Value)->Result<Value,String>{
             })).collect::<Vec<_>>()},
         "representativeLabelsVerified":false,"historicalModelVerified":false,"sourceProvenanceVerified":false,
         "calibratedProbability":null,"eligibleForAutomaticDecision":false,"decisionChanged":false}))
+}
+
+// P07-05: read-only runtime inference on initial recognition. The optional
+// developer model is never a production authorization or an audit label.
+pub(super) fn run_blend_shadow(payload:&Value)->Result<Value,String>{
+    let raw=payload["raw"].as_str().filter(|s|!s.is_empty()&&s.len()<=128*1024).ok_or("그림자 원문 오류")?;
+    let first=&payload["initialAnalysis"];let shadow=&payload["learningShadow"];
+    let model=&payload["model"];
+    let date=|v:&Value|v.as_str().and_then(|s|chrono::DateTime::parse_from_rfc3339(s).ok());
+    let now=date(&payload["predictionAt"]).ok_or("그림자 예측 시각 오류")?;
+    let available=date(&model["availableAfter"]).ok_or("그림자 모델 시각 오류")?;
+    if available>=now||model["schemaVersion"]!=1||model["clientBuildVersion"]!=payload["clientBuildVersion"]||
+        model["scorePolicyVersion"]!=OWNER_SCORE_POLICY||model["captureVersion"]!=4||model["supportVersion"]!=4||
+        model["featureVersion"]!=1||model["contributionVersion"]!=2||model["safetyPolicyVersion"]!=1||
+        model["explicitToWeakRatio"].as_f64()!=Some(3.0)||model["automaticChangeAuthorized"]!=false||
+        shadow["captureVersion"]!=4||shadow["status"]!="captured_shadow_support"||
+        shadow["sourceDigestsMatched"]!=true||shadow["decisionChanged"]!=false||
+        first["recipientOwnerTrace"]["schemaVersion"]!=1||
+        first["recipientOwnerTrace"]["scorePolicyVersion"]!=OWNER_SCORE_POLICY{
+        return Err("그림자 모델 버전 또는 시각 불일치".into());
+    }
+    let units=raw.encode_utf16().collect::<Vec<_>>();
+    let projection=super::learning_context::lookup(&json!({"raw":raw,"initialAnalysis":first}))?;
+    let observations=owner_observations(&units,first,&first["recipients"]);
+    if observations.len()>64{return Err("결합 그림자 관측 한도 초과".into());}
+    let mut decisions=Vec::new();let mut seen=BTreeSet::new();
+    for obs in observations{
+        let Some(s)=position(&units,&obs["source"])else{continue;};
+        if !seen.insert(s){return Err("결합 그림자 관측 중복".into());}
+        let outcome=(||->Option<Value>{
+            let old=singleton(&obs["initialCandidates"])?;
+            if !matches!(old,"next"|"previous"){return None;}
+            let mut traces=rows(&first["recipientOwnerTrace"]["decisions"]).filter(|d|position(&units,&d["source"])==Some(s));
+            let d=traces.next()?;if traces.next().is_some(){return None;}
+            let (kind,route,p)=if d["legacyFirstBlockingReason"].is_null(){
+                let (kind,bin)=owner_score_input(&units,d,&obs)?;
+                let mut found=rows(&model["legacyBins"]).filter(|r|r["sourceKind"]==kind&&r["bin"].as_u64()==Some(bin as u64));
+                let r=found.next()?;if found.next().is_some()||r["fitOrders"].as_u64()?<MIN_CALIBRATION_ORDERS as u64{return None;}
+                (kind,"score",r["estimatedNextProxyFrequency"].as_f64()?)
+            }else{
+                let (kind,reason)=owner_gate_input(&units,d,&obs)?;
+                let mut found=rows(&model["legacyGates"]).filter(|r|r["sourceKind"]==kind&&r["firstBlockingReason"]==reason);
+                let r=found.next()?;if found.next().is_some()||r["fit"]["independentOrders"].as_u64()?<MIN_CALIBRATION_ORDERS as u64{return None;}
+                (kind,"gate",r["estimatedNextProxyFrequency"].as_f64()?)
+            };
+            if !p.is_finite()||!(0.0..=1.0).contains(&p){return None;}
+            let mut selections=rows(&shadow["contextSelection"]).filter(|r|r["task"]=="recipient_ownership"&&position(&units,r)==Some(s));
+            let sel=selections.next()?;if selections.next().is_some()||sel["status"]!="diagnostic_context_selected"||sel["contextConflict"]!=false{return None;}
+            let key=sel["selectedContextKey"].as_str()?;
+            let mut entries=rows(&projection["entries"]).filter(|r|position(&units,&r["source"])==Some(s));
+            let entry=entries.next()?;if entries.next().is_some(){return None;}
+            let mut contexts=rows(&entry["contexts"]).filter(|c|c["key"].as_str()==Some(key));
+            let context=contexts.next()?;if contexts.next().is_some(){return None;}
+            let level=context["level"].as_str()?;
+            let mut locs=rows(&shadow["locations"]).filter(|r|r["task"]=="recipient_ownership"&&position(&units,r)==Some(s));
+            let loc=locs.next()?;if locs.next().is_some()||loc["candidateCoverage"]!="traced_pair"||
+                !rows(&loc["contextKeys"]).any(|k|k.as_str()==Some(key)){return None;}
+            let allowed=BTreeSet::from(["next","previous"]);
+            if rows(&loc["candidates"]).filter_map(Value::as_str).collect::<BTreeSet<_>>()!=allowed||
+                rows(&loc["candidates"]).count()!=2{return None;}
+            let mut reports=rows(&shadow["contexts"]).filter(|r|r["task"]=="recipient_ownership"&&
+                r["contextKey"].as_str()==Some(key)&&r["supportVersion"]==4&&r["featureVersion"]==1&&
+                r["contributionVersion"]==2&&r["contextQuality"]["status"]=="diagnostic_screen_pass"&&
+                rows(&r["candidateIds"]).filter_map(Value::as_str).collect::<BTreeSet<_>>()==allowed);
+            let r=reports.next()?;if reports.next().is_some(){return None;}
+            // The dummy class is not used in inference or screening.
+            let sample=shadow_distribution(r,&allowed,old)?;
+            let mut models=rows(&model["shadowModels"]).filter(|r|r["task"]=="recipient_ownership"&&r["contextLevel"]==level&&r["candidateCoverage"]=="traced_pair");
+            let sm=models.next()?;if models.next().is_some()||sm["fitOrders"].as_u64()?<MIN_CALIBRATION_ORDERS as u64{return None;}
+            let t=sm["temperature"].as_f64()?;let smoothing=sm["uniformSmoothing"].as_f64()?;
+            if !SHADOW_TEMPERATURES.contains(&t)||!SHADOW_SMOOTHING.contains(&smoothing){return None;}
+            let mut weights=rows(&model["blendModels"]).filter(|r|r["sourceKind"]==kind&&r["legacyRoute"]==route&&r["contextLevel"]==level);
+            let wm=weights.next()?;if weights.next().is_some()||wm["weightFitOrders"].as_u64()?<MIN_BLEND_ORDERS as u64{return None;}
+            let w=wm["learningWeight"].as_f64()?;
+            if !w.is_finite()||!(0.0..=1.0).contains(&w)||(w*10.0-(w*10.0).round()).abs()>1e-8{return None;}
+            let blend=BlendSample{legacy:vec![p,1.0-p,0.0],shadow:shadow_transform(&sample.distribution,t,smoothing),
+                actual:sample.actual,label:"runtime_unlabeled",legacy_choice:usize::from(old=="previous"),
+                transfer_block:owner_transfer_block(&units,first,d,s,old)};
+            let (reason,target)=screen_blend_change(&blend,Some(w));
+            Some(json!({"start":s.0,"end":s.1,"legacyCandidate":old,"contextLevel":level,
+                "sourceKind":kind,"legacyRoute":route,"learningWeight":w,
+                "candidateOrder":["next","previous","outside"],"legacyProxy":blend.legacy,
+                "learningProxy":blend.shadow,"combinedProxy":blend_distribution(&blend.legacy,&blend.shadow,w),
+                "status":reason,"diagnosticCandidate":target.map(|i|if i==0{"next"}else{"previous"}),
+                "decisionChanged":false,"eligibleForAutomaticDecision":false}))
+        })();
+        decisions.push(outcome.unwrap_or_else(||json!({"start":s.0,"end":s.1,
+            "status":"unavailable_or_ineligible","decisionChanged":false,"eligibleForAutomaticDecision":false})));
+    }
+    Ok(json!({"status":"runtime_shadow_only","schemaVersion":1,"predictionAt":payload["predictionAt"],
+        "decisions":decisions,"modelIndependentlyApproved":false,"representativeLabelsVerified":false,
+        "automaticChangeAuthorized":false,"decisionChanged":false,"eligibleForAutomaticDecision":false}))
 }
 
 #[cfg(test)]
@@ -1976,6 +2075,24 @@ mod tests{
         let first=&p["confirmationSnapshot"]["recognitionBaseline"]["initialAnalysis"];
         let d=&first["recipientOwnerTrace"]["decisions"][0];
         assert_eq!(owner_transfer_block(&raw,first,d,(6,19),"previous"),Some("partial_or_modified_source_value"));
+    }
+    #[test]
+    fn runtime_blend_rejects_future_or_incompatible_model(){
+        let mut model=json!({"schemaVersion":1,"clientBuildVersion":"test","scorePolicyVersion":OWNER_SCORE_POLICY,
+            "captureVersion":4,"supportVersion":4,"featureVersion":1,"contributionVersion":2,
+            "safetyPolicyVersion":1,"explicitToWeakRatio":3.0,"automaticChangeAuthorized":false,
+            "availableAfter":"2026-11-27T01:00:00Z"});
+        let payload=|model:&Value|json!({"raw":"synthetic","clientBuildVersion":"test",
+            "predictionAt":"2026-11-27T00:00:00Z","model":model,
+            "initialAnalysis":{"recipients":[],"recipientOwnerTrace":{"schemaVersion":1,"scorePolicyVersion":OWNER_SCORE_POLICY}},
+            "learningShadow":{"status":"captured_shadow_support","captureVersion":4,"sourceDigestsMatched":true,"decisionChanged":false}});
+        assert!(run_blend_shadow(&payload(&model)).is_err());
+        model["availableAfter"]=json!("2026-11-26T00:00:00Z");
+        let result=run_blend_shadow(&payload(&model)).unwrap();
+        assert_eq!(result["status"],"runtime_shadow_only");
+        assert_eq!(result["decisionChanged"],false);
+        model["automaticChangeAuthorized"]=json!(true);
+        assert!(run_blend_shadow(&payload(&model)).is_err());
     }
     fn owner_fixture()->Value{
         // Emoji makes the UTF-16 positions differ from byte offsets.
