@@ -49,11 +49,52 @@ fn client_account_choices(accounts:&[Value])->Vec<(String,String)>{
         )));
     choices
 }
+fn client_form_row<R>(ui:&mut Ui,label:&str,control:impl FnOnce(&mut Ui)->R)->R{
+    crate::popup::modal_labeled_row_with_width(ui,label,theme::MODAL_FORM_WIDE_LABEL_WIDTH,control)
+}
+fn client_form_pair(ui:&mut Ui,draft:&mut Value,left:impl FnOnce(&mut Ui,&mut Value),right:impl FnOnce(&mut Ui,&mut Value)){
+    // At constrained window sizes keep each label and control together
+    // instead of shrinking both editable values below their usable width.
+    let minimum=2.0*(theme::MODAL_FORM_WIDE_LABEL_WIDTH+theme::SPACE_8+100.0)+theme::SPACE_8;
+    if ui.available_width()>=minimum{
+        ui.columns(2,|cols|{left(&mut cols[0],draft);right(&mut cols[1],draft);});
+    }else{
+        left(ui,draft);right(ui,draft);
+    }
+}
 fn label_edit(ui:&mut Ui,draft:&mut Value,key:&str,label:&str) {
     let mut input=field(draft,key).to_owned();
-    if crate::popup::modal_compact_text_field(ui,label,&mut input,"").changed(){
-        draft[key]=json!(input);
-    }
+    let response=client_form_row(ui,label,|value|{
+        let width=value.available_width();
+        crate::input::flexible_text_field(value,&mut input,width,"")
+    });
+    if response.changed(){draft[key]=json!(input);}
+}
+fn client_tier_edit(ui:&mut Ui,draft:&mut Value){
+    client_form_row(ui,"가격 등급",|value|{
+        let mut tier=field(draft,"tier").to_owned();
+        let width=value.available_width();
+        crate::dropdown::management_dropdown(
+            value,crate::composite_client::client_tier_label(&tier),width,true,|menu|{
+                for (key,label) in [("wholesale","도매"),("semi","반도매"),
+                    ("retail","소매"),("special","특수")]{
+                    crate::dropdown::management_dropdown_option(menu,&mut tier,key.to_owned(),label);
+                }
+            });
+        draft["tier"]=json!(tier);
+    });
+}
+fn client_payment_edit(ui:&mut Ui,draft:&mut Value){
+    client_form_row(ui,"결제 방식",|value|{
+        let mut payment=field(draft,"payment").to_owned();
+        let width=value.available_width();
+        crate::dropdown::management_dropdown(
+            value,if payment=="POSTPAID"{"후불"}else{"선입금"},width,true,|menu|{
+                crate::dropdown::management_dropdown_option(menu,&mut payment,"PREPAID".into(),"선입금");
+                crate::dropdown::management_dropdown_option(menu,&mut payment,"POSTPAID".into(),"후불");
+            });
+        draft["payment"]=json!(payment);
+    });
 }
 fn bool_edit(ui:&mut Ui,draft:&mut Value,key:&str,title:&str) {
     let mut selected=draft.get(key).and_then(Value::as_bool).unwrap_or(false);
@@ -641,9 +682,9 @@ impl ClientManager {
         }
     }
     fn search_tag_editor(&mut self,ui:&mut Ui,draft:&mut Value){
-        ui.vertical(|panel|{
+        client_form_row(ui,"검색 태그",|controls|{
+            controls.vertical(|panel|{
             crate::ui_layout::apply_spacing_role(panel,crate::ui_layout::SpacingRole::WorkflowDetail);
-            panel.label(typography::field_label("검색 태그"));
             let tags=client_search_tags::labels(draft);
             let interaction=crate::input::tag_block_editor(panel,&tags,&mut self.tag_input,"검색 태그 입력");
             if interaction.changed{self.tag_notice=None;}
@@ -659,51 +700,23 @@ impl ClientManager {
                 panel,status_width,typography::METADATA_LINE_HEIGHT,
                 notice,notice,theme::MUTED
             );
+            });
         });
     }
     fn editor_fields(&mut self,ui:&mut Ui,draft:&mut Value) {
+        crate::popup::modal_form_row_spacing(ui);
         ui.label(typography::section_heading("거래처 식별"));
         label_edit(ui,draft,"name","거래처명");
         self.search_tag_editor(ui,draft);
         crate::ui_primitives::section_divider(ui);
         ui.label(typography::section_heading("주소 / 전화번호"));
         label_edit(ui,draft,"address","주소");
-        ui.columns(2,|cols|{
-            label_edit(&mut cols[0],draft,"phone","전화번호");
-            label_edit(&mut cols[1],draft,"mobile","휴대폰번호");
-        });
+        client_form_pair(ui,draft,
+            |left,draft|label_edit(left,draft,"phone","전화번호"),
+            |right,draft|label_edit(right,draft,"mobile","휴대폰번호"));
         crate::ui_primitives::section_divider(ui);
         ui.label(typography::section_heading("거래 조건"));
-        ui.columns(2,|cols|{
-            cols[0].label(typography::field_label("가격 등급"));
-            let mut tier=field(draft,"tier").to_owned();
-            let width=cols[0].available_width();
-            crate::dropdown::management_dropdown(
-                &mut cols[0],crate::composite_client::client_tier_label(&tier),
-                width,true,|ui|{
-                    for (key,label) in [
-                        ("wholesale","도매"),("semi","반도매"),
-                        ("retail","소매"),("special","특수")
-                    ] {
-                        crate::dropdown::management_dropdown_option(
-                            ui,&mut tier,key.to_owned(),label);
-                    }
-                });
-            draft["tier"]=json!(tier);
-            cols[1].label(typography::field_label("결제 방식"));
-            let mut payment=field(draft,"payment").to_owned();
-            let width=cols[1].available_width();
-            crate::dropdown::management_dropdown(
-                &mut cols[1],if payment=="POSTPAID"{"후불"}else{"선입금"},
-                width,true,|ui|{
-                    crate::dropdown::management_dropdown_option(
-                        ui,&mut payment,"PREPAID".into(),"선입금");
-                    crate::dropdown::management_dropdown_option(
-                        ui,&mut payment,"POSTPAID".into(),"후불");
-                });
-            draft["payment"]=json!(payment);
-        });
-        ui.label(typography::field_label("주 사용 입금계좌"));
+        client_form_pair(ui,draft,client_tier_edit,client_payment_edit);
         let accounts=self.state.pointer("/settings/accounts")
             .and_then(Value::as_array).cloned().unwrap_or_default();
         let choices=client_account_choices(&accounts);
@@ -713,24 +726,28 @@ impl ClientManager {
             .map(|(_,label)|label.as_str())
             .unwrap_or(CLIENT_ACCOUNT_EMPTY_LABEL);
         let mut next_selected=selected.clone();
-        let width=ui.available_width();
-        crate::dropdown::management_dropdown(
-            ui,selected_label,width,true,|menu|{
-                for (id,label) in &choices {
-                    crate::dropdown::management_dropdown_option(
-                        menu,&mut next_selected,id.clone(),label
-                    );
-                }
-            });
+        client_form_row(ui,"주 사용 입금계좌",|value|{
+            let width=value.available_width();
+            crate::dropdown::management_dropdown(
+                value,selected_label,width,true,|menu|{
+                    for (id,label) in &choices {
+                        crate::dropdown::management_dropdown_option(
+                            menu,&mut next_selected,id.clone(),label
+                        );
+                    }
+                });
+        });
         // Persist only an explicit selection. A stale legacy reference stays
         // visible as unassigned until the user deliberately chooses an option.
         if next_selected!=selected {
             draft["preferredAccountId"]=if next_selected.is_empty(){Value::Null}
                 else{json!(next_selected)};
         }
-        ui.horizontal_wrapped(|flags|{
-            bool_edit(flags,draft,"shippingFeeExcluded","배송비 청구 제외");
-            bool_edit(flags,draft,"defaultApplyVat","부가세 포함");
+        client_form_row(ui,"",|value|{
+            value.horizontal_wrapped(|flags|{
+                bool_edit(flags,draft,"shippingFeeExcluded","배송비 청구 제외");
+                bool_edit(flags,draft,"defaultApplyVat","부가세 포함");
+            });
         });
         if field(draft,"tier")=="special" {
             crate::ui_primitives::section_divider(ui);
@@ -1081,5 +1098,40 @@ impl ClientManager {
     }
     pub(crate) fn geometry_select_notice(&mut self){
         self.messages.as_mut().expect("message fixture").geometry_select_first();
+    }
+}
+
+#[cfg(test)]
+mod client_inline_form_tests{
+    use super::*;
+    #[test]
+    fn client_form_labels_and_input_controls_share_rows(){
+        for width in [840.0,420.0]{
+            let ctx=crate::ui_test_support::test_context();
+            let screen=egui::Rect::from_min_size(egui::Pos2::ZERO,egui::vec2(width,500.0));
+            let mut draft=json!({"name":"합성 거래처","address":"합성 주소","phone":"02-0000-0000","mobile":""});
+            crate::ui_test_support::begin_component_geometry();
+            let output=ctx.run(egui::RawInput{screen_rect:Some(screen),..Default::default()},|ctx|{
+                egui::CentralPanel::default().show(ctx,|ui|{
+                    label_edit(ui,&mut draft,"name","거래처명");
+                    label_edit(ui,&mut draft,"address","주소");
+                    client_form_pair(ui,&mut draft,
+                        |left,draft|label_edit(left,draft,"phone","전화번호"),
+                        |right,draft|label_edit(right,draft,"mobile","휴대폰번호"));
+                });
+            });
+            let samples=crate::ui_test_support::finish_component_geometry(screen);
+            let inputs=samples.iter().filter(|s|s.role=="input").map(|s|s.rect).collect::<Vec<_>>();
+            assert_eq!(inputs.len(),4);
+            for (label,rect) in ["거래처명","주소","전화번호","휴대폰번호"].into_iter().zip(&inputs){
+                let ink=crate::ui_test_support::painted_text_rects(&output,label)[0].0;
+                assert!(ink.right()<=rect.left());
+                assert!((ink.center().y-rect.center().y).abs()<=3.0);
+            }
+            assert!((inputs[0].left()-inputs[1].left()).abs()<0.5);
+            assert!((inputs[0].left()-inputs[2].left()).abs()<0.5);
+            if width==840.0{assert!((inputs[2].top()-inputs[3].top()).abs()<0.5);}
+            else{assert!(inputs[3].top()>=inputs[2].bottom());}
+        }
     }
 }

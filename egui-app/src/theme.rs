@@ -477,6 +477,8 @@ pub const MODAL_SECTION_RADIUS: u8 = SECTION_RADIUS;
 // Approved compact modal form row: label and editable value share one 36pt
 // line. No product-management-specific vertical label/input layout.
 pub const MODAL_FORM_LABEL_WIDTH: f32 = 80.0;
+// Wide form label role for localized captions such as 주 사용 입금계좌.
+pub const MODAL_FORM_WIDE_LABEL_WIDTH:f32=128.0;
 pub const MODAL_PANEL_PADDING_X: f32 = SPACE_12;
 pub const MODAL_PANEL_PADDING_Y: f32 = SPACE_12;
 pub const MODAL_DECISION_MAX_WIDTH: f32 = 560.0;
