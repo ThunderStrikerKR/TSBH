@@ -3382,7 +3382,7 @@ impl BandoEgui {
         self.source_save_error=None;
         let manual_workspace::Event::Applied{
             order_id,raw,order_type,client_id,direct_input,model,assignment_order,
-            order,quote,quote_error
+            order,audit_before,quote,quote_error
         }=event else{return;};
                 if self.active_id.as_deref()!=Some(order_id.as_str()) ||
                    self.raw_source!=raw ||
@@ -3452,25 +3452,12 @@ impl BandoEgui {
                 if let Some(recips)=order.get("recipients").filter(|v|v.is_array()) {
                     if let Some(row)=self.drafts.iter_mut()
                         .find(|row|row.id==order_id) {
-                        // The first Rust recognition never becomes an
-                        // employee-corrected projection. Keep both snapshots
-                        // and every subsequent manual edit independently.
-                        let initial=row.analysis_evidence.as_ref()
-                            .filter(|v|v.get("recipients").is_some_and(serde_json::Value::is_array));
-                        let before=row.manual_model.as_ref()
-                            .and_then(|v|v.pointer("/model/rows"))
-                            .or_else(||initial.and_then(|v|v.get("recipients")));
-                        if let (Some(original),Some(previous))=(initial,before) {
-                            if previous!=recips {
-                                row.edit_history.push(serde_json::json!({
-                                    "id":uuid::Uuid::new_v4().to_string(),
-                                    "at":chrono::Utc::now().to_rfc3339(),
-                                    "sourceRaw":raw,
-                                    "initialAnalysis":original,
-                                    "beforeRows":previous,
-                                    "afterRows":recips
-                                }));
-                            }
+                        // Capture exact native before/after evidence, including a
+                        // change of binding that leaves every field value identical.
+                        if let Some(event)=preview_store::reception_edit_event(
+                            row,&raw,&audit_before,&model,&assignment_order,recips
+                        ){
+                            row.edit_history.push(event);
                         }
                         row.manual_model=Some(serde_json::json!({
                             "sourceRaw":raw,"orderType":order_type,
@@ -11610,6 +11597,8 @@ mod reception_workflow_admission_integration_tests {
         tx.send(Ok(manual_workspace::Event::Applied{
             order_id:"draft-1".into(),raw:"원문".into(),order_type:"AGENCY".into(),
             client_id:None,direct_input:false,
+            audit_before:serde_json::json!({"model":{"rows":[{"id":"r1","note":"","items":[]}],
+                "blocks":[],"assignments":{}},"assignmentOrder":[]}),
             model:serde_json::json!({"rows":[{"id":"r1","note":"저장할 메모","items":[]}],
                 "blocks":[],"assignments":{}}),
             assignment_order:Vec::new(),
