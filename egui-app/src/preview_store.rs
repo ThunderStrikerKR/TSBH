@@ -816,6 +816,49 @@ fn ensure_reception_audit_context(conn:&Connection)->Result<(),String>{
     result.map_err(|e|format!("수정 감사 이력 확장 실패: {e}"))
 }
 
+/// Audit the actual native worksheet, not an inferred reconstruction of
+/// the initial parser output. Identical final values may have different
+/// source bindings; a no-op or a reverted gesture must not count as a correction.
+pub(crate) fn reception_edit_event(
+    row:&WorkingReception,raw:&str,before:&Value,after_model:&Value,
+    after_order:&[String],after_rows:&Value,
+)->Option<Value>{
+    if raw.trim().is_empty() || row.raw!=raw ||
+        row.analysis_raw.as_deref()!=Some(raw){return None;}
+    let original=row.analysis_evidence.as_ref()
+        .filter(|v|v["recipients"].is_array())?;
+    let previous=before.get("model")?;
+    let before_rows=previous.get("rows").filter(|v|v.is_array())?;
+    let snapshot=|model:&Value,order:&Value|json!({
+        "blocks":model["blocks"],"assignments":model["assignments"],
+        "assignmentOrder":order
+    });
+    let before_classification=snapshot(previous,&before["assignmentOrder"]);
+    let after_classification=snapshot(after_model,&json!(after_order));
+    if !valid_audit_classification(&before_classification) ||
+       !valid_audit_classification(&after_classification) ||
+       !after_model["rows"].is_array() || !after_rows.is_array(){return None;}
+    if before_rows==&after_model["rows"] && before_classification==after_classification{
+        return None;
+    }
+    Some(json!({
+        "id":uuid::Uuid::new_v4().to_string(),
+        "at":chrono::Utc::now().to_rfc3339(),
+        "sourceRaw":raw,"initialAnalysis":original,
+        "beforeRows":before_rows,"afterRows":after_rows,
+        "context":{
+            "schemaVersion":1,
+            "beforeClassification":before_classification,
+            "afterClassification":after_classification,
+            "clientId":row.client_id,"clientSelection":row.client_selection,
+            "orderType":row.order_type,
+            "sourceInputMethod":row.source_input_method,
+            "initialRecognition":original.get("recognitionContext"),
+            "appVersionAtEdit":env!("CARGO_PKG_VERSION")
+        }
+    }))
+}
+
 fn valid_audit_classification(value:&Value)->bool{
     value.is_object() && value["blocks"].is_array() &&
         value["assignments"].is_object() && value["assignmentOrder"].is_array()
@@ -1051,6 +1094,35 @@ mod ocr_layout_tests {
 #[cfg(test)]
 mod reception_edit_audit_tests {
     use super::*;
+
+    #[test]
+    fn binding_only_correction_is_captured_without_counting_a_noop(){
+        let rows=json!([{"id":"r1","name":"가상","items":[]}]);
+        let blocks=json!([{"id":"0:2","text":"가상","field":"address"}]);
+        let before=json!({"model":{"rows":rows,"blocks":blocks,"assignments":{}},
+            "assignmentOrder":[]});
+        let mut after=before["model"].clone();
+        after["assignments"]["0:2"]=json!({"recipientId":"r1","field":"name","value":"가상"});
+        let row=WorkingReception{
+            id:"synthetic-order".into(),raw:"가상".into(),order_type:"AGENCY".into(),
+            source_input_method:None,last_input_method:None,
+            analysis_raw:Some("가상".into()),
+            analysis_evidence:Some(json!({"recipients":rows,"candidates":[],"unassigned":[],
+                "recognitionContext":{"catalogRevision":42,"clientId":"c1"}})),
+            analysis_view:None,client_match:Some(json!({})),
+            chat_handle:None,chat_title:None,client_id:Some("c1".into()),
+            client_selection:Some("MANUAL".into()),pricing_preview:None,
+            working_version:None,working_synced:false,manual_model:None,edit_history:vec![]
+        };
+        assert!(reception_edit_event(&row,"가상",&before,&before["model"],&[],&rows).is_none());
+        let event=reception_edit_event(&row,"가상",&before,&after,&["0:2".into()],&rows).unwrap();
+        assert_eq!(event["beforeRows"],event["afterRows"]);
+        assert_eq!(event["context"]["beforeClassification"]["blocks"][0]["field"],"address");
+        assert_eq!(event["context"]["afterClassification"]["assignments"]["0:2"]["field"],"name");
+        assert_eq!(event["context"]["initialRecognition"]["catalogRevision"],42);
+        assert_eq!(event["context"]["clientSelection"],"MANUAL");
+        assert!(reception_edit_event(&row,"다른 원문",&before,&after,&["0:2".into()],&rows).is_none());
+    }
 
     #[test]
     fn initial_and_revised_snapshots_are_cas_committed_and_survive_draft_removal() {
