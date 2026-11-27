@@ -908,9 +908,13 @@ struct OwnerWeights {
     rank:i64,
     legacy:i64,
     margin:i64,
+    repeat:i64,
+    local:i64,
+    order:i64,
 }
 const OWNER_WEIGHTS:OwnerWeights=OwnerWeights{
     paragraph:36,line:18,scalar:12,rank:12,legacy:12,margin:10,
+    repeat:52,local:48,order:8,
 };
 fn ownership_score(events:&[Evidence],features:&DocumentFeatures,
     field:usize,anchor:usize,legacy:bool,w:OwnerWeights)->i64{
@@ -927,6 +931,7 @@ fn ownership_score(events:&[Evidence],features:&DocumentFeatures,
         +decay(w.scalar,gap as u64,24)
         +decay(w.rank,rank.unsigned_abs(),1)
         +i64::from(legacy)*w.legacy
+        +features.structural_ownership_score(field,anchor,w)
 }
 fn exceeds_margin(challenger:i64,incumbent:i64,margin:i64)->bool{
     challenger-incumbent>=margin
@@ -985,12 +990,17 @@ fn product_owner_index(anchors:&[usize],events:&[Evidence],features:&DocumentFea
     if events[a].kind!="name"||events[b].kind!="name"{return legacy;}
     let (_,_,same_a)=features.relation(events,hit.evidence,a);
     let (_,_,same_b)=features.relation(events,hit.evidence,b);
-    if same_a==same_b{return legacy;}
     let w=OWNER_WEIGHTS;
+    let structure_a=features.structural_ownership_score(hit.evidence,a,w);
+    let structure_b=features.structural_ownership_score(hit.evidence,b,w);
+    // In a shared paragraph, proximity alone cannot flip ownership.
+    // A complete, independently repeated structure must distinguish the
+    // candidates. Never cross a paragraph in favor of a structural guess.
+    if same_a==same_b&&(!same_a||structure_a==structure_b){return legacy;}
     let score_a=ownership_score(events,features,hit.evidence,a,legacy==previous,w);
     let score_b=ownership_score(events,features,hit.evidence,b,legacy==next,w);
-    if exceeds_margin(score_a,score_b,w.margin)&&same_a{previous}
-    else if exceeds_margin(score_b,score_a,w.margin)&&same_b{next}
+    if exceeds_margin(score_a,score_b,w.margin)&&same_a&&(same_a!=same_b||structure_a>structure_b){previous}
+    else if exceeds_margin(score_b,score_a,w.margin)&&same_b&&(same_a!=same_b||structure_b>structure_a){next}
     else{legacy}
 }
 /// Original TypeScript resolvePrice for the recognition Item shape.
@@ -1333,6 +1343,58 @@ impl DocumentFeatures{
     fn relation(&self,events:&[Evidence],from:usize,to:usize)->(i64,i64,bool){
         let a=&events[from];let b=&events[to];
         (signed_distance(a.line,b.line),signed_distance(self.ranks[from],self.ranks[to]),a.paragraph==b.paragraph)
+    }
+    // Reuse the existing normalized role ranges. No additional source
+    // parsing, period search, or per-document global candidate pairing.
+    fn role_index(&self,event:usize)->Option<usize>{
+        let rank=*self.ranks.get(event)?;
+        let i=self.ranges.partition_point(|&(_,end)|end<=rank);
+        self.ranges.get(i).filter(|&&(start,end)|start<=rank&&rank<end).map(|_|i)
+    }
+    fn structural_ownership_score(&self,field:usize,anchor:usize,w:OwnerWeights)->i64{
+        if self.ambiguous||!self.positions_valid||self.ordered.len()>4096{return 0;}
+        // The quantity linker uses the same distance score but not
+        // recipient-pattern evidence. Only name anchors are eligible.
+        if self.event_roles.get(anchor).copied().flatten()!=Some("N"){return 0;}
+        let Some(role)=self.event_roles.get(field).copied().flatten()else{return 0;};
+        if !matches!(role,"P"|"T"|"A"){return 0;}
+        let (Some(f),Some(a))=(self.role_index(field),self.role_index(anchor))else{return 0;};
+        let mut support;
+        if self.repeat_segments.len()>=2{
+            let i=self.repeat_segments.partition_point(|&(_,end)|end<=f);
+            let Some(&(start,end))=self.repeat_segments.get(i)else{return 0;};
+            // A complete repeat can vote only if its single recipient
+            // anchor and the candidate field belong to the same cycle.
+            if !(start<=a&&a<end)||self.roles[start..end].iter().filter(|&&r|r=="N").count()!=1{return 0;}
+            support=w.repeat;
+        }else{
+            // Name-headed local blocks are evidence only when a run of at
+            // least three consecutive exact blocks reaches the document
+            // end. A leading-product pattern with a missing last product
+            // must not masquerade as a trailing-product pattern.
+            let Some(&(last_start,last_end,last_relation))=self.local_blocks.last()else{return 0;};
+            let n=self.local_blocks.len();
+            if n<3||last_relation!="exact"||self.local_blocks[n-2].2!="exact"
+                ||last_end!=self.roles.len(){return 0;}
+            let template=&self.roles[last_start..last_end];
+            if template.first()!=Some(&"N")||!template.contains(&"P")
+                ||!(template.contains(&"T")||template.contains(&"A")){return 0;}
+            let i=self.local_blocks.partition_point(|&(_,end,_)|end<=f);
+            let Some(&(start,end,_))=self.local_blocks.get(i)else{return 0;};
+            // Limit evidence to the terminal three corroborating blocks;
+            // do not extrapolate a local layout into earlier mixed blocks.
+            if i<n-3||!(start<=a&&a<end)||&self.roles[start..end]!=template{return 0;}
+            support=w.local;
+        }
+        // The existing directed partial-order histogram contributes only
+        // after a complete segment has independently established ownership.
+        // A transition at the boundary of two blocks cannot vote alone.
+        let pair=if a<f{("N",role)}else{(role,"N")};
+        let reverse=(pair.1,pair.0);
+        let count=|p:(&str,&str)|self.partial_order.iter()
+            .find(|&&(x,y,_)|x==p.0&&y==p.1).map_or(0,|x|x.2);
+        if count(pair)>count(reverse){support+=w.order;}
+        support
     }
     // An evaluation identity, NOT a training key. Incomplete coverage
     // and unknown roles cannot be promoted to independent learning.
@@ -2705,6 +2767,33 @@ mod tests {
             &&e.start<e.end&&raw.get(e.start..e.end).is_some()));
         assert!(!document.product_hits.is_empty());
         assert_eq!(assign_document(document,&state,None).unwrap(),analyze(raw,&state,None).unwrap());
+    }
+    #[test]
+    fn terminal_local_blocks_can_override_global_leading_within_one_paragraph(){
+        let raw="709 1개\n수취인: 김가상\n010-0000-0001\n709 2개\n수취인: 박가상\n010-0000-0002\nGT-1 3개\n수취인: 이가상\n010-0000-0003\n709 4개";
+        let state=state();
+        let doc=extract_document(raw,&state,None);
+        let hit=doc.product_hits.iter().find(|h|h.decision["productId"]=="pgt").unwrap();
+        let a=&doc.features.anchors;
+        assert_eq!(a.len(),3);
+        assert!(doc.features.structural_ownership_score(hit.evidence,a[1],OWNER_WEIGHTS)>=OWNER_WEIGHTS.local);
+        assert_eq!(doc.features.structural_ownership_score(hit.evidence,a[2],OWNER_WEIGHTS),0);
+        assert_eq!(product_owner_index(a,&doc.events,&doc.features,&doc.exclusions,hit,true),1);
+        let result=assign_document(doc,&state,None).unwrap();
+        assert!(result["recipients"][1]["items"].as_array().unwrap().iter()
+            .any(|it|it["productId"]=="pgt"&&it["quantity"]==3));
+    }
+    #[test]
+    fn complete_leading_cycles_support_only_their_own_anchor(){
+        let raw="709 1개\n수취인: 김가상\n010-0000-0001\nGT-1 2개\n수취인: 박가상\n010-0000-0002\n709 3개\n수취인: 이가상\n010-0000-0003";
+        let state=state();
+        let doc=extract_document(raw,&state,None);
+        let hit=doc.product_hits.iter().find(|h|h.decision["productId"]=="pgt").unwrap();
+        let a=&doc.features.anchors;
+        assert_eq!(doc.features.exact_repeat,3);
+        assert_eq!(doc.features.structural_ownership_score(hit.evidence,a[0],OWNER_WEIGHTS),0);
+        assert!(doc.features.structural_ownership_score(hit.evidence,a[1],OWNER_WEIGHTS)>=OWNER_WEIGHTS.repeat);
+        assert_eq!(product_owner_index(a,&doc.events,&doc.features,&doc.exclusions,hit,true),1);
     }
     #[test]
     fn product_ownership_uses_local_paragraph_instead_of_global_leading_direction(){
