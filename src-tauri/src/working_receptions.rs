@@ -137,7 +137,7 @@ pub(super) fn replace(conn:&mut Connection,orders:Vec<Value>)->Result<(),String>
             let saved=baselines.get(id).ok_or("확정 주문 DB 본문이 없습니다.")?;
             let baseline=prior.get(id).unwrap_or(saved);
             if baseline!=saved {
-                return Err(format!("확정 주문 {id}이 다른 작업에서 수정됐습니다. 작업본은 덮어쓰지 않았습니다."));
+                return Err(format!("확정 주문 {id}이 다른 작업에서 수정됐습니다. 수정본은 보존했습니다."));
             }
             if order!=saved {
                 edits.push((id.to_string(),raw,serde_json::to_string(baseline).map_err(err)?));
