@@ -399,9 +399,13 @@ fn history_text_overflow(ui:&Ui,rect:Rect,value:&str,role:typography::Management
 }
 fn paint_text(ui:&Ui,rect:Rect,value:&str,
     role:typography::ManagementTableCellRole,right:bool){
+    paint_text_with_state(ui,rect,value,role,right,theme::TextState::Normal);
+}
+fn paint_text_with_state(ui:&Ui,rect:Rect,value:&str,
+    role:typography::ManagementTableCellRole,right:bool,state:theme::TextState){
     if rect.width()<=0.0{return}
-    let color=typography::management_table_cell_color(role);
-    let galley=typography::management_table_cell_galley(ui,value,role);
+    let color=typography::management_table_cell_color_with_state(role,state);
+    let galley=typography::management_table_cell_galley_with_state(ui,value,role,state);
     // Freight table's text columns use a 6pt leading guide; monetary
     // figures keep their 8pt trailing guide for right alignment.
     let inset=if right{theme::SPACE_8}else{theme::MANAGEMENT_TABLE_TEXT_LEADING_INSET};
@@ -548,13 +552,15 @@ fn draw_line(ui:&mut Ui,rect:Rect,line:HistoryLine,snapshot:&HistorySnapshot,
                 cautions.push("기존 입금 표시 / 실제 입금 기록 미확인");
             }
             if cautions.is_empty(){
-                paint_text(ui,columns[4],&total,typography::ManagementTableCellRole::RowTotal,true);
+                paint_text_with_state(ui,columns[4],&total,typography::ManagementTableCellRole::RowTotal,true,
+                    theme::TextState::value(row["total"].as_i64().is_some()));
             }else{
                 let upper=Rect::from_min_max(columns[4].min,
                     egui::pos2(columns[4].right(),columns[4].center().y));
                 let lower=Rect::from_min_max(egui::pos2(columns[4].left(),
                     columns[4].center().y),columns[4].max);
-                paint_text(ui,upper,&total,typography::ManagementTableCellRole::RowTotal,true);
+                paint_text_with_state(ui,upper,&total,typography::ManagementTableCellRole::RowTotal,true,
+                    theme::TextState::value(row["total"].as_i64().is_some()));
                 let warning=cautions.join(" / ");
                 let warning_rect=Rect::from_min_max(
                     egui::pos2(lower.left()+theme::MANAGEMENT_TABLE_TEXT_LEADING_INSET,lower.top()),lower.right_bottom()

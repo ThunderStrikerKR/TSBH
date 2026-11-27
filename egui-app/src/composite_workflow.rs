@@ -11,9 +11,9 @@ use crate::table::management_inline_list_table_header;
 /// geometry. The allocated price slot, rather than its text clip, bounds
 /// the highlight so the currency suffix retains the same 4pt clearance.
 pub fn workflow_compact_money(
-    ui:&Ui,price:Rect,price_ink:Rect,bottom_y:f32,amount:&str,emphasis:bool
+    ui:&Ui,price:Rect,price_ink:Rect,bottom_y:f32,amount:&str,emphasis:bool,state:theme::TextState
 )->bool{
-    let color=if emphasis{crate::one_touch::INK}else{theme::TEXT};
+    let color=if emphasis{crate::one_touch::INK}else{theme::text_ink(theme::TextRole::Value,state)};
     let galley=ui.painter().layout_no_wrap(
         amount.to_owned(),typography::data_value_font(
             typography::DataValueKind::Money,typography::DataValueContext::CompactCard

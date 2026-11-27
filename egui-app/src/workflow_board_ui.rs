@@ -577,7 +577,7 @@ fn workflow_action_line(
     // renderer preserves the full currency padding within the price slot.
     let price_ink=price.shrink2(Vec2::new(theme::SPACE_4.min(price.width()/2.0),0.0));
     let money_clipped=crate::composite_workflow::workflow_compact_money(
-        ui,price,price_ink,bottom_y,&amount,payment_emphasis
+        ui,price,price_ink,bottom_y,&amount,payment_emphasis,theme::TextState::value(total.is_some())
     );
     if let Some(vat)=vat{
         let visible=if vat.starts_with('('){vat.to_owned()}

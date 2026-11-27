@@ -300,9 +300,9 @@ impl BrandManager {
                         Some(0)=>{body.label(typography::body("상품과 기존 주문 기록은 유지됩니다."));}
                         Some(count)=>{body.label(typography::body(&format!(
                             "연결된 상품 {count}개의 브랜드가 미지정으로 변경됩니다. 상품과 기존 주문 기록은 유지됩니다.")));}
-                        None=>{body.label(typography::body("상품 연결 정보를 확인할 수 없습니다. 다시 조회하세요."));}
+                        None=>{body.label(typography::body_with_state("상품 연결 정보를 확인할 수 없습니다. 다시 조회하세요.",theme::TextState::Error));}
                     }
-                    if self.dirty(){body.label(typography::caption("저장하지 않은 브랜드 변경사항도 사라집니다."));}
+                    if self.dirty(){body.label(typography::caption_with_state("저장하지 않은 브랜드 변경사항도 사라집니다.",theme::TextState::ActionRequired));}
                 }
             );
             match decision{

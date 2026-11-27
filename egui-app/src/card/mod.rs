@@ -297,7 +297,11 @@ pub(crate) fn management_summary_card(ui:&mut Ui,label:&str,count:usize){
 /// The same KPI geometry with an explicit display value, including "—"
 /// while data is pending. Never report a fabricated zero before a fetch.
 pub(crate) fn management_summary_card_value(ui:&mut Ui,label:&str,value:&str){
-    management_summary_card_with_role(ui,label,value,SummaryCardRole::Count);
+    management_summary_card_with_state(ui,label,value,theme::TextState::Normal);
+}
+
+pub(crate) fn management_summary_card_with_state(ui:&mut Ui,label:&str,value:&str,state:theme::TextState){
+    management_summary_card_with_role_and_state(ui,label,value,SummaryCardRole::Count,state);
 }
 
 #[derive(Clone,Copy,PartialEq,Eq)]
@@ -307,6 +311,13 @@ pub(crate) enum SummaryCardRole{Count,Settlement}
 pub(crate) fn management_summary_card_with_role(
     ui:&mut Ui,label:&str,value:&str,role:SummaryCardRole
 ){
+    management_summary_card_with_role_and_state(ui,label,value,role,theme::TextState::Normal);
+}
+
+pub(crate) fn management_summary_card_with_role_and_state(
+    ui:&mut Ui,label:&str,value:&str,role:SummaryCardRole,state:theme::TextState
+){
+    let ink=theme::text_ink(theme::TextRole::Value,state);
     let card_width=match role{
         SummaryCardRole::Count=>theme::FREIGHT_SUMMARY_CARD_WIDTH,
         SummaryCardRole::Settlement=>theme::SETTLEMENT_KPI_CARD_WIDTH,
@@ -329,8 +340,8 @@ pub(crate) fn management_summary_card_with_role(
                     egui::vec2(content_width,theme::FREIGHT_SUMMARY_LABEL_LINE_HEIGHT),
                     egui::Sense::hover()
                 );
-                let number=typography::freight_summary_large_number_galley(
-                    cell,value
+                let number=typography::freight_summary_large_number_galley_with_state(
+                    cell,value,state
                 );
                 let caption=typography::freight_summary_small_label_galley(cell,label);
                 let number_pos=egui::pos2(
@@ -342,11 +353,11 @@ pub(crate) fn management_summary_card_with_role(
                 if role==SummaryCardRole::Settlement{
                     let overflow=crate::ui_primitives::text_exceeds_rect(
                         number.size(),number_row.intersect(cell.clip_rect()));
-                    cell.painter().with_clip_rect(number_row).galley(number_pos,number,theme::TEXT);
+                    cell.painter().with_clip_rect(number_row).galley(number_pos,number,ink);
                     cell.painter().with_clip_rect(label_row).galley(label_pos,caption,theme::SECONDARY);
                     crate::ui_primitives::overflow_tooltip(number_response,overflow,value);
                 }else{
-                    cell.painter().galley(number_pos,number,theme::TEXT);
+                    cell.painter().galley(number_pos,number,ink);
                     cell.painter().galley(label_pos,caption,theme::SECONDARY);
                 }
             });

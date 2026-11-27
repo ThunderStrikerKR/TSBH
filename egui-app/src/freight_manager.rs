@@ -901,7 +901,7 @@ impl FreightManager {
                     for label in [
                         "등록 상품","그룹 지정 완료","그룹 미지정","배송 그룹"
                     ]{
-                        crate::card::management_summary_card_value(strip,label,"—");
+                        crate::card::management_summary_card_with_state(strip,label,"—",theme::TextState::Pending);
                     }
                 });
             });

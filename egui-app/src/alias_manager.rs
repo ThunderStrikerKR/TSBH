@@ -330,7 +330,7 @@ impl AliasManager {
                 ctx,work_area,"alias-delete-confirm","별칭 삭제","삭제",
                 !busy,editable&&!busy&&self.form.editing.is_some(),crate::popup::DeleteBody::Plain,|body|{
                     body.label(typography::body("별칭을 삭제할까요? 기존 상품과 주문은 유지됩니다."));
-                    if self.dirty(){body.label(typography::caption("저장하지 않은 별칭 변경사항도 사라집니다."));}
+                    if self.dirty(){body.label(typography::caption_with_state("저장하지 않은 별칭 변경사항도 사라집니다.",theme::TextState::ActionRequired));}
                 }
             );
             if decision==crate::popup::ConfirmDecision::Cancel{self.confirm_delete=false;}

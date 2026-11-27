@@ -78,6 +78,18 @@ pub enum TextState {
     Complete,
 }
 
+impl TextState{
+    pub const fn value(present:bool)->Self{
+        if present{Self::Normal}else{Self::Unconfirmed}
+    }
+    pub const fn query(ready:bool)->Self{
+        if ready{Self::Normal}else{Self::Pending}
+    }
+    pub const fn optional(present:bool)->Self{
+        if present{Self::Normal}else{Self::Missing}
+    }
+}
+
 pub const fn text_ink(role:TextRole,state:TextState)->Color32{
     match state{
         TextState::Normal=>match role{
@@ -984,7 +996,7 @@ impl ReviewTone {
         match self {
             Self::Action => (
                 ORANGE_EMPHASIS_BG, REQUIRED_REVIEW_BORDER,
-                REQUIRED_REVIEW_TEXT, ORANGE_EMPHASIS_TEXT,
+                REQUIRED_REVIEW_TEXT, Color32::from_rgb(217,188,152),
             ),
             Self::Info => (
                 Color32::from_rgb(25, 45, 64), Color32::from_rgb(88, 152, 218),
@@ -1010,7 +1022,8 @@ impl ReviewTone {
 fn review_action_and_one_touch_share_orange_palette(){
     let (background,border,text,detail)=ReviewTone::Action.palette();
     assert_eq!((background,border,text),(ONE_TOUCH_BG,ONE_TOUCH_BORDER,ONE_TOUCH_TEXT));
-    assert_eq!(detail,ONE_TOUCH_TEXT);
+    assert_eq!(detail,Color32::from_rgb(217,188,152));
+    assert_ne!(detail,text);
     assert_ne!(background,PANEL);
 }
 

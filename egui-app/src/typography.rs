@@ -157,7 +157,16 @@ pub fn inline_quantity_amount(
         (prefix,None),(&count,Some(DataValueKind::Quantity)),
         (between,None),(value,kind),(unit,None)
     ];
-    if metadata{inline_metadata_values(&parts)}else{inline_body_values(&parts)}
+    let mut job=if metadata{inline_metadata_values(&parts)}else{inline_body_values(&parts)};
+    if amount.is_none(){
+        let start=prefix.len()+count.len()+between.len();
+        for section in &mut job.sections{
+            if section.byte_range.start>=start{
+                section.format.color=text_ink(TextRole::Value,TextState::Unconfirmed);
+            }
+        }
+    }
+    job
 }
 
 pub fn inline_body_money(prefix:&str,amount:&str)->egui::text::LayoutJob {
@@ -182,8 +191,7 @@ pub fn data_value_text(
 pub fn data_value_text_with_state(
     value:&str,kind:DataValueKind,context:DataValueContext,state:TextState
 )->RichText{
-    // Retain the existing quantity contrast until its screen migration.
-    let role=if kind==DataValueKind::Quantity{TextRole::Label}else{TextRole::Value};
+    let role=TextRole::Value;
     RichText::new(value).font(data_value_font(kind,context)).color(text_ink(role,state))
 }
 
@@ -523,9 +531,9 @@ pub fn management_table_cell_color_with_state(role:ManagementTableCellRole,state
         | ManagementTableCellRole::Text
         | ManagementTableCellRole::Option
         | ManagementTableCellRole::Money
-        | ManagementTableCellRole::RowTotal => TextRole::Value,
-        ManagementTableCellRole::Quantity
-        | ManagementTableCellRole::Category
+        | ManagementTableCellRole::RowTotal
+        | ManagementTableCellRole::Quantity => TextRole::Value,
+        ManagementTableCellRole::Category
         | ManagementTableCellRole::Description
         | ManagementTableCellRole::Status => TextRole::Label,
         ManagementTableCellRole::Muted => TextRole::Metadata,
@@ -1122,7 +1130,7 @@ mod management_table_type_roles_tests {
     #[test]
     fn money_quantity_and_row_total_have_shared_contrast(){
         assert_eq!(management_table_cell_color(ManagementTableCellRole::Money),TEXT);
-        assert_eq!(management_table_cell_color(ManagementTableCellRole::Quantity),SECONDARY);
+        assert_eq!(management_table_cell_color(ManagementTableCellRole::Quantity),TEXT);
         assert_eq!(management_table_cell_color(ManagementTableCellRole::RowTotal),TEXT);
         assert_eq!(management_table_cell_color(ManagementTableCellRole::Category),SECONDARY);
         assert_eq!(management_table_money_font(),numeric_editor_font());

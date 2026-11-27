@@ -7385,7 +7385,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                 "pending-message-canvas","pending-message-scroll",|content|{
                     match draft_message.as_ref(){
                         Some(Ok(message))=>{one_touch::payment_message(content,message,"",false);},
-                        Some(Err(_))=>{content.label(typography::body("문의 메시지를 생성하지 못했습니다. 자동 메시지 설정을 확인하세요."));},
+                        Some(Err(_))=>{content.label(typography::body_with_state("문의 메시지를 생성하지 못했습니다. 자동 메시지 설정을 확인하세요.",theme::TextState::Error));},
                         None=>{}
                     }
                 });

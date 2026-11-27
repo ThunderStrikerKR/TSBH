@@ -964,10 +964,17 @@ pub(crate) fn paint_management_text_cell(
     ui:&Ui,content:Rect,text:&str,full:&str,role:typography::ManagementTableCellRole,
     align:egui::Align2,id:impl std::hash::Hash,shortened:bool
 ){
+    paint_management_text_cell_with_state(ui,content,text,full,role,align,id,shortened,theme::TextState::Normal);
+}
+
+pub(crate) fn paint_management_text_cell_with_state(
+    ui:&Ui,content:Rect,text:&str,full:&str,role:typography::ManagementTableCellRole,
+    align:egui::Align2,id:impl std::hash::Hash,shortened:bool,state:theme::TextState
+){
     let visible=content.intersect(ui.clip_rect());
     if visible.width()<=0.0||visible.height()<=0.0{return;}
-    let color=typography::management_table_cell_color(role);
-    let galley=typography::management_table_cell_galley(ui,text,role);
+    let color=typography::management_table_cell_color_with_state(role,state);
+    let galley=typography::management_table_cell_galley_with_state(ui,text,role,state);
     paint_management_caption(ui,content,visible,full,galley,color,align,id,shortened);
 }
 

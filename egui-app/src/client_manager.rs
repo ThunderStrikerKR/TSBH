@@ -479,7 +479,7 @@ impl ClientManager {
                 for (label,value) in [
                     "도매","반도매","소매","특수"
                 ].into_iter().zip(values.iter()){
-                    crate::card::management_summary_card_value(strip,label,value);
+                    crate::card::management_summary_card_with_state(strip,label,value,theme::TextState::query(self.state.is_object()));
                 }
             });
         });
@@ -908,7 +908,7 @@ mod client_async_kpi_tests{
             "client_tier_kpi_values(self.state.is_object(),tier_counts)"
         ));
         assert!(page.contains(
-            "crate::card::management_summary_card_value(strip,label,value)"
+            "crate::card::management_summary_card_with_state(strip,label,value,theme::TextState::query(self.state.is_object()))"
         ));
     }
 }

@@ -199,32 +199,32 @@ fn fetch(gateway:&dyn BandoGateway,date:&str)->Result<Value,String>{
 
 /// Preserve the approved numeric-first KPI identity. Monetary cards are
 /// wider than freight counts so actual amounts remain legible.
-fn kpi(ui:&mut Ui,label:&str,value:&str){
-    crate::card::management_summary_card_with_role(
-        ui,label,value,crate::card::SummaryCardRole::Settlement
+fn kpi(ui:&mut Ui,label:&str,value:&str,state:theme::TextState){
+    crate::card::management_summary_card_with_role_and_state(
+        ui,label,value,crate::card::SummaryCardRole::Settlement,state
     );
 }
 
-fn metric(ui:&mut Ui,label:&str,value:String){
+fn metric(ui:&mut Ui,label:&str,value:String,state:theme::TextState){
     ui.horizontal(|line|{
         crate::ui_layout::apply_spacing_role(line,crate::ui_layout::SpacingRole::ReportMetricPair);
         line.label(typography::field_label(label));
         // Preserve the original 22pt body line box while displaying a
         // standalone monetary figure in the shared numeric data face.
-        line.label(typography::data_value_text(
+        line.label(typography::data_value_text_with_state(
             &value,typography::DataValueKind::Money,
-            typography::DataValueContext::Form
+            typography::DataValueContext::Form,state
         ).line_height(Some(22.0)));
     });
 }
 
 fn paint_cell(
     ui:&Ui,rect:Rect,content:&str,align:Align2,
-    role:typography::ManagementTableCellRole,id:impl std::hash::Hash,
+    role:typography::ManagementTableCellRole,id:impl std::hash::Hash,state:theme::TextState,
 ){
-    crate::table::paint_management_text_cell(
+    crate::table::paint_management_text_cell_with_state(
         ui,rect.shrink2(Vec2::new(theme::SPACE_8,0.0)),content,content,role,
-        align,("settlement-cell",id),false
+        align,("settlement-cell",id),false,state
     );
 }
 
@@ -236,6 +236,7 @@ fn report_table<const N:usize>(
     align:[Align2;N],roles:[typography::ManagementTableCellRole;N],
     stretch_column:usize,indices:&[usize],ready:bool,scroll_keys:&dyn Fn(usize)->Option<egui::Id>,
     sort:&mut Option<Sort>,empty_notice:Option<&str>,format_row:impl Fn(usize)->[String;N],
+    row_states:impl Fn(usize)->[theme::TextState;N],
 ){
     let previous_gap=crate::table::management_table_container_style(ui);
     let minimum=base.iter().sum::<f32>()+(N.saturating_sub(1)) as f32*COL_GAP;
@@ -269,10 +270,11 @@ fn report_table<const N:usize>(
                 first_x.get_or_insert(rect.left());
                 crate::table::fixed_row(list,(id,index),rect,index,&widths,COL_GAP,crate::table::RowTone::Alternating,|row,row_cells|{
                         let data=format_row(indices[index]);
+                        let states=row_states(indices[index]);
                         for (column,cell) in row_cells.iter().enumerate(){
                             paint_cell(
                                 row,*cell,&data[column],align[column],
-                                roles[column],(id,indices[index],column),
+                                roles[column],(id,indices[index],column),states[column],
                             );
                         }
                         
@@ -399,11 +401,17 @@ impl DailySettlementManager{
         crate::ui_layout::management_top_content(ui,|top|{
             top.horizontal_wrapped(|strip|{
                 crate::ui_layout::apply_spacing_role(strip,crate::ui_layout::SpacingRole::SummaryStrip);
-                for (name,value) in [
+                for (index,(name,value)) in [
                     "접수 주문","청구 합계 확인분",
                     "실제 계좌 입금","미확정 청구 주문"
-                ].into_iter().zip(values.iter()){
-                    kpi(strip,name,value);
+                ].into_iter().zip(values.iter()).enumerate(){
+                    let state=match report{
+                        None=>theme::TextState::Pending,
+                        Some(r) if index==1=>theme::TextState::value(r["billedKnown"].as_i64().is_some()),
+                        Some(r) if index==2=>theme::TextState::value(r["paidCash"].as_i64().is_some()),
+                        Some(_)=>theme::TextState::Normal,
+                    };
+                    kpi(strip,name,value,state);
                 }
             });
         });
@@ -464,7 +472,8 @@ impl DailySettlementManager{
                             ("현재 미수 확인분","outstandingKnown"),
                             ("현재 공장 운임 확인분","actualFreightKnown"),
                         ]{
-                            metric(line,title,if visible_report.is_some(){won(&report[key])}else{"—".to_owned()});
+                            metric(line,title,if visible_report.is_some(){won(&report[key])}else{"—".to_owned()},
+                                if visible_report.is_some(){theme::TextState::value(report[key].as_i64().is_some())}else{theme::TextState::Pending});
                         }
                     });
                     section.add_space(theme::SPACE_8);
@@ -511,6 +520,14 @@ impl DailySettlementManager{
                                 won(&order["paidAllocated"]),
                                 won(&order["outstanding"]),
                             ]
+                        },
+                        |index|{
+                            let order=&orders[index];
+                            let mut states=[theme::TextState::Normal;8];
+                            for (column,key) in ["subtotal","shippingCharge","vat","total","paidAllocated","outstanding"].into_iter().enumerate(){
+                                states[column+2]=theme::TextState::value(order[key].as_i64().is_some());
+                            }
+                            states
                         }
                     );
                 });
@@ -532,7 +549,8 @@ impl DailySettlementManager{
                             ("배송 건 배분액","allocatedCash"),
                             ("미배분 입금액","unallocatedCash"),
                         ]{
-                            metric(line,title,if visible_report.is_some(){won(&report[key])}else{"—".to_owned()});
+                            metric(line,title,if visible_report.is_some(){won(&report[key])}else{"—".to_owned()},
+                                if visible_report.is_some(){theme::TextState::value(report[key].as_i64().is_some())}else{theme::TextState::Pending});
                         }
                     });
                     crate::ui_primitives::section_divider(section);
@@ -564,6 +582,15 @@ impl DailySettlementManager{
                                 won(&payment["unallocated"]),
                                 field(payment,"memo").to_owned(),
                             ]
+                        },
+                        |index|{
+                            let payment=&payments[index];
+                            let mut states=[theme::TextState::Normal;7];
+                            for (column,key) in ["amount","allocated","unallocated"].into_iter().enumerate(){
+                                states[column+3]=theme::TextState::value(payment[key].as_i64().is_some());
+                            }
+                            states[6]=theme::TextState::optional(!field(payment,"memo").trim().is_empty());
+                            states
                         }
                     );
                 });

@@ -233,7 +233,8 @@ fn product_price_text(ui:&mut Ui,rect:Rect,value:&Value) {
         egui::pos2(rect.right()-theme::SPACE_8,rect.center().y),
         egui::Align2::RIGHT_CENTER,text,
         typography::management_table_money_font(),
-        typography::management_table_cell_color(typography::ManagementTableCellRole::Money)
+        typography::management_table_cell_color_with_state(typography::ManagementTableCellRole::Money,
+            theme::TextState::value(value.as_i64().is_some()))
     );
 }
 fn displayed_variant<'a>(
@@ -1163,7 +1164,7 @@ impl ProductManager {
                         crate::card::management_summary_card(strip,"브랜드",brands);
                     }else{
                         for label in ["등록 상품","모델군","별칭","브랜드"]{
-                            crate::card::management_summary_card_value(strip,label,"—");
+                            crate::card::management_summary_card_with_state(strip,label,"—",theme::TextState::Pending);
                         }
                     }
                 });
@@ -1707,8 +1708,10 @@ impl ProductManager {
                                             );
                                         }
                                     }else{
-                                        product_table_text(row,cells[offset+2],"—",
-                                            typography::ManagementTableCellRole::Money,(product_id,offset+2));
+                                        crate::table::paint_management_text_cell_with_state(
+                                            row,cells[offset+2].shrink2(Vec2::new(theme::SPACE_8,0.0)),"—","—",
+                                            typography::ManagementTableCellRole::Money,egui::Align2::LEFT_CENTER,
+                                            ("product-table-text",(product_id,offset+2)),false,theme::TextState::Unconfirmed);
                                     }
                                 }
                                 if selecting{
@@ -2453,7 +2456,7 @@ mod tests {
             .split("let can_edit=").next().unwrap();
         assert!(rendered.contains("product_summary_counts(self.catalog.as_ref())"));
         assert!(rendered.contains(
-            "crate::card::management_summary_card_value(strip,label,\"—\")"
+            "crate::card::management_summary_card_with_state(strip,label,\"—\",theme::TextState::Pending)"
         ));
         assert!(!rendered.contains("unwrap_or((0,0,0,0))"));
     }

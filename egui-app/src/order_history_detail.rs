@@ -45,17 +45,20 @@ fn freight_label(code:&str)->&str{
     match code {"010"=>"선불","020"=>"착불",_=>"운임 구분 미확인"}
 }
 fn text_kv(ui:&mut Ui,name:&str,value:&str){
+    text_kv_with_state(ui,name,value,theme::TextState::Normal);
+}
+fn text_kv_with_state(ui:&mut Ui,name:&str,value:&str,state:theme::TextState){
     ui.horizontal_wrapped(|row|{
         row.label(typography::caption(name));
-        row.label(typography::body(value));
+        row.label(typography::body_with_state(value,state));
     });
 }
-fn money_kv(ui:&mut Ui,name:&str,value:&str){
+fn money_kv(ui:&mut Ui,name:&str,value:&str,state:theme::TextState){
     ui.horizontal_wrapped(|row|{
         row.label(typography::caption(name));
-        row.label(typography::data_value_text(
+        row.label(typography::data_value_text_with_state(
             value,typography::DataValueKind::Money,
-            typography::DataValueContext::Form
+            typography::DataValueContext::Form,state
         ).line_height(Some(22.0)));
     });
 }
@@ -134,7 +137,7 @@ fn payment_panel(
         if i>0{crate::ui_primitives::soft_divider(ui);}
         text_kv(ui,"입금 처리일시",&kst(field(payment,"recordedAt")));
         text_kv(ui,"실제 입금일시",&kst(field(payment,"paidAt")));
-        money_kv(ui,"입금액",&money(&payment["amount"]));
+        money_kv(ui,"입금액",&money(&payment["amount"]),theme::TextState::value(payment["amount"].as_i64().is_some()));
         let account=&payment["account"];
         let bank=field(account,"bank");
         let number=field(account,"number");
@@ -174,9 +177,9 @@ fn billing_panel(ui:&mut Ui,order:&Value,billing:&Value){
         ui.horizontal(|line|{
             line.label(typography::body(label));
             line.with_layout(Layout::right_to_left(Align::Center),|right|{
-                right.label(typography::data_value_text(
+                right.label(typography::data_value_text_with_state(
                     &money(&billing[key]),typography::DataValueKind::Money,
-                    typography::DataValueContext::Form
+                    typography::DataValueContext::Form,theme::TextState::value(billing[key].as_i64().is_some())
                 ).line_height(Some(22.0)));
             });
         });
@@ -185,9 +188,9 @@ fn billing_panel(ui:&mut Ui,order:&Value,billing:&Value){
     ui.horizontal(|line|{
         line.label(typography::section_heading("청구 합계"));
         line.with_layout(Layout::right_to_left(Align::Center),|right|{
-            right.label(typography::data_value_text(
+            right.label(typography::data_value_text_with_state(
                 &money(&billing["total"]),typography::DataValueKind::Money,
-                typography::DataValueContext::Summary
+                typography::DataValueContext::Summary,theme::TextState::value(billing["total"].as_i64().is_some())
             ).line_height(Some(23.0)));
         });
     });
@@ -264,10 +267,10 @@ fn shipment_entry(
         card.add_space(theme::SPACE_4);
         if let Some(ship)=ship{
             let (freight,tracking)=shipment_values(ship);
-            money_kv(card,"실제 운임",&freight);
-            text_kv(card,"운송장번호",&tracking);
+            money_kv(card,"실제 운임",&freight,theme::TextState::value(ship["actualFreight"].as_object().is_some_and(|o|o.values().any(|v|v.as_i64().is_some()))));
+            text_kv_with_state(card,"운송장번호",&tracking,theme::TextState::optional(ship["tracking"].as_object().is_some_and(|o|o.values().any(|v|v.as_str().is_some_and(|s|!s.is_empty())))));
             let note=field(ship,"managementMemo");
-            text_kv(card,"관리 메모",display_or(note,"없음"));
+            text_kv_with_state(card,"관리 메모",display_or(note,"없음"),theme::TextState::optional(!note.trim().is_empty()));
             text_kv(card,"메모 최종 갱신",&kst(field(ship,"managementMemoUpdatedAt")));
         }else{
             crate::ui_primitives::management_body_state_inline(card,"현재 연결된 운송장과 발송 건 메모가 없습니다.");
