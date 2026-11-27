@@ -453,7 +453,7 @@ pub(crate) fn record_control_response(role:&'static str,response:&egui::Response
         if let Some(samples)=trace.borrow_mut().as_mut(){
             samples.push(ComponentGeometry{role,rect:response.rect,clip,minimum_height,
                 hit:Some(ControlHit{id:response.id,layer:response.layer_id,
-                    rect:response.interact_rect,enabled:response.enabled()&&(response.sense.clicks()||response.sense.drags()),clicked:response.clicked()})});
+                    rect:response.interact_rect,enabled:response.enabled()&&(response.sense.senses_click()||response.sense.senses_drag()),clicked:response.clicked()})});
         }
     });
 }

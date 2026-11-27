@@ -260,25 +260,13 @@ pub const SETTINGS_HELP_ICON_SIZE: f32 = 22.0;
 // Settings/Basic compresses the form into three shared section cards.
 // Above the split threshold, the two information cards remain left of the
 // independently scrolling account card. These are logical egui points.
-pub const SETTINGS_BASIC_SPLIT_MIN_WIDTH:f32=1040.0;
 pub const SETTINGS_BASIC_LEFT_PANE_WIDTH:f32=410.0;
-pub const SETTINGS_BASIC_SAVE_RESERVE:f32=50.0;
 pub const SETTINGS_OPERATOR_FIELD_WIDTH:f32=112.0;
 pub const SETTINGS_SENDER_NAME_WIDTH:f32=164.0;
 pub const SETTINGS_SENDER_POSTCODE_WIDTH:f32=106.0;
-pub const SETTINGS_SENDER_PHONE_WIDTH:f32=160.0;
-pub const SETTINGS_SENDER_ADDRESS_WIDTH:f32=500.0;
-// Input boxes have content-appropriate capped widths; they must not
-// stretch with a wide Settings panel or become three equal-width columns.
-pub const SETTINGS_ACCOUNT_ROW_MIN_WIDTH:f32=490.0;
+// The common registry table owns account column growth and scroll geometry.
 pub const SETTINGS_ACCOUNT_FIELD_WIDTHS:[f32;3]=[118.0,194.0,112.0];
-pub const SETTINGS_ACCOUNT_DELETE_WIDTH:f32=102.0;
 pub const SETTINGS_ACCOUNT_PICKER_MAX_WIDTH:f32=278.0;
-// Cap only the account rows' scroll viewport, never the whole Settings page.
-pub const SETTINGS_ACCOUNT_LIST_MIN_HEIGHT:f32=48.0;
-pub const SETTINGS_ACCOUNT_LIST_MAX_HEIGHT:f32=260.0;
-pub const SETTINGS_ACCOUNT_PANEL_FIXED_HEIGHT:f32=190.0;
-pub const SETTINGS_ACCOUNT_STACKED_EXTRA_HEIGHT:f32=62.0;
 pub const SPACING: f32 = SPACE_8;
 const HEADER_PADDING_X: i8 = SPACE_16 as i8;
 pub const BRAND_ICON_SIZE: f32 = 38.0;
@@ -653,7 +641,7 @@ const fn management_columns_min_width<const N:usize>(base:[f32;N],gap:f32)->f32{
     sum+N.saturating_sub(1) as f32*gap
 }
 const FREIGHT_ASSIGNMENT_BASE_COLUMNS:[f32;6]=[44.0,202.0,104.0,258.0,150.0,144.0];
-const ORDER_HISTORY_BASE_COLUMNS:[f32;7]=[112.0,156.0,300.0,126.0,124.0,112.0,264.0];
+const ORDER_HISTORY_BASE_COLUMNS:[f32;7]=[112.0,156.0,300.0,126.0,124.0,244.0,132.0];
 
 // Freight > Shipping Group Assignment: selection, product, color/option,
 // category, shipping group, settings. Fixed 42pt rows; 6 columns + 5 gaps.
@@ -706,12 +694,11 @@ pub const FREIGHT_GROUP_HISTORY_COL_WIDTHS:[f32;6] =
 // Daily settlement is two accounting tables, not the six-column freight
 // editor: reserve numeric columns before handing the spare width to names
 // and receipt memo. Long account details remain available on cell hover.
-pub const SETTLEMENT_ORDER_COL_WIDTHS:[f32;8] =
-    [258.0,106.0,138.0,148.0,118.0,143.0,205.0,145.0];
+pub const SETTLEMENT_ORDER_COL_WIDTHS:[f32;9] =
+    [160.0,130.0,92.0,130.0,140.0,110.0,138.0,198.0,139.0];
 pub const SETTLEMENT_PAYMENT_COL_WIDTHS:[f32;7] =
     [172.0,180.0,254.0,141.0,126.0,126.0,260.0];
 pub const SETTLEMENT_KPI_CARD_WIDTH:f32 = 278.0;
-pub const SETTLEMENT_DATE_FIELD_WIDTH:f32 = 132.0;
 // Client name, phone and terms stay compact; the address takes remaining
 // width. Do not force freight/product's 1320pt grid on the client list.
 pub const MANAGEMENT_CLIENT_TABLE_MIN_WIDTH: f32 = 900.0;

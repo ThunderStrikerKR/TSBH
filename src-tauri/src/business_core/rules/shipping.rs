@@ -734,7 +734,14 @@ pub(super) fn shipping_action(payload: &Value) -> Result<Value, String> {
             let now=required_str(payload,"now")?;
             if group_id.is_none() {
                 let epoch=field(&shipping,"epoch").as_i64().unwrap_or(1);
-                set(&mut shipping,"epoch",json!(epoch+1))?;
+                let next_epoch=epoch.checked_add(1).ok_or("운임 기준 번호 범위 초과")?;
+                set(&mut shipping,"epoch",json!(next_epoch))?;
+                // Global basis start is distinct from mutable per-group/rule
+                // timestamps. Retain the original start for every known epoch.
+                if !field(&shipping,"basisStartedAtByEpoch").is_object(){
+                    set(&mut shipping,"basisStartedAtByEpoch",json!({}))?;
+                }
+                set(&mut shipping["basisStartedAtByEpoch"],&next_epoch.to_string(),json!(now))?;
                 let rules=field(&shipping,"productRules").as_object()
                     .cloned().unwrap_or_default();
                 for (pid,old) in rules {
@@ -1080,4 +1087,27 @@ mod p1_product_freight_tests {
         assert_eq!(r["state"]["shipping"]["productHistory"]["p1"][0]["version"],"old");
         assert_eq!(r["state"]["shipping"]["productRules"]["p1"]["version"],"new");
     }
+}
+
+
+#[cfg(test)]
+#[test]
+fn global_basis_records_immutable_start_and_group_change_keeps_it(){
+    let shipping=json!({"epoch":1,"groups":[{"id":"g","current":{"version":"old","fees":{}}}],
+        "productRules":{},"combinations":[]});
+    let changed=shipping_action(&json!({"action":"change_basis","shipping":shipping,
+        "now":"2026-12-27T15:00:00Z","groupVersions":{"g":"new"},"productVersions":{}})).unwrap();
+    let first=&changed["shipping"];
+    assert_eq!(first["epoch"],2);
+    assert_eq!(first["basisStartedAtByEpoch"]["2"],"2026-12-27T15:00:00Z");
+    assert!(first["basisStartedAtByEpoch"]["1"].is_null());
+    let grouped=shipping_action(&json!({"action":"change_basis","shipping":first,
+        "groupId":"g","now":"2027-01-01T00:00:00Z","groupVersions":{"g":"group-new"}})).unwrap();
+    assert_eq!(grouped["shipping"]["epoch"],2);
+    assert_eq!(grouped["shipping"]["basisStartedAtByEpoch"],first["basisStartedAtByEpoch"]);
+    let next=shipping_action(&json!({"action":"change_basis","shipping":grouped["shipping"],
+        "now":"2027-12-31T15:00:00Z","groupVersions":{"g":"next"},"productVersions":{}})).unwrap();
+    assert_eq!(next["shipping"]["epoch"],3);
+    assert_eq!(next["shipping"]["basisStartedAtByEpoch"]["2"],"2026-12-27T15:00:00Z");
+    assert_eq!(next["shipping"]["basisStartedAtByEpoch"]["3"],"2027-12-31T15:00:00Z");
 }

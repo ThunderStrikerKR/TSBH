@@ -1213,6 +1213,9 @@ mod ambiguity_selection_tests{
         latest["factoryReplies"].as_array_mut().unwrap().push(later);
         latest["workflow"]["shipments"][1]=next["workflow"]["shipments"][1].clone();
         latest["workflow"]["shipments"][1]["tracking"]["FACTORY"]=json!("000099990002");
+        // Both shipments must be completed, otherwise the pending-first matcher
+        // legitimately excludes the selected target before the stale-reply guard.
+        latest["workflow"]["shipments"][0]["actualFreight"]["FACTORY"]=json!(1000);
         review["confirmedText"]=conflict_confirmation_for_state(&latest,&review).unwrap()["text"].clone();
         let error=approve_factory_conflict_for_state(&latest,&review).unwrap_err();
         assert!(error.contains("더 최근 공장 회신"),"{error}");

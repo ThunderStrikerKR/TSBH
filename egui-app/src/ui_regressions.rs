@@ -383,7 +383,7 @@ mod management_async_layout_contract_tests {
         assert!(!rendered.contains("management_list_strip_frame().show(panel,|empty|"));
         let settlement=include_str!("daily_settlement_manager.rs");
         assert!(settlement.contains("let values=["));
-        assert!(settlement.contains("for (name,value) in ["));
+        assert!(settlement.contains("for (index,(name,value)) in ["));
         let model_groups=include_str!("model_group_manager.rs");
         assert!(!model_groups.contains("if self.dirty(){\n                                crate::ui_primitives::soft_divider(right);"));
         let aliases=include_str!("alias_manager.rs");
@@ -433,8 +433,9 @@ mod management_async_behavior_regression_tests {
         // Verify the actual dispatch and selected workbook kind, not the
         // retired single-argument product-only signature.
         assert_eq!(menu.matches("let client=self.client;").count(),2);
-        assert!(menu.contains("self.start(menu.ctx(),move||export_file(native.as_ref(),client));"));
-        assert!(menu.contains("self.start(menu.ctx(),move||preview_file(native.as_ref(),client));"));
+        assert!(menu.contains("menu.workbook_action("));
+        assert!(menu.contains("self.start(ctx,move||export_file(native.as_ref(),client));"));
+        assert!(menu.contains("self.start(ctx,move||preview_file(native.as_ref(),client));"));
     }
 
     #[test]
@@ -446,9 +447,14 @@ mod management_async_behavior_regression_tests {
         assert!(settlement.contains(".auto_shrink([false,false])"));
         assert!(!settlement.contains("변경한 결산 날짜를 조회하고 있습니다."));
         assert!(!settlement.contains("결산 자료 확인 중"));
+        assert!(settlement.contains("align_management_primary_card(ui,page_origin_y)"));
+        assert!(settlement.contains("report_body_height(indices.len()"));
+        assert!(settlement.contains("range_date_picker_with_notice("));
+        assert!(!settlement.contains("fixed_result_viewport(review"));
+        assert!(settlement.contains("if !valid_date(date_input){"));
 
         let model_groups=include_str!("model_group_manager.rs");
-        assert!(model_groups.contains("writable&&!busy&&self.dirty()"));
+        assert!(model_groups.contains("writable&&!busy&&!nested&&self.dirty()"));
         assert!(model_groups.contains("workspace.header(title,\"닫기\""));
 
         let aliases=include_str!("alias_manager.rs");
@@ -2628,9 +2634,13 @@ mod shared_composite_layout_contract_tests{
             include_str!("excel_manager.rs"),include_str!("order_history_manager.rs")]{
             assert!(source.contains("crate::ui_layout::management_toolbar_slot("));
         }
-        for source in [include_str!("product_manager.rs"),include_str!("freight_manager.rs"),include_str!("excel_manager.rs")]{
+        for source in [include_str!("product_manager.rs"),include_str!("excel_manager.rs")]{
             assert!(source.contains("crate::table::control_cell("));
         }
+        // Freight registry migrated to the common registry table/cell owners.
+        let freight=include_str!("freight_manager.rs");
+        assert!(freight.contains("crate::table::registry_table("));
+        assert!(freight.contains("crate::table::registry_cell("));
         assert!(client.contains("crate::popup::modal_form_pair("));
         assert!(include_str!("automatic_message_manager.rs").contains("crate::ui_layout::workspace_pane("));
         assert!(include_str!("manual_workspace.rs").contains("crate::ui_layout::workspace_pane("));

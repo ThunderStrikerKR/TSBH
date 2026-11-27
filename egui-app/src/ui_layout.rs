@@ -233,7 +233,8 @@ pub(crate) fn fixed_row<R>(
     (rect,result)
 }
 
-/// A result list owns one bounded viewport regardless of its content.
+/// Test fixture for a bounded result viewport; no production caller remains.
+#[cfg(test)]
 pub(crate) fn fixed_result_viewport<R>(
     ui:&mut Ui,id:&str,height:f32,render:impl FnOnce(&mut Ui)->R
 )->(Rect,R){

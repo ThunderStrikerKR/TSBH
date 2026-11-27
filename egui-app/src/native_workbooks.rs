@@ -191,7 +191,7 @@ mod client_binary_unit_tests{
 }
 
 /// Shared instructions for reply review and contextual help.
-pub const FACTORY_REPLY_FORMAT_GUIDANCE:&str="회신 Excel: G열에 실제 택배운임(0 이상의 정수), Q열에 운송장번호(텍스트 8~30자리)를 입력하세요. A열 수하인명으로 최근 출력 주문을 찾고, 같은 날짜에 이름이 중복되면 I열 품목을 비교합니다. R열 등 다른 열의 운임은 반영되지 않습니다.";
+pub const FACTORY_REPLY_FORMAT_GUIDANCE:&str="회신 Excel: G열에 출고 운임(0 이상의 정수), Q열에 운송장번호(텍스트 8~30자리)를 입력하세요. A열 수하인명으로 최근 출력 주문을 찾고, 같은 날짜에 이름이 중복되면 I열 품목을 비교합니다. R열 등 다른 열의 운임은 반영되지 않습니다.";
 
 pub fn read_factory_reply(filename:&str,bytes:&[u8])->Result<Value,String>{
     if !filename.to_ascii_lowercase().ends_with(".xlsx")||

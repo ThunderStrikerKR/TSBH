@@ -114,7 +114,33 @@ fn edit_input_width(
     });
     if response.changed(){draft[key]=json!(current);}
 }
+// Reserve the same gap and action geometry that the actual footer uses.
+fn settings_save_reserve()->f32{
+    crate::button::action_style(ButtonRole::Primary,true,false).0+theme::SPACE_8
+}
+fn account_table_columns()->[f32;4]{
+    let [bank,number,holder]=theme::SETTINGS_ACCOUNT_FIELD_WIDTHS;
+    [bank,number,holder,theme::PRODUCT_TABLE_ACTION_WIDTH]
+}
+fn account_table_min_width()->f32{
+    account_table_columns().iter().sum::<f32>()+3.0*theme::SPACE_8
+        +2.0*(theme::SECTION_PADDING+theme::FRAME_STROKE_WIDTH)
+        +crate::scrollbar::management_table_scroll_style().allocated_width()
+}
+fn account_visible_rows(count:usize,budget:f32,wide_recommendations:bool)->usize{
+    // One header, two section boundaries, the recommendation controls and
+    // the card insets precede/follow the fixed-height row viewport.
+    let recommendation_rows=if wide_recommendations{1.0}else{2.0};
+    let chrome=2.0*(theme::SECTION_PADDING+theme::FRAME_STROKE_WIDTH)
+        +theme::SECTION_HEADER_HEIGHT+2.0*theme::SECTION_DIVIDER_HEIGHT
+        +theme::MANAGEMENT_TABLE_HEADER_HEIGHT
+        +recommendation_rows*(theme::INPUT_HEIGHT+theme::SPACING);
+    let capacity=((budget-chrome)/theme::MANAGEMENT_COMPACT_ROW_HEIGHT)
+        .floor().max(1.0) as usize;
+    count.max(1).min(capacity).min(6)
+}
 fn section(ui:&mut Ui,title:&str,body:impl FnOnce(&mut Ui)){
+    crate::popup::modal_form_row_spacing(ui);
     crate::settings_help::heading(ui,title);
     crate::ui_primitives::section_divider(ui);
     body(ui);
@@ -495,7 +521,7 @@ impl SettingsView{
         {self.error=Some("폴더 열기는 Windows 환경에서 사용할 수 있습니다.".into());}
     }
     pub fn show_page(&mut self,ui:&mut Ui,gateway:Arc<dyn BandoGateway>){
-        let page_origin_y=ui.cursor().top();
+        crate::ui_layout::apply_spacing_role(ui,crate::ui_layout::SpacingRole::ExplicitVertical);
         self.poll(ui.ctx(),Arc::clone(&gateway));
         crate::floating_notice::sync(
             ui.ctx(),"settings.result","settings.action",
@@ -532,16 +558,8 @@ impl SettingsView{
         self.sync_tab_navigation();
         ui.push_id(("settings-navigation",self.tab as usize,self.tab_snapshots.epoch(self.tab as usize)),|ui|{
         if !self.loaded || self.source.is_null(){
-            if self.tab!=SettingsTab::Basic{
-                crate::card::align_management_primary_card(ui,page_origin_y);
-            }
             crate::card::management_pending_primary_card(ui);
             return;
-        }
-        // Basic needs no KPI-alignment spacer above its compact cards.
-        // Other management tabs retain their master-card alignment.
-        if self.tab!=SettingsTab::Basic{
-            crate::card::align_management_primary_card(ui,page_origin_y);
         }
         let editable=!self.read_only() && !self.busy();
         if self.tab==SettingsTab::Basic{
@@ -549,7 +567,7 @@ impl SettingsView{
         }else{
             let has_save=self.tab==SettingsTab::Files;
             let body_height=(ui.available_height()-if has_save{
-                theme::SETTINGS_BASIC_SAVE_RESERVE
+                settings_save_reserve()
             }else{0.0}).max(1.0);
             crate::scrollbar::apply_management_scroll_role(ui,crate::scrollbar::ManagementScrollRole::Standard);
             crate::scrollbar::scroll_area(crate::scrollbar::ScrollAxes::Vertical)
@@ -573,7 +591,7 @@ impl SettingsView{
     /// Keep the save control outside the page viewport. The account list
     /// has its own bounded viewport; the page can still scroll at small sizes.
     fn show_basic(&mut self,ui:&mut Ui,editable:bool,gateway:Arc<dyn BandoGateway>){
-        let body_height=(ui.available_height()-theme::SETTINGS_BASIC_SAVE_RESERVE).max(1.0);
+        let body_height=(ui.available_height()-settings_save_reserve()).max(1.0);
         crate::scrollbar::apply_management_scroll_role(ui,crate::scrollbar::ManagementScrollRole::Standard);
         crate::scrollbar::scroll_area(crate::scrollbar::ScrollAxes::Vertical)
             .id_salt("settings-basic-body")
@@ -586,9 +604,10 @@ impl SettingsView{
     }
     fn show_basic_body(&mut self,ui:&mut Ui,editable:bool,gateway:Arc<dyn BandoGateway>,body_height:f32){
         let available_width=ui.available_width();
-        if available_width>=theme::SETTINGS_BASIC_SPLIT_MIN_WIDTH{
-            let left_width=theme::SETTINGS_BASIC_LEFT_PANE_WIDTH;
-            let right_width=crate::card::remaining_column_width(available_width,left_width,theme::SPACE_12).max(1.0);
+        if let Some((left_width,right_width))=crate::card::fixed_and_remaining_columns(
+            available_width,theme::SETTINGS_BASIC_LEFT_PANE_WIDTH,theme::SPACE_12,
+            account_table_min_width()
+        ){
             ui.horizontal(|row|{
                 crate::ui_layout::apply_spacing_role(row,crate::ui_layout::SpacingRole::FormColumns);
                 row.vertical(|left|{
@@ -634,9 +653,9 @@ impl SettingsView{
                     for (key,label,width) in [
                         ("senderName","상호명",theme::SETTINGS_SENDER_NAME_WIDTH),
                         ("senderPostcode","우편번호",theme::SETTINGS_SENDER_POSTCODE_WIDTH),
-                        ("senderAddress","주소",theme::SETTINGS_SENDER_ADDRESS_WIDTH),
-                        ("senderPhone","전화번호",theme::SETTINGS_SENDER_PHONE_WIDTH),
-                        ("senderMobile","휴대폰 번호",theme::SETTINGS_SENDER_PHONE_WIDTH),
+                        ("senderAddress","주소",f32::INFINITY),
+                        ("senderPhone","전화번호",theme::RECIPIENT_MOBILE_INPUT_WIDTH),
+                        ("senderMobile","휴대폰 번호",theme::RECIPIENT_MOBILE_INPUT_WIDTH),
                     ]{
                         edit_input_width(content,&mut self.draft,key,label,width);
                     }
@@ -669,118 +688,89 @@ impl SettingsView{
     }
     fn show_accounts(&mut self,ui:&mut Ui,editable:bool,card_budget:f32){
         crate::card::measured_management_section_card(ui,|card|{
-            section(card,"입금 계좌",|content|{
-                content.add_enabled_ui(editable,|form|{
-                    let wide_recommendations=form.available_width()
-                        >=2.0*(theme::SETTINGS_ACCOUNT_PICKER_MAX_WIDTH+
-                            theme::MODAL_FORM_WIDE_LABEL_WIDTH+theme::SPACE_8)+theme::SPACE_12;
-                    let fixed_height=theme::SETTINGS_ACCOUNT_PANEL_FIXED_HEIGHT
-                        +theme::SECTION_DIVIDER_HEIGHT
-                        +if wide_recommendations{0.0}
-                         else{theme::SETTINGS_ACCOUNT_STACKED_EXTRA_HEIGHT};
-                    let list_height=(card_budget-fixed_height).clamp(
-                        theme::SETTINGS_ACCOUNT_LIST_MIN_HEIGHT,
-                        theme::SETTINGS_ACCOUNT_LIST_MAX_HEIGHT
-                    );
-                    crate::scrollbar::apply_management_scroll_role(form,crate::scrollbar::ManagementScrollRole::Standard);
-                    let _account_viewport=crate::scrollbar::scroll_area(crate::scrollbar::ScrollAxes::Vertical)
-                        .id_salt("settings-bank-account-list")
-                        .max_height(list_height)
-                        .auto_shrink([false,true])
-                        .show(form,|rows|{
-                            self.show_account_rows(rows);
-                        });
-                    #[cfg(test)]
-                    crate::ui_test_support::record("account viewport",_account_viewport.inner_rect);
-                    form.add_space(theme::SPACE_8);
-                    if crate::button::action(
-                        form,"＋ 계좌 추가",ButtonRole::Standard,true
-                    ).clicked(){
-                        let mut accounts=self.draft.get("accounts")
-                            .and_then(Value::as_array).cloned()
-                            .unwrap_or_default();
-                        accounts.push(json!({
-                            "id":settings_store::new_account_id(),
-                            "bank":"","number":"","holder":""
-                        }));
-                        self.draft["accounts"]=json!(accounts);
-                    }
-                    crate::ui_primitives::section_divider(form);
-                    let recommendations=[
-                        ("BANDOSTAND","반도스탠드 추천 계좌"),
-                        ("BANDOMALL","반도몰 추천 계좌")
-                    ];
-                    if wide_recommendations{
-                        form.horizontal(|row|{
-                            crate::ui_layout::apply_spacing_role(row,crate::ui_layout::SpacingRole::FormColumns);
-                            for (key,label) in recommendations{
-                                row.vertical(|col|{
-                                    col.apply_shared_width(crate::ui_layout::geometry::CardWidthPolicy::Fixed,theme::SETTINGS_ACCOUNT_PICKER_MAX_WIDTH+
-                                        theme::MODAL_FORM_WIDE_LABEL_WIDTH+theme::SPACE_8);
-                                    recommendation_picker(
-                                        col,&mut self.draft,key,label
-                                    );
-                                });
-                            }
-                        });
-                    }else{
-                        for (index,(key,label)) in recommendations.into_iter().enumerate(){
-                            if index>0{form.add_space(theme::SPACE_8);}
-                            recommendation_picker(form,&mut self.draft,key,label);
+            card.add_enabled_ui(editable,|form|{
+                crate::popup::modal_form_row_spacing(form);
+                form.horizontal(|header|{
+                    crate::settings_help::heading(header,"입금 계좌");
+                    header.with_layout(Layout::right_to_left(Align::Center),|actions|{
+                        if crate::button::action(
+                            actions,"＋ 계좌 추가",ButtonRole::Standard,true
+                        ).clicked(){
+                            let mut accounts=self.draft.get("accounts")
+                                .and_then(Value::as_array).cloned().unwrap_or_default();
+                            accounts.push(json!({
+                                "id":settings_store::new_account_id(),
+                                "bank":"","number":"","holder":""
+                            }));
+                            self.draft["accounts"]=json!(accounts);
                         }
-                    }
+                    });
                 });
+                crate::ui_primitives::section_divider(form);
+                let picker_width=theme::SETTINGS_ACCOUNT_PICKER_MAX_WIDTH+
+                    theme::MODAL_FORM_WIDE_LABEL_WIDTH+theme::SPACE_8;
+                let wide_recommendations=form.available_width()>=2.0*picker_width+theme::SPACE_12;
+                let count=self.draft.get("accounts").and_then(Value::as_array).map_or(0,Vec::len);
+                let visible=account_visible_rows(count,card_budget,wide_recommendations);
+                crate::ui_layout::apply_spacing_role(form,crate::ui_layout::SpacingRole::AccountFields);
+                self.show_account_rows(form,visible);
+                crate::ui_primitives::section_divider(form);
+                let recommendations=[
+                    ("BANDOSTAND","반도스탠드 추천 계좌"),
+                    ("BANDOMALL","반도몰 추천 계좌")
+                ];
+                if wide_recommendations{
+                    form.horizontal(|row|{
+                        crate::ui_layout::apply_spacing_role(row,crate::ui_layout::SpacingRole::FormColumns);
+                        for (key,label) in recommendations{
+                            row.vertical(|col|{
+                                col.apply_shared_width(crate::ui_layout::geometry::CardWidthPolicy::Fixed,picker_width);
+                                recommendation_picker(col,&mut self.draft,key,label);
+                            });
+                        }
+                    });
+                }else{
+                    for (key,label) in recommendations{
+                        recommendation_picker(form,&mut self.draft,key,label);
+                    }
+                }
             });
         });
     }
-    /// Only account rows scroll. Add, delete policy, brand recommendations
-    /// and the page's save control remain outside the scroll viewport.
-    fn show_account_rows(&mut self,ui:&mut Ui){
+    /// One account per compact registry row. The common table owns the
+    /// header, row height, clipping and both scroll axes.
+    fn show_account_rows(&mut self,ui:&mut Ui,visible:usize){
         let mut accounts=self.draft.get("accounts")
             .and_then(Value::as_array).cloned().unwrap_or_default();
         let mut delete=None;
-        let account_count=accounts.len();
-        for (index,account) in accounts.iter_mut().enumerate(){
-            let labels=[("bank","은행명"),("number","계좌번호"),("holder","예금주")];
-            let label_space=theme::MODAL_FORM_LABEL_WIDTH+theme::SPACE_8;
-            let wide=theme::SETTINGS_ACCOUNT_ROW_MIN_WIDTH+3.0*label_space;
-            if ui.available_width()>=wide{
-                ui.horizontal(|row|{
-                    crate::ui_layout::apply_spacing_role(row,crate::ui_layout::SpacingRole::AccountFields);
-                    let usable=(row.available_width()-theme::SETTINGS_ACCOUNT_DELETE_WIDTH
-                        -3.0*theme::SPACE_8-3.0*label_space).max(1.0);
-                    let targets=theme::SETTINGS_ACCOUNT_FIELD_WIDTHS;
-                    let factor=(usable/targets.iter().sum::<f32>()).min(1.0);
-                    for (column,(key,label)) in labels.into_iter().enumerate(){
-                        let width=targets[column]*factor;
-                        row.shared_allocate_ui_with_layout(
-                            Vec2::new(width+label_space,theme::INPUT_HEIGHT),
-                            Layout::top_down(Align::Min),|input|{
-                                input.apply_shared_width(crate::ui_layout::geometry::CardWidthPolicy::Fixed,width+label_space);
-                                edit_input_width(input,account,key,label,width);
-                            });
-                    }
-                    if crate::button::action(row,"계좌 삭제",ButtonRole::Danger,true).clicked(){
-                        delete=Some(index);
-                    }
-                });
-            }else{
-                crate::popup::modal_form_row_spacing(ui);
-                for (column,(key,label)) in labels.into_iter().enumerate(){
-                    edit_input_width(ui,account,key,label,theme::SETTINGS_ACCOUNT_FIELD_WIDTHS[column]);
+        let count=accounts.len();
+        let _account_viewport=crate::table::registry_table_min_rows(
+            ui,"settings-bank-account-list",["은행명","계좌번호","예금주",""],
+            crate::table::RegistryColumns::balanced_text(account_table_columns(),3),
+            visible,count,|_|false,|row,cells,index,_|{
+                let account=&mut accounts[index];
+                let id=field(account,"id");
+                for (column,key) in ["bank","number","holder"].into_iter().enumerate(){
+                    let cell=cells[column];
+                    let edit_rect=cell.shrink2(Vec2::new(theme::SPACE_2,
+                        (cell.height()-theme::INPUT_HEIGHT).max(0.0)/2.0));
+                    let mut current=field(account,key);
+                    let clip=row.clip_rect().intersect(cell);
+                    let enabled=row.is_enabled();
+                    let response=crate::table::control_cell(row,(&id,key),edit_rect,clip,
+                        Layout::left_to_right(Align::Center),enabled,true,|editor|{
+                            crate::input::flexible_text_field(editor,&mut current,edit_rect.width(),"")
+                        });
+                    if response.changed(){account[key]=json!(current);}
                 }
-                ui.with_layout(Layout::right_to_left(Align::Center),|row|{
-                    if crate::button::action(row,"계좌 삭제",ButtonRole::Danger,true).clicked(){
+                crate::table::registry_actions(row,cells[3],|actions|{
+                    if crate::button::action(actions,"계좌 삭제",ButtonRole::Danger,true).clicked(){
                         delete=Some(index);
                     }
                 });
-            }
-            if index+1<account_count{
-                ui.add_space(theme::SPACE_8);
-                crate::ui_primitives::soft_divider(ui);
-                ui.add_space(theme::SPACE_8);
-            }
-        }
+            });
+        #[cfg(test)]
+        crate::ui_test_support::record("account viewport",_account_viewport);
         if let Some(index)=delete{
             let id=field(&accounts[index],"id");
             let used=self.source.get("usedAccounts")
@@ -823,9 +813,7 @@ impl SettingsView{
             card(ui,title,|area|{
                 let value=field(&self.draft,key);
                 let displayed=if value.is_empty(){*empty}else{value.as_str()};
-                area.add(crate::ui_primitives::truncated_label(typography::body(displayed)));
-                area.add_space(theme::SPACE_8);
-                area.with_layout(Layout::right_to_left(Align::Center).with_main_wrap(true),|buttons|{
+                let mut draw_actions=|buttons:&mut Ui|{
                     if crate::button::action(
                         buttons,button,ButtonRole::Standard,
                         editable&&self.folder_picker.is_none()
@@ -847,7 +835,25 @@ impl SettingsView{
                             self.draft[*key]=json!("");
                         }
                     }
-                });
+                };
+                let actions_width=theme::MANAGEMENT_EXCEL_TOOLBAR_ACTIONS_WIDTH;
+                if area.available_width()>=actions_width+theme::MANAGEMENT_SEARCH_MIN_WIDTH+theme::SPACE_12{
+                    crate::ui_layout::management_toolbar_pair(area,crate::ui_layout::ToolbarPair{
+                        search_id:"settings-path",actions_id:"settings-path-actions",
+                        narrow_search_id:"settings-path-narrow",narrow_actions_id:"settings-path-actions-narrow",
+                        stack_width:actions_width+theme::MANAGEMENT_SEARCH_MIN_WIDTH+theme::SPACE_12,
+                        search_max:f32::INFINITY,actions_width,narrow_actions_first:false,
+                        actions_rtl:true,clip:true,
+                    },|slot,part|match part{
+                        crate::ui_layout::ToolbarPart::Search=>{
+                            slot.add(crate::ui_primitives::truncated_label(typography::body(displayed)));
+                        }
+                        crate::ui_layout::ToolbarPart::Actions=>draw_actions(slot),
+                    });
+                }else{
+                    area.add(crate::ui_primitives::truncated_label(typography::body(displayed)));
+                    area.with_layout(Layout::right_to_left(Align::Center).with_main_wrap(true),draw_actions);
+                }
             });
         }
     }
@@ -870,16 +876,18 @@ impl SettingsView{
         let business=self.source.get("mode").and_then(Value::as_str)==Some("business");
         let reading=self.data_request.is_some()||self.loading.pending();
         card(ui,"접수 원문 감사 보관함",|panel|{
-            if crate::button::action(panel,
-                "감사 기록 열기",ButtonRole::Standard,
-                business&&self.data_available()&&!reading
-            ).clicked(){
-                self.data_action("archive",None,Arc::clone(&gateway),panel.ctx().clone());
-            }
+            panel.with_layout(Layout::right_to_left(Align::Center),|actions|{
+                if crate::button::action(actions,
+                    "감사 기록 열기",ButtonRole::Standard,
+                    business&&self.data_available()&&!reading
+                ).clicked(){
+                    self.data_action("archive",None,Arc::clone(&gateway),actions.ctx().clone());
+                }
+            });
         });
         ui.add_space(theme::SPACE_12);
         card(ui,"데이터 백업 및 복구",|panel|{
-            panel.horizontal_wrapped(|actions|{
+            panel.with_layout(Layout::right_to_left(Align::Center).with_main_wrap(true),|actions|{
                 if crate::button::action(actions,"지금 백업",ButtonRole::Standard,
                     business&&self.data_available()&&!self.read_only()&&!reading).clicked(){
                     self.data_action(
@@ -895,34 +903,40 @@ impl SettingsView{
             });
             let restore_allowed=!self.read_only()&&!reading;
             let mut chosen_backup=None;
-            for filename in &self.backups{
-                panel.add_space(theme::SPACE_8);
-                crate::ui_primitives::soft_divider(panel);
-                panel.add_space(theme::SPACE_8);
-                let name=std::path::Path::new(&filename).file_name()
-                    .and_then(|p|p.to_str()).unwrap_or(&filename);
-                let policy=if name.starts_with("monthly-"){
-                    "월간 최초 자동 백업 (영구 보관)"
-                }else if name.starts_with("auto-"){
-                    "일반 자동 백업 (30일 보관)"
-                }else if name.starts_with("pre-restore-"){
-                    "복원 직전 안전 백업 (영구 보관)"
-                }else if name.starts_with("manual-"){
-                    "수동 백업 (영구 보관)"
-                }else{
-                    "기존 백업 (자동 삭제 안 함)"
-                };
-                panel.horizontal_wrapped(|row|{
-                    row.vertical(|name_column|{
-                        name_column.label(typography::body(name));
-                        name_column.label(typography::caption(policy));
+            if !self.backups.is_empty(){
+                crate::ui_primitives::section_divider(panel);
+                let count=self.backups.len();
+                crate::table::registry_table(panel,"settings-backup-list",
+                    ["백업 파일","보관 규정",""],
+                    [theme::CATALOG_SEARCH_WIDTH/2.0,theme::SETTINGS_ACCOUNT_PICKER_MAX_WIDTH,
+                        theme::MANAGEMENT_TOOLBAR_ACTIONS_WIDTH/1.5],
+                    count.min(6) as f32*theme::MANAGEMENT_COMPACT_ROW_HEIGHT,
+                    count,|_|false,|row,cells,index,_|{
+                        let filename=&self.backups[index];
+                        let name=std::path::Path::new(filename).file_name()
+                            .and_then(|p|p.to_str()).unwrap_or(filename);
+                        let policy=if name.starts_with("monthly-"){
+                            "월간 최초 자동 백업 (영구 보관)"
+                        }else if name.starts_with("auto-"){
+                            "일반 자동 백업 (30일 보관)"
+                        }else if name.starts_with("pre-restore-"){
+                            "복원 직전 안전 백업 (영구 보관)"
+                        }else if name.starts_with("manual-"){
+                            "수동 백업 (영구 보관)"
+                        }else{
+                            "기존 백업 (자동 삭제 안 함)"
+                        };
+                        crate::table::registry_cell(row,cells[0],name,
+                            typography::ManagementTableCellRole::Text,false,(index,"backup-name"));
+                        crate::table::registry_cell(row,cells[1],policy,
+                            typography::ManagementTableCellRole::Muted,false,(index,"backup-policy"));
+                        crate::table::registry_actions(row,cells[2],|actions|{
+                            if crate::button::action(actions,"이 백업으로 복구",
+                                ButtonRole::Standard,restore_allowed).clicked(){
+                                chosen_backup=Some(filename.clone());
+                            }
+                        });
                     });
-                    if crate::button::action(row,"이 백업으로 복구",
-                        ButtonRole::Standard,
-                        restore_allowed).clicked(){
-                        chosen_backup=Some(filename.clone());
-                    }
-                });
             }
             if let Some(filename)=chosen_backup{self.restore_target=Some(filename);}
         });
@@ -966,7 +980,7 @@ impl SettingsView{
             crate::popup::modal_backdrop(ctx,"settings-audit-backdrop",false);
             crate::popup::modal_window(ctx,
                 "접수 원문 감사 보관함","settings-audit-records",area
-            ).default_width(720.0).show(ctx,|ui|{
+            ).default_width(theme::MODAL_DEFAULT_MAX_WIDTH.min(area.width())).show(ctx,|ui|{
 
                 crate::popup::modal_flow_workspace(ui,|workspace|{
                     if workspace.header("접수 원문 감사 보관함","닫기",true
@@ -1092,6 +1106,17 @@ impl SettingsView{
 #[cfg(test)]
 mod management_async_layout_tests{
     use super::*;
+
+    #[test]
+    fn settings_account_row_budget_tracks_shared_geometry(){
+        assert_eq!(account_visible_rows(0,700.0,false),1);
+        assert_eq!(account_visible_rows(100,1.0,false),1);
+        assert_eq!(account_visible_rows(100,10000.0,true),6);
+        assert_eq!(account_visible_rows(2,10000.0,false),2);
+        assert!(account_visible_rows(100,420.0,true)>=account_visible_rows(100,420.0,false));
+        assert_eq!(settings_save_reserve(),
+            crate::button::action_style(ButtonRole::Primary,true,false).0+theme::SPACE_8);
+    }
 
     #[test]
     fn conflict_restore_action_stays_in_fixed_title_slot_without_moving_tabs(){

@@ -45,9 +45,9 @@ const HEADER_HEIGHT: f32 = theme::MANAGEMENT_TABLE_HEADER_HEIGHT;
 const COL_GAP: f32 = theme::SPACE_8;
 // Compact fixed-width metadata columns; the shipping / product column takes
 // ALL remaining width (including when the main pane is resized).
-// The action column holds TWO order-level controls side by side without
-// reducing the product column's 300pt minimum.
-// Date text is YYYY-MM-DD; client name shows at most ten characters;
+// The action column holds one centered tracking copy control; its former
+// detail-button width belongs entirely to the payment confirmation column.
+// Reception date is YYYY-MM-DD; payment confirmation includes local time;
 // status is one of four known values; invoice is at most 10M KRW.
 // All seven approved widths and the 1242pt minimum are owned by theme.rs.
 // Local names stay as aliases for the existing cell-layout helpers and tests.
@@ -95,6 +95,21 @@ fn seoul_date(raw:&str)->String{
     }
     raw.get(..10).filter(|date|NaiveDate::parse_from_str(date,"%Y-%m-%d").is_ok())
         .unwrap_or("").to_owned()
+}
+fn approval_sort_key(approval:&Value)->String{
+    let date=field(approval,"date");
+    DateTime::parse_from_rfc3339(field(approval,"confirmedAt")).ok()
+        .map(|stamp|stamp.with_timezone(&FixedOffset::east_opt(9*3600).unwrap())
+            .format("%Y-%m-%d %H:%M:%S%.9f").to_string())
+        .unwrap_or_else(||date.to_owned())
+}
+fn approval_label(approval:&Value)->&str{
+    let datetime=field(approval,"dateTime");
+    if !datetime.is_empty(){datetime}
+    else{
+        let date=field(approval,"date");
+        if date.is_empty(){"미확인"}else{date}
+    }
 }
 fn memo_last_updated_label(raw:&str)->String{
     DateTime::parse_from_rfc3339(raw).ok()
@@ -334,11 +349,10 @@ fn display_lines(snapshot:&HistorySnapshot,expanded:&BTreeSet<String>,
                 SortColumn::Total=>row["total"].as_i64()
                     .map(|n|format!("{:020}",n.max(0)))
                     .unwrap_or_else(||"~".into()),
-                // The approval date, not the bank paidAt timestamp.
-                // YYYY-MM-DD sorts chronologically as ordinary text.
-                SortColumn::PaymentConfirmation=>field(
-                    &row["display"]["employeePaymentConfirmation"],"date"
-                ).to_owned(),
+                // Chronological employee confirmation, not bank paidAt.
+                SortColumn::PaymentConfirmation=>approval_sort_key(
+                    &row["display"]["employeePaymentConfirmation"]
+                ),
             }
         });
         if sort.direction==SortDirection::Desc{indices.reverse();}
@@ -516,6 +530,14 @@ fn draw_line(ui:&mut Ui,rect:Rect,line:HistoryLine,snapshot:&HistorySnapshot,
     match line {
         HistoryLine::Order(_)=>{
             let columns=crate::table::management_table_cells(rect.min,widths,rect.height(),COL_GAP);
+            // Only the disclosure arrow expands recipients. The rest of
+            // the data row opens the existing order detail popup.
+            let data_rect=Rect::from_min_max(rect.left_top(),
+                egui::pos2(columns[6].left(),rect.bottom())).intersect(area);
+            if data_rect.is_positive() && ui.rect_contains_pointer(data_rect){
+                crate::highlight::paint(ui,data_rect,crate::highlight::Geometry::TableRow,
+                    crate::highlight::Role::RowHover);
+            }
             paint_text(ui,columns[0],&order_date(row),typography::ManagementTableCellRole::Description,false);
             paint_text(ui,columns[1],&display_client_name(order_client(row)),
                 typography::ManagementTableCellRole::ClientName,false);
@@ -525,11 +547,11 @@ fn draw_line(ui:&mut Ui,rect:Rect,line:HistoryLine,snapshot:&HistorySnapshot,
                     history_text_overflow(ui,columns[1],order_client(row),typography::ManagementTableCellRole::ClientName),
                 order_client(row));
             // Main list: ONLY product name × quantity, all items in one line.
-            // Click anywhere except the action button to expand all details.
+            // The chevron alone expands the recipient/shipment blocks.
             let summary=order_items_single_line(row);
             // The order disclosure uses the same stroked chevron as
             // workflow cards, category trees, date arrows and dropdowns.
-            // Keep the existing chevron center and the row's click area.
+            // Keep the existing chevron center; its hit target is independent.
             let center=egui::pos2(columns[2].left()+11.0,columns[2].center().y);
             // The 10pt arrow reaches 16pt from the cell's left edge when
             // expanded. Reserve a 4pt text gap without changing column or row.
@@ -538,14 +560,34 @@ fn draw_line(ui:&mut Ui,rect:Rect,line:HistoryLine,snapshot:&HistorySnapshot,
                 columns[2].right_bottom()
             );
             paint_text(ui,summary_rect,&summary,typography::ManagementTableCellRole::ProductName,false);
-            let open_area=Rect::from_min_max(
-                rect.left_top(),egui::pos2(columns[6].left(),rect.bottom())
-            ).intersect(area);
-            let response=crate::button::disclosure_at(ui,open_area,
-                ui.make_persistent_id(("order-history-toggle",id)),center,
-                Some(columns[2].intersect(area)),expanded.contains(id),
-                history_text_overflow(ui,summary_rect,&summary,typography::ManagementTableCellRole::ProductName),&summary,crate::highlight::Geometry::TableRow);
-            if response.clicked(){*pending_toggle=Some(id.to_owned());}
+            let disclosure=Rect::from_min_max(
+                columns[2].left_top(),egui::pos2(summary_rect.left(),rect.bottom())
+            );
+            for (index,hit) in [
+                Rect::from_min_max(rect.left_top(),egui::pos2(disclosure.left(),rect.bottom())),
+                Rect::from_min_max(egui::pos2(disclosure.right(),rect.top()),
+                    egui::pos2(columns[6].left(),rect.bottom()))
+            ].into_iter().enumerate(){
+                let hit=hit.intersect(area);
+                if hit.is_positive() && crate::table::editable_cell_hit(ui,hit,
+                    ui.make_persistent_id(("history-open-detail",id,index)),true,
+                    egui::CursorIcon::PointingHand,false,"").clicked(){
+                    *pending_detail=Some(id.to_owned());
+                }
+            }
+            let arrow_hit=disclosure.intersect(area);
+            if arrow_hit.is_positive(){
+                let response=crate::button::disclosure_at(ui,arrow_hit,
+                    ui.make_persistent_id(("order-history-toggle",id)),center,
+                    Some(columns[2].intersect(area)),expanded.contains(id),
+                    false,"",crate::highlight::Geometry::Control);
+                if response.on_hover_cursor(egui::CursorIcon::PointingHand).clicked(){
+                    *pending_toggle=Some(id.to_owned());
+                }
+            }
+            crate::ui_primitives::overflow_region_tooltip(ui,summary_rect.intersect(area),
+                ui.make_persistent_id(("history-product-summary",id)),
+                history_text_overflow(ui,summary_rect,&summary,typography::ManagementTableCellRole::ProductName),&summary);
             paint_center(ui,columns[3],field(row,"status"));
             let total=won(&row["total"]);
             let mut cautions=Vec::new();
@@ -553,7 +595,7 @@ fn draw_line(ui:&mut Ui,rect:Rect,line:HistoryLine,snapshot:&HistorySnapshot,
                 cautions.push("소매 주문 / 결제 증빙 별도 확인");
             }
             if row["display"]["paymentEvidenceMissing"]==true{
-                cautions.push("기존 입금 표시 / 실제 입금 기록 미확인");
+                cautions.push("기존 입금 표시 / 입금 기록 미확인");
             }
             if cautions.is_empty(){
                 paint_text_with_state(ui,columns[4],&total,typography::ManagementTableCellRole::RowTotal,true,
@@ -580,41 +622,20 @@ fn draw_line(ui:&mut Ui,rect:Rect,line:HistoryLine,snapshot:&HistorySnapshot,
             // Staff confirmation is NOT the bank transfer's paidAt date.
             // It comes from the Rust projection of workflow.confirmations.
             let approval=&row["display"]["employeePaymentConfirmation"];
-            let approval_day=field(approval,"date");
-            // This column displays only the employee payment confirmation date.
-            let approval_label=if approval_day.is_empty(){
-                "미확인".to_owned()
-            }else{
-                approval_day.to_owned()
-            };
-            paint_center(ui,columns[5],&approval_label);
+            paint_center(ui,columns[5],approval_label(approval));
             let message=field(&row["display"],"trackingMessage");
-            // Keep two INDEPENDENT controls in this fixed 264pt column.
-            // Main-justify expanded the first button to the full cell width,
-            // silently clipping the second one. Allocate exactly half each.
+            // Single control fills the symmetric inset, centered vertically
+            // by the shared cell layout. Its hit area never opens the detail.
             let control=columns[6].shrink2(
                 Vec2::new(theme::SPACE_8,theme::SPACE_4)
             );
-            let control=crate::ui_layout::geometry::aligned_rect(control);
-            let action_gap=theme::SPACE_4;
-            let action_width=(control.width()-action_gap)/2.0;
-            ui.scope_builder(UiBuilder::new()
-                .id_salt(("order-history-actions",id))
-                .aligned_max_rect(control)
-                .layout(egui::Layout::left_to_right(Align::Center)),|actions|{
-                    actions.restrict_shared_clip(control.intersect(area));
-                    actions.apply_shared_width(crate::ui_layout::geometry::CardWidthPolicy::Fixed,control.width());
-                    crate::ui_layout::apply_spacing_role(actions,crate::ui_layout::SpacingRole::CompactActions);
-                    // Copy the FULL order's existing Rust-generated message.
+            crate::table::control_cell(ui,("order-history-actions",id),
+                control,area.intersect(control),egui::Layout::left_to_right(Align::Center),
+                true,true,|actions|{
                     if crate::button::action_with_min_width(actions,"운송장 복사",
                         theme::ButtonRole::Standard,!message.is_empty(),
-                        action_width).clicked(){
+                        control.width()).clicked(){
                         actions.ctx().copy_text(message.to_owned());
-                    }
-                    if crate::button::action_with_min_width(actions,"발주서 상세",
-                        theme::ButtonRole::TableSecondary,true,
-                        action_width).clicked(){
-                        *pending_detail=Some(id.to_owned());
                     }
                 });
         },
@@ -1147,7 +1168,7 @@ impl OrderHistoryManager {
             // column and leaves expandable detail rows variable-height.
             let widths=theme::ORDER_HISTORY_MASTER_TABLE.widths_for(table_width);
             let headings=["접수일","거래처","상품 목록","관리 상태",
-                "청구 합계","입금 확인","처리"];
+                "청구 합계","입금 확인 일시","처리"];
             let mut header_origin=None;
             let mut pending_toggle=None;
             let mut pending_memo=None;
@@ -1589,6 +1610,18 @@ mod tests{
         let second=Sort::next(Some(first),SortColumn::PaymentConfirmation).unwrap();
         assert!(second.direction==SortDirection::Desc);
         assert!(Sort::next(Some(second),SortColumn::PaymentConfirmation).is_none());
+    }
+
+    #[test]
+    fn approval_time_preserves_legacy_date_and_orders_same_day_confirmations(){
+        let earlier=json!({"date":"2026-11-27","confirmedAt":"2026-11-27T01:30:00Z","dateTime":"2026-11-27 10:30"});
+        let later=json!({"date":"2026-11-27","confirmedAt":"2026-11-27T14:00:00+09:00","dateTime":"2026-11-27 14:00"});
+        assert!(approval_sort_key(&earlier)<approval_sort_key(&later));
+        assert_eq!(approval_label(&earlier),"2026-11-27 10:30");
+        assert_eq!(approval_label(&json!({"date":"2026-11-27"})),"2026-11-27");
+        assert_eq!(approval_label(&Value::Null),"미확인");
+        assert_eq!(COLS[5]+COLS[6],376.0);
+        assert_eq!(COLS[6],132.0);
     }
 
     #[test]
