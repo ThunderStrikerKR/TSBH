@@ -100,6 +100,10 @@ impl CommonCandidates {
             self.entries.entry((e.kind,e.start,e.end)).or_default().selected=Some(index);
         }
     }
+    fn admits(&self,e:&Evidence,index:usize)->bool{
+        !self.truncated&&self.entries.get(&(e.kind,e.start,e.end)).is_some_and(|r|
+            r.selected==Some(index)&&!r.disposition.is_some_and(CandidateDisposition::hard))
+    }
     fn disposition(&self,kind:&'static str,start:usize,end:usize)->Option<CandidateDisposition>{
         self.entries.get(&(kind,start,end)).and_then(|r|r.disposition)
     }
@@ -623,6 +627,23 @@ fn split_product_records<'a>(lines:Vec<Line<'a>>,label:&Regex,phone:&Regex,
     }
     out
 }
+// Compare a narrowly scoped name/alias collision using the same cached
+// hypotheses later entered into CommonCandidates. An exact alias or a
+// literal catalog match is protected; so are quantity-qualified products.
+// Only a partial alias inside an honorific name immediately followed by
+// independent delivery information may challenge the legacy product choice.
+fn name_beats_partial_alias(text:&str,inline_delivery:bool,matched:&CachedProductDecision)->bool{
+    if !inline_delivery||matched.truncated||matched.candidates.is_empty(){return false;}
+    if matched.candidates.iter().any(|c|c.literal||c.span==(0,text.len())){return false;}
+    if model::category(text).is_some(){return false;}
+    let Some(stem)=text.strip_suffix('님')else{return false;};
+    if !ts_semantics::person(stem.trim_end()){return false;}
+    // Initial type weights: structural delivery 30, honorific 24, person
+    // form 16 versus partial alias 40 and legacy support 12. Not calibrated.
+    let name_score=30+24+16;
+    let product_score=40+12;
+    exceeds_margin(name_score,product_score,OWNER_WEIGHTS.margin)
+}
 fn unlabelled_recipient_span<'a>(
     line:&'a str,address:Option<usize>,phone:&Regex,near_delivery:bool,
     search:&mut ProductSearch<'a,'_>,competing:&mut Vec<(usize,usize)>
@@ -667,9 +688,11 @@ fn unlabelled_recipient_span<'a>(
     if address.is_some() || contact.is_some(){
         let (a,b)=composite_name_before_address(prefix)?;
         let candidate=&line[a..b];
-        // Address/phone prefixes with no product quantity must not promote
-        // a known model to a consignee. The explicit label path has priority.
-        if product_signal(candidate,search.decision(candidate),state){
+        // A known literal model still takes priority. A partial alias
+        // may compete with a separately bounded honorific recipient name.
+        let matched=search.result(candidate);
+        if product_signal(candidate,&matched.output,state)&&
+            !name_beats_partial_alias(candidate,true,matched){
             competing.push((a,b));
             return None;
         }
@@ -818,7 +841,7 @@ impl DeliveryGeometry{
 // Distances are supporting evidence only: they never create recipients.
 fn recipient_owner_index(
     anchors: &[usize], events: &[Evidence], evidence_index: usize, geometry: &SourceGeometry,
-    delivery:&DeliveryGeometry,features:&DocumentFeatures
+    delivery:&DeliveryGeometry,features:&DocumentFeatures,candidates:&CommonCandidates
 ) -> usize {
     let candidate=&events[evidence_index];
     let previous=owner_index(anchors,events,candidate.start);
@@ -857,18 +880,19 @@ fn recipient_owner_index(
     if matches!(candidate.kind,"phone"|"mobile") && !has_nearby_address {
         return previous;
     }
-    // Legacy equivalence: after the gates above, previous_score <= 20,
-    // following_score >= 80 + 5 - 10 = 75, and required margin = 30.
-    // The comparison was always true. Retain the existing decision as a
-    // deterministic fallback, not as a purported calibrated weight.
-    previous+1
+    // Incomplete candidate data retains the pre-weight handoff rule.
+    if !candidates.admits(candidate,evidence_index)||!features.positions_valid{
+        return previous+1;
+    }
+    let w=OWNER_WEIGHTS;
+    let a=ownership_score(events,features,evidence_index,anchors[previous],true,w);
+    let b=ownership_score(events,features,evidence_index,next_anchor_index,false,w);
+    if exceeds_margin(b,a,w.margin){previous+1}else{previous}
 }
-// Provisional fixed weights for individual product ownership. These are
-// not probabilities or calibrated final weights (stage 05 must validate).
-// Restrict the first operational comparison to distinct paragraph evidence;
-// ambiguous same-paragraph layouts keep the legacy assignment.
+// Shared provisional ownership weights, not calibrated probabilities.
+// Stage 05 validates the profile independently of the hard field gates.
 #[derive(Clone, Copy)]
-struct ProductOwnerWeights {
+struct OwnerWeights {
     paragraph:i64,
     line:i64,
     scalar:i64,
@@ -876,13 +900,13 @@ struct ProductOwnerWeights {
     legacy:i64,
     margin:i64,
 }
-const PRODUCT_OWNER_WEIGHTS:ProductOwnerWeights=ProductOwnerWeights{
+const OWNER_WEIGHTS:OwnerWeights=OwnerWeights{
     paragraph:36,line:18,scalar:12,rank:12,legacy:12,margin:10,
 };
-fn product_owner_score(events:&[Evidence],features:&DocumentFeatures,
-    product:usize,anchor:usize,legacy:bool,w:ProductOwnerWeights)->i64{
-    let (line,rank,same_paragraph)=features.relation(events,product,anchor);
-    let p=features.positions[product];
+fn ownership_score(events:&[Evidence],features:&DocumentFeatures,
+    field:usize,anchor:usize,legacy:bool,w:OwnerWeights)->i64{
+    let (line,rank,same_paragraph)=features.relation(events,field,anchor);
+    let p=features.positions[field];
     let a=features.positions[anchor];
     // Distance between the nearest field endpoints, not between UTF-8 bytes.
     let gap=if p[1].0<=a[0].0{a[0].0-p[1].0}
@@ -895,6 +919,9 @@ fn product_owner_score(events:&[Evidence],features:&DocumentFeatures,
         +decay(w.rank,rank.unsigned_abs(),1)
         +i64::from(legacy)*w.legacy
 }
+fn exceeds_margin(challenger:i64,incumbent:i64,margin:i64)->bool{
+    challenger-incumbent>=margin
+}
 fn product_owner_index(anchors:&[usize],events:&[Evidence],features:&DocumentFeatures,
     candidates:&CommonCandidates,hit:&ProductHit,has_leading:bool)->usize{
     let e=&events[hit.evidence];
@@ -906,8 +933,7 @@ fn product_owner_index(anchors:&[usize],events:&[Evidence],features:&DocumentFea
     }
     // The common candidate index is the admission boundary. Never promote
     // an excluded alternative or create a recipient by scoring a span.
-    if !candidates.entries.get(&(e.kind,e.start,e.end)).is_some_and(|r|
-        r.selected==Some(hit.evidence)&&!r.disposition.is_some_and(CandidateDisposition::hard)){
+    if !candidates.admits(e,hit.evidence){
         return legacy;
     }
     let a=anchors[previous];let b=anchors[next];
@@ -915,11 +941,11 @@ fn product_owner_index(anchors:&[usize],events:&[Evidence],features:&DocumentFea
     let (_,_,same_a)=features.relation(events,hit.evidence,a);
     let (_,_,same_b)=features.relation(events,hit.evidence,b);
     if same_a==same_b{return legacy;}
-    let w=PRODUCT_OWNER_WEIGHTS;
-    let score_a=product_owner_score(events,features,hit.evidence,a,legacy==previous,w);
-    let score_b=product_owner_score(events,features,hit.evidence,b,legacy==next,w);
-    if score_a-score_b>=w.margin&&same_a{previous}
-    else if score_b-score_a>=w.margin&&same_b{next}
+    let w=OWNER_WEIGHTS;
+    let score_a=ownership_score(events,features,hit.evidence,a,legacy==previous,w);
+    let score_b=ownership_score(events,features,hit.evidence,b,legacy==next,w);
+    if exceeds_margin(score_a,score_b,w.margin)&&same_a{previous}
+    else if exceeds_margin(score_b,score_a,w.margin)&&same_b{next}
     else{legacy}
 }
 /// Original TypeScript resolvePrice for the recognition Item shape.
@@ -1781,7 +1807,7 @@ fn assign_document(document:ExtractedDocument<'_>,state:&Value,client:Option<&Va
     let mut postcodes=vec![HashSet::<String>::new();recipients.len()];
     for index in 0..events.len() {
         if events[index].kind == "product" || events[index].kind == "quantity" { continue; }
-        let row_index = recipient_owner_index(anchors,&events,index,&geometry,&delivery,&features);
+        let row_index = recipient_owner_index(anchors,&events,index,&geometry,&delivery,&features,&exclusions);
         let rid = recipients[row_index]["id"].as_str().unwrap_or("").to_owned();
         let e = &events[index];
         let kind = e.kind;
@@ -2456,6 +2482,12 @@ mod tests {
         }
     }
     #[test]
+    fn ownership_margin_is_shared_and_requires_a_real_advantage(){
+        assert!(exceeds_margin(50,40,OWNER_WEIGHTS.margin));
+        assert!(!exceeds_margin(49,40,OWNER_WEIGHTS.margin));
+        assert!(!exceeds_margin(40,50,OWNER_WEIGHTS.margin));
+    }
+    #[test]
     fn address_and_phone_before_next_name_use_new_paragraph_and_proximity(){
         // A second delivery may list address/phone BEFORE its addressee.
         // Its own nearby address corroborates the contact; the blank line
@@ -2640,6 +2672,28 @@ mod tests {
             assert_eq!(doc.exclusions.entries[&(e.kind,e.start,e.end)].selected,Some(i));
         }
         assert!(assign_document(doc,&state,None).is_ok());
+    }
+    #[test]
+    fn inline_honorific_name_can_win_against_partial_alias(){
+        let mut state=state();
+        state["aliases"]=json!([{"id":"a1","text":"김가상","productId":"pgt"}]);
+        let raw="김가상님 010-0000-0001\n709 1개";
+        let doc=extract_document(raw,&state,None);
+        assert!(doc.events.iter().any(|e|e.kind=="name"&&e.value=="김가상님"));
+        assert!(doc.exclusions.entries.iter().any(|(&(kind,_,_),r)|
+            kind=="product"&&r.products.contains_key("pgt")&&r.selected.is_none()));
+        let result=assign_document(doc,&state,None).unwrap();
+        assert_eq!(result["recipients"][0]["name"],"김가상님");
+        assert_eq!(result["recipients"][0]["items"].as_array().unwrap().len(),1);
+        assert_eq!(result["recipients"][0]["items"][0]["productId"],"p709");
+    }
+    #[test]
+    fn exact_alias_and_literal_model_are_not_overridden_by_type_scoring(){
+        for (span,literal) in [((0,"김가상님".len()),false),((0,"김가상".len()),true)]{
+            let matched=CachedProductDecision{output:Value::Null,
+                candidates:vec![model::SourceCandidate{product_id:"pgt".into(),span,literal}],truncated:false};
+            assert!(!name_beats_partial_alias("김가상님",true,&matched));
+        }
     }
     #[test]
     fn inferred_name_preserves_competing_product_identity_without_confirming_it(){
