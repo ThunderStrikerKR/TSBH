@@ -156,7 +156,7 @@ pub(crate) fn paint_management_table_row_background(painter:&egui::Painter,rect:
 /// Interactive table rows retain the standard alternating background when idle.
 /// The hover surface is owned by the table, not by an individual screen.
 pub(crate) fn paint_management_interactive_row_background(painter:&egui::Painter,rect:Rect,index:usize,hovered:bool){
-    if hovered{painter.rect_filled(rect,0.0,theme::BUTTON_HOVER_BG);}
+    if hovered{crate::highlight::paint_fill(painter,rect,0.0,crate::highlight::Role::RowHover);}
     else{paint_management_table_row_background(painter,rect,index);}
 }
 
@@ -512,18 +512,16 @@ pub(crate) fn fixed_row<const N:usize>(
         row.allocate_exact_size(rect.size(),egui::Sense::hover());
         let selected=matches!(tone,RowTone::SelectedIf(true));
         if selected{
-            row.painter().rect_filled(rect,0.0,theme::ORANGE_EMPHASIS_BG);
+            crate::highlight::paint_fill(row.painter(),rect,0.0,crate::highlight::Role::Selected);
         }else if matches!(tone,RowTone::SelectedIf(false))&&row.rect_contains_pointer(rect){
-            row.painter().rect_filled(rect,0.0,theme::BUTTON_HOVER_BG);
+            crate::highlight::paint_fill(row.painter(),rect,0.0,crate::highlight::Role::RowHover);
         }else{paint_management_table_row_background(row.painter(),rect,index);}
         let cells=management_table_cells(rect.min,widths,rect.height(),gap);
         draw(row,cells);
         management_table_column_rules(row,rect,&cells,gap);
         paint_management_table_row_rule(row.painter(),rect);
         if selected{
-            row.painter().rect_stroke(rect,0.0,
-                Stroke::new(theme::FRAME_STROKE_WIDTH,theme::SELECTED_ORDER),
-                egui::StrokeKind::Inside);
+            crate::highlight::paint_outline(row.painter(),rect,0.0,crate::highlight::Role::Selected);
         }
     });
 }
@@ -613,18 +611,7 @@ pub(crate) fn history_row<const N:usize>(
 /// Identical sort-hover outline for all freight management list headers.
 /// The caller supplies the column intersected with the 34pt text area.
 fn management_master_header_sort_hover(ui:&Ui,hit:Rect){
-    if hit.width()>0.0 && hit.height()>0.0 {
-        let painter=ui.painter().with_clip_rect(hit);
-        painter.rect_filled(
-            hit,2.0,theme::TABLE_SORT_HOVER_TINT
-        );
-        painter.rect_stroke(
-            hit.shrink(1.0),2.0,
-            Stroke::new(theme::SOFT_DIVIDER_WIDTH,
-                theme::SELECTION.linear_multiply(0.82)),
-            egui::StrokeKind::Inside
-        );
-    }
+    crate::highlight::paint(ui,hit,2.0,crate::highlight::Role::Hover);
 }
 
 
