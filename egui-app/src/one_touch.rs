@@ -80,17 +80,20 @@ fn outline_shape(rect:Rect)->egui::Shape{
         Stroke::new(theme::ONE_TOUCH_BORDER_WIDTH,theme::ONE_TOUCH_BORDER),egui::StrokeKind::Inside)
 }
 pub fn background(ui:&Ui,rect:Rect){
-    if rect.is_positive(){ui.painter().with_clip_rect(ui.clip_rect().intersect(rect))
-        .add(background_shape(rect));}
+    if let Some(painter)=crate::ui_primitives::highlight_painter(ui,rect){
+        painter.add(background_shape(rect));
+    }
 }
 pub fn outline(ui:&Ui,rect:Rect){
-    if rect.is_positive(){ui.painter().with_clip_rect(ui.clip_rect().intersect(rect))
-        .add(outline_shape(rect));}
+    if let Some(painter)=crate::ui_primitives::highlight_painter(ui,rect){
+        painter.add(outline_shape(rect));
+    }
 }
 /// Existing widgets with their own fill: tint lightly without covering text.
 pub fn mark(ui:&Ui,rect:Rect){
-    if rect.is_positive(){ui.painter().with_clip_rect(ui.clip_rect().intersect(rect))
-        .rect_filled(rect,theme::CONTROL_RADIUS,theme::ONE_TOUCH_TINT);}
+    if let Some(painter)=crate::ui_primitives::highlight_painter(ui,rect){
+        painter.rect_filled(rect,theme::CONTROL_RADIUS,theme::ONE_TOUCH_TINT);
+    }
     outline(ui,rect);
 }
 /// Byte ranges of the exact printed total, tax label, and native account.
@@ -187,12 +190,13 @@ pub fn payment_message(ui:&mut Ui,text:&str,signature:&str,emphasis:bool){
     let display=crate::input::reception_source_text_edit(&mut immutable,ui.available_width())
         .layouter(&mut layouter).show(ui);
     if emphasis{
-        let clip=ui.clip_rect().intersect(display.text_clip_rect);
+        // Text ink clipping is narrower than the reserved document surface.
+        let clip=ui.clip_rect().intersect(display.response.rect);
         let painter=ui.painter().with_clip_rect(clip);
         let rects=payment_rects(text,signature,&display.galley,display.galley_pos);
         painter.set(paint_slot,egui::Shape::Vec(rects.iter().copied()
             .filter(|rect|rect.intersects(clip))
-            .map(|rect|background_shape(rect.intersect(clip)))
+            .map(background_shape)
             .collect()));
         for rect in rects.into_iter().filter(|rect|rect.intersects(clip)){
             painter.add(outline_shape(rect));
