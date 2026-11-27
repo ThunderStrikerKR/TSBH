@@ -274,12 +274,13 @@ impl ReviewPanel {
         if let Some(remote)=remote{
             let tone=ReviewTone::Info;
             crate::card::review_issue_card(ui,tone,|content|{
-                    content.add(egui::Label::new(typography::review_title("도서·산간 지역 확인",tone)).wrap());
+                    content.add(egui::Label::new(typography::review_title(
+                        if text(remote,"status")=="auto"{"도서·산간 지역 자동 판정"}else{"도서·산간 지역 확인 필요"},tone)).wrap());
                     content.add(egui::Label::new(typography::review_detail(
                         if text(remote,"status")=="auto" {
-                            "도서·산간 지역으로 판단했습니다. 확인 후 체크 여부를 결정하세요."
+                            "주소가 도서·산간 지역으로 판정되었습니다. 주소와 도서/산간 체크 상태를 확인하세요."
                         }else{
-                            "도서·산간 지역일 수 있습니다. 주소를 확인 후 체크 여부를 결정하세요."
+                            "도서·산간 지역 여부가 불명확합니다. 주소를 확인하고 해당하면 도서/산간을 체크하세요."
                         },tone
                 )).wrap());
                 });
@@ -508,7 +509,7 @@ fn inherited_message_groups(issues:&[Value],indices:&[usize],recognition:&Value)
 }
 // Display labels are independent of the native validation messages used for
 // failure matching, approval evidence and stage gates.
-fn review_caption<'a>(issue:&'a Value,recognition:&Value)->std::borrow::Cow<'a,str>{
+pub(crate) fn review_caption<'a>(issue:&'a Value,recognition:&Value)->std::borrow::Cow<'a,str>{
     let kind=text(issue,"kind");
     let original=text(issue,"title");
     let label=match kind{
@@ -524,6 +525,22 @@ fn review_caption<'a>(issue:&'a Value,recognition:&Value)->std::borrow::Cow<'a,s
             if address==Some(""){"배송주소 누락"}else{"상세주소 확인 필요"}
         },
         "CONTACT" if original=="연락처가 없습니다"=>"연락처 누락",
+        "CANDIDATE_name"=>"수취인명 후보 선택 필요",
+        "CANDIDATE_address"=>"배송주소 후보 선택 필요",
+        "CANDIDATE_phone"=>"전화번호 후보 선택 필요",
+        "CANDIDATE_mobile"=>"휴대폰 번호 후보 선택 필요",
+        "ITEM"=>"상품 정보 누락",
+        "UNASSIGNED_EVIDENCE"=>"연결되지 않은 상품·수량 정보",
+        "MODEL" if original=="등록된 상품과 옵션을 확인하세요"=>"상품·옵션 연결 오류",
+        "MODEL_CHOICE"=>"상품 모델 선택 필요",
+        "ALIAS_CONFLICT"=>"상품 별칭 충돌",
+        "CATEGORY_CONFLICT"=>"상품 종류와 모델 불일치",
+        "QUANTITY_LINK"=>"수량 연결 확인 필요",
+        "OPTION"=>"상품 옵션 확인 필요",
+        "MODEL_CONFIRM"=>"추천 상품 확인 필요",
+        "ORIGIN"=>"발송지 미확정",
+        "ACCOUNT"=>"입금 계좌 확인 필요",
+        "NOTICE"=>"금액·계좌 재안내 필요",
         "QUANTITY_MISSING" if text(issue,"resolution")=="PROVISIONALLY_APPROVED"=>"수량 잠정 처리 완료",
         "QUANTITY_MISSING"=>"수량 미기재",
         "QUANTITY_INVALID"=>"수량 오류",
@@ -542,8 +559,49 @@ fn review_instruction(kind:&str)->Option<&'static str>{
         "CONTACT"=>Some("연락처를 확인하고 입력 또는 수정하세요."),
         "QUANTITY_MISSING"=>Some("상품 수량을 확인하고 입력하세요."),
         "QUANTITY_INVALID"=>Some("1개 이상의 올바른 수량을 입력하세요."),
+        "CANDIDATE_name"|"CANDIDATE_address"|"CANDIDATE_phone"|"CANDIDATE_mobile"=>
+            Some("올바른 후보를 적용하거나 입력 위치에서 직접 수정하세요."),
+        "ITEM"=>Some("배송할 상품과 수량을 추가하세요."),
+        "MODEL_CHOICE"=>Some("발주원문에 맞는 상품 모델을 선택하세요."),
+        "ALIAS_CONFLICT"=>Some("서로 다른 상품으로 연결된 별칭입니다. 실제 주문 상품을 선택하세요."),
+        "CATEGORY_CONFLICT"=>Some("발주서의 상품 종류와 인식된 모델이 다릅니다. 실제 상품을 선택하세요."),
+        "QUANTITY_LINK"=>Some("원문의 수량이 어느 상품에 해당하는지 확인하고 연결하세요."),
+        "OPTION"=>Some("색상과 옵션을 확인하고 실제 주문 정보로 수정하세요."),
+        "MODEL_CONFIRM"=>Some("추천 상품이 실제 주문 상품과 일치하는지 확인하세요."),
+        "SALE_STATUS"=>Some("상품 관리에서 판매 상태를 확인하세요."),
+        "ORIGIN"=>Some("품목의 발송지를 매장 또는 공장으로 지정하세요."),
+        "ACCOUNT"=>Some("사용할 입금 계좌를 등록하거나 선택하세요."),
+        "NOTICE"=>Some("변경된 금액과 계좌를 확인하고 복사용 메시지로 다시 안내하세요."),
         _=>None
     }
+}
+// Shared UI projection for confirmed orders. Never change the native issue
+// object or its original detail used by error deduplication.
+pub(crate) fn workflow_review_text(issue:&Value,label:&str,recognition:&Value)->String{
+    if text(issue,"resolution")=="USER_APPROVED"||text(issue,"severity")=="INFO"{
+        return label.to_owned();
+    }
+    let old=text(issue,"title");
+    let caption=review_caption(issue,recognition);
+    if old.is_empty()||caption.as_ref()==old{return label.to_owned();}
+    if label==old{return caption.into_owned();}
+    if let Some(prefix)=label.strip_suffix(old){
+        if prefix.ends_with(" / ")||prefix.ends_with(": "){
+            return format!("{prefix}{caption}");
+        }
+    }
+    label.to_owned()
+}
+pub(crate) fn issue_instruction(issue:&Value)->Option<&'static str>{
+    if text(issue,"severity")=="INFO"{return None;}
+    let kind=text(issue,"kind");
+    if kind=="ADDRESS"&&issue["canApproveCurrent"]!=true{
+        return Some("배송주소를 확인하고 입력 또는 수정하세요.");
+    }
+    if kind=="SALE_STATUS"&&issue["canApproveCurrent"]==true{
+        return Some("상품 관리에서 판매 상태를 확인하세요. 현재 상품을 사용해도 된다면 현재 정보 승인으로 처리하세요.");
+    }
+    review_instruction(kind)
 }
 fn issue_card(
     ui:&mut Ui,issue:&Value,analysis:&ReceptionAnalysis,
@@ -592,13 +650,8 @@ fn issue_card(
                     cell.add(egui::Label::new(typography::review_detail(shown,tone)).wrap());
                 }
             }
-            if severity!="INFO"{
-                if let Some(instruction)=review_instruction(kind){
-                    let instruction=if kind=="ADDRESS"&&issue["canApproveCurrent"]!=true{
-                        "배송주소를 확인하고 입력 또는 수정하세요."
-                    }else{instruction};
-                    cell.add(egui::Label::new(typography::review_detail(instruction,tone)).wrap());
-                }
+            if let Some(instruction)=issue_instruction(issue){
+                cell.add(egui::Label::new(typography::review_detail(instruction,tone)).wrap());
             }
             if kind=="UNASSIGNED_EVIDENCE" {
                 cell.add(egui::Label::new(typography::review_detail(
@@ -736,6 +789,19 @@ fn issue_card(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn workflow_review_projection_keeps_original_data_and_approved_state(){
+        let issue=json!({"kind":"ACCOUNT","severity":"ACTION","title":"입금 계좌를 등록 / 선택하세요"});
+        assert_eq!(workflow_review_text(&issue,"입금 계좌를 등록 / 선택하세요",&json!({})),"입금 계좌 확인 필요");
+        assert_eq!(issue["title"],"입금 계좌를 등록 / 선택하세요");
+        let origin=json!({"kind":"ORIGIN","severity":"ACTION","title":"발송지를 확인하세요"});
+        assert_eq!(workflow_review_text(&origin,"가상 수취인 / 발송지를 확인하세요",&json!({})),"가상 수취인 / 발송지 미확정");
+        let approved=json!({"kind":"NOTICE","severity":"INFO","resolution":"USER_APPROVED"});
+        assert!(issue_instruction(&approved).is_none());
+        assert_eq!(workflow_review_text(&approved,"변경된 금액 / 계좌 재안내 사용자 승인",&json!({})),"변경된 금액 / 계좌 재안내 사용자 승인");
+        let unapproved=json!({"kind":"SALE_STATUS","severity":"ACTION"});
+        assert!(!issue_instruction(&unapproved).unwrap().contains("현재 정보 승인"));
+    }
     #[test]
     fn recovered_review_labels_keep_native_issue_identity_and_approval(){
         for (kind,old,expected) in [
