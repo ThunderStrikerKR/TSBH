@@ -29,23 +29,21 @@ struct Evidence {
 // are distinct from missing/unknown fields and must not become anchors.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum CandidateExclusion { SaleUnit, OverlappingField, SenderSection, EmbeddedDigits }
-#[derive(Clone, Debug, PartialEq, Eq)]
-struct ExcludedCandidate {
-    kind:&'static str,
-    start:usize,
-    end:usize,
-    reason:CandidateExclusion,
-}
 #[derive(Default)]
-struct CandidateExclusions { entries:Vec<ExcludedCandidate>, truncated:bool }
+struct CandidateExclusions {
+    entries:HashMap<(&'static str,usize,usize),CandidateExclusion>,
+    truncated:bool,
+}
 impl CandidateExclusions {
     fn record(&mut self,raw:&str,kind:&'static str,start:usize,end:usize,reason:CandidateExclusion){
         if start>=end||raw.get(start..end).is_none(){self.truncated=true;return;}
+        let key=(kind,start,end);
+        if self.entries.contains_key(&key){return;}
         if self.entries.len()>=4096{self.truncated=true;return;}
-        self.entries.push(ExcludedCandidate{kind,start,end,reason});
+        self.entries.insert(key,reason);
     }
-    fn excludes(&self,kind:&str,start:usize,end:usize)->bool{
-        self.entries.iter().any(|e|e.kind==kind&&e.start==start&&e.end==end)
+    fn excludes(&self,kind:&'static str,start:usize,end:usize)->bool{
+        self.entries.contains_key(&(kind,start,end))
     }
 }
 #[derive(Clone, Debug)]
@@ -2146,9 +2144,10 @@ mod tests {
         let state=state();
         let doc=extract_document(raw,&state,None);
         assert!(!doc.exclusions.truncated);
-        let excluded=doc.exclusions.entries.iter().find(|e|e.reason==CandidateExclusion::SenderSection).unwrap();
-        assert_eq!(&raw[excluded.start..excluded.end],"7개");
-        assert_eq!(excluded.kind,"quantity");
+        let (&(kind,start,end),_)=doc.exclusions.entries.iter()
+            .find(|(_,reason)|**reason==CandidateExclusion::SenderSection).unwrap();
+        assert_eq!(&raw[start..end],"7개");
+        assert_eq!(kind,"quantity");
         assert!(doc.events.iter().all(|e|!doc.exclusions.excludes(e.kind,e.start,e.end)));
         let output=assign_document(doc,&state,None).unwrap();
         assert_eq!(output["recipients"][0]["items"][0]["quantity"],1);
