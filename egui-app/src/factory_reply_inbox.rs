@@ -711,6 +711,8 @@ mod tests{
         assert_eq!(result,expected);
         assert_eq!(result["applied"],1);
         assert_eq!(result["held"],1);
+        let notices=bando_data_access::notification_store::load(&conn).unwrap();
+        assert!(notices.iter().any(|n|n["issueCode"]=="DUPLICATE_TRACKING"&&n["applied"]==false&&n["read"]==false));
         assert_eq!(result["next"]["workflow"]["shipments"][2],initial["workflow"]["shipments"][2]);
         assert_eq!(snapshot(&mut conn).unwrap(),result["next"]);
         // Only the accepted row of the partially rejected file is eligible.
@@ -890,10 +892,14 @@ mod tests{
         fs::write(&path,book.save_to_buffer().unwrap()).unwrap();
         let held=scan_ready(&mut Scan::default(),&mut conn,&base.0);
         assert_eq!((held.applied,held.held),(0,1));
+        let notices=bando_data_access::notification_store::load(&conn).unwrap();
+        assert!(notices.iter().any(|n|n["issueCode"]=="NO_MATCH"&&n["applied"]==false&&n["read"]==false));
         // A later blank Q cell must not replace the already accepted tracking.
         fs::write(&path,reply_bytes("",6000)).unwrap();
         let blank=scan_ready(&mut Scan::default(),&mut conn,&base.0);
-        assert_eq!(blank.applied,0);
+        assert_eq!((blank.applied,blank.held),(0,1));
+        let notices=bando_data_access::notification_store::load(&conn).unwrap();
+        assert!(notices.iter().any(|n|n["issueCode"]=="INVALID_TRACKING"&&n["applied"]==false&&n["read"]==false));
         let j=bando_data_access::excel_aggregate_jobs::jobs(&conn,0,false).unwrap().remove(0);
         crate::excel_aggregate::publish(&mut conn,&j,&base.0).unwrap();
         let mut book=Xlsx::new(std::io::Cursor::new(fs::read(&j.path).unwrap())).unwrap();
