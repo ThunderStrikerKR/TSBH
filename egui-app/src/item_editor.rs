@@ -2,6 +2,7 @@
 //! The dialog only stages employee intent. Catalog search is Rust-backed;
 //! the native manual reducer validates the actual item and recalculates price.
 
+use crate::ui_layout::SharedAllocationExt as _;
 use std::sync::Arc;
 use eframe::egui::{self,Context,Vec2};
 use serde_json::Value;
@@ -318,7 +319,7 @@ impl ItemEditor{
                                 // Narrow Kakao-safe workspace: the image still grows
                                 // to a useful size; rows and actions stay readable
                                 // instead of being squeezed beside the image.
-                                let (photo,_)=body.allocate_exact_size(
+                                let (photo,_)=body.shared_allocate_exact_size(
                                     Vec2::splat(photo_side),egui::Sense::hover()
                                 );
                                 self.photos.paint(body,&product,photo);
@@ -332,7 +333,7 @@ impl ItemEditor{
                                     // No implicit spacing around the explicit 16pt
                                     // image-to-details gutter: fill the card exactly.
                                     crate::ui_layout::apply_spacing_role(line,crate::ui_layout::SpacingRole::ExplicitHorizontal);
-                                    let (photo,_)=line.allocate_exact_size(
+                                    let (photo,_)=line.shared_allocate_exact_size(
                                         Vec2::splat(photo_side),egui::Sense::hover()
                                     );
                                     self.photos.paint(line,&product,photo);
