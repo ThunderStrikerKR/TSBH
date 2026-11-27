@@ -418,6 +418,19 @@ mod tests{
         )
     }
     #[test]
+    fn actual_item_detail_keeps_rects_during_error_and_busy_changes(){
+        use crate::ui_test_support::{test_context,assert_popup_transition_geometry,PopupGeometryGateway};
+        let ctx=test_context();
+        let work=egui::Rect::from_min_size(egui::Pos2::ZERO,egui::vec2(1400.0,900.0));
+        let gateway:Arc<dyn BandoGateway>=Arc::new(PopupGeometryGateway{writable:true});
+        let mut editor=dialog();
+        editor.photo_requested=true;
+        assert_popup_transition_geometry(&ctx,work,4,|ctx,phase|{
+            editor.error=(phase==1).then(||"검증 오류".into());
+            editor.show(ctx,Arc::clone(&gateway),work,phase==2);
+        });
+    }
+    #[test]
     fn large_reception_item_photo_uses_full_width_and_safe_height(){
         assert_eq!(item_detail_photo_side(724.0,900.0),300.0);
         assert_eq!(item_detail_photo_side(724.0,500.0),260.0);
