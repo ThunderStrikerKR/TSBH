@@ -2098,6 +2098,80 @@ mod shared_composite_control_contract_tests{
 
 #[cfg(test)]
 mod inline_labeled_form_contract_tests{
+    /// Explicitly approved presentation-only field labels. Editable form
+    /// captions must go through the shared horizontal row instead.
+    #[test]
+    fn raw_field_labels_are_limited_to_readonly_presentation(){
+        fn scan(root:&std::path::Path,dir:&std::path::Path,violations:&mut Vec<String>){
+            for entry in std::fs::read_dir(dir).expect("read egui source directory"){
+                let path=entry.expect("source entry").path();
+                if path.is_dir(){scan(root,&path,violations);continue;}
+                if path.extension().and_then(|v|v.to_str())!=Some("rs"){continue;}
+                let name=path.strip_prefix(root).unwrap().to_string_lossy().replace('\\',"/");
+                if name.ends_with("regression_tests.rs")||name=="ui_regressions.rs"||name=="ui_test_support.rs"{continue;}
+                let source=std::fs::read_to_string(&path).unwrap();
+                if source.starts_with("#![cfg(test)]"){continue;}
+                if !source.contains("field_label("){continue;}
+                let production=crate::ui_test_support::production_source_for_contract(&source);
+                let mut compact=production.split_whitespace().collect::<String>()
+                    .replace(".label(crate::typography::field_label(",".label(typography::field_label(");
+                let allowed:&[&str]=match name.as_str(){
+                    "main.rs"=>&["history.label(typography::field_label(\"수정전\"));",
+                        "history.label(typography::field_label(\"수정후\"));"],
+                    "settings_view.rs"=>&["detail.label(typography::field_label(\"정정전작업용원문\"));",
+                        "detail.label(typography::field_label(\"정정후작업용원문\"));",
+                        "detail.label(typography::field_label(\"최초접수원문\"));"],
+                    "settings_help.rs"=>&["ui.label(typography::field_label(\"언제사용하나요?\"));",
+                        "ui.label(typography::field_label(\"사용방법\"));",
+                        "ui.label(typography::field_label(\"사용하면어떻게되나요?\"));",
+                        "ui.label(typography::field_label(\"알아둘점\"));"],
+                    "popup/mod.rs"=>&["self.ui.label(typography::field_label(label));self.ui.label(typography::body(value));"],
+                    "daily_settlement_manager.rs"=>&["line.label(typography::field_label(label));"],
+                    "excel_manager.rs"=>&["ui.label(typography::field_label(&format!(\"미해결회신{count}행\")));",
+                        "line.label(typography::field_label(&format!(\"{}/{}행/{}\","],
+                    "product_excel_ui.rs"=>&["counts.label(typography::field_label(&format!(\"{title}{value}건\")"],
+                    "freight_manager.rs"=>&["bulk.label(typography::field_label(&format!(\"{}개선택\",selected.len()"],
+                    "product_manager.rs"=>&["line.label(typography::field_label(\"원\"));"],
+                    _=>&[],
+                };
+                for token in allowed{compact=compact.replacen(token,"",1);}
+                if compact.contains(".label(typography::field_label("){
+                    violations.push(name.into_owned());
+                }
+            }
+        }
+        let root=std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
+        let mut violations=Vec::new();
+        scan(&root,&root,&mut violations);
+        assert!(violations.is_empty(),"use the common inline form row instead of raw editable labels: {violations:?}");
+    }
+    #[test]
+    fn shared_text_form_controls_stay_beside_labels_at_different_widths(){
+        use eframe::egui;
+        for width in [250.0,720.0]{
+            let ctx=crate::ui_test_support::test_context();
+            let screen=egui::Rect::from_min_size(egui::Pos2::ZERO,egui::vec2(width,400.0));
+            let mut value=String::new();
+            crate::ui_test_support::begin_component_geometry();
+            let output=ctx.run(egui::RawInput{screen_rect:Some(screen),..Default::default()},|ctx|{
+                egui::CentralPanel::default().show(ctx,|ui|{
+                    crate::popup::modal_form_row_spacing(ui);
+                    crate::popup::modal_compact_text_field(ui,"브랜드명",&mut value,"");
+                    crate::popup::modal_named_text_field(ui,"그룹 이름",&mut value,"",true);
+                });
+            });
+            let trace=crate::ui_test_support::finish_component_geometry(screen);
+            let inputs=trace.iter().filter(|s|s.role=="input").map(|s|s.rect).collect::<Vec<_>>();
+            assert_eq!(inputs.len(),2);
+            for (label,input) in ["브랜드명","그룹 이름"].into_iter().zip(inputs.iter()){
+                let ink=crate::ui_test_support::painted_text_rects(&output,label)[0].0;
+                assert!(ink.right()<=input.left()+0.5);
+                assert!((ink.center().y-input.center().y).abs()<=3.0);
+                assert!((input.height()-crate::theme::INPUT_HEIGHT).abs()<0.5);
+            }
+            assert!((inputs[0].left()-inputs[1].left()).abs()<0.5);
+        }
+    }
     #[test]
     fn editor_forms_use_common_inline_label_layout(){
         let popup=include_str!("popup/mod.rs");
