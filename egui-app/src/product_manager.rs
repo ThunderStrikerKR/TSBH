@@ -1790,7 +1790,7 @@ impl ProductManager {
                                     let status=displayed_sale_status(product);
                                     crate::table::paint_management_status_cell(
                                         row,cells[5].shrink2(Vec2::new(theme::SPACE_8,0.0)),
-                                        status,sale_status_color(status),egui::Align2::LEFT_CENTER,
+                                        status,sale_status_color(status),egui::Align2::CENTER_CENTER,
                                         ("product-table-text",(product_id,5))
                                     );
                                 }
@@ -2735,7 +2735,7 @@ mod tests {
         let source=include_str!("product_manager.rs");
         let list=source.split("let status=displayed_sale_status(product);").nth(1).unwrap();
         assert!(list.contains("crate::table::paint_management_status_cell("));
-        assert!(list.contains("status,sale_status_color(status)"));
+        assert!(list.contains("status,sale_status_color(status),egui::Align2::CENTER_CENTER"));
     }
     #[test]
     fn product_status_edit_persists_without_price_or_variant_loss(){
