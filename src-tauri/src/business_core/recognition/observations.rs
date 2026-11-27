@@ -361,6 +361,97 @@ mod tests{
         p["confirmationSnapshot"]["recipients"][1]["sources"].as_array_mut().unwrap().push(anchor);
         assert_eq!(owner_result(&p)["outcome"],"unresolved_evidence");
     }
+    fn patterned_order(id:&str)->Value{
+        let mut p=owner_fixture();
+        p["id"]=json!(id);
+        p["confirmedAt"]=json!("2026-11-27T00:00:00Z");
+        let snapshot=&mut p["confirmationSnapshot"];
+        snapshot["at"]=json!("2026-11-27T00:00:00Z");
+        snapshot["data"]=json!({"clientId":"client-1"});
+        let baseline=&mut snapshot["recognitionBaseline"];
+        baseline["finalClientId"]=json!("client-1");
+        baseline["finalClientSelection"]=json!("MANUAL");
+        let first=&mut baseline["initialAnalysis"];
+        first["recognitionContext"]=json!({"clientId":"client-1","clientBasis":"MANUAL"});
+        first["candidates"][0]["line"]=json!(1);
+        first["candidates"][0]["paragraph"]=json!(0);
+        first["candidates"].as_array_mut().unwrap().extend([
+            json!({"start":2,"end":5,"text":"김가상","kind":"name","line":0,"paragraph":0}),
+            json!({"start":20,"end":23,"text":"박가상","kind":"name","line":2,"paragraph":0})
+        ]);
+        let decision=&mut first["recipientOwnerTrace"]["decisions"][0];
+        decision["previousHasDelivery"]=json!(false);
+        decision["nearbyAddress"]=json!(false);
+        for candidate in decision["candidates"].as_array_mut().unwrap(){
+            candidate["sameParagraph"]=json!(true);
+            candidate["lineDistance"]=json!(1);
+            candidate["gap"]=json!({"blankLines":0,"contentLines":0,"maxConsecutiveBlankLines":0});
+        }
+        p
+    }
+    #[test]
+    fn owner_context_lookup_and_observations_share_keys_without_personal_text(){
+        let p=patterned_order("one");
+        let observation=owner_result(&p);
+        let contexts=observation["contexts"].as_array().unwrap();
+        assert_eq!(contexts.len(),3);
+        let lookup=super::super::learning_context::lookup(&json!({
+            "raw":p["confirmationSnapshot"]["raw"],
+            "initialAnalysis":p["confirmationSnapshot"]["recognitionBaseline"]["initialAnalysis"]
+        })).unwrap();
+        assert_eq!(lookup["entries"][0]["contexts"],observation["contexts"]);
+        let serialized=observation["contexts"].to_string();
+        for secret in ["김가상","박가상","010-1234-5678","😀"]{
+            assert!(!serialized.contains(secret));
+        }
+    }
+    #[test]
+    fn owner_statistics_deduplicates_orders_and_separates_pending_corrections(){
+        let a=patterned_order("one");
+        let mut b=patterned_order("two");
+        let rs=b["confirmationSnapshot"]["recipients"].as_array_mut().unwrap();
+        let source=rs[0]["sources"].as_array_mut().unwrap().pop().unwrap();
+        rs[0]["mobile"]=json!("");
+        rs[1]["mobile"]=json!("010-1234-5678");
+        rs[1]["sources"].as_array_mut().unwrap().push(source);
+        let result=super::super::learning_context::statistics(&json!({
+            "orders":[a.clone(),a.clone(),b]
+        })).unwrap();
+        assert_eq!(result["uniqueOrders"],2);
+        assert_eq!(result["statistics"].as_array().unwrap().len(),3);
+        for group in result["statistics"].as_array().unwrap(){
+            let c=&group["counts"];
+            assert_eq!(c["observationCount"],2);
+            assert_eq!(c["independentOrders"],2);
+            assert_eq!(c["weakUnchangedCount"],1);
+            assert_eq!(c["weakIndependentOrders"],1);
+            assert_eq!(c["pendingCorrectionCount"],1);
+            assert_eq!(c["weakCandidates"]["previous"],1);
+            assert_eq!(c["weakCandidates"]["next"],0);
+            assert_eq!(c["eligibleForAutomaticDecision"],false);
+        }
+        let mut conflict=a.clone();
+        conflict["confirmedAt"]=json!("different");
+        assert!(super::super::learning_context::statistics(&json!({
+            "orders":[a,conflict]
+        })).is_err());
+    }
+    #[test]
+    fn owner_statistics_requires_matching_manual_client_and_can_lookup_one_context(){
+        let a=patterned_order("one");
+        let mut b=patterned_order("two");
+        b["confirmationSnapshot"]["data"]["clientId"]=json!("different-client");
+        let result=super::super::learning_context::statistics(&json!({"orders":[a.clone(),b]})).unwrap();
+        let groups=result["statistics"].as_array().unwrap();
+        assert_eq!(groups.len(),3);
+        let client=groups.iter().find(|g|g["key"].as_str().unwrap().contains("client_structure")).unwrap();
+        assert_eq!(client["counts"]["independentOrders"],1);
+        let filtered=super::super::learning_context::statistics(&json!({
+            "orders":[a],"contextKeys":[client["key"]]
+        })).unwrap();
+        assert_eq!(filtered["statistics"].as_array().unwrap().len(),1);
+    }
+
     #[test]
     fn unchanged_and_changed_are_distinct_without_inventing_error(){
         let source=json!({"start":0,"end":3,"text":"709","field":"product"});
