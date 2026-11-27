@@ -880,8 +880,8 @@ mod shared_selection_interaction_tests {
                         assert!(!blocked.2);
                     }
                     drop(draw);
-                    assert_eq!(actions,usize::from(probe<5),"button hit probe {probe} scale {scale}");
-                    assert_eq!(neighbors,usize::from(probe==5),"neighbor hit probe {probe} scale {scale}");
+                    assert_eq!(actions,if probe<5{1}else{0},"button hit probe {probe} scale {scale}");
+                    assert_eq!(neighbors,if probe==5{1}else{0},"neighbor hit probe {probe} scale {scale}");
                 }
             }
         }
@@ -1043,6 +1043,32 @@ mod shared_selection_interaction_tests {
         }
     }
 
+    #[test]
+    fn actual_dropdown_trigger_and_option_hit_areas_cover_visible_interior(){
+        for kind in [Selector::Ordinary,Selector::Compact,Selector::Status]{
+            for scale in [1.0_f32,1.25,1.5]{
+                for probe in 0..5{
+                    let ctx=test_context();
+                    ctx.set_pixels_per_point(scale);
+                    let mut selected=0;
+                    let mut changes=0;
+                    let mut draw=|events|select_frame(&ctx,kind,&mut selected,true,true,&mut changes,events);
+                    let base=draw(vec![]);
+                    let opened=click(hit_probes(base.trigger)[probe],&mut draw);
+                    same_select_slots(&base,&opened);
+                    assert_eq!(opened.options.len(),2,
+                        "{kind:?} trigger probe {probe} scale {scale}");
+                    let closed=click(hit_probes(opened.options[1])[probe],&mut draw);
+                    same_select_slots(&base,&closed);
+                    assert!(closed.options.is_empty(),"{kind:?}: option probe {probe} did not close menu");
+                    drop(draw);
+                    assert_eq!(selected,1,"{kind:?}: wrong option selected at probe {probe}");
+                    assert_eq!(changes,1,"{kind:?}: option must change exactly once");
+                }
+            }
+        }
+    }
+
     #[derive(Clone,Copy,Debug)]
     enum CheckKind{Ordinary,List,TableHeader,TableRow}
     struct CheckFrame{hit:Rect,next:Rect,id:egui::Id,enabled:bool}
@@ -1074,6 +1100,36 @@ mod shared_selection_interaction_tests {
             });
         });
         frame.expect("shared checkbox rendered")
+    }
+    #[test]
+    fn actual_checkbox_hit_area_edges_and_outside_do_not_cross_activate(){
+        for kind in [CheckKind::Ordinary,CheckKind::List,CheckKind::TableHeader,CheckKind::TableRow]{
+            for scale in [1.0_f32,1.25,1.5]{
+                for probe in 0..8{
+                    let ctx=test_context();
+                    ctx.set_pixels_per_point(scale);
+                    let mut checked=false;
+                    let mut changes=0;
+                    let mut draw=|enabled,parent,events|check_frame(&ctx,kind,&mut checked,
+                        enabled,parent,&mut changes,events);
+                    let base=draw(true,true,vec![]);
+                    let (pos,enabled,parent)=match probe{
+                        0..=4=>(hit_probes(base.hit)[probe],true,true),
+                        5=>(base.next.center(),true,true),
+                        6=>(base.hit.center(),false,true),
+                        _=>(base.hit.center(),true,false)
+                    };
+                    let current=click(pos,|events|draw(enabled,parent,events));
+                    assert_layout_rects_invariant(&[("checkbox",base.hit),("following",base.next)],
+                        &[("checkbox",current.hit),("following",current.next)]);
+                    assert_eq!(base.id,current.id);
+                    assert_eq!(current.enabled,enabled&&parent);
+                    drop(draw);
+                    assert_eq!(checked,probe<5,"{kind:?}: wrong checked state probe {probe} scale {scale}");
+                    assert_eq!(changes,if probe<5{1}else{0},"{kind:?}: duplicate or stray activation");
+                }
+            }
+        }
     }
     #[test]
     fn shared_checkbox_click_toggles_once_and_disabled_clicks_preserve_value(){
