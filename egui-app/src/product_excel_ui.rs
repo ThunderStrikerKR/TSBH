@@ -1,6 +1,7 @@
 //! Excel 관리 UI for ProductManager. File I/O stays on native worker threads;
 //! authoritative price/catalog changes belong to the existing Rust reducer.
 use crate::{gateway::BandoGateway,product_excel,theme,typography};
+use crate::card::UiWidthPolicyExt;
 use eframe::egui::{self,Context,Ui};
 use serde_json::Value;
 use std::{path::PathBuf,sync::{Arc,mpsc::{self,Receiver,TryRecvError}}};
@@ -269,7 +270,7 @@ impl ProductExcelUi {
 
                 let inner_width=(work_area.width()-2.0*(theme::MODAL_PANEL_PADDING_X
                     +theme::FRAME_STROKE_WIDTH)).max(1.0);
-                ui.set_min_width(inner_width.min(900.0));
+                ui.apply_shared_width(crate::card::CardWidthPolicy::FillAvailable,inner_width.min(900.0));
                 crate::popup::modal_flow_workspace(ui,|workspace|{
                     close=workspace.header(title,"취소",!self.busy()&&!self.confirming
                     );

@@ -2,6 +2,7 @@
 //! Matches React HelpTooltip: 500ms hover, 180ms leave, mouse click pin,
 //! outside pointer/keyboard/wheel dismissal. It is NOT an alert or modal.
 use crate::{theme,typography};
+use crate::card::UiWidthPolicyExt;
 use eframe::egui::{self,Align2,Pos2,Rect,Sense,Stroke,Ui,Vec2};
 use std::time::{Duration,Instant};
 
@@ -402,7 +403,7 @@ pub fn icon(heading:&mut Ui,title:&str){
                             crate::scrollbar::scroll_area(crate::scrollbar::ScrollAxes::Vertical)
                                 .max_height(viewport.height().min(500.0)*0.7)
                                 .show(panel,|details|{
-                                    details.set_width(width-theme::SPACE_24);
+                                    details.apply_shared_width(crate::card::CardWidthPolicy::Fixed,width-theme::SPACE_24);
                                     content(details,title,help);
                                 });
                         });

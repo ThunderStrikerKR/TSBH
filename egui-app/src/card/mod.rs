@@ -46,6 +46,8 @@ pub(crate) enum CardWidthPolicy {
     FillAvailable,
     Fixed,
     Bounded,
+    /// Upper bound only: preserve the content's natural minimum width.
+    UpperLimit,
 }
 pub(crate) fn apply_width_policy(ui:&mut Ui,policy:CardWidthPolicy,target:f32){
     if !target.is_finite(){return;}
@@ -54,10 +56,21 @@ pub(crate) fn apply_width_policy(ui:&mut Ui,policy:CardWidthPolicy,target:f32){
         CardWidthPolicy::FitContent=>{},
         CardWidthPolicy::FillAvailable=>ui.set_min_width(width),
         CardWidthPolicy::Fixed=>ui.set_width(width),
+        CardWidthPolicy::UpperLimit=>ui.set_max_width(width),
         CardWidthPolicy::Bounded=>{
             ui.set_width(width);
             ui.set_max_width(width);
         }
+    }
+}
+
+/// Same policy for owned Ui and borrowed Ui receivers.
+pub(crate) trait UiWidthPolicyExt {
+    fn apply_shared_width(&mut self,policy:CardWidthPolicy,target:f32);
+}
+impl UiWidthPolicyExt for Ui {
+    fn apply_shared_width(&mut self,policy:CardWidthPolicy,target:f32){
+        apply_width_policy(self,policy,target);
     }
 }
 
@@ -255,7 +268,7 @@ pub(crate) fn fixed_scroll_panel(
         .max_rect(scroll_rect)
         .layout(Layout::top_down(Align::Min)),|content|{
             content.set_clip_rect(scroll_rect.intersect(parent_clip));
-            content.set_width(scroll_rect.width());
+            content.apply_shared_width(CardWidthPolicy::Fixed,scroll_rect.width());
             content.spacing_mut().item_spacing.y=0.0;
             scroll_area(ScrollAxes::Vertical)
                 .id_salt("fixed-scroll-panel")
@@ -526,7 +539,7 @@ pub(crate) fn reception_document_viewport<R>(
             .layout(Layout::top_down(Align::Min))
     );
     canvas.set_clip_rect(clip);
-    canvas.set_width(inner.width());
+    canvas.apply_shared_width(CardWidthPolicy::Fixed,inner.width());
     canvas.set_height(inner.height());
     Some(scroll_area(ScrollAxes::Vertical).id_salt(scroll_id)
         .max_height(inner.height()).auto_shrink([false,false])

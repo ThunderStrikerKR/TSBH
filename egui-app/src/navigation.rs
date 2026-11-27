@@ -1,5 +1,6 @@
 //! Shared date selection, segmented navigation and recipient/count traversal.
 use chrono::{Datelike,Duration as Days,Months,NaiveDate};
+use crate::card::UiWidthPolicyExt;
 use eframe::egui::{self,Align,Color32,Layout,Rect,Response,Sense,Stroke,Ui,Vec2};
 #[cfg(test)]
 use eframe::egui::UiBuilder;
@@ -94,7 +95,7 @@ pub fn reception_recipient_navigator(
         ui,"reception-recipient-nav-header",Vec2::new(width,height),
         |segments,inner|{
             let mut selected=None;
-            segments.set_width(inner.width());
+            segments.apply_shared_width(crate::card::CardWidthPolicy::Fixed,inner.width());
             segments.set_height(inner.height());
             segments.spacing_mut().item_spacing=Vec2::ZERO;
 
@@ -124,7 +125,7 @@ pub fn reception_recipient_navigator(
             let label=overflow_tooltip(label,clipped,display);
             if clipped{
                 crate::overlay::show_menu(&label,None,|popup|{
-            popup.set_max_width(320.0);
+            popup.apply_shared_width(crate::card::CardWidthPolicy::UpperLimit,320.0);
                         popup.add(egui::Label::new(typography::body(display)).wrap());
                     });
             }
@@ -326,7 +327,7 @@ pub fn date_calendar(
             calendar.spacing_mut().item_spacing=egui::vec2(
                 theme::CALENDAR_GRID_GAP,theme::CALENDAR_GRID_GAP
             );
-            calendar.set_min_width(theme::CALENDAR_GRID_WIDTH);
+            calendar.apply_shared_width(crate::card::CardWidthPolicy::FillAvailable,theme::CALENDAR_GRID_WIDTH);
             calendar.horizontal(|nav|{
                 nav.spacing_mut().item_spacing.x=theme::CALENDAR_GRID_GAP;
                 if calendar_nav_button(

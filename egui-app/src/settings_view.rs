@@ -2,6 +2,7 @@
  //! section order, dirty-tab guard and CAS saves match the original React
  //! implementation. The shared theme/components own visual tokens.
 use crate::{gateway::BandoGateway, settings_store, theme::{self,ButtonRole}, typography};
+use crate::card::UiWidthPolicyExt;
 use eframe::egui::{self,Align,Context,Layout,Ui,Vec2};
 use serde_json::{json,Map,Value};
 use std::{sync::{mpsc::{self,Receiver},Arc},thread};
@@ -118,7 +119,7 @@ fn setting_field_column(
 ){
     let width=width.min(ui.available_width());
     ui.vertical(|col|{
-        col.set_width(width);
+        col.apply_shared_width(crate::card::CardWidthPolicy::Fixed,width);
         edit_input_width(col,draft,key,label,width);
     });
 }
@@ -616,7 +617,7 @@ impl SettingsView{
                     content.horizontal(|row|{
                         crate::ui_layout::apply_spacing_role(row,crate::ui_layout::SpacingRole::FormColumns);
                         row.vertical(|size|{
-                            size.set_width(theme::MANAGEMENT_FILTER_DROPDOWN_WIDTH);
+                            size.apply_shared_width(crate::card::CardWidthPolicy::Fixed,theme::MANAGEMENT_FILTER_DROPDOWN_WIDTH);
                             self.scale_selector(size,Arc::clone(&gateway));
                         });
                         setting_field_column(
@@ -768,7 +769,7 @@ impl SettingsView{
                             crate::ui_layout::apply_spacing_role(row,crate::ui_layout::SpacingRole::FormColumns);
                             for (key,label) in recommendations{
                                 row.vertical(|col|{
-                                    col.set_width(theme::SETTINGS_ACCOUNT_PICKER_MAX_WIDTH);
+                                    col.apply_shared_width(crate::card::CardWidthPolicy::Fixed,theme::SETTINGS_ACCOUNT_PICKER_MAX_WIDTH);
                                     recommendation_picker(
                                         col,&mut self.draft,key,label
                                     );
@@ -809,7 +810,7 @@ impl SettingsView{
                         row.allocate_ui_with_layout(
                             Vec2::new(width,theme::SPACE_24+theme::INPUT_HEIGHT),
                             Layout::top_down(Align::Min),|input|{
-                                input.set_width(width);
+                                input.apply_shared_width(crate::card::CardWidthPolicy::Fixed,width);
                                 edit_input_width(input,account,key,label,width);
                             }
                         );

@@ -571,7 +571,7 @@ function cardHeightSelfTest(){
   assert.equal(check(allowed,"new_screen.rs"),1);
   assert.equal(check("fn other(){ui.set_min_height(height);}","card/mod.rs"),1);
   const viewport="fn details_and_freight(){pane.set_height(review_rect.height());}";
-  assert.equal(check(viewport,"main.rs"),0);
+  assert.equal(check(viewport,"main.rs"),1);
   assert.equal(check(viewport.replace("pane.","card."),"main.rs"),1);
   assert.equal(check(viewport.replace("review_rect","arbitrary_rect"),"main.rs"),1);
   assert.equal(check("fn details_and_freight(){"+ "pane.set_height(review_rect.height());".repeat(4)+"}","main.rs"),1);
@@ -720,93 +720,7 @@ function indirectCardHeightSelfTest(){
 const widthWriteAllowances=new Map([
   ["card/mod.rs:apply_width_policy:ui.set_min_width(width)",1],
   ["card/mod.rs:apply_width_policy:ui.set_width(width)",2],
-  ["card/mod.rs:apply_width_policy:ui.set_max_width(width)",1],
-  ["card/mod.rs:fixed_scroll_panel:content.set_width(scroll_rect.width())",1],
-  ["card/mod.rs:reception_document_viewport:canvas.set_width(inner.width())",1],
-  ["popup/mod.rs:modal_master_header_content_in_rect:details.set_width(subtitle.width())",1],
-  ["popup/mod.rs:modal_master_footer_in_rect:footer.set_width(content.width())",1],
-  ["popup/mod.rs:modal_action_row_measured:buttons.set_width(area.width())",1],
-  ["popup/mod.rs:show_management_menu:menu.set_min_width(width)",1],
-  ["popup/mod.rs:modal_plain_body_region:content.set_width(width)",1],
-  ["popup/mod.rs:modal_master_body:body.set_min_width(width)",1],
-  ["main.rs:show_ocr_review:toolbar.set_width(left_header.width())",1],
-  ["main.rs:show_ocr_review:toolbar.set_width(right_header.width())",1],
-  ["main.rs:show_ocr_review:viewport.set_width(image_scroll_rect.width())",1],
-  ["main.rs:show_ocr_review:editor.set_width(text_view_rect.width())",1],
-  ["main.rs:reception:pane.set_width(rect.width())",1],
-  ["main.rs:source_and_message:child.set_width(source_rect.width())",1],
-  ["main.rs:source_and_message:child.set_width(message_rect.width())",1],
-  ["main.rs:details_and_freight:pane.set_width(review_rect.width())",3],
-  ["main.rs:details_and_freight:pane.set_width(recipient_rect.width())",3],
-  ["main.rs:details_and_freight:pane.set_width(bottom_rect.width())",3],
-  ["main.rs:details_and_freight:pane.set_width(summary_rect.width())",3],
-  ["main.rs:other_page:pane.set_width(left.width())",1],
-  ["main.rs:other_page:main.set_width(right.width())",1],
-  ["manual_workspace.rs:show:outer.set_min_width(content_width)",1],
-  ["manual_workspace.rs:show:panel.set_min_width(panel_width)",1],
-  ["workflow_board_ui.rs:workflow_details:details.set_width(width)",1],
-  ["workflow_board_ui.rs:show:overlay_ui.set_min_width(width)",1],
-  ["workflow_board_ui.rs:show:overlay_ui.set_max_width(width)",1],
-  ["workflow_board_ui.rs:show:ui.set_min_width(width)",1],
-  ["workflow_board_ui.rs:show:ui.set_max_width(width)",1],
-  ["order_history_detail.rs:overview:panel.set_width(inner.width())",1],
-  ["order_history_detail.rs:show:ui.set_width((modal_size.x-2.0*theme::MODAL_PANEL_PADDING_X-2.0).max(1.0))",1],
-  ["product_manager.rs:show_selection_modal:ui.set_width(width)",1],
-  ["product_manager.rs:show_page:actions.set_width(actions_rect.width())",1],
-  ["product_excel_ui.rs:show_menu:menu.set_min_width(width)",1],
-  ["product_excel_ui.rs:show_menu:menu.set_max_width(width)",1],
-  ["product_excel_ui.rs:show_review:ui.set_min_width(inner_width.min(900.0))",1],
-  ["settings_view.rs:setting_field_column:col.set_width(width)",1],
-  ["settings_view.rs:show_work_settings:size.set_width(theme::MANAGEMENT_FILTER_DROPDOWN_WIDTH)",1],
-  ["settings_view.rs:show_accounts:col.set_width(theme::SETTINGS_ACCOUNT_PICKER_MAX_WIDTH)",1],
-  ["settings_view.rs:show_account_rows:input.set_width(width)",1],
-  ["settings_help.rs:icon:details.set_width(width-theme::SPACE_24)",1],
-  ["category_manager.rs:show_page:actions.set_width(actions_rect.width())",2],
-  ["category_manager.rs:show_page:search.set_width(search_rect.width())",2],
-  ["client_manager.rs:show_page:search.set_width(search_rect.width())",2],
-  ["client_manager.rs:show_page:actions.set_width(actions_rect.width())",1],
-  ["client_manager.rs:show_page:actions.set_width(action_rect.width())",1],
-  ["excel_manager.rs:show_page:search.set_width(search_rect.width())",1],
-  ["excel_manager.rs:show_page:dates.set_width(dates_rect.width())",1],
-  ["excel_manager.rs:show_page:actions.set_width(actions_rect.width())",1],
-  ["freight_manager.rs:show_groups:tools.set_width(left_rect.width())",1],
-  ["freight_manager.rs:show_groups:bulk.set_width(right_controls_rect.width())",1],
-  ["freight_manager.rs:show_groups:control.set_width(selector_rect.width())",1],
-  ["freight_manager.rs:show_groups:actions.set_width(actions_rect.width())",1],
-  ["freight_manager.rs:rate_toolbar:tools.set_width(toolbar_rect.width())",1],
-  ["freight_manager.rs:rate_toolbar:field.set_width(search_rect.width())",1],
-  ["freight_manager.rs:show_rates:buttons.set_width(rect.width())",1],
-  ["freight_manager.rs:show_history:buttons.set_width(action_rect.width())",1],
-  ["order_history_manager.rs:draw_line:actions.set_width(control.width())",1],
-  ["order_history_manager.rs:excel_export_date_controls:line.set_width(first.width())",1],
-  ["order_history_manager.rs:excel_export_date_controls:line.set_width(second.width())",1],
-  ["order_history_manager.rs:history_date_controls:line.set_width(first.width())",1],
-  ["order_history_manager.rs:history_date_controls:line.set_width(second.width())",1],
-  ["order_history_manager.rs:show_page:search.set_width(search_rect.width())",1],
-  ["order_history_manager.rs:show_page:dates.set_width(date_rect.width())",1],
-  ["category_dropdown.rs:crumbs_row:rows.set_max_width(width)",1],
-  ["category_dropdown.rs:menu_body:menu.set_min_width(popup_width)",1],
-  ["category_dropdown.rs:menu_body:menu.set_max_width(popup_width)",1],
-  ["category_dropdown.rs:menu_body:menu.set_width(popup_width)",1],
-  ["composite_reception.rs:row:contacts.set_min_width(row_width)",1],
-  ["floating_notice.rs:show:inner.set_width(text_rect.width())",1],
-  ["floating_notice.rs:show:content.set_width(text_rect.width().max(1.0))",1],
-  ["ui_layout.rs:reception_goods_viewport:child.set_width(rect.width())",1],
-  ["ui_layout.rs:reception_items_body:ui.set_width(width)",1],
-  ["ui_layout.rs:reception_items_body:ui.set_min_width(width)",1],
-  ["ui_layout.rs:management_top_content:inset.set_min_width(inset.available_width())",1],
-  ["table/mod.rs:management_table_row_body:ui.set_min_width(width)",1],
-  ["table/mod.rs:register_rows:body.set_min_width(width)",1],
-  ["navigation.rs:reception_recipient_navigator:segments.set_width(inner.width())",1],
-  ["navigation.rs:reception_recipient_navigator:popup.set_max_width(320.0)",1],
-  ["navigation.rs:date_calendar:calendar.set_min_width(theme::CALENDAR_GRID_WIDTH)",1],
-  ["ui_primitives.rs:date_navigation_segmented_surface:segments.set_width(inner.width())",1],
-  ["dropdown/mod.rs:management_dropdown_inner:menu.set_min_width(width)",1],
-  ["dropdown/mod.rs:management_dropdown_inner:menu.set_max_width(width)",1],
-  ["dropdown/mod.rs:management_dropdown_inner:choices.set_width(width)",1],
-  ["dropdown/mod.rs:management_searchable_dropdown:menu.set_min_width(popup_width)",1],
-  ["dropdown/mod.rs:management_searchable_dropdown:menu.set_max_width(popup_width)",1],
-  ["dropdown/mod.rs:management_searchable_dropdown:menu.set_width(popup_width)",1],
+  ["card/mod.rs:apply_width_policy:ui.set_max_width(width)",2],
 ]);
 export function auditCardWidths(source,file){
   const tokens=productionTokens(source),v=tokens.map(t=>t.v),hits=[],used=new Map();
@@ -858,7 +772,7 @@ function cardWidthSelfTest(){
   const viewport="fn details_and_freight(){pane.set_width(review_rect.width());}";
   assert.equal(check(viewport,"main.rs"),0);
   assert.equal(check(viewport.replace("pane.","card."),"main.rs"),1);
-  assert.equal(check("fn details_and_freight(){"+"pane.set_width(review_rect.width());".repeat(4)+"}","main.rs"),1);
+  assert.equal(check("fn details_and_freight(){"+"pane.set_width(review_rect.width());".repeat(4)+"}","main.rs"),4);
   console.log("EGUI_CARD_WIDTH_SELFTEST_PASS",cases.length+7);
 }
 

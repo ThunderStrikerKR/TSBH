@@ -2,6 +2,7 @@
 //! Category selection, search, expansion and operations remain in this manager.
 //! All add/rename/move/delete decisions are delegated to catalog_clients.
 use crate::{category_dropdown,category_tree,theme,typography};
+use crate::card::UiWidthPolicyExt;
 use eframe::egui::{self,Align,Context,Layout,Rect,Sense,Ui,Vec2};
 use serde_json::{json,Value};
 use std::collections::{HashMap,HashSet};
@@ -656,7 +657,7 @@ impl CategoryManager {
                         .max_rect(actions_rect)
                         .layout(Layout::right_to_left(Align::Center)),
                     |actions|{
-                        actions.set_width(actions_rect.width());
+                        actions.apply_shared_width(crate::card::CardWidthPolicy::Fixed,actions_rect.width());
                         self.map_toolbar_actions(actions,&cats,catalog,editable,busy);
                     }
                 );
@@ -670,7 +671,7 @@ impl CategoryManager {
                         .max_rect(search_rect)
                         .layout(Layout::left_to_right(Align::Center)),
                     |search|{
-                        search.set_width(search_rect.width());
+                        search.apply_shared_width(crate::card::CardWidthPolicy::Fixed,search_rect.width());
                         search.add_enabled_ui(!busy,|search|crate::input::management_search_field(
                             search,&mut self.query,
                             theme::CATALOG_SEARCH_WIDTH.min(search_rect.width()),
@@ -698,7 +699,7 @@ impl CategoryManager {
                         .max_rect(search_rect)
                         .layout(Layout::left_to_right(Align::Center)),
                     |search|{
-                        search.set_width(search_rect.width());
+                        search.apply_shared_width(crate::card::CardWidthPolicy::Fixed,search_rect.width());
                         search.add_enabled_ui(!busy,|search|crate::input::management_search_field(
                             search,&mut self.query,search_rect.width(),
                             "카테고리 이름 또는 전체 경로 검색"
@@ -711,7 +712,7 @@ impl CategoryManager {
                         .max_rect(actions_rect)
                         .layout(Layout::right_to_left(Align::Center)),
                     |actions|{
-                        actions.set_width(actions_rect.width());
+                        actions.apply_shared_width(crate::card::CardWidthPolicy::Fixed,actions_rect.width());
                         self.map_toolbar_actions(actions,&cats,catalog,editable,busy);
                     }
                 );

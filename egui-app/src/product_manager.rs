@@ -15,6 +15,7 @@ use crate::{
     product_images::{self,ProductImageCache},
     theme, typography,
 };
+use crate::card::UiWidthPolicyExt;
 use eframe::egui::{self, Align, Context, Layout, Sense, Ui, UiBuilder, Rect, Vec2};
 use serde_json::{json, Value};
 use std::{
@@ -597,7 +598,7 @@ impl ProductManager {
         crate::popup::modal_window(ctx,"상품 선택",window_id,work_area)
             .default_width(width).show(ctx,|ui|{
 
-                ui.set_width(width);
+                ui.apply_shared_width(crate::card::CardWidthPolicy::Fixed,width);
                 crate::popup::modal_flow_workspace(ui,|workspace|{
                     cancelled=workspace.header("상품 선택","취소",true);
                     workspace.body_region(|ui|{
@@ -1302,7 +1303,7 @@ impl ProductManager {
                     .layout(Layout::right_to_left(Align::Center)),
                 |actions|{
                     actions.set_clip_rect(actions_rect);
-                    actions.set_width(actions_rect.width());
+                    actions.apply_shared_width(crate::card::CardWidthPolicy::Fixed,actions_rect.width());
                     actions.set_height(actions_rect.height());
                     crate::ui_layout::apply_spacing_role(actions,crate::ui_layout::SpacingRole::Toolbar);
                     if crate::button::action(actions,"상품 추가",

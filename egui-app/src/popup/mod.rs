@@ -1,5 +1,6 @@
 //! Modal presentation and geometry. Overlay owns window layers, input priority and lifetime.
 use eframe::egui::{self,Align,Color32,Frame,Layout,Rect,Response,Sense,Stroke,Ui,UiBuilder,Vec2};
+use crate::card::UiWidthPolicyExt;
 use crate::{theme,typography};
 use crate::theme::*;
 use crate::ui_primitives::{truncated_label,section_divider,form_field_label_sized};
@@ -587,7 +588,7 @@ fn modal_master_header_content_in_rect(
                 .max_rect(subtitle),
             |details|{
                 details.set_clip_rect(subtitle_clip);
-                details.set_width(subtitle.width());
+                details.apply_shared_width(crate::card::CardWidthPolicy::Fixed,subtitle.width());
                 details.add(truncated_label(typography::caption(description)))
                     ;
             },
@@ -709,7 +710,7 @@ pub(crate) fn modal_master_footer_in_rect(
             .layout(Layout::right_to_left(Align::Center)),
         |footer|{
             footer.set_clip_rect(clip);
-            footer.set_width(content.width());
+            footer.apply_shared_width(crate::card::CardWidthPolicy::Fixed,content.width());
             actions(footer);
         },
     );
@@ -744,7 +745,7 @@ fn modal_action_row_measured<R>(
             .layout(Layout::right_to_left(Align::Center)),
         |buttons|{
             buttons.set_clip_rect(clip);
-            buttons.set_width(area.width());
+            buttons.apply_shared_width(crate::card::CardWidthPolicy::Fixed,area.width());
             actions(buttons)
         }
     );
@@ -940,7 +941,7 @@ fn modal_plain_body_region<R>(
     let width=(ui.available_width()-2.0*inset).max(1.0);
     Frame::NONE.inner_margin(egui::Margin::symmetric(inset as i8,0))
         .show(ui,|content|{
-            content.set_width(width);
+            content.apply_shared_width(crate::card::CardWidthPolicy::Fixed,width);
             modal_form_row_spacing(content);
             contents(content)
         })
@@ -957,7 +958,7 @@ pub(crate) fn modal_master_body<R>(
     theme::bordered_surface(theme::PANEL,theme::DIVIDER,theme::CONTROL_RADIUS)
         .inner_margin(inset)
         .show(ui,|body|{
-            body.set_min_width(width);
+            body.apply_shared_width(crate::card::CardWidthPolicy::FillAvailable,width);
             contents(body)
         }).inner
 }

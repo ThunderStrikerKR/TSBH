@@ -7,6 +7,7 @@ use crate::{
     gateway::{BandoGateway, ReadOperation},
     settings_help, theme, typography,
 };
+use crate::card::UiWidthPolicyExt;
 use chrono::{DateTime, Duration as Days, FixedOffset, NaiveDate, Utc};
 use eframe::egui::{self, Align, Align2, Rect, Sense, Stroke, Ui, UiBuilder, Vec2};
 use serde_json::{json, Value};
@@ -595,7 +596,7 @@ fn draw_line(ui:&mut Ui,rect:Rect,line:HistoryLine,snapshot:&HistorySnapshot,
                 .max_rect(control)
                 .layout(egui::Layout::left_to_right(Align::Center)),|actions|{
                     actions.set_clip_rect(control.intersect(area));
-                    actions.set_width(control.width());
+                    actions.apply_shared_width(crate::card::CardWidthPolicy::Fixed,control.width());
                     crate::ui_layout::apply_spacing_role(actions,crate::ui_layout::SpacingRole::CompactActions);
                     // Copy the FULL order's existing Rust-generated message.
                     if crate::button::action_with_min_width(actions,"운송장 복사",
@@ -864,7 +865,7 @@ pub(crate) fn excel_export_date_controls(
             .max_rect(first)
             .layout(egui::Layout::left_to_right(Align::Center)
                 .with_main_align(Align::Max)),|line|{
-                line.set_width(first.width());
+                line.apply_shared_width(crate::card::CardWidthPolicy::Fixed,first.width());
                 crate::navigation::apply_management_date_control_spacing(line);
                 let all_dates=from.is_empty()&&to.is_empty();
                 changed|=range_date_picker_rtl(line,all_dates,from,from_month,
@@ -874,7 +875,7 @@ pub(crate) fn excel_export_date_controls(
             .max_rect(second)
             .layout(egui::Layout::left_to_right(Align::Center)
                 .with_main_align(Align::Max)),|line|{
-                line.set_width(second.width());
+                line.apply_shared_width(crate::card::CardWidthPolicy::Fixed,second.width());
                 crate::navigation::apply_management_date_control_spacing(line);
                 changed|=excel_export_date_end(line,from,to,to_month);
             });
@@ -953,7 +954,7 @@ fn history_date_controls(
             .layout(egui::Layout::left_to_right(Align::Center)
                 .with_main_align(Align::Max)),
             |line|{
-                line.set_width(first.width());
+                line.apply_shared_width(crate::card::CardWidthPolicy::Fixed,first.width());
                 line.set_height(first.height());
                 crate::navigation::apply_management_date_control_spacing(line);
                 changed|=history_date_range_start(
@@ -966,7 +967,7 @@ fn history_date_controls(
             .layout(egui::Layout::left_to_right(Align::Center)
                 .with_main_align(Align::Max)),
             |line|{
-                line.set_width(second.width());
+                line.apply_shared_width(crate::card::CardWidthPolicy::Fixed,second.width());
                 line.set_height(second.height());
                 crate::navigation::apply_management_date_control_spacing(line);
                 changed|=history_date_range_end(
@@ -1272,7 +1273,7 @@ impl OrderHistoryManager {
                 .max_rect(search_rect)
                 .layout(egui::Layout::left_to_right(Align::Center)),
                 |search|{
-                    search.set_width(search_rect.width());
+                    search.apply_shared_width(crate::card::CardWidthPolicy::Fixed,search_rect.width());
                     search.set_height(search_rect.height());
                     if crate::input::management_search_field(
                         search,&mut self.query,search_rect.width(),
@@ -1293,7 +1294,7 @@ impl OrderHistoryManager {
                 .layout(egui::Layout::left_to_right(Align::Center)
                     .with_main_align(Align::Max)),
                 |dates|{
-                    dates.set_width(date_rect.width());
+                    dates.apply_shared_width(crate::card::CardWidthPolicy::Fixed,date_rect.width());
                     dates.set_height(date_rect.height());
                     changed|=history_date_controls(
                         dates,&mut self.date_basis,

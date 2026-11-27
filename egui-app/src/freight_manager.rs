@@ -9,6 +9,7 @@ use crate::{
     management_queries,
     settings_help, theme, typography,
 };
+use crate::card::UiWidthPolicyExt;
 use eframe::egui::{self, Ui};
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 use serde_json::{json, Value};
@@ -1297,7 +1298,7 @@ impl FreightManager {
                     .layout(egui::Layout::left_to_right(egui::Align::Center)),
                 |tools|{
                     tools.set_clip_rect(left_rect);
-                    tools.set_width(left_rect.width());
+                    tools.apply_shared_width(crate::card::CardWidthPolicy::Fixed,left_rect.width());
                     tools.set_height(left_rect.height());
                     crate::ui_layout::apply_spacing_role(tools,crate::ui_layout::SpacingRole::ToolbarInput);
                     // Search stays at 36pt; the shared 34pt dropdown trigger
@@ -1396,7 +1397,7 @@ impl FreightManager {
                     // Clip to the trailing card-inner slot, not the
                     // independent table scrollbar gutter.
                     bulk.set_clip_rect(right_rect);
-                    bulk.set_width(right_controls_rect.width());
+                    bulk.apply_shared_width(crate::card::CardWidthPolicy::Fixed,right_controls_rect.width());
                     bulk.set_height(right_controls_rect.height());
                     crate::ui_layout::apply_spacing_role(bulk,crate::ui_layout::SpacingRole::ToolbarInput);
                     // Bulk selection uses the same 34pt split-chevron
@@ -1591,7 +1592,7 @@ impl FreightManager {
                         }
                         row.scope_builder(selector_builder,|control|{
                                 control.set_clip_rect(selector_clip);
-                                control.set_width(selector_rect.width());
+                                control.apply_shared_width(crate::card::CardWidthPolicy::Fixed,selector_rect.width());
                                 crate::dropdown::management_dropdown(
                                     control,
                                     if current.is_empty() {
@@ -1662,7 +1663,7 @@ impl FreightManager {
                                 actions.set_clip_rect(
                                     actions_clip
                                 );
-                                actions.set_width(actions_rect.width());
+                                actions.apply_shared_width(crate::card::CardWidthPolicy::Fixed,actions_rect.width());
                                 crate::ui_layout::apply_spacing_role(actions,crate::ui_layout::SpacingRole::Toolbar);
                                 let editable=enabled&&!changed&&ready;
                                 // Only an unassigned product can edit its
@@ -1822,7 +1823,7 @@ impl FreightManager {
                 .max_rect(toolbar_rect)
                 .layout(egui::Layout::right_to_left(egui::Align::Center)),
             |tools|{
-                tools.set_width(toolbar_rect.width());
+                tools.apply_shared_width(crate::card::CardWidthPolicy::Fixed,toolbar_rect.width());
                 tools.set_height(toolbar_rect.height());
                 crate::button::action(
                     tools,"배송 그룹 추가",theme::ButtonRole::Primary,enabled
@@ -1843,7 +1844,7 @@ impl FreightManager {
                     .layout(egui::Layout::left_to_right(egui::Align::Center)),
                 |field|{
                     field.set_clip_rect(search_rect);
-                    field.set_width(search_rect.width());
+                    field.apply_shared_width(crate::card::CardWidthPolicy::Fixed,search_rect.width());
                     crate::input::management_search_field(
                         field,search,search_width,"배송 그룹 검색"
                     )
@@ -1990,7 +1991,7 @@ impl FreightManager {
                                             cells[3].intersect(row_rect)
                                                 .intersect(buttons.clip_rect())
                                         );
-                                        buttons.set_width(rect.width());
+                                        buttons.apply_shared_width(crate::card::CardWidthPolicy::Fixed,rect.width());
                                         buttons.set_height(rect.height());
                                         let trigger=crate::button::action(
                                             buttons,"관리",
@@ -2298,7 +2299,7 @@ impl FreightManager {
                             ).with_main_align(egui::Align::Center)),
                         |buttons|{
                             buttons.set_clip_rect(cells[4].intersect(history_row_clip));
-                            buttons.set_width(action_rect.width());
+                            buttons.apply_shared_width(crate::card::CardWidthPolicy::Fixed,action_rect.width());
                             let trigger=crate::button::action(
                                 buttons,"상세정보",
                                 theme::ButtonRole::TableSecondary,true

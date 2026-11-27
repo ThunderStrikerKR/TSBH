@@ -2,6 +2,7 @@
 //! Export, sender validation, workflow state and file history remain owned by
 //! the original Rust business core and Tauri's existing SQLite database.
 use crate::{gateway::{BandoGateway,ReadOperation},order_history_manager,settings_help,theme,typography};
+use crate::card::UiWidthPolicyExt;
 use chrono::{DateTime,FixedOffset,NaiveDate,Utc};
 use eframe::egui::{self,Align,Align2,Rect,Sense,Ui,UiBuilder,Vec2};
 use serde_json::{json,Value};
@@ -945,7 +946,7 @@ impl ExcelManager{
                     .layout(egui::Layout::left_to_right(Align::Center)),
                 |search|{
                     search.set_clip_rect(search_rect);
-                    search.set_width(search_rect.width());
+                    search.apply_shared_width(crate::card::CardWidthPolicy::Fixed,search_rect.width());
                     if crate::input::management_search_field(
                         search,&mut self.query,
                         theme::MANAGEMENT_SEARCH_MIN_WIDTH,
@@ -982,7 +983,7 @@ impl ExcelManager{
                         .layout(egui::Layout::left_to_right(Align::Center)
                             .with_main_align(Align::Max)),
                     |dates|{
-                        dates.set_width(dates_rect.width());
+                        dates.apply_shared_width(crate::card::CardWidthPolicy::Fixed,dates_rect.width());
                         dates.set_height(dates_rect.height());
                         if order_history_manager::excel_export_date_controls(
                             dates,&mut self.export_from_input,
@@ -1028,7 +1029,7 @@ impl ExcelManager{
                         .layout(egui::Layout::right_to_left(Align::Center)),
                     |actions|{
                         actions.set_clip_rect(actions_rect);
-                        actions.set_width(actions_rect.width());
+                        actions.apply_shared_width(crate::card::CardWidthPolicy::Fixed,actions_rect.width());
                         if crate::button::action(actions,"폴더 열기",
                             theme::ButtonRole::Standard,!busy).clicked(){
                             open_daily=true;

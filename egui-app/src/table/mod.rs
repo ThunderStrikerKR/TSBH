@@ -1,6 +1,7 @@
 //! Shared table renderer: surface, header, row/viewport geometry and sort hit testing.
 //! Screens retain column data, stable IDs and business sort state.
 use eframe::egui::{self,Color32,Rect,Stroke,Ui,Vec2};
+use crate::card::UiWidthPolicyExt;
 use crate::{theme,typography};
 use eframe::egui::{Sense,Align};
 use crate::ui_primitives::{overflow_region_tooltip,text_exceeds_rect,positioned_text_overflow};
@@ -169,7 +170,7 @@ pub(crate) fn paint_management_table_row_rule(painter:&egui::Painter,rect:Rect){
 /// Fixed and variable row viewports share the minimum-width and zero-gap
 /// rules. Retain the caller's existing width and height calculations.
 pub(crate) fn management_table_row_body(ui:&mut Ui,width:f32){
-    ui.set_min_width(width);
+    ui.apply_shared_width(crate::card::CardWidthPolicy::FillAvailable,width);
     ui.spacing_mut().item_spacing.y=0.0;
 }
 
@@ -428,7 +429,7 @@ pub(crate) fn register_rows<R>(
     let output=scroll.show_viewport(ui,|body,viewport|{
             let clip=strict_viewport_clip(body,viewport);
             body.set_clip_rect(clip);
-            body.set_min_width(width);
+            body.apply_shared_width(crate::card::CardWidthPolicy::FillAvailable,width);
             draw(body)
         });
     capture.finish(ui,&output,None);

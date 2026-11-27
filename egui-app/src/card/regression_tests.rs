@@ -300,7 +300,7 @@ fn screen_card_height_reservations_use_the_common_policy(){
 
 #[test]
 fn card_width_policies_preserve_natural_and_reserved_widths(){
-    use super::{apply_width_policy,CardWidthPolicy,inner_width_for_insets,fixed_and_remaining_columns};
+    use super::{UiWidthPolicyExt,CardWidthPolicy,inner_width_for_insets,fixed_and_remaining_columns};
     let ctx=egui::Context::default();
     for (policy,target,expected) in [
         (CardWidthPolicy::FitContent,240.0,40.0),
@@ -308,11 +308,12 @@ fn card_width_policies_preserve_natural_and_reserved_widths(){
         (CardWidthPolicy::FillAvailable,20.0,40.0),
         (CardWidthPolicy::Fixed,160.0,160.0),
         (CardWidthPolicy::Bounded,140.0,140.0),
+        (CardWidthPolicy::UpperLimit,140.0,40.0),
     ]{
         let _=ctx.run(egui::RawInput::default(),|ctx|{
             egui::CentralPanel::default().show(ctx,|ui|{
                 let measured=ui.scope(|body|{
-                    apply_width_policy(body,policy,target);
+                    body.apply_shared_width(policy,target);
                     body.allocate_exact_size(Vec2::new(40.0,30.0),Sense::hover());
                 });
                 assert!((measured.response.rect.width()-expected).abs()<1.0,

@@ -3,6 +3,7 @@
 //! matching workflow records. This module never recalculates prices or writes
 //! historical data. Only content-heavy panes have their own scroll areas.
 use crate::{theme,typography};
+use crate::card::UiWidthPolicyExt;
 use chrono::{DateTime,FixedOffset};
 use eframe::egui::{self,Align,Layout,Rect,Sense,Ui,UiBuilder,Vec2};
 use serde_json::Value;
@@ -82,7 +83,7 @@ fn overview(ui:&mut Ui,rect:Rect,row:&Value,shipment_count:usize){
         .id_salt("history-detail-overview")
         .max_rect(inner).layout(Layout::top_down(Align::Min)),|panel|{
             panel.set_clip_rect(clip);
-            panel.set_width(inner.width());
+            panel.apply_shared_width(crate::card::CardWidthPolicy::Fixed,inner.width());
             panel.horizontal_wrapped(|line|{
                 line.label(typography::section_heading(
                     display_or(field(&row["client"],"name"),"거래처 미확인")
@@ -457,9 +458,7 @@ pub fn show(ctx:&egui::Context,work_area:Rect,row:&Value,state:&Value)->bool{
 
             // Reserve a full-window dashboard with a fixed grid, rather than
             // the old single vertical ScrollArea around every information row.
-            ui.set_width(
-                (modal_size.x-2.0*theme::MODAL_PANEL_PADDING_X-2.0).max(1.0)
-            );
+            ui.apply_shared_width(crate::card::CardWidthPolicy::Fixed,(modal_size.x-2.0*theme::MODAL_PANEL_PADDING_X-2.0).max(1.0));
             crate::popup::modal_flow_workspace(ui,|workspace|{
                 close=workspace.header("발주서 상세","닫기",true);
                 workspace.body_region(|ui|{

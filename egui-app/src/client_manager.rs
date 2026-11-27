@@ -4,6 +4,7 @@
 use crate::{automatic_message_manager::AutomaticMessageManager,
     client_search_tags, gateway::{BandoGateway,ReadOperation},
     theme::{self,ButtonRole}, typography};
+use crate::card::UiWidthPolicyExt;
 use eframe::egui::{self,Align,Context,Layout,Ui};
 use serde_json::{json,Value};
 use std::{sync::{mpsc::{self,Receiver},Arc},thread,time::{SystemTime,UNIX_EPOCH}};
@@ -478,7 +479,7 @@ impl ClientManager {
                         .layout(Layout::left_to_right(Align::Center)),
                     |search|{
                         search.set_clip_rect(search_rect);
-                        search.set_width(search_rect.width());
+                        search.apply_shared_width(crate::card::CardWidthPolicy::Fixed,search_rect.width());
                         self.list_search(search,Arc::clone(&gateway));
                     }
                 );
@@ -494,7 +495,7 @@ impl ClientManager {
                         .layout(Layout::left_to_right(Align::Center)),
                     |actions|{
                         actions.set_clip_rect(actions_rect);
-                        actions.set_width(actions_rect.width());
+                        actions.apply_shared_width(crate::card::CardWidthPolicy::Fixed,actions_rect.width());
                         self.list_toolbar_actions(actions,Arc::clone(&gateway));
                     }
                 );
@@ -523,7 +524,7 @@ impl ClientManager {
                         .layout(Layout::left_to_right(Align::Center)),
                     |search|{
                         search.set_clip_rect(search_rect);
-                        search.set_width(search_rect.width());
+                        search.apply_shared_width(crate::card::CardWidthPolicy::Fixed,search_rect.width());
                         self.list_search(search,Arc::clone(&gateway));
                     }
                 );
@@ -534,7 +535,7 @@ impl ClientManager {
                         .layout(Layout::left_to_right(Align::Center)),
                     |actions|{
                         actions.set_clip_rect(action_rect);
-                        actions.set_width(action_rect.width());
+                        actions.apply_shared_width(crate::card::CardWidthPolicy::Fixed,action_rect.width());
                         self.list_toolbar_actions(actions,Arc::clone(&gateway));
                     }
                 );

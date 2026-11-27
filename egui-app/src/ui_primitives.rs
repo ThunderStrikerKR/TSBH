@@ -1,5 +1,6 @@
 //! Low-level UI primitives independent of composite screens and controls.
 use eframe::egui::{self,Align,Color32,Layout,Rect,Response,Sense,Stroke,Ui,UiBuilder,Vec2};
+use crate::card::UiWidthPolicyExt;
 use crate::{theme,typography};
 use crate::theme::{BUTTON_HOVER_TINT,SOFT_DIVIDER_WIDTH,SELECTION};
 
@@ -187,7 +188,7 @@ pub(crate) fn date_navigation_segmented_surface<R>(
     let mut segments=navigation_segment_child(
         ui,id_salt,inner,Layout::left_to_right(Align::Center)
     );
-    segments.set_width(inner.width());
+    segments.apply_shared_width(crate::card::CardWidthPolicy::Fixed,inner.width());
     segments.set_height(inner.height());
     segments.spacing_mut().item_spacing=Vec2::ZERO;
     let content=add_segments(&mut segments,inner);
