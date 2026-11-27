@@ -1812,7 +1812,7 @@ pub(super) fn learn_blend_weights(payload:&Value)->Result<Value,String>{
     let runtime=json!({"schemaVersion":1,"clientBuildVersion":build,
         "scorePolicyVersion":OWNER_SCORE_POLICY,"captureVersion":4,"supportVersion":4,
         "featureVersion":1,"contributionVersion":2,"explicitToWeakRatio":3.0,
-        "safetyPolicyVersion":1,"availableAfter":config["evaluationAsOf"],
+        "safetyPolicyVersion":1,"calibrationScope":OWNER_PAIR_CALIBRATION_SCOPE,"availableAfter":config["evaluationAsOf"],
         "legacyBins":legacy["bins"],"legacyGates":legacy["gateCalibration"]["groups"],
         "shadowModels":shadow_model["models"],"blendModels":models,
         "automaticChangeAuthorized":false});
@@ -2247,7 +2247,7 @@ fn run_blend_prepared(first:&Value,shadow:&Value,model:&Value,prediction_at:&Val
     let date=|v:&Value|v.as_str().and_then(|s|chrono::DateTime::parse_from_rfc3339(s).ok());
     let now=date(prediction_at).ok_or("그림자 예측 시각 오류")?;
     let available=date(&model["availableAfter"]).ok_or("그림자 모델 시각 오류")?;
-    if available>=now||model["schemaVersion"]!=1||&model["clientBuildVersion"]!=build||
+    if available>=now||model["schemaVersion"]!=1||model["calibrationScope"]!=OWNER_PAIR_CALIBRATION_SCOPE||&model["clientBuildVersion"]!=build||
         model["scorePolicyVersion"]!=OWNER_SCORE_POLICY||model["captureVersion"]!=4||model["supportVersion"]!=4||
         model["featureVersion"]!=1||model["contributionVersion"]!=2||model["safetyPolicyVersion"]!=1||
         model["explicitToWeakRatio"].as_f64()!=Some(3.0)||model["automaticChangeAuthorized"]!=false||
@@ -2870,7 +2870,7 @@ mod tests{
     fn runtime_blend_rejects_future_or_incompatible_model(){
         let mut model=json!({"schemaVersion":1,"clientBuildVersion":"test","scorePolicyVersion":OWNER_SCORE_POLICY,
             "captureVersion":4,"supportVersion":4,"featureVersion":1,"contributionVersion":2,
-            "safetyPolicyVersion":1,"explicitToWeakRatio":3.0,"automaticChangeAuthorized":false,
+            "safetyPolicyVersion":1,"calibrationScope":OWNER_PAIR_CALIBRATION_SCOPE,"explicitToWeakRatio":3.0,"automaticChangeAuthorized":false,
             "availableAfter":"2026-11-27T01:00:00Z"});
         let payload=|model:&Value|json!({"raw":"synthetic","clientBuildVersion":"test",
             "predictionAt":"2026-11-27T00:00:00Z","model":model,
