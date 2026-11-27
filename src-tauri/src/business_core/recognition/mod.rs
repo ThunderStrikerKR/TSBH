@@ -222,9 +222,7 @@ fn ts_evidence_reason(raw: &str,e:&Evidence) -> String {
     } else {base.to_owned()}
 }
 
-fn e_json(raw: &str, e: &Evidence) -> Value {
-    let start = utf16(raw, e.start);
-    let end = utf16(raw, e.end);
+fn e_json(raw: &str, e: &Evidence, (start,end):(usize,usize)) -> Value {
     let mut result = json!({
         "id": format!("{}:{}:{}", e.kind, start, end),
         "text": &raw[e.start..e.end],
@@ -662,9 +660,9 @@ fn product_signal(text: &str, decision: &Value, _state: &Value) -> bool {
     product_category.is_match(t)
         && (quantity::extract(t).len()>0 || t.contains("BANDO") || t.contains("반도"))
 }
-fn source_json(raw: &str, e: &Evidence, recipient_id: &str, target_id: &str) -> Value {
+fn source_json(raw: &str, e: &Evidence, (start,end):(usize,usize), recipient_id: &str, target_id: &str) -> Value {
     json!({
-        "start": utf16(raw,e.start), "end": utf16(raw,e.end),
+        "start": start, "end": end,
         "field": e.kind, "targetId": target_id,
         "recipientId":recipient_id, "text": &raw[e.start..e.end],
     })
@@ -717,14 +715,14 @@ fn address_info(value: &str) -> (String, String, Value) {
     }
     (kind.into(), status.into(), parts)
 }
-fn blank_recipient(id: &str, name: &str, anchor: Option<&Evidence>, raw: &str) -> Value {
+fn blank_recipient(id: &str, name: &str, anchor: Option<(&Evidence,(usize,usize))>) -> Value {
     let mut value = json!({
         "id":id, "name":name, "address":"", "phone":"", "mobile":"", "note":"",
         "items":[], "sources":[], "candidates":[],
     });
-    if let Some(a) = anchor {
-        value["evidence"] = json!({"anchorId": format!("{}:{}:{}",a.kind,utf16(raw,a.start),utf16(raw,a.end)),
-            "start":utf16(raw,a.start),"end":utf16(raw,a.end)});
+    if let Some((a,(start,end))) = anchor {
+        value["evidence"] = json!({"anchorId": format!("{}:{}:{}",a.kind,start,end),
+            "start":start,"end":end});
     }
     value
 }
@@ -1020,6 +1018,7 @@ struct DocumentFeatures{
     ordered:Vec<usize>,
     ranks:Vec<usize>,
     positions:Vec<[(usize,usize);2]>, // (Unicode scalar, UTF-16) at both endpoints
+    positions_valid:bool,
     anchors:Vec<usize>,
     roles:Vec<&'static str>,
     ranges:Vec<(usize,usize)>,
@@ -1122,7 +1121,10 @@ impl DocumentFeatures{
         }
         let exact_repeat=if period>0&&roles.len()%period==0{roles.len()/period}else{0};
         let incomplete_tail=if period>0{roles.len()%period}else{0};
-        Self{ordered,ranks,positions,anchors,roles,ranges,period,exact_repeat,incomplete_tail,ambiguous}
+        Self{ordered,ranks,positions,positions_valid:!invalid_positions,anchors,roles,ranges,period,exact_repeat,incomplete_tail,ambiguous}
+    }
+    fn utf16_span(&self,index:usize)->(usize,usize){
+        (self.positions[index][0].1,self.positions[index][1].1)
     }
     fn relation(&self,events:&[Evidence],from:usize,to:usize)->(i64,i64,bool){
         let a=&events[from];let b=&events[to];
@@ -1609,7 +1611,12 @@ fn analyze(raw:&str,state:&Value,client:Option<&Value>)->Result<Value,String>{
     assign_document(extract_document(raw,state,client),state,client)
 }
 fn assign_document(document:ExtractedDocument<'_>,state:&Value,client:Option<&Value>)->Result<Value,String>{
-    let ExtractedDocument{raw,lines,mut events,product_hits,geometry,delivery,exclusions,features}=document;
+    let ExtractedDocument{raw,lines,mut events,product_hits,geometry,delivery,exclusions,mut features}=document;
+    if !features.positions_valid{return Err("원문 후보 좌표가 일치하지 않습니다.".into());}
+    // Narrowing a display span is the only post-extraction coordinate
+    // mutation. Keep the extracted ordering and reuse it unless that
+    // projection actually changes relative source order.
+    let mut span_changed=false;
     // No blocked candidate may be used as an assignable field. Keep
     // event indexes stable for ProductHit; reject contradictory extraction
     // rather than deleting events after product references were built.
@@ -1632,10 +1639,10 @@ fn assign_document(document:ExtractedDocument<'_>,state:&Value,client:Option<&Va
     let mut recipients: Vec<Value> = anchors.iter().enumerate().map(|(i,a)| {
         let e = &events[*a];
         blank_recipient(&format!("recognition:recipient:{i}"),
-            if e.kind=="name" {&e.value} else {""},Some(e),raw)
+            if e.kind=="name" {&e.value} else {""},Some((e,features.utf16_span(*a))))
     }).collect();
     if recipients.is_empty() {
-        recipients.push(blank_recipient("recognition:recipient:0","",None,raw));
+        recipients.push(blank_recipient("recognition:recipient:0","",None));
     }
     let mut postcodes=vec![HashSet::<String>::new();recipients.len()];
     for index in 0..events.len() {
@@ -1697,13 +1704,14 @@ fn assign_document(document:ExtractedDocument<'_>,state:&Value,client:Option<&Va
                 other
             } else {kind}
         } else {kind};
-        let mut src=source_json(raw,e,&rid,&rid);
+        let (start,end)=features.utf16_span(index);
+        let mut src=source_json(raw,e,(start,end),&rid,&rid);
         src["field"]=json!(effective_field);
         recipients[row_index]["sources"].as_array_mut().expect("sources").push(src);
         recipients[row_index]["candidates"].as_array_mut().expect("candidates")
-            .push(json!({"id":format!("{}:{}:{}",kind,utf16(raw,e.start),utf16(raw,e.end)),
+            .push(json!({"id":format!("{}:{}:{}",kind,start,end),
                 "field":effective_field,"value":e.value,"label":e.value,
-                "start":utf16(raw,e.start),"end":utf16(raw,e.end)}));
+                "start":start,"end":end}));
         events[index].recipient = Some(row_index);
     }
     for (row,codes) in recipients.iter_mut().zip(postcodes) {
@@ -1731,7 +1739,7 @@ fn assign_document(document:ExtractedDocument<'_>,state:&Value,client:Option<&Va
         } else { vec![owner] };
         for idx in attach_to {
             let (display_raw,display_start)=ts_product_display(hit,&events);
-            let id = format!("recognition:item:{}:{}", utf16(raw,events[hit.evidence].start),idx);
+            let id = format!("recognition:item:{}:{}", features.utf16_span(hit.evidence).0,idx);
             let rid = recipients[idx]["id"].as_str().unwrap_or("").to_owned();
             // Direct port of order-evidence.ts:534-560:
             // - non-common goods keep their own line quantity
@@ -1845,7 +1853,7 @@ fn assign_document(document:ExtractedDocument<'_>,state:&Value,client:Option<&Va
             if !reason.is_null() {item["recognitionReason"]=reason;}
             apply_registered_item(&mut item,state,client,
                 hit.decision.get("color").and_then(Value::as_str).unwrap_or(""));
-            let mut product_source=source_json(raw,&events[hit.evidence],&rid,&id);
+            let mut product_source=source_json(raw,&events[hit.evidence],features.utf16_span(hit.evidence),&rid,&id);
             // parser.ts::productNameEvidence returns the registered model
             // token rather than the surrounding "(블랙)" color hint. Keep
             // recognition's original evidence intact; correct only the
@@ -1867,22 +1875,36 @@ fn assign_document(document:ExtractedDocument<'_>,state:&Value,client:Option<&Va
                         if let Some((begin,end))=spans.first().copied() {
                             let start=hit.source_start+begin;
                             let finish=hit.source_start+end;
-                            product_source["start"]=json!(utf16(raw,start));
-                            product_source["end"]=json!(utf16(raw,finish));
-                            product_source["text"]=json!(&hit.raw[begin..end]);
-                            // TS analyzes product NameEvidence once and
-                            // exposes the same narrowed source span in both
-                            // Item.sources and the top-level evidence list.
-                            // Previously Rust narrowed only Item.sources.
-                            events[hit.evidence].start=start;
-                            events[hit.evidence].end=finish;
+                            // Update the cached endpoint coordinates using
+                            // only the changed local range, not the prefix
+                            // of the entire order. Never fabricate a span.
+                            let e=&events[hit.evidence];
+                            if raw.get(start..finish)==Some(&hit.raw[begin..end]){
+                                let old=features.positions[hit.evidence][0];
+                                let adjusted=if start>=e.start{
+                                    let delta=&raw[e.start..start];
+                                    (old.0+delta.chars().count(),old.1+delta.encode_utf16().count())
+                                }else{
+                                    let delta=&raw[start..e.start];
+                                    (old.0-delta.chars().count(),old.1-delta.encode_utf16().count())
+                                };
+                                let tail=&raw[start..finish];
+                                let last=(adjusted.0+tail.chars().count(),adjusted.1+tail.encode_utf16().count());
+                                features.positions[hit.evidence]=[adjusted,last];
+                                product_source["start"]=json!(adjusted.1);
+                                product_source["end"]=json!(last.1);
+                                product_source["text"]=json!(tail);
+                                span_changed|=e.start!=start||e.end!=finish;
+                                events[hit.evidence].start=start;
+                                events[hit.evidence].end=finish;
+                            }
                         }
                     }
                 }
             }
             let mut sources=vec![product_source];
             if let Some(qi)=selected_qty {
-                sources.push(source_json(raw,&events[qi],&rid,&id));
+                sources.push(source_json(raw,&events[qi],features.utf16_span(qi),&rid,&id));
                 events[qi].item_id=Some(id.clone());
                 events[qi].recipient=Some(idx);
             }
@@ -1916,7 +1938,7 @@ fn assign_document(document:ExtractedDocument<'_>,state:&Value,client:Option<&Va
                     issues.retain(|s|!s.as_str().unwrap_or("").contains("수량"));
                 }
                 recipients[idx]["items"][item_idx]["sources"].as_array_mut().expect("item sources")
-                    .push(source_json(raw,&events[q],&rid,&id));
+                    .push(source_json(raw,&events[q],features.utf16_span(q),&rid,&id));
                 events[q].recipient=Some(idx);
                 events[q].item_id=Some(id);
             }
@@ -1926,13 +1948,21 @@ fn assign_document(document:ExtractedDocument<'_>,state:&Value,client:Option<&Va
     // Source order-evidence.ts sorts all evidence by source position before
     // assigning and returning candidates. A quantity inserted ahead of its
     // corresponding product in Rust must not reverse the public array order.
-    let mut ordered=events.iter().collect::<Vec<_>>();
-    ordered.sort_by_key(|e|(e.start,e.end));
-    let mut unassigned=Vec::new();
-    for e in &ordered {
-        if e.recipient.is_none(){unassigned.push(e_json(raw,e)["id"].clone());}
+    if span_changed&&features.ordered.windows(2).any(|w|{
+        let a=&events[w[0]];let b=&events[w[1]];
+        (a.start,a.end)>(b.start,b.end)
+    }){
+        features.ordered.sort_by_key(|&i|(events[i].start,events[i].end,i));
     }
-    for e in &events {
+    let mut unassigned=Vec::new();
+    for &i in &features.ordered {
+        let e=&events[i];
+        if e.recipient.is_none(){
+            let (start,end)=features.utf16_span(i);
+            unassigned.push(json!(format!("{}:{}:{}",e.kind,start,end)));
+        }
+    }
+    for (i,e) in events.iter().enumerate() {
         if (e.kind=="product" || e.kind=="quantity") && e.recipient.is_none() {
             let idx=owner_index(anchors,&events,e.start);
             // Indexing a missing JSON key creates null. Check the array
@@ -1943,11 +1973,12 @@ fn assign_document(document:ExtractedDocument<'_>,state:&Value,client:Option<&Va
                 recipients[idx]["unassignedEvidence"]=json!([]);
             }
             recipients[idx]["unassignedEvidence"].as_array_mut()
-                .expect("unassigned evidence array").push(e_json(raw,e));
+                .expect("unassigned evidence array").push(e_json(raw,e,features.utf16_span(i)));
         }
     }
-    let candidates: Vec<Value> = ordered.iter().map(|e| {
-        let mut candidate=e_json(raw,e);
+    let candidates: Vec<Value> = features.ordered.iter().map(|&i| {
+        let e=&events[i];
+        let mut candidate=e_json(raw,e,features.utf16_span(i));
         if let Some(idx) = e.recipient {
             candidate["recipientId"]=recipients[idx]["id"].clone();
         }
@@ -2470,6 +2501,29 @@ mod tests {
         assert_eq!(near_role_block(&["N","T","A"],&["N","A","T"]),"adjacent_swap");
         assert_eq!(near_role_block(&["N","T"],&["N","A","T"]),"one_extra");
         assert_eq!(near_role_block(&["N","A","T"],&["N","T"]),"one_missing");
+    }
+    #[test]
+    fn output_evidence_reuses_indexed_utf16_positions(){
+        let state=state();
+        let raw="수취인: 김가상😀\n010-0000-0001\n709(블랙) 2개";
+        let output=analyze(raw,&state,None).unwrap();
+        let units=raw.encode_utf16().collect::<Vec<_>>();
+        let candidates=output["candidates"].as_array().unwrap();
+        for e in candidates{
+            let a=e["start"].as_u64().unwrap() as usize;
+            let b=e["end"].as_u64().unwrap() as usize;
+            assert_eq!(e["text"],String::from_utf16(&units[a..b]).unwrap());
+        }
+        for row in output["recipients"].as_array().unwrap(){
+            for item in row["items"].as_array().unwrap(){
+                for e in item["sources"].as_array().unwrap(){
+                    let a=e["start"].as_u64().unwrap() as usize;
+                    let b=e["end"].as_u64().unwrap() as usize;
+                    assert_eq!(e["text"],String::from_utf16(&units[a..b]).unwrap());
+                }
+            }
+        }
+        assert!(candidates.windows(2).all(|w|w[0]["start"].as_u64()<=w[1]["start"].as_u64()));
     }
     #[test]
     fn document_feature_character_positions_distinguish_utf16_and_scalar(){
