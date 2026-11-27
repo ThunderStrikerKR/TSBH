@@ -125,6 +125,20 @@ pub fn query_manual_products(
     major: &str,
     brand: &str,
 ) -> Result<ManualProductRows, String> {
+    query_product_picker(gateway,cached,query,client_id,major,brand,None,&Default::default())
+}
+
+pub(crate) fn query_reference_products(
+    gateway:&dyn BandoGateway,cached:Option<Value>,query:&str,major:&str,brand:&str,
+    eligible:Option<&std::collections::HashSet<String>>,excluded:&std::collections::HashSet<String>,
+)->Result<ManualProductRows,String>{
+    query_product_picker(gateway,cached,query,"",major,brand,eligible,excluded)
+}
+
+fn query_product_picker(
+    gateway:&dyn BandoGateway,cached:Option<Value>,query:&str,client_id:&str,major:&str,brand:&str,
+    eligible:Option<&std::collections::HashSet<String>>,excluded:&std::collections::HashSet<String>,
+)->Result<ManualProductRows,String>{
     let catalog = match cached {
         Some(value) => value,
         None => gateway.load_catalog()?,
@@ -137,8 +151,11 @@ pub fn query_manual_products(
         .ok_or("Rust 상품 검색 결과 형식 오류")?;
     let all = catalog.get("products").and_then(Value::as_array)
         .ok_or("상품 목록이 없습니다.")?;
+    let filtered=ids.iter().filter(|value|value.as_str().is_none_or(|id|
+        eligible.is_none_or(|allowed|allowed.contains(id)) && !excluded.contains(id)
+    )).cloned().collect::<Vec<_>>();
     let products = product_rows_by_ids(
-        all, ids, true, 100,
+        all, &filtered, true, 100,
         "Rust 상품 검색 ID 오류",
         "상품 ID와 목록이 일치하지 않습니다.",
     )?;
