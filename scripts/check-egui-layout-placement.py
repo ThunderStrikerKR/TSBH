@@ -64,6 +64,9 @@ RULES = (
     ("associated positioned UI helper", re.compile(r"\bUi\s*::\s*(?:place|put|allocate_ui_at_rect|allocate_new_ui)\s*\(")),
     ("raw UI allocation", re.compile(r"\.\s*(?:allocate_exact_size|allocate_space|allocate_ui_with_layout|allocate_at_least|add_sized|allocate_response|allocate_painter|allocate_ui)\s*(?:::<[^>]*>\s*)?\(")),
     ("associated UI allocation", re.compile(r"\bUi\s*::\s*(?:allocate_exact_size|allocate_space|allocate_ui_with_layout|allocate_at_least|add_sized|allocate_response|allocate_painter|allocate_ui)\s*\(")),
+    ("raw clip API", re.compile(r"\.\s*(?:set_clip_rect|with_clip_rect|shrink_clip_rect)\s*\(")),
+    ("associated clip API", re.compile(r"\b(?:Ui|Painter)\s*::\s*(?:set_clip_rect|with_clip_rect|shrink_clip_rect)\s*\(")),
+    ("owner pane clip replacement", re.compile(r"\.\s*use_owner_pane_clip\s*\(")),
     ("raw Ui.put", re.compile(r"\b(?:ui|root|pane|child|row|body|host|slot|cell|panel|content|parent|control)\s*\.\s*put\s*\(")),
 )
 
@@ -84,6 +87,14 @@ def violations(name, source):
                 tail = code[match.start():]
                 if prefix.endswith("self") and re.match(r"\.\s*(?:allocate_exact_size|allocate_space|allocate_ui_with_layout|add_sized|allocate_response)\s*\(\s*aligned_allocation_size\s*\(", tail):
                     continue
+            if rule == "raw clip API" and name == OWNER:
+                prefix = code[max(0, match.start()-5):match.start()]
+                tail = code[match.start():]
+                if prefix.endswith("self") and re.match(r"\.\s*(?:set_clip_rect\s*\(\s*(?:self\.clip_rect\(\)\.intersect\(requested\)|owner_pane)\s*\)|with_clip_rect\s*\(\s*requested\s*\))", tail):
+                    continue
+            if rule == "owner pane clip replacement" and name == "workflow_board_ui.rs":
+                if re.match(r"\.\s*use_owner_pane_clip\s*\(\s*pane_clip\s*\)", code[match.start():]):
+                    continue
             findings.append((code.count("\n", 0, match.start()) + 1, rule))
     if name == OWNER and owner_calls != 1:
         findings.append((1, "expected exactly one raw builder owner call"))
@@ -101,6 +112,15 @@ def self_test():
     assert violations("screen.rs", "ui.place(rect, widget);")
     assert violations("screen.rs", "ui.put(rect, widget);")
     assert not violations("screen.rs", "states.put(id, state);")
+    for api in ("set_clip_rect", "with_clip_rect", "shrink_clip_rect"):
+        assert violations("screen.rs", f"ui.{api}(rect);")
+        assert violations("screen.rs", f"Painter::{api}(painter, rect);")
+    assert not violations("screen.rs", "ui.restrict_shared_clip(rect); painter.with_shared_clip(rect);")
+    assert violations("screen.rs", "ui.use_owner_pane_clip(pane_clip);")
+    assert not violations("workflow_board_ui.rs", "ui.use_owner_pane_clip(pane_clip);")
+    assert violations("workflow_board_ui.rs", "ui.use_owner_pane_clip(other_clip);")
+    assert not violations(OWNER, "self.max_rect(aligned_rect(rect)); self.set_clip_rect(self.clip_rect().intersect(requested)); self.set_clip_rect(owner_pane); self.with_clip_rect(requested);")
+    assert violations(OWNER, "self.max_rect(aligned_rect(rect)); self.set_clip_rect(rect);")
     assert not violations("screen.rs", "ui.shared_allocate_exact_size(size, sense);")
     for api in ("allocate_exact_size", "allocate_space", "allocate_ui_with_layout",
                 "allocate_at_least", "add_sized", "allocate_response", "allocate_painter", "allocate_ui"):
