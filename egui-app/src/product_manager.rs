@@ -450,6 +450,26 @@ fn selected_product_snapshot(products:&[Value],selection:&Value)->Option<Value>{
     ).cloned()
 }
 
+#[cfg(test)]
+mod selection_snapshot_tests{
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn replacement_resolves_exact_independent_product_and_variant(){
+        let product=json!({"id":"p1","name":"BD 709","active":true,
+            "variants":[{"id":"v1","color":"Black","url":"https://example.com/product"}]});
+        let rows=vec![product.clone(),
+            json!({"id":"p2","active":false,"variants":[{"id":"v2"}]}),
+            json!({"id":"p3","requiresOption":true,"variants":[{"id":"v3"}]}),
+            json!({"id":"p4","variants":[{"id":"v4"},{"id":"v5"}]})];
+        assert_eq!(selected_product_snapshot(&rows,&json!({"productId":"p1","variantId":"v1"})),Some(product));
+        for (id,variant) in [("p1","wrong"),("p2","v2"),("p3","v3"),("p4","v4"),("missing","v1"),("p1","")]{
+            assert!(selected_product_snapshot(&rows,&json!({"productId":id,"variantId":variant})).is_none());
+        }
+    }
+}
+
 fn product_summary_counts(catalog:Option<&Value>)->Option<[usize;4]>{
     let catalog=catalog?;
     Some([
