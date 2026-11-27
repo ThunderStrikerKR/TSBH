@@ -1446,6 +1446,95 @@ const MIN_BLEND_ORDERS:usize=10;
 type BlendGroup=(String,String,String);
 struct BlendSample{
     legacy:Vec<f64>,shadow:Vec<f64>,actual:usize,label:&'static str,
+    legacy_choice:usize,transfer_block:Option<&'static str>,
+}
+// A source transfer must be lossless. Never overwrite another recipient's
+// delivery field, move a fragment of a combined value, or detach explicit
+// same-line identity. This check uses only the first analysis, no final label.
+fn owner_transfer_block(units:&[u16],first:&Value,d:&Value,s:Span,old:&str)->Option<&'static str>{
+    let fail=||->Option<Option<&'static str>>{
+        let index=OwnerIndex::new(units,&first["recipients"]);
+        let links=index.links.get(&s)?;
+        if links.len()!=1{return Some(Some("ambiguous_source_link"));}
+        let link=&links[0];
+        if !delivery(link.field){return Some(Some("not_delivery_field"));}
+        let source=String::from_utf16(&units[s.0..s.1]).ok()?;
+        if source.trim()!=link.value.trim(){return Some(Some("partial_or_modified_source_value"));}
+        if index.links.keys().any(|other|*other!=s&&other.0<s.1&&s.0<other.1){
+            return Some(Some("overlapping_source_links"));
+        }
+        let old_anchor=index.unique_anchor(link.row)?;
+        if position(units,&d["selectedAnchor"])!=Some(old_anchor){return None;}
+        let target=if old=="next"{"previous"}else{"next"};
+        let mut candidates=rows(&d["candidates"]).filter(|c|c["relation"]==target);
+        let candidate=candidates.next()?;if candidates.next().is_some(){return None;}
+        let anchor=position(units,&candidate["anchor"])?;
+        if !index.has_unique_anchor(anchor)||anchor==old_anchor{return None;}
+        let owners=index.names.get(&anchor)?;
+        let target_row=*owners.iter().next()?;
+        let row=first["recipients"].as_array()?.get(target_row)?;
+        let between=if old_anchor.1<=s.0{&units[old_anchor.1..s.0]}
+            else if s.1<=old_anchor.0{&units[s.1..old_anchor.0]}else{return None;};
+        if !between.iter().any(|u|*u==10||*u==13){return Some(Some("same_line_explicit_identity_protected"));}
+        let occupied=if link.field=="address"{
+            row["address"].as_str().is_some_and(|v|!v.trim().is_empty())
+        }else{["phone","mobile"].iter().any(|field|
+            row[*field].as_str().is_some_and(|v|!v.trim().is_empty()))};
+        if occupied{return Some(Some("target_delivery_field_occupied"));}
+        // Even if the field value is blank, a conflicting source link is
+        // not an available destination.
+        if rows(&row["sources"]).any(|source|source["field"].as_str().is_some_and(|field|
+            if link.field=="address"{field=="address"}else{contact(field)})){
+            return Some(Some("target_delivery_source_exists"));
+        }
+        Some(None)
+    };
+    fail().unwrap_or(Some("unverified_source_or_anchor"))
+}
+const MIN_CHANGE_PROXY:f64=0.80;
+const MIN_CHANGE_MARGIN:f64=0.25;
+const MAX_CHANGE_OUTSIDE:f64=0.05;
+// Pure diagnostic proposal. No operational authority is issued even if
+// every screening check passes. Never consume evaluation labels here.
+fn screen_blend_change(sample:&BlendSample,w:Option<f64>)->(&'static str,Option<usize>){
+    let Some(w)=w.filter(|w|w.is_finite()&&(0.0..=1.0).contains(w))else{return ("missing_weight",None);};
+    let valid=|v:&[f64]|v.len()==3&&v.iter().all(|p|p.is_finite()&&*p>=0.0&&*p<=1.0)&&
+        (v.iter().sum::<f64>()-1.0).abs()<1e-8;
+    if sample.legacy_choice>1||!valid(&sample.legacy)||!valid(&sample.shadow){return ("invalid_distribution",None);}
+    let p=blend_distribution(&sample.legacy,&sample.shadow,w);
+    let target=1-sample.legacy_choice;
+    if p[sample.legacy_choice]>=p[target]{return ("retain_legacy",None);}
+    if let Some(reason)=sample.transfer_block{return (reason,None);}
+    if w<=0.0{return ("learning_weight_zero",None);}
+    if p[2]>MAX_CHANGE_OUTSIDE+1e-10{return ("outside_mass_too_high",None);}
+    if p[target]<MIN_CHANGE_PROXY-1e-10{return ("low_combined_support",None);}
+    if p[target]-p[sample.legacy_choice].max(p[2])<MIN_CHANGE_MARGIN-1e-10{return ("small_combined_margin",None);}
+    if sample.shadow[target]<=sample.shadow[sample.legacy_choice].max(sample.shadow[2])+1e-10{
+        return ("shadow_does_not_support_change",None);
+    }
+    ("diagnostic_proposal_only",Some(target))
+}
+#[derive(Default)]
+struct ChangeScreenMetrics{
+    considered:usize,proposed:usize,improved:usize,worsened:usize,
+    reasons:BTreeMap<&'static str,usize>,
+}
+impl ChangeScreenMetrics{
+    fn observe(&mut self,s:&BlendSample,w:Option<f64>){
+        self.considered+=1;
+        let (reason,target)=screen_blend_change(s,w);
+        *self.reasons.entry(reason).or_default()+=1;
+        if let Some(target)=target{
+            self.proposed+=1;
+            if target==s.actual&&s.legacy_choice!=s.actual{self.improved+=1;}
+            if target!=s.actual&&s.legacy_choice==s.actual{self.worsened+=1;}
+        }
+    }
+    fn wire(&self)->Value{
+        json!({"considered":self.considered,"diagnosticProposals":self.proposed,
+            "improvedAgainstOperationalLabel":self.improved,"worsenedAgainstOperationalLabel":self.worsened,
+            "reasons":self.reasons,"actualChanges":0,"eligibleForAutomaticDecision":false})
+    }
 }
 fn blend_distribution(a:&[f64],b:&[f64],w:f64)->Vec<f64>{
     a.iter().zip(b).map(|(x,y)|(1.0-w)*x+w*y).collect()
@@ -1621,7 +1710,8 @@ pub(super) fn learn_blend_weights(payload:&Value)->Result<Value,String>{
                 // BTreeSet order: next, previous, outside.
                 Some(((kind.to_owned(),route.to_owned(),level.to_owned()),BlendSample{
                     legacy:vec![p,1.0-p,0.0],shadow:shadow_transform(&sample.distribution,t,smoothing),
-                    actual:sample.actual,label}))
+                    actual:sample.actual,label,legacy_choice:usize::from(old=="previous"),
+                    transfer_block:owner_transfer_block(&units,first,d,s,old)}))
             })();
             if let Some((key,sample))=candidate{local.entry(key).or_default().push(sample);}
             else{unavailable+=1;}
@@ -1637,12 +1727,16 @@ pub(super) fn learn_blend_weights(payload:&Value)->Result<Value,String>{
         }
     }
     let mut totals=BTreeMap::<(BlendGroup,String),BlendTest>::new();
+    let mut screens=BTreeMap::<(BlendGroup,String),ChangeScreenMetrics>::new();
     for order in tests{
         for (key,samples) in order{
             let weight=fits.get(&key).and_then(BlendFit::weight);
             let mut local=BTreeMap::<&str,BlendTest>::new();
             for sample in samples{
-                for label in [sample.label,"mixed_proxy"]{local.entry(label).or_default().observe(Some(&sample),weight);}
+                for label in [sample.label,"mixed_proxy"]{
+                    local.entry(label).or_default().observe(Some(&sample),weight);
+                    screens.entry((key.clone(),label.to_owned())).or_default().observe(&sample,weight);
+                }
             }
             for (label,metrics) in local{totals.entry((key.clone(),label.to_owned())).or_default().merge(metrics);}
         }
@@ -1663,6 +1757,15 @@ pub(super) fn learn_blend_weights(payload:&Value)->Result<Value,String>{
         "unavailableBothModelsObservations":unavailable,"excludedOrders":excluded,"lateLabelOrders":late,
         "overallTestCoverage":(eligible_test>0).then(||covered as f64/eligible_test as f64),
         "models":models,"testGroups":groups,"outsideBucketSelectable":false,
+        "changeSafety":{"policyVersion":1,"status":"diagnostic_only",
+            "minimumCombinedProxySupport":MIN_CHANGE_PROXY,"minimumCombinedMargin":MIN_CHANGE_MARGIN,
+            "maximumOutsideProxySupport":MAX_CHANGE_OUTSIDE,"requiresShadowAgreement":true,
+            "scope":"initial_recipient_ownership_only","runtimeManualLockVerified":false,
+            "runtimeDestinationValidationVerified":false,"independentApprovalVerified":false,
+            "automaticChangeAuthorized":false,
+            "groups":screens.into_iter().map(|(((kind,route,level),label),v)|json!({
+                "sourceKind":kind,"legacyRoute":route,"contextLevel":level,"labelKind":label,"metrics":v.wire()
+            })).collect::<Vec<_>>()},
         "representativeLabelsVerified":false,"historicalModelVerified":false,"sourceProvenanceVerified":false,
         "calibratedProbability":null,"eligibleForAutomaticDecision":false,"decisionChanged":false}))
 }
@@ -1816,13 +1919,13 @@ mod tests{
     #[test]
     fn blend_fit_prefers_legacy_on_ties_and_requires_independent_orders(){
         let equal=||BlendSample{legacy:vec![0.7,0.3,0.0],shadow:vec![0.7,0.3,0.0],
-            actual:0,label:"unchanged_proxy"};
+            actual:0,label:"unchanged_proxy",legacy_choice:0,transfer_block:None};
         let mut fit=BlendFit::default();fit.add_order(&(0..100).map(|_|equal()).collect::<Vec<_>>());
         assert!(fit.weight().is_none());
         for _ in 1..10{fit.add_order(&[equal()]);}
         assert_eq!(fit.weight(),Some(0.0));
         let good=||BlendSample{legacy:vec![0.1,0.9,0.0],shadow:vec![0.9,0.05,0.05],
-            actual:0,label:"explicit_correction"};
+            actual:0,label:"explicit_correction",legacy_choice:1,transfer_block:None};
         let mut other=BlendFit::default();for _ in 0..10{other.add_order(&[good()]);}
         assert_eq!(other.weight(),Some(1.0));
         let s=good();let p=blend_distribution(&s.legacy,&s.shadow,0.5);
@@ -1832,12 +1935,47 @@ mod tests{
     #[test]
     fn blend_test_compares_same_covered_observations(){
         let s=BlendSample{legacy:vec![0.0,1.0,0.0],shadow:vec![1.0,0.0,0.0],
-            actual:0,label:"explicit_correction"};
+            actual:0,label:"explicit_correction",legacy_choice:1,transfer_block:None};
         let mut local=BlendTest::default();local.observe(Some(&s),Some(0.5));local.observe(Some(&s),None);
         let mut total=BlendTest::default();total.merge(local);
         let v=total.wire();assert_eq!(v["coverage"],0.5);
         assert_eq!(v["legacyBrierOnCovered"],2.0);assert_eq!(v["shadowBrierOnCovered"],0.0);
         assert_eq!(v["combinedBrierOnCovered"],0.5);
+    }
+    #[test]
+    fn blend_change_screen_never_grants_authority_and_checks_structural_blocks(){
+        let mut s=BlendSample{legacy:vec![0.05,0.95,0.0],shadow:vec![0.95,0.04,0.01],
+            actual:0,label:"explicit_correction",legacy_choice:1,transfer_block:None};
+        assert_eq!(screen_blend_change(&s,Some(1.0)),("diagnostic_proposal_only",Some(0)));
+        assert_eq!(screen_blend_change(&s,None),("missing_weight",None));
+        assert_eq!(screen_blend_change(&s,Some(0.0)),("retain_legacy",None));
+        s.transfer_block=Some("target_delivery_field_occupied");
+        assert_eq!(screen_blend_change(&s,Some(1.0)),("target_delivery_field_occupied",None));
+        s.transfer_block=None;s.shadow=vec![0.80,0.10,0.10];
+        assert_eq!(screen_blend_change(&s,Some(1.0)),("outside_mass_too_high",None));
+        s.shadow=vec![0.75,0.24,0.01];
+        assert_eq!(screen_blend_change(&s,Some(1.0)),("low_combined_support",None));
+        s.shadow=vec![0.95,0.04,0.01];
+        let mut metrics=ChangeScreenMetrics::default();metrics.observe(&s,Some(1.0));
+        assert_eq!(metrics.wire()["improvedAgainstOperationalLabel"],1);
+        assert_eq!(metrics.wire()["actualChanges"],0);
+        assert_eq!(metrics.wire()["eligibleForAutomaticDecision"],false);
+    }
+    #[test]
+    fn owner_transfer_checks_original_links_and_occupied_target(){
+        let mut p=owner_fixture();
+        let raw=p["confirmationSnapshot"]["raw"].as_str().unwrap().encode_utf16().collect::<Vec<_>>();
+        let first=&p["confirmationSnapshot"]["recognitionBaseline"]["initialAnalysis"];
+        let d=&first["recipientOwnerTrace"]["decisions"][0];
+        assert_eq!(owner_transfer_block(&raw,first,d,(6,19),"previous"),None);
+        p["confirmationSnapshot"]["recognitionBaseline"]["initialAnalysis"]["recipients"][1]["mobile"]=json!("010-0000-0000");
+        let first=&p["confirmationSnapshot"]["recognitionBaseline"]["initialAnalysis"];
+        let d=&first["recipientOwnerTrace"]["decisions"][0];
+        assert_eq!(owner_transfer_block(&raw,first,d,(6,19),"previous"),Some("target_delivery_field_occupied"));
+        p["confirmationSnapshot"]["recognitionBaseline"]["initialAnalysis"]["recipients"][0]["mobile"]=json!("010-1234-5678 추가");
+        let first=&p["confirmationSnapshot"]["recognitionBaseline"]["initialAnalysis"];
+        let d=&first["recipientOwnerTrace"]["decisions"][0];
+        assert_eq!(owner_transfer_block(&raw,first,d,(6,19),"previous"),Some("partial_or_modified_source_value"));
     }
     fn owner_fixture()->Value{
         // Emoji makes the UTF-16 positions differ from byte offsets.
