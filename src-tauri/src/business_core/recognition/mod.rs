@@ -39,26 +39,33 @@ impl CandidateDisposition {
         !matches!(self,Self::CompetingType|Self::CompetingQuantity|Self::UnclassifiedSegment)
     }
 }
+// One source key per role and byte span. Selected evidence is referenced
+// by index so the existing assignment projection need not duplicate text.
 #[derive(Default)]
-struct DeferredCandidates {
-    entries:HashMap<(&'static str,usize,usize),CandidateDisposition>,
-    // Product identities for spans suppressed by a provisional type choice.
-    // Key by absolute source span and identity, not by the winning name.
-    competing_products:HashMap<(usize,usize,String),bool>,
+struct CandidateRecord {
+    selected:Option<usize>,
+    disposition:Option<CandidateDisposition>,
+    products:HashMap<String,bool>,
+}
+#[derive(Default)]
+struct CommonCandidates {
+    entries:HashMap<(&'static str,usize,usize),CandidateRecord>,
+    product_count:usize,
     truncated:bool,
 }
-impl DeferredCandidates {
+impl CommonCandidates {
     fn record(&mut self,raw:&str,kind:&'static str,start:usize,end:usize,reason:CandidateDisposition){
         if start>=end||raw.get(start..end).is_none(){self.truncated=true;return;}
         let key=(kind,start,end);
-        if let Some(existing)=self.entries.get_mut(&key){
-            if reason.hard()&&!existing.hard(){*existing=reason;}
-            return;
+        if !self.entries.contains_key(&key)&&self.entries.len()>=4096{
+            self.truncated=true;return;
         }
-        if self.entries.len()>=4096{self.truncated=true;return;}
-        self.entries.insert(key,reason);
+        let entry=self.entries.entry(key).or_default();
+        if entry.disposition.is_none_or(|old|reason.hard()&&!old.hard()){
+            entry.disposition=Some(reason);
+        }
     }
-    fn record_competing_products(&mut self,raw:&str,offset:usize,len:usize,result:&CachedProductDecision){
+    fn record_products(&mut self,raw:&str,offset:usize,len:usize,result:&CachedProductDecision,competing_type:bool){
         self.truncated|=result.truncated;
         for c in &result.candidates{
             let (a,b)=c.span;
@@ -66,19 +73,38 @@ impl DeferredCandidates {
                 self.truncated=true;continue;
             }
             let (a,b)=(offset+a,offset+b);
-            let key=(a,b,c.product_id.clone());
-            if let Some(literal)=self.competing_products.get_mut(&key){
-                *literal|=c.literal;continue;
+            let key=("product",a,b);
+            if self.entries.get(&key).is_some_and(|e|e.products.contains_key(&c.product_id)){
+                let entry=self.entries.get_mut(&key).unwrap();
+                *entry.products.get_mut(&c.product_id).unwrap()|=c.literal;
+                if competing_type&&entry.disposition.is_none(){
+                    entry.disposition=Some(CandidateDisposition::CompetingType);
+                }
+                continue;
             }
-            if self.competing_products.len()>=4096{
-                self.truncated=true;break;
+            if self.product_count>=4096||(!self.entries.contains_key(&key)&&self.entries.len()>=4096){
+                self.truncated=true;continue;
             }
-            self.record(raw,"product",a,b,CandidateDisposition::CompetingType);
-            self.competing_products.insert(key,c.literal);
+            let entry=self.entries.entry(key).or_default();
+            entry.products.insert(c.product_id.clone(),c.literal);
+            self.product_count+=1;
+            if competing_type&&entry.disposition.is_none(){
+                entry.disposition=Some(CandidateDisposition::CompetingType);
+            }
         }
     }
+    fn index_selected(&mut self,events:&[Evidence]){
+        // A diagnostic budget may truncate alternatives, but never drop
+        // already selected evidence needed by the production projection.
+        for (index,e) in events.iter().enumerate(){
+            self.entries.entry((e.kind,e.start,e.end)).or_default().selected=Some(index);
+        }
+    }
+    fn disposition(&self,kind:&'static str,start:usize,end:usize)->Option<CandidateDisposition>{
+        self.entries.get(&(kind,start,end)).and_then(|r|r.disposition)
+    }
     fn excludes(&self,kind:&'static str,start:usize,end:usize)->bool{
-        self.entries.get(&(kind,start,end)).is_some_and(|reason|reason.hard())
+        self.disposition(kind,start,end).is_some_and(CandidateDisposition::hard)
     }
 }
 #[derive(Clone, Debug)]
@@ -96,8 +122,6 @@ struct ProductHit {
     line: usize,
     raw: String,
     decision: Value,
-    source_candidates:Vec<model::SourceCandidate>,
-    source_len:usize,
     quantities: Vec<usize>,
     common: bool,
     each: bool,
@@ -1094,7 +1118,7 @@ fn near_role_block(a:&[&str],b:&[&str])->&'static str{
     if short[i..]==long[i+1..]{kind}else{"different"}
 }
 impl DocumentFeatures{
-    fn new(raw:&str,events:&[Evidence],hits:&[ProductHit],deferred:&DeferredCandidates)->Self{
+    fn new(raw:&str,events:&[Evidence],hits:&[ProductHit],deferred:&CommonCandidates)->Self{
         let mut ordered=(0..events.len()).collect::<Vec<_>>();
         ordered.sort_by_key(|&i|(events[i].start,events[i].end));
         let mut ranks=vec![0;events.len()];
@@ -1119,7 +1143,7 @@ impl DocumentFeatures{
         let mut roles=Vec::new();
         let mut ranges:Vec<(usize,usize)>=Vec::new();
         let mut last_end=0usize;
-        let mut ambiguous=invalid_positions||deferred.truncated||deferred.entries.values().any(|r|!r.hard());
+        let mut ambiguous=invalid_positions||deferred.truncated||deferred.entries.values().any(|r|r.disposition.is_some_and(|d|!d.hard()));
         for (rank,&i) in ordered.iter().enumerate(){
             let event=&events[i];
             let Some(role)=event_roles[i]else{continue};
@@ -1225,7 +1249,7 @@ impl DocumentFeatures{
     }
 }
 fn retain_unclassified_fragments(raw:&str,lines:&[Line<'_>],non_delivery:&HashSet<usize>,
-    mut spans:Vec<(usize,usize)>,deferred:&mut DeferredCandidates){
+    mut spans:Vec<(usize,usize)>,deferred:&mut CommonCandidates){
     spans.retain(|&(a,b)|a<b&&raw.get(a..b).is_some());
     spans.sort_unstable();
     let (mut cursor,mut covered_end)=(0usize,0usize);
@@ -1266,7 +1290,7 @@ struct ExtractedDocument<'a>{
     product_hits:Vec<ProductHit>,
     geometry:SourceGeometry,
     delivery:DeliveryGeometry,
-    exclusions:DeferredCandidates,
+    exclusions:CommonCandidates,
     features:DocumentFeatures,
 }
 fn extract_document<'a>(raw:&'a str,state:&Value,client:Option<&Value>)->ExtractedDocument<'a>{
@@ -1279,7 +1303,7 @@ fn extract_document<'a>(raw:&'a str,state:&Value,client:Option<&Value>)->Extract
         &person_label,&phone,&mut search);
     let geometry=SourceGeometry::new(raw);
     let mut events: Vec<Evidence> = Vec::new();
-    let mut exclusions=DeferredCandidates::default();
+    let mut exclusions=CommonCandidates::default();
     let mut product_hits: Vec<ProductHit> = Vec::new();
     // Direct translation of order-evidence.ts:140-170: parenthesized
     // delivery requests and note continuation remain separate evidence.
@@ -1449,7 +1473,7 @@ fn extract_document<'a>(raw:&'a str,state:&Value,client:Option<&Value>)->Extract
             if explicit_name.is_none()&&!after_label{
                 let candidate=&line.text[begin..end];
                 let matched=search.result(candidate);
-                exclusions.record_competing_products(raw,line.start+begin,candidate.len(),matched);
+                exclusions.record_products(raw,line.start+begin,candidate.len(),matched,true);
             }
             add_match(&mut events,line,begin,end,"name",line.text[begin..end].to_owned(),
                 if explicit_name.is_some()||after_label{"명시적 수취인 이름"}
@@ -1526,7 +1550,8 @@ fn extract_document<'a>(raw:&'a str,state:&Value,client:Option<&Value>)->Extract
         // Never synthesize a new string and then treat its indexes as offsets
         // into raw: UTF-8/UTF-16 source-evidence contract must be lossless.
         let cached=search.result(skip_until).clone();
-        exclusions.truncated|=cached.truncated;
+        let offset = line.text.find(trimmed).unwrap_or(0);
+        exclusions.record_products(raw,line.start+offset,skip_until.len(),&cached,false);
         let matched=cached.output;
         let mut quantity_values = if trimmed.contains('|') {
             let model_end=matched.get("evidence").and_then(Value::as_object)
@@ -1542,7 +1567,6 @@ fn extract_document<'a>(raw:&'a str,state:&Value,client:Option<&Value>)->Extract
                         .any(|name|model::find_term(skip_until,name,true).is_some())))
             }
         };
-        let offset = line.text.find(trimmed).unwrap_or(0);
         // parser.ts:537-552: a compound sale-unit phrase containing
         // "2개" is part of the option name, not an order quantity.
         if quantity_values.len()==1 {
@@ -1584,7 +1608,7 @@ fn extract_document<'a>(raw:&'a str,state:&Value,client:Option<&Value>)->Extract
         product_hits.push(ProductHit {
             evidence:product_evidence,source_start:line.start+offset,
             line:line.number,raw:original_product_line.to_owned(),
-            decision:matched,source_candidates:cached.candidates,source_len:skip_until.len(),
+            decision:matched,
             quantities:quantity_indexes,
             common:Regex::new(r"공통|모두|전부|전원|각\s*수취인|같은\s*상품")
                 .expect("common item").is_match(trimmed),
@@ -1655,14 +1679,8 @@ fn extract_document<'a>(raw:&'a str,state:&Value,client:Option<&Value>)->Extract
     // Preserve meaningful uncovered source fragments even when the same
     // logical record already contains a recognized field. Union all known
     // candidate spans in source order, without a second recognition pass.
-    let mut spans=events.iter().map(|e|(e.start,e.end)).collect::<Vec<_>>();
-    spans.extend(exclusions.entries.keys().map(|&(_,a,b)|(a,b)));
-    for hit in &product_hits{
-        spans.extend(hit.source_candidates.iter().filter_map(|c|{
-            let (a,b)=c.span;
-            (a<b&&b<=hit.source_len).then_some((hit.source_start+a,hit.source_start+b))
-        }));
-    }
+    exclusions.index_selected(&events);
+    let spans=exclusions.entries.keys().map(|&(_,a,b)|(a,b)).collect::<Vec<_>>();
     retain_unclassified_fragments(raw,&lines,&non_delivery_segments,spans,&mut exclusions);
     let delivery=DeliveryGeometry::new(&events);
     let features=DocumentFeatures::new(raw,&events,&product_hits,&exclusions);
@@ -1681,17 +1699,13 @@ fn assign_document(document:ExtractedDocument<'_>,state:&Value,client:Option<&Va
     // No blocked candidate may be used as an assignable field. Keep
     // event indexes stable for ProductHit; reject contradictory extraction
     // rather than deleting events after product references were built.
-    if events.iter().any(|e|exclusions.excludes(e.kind,e.start,e.end)){
+    if exclusions.entries.values().any(|r|
+        r.selected.is_some()&&r.disposition.is_some_and(CandidateDisposition::hard)){
         return Err("원문 후보의 채택·제외 상태가 충돌합니다.".into());
     }
-    // All retained product hypotheses must still refer to the exact
-    // searched source slice, including candidates rejected by ranking.
-    if product_hits.iter().any(|h|h.source_candidates.iter().any(|c|{
-        let (a,b)=c.span;
-        a>=b||b>h.source_len||raw.get(h.source_start+a..h.source_start+b).is_none()
-    })){
-        return Err("상품 후보의 원문 위치가 일치하지 않습니다.".into());
-    }
+    // Alternative product offsets were validated when inserted into the
+    // common index. A malformed unselected hypothesis only marks it
+    // truncated; it must not reject otherwise usable order evidence.
     let anchors=&features.anchors;
     // If a document has only one unnamed destination, keep exactly one row.
     if anchors.is_empty() && raw.trim().is_empty() {
@@ -2519,15 +2533,32 @@ mod tests {
         assert_eq!(assign_document(document,&state,None).unwrap(),analyze(raw,&state,None).unwrap());
     }
     #[test]
+    fn common_candidate_index_preserves_selected_and_excluded_roles(){
+        let raw="709";
+        let mut candidates=CommonCandidates::default();
+        candidates.record(raw,"quantity",0,3,CandidateDisposition::CompetingQuantity);
+        candidates.record(raw,"phone",0,3,CandidateDisposition::EmbeddedDigits);
+        let events=vec![Evidence{kind:"product",value:raw.to_owned(),start:0,end:3,
+            line:0,paragraph:0,reason:"synthetic",recipient:None,item_id:None}];
+        candidates.index_selected(&events);
+        assert_eq!(candidates.entries.len(),3);
+        assert_eq!(candidates.entries[&("product",0,3)].selected,Some(0));
+        assert!(!candidates.excludes("quantity",0,3));
+        assert!(candidates.excludes("phone",0,3));
+        assert!(candidates.entries[&("quantity",0,3)].selected.is_none());
+    }
+    #[test]
     fn product_search_retains_pre_rank_candidates_in_extracted_document(){
         let state=state();
         let raw="709 GT-1 2개";
         let doc=extract_document(raw,&state,None);
-        let hit=doc.product_hits.first().expect("product evidence");
+        assert!(!doc.product_hits.is_empty());
         for id in ["p709","pgt"]{
-            let c=hit.source_candidates.iter().find(|c|c.product_id==id&&c.literal)
-                .expect("pre-rank candidate");
-            assert!(raw.get(hit.source_start+c.span.0..hit.source_start+c.span.1).is_some());
+            assert!(doc.exclusions.entries.iter().any(|(&(kind,a,b),r)|
+                kind=="product"&&r.products.get(id)==Some(&true)&&raw.get(a..b).is_some()));
+        }
+        for (i,e) in doc.events.iter().enumerate(){
+            assert_eq!(doc.exclusions.entries[&(e.kind,e.start,e.end)].selected,Some(i));
         }
         assert!(assign_document(doc,&state,None).is_ok());
     }
@@ -2538,9 +2569,10 @@ mod tests {
         let doc=extract_document(raw,&state,None);
         let start=raw.find("GT-1").unwrap();
         assert!(doc.events.iter().any(|e|e.kind=="name"&&e.start==start));
-        assert_eq!(doc.exclusions.competing_products.get(&(start,start+4,"pgt".to_owned())),Some(&true));
-        assert_eq!(doc.exclusions.entries.get(&("product",start,start+4)),
-            Some(&CandidateDisposition::CompetingType));
+        let record=&doc.exclusions.entries[&("product",start,start+4)];
+        assert_eq!(record.products.get("pgt"),Some(&true));
+        assert_eq!(record.disposition,Some(CandidateDisposition::CompetingType));
+        assert!(record.selected.is_none());
         assert!(!doc.exclusions.excludes("product",start,start+4));
         let result=assign_document(doc,&state,None).unwrap();
         assert_eq!(result["recipients"][0]["name"],"GT-1");
@@ -2552,7 +2584,8 @@ mod tests {
         let state=state();
         let raw="수취인: GT-1\n010-0000-0001\n709 1개";
         let doc=extract_document(raw,&state,None);
-        assert!(doc.exclusions.competing_products.is_empty());
+        let start=raw.find("GT-1").unwrap();
+        assert!(!doc.exclusions.entries.contains_key(&("product",start,start+4)));
         let result=assign_document(doc,&state,None).unwrap();
         assert_eq!(result["recipients"][0]["name"],"GT-1");
     }
@@ -2572,8 +2605,8 @@ mod tests {
         let state=state();
         let doc=extract_document(raw,&state,None);
         let start=raw.find("3개").unwrap();
-        assert_eq!(doc.exclusions.entries.get(&("quantity",start,raw.len())),
-            Some(&CandidateDisposition::CompetingQuantity));
+        assert_eq!(doc.exclusions.disposition("quantity",start,raw.len()),
+            Some(CandidateDisposition::CompetingQuantity));
         assert!(!doc.exclusions.excludes("quantity",start,raw.len()));
         let result=assign_document(doc,&state,None).unwrap();
         assert_eq!(result["recipients"][0]["items"][0]["quantity"],2);
@@ -2590,7 +2623,7 @@ mod tests {
         }).collect::<Vec<_>>();
         let raw="x".repeat(kinds.len()*3);
         let geometry=SourceGeometry::new(&raw);
-        let features=DocumentFeatures::new(&raw,&events,&[],&DeferredCandidates::default());
+        let features=DocumentFeatures::new(&raw,&events,&[],&CommonCandidates::default());
         assert_eq!(features.anchors,vec![0,6]);
         assert_eq!(features.roles,vec!["N","T","P","N","T","P"]);
         assert_eq!(features.exact_repeat,2);
@@ -2599,10 +2632,10 @@ mod tests {
         let eval=features.evaluation(&events,&geometry);
         assert_eq!(eval["evaluationKey"],json!([2,["N","T","P"]]));
         assert!(eval["trainingKey"].is_null());
-        let incomplete=DocumentFeatures::new(&raw,&events[..7],&[],&DeferredCandidates::default());
+        let incomplete=DocumentFeatures::new(&raw,&events[..7],&[],&CommonCandidates::default());
         assert_eq!(incomplete.incomplete_tail,1);
         assert_eq!(incomplete.exact_repeat,0);
-        let mut uncertain=DeferredCandidates::default();
+        let mut uncertain=CommonCandidates::default();
         uncertain.truncated=true;
         assert!(DocumentFeatures::new(&raw,&events,&[],&uncertain).evaluation(&events,&geometry)["evaluationKey"].is_null());
         assert!(incomplete.evaluation(&events[..7],&geometry)["evaluationKey"].is_null());
@@ -2619,10 +2652,10 @@ mod tests {
         }).collect::<Vec<_>>();
         let raw="x".repeat(kinds.len()*3);
         let geometry=SourceGeometry::new(&raw);
-        let deferred=DeferredCandidates::default();
+        let deferred=CommonCandidates::default();
         let make_hit=|evidence:usize,common:bool,each:bool|ProductHit{
             evidence,source_start:events[evidence].start,line:events[evidence].line,
-            raw:String::new(),decision:Value::Null,source_candidates:Vec::new(),source_len:1,
+            raw:String::new(),decision:Value::Null,
             quantities:vec![evidence+1],common,each
         };
         let ordinary=DocumentFeatures::new(&raw,&events,&[],&deferred);
@@ -2671,7 +2704,7 @@ mod tests {
             Evidence{kind:"mobile",value:"T".into(),start:6,end:7,line:1,paragraph:0,
                 reason:"synthetic",recipient:None,item_id:None}
         ];
-        let f=DocumentFeatures::new(raw,&events,&[],&DeferredCandidates::default());
+        let f=DocumentFeatures::new(raw,&events,&[],&CommonCandidates::default());
         assert_eq!(f.positions,vec![[(1,2),(2,3)],[(3,4),(4,5)]]);
         let e=f.evaluation(&events,&SourceGeometry::new(raw));
         assert_eq!(e["relations"][0]["utf16Gap"],1);
@@ -2683,13 +2716,13 @@ mod tests {
         let raw="수취인: 김가상 XYZ";
         let lines=physical_lines(raw);
         let name=raw.find("김가상").unwrap();
-        let mut deferred=DeferredCandidates::default();
+        let mut deferred=CommonCandidates::default();
         retain_unclassified_fragments(raw,&lines,&HashSet::new(),
             vec![(name,name+"김가상".len())],&mut deferred);
         let start=raw.find("XYZ").unwrap();
         assert_eq!(deferred.entries.len(),1);
-        assert_eq!(deferred.entries.get(&("segment",start,raw.len())),
-            Some(&CandidateDisposition::UnclassifiedSegment));
+        assert_eq!(deferred.disposition("segment",start,raw.len()),
+            Some(CandidateDisposition::UnclassifiedSegment));
     }
     #[test]
     fn unclassified_records_are_not_promoted_to_fields(){
@@ -2697,8 +2730,8 @@ mod tests {
         let state=state();
         let doc=extract_document(raw,&state,None);
         assert!(doc.events.is_empty());
-        assert_eq!(doc.exclusions.entries.get(&("segment",0,raw.len())),
-            Some(&CandidateDisposition::UnclassifiedSegment));
+        assert_eq!(doc.exclusions.disposition("segment",0,raw.len()),
+            Some(CandidateDisposition::UnclassifiedSegment));
         assert!(!doc.exclusions.excludes("segment",0,raw.len()));
         let result=assign_document(doc,&state,None).unwrap();
         assert_eq!(result["recipients"][0]["items"].as_array().unwrap().len(),0);
@@ -2710,7 +2743,7 @@ mod tests {
         let doc=extract_document(raw,&state,None);
         assert!(!doc.exclusions.truncated);
         let (&(kind,start,end),_)=doc.exclusions.entries.iter()
-            .find(|(_,reason)|**reason==CandidateDisposition::SenderSection).unwrap();
+            .find(|(_,r)|r.disposition==Some(CandidateDisposition::SenderSection)).unwrap();
         assert_eq!(&raw[start..end],"7개");
         assert_eq!(kind,"quantity");
         assert!(doc.events.iter().all(|e|!doc.exclusions.excludes(e.kind,e.start,e.end)));
