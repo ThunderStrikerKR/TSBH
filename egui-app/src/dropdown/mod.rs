@@ -101,14 +101,15 @@ fn management_dropdown_trigger_inner(
     // Inline modal rows opt into the 36pt form interaction height;
     // standard management toolbars retain their 34pt minimum.
     let height=theme::ACTION_STANDARD_HEIGHT.max(ui.spacing().interact_size.y);
-    let trigger=ui.add_enabled(
-        enabled,
-        egui::Button::new("")
+    let trigger=ui.scope(|ui|{
+        let mut button=egui::Button::new("")
             .min_size(Vec2::new(width,height))
-            .fill(fill)
-            .stroke(stroke)
-            .corner_radius(egui::CornerRadius::same(theme::CONTROL_RADIUS))
-    );
+            .corner_radius(egui::CornerRadius::same(crate::highlight::CONTROL_RADIUS));
+        if interactive{
+            crate::highlight::action_widget(ui,fill,stroke,false);
+        }else{button=button.fill(fill).stroke(stroke);}
+        ui.add_enabled(enabled,button)
+    }).inner;
     let rect=trigger.rect;
     #[cfg(test)]
     crate::ui_test_support::record_component_geometry("dropdown",rect,ui.clip_rect(),Some(height));
@@ -156,9 +157,7 @@ fn management_dropdown_trigger_inner(
         ManagementChevronDirection::Down,arrow_ink
     );
     if interactive {
-        crate::button::paint_button_hover(
-            ui,&trigger,theme::CONTROL_RADIUS as f32
-        );
+        crate::floating_notice::remember_response(ui.ctx(),&trigger);
     }
     overflow_tooltip(trigger,overflow||label!=full_label,full_label)
 }

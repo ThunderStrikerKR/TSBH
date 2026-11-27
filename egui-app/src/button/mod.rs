@@ -535,18 +535,18 @@ pub(crate) fn date_navigation_button_surface(
 )->(Response,Color32){
     let effective_enabled=enabled && ui.is_enabled();
     let (fill,ink,stroke)=crate::button::field_action_palette(effective_enabled,theme::SECONDARY);
-    let response=navigation_native_button(
-        ui,Vec2::splat(theme::CALENDAR_NAV_SIZE),
-        egui::Button::new("").fill(fill).stroke(stroke).corner_radius(theme::CONTROL_RADIUS),
-        Some(effective_enabled)
-    );
+    let response=ui.scope(|ui|{
+        let mut button=egui::Button::new("").corner_radius(crate::highlight::CONTROL_RADIUS);
+        if effective_enabled{
+            crate::highlight::action_widget(ui,fill,stroke,false);
+        }else{button=button.fill(fill).stroke(stroke);}
+        navigation_native_button(ui,Vec2::splat(theme::CALENDAR_NAV_SIZE),button,Some(effective_enabled))
+    }).inner;
     let ink=if effective_enabled && response.hovered(){
         theme::TEXT
     }else{ink};
     if effective_enabled{
-        crate::button::paint_button_hover(
-            ui,&response,theme::CONTROL_RADIUS as f32
-        );
+        crate::floating_notice::remember_response(ui.ctx(),&response);
     }
     (response,ink)
 }
@@ -572,20 +572,21 @@ pub(crate) fn calendar_day(grid:&mut Ui,day:&str,width:f32,selected:bool,today:b
 
 /// Dispatch-origin toggle; the reception row retains its business selection and highlight.
 pub(crate) fn dispatch_origin(right:&mut Ui,label:&str,selected:bool,editable:bool)->Response{
-    let response=right.add_enabled(editable,
-        egui::Button::new(typography::action_label(
+    let effective_enabled=editable&&right.is_enabled();
+    let response=right.scope(|ui|{
+        let fill=if selected{theme::RAISED}else{theme::PANEL};
+        let stroke=Stroke::new(theme::FRAME_STROKE_WIDTH,
+            if selected{theme::SELECTION}else{theme::DIVIDER});
+        let mut button=egui::Button::new(typography::action_label(
             label,typography::FONT_STANDARD_ACTION,false,
             if selected{theme::TEXT}else{theme::SECONDARY}
-        ))
-        .min_size(Vec2::new(42.0,theme::ACTION_STANDARD_HEIGHT))
-        .fill(if selected{theme::RAISED}else{theme::PANEL})
-        .stroke(Stroke::new(theme::FRAME_STROKE_WIDTH,
-            if selected{theme::SELECTION}else{theme::DIVIDER}))
-        .corner_radius(theme::CONTROL_RADIUS)
-    );
-    crate::button::paint_button_hover(
-        right,&response,theme::CONTROL_RADIUS as f32
-    );
+        )).min_size(Vec2::new(42.0,theme::ACTION_STANDARD_HEIGHT))
+         .corner_radius(crate::highlight::CONTROL_RADIUS);
+        if effective_enabled{crate::highlight::action_widget(ui,fill,stroke,false);}
+        else{button=button.fill(fill).stroke(stroke);}
+        ui.add_enabled(editable,button)
+    }).inner;
+    if effective_enabled{crate::floating_notice::remember_response(right.ctx(),&response);}
     response
 }
 

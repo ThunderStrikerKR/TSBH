@@ -1440,7 +1440,9 @@ const highlightContracts = {
     "paint_action_hover_surface":{"highlight :: action_hover (":1}},
   "button/mod.rs":{
     "action_with_palette":{"highlight :: action_widget (":1},
-    "workflow_fixed_action":{"highlight :: fixed_action_surface (":1}},
+    "workflow_fixed_action":{"highlight :: fixed_action_surface (":1},
+    "date_navigation_button_surface":{"highlight :: action_widget (":1},
+    "dispatch_origin":{"highlight :: action_widget (":1}},
   "table/mod.rs":{
     "management_master_header_sort_hover":{"highlight :: paint (":1},
     "paint_management_interactive_row_background":{"highlight :: paint_fill (":1},
@@ -1451,7 +1453,9 @@ const highlightContracts = {
   "category_tree/mod.rs":{"category_tree_row":{"highlight :: paint (":1}},
   "composite_client.rs":{"management_chooser_row":{"highlight :: paint (":1}},
   "checkbox/mod.rs":{"checkbox":{"highlight :: checked_checkbox (":1}},
-  "dropdown/mod.rs":{"management_dropdown_option_palette":{"highlight :: dropdown_options (":1}},
+  "dropdown/mod.rs":{"management_dropdown_option_palette":{"highlight :: dropdown_options (":1},
+    "management_dropdown_trigger_inner":{"highlight :: action_widget (":1}},
+  "composite_workflow.rs":{"workflow_shipment_row":{"highlight :: paint_parts (":1}},
   "input/mod.rs":{
     "paint_required_input":{"highlight :: paint (":1}},
   "source_highlight.rs":{
@@ -1511,7 +1515,9 @@ export function auditHighlight(source,file,requireCalls=false){
     }
     // Single-frame button renderers must not regain a post-widget overlay,
     // even via an existing shared wrapper or locally aliased paint color.
-    if(file==="button/mod.rs"&&["action_with_palette","workflow_fixed_action"].includes(fn)&&v[i+1]==="("&&
+    const singleFrame=(file==="button/mod.rs"&&["action_with_palette","workflow_fixed_action","date_navigation_button_surface","dispatch_origin"].includes(fn))||
+      (file==="dropdown/mod.rs"&&fn==="management_dropdown_trigger_inner");
+    if(singleFrame&&v[i+1]==="("&&
        ["paint_button_hover","paint_button_hover_corners","paint_action_hover_corners","paint_action_hover_surface","action_hover","rect_filled","rect_stroke"].includes(v[i])){
       flag(i,"duplicate button frame; use single shared action surface");continue;
     }
@@ -1574,7 +1580,8 @@ function highlightSelfTest(){
   assert.equal(audit("fn management_dropdown_option_palette(){crate::highlight::dropdown_options(ui);crate::highlight::dropdown_options(ui);}","dropdown/mod.rs",true).length,1);
   assert.equal(audit("fn action_with_palette(){crate::highlight::action_widget(ui,fill,stroke,false);paint_button_hover(ui,r,6.0);}","button/mod.rs").length,1);
   assert.equal(audit("fn workflow_fixed_action(){crate::highlight::fixed_action_surface(ui,r,6,fill,stroke,false,true);painter.rect_stroke(r,6,local,kind);}","button/mod.rs").length,1);
-  console.log("EGUI_HIGHLIGHT_SELFTEST_PASS",14);
+  assert.equal(audit("fn management_dropdown_trigger_inner(){crate::highlight::action_widget(ui,fill,stroke,false);paint_button_hover(ui,r,6.0);}","dropdown/mod.rs").length,1);
+  console.log("EGUI_HIGHLIGHT_SELFTEST_PASS",15);
 }
 
 function main(){

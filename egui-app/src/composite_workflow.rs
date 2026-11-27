@@ -78,7 +78,14 @@ pub fn workflow_shipment_row(
         .max(freight_galley.size().y));
     let (block,response)=ui.allocate_exact_size(Vec2::new(outer,height),Sense::hover());
     let [name_rect,product_rect,freight_rect]=shipment_detail_cells(block,&widths,gap);
-    paint_shipment_detail_surface(ui,block,fill,chosen);
+    if previewed && !chosen{
+        // Keep the existing preview fill; the linked outline replaces the
+        // ordinary row border rather than layering over it.
+        crate::highlight::paint_parts(ui.painter(),block,theme::ORDER_HISTORY_RECIPIENT_BLOCK_RADIUS,
+            Some(fill),crate::highlight::palette(crate::highlight::Role::LinkedPreview).stroke);
+    }else{
+        paint_shipment_detail_surface(ui,block,fill,chosen);
+    }
     paint_shipment_detail_products(ui,name_rect,name_galley,preview_ink);
     paint_shipment_detail_products(ui,product_rect,product_galley,summary_ink);
     let x=freight_rect.right()-theme::SPACE_8-freight_galley.size().x;
@@ -88,9 +95,6 @@ pub fn workflow_shipment_row(
     if freight_emphasis{crate::one_touch::background(ui,highlight);}
     paint_table_galley(ui,freight_rect,x,freight_galley,freight_ink);
     if freight_emphasis{crate::one_touch::outline(ui,highlight);}
-    if previewed && !chosen{
-        source_highlight::paint_active_outline(ui,block,theme::ORDER_HISTORY_RECIPIENT_BLOCK_RADIUS);
-    }
     response
 }
 

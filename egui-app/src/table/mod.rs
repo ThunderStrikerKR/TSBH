@@ -519,9 +519,12 @@ pub(crate) fn fixed_row<const N:usize>(
         let cells=management_table_cells(rect.min,widths,rect.height(),gap);
         draw(row,cells);
         management_table_column_rules(row,rect,&cells,gap);
-        paint_management_table_row_rule(row.painter(),rect);
         if selected{
+            // The selected bottom edge replaces the ordinary horizontal rule.
+            // Column rules remain structural and retain their exact positions.
             crate::highlight::paint_outline(row.painter(),rect,0.0,crate::highlight::Role::Selected);
+        }else{
+            paint_management_table_row_rule(row.painter(),rect);
         }
     });
 }
