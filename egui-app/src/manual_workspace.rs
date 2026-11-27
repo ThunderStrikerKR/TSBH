@@ -594,7 +594,7 @@ pub enum Event {
     Closed,
     Applied { order_id:String,raw:String,order_type:String,client_id:Option<String>,
         direct_input:bool,model:Value,assignment_order:Vec<String>,order:Value,
-        quote:Option<Value>,quote_error:Option<String> },
+        audit_before:Value,quote:Option<Value>,quote_error:Option<String> },
 }
 
 /// A direct in-place edit from the reception pane. The visible cell owns
@@ -848,6 +848,7 @@ pub fn apply_inline(
     let keys=previous.and_then(|v|v.get("assignmentOrder"))
         .or_else(||initialized.get("assignmentOrder"))
         .and_then(Value::as_array).cloned().unwrap_or_default();
+    let audit_before=json!({"model":&model,"assignmentOrder":&keys});
     let mut cell=json!({"recipientId":change.recipient_id,"field":change.field});
     if let Some(item)=change.item_id.as_deref(){cell["itemId"]=json!(item);}
     let action=if change.item_id.is_some(){
@@ -1044,7 +1045,7 @@ pub fn apply_inline(
     Ok(Event::Applied{
         order_id:source.id.clone(),raw:source.raw.clone(),
         order_type:source.order_type.clone(),client_id:source.client_id.clone(),
-        direct_input,
+        direct_input,audit_before,
         model,assignment_order:keys.iter().filter_map(Value::as_str)
             .map(str::to_owned).collect(),
         order:updated,quote,quote_error
@@ -1088,6 +1089,7 @@ pub struct ManualWorkspace {
     client_id:Option<String>,
     gateway:Arc<dyn BandoGateway>,
     base_order:Option<Value>,
+    audit_before:Option<Value>,
     cached_quote:Option<Value>,
     model:Option<Value>,
     render_data:Option<std::rc::Rc<ManualRenderData>>,
@@ -1256,7 +1258,7 @@ impl ManualWorkspace {
         });
         Self {
             order_id:source.id,direct_input,raw:source.raw,order_type:source.order_type,
-            client_id:source.client_id,gateway,base_order:None,
+            client_id:source.client_id,gateway,base_order:None,audit_before:None,
             cached_quote:source.pricing_preview,model:None,render_data:None,
             assignment_order:Vec::new(),remote_rows:Vec::new(),view_quote:None,
             selected_recipient:0,selected_item:None,selected_field:"name".into(),
@@ -1339,6 +1341,7 @@ impl ManualWorkspace {
             })))=>{
                 self.view_quote=view_quote;
                 self.base_order=Some(order);
+                self.audit_before=Some(json!({"model":&model,"assignmentOrder":&assignment_order}));
                 self.remote_rows=remote_rows;
                 let count=list(&model,"rows").len();
                 self.row_count_text=count.to_string();
@@ -1937,6 +1940,7 @@ impl ManualWorkspace {
                     order_type:self.order_type.clone(),client_id:self.client_id.clone(),
                     direct_input:self.direct_input,model,
                     assignment_order:self.assignment_order.clone(),order,
+                    audit_before:self.audit_before.take().unwrap_or(Value::Null),
                     quote,quote_error
                 });
             }
@@ -3872,7 +3876,7 @@ mod manual_workspace_modal_routing_tests {
         ManualWorkspace{
             order_id:"synthetic-palette-order".into(),direct_input:false,
             raw:PALETTE_RAW.into(),order_type:"".into(),
-            client_id:None,gateway:Arc::new(crate::gateway::LocalGateway),base_order:None,
+            client_id:None,gateway:Arc::new(crate::gateway::LocalGateway),base_order:None,audit_before:None,
             cached_quote:None,model:None,render_data:None,
             assignment_order:Vec::new(),remote_rows:Vec::new(),view_quote:None,
             selected_recipient:0,selected_item:None,selected_field:"name".into(),
