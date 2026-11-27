@@ -338,7 +338,7 @@ pub fn patch_product_v2(conn:&mut Connection, request:&Value)->Result<Value,Stri
         "delete_brand"=>{
             let id=required(data,"brandId")?;
             let result=catalog_clients::execute("delete_brand",
-                json!({"state":before,"brandId":id}))?;
+                json!({"state":before,"brandId":id,"expectedProductIds":data["expectedProductIds"]}))?;
             result.get("state").filter(|v|v.is_object()).cloned()
                 .ok_or("Rust 브랜드 삭제 결과 형식 오류")?
         }
