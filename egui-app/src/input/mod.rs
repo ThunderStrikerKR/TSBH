@@ -6,6 +6,13 @@ use crate::ui_primitives::{navigation_segment_child,date_navigation_segmented_su
 #[cfg(test)]
 use crate::ui_test_support::test_context;
 
+/// Placeholder ink is independent of the actual input value and general UI text.
+pub(crate) const INPUT_PLACEHOLDER_COLOR:egui::Color32=egui::Color32::from_gray(96);
+
+fn input_placeholder(text:&str)->egui::RichText{
+    egui::RichText::new(text).color(INPUT_PLACEHOLDER_COLOR)
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum FieldKind {
     #[cfg(test)]
@@ -312,7 +319,7 @@ pub(crate) fn flexible_text_field(
 )->Response {
     let width=form_field_width(ui,width);
     let edit=singleline_editor(value,egui::TextStyle::Body,width,Align::LEFT,
-        typography::form_input_text_margin()).hint_text(placeholder);
+        typography::form_input_text_margin()).hint_text(input_placeholder(placeholder));
     allocate_singleline_field(ui,Vec2::new(width,theme::INPUT_HEIGHT),edit,None)
 }
 
@@ -331,7 +338,7 @@ pub(crate) fn management_date_text_field_impl(
     let mut edit=singleline_editor(value,typography::data_value_font(
             typography::DataValueKind::Date,typography::DataValueContext::Form
         ),width,Align::Center,typography::management_date_text_margin())
-        .frame(false).hint_text(hint);
+        .frame(false).hint_text(input_placeholder(hint));
     if let Some(limit)=limit{edit=edit.char_limit(limit);}
     allocate_singleline_field(ui,Vec2::new(width,height),edit,None)
 }
@@ -390,7 +397,7 @@ pub(crate) fn multiline_text_field(
     let mut editor=multiline_editor(value,desired_width)
         .desired_rows(desired_rows);
     if let Some(hint)=hint{
-        editor=editor.hint_text(hint);
+        editor=editor.hint_text(input_placeholder(hint));
     }
     ui.add_enabled(enabled,editor)
 }
