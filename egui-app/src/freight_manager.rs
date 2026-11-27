@@ -2,6 +2,7 @@
 //! combination validity come from the existing Tauri Rust business state and
 //! rules::shipping_manager_view. No preview DB or hard-coded rate is treated as
 //! operational freight. Write actions are a separate migration step.
+use crate::ui_layout::SharedAllocationExt as _;
 use crate::ui_layout::AlignedUiBuilderExt as _;
 use crate::{
     category_manager::ProductCategoryPaths,
@@ -1393,7 +1394,7 @@ impl FreightManager {
             // Mixing left-to-right and right-to-left layouts in ONE row
             // previously advanced the second group's vertical origin.
             let toolbar_width=section.available_width();
-            let (toolbar_rect,_) = section.allocate_exact_size(
+            let (toolbar_rect,_) = section.shared_allocate_exact_size(
                 egui::vec2(toolbar_width,theme::INPUT_HEIGHT),
                 egui::Sense::hover()
             );
@@ -1941,7 +1942,7 @@ impl FreightManager {
         section:&mut Ui,search:&mut String,enabled:bool
     )->(egui::Response,egui::Rect,Option<egui::Response>){
         let width=section.available_width().max(1.0);
-        let (toolbar_rect,_)=section.allocate_exact_size(
+        let (toolbar_rect,_)=section.shared_allocate_exact_size(
             egui::vec2(width,theme::INPUT_HEIGHT),egui::Sense::hover()
         );
         let create=crate::ui_layout::management_toolbar_slot(section,"freight-rate-toolbar-actions",
