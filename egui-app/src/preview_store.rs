@@ -817,19 +817,76 @@ impl PreviewStore {
     }
 
     // Read the existing isolated audit DB without initializing or migrating it.
-    pub(crate) fn read_reception_audit_page(query:&Value)->Result<Value,String>{
+    fn open_reception_audit_snapshot()->Result<Connection,String>{
         let path=Self::directory()?.join("egui-preview.sqlite3");
         let conn=Connection::open_with_flags(path,OpenFlags::SQLITE_OPEN_READ_ONLY)
             .map_err(|e|format!("정정 이력 읽기 실패: {e}"))?;
         conn.busy_timeout(Duration::from_secs(5)).map_err(|e|e.to_string())?;
+        conn.execute_batch("PRAGMA query_only=ON; BEGIN DEFERRED TRANSACTION;")
+            .map_err(|e|e.to_string())?;
         let signature:String=conn.query_row(
             "SELECT value FROM preview_meta WHERE key='signature'",[],|r|r.get(0))
             .map_err(|e|e.to_string())?;
         if signature!=SIGNATURE{return Err("egui 전용 DB 식별자가 다릅니다.".into());}
-        query_reception_audit_page(&conn,query)
+        Ok(conn)
+    }
+    pub(crate) fn read_reception_audit_page(query:&Value)->Result<Value,String>{
+        let conn=Self::open_reception_audit_snapshot()?;
+        let result=query_reception_audit_page(&conn,query)?;
+        conn.execute_batch("COMMIT").map_err(|e|e.to_string())?;
+        Ok(result)
+    }
+
+    /// All selected orders and pages come from one read-only audit snapshot.
+    pub(crate) fn read_reception_audit_batch(ids:&[String])->Result<std::collections::BTreeMap<String,Vec<Value>>,String>{
+        let conn=Self::open_reception_audit_snapshot()?;
+        let result=query_reception_audit_batch(&conn,ids)?;
+        conn.execute_batch("COMMIT").map_err(|e|e.to_string())?;
+        Ok(result)
     }
 
     pub fn path(&self) -> &std::path::Path { &self.path }
+}
+
+fn query_reception_audit_batch(conn:&Connection,ids:&[String])->Result<std::collections::BTreeMap<String,Vec<Value>>,String>{
+    let unique=ids.iter().collect::<std::collections::BTreeSet<_>>();
+    if unique.len()>250||unique.iter().any(|id|id.trim().is_empty()){
+        return Err("감사 조회 주문 범위 오류".into());
+    }
+    let mut out=std::collections::BTreeMap::new();
+    let mut total_rows=0i64;
+    let mut total_bytes=0i64;
+    let has_context:i64=conn.query_row(
+        "SELECT count(*) FROM pragma_table_info('reception_edit_audit') WHERE name='context_json'",
+        [],|r|r.get(0)).map_err(|e|e.to_string())?;
+    let context=if has_context==1{"coalesce(length(CAST(context_json AS BLOB)),0)"}else{"0"};
+    let sql=format!("SELECT count(*),coalesce(sum(length(CAST(source_raw AS BLOB))+
+        length(CAST(initial_analysis_json AS BLOB))+length(CAST(before_rows_json AS BLOB))+
+        length(CAST(after_rows_json AS BLOB))+{context}),0)
+        FROM reception_edit_audit WHERE order_id=?1");
+    for id in unique{
+        let (count,bytes):(i64,i64)=conn.query_row(&sql,params![id],|r|Ok((r.get(0)?,r.get(1)?)))
+            .map_err(|e|e.to_string())?;
+        total_rows=total_rows.saturating_add(count);
+        total_bytes=total_bytes.saturating_add(bytes);
+        if count>1000||total_rows>4000||total_bytes>32*1024*1024{
+            return Err("정정 감사 조회 한도 초과: 주문 범위를 줄여 다시 조회하세요.".into());
+        }
+        let mut events=Vec::new();
+        let mut cursor=Value::Null;
+        loop{
+            let page=query_reception_audit_page(conn,&json!({"orderId":id,"limit":250,"cursor":cursor}))?;
+            let batch=page["events"].as_array().ok_or("정정 감사 조회 결과 오류")?;
+            events.extend(batch.iter().cloned());
+            let next=page["nextCursor"].clone();
+            if next.is_null(){break;}
+            if batch.is_empty()||next==cursor{return Err("정정 감사 조회 커서가 진행되지 않습니다.".into());}
+            cursor=next;
+        }
+        if events.len() as i64!=count{return Err("정정 감사 조회 건수 불일치".into());}
+        out.insert(id.clone(),events);
+    }
+    Ok(out)
 }
 
 // Stable keyset paging: no unbounded loading and no write on the audit path.
