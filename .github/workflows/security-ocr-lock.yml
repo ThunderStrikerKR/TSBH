@@ -5,12 +5,14 @@ on:
     paths:
       - '.github/workflows/security-ocr-lock.yml'
       - 'scripts/resolve-ocr-lock.py'
+      - 'scripts/test-resolve-ocr-lock.py'
       - 'security/ocr/requirements.in'
   pull_request:
     branches: [main]
     paths:
       - '.github/workflows/security-ocr-lock.yml'
       - 'scripts/resolve-ocr-lock.py'
+      - 'scripts/test-resolve-ocr-lock.py'
       - 'security/ocr/requirements.in'
   workflow_dispatch:
 permissions:
@@ -39,6 +41,8 @@ jobs:
           py -3.11 -m venv "$env:RUNNER_TEMP/ocr-resolve"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           $python = "$env:RUNNER_TEMP/ocr-resolve/Scripts/python.exe"
+          & $python scripts/test-resolve-ocr-lock.py
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           & $python scripts/resolve-ocr-lock.py "$env:RUNNER_TEMP/ocr-candidate"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           & $python scripts/validate-ocr-audit-lock.py "$env:RUNNER_TEMP/ocr-candidate/requirements.lock"
