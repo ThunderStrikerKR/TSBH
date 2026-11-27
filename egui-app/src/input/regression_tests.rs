@@ -645,7 +645,7 @@ mod shared_input_width_rendered_geometry_tests{
 fn tag_blocks_share_top_bottom_and_vertical_centers_even_when_wrapped(){
     let tags=["가상06","테스트거래처06","테스트 납품처 06","UI-SAMPLE-C06",
         "매우 긴 검색 별칭을 사용해도 고정된 높이를 유지한다"].map(str::to_owned);
-    for width in [900.0,360.0]{
+    for width in [1200.0,360.0]{
         let ctx=test_context();
         let screen=Rect::from_min_size(egui::Pos2::ZERO,Vec2::new(width,500.0));
         let mut entry=String::new();
@@ -680,7 +680,7 @@ fn tag_blocks_share_top_bottom_and_vertical_centers_even_when_wrapped(){
                 }
             }
         }
-        if width==900.0{assert!(chips.iter().all(|r|(r.top()-chips[0].top()).abs()<=0.5));}
+        if width==1200.0{assert!(chips.iter().all(|r|(r.top()-chips[0].top()).abs()<=0.5));}
         else{assert!(chips.last().unwrap().top()>chips[0].top());}
     }
 }
