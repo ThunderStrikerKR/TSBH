@@ -54,18 +54,23 @@ struct CommonCandidates {
     truncated:bool,
 }
 impl CommonCandidates {
-    fn record(&mut self,raw:&str,kind:&'static str,start:usize,end:usize,reason:CandidateDisposition){
-        if start>=end||raw.get(start..end).is_none(){self.truncated=true;return;}
+    // Discovery does not require an exclusion reason or a selected event.
+    fn register(&mut self,raw:&str,kind:&'static str,start:usize,end:usize)->Option<&mut CandidateRecord>{
+        if start>=end||raw.get(start..end).is_none(){self.truncated=true;return None;}
         let key=(kind,start,end);
         if !self.entries.contains_key(&key)&&self.entries.len()>=4096{
-            self.truncated=true;return;
+            self.truncated=true;return None;
         }
-        let entry=self.entries.entry(key).or_default();
-        if entry.disposition.is_none_or(|old|reason.hard()&&!old.hard()){
-            entry.disposition=Some(reason);
+        Some(self.entries.entry(key).or_default())
+    }
+    fn record(&mut self,raw:&str,kind:&'static str,start:usize,end:usize,reason:CandidateDisposition){
+        if let Some(entry)=self.register(raw,kind,start,end){
+            if entry.disposition.is_none_or(|old|reason.hard()&&!old.hard()){
+                entry.disposition=Some(reason);
+            }
         }
     }
-    fn record_products(&mut self,raw:&str,offset:usize,len:usize,result:&CachedProductDecision,competing_type:bool){
+    fn record_products(&mut self,raw:&str,offset:usize,len:usize,result:&CachedProductDecision){
         self.truncated|=result.truncated;
         for c in &result.candidates{
             let (a,b)=c.span;
@@ -77,9 +82,6 @@ impl CommonCandidates {
             if self.entries.get(&key).is_some_and(|e|e.products.contains_key(&c.product_id)){
                 let entry=self.entries.get_mut(&key).unwrap();
                 *entry.products.get_mut(&c.product_id).unwrap()|=c.literal;
-                if competing_type&&entry.disposition.is_none(){
-                    entry.disposition=Some(CandidateDisposition::CompetingType);
-                }
                 continue;
             }
             if self.product_count>=4096||(!self.entries.contains_key(&key)&&self.entries.len()>=4096){
@@ -88,9 +90,7 @@ impl CommonCandidates {
             let entry=self.entries.entry(key).or_default();
             entry.products.insert(c.product_id.clone(),c.literal);
             self.product_count+=1;
-            if competing_type&&entry.disposition.is_none(){
-                entry.disposition=Some(CandidateDisposition::CompetingType);
-            }
+ 
         }
     }
     fn index_selected(&mut self,events:&[Evidence]){
@@ -657,10 +657,16 @@ fn name_beats_partial_alias(text:&str,inline_delivery:bool,matched:&CachedProduc
     let product_score=30+12+24*coverage/total.max(1);
     exceeds_margin(name_score,product_score,OWNER_WEIGHTS.margin)
 }
-fn unlabelled_recipient_span<'a>(
+#[derive(Clone,Copy)]
+enum NameBoundary { SeparatedSuffix, InlineDelivery, Standalone }
+#[derive(Clone,Copy)]
+struct NameProposal { start:usize,end:usize,boundary:NameBoundary }
+// Discover the candidate span, not its final information type. The
+// legacy table/quantity boundaries are still the source of proposals.
+fn unlabelled_recipient_proposal<'a>(
     line:&'a str,address:Option<usize>,phone:&Regex,near_delivery:bool,
-    search:&mut ProductSearch<'a,'_>,competing:&mut Vec<(usize,usize)>
-)->Option<(usize,usize)>{
+    search:&mut ProductSearch<'a,'_>
+)->Option<NameProposal>{
     let state=search.state;
     let contact=phone.find(line).map(|m|m.start());
     let end=address.into_iter().chain(contact).min().unwrap_or(line.len());
@@ -680,7 +686,9 @@ fn unlabelled_recipient_span<'a>(
         let tail=prefix[start..].trim_end();
         let tail=tail.strip_suffix('/').unwrap_or(tail);
         let (a,b)=trim_span(line,start,start+tail.len())?;
-        if !other_recipient_field(&line[a..b]){return Some((a,b));}
+        if !other_recipient_field(&line[a..b]){
+            return Some(NameProposal{start:a,end:b,boundary:NameBoundary::SeparatedSuffix});
+        }
         return None;
     }
     // A known product followed by an explicit quantity is a separate field.
@@ -695,29 +703,46 @@ fn unlabelled_recipient_span<'a>(
         let candidate=&line[a..b];
         if other_recipient_field(candidate){continue;}
         if bounded || weak_recipient_hint(candidate){
-            return Some((a,b));
+            return Some(NameProposal{start:a,end:b,boundary:NameBoundary::SeparatedSuffix});
         }
     }
     if address.is_some() || contact.is_some(){
         let (a,b)=composite_name_before_address(prefix)?;
-        let candidate=&line[a..b];
-        // A known literal model still takes priority. A partial alias
-        // may compete with a separately bounded honorific recipient name.
-        let matched=search.result(candidate);
-        if product_signal(candidate,&matched.output,state)&&
-            !name_beats_partial_alias(candidate,true,matched){
-            competing.push((a,b));
-            return None;
-        }
-        return Some((a,b));
+        return Some(NameProposal{start:a,end:b,boundary:NameBoundary::InlineDelivery});
     }
     let (a,b)=trim_span(line,0,line.len())?;
     let candidate=&line[a..b];
     if other_recipient_field(candidate) || !search.quantities(candidate).is_empty(){return None;}
     if !near_delivery && !weak_recipient_hint(candidate){return None;}
-    if product_signal(candidate,search.decision(candidate),state){
-        competing.push((a,b));
+    Some(NameProposal{start:a,end:b,boundary:NameBoundary::Standalone})
+}
+// The competing name and catalog hypotheses enter the common index
+// before the legacy type policy is applied. Do not turn a rejected type
+// into a hard exclusion, or rerun the catalog search to retain it.
+fn resolve_name_proposal<'a>(raw:&str,line:&Line<'a>,proposal:NameProposal,
+    search:&mut ProductSearch<'a,'_>,candidates:&mut CommonCandidates)->Option<(usize,usize)>{
+    let NameProposal{start:a,end:b,boundary}=proposal;
+    let state=search.state;
+    let text=&line.text[a..b];
+    let offset=line.start+a;
+    let _=candidates.register(raw,"name",offset,line.start+b);
+    let matched=search.result(text);
+    candidates.record_products(raw,offset,text.len(),matched);
+    let signal=product_signal(text,&matched.output,state);
+    let chosen=match boundary{
+        NameBoundary::SeparatedSuffix=>true,
+        NameBoundary::InlineDelivery=>!signal||name_beats_partial_alias(text,true,matched),
+        NameBoundary::Standalone=>!signal,
+    };
+    if !chosen{
+        candidates.record(raw,"name",offset,line.start+b,CandidateDisposition::CompetingType);
         return None;
+    }
+    for c in &matched.candidates{
+        let (start,end)=c.span;
+        if start<end&&end<=text.len(){
+            candidates.record(raw,"product",offset+start,offset+end,CandidateDisposition::CompetingType);
+        }
     }
     Some((a,b))
 }
@@ -1745,28 +1770,16 @@ fn extract_document<'a>(raw:&'a str,state:&Value,client:Option<&Value>)->Extract
             }
         }
 
-        let mut competing_names=Vec::new();
         let name_span=explicit_name.or_else(||{
             if after_label && address.is_none() && !phone.is_match(line.text) &&
                 !other_recipient_field(text){
                 trim_span(line.text,0,line.text.len())
             }else{
-                unlabelled_recipient_span(line.text,address,&phone,near_delivery,&mut search,&mut competing_names)
+                let proposal=unlabelled_recipient_proposal(line.text,address,&phone,near_delivery,&mut search)?;
+                resolve_name_proposal(raw,line,proposal,&mut search,&mut exclusions)
             }
         });
-        for (a,b) in competing_names{
-            exclusions.record(raw,"name",line.start+a,line.start+b,CandidateDisposition::CompetingType);
-        }
         if let Some((begin,end))=name_span{
-            // A structurally inferred name (including a suffix after an
-            // item quantity) is a provisional choice, not proof that a
-            // registered product hypothesis at that span does not exist.
-            // Explicit recipient labels retain their hard field semantics.
-            if explicit_name.is_none()&&!after_label{
-                let candidate=&line.text[begin..end];
-                let matched=search.result(candidate);
-                exclusions.record_products(raw,line.start+begin,candidate.len(),matched,true);
-            }
             add_match(&mut events,line,begin,end,"name",line.text[begin..end].to_owned(),
                 if explicit_name.is_some()||after_label{"명시적 수취인 이름"}
                 else{"수취인 필드 경계에서 원문 전체 보존"});
@@ -1843,7 +1856,7 @@ fn extract_document<'a>(raw:&'a str,state:&Value,client:Option<&Value>)->Extract
         // into raw: UTF-8/UTF-16 source-evidence contract must be lossless.
         let cached=search.result(skip_until).clone();
         let offset = line.text.find(trimmed).unwrap_or(0);
-        exclusions.record_products(raw,line.start+offset,skip_until.len(),&cached,false);
+        exclusions.record_products(raw,line.start+offset,skip_until.len(),&cached);
         let matched=cached.output;
         let mut quantity_values = if trimmed.contains('|') {
             let model_end=matched.get("evidence").and_then(Value::as_object)
@@ -3083,6 +3096,25 @@ mod tests {
                 candidates:vec![model::SourceCandidate{product_id:"pgt".into(),span,literal}],truncated:false};
             assert!(!name_beats_partial_alias("김가상님",true,&matched));
         }
+    }
+    #[test]
+    fn inferred_name_discovery_preserves_losing_type_before_projection(){
+        let state=state();
+        let raw="GT-1 010-0000-0001";
+        let line=physical_lines(raw).remove(0);
+        let phone=phone_regex();
+        let mut search=ProductSearch::new(&state,"");
+        let proposal=unlabelled_recipient_proposal(line.text,None,&phone,true,&mut search).unwrap();
+        assert_eq!(&raw[proposal.start..proposal.end],"GT-1");
+        let mut candidates=CommonCandidates::default();
+        assert!(resolve_name_proposal(raw,&line,proposal,&mut search,&mut candidates).is_none());
+        let name=&candidates.entries[&("name",0,4)];
+        assert_eq!(name.disposition,Some(CandidateDisposition::CompetingType));
+        assert!(name.selected.is_none());
+        let product=&candidates.entries[&("product",0,4)];
+        assert_eq!(product.products.get("pgt"),Some(&true));
+        assert!(product.selected.is_none());
+        assert!(!candidates.excludes("name",0,4));
     }
     #[test]
     fn inferred_name_preserves_competing_product_identity_without_confirming_it(){
