@@ -447,11 +447,20 @@ pub(super) fn compare(payload:&Value)->Result<Value,String>{
     for (position,task) in keys{
         let old=before.get(&(position,task));
         let new=after.get(&(position,task));
-        let status=match (old,new){
+        let mut status=match (old,new){
             (Some(a),Some(b)) if a.len()==1 && b.len()==1 && a==b=>"unchanged_observed",
             (Some(a),Some(b)) if a.len()==1 && b.len()==1=>"changed_requires_review",
             _=>"unresolved_evidence",
         };
+        // A default option is not a verified source observation. Require
+        // the written color and a single associated product for weak credit.
+        if task=="variant"&&status=="unchanged_observed"{
+            let final_rows=&snapshot["recipients"];
+            let mut items=rows(final_rows).flat_map(|r|rows(&r["items"]))
+                .filter(|i|rows(&i["sources"]).any(|src|src["field"]=="product"&&span(&units,src)==Some(position)));
+            if items.next().is_none_or(|item|!verified_variant_color(&units,position,final_rows,item))
+                || items.next().is_some(){status="unresolved_evidence";}
+        }
         observations.push(json!({
             "source":{"start":position.0,"end":position.1},
             "task":task,"initialCandidates":old,"finalCandidates":new,
@@ -719,6 +728,81 @@ mod tests{
             "orders":[a],"contextKeys":[client["key"]]
         })).unwrap();
         assert_eq!(filtered["statistics"].as_array().unwrap().len(),1);
+    }
+
+    fn field_audit_fixture(raw:&str,token:&str,old_field:&str,new_field:&str,
+        before_item:Value,after_item:Value)->Value{
+        let start=raw.find(token).unwrap();
+        let a=raw[..start].encode_utf16().count();
+        let b=a+token.encode_utf16().count();
+        let mut before_item=before_item;
+        let mut after_item=after_item;
+        for (item,field) in [(&mut before_item,old_field),(&mut after_item,new_field)]{
+            item["id"]=json!("i");
+            item["sources"]=json!([{"start":a,"end":b,"text":token,"field":field}]);
+        }
+        let before=json!([{"id":"r","items":[before_item]}]);
+        let after=json!([{"id":"r","items":[after_item]}]);
+        let first=json!({"recipients":before,"candidates":[{"start":a,"end":b,"text":token,"kind":old_field}]});
+        let block=json!({"id":"block","start":a,"end":b,"text":token,"field":old_field});
+        let label=if new_field=="product"{after[0]["items"][0]["name"].as_str().unwrap().to_owned()}
+            else{after[0]["items"][0]["quantity"].to_string()};
+        json!({"id":"field-order","confirmedAt":"2026-11-27T00:00:00Z",
+            "confirmationSnapshot":{"raw":raw,"at":"2026-11-27T00:00:00Z","recipients":after,
+                "recognitionBaseline":{"schemaVersion":1,"initialAnalysis":first}},
+            "recognitionAuditEvents":[{"id":"audit","orderId":"field-order","at":"2026-11-26T23:59:00Z",
+                "sourceRaw":raw,"initialAnalysis":first,"beforeRows":before,"afterRows":after,
+                "context":{"schemaVersion":1,
+                    "beforeClassification":{"blocks":[block.clone()],"assignments":{}},
+                    "afterClassification":{"blocks":[block],"assignments":{"block":{
+                        "recipientId":"r","itemId":"i","field":new_field,"value":label
+                    }}}}
+            }]})
+    }
+    fn field_observation(p:&Value,task:&str)->Value{
+        let result=compare(p).unwrap();
+        rows(&result["observations"]).find(|o|o["task"].as_str()==Some(task)).unwrap().clone()
+    }
+    #[test]
+    fn field_audit_product_and_type_corrections_have_opposite_polarities(){
+        let p=field_audit_fixture("😀709","709","product","product",
+            json!({"name":"BD 708","productId":"old","variantId":"old-v"}),
+            json!({"name":"BD 709","productId":"new","variantId":"new-v"}));
+        let o=field_observation(&p,"product");
+        assert_eq!(o["outcome"],"explicit_correction_observed");
+        assert_eq!(o["negativeCandidates"],json!(["old"]));
+        assert_eq!(o["positiveCandidates"],json!(["new"]));
+        assert_ne!(field_observation(&p,"variant")["outcome"],"explicit_correction_observed");
+        let t=field_audit_fixture("709","709","quantity","product",
+            json!({"quantity":709,"quantityConfirmed":true}),
+            json!({"name":"BD 709","productId":"new"}));
+        let o=field_observation(&t,"type");
+        assert_eq!(o["outcome"],"explicit_correction_observed");
+        assert_eq!(o["negativeCandidates"],json!(["quantity"]));
+        assert_eq!(o["positiveCandidates"],json!(["product"]));
+        let summary=super::super::learning_context::statistics(&json!({"orders":[p.clone(),p]})).unwrap();
+        let product=rows(&summary["fieldStatistics"]).find(|v|v["task"]=="product").unwrap();
+        assert_eq!(product["counts"]["explicitPositiveCandidates"]["new"],1);
+        assert_eq!(product["counts"]["explicitNegativeCandidates"]["old"],1);
+    }
+    #[test]
+    fn field_audit_quantity_requires_written_quantity_and_variant_requires_written_color(){
+        let q=field_audit_fixture("3개","3개","quantity","quantity",
+            json!({"quantity":2,"quantityConfirmed":true}),
+            json!({"quantity":3,"quantityConfirmed":true}));
+        let o=field_observation(&q,"quantity");
+        assert_eq!(o["outcome"],"explicit_correction_observed");
+        assert_eq!(o["negativeCandidates"],json!(["2"]));
+        assert_eq!(o["positiveCandidates"],json!(["3"]));
+        let old=json!({"name":"BD 709","productId":"p","variantId":"black","color":"Black"});
+        let new=json!({"name":"BD 709","productId":"p","variantId":"white","color":"White"});
+        let v=field_audit_fixture("709 화이트","709","product","product",old.clone(),new.clone());
+        assert_eq!(field_observation(&v,"variant")["positiveCandidates"],json!(["white"]));
+        let no_color=field_audit_fixture("709","709","product","product",old,new);
+        assert_eq!(field_observation(&no_color,"variant")["outcome"],"changed_requires_review");
+        let mut stale=q.clone();
+        stale["recognitionAuditEvents"][0]["sourceRaw"]=json!("외부 변경");
+        assert_eq!(field_observation(&stale,"quantity")["outcome"],"changed_requires_review");
     }
 
     #[test]
