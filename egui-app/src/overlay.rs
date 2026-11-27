@@ -145,6 +145,11 @@ pub fn drag_painter(ctx:&Context,owner:LayerId,id:Id)->Option<egui::Painter>{
     (modal_scope(ctx)==Some(owner)&&!egui::Popup::is_any_open(ctx))
         .then(||ctx.layer_painter(LayerId::new(Order::Tooltip,id)))
 }
+pub(crate) fn page_drag_painter(ctx:&Context,owner:LayerId,id:Id)->Option<egui::Painter>{
+    (modal_scope(ctx).is_none()&&!egui::Popup::is_any_open(ctx)
+        &&ctx.memory(|m|m.allows_interaction(owner)))
+        .then(||ctx.layer_painter(LayerId::new(Order::Tooltip,id)))
+}
 pub fn tooltip_allowed(response:&Response)->bool{
     let ctx=&response.ctx;
     let popup_layer=with_scope(ctx,|s|s.seen_popups.contains(&response.layer_id));

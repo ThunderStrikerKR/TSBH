@@ -2,7 +2,7 @@
 use crate::ui_layout::geometry::UiWidthPolicyExt as _;
 use crate::ui_layout::geometry::SharedPainterClipExt as _;
 use crate::ui_layout::geometry::SharedAllocationExt as _;
-use eframe::egui::{self,Color32,Rect,Response,Sense,Stroke,Ui,Vec2};
+use eframe::egui::{self,Color32,Rect,Response,Stroke,Ui,Vec2};
 use crate::{theme,typography};
 use crate::ui_primitives::{overflow_tooltip,paint_management_chevron,ManagementChevronDirection};
 
@@ -115,16 +115,15 @@ pub(crate) fn category_tree_row(ui:&mut Ui,item:CategoryTreeRow<'_>)->Response{
 
 /// Management-only folder row. Ordinary category pickers remain click-only.
 pub(crate) fn draggable_folder_row(ui:&mut Ui,item:CategoryTreeRow<'_>,id:&str,parent:&str,enabled:bool,draggable:bool)->Response{
+    let name=item.name;
     let response=tree_row(ui,item,false,enabled,draggable);
-    if enabled&&draggable&&ui.is_enabled()&&!id.is_empty(){
-        response.dnd_set_drag_payload(FolderDrag{id:id.to_owned(),parent:parent.to_owned()});
-        if response.dragged(){ui.ctx().set_cursor_icon(egui::CursorIcon::Grabbing);}
-    }
+    crate::drag_drop::start_native(ui,&response,enabled&&draggable&&!id.is_empty(),||
+        FolderDrag{id:id.to_owned(),parent:parent.to_owned(),name:name.to_owned()});
     response
 }
 
 #[derive(Clone)]
-struct FolderDrag{id:String,parent:String}
+struct FolderDrag{id:String,parent:String,name:String}
 
 fn valid_folder_target(drag:&FolderDrag,target:&str,contains_source:impl Fn(&str)->bool)->bool{
     !target.is_empty()&&drag.id!=target&&drag.parent!=target&&!contains_source(&drag.id)
@@ -141,10 +140,7 @@ pub(crate) fn folder_drop_target(ui:&Ui,response:&Response,target:&str,enabled:b
     contains_source:impl Fn(&str)->bool)->Option<FolderMove>{
     if !enabled||!ui.is_enabled()||target.is_empty(){return None;}
     let valid=|drag:&FolderDrag|valid_folder_target(drag,target,&contains_source);
-    if !response.dnd_hover_payload::<FolderDrag>().is_some_and(|drag|valid(&drag)){return None;}
-    crate::highlight::paint(ui,response.rect.intersect(ui.clip_rect()),
-        crate::highlight::Geometry::Control,crate::highlight::Role::DropHovered);
-    response.dnd_release_payload::<FolderDrag>().filter(|drag|valid(drag))
+    crate::drag_drop::drop_native::<FolderDrag>(ui,response,enabled,valid)
         .map(|drag|FolderMove{id:drag.id.clone(),parent:drag.parent.clone(),target:target.to_owned()})
 }
 
@@ -158,7 +154,7 @@ pub(crate) fn product_tree_row(ui:&mut Ui,name:&str,depth:usize,ancestor_guides:
 }
 
 #[derive(Clone)]
-struct ProductDrag { id:String, source:String, members:Vec<(String,String)> }
+struct ProductDrag { id:String, source:String, name:String, members:Vec<(String,String)> }
 
 /// Selection is shared between both management tree modes. A plain click
 /// still opens details; Ctrl+click toggles a unique product ID.
@@ -210,10 +206,10 @@ impl CategoryDragHover {
             !ui.input(|i|i.pointer.primary_down())||
             !response.rect.intersect(ui.clip_rect()).is_positive(){return false;}
         let now=ui.input(|i|i.time);
-        let ready=if let Some(drag)=response.dnd_hover_payload::<ProductDrag>(){
+        let ready=if let Some(drag)=crate::drag_drop::hover_payload::<ProductDrag>(response){
             if drag.members.iter().all(|(_,source)|source==target){return false;}
             self.advance(DragKind::Product,&drag.id,&drag.source,target,now)
-        }else if let Some(drag)=response.dnd_hover_payload::<FolderDrag>(){
+        }else if let Some(drag)=crate::drag_drop::hover_payload::<FolderDrag>(response){
             if !folder_enabled||!valid_folder_target(&drag,target,contains_source){return false;}
             self.advance(DragKind::Folder,&drag.id,&drag.parent,target,now)
         }else{return false;};
@@ -232,10 +228,18 @@ pub(crate) struct ProductMove {
     pub(crate) target:String,
 }
 
-pub(crate) fn start_product_drag(ui:&Ui,response:&Response,id:&str,source:&str,enabled:bool,selection:&ProductSelection){
-    if enabled&&ui.is_enabled()&&!id.is_empty()&&!source.is_empty(){
-        response.dnd_set_drag_payload(ProductDrag{id:id.to_owned(),source:source.to_owned(),members:selection.members(id,source)});
-        if response.dragged(){ui.ctx().set_cursor_icon(egui::CursorIcon::Grabbing);}
+pub(crate) fn start_product_drag(ui:&Ui,response:&Response,id:&str,name:&str,source:&str,enabled:bool,selection:&ProductSelection){
+    crate::drag_drop::start_native(ui,response,enabled&&!id.is_empty()&&!source.is_empty(),||
+        ProductDrag{id:id.to_owned(),source:source.to_owned(),name:name.to_owned(),members:selection.members(id,source)});
+}
+
+/// Read the native payload, not the source row: focused navigation may
+/// remove that row while the mouse remains pressed.
+pub(crate) fn paint_drag_preview(ui:&Ui){
+    if let Some(drag)=egui::DragAndDrop::payload::<ProductDrag>(ui.ctx()){
+        crate::drag_drop::paint_pointer_label(ui,&drag.name,&format!("상품 {}개",drag.members.len()));
+    }else if let Some(drag)=egui::DragAndDrop::payload::<FolderDrag>(ui.ctx()){
+        crate::drag_drop::paint_pointer_label(ui,&drag.name,"폴더 1개");
     }
 }
 
@@ -243,12 +247,8 @@ pub(crate) fn start_product_drag(ui:&Ui,response:&Response,id:&str,source:&str,e
 /// remains untouched until ProductManager commits a Rust mutation.
 pub(crate) fn product_drop_target(ui:&Ui,response:&Response,target:&str,enabled:bool)->Option<Vec<ProductMove>>{
     if !enabled||!ui.is_enabled()||target.is_empty(){return None;}
-    let valid=response.dnd_hover_payload::<ProductDrag>()
-        .is_some_and(|drag|drag.members.iter().any(|(_,source)|source!=target));
-    if !valid{return None;}
-    crate::highlight::paint(ui,response.rect.intersect(ui.clip_rect()),
-        crate::highlight::Geometry::Control,crate::highlight::Role::DropHovered);
-    response.dnd_release_payload::<ProductDrag>().and_then(|drag|{
+    crate::drag_drop::drop_native::<ProductDrag>(ui,response,enabled,
+        |drag|drag.members.iter().any(|(_,source)|source!=target)).and_then(|drag|{
         let moves=drag.members.iter().filter(|(_,source)|source!=target)
             .map(|(id,source)|ProductMove{id:id.clone(),source:source.clone(),target:target.to_owned()})
             .collect::<Vec<_>>();
@@ -259,7 +259,7 @@ pub(crate) fn product_drop_target(ui:&Ui,response:&Response,target:&str,enabled:
 fn tree_row(ui:&mut Ui,item:CategoryTreeRow<'_>,product:bool,enabled:bool,draggable:bool)->Response{
     let (rect,response)=ui.shared_allocate_exact_size(
         Vec2::new(ui.available_width().max(1.0),theme::CATALOG_TREE_ROW_HEIGHT),
-        if enabled&&draggable{Sense::click_and_drag()}else if enabled{Sense::click()}else{Sense::hover()}
+        crate::drag_drop::sense(enabled,draggable)
     );
     #[cfg(test)]
     if !product{crate::ui_test_support::record_highlight_target("category row",rect,ui.clip_rect());}
@@ -376,7 +376,7 @@ mod category_tree_geometry_tests{
     }
     #[test]
     fn folder_hover_and_drop_share_cycle_and_parent_guards(){
-        let drag=FolderDrag{id:"a".into(),parent:"parent".into()};
+        let drag=FolderDrag{id:"a".into(),parent:"parent".into(),name:"폴더".into()};
         assert!(!valid_folder_target(&drag,"a",|_|false));
         assert!(!valid_folder_target(&drag,"parent",|_|false));
         assert!(!valid_folder_target(&drag,"child",|id|id=="a"));

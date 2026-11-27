@@ -517,7 +517,7 @@ pub(crate) fn explorer_body(menu:&mut Ui,nodes:&[CategoryNode],index:&HashMap<&s
                         let response=category_tree::product_tree_row(row,name,1,&[],i+1==product_rows.len(),
                             active,move_enabled,selected);
                         if let Some(selection)=product_selection.as_deref_mut(){
-                            category_tree::start_product_drag(row,&response,id,current,active&&move_enabled,selection);
+                            category_tree::start_product_drag(row,&response,id,name,current,active&&move_enabled,selection);
                             if response.clicked(){
                                 if move_enabled&&row.input(|i|i.modifiers.ctrl){selection.toggle(id,current);}
                                 else{selection.clear();product_request=Some(id.clone());}

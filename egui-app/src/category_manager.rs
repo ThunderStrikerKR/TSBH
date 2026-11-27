@@ -671,7 +671,7 @@ impl CategoryManager {
                     let response=rows.push_id(("category-product",&item.id,id),|row|
                         category_tree::product_tree_row(row,name,depth+1,&child_guides,
                             position+1==products.len(),enabled,move_enabled,this.product_selection.contains(id))).inner;
-                    category_tree::start_product_drag(rows,&response,id,&item.id,enabled&&move_enabled,&this.product_selection);
+                    category_tree::start_product_drag(rows,&response,id,name,&item.id,enabled&&move_enabled,&this.product_selection);
                     if response.clicked(){
                         if move_enabled&&rows.input(|i|i.modifiers.ctrl){this.product_selection.toggle(id,&item.id);}
                         else{this.product_selection.clear();this.product_request=Some(id.clone());}
@@ -883,6 +883,7 @@ impl CategoryManager {
         });
         self.drag_hover.end_frame();
         if editable&&!busy&&!self.has_overlay(){
+            category_tree::paint_drag_preview(ui);
             if let Some(request)=self.folder_drop.take(){
                 self.folder_confirmation=folder_confirmation(cats,catalog,request);
                 if self.folder_confirmation.is_none(){self.error=Some("이동할 수 없는 분류입니다.".into());}

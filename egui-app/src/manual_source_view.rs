@@ -4,7 +4,7 @@
 
 use crate::ui_layout::geometry::SharedAllocationExt as _;
 use std::collections::HashSet;
-use eframe::egui::{self, Align, FontId, Sense, Ui};
+use eframe::egui::{self, Align, FontId, Ui};
 use crate::{source_highlight::{self,LinkKey,LinkedSpan},theme,typography};
 
 #[derive(Default)]
@@ -55,7 +55,7 @@ pub fn source_document(
     let content_height=galley.size().y+2.0*text_inset;
     let (rect,response)=ui.shared_allocate_exact_size(
         egui::vec2(width,content_height.max(theme::INPUT_HEIGHT)),
-        if enabled{Sense::click_and_drag()}else{Sense::hover()},
+        crate::drag_drop::sense(enabled,true),
     );
     #[cfg(test)]
     crate::ui_test_support::record_highlight_target("manual source viewport",response.rect,ui.clip_rect());

@@ -18,6 +18,7 @@ mod launch_profile;
 #[cfg(test)]
 mod ui_regressions;
 mod category_tree;
+mod drag_drop;
 mod status_notice;
 mod ui_primitives;
 mod highlight;

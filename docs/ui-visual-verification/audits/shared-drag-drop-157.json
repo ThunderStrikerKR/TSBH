@@ -1,0 +1,42 @@
+{
+  "schemaVersion": 1,
+  "id": "shared-drag-drop-157",
+  "screen": "상품 관리 / 카테고리 관리 및 접수 수동 분류 / 공통 드래그",
+  "files": [
+    "egui-app/src/main.rs",
+    "egui-app/src/drag_drop.rs",
+    "egui-app/src/category_tree/mod.rs",
+    "egui-app/src/category_manager.rs",
+    "egui-app/src/category_dropdown.rs",
+    "egui-app/src/manual_workspace.rs",
+    "egui-app/src/manual_source_view.rs",
+    "egui-app/src/overlay.rs"
+  ],
+  "visualStatus": "NOT_VERIFIED",
+  "reason": "업무용 drag/drop의 타입 payload·클릭 임계값·드롭 강조·커서·preview painter 공통화. 카테고리 드래그 이름/선택 수량 표시. 원문 미리보기와 업무 저장 규칙은 유지. 컴파일·CI·Windows 실화면 미검증.",
+  "defects": [],
+  "releaseDecision": "NOT_APPROVED",
+  "nextVerification": {
+    "requiredViewports": [
+      {
+        "width": 1920,
+        "height": 1080,
+        "scalePercent": 100
+      },
+      {
+        "width": 1366,
+        "height": 768,
+        "scalePercent": 100
+      }
+    ],
+    "checks": [
+      "noClipping",
+      "footerVisible",
+      "scrollReachable",
+      "inputReadable",
+      "alignment",
+      "interaction",
+      "hoverAndFocus"
+    ]
+  }
+}

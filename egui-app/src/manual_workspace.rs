@@ -254,7 +254,7 @@ fn manual_assignment_payload(
 /// Hit test uses the real shared cell Rect and viewport clip. The pointer may
 /// be captured by the source during a drag, so Response::hovered is not used.
 fn manual_assignment_drop_hit(ui:&egui::Ui,rect:egui::Rect,pointer:Option<egui::Pos2>)->bool{
-    ui.is_enabled() && pointer.is_some_and(|pos|rect.intersect(ui.clip_rect()).contains(pos))
+    crate::drag_drop::pointer_hits(ui,rect,pointer)
 }
 
 fn manual_assignment_target_supported(target:&ManualCellTarget)->bool{
@@ -295,8 +295,7 @@ fn manual_assignment_recommendations(
 fn paint_manual_assignment_recommendation(
     ui:&egui::Ui,rect:egui::Rect,hovered:bool
 ){
-    let role=if hovered{crate::highlight::Role::DropHovered}else{crate::highlight::Role::DropTarget};
-    crate::highlight::paint(ui,rect,crate::highlight::Geometry::Control,role);
+    crate::drag_drop::paint_target(ui,rect,hovered);
 }
 
 /// Paint only the selected source evidence while preserving the original
@@ -353,8 +352,8 @@ fn paint_manual_source_drag_preview(
     let desired_block_min=pointer-anchor_offset;
     let translation=desired_block_min-original_bounds.min;
     let galley_pos=egui::Pos2::ZERO+translation;
-    let Some(painter)=crate::overlay::drag_painter(ctx,
-        crate::popup::modal_window_layer("bando-native-manual-classification"),
+    let Some(painter)=crate::drag_drop::preview_painter(ctx,
+        crate::popup::modal_window_layer("bando-native-manual-classification"),true,
         egui::Id::new("manual-source-drag-preview")) else{return;};
     for rect in &original_geometry.rects {
         crate::highlight::paint_parts(&painter,rect.translate(translation),
@@ -2723,9 +2722,7 @@ impl ManualWorkspace {
             if !ctx.input(|input|input.pointer.primary_down()){
                 self.assignment_gesture.clear();
             }else{
-                ctx.set_cursor_icon(if self.assignment_gesture.drag_moved && !drop_allowed{
-                    egui::CursorIcon::NotAllowed
-                }else{egui::CursorIcon::Grabbing});
+                crate::drag_drop::cursor(ctx,!self.assignment_gesture.drag_moved||drop_allowed);
                 if let (Some(source_id),Some(pointer),Some(anchor_offset))=(
                     self.assignment_gesture.dragging.as_deref(),drag_pointer,
                     self.assignment_gesture.drag_anchor_offset
