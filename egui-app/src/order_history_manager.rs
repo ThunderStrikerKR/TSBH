@@ -2,16 +2,16 @@
 //! decisions are all projected by existing native Rust rules::history::list_view.
 //! The native egui view owns only date/search presentation, sort, expansion,
 //! clipboard copy and virtualized fixed-height rows.
-use crate::ui_layout::SharedUiClipExt as _;
-use crate::ui_layout::SharedPainterClipExt as _;
-use crate::ui_layout::SharedAllocationExt as _;
-use crate::ui_layout::AlignedUiBuilderExt as _;
+use crate::ui_layout::geometry::SharedUiClipExt as _;
+use crate::ui_layout::geometry::SharedPainterClipExt as _;
+use crate::ui_layout::geometry::SharedAllocationExt as _;
+use crate::ui_layout::geometry::AlignedUiBuilderExt as _;
 use crate::{
     navigation::calendar_month_start as month_start,
     gateway::{BandoGateway, ReadOperation},
     settings_help, theme, typography,
 };
-use crate::ui_primitives::UiWidthPolicyExt;
+use crate::ui_layout::geometry::UiWidthPolicyExt;
 use chrono::{DateTime, FixedOffset, NaiveDate, Utc};
 use eframe::egui::{self, Align, Rect, Sense, Stroke, Ui, UiBuilder, Vec2};
 use serde_json::{json, Value};
@@ -595,7 +595,7 @@ fn draw_line(ui:&mut Ui,rect:Rect,line:HistoryLine,snapshot:&HistorySnapshot,
             let control=columns[6].shrink2(
                 Vec2::new(theme::SPACE_8,theme::SPACE_4)
             );
-            let control=crate::ui_layout::aligned_rect(control);
+            let control=crate::ui_layout::geometry::aligned_rect(control);
             let action_gap=theme::SPACE_4;
             let action_width=(control.width()-action_gap)/2.0;
             ui.scope_builder(UiBuilder::new()
@@ -603,7 +603,7 @@ fn draw_line(ui:&mut Ui,rect:Rect,line:HistoryLine,snapshot:&HistorySnapshot,
                 .aligned_max_rect(control)
                 .layout(egui::Layout::left_to_right(Align::Center)),|actions|{
                     actions.restrict_shared_clip(control.intersect(area));
-                    actions.apply_shared_width(crate::ui_primitives::CardWidthPolicy::Fixed,control.width());
+                    actions.apply_shared_width(crate::ui_layout::geometry::CardWidthPolicy::Fixed,control.width());
                     crate::ui_layout::apply_spacing_role(actions,crate::ui_layout::SpacingRole::CompactActions);
                     // Copy the FULL order's existing Rust-generated message.
                     if crate::button::action_with_min_width(actions,"운송장 복사",
@@ -661,7 +661,7 @@ fn draw_line(ui:&mut Ui,rect:Rect,line:HistoryLine,snapshot:&HistorySnapshot,
             // Actions live OUTSIDE the compact shipment card. Both actions
             // target this one shipment; the order-level copy remains separate.
             let block=history_detail_block_rect(rect,widths,spacing);
-            let actions_rect=crate::ui_layout::aligned_rect(history_detail_actions_rect(rect,block));
+            let actions_rect=crate::ui_layout::geometry::aligned_rect(history_detail_actions_rect(rect,block));
             let memo_text=shipment.map(|s|field(s,"managementMemo")).unwrap_or("");
             ui.scope_builder(UiBuilder::new()
                 .id_salt(("history-shipment-actions",id,recipient_index,shipment_index))
@@ -772,8 +772,8 @@ fn history_date_controls(
     crate::navigation::apply_management_date_control_spacing(ui);
     if compact{
         let (first,second)=crate::navigation::compact_date_range_rows(ui,RANGE_COMPACT_START_WIDTH,RANGE_COMPACT_END_WIDTH);
-        let first=crate::ui_layout::aligned_rect(first);
-        let second=crate::ui_layout::aligned_rect(second);
+        let first=crate::ui_layout::geometry::aligned_rect(first);
+        let second=crate::ui_layout::geometry::aligned_rect(second);
         ui.scope_builder(UiBuilder::new()
             .id_salt("history-range-start-line")
             .aligned_max_rect(first)
@@ -782,8 +782,8 @@ fn history_date_controls(
             .layout(egui::Layout::left_to_right(Align::Center)
                 .with_main_align(Align::Max)),
             |line|{
-                line.apply_shared_width(crate::ui_primitives::CardWidthPolicy::Fixed,first.width());
-                crate::ui_layout::set_fixed_height(line,first.height());
+                line.apply_shared_width(crate::ui_layout::geometry::CardWidthPolicy::Fixed,first.width());
+                crate::ui_layout::geometry::set_fixed_height(line,first.height());
                 crate::navigation::apply_management_date_control_spacing(line);
                 changed|=history_date_range_start(
                     line,basis,from,to,from_month
@@ -795,8 +795,8 @@ fn history_date_controls(
             .layout(egui::Layout::left_to_right(Align::Center)
                 .with_main_align(Align::Max)),
             |line|{
-                line.apply_shared_width(crate::ui_primitives::CardWidthPolicy::Fixed,second.width());
-                crate::ui_layout::set_fixed_height(line,second.height());
+                line.apply_shared_width(crate::ui_layout::geometry::CardWidthPolicy::Fixed,second.width());
+                crate::ui_layout::geometry::set_fixed_height(line,second.height());
                 crate::navigation::apply_management_date_control_spacing(line);
                 changed|=history_date_range_end(
                     line,from,to,to_month
