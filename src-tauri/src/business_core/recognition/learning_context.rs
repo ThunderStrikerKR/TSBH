@@ -280,6 +280,59 @@ fn document_pattern(events:&[Event],first:&Value)->Value{
         "recipientCycleObserved":recipient_cycle,"learningEligible":false})
 }
 
+// An observed role key is usable for controlled evaluation, not a
+// certificate of complete extraction. Bind line/paragraph metadata back
+// to the original document. Keep the eventual training key unavailable
+// until candidate coverage and section normalization are proven.
+fn pattern_identity(raw:&str,units:&[u16],events:&[Event],first:&Value,pattern:&Value)->Value{
+    let mut blockers=Vec::new();
+    if pattern["candidateKey"].as_str().is_none(){blockers.push("ambiguous_or_missing_structure");}
+    let lines=super::physical_lines(raw);
+    let mut starts=Vec::with_capacity(lines.len());
+    let (mut last_byte,mut last_unit)=(0usize,0usize);
+    for line in &lines{
+        last_unit+=raw[last_byte..line.start].encode_utf16().count();
+        last_byte=line.start;
+        starts.push((last_unit,last_unit+line.text.encode_utf16().count(),line.number as u64,line.paragraph as u64));
+    }
+    let verified_geometry=events.iter().all(|e|{
+        let index=starts.partition_point(|l|l.0<=e.position.0);
+        index>0&&{
+            let line=starts[index-1];
+            e.position.0<line.1&&e.line==line.2&&e.paragraph==line.3
+        }
+    });
+    if !verified_geometry{blockers.push("source_geometry_mismatch");}
+    let inventory=&first["classificationCandidateTrace"]["rawCandidateInventory"];
+    if inventory["version"]!=1{blockers.push("missing_raw_candidate_inventory");}
+    else{
+        if inventory["complete"]!=true||first["classificationCandidateTrace"]["fullCandidateCoverage"]!=true{
+            blockers.push("incomplete_candidate_coverage");
+        }
+        if inventory["truncated"]!=false||inventory["invalidSourceCount"]!=0{
+            blockers.push("invalid_or_truncated_inventory");
+        }
+        let mut retained=BTreeSet::new();let mut common=false;
+        for record in rows(&inventory["records"]){
+            let Some(r)=role(record["kind"].as_str().unwrap_or(""))else{continue;};
+            if rows(&record["origins"]).any(|o|o["stage"]=="native_extraction"&&o["status"]=="retained"){
+                if let Some(s)=span(units,&record["source"]){retained.insert((s,r));}
+                else if !blockers.contains(&"invalid_native_span"){blockers.push("invalid_native_span");}
+                common|=rows(&record["origins"]).any(|o|o["section"]=="common_product");
+            }
+        }
+        let observed=events.iter().map(|e|(e.position,e.role)).collect::<BTreeSet<_>>();
+        if retained!=observed{blockers.push("native_and_final_candidate_mismatch");}
+        if common{blockers.push("common_section_identity_not_validated");}
+    }
+    // Never treat a caller-supplied completeness flag as a training
+    // authorization. The versioned evaluation key contains only roles.
+    json!({"identityVersion":DOCUMENT_PATTERN_VERSION,
+        "evaluationKey":if verified_geometry{pattern["candidateKey"].clone()}else{Value::Null},
+        "scope":"observed_structure_only","trainingKey":null,
+        "learningEligible":false,"blockers":blockers})
+}
+
 // Diagnostic feature projection only; do not change the v1 context key
 // or duplicate all candidate pair combinations. Exact source geometry is
 // available for adjacent events, including within one physical line.
@@ -735,8 +788,10 @@ pub(super) fn lookup(payload:&Value)->Result<Value,String>{
         }
         entry
     }).collect::<Vec<_>>();
+    let pattern=document_pattern(&events,first);
+    let identity=pattern_identity(raw,&units,&events,first,&pattern);
     let mut result=json!({"featureVersion":FEATURE_VERSION,"entries":entries,"fieldEntries":field_entries,
-        "documentPattern":document_pattern(&events,first)});
+        "documentPattern":pattern,"patternIdentity":identity});
     if payload["includeDocumentFeatures"]==true{
         result["documentFeatures"]=document_geometry(raw,&units,&events,&result["documentPattern"]);
         let order=OwnerOrderEvidence::new(events.iter().map(|e|(if e.role=="contact"{"phone"}else{e.role},
@@ -1171,6 +1226,22 @@ mod tests{
             ("name",2,8,9),("product",2,10,11)]);
         assert_eq!(products.votes("product",[0,0,0]),[0,2]);
         assert_eq!(products.votes("product",[1,2,2]),[1,0]);
+    }
+    #[test]
+    fn pattern_identity_rejects_invented_geometry_and_unproven_coverage(){
+        let raw="A\nB";
+        let mut first=json!({"candidates":[
+            {"start":0,"end":1,"text":"A","kind":"name","line":0,"paragraph":0},
+            {"start":2,"end":3,"text":"B","kind":"address","line":1,"paragraph":0}]});
+        let check=|first:&Value|lookup(&json!({"raw":raw,"initialAnalysis":first})).unwrap()["patternIdentity"].clone();
+        let observed=check(&first);
+        assert!(observed["evaluationKey"].is_string());
+        assert_eq!(observed["trainingKey"],Value::Null);
+        assert!(rows(&observed["blockers"]).any(|b|b=="missing_raw_candidate_inventory"));
+        first["candidates"][1]["paragraph"]=json!(1);
+        let invalid=check(&first);
+        assert_eq!(invalid["evaluationKey"],Value::Null);
+        assert!(rows(&invalid["blockers"]).any(|b|b=="source_geometry_mismatch"));
     }
     #[test]
     fn document_pattern_candidate_preserves_order_and_ignores_item_count(){
