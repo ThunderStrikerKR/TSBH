@@ -1983,37 +1983,41 @@ fn apply_prepared_learning_changes(tx:&rusqlite::Transaction<'_>,scope:&str,ids:
 
 fn query_learning_audit_digests(conn:&Connection,ids:&[String])->Result<std::collections::BTreeMap<String,String>,String>{
     use sha2::{Digest,Sha256};
-    let unique=ids.iter().collect::<std::collections::BTreeSet<_>>();
+    let unique=ids.iter().map(String::as_str).collect::<std::collections::BTreeSet<_>>();
     if unique.len()>250||unique.iter().any(|id|id.trim().is_empty()){
         return Err("감사 지문 조회 범위 오류".into());
     }
+    if unique.is_empty(){return Ok(std::collections::BTreeMap::new());}
     let has_context:i64=conn.query_row(
         "SELECT count(*) FROM pragma_table_info('reception_edit_audit') WHERE name='context_json'",
         [],|r|r.get(0)).map_err(|e|e.to_string())?;
     let context=if has_context==1{"context_json"}else{"NULL"};
+    let placeholders=vec!["?";unique.len()].join(",");
     let sql=format!("SELECT id,order_id,source_raw,initial_analysis_json,before_rows_json,
         after_rows_json,recorded_at,{context} FROM reception_edit_audit
-        WHERE order_id=?1 ORDER BY recorded_at,id");
+        WHERE order_id IN ({placeholders}) ORDER BY order_id,recorded_at,id");
     let mut stmt=conn.prepare(&sql).map_err(|e|e.to_string())?;
-    let mut out=std::collections::BTreeMap::new();
-    let mut total_rows=0usize;let mut total_bytes=0usize;
-    for id in unique{
+    let mut hashes=unique.iter().map(|id|{
         let mut hash=Sha256::new();hash.update(b"bando-audit-learning-source-v1\0");
-        let mut rows=stmt.query(params![id]).map_err(|e|e.to_string())?;
-        let mut count=0usize;
-        while let Some(row)=rows.next().map_err(|e|e.to_string())?{
-            count+=1;total_rows+=1;
-            if count>1000||total_rows>4000{return Err("감사 지문 조회 건수 한도 초과".into());}
-            for col in 0..8{
-                total_bytes=total_bytes.saturating_add(crate::business_state::hash_learning_text(
-                    &mut hash,row.get_ref(col).map_err(|e|e.to_string())?)?);
-                if total_bytes>32*1024*1024{return Err("감사 지문 조회 용량 한도 초과".into());}
-            }
+        ((*id).to_owned(),(hash,0usize))
+    }).collect::<std::collections::BTreeMap<_,_>>();
+    let mut rows=stmt.query(rusqlite::params_from_iter(unique.iter().copied())).map_err(|e|e.to_string())?;
+    let mut total_rows=0usize;let mut total_bytes=0usize;
+    while let Some(row)=rows.next().map_err(|e|e.to_string())?{
+        let id=row.get::<_,String>(1).map_err(|e|e.to_string())?;
+        let (hash,count)=hashes.get_mut(&id).ok_or("감사 지문 주문 범위 오류")?;
+        *count+=1;total_rows+=1;
+        if *count>1000||total_rows>4000{return Err("감사 지문 조회 건수 한도 초과".into());}
+        for col in 0..8{
+            total_bytes=total_bytes.saturating_add(crate::business_state::hash_learning_text(
+                hash,row.get_ref(col).map_err(|e|e.to_string())?)?);
+            if total_bytes>32*1024*1024{return Err("감사 지문 조회 용량 한도 초과".into());}
         }
-        hash.update((count as u64).to_le_bytes());
-        out.insert(id.clone(),format!("{:x}",hash.finalize()));
     }
-    Ok(out)
+    Ok(hashes.into_iter().map(|(id,(mut hash,count))|{
+        hash.update((count as u64).to_le_bytes());
+        (id,format!("{:x}",hash.finalize()))
+    }).collect())
 }
 
 fn query_reception_audit_batch(conn:&Connection,ids:&[String])->Result<std::collections::BTreeMap<String,Vec<Value>>,String>{
@@ -2632,6 +2636,19 @@ mod reception_edit_audit_tests {
         conn.execute("UPDATE reception_edit_audit SET context_json='null' WHERE id='e'",[]).unwrap();
         assert_ne!(query_learning_audit_digests(&conn,&ids).unwrap(),edited);
         conn.execute("INSERT INTO reception_edit_audit VALUES('unrelated','b','x','{}','[]','[]','t',NULL)",[]).unwrap();
+        let batch=query_learning_audit_digests(&conn,&["b".into(),"a".into(),"a".into(),"empty".into()]).unwrap();
+        assert_eq!(batch.len(),3);
+        for id in ["a","b","empty"]{
+            assert_eq!(batch[id],query_learning_audit_digests(&conn,&[id.into()]).unwrap()[id]);
+        }
+        // Reference v1 bytes, including NULL versus textual JSON null.
+        use sha2::{Digest,Sha256};
+        let mut reference=Sha256::new();reference.update(b"bando-audit-learning-source-v1\0");
+        for s in ["e","a","raw","{}","[]","[1]","t","null"]{
+            reference.update([1]);reference.update((s.len() as u64).to_le_bytes());reference.update(s.as_bytes());
+        }
+        reference.update(1u64.to_le_bytes());
+        assert_eq!(batch["a"],format!("{:x}",reference.finalize()));
         conn.execute("DELETE FROM reception_edit_audit WHERE id='e'",[]).unwrap();
         assert_eq!(query_learning_audit_digests(&conn,&ids).unwrap(),empty);
     }
