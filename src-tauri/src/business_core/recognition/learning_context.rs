@@ -1074,7 +1074,7 @@ mod tests{
         assert_eq!(locals[&1],saved);
         assert_eq!(owner,contexts(&units,&first));
         assert_eq!(fields,field_contexts(&units,&first));
-        assert_eq!(saved,json!([["name",false,1,true],["contact",true,0,true],["name",false,1,true]]));
+        assert_eq!(json!(saved),json!([["name",false,1,true],["contact",true,0,true],["name",false,1,true]]));
     }
     #[test]
     fn document_features_preserve_exact_unicode_distance_and_boundaries(){
