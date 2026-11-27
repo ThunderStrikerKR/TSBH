@@ -26,6 +26,7 @@ pub(crate) struct Decision {
     pub(crate) alias_id: Option<String>,
     pub(crate) span: Option<(usize, usize)>,
     pub(super) source_candidates:Vec<SourceCandidate>,
+    pub(super) source_truncated:bool,
 }
 
 fn str_field<'a>(v: &'a Value, name: &str) -> &'a str {
@@ -134,6 +135,12 @@ fn spell(term: &str, is_model: bool) -> String {
     result
 }
 pub(crate) fn find_term(text: &str, term: &str, is_model: bool) -> Option<(usize, usize)> {
+    visit_term(text,term,is_model,|_|false)
+}
+// Reuse exactly the same compiled matcher and token boundary for the
+// legacy first choice and all retained occurrence hypotheses.
+fn visit_term(text:&str,term:&str,is_model:bool,
+    mut visit:impl FnMut((usize,usize))->bool)->Option<(usize,usize)>{
     if term.trim().is_empty() { return None; }
     // A full product catalog scan repeats the same registered model patterns
     // hundreds of times. Cache the compiled *identical* regex so this changes
@@ -152,9 +159,13 @@ pub(crate) fn find_term(text: &str, term: &str, is_model: bool) -> Option<(usize
             compiled
         }
     };
-    let found=re.find_iter(text).find(|m| is_boundary(text,m.start(),m.end()))
-        .map(|m|(m.start(),m.end()));
-    found
+    let mut first=None;
+    for m in re.find_iter(text).filter(|m|is_boundary(text,m.start(),m.end())){
+        let span=(m.start(),m.end());
+        first.get_or_insert(span);
+        if !visit(span){break;}
+    }
+    first
 }
 pub(crate) fn model_names(p: &Value) -> Vec<String> {
     let name = lead(p);
@@ -370,18 +381,41 @@ fn terms(p: &Value) -> Vec<(String, u8, bool)> {
 }
 #[derive(Clone)]
 struct Entry<'a> { p: &'a Value, priority: u8, span: (usize, usize) }
-fn evidence<'a>(text: &str, p: &'a Value, verified: &HashSet<String>) -> Option<Entry<'a>> {
-    for (term, priority, model) in terms(p) {
-        if let Some(span) = find_term(text, &term, model) {
-            return Some(Entry { p, priority, span });
-        }
+// Keep one bounded collection for the current search, with no secondary
+// catalog traversal. Duplicate terms for the same product/span are not
+// separate evidence. If the budget is reached the legacy decision still
+// obtains its first match; only completeness of the raw pool is lost.
+const SOURCE_CANDIDATE_LIMIT:usize=4096;
+fn retain_occurrence(pool:&mut Vec<SourceCandidate>,truncated:&mut bool,
+    seen:&mut HashSet<(usize,usize)>,id:&str,span:(usize,usize),literal:bool)->bool{
+    if !seen.insert(span){return true;}
+    if pool.len()>=SOURCE_CANDIDATE_LIMIT{
+        *truncated=true;return false;
     }
+    pool.push(SourceCandidate{product_id:id.to_owned(),span,literal});
+    true
+}
+fn evidence<'a>(text: &str, p: &'a Value, verified: &HashSet<String>,
+    pool:&mut Vec<SourceCandidate>,truncated:&mut bool) -> Option<Entry<'a>> {
+    let mut selected=None;
+    let mut seen=HashSet::new();
+    let id=str_field(p,"id");
+    for (term, priority, model) in terms(p) {
+        let first=visit_term(text,&term,model,|span|
+            retain_occurrence(pool,truncated,&mut seen,id,span,true));
+        if selected.is_none(){
+            if let Some(span)=first{selected=Some(Entry{p,priority,span});}
+        }
+        if *truncated&&selected.is_some(){break;}
+    }
+    if selected.is_some(){return selected;}
     if let Some((base, _, _)) = score_model(p) {
         if (verified.contains(&base) && ((no_holes(text) && top(p, verified) == Some("UNPERFORATED"))
             || (!no_holes(text) && top(p, verified) == Some("PERFORATED"))))
             || (no_holes(text) && top(p, verified) == Some("UNPERFORATED")) {
-            if let Some(span) = find_term(text, &base, true) {
-                return Some(Entry { p, priority: 2, span });
+            if let Some(span)=visit_term(text,&base,true,|span|
+                retain_occurrence(pool,truncated,&mut seen,id,span,true)){
+                return Some(Entry{p,priority:2,span});
             }
         }
     }
@@ -440,22 +474,27 @@ fn name_entries<'a>(text: &str, mut entries:Vec<Entry<'a>>,
     strongest(text, entries)
 }
 fn alias_entries<'a>(text: &str, state: &'a Value, client_id: &str,
-    ps: &[&'a Value]) -> Vec<(&'a Value, &'a Value)> {
-    let mut aliases: Vec<&Value> = state.get("aliases").and_then(Value::as_array)
-        .map(|xs| xs.iter().filter(|a| {
-            let scope = a.get("clientId").and_then(Value::as_str);
-            (scope.is_none() || scope == Some(client_id)) &&
-                !generic(str_field(a,"text")) &&
-                find_term(text, str_field(a,"text"), true).is_some()
-        }).collect()).unwrap_or_default();
-    aliases.sort_by(|a,b| {
+    ps: &[&'a Value],pool:&mut Vec<SourceCandidate>,truncated:&mut bool
+) -> Vec<(&'a Value, &'a Value,(usize,usize))> {
+    let mut seen=HashMap::<&str,HashSet<(usize,usize)>>::new();
+    let mut aliases=Vec::new();
+    for a in state.get("aliases").and_then(Value::as_array).into_iter().flatten(){
+        let scope=a.get("clientId").and_then(Value::as_str);
+        if !(scope.is_none()||scope==Some(client_id))||generic(str_field(a,"text")){continue;}
+        let id=str_field(a,"productId");
+        let Some(&p)=ps.iter().find(|p|str_field(p,"id")==id)else{continue;};
+        let positions=seen.entry(id).or_default();
+        if let Some(span)=visit_term(text,str_field(a,"text"),true,|span|
+            retain_occurrence(pool,truncated,positions,id,span,false)){
+            aliases.push((a,p,span));
+        }
+    }
+    aliases.sort_by(|(a,_,_),(b,_,_)|{
         b.get("clientId").and_then(Value::as_str).is_some()
             .cmp(&a.get("clientId").and_then(Value::as_str).is_some())
-            .then_with(|| str_field(b,"text").len().cmp(&str_field(a,"text").len()))
+            .then_with(||str_field(b,"text").len().cmp(&str_field(a,"text").len()))
     });
-    aliases.into_iter().filter_map(|a| ps.iter()
-        .find(|p| str_field(p,"id") == str_field(a,"productId"))
-        .map(|p| (a,*p))).collect()
+    aliases
 }
 // Vocabulary-level normalization, not a learned guess. An unambiguous
 // conductor's score stand is described as "지휘용 악보 스탠드" in customer
@@ -482,21 +521,15 @@ fn conductor_semantic_entries<'a>(text: &str, ps: &[&'a Value]) -> Vec<Entry<'a>
 pub(crate) fn decide(text: &str, state: &Value, client_id: &str) -> Decision {
     let ps = products(state);
     let verified = verified_bases(&ps);
-    let raw_entries:Vec<_>=ps.iter().filter_map(|p|evidence(text,p,&verified)).collect();
-    let mut source_candidates=raw_entries.iter().map(|e|SourceCandidate{
-        product_id:str_field(e.p,"id").to_owned(),span:e.span,literal:true
-    }).collect::<Vec<_>>();
+    let mut source_candidates=Vec::new();
+    let mut source_truncated=false;
+    let raw_entries:Vec<_>=ps.iter().filter_map(|p|
+        evidence(text,p,&verified,&mut source_candidates,&mut source_truncated)).collect();
     let entries = name_entries(text, raw_entries, &verified);
     // parser.ts:487-510 filters brand/catalog and DEMO before options.
     let (mut entries,known_brand) =
         filter_business_candidates(text,state,&ps,entries);
-    let aliases = alias_entries(text, state, client_id, &ps);
-    for (a,p) in &aliases{
-        if let Some(span)=find_term(text,str_field(a,"text"),true){
-            source_candidates.push(SourceCandidate{
-                product_id:str_field(p,"id").to_owned(),span,literal:false});
-        }
-    }
+    let aliases=alias_entries(text,state,client_id,&ps,&mut source_candidates,&mut source_truncated);
     let mut hint=code_color_hint(text,&ps);
     if let Some((base,_,term))=hint.clone() {
         // parser.ts::protectedCode guards against reinterpreting the final
@@ -547,14 +580,13 @@ pub(crate) fn decide(text: &str, state: &Value, client_id: &str) -> Decision {
     let proof = qualifiers(text);
     entries.retain(|e| qualifies(e.p, &proof, &verified));
     let code_entries = entries.clone();
-    let first_alias = aliases.first().map(|(a,_)| *a);
+    let first_alias = aliases.first().map(|(a,_,_)| *a);
     if entries.is_empty() {
-        if let Some((_,p)) = aliases.first() {
+        if let Some((_,p,span)) = aliases.first() {
             if qualifies(p, &proof, &verified) {
                 entries = vec![Entry {
                     p, priority: 1,
-                    span: find_term(text, str_field(first_alias.unwrap(), "text"), true)
-                        .unwrap_or((0, text.len())),
+                    span:*span,
                 }];
             }
         }
@@ -580,12 +612,12 @@ pub(crate) fn decide(text: &str, state: &Value, client_id: &str) -> Decision {
             .cloned().collect()
     } else { code_entries.clone() };
     let alias_conflict = (!exact.is_empty() && aliases.iter()
-            .any(|(_,p)| !exact.iter().any(|e| str_field(e.p,"id") == str_field(p,"id"))))
+            .any(|(_,p,_)| !exact.iter().any(|e| str_field(e.p,"id") == str_field(p,"id"))))
         || (exact.is_empty() && {
             let priority = first_alias.and_then(|a| a.get("clientId").and_then(Value::as_str)).is_some();
-            let ids: HashSet<_> = aliases.iter().filter(|(a,_)|
+            let ids: HashSet<_> = aliases.iter().filter(|(a,_,_)|
                 a.get("clientId").and_then(Value::as_str).is_some() == priority)
-                .map(|(_,p)| str_field(p,"id")).collect();
+                .map(|(_,p,_)| str_field(p,"id")).collect();
             ids.len() > 1
         });
     let category_mismatch = chosen.as_ref().map_or(false, |pick| {
@@ -597,7 +629,7 @@ pub(crate) fn decide(text: &str, state: &Value, client_id: &str) -> Decision {
     let broad = category(text).is_some() && code_entries.is_empty() && aliases.is_empty();
     let mut available = if alias_conflict {
         let mut seen = HashSet::new();
-        exact.iter().map(|e| e.p).chain(aliases.iter().map(|(_,p)| *p))
+        exact.iter().map(|e| e.p).chain(aliases.iter().map(|(_,p,_)| *p))
             .filter(|p| seen.insert(str_field(p,"id")))
             .map(|p| Entry {
                 p, priority: 0, span: find_term(text, lead(p), true).unwrap_or((0,text.len()))
@@ -669,7 +701,7 @@ pub(crate) fn decide(text: &str, state: &Value, client_id: &str) -> Decision {
                 .unwrap_or_else(|| text.to_owned())),
         reason, candidates, alias_id: first_alias.map(|a|str_field(a,"id").to_owned()),
         span,
-        source_candidates,
+        source_candidates,source_truncated,
     }
 }
 pub(crate) fn decision_json(decision: &Decision) -> Value {
@@ -690,6 +722,20 @@ pub(crate) fn decision_json(decision: &Decision) -> Value {
 #[cfg(test)]
 mod option_boundary_tests {
     use super::*;
+    #[test]
+    fn retained_term_occurrences_share_first_match_boundary(){
+        let text="709 709 7090 709";
+        let mut spans=Vec::new();
+        let first=visit_term(text,"709",true,|span|{spans.push(span);true});
+        assert_eq!(first,find_term(text,"709",true));
+        assert_eq!(spans,vec![(0,3),(4,7),(13,16)]);
+        let state=json!({"products":[{"id":"p","name":"709","active":true}],"aliases":[]});
+        let decision=decide(text,&state,"");
+        let positions=decision.source_candidates.iter().filter(|c|c.product_id=="p"&&c.literal)
+            .map(|c|c.span).collect::<Vec<_>>();
+        assert_eq!(positions,spans);
+        assert!(!decision.source_truncated);
+    }
 
     #[test]
     fn type_evidence_cannot_bridge_model_code_boundary() {
