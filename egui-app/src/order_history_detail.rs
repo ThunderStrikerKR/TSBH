@@ -2,6 +2,7 @@
 //! All business values come from the saved order-history projection and its
 //! matching workflow records. This module never recalculates prices or writes
 //! historical data. Only content-heavy panes have their own scroll areas.
+use crate::ui_layout::AlignedUiBuilderExt as _;
 use crate::{theme,typography};
 use crate::ui_primitives::UiWidthPolicyExt;
 use chrono::{DateTime,FixedOffset};
@@ -85,7 +86,7 @@ fn overview(ui:&mut Ui,rect:Rect,row:&Value,shipment_count:usize){
     let order=&row["order"];
     ui.scope_builder(UiBuilder::new()
         .id_salt("history-detail-overview")
-        .max_rect(inner).layout(Layout::top_down(Align::Min)),|panel|{
+        .aligned_max_rect(inner).layout(Layout::top_down(Align::Min)),|panel|{
             panel.set_clip_rect(clip);
             panel.apply_shared_width(crate::ui_primitives::CardWidthPolicy::Fixed,inner.width());
             panel.horizontal_wrapped(|line|{
