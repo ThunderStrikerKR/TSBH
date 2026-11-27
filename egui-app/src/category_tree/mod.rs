@@ -192,7 +192,7 @@ mod category_tree_geometry_tests{
 
 /// Geometry of the shared category explorer; motion remains screen-owned.
 pub(crate) fn configure_explorer_popup(ui:&mut Ui,width:f32){
-    ui.set_min_width(width);ui.set_max_width(width);ui.set_width(width);
+    crate::card::apply_width_policy(ui,crate::card::CardWidthPolicy::Bounded,width);
     ui.spacing_mut().item_spacing.y=theme::SPACE_8;
 }
 pub(crate) fn configure_tree_rows(ui:&mut Ui){
