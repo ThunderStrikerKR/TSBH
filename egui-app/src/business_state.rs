@@ -251,7 +251,7 @@ pub fn load_export_metadata()->Result<Value,String>{
 
 enum ReadScope{Full,Catalog,ReceptionCatalog,Settings,Exports}
 
-fn load_projection(scope:ReadScope) -> Result<Value,String> {
+fn open_business_read_snapshot()->Result<Connection,String>{
     let path=std::env::var_os("BANDO_EGUI_BUSINESS_DB")
         .filter(|p|!p.is_empty())
         .map(PathBuf::from)
@@ -275,6 +275,11 @@ fn load_projection(scope:ReadScope) -> Result<Value,String> {
         "SELECT version FROM core_schema WHERE key='business-core'",[],|r|r.get(0)
     ).map_err(|_|"운영 DB 스키마 버전을 확인하지 못했습니다.".to_owned())?;
     if version!=2 {return Err("지원되지 않는 운영 DB 스키마입니다. 아무 것도 저장하지 않았습니다.".into());}
+    Ok(conn)
+}
+
+fn load_projection(scope:ReadScope) -> Result<Value,String> {
+    let conn=open_business_read_snapshot()?;
     // Share the same app_state and catalog-hydration rules with Tauri.
     // Only the full business read needs order, recipient and item tables.
     let state=match scope{
@@ -316,9 +321,71 @@ fn load_projection(scope:ReadScope) -> Result<Value,String> {
 }
 
 
+/// Explicit diagnostic only. Fetch exactly the requested order IDs, not the
+/// full ledger or its live recipients/items. The frozen snapshot remains the
+/// sole authority for a historical recognition comparison.
+fn owner_snapshot_batch(conn:&Connection,ids:&[String])->Result<Vec<Value>,String>{
+    let unique=ids.iter().map(String::as_str)
+        .collect::<std::collections::BTreeSet<_>>();
+    if unique.is_empty()||ids.len()>250||unique.iter().any(|id|id.trim().is_empty()){
+        return Err("귀속 통계는 1~250개 주문 ID를 명시해야 합니다.".into());
+    }
+    let placeholders=vec!["?";unique.len()].join(",");
+    let sql=format!("SELECT id,confirmed_at,json_extract(payload,'$.deletedAt'),
+        json_extract(payload,'$.confirmationSnapshot') FROM core_orders
+        WHERE id IN ({placeholders}) ORDER BY id");
+    let mut stmt=conn.prepare(&sql).map_err(|e|e.to_string())?;
+    let records=stmt.query_map(rusqlite::params_from_iter(unique.iter().copied()),|r|
+        Ok((r.get::<_,String>(0)?,r.get::<_,Option<String>>(1)?,
+            r.get::<_,Option<String>>(2)?,r.get::<_,Option<String>>(3)?)))
+        .map_err(|e|e.to_string())?;
+    let mut orders=Vec::new();
+    for row in records{
+        let (id,confirmed_at,deleted_at,snapshot)=row.map_err(|e|e.to_string())?;
+        let snapshot:Value=match snapshot{
+            Some(s)=>serde_json::from_str(&s).map_err(|_|"확정 스냅샷 형식 오류")?,
+            None=>Value::Null
+        };
+        orders.push(serde_json::json!({
+            "id":id,"confirmedAt":confirmed_at,"deletedAt":deleted_at,
+            "confirmationSnapshot":snapshot
+        }));
+    }
+    Ok(orders)
+}
+pub(crate) fn read_owner_snapshots(ids:&[String])->Result<Vec<Value>,String>{
+    let conn=open_business_read_snapshot()?;
+    let orders=owner_snapshot_batch(&conn,ids)?;
+    conn.execute_batch("COMMIT").map_err(|e|e.to_string())?;
+    // Release the SQLite snapshot before CPU comparison and aggregation.
+    Ok(orders)
+}
+
+
 #[cfg(test)]
 mod auto_database_location_tests {
     use super::*;
+    #[test]
+    fn owner_snapshot_batch_reads_only_requested_frozen_snapshots(){
+        let conn=Connection::open_in_memory().unwrap();
+        conn.execute_batch("CREATE TABLE core_orders(
+            id TEXT PRIMARY KEY,confirmed_at TEXT,payload TEXT NOT NULL
+        );").unwrap();
+        for id in ["a","b"]{
+            let payload=serde_json::json!({
+                "raw":"live raw not needed","confirmationSnapshot":{"at":"t","raw":id}
+            });
+            conn.execute("INSERT INTO core_orders VALUES (?1,'t',?2)",
+                rusqlite::params![id,payload.to_string()]).unwrap();
+        }
+        conn.execute_batch("PRAGMA query_only=ON;").unwrap();
+        let orders=owner_snapshot_batch(&conn,&["b".into(),"b".into()]).unwrap();
+        assert_eq!(orders.len(),1);
+        assert_eq!(orders[0]["id"],"b");
+        assert_eq!(orders[0]["confirmationSnapshot"]["raw"],"b");
+        assert!(orders[0].get("raw").is_none());
+        assert!(owner_snapshot_batch(&conn,&[]).is_err());
+    }
     #[test]
     fn resolves_only_the_existing_operating_database(){
         let root=std::path::Path::new("roaming-root");
