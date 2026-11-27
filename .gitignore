@@ -156,3 +156,17 @@ release/
 
 # Native egui compiler outputs (keep local builds out of source control)
 egui-app/target/
+
+# SQLite sidecars, backup archives and private security tooling output
+*.sqlite-wal
+*.sqlite-shm
+*.sqlite-journal
+*.sqlite3-wal
+*.sqlite3-shm
+*.sqlite3-journal
+*.db-journal
+*.bak
+.env.*
+!.env.example
+!.env.template
+security-local/
