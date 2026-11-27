@@ -1,7 +1,7 @@
 //! Native client manager: semantic parity with React ClientManager.
 //! Layout uses shared management components; validation and persistence are
 //! delegated to the Rust catalog client rules via BandoGateway.
-use crate::ui_layout::SharedUiClipExt as _;
+use crate::ui_layout::geometry::SharedUiClipExt as _;
 use crate::{automatic_message_manager::AutomaticMessageManager,
     client_search_tags, gateway::{BandoGateway,ReadOperation},
     theme::{self,ButtonRole}, typography};
