@@ -247,7 +247,7 @@ pub struct PreviewStore {
 }
 
 impl PreviewStore {
-    pub fn initialize() -> Result<Self, String> {
+    fn directory() -> Result<PathBuf,String>{
         let root = if let Some(local) = std::env::var_os("LOCALAPPDATA") {
             PathBuf::from(local)
         } else if let Some(home) = std::env::var_os("HOME") {
@@ -258,6 +258,11 @@ impl PreviewStore {
         let directory = if crate::business_state::test_launch(){
             crate::business_state::test_directory("preview")?
         }else{root.join("BANDO-HUB-egui-preview")};
+        Ok(directory)
+    }
+
+    pub fn initialize() -> Result<Self, String> {
+        let directory=Self::directory()?;
         fs::create_dir_all(&directory)
             .map_err(|e| format!("egui 전용 DB 폴더를 만들지 못했습니다: {e}"))?;
         let path = directory.join("egui-preview.sqlite3");
@@ -795,7 +800,66 @@ impl PreviewStore {
         Ok(())
     }
 
+    // Read the existing isolated audit DB without initializing or migrating it.
+    pub(crate) fn read_reception_audit_page(query:&Value)->Result<Value,String>{
+        let path=Self::directory()?.join("egui-preview.sqlite3");
+        let conn=Connection::open_with_flags(path,OpenFlags::SQLITE_OPEN_READ_ONLY)
+            .map_err(|e|format!("정정 이력 읽기 실패: {e}"))?;
+        conn.busy_timeout(Duration::from_secs(5)).map_err(|e|e.to_string())?;
+        let signature:String=conn.query_row(
+            "SELECT value FROM preview_meta WHERE key='signature'",[],|r|r.get(0))
+            .map_err(|e|e.to_string())?;
+        if signature!=SIGNATURE{return Err("egui 전용 DB 식별자가 다릅니다.".into());}
+        query_reception_audit_page(&conn,query)
+    }
+
     pub fn path(&self) -> &std::path::Path { &self.path }
+}
+
+// Stable keyset paging: no unbounded loading and no write on the audit path.
+// A missing historical context is preserved as NULL, not reconstructed.
+fn query_reception_audit_page(conn:&Connection,query:&Value)->Result<Value,String>{
+    let limit=query.get("limit").and_then(Value::as_u64).unwrap_or(100).clamp(1,250) as usize;
+    let order_id=query.get("orderId").and_then(Value::as_str);
+    let client_id=query.get("clientId").and_then(Value::as_str);
+    let since=query.get("since").and_then(Value::as_str);
+    let cursor=query.get("cursor").filter(|v|!v.is_null());
+    let (at,id)=if let Some(c)=cursor{
+        (Some(c["at"].as_str().filter(|v|!v.is_empty()).ok_or("감사 조회 커서 시각 오류")?),
+         Some(c["id"].as_str().filter(|v|!v.is_empty()).ok_or("감사 조회 커서 ID 오류")?))
+    }else{(None,None)};
+    let has_context:i64=conn.query_row(
+        "SELECT count(*) FROM pragma_table_info('reception_edit_audit') WHERE name='context_json'",
+        [],|r|r.get(0)).map_err(|e|e.to_string())?;
+    let context=if has_context==1{"context_json"}else{"NULL"};
+    let sql=format!("SELECT id,order_id,source_raw,initial_analysis_json,
+        before_rows_json,after_rows_json,recorded_at,{context}
+        FROM reception_edit_audit
+        WHERE (?1 IS NULL OR order_id=?1)
+          AND (?2 IS NULL OR json_extract({context},'$.clientId')=?2)
+          AND (?3 IS NULL OR recorded_at>=?3)
+          AND (?4 IS NULL OR (recorded_at,id)>(?4,?5))
+        ORDER BY recorded_at,id LIMIT ?6");
+    let mut stmt=conn.prepare(&sql).map_err(|e|e.to_string())?;
+    let records=stmt.query_map(params![order_id,client_id,since,at,id,(limit+1) as i64],|r|Ok((
+        r.get::<_,String>(0)?,r.get::<_,String>(1)?,r.get::<_,String>(2)?,
+        r.get::<_,String>(3)?,r.get::<_,String>(4)?,r.get::<_,String>(5)?,
+        r.get::<_,String>(6)?,r.get::<_,Option<String>>(7)?
+    ))).map_err(|e|e.to_string())?;
+    let mut events=Vec::new();
+    let mut has_more=false;
+    for record in records{
+        let (id,order,raw,initial,before,after,at,context)=record.map_err(|e|e.to_string())?;
+        if events.len()==limit{has_more=true;break;}
+        let parse=|s:&str|serde_json::from_str::<Value>(s)
+            .map_err(|e|format!("저장된 정정 이력 JSON 오류: {e}"));
+        events.push(json!({"id":id,"orderId":order,"sourceRaw":raw,
+            "initialAnalysis":parse(&initial)?,"beforeRows":parse(&before)?,
+            "afterRows":parse(&after)?,"at":at,
+            "context":context.as_deref().map(parse).transpose()?}));
+    }
+    let next=if has_more{events.last().map(|v|json!({"at":v["at"],"id":v["id"]}))}else{None};
+    Ok(json!({"events":events,"nextCursor":next}))
 }
 
 // Legacy events have unknown context. Never synthesize historical evidence.
@@ -1094,6 +1158,29 @@ mod ocr_layout_tests {
 #[cfg(test)]
 mod reception_edit_audit_tests {
     use super::*;
+
+    #[test]
+    fn correction_query_pages_and_filters_without_inventing_legacy_context(){
+        let conn=Connection::open_in_memory().unwrap();
+        conn.execute_batch("CREATE TABLE reception_edit_audit(
+            id TEXT PRIMARY KEY,order_id TEXT,source_raw TEXT,initial_analysis_json TEXT,
+            before_rows_json TEXT,after_rows_json TEXT,recorded_at TEXT,context_json TEXT);
+            INSERT INTO reception_edit_audit VALUES
+            ('a','o1','709','{\"recipients\":[]}','[]','[]','2026-11-01',NULL),
+            ('b','o2','709','{\"recipients\":[]}','[]','[]','2026-11-01','{\"clientId\":\"c1\"}'),
+            ('c','o3','270','{\"recipients\":[]}','[]','[]','2026-11-02','{\"clientId\":\"c2\"}');").unwrap();
+        let first=query_reception_audit_page(&conn,&json!({"limit":1})).unwrap();
+        assert_eq!(first["events"][0]["id"],"a");
+        assert!(first["events"][0]["context"].is_null());
+        let second=query_reception_audit_page(&conn,&json!({"limit":1,"cursor":first["nextCursor"]})).unwrap();
+        assert_eq!(second["events"][0]["id"],"b");
+        let client=query_reception_audit_page(&conn,&json!({"clientId":"c1"})).unwrap();
+        assert_eq!(client["events"].as_array().unwrap().len(),1);
+        assert_eq!(client["events"][0]["id"],"b");
+        let last=query_reception_audit_page(&conn,&json!({"since":"2026-11-02","orderId":"o3"})).unwrap();
+        assert_eq!(last["events"][0]["id"],"c");
+        assert!(last["nextCursor"].is_null());
+    }
 
     #[test]
     fn binding_only_correction_is_captured_without_counting_a_noop(){
