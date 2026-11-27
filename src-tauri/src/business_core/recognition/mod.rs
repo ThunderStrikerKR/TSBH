@@ -931,6 +931,40 @@ fn ownership_score(events:&[Evidence],features:&DocumentFeatures,
 fn exceeds_margin(challenger:i64,incumbent:i64,margin:i64)->bool{
     challenger-incumbent>=margin
 }
+// Detached quantities use the common distance features, with an explicit
+// provisional direction bonus for a repeated product-then-quantity layout.
+fn quantity_link_score(events:&[Evidence],features:&DocumentFeatures,p:usize,q:usize)->i64{
+    ownership_score(events,features,p,q,false,OWNER_WEIGHTS)
+        +if events[p].end<=events[q].start{18}else{0}
+}
+fn ordered_quantity_pairs(events:&[Evidence],features:&DocumentFeatures,candidates:&CommonCandidates,
+    mut products:Vec<(usize,usize)>,mut quantities:Vec<usize>)->Vec<(usize,usize)>{
+    if candidates.truncated||!features.positions_valid||products.len()<2||
+        products.len()!=quantities.len()||products.len()>32{return vec![];}
+    products.sort_unstable_by_key(|&(_,p)|events[p].start);
+    quantities.sort_unstable_by_key(|&q|events[q].start);
+    for (i,&(_,p)) in products.iter().enumerate(){
+        let q=quantities[i];
+        if !candidates.admits(&events[p],p)||!candidates.admits(&events[q],q)
+            ||events[p].end>events[q].start||events[p].paragraph!=events[q].paragraph
+            ||events[q].line.checked_sub(events[p].line)!=Some(1)
+            ||features.ranks[q].checked_sub(features.ranks[p])!=Some(1)
+            ||events[q].value.parse::<i64>().ok().is_none_or(|v|v<=0){
+            return vec![];
+        }
+        if i+1<products.len()&&events[q].end>events[products[i+1].1].start{return vec![];}
+        let score=quantity_link_score(events,features,p,q);
+        // Compare both adjacent rivals in each direction; never enumerate
+        // the Cartesian product of all document candidates.
+        for j in [i.checked_sub(1),i.checked_add(1).filter(|&j|j<products.len())].into_iter().flatten(){
+            if !exceeds_margin(score,quantity_link_score(events,features,products[j].1,q),OWNER_WEIGHTS.margin)
+                ||!exceeds_margin(score,quantity_link_score(events,features,p,quantities[j]),OWNER_WEIGHTS.margin){
+                return vec![];
+            }
+        }
+    }
+    products.into_iter().zip(quantities).map(|((item,_),q)|(item,q)).collect()
+}
 fn product_owner_index(anchors:&[usize],events:&[Evidence],features:&DocumentFeatures,
     candidates:&CommonCandidates,hit:&ProductHit,has_leading:bool)->usize{
     let e=&events[hit.evidence];
@@ -2088,16 +2122,35 @@ fn assign_document(document:ExtractedDocument<'_>,state:&Value,client:Option<&Va
             }
         }
     }
-    // A detached quantity is attachable only when exactly one item and one quantity
-    // are unresolved within the same recipient. Otherwise it stays visible as evidence.
+    // Index unresolved individual products once. Common totals and items
+    // with ambiguous inline quantities are ineligible for new pairing.
+    let mut pending_hits=vec![HashMap::<String,usize>::new();recipients.len()];
+    for hit in &product_hits{
+        if hit.common||!hit.quantities.is_empty(){continue;}
+        let e=&events[hit.evidence];
+        if let (Some(idx),Some(id))=(e.recipient,e.item_id.as_ref()){
+            pending_hits[idx].insert(id.clone(),hit.evidence);
+        }
+    }
+    // Keep the existing single-item path. Multiple unresolved items need
+    // an independently supported, complete, one-to-one ordered matching.
     for idx in 0..recipients.len() {
         let standalone:Vec<usize>=detached[idx].iter().copied()
             .filter(|&i|events[i].item_id.is_none()).collect();
         let pending: Vec<usize> = recipients[idx]["items"].as_array().expect("items")
             .iter().enumerate().filter_map(|(i,it)|it["quantity"].is_null().then_some(i)).collect();
-        if standalone.len()==1 && pending.len()==1 {
-            let q = standalone[0];
-            let item_idx = pending[0];
+        let pairs=if standalone.len()==1&&pending.len()==1{
+            vec![(pending[0],standalone[0])]
+        }else if standalone.len()==pending.len()&&pending.len()>1&&pending.len()<=32{
+            let items=recipients[idx]["items"].as_array().expect("items");
+            let products=pending.iter().filter_map(|&i|
+                items[i]["id"].as_str().and_then(|id|pending_hits[idx].get(id)).map(|&p|(i,p)))
+                .collect::<Vec<_>>();
+            if products.len()==pending.len(){
+                ordered_quantity_pairs(&events,&features,&exclusions,products,standalone)
+            }else{vec![]}
+        }else{vec![]};
+        for (item_idx,q) in pairs{
             let rid = recipients[idx]["id"].as_str().unwrap_or("").to_owned();
             let id = recipients[idx]["items"][item_idx]["id"].as_str().unwrap_or("").to_owned();
             if let Some(value) = events[q].value.parse::<i64>().ok().filter(|q|*q>0) {
@@ -2532,6 +2585,29 @@ mod tests {
         assert_eq!(recipients.len(),1);
         assert_eq!(recipients[0]["mobile"],"010-1234-5678");
         assert_eq!(recipients[0]["phone"],"010-3456-7890");
+    }
+    #[test]
+    fn alternating_detached_quantities_attach_to_their_own_products(){
+        let raw="수취인: 김가상\n010-0000-0001\n709\n2개\nGT-1\n3개";
+        let result=execute("analyze_order",json!({"raw":raw,"state":state()})).unwrap();
+        let items=result["recipients"][0]["items"].as_array().unwrap();
+        assert_eq!(items.len(),2);
+        assert_eq!(items[0]["productId"],"p709");
+        assert_eq!(items[0]["quantity"],2);
+        assert_eq!(items[1]["productId"],"pgt");
+        assert_eq!(items[1]["quantity"],3);
+        for item in items{
+            assert_eq!(item["quantityConfirmed"],true);
+            assert_eq!(item["sources"].as_array().unwrap().iter().filter(|s|s["field"]=="quantity").count(),1);
+        }
+    }
+    #[test]
+    fn grouped_detached_quantities_remain_unresolved_without_alternating_evidence(){
+        let raw="수취인: 김가상\n010-0000-0001\n709\nGT-1\n2개\n3개";
+        let result=execute("analyze_order",json!({"raw":raw,"state":state()})).unwrap();
+        let items=result["recipients"][0]["items"].as_array().unwrap();
+        assert_eq!(items.len(),2);
+        assert!(items.iter().all(|it|it["quantity"].is_null()&&it["quantityConfirmed"]==false));
     }
     #[test]
     fn same_line_registered_products_keep_independent_quantity_sources(){
