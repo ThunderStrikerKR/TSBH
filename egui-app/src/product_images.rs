@@ -3,7 +3,7 @@
 //! Image media is presentation only; catalog mutation and validation stay in Rust.
 //! Never fetch arbitrary product URLs or infer an image from the model name.
 
-use crate::ui_layout::SharedAllocationExt as _;
+use crate::ui_layout::geometry::SharedAllocationExt as _;
 use std::{collections::HashMap,fs,path::{Path,PathBuf}};
 use base64::{Engine as _,engine::general_purpose::STANDARD};
 use eframe::egui::{self,Rect,TextureHandle,TextureOptions,Ui,Vec2};
