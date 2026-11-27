@@ -195,7 +195,7 @@ fn field_contexts(units:&[u16],first:&Value)->FieldContexts{
 
 // Only candidates already present in the original analysis. A selected
 // value alone is not evidence that the full competing set was retained.
-fn field_shadow_candidates(units:&[u16],first:&Value,s:Span,task:&str)->Vec<String>{
+fn field_shadow_projection(units:&[u16],first:&Value,s:Span,task:&str)->Value{
     let mut candidates=BTreeSet::new();
     let mut links=Vec::new();
     for row in rows(&first["recipients"]){
@@ -208,7 +208,7 @@ fn field_shadow_candidates(units:&[u16],first:&Value,s:Span,task:&str)->Vec<Stri
             }
         }
     }
-    if links.len()!=1{return Vec::new();}
+    if links.len()!=1{return json!({"candidates":[],"coverage":"ambiguous_source","traceReferences":[]});}
     let (item,source)=links[0];
     let field=source["field"].as_str().unwrap_or("");
     fn add(candidates:&mut BTreeSet<String>,id:Option<&str>){
@@ -227,8 +227,92 @@ fn field_shadow_candidates(units:&[u16],first:&Value,s:Span,task:&str)->Vec<Stri
         }
         _=>{}
     }
-    if candidates.len()>64{return Vec::new();}
-    candidates.into_iter().collect()
+    // A trace is an observation of the old engine, not a learned label.
+    let trace=&first["classificationCandidateTrace"];
+    let mut references=Vec::new();
+    let mut expanded=false;
+    if trace["schemaVersion"]==1 {
+        let item_id=item["id"].as_str().filter(|id|!id.is_empty());
+        let mut item_matches=rows(&trace["itemDecisions"]).enumerate().filter(|(_,d)|
+            item_id.is_some() && d["itemId"].as_str()==item_id &&
+            d["productId"]==item["productId"]);
+        if let Some((ii,d))=item_matches.next(){
+            if item_matches.next().is_none(){
+                match task{
+                    "product" if field=="product"=>{
+                        let start=d["productTraceStart"].as_u64();
+                        let line=d["productTraceLine"].as_u64();
+                        let mut matches=rows(&trace["decisions"]).enumerate().filter(|(_,r)|
+                            start.is_some()&&line.is_some()&&r["line"].as_u64()==line&&
+                            r["source"]["start"].as_u64()==start&&
+                            position(units,&r["source"]).is_some_and(|(a,b)|a<=s.0&&s.1<=b)&&
+                            r["productStages"].is_array());
+                        if let Some((di,decision))=matches.next(){
+                            if matches.next().is_none(){
+                                for (si,stage) in rows(&decision["productStages"]).enumerate(){
+                                    for candidate in rows(&stage["candidates"]){
+                                        add(&mut candidates,candidate["productId"].as_str());
+                                    }
+                                    references.push(json!({"decisionIndex":di,"stageIndex":si}));
+                                }
+                                expanded=true;
+                            }
+                        }
+                    }
+                    "variant" if field=="product"=>{
+                        for (vi,v) in rows(&d["variants"]).enumerate(){
+                            add(&mut candidates,v["variantId"].as_str());
+                            references.push(json!({"itemDecisionIndex":ii,"variantIndex":vi}));
+                        }
+                        expanded=true;
+                    }
+                    "quantity" if field=="quantity"=>{
+                        // Different numeric tokens are not alternative values
+                        // for this exact source observation.
+                        for (qi,q) in rows(&d["quantityCandidates"]).enumerate(){
+                            if position(units,q)==Some(s){
+                                if let Some(n)=q["value"].as_str().and_then(|v|v.parse::<i64>().ok())
+                                    .filter(|n|*n>0){
+                                    candidates.insert(n.to_string());
+                                    references.push(json!({"itemDecisionIndex":ii,"quantityIndex":qi}));
+                                    expanded=true;
+                                }
+                            }
+                        }
+                    }
+                    _=>{}
+                }
+            }
+        }
+        if task=="type"{
+            for (gi,g) in rows(&trace["typeGateRecords"]).enumerate(){
+                if position(units,&g["source"])!=Some(s){continue;}
+                // Only specific actual candidate rejection, never a
+                // line-wide skipped branch or an invented alternate type.
+                let alternate=match (g["kind"].as_str(),g["reasonCode"].as_str()){
+                    (Some("contact"),Some("overlaps_name"|"embedded_digit_run"))=>None,
+                    (Some("name"),Some("other_document_field"|"quantity_signal"|"product_signal"|
+                        "product_signal_before_delivery"|"insufficient_recipient_context"|
+                        "suffix_other_field"|"suffix_without_recipient_context"|"table_other_field"))=>Some("name"),
+                    (Some("quantity"),Some("overlaps_recipient_field"))=>Some("quantity"),
+                    _=>None
+                };
+                if let Some(id)=alternate{
+                    add(&mut candidates,Some(id));expanded=true;
+                }
+                references.push(json!({"typeGateIndex":gi}));
+            }
+        }
+    }
+    if candidates.len()>64{return json!({"candidates":[],"coverage":"candidate_limit_exceeded","traceReferences":[]});}
+    json!({"candidates":candidates.into_iter().collect::<Vec<_>>(),
+        "coverage":if expanded{"traced_partial"}else{"observed_only"},
+        "traceReferences":references,"traceIsTrainingEvidence":false})
+}
+#[cfg(test)]
+fn field_shadow_candidates(units:&[u16],first:&Value,s:Span,task:&str)->Vec<String>{
+    rows(&field_shadow_projection(units,first,s,task)["candidates"])
+        .filter_map(Value::as_str).map(str::to_owned).collect()
 }
 
 /// Explicit diagnostic/lookup projection, not a second parser. The same
@@ -240,10 +324,12 @@ pub(super) fn lookup(payload:&Value)->Result<Value,String>{
     let entries=contexts(&units,first).into_iter().map(|(s,keys)|
         json!({"source":{"start":s.0,"end":s.1},"contexts":keys})
     ).collect::<Vec<_>>();
-    let field_entries=field_contexts(&units,first).into_iter().map(|((s,task),keys)|
+    let field_entries=field_contexts(&units,first).into_iter().map(|((s,task),keys)|{
+        let shadow=field_shadow_projection(&units,first,s,task);
         json!({"source":{"start":s.0,"end":s.1},"task":task,"contexts":keys,
-            "shadowCandidates":field_shadow_candidates(&units,first,s,task),
-            "candidateCoverage":"observed_only"})).collect::<Vec<_>>();
+            "shadowCandidates":shadow["candidates"],"candidateCoverage":shadow["coverage"],
+            "traceReferences":shadow["traceReferences"],"traceIsTrainingEvidence":false})
+    }).collect::<Vec<_>>();
     let mut result=json!({"featureVersion":FEATURE_VERSION,"entries":entries,"fieldEntries":field_entries});
     // Optional offline comparison. Ordinary context projection remains unchanged.
     if let Some(history)=payload.get("historicalOrders"){

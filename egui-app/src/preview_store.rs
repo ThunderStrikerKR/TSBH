@@ -941,8 +941,13 @@ impl PreviewStore {
                 keys.insert(key.clone());local.push(key.clone());
                 queries.insert((task.to_owned(),key,candidates.clone()));
             }
+            let coverage=if owner{"traced_pair"}else{
+                entry["candidateCoverage"].as_str().filter(|s|matches!(*s,"observed_only"|"traced_partial"))
+                    .ok_or("후보 추적 범위 오류")?
+            };
             locations.push(json!({"start":start,"end":end,"task":task,"contextKeys":local,
-                "candidates":candidates,"candidateCoverage":if owner{"traced_pair"}else{"observed_only"}}));
+                "candidates":candidates,"candidateCoverage":coverage,
+                "traceReferences":entry["traceReferences"],"traceIsTrainingEvidence":false}));
         }
         if keys.is_empty(){return Ok(json!({"status":"no_eligible_context","skippedMissingCandidates":skipped,
             "decisionChanged":false,"calibratedProbability":null}));}
@@ -968,7 +973,7 @@ impl PreviewStore {
             // Only compact predictive sufficient statistics are persisted,
             // not the correction-validation report or source documents.
             results.push(json!({"contextKey":key,"task":task,"candidateIds":candidates,
-                "candidateCoverage":if task=="recipient_ownership"{"traced_pair"}else{"observed_only"},
+                "candidateCoverage":if task=="recipient_ownership"{"traced_pair"}else{"see_locations"},
                 "supportVersion":report["supportVersion"],
                 "featureVersion":report["featureVersion"],"contributionVersion":report["contributionVersion"],
                 "contextOrders":report["contextOrders"],"supportedOrders":report["supportedOrders"],
@@ -981,10 +986,10 @@ impl PreviewStore {
             return Err("실시간 학습 조회 중 원본 변경".into());
         }
         let mut hash=Sha256::new();
-        hash.update(serde_json::to_vec(&json!(["recognition-shadow-v2",scope,RATIO,digests,results]))
+        hash.update(serde_json::to_vec(&json!(["recognition-shadow-v3",scope,RATIO,digests,results]))
             .map_err(|_|"실시간 학습 모델 지문 오류")?);
         let model=format!("shadow-{:x}",hash.finalize());
-        let result=json!({"status":"captured_shadow_support","captureVersion":2,"skippedMissingCandidates":skipped,
+        let result=json!({"status":"captured_shadow_support","captureVersion":3,"skippedMissingCandidates":skipped,
             "modelId":model,"capturedAt":chrono::Utc::now().to_rfc3339(),
             "explicitToWeakRatio":RATIO,"verifiedSourceOrders":ids.len(),"locations":locations,
             "contexts":results,"sourceDigestsMatched":true,"fullHistoryReconciled":false,

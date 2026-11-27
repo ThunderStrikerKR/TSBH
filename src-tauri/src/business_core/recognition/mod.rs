@@ -1456,6 +1456,7 @@ fn analyze_with_owner_trace(raw:&str,state:&Value,client:Option<&Value>,
                                 else{"not_selected"}})
                     }).collect::<Vec<_>>();
                     item_candidate_trace.push(json!({"itemId":id,"recipientId":rid,
+                        "productTraceLine":hit.line,"productTraceStart":utf16(raw,hit.source_start),
                         "productId":item["productId"],"selectedVariantId":item["variantId"],
                         "variantCount":variant_count,"variantTruncated":variant_count>128,
                         "variants":options,"quantityCandidates":quantity_candidates,
