@@ -442,7 +442,7 @@ impl DailySettlementManager{
                 crate::card::measured_management_section_card(body,|section|{
                     // Keep the section inside the bounded vertical viewport;
                     // its report rows own their independent horizontal scroll.
-                    crate::ui_primitives::apply_width_policy(section,crate::ui_primitives::CardWidthPolicy::Bounded,section_inner_max_width);
+                    crate::ui_layout::geometry::apply_width_policy(section,crate::ui_layout::geometry::CardWidthPolicy::Bounded,section_inner_max_width);
                     // The date selector is the first element of the
                     // settlement card. No redundant title/help row above it.
                     // Like Order History, the date picker is inside the
@@ -537,7 +537,7 @@ impl DailySettlementManager{
                 crate::card::measured_management_section_card(body,|section|{
                     // Keep the section inside the bounded vertical viewport;
                     // its report rows own their independent horizontal scroll.
-                    crate::ui_primitives::apply_width_policy(section,crate::ui_primitives::CardWidthPolicy::Bounded,section_inner_max_width);
+                    crate::ui_layout::geometry::apply_width_policy(section,crate::ui_layout::geometry::CardWidthPolicy::Bounded,section_inner_max_width);
                     section.label(typography::section_heading(
                         "실제 입금 내역 / 입금 일시 기준"
                     ));
@@ -596,7 +596,7 @@ impl DailySettlementManager{
                 });
                 body.add_space(theme::SPACE_12);
                 crate::card::measured_management_section_card(body,|review|{
-                    crate::ui_primitives::apply_width_policy(review,crate::ui_primitives::CardWidthPolicy::Bounded,section_inner_max_width);
+                    crate::ui_layout::geometry::apply_width_policy(review,crate::ui_layout::geometry::CardWidthPolicy::Bounded,section_inner_max_width);
                     review.label(typography::section_heading("결산 검토 사항"));
                     crate::ui_primitives::section_divider(review);
                     crate::ui_layout::fixed_result_viewport(review,"settlement-warnings",100.0,|list|{
