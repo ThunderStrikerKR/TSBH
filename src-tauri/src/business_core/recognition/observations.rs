@@ -127,6 +127,11 @@ impl<'a> OwnerIndex<'a>{
         (self.names.get(&s).is_some_and(|owners|owners.len()==1&&owners.contains(&row)))
             .then_some(s)
     }
+    fn has_unique_anchor(&self,s:Span)->bool{
+        self.names.get(&s).filter(|owners|owners.len()==1)
+            .and_then(|owners|owners.iter().next())
+            .is_some_and(|row|self.unique_anchor(*row)==Some(s))
+    }
     fn owner(&self,s:Span,kind:&str,original:&str)->Option<Span>{
         let links=self.links.get(&s)?;
         let first=links.first()?;
@@ -179,7 +184,8 @@ fn owner_observations(units:&[u16],first:&Value,final_rows:&Value)->Vec<Value>{
                 let relation=|anchor:Span|candidates.iter().find(|(p,_)|*p==anchor)
                     .map(|(_,r)|*r);
                 if initial.is_some() && initial==selected && candidates.len()==2 &&
-                    candidates[0].0!=candidates[1].0 && candidates[0].1!=candidates[1].1{
+                    candidates[0].0!=candidates[1].0 && candidates[0].1!=candidates[1].1 &&
+                    candidates.iter().all(|(p,_)|before.has_unique_anchor(*p)){
                     initial_relation=initial.and_then(relation);
                     final_relation=final_anchor.map(|p|relation(p).unwrap_or("outside_traced_candidates"));
                     reason=if initial_relation.is_none(){"initial_anchor_not_traced"}
