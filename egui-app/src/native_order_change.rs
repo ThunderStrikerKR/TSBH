@@ -30,6 +30,30 @@ pub struct ChangeResult {
     pub recognition: Option<Value>,
 }
 
+/// Attach the immutable first analysis only at explicit confirmation.
+/// The latest dealer-specific quote is not the original recognition.
+/// The existing order snapshot owns this data; no additional raw copy.
+pub(crate) fn attach_recognition_baseline(order:&mut Value,source:&WorkingReception){
+    if source.raw.trim().is_empty() ||
+        source.analysis_raw.as_deref()!=Some(source.raw.as_str()) ||
+        order.get("raw").and_then(Value::as_str)!=Some(source.raw.as_str()) ||
+        order.get("id").and_then(Value::as_str)!=Some(source.id.as_str()){
+        return;
+    }
+    let Some(first)=source.analysis_evidence.as_ref().filter(|v|
+        v["recipients"].is_array() && v["candidates"].is_array())
+    else{return;};
+    if let Some(object)=order.as_object_mut(){
+        object.insert("recognitionBaseline".into(),json!({
+            "schemaVersion":1,
+            "initialAnalysis":first,
+            "sourceInputMethod":source.source_input_method,
+            "finalClientId":source.client_id,
+            "finalClientSelection":source.client_selection
+        }));
+    }
+}
+
 fn required<'a>(value:&'a Value,key:&str)->Result<&'a Value,String>{
     value.get(key).filter(|v|!v.is_null()).ok_or_else(||
         format!("Rust 주문 변경 결과에 {key}가 없습니다."))
