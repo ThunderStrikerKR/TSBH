@@ -45,7 +45,8 @@ pub(crate) fn apply_height_policy(ui:&mut Ui,policy:CardHeightPolicy,target:f32)
         // passing a total height there adds another full-height tail.
         // Expand to the absolute bottom instead; this never moves or
         // reruns the controls, and repeated applications are idempotent.
-        ui.expand_to_include_y(used.top()+height);
+        let target=crate::ui_layout::aligned_rect(Rect::from_min_max(used.min,egui::pos2(used.right(),used.top()+height)));
+        ui.expand_to_include_y(target.bottom());
     }
 }
 
@@ -85,12 +86,13 @@ pub(crate) fn parallel_frames(
     let mut prepared=Vec::with_capacity(widths.len());
     for (index,&width) in widths.iter().enumerate(){
         let width=width.max(1.0);
+        let rect=crate::ui_layout::aligned_rect(Rect::from_min_size(egui::pos2(x,origin.y),Vec2::new(width,0.0)));
         let mut column=ui.new_child(UiBuilder::new()
             .id_salt(("parallel-card",index))
-            .max_rect(Rect::from_min_size(egui::pos2(x,origin.y),Vec2::new(width,0.0)))
+            .max_rect(rect)
             .layout(Layout::top_down(Align::Min)));
         column.spacing_mut().item_spacing.y=0.0;
-        apply_width_policy(&mut column,CardWidthPolicy::Fixed,width);
+        apply_width_policy(&mut column,CardWidthPolicy::Fixed,rect.width());
         let mut card=frame.clone().begin(&mut column);
         let inner_width=card.content_ui.available_width().max(1.0);
         apply_width_policy(&mut card.content_ui,CardWidthPolicy::FillAvailable,inner_width);
@@ -204,6 +206,7 @@ pub(crate) fn fixed_scroll_panel(
     title_to_body_gap:f32,
     body:impl FnOnce(&mut Ui),
 ){
+    let rect=crate::ui_layout::aligned_rect(rect);
     if rect.width()<2.0||rect.height()<2.0{return;}
     ui.painter().rect(
         rect,theme::CONTROL_RADIUS as f32,theme::surface_palette(theme::SurfaceRole::Input,theme::VisualState::Normal).fill,
@@ -220,6 +223,8 @@ pub(crate) fn fixed_scroll_panel(
     let scroll_rect=Rect::from_min_max(
         egui::pos2(inner.left(),inner.top()+title_height),inner.max
     );
+    let title_rect=crate::ui_layout::aligned_rect(title_rect);
+    let scroll_rect=crate::ui_layout::aligned_rect(scroll_rect);
     ui.scope_builder(UiBuilder::new()
         .id_salt(heading_id)
         .max_rect(title_rect)
@@ -502,9 +507,10 @@ pub(crate) fn reception_document_viewport<R>(
     ui:&mut Ui,rect:Rect,canvas_id:impl std::hash::Hash,
     scroll_id:impl std::hash::Hash,content:impl FnOnce(&mut Ui)->R
 )->Option<R>{
+    let rect=crate::ui_layout::aligned_rect(rect);
     if rect.width()<=0.0 || rect.height()<=0.0{return None;}
     paint_source_document_surface(ui,rect);
-    let inner=reception_document_inner_rect(rect)?;
+    let inner=crate::ui_layout::aligned_rect(reception_document_inner_rect(rect)?);
     let clip=ui.clip_rect().intersect(inner);
     // All callers already reserve the document rectangle. A scope_builder
     // would report the inset child back to the parent and can change the
