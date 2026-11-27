@@ -113,6 +113,38 @@ pub(crate) fn category_tree_row(ui:&mut Ui,item:CategoryTreeRow<'_>)->Response{
     tree_row(ui,item,false,true,false)
 }
 
+/// Management-only folder row. Ordinary category pickers remain click-only.
+pub(crate) fn draggable_folder_row(ui:&mut Ui,item:CategoryTreeRow<'_>,id:&str,parent:&str,enabled:bool,draggable:bool)->Response{
+    let response=tree_row(ui,item,false,enabled,draggable);
+    if enabled&&draggable&&ui.is_enabled()&&!id.is_empty(){
+        response.dnd_set_drag_payload(FolderDrag{id:id.to_owned(),parent:parent.to_owned()});
+        if response.dragged(){ui.ctx().set_cursor_icon(egui::CursorIcon::Grabbing);}
+    }
+    response
+}
+
+#[derive(Clone)]
+struct FolderDrag{id:String,parent:String}
+
+#[derive(Clone,Debug)]
+pub(crate) struct FolderMove{
+    pub(crate) id:String,
+    pub(crate) parent:String,
+    pub(crate) target:String,
+}
+
+pub(crate) fn folder_drop_target(ui:&Ui,response:&Response,target:&str,enabled:bool,
+    contains_source:impl Fn(&str)->bool)->Option<FolderMove>{
+    if !enabled||!ui.is_enabled()||target.is_empty(){return None;}
+    let valid=|drag:&FolderDrag|drag.id!=target&&drag.parent!=target&&!contains_source(&drag.id);
+    if response.dnd_hover_payload::<FolderDrag>().is_some_and(|drag|valid(&drag)){
+        crate::highlight::paint(ui,response.rect.intersect(ui.clip_rect()),
+            crate::highlight::Geometry::Control,crate::highlight::Role::DropHovered);
+    }
+    response.dnd_release_payload::<FolderDrag>().filter(|drag|valid(drag))
+        .map(|drag|FolderMove{id:drag.id.clone(),parent:drag.parent.clone(),target:target.to_owned()})
+}
+
 /// Product leaf opens the existing product detail; it never changes
 /// category selection or expansion.
 pub(crate) fn product_tree_row(ui:&mut Ui,name:&str,depth:usize,ancestor_guides:&[bool],is_last:bool,enabled:bool,draggable:bool,selected:bool)->Response{

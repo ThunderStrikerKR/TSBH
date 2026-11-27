@@ -233,11 +233,12 @@ fn crumb_text(ui:&mut Ui,name:&str,width:f32,current:bool,enabled:bool)->Respons
 }
 pub(crate) fn crumbs_row(ui:&mut Ui,state:&mut ExplorerState,index:&HashMap<&str,&CategoryNode>,
     path:&[String],enabled:bool,alpha:f32,slide:f32)->Option<Vec<String>>{
-    crumbs_row_with_drop(ui,state,index,path,enabled,alpha,slide,None)
+    crumbs_row_with_drop(ui,state,index,path,enabled,alpha,slide,None,None,None)
 }
 
 fn crumbs_row_with_drop(ui:&mut Ui,state:&mut ExplorerState,index:&HashMap<&str,&CategoryNode>,
-    path:&[String],enabled:bool,alpha:f32,slide:f32,mut product_move:Option<&mut Option<Vec<category_tree::ProductMove>>>)->Option<Vec<String>>{
+    path:&[String],enabled:bool,alpha:f32,slide:f32,mut product_move:Option<&mut Option<Vec<category_tree::ProductMove>>>,
+    mut folder_move:Option<&mut Option<category_tree::FolderMove>>,folder_allowed:Option<&HashSet<String>>)->Option<Vec<String>>{
     let mut next=None;
     let height=theme::CATEGORY_EXPLORER_CRUMB_HEIGHT;
     let (nav_rect,_)=ui.shared_allocate_exact_size(Vec2::new(ui.available_width().max(1.0),height),egui::Sense::hover());
@@ -252,6 +253,15 @@ fn crumbs_row_with_drop(ui:&mut Ui,state:&mut ExplorerState,index:&HashMap<&str,
     if let Some(output)=product_move.as_deref_mut(){
         if path.len()>1{
             if let Some(request)=category_tree::product_drop_target(&back,&back_response,&path[path.len()-2],enabled){
+                *output=Some(request);
+            }
+        }
+    }
+    if let Some(output)=folder_move.as_deref_mut(){
+        if path.len()>1{
+            let target=&path[path.len()-2];
+            if let Some(request)=category_tree::folder_drop_target(&back,&back_response,target,
+                enabled&&folder_allowed.is_some_and(|a|a.contains(target)),|id|path[..path.len()-1].iter().any(|p|p==id)){
                 *output=Some(request);
             }
         }
@@ -288,6 +298,15 @@ fn crumbs_row_with_drop(ui:&mut Ui,state:&mut ExplorerState,index:&HashMap<&str,
         if let Some(output)=product_move.as_deref_mut(){
             if i>0{
                 if let Some(request)=category_tree::product_drop_target(&bar,&response,&path[i-1],enabled){
+                    *output=Some(request);
+                }
+            }
+        }
+        if let Some(output)=folder_move.as_deref_mut(){
+            if i>0{
+                let target=&path[i-1];
+                if let Some(request)=category_tree::folder_drop_target(&bar,&response,target,
+                    enabled&&folder_allowed.is_some_and(|a|a.contains(target)),|id|path[..i].iter().any(|p|p==id)){
                     *output=Some(request);
                 }
             }
@@ -342,7 +361,7 @@ fn menu_body(
     ).inner;
     let list_height=theme::CATEGORY_EXPLORER_LIST_MAX_HEIGHT
         .min((menu.ctx().content_rect().height()-270.0).max(100.0));
-    let _=explorer_body(menu,nodes,index,state,enabled,list_height,search_response.has_focus(),None,None,false,None,None);
+    let _=explorer_body(menu,nodes,index,state,enabled,list_height,search_response.has_focus(),None,None,false,None,None,None);
     let busy=state.moving();
     crate::ui_primitives::soft_divider(menu);
     let mut applied=false;
@@ -362,10 +381,11 @@ pub(crate) fn explorer_body(menu:&mut Ui,nodes:&[CategoryNode],index:&HashMap<&s
     state:&mut ExplorerState,enabled:bool,list_height:f32,search_focused:bool,
     totals:Option<&HashMap<String,usize>>,products:Option<&HashMap<String,Vec<(String,String)>>>,move_enabled:bool,
     mut drag_hover:Option<&mut category_tree::ProductDragHover>,
-    mut product_selection:Option<&mut category_tree::ProductSelection>)
-    ->(Option<String>,Option<Vec<category_tree::ProductMove>>){
+    mut product_selection:Option<&mut category_tree::ProductSelection>,folder_allowed:Option<&HashSet<String>>)
+    ->(Option<String>,Option<Vec<category_tree::ProductMove>>,Option<category_tree::FolderMove>){
     let mut product_request=None;
     let mut product_move=None;
+    let mut folder_move=None;
     let now=menu.input(|i|i.time);
     if state.motion.as_ref().is_some_and(|m|m.elapsed(now)>=450.0){state.finish_motion();menu.ctx().request_repaint();}
     else if state.motion.is_some(){menu.ctx().request_repaint();}
@@ -388,7 +408,8 @@ pub(crate) fn explorer_body(menu:&mut Ui,nodes:&[CategoryNode],index:&HashMap<&s
     let nav_slide=motion.as_ref().map(|m|if final_phase{(1.0-alpha)*if m.reverse{-8.0}else{8.0}}
         else{(1.0-alpha)*if m.reverse{8.0}else{-8.0}}).unwrap_or(0.0);
     if let Some(p)=crumbs_row_with_drop(menu,state,index,&visual_path,enabled&&!busy,alpha,nav_slide,
-        if move_enabled&&enabled&&!busy{Some(&mut product_move)}else{None}){next_path=Some(p);}
+        if move_enabled&&enabled&&!busy{Some(&mut product_move)}else{None},
+        if move_enabled&&enabled&&!busy{Some(&mut folder_move)}else{None},folder_allowed){next_path=Some(p);}
     if totals.is_some(){crate::ui_primitives::section_divider(menu);}
     else{crate::ui_primitives::soft_divider(menu);}
     let searching=!state.search.trim().is_empty();
@@ -432,7 +453,7 @@ pub(crate) fn explorer_body(menu:&mut Ui,nodes:&[CategoryNode],index:&HashMap<&s
                     let hide=motion.as_ref().is_some_and(|m|{
                         if final_phase{!m.reverse&&path==m.to}else if m.reverse{path==m.from}else{path==m.to}
                     });
-                    let response=list.scope(|row|{
+                    let response=list.push_id(("category-folder",&path),|row|{
                         // A fully opaque local row must not cancel the parent mode fade.
                         if hide{row.set_opacity(0.0);}
                         else if alpha<1.0{row.set_opacity(alpha);}
@@ -443,15 +464,20 @@ pub(crate) fn explorer_body(menu:&mut Ui,nodes:&[CategoryNode],index:&HashMap<&s
                                 let children=child_counts.get(id).copied().unwrap_or(0);
                                 if children==0{format!("(상품 {count})")}else{format!("(상품 {count} · 하위 분류 {children})")}
                             };
-                            category_tree::category_tree_row(row,category_tree::CategoryTreeRow{
+                            let parent=index.get(id).map(|n|n.parent.as_str()).unwrap_or("");
+                            category_tree::draggable_folder_row(row,category_tree::CategoryTreeRow{
                                 name,summary:&summary,depth,ancestor_guides:&[],is_last:last,
                                 root:depth==0&&open,has_children,open,selected:path==visual_path,
-                            })
+                            },id,parent,enabled&&!busy&&!hide,
+                                move_enabled&&folder_allowed.is_some_and(|a|a.contains(id))&&!ROOTS.iter().any(|(root,_)|*root==id))
                         }else{category_option_row(row,name,depth,last,has_children,open,path==visual_path)}
                     }).inner;
                     if let Some(target)=path.last(){
                         let allow_drop=move_enabled&&enabled&&!busy&&!hide;
-                        if let Some(request)=category_tree::product_drop_target(list,&response,target,
+                        if let Some(request)=category_tree::folder_drop_target(list,&response,target,
+                            allow_drop&&folder_allowed.is_some_and(|a|a.contains(target)),|id|path.iter().any(|p|p==id)){
+                            folder_move=Some(request);
+                        }else if let Some(request)=category_tree::product_drop_target(list,&response,target,
                             allow_drop){product_move=Some(request);}
                         else if let Some(hover)=drag_hover.as_deref_mut(){
                             if hover.observe(list,&response,target,allow_drop&&has_children&&!open&&path!=context){
@@ -459,7 +485,7 @@ pub(crate) fn explorer_body(menu:&mut Ui,nodes:&[CategoryNode],index:&HashMap<&s
                             }
                         }
                     }
-                    if enabled&&!busy&&response.clicked()&&product_move.is_none(){
+                    if enabled&&!busy&&response.clicked()&&product_move.is_none()&&folder_move.is_none(){
                         source=Some((response.rect.top()-clip.top(),(clip.top()-top).max(0.0)));
                         next_path=Some(path);
                     }
@@ -516,7 +542,7 @@ pub(crate) fn explorer_body(menu:&mut Ui,nodes:&[CategoryNode],index:&HashMap<&s
                 category_option_row(&mut ghost,&m.ghost_name,0,true,true,!m.reverse&&final_phase,true);
             }
     });
-    if product_move.is_none(){
+    if product_move.is_none()&&folder_move.is_none(){
         if let Some(path)=hover_path{
             // Keep the payload alive; a drag-driven descent must not enter
             // the ordinary 450ms interaction-locking navigation animation.
@@ -528,7 +554,7 @@ pub(crate) fn explorer_body(menu:&mut Ui,nodes:&[CategoryNode],index:&HashMap<&s
             menu.ctx().request_repaint();
         }
     }
-    (product_request,product_move)
+    (product_request,product_move,folder_move)
 }
 
 type PopupStates=crate::view_state::TimedViewStore<(ExplorerState,std::time::Instant)>;

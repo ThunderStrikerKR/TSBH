@@ -49,6 +49,38 @@ pub struct CategoryWrite {
     pub action:&'static str,
     pub data:Value,
 }
+struct FolderConfirmation{
+    request:category_tree::FolderMove,
+    scope:String,
+    name:String,
+    before_path:String,
+    after_path:String,
+    folders:usize,
+    products:usize,
+}
+fn folder_confirmation(cats:&[Category],catalog:&Value,request:category_tree::FolderMove)->Option<FolderConfirmation>{
+    let source=cats.iter().find(|c|c.id==request.id)?;
+    let target=cats.iter().find(|c|c.id==request.target)?;
+    if is_root(&source.id)||!source.active||source.parent!=request.parent||source.parent==target.id
+        ||source.id==target.id||under(cats,&target.id,&source.id)
+        ||path(cats,&target.id).iter().any(|c|!c.active)
+        ||cats.iter().any(|c|c.id!=source.id&&c.parent==target.id&&c.name==source.name){
+        return None;
+    }
+    let folders=cats.iter().filter(|c|c.id!=source.id&&under(cats,&c.id,&source.id)).count();
+    let index=CategoryMapIndex::new(cats,catalog,"");
+    Some(FolderConfirmation{scope:bando_data_access::management_scope_token(catalog,"categories"),
+        name:source.name.clone(),before_path:path_text(cats,&source.id),
+        after_path:format!("{} > {}",path_text(cats,&target.id),source.name),
+        folders,products:index.total(&source.id),request})
+}
+fn category_move_write(id:&str,name:&str,target:&str)->CategoryWrite{
+    CategoryWrite{action:"change_category",data:json!({
+        "categoryId":id,"name":name,"parentId":target,"transfer":false,
+        "guardCatalogMove":true,
+        "guardError":"이 분류에는 이동할 최상위 구분과 다른 상품이 연결되어 있습니다. 상품 소속을 먼저 확인하세요."
+    })}
+}
 pub struct CategoryManager {
     selected:String,
     expanded:HashSet<String>,
@@ -66,6 +98,8 @@ pub struct CategoryManager {
     product_request:Option<String>,
     product_move:Option<Vec<category_tree::ProductMove>>,
     product_selection:category_tree::ProductSelection,
+    folder_drop:Option<category_tree::FolderMove>,
+    folder_confirmation:Option<FolderConfirmation>,
     drag_hover:category_tree::ProductDragHover,
     name:String,
     editor:bool,
@@ -88,7 +122,7 @@ impl Default for CategoryManager {
             expanded:ROOTS.iter().map(|(id,_)|(*id).to_owned()).collect(),
             query:String::new(),focused:false,focus:Default::default(),crumbs:Default::default(),
             tree_motion:None,nav_motion:None,mode_motion:None,map_cache:None,node_cache:Default::default(),scroll_epoch:0,scroll_to:None,
-            product_request:None,product_move:None,drag_hover:Default::default(),product_selection:Default::default(),
+            product_request:None,product_move:None,drag_hover:Default::default(),product_selection:Default::default(),folder_drop:None,folder_confirmation:None,
             name:String::new(),editor:false,expected_scope:None,
             operation:None,new_name:String::new(),target:String::new(),
             transfer:false,confirm:None,after_save:None,
@@ -310,15 +344,17 @@ impl CategoryManager {
         self.rename_dirty(&cats)||self.operation_dirty(&cats)
     }
     pub fn has_overlay(&self)->bool{
-        self.editor||self.operation.is_some()||self.confirm.is_some()
+        self.editor||self.operation.is_some()||self.confirm.is_some()||self.folder_confirmation.is_some()
     }
     pub fn request_tab_leave(&mut self,catalog:&Value)->bool{
+        if self.folder_confirmation.is_some(){return false;}
         if self.dirty(catalog){
             self.confirm=Some(Confirm::SwitchTab);
             false
         }else{true}
     }
     pub fn request_global_leave(&mut self,catalog:&Value)->bool{
+        if self.folder_confirmation.is_some(){return false;}
         if self.dirty(catalog){
             self.confirm=Some(Confirm::GlobalLeave);
             false
@@ -344,6 +380,7 @@ impl CategoryManager {
     pub fn report_error(&mut self,message:String){self.error=Some(message);}
 
     pub fn clear_for_leave(&mut self){
+        self.folder_drop=None;self.folder_confirmation=None;
         self.product_selection.clear();
         self.drag_hover=Default::default();
         if self.focused&&self.focus.moving(){
@@ -416,17 +453,7 @@ impl CategoryManager {
             }
             Some(Operation::Move)=>{
                 if self.target.is_empty(){return Err("이동할 상위 분류를 선택하세요.".into());}
-                Ok::<CategoryWrite,String>(CategoryWrite{
-                    action:"change_category",
-                    data:json!({
-                        "categoryId":current.id,
-                        "name":current.name,
-                        "parentId":self.target,
-                        "transfer":false,
-                        "guardCatalogMove":true,
-                        "guardError":"이 분류에는 이동할 최상위 구분과 다른 상품이 연결되어 있습니다. 상품 소속을 먼저 확인하세요.",
-                    }),
-                })
+                Ok::<CategoryWrite,String>(category_move_write(&current.id,&current.name,&self.target))
             }
             Some(Operation::Delete)=>{
                 Ok::<CategoryWrite,String>(CategoryWrite{
@@ -453,6 +480,10 @@ impl CategoryManager {
     }
     pub fn on_saved(&mut self,kind:&str,catalog:&Value)->&'static str{
         self.expected_scope=Some(bando_data_access::management_scope_token(catalog,"categories"));
+        if kind=="change_category"&&self.folder_confirmation.take().is_some(){
+            self.error=None;self.invalidate_map_cache();
+            return "분류 위치를 변경했습니다.";
+        }
         let success=match (kind,self.operation){
             ("delete_category",_)=>"빈 분류를 삭제했습니다.",
             ("change_category",Some(Operation::Add))=>"하위 분류를 추가했습니다.",
@@ -509,6 +540,7 @@ impl CategoryManager {
         self.confirm=None;
     }
     pub(crate) fn reset_navigation(&mut self){
+        self.folder_drop=None;self.folder_confirmation=None;
         self.product_selection.clear();
         self.drag_hover=Default::default();
         let epoch=self.scroll_epoch.wrapping_add(1);
@@ -575,11 +607,14 @@ impl CategoryManager {
         }else{
             format!("(상품 {count} · 하위 분류 {})",branches.len())
         };
-        let response=category_tree::category_tree_row(ui,category_tree::CategoryTreeRow{
-            name:&item.name,summary:&summary,depth,ancestor_guides,is_last,
-            root:is_root(&item.id),has_children,open,
-            selected:self.selected==item.id,
-        });
+        let folder_enabled=product_enabled&&!locked;
+        let response=ui.push_id(("category-folder",&item.id),|row|
+            category_tree::draggable_folder_row(row,category_tree::CategoryTreeRow{
+                name:&item.name,summary:&summary,depth,ancestor_guides,is_last,
+                root:is_root(&item.id),has_children,open,
+                selected:self.selected==item.id,
+            },&item.id,&item.parent,folder_enabled,move_enabled&&item.active&&!is_root(&item.id))
+        ).inner;
         #[cfg(test)]
         if item.id.starts_with("geometry-cat-"){
             crate::ui_test_support::record("catalog data row",response.rect);
@@ -588,7 +623,10 @@ impl CategoryManager {
             response.scroll_to_me(None);self.scroll_to=None;
         }
         let allow_drop=move_enabled&&product_enabled&&!locked&&item.active;
-        if let Some(request)=category_tree::product_drop_target(ui,&response,&item.id,allow_drop){
+        if let Some(request)=category_tree::folder_drop_target(ui,&response,&item.id,
+            allow_drop&&path(cats,&item.id).iter().all(|c|c.active),|id|ancestors.contains(id)){
+            self.folder_drop=Some(request);
+        }else if let Some(request)=category_tree::product_drop_target(ui,&response,&item.id,allow_drop){
             self.product_move=Some(request);
         }else if self.drag_hover.observe(ui,&response,&item.id,allow_drop&&has_children&&!open){
             // Expand on the next frame without a disabling fold animation.
@@ -596,7 +634,7 @@ impl CategoryManager {
             self.expanded.insert(item.id.clone());
             ui.ctx().request_repaint();
         }
-        if response.clicked()&&!locked&&self.product_move.is_none(){
+        if response.clicked()&&folder_enabled&&self.product_move.is_none()&&self.folder_drop.is_none(){
             self.select_map(cats,&item.id,ui.input(|i|i.time));
             ui.ctx().request_repaint();
             if has_children && self.query.trim().is_empty(){
@@ -675,6 +713,7 @@ impl CategoryManager {
     pub fn show_page(&mut self,ui:&mut Ui,catalog:&Value,editable:bool,busy:bool){
         self.product_request=None;
         self.product_move=None;
+        self.folder_drop=None;
         self.drag_hover.begin_frame();
         if !busy&&ui.input(|i|i.key_pressed(egui::Key::Escape)){self.product_selection.clear();}
         let revision=catalog["revision"].as_u64();
@@ -754,11 +793,14 @@ impl CategoryManager {
                 let height=(panel.available_height()-theme::CATEGORY_EXPLORER_CRUMB_HEIGHT-theme::SECTION_DIVIDER_HEIGHT)
                     .max(theme::CATALOG_TREE_ROW_HEIGHT);
                 let search_focused=panel.ctx().memory(|mem|mem.focused().is_some());
-                let (request,product_move)=category_dropdown::explorer_body(panel,&nodes,&node_index,&mut self.focus,
+                let allowed=cats.iter().filter(|c|c.active&&path(cats,&c.id).iter().all(|p|p.active))
+                    .map(|c|c.id.clone()).collect::<HashSet<_>>();
+                let (request,product_move,folder_move)=category_dropdown::explorer_body(panel,&nodes,&node_index,&mut self.focus,
                     !busy,height,search_focused,Some(&index.totals),Some(&index.products),editable,
-                    Some(&mut self.drag_hover),Some(&mut self.product_selection));
+                    Some(&mut self.drag_hover),Some(&mut self.product_selection),Some(&allowed));
                 self.product_request=request;
                 self.product_move=product_move;
+                self.folder_drop=folder_move;
                 if !self.focus.moving(){
                     let new=self.focus.path.last().cloned().unwrap_or_default();
                     if self.selected!=new{
@@ -829,9 +871,56 @@ impl CategoryManager {
             }
         });
         self.drag_hover.end_frame();
+        if editable&&!busy&&!self.has_overlay(){
+            if let Some(request)=self.folder_drop.take(){
+                self.folder_confirmation=folder_confirmation(cats,catalog,request);
+                if self.folder_confirmation.is_none(){self.error=Some("이동할 수 없는 분류입니다.".into());}
+                ui.ctx().request_repaint();
+            }
+        }
+    }
+    fn show_folder_confirmation(&mut self,ctx:&Context,work_area:Rect,catalog:&Value,editable:bool,busy:bool)->Option<CategoryWrite>{
+        let pending=self.folder_confirmation.as_ref()?;
+        let stale=pending.scope!=bando_data_access::management_scope_token(catalog,"categories");
+        let mut cancel=false;
+        let mut submit=false;
+        crate::popup::modal_backdrop(ctx,"category-folder-move-dim",false);
+        crate::popup::show_decision_window(ctx,"분류 이동 확인","category-folder-move-confirm",work_area,|modal|{
+            crate::popup::decision_workspace(modal,|decision|{
+                cancel=decision.header("분류 이동 확인","취소",!busy);
+                decision.body(|body|{
+                    body.label(typography::body("이 분류와 하위 분류를 함께 이동합니다. 연결된 상품은 유지되며 카테고리 경로가 변경됩니다."));
+                    crate::ui_primitives::section_divider(body);
+                    body.label(typography::field_label("현재 경로"));
+                    body.label(typography::body(&pending.before_path));
+                    body.label(typography::field_label("이동 후 경로"));
+                    body.label(typography::body(&pending.after_path));
+                    crate::ui_primitives::section_divider(body);
+                    body.label(typography::body(&format!("하위 분류 {}개 · 연결 상품 {}개",pending.folders,pending.products)));
+                    if stale{body.label(typography::body("분류 또는 상품 소속이 변경되었습니다. 취소한 뒤 다시 이동해 주세요."));}
+                    if let Some(error)=self.error.as_deref(){body.label(typography::body(error));}
+                });
+                decision.actions(|right|{
+                    submit=crate::button::action(right,"위치 변경",theme::ButtonRole::Primary,
+                        editable&&!busy&&!stale).clicked();
+                });
+            });
+        });
+        if cancel||(!busy&&ctx.input(|i|i.key_pressed(egui::Key::Escape))){
+            self.folder_confirmation=None;self.error=None;return None;
+        }
+        if submit{
+            let mut write=category_move_write(&pending.request.id,&pending.name,&pending.request.target);
+            write.data["expectedScope"]=json!(pending.scope);
+            return Some(write);
+        }
+        None
     }
     pub fn show_overlays(&mut self,ctx:&Context,work_area:Rect,
         catalog:&Value,editable:bool,busy:bool)->Option<CategoryWrite>{
+        if self.folder_confirmation.is_some(){
+            return self.show_folder_confirmation(ctx,work_area,catalog,editable,busy);
+        }
         let cats=categories(catalog);
         let mut write=None;
         if self.editor{
