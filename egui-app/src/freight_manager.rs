@@ -2,10 +2,10 @@
 //! combination validity come from the existing Tauri Rust business state and
 //! rules::shipping_manager_view. No preview DB or hard-coded rate is treated as
 //! operational freight. Write actions are a separate migration step.
-use crate::ui_layout::SharedUiClipExt as _;
-use crate::ui_layout::SharedPainterClipExt as _;
-use crate::ui_layout::SharedAllocationExt as _;
-use crate::ui_layout::AlignedUiBuilderExt as _;
+use crate::ui_layout::geometry::SharedUiClipExt as _;
+use crate::ui_layout::geometry::SharedPainterClipExt as _;
+use crate::ui_layout::geometry::SharedAllocationExt as _;
+use crate::ui_layout::geometry::AlignedUiBuilderExt as _;
 use crate::{
     category_manager::ProductCategoryPaths,
     cell_navigation,
@@ -13,7 +13,7 @@ use crate::{
     management_queries,
     settings_help, theme, typography,
 };
-use crate::ui_primitives::UiWidthPolicyExt;
+use crate::ui_layout::geometry::UiWidthPolicyExt;
 use eframe::egui::{self, Ui};
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 use serde_json::{json, Value};
@@ -1416,8 +1416,8 @@ impl FreightManager {
             );
             // The right controls (including optional help) own the full
             // trailing slot; only the TABLE body/header reserve scroll space.
-            let left_rect=crate::ui_layout::aligned_rect(left_rect);
-            let right_rect=crate::ui_layout::aligned_rect(right_rect);
+            let left_rect=crate::ui_layout::geometry::aligned_rect(left_rect);
+            let right_rect=crate::ui_layout::geometry::aligned_rect(right_rect);
             let right_controls_rect=right_rect;
             section.scope_builder(
                 egui::UiBuilder::new()
@@ -1426,8 +1426,8 @@ impl FreightManager {
                     .layout(egui::Layout::left_to_right(egui::Align::Center)),
                 |tools|{
                     tools.restrict_shared_clip(left_rect);
-                    tools.apply_shared_width(crate::ui_primitives::CardWidthPolicy::Fixed,left_rect.width());
-                    crate::ui_layout::set_fixed_height(tools,left_rect.height());
+                    tools.apply_shared_width(crate::ui_layout::geometry::CardWidthPolicy::Fixed,left_rect.width());
+                    crate::ui_layout::geometry::set_fixed_height(tools,left_rect.height());
                     crate::ui_layout::apply_spacing_role(tools,crate::ui_layout::SpacingRole::ToolbarInput);
                     // Search stays at 36pt; the shared 34pt dropdown trigger
                     // is vertically centered within the same 36pt toolbar.
@@ -1525,8 +1525,8 @@ impl FreightManager {
                     // Clip to the trailing card-inner slot, not the
                     // independent table scrollbar gutter.
                     bulk.restrict_shared_clip(right_rect);
-                    bulk.apply_shared_width(crate::ui_primitives::CardWidthPolicy::Fixed,right_controls_rect.width());
-                    crate::ui_layout::set_fixed_height(bulk,right_controls_rect.height());
+                    bulk.apply_shared_width(crate::ui_layout::geometry::CardWidthPolicy::Fixed,right_controls_rect.width());
+                    crate::ui_layout::geometry::set_fixed_height(bulk,right_controls_rect.height());
                     crate::ui_layout::apply_spacing_role(bulk,crate::ui_layout::SpacingRole::ToolbarInput);
                     // Bulk selection uses the same 34pt split-chevron
                     // trigger as the filter and every product-row selector.
@@ -1710,7 +1710,7 @@ impl FreightManager {
                                 theme::ACTION_STANDARD_HEIGHT
                             )
                         );
-                        let selector_rect=crate::ui_layout::aligned_rect(selector_rect);
+                        let selector_rect=crate::ui_layout::geometry::aligned_rect(selector_rect);
                         let selector_clip=cells[4].intersect(row.clip_rect());
                         let mut selector_builder=egui::UiBuilder::new()
                             .id_salt(("freight-selector",id))
@@ -1721,7 +1721,7 @@ impl FreightManager {
                         }
                         row.scope_builder(selector_builder,|control|{
                                 control.restrict_shared_clip(selector_clip);
-                                control.apply_shared_width(crate::ui_primitives::CardWidthPolicy::Fixed,selector_rect.width());
+                                control.apply_shared_width(crate::ui_layout::geometry::CardWidthPolicy::Fixed,selector_rect.width());
                                 crate::dropdown::management_dropdown(
                                     control,
                                     crate::dropdown::DropdownCaption::new(if current.is_empty() {
@@ -1771,7 +1771,7 @@ impl FreightManager {
                         let actions_rect=cells[5].shrink2(
                             egui::vec2(theme::SPACE_12,0.0)
                         );
-                        let actions_rect=crate::ui_layout::aligned_rect(actions_rect);
+                        let actions_rect=crate::ui_layout::geometry::aligned_rect(actions_rect);
                         let actions_clip=actions_rect.intersect(row.clip_rect());
                         // Center the single "기본 운임 설정" action within
                         // the 120pt inset slot, preserving its 34pt height
@@ -1793,7 +1793,7 @@ impl FreightManager {
                                 actions.restrict_shared_clip(
                                     actions_clip
                                 );
-                                actions.apply_shared_width(crate::ui_primitives::CardWidthPolicy::Fixed,actions_rect.width());
+                                actions.apply_shared_width(crate::ui_layout::geometry::CardWidthPolicy::Fixed,actions_rect.width());
                                 crate::ui_layout::apply_spacing_role(actions,crate::ui_layout::SpacingRole::Toolbar);
                                 let editable=enabled&&!changed&&ready;
                                 // Only an unassigned product can edit its
