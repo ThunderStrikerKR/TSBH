@@ -1,0 +1,35 @@
+{
+  "schemaVersion": 1,
+  "id": "order-history-tracking-copy-157",
+  "screen": "주문 내역 / 주문 및 배송 건 운송장 복사",
+  "files": [
+    "egui-app/src/order_history_manager.rs"
+  ],
+  "visualStatus": "NOT_VERIFIED",
+  "reason": "활성 운송장 복사에 기존 Standard 버튼 역할을 적용. 비활성 공통 팔레트와 복사 가능 조건, 복사 내용, 버튼 높이 및 배치는 유지. Windows 실화면 및 자동 테스트 미확인.",
+  "defects": [],
+  "releaseDecision": "NOT_APPROVED",
+  "nextVerification": {
+    "requiredViewports": [
+      {
+        "width": 1920,
+        "height": 1080,
+        "scalePercent": 100
+      },
+      {
+        "width": 1366,
+        "height": 768,
+        "scalePercent": 100
+      }
+    ],
+    "checks": [
+      "noClipping",
+      "footerVisible",
+      "scrollReachable",
+      "inputReadable",
+      "alignment",
+      "interaction",
+      "hoverAndFocus"
+    ]
+  }
+}

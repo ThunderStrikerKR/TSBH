@@ -607,7 +607,7 @@ fn draw_line(ui:&mut Ui,rect:Rect,line:HistoryLine,snapshot:&HistorySnapshot,
                     crate::ui_layout::apply_spacing_role(actions,crate::ui_layout::SpacingRole::CompactActions);
                     // Copy the FULL order's existing Rust-generated message.
                     if crate::button::action_with_min_width(actions,"운송장 복사",
-                        theme::ButtonRole::TableSecondary,!message.is_empty(),
+                        theme::ButtonRole::Standard,!message.is_empty(),
                         action_width).clicked(){
                         actions.ctx().copy_text(message.to_owned());
                     }
@@ -683,7 +683,7 @@ fn draw_line(ui:&mut Ui,rect:Rect,line:HistoryLine,snapshot:&HistorySnapshot,
                         }
                     }
                     if crate::button::action(actions,"운송장 복사",
-                        theme::ButtonRole::TableSecondary,
+                        theme::ButtonRole::Standard,
                         shipment.is_some() && tracking!="운송장 미확인"
                     ).clicked(){
                         actions.ctx().copy_text(tracking.clone());
