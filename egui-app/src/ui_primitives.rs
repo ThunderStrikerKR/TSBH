@@ -199,7 +199,7 @@ pub(crate) fn date_navigation_segmented_surface_with_state<R>(
         ui,id_salt,inner,Layout::left_to_right(Align::Center)
     );
     segments.apply_shared_width(CardWidthPolicy::Fixed,inner.width());
-    crate::ui_layout::set_fixed_height(segments,inner.height());
+    crate::ui_layout::set_fixed_height(&mut segments,inner.height());
     segments.spacing_mut().item_spacing=Vec2::ZERO;
     let content=add_segments(&mut segments,inner);
     let stroke=crate::highlight::prioritized_stroke(
