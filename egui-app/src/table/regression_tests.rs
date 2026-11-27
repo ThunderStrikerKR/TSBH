@@ -676,6 +676,38 @@ mod shared_table_rendered_geometry_tests{
     use eframe::egui::{self,Align,Layout,Rect,Vec2};
     use crate::ui_test_support::{test_context,TRACE,assert_geometry_value,assert_rect_geometry,assert_rect_inside};
     #[test]
+    fn checked_row_orange_overrides_blue_hover_without_moving_cells(){
+        fn contains_paint(shape:&egui::Shape,rect:Rect,fill:egui::Color32)->bool{
+            match shape{
+                egui::Shape::Rect(s)=>s.fill==fill&&(s.rect.min-rect.min).length()<=1.5&&(s.rect.max-rect.max).length()<=1.5,
+                egui::Shape::Vec(shapes)=>shapes.iter().any(|s|contains_paint(s,rect,fill)),
+                _=>false,
+            }
+        }
+        let ctx=test_context();
+        let screen=Rect::from_min_size(egui::Pos2::ZERO,Vec2::new(800.0,500.0));
+        let mut baseline=None;
+        for (checked,hover) in [(false,false),(false,true),(true,true),(true,false)]{
+            let mut measured=None;
+            for frame in 0..3{
+                let events=if hover{vec![egui::Event::PointerMoved(egui::pos2(100.0,28.0))]}
+                    else{vec![egui::Event::PointerGone]};
+                let output=ctx.run(egui::RawInput{screen_rect:Some(screen),events,..Default::default()},|ctx|{
+                    egui::CentralPanel::default().show(ctx,|ui|{
+                        let rect=Rect::from_min_size(egui::pos2(20.0,12.0),Vec2::new(308.0,42.0));
+                        crate::table::fixed_row(ui,"selection-paint",rect,0,&[44.0,256.0],8.0,
+                            crate::table::RowTone::SelectedIf(checked),|_,cells|measured=Some((rect,cells)));
+                    });
+                });
+                let (rect,cells)=measured.unwrap();
+                let fill=if checked{theme::ORANGE_EMPHASIS_BG}else if hover{theme::BUTTON_HOVER_BG}else{theme::PANEL};
+                if let Some(old)=baseline{assert_eq!(cells,old);}else{baseline=Some(cells);}
+                // egui hover may settle after the first frame; check settled output below.
+                if frame == 2 {assert!(output.shapes.iter().any(|s|contains_paint(&s.shape,rect,fill)));}
+            }
+        }
+    }
+    #[test]
     fn registry_rows_keep_cell_edges_and_clipping_inside_the_painted_table(){
         let ctx=test_context();
         for width in [640.0,440.0,640.0]{
