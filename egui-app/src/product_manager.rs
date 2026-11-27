@@ -876,6 +876,7 @@ impl ProductManager {
                         self.confirm_archive=false;
                         self.confirm_discard=false;
                     }
+                    if job.kind=="move_products_to_category"{self.category_manager.clear_product_selection();}
                     let category_notice=if matches!(
                         job.kind.as_str(),"change_category"|"delete_category"
                     ){
@@ -893,6 +894,7 @@ impl ProductManager {
                     }else{
                         Some(category_notice.unwrap_or(match job.kind.as_str(){
                             "upsert_product"=>"상품 상세 정보를 저장했습니다.",
+                            "move_products_to_category"=>"선택 상품의 카테고리를 변경했습니다.",
                             "archive_product"=>"상품을 삭제하고 과거 기록을 보존했습니다.",
                             "change_category"=>"카테고리 변경사항을 저장했습니다.",
                             "delete_category"=>"빈 분류를 삭제했습니다.",
@@ -1234,11 +1236,14 @@ impl ProductManager {
                 self.category_manager.show_page(ui,catalog,can_edit,blocked);
                 let requested=self.category_manager.take_product_request();
                 let move_request=self.category_manager.take_product_move();
-                if let Some(request)=move_request.filter(|_|can_edit&&!blocked){
-                    let change=Self::category_move_candidate(catalog,&request);
-                    if let Some((original,candidate))=change{
-                        self.start_write("upsert_product",json!({"product":candidate,"expectedEntity":original}),None,ui.ctx().clone());
-                    }
+                if let Some(requests)=move_request.filter(|_|can_edit&&!blocked){
+                    let changes=requests.iter().map(|request|
+                        Self::category_move_candidate(catalog,request).map(|(original,candidate)|
+                            json!({"product":candidate,"expectedEntity":original,"source":request.source,"target":request.target}))
+                    ).collect::<Option<Vec<_>>>();
+                    if let Some(changes)=changes.filter(|v|!v.is_empty()){
+                        self.start_write("move_products_to_category",json!({"changes":changes}),None,ui.ctx().clone());
+                    }else{self.error=Some("선택 상품 또는 이동 대상이 변경되었습니다. 다시 확인해 주세요.".into());}
                 }else if let Some(id)=requested.filter(|_|!blocked){
                     let product=rows(&catalog["products"]).iter().find(|product|
                         field(product,"id")==id.as_str()&&field(product,"deletedAt").is_empty()

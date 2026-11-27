@@ -1,0 +1,39 @@
+{
+  "schemaVersion": 1,
+  "id": "category-multi-product-move-157",
+  "screen": "상품 관리 / 카테고리 관리 / 다중 상품 이동",
+  "files": [
+    "egui-app/src/category_tree/mod.rs",
+    "egui-app/src/category_manager.rs",
+    "egui-app/src/category_dropdown.rs",
+    "egui-app/src/product_manager.rs",
+    "crates/bando-data-access/src/product_commands.rs"
+  ],
+  "visualStatus": "NOT_VERIFIED",
+  "reason": "Ctrl+클릭 선택, Esc 해제, 기존 선택 강조, 단일 typed drag payload, 단일 Rust 트랜잭션 및 모든 상품 CAS/대상 검증. 컴파일·CI·Windows 실화면 미확인.",
+  "defects": [],
+  "releaseDecision": "NOT_APPROVED",
+  "nextVerification": {
+    "requiredViewports": [
+      {
+        "width": 1920,
+        "height": 1080,
+        "scalePercent": 100
+      },
+      {
+        "width": 1366,
+        "height": 768,
+        "scalePercent": 100
+      }
+    ],
+    "checks": [
+      "noClipping",
+      "footerVisible",
+      "scrollReachable",
+      "inputReadable",
+      "alignment",
+      "interaction",
+      "hoverAndFocus"
+    ]
+  }
+}

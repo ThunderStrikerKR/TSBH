@@ -64,7 +64,8 @@ pub struct CategoryManager {
     scroll_epoch:u64,
     scroll_to:Option<String>,
     product_request:Option<String>,
-    product_move:Option<category_tree::ProductMove>,
+    product_move:Option<Vec<category_tree::ProductMove>>,
+    product_selection:category_tree::ProductSelection,
     drag_hover:category_tree::ProductDragHover,
     name:String,
     editor:bool,
@@ -87,7 +88,7 @@ impl Default for CategoryManager {
             expanded:ROOTS.iter().map(|(id,_)|(*id).to_owned()).collect(),
             query:String::new(),focused:false,focus:Default::default(),crumbs:Default::default(),
             tree_motion:None,nav_motion:None,mode_motion:None,map_cache:None,node_cache:Default::default(),scroll_epoch:0,scroll_to:None,
-            product_request:None,product_move:None,drag_hover:Default::default(),
+            product_request:None,product_move:None,drag_hover:Default::default(),product_selection:Default::default(),
             name:String::new(),editor:false,expected_scope:None,
             operation:None,new_name:String::new(),target:String::new(),
             transfer:false,confirm:None,after_save:None,
@@ -326,9 +327,10 @@ impl CategoryManager {
     pub(crate) fn take_product_request(&mut self)->Option<String>{
         self.product_request.take()
     }
-    pub(crate) fn take_product_move(&mut self)->Option<category_tree::ProductMove>{
+    pub(crate) fn take_product_move(&mut self)->Option<Vec<category_tree::ProductMove>>{
         self.product_move.take()
     }
+    pub(crate) fn clear_product_selection(&mut self){self.product_selection.clear();}
     pub fn take_switch_to_list(&mut self)->bool{
         std::mem::take(&mut self.switch_to_list)
     }
@@ -342,6 +344,7 @@ impl CategoryManager {
     pub fn report_error(&mut self,message:String){self.error=Some(message);}
 
     pub fn clear_for_leave(&mut self){
+        self.product_selection.clear();
         self.drag_hover=Default::default();
         if self.focused&&self.focus.moving(){
             self.focus.finish_motion();self.selected=self.focus.path.last().cloned().unwrap_or_default();
@@ -506,6 +509,7 @@ impl CategoryManager {
         self.confirm=None;
     }
     pub(crate) fn reset_navigation(&mut self){
+        self.product_selection.clear();
         self.drag_hover=Default::default();
         let epoch=self.scroll_epoch.wrapping_add(1);
         self.selected=ROOTS[0].0.to_owned();
@@ -615,9 +619,12 @@ impl CategoryManager {
                     let enabled=product_enabled&&!locked&&!id.is_empty();
                     let response=rows.push_id(("category-product",&item.id,id),|row|
                         category_tree::product_tree_row(row,name,depth+1,&child_guides,
-                            position+1==products.len(),enabled,move_enabled)).inner;
-                    category_tree::start_product_drag(rows,&response,id,&item.id,enabled&&move_enabled);
-                    if response.clicked(){this.product_request=Some(id.clone());}
+                            position+1==products.len(),enabled,move_enabled,this.product_selection.contains(id))).inner;
+                    category_tree::start_product_drag(rows,&response,id,&item.id,enabled&&move_enabled,&this.product_selection);
+                    if response.clicked(){
+                        if move_enabled&&rows.input(|i|i.modifiers.ctrl){this.product_selection.toggle(id,&item.id);}
+                        else{this.product_selection.clear();this.product_request=Some(id.clone());}
+                    }
                 }
             };
             if let Some(m)=motion{
@@ -669,6 +676,7 @@ impl CategoryManager {
         self.product_request=None;
         self.product_move=None;
         self.drag_hover.begin_frame();
+        if !busy&&ui.input(|i|i.key_pressed(egui::Key::Escape)){self.product_selection.clear();}
         let revision=catalog["revision"].as_u64();
         if revision.is_none(){self.node_cache.invalidate();}
         let projection=self.node_cache.get(revision,||{
@@ -748,7 +756,7 @@ impl CategoryManager {
                 let search_focused=panel.ctx().memory(|mem|mem.focused().is_some());
                 let (request,product_move)=category_dropdown::explorer_body(panel,&nodes,&node_index,&mut self.focus,
                     !busy,height,search_focused,Some(&index.totals),Some(&index.products),editable,
-                    Some(&mut self.drag_hover));
+                    Some(&mut self.drag_hover),Some(&mut self.product_selection));
                 self.product_request=request;
                 self.product_move=product_move;
                 if !self.focus.moving(){

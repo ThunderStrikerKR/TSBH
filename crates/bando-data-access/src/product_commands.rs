@@ -230,6 +230,62 @@ fn validate_product_brand_selection(before:&Value,product:&Value)->Result<(),Str
     Ok(())
 }
 
+/// Validate every before-image and destination before producing a single
+/// snapshot. A failure in any reducer leaves the transaction untouched.
+fn apply_category_moves(before:&Value,data:&Value)->Result<Value,String>{
+    let changes=data["changes"].as_array().filter(|v|!v.is_empty())
+        .ok_or("이동할 상품이 없습니다.")?;
+    let mut seen=std::collections::HashSet::new();
+    let mut next=before.clone();
+    let at=chrono::Utc::now().to_rfc3339();
+    for change in changes{
+        let original=change.get("expectedEntity").filter(|v|v.is_object()).ok_or("상품 원본 정보가 없습니다.")?;
+        let id=required(original,"id")?;
+        let source=required(change,"source")?;
+        let target=required(change,"target")?;
+        if !seen.insert(id.to_owned())||source==target{return Err("중복 또는 동일 카테고리 이동입니다.".into());}
+        let actual=before["products"].as_array().into_iter().flatten()
+            .find(|p|p["id"].as_str()==Some(id)).ok_or("이동할 상품이 삭제되었습니다.")?;
+        if actual!=original||actual["deletedAt"].as_str().is_some_and(|v|!v.is_empty())
+            ||actual["supersededBy"].as_str().is_some_and(|v|!v.is_empty())
+            ||!actual["categories"].as_array().into_iter().flatten().any(|v|v.as_str()==Some(source)){
+            return Err("선택 상품이 변경되었습니다. 전체 이동을 취소합니다.".into());
+        }
+        // Derive the target label from authoritative category ancestry, not
+        // the submitted editor draft. Virtual roots match the existing UI.
+        let mut names=Vec::new();
+        let mut cursor=target;
+        let mut visited=std::collections::HashSet::new();
+        while !cursor.is_empty(){
+            if !visited.insert(cursor){return Err("카테고리 경로 오류".into());}
+            if let Some(cat)=before["categories"].as_array().into_iter().flatten()
+                .find(|c|c["id"].as_str()==Some(cursor)){
+                if cat["active"]==false||cat["deletedAt"].as_str().is_some_and(|v|!v.is_empty()){
+                    return Err("이동할 카테고리를 사용할 수 없습니다.".into());
+                }
+                names.push(required(cat,"name")?);
+                cursor=cat["parentId"].as_str().unwrap_or("");
+            }else{
+                match cursor{
+                    "catalog-root:BANDOSTAND"=>names.push("반도스탠드"),
+                    "catalog-root:BANDOMALL"=>names.push("반도몰"),
+                    _=>return Err("이동할 카테고리가 존재하지 않습니다.".into()),
+                }
+                break;
+            }
+        }
+        names.reverse();
+        let mut product=actual.clone();
+        product["categories"]=json!([target]);
+        product["category"]=json!(names.join(" > "));
+        let result=catalog_clients::execute("upsert_product_from_editor",
+            json!({"state":&next,"product":product,"updatedAt":at}))?;
+        next=result.get("state").filter(|v|v.is_object()).cloned()
+            .ok_or("Rust 상품 이동 결과 형식 오류")?;
+    }
+    Ok(next)
+}
+
 pub fn patch_product_v2(conn:&mut Connection, request:&Value)->Result<Value,String>{
     let expected=request.get("expectedRevision").and_then(Value::as_u64)
         .ok_or("상품 변경 비교 리비전이 없습니다.")?;
@@ -287,6 +343,9 @@ pub fn patch_product_v2(conn:&mut Connection, request:&Value)->Result<Value,Stri
                 &mut changed,product_id,variant_id,tier,new_price,old_price,
             )?;
             changed
+        }
+        "move_products_to_category"=>{
+            apply_category_moves(before,data)?
         }
         "upsert_product"=>{
             let mut product=data.get("product").filter(|value|value.is_object())

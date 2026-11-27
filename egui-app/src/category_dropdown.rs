@@ -237,7 +237,7 @@ pub(crate) fn crumbs_row(ui:&mut Ui,state:&mut ExplorerState,index:&HashMap<&str
 }
 
 fn crumbs_row_with_drop(ui:&mut Ui,state:&mut ExplorerState,index:&HashMap<&str,&CategoryNode>,
-    path:&[String],enabled:bool,alpha:f32,slide:f32,mut product_move:Option<&mut Option<category_tree::ProductMove>>)->Option<Vec<String>>{
+    path:&[String],enabled:bool,alpha:f32,slide:f32,mut product_move:Option<&mut Option<Vec<category_tree::ProductMove>>>)->Option<Vec<String>>{
     let mut next=None;
     let height=theme::CATEGORY_EXPLORER_CRUMB_HEIGHT;
     let (nav_rect,_)=ui.shared_allocate_exact_size(Vec2::new(ui.available_width().max(1.0),height),egui::Sense::hover());
@@ -342,7 +342,7 @@ fn menu_body(
     ).inner;
     let list_height=theme::CATEGORY_EXPLORER_LIST_MAX_HEIGHT
         .min((menu.ctx().content_rect().height()-270.0).max(100.0));
-    let _=explorer_body(menu,nodes,index,state,enabled,list_height,search_response.has_focus(),None,None,false,None);
+    let _=explorer_body(menu,nodes,index,state,enabled,list_height,search_response.has_focus(),None,None,false,None,None);
     let busy=state.moving();
     crate::ui_primitives::soft_divider(menu);
     let mut applied=false;
@@ -361,8 +361,9 @@ fn menu_body(
 pub(crate) fn explorer_body(menu:&mut Ui,nodes:&[CategoryNode],index:&HashMap<&str,&CategoryNode>,
     state:&mut ExplorerState,enabled:bool,list_height:f32,search_focused:bool,
     totals:Option<&HashMap<String,usize>>,products:Option<&HashMap<String,Vec<(String,String)>>>,move_enabled:bool,
-    mut drag_hover:Option<&mut category_tree::ProductDragHover>)
-    ->(Option<String>,Option<category_tree::ProductMove>){
+    mut drag_hover:Option<&mut category_tree::ProductDragHover>,
+    mut product_selection:Option<&mut category_tree::ProductSelection>)
+    ->(Option<String>,Option<Vec<category_tree::ProductMove>>){
     let mut product_request=None;
     let mut product_move=None;
     let now=menu.input(|i|i.time);
@@ -485,10 +486,16 @@ pub(crate) fn explorer_body(menu:&mut Ui,nodes:&[CategoryNode],index:&HashMap<&s
                     list.push_id(("category-product",current,id),|row|{
                         if alpha<1.0{row.set_opacity(alpha);}
                         let active=enabled&&!busy&&!id.is_empty();
+                        let selected=product_selection.as_ref().is_some_and(|s|s.contains(id));
                         let response=category_tree::product_tree_row(row,name,1,&[],i+1==product_rows.len(),
-                            active,move_enabled);
-                        category_tree::start_product_drag(row,&response,id,current,active&&move_enabled);
-                        if response.clicked(){product_request=Some(id.clone());}
+                            active,move_enabled,selected);
+                        if let Some(selection)=product_selection.as_deref_mut(){
+                            category_tree::start_product_drag(row,&response,id,current,active&&move_enabled,selection);
+                            if response.clicked(){
+                                if move_enabled&&row.input(|i|i.modifiers.ctrl){selection.toggle(id,current);}
+                                else{selection.clear();product_request=Some(id.clone());}
+                            }
+                        }
                     });
                 }
             });

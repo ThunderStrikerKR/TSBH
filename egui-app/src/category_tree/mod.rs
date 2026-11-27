@@ -115,15 +115,31 @@ pub(crate) fn category_tree_row(ui:&mut Ui,item:CategoryTreeRow<'_>)->Response{
 
 /// Product leaf opens the existing product detail; it never changes
 /// category selection or expansion.
-pub(crate) fn product_tree_row(ui:&mut Ui,name:&str,depth:usize,ancestor_guides:&[bool],is_last:bool,enabled:bool,draggable:bool)->Response{
+pub(crate) fn product_tree_row(ui:&mut Ui,name:&str,depth:usize,ancestor_guides:&[bool],is_last:bool,enabled:bool,draggable:bool,selected:bool)->Response{
     tree_row(ui,CategoryTreeRow{
         name,summary:"",depth,ancestor_guides,is_last,
-        root:false,has_children:false,open:false,selected:false,
+        root:false,has_children:false,open:false,selected,
     },true,enabled,draggable)
 }
 
 #[derive(Clone)]
-struct ProductDrag { id:String, source:String }
+struct ProductDrag { id:String, source:String, members:Vec<(String,String)> }
+
+/// Selection is shared between both management tree modes. A plain click
+/// still opens details; Ctrl+click toggles a unique product ID.
+#[derive(Default)]
+pub(crate) struct ProductSelection(std::collections::BTreeMap<String,String>);
+impl ProductSelection {
+    pub(crate) fn contains(&self,id:&str)->bool{self.0.contains_key(id)}
+    pub(crate) fn clear(&mut self){self.0.clear();}
+    pub(crate) fn toggle(&mut self,id:&str,source:&str){
+        if self.0.remove(id).is_none(){self.0.insert(id.to_owned(),source.to_owned());}
+    }
+    fn members(&self,id:&str,source:&str)->Vec<(String,String)>{
+        if self.contains(id){self.0.iter().map(|(id,source)|(id.clone(),source.clone())).collect()}
+        else{vec![(id.to_owned(),source.to_owned())]}
+    }
+}
 
 const PRODUCT_DRAG_OPEN_DELAY:f64=0.65;
 
@@ -155,7 +171,7 @@ impl ProductDragHover {
             !ui.input(|i|i.pointer.primary_down())||
             !response.rect.intersect(ui.clip_rect()).is_positive(){return false;}
         let Some(drag)=response.dnd_hover_payload::<ProductDrag>()else{return false;};
-        if drag.source==target{return false;}
+        if drag.members.iter().all(|(_,source)|source==target){return false;}
         let now=ui.input(|i|i.time);
         if self.advance(&drag.id,&drag.source,target,now){return true;}
         if let Some((_,_,_,start))=&self.pending{
@@ -172,25 +188,29 @@ pub(crate) struct ProductMove {
     pub(crate) target:String,
 }
 
-pub(crate) fn start_product_drag(ui:&Ui,response:&Response,id:&str,source:&str,enabled:bool){
+pub(crate) fn start_product_drag(ui:&Ui,response:&Response,id:&str,source:&str,enabled:bool,selection:&ProductSelection){
     if enabled&&ui.is_enabled()&&!id.is_empty()&&!source.is_empty(){
-        response.dnd_set_drag_payload(ProductDrag{id:id.to_owned(),source:source.to_owned()});
+        response.dnd_set_drag_payload(ProductDrag{id:id.to_owned(),source:source.to_owned(),members:selection.members(id,source)});
         if response.dragged(){ui.ctx().set_cursor_icon(egui::CursorIcon::Grabbing);}
     }
 }
 
 /// Native typed drag/drop; only real folders are accepted. The source
 /// remains untouched until ProductManager commits a Rust mutation.
-pub(crate) fn product_drop_target(ui:&Ui,response:&Response,target:&str,enabled:bool)->Option<ProductMove>{
+pub(crate) fn product_drop_target(ui:&Ui,response:&Response,target:&str,enabled:bool)->Option<Vec<ProductMove>>{
     if !enabled||!ui.is_enabled()||target.is_empty(){return None;}
     let valid=response.dnd_hover_payload::<ProductDrag>()
-        .is_some_and(|drag|drag.source!=target);
+        .is_some_and(|drag|drag.members.iter().any(|(_,source)|source!=target));
     if valid{
         crate::highlight::paint(ui,response.rect.intersect(ui.clip_rect()),
             crate::highlight::Geometry::Control,crate::highlight::Role::DropHovered);
     }
-    response.dnd_release_payload::<ProductDrag>().filter(|drag|drag.source!=target)
-        .map(|drag|ProductMove{id:drag.id.clone(),source:drag.source.clone(),target:target.to_owned()})
+    response.dnd_release_payload::<ProductDrag>().and_then(|drag|{
+        let moves=drag.members.iter().filter(|(_,source)|source!=target)
+            .map(|(id,source)|ProductMove{id:id.clone(),source:source.clone(),target:target.to_owned()})
+            .collect::<Vec<_>>();
+        (!moves.is_empty()).then_some(moves)
+    })
 }
 
 fn tree_row(ui:&mut Ui,item:CategoryTreeRow<'_>,product:bool,enabled:bool,draggable:bool)->Response{
@@ -265,6 +285,16 @@ mod category_tree_geometry_tests{
     fn row(depth:usize)->CategoryTreeGeometry{
         CategoryTreeGeometry::new(Rect::from_min_size(egui::pos2(0.0,0.0),
             Vec2::new(500.0,theme::CATALOG_TREE_ROW_HEIGHT)),depth)
+    }
+    #[test]
+    fn product_selection_has_unique_ids_and_unselected_drag_is_single(){
+        let mut selection=ProductSelection::default();
+        selection.toggle("p1","a");selection.toggle("p2","b");
+        assert_eq!(selection.members("p1","a").len(),2);
+        assert_eq!(selection.members("p3","c"),vec![("p3".into(),"c".into())]);
+        selection.toggle("p1","a");
+        assert!(!selection.contains("p1"));assert!(selection.contains("p2"));
+        selection.clear();assert!(!selection.contains("p2"));
     }
     #[test]
     fn product_drag_hover_requires_continuous_target_and_resets_after_leave(){
