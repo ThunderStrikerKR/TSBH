@@ -1158,9 +1158,16 @@ pub(crate) fn start_recognition_learning_worker(){
         let mut cursor=String::new();
         let mut next_scan=Instant::now();
         let mut next_retrain=Instant::now();
+        let mut next_pending=Instant::now();
         loop{
             match receiver.recv_timeout(Duration::from_secs(2)){
                 Ok(ids)=>{
+                    let mut unique=ids.into_iter().collect::<std::collections::BTreeSet<_>>();
+                    // Drain a bounded burst of notifications before syncing.
+                    for _ in 0..63{
+                        match receiver.try_recv(){Ok(ids)=>unique.extend(ids),Err(_)=>break}
+                    }
+                    let ids=unique.into_iter().collect::<Vec<_>>();
                     for chunk in ids.chunks(16){
                         if sync_recognition_learning(chunk).is_err(){
                             eprintln!("[BANDO HUB] 학습 통계 갱신 지연: 정기 재동기화 대상입니다.");
@@ -1170,23 +1177,29 @@ pub(crate) fn start_recognition_learning_worker(){
                 Err(std::sync::mpsc::RecvTimeoutError::Timeout)=>{},
                 Err(std::sync::mpsc::RecvTimeoutError::Disconnected)=>break,
             }
+            if Instant::now()>=next_pending{
+                next_pending=Instant::now()+Duration::from_secs(60);
+                if let Ok(ids)=PreviewStore::pending_recognition_learning_ids(16){
+                    for id in ids{
+                        let _=sync_recognition_learning(std::slice::from_ref(&id));
+                    }
+                }
+            }
+            if Instant::now()>=next_retrain{
+                next_retrain=Instant::now()+Duration::from_secs(3600);
+                if PreviewStore::auto_govern_blend(|payload|recognition::execute("compare_registered_models",payload.clone())).is_err(){
+                    eprintln!("[BANDO HUB] 그림자 모델 자동 교체 검증 보류.");
+                }
+                if PreviewStore::auto_retrain_blend(|payload|recognition::execute("learn_blend_weights",payload.clone())).is_err(){
+                    eprintln!("[BANDO HUB] 결합 모델 자동 재학습 보류.");
+                }
+            }
             if Instant::now()<next_scan{continue;}
             match PreviewStore::recognition_learning_page(&cursor,16){
                 Ok(ids) if ids.is_empty()=>{
                     cursor.clear();
-                    if Instant::now()>=next_retrain{
-                        next_retrain=Instant::now()+Duration::from_secs(3600);
-                        // Review already-existing candidates before creating a newer one.
-                        if PreviewStore::auto_govern_blend(|payload|
-                            recognition::execute("compare_registered_models",payload.clone())).is_err(){
-                            eprintln!("[BANDO HUB] 그림자 모델 자동 교체 검증 보류.");
-                        }
-                        if PreviewStore::auto_retrain_blend(|payload|
-                            recognition::execute("learn_blend_weights",payload.clone())).is_err(){
-                            eprintln!("[BANDO HUB] 결합 모델 자동 재학습 보류: 다음 주기에 재검증합니다.");
-                        }
-                    }
-                    next_scan=Instant::now()+Duration::from_secs(60);
+                    // Full reconciliation is a low-frequency integrity sweep.
+                    next_scan=Instant::now()+Duration::from_secs(6*3600);
                 }
                 Ok(ids)=>{
                     // One oversized or damaged order must not prevent other
@@ -1218,11 +1231,8 @@ pub(crate) fn start_recognition_learning_worker(){
 pub(crate) fn sync_recognition_learning(ids:&[String])->Result<Value,String>{
     let mode=std::env::var("BANDO_HUB_GATEWAY").unwrap_or_else(|_|"local".into());
     if !mode.trim().eq_ignore_ascii_case("local"){return Err("학습 통계 저장은 로컬 DB에서만 지원합니다.".into());}
-    PreviewStore::sync_recognition_learning(ids,|order|{
-        let mut report=recognition::execute("summarize_owner_statistics",serde_json::json!({"orders":[order]}))?;
-        report["combinedEvaluation"]=recognition::execute("evaluate_combined_confirmation",order.clone())?;
-        Ok(report)
-    })
+    PreviewStore::sync_recognition_learning(ids,|order|
+        recognition::execute("summarize_learning_confirmation",order.clone()))
 }
 
 pub(crate) fn recognition_learning_support(input:&Value)->Result<Value,String>{

@@ -902,6 +902,15 @@ impl PreviewStore {
         Ok(combined.into_iter().take(limit).collect())
     }
 
+    pub(crate) fn pending_recognition_learning_ids(limit:usize)->Result<Vec<String>,String>{
+        let (conn,_,scope)=Self::learning_connection()?;
+        recognition_learning_store::prepare(&conn)?;
+        let mut stmt=conn.prepare("SELECT order_id FROM recognition_learning_pending
+            WHERE scope=?1 AND feature_version=1 ORDER BY order_id LIMIT ?2").map_err(|e|e.to_string())?;
+        let rows=stmt.query_map(params![scope,limit.clamp(1,250) as i64],|r|r.get::<_,String>(0)).map_err(|e|e.to_string())?;
+        rows.collect::<Result<Vec<_>,_>>().map_err(|e|e.to_string())
+    }
+
     pub(crate) fn quarantine_recognition_learning(id:&str)->Result<(),String>{
         let (mut conn,business,scope)=Self::learning_connection()?;
         let tx=conn.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate).map_err(|e|e.to_string())?;

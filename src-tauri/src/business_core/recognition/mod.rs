@@ -102,6 +102,7 @@ pub fn execute(operation: &str, payload: Value) -> Result<Value, String> {
         "compare_registered_models" => observations::compare_registered_models(&payload),
         "project_owner_contexts" => learning_context::lookup(&payload),
         "summarize_owner_statistics" => learning_context::statistics(&payload),
+        "summarize_learning_confirmation" => learning_context::summarize_confirmation(&payload),
         _ => Err(format!("unknown recognition operation: {operation}")),
     }
 }

@@ -607,14 +607,15 @@ impl FieldCounts{
 /// Per-order contributions, also usable by the future durable delta writer.
 /// Group before counting independent orders; no sum of per-candidate order
 /// counts can substitute for the distinct context denominator.
-fn contributions(order:&Value,filter:&BTreeSet<&str>)->Result<Option<(BTreeMap<String,Counts>,BTreeMap<String,FieldCounts>,BTreeMap<String,FieldCounts>,String)>,String>{
+fn contributions(order:&Value,filter:&BTreeSet<&str>,prepared:Option<&Value>)->Result<Option<(BTreeMap<String,Counts>,BTreeMap<String,FieldCounts>,BTreeMap<String,FieldCounts>,String)>,String>{
     let confirmed=order["confirmedAt"].as_str().filter(|v|!v.trim().is_empty());
     let snapshot=&order["confirmationSnapshot"];
     if confirmed.is_none() || snapshot["at"].as_str()!=confirmed ||
         order["deletedAt"].as_str().is_some_and(|v|!v.trim().is_empty()){
         return Ok(None);
     }
-    let compared=super::observations::compare(order)?;
+    let owned;
+    let compared=match prepared{Some(v)=>v,None=>{owned=super::observations::compare(order)?;&owned}};
     if compared["status"]!="compared"{return Ok(None);}
     // Unverified orders remain visible through coverage counts and compare(),
     // but cannot inflate candidate counts OR independent-order denominators.
@@ -678,6 +679,15 @@ fn contributions(order:&Value,filter:&BTreeSet<&str>)->Result<Option<(BTreeMap<S
 /// conflicting duplicate fails instead of silently choosing a revision.
 /// Weak observations and verified explicit corrections remain separate, not calibrated probabilities.
 pub(super) fn statistics(payload:&Value)->Result<Value,String>{
+    statistics_with_comparison(payload,None)
+}
+pub(super) fn summarize_confirmation(order:&Value)->Result<Value,String>{
+    let compared=super::observations::compare(order)?;
+    let mut report=statistics_with_comparison(&json!({"orders":[order]}),Some(&compared))?;
+    report["combinedEvaluation"]=super::observations::evaluate_combined_prepared(order,Some(&compared))?;
+    Ok(report)
+}
+fn statistics_with_comparison(payload:&Value,prepared:Option<&Value>)->Result<Value,String>{
     let orders=payload["orders"].as_array().ok_or("확정 주문 목록이 없습니다.")?;
     if orders.len()>250{return Err("귀속 통계 검증은 한 번에 최대 250개 주문만 허용합니다.".into());}
     let keys=payload.get("contextKeys");
@@ -705,7 +715,7 @@ pub(super) fn statistics(payload:&Value)->Result<Value,String>{
             continue;
         }
         seen.insert(id,order);
-        match contributions(order,&filter)?{
+        match contributions(order,&filter,prepared)?{
             Some((local,field_counts,local_fields,coverage))=>{
                 match coverage.as_str(){
                     "verified_manifest"=>manifest_orders+=1,

@@ -1873,6 +1873,9 @@ pub(super) fn run_blend_shadow(payload:&Value)->Result<Value,String>{
 
 // P07-06: compare frozen runtime proposals, never rerun a model with final labels.
 pub(super) fn evaluate_combined_confirmation(order:&Value)->Result<Value,String>{
+    evaluate_combined_prepared(order,None)
+}
+pub(super) fn evaluate_combined_prepared(order:&Value,prepared:Option<&Value>)->Result<Value,String>{
     let snap=&order["confirmationSnapshot"];
     let first=&snap["recognitionBaseline"]["initialAnalysis"];
     let cap=&first["initialPredictionCapture"];
@@ -1896,7 +1899,8 @@ pub(super) fn evaluate_combined_confirmation(order:&Value)->Result<Value,String>
         else{return Ok(empty("unverified_model_identity"));};
     let Some(events)=order["recognitionAuditEvents"].as_array()else{return Ok(empty("unverified_audit"));};
     if events.iter().any(|v|date(&v["at"]).is_none_or(|t|t<=d||t>e)){return Ok(empty("unverified_audit_time"));}
-    let compared=compare(order)?;
+    let owned;
+    let compared=match prepared{Some(v)=>v,None=>{owned=compare(order)?;&owned}};
     if compared["auditCoverage"]!="verified_manifest"{return Ok(empty("unverified_audit"));}
     let units=snap["raw"].as_str().ok_or("평가 원문 누락")?.encode_utf16().collect::<Vec<_>>();
     let decisions=combined["decisions"].as_array().filter(|v|v.len()<=64).ok_or("결합 예측 목록 오류")?;

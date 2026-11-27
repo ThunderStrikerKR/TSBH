@@ -137,26 +137,38 @@ fn replace(tx:&Transaction<'_>,scope:&str,id:&str,new:&[Fact])->Result<bool,Stri
         if fact_proof(&old)?!=proof{return Err("기존 학습 기여 내용 손상".into());}
     }
     if old==new{return Ok(false);}
-    for (family,key,metric,candidate,n) in old{
-        let changed=tx.execute("UPDATE recognition_learning_totals SET amount=amount-?7
-            WHERE scope=?1 AND feature_version=?2 AND family=?3 AND context_key=?4 AND metric=?5 AND candidate=?6 AND amount>=?7",
-            params![scope,FEATURE_VERSION,family,key,metric,candidate,n]).map_err(|e|e.to_string())?;
-        if changed!=1{return Err("기존 학습 합계 불일치: 갱신을 중단했습니다.".into());}
-    }
-    tx.execute("DELETE FROM recognition_learning_orders WHERE scope=?1 AND feature_version=?2 AND order_id=?3",
-        params![scope,FEATURE_VERSION,id]).map_err(|e|e.to_string())?;
-    if !new.is_empty(){
+    // Keep unchanged facts and totals intact; only apply the sorted diff.
+    let key=|f:&Fact|(f.0.clone(),f.1.clone(),f.2.clone(),f.3.clone());
+    let previous=old.iter().map(|f|(key(f),f.4)).collect::<BTreeMap<_,_>>();
+    let next=new.iter().map(|f|(key(f),f.4)).collect::<BTreeMap<_,_>>();
+    if !new.is_empty()&&old.is_empty(){
         tx.execute("INSERT INTO recognition_learning_orders VALUES(?1,?2,?3)",params![scope,FEATURE_VERSION,id]).map_err(|e|e.to_string())?;
     }
-    for (family,key,metric,candidate,n) in new{
+    for ((family,k,metric,candidate),n) in &previous{
+        if next.get(&(family.clone(),k.clone(),metric.clone(),candidate.clone()))==Some(n){continue;}
+        let changed=tx.execute("UPDATE recognition_learning_totals SET amount=amount-?7
+            WHERE scope=?1 AND feature_version=?2 AND family=?3 AND context_key=?4 AND metric=?5 AND candidate=?6 AND amount>=?7",
+            params![scope,FEATURE_VERSION,family,k,metric,candidate,n]).map_err(|e|e.to_string())?;
+        if changed!=1{return Err("기존 학습 합계 불일치: 갱신을 중단했습니다.".into());}
+        tx.execute("DELETE FROM recognition_learning_facts WHERE scope=?1 AND feature_version=?2 AND order_id=?3
+            AND family=?4 AND context_key=?5 AND metric=?6 AND candidate=?7",
+            params![scope,FEATURE_VERSION,id,family,k,metric,candidate]).map_err(|e|e.to_string())?;
+        tx.execute("DELETE FROM recognition_learning_totals WHERE scope=?1 AND feature_version=?2
+            AND family=?3 AND context_key=?4 AND metric=?5 AND candidate=?6 AND amount=0",
+            params![scope,FEATURE_VERSION,family,k,metric,candidate]).map_err(|e|e.to_string())?;
+    }
+    for ((family,k,metric,candidate),n) in &next{
+        if previous.get(&(family.clone(),k.clone(),metric.clone(),candidate.clone()))==Some(n){continue;}
         tx.execute("INSERT INTO recognition_learning_facts VALUES(?1,?2,?3,?4,?5,?6,?7,?8)",
-            params![scope,FEATURE_VERSION,id,family,key,metric,candidate,n]).map_err(|e|e.to_string())?;
+            params![scope,FEATURE_VERSION,id,family,k,metric,candidate,n]).map_err(|e|e.to_string())?;
         tx.execute("INSERT INTO recognition_learning_totals VALUES(?1,?2,?3,?4,?5,?6,?7)
             ON CONFLICT(scope,feature_version,family,context_key,metric,candidate) DO UPDATE SET amount=amount+excluded.amount",
-            params![scope,FEATURE_VERSION,family,key,metric,candidate,n]).map_err(|e|e.to_string())?;
+            params![scope,FEATURE_VERSION,family,k,metric,candidate,n]).map_err(|e|e.to_string())?;
     }
-    tx.execute("DELETE FROM recognition_learning_totals WHERE scope=?1 AND feature_version=?2 AND amount=0",
-        params![scope,FEATURE_VERSION]).map_err(|e|e.to_string())?;
+    if new.is_empty(){
+        tx.execute("DELETE FROM recognition_learning_orders WHERE scope=?1 AND feature_version=?2 AND order_id=?3",
+            params![scope,FEATURE_VERSION,id]).map_err(|e|e.to_string())?;
+    }
     Ok(true)
 }
 
