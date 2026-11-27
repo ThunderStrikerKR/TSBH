@@ -1,3 +1,5 @@
+> **현행 Windows 정식 배포 (egui v0.8.0):** 저장소 루트의 `PACKAGE_WINDOWS_EGUI.cmd`로 네이티브 EXE와 오프라인 OCR을 포함한 ZIP을 생성한다. 운영 실행은 압축 해제 후 `RUN_BANDO_HUB.cmd`를 사용한다. [Windows 배포 절차](docs/windows-egui-release.md). 기존 DB는 별도 백업 및 유지하며 패키징에 포함하지 않는다.
+
 > **2026-11-26 TypeScript 퇴역:** main에서 TypeScript/TSX/MTS 소스와 npm 패키지 의존성을 제거했다. 과거 TS 비교용 실행·검증은 완전한 이전 소스 `869de27b942928cd0474ef065ee5b91b3a273c3f`의 별도 체크아웃에서만 재현한다. 현행 UI/업무/SQLite는 Rust/egui이며 Node는 외부 패키지 없는 개발용 정적 검사에 한정한다. Tauri Rust 라이브러리 및 현행 native CI는 유지하고, 남은 역사적 JS 검사 정리는 별도 범위다.
 
 > **현행 실행 경로 (2026-11-26):** Rust/egui가 단일 운영 UI다. React/TypeScript UI와 Vite 실행·빌드 진입점은 main에서 퇴역했다. 이전 UI 및 전체 과거 검증 환경은 [퇴역 직전 커밋 `869de27`](https://github.com/ThunderStrikerKR/TSBH/tree/869de27b942928cd0474ef065ee5b91b3a273c3f)에서만 확인한다. 운영 Rust 및 공통 데이터는 유지하며, 남은 TypeScript 비교 오라클 의존성은 별도 퇴역 범위다. 현행 Windows 실행은 `DEV_WINDOWS_EGUI.cmd`, 컴파일은 `cargo check --manifest-path egui-app/Cargo.toml`을 사용한다. 아래 React/Tauri 운영 안내는 역사 기록이다.
