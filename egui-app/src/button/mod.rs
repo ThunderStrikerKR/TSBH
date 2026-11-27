@@ -1,4 +1,5 @@
 //! Shared native button rendering and hover/focus policy.
+use crate::ui_layout::SharedAllocationExt as _;
 use eframe::egui::{self,Color32,Rect,Response,Sense,Stroke,Ui,Vec2};
 use crate::{theme,typography};
 use crate::theme::{
@@ -302,7 +303,7 @@ pub(crate) fn icon_action_button(
 fn navigation_native_button(
     ui:&mut Ui,size:Vec2,button:egui::Button<'_>,enabled:Option<bool>
 )->Response{
-    let place=|slot:&mut Ui|slot.add_sized(size,button);
+    let place=|slot:&mut Ui|slot.shared_add_sized(size,button);
     match enabled{
         Some(enabled)=>ui.add_enabled_ui(enabled,place).inner,
         None=>place(ui),
@@ -556,7 +557,7 @@ pub(crate) fn date_navigation_button_surface(
 pub(crate) fn calendar_day(grid:&mut Ui,day:&str,width:f32,selected:bool,today:bool)->Response{
     let response=grid.scope(|ui|{
         crate::highlight::calendar_widget(ui,selected,today);
-        ui.add_sized(egui::vec2(width,width),
+        ui.shared_add_sized(egui::vec2(width,width),
             egui::Button::new(typography::body(day)).corner_radius(crate::highlight::Geometry::Control.corners()))
     }).inner;
     #[cfg(test)]
@@ -652,7 +653,7 @@ mod shared_action_style_tests{
 /// The native Kakao HWND and order-matching logic remain unchanged.
 pub(crate) fn kakao_menu_icon(ui:&mut Ui) -> Response {
     let side=theme::KAKAO_MENU_ICON_SIZE;
-    let (rect,response)=ui.allocate_exact_size(Vec2::splat(side),Sense::hover());
+    let (rect,response)=ui.shared_allocate_exact_size(Vec2::splat(side),Sense::hover());
     let painter=ui.painter();
     painter.rect_filled(rect,4.0,theme::KAKAO_ICON_YELLOW);
     let bubble=Rect::from_min_max(
