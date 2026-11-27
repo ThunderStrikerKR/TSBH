@@ -779,7 +779,8 @@ mod tests{
     #[test]
     fn stale_factory_revision_retries_without_failure_notification(){
         let base=Temp::new();
-        let (mut conn,inbox)=synthetic_db(&base.0);
+        let (mut conn,_inbox)=synthetic_db(&base.0);
+        let inbox=configured(&conn).unwrap().unwrap();
         let bytes=reply_bytes("001234567890",4000);
         let path=inbox.join("reply.xlsx");
         fs::write(&path,&bytes).unwrap();
@@ -794,7 +795,8 @@ mod tests{
     #[test]
     fn busy_writer_defers_factory_reply_without_failure_notification(){
         let base=Temp::new();
-        let (mut conn,inbox)=synthetic_db(&base.0);
+        let (mut conn,_inbox)=synthetic_db(&base.0);
+        let inbox=configured(&conn).unwrap().unwrap();
         let bytes=reply_bytes("001234567890",4000);
         let path=inbox.join("reply.xlsx");
         fs::write(&path,&bytes).unwrap();
