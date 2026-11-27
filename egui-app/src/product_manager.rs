@@ -210,8 +210,7 @@ fn product_table_column_widths(data_width:f32)->[f32;6]{
 /// containing column, not the narrower editor rectangle: otherwise egui's
 /// focused TextEdit outline loses its right-hand stroke at the clip edge.
 fn product_price_editor_rects(cell:Rect,scroll_clip:Rect)->(Rect,Rect){
-    let inset=theme::SPACE_4/2.0;
-    (cell.shrink2(Vec2::new(inset,0.0)),cell.intersect(scroll_clip))
+    crate::table::money_editor_rects(cell,scroll_clip)
 }
 
 
@@ -1324,14 +1323,8 @@ impl ProductManager {
                 );
                 rect
             };
-            panel.scope_builder(
-                UiBuilder::new().id_salt("product-master-actions")
-                    .max_rect(actions_rect)
-                    .layout(Layout::right_to_left(Align::Center)),
-                |actions|{
-                    actions.set_clip_rect(actions_rect);
-                    actions.apply_shared_width(crate::card::CardWidthPolicy::Fixed,actions_rect.width());
-                    actions.set_height(actions_rect.height());
+            crate::ui_layout::management_toolbar_slot(panel,"product-master-actions",
+                actions_rect,Layout::right_to_left(Align::Center),true,true,|actions|{
                     crate::ui_layout::apply_spacing_role(actions,crate::ui_layout::SpacingRole::Toolbar);
                     if crate::button::action(actions,"상품 추가",
                         theme::ButtonRole::Primary,can_edit&&!saving&&!self.has_pending_prices()
@@ -1484,15 +1477,9 @@ impl ProductManager {
                                         field(v,"id")==selected_id.as_str())
                                         .unwrap_or(&variants[0]);
                                     let current_label=option_text(product,chosen);
-                                    let mut builder=UiBuilder::new()
-                                        .id_salt(("product-variant",product_id))
-                                        .max_rect(variant_cell)
-                                        .layout(Layout::left_to_right(Align::Center));
-                                    if selection_locked{builder=builder.disabled();}
-                                    row.scope_builder(builder,|controls|{
-                                            controls.set_clip_rect(
-                                                variant_cell.intersect(row_clip)
-                                            );
+                                    crate::table::control_cell(row,("product-variant",product_id),variant_cell,
+                                        variant_cell.intersect(row_clip),Layout::left_to_right(Align::Center),
+                                        !selection_locked,false,|controls|{
                                             crate::dropdown::management_dropdown(
                                                 controls,
                                                 if current_label.is_empty(){"기본"}
@@ -1551,20 +1538,10 @@ impl ProductManager {
                                                     input:original.map(|v|v.to_string())
                                                         .unwrap_or_default()
                                                 });
-                                            let mut builder=UiBuilder::new()
-                                                .id_salt(("product-price-edit",key.as_str()))
-                                                .max_rect(price_rect)
-                                                .layout(Layout::left_to_right(Align::Center));
-                                            if other_write_busy||cell_busy
-                                                ||self.price_mode_exit_requested{
-                                                builder=builder.disabled();
-                                            }
-                                            row.scope_builder(builder,|inputs|{
-                                                    // Do not clip TextEdit's
-                                                    // focus stroke to its own
-                                                    // 112pt allocation. Preserve
-                                                    // the adjacent 2pt gutters.
-                                                    inputs.set_clip_rect(price_paint_clip);
+                                            crate::table::control_cell(row,("product-price-edit",key.as_str()),
+                                                price_rect,price_paint_clip,Layout::left_to_right(Align::Center),
+                                                !(other_write_busy||cell_busy||self.price_mode_exit_requested),
+                                                false,|inputs|{
                                                     inputs.push_id(
                                                         ("product-price-cell",product_id,
                                                          field(variant,"id"),tier),
@@ -1710,13 +1687,9 @@ impl ProductManager {
                                         theme::ACTION_STANDARD_HEIGHT
                                     )
                                 );
-                                let mut builder=UiBuilder::new()
-                                    .id_salt(("product-table-action",product_id))
-                                    .max_rect(action_rect)
-                                    .layout(Layout::left_to_right(Align::Center));
-                                if saving{builder=builder.disabled();}
-                                row.scope_builder(builder,|actions|{
-                                        actions.set_clip_rect(action_rect.intersect(row_clip));
+                                crate::table::control_cell(row,("product-table-action",product_id),action_rect,
+                                    action_rect.intersect(row_clip),Layout::left_to_right(Align::Center),
+                                    !saving,false,|actions|{
                                         if selecting{
                                             // Order engine accepts only independent sale units.
                                             let allowed=selection_ready && if self.reference_selection{

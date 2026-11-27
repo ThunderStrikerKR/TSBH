@@ -813,16 +813,7 @@ fn history_date_range_end(
 )->bool{
     // Fixed 36pt separator slot: the glyph is centered on both axes,
     // with the same external 8pt gaps as every other date control.
-    let (separator,_)=ui.allocate_exact_size(
-        Vec2::new(theme::MANAGEMENT_DATE_RANGE_SEPARATOR_WIDTH,
-            theme::INPUT_HEIGHT),
-        Sense::hover()
-    );
-    ui.painter().text(
-        separator.center(),egui::Align2::CENTER_CENTER,"~",
-        egui::FontId::proportional(typography::FONT_METADATA),
-        theme::MUTED
-    );
+    crate::navigation::date_range_separator(ui);
     let all_dates=from.is_empty()&&to.is_empty();
     let mut changed=range_date_picker_rtl(
         ui,all_dates,to,to_month,"order-history-date-to-calendar"
@@ -844,23 +835,8 @@ pub(crate) fn excel_export_date_controls(
 )->bool{
     let mut changed=false;
     crate::navigation::apply_management_date_control_spacing(ui);
-    let inner_height=theme::INPUT_HEIGHT;
-    if compact {
-        // Below 536pt use two right-aligned rows with a common 8pt gap.
-        // No controls are clipped, even when the search itself wraps.
-        let width=ui.available_width().max(1.0);
-        let (outer,_)=ui.allocate_exact_size(
-            Vec2::new(width,inner_height*2.0+theme::SPACE_8),Sense::hover()
-        );
-        let first=Rect::from_min_size(
-            egui::pos2(outer.right()-width,outer.top()),
-            Vec2::new(width,inner_height)
-        );
-        let second=Rect::from_min_size(
-            egui::pos2(outer.right()-width,
-                outer.top()+inner_height+theme::SPACE_8),
-            Vec2::new(width,inner_height)
-        );
+    if compact{
+        let (first,second)=crate::navigation::compact_date_range_rows(ui,f32::INFINITY,f32::INFINITY);
         ui.scope_builder(UiBuilder::new().id_salt("excel-export-from-line")
             .max_rect(first)
             .layout(egui::Layout::left_to_right(Align::Center)
@@ -899,14 +875,7 @@ pub(crate) fn excel_export_date_controls(
 fn excel_export_date_end(
     ui:&mut Ui,from:&mut String,to:&mut String,to_month:&mut NaiveDate
 )->bool{
-    let (separator,_)=ui.allocate_exact_size(
-        Vec2::new(theme::MANAGEMENT_DATE_RANGE_SEPARATOR_WIDTH,
-            theme::INPUT_HEIGHT),Sense::hover()
-    );
-    ui.painter().text(
-        separator.center(),Align2::CENTER_CENTER,"~",
-        egui::FontId::proportional(typography::FONT_METADATA),theme::MUTED
-    );
+    crate::navigation::date_range_separator(ui);
     let all_dates=from.is_empty()&&to.is_empty();
     let mut changed=range_date_picker_rtl(
         ui,all_dates,to,to_month,"excel-export-to-calendar"
@@ -930,22 +899,7 @@ fn history_date_controls(
     let mut changed=false;
     crate::navigation::apply_management_date_control_spacing(ui);
     if compact{
-        let width=ui.available_width().max(1.0);
-        let (area,_)=ui.allocate_exact_size(
-            Vec2::new(width,theme::INPUT_HEIGHT*2.0+theme::SPACE_8),
-            Sense::hover()
-        );
-        let start_width=RANGE_COMPACT_START_WIDTH.min(width);
-        let end_width=RANGE_COMPACT_END_WIDTH.min(width);
-        let first=Rect::from_min_size(
-            egui::pos2(area.right()-start_width,area.top()),
-            Vec2::new(start_width,theme::INPUT_HEIGHT)
-        );
-        let second=Rect::from_min_size(
-            egui::pos2(area.right()-end_width,
-                area.top()+theme::INPUT_HEIGHT+theme::SPACE_8),
-            Vec2::new(end_width,theme::INPUT_HEIGHT)
-        );
+        let (first,second)=crate::navigation::compact_date_range_rows(ui,RANGE_COMPACT_START_WIDTH,RANGE_COMPACT_END_WIDTH);
         ui.scope_builder(UiBuilder::new()
             .id_salt("history-range-start-line")
             .max_rect(first)
@@ -1268,13 +1222,8 @@ impl OrderHistoryManager {
                 Vec2::new(theme::MANAGEMENT_SEARCH_MIN_WIDTH
                     .min(toolbar_content_width),theme::INPUT_HEIGHT)
             );
-            section.scope_builder(UiBuilder::new()
-                .id_salt("history-range-search")
-                .max_rect(search_rect)
-                .layout(egui::Layout::left_to_right(Align::Center)),
-                |search|{
-                    search.apply_shared_width(crate::card::CardWidthPolicy::Fixed,search_rect.width());
-                    search.set_height(search_rect.height());
+            crate::ui_layout::management_toolbar_slot(section,"history-range-search",
+                search_rect,egui::Layout::left_to_right(Align::Center),false,true,|search|{
                     if crate::input::management_search_field(
                         search,&mut self.query,search_rect.width(),
                         "거래처 / 주문 내용 검색"
@@ -1285,17 +1234,9 @@ impl OrderHistoryManager {
                 if one_row{0.0}else{theme::INPUT_HEIGHT+theme::SPACE_8},
                 if one_row{theme::INPUT_HEIGHT}else{date_height}
             );
-            section.scope_builder(UiBuilder::new()
-                .id_salt("history-range-controls")
-                .max_rect(date_rect)
-                // Anchor the actual trailing "전체 날짜" button to the
-                // card's right content boundary (12pt inset). The table's
-                // independent scrollbar gutter is NOT subtracted here.
-                .layout(egui::Layout::left_to_right(Align::Center)
-                    .with_main_align(Align::Max)),
-                |dates|{
-                    dates.apply_shared_width(crate::card::CardWidthPolicy::Fixed,date_rect.width());
-                    dates.set_height(date_rect.height());
+            crate::ui_layout::management_toolbar_slot(section,"history-range-controls",
+                date_rect,egui::Layout::left_to_right(Align::Center).with_main_align(Align::Max),
+                false,true,|dates|{
                     changed|=history_date_controls(
                         dates,&mut self.date_basis,
                         &mut self.from_input,&mut self.to_input,

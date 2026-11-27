@@ -940,13 +940,8 @@ impl ExcelManager{
             let search_rect=Rect::from_min_size(
                 toolbar_rect.min,Vec2::new(search_width,theme::INPUT_HEIGHT)
             );
-            section.scope_builder(
-                UiBuilder::new().id_salt("excel-master-search")
-                    .max_rect(search_rect)
-                    .layout(egui::Layout::left_to_right(Align::Center)),
-                |search|{
-                    search.set_clip_rect(search_rect);
-                    search.apply_shared_width(crate::card::CardWidthPolicy::Fixed,search_rect.width());
+            crate::ui_layout::management_toolbar_slot(section,"excel-master-search",
+                search_rect,egui::Layout::left_to_right(Align::Center),true,false,|search|{
                     if crate::input::management_search_field(
                         search,&mut self.query,
                         theme::MANAGEMENT_SEARCH_MIN_WIDTH,
@@ -977,14 +972,9 @@ impl ExcelManager{
                         theme::INPUT_HEIGHT+theme::SPACE_8
                     },date_height
                 );
-                section.scope_builder(
-                    UiBuilder::new().id_salt("excel-export-dates")
-                        .max_rect(dates_rect)
-                        .layout(egui::Layout::left_to_right(Align::Center)
-                            .with_main_align(Align::Max)),
-                    |dates|{
-                        dates.apply_shared_width(crate::card::CardWidthPolicy::Fixed,dates_rect.width());
-                        dates.set_height(dates_rect.height());
+                crate::ui_layout::management_toolbar_slot(section,"excel-export-dates",
+                    dates_rect,egui::Layout::left_to_right(Align::Center).with_main_align(Align::Max),
+                    false,true,|dates|{
                         if order_history_manager::excel_export_date_controls(
                             dates,&mut self.export_from_input,
                             &mut self.export_to_input,
@@ -1023,13 +1013,8 @@ impl ExcelManager{
                     theme::MANAGEMENT_EXCEL_TOOLBAR_ACTIONS_WIDTH.min(toolbar_width),
                     actions_y,theme::INPUT_HEIGHT
                 );
-                section.scope_builder(
-                    UiBuilder::new().id_salt("excel-master-actions")
-                        .max_rect(actions_rect)
-                        .layout(egui::Layout::right_to_left(Align::Center)),
-                    |actions|{
-                        actions.set_clip_rect(actions_rect);
-                        actions.apply_shared_width(crate::card::CardWidthPolicy::Fixed,actions_rect.width());
+                crate::ui_layout::management_toolbar_slot(section,"excel-master-actions",
+                    actions_rect,egui::Layout::right_to_left(Align::Center),true,false,|actions|{
                         if crate::button::action(actions,"폴더 열기",
                             theme::ButtonRole::Standard,!busy).clicked(){
                             open_daily=true;
@@ -1083,11 +1068,8 @@ impl ExcelManager{
                             Align2::LEFT_CENTER,typography::ManagementTableCellRole::ClientName,(id,1));
                         cell(row,cells[2],&entry.products,
                             Align2::LEFT_CENTER,typography::ManagementTableCellRole::ProductName,(id,2));
-                        row.scope_builder(UiBuilder::new()
-                            .id_salt(("excel-history-actions",id))
-                            .max_rect(cells[3].shrink2(Vec2::new(theme::SPACE_8,0.0)))
-                            .layout(egui::Layout::left_to_right(Align::Center)),
-                            |buttons|{
+                        crate::table::control_cell(row,("excel-history-actions",id),cells[3].shrink2(Vec2::new(theme::SPACE_8,0.0)),
+                            cells[3],egui::Layout::left_to_right(Align::Center),true,false,|buttons|{
                                 if !text(&entry.export,"savedPath").is_empty() {
                                     if crate::button::action(buttons,"파일 열기",
                                         theme::ButtonRole::TableSecondary,!busy).clicked(){
@@ -1149,11 +1131,8 @@ impl ExcelManager{
                             }else{amount(&entry.queue["snapshot"]["total"])};
                         cell(row,cells[3],&price,
                             Align2::RIGHT_CENTER,typography::ManagementTableCellRole::Money,(id.clone(),3));
-                        row.scope_builder(UiBuilder::new()
-                            .id_salt(("excel-queue-action",id.clone()))
-                            .max_rect(cells[4].shrink2(Vec2::new(theme::SPACE_8,0.0)))
-                            .layout(egui::Layout::left_to_right(Align::Center)),
-                            |buttons|{
+                        crate::table::control_cell(row,("excel-queue-action",id.clone()),cells[4].shrink2(Vec2::new(theme::SPACE_8,0.0)),
+                            cells[4],egui::Layout::left_to_right(Align::Center),true,false,|buttons|{
                                 if crate::button::action(buttons,"상세 보기",
                                     theme::ButtonRole::TableSecondary,true).clicked(){
                                     open_order=Some(entry.order_id().to_owned());

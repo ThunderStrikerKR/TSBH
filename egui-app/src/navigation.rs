@@ -579,3 +579,19 @@ mod date_navigation_segmented_control_tests{
 pub(crate) fn apply_management_date_control_spacing(ui:&mut eframe::egui::Ui){
     ui.spacing_mut().item_spacing.x=crate::theme::MANAGEMENT_DATE_CONTROL_GAP;
 }
+
+/// Reserve two compact date rows with a common right edge and shared gap.
+pub(crate) fn compact_date_range_rows(ui:&mut Ui,first_width:f32,second_width:f32)->(Rect,Rect){
+    let width=ui.available_width().max(1.0);
+    let (area,_)=ui.allocate_exact_size(Vec2::new(width,theme::INPUT_HEIGHT*2.0+theme::SPACE_8),Sense::hover());
+    let row=|desired:f32,top:f32|{
+        let w=desired.min(width);
+        Rect::from_min_size(egui::pos2(area.right()-w,top),Vec2::new(w,theme::INPUT_HEIGHT))
+    };
+    (row(first_width,area.top()),row(second_width,area.top()+theme::INPUT_HEIGHT+theme::SPACE_8))
+}
+pub(crate) fn date_range_separator(ui:&mut Ui){
+    let (rect,_)=ui.allocate_exact_size(Vec2::new(theme::MANAGEMENT_DATE_RANGE_SEPARATOR_WIDTH,theme::INPUT_HEIGHT),Sense::hover());
+    ui.painter().text(rect.center(),egui::Align2::CENTER_CENTER,"~",
+        egui::FontId::proportional(typography::FONT_METADATA),theme::MUTED);
+}

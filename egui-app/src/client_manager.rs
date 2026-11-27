@@ -53,14 +53,7 @@ fn client_form_row<R>(ui:&mut Ui,label:&str,control:impl FnOnce(&mut Ui)->R)->R{
     crate::popup::modal_labeled_row_with_width(ui,label,theme::MODAL_FORM_WIDE_LABEL_WIDTH,control)
 }
 fn client_form_pair(ui:&mut Ui,draft:&mut Value,left:impl FnOnce(&mut Ui,&mut Value),right:impl FnOnce(&mut Ui,&mut Value)){
-    // At constrained window sizes keep each label and control together
-    // instead of shrinking both editable values below their usable width.
-    let minimum=2.0*(theme::MODAL_FORM_WIDE_LABEL_WIDTH+theme::SPACE_8+100.0)+theme::SPACE_8;
-    if ui.available_width()>=minimum{
-        ui.columns(2,|cols|{left(&mut cols[0],draft);right(&mut cols[1],draft);});
-    }else{
-        left(ui,draft);right(ui,draft);
-    }
+    crate::popup::modal_form_pair(ui,draft,theme::MODAL_FORM_WIDE_LABEL_WIDTH,left,right);
 }
 fn label_edit(ui:&mut Ui,draft:&mut Value,key:&str,label:&str) {
     let mut input=field(draft,key).to_owned();
@@ -505,82 +498,15 @@ impl ClientManager {
         crate::card::measured_management_master_card(ui,|section|{
             crate::card::fill_management_primary_card(section,card_min_height);
             crate::table::management_table_container_style(section);
-            let toolbar_width=section.available_width().max(1.0);
-            if toolbar_width<theme::MANAGEMENT_CLIENT_TOOLBAR_STACK_WIDTH {
-                // Only genuinely narrow panes stack their SEARCH and
-                // actions. The table and header stay on one fixed grid.
-                let (search_rect,_)=section.allocate_exact_size(
-                    egui::vec2(toolbar_width,theme::INPUT_HEIGHT),
-                    egui::Sense::hover()
-                );
-                section.scope_builder(
-                    egui::UiBuilder::new()
-                        .id_salt("client-master-search-narrow")
-                        .max_rect(search_rect)
-                        .layout(Layout::left_to_right(Align::Center)),
-                    |search|{
-                        search.set_clip_rect(search_rect);
-                        search.apply_shared_width(crate::card::CardWidthPolicy::Fixed,search_rect.width());
-                        self.list_search(search,Arc::clone(&gateway));
-                    }
-                );
-                section.add_space(theme::SPACE_8);
-                let (actions_rect,_)=section.allocate_exact_size(
-                    egui::vec2(toolbar_width,theme::INPUT_HEIGHT),
-                    egui::Sense::hover()
-                );
-                section.scope_builder(
-                    egui::UiBuilder::new()
-                        .id_salt("client-master-actions-narrow")
-                        .max_rect(actions_rect)
-                        .layout(Layout::left_to_right(Align::Center)),
-                    |actions|{
-                        actions.set_clip_rect(actions_rect);
-                        actions.apply_shared_width(crate::card::CardWidthPolicy::Fixed,actions_rect.width());
-                        self.list_toolbar_actions(actions,Arc::clone(&gateway));
-                    }
-                );
-            }else{
-                // Freight's separate absolute slots keep the trailing
-                // action at the card's inner edge, NOT the scrollbar edge.
-                let (toolbar_rect,_)=section.allocate_exact_size(
-                    egui::vec2(toolbar_width,theme::INPUT_HEIGHT),
-                    egui::Sense::hover()
-                );
-                let actions_width=theme::MANAGEMENT_TOOLBAR_ACTIONS_WIDTH
-                    .min(toolbar_rect.width());
-                let left_width=(toolbar_rect.width()-actions_width
-                    -theme::SPACE_12).max(1.0);
-                let search_rect=egui::Rect::from_min_size(
-                    toolbar_rect.min,
-                    egui::vec2(left_width,toolbar_rect.height())
-                );
-                let action_rect=crate::ui_layout::management_toolbar_trailing_rect(
-                    toolbar_rect,actions_width,0.0,toolbar_rect.height()
-                );
-                section.scope_builder(
-                    egui::UiBuilder::new()
-                        .id_salt("client-master-search-toolbar")
-                        .max_rect(search_rect)
-                        .layout(Layout::left_to_right(Align::Center)),
-                    |search|{
-                        search.set_clip_rect(search_rect);
-                        search.apply_shared_width(crate::card::CardWidthPolicy::Fixed,search_rect.width());
-                        self.list_search(search,Arc::clone(&gateway));
-                    }
-                );
-                section.scope_builder(
-                    egui::UiBuilder::new()
-                        .id_salt("client-master-actions-toolbar")
-                        .max_rect(action_rect)
-                        .layout(Layout::left_to_right(Align::Center)),
-                    |actions|{
-                        actions.set_clip_rect(action_rect);
-                        actions.apply_shared_width(crate::card::CardWidthPolicy::Fixed,action_rect.width());
-                        self.list_toolbar_actions(actions,Arc::clone(&gateway));
-                    }
-                );
-            }
+            crate::ui_layout::management_toolbar_pair(section,crate::ui_layout::ToolbarPair{
+                search_id:"client-master-search-toolbar",actions_id:"client-master-actions-toolbar",
+                narrow_search_id:"client-master-search-narrow",narrow_actions_id:"client-master-actions-narrow",
+                stack_width:theme::MANAGEMENT_CLIENT_TOOLBAR_STACK_WIDTH,search_max:f32::INFINITY,
+                actions_width:theme::MANAGEMENT_TOOLBAR_ACTIONS_WIDTH,narrow_actions_first:false,actions_rtl:false,clip:true,
+            },|slot,part|match part{
+                crate::ui_layout::ToolbarPart::Search=>self.list_search(slot,Arc::clone(&gateway)),
+                crate::ui_layout::ToolbarPart::Actions=>self.list_toolbar_actions(slot,Arc::clone(&gateway)),
+            });
             crate::table::show(section,crate::table::Header::Sticky(theme::MANAGEMENT_CLIENT_TAG_TABLE_MIN_WIDTH),|section,layout|{
             let table_width=layout.table_width;
             let header_rect=layout.header_rect;

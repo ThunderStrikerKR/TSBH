@@ -1356,3 +1356,14 @@ pub(crate) use tag::{removable_tag_chip,TagChip};
 
 #[cfg(test)]
 mod regression_tests;
+
+/// Keep labeled field pairs together when the viewport is too narrow for two columns.
+pub(crate) fn modal_form_pair<S>(ui:&mut Ui,state:&mut S,label_width:f32,
+    left:impl FnOnce(&mut Ui,&mut S),right:impl FnOnce(&mut Ui,&mut S)){
+    let minimum=2.0*(label_width+theme::SPACE_8+100.0)+theme::SPACE_8;
+    if ui.available_width()>=minimum{
+        ui.columns(2,|cols|{left(&mut cols[0],state);right(&mut cols[1],state);});
+    }else{
+        left(ui,state);right(ui,state);
+    }
+}

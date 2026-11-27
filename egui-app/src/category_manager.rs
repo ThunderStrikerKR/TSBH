@@ -643,80 +643,22 @@ impl CategoryManager {
             // search-and-actions toolbar, exactly as the management master.
             crate::category_tree::configure_tree_rows(panel);
             let width=panel.available_width().max(1.0);
-            // Reserve the checkbox label and shared inter-control gap in both layouts.
             let focus_action_width=theme::INPUT_HEIGHT*3.0+theme::SPACE_12;
-            if width<theme::CATALOG_MAP_TOOLBAR_STACK_WIDTH+focus_action_width{
-                // On a narrow pane, preserve usable search and button hit
-                // targets instead of squeezing them into clipped columns.
-                let (actions_rect,_)=panel.allocate_exact_size(
-                    Vec2::new(width,theme::INPUT_HEIGHT),Sense::hover()
-                );
-                panel.scope_builder(
-                    egui::UiBuilder::new()
-                        .id_salt("category-map-actions-narrow")
-                        .max_rect(actions_rect)
-                        .layout(Layout::right_to_left(Align::Center)),
-                    |actions|{
-                        actions.apply_shared_width(crate::card::CardWidthPolicy::Fixed,actions_rect.width());
-                        self.map_toolbar_actions(actions,&cats,catalog,editable,busy);
-                    }
-                );
-                panel.add_space(theme::SPACE_8);
-                let (search_rect,_)=panel.allocate_exact_size(
-                    Vec2::new(width,theme::INPUT_HEIGHT),Sense::hover()
-                );
-                panel.scope_builder(
-                    egui::UiBuilder::new()
-                        .id_salt("category-map-search-narrow")
-                        .max_rect(search_rect)
-                        .layout(Layout::left_to_right(Align::Center)),
-                    |search|{
-                        search.apply_shared_width(crate::card::CardWidthPolicy::Fixed,search_rect.width());
-                        search.add_enabled_ui(!busy,|search|crate::input::management_search_field(
-                            search,&mut self.query,
-                            theme::CATALOG_SEARCH_WIDTH.min(search_rect.width()),
-                            "카테고리 이름 또는 전체 경로 검색"
-                        ));
-                    }
-                );
-            }else{
-                let (toolbar_rect,_)=panel.allocate_exact_size(
-                    Vec2::new(width,theme::INPUT_HEIGHT),Sense::hover()
-                );
-                let actions_width=theme::CATALOG_MAP_TOOLBAR_ACTIONS_WIDTH+focus_action_width;
-                let search_width=theme::CATALOG_SEARCH_WIDTH.min(
-                    (toolbar_rect.width()-actions_width-theme::SPACE_12).max(1.0)
-                );
-                let search_rect=Rect::from_min_size(
-                    toolbar_rect.min,Vec2::new(search_width,toolbar_rect.height())
-                );
-                let actions_rect=crate::ui_layout::management_toolbar_trailing_rect(
-                    toolbar_rect,actions_width,0.0,toolbar_rect.height()
-                );
-                panel.scope_builder(
-                    egui::UiBuilder::new()
-                        .id_salt("category-map-search-toolbar")
-                        .max_rect(search_rect)
-                        .layout(Layout::left_to_right(Align::Center)),
-                    |search|{
-                        search.apply_shared_width(crate::card::CardWidthPolicy::Fixed,search_rect.width());
-                        search.add_enabled_ui(!busy,|search|crate::input::management_search_field(
-                            search,&mut self.query,search_rect.width(),
-                            "카테고리 이름 또는 전체 경로 검색"
-                        ));
-                    }
-                );
-                panel.scope_builder(
-                    egui::UiBuilder::new()
-                        .id_salt("category-map-actions-toolbar")
-                        .max_rect(actions_rect)
-                        .layout(Layout::right_to_left(Align::Center)),
-                    |actions|{
-                        actions.apply_shared_width(crate::card::CardWidthPolicy::Fixed,actions_rect.width());
-                        self.map_toolbar_actions(actions,&cats,catalog,editable,busy);
-                    }
-                );
-            }
+            crate::ui_layout::management_toolbar_pair(panel,crate::ui_layout::ToolbarPair{
+                search_id:"category-map-search-toolbar",actions_id:"category-map-actions-toolbar",
+                narrow_search_id:"category-map-search-narrow",narrow_actions_id:"category-map-actions-narrow",
+                stack_width:theme::CATALOG_MAP_TOOLBAR_STACK_WIDTH+focus_action_width,
+                search_max:theme::CATALOG_SEARCH_WIDTH,
+                actions_width:theme::CATALOG_MAP_TOOLBAR_ACTIONS_WIDTH+focus_action_width,
+                narrow_actions_first:true,actions_rtl:true,clip:false,
+            },|slot,part|match part{
+                crate::ui_layout::ToolbarPart::Search=>{
+                    let width=theme::CATALOG_SEARCH_WIDTH.min(slot.available_width());
+                    slot.add_enabled_ui(!busy,|search|crate::input::management_search_field(
+                        search,&mut self.query,width,"카테고리 이름 또는 전체 경로 검색"));
+                }
+                crate::ui_layout::ToolbarPart::Actions=>self.map_toolbar_actions(slot,&cats,catalog,editable,busy),
+            });
             // The search/actions toolbar and navigation each own one fixed row.
             // Use the same symmetric structural divider on both sides of navigation.
             crate::ui_primitives::section_divider(panel);
@@ -1263,7 +1205,7 @@ mod modal_layout_contract_tests{
         assert!(page.contains("measured_management_section_card(ui"));
         assert!(page.contains("fill_management_primary_card(panel,card_min_height)"));
         assert!(page.contains("crate::category_tree::configure_tree_rows(panel);"));
-        assert!(page.contains("management_toolbar_trailing_rect("));
+        assert!(page.contains("management_toolbar_pair("));
         assert!(page.contains("theme::CATALOG_MAP_TOOLBAR_STACK_WIDTH"));
         assert!(page.contains("self.map_toolbar_actions("));
         assert_eq!(page.matches("crate::ui_primitives::section_divider(panel)").count(),2);

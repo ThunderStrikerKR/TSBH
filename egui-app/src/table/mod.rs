@@ -1319,3 +1319,20 @@ mod tag_block_table_tests{
             theme::MANAGEMENT_CLIENT_TABLE_MIN_WIDTH);
     }
 }
+
+/// A fixed table cell owns its control geometry and clipping independently of
+/// business actions. Focusable controls keep their caller-provided stable ID.
+pub(crate) fn control_cell<R>(ui:&mut Ui,id:impl std::hash::Hash,rect:Rect,clip:Rect,
+    layout:egui::Layout,enabled:bool,fixed_width:bool,draw:impl FnOnce(&mut Ui)->R)->R{
+    let mut builder=egui::UiBuilder::new().id_salt(id).max_rect(rect).layout(layout);
+    if !enabled{builder=builder.disabled();}
+    ui.scope_builder(builder,|control|{
+        control.set_clip_rect(clip.intersect(control.clip_rect()));
+        if fixed_width{control.apply_shared_width(crate::card::CardWidthPolicy::Fixed,rect.width());}
+        draw(control)
+    }).inner
+}
+pub(crate) fn money_editor_rects(cell:Rect,scroll_clip:Rect)->(Rect,Rect){
+    let inset=theme::SPACE_4/2.0;
+    (cell.shrink2(Vec2::new(inset,0.0)),cell.intersect(scroll_clip))
+}

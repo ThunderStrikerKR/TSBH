@@ -1817,19 +1817,13 @@ impl FreightManager {
         let (toolbar_rect,_)=section.allocate_exact_size(
             egui::vec2(width,theme::INPUT_HEIGHT),egui::Sense::hover()
         );
-        let create=section.scope_builder(
-            egui::UiBuilder::new()
-                .id_salt("freight-rate-toolbar-actions")
-                .max_rect(toolbar_rect)
-                .layout(egui::Layout::right_to_left(egui::Align::Center)),
-            |tools|{
-                tools.apply_shared_width(crate::card::CardWidthPolicy::Fixed,toolbar_rect.width());
-                tools.set_height(toolbar_rect.height());
+        let create=crate::ui_layout::management_toolbar_slot(section,"freight-rate-toolbar-actions",
+            toolbar_rect,egui::Layout::right_to_left(egui::Align::Center),false,true,|tools|{
                 crate::button::action(
                     tools,"배송 그룹 추가",theme::ButtonRole::Primary,enabled
                 )
             }
-        ).inner;
+        );
         let room=(create.rect.left()-theme::SPACE_12-toolbar_rect.left())
             .max(0.0);
         let search_width=room.min(theme::MANAGEMENT_SEARCH_MIN_WIDTH);
@@ -1837,19 +1831,13 @@ impl FreightManager {
             let search_rect=egui::Rect::from_min_size(
                 toolbar_rect.min,egui::vec2(search_width,theme::INPUT_HEIGHT)
             );
-            Some(section.scope_builder(
-                egui::UiBuilder::new()
-                    .id_salt("freight-rate-toolbar-search")
-                    .max_rect(search_rect)
-                    .layout(egui::Layout::left_to_right(egui::Align::Center)),
-                |field|{
-                    field.set_clip_rect(search_rect);
-                    field.apply_shared_width(crate::card::CardWidthPolicy::Fixed,search_rect.width());
+            Some(crate::ui_layout::management_toolbar_slot(section,"freight-rate-toolbar-search",
+                search_rect,egui::Layout::left_to_right(egui::Align::Center),true,false,|field|{
                     crate::input::management_search_field(
                         field,search,search_width,"배송 그룹 검색"
                     )
                 }
-            ).inner)
+            ))
         }else{None};
         (create,toolbar_rect,search_response)
     }
@@ -2290,16 +2278,10 @@ impl FreightManager {
                     );
                     let action_rect=cells[4].shrink2(egui::vec2(theme::SPACE_8,0.0));
                     let history_row_clip=row.clip_rect();
-                    row.scope_builder(
-                        egui::UiBuilder::new()
-                            .id_salt(("freight-history-details",id))
-                            .max_rect(action_rect)
-                            .layout(egui::Layout::left_to_right(
-                                egui::Align::Center
-                            ).with_main_align(egui::Align::Center)),
-                        |buttons|{
-                            buttons.set_clip_rect(cells[4].intersect(history_row_clip));
-                            buttons.apply_shared_width(crate::card::CardWidthPolicy::Fixed,action_rect.width());
+                    crate::table::control_cell(row,("freight-history-details",id),action_rect,
+                        cells[4].intersect(history_row_clip),
+                        egui::Layout::left_to_right(egui::Align::Center).with_main_align(egui::Align::Center),
+                        true,true,|buttons|{
                             let trigger=crate::button::action(
                                 buttons,"상세정보",
                                 theme::ButtonRole::TableSecondary,true

@@ -358,3 +358,51 @@ pub fn reception_source_client_rect(body:Rect)->Rect{
 pub fn reception_items_to_freight_gap(ui:&mut Ui){
     ui.add_space(theme::RECEPTION_ITEMS_TO_FREIGHT_GAP);
 }
+
+/// Fixed toolbar slots own alignment, width and clipping; callers supply controls.
+/// Retain existing IDs so editing focus and popup state survive the migration.
+pub(crate) fn management_toolbar_slot<R>(
+    ui:&mut Ui,id:impl std::hash::Hash,rect:Rect,layout:Layout,
+    clip:bool,fixed_height:bool,draw:impl FnOnce(&mut Ui)->R
+)->R{
+    ui.scope_builder(UiBuilder::new().id_salt(id).max_rect(rect).layout(layout),|slot|{
+        if clip{slot.set_clip_rect(rect.intersect(slot.clip_rect()));}
+        slot.apply_shared_width(crate::card::CardWidthPolicy::Fixed,rect.width());
+        if fixed_height{slot.set_height(rect.height());}
+        draw(slot)
+    }).inner
+}
+#[derive(Clone,Copy)]
+pub(crate) enum ToolbarPart{Search,Actions}
+pub(crate) struct ToolbarPair{
+    pub search_id:&'static str,pub actions_id:&'static str,
+    pub narrow_search_id:&'static str,pub narrow_actions_id:&'static str,
+    pub stack_width:f32,pub search_max:f32,pub actions_width:f32,
+    pub narrow_actions_first:bool,pub actions_rtl:bool,pub clip:bool,
+}
+pub(crate) fn management_toolbar_pair(ui:&mut Ui,policy:ToolbarPair,
+    mut draw:impl FnMut(&mut Ui,ToolbarPart)){
+    let width=ui.available_width().max(1.0);
+    let actions_layout=if policy.actions_rtl{Layout::right_to_left(Align::Center)}
+        else{Layout::left_to_right(Align::Center)};
+    if width<policy.stack_width{
+        let parts=if policy.narrow_actions_first{[ToolbarPart::Actions,ToolbarPart::Search]}
+            else{[ToolbarPart::Search,ToolbarPart::Actions]};
+        for (index,part) in parts.into_iter().enumerate(){
+            if index>0{ui.add_space(theme::SPACE_8);}
+            let (rect,_)=ui.allocate_exact_size(Vec2::new(width,theme::INPUT_HEIGHT),Sense::hover());
+            let (id,layout)=match part{
+                ToolbarPart::Search=>(policy.narrow_search_id,Layout::left_to_right(Align::Center)),
+                ToolbarPart::Actions=>(policy.narrow_actions_id,actions_layout),
+            };
+            management_toolbar_slot(ui,id,rect,layout,policy.clip,false,|slot|draw(slot,part));
+        }
+    }else{
+        let (outer,_)=ui.allocate_exact_size(Vec2::new(width,theme::INPUT_HEIGHT),Sense::hover());
+        let actions=management_toolbar_trailing_rect(outer,policy.actions_width,0.0,outer.height());
+        let search_width=policy.search_max.min((actions.left()-outer.left()-theme::SPACE_12).max(1.0));
+        let search=Rect::from_min_size(outer.min,Vec2::new(search_width,outer.height()));
+        management_toolbar_slot(ui,policy.search_id,search,Layout::left_to_right(Align::Center),policy.clip,false,|slot|draw(slot,ToolbarPart::Search));
+        management_toolbar_slot(ui,policy.actions_id,actions,actions_layout,policy.clip,false,|slot|draw(slot,ToolbarPart::Actions));
+    }
+}
