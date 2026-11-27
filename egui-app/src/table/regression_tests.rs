@@ -635,7 +635,7 @@ mod shared_ui_base_113_contract_tests {
         ]{
             assert!(production_source_for_contract(source).contains(required),"{name}: missing {required}");
         }
-        let shared=production_source_for_contract(include_str!("mod.rs"));
+        let shared=include_str!("mod.rs");
         let normal=shared.split("pub(crate) fn paint_management_text_cell(").nth(1).unwrap()
             .split("pub(crate) fn paint_management_text_cell_with_state(").next().unwrap();
         assert!(normal.contains("paint_management_text_cell_with_state("),"normal cell must delegate to state-aware owner");
