@@ -426,29 +426,22 @@ impl SettingsView{
     ){
         if self.requested_tab.is_none(){return;}
         crate::popup::modal_backdrop(ctx,"settings-tab-changes-backdrop",false);
-        crate::popup::show_decision_window(ctx,"저장하지 않은 변경사항","settings-tab-unsaved",area,|ui|{
-            crate::popup::decision_workspace(ui,|decision|{
-                if decision.header("저장하지 않은 변경사항","취소",!self.busy()
-                ){self.requested_tab=None;}
-                decision.body(|ui|{
-                    ui.label(typography::body(
-                        "현재 탭에서 수정한 설정이 있습니다. 변경사항을 저장할까요?"
-                    ));
-                });
-                decision.actions(|actions|{
-                    if crate::button::action(actions,"저장하고 이동",ButtonRole::Primary,
-                        !self.busy() && !self.read_only()).clicked(){
-                        self.switch_after_save=true;
-                        self.save(gateway.clone(),ctx.clone());
-                    }
-                    if crate::button::action(actions,"저장 안 함",ButtonRole::Danger,
-                        !self.busy()).clicked(){
-                        self.draft=settings(&self.source).clone();
-                        if let Some(next)=self.requested_tab.take(){self.tab=next;}
-                    }
-                });
-            });
-        });
+        match crate::popup::show_save_confirmation(
+            ctx,area,"settings-tab-unsaved","저장하지 않은 변경사항",
+            "현재 탭에서 수정한 설정이 있습니다. 변경사항을 저장할까요?",
+            "저장하고 이동",!self.busy(),!self.busy()&&!self.read_only()
+        ){
+            crate::popup::ChangeDecision::Cancel=>self.requested_tab=None,
+            crate::popup::ChangeDecision::Save=>{
+                self.switch_after_save=true;
+                self.save(gateway.clone(),ctx.clone());
+            }
+            crate::popup::ChangeDecision::Discard=>{
+                self.draft=settings(&self.source).clone();
+                if let Some(next)=self.requested_tab.take(){self.tab=next;}
+            }
+            crate::popup::ChangeDecision::Pending=>{}
+        }
     }
     fn choose_folder(&mut self,key:&str,ctx:Context){
         if self.folder_picker.is_some()||self.saving.is_some()||self.read_only(){return;}
