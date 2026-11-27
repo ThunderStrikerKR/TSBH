@@ -1032,6 +1032,46 @@ fn native_brand_sqlite_save_correction_collision_and_reopen() {
 }
 
 #[test]
+fn native_brand_sqlite_delete_checks_links_stale_entity_and_reopen(){
+    let (isolated,mut conn)=IsolatedDatabase::open();
+    let before=get_snapshot(&conn).unwrap();
+    let created=bando_data_access::patch_product_v2(&mut conn,&json!({
+        "expectedRevision":before["revision"],"action":"upsert_brand",
+        "data":{"editing":null,"name":"SYNTHETIC_DELETE_BRAND_148",
+            "korean":"","aliases":[],"evidence":"https://example.com/delete-brand"}
+    })).unwrap();
+    let brand=created["brands"].as_array().unwrap().iter()
+        .find(|b|b["name"]=="SYNTHETIC_DELETE_BRAND_148").unwrap().clone();
+    let id=brand["id"].as_str().unwrap();
+    let request=json!({"expectedRevision":created["revision"],"action":"delete_brand",
+        "data":{"brandId":id,"expectedEntity":brand}});
+    let mut stale=request.clone();
+    stale["data"]["expectedEntity"]["name"]=json!("stale");
+    assert!(bando_data_access::patch_product_v2(&mut conn,&stale).is_err());
+    assert_eq!(get_snapshot(&conn).unwrap(),created);
+    let mut linked=stage_three(&created,"POSTPAID");
+    let old_link=linked["products"][0].get("brandId").cloned();
+    linked["products"][0]["brandId"]=json!(id);
+    let linked=write_snapshot(&mut conn,linked,created["revision"].as_u64().unwrap(),true).unwrap();
+    assert!(bando_data_access::patch_product_v2(&mut conn,&request).unwrap_err().contains("연결된 상품"));
+    assert_eq!(get_snapshot(&conn).unwrap(),linked);
+    let mut unlinked=linked.clone();
+    if let Some(old)=old_link{unlinked["products"][0]["brandId"]=old;}
+    else{unlinked["products"][0].as_object_mut().unwrap().remove("brandId");}
+    let unlinked=write_snapshot(&mut conn,unlinked,linked["revision"].as_u64().unwrap(),true).unwrap();
+    let deleted=bando_data_access::patch_product_v2(&mut conn,&request).unwrap();
+    let mut expected=unlinked.clone();
+    expected["revision"]=json!(unlinked["revision"].as_u64().unwrap()+1);
+    expected["brands"].as_array_mut().unwrap().retain(|b|b["id"]!=id);
+    assert_eq!(deleted,expected,"only the selected brand and revision may change");
+    assert!(bando_data_access::patch_product_v2(&mut conn,&request).is_err());
+    assert_eq!(get_snapshot(&conn).unwrap(),deleted);
+    drop(conn);
+    let reopened=initialize_database(&isolated.root.join("state.sqlite")).unwrap();
+    assert_eq!(get_snapshot(&reopened).unwrap(),deleted);
+}
+
+#[test]
 fn native_workflow_freight_edit_normalizes_remote_and_reopens_sqlite(){
     let (isolated,mut conn)=IsolatedDatabase::open();
     let before=get_snapshot(&conn).unwrap();
