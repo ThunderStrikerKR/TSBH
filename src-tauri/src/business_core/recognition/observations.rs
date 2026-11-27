@@ -204,7 +204,7 @@ fn owner_observations(units:&[u16],first:&Value,final_rows:&Value)->Vec<Value>{
             // A comparison alone cannot prove deliberate correction.
             // Audit reconciliation remains a separate P02 requirement.
             "requiresReview":outcome!="unchanged_observed",
-            "eligibleForCandidateLearning":false
+            "eligibleForCandidateLearning":outcome=="unchanged_observed"
         }));
     }
     result
@@ -259,6 +259,100 @@ pub(super) fn compare(payload:&Value)->Result<Value,String>{
 #[cfg(test)]
 mod tests{
     use super::*;
+    fn owner_fixture()->Value{
+        // Emoji makes the UTF-16 positions differ from byte offsets.
+        let raw="😀김가상\n010-1234-5678\n박가상";
+        let name_a=json!({"start":2,"end":5,"text":"김가상","field":"name"});
+        let name_b=json!({"start":20,"end":23,"text":"박가상","field":"name"});
+        let phone=json!({"start":6,"end":19,"text":"010-1234-5678","field":"mobile"});
+        let a=json!({"id":"a","name":"김가상","mobile":"010-1234-5678",
+            "sources":[name_a,phone.clone()]});
+        let b=json!({"id":"b","name":"박가상","mobile":"","sources":[name_b]});
+        json!({"confirmationSnapshot":{"raw":raw,"recipients":[a.clone(),b.clone()],
+            "recognitionBaseline":{"schemaVersion":1,"initialAnalysis":{
+                "recipients":[a,b],
+                "candidates":[{"start":6,"end":19,"text":"010-1234-5678",
+                    "kind":"mobile","value":"010-1234-5678"}],
+                "recipientOwnerTrace":{"schemaVersion":1,"decisions":[{
+                    "source":{"start":6,"end":19,"kind":"mobile"},
+                    "selectedAnchor":{"start":2,"end":5,"kind":"name"},
+                    "candidates":[
+                        {"relation":"previous","anchor":{"start":2,"end":5,"kind":"name"}},
+                        {"relation":"next","anchor":{"start":20,"end":23,"kind":"name"}}
+                    ]
+                }]}
+            }}
+        }})
+    }
+    fn owner_result(payload:&Value)->Value{
+        let result=compare(payload).unwrap();
+        let found=result["observations"].as_array().unwrap().iter()
+            .filter(|v|v["task"]=="recipient_ownership").collect::<Vec<_>>();
+        assert_eq!(found.len(),1);
+        found[0].clone()
+    }
+    #[test]
+    fn owner_trace_final_comparison_survives_changed_ids_and_row_order(){
+        let mut p=owner_fixture();
+        let rs=p["confirmationSnapshot"]["recipients"].as_array_mut().unwrap();
+        rs[0]["id"]=json!("new-a");
+        rs[1]["id"]=json!("new-b");
+        rs.swap(0,1);
+        let o=owner_result(&p);
+        assert_eq!(o["outcome"],"unchanged_observed");
+        assert_eq!(o["initialAnchor"],json!({"start":2,"end":5}));
+        assert_eq!(o["finalAnchor"],o["initialAnchor"]);
+        assert_eq!(o["eligibleForCandidateLearning"],true);
+    }
+    #[test]
+    fn owner_trace_final_comparison_distinguishes_reassignment_and_alternate_phone(){
+        let mut p=owner_fixture();
+        let rs=p["confirmationSnapshot"]["recipients"].as_array_mut().unwrap();
+        let mut source=rs[0]["sources"].as_array_mut().unwrap().pop().unwrap();
+        source["field"]=json!("phone");
+        rs[0]["mobile"]=json!("");
+        rs[1]["phone"]=json!("01012345678");
+        rs[1]["sources"].as_array_mut().unwrap().push(source);
+        let o=owner_result(&p);
+        assert_eq!(o["outcome"],"changed_requires_review");
+        assert_eq!(o["initialCandidates"],json!(["previous"]));
+        assert_eq!(o["finalCandidates"],json!(["next"]));
+        assert_eq!(o["finalAnchor"],json!({"start":20,"end":23}));
+        assert_eq!(o["eligibleForCandidateLearning"],false);
+    }
+    #[test]
+    fn owner_trace_final_comparison_rejects_stale_missing_and_duplicate_links(){
+        let mut stale=owner_fixture();
+        stale["confirmationSnapshot"]["recipients"][0]["mobile"]=json!("010-9999-9999");
+        assert_eq!(owner_result(&stale)["outcome"],"unresolved_evidence");
+        let mut missing=owner_fixture();
+        missing["confirmationSnapshot"]["recipients"][0]["sources"].as_array_mut().unwrap().pop();
+        assert_eq!(owner_result(&missing)["outcome"],"unresolved_evidence");
+        let mut duplicate=owner_fixture();
+        let link=duplicate["confirmationSnapshot"]["recipients"][0]["sources"][1].clone();
+        duplicate["confirmationSnapshot"]["recipients"][1]["sources"].as_array_mut().unwrap().push(link);
+        duplicate["confirmationSnapshot"]["recipients"][1]["mobile"]=json!("010-1234-5678");
+        assert_eq!(owner_result(&duplicate)["outcome"],"unresolved_evidence");
+        let mut renamed=owner_fixture();
+        renamed["confirmationSnapshot"]["recipients"][0]["name"]=json!("다른이름");
+        assert_eq!(owner_result(&renamed)["outcome"],"unresolved_evidence");
+    }
+    #[test]
+    fn owner_trace_final_comparison_rejects_unverified_initial_trace(){
+        let mut p=owner_fixture();
+        p["confirmationSnapshot"]["recognitionBaseline"]["initialAnalysis"]
+            ["recipientOwnerTrace"]["decisions"][0]["selectedAnchor"]=json!({
+                "start":20,"end":23,"kind":"name"
+            });
+        assert_eq!(owner_result(&p)["outcome"],"unresolved_evidence");
+    }
+    #[test]
+    fn owner_trace_final_comparison_rejects_duplicate_anchor_across_rows(){
+        let mut p=owner_fixture();
+        let anchor=p["confirmationSnapshot"]["recipients"][0]["sources"][0].clone();
+        p["confirmationSnapshot"]["recipients"][1]["sources"].as_array_mut().unwrap().push(anchor);
+        assert_eq!(owner_result(&p)["outcome"],"unresolved_evidence");
+    }
     #[test]
     fn unchanged_and_changed_are_distinct_without_inventing_error(){
         let source=json!({"start":0,"end":3,"text":"709","field":"product"});
