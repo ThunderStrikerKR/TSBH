@@ -39,12 +39,12 @@ fn manual_linked_table_cell(
 )->Response {
     let label=if value.trim().is_empty(){"미입력"}else{value};
     let border=if linked {
-        Stroke::new(theme::SOFT_DIVIDER_WIDTH/2.0,theme::DIVIDER)
+        Stroke::new(theme::SOFT_DIVIDER_WIDTH/2.0,theme::border_ink(theme::BorderRole::Divider))
     }else if selected {
-        Stroke::new(theme::DOCK_SPLITTER_HOVER_LINE,theme::SELECTED_ORDER)
+        Stroke::new(theme::DOCK_SPLITTER_HOVER_LINE,theme::selected_palette().border)
     }else{
         // Two adjacent cells share one visual divider, not a doubled border.
-        Stroke::new(theme::SOFT_DIVIDER_WIDTH/2.0,theme::DIVIDER)
+        Stroke::new(theme::SOFT_DIVIDER_WIDTH/2.0,theme::border_ink(theme::BorderRole::Divider))
     };
     // Match the selected editor and the 16pt reception/source standard.
     // Read-only manual fields must not shrink when focus leaves a cell.
@@ -52,11 +52,11 @@ fn manual_linked_table_cell(
     let response=ui.add_sized(
         Vec2::new(width,theme::MANAGEMENT_COMPACT_ROW_HEIGHT),
         egui::Button::new(
-            if linked{text.color(source_highlight::ACTIVE_TEXT)}else{text}
+            if linked{text.color(theme::linked_preview_palette().text)}else{text}
         )
             .truncate()
-            .fill(if linked{source_highlight::ACTIVE_FILL}
-                  else if selected{theme::RAISED}else{theme::INPUT})
+            .fill(if linked{theme::linked_preview_palette().fill}
+                  else if selected{theme::surface_palette(theme::SurfaceRole::Button,theme::VisualState::Normal).fill}else{theme::surface_palette(theme::SurfaceRole::Input,theme::VisualState::Normal).fill})
             .stroke(border)
             .corner_radius(0),
     );
@@ -294,7 +294,7 @@ mod modal_editor_workspace_geometry_tests {
     // not the spacing constants or a second implementation of the renderer.
     fn collect_modal_paint(shape:&egui::Shape,rules:&mut Vec<Rect>,heading:&mut Vec<Rect>){
         match shape{
-            egui::Shape::Rect(rect) if rect.fill==theme::DIVIDER
+            egui::Shape::Rect(rect) if rect.fill==theme::border_ink(theme::BorderRole::Divider)
                 &&rect.rect.height()<=2.0&&rect.rect.width()>100.0=>{
                 rules.push(rect.rect);
             }
@@ -983,13 +983,13 @@ mod manual_nested_prompt_regression_tests{
         });
         assert!(output.shapes.iter().any(|paint|
             matches!(&paint.shape,
-                egui::Shape::Rect(rect) if rect.fill==source_highlight::ACTIVE_FILL
+                egui::Shape::Rect(rect) if rect.fill==theme::linked_preview_palette().fill
             )
         ),"shared blue source fill is absent from linked table cells");
         assert!(output.shapes.iter().any(|paint|
             matches!(&paint.shape,
                 egui::Shape::Rect(rect)
-                    if rect.stroke.color==source_highlight::ACTIVE_BORDER
+                    if rect.stroke.color==theme::linked_preview_palette().border
             )
         ),"shared blue source border is absent from linked table cells");
     }

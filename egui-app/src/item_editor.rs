@@ -375,7 +375,7 @@ impl ItemEditor{
                         }
                         let status_text=status_messages.join(" · ");
                         let status_color=if self.error.is_some()||invalid_selection{
-                            theme::DANGER
+                            theme::message_ink(theme::MessageInkRole::Danger)
                         }else{theme::text_ink(theme::TextRole::Label,theme::TextState::Normal)};
                         let status_width=ui.available_width();
                         crate::ui_layout::fixed_status_slot(

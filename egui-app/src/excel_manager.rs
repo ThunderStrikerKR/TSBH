@@ -773,7 +773,7 @@ impl ExcelManager{
                             let error=self.error.as_deref();
                             let error_width=bar.available_width();
                             crate::ui_layout::fixed_status_slot(bar,error_width,
-                                typography::METADATA_LINE_HEIGHT,error,error,theme::DANGER);
+                                typography::METADATA_LINE_HEIGHT,error,error,theme::message_ink(theme::MessageInkRole::Danger));
                         });
                     });
                     workspace.footer_single(|bar|{if crate::button::action(bar,"닫기",theme::ButtonRole::Standard,!busy&&self.reply_confirm.is_none()).clicked(){close=true;}});

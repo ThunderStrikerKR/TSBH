@@ -4193,7 +4193,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                     let status_width=ui.available_width();
                     crate::ui_layout::fixed_status_slot(
                         ui,status_width,typography::METADATA_LINE_HEIGHT,
-                        error,error,theme::DANGER
+                        error,error,theme::message_ink(theme::MessageInkRole::Danger)
                     );
                 });
                 decision.actions(|buttons|{

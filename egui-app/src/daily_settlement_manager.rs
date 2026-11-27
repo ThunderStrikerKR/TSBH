@@ -100,7 +100,7 @@ fn settlement_date_toolbar(
     let status_width=ui.available_width();
     crate::ui_layout::fixed_status_slot(
         ui,status_width,typography::METADATA_LINE_HEIGHT,
-        date_error,date_error,theme::DANGER
+        date_error,date_error,theme::message_ink(theme::MessageInkRole::Danger)
     );
     changed
 }

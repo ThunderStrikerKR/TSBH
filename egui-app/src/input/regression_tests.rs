@@ -672,7 +672,7 @@ fn tag_blocks_share_top_bottom_and_vertical_centers_even_when_wrapped(){
         fn crosses(shape:&egui::Shape,hit:Rect,out:&mut Vec<[egui::Pos2;2]>){
             match shape{
                 egui::Shape::LineSegment{points,stroke} if
-                    (stroke.width-1.5).abs()<0.01 && stroke.color==theme::SECONDARY
+                    (stroke.width-1.5).abs()<0.01 && stroke.color==theme::text_ink(theme::TextRole::Label,theme::TextState::Normal)
                     && hit.contains(points[0]) && hit.contains(points[1])=>out.push(*points),
                 egui::Shape::Vec(shapes)=>for shape in shapes{crosses(shape,hit,out);},
                 _=>{}

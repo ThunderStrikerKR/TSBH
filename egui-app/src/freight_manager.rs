@@ -1199,7 +1199,7 @@ impl FreightManager {
                     if !affected.is_empty(){
                         details.add(egui::Label::new(typography::status(
                             "그룹을 삭제하면 연결된 상품의 배송 그룹이 미지정으로 변경됩니다.",
-                            theme::SELECTED_ORDER
+                            theme::selected_palette().border
                         )).wrap());
                         let height=crate::popup::modal_compact_table_height(
                             details,area.height(),body_top,affected.len(),10

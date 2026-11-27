@@ -491,7 +491,7 @@ pub(crate) fn reception_recipient_text_edit(
         // TextEdit's native background uses a different square/filled
         // geometry. Let the shared evidence surface own the rounded fill
         // and the outer caller own the common 2pt border instead.
-        input.frame(false).text_color(source_highlight::ACTIVE_TEXT)
+        input.frame(false).text_color(theme::linked_preview_palette().text)
     }else{input}
 }
 
