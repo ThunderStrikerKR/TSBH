@@ -7499,6 +7499,11 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                             ("native-workflow-issues",group.id.as_str()),|issues|{
                                 for issue in &group.issues{
                                     let Some(label)=workflow_board::workflow_issue_label(issue)else{continue};
+                                    // Keep the original native issue for deduplication and
+                                    // routing; only the visible freight caption changes.
+                                    let label=if issue["kind"]=="FREIGHT"&&issue["severity"]=="ACTION"{
+                                        label.replace("배송 운임을 확인하세요","운임 미확정")
+                                    }else{label};
                                     let tone=match issue["severity"].as_str(){
                                         Some("ACTION")=>theme::ReviewTone::Action,
                                         Some("ERROR")=>theme::ReviewTone::Error,
