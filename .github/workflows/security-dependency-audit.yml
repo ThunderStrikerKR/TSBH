@@ -1,0 +1,83 @@
+name: Native dependency security audit
+on:
+  push:
+    branches: [security/v0.8.0-pre-release]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: dependency-audit-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+jobs:
+  rust:
+    if: >-
+      github.ref == 'refs/heads/security/v0.8.0-pre-release' ||
+      (github.event_name == 'pull_request' &&
+      github.head_ref == 'security/v0.8.0-pre-release' &&
+      github.event.pull_request.head.repo.full_name == github.repository)
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        crate: [egui-app, crates/bando-data-access]
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Require tracked lockfile and validate resolved graph
+        env:
+          CRATE_DIR: ${{ matrix.crate }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          git ls-files --error-unmatch "$CRATE_DIR/Cargo.lock"
+          test -f "$CRATE_DIR/Cargo.lock"
+          cargo fetch --locked --target x86_64-pc-windows-msvc --manifest-path "$CRATE_DIR/Cargo.toml"
+          git diff --exit-code -- "$CRATE_DIR/Cargo.lock"
+      - name: Install pinned RustSec auditor
+        working-directory: ${{ runner.temp }}
+        run: cargo install cargo-audit --version 0.22.2 --locked
+      - name: Audit exact committed lockfile (RustSec)
+        env:
+          CRATE_DIR: ${{ matrix.crate }}
+        working-directory: ${{ runner.temp }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo audit --version
+          cargo audit --file "$GITHUB_WORKSPACE/$CRATE_DIR/Cargo.lock"
+  python:
+    if: >-
+      github.ref == 'refs/heads/security/v0.8.0-pre-release' ||
+      (github.event_name == 'pull_request' &&
+      github.head_ref == 'security/v0.8.0-pre-release' &&
+      github.event.pull_request.head.repo.full_name == github.repository)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Require exact OCR dependency inventory
+        shell: bash
+        run: |
+          set -euo pipefail
+          git ls-files --error-unmatch security/ocr/requirements.lock
+          python3 scripts/validate-ocr-audit-lock.py security/ocr/requirements.lock
+      - name: Install pinned auditor in isolated environment
+        working-directory: ${{ runner.temp }}
+        run: |
+          python3 -m venv audit-venv
+          audit-venv/bin/python -m pip --isolated install --disable-pip-version-check --only-binary=:all: pip-audit==2.10.1
+      - name: Audit pinned OCR dependencies without installing OCR
+        working-directory: ${{ runner.temp }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          audit-venv/bin/python -m pip_audit --version
+          audit-venv/bin/python -m pip_audit --strict --disable-pip --require-hashes -r "$GITHUB_WORKSPACE/security/ocr/requirements.lock"
