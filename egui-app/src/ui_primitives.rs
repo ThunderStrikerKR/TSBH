@@ -1,5 +1,5 @@
 //! Low-level UI primitives independent of composite screens and controls.
-use crate::ui_layout::geometry::SharedUiClipExt as _;
+use crate::ui_layout::geometry::{CardWidthPolicy,UiWidthPolicyExt,SharedUiClipExt as _};
 use crate::ui_layout::geometry::SharedPainterClipExt as _;
 use crate::ui_layout::geometry::SharedAllocationExt as _;
 use crate::ui_layout::geometry::AlignedUiBuilderExt as _;
@@ -304,8 +304,7 @@ mod shared_hover_clip_tests{
     }
 }
 
-// Compatibility exports for existing screen callers; geometry owns the policy.
-pub(crate) use crate::ui_layout::geometry::{CardWidthPolicy,UiWidthPolicyExt,apply_width_policy};
+
 
 #[cfg(test)]
 mod private_api_contract_overflow_tooltip_policy_rejects_blank_and_fitting_text {
