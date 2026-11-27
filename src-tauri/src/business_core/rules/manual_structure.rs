@@ -130,6 +130,9 @@ pub(super) fn execute(payload:&Value)->Result<Value,String>{
         },
         _=>return Err(format!("지원하지 않는 수동 분류 구성 명령: {action}")),
     }
+    if let Some(rows)=model["rows"].as_array_mut(){
+        for row in rows {super::issues::prune_validation_approvals(row);}
+    }
     let keys=assignment_order(payload,&model);
     Ok(json!({"model":model,"assignmentOrder":keys}))
 }

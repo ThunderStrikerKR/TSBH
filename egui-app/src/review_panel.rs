@@ -479,6 +479,13 @@ fn issue_card(
                 .and_then(Value::as_array)
                 .and_then(|rows|rows.iter().find(|row|text(row,"id")==rid));
             cell.horizontal_wrapped(|buttons|{
+                if kind=="CLIENT_MATCH_CONFLICT" && severity!="INFO"{
+                    if let Some(id)=issue.get("selectedClientId").and_then(Value::as_str).filter(|id|!id.is_empty()){
+                        if crate::button::review_action(buttons,"현재 정보 승인",ButtonRole::Standard,enabled).clicked(){
+                            *selected=Some(Action::ChooseClient(id.to_owned()));
+                        }
+                    }
+                }
                 if is_client && severity!="INFO"{
                     // React uses the current native match's candidate list,
                     // falling back to directory candidates for a missing match.

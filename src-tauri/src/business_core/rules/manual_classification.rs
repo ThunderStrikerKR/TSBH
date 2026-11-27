@@ -99,15 +99,12 @@ fn pending_quantity(model: &Value) -> bool {
         rows(field(r, "items")).iter().any(|i|
             (!str_field(i, "productId").is_empty() ||
                 !str_field(i, "name").trim().is_empty()) &&
-            (!valid_quantity(field(i, "quantity")) ||
-                field(i, "quantityConfirmed").as_bool() == Some(false))
+            !super::issues::quantity_accepted(r,i)
         )
     )
 }
-fn valid_quantity_item(item:&Value)->bool{
-    let number=field(item,"quantity").as_i64();
-    number.is_some_and(|n|n>0 && n<=9_007_199_254_740_991)
-        && item.get("quantityConfirmed")!=Some(&Value::Bool(false))
+fn valid_quantity_item(row:&Value,item:&Value)->bool{
+    super::issues::quantity_accepted(row,item)
 }
 fn apply_final(payload:&Value,draft_preview:bool)->Result<Value,String>{
     let order=req(payload,"order")?;
@@ -124,7 +121,7 @@ fn apply_final(payload:&Value,draft_preview:bool)->Result<Value,String>{
             for item in rows(field(row,"items")){
                 if (!str_field(item,"productId").is_empty()
                     || !str_field(item,"name").trim().is_empty())
-                    && !valid_quantity_item(item) {
+                    && !valid_quantity_item(row,item) {
                     return Err("선택한 상품의 수량을 먼저 확정하세요.".into());
                 }
             }
@@ -430,7 +427,7 @@ pub(super) fn apply(payload: &Value) -> Result<Value, String> {
                 items.push(json!({
                     "recipientId":field(row,"id"),
                     "itemId":field(item,"id"),
-                    "valid":valid_quantity_item(item)
+                    "valid":valid_quantity_item(row,item)
                 }));
             }
         }

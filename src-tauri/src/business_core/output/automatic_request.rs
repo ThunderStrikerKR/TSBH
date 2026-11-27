@@ -93,6 +93,9 @@ pub(super) fn execute(payload:&Value)->Result<Value,String>{
         let links=list(row,"items").iter().filter(|i|
             i.get("modelProposal").and_then(|v|v.get("required"))
                 .and_then(Value::as_bool)==Some(true) &&
+            !issues.iter().any(|issue|s(issue,"kind")=="MODEL_CONFIRM" &&
+                s(issue,"recipientId")==s(row,"id") && s(issue,"itemId")==s(i,"id") &&
+                s(issue,"resolution")=="USER_APPROVED") &&
             url_is_official(s(i,"url")))
             .map(|i|format!("{}\n{}",s(i,"name"),s(i,"url")))
             .collect::<Vec<_>>();

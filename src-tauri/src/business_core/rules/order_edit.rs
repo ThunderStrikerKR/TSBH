@@ -505,6 +505,7 @@ fn edit_confirmed_recipient(payload:&Value)->Result<Value,String>{
     }
     let mut state=before.clone();
     let mut recipient=model["rows"][0].clone();
+    super::issues::prune_validation_approvals(&mut recipient);
     if &recipient==old{return Ok(json!({"state":before,"unchanged":true}));}
     // Keep the current manual charge only on an existing origin. New
     // origins are intentionally unconfirmed. For automatic rates, a

@@ -2163,6 +2163,7 @@ impl BandoEgui {
         let Some(row) = self.drafts.iter().find(|row| row.id == id).cloned() else { return; };
         if reprice_selection.is_none() &&
            row.client_id.as_deref() == Some(client_id) &&
+           row.client_selection.as_deref()==Some("MANUAL") &&
            row.pricing_preview.as_ref().is_some_and(complete_reception_quote) {
             return; // Same dealer with an already complete native quote.
         }

@@ -170,9 +170,51 @@ fn approved(row:&Value,kind:&str)->bool{
             field(record,"basis")==&basis && !str_field(record,"approvedAt").is_empty()
             && !str_field(record,"approvedBy").is_empty()))
 }
+fn item_approval_basis(row:&Value,item:&Value,kind:&str)->Option<Value>{
+    if ["id","productId","variantId"].iter().any(|key|str_field(item,key).trim().is_empty()){
+        return None;
+    }
+    let values=match kind{
+        "OPTION"|"ALIAS_CONFLICT"|"CATEGORY_CONFLICT"|"MODEL_CONFIRM"=>
+            json!([field(item,"productId"),field(item,"variantId"),field(item,"color"),
+                field(item,"raw"),field(item,"match"),field(item,"issues"),field(item,"modelProposal")]),
+        "QUANTITY_MISSING"|"QUANTITY_LINK"=>{
+            if !field(item,"quantity").as_i64().is_some_and(|n|(1..=super::MAX_SAFE).contains(&n))
+                || super::has_value(field(item,"quantityApproval"))
+                || field(item,"defaulted")==true {return None;}
+            json!([field(item,"productId"),field(item,"variantId"),field(item,"quantity"),
+                field(item,"quantityConfirmed"),field(item,"raw"),field(item,"match"),
+                rows(field(item,"issues")).iter().filter(|v|
+                    v.as_str().is_some_and(|s|s.contains("수량"))).collect::<Vec<_>>()])
+        },
+        _=>return None
+    };
+    Some(json!({"recipientId":field(row,"id"),"itemId":field(item,"id"),"kind":kind,"values":values}))
+}
+fn approval_key(item:Option<&Value>,kind:&str)->String{
+    match item{Some(i)=>format!("{}:{kind}",str_field(i,"id")),None=>kind.to_owned()}
+}
+fn item_approved(row:&Value,item:&Value,kind:&str)->bool{
+    item_approval_basis(row,item,kind).is_some_and(|basis|
+        field(row,"validationApprovals").get(approval_key(Some(item),kind)).is_some_and(|record|
+            field(record,"basis")==&basis && !str_field(record,"approvedAt").is_empty()
+            && !str_field(record,"approvedBy").is_empty()))
+}
+pub(super) fn quantity_accepted(row:&Value,item:&Value)->bool{
+    field(item,"quantity").as_i64().is_some_and(|n|(1..=super::MAX_SAFE).contains(&n)) &&
+        (field(item,"quantityConfirmed")!=&Value::Bool(false) ||
+         item_approved(row,item,"QUANTITY_MISSING")||item_approved(row,item,"QUANTITY_LINK"))
+}
 pub(super) fn prune_validation_approvals(row:&mut Value){
     let valid=field(row,"validationApprovals").as_object().map(|records|
-        records.keys().filter(|kind|approved(row,kind)).cloned().collect::<HashSet<_>>());
+        records.iter().filter(|(key,record)|{
+            let basis=field(record,"basis");
+            let kind=str_field(basis,"kind");
+            if let Some(item)=rows(field(row,"items")).iter().find(|item|
+                !str_field(basis,"itemId").is_empty() && str_field(item,"id")==str_field(basis,"itemId")){
+                key.as_str()==approval_key(Some(item),kind).as_str() && item_approved(row,item,kind)
+            }else{approved(row,key)}
+        }).map(|(key,_)|key.clone()).collect::<HashSet<_>>());
     if let (Some(valid),Some(records))=(valid,row.get_mut("validationApprovals").and_then(Value::as_object_mut)){
         records.retain(|kind,_|valid.contains(kind));
     }
@@ -196,9 +238,7 @@ pub(super) fn delivery_requirements(payload: &Value) -> Result<Value, String> {
             !str_field(i,"productId").is_empty() && !str_field(i,"variantId").is_empty()
         );
         let quantity_ok=!items.is_empty() && items.iter().all(|i|
-            field(i,"quantity").as_i64().is_some_and(|q|
-                (1..=9_007_199_254_740_991).contains(&q)) &&
-            field(i,"quantityConfirmed")!=&Value::Bool(false)
+            quantity_accepted(row,i)
         );
         json!({"recipientId":field(row,"id"),
             "name":!str_field(row,"name").trim().is_empty(),
@@ -275,9 +315,12 @@ fn emit(result:&mut Vec<Value>,order:&Value,info:Info<'_>){
     let evidence=js_evidence(evidence);
     let decision=field(order,"issueResolutions").get(&id)
         .filter(|d|str_field(d,"resolution")!="USER_APPROVED");
-    let basis=row.and_then(|r|approval_basis(r,kind));
-    let user_approval=row.filter(|r|approved(r,kind))
-        .and_then(|r|field(r,"validationApprovals").get(kind));
+    let basis=row.and_then(|r|match item{
+        Some(i)=>item_approval_basis(r,i,kind),None=>approval_basis(r,kind)});
+    let key=approval_key(item,kind);
+    let user_approval=row.filter(|r|match item{
+        Some(i)=>item_approved(r,i,kind),None=>approved(r,kind)})
+        .and_then(|r|field(r,"validationApprovals").get(&key));
     let status=if user_approval.is_some(){"USER_APPROVED"}else{resolution.unwrap_or_else(||{
         let approved=kind=="QUANTITY_MISSING"&&item.is_some_and(|i|{
             field(field(i,"quantityApproval"),"quantity").as_i64()==Some(1)&&
@@ -296,9 +339,12 @@ fn emit(result:&mut Vec<Value>,order:&Value,info:Info<'_>){
     let detail=if status=="USER_APPROVED" {
         let target=match kind{"ADDRESS"=>"배송주소","CONTACT"=>"연락처",
             "CANDIDATE_name"=>"수취인명","CANDIDATE_address"=>"배송주소",
-            "CANDIDATE_phone"=>"전화번호","CANDIDATE_mobile"=>"휴대폰 번호",_=>"현재 정보"};
-        format!("{} — {target} 사용자 승인",row.map(|r|str_field(r,"name"))
-            .filter(|name|!name.is_empty()).unwrap_or("수취인"))
+            "CANDIDATE_phone"=>"전화번호","CANDIDATE_mobile"=>"휴대폰 번호",
+            "OPTION"=>"상품 옵션","ALIAS_CONFLICT"|"CATEGORY_CONFLICT"|"MODEL_CONFIRM"=>"상품",
+            "QUANTITY_MISSING"|"QUANTITY_LINK"=>"수량",_=>"현재 정보"};
+        let who=row.map(|r|str_field(r,"name")).filter(|name|!name.is_empty()).unwrap_or("수취인");
+        if let Some(item)=item{format!("{who} — {} {target} 사용자 승인",internal_model(str_field(item,"name")))}
+        else{format!("{who} — {target} 사용자 승인")}
     }else if kind=="UNASSIGNED_EVIDENCE" {
         row.map(unassigned_detail).unwrap_or_else(||title.clone())
     }else if let Some(row)=row {
@@ -384,6 +430,7 @@ pub(super) fn order_issues(o:&Value)->Vec<Value>{
                 "orderId":field(o,"id"),
                 "groupId":format!("group:{}",str_field(o,"id")),
                 "recipientId":"",
+                "selectedClientId":actual_id,
                 "kind":kind,
                 "title":title,
                 "detail":if needs_action{detail}else{""},
@@ -488,6 +535,14 @@ pub(super) fn order_issues(o:&Value)->Vec<Value>{
                 };
                 let evidence=json!([field(item,"productId"),field(item,"variantId"),field(item,"match")]);
                 add(&mut issues,o,Some(row),Some(item),root,title,"product",Some(&evidence),1,None,None);
+            }
+            if !str_field(item,"productId").is_empty() && !str_field(item,"variantId").is_empty()
+                && ["ALIAS_CONFLICT","CATEGORY_CONFLICT","QUANTITY_LINK"].contains(&root){
+                let evidence=json!([field(item,"productId"),field(item,"variantId"),field(item,"match")]);
+                let title=match root{"ALIAS_CONFLICT"=>"상품 연결 정보가 충돌합니다.",
+                    "CATEGORY_CONFLICT"=>"상품 종류와 모델이 상충합니다.",_=>"수량 연결을 확인하세요."};
+                add(&mut issues,o,Some(row),Some(item),root,title,
+                    if root=="QUANTITY_LINK"{"quantity"}else{"product"},Some(&evidence),1,None,None);
             }
             if field(item,"quantityConfirmed").as_bool()==Some(false)&&root!="QUANTITY_LINK"{
                 let evidence=json!([field(item,"quantity"),field(item,"quantityConfirmed")]);
@@ -605,19 +660,21 @@ pub(super) fn issue_action(payload:&Value)->Result<Value,String> {
                     "canApproveCurrent"}else{"canCancelCurrent"})==&Value::Bool(true))
                 .ok_or("현재 정보가 변경되었거나 승인할 수 없는 검증 항목입니다.")?;
             let kind=str_field(&issue,"kind");
+            let iid=str_field(&issue,"itemId");
             let row=order["recipients"].as_array_mut().ok_or("배송 정보 누락")?
                 .iter_mut().find(|row|str_field(row,"id")==rid)
                 .ok_or("승인할 수취인을 찾을 수 없습니다.")?;
+            let key=if iid.is_empty(){kind.to_owned()}else{format!("{iid}:{kind}")};
             if action=="approve_current_information"{
                 if !field(row,"validationApprovals").is_object(){
                     set(row,"validationApprovals",json!({}))?;
                 }
-                set(&mut row["validationApprovals"],kind,json!({
+                set(&mut row["validationApprovals"],&key,json!({
                     "basis":basis,"approvedAt":required_str(payload,"now")?,
                     "approvedBy":required_str(payload,"actor")?
                 }))?;
             }else if let Some(records)=row["validationApprovals"].as_object_mut(){
-                records.remove(kind);
+                records.remove(&key);
             }
             set(&mut order,"updatedAt",json!(required_str(payload,"now")?))?;
             synchronize(&mut order)?;
