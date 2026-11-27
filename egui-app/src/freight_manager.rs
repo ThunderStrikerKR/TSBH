@@ -467,8 +467,8 @@ impl RateEditor {
 #[test]
 fn group_and_combination_tables_open_details_without_action_columns(){
     let source=include_str!("freight_manager.rs");
-    let rate=source.split("fn show_rates(").nth(1).unwrap().split("fn rate_dialog(").next().unwrap();
-    let history=source.split("fn show_history(").nth(1).unwrap().split("fn group_history_fee_summary(").next().unwrap();
+    let rate=source.split("\n    fn show_rates(").nth(1).unwrap().split("\n    fn rate_dialog(").next().unwrap();
+    let history=source.split("\n    fn show_history(").nth(1).unwrap().split("\nfn group_history_fee_summary(").next().unwrap();
     assert!(rate.contains("\"그룹명\",\"묶음 한도\",\"소속 상품\""));
     assert!(rate.contains("freight-group-detail"));
     assert!(history.contains("\"조합\",\"청구 운임\",\"실제 운임\",\"기준\""));
@@ -1143,6 +1143,8 @@ impl FreightManager {
                                 }
                                 Self::rate_dialog(body,editor,enabled);
                             });
+                            crate::floating_notice::sync(ctx,"freight.editor.validation","freight.action",
+                                crate::floating_notice::Tone::Validation,editor.error.as_deref());
                             let group_editor=!editor.product;
                             let clean=!editor.dirty();
                             workspace.footer(
@@ -1155,6 +1157,7 @@ impl FreightManager {
                                 |right|{
                                     if crate::button::action(right,if editor.product{"확인한 운임 저장"}else{"변경사항 저장"},
                                         theme::ButtonRole::Primary,enabled&&editor.dirty()).clicked(){
+                                        crate::floating_notice::dispatch_pointer(ctx,"freight.action");
                                         match editor.write_action(){
                                             Ok(command)=>{editor.error=None;action=Some(command);}
                                             Err(message)=>editor.error=Some(message),
