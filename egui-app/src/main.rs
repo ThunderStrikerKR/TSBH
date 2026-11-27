@@ -7499,11 +7499,12 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                             ("native-workflow-issues",group.id.as_str()),|issues|{
                                 for issue in &group.issues{
                                     let Some(label)=workflow_board::workflow_issue_label(issue)else{continue};
-                                    // Keep the original native issue for deduplication and
-                                    // routing; only the visible freight caption changes.
-                                    let label=if issue["kind"]=="FREIGHT"&&issue["severity"]=="ACTION"{
-                                        label.replace("배송 운임을 확인하세요","운임 미확정")
-                                    }else{label};
+                                    // Shared review presentation; original issue identity and
+                                    // native blocker messages are preserved.
+                                    let recognition=json!({"recipients":group.shipments.iter()
+                                        .filter(|s|issue["orderId"].as_str()==Some(s.order_id.as_str()))
+                                        .map(|s|&s.recipient).collect::<Vec<_>>()});
+                                    let label=review_panel::workflow_review_text(issue,&label,&recognition);
                                     let tone=match issue["severity"].as_str(){
                                         Some("ACTION")=>theme::ReviewTone::Action,
                                         Some("ERROR")=>theme::ReviewTone::Error,
@@ -7546,6 +7547,9 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                             if crate::button::review_action(content,"운임 입력",theme::ButtonRole::Standard,enabled).clicked(){
                                                 workflow_freight_open=Some((target.id.clone(),origin,String::new(),None,true));
                                             }
+                                        }
+                                        if let Some(instruction)=review_panel::issue_instruction(issue){
+                                            content.add(egui::Label::new(typography::review_detail(instruction,tone)).wrap());
                                         }
                                         if issue["severity"].as_str()!=Some("INFO"){
                                             if let Some(hint)=review_panel::pricing_registration_hint(
