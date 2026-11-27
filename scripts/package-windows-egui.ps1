@@ -7,19 +7,9 @@ $manifest = Join-Path $repo "egui-app\Cargo.toml"
 $nonce = [guid]::NewGuid().ToString("N")
 $stage = Join-Path $release ("egui-stage-" + $nonce)
 $zipStage = Join-Path $release ("egui-stage-" + $nonce + ".zip")
-$ocrStageRelative = "release/ocr-stage-" + $nonce
-$ocrStage = Join-Path $repo $ocrStageRelative
 $extracted = Join-Path ([IO.Path]::GetTempPath()) ("BANDO-HUB-" + [char]0xBC30 + [char]0xD3EC + "-" + $nonce)
 
-function Test-OcrBundle([string]$Root) {
-    if (!(Test-Path -LiteralPath (Join-Path $Root "runtime\python.exe") -PathType Leaf)) { return $false }
-    foreach ($model in @("PP-OCRv5_mobile_det", "korean_PP-OCRv5_mobile_rec")) {
-        foreach ($file in @("inference.json", "inference.pdiparams", "inference.yml")) {
-            if (!(Test-Path -LiteralPath (Join-Path $Root ("models\" + $model + "\" + $file)) -PathType Leaf)) { return $false }
-        }
-    }
-    return $true
-}
+. (Join-Path $PSScriptRoot "ocr-release-trust.ps1")
 
 Push-Location $repo
 try {
@@ -33,32 +23,29 @@ try {
     New-Item -ItemType Directory -Path $release -Force | Out-Null
     $targetDir = Join-Path $repo "egui-app\target"
     Write-Host "[BUILD] BANDO HUB v$version (native egui, x64 Release)"
-    & cargo.exe build --release --manifest-path $manifest --bin bando-hub-egui --target x86_64-pc-windows-msvc --target-dir $targetDir
+    if (!(Test-Path -LiteralPath (Join-Path $repo "egui-app\Cargo.lock") -PathType Leaf)) { throw "Committed egui Cargo.lock is required." }
+    & git.exe ls-files --error-unmatch egui-app/Cargo.lock | Out-Null
+    if ($LASTEXITCODE -ne 0) { throw "egui Cargo.lock is not tracked." }
+    & cargo.exe build --locked --release --manifest-path $manifest --bin bando-hub-egui --target x86_64-pc-windows-msvc --target-dir $targetDir
     if ($LASTEXITCODE -ne 0) { throw "Rust release build failed (code=$LASTEXITCODE)." }
     $exe = Join-Path $targetDir "x86_64-pc-windows-msvc\release\bando-hub-egui.exe"
     if (!(Test-Path -LiteralPath $exe -PathType Leaf)) { throw "Release EXE missing." }
 
-    # Prefer an explicitly supplied OCR bundle, otherwise reuse existing local packages.
-    $ocrSource = $null
-    if ($env:BANDO_OCR_RUNTIME_DIR) {
-        $ocrSource = (Resolve-Path -LiteralPath $env:BANDO_OCR_RUNTIME_DIR).Path
-        if (!(Test-OcrBundle $ocrSource)) { throw "Explicit OCR runtime is incomplete." }
-    } else {
-        foreach ($candidate in @("release\ocr", "ocr", "src-tauri\target\release\ocr", "src-tauri\target\debug\ocr", "release\win-unpacked\ocr")) {
-            $full = Join-Path $repo $candidate
-            if (Test-OcrBundle $full) { $ocrSource = $full; break }
-        }
-        if (!$ocrSource) {
-            Write-Host "[OCR] No local bundle found. Preparing existing supported offline OCR package..."
-            & (Join-Path $PSScriptRoot "package-ocr-runtime.ps1") -TargetDir $ocrStageRelative
-            if ($LASTEXITCODE -ne 0 -or !(Test-OcrBundle $ocrStage)) { throw "OCR bundle preparation failed." }
-            $ocrSource = $ocrStage
-        }
+    # Release packaging must never download or execute an unapproved runtime.
+    if (!$env:BANDO_OCR_APPROVAL_MANIFEST -or !$env:BANDO_OCR_APPROVAL_SHA256) {
+        throw "Independently approved OCR inventory and its SHA256 are required."
     }
-
+    $approval = (Resolve-Path -LiteralPath $env:BANDO_OCR_APPROVAL_MANIFEST).Path
+    $ocrSource = if ($env:BANDO_OCR_RUNTIME_DIR) {
+        (Resolve-Path -LiteralPath $env:BANDO_OCR_RUNTIME_DIR).Path
+    } else { Join-Path $release "ocr" }
+    Assert-ApprovedOcr $ocrSource $approval $env:BANDO_OCR_APPROVAL_SHA256
     New-Item -ItemType Directory -Path $stage | Out-Null
     Copy-Item -LiteralPath $exe -Destination (Join-Path $stage "BANDO-HUB.exe")
     Copy-Item -LiteralPath $ocrSource -Destination (Join-Path $stage "ocr") -Recurse
+    Assert-ApprovedOcr (Join-Path $stage "ocr") $approval $env:BANDO_OCR_APPROVAL_SHA256
+    & (Join-Path $PSScriptRoot "check-release-security.ps1") -OcrRoot (Join-Path $stage "ocr") -ApprovalManifest $approval -ApprovalSha256 $env:BANDO_OCR_APPROVAL_SHA256
+    if ($LASTEXITCODE -ne 0) { throw "Release security checks failed." }
     Copy-Item -LiteralPath (Join-Path $repo "scripts\RUN_BANDO_HUB.cmd") -Destination $stage
     @(
         "BANDO HUB v$version - Windows x64",
@@ -77,14 +64,9 @@ try {
     if (!(Test-Path -LiteralPath (Join-Path $extracted "RUN_BANDO_HUB.cmd") -PathType Leaf)) { throw "Packaged launcher missing." }
     if (!(Test-Path -LiteralPath $unpackedExe -PathType Leaf)) { throw "Packaged EXE missing." }
     if ((Get-FileHash -LiteralPath $exe -Algorithm SHA256).Hash -ne (Get-FileHash -LiteralPath $unpackedExe -Algorithm SHA256).Hash) { throw "Extracted EXE hash mismatch." }
+    Assert-ApprovedOcr (Join-Path $extracted "ocr") $approval $env:BANDO_OCR_APPROVAL_SHA256
     & (Join-Path $PSScriptRoot "verify-packaged-ocr.ps1") -OcrRoot (Join-Path $extracted "ocr")
     if ($LASTEXITCODE -ne 0) { throw "Extracted OCR verification failed." }
-    # Save a newly prepared OCR cache only if there is no existing cache.
-    $cache = Join-Path $release "ocr"
-    if (($ocrSource -eq $ocrStage) -and !(Test-Path -LiteralPath $cache)) {
-        Move-Item -LiteralPath $ocrStage -Destination $cache
-    }
-
     # Publish only the verified archive; keep any previous same-version ZIP as backup.
     if (Test-Path -LiteralPath $zip) {
         $backup = $zip + "." + $nonce + ".bak"
@@ -100,7 +82,7 @@ try {
     exit 1
 } finally {
     Pop-Location
-    foreach ($temp in @($stage, $zipStage, $ocrStage, $extracted)) {
+    foreach ($temp in @($stage, $zipStage, $extracted)) {
         if (Test-Path -LiteralPath $temp) {
             Remove-Item -LiteralPath $temp -Recurse -Force -ErrorAction SilentlyContinue
         }
