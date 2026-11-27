@@ -391,6 +391,42 @@ mod shared_dropdown_rendered_geometry_tests{
         }
     }
     #[test]
+    fn freight_group_filter_and_bulk_selection_paint_same_orange(){
+        fn check<T:Clone+PartialEq>(selected_value:T,other_value:T,selected_label:&str,other_label:&str){
+            fn fill_at(shape:&egui::Shape,point:egui::Pos2,fill:egui::Color32)->bool{
+                match shape{
+                    egui::Shape::Rect(rect)=>rect.fill==fill&&rect.rect.contains(point),
+                    egui::Shape::Vec(shapes)=>shapes.iter().any(|s|fill_at(s,point,fill)),
+                    _=>false,
+                }
+            }
+            let ctx=test_context();
+            let screen=Rect::from_min_size(egui::Pos2::ZERO,egui::vec2(800.0,500.0));
+            let mut current=selected_value.clone();
+            let mut selected=Rect::NOTHING;
+            let mut other=Rect::NOTHING;
+            for phase in 0..4{
+                let events=if phase==0{vec![]}else{vec![egui::Event::PointerMoved(other.center())]};
+                let output=ctx.run(egui::RawInput{screen_rect:Some(screen),events,..Default::default()},|ctx|{
+                    egui::CentralPanel::default().show(ctx,|ui|{
+                        crate::dropdown::management_dropdown_option_palette(ui);
+                        selected=crate::dropdown::management_dropdown_option(ui,&mut current,
+                            selected_value.clone(),selected_label).rect;
+                        other=crate::dropdown::management_dropdown_option(ui,&mut current,
+                            other_value.clone(),other_label).rect;
+                    });
+                });
+                if phase==3{
+                    assert!(output.shapes.iter().any(|s|fill_at(&s.shape,selected.center(),theme::ORANGE_EMPHASIS_BG)));
+                    assert!(output.shapes.iter().any(|s|fill_at(&s.shape,other.center(),theme::MANAGEMENT_DROPDOWN_HOVER_BG)));
+                    assert!(current==selected_value);
+                }
+            }
+        }
+        check("none".to_owned(),"group-1".to_owned(),"그룹 미지정만","배송그룹 01");
+        check(Some("group-1".to_owned()),Some(String::new()),"배송그룹 01","미지정으로 변경");
+    }
+    #[test]
     fn dropdown_caption_clip_excludes_arrow_and_state_does_not_resize_trigger(){
         let ctx=test_context();
         for width in [180.0,90.0,180.0]{
