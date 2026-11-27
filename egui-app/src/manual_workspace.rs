@@ -838,12 +838,16 @@ pub fn apply_inline(
                 .and_then(Value::as_str).map(str::trim)
                 .filter(|name|!name.is_empty()).map(str::to_owned))
             .unwrap_or_else(||"사용자".to_owned());
-        let approved=gateway.execute(ReadOperation::ApplyIssueAction,json!({
+        let mut approval_request=json!({
             "action":if change.field=="validationApproval"{"approve_current_information"}else{"cancel_current_information"},
             "order":&order,"recipientId":change.recipient_id,
             "issueId":change.value["issueId"],"approvalBasis":change.value["approvalBasis"],
             "actor":actor,"now":chrono::Utc::now().to_rfc3339()
-        }))?;
+        });
+        if change.value["approvalBasis"]["kind"]=="SALE_STATUS"{
+            approval_request["state"]=gateway.load_catalog()?;
+        }
+        let approved=gateway.execute(ReadOperation::ApplyIssueAction,approval_request)?;
         let row=approved["order"]["recipients"].as_array().into_iter().flatten()
             .find(|r|text(r,"id")==change.recipient_id.as_str())
             .ok_or("승인한 배송 정보를 확인할 수 없습니다.")?;
@@ -851,6 +855,10 @@ pub fn apply_inline(
             .find(|r|text(r,"id")==change.recipient_id.as_str()))
             .ok_or("승인할 배송 정보를 찾을 수 없습니다.")?;
         target["validationApprovals"]=row["validationApprovals"].clone();
+        if row["unassignedReviewRetained"]==true{
+            target["unassignedReviewRetained"]=json!(true);
+            target["unassignedEvidence"]=row["unassignedEvidence"].clone();
+        }
         json!({"model":model})
     }else if action=="native_approve_one" || action=="native_cancel_approval"{
         let rid=change.recipient_id.as_str();

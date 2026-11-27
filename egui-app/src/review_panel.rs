@@ -157,9 +157,11 @@ impl ReviewPanel {
                             }
                         }
                     }
-                    let response=gateway.execute(
-                        ReadOperation::OrderIssuesWithActions,json!({"order":order})
-                    )?;
+                    let mut request=json!({"order":order});
+                    // Sale status requires the live catalog; do not infer it
+                    // from a previously recognized product label.
+                    if let Ok(catalog)=gateway.load_catalog(){request["state"]=catalog;}
+                    let response=gateway.execute(ReadOperation::OrderIssuesWithActions,request)?;
                     response.get("issues").and_then(Value::as_array)
                         .cloned().ok_or_else(||
                             "확인할 내용을 불러오지 못했습니다.".into())
@@ -414,7 +416,7 @@ pub(crate) fn validation_approval_request(issue:&Value)->Value{
 pub(crate) fn show_validation_approval_action(ui:&mut Ui,issue:&Value,enabled:bool)->Option<bool>{
     let cancel=issue["canCancelCurrent"]==true;
     if !cancel && issue["canApproveCurrent"]!=true{return None;}
-    crate::button::review_action(ui,if cancel{"승인 취소"}else{"현재 정보 승인"},
+    crate::button::review_action(ui,if cancel{"승인 취소"}else if text(issue,"kind")=="UNASSIGNED_EVIDENCE"{"주문 정보 아님"}else{"현재 정보 승인"},
         ButtonRole::Standard,enabled).clicked().then_some(cancel)
 }
 fn issue_card(

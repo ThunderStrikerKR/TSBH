@@ -148,6 +148,8 @@ fn address_candidates_form_one_location(row:&Value,candidates:&[Value])->bool {
 fn approval_basis(row:&Value,kind:&str)->Option<Value>{
     let nonempty=|key:&str|!str_field(row,key).trim().is_empty();
     let values=match kind{
+        "UNASSIGNED_EVIDENCE" if !rows(field(row,"unassignedEvidence")).is_empty()=>
+            field(row,"unassignedEvidence").clone(),
         "ADDRESS" if nonempty("address")=>json!([field(row,"address")]),
         "CONTACT" if nonempty("phone")||nonempty("mobile")=>
             json!([field(row,"phone"),field(row,"mobile")]),
@@ -170,11 +172,12 @@ fn approved(row:&Value,kind:&str)->bool{
             field(record,"basis")==&basis && !str_field(record,"approvedAt").is_empty()
             && !str_field(record,"approvedBy").is_empty()))
 }
-fn item_approval_basis(row:&Value,item:&Value,kind:&str)->Option<Value>{
+pub(super) fn item_approval_basis(row:&Value,item:&Value,kind:&str)->Option<Value>{
     if ["id","productId","variantId"].iter().any(|key|str_field(item,key).trim().is_empty()){
         return None;
     }
     let values=match kind{
+        "SALE_STATUS"=>json!([field(item,"productId"),field(item,"variantId"),field(item,"raw")]),
         "OPTION"|"ALIAS_CONFLICT"|"CATEGORY_CONFLICT"|"MODEL_CONFIRM"=>
             json!([field(item,"productId"),field(item,"variantId"),field(item,"color"),
                 field(item,"raw"),field(item,"match"),field(item,"issues"),field(item,"modelProposal")]),
@@ -214,7 +217,10 @@ pub(super) fn prune_validation_approvals(row:&mut Value){
             let kind=str_field(basis,"kind");
             if let Some(item)=rows(field(row,"items")).iter().find(|item|
                 !str_field(basis,"itemId").is_empty() && str_field(item,"id")==str_field(basis,"itemId")){
-                key.as_str()==approval_key(Some(item),kind).as_str() && item_approved(row,item,kind)
+                key.as_str()==approval_key(Some(item),kind).as_str() &&
+                    if kind=="SALE_STATUS"{
+                        item_approval_basis(row,item,kind).as_ref()==basis.get("itemBasis")
+                    }else{item_approved(row,item,kind)}
             }else{approved(row,key)}
         }).map(|(key,_)|key.clone()).collect::<HashSet<_>>());
     if let (Some(valid),Some(records))=(valid,row.get_mut("validationApprovals").and_then(Value::as_object_mut)){
@@ -287,17 +293,14 @@ fn contact_problem(value:&str,mobile:bool)->String {
 fn unassigned_detail(row:&Value)->String {
     let candidates=rows(field(row,"unassignedEvidence"));
     let mut parts=Vec::new();
-    for candidate in candidates.iter().take(4) {
+    for candidate in candidates {
         let source=str_field(candidate,"text");
         let source=if source.is_empty(){str_field(candidate,"value")} else{source};
         let normalized=source.split_whitespace().collect::<Vec<_>>().join(" ");
-        let chars=normalized.chars().collect::<Vec<_>>();
-        let short=if chars.len()>60 {
-            format!("{}…",chars[..60].iter().collect::<String>())
-        }else{normalized};
+        let short=normalized;
         parts.push(format!("{}: \"{}\"",if str_field(candidate,"kind")=="quantity"{"수량"}else{"상품"},short));
     }
-    let more=if candidates.len()>4{format!(" 외 {}개",candidates.len()-4)}else{String::new()};
+    let more="";
     format!("연결되지 않은 원문: {}{more}",if parts.is_empty(){"확인할 문구 없음".into()}else{parts.join(" / ")})
 }
 struct Info<'a>{
@@ -345,7 +348,8 @@ fn emit(result:&mut Vec<Value>,order:&Value,info:Info<'_>){
             "OPTION"=>"상품 옵션","ALIAS_CONFLICT"|"CATEGORY_CONFLICT"|"MODEL_CONFIRM"=>"상품",
             "QUANTITY_MISSING"|"QUANTITY_LINK"=>"수량",_=>"현재 정보"};
         let who=row.map(|r|str_field(r,"name")).filter(|name|!name.is_empty()).unwrap_or("수취인");
-        if let Some(item)=item{format!("{who} — {} {target} 사용자 승인",internal_model(str_field(item,"name")))}
+        if kind=="UNASSIGNED_EVIDENCE"{format!("{who} — 주문 정보 아님: {}",unassigned_detail(row.unwrap()))}
+        else if let Some(item)=item{format!("{who} — {} {target} 사용자 승인",internal_model(str_field(item,"name")))}
         else{format!("{who} — {target} 사용자 승인")}
     }else if kind=="UNASSIGNED_EVIDENCE" {
         row.map(unassigned_detail).unwrap_or_else(||title.clone())
@@ -657,7 +661,11 @@ pub(super) fn issue_action(payload:&Value)->Result<Value,String> {
             let id=required_str(payload,"issueId")?;
             let rid=required_str(payload,"recipientId")?;
             let basis=req(payload,"approvalBasis")?;
-            let issue=order_issues(&order).into_iter().find(|issue|
+            let mut candidates=order_issues(&order);
+            if let Some(state)=payload.get("state"){
+                candidates.extend(super::workflow_issues::sale_issues(state,&order,""));
+            }
+            let issue=candidates.into_iter().find(|issue|
                 str_field(issue,"issueId")==id && str_field(issue,"recipientId")==rid
                 && field(issue,"approvalBasis")==basis
                 && field(issue,if action=="approve_current_information"{
@@ -669,6 +677,7 @@ pub(super) fn issue_action(payload:&Value)->Result<Value,String> {
                 .iter_mut().find(|row|str_field(row,"id")==rid)
                 .ok_or("승인할 수취인을 찾을 수 없습니다.")?;
             let key=if iid.is_empty(){kind.to_owned()}else{format!("{iid}:{kind}")};
+            if kind=="UNASSIGNED_EVIDENCE"{set(row,"unassignedReviewRetained",json!(true))?;}
             if action=="approve_current_information"{
                 if !field(row,"validationApprovals").is_object(){
                     set(row,"validationApprovals",json!({}))?;

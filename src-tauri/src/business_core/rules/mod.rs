@@ -167,9 +167,14 @@ pub fn execute(operation: &str, payload: Value) -> Result<Value, String> {
             req(&payload, "state")?, required_str(&payload, "orderId")?,
         ),
         "order_issues" => Ok(json!({"issues": issues::order_issues(req(&payload,"order")?)})),
-        "order_issues_with_actions" => Ok(json!({
-            "issues": issues::order_issues_with_actions(req(&payload,"order")?)
-        })),
+        "order_issues_with_actions" => {
+            let order=req(&payload,"order")?;
+            let mut result=issues::order_issues_with_actions(order);
+            if let Some(state)=payload.get("state"){
+                result.extend(workflow_issues::sale_issues(state,order,""));
+            }
+            Ok(json!({"issues":result}))
+        },
         "delivery_requirements" => issues::delivery_requirements(&payload),
         "delivery_requirements_with_messages" =>
             issues::delivery_requirements_with_messages(&payload),

@@ -150,8 +150,23 @@ fn apply_final(payload:&Value,draft_preview:bool)->Result<Value,String>{
                 }
             }
         }
-        recipient.as_object_mut().ok_or("배송 행 정보 오류")?
-            .remove("unassignedEvidence");
+        if field(recipient,"unassignedReviewRetained")!=&Value::Bool(true){
+            recipient.as_object_mut().ok_or("배송 행 정보 오류")?
+                .remove("unassignedEvidence");
+        }else{
+            // Keep reviewed evidence for cancellation and subsequent rechecks.
+            // An explicit manual assignment resolves only its exact source span.
+            let assigned=field(model,"assignments");
+            let remaining=rows(field(recipient,"unassignedEvidence")).iter().filter(|e|{
+                let key=format!("{}:{}",field(e,"start"),field(e,"end"));
+                !assigned.get(&key).is_some_and(|cell|
+                    str_field(cell,"recipientId")==str_field(recipient,"id") &&
+                    !str_field(cell,"itemId").is_empty() &&
+                    ["product","quantity"].contains(&str_field(cell,"field")))
+            }).cloned().collect::<Vec<_>>();
+            set(recipient,"unassignedEvidence",json!(remaining))?;
+            super::issues::prune_validation_approvals(recipient);
+        }
         set(recipient,"sources",json!([]))?;
         if let Some(items)=recipient.get_mut("items").and_then(Value::as_array_mut){
             for item in items {

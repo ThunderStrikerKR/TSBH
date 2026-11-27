@@ -397,7 +397,7 @@ fn edit_confirmed_recipient(payload:&Value)->Result<Value,String>{
             let actor=str_field(field(before,"settings"),"operatorName");
             let result=super::issues::issue_action(&json!({
                 "action":if key=="validationApproval"{"approve_current_information"}else{"cancel_current_information"},
-                "order":order,"recipientId":rid,"issueId":field(value,"issueId"),
+                "state":before,"order":order,"recipientId":rid,"issueId":field(value,"issueId"),
                 "approvalBasis":field(value,"approvalBasis"),"now":now,
                 "actor":if actor.trim().is_empty(){"사용자"}else{actor}
             }))?;

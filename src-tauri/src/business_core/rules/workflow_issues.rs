@@ -27,6 +27,56 @@ pub(super) fn sale_problem(p:Option<&Value>)->&str{
         ""|"판매중"|"SELLING"|"판매 표시"=>"",other=>other
     }
 }
+// A sale exception is not permission to use a deleted, inactive or
+// disconnected product. Compare the live catalog as well as the actual item.
+fn sale_basis(row:&Value,item:&Value,product:Option<&Value>)->Option<Value>{
+    let p=product?;
+    if sale_problem(Some(p)).is_empty() || has_value(field(p,"deletedAt"))
+        || has_value(field(p,"supersededBy")) || field(p,"active")==&Value::Bool(false){
+        return None;
+    }
+    Some(json!({"itemId":field(item,"id"),"kind":"SALE_STATUS",
+        "itemBasis":super::issues::item_approval_basis(row,item,"SALE_STATUS")?,
+        "catalog":p}))
+}
+pub(super) fn sale_approved(state:&Value,row:&Value,item:&Value)->bool{
+    let product=historical_product(state,str_field(item,"productId"),str_field(item,"variantId"));
+    sale_basis(row,item,product).is_some_and(|basis|
+        field(row,"validationApprovals").get(format!("{}:SALE_STATUS",str_field(item,"id")))
+        .is_some_and(|record|field(record,"basis")==&basis &&
+            !str_field(record,"approvedAt").is_empty()&&!str_field(record,"approvedBy").is_empty()))
+}
+pub(super) fn sale_issues(state:&Value,order:&Value,group_id:&str)->Vec<Value>{
+    let mut issues=Vec::new();
+    for row in rows(field(order,"recipients")){
+        for item in rows(field(row,"items")){
+            let pid=str_field(item,"productId");
+            if pid.is_empty(){continue;}
+            let product=historical_product(state,pid,str_field(item,"variantId"));
+            let problem=sale_problem(product);
+            if problem.is_empty(){continue;}
+            let mut issue=operational(order,Some(row),group_id,"SALE_STATUS",
+                format!("{} / {} — 판매 상태 확인 필요",str_field(item,"name"),problem),1,"product");
+            issue["itemId"]=field(item,"id").clone();
+            issue["issueId"]=json!(format!("issue:{}:{}:{}:SALE_STATUS",
+                str_field(order,"id"),str_field(row,"id"),str_field(item,"id")));
+            if let Some(basis)=sale_basis(row,item,product){
+                let approved=sale_approved(state,row,item);
+                issue["approvalBasis"]=basis;
+                issue["canApproveCurrent"]=json!(!approved);
+                issue["canCancelCurrent"]=json!(approved);
+                if approved{
+                    issue["severity"]=json!("INFO");
+                    issue["resolution"]=json!("USER_APPROVED");
+                    issue["detail"]=json!(format!("{} — {} 판매 상태 사용자 승인",
+                        str_field(row,"name"),str_field(item,"name")));
+                }
+            }
+            issues.push(issue);
+        }
+    }
+    issues
+}
 pub(super) fn sender_phone(raw:&str)->String{
     // Sender phone rules in src/explicit-sender.ts permit whitespace and
     // punctuation inside all three blocks of a telephone number.
@@ -238,20 +288,8 @@ pub(super) fn workflow_issues(state:&Value,group_id:&str)->Result<Vec<Value>,Str
         .map(|mut issue|{
             let _=set(&mut issue,"groupId",json!(group_id));issue
         }).collect::<Vec<_>>();
-    // Historical reference validation runs for ALL original recipients,
-    // including those moved to another operational group.
-    for row in rows(field(order,"recipients")){
-        for item in rows(field(row,"items")){
-            let pid=str_field(item,"productId");
-            if pid.is_empty(){continue;}
-            let problem=sale_problem(historical_product(state,pid,str_field(item,"variantId")));
-            if !problem.is_empty(){
-                issues.push(operational(order,Some(row),group_id,"SALE_STATUS",
-                    format!("{} / {} — 판매 상태 확인 필요",str_field(item,"name"),problem),
-                    1,"product"));
-            }
-        }
-    }
+    // Historical reference validation still covers every original recipient.
+    issues.extend(sale_issues(state,order,group_id));
     // Sender fields are checked at Excel output, not at order confirmation.
     for ship in &shipments{
         let (shipment_order,row)=context(state,ship)?;
@@ -366,7 +404,7 @@ pub(super) fn stage_issues(state:&Value,group_id:&str,next:i64)->Result<Vec<Stri
             let pid=str_field(item,"productId");
             if pid.is_empty(){continue;}
             let problem=sale_problem(historical_product(state,pid,str_field(item,"variantId")));
-            if !problem.is_empty(){
+            if !problem.is_empty() && !sale_approved(state,row,item){
                 messages.push(format!("{name}: {} / {problem} — 판매 상태 확인 필요",
                     str_field(item,"name")));
             }
