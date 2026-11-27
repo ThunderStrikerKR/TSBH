@@ -1099,28 +1099,14 @@ impl CategoryManager {
             }
         }
         if let Some(intent)=self.confirm {
-            let mut cancel=false;
-            let mut discard=false;
-            let mut save=false;
             crate::popup::modal_backdrop(ctx,"category-pending-dim",true);
-            crate::popup::show_decision_window(ctx,"저장하지 않은 카테고리","category-unsaved-confirm",work_area,|modal|{
-                crate::popup::decision_workspace(modal,|decision|{
-                    cancel=decision.header("저장하지 않은 카테고리","취소",!busy
-                    );
-                    decision.body(|modal|{
-                        modal.label(typography::body(
-                            "카테고리 변경사항을 저장할까요?"
-                        ));
-                    });
-                    decision.actions(|actions|{
-                            save=crate::button::action(actions,"저장하고 이동",
-                                theme::ButtonRole::Primary,editable&&!busy).clicked();
-                            discard=crate::button::action(actions,"저장 안 함",
-                                theme::ButtonRole::Danger,!busy).clicked();
-                        }
-                    );
-                });
-            });
+            let decision=crate::popup::show_save_confirmation(
+                ctx,work_area,"category-unsaved-confirm","저장하지 않은 카테고리",
+                "카테고리 변경사항을 저장할까요?","저장하고 이동",!busy,editable&&!busy
+            );
+            let cancel=decision==crate::popup::ChangeDecision::Cancel;
+            let discard=decision==crate::popup::ChangeDecision::Discard;
+            let save=decision==crate::popup::ChangeDecision::Save;
             if cancel{self.confirm=None;}
             else if discard{
                 if matches!(intent,Confirm::SwitchTab|Confirm::GlobalLeave){
