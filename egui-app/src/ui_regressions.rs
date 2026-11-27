@@ -594,6 +594,35 @@ mod shared_screen_component_contract_tests {
 mod common_action_tooltip_tests{
     use super::*;
     #[test]
+    fn actual_form_and_table_captions_are_visible_with_explicit_overflow_policy(){
+        for scale in [1.0_f32,1.25,1.5]{
+            let ctx=test_context();
+            ctx.set_pixels_per_point(scale);
+            let screen=Rect::from_min_size(egui::Pos2::ZERO,Vec2::new(800.0,500.0));
+            let mut field=Rect::NOTHING;
+            let mut table=Rect::NOTHING;
+            let mut narrow=Rect::NOTHING;
+            let full="반도스탠드 대형 오케스트라 보면대";
+            let output=ctx.run(egui::RawInput{screen_rect:Some(screen),..Default::default()},|ctx|{
+                egui::CentralPanel::default().show(ctx,|ui|{
+                    field=crate::ui_primitives::form_field_label_sized(ui,"판매 상태",180.0).rect;
+                    table=ui.allocate_exact_size(Vec2::new(160.0,36.0),Sense::hover()).0;
+                    crate::table::paint_management_text_cell(ui,table,"판매중","판매중",
+                        typography::ManagementTableCellRole::Status,egui::Align2::LEFT_CENTER,
+                        "caption-status",false);
+                    narrow=ui.allocate_exact_size(Vec2::new(60.0,36.0),Sense::hover()).0;
+                    crate::table::paint_management_text_cell(ui,narrow,full,full,
+                        typography::ManagementTableCellRole::ProductName,egui::Align2::LEFT_CENTER,
+                        "caption-long-product",false);
+                });
+            });
+            crate::ui_test_support::assert_painted_caption(&output,"판매 상태",field);
+            crate::ui_test_support::assert_painted_caption(&output,"판매중",table);
+            let ink=crate::ui_test_support::assert_caption_visibility(&output,full,narrow,true);
+            assert!(ink.width()>narrow.width(),"long product fixture must actually overflow");
+        }
+    }
+    #[test]
     fn only_overflowing_text_qualifies_for_a_tooltip(){
         let rect=Rect::from_min_size(egui::Pos2::ZERO,Vec2::new(100.0,20.0));
         assert!(!text_exceeds_rect(Vec2::new(80.0,18.0),rect));
