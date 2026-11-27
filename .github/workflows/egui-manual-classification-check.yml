@@ -69,6 +69,7 @@ jobs:
         run: |
           cargo test --manifest-path egui-app/Cargo.toml dealer_selection_without_manual_edits_uses_complete_native_quote -- --nocapture
           cargo test --manifest-path egui-app/Cargo.toml recognition::observations::tests -- --nocapture
+          cargo test --manifest-path egui-app/Cargo.toml recognition::learning_context::tests -- --nocapture
           cargo test --manifest-path egui-app/Cargo.toml owner_trace_ -- --nocapture
           cargo test --manifest-path egui-app/Cargo.toml owner_snapshot_batch_reads_only_requested_frozen_snapshots -- --nocapture
       - name: Verify content-fitted manual popup and Reception source-pane geometry
