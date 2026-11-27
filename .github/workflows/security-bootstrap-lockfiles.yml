@@ -53,7 +53,10 @@ jobs:
             cargo metadata --locked --format-version 1 --no-deps --manifest-path $manifest | Out-Null
             if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
             $lockText = Get-Content -LiteralPath $lock -Raw
-            if ($lockText -notmatch '(?m)^name = "rusqlite"\r?\nversion = "0\.41\.1"
+            if ($lockText -notmatch '(?m)^name = "rusqlite"\r?\nversion = "0\.41\.1"\r?$' -or $lockText -notmatch '(?m)^name = "libsqlite3-sys"\r?\nversion = "0\.39\.1"\r?$') {
+              throw "SQLite security versions not resolved: $lock"
+            }
+          }
           # Recheck the full graph and registry resolution against the generated locks.
           cargo fetch --locked --target x86_64-pc-windows-msvc --manifest-path egui-app/Cargo.toml
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
@@ -249,3 +252,30 @@ jobs:
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git -c core.hooksPath=/dev/null commit -m 'security: commit Cargo-resolved native lockfiles'
           git push origin HEAD:refs/heads/security/v0.8.0-pre-release
+
+  sqlite-regression:
+    needs: resolve
+    runs-on: windows-latest
+    timeout-minutes: 45
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: resolved-cargo-locks
+          path: lock-output
+      - name: Validate patched SQLite and synthetic backup restore
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          foreach ($dir in @('egui-app','crates/bando-data-access','src-tauri')) {
+            Copy-Item -LiteralPath "lock-output/$dir/Cargo.lock" -Destination "$dir/Cargo.lock" -Force
+          }
+          cargo test --locked --manifest-path crates/bando-data-access/Cargo.toml backup_service::tests
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cargo check --locked --manifest-path egui-app/Cargo.toml --all-targets
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
