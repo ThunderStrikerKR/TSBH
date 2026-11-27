@@ -2,7 +2,8 @@
 use eframe::egui::{self,Color32,Rect,Response,Stroke,Ui,Vec2};
 use crate::card::UiWidthPolicyExt;
 use crate::{theme,typography};
-use crate::input::{management_search_field,INPUT_PLACEHOLDER_COLOR};
+use crate::input::management_search_field;
+use crate::theme::{text_ink,TextRole,TextState};
 
 /// Caption state is supplied by the selection owner, not inferred from text.
 #[derive(Clone,Copy)]
@@ -125,8 +126,9 @@ fn management_dropdown_trigger_inner(
     crate::ui_test_support::record_component_geometry("dropdown",rect,ui.clip_rect(),Some(height));
     let painter=ui.painter().with_clip_rect(rect);
     let arrow_left=rect.right()-30.0;
-    let caption_ink=if placeholder{INPUT_PLACEHOLDER_COLOR}
-        else if interactive{indicator.unwrap_or(ink)}else{ink};
+    let caption_ink=if placeholder{text_ink(TextRole::Value,TextState::Placeholder)}
+        else if interactive{indicator.unwrap_or(text_ink(TextRole::Value,TextState::Normal))}
+        else{text_ink(TextRole::Value,TextState::Disabled)};
     let caption=if let Some(values)=values{
         ui.fonts_mut(|fonts|fonts.layout_job(typography::dropdown_value_job(values,false,caption_ink)))
     }else{

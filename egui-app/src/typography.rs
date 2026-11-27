@@ -9,7 +9,7 @@
 use eframe::egui::{
     self, Color32, FontData, FontDefinitions, FontFamily, FontId, RichText, TextStyle,
 };
-use crate::theme::{MUTED, SECONDARY, TEXT};
+use crate::theme::{MUTED, SECONDARY, TEXT, text_ink, TextRole, TextState};
 // Canonical font metrics are shared with theme geometry; no reverse import.
 pub use crate::ui_tokens::{FONT_FIELD_LABEL,FONT_FREIGHT_SUMMARY_NUMBER,FONT_FREIGHT_SUMMARY_LABEL,FONT_PAGE_HEADING};
 
@@ -108,7 +108,7 @@ fn inline_role_values(role:Role,parts:&[(&str,Option<DataValueKind>)])->egui::te
     let body=spec(role);
     let regular=egui::TextFormat{
         font_id:FontId::proportional(body.size),
-        color:body.color,
+        color:text_ink(body.ink_role,TextState::Normal),
         line_height:Some(body.line),
         extra_letter_spacing:body.tracking,
         ..Default::default()
@@ -176,8 +176,15 @@ pub fn data_value_align(kind:DataValueKind)->egui::Align {
 pub fn data_value_text(
     value:&str,kind:DataValueKind,context:DataValueContext
 )->RichText {
-    let color=if kind==DataValueKind::Quantity{SECONDARY}else{TEXT};
-    RichText::new(value).font(data_value_font(kind,context)).color(color)
+    data_value_text_with_state(value,kind,context,TextState::Normal)
+}
+
+pub fn data_value_text_with_state(
+    value:&str,kind:DataValueKind,context:DataValueContext,state:TextState
+)->RichText{
+    // Retain the existing quantity contrast until its screen migration.
+    let role=if kind==DataValueKind::Quantity{TextRole::Label}else{TextRole::Value};
+    RichText::new(value).font(data_value_font(kind,context)).color(text_ink(role,state))
 }
 
 /// Visual offset for management dropdown captions, calibrated against the
@@ -255,7 +262,7 @@ struct TypeSpec {
     size: f32,
     line: f32,
     tracking: f32,
-    color: Color32,
+    ink_role: TextRole,
     weight: Weight,
 }
 
@@ -281,68 +288,72 @@ fn spec(role: Role) -> TypeSpec {
     match role {
         Role::Brand => TypeSpec {
             size: FONT_BRAND, line: 34.0, tracking: -0.35,
-            color: TEXT, weight: Weight::Emphasis,
+            ink_role: TextRole::Heading, weight: Weight::Emphasis,
         },
         Role::Page => TypeSpec {
             size: FONT_PAGE_HEADING, line: 28.0, tracking: -0.30,
-            color: TEXT, weight: Weight::Emphasis,
+            ink_role: TextRole::Heading, weight: Weight::Emphasis,
         },
         Role::ModalTitle => TypeSpec {
             size: FONT_MODAL_TITLE, line: 24.0, tracking: -0.10,
-            color: TEXT, weight: Weight::Emphasis,
+            ink_role: TextRole::Heading, weight: Weight::Emphasis,
         },
         Role::Navigation => TypeSpec {
             size: FONT_MAIN_NAV, line: 23.0, tracking: -0.16,
-            color: SECONDARY, weight: Weight::Regular,
+            ink_role: TextRole::Label, weight: Weight::Regular,
         },
         Role::NavigationActive => TypeSpec {
             size: FONT_MAIN_NAV, line: 23.0, tracking: -0.16,
-            color: TEXT, weight: Weight::Emphasis,
+            ink_role: TextRole::Value, weight: Weight::Emphasis,
         },
         Role::Section => TypeSpec {
             size: FONT_SECTION_HEADING, line: 23.0, tracking: -0.20,
-            color: TEXT, weight: Weight::Emphasis,
+            ink_role: TextRole::Heading, weight: Weight::Emphasis,
         },
         Role::Subsection => TypeSpec {
             size: FONT_SUBSECTION_HEADING, line: SUBSECTION_LINE_HEIGHT, tracking: -0.10,
-            color: TEXT, weight: Weight::Emphasis,
+            ink_role: TextRole::Heading, weight: Weight::Emphasis,
         },
         Role::Body => TypeSpec {
             size: FONT_BODY, line: 22.0, tracking: 0.0,
-            color: TEXT, weight: Weight::Regular,
+            ink_role: TextRole::Value, weight: Weight::Regular,
         },
         Role::FieldLabel => TypeSpec {
             size: FONT_FIELD_LABEL, line: 19.0, tracking: 0.0,
-            color: SECONDARY, weight: Weight::Emphasis,
+            ink_role: TextRole::Label, weight: Weight::Emphasis,
         },
         Role::Metadata => TypeSpec {
             size: FONT_METADATA, line: METADATA_LINE_HEIGHT, tracking: 0.0,
-            color: MUTED, weight: Weight::Regular,
+            ink_role: TextRole::Metadata, weight: Weight::Regular,
         },
         Role::TableCell => TypeSpec {
             size: FONT_FIELD_LABEL, line: 20.0, tracking: 0.0,
-            color: TEXT, weight: Weight::Regular,
+            ink_role: TextRole::Value, weight: Weight::Regular,
         },
         #[cfg(test)]
         Role::SummaryValue => TypeSpec {
             size: FONT_SECTION_HEADING, line: 23.0, tracking: 0.0,
-            color: TEXT, weight: Weight::Monospace,
+            ink_role: TextRole::Value, weight: Weight::Monospace,
         },
         Role::Status => TypeSpec {
             size: FONT_FIELD_LABEL, line: 20.0, tracking: 0.0,
-            color: TEXT, weight: Weight::Emphasis,
+            ink_role: TextRole::Value, weight: Weight::Emphasis,
         },
     }
 }
 
 fn render(text: &str, role: Role) -> RichText {
+    render_with_state(text,role,TextState::Normal)
+}
+
+fn render_with_state(text:&str,role:Role,state:TextState)->RichText{
     let is_brand = matches!(role, Role::Brand);
     let role = spec(role);
     let rich = RichText::new(text)
         .size(role.size)
         .line_height(Some(role.line))
         .extra_letter_spacing(role.tracking)
-        .color(role.color);
+        .color(text_ink(role.ink_role,state));
     match role.weight {
         Weight::Regular => rich,
         Weight::Emphasis => {
@@ -363,7 +374,7 @@ pub fn brand_galley(ui: &egui::Ui, text: &str) -> std::sync::Arc<egui::Galley> {
         font_id: FontId::new(
             role.size, FontFamily::Name(BRAND_FAMILY.into())
         ),
-        color: role.color,
+        color: text_ink(role.ink_role,TextState::Normal),
         extra_letter_spacing: role.tracking,
         // Use actual font metrics for measured vertical centering; a forced
         // 42pt line box placed the visible capitals off-center against the icon.
@@ -401,6 +412,15 @@ pub fn workflow_dealer_galley(
 }
 
 pub fn body(text: &str) -> RichText { render(text, Role::Body) }
+
+/// Retain body typography while resolving the independently supplied state.
+pub fn body_with_state(text:&str,state:TextState)->RichText{
+    render_with_state(text,Role::Body,state)
+}
+
+pub fn caption_with_state(text:&str,state:TextState)->RichText{
+    render_with_state(text,Role::Metadata,state)
+}
 pub fn field_label(text: &str) -> RichText { render(text, Role::FieldLabel) }
 
 /// Shared field-label typography laid out for exact left-edge painting.
@@ -409,7 +429,7 @@ pub fn field_label(text: &str) -> RichText { render(text, Role::FieldLabel) }
 pub fn field_label_galley(
     ui: &egui::Ui, text: &str
 ) -> std::sync::Arc<egui::Galley> {
-    client_table_galley(ui,text,Role::FieldLabel,true,spec(Role::FieldLabel).color)
+    client_table_galley(ui,text,Role::FieldLabel,true,text_ink(spec(Role::FieldLabel).ink_role,TextState::Normal))
 }
 pub fn caption(text: &str) -> RichText { render(text, Role::Metadata) }
 
@@ -493,24 +513,36 @@ impl ManagementTableCellRole {
 }
 
 pub fn management_table_cell_color(role:ManagementTableCellRole)->Color32 {
-    match role {
+    management_table_cell_color_with_state(role,TextState::Normal)
+}
+
+pub fn management_table_cell_color_with_state(role:ManagementTableCellRole,state:TextState)->Color32{
+    let ink_role=match role {
         ManagementTableCellRole::ProductName
         | ManagementTableCellRole::ClientName
         | ManagementTableCellRole::Text
         | ManagementTableCellRole::Option
         | ManagementTableCellRole::Money
-        | ManagementTableCellRole::RowTotal => TEXT,
+        | ManagementTableCellRole::RowTotal => TextRole::Value,
         ManagementTableCellRole::Quantity
         | ManagementTableCellRole::Category
         | ManagementTableCellRole::Description
-        | ManagementTableCellRole::Status => SECONDARY,
-        ManagementTableCellRole::Muted => MUTED,
-    }
+        | ManagementTableCellRole::Status => TextRole::Label,
+        ManagementTableCellRole::Muted => TextRole::Metadata,
+    };
+    text_ink(ink_role,state)
 }
 
 pub fn management_table_cell_galley(
     ui:&egui::Ui,text:&str,role:ManagementTableCellRole
 )->std::sync::Arc<egui::Galley>{
+    management_table_cell_galley_with_state(ui,text,role,TextState::Normal)
+}
+
+pub fn management_table_cell_galley_with_state(
+    ui:&egui::Ui,text:&str,role:ManagementTableCellRole,state:TextState
+)->std::sync::Arc<egui::Galley>{
+    let ink=management_table_cell_color_with_state(role,state);
     let numeric=match role {
         ManagementTableCellRole::Money|ManagementTableCellRole::RowTotal=>
             Some(DataValueKind::Money),
@@ -519,14 +551,14 @@ pub fn management_table_cell_galley(
     };
     if let Some(kind)=numeric {
         let format=measured_role_format(Role::Body,
-            data_value_font(kind,DataValueContext::Table),management_table_cell_color(role));
+            data_value_font(kind,DataValueContext::Table),ink);
         ui.fonts_mut(|fonts|fonts.layout_job(
             egui::text::LayoutJob::single_section(text.to_owned(),format)
         ))
     }else{
         client_table_galley(
             ui,text,Role::Body,role.emphasized(),
-            management_table_cell_color(role)
+            ink
         )
     }
 }
@@ -635,12 +667,18 @@ pub fn table_cell(text: &str) -> RichText { render(text, Role::TableCell) }
 pub fn freight_summary_large_number_galley(
     ui: &egui::Ui, text: &str
 ) -> std::sync::Arc<egui::Galley> {
+    freight_summary_large_number_galley_with_state(ui,text,TextState::Normal)
+}
+
+pub fn freight_summary_large_number_galley_with_state(
+    ui:&egui::Ui,text:&str,state:TextState
+)->std::sync::Arc<egui::Galley>{
     let format = egui::TextFormat {
         font_id: FontId::new(
             FONT_FREIGHT_SUMMARY_NUMBER,
             FontFamily::Name(EMPHASIS_FAMILY.into()),
         ),
-        color: TEXT,
+        color: text_ink(TextRole::Value,state),
         line_height: Some(crate::ui_tokens::FREIGHT_SUMMARY_NUMBER_LINE_HEIGHT),
         ..Default::default()
     };
@@ -1096,3 +1134,58 @@ pub fn metadata_font()->FontId{FontId::proportional(FONT_METADATA)}
 pub fn body_font()->FontId{FontId::proportional(FONT_BODY)}
 pub fn reception_source_font()->FontId{FontId::proportional(FONT_RECEPTION_SOURCE_TEXT)}
 pub fn ocr_review_font()->FontId{FontId::proportional(FONT_OCR_REVIEW_TEXT)}
+
+
+#[cfg(test)]
+mod shared_text_hierarchy_contract_tests{
+    use super::*;
+    #[test]
+    fn roles_and_states_resolve_to_approved_palette(){
+        for (role,normal) in [
+            (TextRole::Heading,Color32::from_gray(237)),
+            (TextRole::Value,Color32::from_gray(237)),
+            (TextRole::Label,Color32::from_gray(185)),
+            (TextRole::Metadata,Color32::from_gray(153)),
+        ]{
+            assert_eq!(text_ink(role,TextState::Normal),normal);
+            for (state,expected) in [
+                (TextState::Missing,Color32::from_gray(153)),
+                (TextState::Pending,Color32::from_gray(153)),
+                (TextState::Unconfirmed,Color32::from_gray(153)),
+                (TextState::Disabled,Color32::from_gray(124)),
+                (TextState::Placeholder,Color32::from_gray(96)),
+                (TextState::Info,Color32::from_rgb(160,205,255)),
+                (TextState::ActionRequired,Color32::from_rgb(255,228,188)),
+                (TextState::Error,Color32::from_rgb(240,160,160)),
+                (TextState::Complete,Color32::from_rgb(155,221,176)),
+            ]{
+                assert_eq!(text_ink(role,state),expected,"{role:?}/{state:?}");
+            }
+        }
+    }
+
+    #[test]
+    fn table_and_kpi_state_changes_preserve_font_and_galley_geometry(){
+        let ctx=crate::ui_test_support::test_context();
+        let _=ctx.run(egui::RawInput::default(),|ctx|{
+            egui::CentralPanel::default().show(ctx,|ui|{
+                let check=|a:std::sync::Arc<egui::Galley>,b:std::sync::Arc<egui::Galley>|{
+                    assert_eq!(a.size(),b.size());
+                    assert_eq!(a.text(),b.text());
+                    assert_eq!(a.job.sections.len(),b.job.sections.len());
+                    for (normal,missing) in a.job.sections.iter().zip(&b.job.sections){
+                        assert_eq!(normal.format.font_id,missing.format.font_id);
+                        assert_eq!(normal.format.line_height,missing.format.line_height);
+                        assert_eq!(normal.format.extra_letter_spacing,missing.format.extra_letter_spacing);
+                        assert_eq!(normal.format.color,TEXT);
+                        assert_eq!(missing.format.color,MUTED);
+                    }
+                };
+                check(management_table_cell_galley(ui,"0",ManagementTableCellRole::Money),
+                    management_table_cell_galley_with_state(ui,"0",ManagementTableCellRole::Money,TextState::Missing));
+                check(freight_summary_large_number_galley(ui,"0"),
+                    freight_summary_large_number_galley_with_state(ui,"0",TextState::Pending));
+            });
+        });
+    }
+}

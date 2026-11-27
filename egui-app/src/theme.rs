@@ -52,6 +52,48 @@ pub const TABLE_HEADER_OUTLINE: Color32 = Color32::from_rgb(106, 106, 106);
 pub const TEXT: Color32 = Color32::from_rgb(237, 237, 237);
 pub const SECONDARY: Color32 = Color32::from_rgb(185, 185, 185);
 pub const MUTED: Color32 = Color32::from_rgb(153, 153, 153);
+pub const PLACEHOLDER_TEXT:Color32=Color32::from_gray(96);
+
+/// Information role is independent of typography, widget and business state.
+#[derive(Clone,Copy,Debug,PartialEq,Eq)]
+pub enum TextRole {
+    Heading,
+    Value,
+    Label,
+    Metadata,
+}
+
+/// State is explicit, never inferred from the displayed string or a zero.
+#[derive(Clone,Copy,Debug,PartialEq,Eq)]
+pub enum TextState {
+    Normal,
+    Missing,
+    Pending,
+    Unconfirmed,
+    Disabled,
+    Placeholder,
+    Info,
+    ActionRequired,
+    Error,
+    Complete,
+}
+
+pub const fn text_ink(role:TextRole,state:TextState)->Color32{
+    match state{
+        TextState::Normal=>match role{
+            TextRole::Heading|TextRole::Value=>TEXT,
+            TextRole::Label=>SECONDARY,
+            TextRole::Metadata=>MUTED,
+        },
+        TextState::Missing|TextState::Pending|TextState::Unconfirmed=>MUTED,
+        TextState::Disabled=>DISABLED_ACTION_TEXT,
+        TextState::Placeholder=>PLACEHOLDER_TEXT,
+        TextState::Info=>ReviewTone::Info.text_color(),
+        TextState::ActionRequired=>ReviewTone::Action.text_color(),
+        TextState::Error=>ReviewTone::Error.text_color(),
+        TextState::Complete=>ReviewTone::Complete.text_color(),
+    }
+}
 pub const SELECTION: Color32 = Color32::from_rgb(112, 180, 255);
 pub const INTERACTION_BLUE_TINT:Color32=Color32::from_rgba_unmultiplied_const(112,180,255,20);
 pub const TABLE_SORT_HOVER_TINT:Color32=INTERACTION_BLUE_TINT;
@@ -821,7 +863,7 @@ pub fn install(ctx: &egui::Context) {
     style.visuals.window_fill = PANEL;
     style.visuals.faint_bg_color = RAISED;
     style.visuals.extreme_bg_color = INPUT;
-    style.visuals.override_text_color = Some(TEXT);
+    style.visuals.override_text_color = Some(text_ink(TextRole::Value,TextState::Normal));
     style.visuals.widgets.noninteractive.bg_fill = PANEL;
     style.visuals.widgets.inactive.bg_fill = RAISED;
     // Native egui controls, selectables, toggles and pop-up options inherit
@@ -946,7 +988,7 @@ pub enum ReviewTone {
 }
 
 impl ReviewTone {
-    pub fn palette(self) -> (Color32, Color32, Color32, Color32) {
+    pub const fn palette(self) -> (Color32, Color32, Color32, Color32) {
         // Background, border, primary text, secondary text.
         match self {
             Self::Action => (
@@ -968,7 +1010,7 @@ impl ReviewTone {
         }
     }
 
-    pub fn text_color(self) -> Color32 { self.palette().2 }
+    pub const fn text_color(self) -> Color32 { self.palette().2 }
     pub fn detail_color(self) -> Color32 { self.palette().3 }
 }
 

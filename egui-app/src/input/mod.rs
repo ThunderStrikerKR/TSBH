@@ -7,7 +7,8 @@ use crate::ui_primitives::{navigation_segment_child,date_navigation_segmented_su
 use crate::ui_test_support::test_context;
 
 /// Placeholder ink is independent of the actual input value and general UI text.
-pub(crate) const INPUT_PLACEHOLDER_COLOR:egui::Color32=egui::Color32::from_gray(96);
+pub(crate) const INPUT_PLACEHOLDER_COLOR:egui::Color32=
+    theme::text_ink(theme::TextRole::Value,theme::TextState::Placeholder);
 
 fn input_placeholder(text:&str)->egui::RichText{
     egui::RichText::new(text).color(INPUT_PLACEHOLDER_COLOR)
