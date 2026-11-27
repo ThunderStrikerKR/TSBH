@@ -2,6 +2,7 @@
 //! All business values come from the saved order-history projection and its
 //! matching workflow records. This module never recalculates prices or writes
 //! historical data. Only content-heavy panes have their own scroll areas.
+use crate::ui_layout::SharedAllocationExt as _;
 use crate::ui_layout::AlignedUiBuilderExt as _;
 use crate::{theme,typography};
 use crate::ui_primitives::UiWidthPolicyExt;
@@ -469,13 +470,13 @@ pub fn show(ctx:&egui::Context,work_area:Rect,row:&Value,state:&Value)->bool{
                 workspace.body_region(|ui|{
                     let body=ui.available_rect_before_wrap();
                     let summary_height=74.0_f32.min((body.height()*0.22).max(1.0));
-                    let (summary_rect,_)=ui.allocate_exact_size(
+                    let (summary_rect,_)=ui.shared_allocate_exact_size(
                         Vec2::new(body.width(),summary_height),Sense::hover()
                     );
                     overview(ui,summary_rect,row,shipments.len());
                     ui.add_space(PANE_GAP);
                     let remaining=ui.available_rect_before_wrap();
-                    let (grid_rect,_)=ui.allocate_exact_size(
+                    let (grid_rect,_)=ui.shared_allocate_exact_size(
                         Vec2::new(remaining.width(),remaining.height().max(1.0)),
                         Sense::hover()
                     );
