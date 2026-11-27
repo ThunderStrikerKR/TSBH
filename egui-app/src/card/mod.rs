@@ -145,7 +145,7 @@ pub(crate) fn parallel_frames(
 }
 
 pub(crate) fn workflow_group_card_frame(highlighted:bool)->Frame{
-    bordered_surface(if highlighted{WORKFLOW_SELECTED_BG}else{WORKFLOW_CARD_BG},WORKFLOW_CARD_BORDER,WORKFLOW_CARD_RADIUS)
+    role_surface_frame(SurfaceRole::WorkflowCard,if highlighted{VisualState::Selected}else{VisualState::Normal},WORKFLOW_CARD_RADIUS)
         .inner_margin(0)
 }
 pub(crate) fn workflow_shipment_row_frame(fill:Color32,chosen:bool)->Frame{
@@ -156,7 +156,7 @@ pub(crate) fn workflow_shipment_row_frame(fill:Color32,chosen:bool)->Frame{
         ))
 }
 pub(crate) fn settings_help_surface_frame()->Frame{
-    bordered_surface(INPUT,BORDER,CONTROL_RADIUS)
+    role_surface_frame(SurfaceRole::Input,VisualState::Normal,CONTROL_RADIUS)
         .inner_margin(egui::Margin::symmetric(SPACE_12 as i8,SPACE_12 as i8))
 }
 
@@ -164,12 +164,12 @@ pub(crate) fn settings_help_surface_frame()->Frame{
 /// BORDER outline is intentional; do not replace it with the softer modal
 /// nested-frame stroke.
 pub(crate) fn category_ancestor_frame()->Frame{
-    bordered_surface(INPUT,BORDER,CONTROL_RADIUS)
+    role_surface_frame(SurfaceRole::Input,VisualState::Normal,CONTROL_RADIUS)
         .inner_margin(SPACE_8)
 }
 
 pub(crate) fn section_frame() -> Frame {
-    bordered_surface(PANEL,CARD_BORDER,SECTION_RADIUS).inner_margin(SECTION_PADDING)
+    role_surface_frame(SurfaceRole::Section,VisualState::Normal,SECTION_RADIUS).inner_margin(SECTION_PADDING)
 }
 
 /// Full-height master table cards keep the same 12pt interior clearance on
@@ -188,7 +188,7 @@ pub(crate) fn management_master_table_frame()->Frame{
 /// Overview card keeps the shared frame identity with proportional padding.
 /// Only the freight KPI's vertical inset differs from standard section cards.
 pub(crate) fn freight_summary_frame() -> Frame {
-    bordered_surface(PANEL,BORDER,PANEL_RADIUS)
+    role_surface_frame(SurfaceRole::Summary,VisualState::Normal,PANEL_RADIUS)
         .inner_margin(egui::Margin::symmetric(
             FREIGHT_SUMMARY_PADDING_X as i8, FREIGHT_SUMMARY_PADDING_Y as i8
         ))
@@ -215,7 +215,7 @@ pub(crate) fn review_issue_card(ui: &mut Ui, tone: ReviewTone, add_contents: imp
 /// Unbordered preview surface for generated or copy-ready text. Keep the
 /// INPUT fill and 12pt inset shared instead of rebuilding a local Frame.
 pub(crate) fn preview_surface_frame()->Frame{
-    Frame::new().fill(INPUT).inner_margin(SPACE_12 as i8)
+    Frame::new().fill(surface_palette(SurfaceRole::Input,VisualState::Normal).fill).inner_margin(SPACE_12 as i8)
 }
 
 /// Reusable absolute-layout panel with a fixed title band and an

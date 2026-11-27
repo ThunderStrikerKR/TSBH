@@ -146,7 +146,7 @@ pub(crate) fn management_table_cells<const N:usize>(
 }
 
 pub(crate) fn management_table_row_fill(index:usize)->Color32{
-    if index%2==0{theme::PANEL}else{theme::TABLE_ROW_ALT_BG}
+    theme::surface_palette(if index%2==0{theme::SurfaceRole::Panel}else{theme::SurfaceRole::AlternateRow},theme::VisualState::Normal).fill
 }
 
 pub(crate) fn paint_management_table_row_background(painter:&egui::Painter,rect:Rect,index:usize){

@@ -6,7 +6,7 @@ use crate::theme::*;
 use crate::ui_primitives::{truncated_label,section_divider,form_field_label_sized};
 use crate::scrollbar::{scroll_area,ScrollAxes};
 pub(crate) fn modal_frame() -> Frame {
-    bordered_surface(PANEL,BORDER,PANEL_RADIUS)
+    role_surface_frame(SurfaceRole::Modal,VisualState::Normal,PANEL_RADIUS)
         .inner_margin(egui::Margin {
             left: MODAL_PANEL_PADDING_X as i8,
             right: MODAL_PANEL_PADDING_X as i8,
@@ -30,7 +30,7 @@ pub(crate) fn modal_nested_role_frame(role:ModalNestedRole)->Frame{
         ModalNestedRole::RecipientChecklist=>egui::Margin::symmetric(SPACE_12 as i8,SPACE_8 as i8),
         ModalNestedRole::CompactTag=>egui::Margin::symmetric(SPACE_8 as i8,SPACE_2 as i8),
     };
-    bordered_surface(INPUT,DIVIDER,CONTROL_RADIUS).inner_margin(margin)
+    role_surface_frame(SurfaceRole::Inset,VisualState::Normal,CONTROL_RADIUS).inner_margin(margin)
 }
 
 #[cfg(test)]
@@ -992,7 +992,7 @@ pub(crate) fn modal_master_body_section<R>(
 
 /// One boxed section appearance for single and parallel modal sections.
 fn modal_section_frame()->Frame{
-    theme::bordered_surface(theme::MODAL_SECTION_BG,theme::DIVIDER,theme::MODAL_SECTION_RADIUS)
+    theme::role_surface_frame(theme::SurfaceRole::ModalSection,theme::VisualState::Normal,theme::MODAL_SECTION_RADIUS)
         .inner_margin(theme::MODAL_SECTION_PADDING)
 }
 

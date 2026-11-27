@@ -109,7 +109,8 @@ jobs:
             'input::regression_tests::shared_input_width_rendered_geometry_tests::',
             'dropdown::regression_tests::shared_dropdown_rendered_geometry_tests::',
             'typography::management_table_type_roles_tests::',
-            'typography::shared_text_hierarchy_contract_tests::'
+            'typography::shared_text_hierarchy_contract_tests::',
+            'theme::shared_visual_role_contract_tests::'
           )
           foreach ($group in $groups) {
             $listed = cargo test --manifest-path egui-app/Cargo.toml $group -- --list

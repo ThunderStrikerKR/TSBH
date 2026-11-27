@@ -852,6 +852,164 @@ pub enum ButtonRole {
     ActiveKakaoControl,
 }
 
+
+/// Visual state is supplied by the component, never inferred from its caption.
+/// Geometry and hit testing stay with the component. Hover/focus overlays
+/// remain independently composable through the shared highlight module.
+#[derive(Clone,Copy,Debug,PartialEq,Eq)]
+pub(crate) enum VisualState{Normal,Disabled,Hovered,Focused,Selected}
+impl VisualState{
+    pub(crate) const fn enabled(enabled:bool)->Self{
+        if enabled{Self::Normal}else{Self::Disabled}
+    }
+    pub(crate) const fn pointer(enabled:bool,hovered:bool)->Self{
+        if !enabled{Self::Disabled}else if hovered{Self::Hovered}else{Self::Normal}
+    }
+}
+
+#[derive(Clone,Copy,Debug,PartialEq,Eq)]
+pub(crate) enum SurfaceRole{
+    Workspace,Header,Panel,Section,Summary,Input,Inset,Modal,ModalSection,
+    AlternateRow,Button,WorkflowCard,FieldAction,NavigationSegment,
+}
+
+#[derive(Clone,Copy,Debug,PartialEq,Eq)]
+pub(crate) struct SurfacePalette{pub fill:Color32,pub border:Color32}
+
+pub(crate) const fn surface_palette(role:SurfaceRole,state:VisualState)->SurfacePalette{
+    use SurfaceRole::*;
+    let (fill,border)=match role{
+        Workspace=>(CANVAS,Color32::TRANSPARENT),
+        Header=>(HEADER_BG,Color32::TRANSPARENT),
+        Panel=>(PANEL,Color32::TRANSPARENT),
+        Section=>(PANEL,CARD_BORDER),
+        Summary|Modal=>(PANEL,BORDER),
+        Input|FieldAction=>(INPUT,BORDER),
+        Inset=>(INPUT,DIVIDER),
+        ModalSection=>(MODAL_SECTION_BG,DIVIDER),
+        AlternateRow=>(TABLE_ROW_ALT_BG,Color32::TRANSPARENT),
+        Button=>(RAISED,BORDER),
+        WorkflowCard=>(WORKFLOW_CARD_BG,WORKFLOW_CARD_BORDER),
+        NavigationSegment=>(INPUT,Color32::TRANSPARENT),
+    };
+    let (fill,border)=match (role,state){
+        (FieldAction|Button,VisualState::Disabled)=>(DISABLED_ACTION_BG,DISABLED_ACTION_BORDER),
+        (NavigationSegment,VisualState::Disabled)=>(RECEPTION_RECIPIENT_NAV_DISABLED_BG,Color32::TRANSPARENT),
+        (WorkflowCard,VisualState::Selected)=>(WORKFLOW_SELECTED_BG,WORKFLOW_CARD_BORDER),
+        _=>(fill,border),
+    };
+    SurfacePalette{fill,border}
+}
+
+#[derive(Clone,Copy,Debug,PartialEq,Eq)]
+pub(crate) enum IconRole{Secondary,Interactive,Navigation}
+pub(crate) const fn icon_ink(role:IconRole,state:VisualState)->Color32{
+    match (role,state){
+        (IconRole::Navigation,VisualState::Disabled)=>RECEPTION_RECIPIENT_NAV_DISABLED_ICON,
+        (_,VisualState::Disabled)=>text_ink(TextRole::Label,TextState::Disabled),
+        (IconRole::Interactive|IconRole::Navigation,VisualState::Hovered)=>text_ink(TextRole::Value,TextState::Normal),
+        _=>text_ink(TextRole::Label,TextState::Normal),
+    }
+}
+
+pub(crate) fn role_surface_frame(role:SurfaceRole,state:VisualState,radius:u8)->Frame{
+    let palette=surface_palette(role,state);
+    bordered_surface(palette.fill,palette.border,radius)
+}
+
+pub(crate) fn button_visual(
+    role:ButtonRole,state:VisualState,review_white:bool
+)->(f32,Color32,Color32,Stroke){
+    let enabled=state!=VisualState::Disabled;
+    let (height, fill, color, stroke): (f32, Color32, Color32, Stroke) = match role {
+        ButtonRole::Primary => (ACTION_PRIMARY_HEIGHT, PRIMARY_ACTION_FILL, BRIGHT_TEXT, Stroke::NONE),
+        ButtonRole::Standard => (ACTION_STANDARD_HEIGHT, RAISED, TEXT, Stroke::new(FRAME_STROKE_WIDTH, BORDER)),
+        ButtonRole::TableSecondary => (
+            ACTION_STANDARD_HEIGHT,
+            PANEL,
+            SECONDARY,
+            Stroke::new(FRAME_STROKE_WIDTH, DIVIDER),
+        ),
+        ButtonRole::Emphasized => (ACTION_EMPHASIZED_HEIGHT, BRIGHT, BRIGHT_TEXT, Stroke::NONE),
+        ButtonRole::Quiet => (ACTION_QUIET_HEIGHT, PANEL, SECONDARY, Stroke::new(FRAME_STROKE_WIDTH,DIVIDER)),
+        ButtonRole::Ghost => (ACTION_PRIMARY_HEIGHT, Color32::TRANSPARENT, SECONDARY, Stroke::NONE),
+        ButtonRole::Danger => (ACTION_STANDARD_HEIGHT, DANGER_ACTION_BG, ERROR_TEXT, Stroke::new(FRAME_STROKE_WIDTH,DANGER_ACTION_BORDER)),
+        ButtonRole::Navigation => (NAV_HEIGHT, Color32::TRANSPARENT, SECONDARY, Stroke::NONE),
+        ButtonRole::ActiveNavigation => (NAV_HEIGHT, ACTIVE_NAVIGATION_BG, TEXT, Stroke::NONE),
+        ButtonRole::ManagementTab => (MANAGEMENT_TAB_HEIGHT, Color32::TRANSPARENT, SECONDARY, Stroke::NONE),
+        ButtonRole::ActiveManagementTab => (MANAGEMENT_TAB_HEIGHT, RAISED, TEXT, Stroke::new(FRAME_STROKE_WIDTH,BORDER)),
+        ButtonRole::KakaoControl => (KAKAO_CONTROL_HEIGHT, Color32::TRANSPARENT, SECONDARY, Stroke::NONE),
+        ButtonRole::ActiveKakaoControl => (KAKAO_CONTROL_HEIGHT, RAISED, TEXT, Stroke::new(FRAME_STROKE_WIDTH,BORDER)),
+    };
+    // Standard management actions have an explicit disabled appearance.
+    // egui's generic disabled tint alone was too close to the enabled state.
+    // Callers resolve the parent scope before selecting the visual state.
+    let (fill,color,stroke)=if review_white {
+        if enabled {
+            (BRIGHT, BRIGHT_TEXT, stroke)
+        } else {
+            (DISABLED_ACTION_BG, DISABLED_ACTION_TEXT, stroke)
+        }
+    }else if !enabled && matches!(role,ButtonRole::Ghost) {
+        (Color32::TRANSPARENT,DISABLED_ACTION_TEXT,Stroke::NONE)
+    }else if !enabled
+        && matches!(role,
+            ButtonRole::Primary | ButtonRole::Standard | ButtonRole::TableSecondary | ButtonRole::Emphasized | ButtonRole::Quiet | ButtonRole::Danger
+        )
+    {
+        (DISABLED_ACTION_BG,DISABLED_ACTION_TEXT,
+         Stroke::new(FRAME_STROKE_WIDTH,DISABLED_ACTION_BORDER))
+    }else{(fill,color,stroke)};
+    (height,fill,color,stroke)
+}
+
+pub(crate) fn field_visual(state:VisualState,enabled_ink:Color32)->(Color32,Color32,Stroke){
+    let p=surface_palette(SurfaceRole::FieldAction,state);
+    if state==VisualState::Disabled{
+        (p.fill,text_ink(TextRole::Value,TextState::Disabled),Stroke::new(FRAME_STROKE_WIDTH,p.border))
+    }else{
+        (p.fill,enabled_ink,Stroke::new(SOFT_DIVIDER_WIDTH,p.border))
+    }
+}
+
+#[cfg(test)]
+mod shared_visual_role_contract_tests{
+    use super::*;
+    #[test]
+    fn base_surfaces_preserve_approved_colors_and_borders(){
+        for (role,fill,border) in [
+            (SurfaceRole::Workspace,CANVAS,Color32::TRANSPARENT),
+            (SurfaceRole::Section,PANEL,CARD_BORDER),
+            (SurfaceRole::Summary,PANEL,BORDER),
+            (SurfaceRole::Input,INPUT,BORDER),
+            (SurfaceRole::Inset,INPUT,DIVIDER),
+            (SurfaceRole::Modal,PANEL,BORDER),
+            (SurfaceRole::ModalSection,MODAL_SECTION_BG,DIVIDER),
+            (SurfaceRole::AlternateRow,TABLE_ROW_ALT_BG,Color32::TRANSPARENT),
+        ]{
+            assert_eq!(surface_palette(role,VisualState::Normal),SurfacePalette{fill,border});
+            assert_eq!(role_surface_frame(role,VisualState::Normal,CONTROL_RADIUS).fill,fill);
+        }
+        assert_eq!(surface_palette(SurfaceRole::FieldAction,VisualState::Disabled),
+            SurfacePalette{fill:DISABLED_ACTION_BG,border:DISABLED_ACTION_BORDER});
+    }
+    #[test]
+    fn button_icon_and_field_states_preserve_shared_palette(){
+        for role in [ButtonRole::Primary,ButtonRole::Standard,ButtonRole::TableSecondary,
+            ButtonRole::Emphasized,ButtonRole::Quiet,ButtonRole::Danger]{
+            let (height,_,_,_)=button_visual(role,VisualState::Normal,false);
+            let (disabled,fill,ink,stroke)=button_visual(role,VisualState::Disabled,false);
+            assert_eq!(height,disabled);
+            assert_eq!((fill,ink,stroke.color),(DISABLED_ACTION_BG,DISABLED_ACTION_TEXT,DISABLED_ACTION_BORDER));
+        }
+        assert_eq!(icon_ink(IconRole::Interactive,VisualState::Hovered),TEXT);
+        assert_eq!(icon_ink(IconRole::Interactive,VisualState::Normal),SECONDARY);
+        assert_eq!(icon_ink(IconRole::Navigation,VisualState::Disabled),RECEPTION_RECIPIENT_NAV_DISABLED_ICON);
+        assert_eq!(field_visual(VisualState::Normal,TEXT),(INPUT,TEXT,Stroke::new(SOFT_DIVIDER_WIDTH,BORDER)));
+        assert_eq!(field_visual(VisualState::Disabled,TEXT),(MANAGEMENT_DROPDOWN_DISABLED_BG,DISABLED_ACTION_TEXT,Stroke::new(FRAME_STROKE_WIDTH,DISABLED_ACTION_BORDER)));
+    }
+}
+
 /// Apply the shared level-2.5 alternate-row surface to a table's local UI.
 /// Call inside its ScrollArea before egui::Grid::striped(true); do not
 /// globally change faint_bg_color because other egui widgets also use it.
@@ -862,20 +1020,21 @@ pub fn apply_table_row_colors(ui:&mut Ui) {
 pub fn install(ctx: &egui::Context) {
     let mut style = (*ctx.style()).clone();
     style.visuals.dark_mode = true;
-    style.visuals.panel_fill = CANVAS;
-    style.visuals.window_fill = PANEL;
-    style.visuals.faint_bg_color = RAISED;
-    style.visuals.extreme_bg_color = INPUT;
+    style.visuals.panel_fill = surface_palette(SurfaceRole::Workspace,VisualState::Normal).fill;
+    style.visuals.window_fill = surface_palette(SurfaceRole::Panel,VisualState::Normal).fill;
+    style.visuals.faint_bg_color = surface_palette(SurfaceRole::Button,VisualState::Normal).fill;
+    style.visuals.extreme_bg_color = surface_palette(SurfaceRole::Input,VisualState::Normal).fill;
     style.visuals.override_text_color = Some(text_ink(TextRole::Value,TextState::Normal));
-    style.visuals.widgets.noninteractive.bg_fill = PANEL;
-    style.visuals.widgets.inactive.bg_fill = RAISED;
+    style.visuals.widgets.noninteractive.bg_fill = surface_palette(SurfaceRole::Panel,VisualState::Normal).fill;
+    style.visuals.widgets.inactive.bg_fill = surface_palette(SurfaceRole::Button,VisualState::Normal).fill;
     // Native egui controls, selectables, toggles and pop-up options inherit
     // the same clearly visible hover feedback as our authored buttons.
     // Keep hover blue distinct from committed orange order selection.
     crate::highlight_native::native_widgets(&mut style.visuals,crate::highlight_native::NativePalette{
         hover_fill:BUTTON_HOVER_BG,
         hover_outline:Stroke::new(BUTTON_HOVER_BORDER_WIDTH,SELECTION),
-        hover_ink:TEXT,active_fill:INPUT,
+        hover_ink:text_ink(TextRole::Value,TextState::Normal),
+        active_fill:surface_palette(SurfaceRole::Input,VisualState::Normal).fill,
         focus_outline:Stroke::new(BUTTON_HOVER_BORDER_WIDTH,SELECTION),
         selection_fill:SELECTION.linear_multiply(0.3),
         selection_outline:Stroke::new(SELECTION_STROKE_WIDTH,SELECTION),
@@ -891,7 +1050,7 @@ pub fn install(ctx: &egui::Context) {
 /// Screen-specific roles retain their approved appearance, but frame
 /// construction and padding belong to the shared theme.
 pub fn navigation_header_frame()->Frame{
-    Frame::new().fill(HEADER_BG)
+    Frame::new().fill(surface_palette(SurfaceRole::Header,VisualState::Normal).fill)
         .inner_margin(egui::Margin::symmetric(HEADER_PADDING_X,0))
 }
 pub fn management_page_host_frame()->Frame{
@@ -953,7 +1112,7 @@ pub const MANAGEMENT_TABLE_SCROLL_RAIL_EXTENSION:f32=0.0;
 /// placement remain based on the actual available workspace.
 pub fn workspace_shell_frame() -> Frame {
     Frame::new()
-        .fill(CANVAS)
+        .fill(surface_palette(SurfaceRole::Workspace,VisualState::Normal).fill)
         .stroke(Stroke::NONE)
         .inner_margin(egui::Margin {
             left: 0,
@@ -969,7 +1128,7 @@ pub fn kakao_slot_frame() -> Frame {
     Frame::new()
         // One palette level above the canvas (#101010 -> #181818).
         // Only the Kakao reservation changes; native HWND geometry is intact.
-        .fill(PANEL)
+        .fill(surface_palette(SurfaceRole::Panel,VisualState::Normal).fill)
         .stroke(Stroke::NONE)
         .corner_radius(CornerRadius::same(0))
         .inner_margin(0)

@@ -167,7 +167,7 @@ pub(crate) fn paint_management_chevron(
     painter:&egui::Painter,center:egui::Pos2,direction:ManagementChevronDirection
 ){
     paint_management_chevron_with_color(
-        painter,center,direction,theme::SECONDARY
+        painter,center,direction,theme::icon_ink(theme::IconRole::Secondary,theme::VisualState::Normal)
     );
 }
 

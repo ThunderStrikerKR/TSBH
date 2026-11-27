@@ -27,7 +27,7 @@ pub(crate) fn remove_at(ui:&Ui,hit:Rect,id:egui::Id,enabled:bool)->bool{
 pub(crate) fn remove_at_response(ui:&Ui,hit:Rect,id:egui::Id,enabled:bool)->Response{
     let enabled=enabled && ui.is_enabled();
     let response=ui.interact(hit,id,if enabled{Sense::click()}else{Sense::hover()});
-    let ink=if enabled{theme::SECONDARY}else{theme::DISABLED_ACTION_TEXT};
+    let ink=theme::icon_ink(theme::IconRole::Secondary,theme::VisualState::enabled(enabled));
     if enabled{paint_button_hover(ui,&response,theme::CONTROL_RADIUS as f32);}
     let center=hit.center();
     let stroke=Stroke::new(1.5_f32,ink);
@@ -87,58 +87,14 @@ pub(crate) fn review_action(ui: &mut Ui, label: &str, role: ButtonRole, enabled:
 pub(crate) fn action_style(
     role:ButtonRole,enabled:bool,review_white:bool
 )->(f32,Color32,Color32,Stroke){
-    let (height, fill, color, stroke): (f32, Color32, Color32, Stroke) = match role {
-        ButtonRole::Primary => (ACTION_PRIMARY_HEIGHT, PRIMARY_ACTION_FILL, BRIGHT_TEXT, Stroke::NONE),
-        ButtonRole::Standard => (ACTION_STANDARD_HEIGHT, RAISED, TEXT, Stroke::new(FRAME_STROKE_WIDTH, BORDER)),
-        ButtonRole::TableSecondary => (
-            ACTION_STANDARD_HEIGHT,
-            PANEL,
-            SECONDARY,
-            Stroke::new(FRAME_STROKE_WIDTH, DIVIDER),
-        ),
-        ButtonRole::Emphasized => (ACTION_EMPHASIZED_HEIGHT, BRIGHT, BRIGHT_TEXT, Stroke::NONE),
-        ButtonRole::Quiet => (ACTION_QUIET_HEIGHT, PANEL, SECONDARY, Stroke::new(FRAME_STROKE_WIDTH,DIVIDER)),
-        ButtonRole::Ghost => (ACTION_PRIMARY_HEIGHT, Color32::TRANSPARENT, SECONDARY, Stroke::NONE),
-        ButtonRole::Danger => (ACTION_STANDARD_HEIGHT, DANGER_ACTION_BG, ERROR_TEXT, Stroke::new(FRAME_STROKE_WIDTH,DANGER_ACTION_BORDER)),
-        ButtonRole::Navigation => (NAV_HEIGHT, Color32::TRANSPARENT, SECONDARY, Stroke::NONE),
-        ButtonRole::ActiveNavigation => (NAV_HEIGHT, ACTIVE_NAVIGATION_BG, TEXT, Stroke::NONE),
-        ButtonRole::ManagementTab => (MANAGEMENT_TAB_HEIGHT, Color32::TRANSPARENT, SECONDARY, Stroke::NONE),
-        ButtonRole::ActiveManagementTab => (MANAGEMENT_TAB_HEIGHT, RAISED, TEXT, Stroke::new(FRAME_STROKE_WIDTH,BORDER)),
-        ButtonRole::KakaoControl => (KAKAO_CONTROL_HEIGHT, Color32::TRANSPARENT, SECONDARY, Stroke::NONE),
-        ButtonRole::ActiveKakaoControl => (KAKAO_CONTROL_HEIGHT, RAISED, TEXT, Stroke::new(FRAME_STROKE_WIDTH,BORDER)),
-    };
-    // Standard management actions have an explicit disabled appearance.
-    // egui's generic disabled tint alone was too close to the enabled state.
-    // Callers resolve the parent scope before selecting the visual state.
-    let (fill,color,stroke)=if review_white {
-        if enabled {
-            (BRIGHT, BRIGHT_TEXT, stroke)
-        } else {
-            (DISABLED_ACTION_BG, DISABLED_ACTION_TEXT, stroke)
-        }
-    }else if !enabled && matches!(role,ButtonRole::Ghost) {
-        (Color32::TRANSPARENT,DISABLED_ACTION_TEXT,Stroke::NONE)
-    }else if !enabled
-        && matches!(role,
-            ButtonRole::Primary | ButtonRole::Standard | ButtonRole::TableSecondary | ButtonRole::Emphasized | ButtonRole::Quiet | ButtonRole::Danger
-        )
-    {
-        (DISABLED_ACTION_BG,DISABLED_ACTION_TEXT,
-         Stroke::new(FRAME_STROKE_WIDTH,DISABLED_ACTION_BORDER))
-    }else{(fill,color,stroke)};
-    (height,fill,color,stroke)
+    theme::button_visual(role,theme::VisualState::enabled(enabled),review_white)
 }
 
 /// Field-like actions (calendar and dropdown) share the disabled action
 /// palette but retain the approved enabled input surface and semantic ink.
 pub(crate) fn field_action_palette(enabled:bool,enabled_ink:Color32)
     ->(Color32,Color32,Stroke){
-    if enabled{
-        (INPUT,enabled_ink,Stroke::new(SOFT_DIVIDER_WIDTH,BORDER))
-    }else{
-        let (_,_,ink,stroke)=action_style(ButtonRole::Standard,false,false);
-        (MANAGEMENT_DROPDOWN_DISABLED_BG,ink,stroke)
-    }
+    theme::field_visual(theme::VisualState::enabled(enabled),enabled_ink)
 }
 
 fn action_with_palette(
@@ -290,7 +246,7 @@ pub(crate) fn notification_button(ui:&mut Ui,unread:usize)->Response{
     let response=action_with_min_width(ui,"",ButtonRole::Standard,true,width);
     let (bell,count)=notification_button_slots(response.rect,max_count.size().x);
     let center=bell.center();
-    let ink=if response.hovered(){TEXT}else{SECONDARY};
+    let ink=theme::icon_ink(theme::IconRole::Interactive,theme::VisualState::pointer(true,response.hovered()));
     let stroke=Stroke::new(1.55_f32,ink);
     let p=|x:f32,y:f32|center+egui::vec2(x,y);
     let painter=ui.painter();
@@ -530,14 +486,13 @@ pub(crate) fn date_navigation_segment_button(
     let enabled=enabled && ui.is_enabled();
     if let DateNavigationSegmentGlyph::Chevron(direction)=glyph{
         let height=ui.available_height();
-        let fill=if enabled{theme::INPUT}else{theme::RECEPTION_RECIPIENT_NAV_DISABLED_BG};
+        let fill=theme::surface_palette(theme::SurfaceRole::NavigationSegment,theme::VisualState::enabled(enabled)).fill;
         let response=navigation_native_button(
             ui,Vec2::new(width,height),
             egui::Button::new("").fill(fill).stroke(Stroke::NONE).corner_radius(0),
             Some(enabled)
         );
-        let ink=if !enabled{theme::RECEPTION_RECIPIENT_NAV_DISABLED_ICON}
-            else if response.hovered(){theme::TEXT}else{theme::SECONDARY};
+        let ink=theme::icon_ink(theme::IconRole::Navigation,theme::VisualState::pointer(enabled,response.hovered()));
         if enabled{crate::button::paint_button_hover(ui,&response,0.0);}
         let painter=ui.painter().with_clip_rect(response.rect);
         paint_management_chevron_with_color(&painter,response.rect.center(),direction,ink);
@@ -566,8 +521,7 @@ pub(crate) fn date_navigation_segment_button(
     let painter=ui.painter().with_clip_rect(rect);
     let (fill,ink)=match glyph{
         DateNavigationSegmentGlyph::CompactVerticalChevron{..}=>{
-            let ink=if !enabled{theme::RECEPTION_RECIPIENT_NAV_DISABLED_ICON}
-                else if response.hovered(){theme::TEXT}else{theme::SECONDARY};
+            let ink=theme::icon_ink(theme::IconRole::Navigation,theme::VisualState::pointer(enabled,response.hovered()));
             (if enabled{None}else{Some(theme::RECEPTION_RECIPIENT_NAV_DISABLED_BG)},ink)
         }
         DateNavigationSegmentGlyph::CountStep{..}=>{
