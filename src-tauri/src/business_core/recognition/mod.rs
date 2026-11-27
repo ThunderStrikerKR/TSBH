@@ -100,7 +100,17 @@ pub fn execute(operation: &str, payload: Value) -> Result<Value, String> {
                         .is_some_and(|variants|variants.iter().any(|variant|
                             variant.get("source").and_then(Value::as_str)==Some("DEMO")))
                 });
-            analyze(raw, &reception, payload.get("client"))
+            // Optional offline evaluation reads the same extracted
+            // feature object as production assignment, with no reparse.
+            if payload.get("includeDocumentFeatures").and_then(Value::as_bool)==Some(true){
+                let document=extract_document(raw,&reception,payload.get("client"));
+                let evaluation=document.features.evaluation(&document.events);
+                let mut result=assign_document(document,&reception,payload.get("client"))?;
+                result["documentFeatures"]=evaluation;
+                Ok(result)
+            }else{
+                analyze(raw, &reception, payload.get("client"))
+            }
         }
         "match_products" => {
             let state = required_state(&payload)?;
@@ -762,7 +772,7 @@ impl DeliveryGeometry{
 // Distances are supporting evidence only: they never create recipients.
 fn recipient_owner_index(
     anchors: &[usize], events: &[Evidence], evidence_index: usize, geometry: &SourceGeometry,
-    delivery:&DeliveryGeometry
+    delivery:&DeliveryGeometry,features:&DocumentFeatures
 ) -> usize {
     let candidate=&events[evidence_index];
     let previous=owner_index(anchors,events,candidate.start);
@@ -777,7 +787,9 @@ fn recipient_owner_index(
     }
     // Keep existing ownership inside the preceding named person's paragraph.
     // This protects multiple phone numbers for the same recipient.
-    if candidate.paragraph==preceding.paragraph || candidate.paragraph!=following.paragraph {
+    let (previous_line,_,previous_paragraph)=features.relation(events,anchors[previous],evidence_index);
+    let (next_line,_,next_paragraph)=features.relation(events,evidence_index,next_anchor_index);
+    if previous_paragraph || !next_paragraph {
         return previous;
     }
     // The prior named recipient must already have independent delivery
@@ -792,7 +804,7 @@ fn recipient_owner_index(
     let previous_gap=geometry.between(preceding.line,candidate.line);
     let following_gap=geometry.between(candidate.line,following.line);
     if following_gap.blank_lines>0 {return previous;}
-    let next_distance=following.line.saturating_sub(candidate.line);
+    let next_distance=next_line.max(0) as usize;
     if next_distance>3 {return previous;}
     let has_nearby_address=delivery.nearby_address(candidate.paragraph,candidate.line,4);
     // A phone just before the next name is not sufficient on its own.
@@ -800,7 +812,7 @@ fn recipient_owner_index(
     if matches!(candidate.kind,"phone"|"mobile") && !has_nearby_address {
         return previous;
     }
-    let preceding_distance=candidate.line.saturating_sub(preceding.line);
+    let preceding_distance=previous_line.max(0) as usize;
     let previous_score=(if preceding.paragraph==candidate.paragraph {80usize} else {0})
         + 20usize.saturating_sub(preceding_distance.saturating_mul(5));
     // Blank-line and content-line evidence are distinct. Their bounded
@@ -1002,6 +1014,102 @@ fn dated_dispatch_instruction(text:&str)->bool{
     )).expect("dated dispatch instruction"));
     re.is_match(text)
 }
+// Source-order features are derived before any recipient/item assignment.
+// Keep event indexes rather than copying text, and avoid all-pairs matrices.
+struct DocumentFeatures{
+    ordered:Vec<usize>,
+    ranks:Vec<usize>,
+    anchors:Vec<usize>,
+    roles:Vec<&'static str>,
+    ranges:Vec<(usize,usize)>,
+    period:usize,
+    exact_repeat:usize,
+    incomplete_tail:usize,
+    ambiguous:bool,
+}
+fn structural_role(kind:&str)->Option<&'static str>{
+    match kind{
+        "name"=>Some("N"),"address"=>Some("A"),
+        "phone"|"mobile"=>Some("T"),"product"=>Some("P"),
+        "quantity"=>Some("Q"),_=>None,
+    }
+}
+impl DocumentFeatures{
+    fn new(events:&[Evidence],deferred:&DeferredCandidates)->Self{
+        let mut ordered=(0..events.len()).collect::<Vec<_>>();
+        ordered.sort_by_key(|&i|(events[i].start,events[i].end));
+        let mut ranks=vec![0;events.len()];
+        for (rank,&i) in ordered.iter().enumerate(){ranks[i]=rank;}
+        let mut anchors=ordered.iter().copied().filter(|&i|events[i].kind=="name").collect::<Vec<_>>();
+        anchors.dedup_by_key(|i|(events[*i].start,events[*i].end));
+        if anchors.is_empty(){
+            anchors=ordered.iter().copied().filter(|&i|events[i].kind=="address").collect();
+        }
+        let mut roles=Vec::new();
+        let mut ranges:Vec<(usize,usize)>=Vec::new();
+        let mut last_end=0usize;
+        let mut ambiguous=deferred.truncated||deferred.entries.values().any(|r|!r.hard());
+        for (rank,&i) in ordered.iter().enumerate(){
+            let event=&events[i];
+            let Some(role)=structural_role(event.kind)else{continue};
+            if event.start<last_end{ambiguous=true;}
+            last_end=last_end.max(event.end);
+            // Collapse adjacent product/quantity runs, retaining the raw
+            // event sequence and section bounds for individual decisions.
+            // A leading unattached quantity is NOT an item section.
+            let merge=ranges.last().is_some_and(|&(a,b)|{
+                b==rank&&events[ordered[a]].paragraph==event.paragraph&&
+                ((roles.last()==Some(&"P")&&matches!(role,"P"|"Q"))||
+                 (roles.last()==Some(&"T")&&role=="T"))
+            });
+            if merge{ranges.last_mut().unwrap().1=rank+1;}
+            else{roles.push(role);ranges.push((rank,rank+1));}
+        }
+        // KMP prefix function: linear-time exact period and incomplete
+        // tail, never search arbitrary combinations of candidate blocks.
+        let mut prefix=vec![0usize;roles.len()];
+        for i in 1..roles.len(){
+            let mut j=prefix[i-1];
+            while j>0&&roles[i]!=roles[j]{j=prefix[j-1];}
+            if roles[i]==roles[j]{j+=1;}
+            prefix[i]=j;
+        }
+        let mut period=roles.len().saturating_sub(prefix.last().copied().unwrap_or(0));
+        if period>0&&(!roles[..period].contains(&"N")||
+            !(roles[..period].contains(&"T")||roles[..period].contains(&"A"))){
+            period=roles.len();
+        }
+        let exact_repeat=if period>0&&roles.len()%period==0{roles.len()/period}else{0};
+        let incomplete_tail=if period>0{roles.len()%period}else{0};
+        Self{ordered,ranks,anchors,roles,ranges,period,exact_repeat,incomplete_tail,ambiguous}
+    }
+    fn relation(&self,events:&[Evidence],from:usize,to:usize)->(i64,i64,bool){
+        let a=&events[from];let b=&events[to];
+        let signed=|x:usize,y:usize|if y>=x{(y-x) as i64}else{-((x-y) as i64)};
+        (signed(a.line,b.line),signed(self.ranks[from],self.ranks[to]),a.paragraph==b.paragraph)
+    }
+    // An evaluation identity, NOT a training key. Incomplete coverage
+    // and unknown roles cannot be promoted to independent learning.
+    fn evaluation(&self,events:&[Evidence])->Value{
+        let cycle=if self.exact_repeat>0{&self.roles[..self.period]}else{self.roles.as_slice()};
+        let segments=self.ranges.iter().map(|&(a,b)|{
+            let first=&events[self.ordered[a]];let last=&events[self.ordered[b-1]];
+            json!({"start":first.start,"end":last.end,"line":first.line,"paragraph":first.paragraph})
+        }).collect::<Vec<_>>();
+        // Adjacent and skip-one relations preserve local order without
+        // quadratic enumeration. Distances remain separate from keys.
+        let mut partial=std::collections::BTreeMap::<(&str,&str),usize>::new();
+        for (i,&a) in self.roles.iter().enumerate(){
+            for &b in self.roles.iter().skip(i+1).take(2){*partial.entry((a,b)).or_default()+=1;}
+        }
+        let partial=partial.into_iter().map(|((a,b),count)|json!([a,b,count])).collect::<Vec<_>>();
+        json!({"version":1,"coordinateUnit":"utf8_byte",
+            "evaluationKey":if self.ambiguous||cycle.is_empty(){Value::Null}else{json!([1,cycle])},
+            "roles":self.roles,"segments":segments,"period":self.period,
+            "exactRepeatCount":self.exact_repeat,"incompleteTail":self.incomplete_tail,
+            "partialOrder":partial,"ambiguous":self.ambiguous,"trainingKey":null})
+    }
+}
 // Extraction is separated from assignment at the real production boundary.
 // This is the existing evidence/hit set, not a claim that earlier type
 // gates already retain every competing candidate.
@@ -1013,6 +1121,7 @@ struct ExtractedDocument<'a>{
     geometry:SourceGeometry,
     delivery:DeliveryGeometry,
     exclusions:DeferredCandidates,
+    features:DocumentFeatures,
 }
 fn extract_document<'a>(raw:&'a str,state:&Value,client:Option<&Value>)->ExtractedDocument<'a>{
     let client_id = client_id(client);
@@ -1388,13 +1497,14 @@ fn extract_document<'a>(raw:&'a str,state:&Value,client:Option<&Value>)->Extract
         }
     }
     let delivery=DeliveryGeometry::new(&events);
-    ExtractedDocument{raw,lines,events,product_hits,geometry,delivery,exclusions}
+    let features=DocumentFeatures::new(&events,&exclusions);
+    ExtractedDocument{raw,lines,events,product_hits,geometry,delivery,exclusions,features}
 }
 fn analyze(raw:&str,state:&Value,client:Option<&Value>)->Result<Value,String>{
     assign_document(extract_document(raw,state,client),state,client)
 }
 fn assign_document(document:ExtractedDocument<'_>,state:&Value,client:Option<&Value>)->Result<Value,String>{
-    let ExtractedDocument{raw,lines,mut events,product_hits,geometry,delivery,exclusions}=document;
+    let ExtractedDocument{raw,lines,mut events,product_hits,geometry,delivery,exclusions,features}=document;
     // No blocked candidate may be used as an assignable field. Keep
     // event indexes stable for ProductHit; reject contradictory extraction
     // rather than deleting events after product references were built.
@@ -1409,16 +1519,7 @@ fn assign_document(document:ExtractedDocument<'_>,state:&Value,client:Option<&Va
     })){
         return Err("상품 후보의 원문 위치가 일치하지 않습니다.".into());
     }
-    let mut anchors: Vec<usize> = events.iter().enumerate()
-        .filter_map(|(i,e)| (e.kind == "name").then_some(i)).collect();
-    anchors.sort_by_key(|i| events[*i].start);
-    anchors.dedup_by_key(|i| (events[*i].start,events[*i].end));
-    if anchors.is_empty() {
-        anchors = events.iter().enumerate()
-            .filter_map(|(i,e)| (e.kind=="address").then_some(i)).collect();
-    }
-    // Address fallback anchors must obey the same sorted-offset contract.
-    anchors.sort_by_key(|i|events[*i].start);
+    let anchors=&features.anchors;
     // If a document has only one unnamed destination, keep exactly one row.
     if anchors.is_empty() && raw.trim().is_empty() {
         return Ok(json!({"recipients":[],"candidates":[],"unassigned":[]}));
@@ -1434,7 +1535,7 @@ fn assign_document(document:ExtractedDocument<'_>,state:&Value,client:Option<&Va
     let mut postcodes=vec![HashSet::<String>::new();recipients.len()];
     for index in 0..events.len() {
         if events[index].kind == "product" || events[index].kind == "quantity" { continue; }
-        let row_index = recipient_owner_index(&anchors,&events,index,&geometry,&delivery);
+        let row_index = recipient_owner_index(anchors,&events,index,&geometry,&delivery,&features);
         let rid = recipients[row_index]["id"].as_str().unwrap_or("").to_owned();
         let e = &events[index];
         let kind = e.kind;
@@ -1514,7 +1615,7 @@ fn assign_document(document:ExtractedDocument<'_>,state:&Value,client:Option<&Va
     let has_leading = anchors.first().map_or(false, |a| product_hits.iter().any(|h|
         !h.common && events[h.evidence].start < events[*a].start));
     for hit in &product_hits {
-        let anchor_index = owner_index(&anchors,&events,events[hit.evidence].start);
+        let anchor_index = owner_index(anchors,&events,events[hit.evidence].start);
         let owner = if has_leading && !anchors.is_empty() {
             anchors.iter().position(|a| events[*a].start > events[hit.evidence].start)
                 .unwrap_or(anchors.len()-1)
@@ -1537,7 +1638,7 @@ fn assign_document(document:ExtractedDocument<'_>,state:&Value,client:Option<&Va
                     (e.kind=="quantity" && e.item_id.is_none()
                         && !hit.quantities.contains(&qi)
                         && !product_hits.iter().any(|p|p.line==e.line)
-                        && owner_index(&anchors,&events,e.start)==idx).then_some(qi));
+                        && owner_index(anchors,&events,e.start)==idx).then_some(qi));
                 match (local.next(),local.next()){
                     (Some(q),None)=>Some(q),
                     (Some(_),Some(_))=>None,
@@ -1693,7 +1794,7 @@ fn assign_document(document:ExtractedDocument<'_>,state:&Value,client:Option<&Va
     for idx in 0..recipients.len() {
         let standalone: Vec<usize> = events.iter().enumerate().filter_map(|(i,e)|
             (e.kind=="quantity" && e.item_id.is_none()
-                && owner_index(&anchors,&events,e.start)==idx
+                && owner_index(anchors,&events,e.start)==idx
                 && !product_hits.iter().any(|h| h.line==e.line)).then_some(i)
         ).collect();
         let pending: Vec<usize> = recipients[idx]["items"].as_array().expect("items")
@@ -1728,7 +1829,7 @@ fn assign_document(document:ExtractedDocument<'_>,state:&Value,client:Option<&Va
     }
     for e in &events {
         if (e.kind=="product" || e.kind=="quantity") && e.recipient.is_none() {
-            let idx=owner_index(&anchors,&events,e.start);
+            let idx=owner_index(anchors,&events,e.start);
             // Indexing a missing JSON key creates null. Check the array
             // before indexing; otherwise the first unassigned evidence is
             // silently dropped and its shipping warning disappears.
@@ -2232,6 +2333,32 @@ mod tests {
         assert!(!doc.exclusions.excludes("quantity",start,raw.len()));
         let result=assign_document(doc,&state,None).unwrap();
         assert_eq!(result["recipients"][0]["items"][0]["quantity"],2);
+    }
+    #[test]
+    fn document_features_reuse_order_and_normalize_item_counts(){
+        // Build synthetic source roles to isolate feature behavior from
+        // legacy field gates. No real order values are used.
+        let kinds=["name","mobile","product","quantity","product","quantity",
+                   "name","phone","product","quantity"];
+        let events=kinds.iter().enumerate().map(|(i,&kind)|Evidence{
+            kind,value:String::new(),start:i*3,end:i*3+1,line:i,paragraph:usize::from(i>=6),
+            reason:"synthetic",recipient:None,item_id:None
+        }).collect::<Vec<_>>();
+        let features=DocumentFeatures::new(&events,&DeferredCandidates::default());
+        assert_eq!(features.anchors,vec![0,6]);
+        assert_eq!(features.roles,vec!["N","T","P","N","T","P"]);
+        assert_eq!(features.exact_repeat,2);
+        assert_eq!(features.period,3);
+        assert_eq!(features.relation(&events,6,1),(-5,-5,false));
+        let eval=features.evaluation(&events);
+        assert_eq!(eval["evaluationKey"],json!([1,["N","T","P"]]));
+        assert!(eval["trainingKey"].is_null());
+        let incomplete=DocumentFeatures::new(&events[..7],&DeferredCandidates::default());
+        assert_eq!(incomplete.incomplete_tail,1);
+        assert_eq!(incomplete.exact_repeat,0);
+        let mut uncertain=DeferredCandidates::default();
+        uncertain.truncated=true;
+        assert!(DocumentFeatures::new(&events,&uncertain).evaluation(&events)["evaluationKey"].is_null());
     }
     #[test]
     fn unclassified_records_are_not_promoted_to_fields(){
