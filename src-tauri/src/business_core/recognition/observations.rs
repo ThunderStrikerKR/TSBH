@@ -1775,7 +1775,25 @@ pub(super) fn learn_blend_weights(payload:&Value)->Result<Value,String>{
         "legacyWeight":v.weight().map(|w|1.0-w)})).collect::<Vec<_>>();
     let groups=totals.into_iter().map(|(((kind,route,level),label),v)|json!({
         "sourceKind":kind,"legacyRoute":route,"contextLevel":level,"labelKind":label,"metrics":v.wire()})).collect::<Vec<_>>();
-    Ok(json!({"status":"blend_weight_diagnostic_only","method":"order_macro_brier_grid_v1",
+    // Build independent sections before constructing the report to keep
+    // serde_json's macro expansion within the default Rust recursion limit.
+    let screen_groups=screens.into_iter().map(|(((kind,route,level),label),v)|json!({
+        "sourceKind":kind,"legacyRoute":route,"contextLevel":level,"labelKind":label,"metrics":v.wire()
+    })).collect::<Vec<_>>();
+    let runtime=json!({"schemaVersion":1,"clientBuildVersion":build,
+        "scorePolicyVersion":OWNER_SCORE_POLICY,"captureVersion":4,"supportVersion":4,
+        "featureVersion":1,"contributionVersion":2,"explicitToWeakRatio":3.0,
+        "safetyPolicyVersion":1,"availableAfter":config["evaluationAsOf"],
+        "legacyBins":legacy["bins"],"legacyGates":legacy["gateCalibration"]["groups"],
+        "shadowModels":shadow_model["models"],"blendModels":models,
+        "automaticChangeAuthorized":false});
+    let safety=json!({"policyVersion":1,"status":"diagnostic_only",
+        "minimumCombinedProxySupport":MIN_CHANGE_PROXY,"minimumCombinedMargin":MIN_CHANGE_MARGIN,
+        "maximumOutsideProxySupport":MAX_CHANGE_OUTSIDE,"requiresShadowAgreement":true,
+        "scope":"initial_recipient_ownership_only","runtimeManualLockVerified":false,
+        "runtimeDestinationValidationVerified":false,"independentApprovalVerified":false,
+        "automaticChangeAuthorized":false,"groups":screen_groups});
+    let mut report=json!({"status":"blend_weight_diagnostic_only","method":"order_macro_brier_grid_v1",
         "task":"recipient_ownership","clientBuildVersion":build,"fitStart":config["fitStart"],
         "weightStart":config["weightStart"],"testStart":config["testStart"],"testEnd":config["testEnd"],
         "evaluationAsOf":config["evaluationAsOf"],"minimumWeightFitOrders":MIN_BLEND_ORDERS,
@@ -1783,26 +1801,19 @@ pub(super) fn learn_blend_weights(payload:&Value)->Result<Value,String>{
         "weightOrdersWithBothModels":valid_weight_orders,"testOrdersWithBothModels":valid_test_orders,
         "eligibleWeightObservations":eligible_weight,"eligibleTestObservations":eligible_test,
         "unavailableBothModelsObservations":unavailable,"excludedOrders":excluded,"lateLabelOrders":late,
-        "overallTestCoverage":(eligible_test>0).then(||covered as f64/eligible_test as f64),
-        "models":models,"testGroups":groups,"outsideBucketSelectable":false,
-        "runtimeParameters":{"schemaVersion":1,"clientBuildVersion":build,
-            "scorePolicyVersion":OWNER_SCORE_POLICY,"captureVersion":4,"supportVersion":4,
-            "featureVersion":1,"contributionVersion":2,"explicitToWeakRatio":3.0,
-            "safetyPolicyVersion":1,"availableAfter":config["evaluationAsOf"],
-            "legacyBins":legacy["bins"],"legacyGates":legacy["gateCalibration"]["groups"],
-            "shadowModels":shadow_model["models"],"blendModels":models,
-            "automaticChangeAuthorized":false},
-        "changeSafety":{"policyVersion":1,"status":"diagnostic_only",
-            "minimumCombinedProxySupport":MIN_CHANGE_PROXY,"minimumCombinedMargin":MIN_CHANGE_MARGIN,
-            "maximumOutsideProxySupport":MAX_CHANGE_OUTSIDE,"requiresShadowAgreement":true,
-            "scope":"initial_recipient_ownership_only","runtimeManualLockVerified":false,
-            "runtimeDestinationValidationVerified":false,"independentApprovalVerified":false,
-            "automaticChangeAuthorized":false,
-            "groups":screens.into_iter().map(|(((kind,route,level),label),v)|json!({
-                "sourceKind":kind,"legacyRoute":route,"contextLevel":level,"labelKind":label,"metrics":v.wire()
-            })).collect::<Vec<_>>()},
-        "representativeLabelsVerified":false,"historicalModelVerified":false,"sourceProvenanceVerified":false,
-        "calibratedProbability":null,"eligibleForAutomaticDecision":false,"decisionChanged":false}))
+        "overallTestCoverage":(eligible_test>0).then(||covered as f64/eligible_test as f64)});
+    report["models"]=json!(models);
+    report["testGroups"]=json!(groups);
+    report["outsideBucketSelectable"]=json!(false);
+    report["runtimeParameters"]=runtime;
+    report["changeSafety"]=safety;
+    report["representativeLabelsVerified"]=json!(false);
+    report["historicalModelVerified"]=json!(false);
+    report["sourceProvenanceVerified"]=json!(false);
+    report["calibratedProbability"]=Value::Null;
+    report["eligibleForAutomaticDecision"]=json!(false);
+    report["decisionChanged"]=json!(false);
+    Ok(report)
 }
 
 // P07-05: read-only runtime inference on initial recognition. The optional
