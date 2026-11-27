@@ -120,7 +120,6 @@ jobs:
             'product_manager::tests::rendered_detail_price_fields_match_half_width_sale_status',
             'item_editor::tests::actual_item_detail_keeps_rects_during_error_and_busy_changes',
             'notification_center::shared_notification_center_screen_geometry_tests::actual_notification_popup_keeps_rects_during_read_and_error_changes',
-            'ui_regressions::general_screen_geometry_tests::actual_product_chooser_uses_modal_body_not_management_page_anchor',
             'popup::regression_tests::modal_editor_workspace_geometry_tests::actual_flow_modal_keeps_chrome_and_action_rects_when_permission_changes',
             'popup::regression_tests::round87_modal_flow_contract_tests::flow_regions_measure_master_vertical_gaps_at_normal_and_compact_widths',
             'popup::regression_tests::round87_phase5_modal_contract_tests::production_screens_do_not_bypass_shared_modal_chrome_or_decision_entry',
@@ -170,26 +169,18 @@ jobs:
             'ui_layout::logical_alignment_tests::',
             'ui_layout::pixel_paint::tests::',
             'popup::regression_tests::modal_editor_workspace_geometry_tests::fractional_modal_geometry_uses_logical_anchors_not_device_pixels',
-            'ui_regressions::general_screen_geometry_tests::actual_management_pages_allocate_valid_geometry_at_three_work_area_sizes',
-            'ui_regressions::general_screen_geometry_tests::actual_dual_master_table_header_and_rail_share_geometry',
-            'ui_regressions::general_screen_geometry_tests::actual_reception_sections_and_value_cells_keep_geometry_during_recipient_changes',
-            # Exercise populated rows and error/retry transitions on actual business screens.
-            'ui_regressions::general_screen_geometry_tests::actual_freight_table_keeps_fixed_slots_through_populated_read_transitions',
-            'ui_regressions::general_screen_geometry_tests::actual_history_table_keeps_fixed_slots_through_populated_read_transitions',
-            'ui_regressions::general_screen_geometry_tests::actual_products_table_keeps_fixed_slots_through_populated_read_transitions',
-            'ui_regressions::general_screen_geometry_tests::actual_clients_table_keeps_fixed_slots_through_populated_read_transitions',
-            'ui_regressions::general_screen_geometry_tests::actual_excel_table_keeps_fixed_slots_through_populated_read_transitions',
-            'ui_regressions::general_screen_geometry_tests::actual_freight_subtabs_keep_fixed_slots_through_populated_reads',
-            'ui_regressions::general_screen_geometry_tests::actual_catalog_subtabs_render_populated_records_and_recover_from_errors',
-            'ui_regressions::general_screen_geometry_tests::actual_excel_store_and_archive_tabs_render_populated_records',
-            'ui_regressions::general_screen_geometry_tests::actual_automatic_message_tabs_preserve_workspace_during_reads',
-            'ui_regressions::general_screen_geometry_tests::actual_settings_tabs_keep_top_slots_during_account_and_path_reads',
-            'ui_regressions::general_screen_geometry_tests::actual_settlement_renders_orders_payments_and_error_recovery',
+            # Run the entire screen suite, including newly added tests, not a brittle subset.
+            'ui_regressions::general_screen_geometry_tests::',
             'ui_regressions::reception_state_layout_invariance_tests::',
             'ui_regressions::result_viewport_invariance_tests::',
-            'ui_regressions::general_screen_geometry_tests::unaligned_',
             'ui_test_support::highlight_invariance_detector_tests::',
-            'ui_regressions::general_screen_geometry_tests::highlight_invariance_'
+            'ui_test_support::shared_component_screen_trace_tests::',
+            'ui_regressions::management_async_layout_contract_tests::',
+            'ui_regressions::management_async_behavior_regression_tests::',
+            'ui_regressions::shared_screen_component_contract_tests::',
+            'ui_regressions::shared_detail_divider_contract_tests::',
+            'ui_regressions::shared_composite_control_contract_tests::',
+            'ui_regressions::shared_composite_layout_contract_tests::'
           )
           $listed = cargo test --manifest-path egui-app/Cargo.toml --bin bando-hub-egui -- --list
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
