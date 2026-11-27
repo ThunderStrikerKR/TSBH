@@ -684,7 +684,12 @@ mod modal_input_routing_tests {
         for frame in 0..4 {
             let mut raw=egui::RawInput::default();
             raw.screen_rect=Some(work_area);
+            // Advance the same monotonic clock used by actual egui frames.
+            // The first pass mounts/sizes the menu; every subsequent raise
+            // must still paint it visibly above its opaque owner.
+            raw.time=Some(f64::from(frame)*0.2);
             let output=ctx.run(raw,|ctx|{
+                crate::overlay::begin_frame(ctx);
                 modal_backdrop(ctx,"popup-owner-regression-dim",true);
                 show_decision_window(ctx,"Popup owner","popup-owner-regression",work_area,|ui|{
                     let trigger=ui.button("Open popup");
@@ -700,6 +705,7 @@ mod modal_input_routing_tests {
                     // still place the menu caption above that background.
                     ui.painter().rect_filled(owner_body,0.0,theme::surface_palette(theme::SurfaceRole::Panel,theme::VisualState::Normal).fill);
                 });
+                crate::overlay::finish_frame(ctx);
             });
             if frame>=1{
                 crate::ui_test_support::assert_painted_caption(&output,"Select option",popup_rect);
