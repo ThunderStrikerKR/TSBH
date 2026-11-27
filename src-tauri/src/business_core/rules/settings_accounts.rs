@@ -1,47 +1,69 @@
 //! One native settings-account rule for both the React Tauri command and
 //! the isolated egui settings editor. UI and persistence do not duplicate it.
-use serde_json::Value;
+use serde_json::{json,Value};
+use std::collections::{HashMap,HashSet};
+type Finding=(Vec<String>,Value,String);
 
 pub fn validate(state: &Value) -> Result<(), String> {
-    let accounts = state["settings"]["accounts"].as_array()
-        .ok_or("입금 계좌 목록 형식 오류")?;
-    let mut ids = std::collections::HashSet::new();
-    for account in accounts {
-        let id = account["id"].as_str().ok_or("계좌 ID 오류")?;
-        if id.is_empty() || !ids.insert(id) {
-            return Err("입금 계좌 ID가 중복되거나 비어 있습니다.".into());
-        }
-        if ["bank", "number", "holder"].iter().any(|k|
-            account[*k].as_str().unwrap_or("").trim().is_empty()
-        ) {
-            return Err("은행명, 계좌번호, 예금주를 모두 입력한 뒤 저장하세요.".into());
-        }
-    }
-    let check_id = |id: &Value| -> Result<(), String> {
-        if let Some(id) = id.as_str().filter(|x| !x.is_empty()) {
-            if !ids.contains(id) {
-                return Err("추천 계좌가 등록된 입금 계좌 목록에 없습니다.".into());
-            }
-        }
-        Ok(())
+    diagnostics(state).into_iter().next().map_or(Ok(()),|(_,_,message)|Err(message))
+}
+
+/// Complete findings. Unidentifiable and duplicate IDs cannot be exempted.
+pub(crate) fn diagnostics(state:&Value)->Vec<Finding>{
+    let mut out=Vec::new();
+    let Some(accounts)=state["settings"]["accounts"].as_array()else{
+        out.push((vec![],Value::Null,"입금 계좌 목록 형식 오류".into()));
+        return out;
     };
-    check_id(&state["settings"]["defaultAccountId"])?;
-    for brand in ["BANDOSTAND", "BANDOMALL"] {
-        check_id(&state["settings"]["brandAccounts"][brand])?;
+    let mut counts=HashMap::new();
+    for account in accounts{
+        if let Some(id)=account["id"].as_str(){*counts.entry(id).or_insert(0usize)+=1;}
     }
-    for client in state["clients"].as_array().ok_or("거래처 데이터 형식 오류")? {
-        if !client["deletedAt"].is_null() { continue; }
-        if let Some(id) = client["preferredAccountId"].as_str()
-            .filter(|x| !x.is_empty())
-        {
-            if !ids.contains(id) {
-                return Err(
-                    "거래처에서 사용하는 입금 계좌는 삭제할 수 없습니다. 거래처의 주 사용 계좌부터 변경하세요.".into()
-                );
+    let mut ids=HashSet::new();
+    for account in accounts{
+        let Some(id)=account["id"].as_str()else{
+            out.push((vec![],Value::Null,"계좌 ID 오류".into()));continue;
+        };
+        if id.is_empty()||!ids.insert(id){
+            out.push((vec![],Value::Null,"입금 계좌 ID가 중복되거나 비어 있습니다.".into()));
+        }
+        for field in ["bank","number","holder"]{
+            if account[field].as_str().unwrap_or("").trim().is_empty(){
+                let key=if !id.is_empty()&&counts.get(id)==Some(&1){
+                    vec!["account-field".into(),id.into(),field.into()]
+                }else{vec![]};
+                let evidence=match &account[field]{
+                    Value::Null=>json!({"present":account.get(field).is_some()}),
+                    Value::String(s)=>json!(s),
+                    _=>{out.push((vec![],Value::Null,"은행명, 계좌번호, 예금주를 모두 입력한 뒤 저장하세요.".into()));continue;}
+                };
+                out.push((key,evidence,"은행명, 계좌번호, 예금주를 모두 입력한 뒤 저장하세요.".into()));
             }
         }
     }
-    Ok(())
+    let mut check_id=|key:Vec<String>,value:&Value,message:&str|{
+        if let Some(id)=value.as_str().filter(|x|!x.is_empty()){
+            if !ids.contains(id){out.push((key,json!(id),message.into()));}
+        }
+    };
+    check_id(vec!["default-account".into()],&state["settings"]["defaultAccountId"],"추천 계좌가 등록된 입금 계좌 목록에 없습니다.");
+    for brand in ["BANDOSTAND","BANDOMALL"]{
+        check_id(vec!["brand-account".into(),brand.into()],&state["settings"]["brandAccounts"][brand],"추천 계좌가 등록된 입금 계좌 목록에 없습니다.");
+    }
+    let Some(clients)=state["clients"].as_array()else{
+        out.push((vec![],Value::Null,"거래처 데이터 형식 오류".into()));return out;
+    };
+    let mut client_counts=HashMap::new();
+    for client in clients{
+        if let Some(id)=client["id"].as_str(){*client_counts.entry(id).or_insert(0usize)+=1;}
+    }
+    for client in clients{
+        if !client["deletedAt"].is_null(){continue;}
+        let key=client["id"].as_str().filter(|id|!id.is_empty()&&client_counts.get(id)==Some(&1))
+            .map(|id|vec!["client-account".into(),id.into()]).unwrap_or_default();
+        check_id(key,&client["preferredAccountId"],"거래처에서 사용하는 입금 계좌는 삭제할 수 없습니다. 거래처의 주 사용 계좌부터 변경하세요.");
+    }
+    out
 }
 
 #[cfg(test)]

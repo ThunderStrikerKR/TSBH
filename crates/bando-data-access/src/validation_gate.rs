@@ -3,7 +3,7 @@
 //! coverage is an explicit non-success, never a permissive default.
 use crate::{change_set,validation,validation_dependencies::{self,Dependencies,FullReason,Validator}};
 use serde_json::Value;
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap,BTreeSet};
 use Validator::*;
 
 /// Exhaustive requirement universe. Adding an enum variant requires updating
@@ -64,6 +64,8 @@ pub struct ValidationReport{
     pub checked:BTreeSet<Validator>,
     pub unavailable:BTreeSet<Validator>,
     pub failures:Vec<ValidationFailure>,
+    pub retained_legacy:BTreeMap<Validator,usize>,
+    pub resolved_legacy:BTreeMap<Validator,usize>,
     pub fallback:Option<FullReason>,
 }
 impl ValidationReport{
@@ -86,10 +88,18 @@ fn execute_plan(before:&Value,next:&Value,plan:Dependencies)->ValidationReport{
     // must not quietly weaken that contract. They run only once each.
     required.insert(Message);
     required.insert(ProvisionalNotice);
-    let mut report=ValidationReport{required,checked:BTreeSet::new(),unavailable:BTreeSet::new(),failures:Vec::new(),fallback};
+    let mut report=ValidationReport{required,checked:BTreeSet::new(),unavailable:BTreeSet::new(),failures:Vec::new(),retained_legacy:BTreeMap::new(),resolved_legacy:BTreeMap::new(),fallback};
     for rule in report.required.iter().copied(){
         let Some(check)=binding(rule)else{report.unavailable.insert(rule);continue;};
         report.checked.insert(rule);
+        if rule==Account{
+            let compared=crate::validation_policy::compare(
+                validation::account_diagnostics(before),validation::account_diagnostics(next));
+            if compared.retained>0{report.retained_legacy.insert(rule,compared.retained);}
+            if compared.resolved>0{report.resolved_legacy.insert(rule,compared.resolved);}
+            report.failures.extend(compared.blocking.into_iter().map(|message|ValidationFailure{rule,message}));
+            continue;
+        }
         if let Err(message)=check(before,next){
             report.failures.push(ValidationFailure{rule,message});
             // Malformed root data cannot be safely passed to downstream
@@ -173,6 +183,21 @@ mod tests{
         let report=inspect(&a,&b);
         assert_eq!(report.checked,[Shape].into_iter().collect());
         assert!(report.failures.iter().any(|f|f.rule==Shape));
+        assert!(!report.is_complete_and_valid());
+    }
+    #[test]
+    fn account_legacy_reference_does_not_hide_new_reference(){
+        let mut a=state();
+        a["settings"]["defaultAccountId"]=json!("missing-a");
+        a["settings"]["accounts"]=json!([{"id":"b","bank":"B","number":"1","holder":"H"}]);
+        let mut b=a.clone();
+        b["settings"]["accounts"][0]["bank"]=json!("BB");
+        let report=inspect(&a,&b);
+        assert_eq!(report.retained_legacy.get(&Account),Some(&1));
+        assert!(!report.failures.iter().any(|f|f.rule==Account));
+        b["settings"]["brandAccounts"]["BANDOSTAND"]=json!("missing-b");
+        let report=inspect(&a,&b);
+        assert!(report.failures.iter().any(|f|f.rule==Account));
         assert!(!report.is_complete_and_valid());
     }
     #[test]

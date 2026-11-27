@@ -5,7 +5,7 @@ use serde_json::Value;
 
 #[path = "../../../src-tauri/src/business_core/rules/settings_accounts.rs"]
 mod settings_accounts;
-pub(crate) use settings_accounts::validate as validate_accounts;
+pub(crate) use settings_accounts::{validate as validate_accounts,diagnostics as account_diagnostics};
 
 pub(crate) fn validate_shape(s: &Value) -> Result<(), String> {
     for field in ["products", "orders", "clients", "aliases", "queue", "exports"] {
