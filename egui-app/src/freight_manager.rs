@@ -2,6 +2,8 @@
 //! combination validity come from the existing Tauri Rust business state and
 //! rules::shipping_manager_view. No preview DB or hard-coded rate is treated as
 //! operational freight. Write actions are a separate migration step.
+use crate::ui_layout::SharedUiClipExt as _;
+use crate::ui_layout::SharedPainterClipExt as _;
 use crate::ui_layout::SharedAllocationExt as _;
 use crate::ui_layout::AlignedUiBuilderExt as _;
 use crate::{
@@ -193,7 +195,7 @@ fn freight_assignment_text(
         );
         return;
     }
-    let painter=ui.painter().with_clip_rect(clipped);
+    let painter=ui.painter().with_shared_clip(clipped);
     match role {
         typography::ManagementTableCellRole::Category=>{
             // Show ancestry as muted context with a readable, regular leaf.
@@ -1423,7 +1425,7 @@ impl FreightManager {
                     .aligned_max_rect(left_rect)
                     .layout(egui::Layout::left_to_right(egui::Align::Center)),
                 |tools|{
-                    tools.set_clip_rect(left_rect);
+                    tools.restrict_shared_clip(left_rect);
                     tools.apply_shared_width(crate::ui_primitives::CardWidthPolicy::Fixed,left_rect.width());
                     crate::ui_layout::set_fixed_height(tools,left_rect.height());
                     crate::ui_layout::apply_spacing_role(tools,crate::ui_layout::SpacingRole::ToolbarInput);
@@ -1522,7 +1524,7 @@ impl FreightManager {
             section.scope_builder(bulk_builder,|bulk|{
                     // Clip to the trailing card-inner slot, not the
                     // independent table scrollbar gutter.
-                    bulk.set_clip_rect(right_rect);
+                    bulk.restrict_shared_clip(right_rect);
                     bulk.apply_shared_width(crate::ui_primitives::CardWidthPolicy::Fixed,right_controls_rect.width());
                     crate::ui_layout::set_fixed_height(bulk,right_controls_rect.height());
                     crate::ui_layout::apply_spacing_role(bulk,crate::ui_layout::SpacingRole::ToolbarInput);
@@ -1718,7 +1720,7 @@ impl FreightManager {
                             selector_builder=selector_builder.disabled();
                         }
                         row.scope_builder(selector_builder,|control|{
-                                control.set_clip_rect(selector_clip);
+                                control.restrict_shared_clip(selector_clip);
                                 control.apply_shared_width(crate::ui_primitives::CardWidthPolicy::Fixed,selector_rect.width());
                                 crate::dropdown::management_dropdown(
                                     control,
@@ -1788,7 +1790,7 @@ impl FreightManager {
                                 .aligned_max_rect(actions_rect)
                                 .layout(action_layout),
                             |actions|{
-                                actions.set_clip_rect(
+                                actions.restrict_shared_clip(
                                     actions_clip
                                 );
                                 actions.apply_shared_width(crate::ui_primitives::CardWidthPolicy::Fixed,actions_rect.width());
@@ -2165,7 +2167,7 @@ impl FreightManager {
                     )
                 ).intersect(section.clip_rect());
                 if available.width()>0.0 && available.height()>0.0 {
-                    section.painter().with_clip_rect(available).text(
+                    section.painter().with_shared_clip(available).text(
                         available.center(),egui::Align2::CENTER_CENTER,caption,
                         typography::metadata_font(),
                         theme::text_ink(theme::TextRole::Metadata,theme::TextState::Normal)
@@ -2611,7 +2613,7 @@ fn freight_history_table<const N:usize>(
                 )
             ).intersect(ui.clip_rect());
             if body.width()>0.0&&body.height()>0.0 {
-                ui.painter().with_clip_rect(body).text(
+                ui.painter().with_shared_clip(body).text(
                     body.center(),egui::Align2::CENTER_CENTER,message,
                     typography::metadata_font(),
                     theme::text_ink(theme::TextRole::Metadata,theme::TextState::Normal),
