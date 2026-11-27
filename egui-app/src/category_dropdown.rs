@@ -1,6 +1,7 @@
 //! One reusable drill-down category selector for egui management screens.
 //! Presentation-only: selection writes an existing category ID, never a new
 //! category, product edit, or implicit business transaction.
+use crate::ui_layout::SharedAllocationExt as _;
 use crate::ui_layout::AlignedUiBuilderExt as _;
 use std::collections::{HashMap,HashSet};
 use crate::ui_primitives::UiWidthPolicyExt;
@@ -216,7 +217,7 @@ fn crumb_width(ui:&Ui,name:&str)->f32{
     typography::category_tree_name_galley(ui,name,false).size().x+12.0
 }
 fn crumb_text(ui:&mut Ui,name:&str,width:f32,current:bool,enabled:bool)->Response{
-    let (rect,response)=ui.allocate_exact_size(Vec2::new(width.max(0.0),theme::CATEGORY_EXPLORER_CRUMB_HEIGHT),
+    let (rect,response)=ui.shared_allocate_exact_size(Vec2::new(width.max(0.0),theme::CATEGORY_EXPLORER_CRUMB_HEIGHT),
         if enabled&&!current{egui::Sense::click()}else{egui::Sense::hover()});
     #[cfg(test)]
     crate::ui_test_support::record_highlight_target("category breadcrumb",response.rect,ui.clip_rect());
@@ -232,7 +233,7 @@ pub(crate) fn crumbs_row(ui:&mut Ui,state:&mut ExplorerState,index:&HashMap<&str
     path:&[String],enabled:bool,alpha:f32,slide:f32)->Option<Vec<String>>{
     let mut next=None;
     let height=theme::CATEGORY_EXPLORER_CRUMB_HEIGHT;
-    let (nav_rect,_)=ui.allocate_exact_size(Vec2::new(ui.available_width().max(1.0),height),egui::Sense::hover());
+    let (nav_rect,_)=ui.shared_allocate_exact_size(Vec2::new(ui.available_width().max(1.0),height),egui::Sense::hover());
     // The back action remains in a fixed slot, outside the moving/fading path.
     // Root and busy states disable it without shifting the breadcrumb or tree.
     let back_width=theme::CATEGORY_EXPLORER_BACK_WIDTH.min(nav_rect.width());
@@ -258,7 +259,7 @@ pub(crate) fn crumbs_row(ui:&mut Ui,state:&mut ExplorerState,index:&HashMap<&str
     let dots=theme::CATEGORY_EXPLORER_OMITTED_WIDTH;
     let sep=theme::CATEGORY_EXPLORER_SEPARATOR_WIDTH;
     let omitted=omitted_count(width,&widths[..last],widths[last],dots,sep);
-    let separator=|bar:&mut Ui|{let (r,_)=bar.allocate_exact_size(Vec2::new(sep,height),egui::Sense::hover());
+    let separator=|bar:&mut Ui|{let (r,_)=bar.shared_allocate_exact_size(Vec2::new(sep,height),egui::Sense::hover());
         let galley=typography::category_tree_name_galley(bar,"›",false);
         bar.painter().galley_with_override_text_color(r.center()-galley.size()/2.0,galley,theme::CATEGORY_EXPLORER_SEPARATOR_INK);};
     if omitted>0{
@@ -708,7 +709,7 @@ mod tests{
         let _=ctx.run(egui::RawInput::default(),|ctx|{
             egui::CentralPanel::default().show(ctx,|ui|{
                 for enabled in [true,false]{
-                    let (slot,_)=ui.allocate_exact_size(Vec2::new(theme::CATEGORY_EXPLORER_BACK_WIDTH,
+                    let (slot,_)=ui.shared_allocate_exact_size(Vec2::new(theme::CATEGORY_EXPLORER_BACK_WIDTH,
                         theme::CATEGORY_EXPLORER_CRUMB_HEIGHT),egui::Sense::hover());
                     let mut row=ui.new_child(egui::UiBuilder::new().id_salt(enabled).aligned_max_rect(slot)
                         .layout(egui::Layout::left_to_right(egui::Align::Center)));
