@@ -144,6 +144,11 @@ fn field_contexts(units:&[u16],first:&Value)->FieldContexts{
             }
         }
     }
+    let mut line_roles=BTreeMap::<u64,Vec<&str>>::new();
+    for e in &events{
+        let line=line_roles.entry(e.line).or_default();
+        if line.len()<17{line.push(e.role);}
+    }
     let mut result=FieldContexts::new();
     for (i,e) in events.iter().enumerate(){
         let s=e.position;
@@ -152,9 +157,7 @@ fn field_contexts(units:&[u16],first:&Value)->FieldContexts{
         let local=events[i.saturating_sub(2)..(i+3).min(events.len())].iter().map(|n|
             json!([n.role,n.position==s,distance_bucket(n.line.abs_diff(e.line)),
                 n.paragraph==e.paragraph])).collect::<Vec<_>>();
-        let line_events=events.iter().filter(|n|n.line==e.line)
-            .map(|n|n.role).take(17).collect::<Vec<_>>();
-        let line_order=(line_events.len()<=16).then_some(line_events);
+        let line_order=line_roles.get(&e.line).filter(|v|v.len()<=16);
         let mut tasks=vec![("type",json!([e.role,shape]))];
         if let Some(links)=items.get(&s).filter(|v|v.len()==1){
             let (item,field)=links[0];
@@ -553,6 +556,52 @@ pub(super) fn statistics(payload:&Value)->Result<Value,String>{
 #[cfg(test)]
 mod tests{
     use super::*;
+    #[test]
+    fn field_contexts_use_initial_shape_task_and_manual_client_only(){
+        let first=json!({
+            "recognitionContext":{"clientId":"client-a","clientBasis":"MANUAL"},
+            "candidates":[
+                {"start":0,"end":3,"text":"709","kind":"product","line":0,"paragraph":0},
+                {"start":4,"end":6,"text":"3개","kind":"quantity","line":0,"paragraph":0}
+            ],
+            "recipients":[{"items":[{"productId":"p","variantId":"v","quantity":3,
+                "quantityConfirmed":true,"sources":[
+                    {"start":0,"end":3,"text":"709","field":"product"},
+                    {"start":4,"end":6,"text":"3개","field":"quantity"}
+                ]}]}]
+        });
+        let raw="709 3개";
+        let lookup=lookup(&json!({"raw":raw,"initialAnalysis":first})).unwrap();
+        let entries=lookup["fieldEntries"].as_array().unwrap();
+        assert_eq!(entries.len(),5);
+        let keys=entries.iter().flat_map(|e|rows(&e["contexts"]))
+            .map(|c|c["key"].as_str().unwrap()).collect::<BTreeSet<_>>();
+        assert_eq!(keys.len(),15);
+        assert!(keys.iter().all(|k|!k.contains("709")&&!k.contains("3개")));
+        let mut automatic=first.clone();
+        automatic["recognitionContext"]["clientBasis"]=json!("AUTO");
+        let auto=super::lookup(&json!({"raw":raw,"initialAnalysis":automatic})).unwrap();
+        assert!(rows(&auto["fieldEntries"]).all(|e|e["contexts"].as_array().unwrap().len()==2));
+
+        let order=json!({"id":"order","confirmedAt":"2026-11-27T00:00:00Z",
+            "confirmationSnapshot":{"at":"2026-11-27T00:00:00Z","raw":raw,
+                "data":{"clientId":"client-a"},"recipients":first["recipients"],
+                "recognitionBaseline":{"schemaVersion":1,"initialAnalysis":first,
+                    "finalClientId":"client-a","finalClientSelection":"MANUAL"}}});
+        let report=statistics(&json!({"orders":[order.clone(),order.clone()]})).unwrap();
+        assert_eq!(report["uniqueOrders"],1);
+        let records=report["fieldContextStatistics"].as_array().unwrap();
+        assert_eq!(records.len(),15);
+        assert!(records.iter().all(|r|r["counts"]["independentOrders"]==1));
+        let selected=records.iter().find(|r|r["key"].as_str().unwrap().contains("\\\"quantity\\\"")).unwrap();
+        let filtered=statistics(&json!({"orders":[order.clone()],"contextKeys":[selected["key"]]})).unwrap();
+        assert_eq!(filtered["fieldContextStatistics"].as_array().unwrap().len(),1);
+        assert_eq!(filtered["fieldStatistics"],json!([]));
+        let mut changed=order.clone();
+        changed["confirmationSnapshot"]["data"]["clientId"]=json!("other");
+        let report=statistics(&json!({"orders":[changed]})).unwrap();
+        assert_eq!(report["fieldContextStatistics"].as_array().unwrap().len(),10);
+    }
     #[test]
     fn field_evidence_keeps_candidate_polarity_and_distinct_order_counts(){
         let mut local=FieldCounts::default();
