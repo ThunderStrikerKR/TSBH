@@ -81,10 +81,9 @@ pub const ERROR_TEXT:Color32=Color32::from_rgb(240,160,160);
 pub const ERROR_BORDER:Color32=Color32::from_rgb(199,107,107);
 pub const DANGER_ACTION_BG:Color32=Color32::from_rgb(53,37,37);
 pub const DANGER_ACTION_BORDER:Color32=Color32::from_rgb(117,68,68);
-// Single-select popup palette, independent of the global widget hover and
-// confirmed-order orange selection. A chosen option stays muted navy while
-// the hovered option is brighter blue; no conflicting highlight roles.
-pub const MANAGEMENT_DROPDOWN_SELECTED_BG: Color32 = Color32::from_rgb(37, 62, 82);
+// Persistent single-select state uses the existing shared orange palette;
+// transient pointer hover remains blue.
+pub const MANAGEMENT_DROPDOWN_SELECTED_BG: Color32 = ORANGE_EMPHASIS_BG;
 pub const MANAGEMENT_DROPDOWN_HOVER_BG: Color32 = Color32::from_rgb(57, 91, 118);
 // Hierarchical category explorer reuses the management dropdown master.
 // Exploration is neutral; confirmed filtering uses the existing orange role.
