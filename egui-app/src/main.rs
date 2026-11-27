@@ -9583,51 +9583,31 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                     board.groups.iter().find(|g|g.id==id)
                 ).cloned();
                 if let Some(group)=group{
-                    crate::popup::show_decision_window(ctx,"주문 묶음 삭제","egui-workflow-delete-group",work_area,|ui|{
-                        crate::popup::decision_workspace(ui,|decision|{
-                            close=decision.header("주문 묶음 삭제","취소",self.workflow_action.is_none()
-                            );
-                            decision.body(|ui|{
-                                ui.label(format!(
-                                    "{} / 배송 {}건 묶음을 삭제할까요?",
-                                    group.dealer_name,group.shipments.len()
-                                ));
-                                ui.label("접수 원문과 감사 기록은 보존됩니다.");
-                            });
-                            decision.actions(|buttons|{
-                                if crate::button::action(
-                                    buttons,"묶음 삭제",ButtonRole::Danger,
-                                    writable && !busy && !group.transferred
-                                ).clicked(){
-                                    command=Some((
-                                        "delete_group".into(),id.clone(),
-                                        None,None,false
-                                    ));
-                                }
-                            });
-                        });
-                    });
+                    let decision=crate::popup::show_delete_confirmation(
+                        ctx,work_area,"egui-workflow-delete-group","주문 묶음 삭제","묶음 삭제",
+                        self.workflow_action.is_none(),writable&&!busy&&!group.transferred,
+                        crate::popup::DeleteBody::Plain,|ui|{
+                            ui.label(format!("{} / 배송 {}건 묶음을 삭제할까요?",
+                                group.dealer_name,group.shipments.len()));
+                            ui.label("접수 원문과 감사 기록은 보존됩니다.");
+                        }
+                    );
+                    close=decision==crate::popup::ConfirmDecision::Cancel;
+                    if decision==crate::popup::ConfirmDecision::Confirm{
+                        command=Some(("delete_group".into(),id.clone(),None,None,false));
+                    }
                 }else{close=true;}
             }
             WorkflowDialog::DeletePending(id)=>{
                 if self.drafts.iter().any(|d|d.id==id){
-                    crate::popup::show_decision_window(ctx,"미확정 발주서 삭제","egui-workflow-delete-pending",work_area,|ui|{
-                        crate::popup::decision_workspace(ui,|decision|{
-                            close=decision.header("미확정 발주서 삭제","취소",true
-                            );
-                            decision.body(|ui|{
-                                ui.label("미확정 발주서를 삭제할까요?");
-                            });
-                            decision.actions(|buttons|{
-                                if crate::button::action(
-                                    buttons,"발주서 삭제",ButtonRole::Danger,
-                                    !busy
-                                ).clicked(){
-                                    delete_pending=Some(id.clone());
-                                }
-                            });
-                        });
-                    });
+                    let decision=crate::popup::show_delete_confirmation(
+                        ctx,work_area,"egui-workflow-delete-pending","미확정 발주서 삭제","발주서 삭제",
+                        true,!busy,crate::popup::DeleteBody::Plain,|ui|{
+                            ui.label("미확정 발주서를 삭제할까요?");
+                        }
+                    );
+                    close=decision==crate::popup::ConfirmDecision::Cancel;
+                    if decision==crate::popup::ConfirmDecision::Confirm{delete_pending=Some(id.clone());}
                 }else{close=true;}
             }
             WorkflowDialog::PaymentNotice(id)=>{
