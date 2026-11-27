@@ -117,7 +117,7 @@ pub const MANUAL_ASSIGNMENT_STROKE_WIDTH:f32=1.25;
 pub const CARD_BORDER:Color32=DIVIDER;
 // Restore the original shared blue pointer feedback; focus stays independent.
 pub const BUTTON_HOVER_BG:Color32=Color32::from_rgb(47,62,74);
-pub const ACTIVE_NAVIGATION_BG:Color32=Color32::from_rgb(41,72,92);
+const ACTIVE_NAVIGATION_BG:Color32=Color32::from_rgb(41,72,92);
 // Strong pointer feedback belongs to controls, not the subdued table/sort tint.
 pub const BUTTON_HOVER_TINT:Color32=Color32::from_rgba_unmultiplied_const(112,180,255,66);
 pub const BUTTON_HOVER_LIGHT_BG:Color32=Color32::from_rgb(143,197,255);
@@ -132,8 +132,8 @@ pub const REQUIRED_REVIEW_BORDER:Color32=SELECTED_ORDER;
 pub const ERROR_BG:Color32=Color32::from_rgb(51,37,37);
 pub const ERROR_TEXT:Color32=Color32::from_rgb(240,160,160);
 pub const ERROR_BORDER:Color32=Color32::from_rgb(199,107,107);
-pub const DANGER_ACTION_BG:Color32=Color32::from_rgb(53,37,37);
-pub const DANGER_ACTION_BORDER:Color32=Color32::from_rgb(117,68,68);
+const DANGER_ACTION_BG:Color32=Color32::from_rgb(53,37,37);
+const DANGER_ACTION_BORDER:Color32=Color32::from_rgb(117,68,68);
 // Persistent single-select state uses the existing shared orange palette;
 // transient pointer hover remains blue.
 pub const MANAGEMENT_DROPDOWN_SELECTED_BG: Color32 = ORANGE_EMPHASIS_BG;
@@ -166,8 +166,8 @@ pub const ORANGE_EMPHASIS_BG: Color32 = Color32::from_rgb(59, 43, 27); // #3B2B1
 pub const ORANGE_EMPHASIS_TEXT:Color32=Color32::from_rgb(255,228,188);
 // Checkbox marks are neutral; row/option selection retains its independent orange palette.
 pub const CHECKBOX_CHECKED_BG:Color32=RAISED;
-pub const CHECKBOX_CHECKED_MARK:Color32=BRIGHT;
-pub const CHECKBOX_CHECKED_STROKE_WIDTH:f32=2.0;
+const CHECKBOX_CHECKED_MARK:Color32=BRIGHT;
+const CHECKBOX_CHECKED_STROKE_WIDTH:f32=2.0;
 pub const ONE_TOUCH_BG:Color32=ORANGE_EMPHASIS_BG;
 pub const ONE_TOUCH_TEXT:Color32=ORANGE_EMPHASIS_TEXT;
 pub const ONE_TOUCH_BORDER:Color32=SELECTED_ORDER;
@@ -328,7 +328,7 @@ pub const RECEPTION_RECIPIENT_NAV_COUNT_WIDTH:f32 = 38.0;
 // vector chevrons are deliberately lower contrast than active arrows.
 pub const RECEPTION_RECIPIENT_NAV_DISABLED_BG:Color32 =
     Color32::from_rgb(27,27,27);
-pub const RECEPTION_RECIPIENT_NAV_DISABLED_ICON:Color32 =
+const RECEPTION_RECIPIENT_NAV_DISABLED_ICON:Color32 =
     Color32::from_rgb(72,72,72);
 pub const RECEPTION_RECIPIENT_NAV_WIDTH:f32 =
     2.0*RECEPTION_RECIPIENT_NAV_ARROW_WIDTH

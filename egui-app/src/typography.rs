@@ -202,7 +202,7 @@ pub fn data_value_text_with_state(
 pub const MANAGEMENT_DROPDOWN_TEXT_OPTICAL_Y: f32 = 2.0;
 /// Optical adjustment for the TEXT INSIDE compact dropdown popup options.
 /// The option's 28pt background, hitbox, hover and selected outline stay put.
-pub const MANAGEMENT_DROPDOWN_OPTION_TEXT_OPTICAL_Y: f32 = -1.0;
+const MANAGEMENT_DROPDOWN_OPTION_TEXT_OPTICAL_Y: f32 = -1.0;
 pub fn management_dropdown_option_text_y(row_height:f32,text_height:f32)->f32 {
     (row_height-text_height)*0.5+MANAGEMENT_DROPDOWN_OPTION_TEXT_OPTICAL_Y
 }
@@ -215,10 +215,10 @@ pub const MANAGEMENT_DATE_TEXT_OPTICAL_SHIFT_Y: i8 = INPUT_TEXT_OPTICAL_SHIFT_Y;
 /// look above the optical center of a 36pt field. Apply the adjustment only
 /// to inline *form labels*, never table headers, navigation or body text.
 /// The position is shared by every form using crate::ui_primitives::form_field_label.
-pub const FORM_LABEL_OPTICAL_CENTER_Y: f32 = 2.0;
+const FORM_LABEL_OPTICAL_CENTER_Y: f32 = 2.0;
 /// Move form-editing ink and its caret together. Never use the Consolas
 /// numeric glyph tweak to fix a proportional Body TextEdit baseline.
-pub const FORM_INPUT_OPTICAL_SHIFT_Y: i8 = INPUT_TEXT_OPTICAL_SHIFT_Y;
+const FORM_INPUT_OPTICAL_SHIFT_Y: i8 = INPUT_TEXT_OPTICAL_SHIFT_Y;
 
 pub fn form_label_text_y(row_height:f32,galley_height:f32)->f32 {
     (row_height-galley_height)*0.5+FORM_LABEL_OPTICAL_CENTER_Y

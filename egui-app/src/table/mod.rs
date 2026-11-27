@@ -160,7 +160,7 @@ pub(crate) fn management_table_cells<const N:usize>(
     })
 }
 
-pub(crate) fn management_table_row_fill(index:usize)->Color32{
+fn management_table_row_fill(index:usize)->Color32{
     theme::surface_palette(if index%2==0{theme::SurfaceRole::Panel}else{theme::SurfaceRole::AlternateRow},theme::VisualState::Normal).fill
 }
 
@@ -1258,7 +1258,7 @@ pub(crate) fn reception_items_header(ui:&mut Ui,remove_slot:bool)->Rect{
 /// Use the actual laid-out glyph box for all value cells.
 /// Product text is left aligned; quantity and amount share a right edge and
 /// the exact same vertical midpoint independently of their string length.
-pub(crate) fn reception_item_value_origin(cell:Rect,glyphs:Vec2,right:bool)->egui::Pos2 {
+fn reception_item_value_origin(cell:Rect,glyphs:Vec2,right:bool)->egui::Pos2 {
     egui::pos2(
         if right {cell.right()-glyphs.x} else {cell.left()},
         cell.center().y-glyphs.y/2.0,

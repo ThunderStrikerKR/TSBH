@@ -5,6 +5,7 @@ on:
     paths:
       - .github/workflows/egui-compile-gate.yml
       - scripts/check-egui-layout-placement.py
+      - scripts/audit-egui-design-api.py
       - 'scripts/egui-design-api-contract*.json'
       - egui-app/**
       - src-tauri/src/business_core/rules/history.rs
@@ -30,6 +31,7 @@ on:
     paths:
       - .github/workflows/egui-compile-gate.yml
       - scripts/check-egui-layout-placement.py
+      - scripts/audit-egui-design-api.py
       - 'scripts/egui-design-api-contract*.json'
       - egui-app/**
   workflow_dispatch:
@@ -52,6 +54,14 @@ jobs:
           key: egui-compile
       - name: Require shared egui explicit placement ownership
         run: python scripts/check-egui-layout-placement.py
+      - name: Audit public design API references
+        run: python scripts/audit-egui-design-api.py --output design-api-reference-audit.json
+      - name: Upload public design API reference inventory
+        uses: actions/upload-artifact@v4
+        with:
+          name: egui-design-api-reference-audit
+          path: design-api-reference-audit.json
+          retention-days: 7
       - name: Compile current Windows egui source
         id: compile_source
         run: cargo check --manifest-path egui-app/Cargo.toml
