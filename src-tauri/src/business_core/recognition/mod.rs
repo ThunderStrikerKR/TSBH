@@ -65,8 +65,9 @@ pub fn execute(operation: &str, payload: Value) -> Result<Value, String> {
                         .is_some_and(|variants|variants.iter().any(|variant|
                             variant.get("source").and_then(Value::as_str)==Some("DEMO")))
                 });
-            if payload["collectOwnerTrace"]==true {
-                analyze_with_owner_trace(raw,&reception,payload.get("client"),true)
+            if payload["collectOwnerTrace"]==true || payload["collectCandidateTrace"]==true {
+                analyze_with_owner_trace(raw,&reception,payload.get("client"),
+                    payload["collectOwnerTrace"]==true,payload["collectCandidateTrace"]==true)
             }else{
                 analyze(raw,&reception,payload.get("client"))
             }
@@ -846,15 +847,17 @@ fn dated_dispatch_instruction(text:&str)->bool{
     re.is_match(text)
 }
 fn analyze(raw: &str, state: &Value, client: Option<&Value>) -> Result<Value, String> {
-    analyze_with_owner_trace(raw,state,client,false)
+    analyze_with_owner_trace(raw,state,client,false,false)
 }
 
 fn analyze_with_owner_trace(raw:&str,state:&Value,client:Option<&Value>,
-    collect_owner_trace:bool)->Result<Value,String>{
+    collect_owner_trace:bool,collect_candidate_trace:bool)->Result<Value,String>{
     let client_id = client_id(client);
     let lines = physical_lines(raw);
     let mut events: Vec<Evidence> = Vec::new();
     let mut product_hits: Vec<ProductHit> = Vec::new();
+    let mut candidate_trace=Vec::new();
+    let mut candidate_trace_truncated=false;
     let phone = phone_regex();
     let person_label = recipient_label();
     // Direct translation of order-evidence.ts:140-170: parenthesized
@@ -1048,7 +1051,11 @@ fn analyze_with_owner_trace(raw:&str,state:&Value,client:Option<&Value>,
         let skip_until = ts_semantics::table_product_prefix(trimmed);
         // Never synthesize a new string and then treat its indexes as offsets
         // into raw: UTF-8/UTF-16 source-evidence contract must be lossless.
-        let matched = model::decision_json(&model::decide(skip_until,state,client_id));
+        let capture=collect_candidate_trace && candidate_trace.len()<64;
+        if collect_candidate_trace && !capture{candidate_trace_truncated=true;}
+        let mut stages=Vec::new();
+        let matched = model::decision_json(&model::decide_with_trace(skip_until,state,client_id,
+            capture.then_some(&mut stages)));
         let mut quantity_values = if trimmed.contains('|') {
             let model_end=matched.get("evidence").and_then(Value::as_object)
                 .and_then(|o|o.get("end")).and_then(Value::as_u64)
@@ -1060,6 +1067,7 @@ fn analyze_with_owner_trace(raw:&str,state:&Value,client:Option<&Value>,
                 model::products(state).iter().any(|p|model::model_names(p).iter()
                     .any(|name|model::find_term(skip_until,name,true).is_some())))
         };
+        let quantity_before=if capture{Some(quantity_values.clone())}else{None};
         // parser.ts:537-552: a compound sale-unit phrase containing
         // "2개" is part of the option name, not an order quantity.
         if quantity_values.len()==1 {
@@ -1078,6 +1086,19 @@ fn analyze_with_owner_trace(raw:&str,state:&Value,client:Option<&Value>,
         }
         let mut quantity_indexes = Vec::new();
         let offset = line.text.find(trimmed).unwrap_or(0);
+        if capture{
+            let encode=|qs:&[quantity::Quantity]|qs.iter().take(128).map(|q|json!({
+                "value":q.value,"start":utf16(raw,line.start+offset+q.start),
+                "end":utf16(raw,line.start+offset+q.end)})).collect::<Vec<_>>();
+            let before=quantity_before.as_deref().unwrap_or(&[]);
+            candidate_trace.push(json!({"line":line.number,
+                "source":{"start":utf16(raw,line.start+offset),
+                    "end":utf16(raw,line.start+offset+trimmed.len())},
+                "productStages":stages,"quantityBeforeSaleUnitFilter":encode(before),
+                "quantityAfterSaleUnitFilter":encode(&quantity_values),
+                "quantityTruncated":before.len()>128||quantity_values.len()>128,
+                "saleUnitFilterRemoved":before.len()>quantity_values.len()}));
+        }
         for q in quantity_values {
             quantity_indexes.push(add_match(&mut events, line, offset+q.start,offset+q.end,
                 "quantity",q.value.to_string(),"상품 행에 명시된 수량"));
@@ -1476,6 +1497,12 @@ fn analyze_with_owner_trace(raw:&str,state:&Value,client:Option<&Value>,
     let mut result=json!({"recipients":recipients,"candidates":candidates,"unassigned":unassigned});
     if let Some(trace)=owner_trace {
         result["recipientOwnerTrace"]=json!({"schemaVersion":1,"decisions":trace});
+    }
+    if collect_candidate_trace{
+        result["classificationCandidateTrace"]=json!({"schemaVersion":1,
+            "coverage":"product_stages_and_quantity_post_extraction",
+            "truncated":candidate_trace_truncated,"decisions":candidate_trace,
+            "fullCandidateCoverage":false});
     }
     Ok(result)
 }

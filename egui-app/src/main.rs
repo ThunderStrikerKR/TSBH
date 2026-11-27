@@ -4848,6 +4848,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                     // The display projection must not retain a second copy.
                     if let Some(view)=analysis.recognition.as_object_mut(){
                         view.remove("recipientOwnerTrace");
+                        view.remove("classificationCandidateTrace");
                     }
                     if let Some(order_id)=self.active_id.as_deref(){
                         if let Err(error)=analysis.scope_display(order_id,&self.raw_source){

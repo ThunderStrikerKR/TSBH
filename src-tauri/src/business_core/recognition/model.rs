@@ -408,14 +408,26 @@ fn strongest<'a>(text: &str, entries: Vec<Entry<'a>>) -> Vec<Entry<'a>> {
     if priority == 1 && xs.len() > 1 { return vec![]; }
     xs
 }
+// Observe the real stage survivors without re-running matching. A bounded
+// stage explicitly declares truncation; it cannot certify complete coverage.
+fn trace_entries(trace:&mut Option<&mut Vec<Value>>,stage:&str,entries:&[Entry<'_>]){
+    if let Some(out)=trace.as_deref_mut(){
+        out.push(json!({"stage":stage,"count":entries.len(),"truncated":entries.len()>128,
+            "candidates":entries.iter().take(128).map(|e|json!({
+                "productId":str_field(e.p,"id"),"priority":e.priority,
+                "byteStart":e.span.0,"byteEnd":e.span.1})).collect::<Vec<_>>()}));
+    }
+}
 fn name_entries<'a>(text: &str, ps: &[&'a Value],
-    verified: &HashSet<String>) -> Vec<Entry<'a>> {
+    verified: &HashSet<String>,trace:&mut Option<&mut Vec<Value>>) -> Vec<Entry<'a>> {
     let mut entries: Vec<_> = ps.iter().filter_map(|p| evidence(text, p, verified)).collect();
+    trace_entries(trace,"literal_evidence",&entries);
     if no_holes(text) {
         entries.retain(|e| top(e.p, verified) != Some("PERFORATED"));
     } else if with_holes(text) {
         entries.retain(|e| top(e.p, verified) != Some("UNPERFORATED"));
     }
+    trace_entries(trace,"perforation_filter",&entries);
     let numeric = Regex::new(r"(?i)(?:BD[\s-]*)?(\d{3})(?:\b|$)").expect("static regex");
     if let Some(m) = numeric.captures(text) {
         if let Some(whole) = m.get(0) {
@@ -427,6 +439,7 @@ fn name_entries<'a>(text: &str, ps: &[&'a Value],
                         && top(e.p, verified) == Some(desired))
                     .cloned().collect();
                 if !family.is_empty() {
+                    trace_entries(trace,"verified_model_family",&family);
                     let selected = if let Some(color) = written_color(text) {
                         family.into_iter().filter(|e| variants(e.p).iter().any(|v|
                             norm_color(str_field(v, "color")) == color) ||
@@ -437,12 +450,17 @@ fn name_entries<'a>(text: &str, ps: &[&'a Value],
                             .cloned().collect();
                         if defaults.is_empty() { family } else { defaults }
                     };
-                    return strongest(text, selected);
+                    trace_entries(trace,"family_color_or_default_filter",&selected);
+                    let selected=strongest(text,selected);
+                    trace_entries(trace,"strongest_name_evidence",&selected);
+                    return selected;
                 }
             }
         }
     }
-    strongest(text, entries)
+    let selected=strongest(text,entries);
+    trace_entries(trace,"strongest_name_evidence",&selected);
+    selected
 }
 fn alias_entries<'a>(text: &str, state: &'a Value, client_id: &str,
     ps: &[&'a Value]) -> Vec<(&'a Value, &'a Value)> {
@@ -485,13 +503,23 @@ fn conductor_semantic_entries<'a>(text: &str, ps: &[&'a Value]) -> Vec<Entry<'a>
         .map(|p|Entry{p,priority:1,span:(m.start(),m.end())}).collect()
 }
 pub(crate) fn decide(text: &str, state: &Value, client_id: &str) -> Decision {
+    decide_with_trace(text,state,client_id,None)
+}
+pub(super) fn decide_with_trace(text:&str,state:&Value,client_id:&str,mut trace:Option<&mut Vec<Value>>)->Decision{
     let ps = products(state);
     let verified = verified_bases(&ps);
-    let entries = name_entries(text, &ps, &verified);
+    let entries = name_entries(text, &ps, &verified,&mut trace);
     // parser.ts:487-510 filters brand/catalog and DEMO before options.
     let (mut entries,known_brand) =
         filter_business_candidates(text,state,&ps,entries);
+    trace_entries(&mut trace,"business_catalog_filter",&entries);
     let aliases = alias_entries(text, state, client_id, &ps);
+    if let Some(out)=trace.as_deref_mut(){
+        out.push(json!({"stage":"matched_aliases","count":aliases.len(),"truncated":aliases.len()>128,
+            "candidates":aliases.iter().take(128).map(|(a,p)|json!({
+                "productId":str_field(p,"id"),"aliasId":str_field(a,"id"),
+                "clientScoped":a["clientId"].is_string()})).collect::<Vec<_>>()}));
+    }
     let mut hint=code_color_hint(text,&ps);
     if let Some((base,_,term))=hint.clone() {
         // parser.ts::protectedCode guards against reinterpreting the final
@@ -510,6 +538,7 @@ pub(crate) fn decide(text: &str, state: &Value, client_id: &str) -> Decision {
                     p,priority:2,span:find_term(text,&term,false)
                         .unwrap_or((0,text.len()))
                 }).collect();
+            trace_entries(&mut trace,"color_code_matches",&matched);
             if matched.iter().any(|e|!variants(e.p).iter()
                 .any(|v|str_field(v,"source")=="DEMO")) {
                 matched.retain(|e|!variants(e.p).iter()
@@ -521,10 +550,12 @@ pub(crate) fn decide(text: &str, state: &Value, client_id: &str) -> Decision {
     // Only use meaning-equivalent wording if literal names and aliases
     // found nothing. Ambiguous variants remain unresolved by the usual
     // candidate-selection safeguards.
+    trace_entries(&mut trace,"color_code_filter",&entries);
     let mut semantic_name=false;
     if entries.is_empty() && aliases.is_empty() {
         let semantic=conductor_semantic_entries(text,&ps);
         if !semantic.is_empty() {
+            trace_entries(&mut trace,"semantic_name_matches",&semantic);
             let (filtered,_)=filter_business_candidates(text,state,&ps,semantic);
             if !filtered.is_empty() {
                 entries=filtered;
@@ -539,8 +570,10 @@ pub(crate) fn decide(text: &str, state: &Value, client_id: &str) -> Decision {
             .map(|p|Entry{p,priority:0,span:(0,text.len())}).collect();
         branded_category=true;
     }
+    trace_entries(&mut trace,"semantic_or_branded_fallback",&entries);
     let proof = qualifiers(text);
     entries.retain(|e| qualifies(e.p, &proof, &verified));
+    trace_entries(&mut trace,"qualifier_filter",&entries);
     let code_entries = entries.clone();
     let first_alias = aliases.first().map(|(a,_)| *a);
     if entries.is_empty() {
@@ -554,6 +587,7 @@ pub(crate) fn decide(text: &str, state: &Value, client_id: &str) -> Decision {
             }
         }
     }
+    trace_entries(&mut trace,"alias_fallback",&entries);
     let explicit = hint.as_ref().map(|(_,color,_)|color.clone())
         .or_else(||written_color(text));
     let color_matched: Vec<_> = if let Some(ref color) = explicit {
@@ -561,6 +595,7 @@ pub(crate) fn decide(text: &str, state: &Value, client_id: &str) -> Decision {
             .any(|v| norm_color(str_field(v, "color")) == *color))
             .cloned().collect()
     } else { entries.clone() };
+    trace_entries(&mut trace,"explicit_color_filter",&color_matched);
     let alias_selected = first_alias.and_then(|a| {
         entries.iter().find(|e| str_field(e.p, "id") == str_field(a, "productId"))
     }).cloned();
@@ -604,6 +639,7 @@ pub(crate) fn decide(text: &str, state: &Value, client_id: &str) -> Decision {
         && !category_mismatch && !broad && !branded_category && color_matched.len() == 1 {
         chosen = available.first().cloned();
     }
+    trace_entries(&mut trace,"final_available",&available);
     let ambiguous = chosen.is_none() && available.len() > 1;
     let kind = if alias_conflict { "CONFLICT" }
         else if category_mismatch { "CATEGORY_CONFLICT" }
@@ -654,6 +690,12 @@ pub(crate) fn decide(text: &str, state: &Value, client_id: &str) -> Decision {
             str_field(p,"name").to_owned(),
             str_field(p,"origin").to_owned())
     } else { (None,None,text.trim().to_owned(),"FACTORY".to_owned()) };
+    if let Some(out)=trace.as_deref_mut(){
+        out.push(json!({"stage":"final_decision","selectedProductId":product_id,
+            "selectedVariantId":variant_id,"aliasConflict":alias_conflict,
+            "categoryMismatch":category_mismatch,"broadCategory":broad,
+            "brandedCategory":branded_category,"ambiguous":ambiguous,"reasonCode":kind}));
+    }
     let span = chosen.as_ref().map(|e|e.span)
         .or_else(|| available.first().map(|e|e.span));
     Decision {
