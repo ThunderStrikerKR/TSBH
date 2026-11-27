@@ -1467,6 +1467,9 @@ impl PreviewStore {
 
     pub(crate) fn recognition_learning_support(input:&Value,
         evaluate:impl Fn(&[Value])->Result<Value,String>)->Result<Value,String>{
+        if input.get("fieldBlendRegistry").is_some()&&input.as_object().is_none_or(|o|o.len()!=1){
+            return Err("필드 모델 후보 조회 요청을 분리하세요.".into());
+        }
         if let Some(performance)=input.get("combinedModelPerformance"){
             if ["blendModelRegistry","shadowEvaluation","combinedEvaluation","legacyScoreCalibration",
                 "shadowCandidateCalibration","blendWeightLearning","fieldBlendWeightLearning","localChronologicalReplay"].iter().any(|k|input.get(*k).is_some()){
@@ -2564,6 +2567,34 @@ mod reception_edit_audit_tests {
         assert!(auto_retrain_config(&vec![orders[0].clone();60],now,"test").is_none());
     }
 
+    #[test]
+    fn field_blend_registry_keeps_tasks_and_revisions_separate(){
+        let conn=Connection::open_in_memory().unwrap();
+        assert_eq!(list_field_blend_candidates(&conn,"scope").unwrap()["models"],json!([]));
+        let digests=LearningDigests::from([("synthetic".into(),"a".repeat(64))]);
+        let config=json!({"fitStart":"2026-01-01T00:00:00Z","weightStart":"2026-02-01T00:00:00Z",
+            "testStart":"2026-03-01T00:00:00Z","testEnd":"2026-04-01T00:00:00Z","evaluationAsOf":"2026-04-01T00:00:00Z"});
+        let mut report=json!({"schemaVersion":1,"status":"field_blend_diagnostic_only",
+            "clientBuildVersion":env!("CARGO_PKG_VERSION"),"currentSourceDigestsVerified":true,
+            "automaticChangeAuthorized":false,"eligibleForAutomaticDecision":false,"decisionChanged":false,
+            "models":[{"task":"type","learningWeight":0.5,"automaticChangeAuthorized":false},
+                {"task":"product","learningWeight":0.7,"automaticChangeAuthorized":false},
+                {"task":"quantity","learningWeight":null,"automaticChangeAuthorized":false}]});
+        let first=store_field_blend_candidates(&conn,"scope",&digests,&config,&report).unwrap();
+        assert_eq!(first.len(),2);assert_ne!(first[0],first[1]);
+        assert_eq!(store_field_blend_candidates(&conn,"scope",&digests,&config,&report).unwrap(),first);
+        assert_eq!(list_field_blend_candidates(&conn,"other").unwrap()["models"],json!([]));
+        report["models"][0]["learningWeight"]=json!(0.6);
+        let next=store_field_blend_candidates(&conn,"scope",&digests,&config,&report).unwrap();
+        assert_ne!(first[0],next[0]);assert_eq!(first[1],next[1]);
+        let list=list_field_blend_candidates(&conn,"scope").unwrap();
+        assert_eq!(list["models"].as_array().unwrap().len(),3);
+        assert!(list["selectedModelId"].is_null());assert_eq!(list["automaticChangeAuthorized"],false);
+        report["currentSourceDigestsVerified"]=json!(false);
+        assert!(store_field_blend_candidates(&conn,"scope",&digests,&config,&report).is_err());
+        conn.execute("UPDATE recognition_field_blend_candidates SET payload='{}' WHERE model_id=?1",[&first[0]]).unwrap();
+        assert!(list_field_blend_candidates(&conn,"scope").is_err());
+    }
     #[test]
     fn blend_registry_stores_immutable_revisions_and_separate_selection(){
         let conn=Connection::open_in_memory().unwrap();
