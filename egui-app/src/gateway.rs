@@ -1038,6 +1038,23 @@ pub(crate) fn read_recognition_correction_page(query:&Value)->Result<Value,Strin
         "candidates":candidates,"nextCursor":page["nextCursor"]}))
 }
 
+/// Developer diagnostic: a bounded selected-order snapshot read, never
+/// called from reception analysis or rendering. No write or model activation.
+pub(crate) fn read_recognition_owner_statistics(ids:&[String])->Result<Value,String>{
+    let mode=std::env::var("BANDO_HUB_GATEWAY").unwrap_or_else(|_|"local".into());
+    if !mode.trim().eq_ignore_ascii_case("local"){
+        return Err("귀속 학습 검증은 로컬 DB에서만 지원합니다.".into());
+    }
+    let orders=crate::business_state::read_owner_snapshots(ids)?;
+    let requested=ids.iter().collect::<std::collections::BTreeSet<_>>().len();
+    let missing=requested.saturating_sub(orders.len());
+    let mut summary=recognition::execute("summarize_owner_statistics",
+        serde_json::json!({"orders":orders}))?;
+    summary["requestedUniqueOrders"]=serde_json::json!(requested);
+    summary["notFoundOrders"]=serde_json::json!(missing);
+    Ok(summary)
+}
+
 pub fn from_environment() -> Result<Arc<dyn BandoGateway>, String> {
     let mode = std::env::var("BANDO_HUB_GATEWAY")
         .unwrap_or_else(|_| "local".to_owned());
