@@ -3,7 +3,7 @@
 //! All coordinates are egui logical points, not OS/device pixels.
 
 use std::{collections::HashMap, time::{Duration, Instant}};
-use crate::card::UiWidthPolicyExt;
+use crate::ui_primitives::UiWidthPolicyExt;
 use eframe::egui::{
     self, Context, Id, Pos2, Rect, Response, Sense, Stroke, Vec2,
 };
@@ -522,13 +522,13 @@ pub fn show(ctx: &Context) {
                         .max_rect(text_rect),
                     |inner| {
                         inner.set_clip_rect(text_rect);
-                        inner.apply_shared_width(crate::card::CardWidthPolicy::Fixed,text_rect.width());
+                        inner.apply_shared_width(crate::ui_primitives::CardWidthPolicy::Fixed,text_rect.width());
                         crate::scrollbar::scroll_area(crate::scrollbar::ScrollAxes::Vertical)
                             .id_salt("floating-notice-scroll")
                             .auto_shrink([false,false])
                             .max_height(text_rect.height())
                             .show(inner,|content| {
-                                content.apply_shared_width(crate::card::CardWidthPolicy::Fixed,text_rect.width().max(1.0));
+                                content.apply_shared_width(crate::ui_primitives::CardWidthPolicy::Fixed,text_rect.width().max(1.0));
                                 content.add(egui::Label::new(
                                     typography::floating_notice_text(display.as_ref())
                                 ).wrap());
