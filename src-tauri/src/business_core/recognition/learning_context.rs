@@ -115,7 +115,84 @@ pub(super) fn lookup(payload:&Value)->Result<Value,String>{
     let entries=contexts(&units,first).into_iter().map(|(s,keys)|
         json!({"source":{"start":s.0,"end":s.1},"contexts":keys})
     ).collect::<Vec<_>>();
-    Ok(json!({"featureVersion":FEATURE_VERSION,"entries":entries}))
+    let mut result=json!({"featureVersion":FEATURE_VERSION,"entries":entries});
+    // Optional offline comparison. Ordinary context projection remains unchanged.
+    if let Some(history)=payload.get("historicalOrders"){
+        let orders=history.as_array().ok_or("비교 주문 목록 형식 오류")?;
+        if orders.len()>250{return Err("비교 주문은 최대 250개만 허용합니다.".into());}
+        let target=payload["targetOrderId"].as_str().filter(|id|!id.trim().is_empty())
+            .ok_or("자기 학습 제외를 위한 비교 대상 주문 ID가 필요합니다.")?;
+        let historical=orders.iter().filter(|order|order["id"].as_str()!=Some(target))
+            .cloned().collect::<Vec<_>>();
+        let summary=statistics(&json!({"orders":historical}))?;
+        let counts=rows(&summary["statistics"]).filter_map(|record|
+            Some((record["key"].as_str()?, &record["counts"])))
+            .collect::<BTreeMap<_,_>>();
+        let selected=rows(&first["recipientOwnerTrace"]["decisions"]).filter_map(|d|{
+            let s=position(&units,&d["source"])?;
+            if d["selectedAnchor"]["kind"]!="name"{return None;}
+            let anchor=position(&units,&d["selectedAnchor"])?;
+            let mut matching=rows(&d["candidates"]).filter(|c|
+                c["anchor"]["kind"]=="name"&&position(&units,&c["anchor"])==Some(anchor));
+            let relation=matching.next()?["relation"].as_str()?;
+            if matching.next().is_some()||!matches!(relation,"previous"|"next"){return None;}
+            Some((s,(relation,d["legacyFirstBlockingReason"].clone())))
+        }).collect::<BTreeMap<_,_>>();
+        let assessments=rows(&result["entries"]).filter_map(|entry|{
+            let s=position(&units,&entry["source"])?;
+            let (baseline,gate)=selected.get(&s)?;
+            let levels=rows(&entry["contexts"]).map(|context|{
+                let count=context["key"].as_str().and_then(|k|counts.get(k).copied());
+                level_diagnostic(context,count)
+            }).collect::<Vec<_>>();
+            Some(conflict_diagnostic(s,baseline,gate,&levels))
+        }).collect::<Vec<_>>();
+        result["comparison"]=json!({
+            "status":"diagnostic_only","excludedTargetOrder":true,
+            "historicalUniqueOrders":summary["uniqueOrders"],
+            "assessments":assessments
+        });
+    }
+    Ok(result)
+}
+
+// Each context is an overlapping projection, never an independent vote.
+// Distinguish mixed observations instead of fabricating a calibrated probability.
+fn level_diagnostic(context:&Value,counts:Option<&Value>)->Value{
+    let count=|name:&str|counts.and_then(|c|c["weakCandidateOrders"][name].as_u64())
+        .unwrap_or(0);
+    let previous=count("previous");
+    let next=count("next");
+    let direction=match (previous>0,next>0){
+        (true,false)=>"previous",
+        (false,true)=>"next",
+        (true,true)=>"mixed",
+        _=>"unavailable",
+    };
+    json!({
+        "level":context["level"],"direction":direction,
+        "previousOrders":previous,"nextOrders":next,
+        "independentOrders":counts.and_then(|c|c["weakIndependentOrders"].as_u64()).unwrap_or(0),
+        "pendingCorrections":counts.and_then(|c|c["pendingCorrectionCount"].as_u64()).unwrap_or(0)
+    })
+}
+
+fn conflict_diagnostic(s:Span,baseline:&str,gate:&Value,levels:&[Value])->Value{
+    let previous=levels.iter().any(|v|v["direction"]=="previous");
+    let next=levels.iter().any(|v|v["direction"]=="next");
+    let mixed=levels.iter().any(|v|v["direction"]=="mixed");
+    let opposing=levels.iter().any(|v|
+        matches!(v["direction"].as_str(),Some("previous"|"next"))&&v["direction"]!=baseline);
+    let agreement=levels.iter().any(|v|v["direction"]==baseline);
+    json!({
+        "source":{"start":s.0,"end":s.1},
+        "legacyCandidate":baseline,"legacyFirstBlockingReason":gate,
+        "levels":levels,"contextConflict":previous&&next,
+        "mixedContextEvidence":mixed,"baselineOpposition":opposing,
+        "baselineAgreement":agreement,
+        "eligibleForAutomaticDecision":false,
+        "decisionChanged":false
+    })
 }
 
 #[derive(Default)]
@@ -267,6 +344,42 @@ mod tests{
         assert_eq!(c["weakIndependentOrders"],1);
         assert_eq!(c["weakCandidateOrders"]["previous"],1);
         assert_eq!(c["weakCandidateOrders"]["next"],1);
+    }
+    #[test]
+    fn owner_conflicts_preserve_baseline_and_do_not_sum_context_votes(){
+        let count=|p,n|json!({
+            "weakCandidateOrders":{"previous":p,"next":n},
+            "weakIndependentOrders":3,"pendingCorrectionCount":1
+        });
+        let p=count(3,0);
+        let n=count(0,3);
+        let mixed=count(2,2);
+        let levels=vec![
+            level_diagnostic(&json!({"level":"base"}),Some(&p)),
+            level_diagnostic(&json!({"level":"structure"}),Some(&n)),
+            level_diagnostic(&json!({"level":"client_structure"}),Some(&mixed))
+        ];
+        let result=conflict_diagnostic((1,2),"previous",&json!("paragraph_boundary"),&levels);
+        assert_eq!(result["contextConflict"],true);
+        assert_eq!(result["mixedContextEvidence"],true);
+        assert_eq!(result["baselineOpposition"],true);
+        assert_eq!(result["baselineAgreement"],true);
+        assert_eq!(result["legacyCandidate"],"previous");
+        assert_eq!(result["legacyFirstBlockingReason"],"paragraph_boundary");
+        assert_eq!(result["eligibleForAutomaticDecision"],false);
+        assert_eq!(result["decisionChanged"],false);
+        assert_eq!(result["levels"][2]["independentOrders"],3);
+        assert_eq!(result["levels"][2]["pendingCorrections"],1);
+    }
+    #[test]
+    fn owner_conflict_lookup_requires_target_and_excludes_its_history(){
+        assert!(lookup(&json!({"raw":"x","historicalOrders":[]})).is_err());
+        let result=lookup(&json!({
+            "raw":"x","targetOrderId":"same",
+            "historicalOrders":[{"id":"same"}]
+        })).unwrap();
+        assert_eq!(result["comparison"]["historicalUniqueOrders"],0);
+        assert!(lookup(&json!({"raw":"x"})).unwrap().get("comparison").is_none());
     }
     #[test]
     fn explicitly_empty_lookup_does_not_expand_to_all_contexts(){
