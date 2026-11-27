@@ -2458,6 +2458,20 @@ impl ManualWorkspace {
                                                                     ("unitPrice",cells.amount,&keys[2])
                                                                 ]{
                                                                     let target=ManualCellTarget{row:index,item:Some(item_id.to_owned()),field:field.to_owned()};
+                                                                    // The common row is hover-only during a quantity lock.
+                                                                    // Upgrade just the unresolved product cell, never the
+                                                                    // quantity, amount, or remove controls on that row.
+                                                                    let resolving_drop=field=="product" && !busy && !count_resize_requested
+                                                                        && self.selected_recipient==index
+                                                                        && self.selected_item.as_deref()==Some(item_id)
+                                                                        && unresolved_assigned_product_source(model,rid,item_id).is_some()
+                                                                        && self.edit_text==self.current_value()
+                                                                        && self.assignment_gesture.source.is_none()
+                                                                        && !items_ui.input(|input|input.modifiers.shift);
+                                                                    let response=if resolving_drop && !can_switch{
+                                                                        response.interact(egui::Sense::click())
+                                                                            .on_hover_cursor(egui::CursorIcon::PointingHand)
+                                                                    }else{response};
                                                                     let recommended=drag_recommendations.contains(&target);
                                                                     let hovered=recommended &&
                                                                         manual_assignment_drop_hit(items_ui,response.rect,drag_pointer);
@@ -2503,14 +2517,6 @@ impl ManualWorkspace {
                                                                         if field=="product"{
                                                                             let assignment_requested=self.assignment_gesture.source.is_some()
                                                                                 || items_ui.input(|input|input.modifiers.shift);
-                                                                            // Reopen unresolved product selection after cancellation,
-                                                                            // without unlocking any other pending-quantity cell.
-                                                                            let resolving_drop=!busy && !count_resize_requested
-                                                                                && self.selected_recipient==index
-                                                                                && self.selected_item.as_deref()==Some(item_id)
-                                                                                && unresolved_assigned_product_source(model,rid,item_id).is_some()
-                                                                                && self.edit_text==self.current_value()
-                                                                                && !assignment_requested;
                                                                             match item_editor::product_click_intent(response.clicked(),can_switch || resolving_drop,assignment_requested){
                                                                                 ProductClickIntent::OpenDetail=>{
                                                                                     lookup=Some((rid.to_owned(),item_id.to_owned()));
