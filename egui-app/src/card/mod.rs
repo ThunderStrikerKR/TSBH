@@ -366,12 +366,16 @@ pub(crate) fn measured_management_master_card<R>(ui:&mut Ui,body:impl FnOnce(&mu
     let output=crate::card::management_master_table_frame().show(ui,body);
     #[cfg(test)]
     record("master card",output.response.rect);
+    #[cfg(test)]
+    crate::ui_test_support::record_component_geometry("card",output.response.rect,ui.clip_rect(),None);
     output
 }
 pub(crate) fn measured_management_section_card<R>(ui:&mut Ui,body:impl FnOnce(&mut Ui)->R)->egui::InnerResponse<R>{
     let output=crate::card::section_frame().show(ui,body);
     #[cfg(test)]
     record("section card",output.response.rect);
+    #[cfg(test)]
+    crate::ui_test_support::record_component_geometry("card",output.response.rect,ui.clip_rect(),None);
     output
 }
 
@@ -492,6 +496,8 @@ pub(crate) fn reception_section_with_header(
     });
     #[cfg(test)]
     crate::ui_test_support::record(reception_geometry_role(title,false),_card.response.rect);
+    #[cfg(test)]
+    crate::ui_test_support::record_component_geometry("card",_card.response.rect,ui.clip_rect(),None);
 }
 
 #[cfg(test)]
