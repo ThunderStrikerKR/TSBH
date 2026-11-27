@@ -1,4 +1,5 @@
 //! Modal presentation and geometry. Overlay owns window layers, input priority and lifetime.
+use crate::ui_layout::SharedUiClipExt as _;
 use crate::ui_layout::SharedAllocationExt as _;
 use crate::ui_layout::AlignedUiBuilderExt as _;
 use eframe::egui::{self,Align,Frame,Layout,Rect,Response,Sense,Stroke,Ui,Vec2};
@@ -106,7 +107,7 @@ pub(crate) fn modal_master_overlay_ui(parent:&mut Ui,bounds:Rect,id:&'static str
             .aligned_max_rect(bounds)
             .layout(Layout::top_down(Align::Min))
     );
-    overlay.set_clip_rect(bounds.intersect(inherited_clip));
+    overlay.restrict_shared_clip(bounds.intersect(inherited_clip));
     overlay
 }
 
@@ -582,7 +583,7 @@ fn modal_master_header_content_in_rect(
             .aligned_max_rect(heading)
             .layout(Layout::right_to_left(Align::Center))
     );
-    close_ui.set_clip_rect(heading_clip);
+    close_ui.restrict_shared_clip(heading_clip);
     let response=crate::button::action(&mut close_ui,close_label,theme::ButtonRole::Standard,enabled);
     let close=response.clicked();
     let title_right=(response.rect.left()-theme::SPACE_8).max(heading.left());
@@ -593,7 +594,7 @@ fn modal_master_header_content_in_rect(
                 .aligned_max_rect(title_rect)
                 .layout(Layout::left_to_right(Align::Center))
         );
-        title_ui.set_clip_rect(title_rect.intersect(heading_clip));
+        title_ui.restrict_shared_clip(title_rect.intersect(heading_clip));
         title_ui.add(truncated_label(typography::modal_title(title)))
             ;
     }
@@ -603,7 +604,7 @@ fn modal_master_header_content_in_rect(
             egui::UiBuilder::new().id_salt("modal-master-description")
                 .aligned_max_rect(subtitle),
             |details|{
-                details.set_clip_rect(subtitle_clip);
+                details.restrict_shared_clip(subtitle_clip);
                 details.apply_shared_width(crate::ui_primitives::CardWidthPolicy::Fixed,subtitle.width());
                 details.add(truncated_label(typography::caption(description)))
                     ;
@@ -689,7 +690,7 @@ pub(crate) fn modal_master_header_with_toolbar_in_rect<R>(
             .aligned_max_rect(toolbar_rect)
             .layout(Layout::left_to_right(Align::Center))
     );
-    toolbar_ui.set_clip_rect(toolbar_rect.intersect(ui.clip_rect()));
+    toolbar_ui.restrict_shared_clip(toolbar_rect.intersect(ui.clip_rect()));
     let result=toolbar(&mut toolbar_ui);
     (close,result)
 }
@@ -725,7 +726,7 @@ pub(crate) fn modal_master_footer_in_rect(
             .aligned_max_rect(content)
             .layout(Layout::right_to_left(Align::Center)),
         |footer|{
-            footer.set_clip_rect(clip);
+            footer.restrict_shared_clip(clip);
             footer.apply_shared_width(crate::ui_primitives::CardWidthPolicy::Fixed,content.width());
             actions(footer);
         },
@@ -760,7 +761,7 @@ fn modal_action_row_measured<R>(
             .aligned_max_rect(area)
             .layout(Layout::right_to_left(Align::Center)),
         |buttons|{
-            buttons.set_clip_rect(clip);
+            buttons.restrict_shared_clip(clip);
             buttons.apply_shared_width(crate::ui_primitives::CardWidthPolicy::Fixed,area.width());
             actions(buttons)
         }
