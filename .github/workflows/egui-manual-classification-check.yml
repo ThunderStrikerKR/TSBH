@@ -113,6 +113,52 @@ jobs:
           if failures:
               raise SystemExit("Previously passing fixture regression: "+str(failures))
           PY
+      - name: Compare independently annotated field truth on the same inputs
+        shell: bash
+        run: |
+          set -euo pipefail
+          manifest=tests/rust-migration/recognition/Cargo.toml
+          # Reuse the expanded independent test on the pinned engine too.
+          # No changes to the reference production source or catalog.
+          testfile=tests/rust-migration/recognition/src/recipient_regressions.rs
+          cp "$testfile" ".recognition-reference/$testfile"
+          capture_truth() {
+            local input="$1" output="$2"
+            cargo test --manifest-path "$input" --lib recipient_regressions::operational_field_truth_report -- --exact --nocapture > /tmp/recognition-field-truth.log 2>&1 || {
+              echo "Independent field truth test failed; raw output withheld."
+              exit 1
+            }
+            sed -n 's/^.*RECOGNITION_FIELD_TRUTH //p' /tmp/recognition-field-truth.log > "$output"
+          }
+          capture_truth ".recognition-reference/$manifest" recognition-main-field-truth.json
+          capture_truth "$manifest" recognition-current-field-truth.json
+          python3 - <<'PY'
+          import json
+          def flatten(report):
+              assert report["fixtureCount"]==18 and len(report["fixtures"])==18
+              out={}
+              for f in report["fixtures"]:
+                  fid=f["fixtureId"]
+                  for k in ("recipientCount","sourceLinks"):
+                      out[(fid,-1,-1,k)]=f[k]
+                  for ri,r in enumerate(f["recipients"]):
+                      for k in ("name","addressAnchor","contacts","itemCount"):
+                          out[(fid,ri,-1,k)]=r[k]
+                      for ii,item in enumerate(r["items"]):
+                          for k,v in item.items():
+                              if v is not None:
+                                  out[(fid,ri,ii,k)]=v
+              return out
+          a=flatten(json.load(open("recognition-main-field-truth.json")))
+          b=flatten(json.load(open("recognition-current-field-truth.json")))
+          assert a.keys()==b.keys()
+          for k in sorted({key[-1] for key in a}):
+              keys=[key for key in a if key[-1]==k]
+              print("field truth",k,sum(a[key] for key in keys),"->",sum(b[key] for key in keys),"/",len(keys))
+          failures=[key for key in a if a[key] and not b[key]]
+          if failures:
+              raise SystemExit("Independently labelled field regression: "+str(failures))
+          PY
       - name: Upload paired recognition reports without raw order or contact values
         if: ${{ !cancelled() }}
         uses: actions/upload-artifact@v4
@@ -121,6 +167,8 @@ jobs:
           path: |
             recognition-main-baseline.json
             recognition-current.json
+            recognition-main-field-truth.json
+            recognition-current-field-truth.json
           retention-days: 7
       - name: Run native recognition regression suite
         shell: bash
