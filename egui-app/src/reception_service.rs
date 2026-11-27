@@ -55,6 +55,38 @@ pub fn scope_display_recognition(order_id:&str,recognition:&mut Value)->Result<(
 }
 
 impl ReceptionAnalysis {
+    /// Restore the exact persisted projection for both selected and hovered
+    /// drafts. Never rerun recognition or synthesize missing evidence.
+    pub(crate) fn from_working_source(source:&crate::preview_store::WorkingReception)->Option<Self>{
+        let direct=source.raw.trim().is_empty()&&source.manual_model.as_ref()
+            .is_some_and(|saved|saved["mode"]=="DIRECT");
+        if direct{
+            let saved=source.manual_model.as_ref()?;
+            if saved["sourceRaw"].as_str()!=Some("")||
+                saved["orderType"].as_str()!=Some(source.order_type.as_str())||
+                saved["clientId"].as_str()!=source.client_id.as_deref(){return None;}
+            let rows=saved.pointer("/model/rows")?.as_array()?;
+            let mut recognition=json!({"recipients":rows,"candidates":[]});
+            scope_display_recognition(&source.id,&mut recognition).ok()?;
+            return Some(Self{recognition,reference:Vec::new(),client_match:Value::Null,
+                client_candidates:Vec::new(),matched_client_name:None,chosen_client_name:None,
+                directory_count:0,linked_spans:Vec::new()});
+        }
+        if source.analysis_raw.as_deref()!=Some(source.raw.as_str()){return None;}
+        let evidence=source.analysis_evidence.as_ref()?;
+        let matched=source.client_match.as_ref()?;
+        let view=source.analysis_view.as_ref()?;
+        let mut recognition=view.get("recognition").filter(|value|
+            value.get("recipients").is_some_and(Value::is_array)).cloned()
+            .unwrap_or_else(||evidence.clone());
+        if let Some(rows)=source.manual_model.as_ref().and_then(|model|
+            model.pointer("/model/rows")).filter(|rows|rows.is_array()){
+            recognition["recipients"]=rows.clone();
+        }
+        scope_display_recognition(&source.id,&mut recognition).ok()?;
+        Self::from_cached_view(&source.raw,recognition,matched.clone(),view)
+    }
+
     pub fn scope_display(&mut self,order_id:&str,raw:&str)->Result<(),String>{
         scope_display_recognition(order_id,&mut self.recognition)?;
         self.linked_spans=source_highlight::collect(raw,&self.recognition);
