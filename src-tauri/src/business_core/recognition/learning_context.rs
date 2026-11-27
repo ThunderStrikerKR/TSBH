@@ -125,10 +125,10 @@ fn near_recipient_blocks(roles:&[&str],events:&[Event],ranges:&[(usize,usize)])-
 // Preserve v1 byte-for-byte order, magnitude and same-paragraph semantics.
 fn local_context(events:&[Event],i:usize)->Vec<Value>{
     let e=&events[i];
-    events[i.saturating_sub(2)..(i+3).min(events.len())].iter().map(|n|
-        json!([n.role,n.position==e.position,
-            distance_bucket(super::signed_line_distance(e.line,n.line).unsigned_abs()),
-            n.paragraph==e.paragraph])).collect()
+    events[i.saturating_sub(2)..(i+3).min(events.len())].iter().map(|n|{
+        let relation=super::SourceRelation::between(e.line,e.paragraph,n.line,n.paragraph);
+        json!([n.role,n.position==e.position,distance_bucket(relation.distance()),relation.same_paragraph])
+    }).collect()
 }
 
 fn document_pattern(events:&[Event],first:&Value)->Value{
@@ -227,10 +227,11 @@ fn source_pair_features(units:&[u16],geometry:&super::SourceGeometry,from:&Event
         json!({"utf16":sign*(gap.len() as i64),"unicodeScalars":sign*(scalars as i64)})
     }else{Value::Null};
     let gap=geometry.between(earlier.line as usize,later.line as usize);
+    let relation=super::SourceRelation::between(from.line,from.paragraph,to.line,to.paragraph);
     json!({"from":{"start":from.position.0,"end":from.position.1,"role":from.role},
         "to":{"start":to.position.0,"end":to.position.1,"role":to.role},
-        "lineDelta":super::signed_line_distance(from.line,to.line),
-        "sourceGap":source_gap,"sameParagraph":from.paragraph==to.paragraph,
+        "lineDelta":relation.line_delta,
+        "sourceGap":source_gap,"sameParagraph":relation.same_paragraph,
         "blankLines":gap.blank_lines,"contentLines":gap.content_lines,
         "maxConsecutiveBlankLines":gap.max_consecutive_blank_lines})
 }
