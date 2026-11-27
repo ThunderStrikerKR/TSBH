@@ -2795,6 +2795,35 @@ mod tests {
         assert_eq!(baseline,compared);
     }
     #[test]
+    fn detached_quantity_projection_exposes_collisions_and_common_reservations(){
+        let raw="P\nQ\n2";
+        let e=|kind,start,end,line,value:&str|Evidence{kind,value:value.to_owned(),start,end,line,paragraph:0,
+            reason:"synthetic",recipient:None,item_id:None};
+        let events=vec![e("product",0,1,0,"P"),e("product",2,3,1,"Q"),e("quantity",4,5,2,"2")];
+        let hit=|i|ProductHit{evidence:i,source_start:events[i].start,line:events[i].line,
+            raw:events[i].value.clone(),decision:Value::Null,quantities:vec![],common:false,each:false};
+        let mut hits=vec![hit(0),hit(1)];
+        let rows=vec![json!({"id":"r","items":[{"id":"i1","sources":[]},
+            {"id":"i2","sources":[{"field":"quantity","start":4,"end":5,"text":"2"}]}]})];
+        let bindings=[(0,0,0),(0,1,1)];
+        let report=quantity_link_projection(raw,&events,&hits,&[],&rows,&bindings,false);
+        assert_eq!(report["status"],"provisional_comparison");
+        assert_eq!(report["samples"][0]["legacy"],"abstain");
+        assert_eq!(report["samples"][1]["legacy"],"4:5");
+        for row in report["samples"].as_array().unwrap(){
+            assert_eq!(row["candidates"][0]["origin"],"detached");
+            assert_eq!(row["preferredCandidate"],"abstain");
+            assert_eq!(row["collisionAbstained"],true);
+        }
+        hits[1].common=true;
+        let reserved=quantity_link_projection(raw,&events,&hits,&[],&rows,&bindings,false);
+        assert_eq!(reserved["commonItemsExcluded"],1);
+        assert_eq!(reserved["samples"][0]["candidates"][0]["blocked"],true);
+        assert_eq!(reserved["samples"][0]["preferredCandidate"],"abstain");
+        assert_eq!(quantity_link_projection(raw,&events,&hits,&[],&rows,&bindings,true)["status"],
+            "candidate_budget_exceeded");
+    }
+    #[test]
     fn exclusive_quantity_predictions_abstain_on_all_same_order_claims(){
         assert_eq!(exclusive_quantity_predictions([("A","5:6"),("A","5:6"),("A","7:8"),("B","5:6")]),
             vec!["abstain","abstain","7:8","5:6"]);
