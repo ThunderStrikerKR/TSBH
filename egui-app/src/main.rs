@@ -7526,34 +7526,24 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                             let enabled=confirmed_editable && confirmed_controls_idle
                                                 && !target.transferred && self.workflow_ui.active_preview().is_none();
                                             if issue["severity"]=="ACTION"{
-                                                let kind=issue["kind"].as_str().unwrap_or("");
                                                 let item_id=issue["itemId"].as_str();
-                                                let field=match kind{
-                                                    "NAME"|"CANDIDATE_name"=>Some("name"),
-                                                    "ADDRESS"|"CANDIDATE_address"=>Some("address"),
-                                                    "CANDIDATE_phone"=>Some("phone"),
-                                                    "CANDIDATE_mobile"=>Some("mobile"),
-                                                    "CONTACT"=>Some(if issue["linkKey"].as_str().is_some_and(|k|k.ends_with(":phone")){"phone"}else{"mobile"}),
-                                                    "PRICE"=>Some("unitPrice"),
-                                                    "QUANTITY_MISSING"|"QUANTITY_INVALID"|"QUANTITY_LINK"=>Some("quantity"),
-                                                    _=>None,
-                                                };
+                                                let field=review_panel::notice::confirmed_input_field(issue);
                                                 if let Some(field)=field{
                                                     let inline=InlineTarget{recipient_id:target.recipient_id.clone(),
                                                         item_id:item_id.map(str::to_owned),field};
                                                     let editable=confirmed_navigation_entries(target,enabled,false)
                                                         .iter().any(|entry|entry.cell.enabled&&entry.target==inline);
-                                                    let caption=match field{"unitPrice"=>"단가 입력","quantity"=>"수량 수정",_=>"입력 위치로 이동"};
+                                                    let caption=review_panel::notice::input_action_caption(field);
                                                     if crate::button::review_action(content,caption,theme::ButtonRole::Standard,editable).clicked(){
                                                         review_edit=Some((workflow_board_ui::Selection{
                                                             group_id:group.id.clone(),order_id:target.order_id.clone(),shipment_id:target.id.clone()
                                                         },inline));
                                                     }
                                                 }
-                                                if matches!(kind,"MODEL"|"MODEL_CHOICE"|"ALIAS_CONFLICT"|"CATEGORY_CONFLICT"|"MODEL_CONFIRM"|"OPTION"){
+                                                if review_panel::notice::confirmed_product_action(issue){
                                                     if let Some(item)=target.recipient["items"].as_array().and_then(|items|
                                                         items.iter().find(|i|i["id"].as_str()==item_id && item_id.is_some())){
-                                                        if crate::button::review_action(content,"상품 확인",theme::ButtonRole::Standard,enabled).clicked(){
+                                                        if crate::button::review_action(content,review_panel::notice::PRODUCT_ACTION,theme::ButtonRole::Standard,enabled).clicked(){
                                                             review_product=Some((target.id.clone(),item.clone()));
                                                         }
                                                     }
@@ -7561,7 +7551,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                             }
                                             if issue["inquiryRequested"]==true{
                                                 content.add(egui::Label::new(typography::review_detail(
-                                                    "거래처 회신 대기",tone)).wrap());
+                                                    review_panel::notice::INQUIRY_WAIT,tone)).wrap());
                                                 content.add(egui::Label::new(typography::review_detail(
                                                     review_panel::INQUIRY_GUIDANCE,tone)).wrap());
                                             }
@@ -7578,7 +7568,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                                 && self.workflow_mutation_ready()
                                                 && self.workflow_freight_editor.is_none()
                                                 && self.confirmed_cell.is_none();
-                                            if crate::button::review_action(content,"운임 입력",theme::ButtonRole::Standard,enabled).clicked(){
+                                            if crate::button::review_action(content,review_panel::notice::FREIGHT_ACTION,theme::ButtonRole::Standard,enabled).clicked(){
                                                 workflow_freight_open=Some((target.id.clone(),origin,String::new(),None,true));
                                             }
                                         }
