@@ -1754,7 +1754,105 @@ function visibilityContractSelfTest(){
   assert.equal(visibilityContractViolations("pub fn management_table_cell_color(){}","typography.rs").length,1);
   assert.equal(visibilityContractViolations("#[cfg(test)] fn management_table_cell_color(){}","typography.rs").length,0);
 }
+function auditGlobImports(source){
+  const tokens=tokenizeRust(source),v=tokens.map(t=>t.kind==="literal"?"<literal>":t.v),hits=[];
+  const pairs=new Map(),stack=[];
+  for(let i=0;i<v.length;i++){
+    if(["(","[","{"].includes(v[i]))stack.push(i);
+    else if([")","]","}"].includes(v[i])){
+      const open=stack.pop();
+      if(open!==undefined&&{"(":")","[":"]","{":"}"}[v[open]]===v[i])pairs.set(open,i);
+    }
+  }
+  // Exempt only predicates which necessarily imply cfg(test), not any(test, windows).
+  function requiresTest(start,end){
+    if(end===start+1)return v[start]==="test";
+    if(!["all","any"].includes(v[start])||v[start+1]!=="("||pairs.get(start+1)!==end-1)return false;
+    const args=[];let a=start+2;
+    for(let i=a;i<end-1;i++){
+      if(pairs.has(i)){i=pairs.get(i);continue;}
+      if(v[i]===","){args.push(requiresTest(a,i));a=i+1;}
+    }
+    if(a<end-1)args.push(requiresTest(a,end-1));
+    return args.length>0&&(v[start]==="all"?args.some(Boolean):args.every(Boolean));
+  }
+  function testAttribute(open){
+    const end=pairs.get(open);
+    return end!==undefined&&v[open+1]==="cfg"&&v[open+2]==="("&&
+      pairs.get(open+2)===end-1&&requiresTest(open+3,end-1);
+  }
+  // Inner file/module attributes gate the entire containing scope.
+  const testScopes=[];
+  for(let i=0;i<v.length;i++){
+    if(v[i]==="#"&&v[i+1]==="!"&&v[i+2]==="["&&testAttribute(i+2)){
+      let enclosing=-1;
+      for(const [open,end] of pairs)if(v[open]==="{"&&open<i&&end>i&&open>enclosing)enclosing=open;
+      if(enclosing<0)return [];
+      testScopes.push([enclosing,pairs.get(enclosing)]);
+    }
+  }
+  for(let i=0;i<v.length;i++){
+    if(v[i]==="#"&&v[i+1]==="["&&pairs.has(i+1)){
+      // Consume adjacent attributes, including allow/derive, before the item.
+      let j=i,onlyTest=false;
+      while(v[j]==="#"&&v[j+1]==="["&&pairs.has(j+1)){
+        onlyTest ||= testAttribute(j+1);
+        j=pairs.get(j+1)+1;
+      }
+      if(onlyTest){
+        if(v[j]==="pub"){j++;if(v[j]==="("&&pairs.has(j))j=pairs.get(j)+1;}
+        while(["async","unsafe","const","extern"].includes(v[j])){j++;if(v[j]==="<literal>")j++;}
+        if(v[j]==="use"){
+          while(j<v.length&&v[j]!==";")j++;
+          i=j;continue;
+        }
+        if(["mod","fn","impl","struct","enum","trait"].includes(v[j])){
+          for(;j<v.length&&v[j]!==";";j++){
+            if(v[j]==="{"&&pairs.has(j)){j=pairs.get(j);break;}
+            if(["(","["].includes(v[j])&&pairs.has(j))j=pairs.get(j);
+          }
+          i=j;continue;
+        }
+      }
+    }
+    if(testScopes.some(([start,end])=>i>start&&i<end))continue;
+    // Rust 2024 precise capture syntax `use<'a>` is not an import.
+    if(v[i]!=="use"||v[i+1]==="<")continue;
+    for(let j=i+1;j<v.length&&v[j]!==";";j++){
+      if(v[j]==="*"){
+        hits.push({line:tokens[j].line,rule:"wildcard import prohibited in production Rust; import named items explicitly"});
+        break;
+      }
+    }
+  }
+  return hits;
+}
+function globImportSelfTest(){
+  const cases=[
+    ["use crate::theme::*;",1],
+    ["pub(crate) use crate::theme::*;",1],
+    ["use crate::{theme::{*, TextRole}, popup};",1],
+    ["fn f(){use Role::*;}",1],
+    ["#[cfg(windows)] mod native{use super::*;}",1],
+    ["use crate::theme::{TextRole, TextState};",0],
+    ["// use a::*;\nfn f(){let x=2*3;let s=\"use a::*;\";}",0],
+    ["fn f(){let x=*ptr;}",0],
+    ["#[cfg(test)] mod tests{use super::*;}",0],
+    ["#[allow(unused_imports)] #[cfg(test)] pub(crate) use crate::{a::*};",0],
+    ["#[cfg(test)] #[allow(unused_imports)] use a::*; use b::*;",1],
+    ["#![cfg(test)]\nuse a::*;",0],
+    ["mod tests { #![cfg(test)] use a::*; } use b::*;",1],
+    ["#[cfg(all(test, windows))] use a::*;",0],
+    ["#[cfg(any(test, windows))] use a::*;",1],
+    ["#[cfg(not(test))] use a::*;",1],
+    ["fn f<'a>() -> impl Trait + use<'a> { value }",0],
+    ["use a::*;\nuse b::*;",2],
+  ];
+  for(const [source,wanted] of cases)assert.equal(auditGlobImports(source).length,wanted,source);
+  console.log("EGUI_GLOB_IMPORT_SELFTEST_PASS",cases.length);
+}
 function main(){
+  globImportSelfTest();
   forwardingContractSelfTest();
   visibilityContractSelfTest();
   colorOwnershipSelfTest();
@@ -1787,6 +1885,7 @@ function main(){
       for(const dep of sharedDependencies(source,owner,true))deps.add(dep);
       graph.set(owner,deps);
     }
+    for(const hit of auditGlobImports(source)){failures++;console.error(file+":"+hit.line+" "+hit.rule);}
     for(const rule of forwardingContractViolations(source,file)){failures++;console.error(file+": "+rule);}
     for(const rule of visibilityContractViolations(source,file)){failures++;console.error(file+": "+rule);}
     for(const rule of designTokenViolations(source,file)){failures++;console.error(file+": "+rule);}
