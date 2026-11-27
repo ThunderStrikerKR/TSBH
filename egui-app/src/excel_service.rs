@@ -11,12 +11,12 @@ use uuid::Uuid;
 
 #[path = "../../src-tauri/src/export_file.rs"]
 mod recorded_export;
-const HEADERS:[&str;16]=[
+pub(crate) const HEADERS:[&str;16]=[
     "수하인명","수하인우편번호","수하인주소","수하인전화번호","수하인핸드폰번호",
     "택배수량","택배운임","운임구분","품목명","","메시지","송하인명",
     "(송)우편","(송)주소1","(송)전화","(송)핸드폰"
 ];
-const WIDTHS:[f64;16]=[16.,14.,48.,18.,18.,12.,12.,12.,64.,3.,35.,18.,12.,48.,18.,18.];
+pub(crate) const WIDTHS:[f64;16]=[16.,14.,48.,18.,18.,12.,12.,12.,64.,3.,35.,18.,12.,48.,18.,18.];
 fn kind(origin:&str)->Result<(&'static str,&'static str,&'static str),String>{
     match origin {
         "FACTORY"=>Ok(("prepare_factory_export","공장 발송","공장")),
@@ -39,8 +39,10 @@ fn archive_root(state:&Value)->Result<PathBuf,String>{
     Ok(root)
 }
 fn archive_day(root:&Path,origin:&str)->Result<PathBuf,String>{
+    archive_day_at(root,origin,Local::now().date_naive())
+}
+fn archive_day_at(root:&Path,origin:&str,now:chrono::NaiveDate)->Result<PathBuf,String>{
     let (_,category,_)=kind(origin)?;
-    let now=Local::now();
     let dir=root.join(category).join(format!("{}년",now.year()))
         .join(format!("{:02}월",now.month())).join(format!("{:02}일",now.day()));
     fs::create_dir_all(&dir).map_err(|_|"Excel 날짜 폴더 생성 실패")?;
@@ -80,9 +82,10 @@ fn save(root:&Path,origin:&str,bytes:&[u8])->Result<PathBuf,String>{
     if bytes.len()<4||bytes.len()>25*1024*1024||!bytes.starts_with(b"PK\x03\x04"){
         return Err("정상적인 Excel XLSX 파일이 아닙니다.".into())
     }
-    let dir=archive_day(root,origin)?;
+    let day=Local::now().date_naive();
+    let dir=archive_day_at(root,origin,day)?;
     let (_,_,stem)=kind(origin)?;
-    let date=Local::now().format("%Y%m%d").to_string();
+    let date=day.format("%Y%m%d").to_string();
     for n in 1..=100_000_u32 {
         let path=dir.join(format!("{date}({stem}{n}).xlsx"));
         let mut file=match fs::OpenOptions::new().write(true).create_new(true).open(&path){

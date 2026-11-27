@@ -1,0 +1,183 @@
+//! Derived daily workbook publisher. The SQLite reservation is authoritative.
+use bando_data_access::excel_aggregate_jobs as jobs;
+use calamine::{Data,Reader,Xlsx};
+use chrono::Utc;
+use rusqlite::{Connection,TransactionBehavior};
+use rust_xlsxwriter::{Format,Workbook};
+use sha2::{Digest,Sha256};
+use std::{fs,io::{Cursor,Read,Write},path::{Path,PathBuf},sync::{Mutex,atomic::{AtomicBool,Ordering}},time::{Duration,Instant}};
+use uuid::Uuid;
+
+fn err(e:impl std::fmt::Display)->String{e.to_string()}
+const INTERVAL:Duration=Duration::from_secs(5);
+const RECONCILE:Duration=Duration::from_secs(60);
+static BUSY:AtomicBool=AtomicBool::new(false);
+static LAST:Mutex<Option<Instant>>=Mutex::new(None);
+static LAST_RECONCILE:Mutex<Option<Instant>>=Mutex::new(None);
+struct Busy;
+impl Drop for Busy{fn drop(&mut self){BUSY.store(false,Ordering::Release);}}
+
+fn encode(rows:&[Vec<String>],reply:bool)->Result<Vec<u8>,String>{
+    let columns=if reply{17}else{16};
+    let mut book=Workbook::new();let sheet=book.add_worksheet();
+    sheet.set_name("로젠택배").map_err(err)?;
+    let header=Format::new().set_bold();
+    for col in 0..columns{
+        let title=crate::excel_service::HEADERS.get(col).copied().unwrap_or("운송장번호");
+        let width=crate::excel_service::WIDTHS.get(col).copied().unwrap_or(22.);
+        sheet.write_string_with_format(0,col as u16,title,&header).map_err(err)?;
+        sheet.set_column_width(col as u16,width).map_err(err)?;
+    }
+    for (i,row) in rows.iter().enumerate(){
+        if row.len()!=columns{return Err("취합 열 수 오류".into())}
+        let n=u32::try_from(i+1).map_err(err)?;
+        for (c,value) in row.iter().enumerate(){sheet.write_string(n,c as u16,value).map_err(err)?;}
+    }
+    sheet.set_freeze_panes(1,0).map_err(err)?;
+    sheet.autofilter(0,0,u32::try_from(rows.len()).map_err(err)?,(columns-1) as u16).map_err(err)?;
+    let bytes=book.save_to_buffer().map_err(err)?;
+    // Validate actual serialized cell values, including all leading zeros.
+    let mut check=Xlsx::new(Cursor::new(bytes.as_slice())).map_err(err)?;
+    let range=check.worksheet_range("로젠택배").map_err(err)?;
+    if range.end().map(|(r,_)|r as usize)!=Some(rows.len()){return Err("취합 Excel 행 수 불일치".into())}
+    for (i,row) in rows.iter().enumerate(){
+        for (c,value) in row.iter().enumerate(){
+            match range.get_value(((i+1) as u32,c as u32)).unwrap_or(&Data::Empty){
+                Data::String(s) if s==value=>{},
+                Data::Empty if value.is_empty()=>{},
+                _=>return Err("취합 Excel 기록값 불일치".into()),
+            }
+        }
+    }
+    Ok(bytes)
+}
+fn file_hash(path:&Path)->Result<String,String>{
+    let mut f=fs::File::open(path).map_err(err)?;
+    let mut h=Sha256::new();let mut buffer=[0u8;65536];
+    loop{let n=f.read(&mut buffer).map_err(err)?;if n==0{break}h.update(&buffer[..n]);}
+    Ok(format!("{:x}",h.finalize()))
+}
+fn checked_target(j:&jobs::Job)->Result<PathBuf,String>{
+    let path=Path::new(&j.path);
+    let root=path.ancestors().nth(5).ok_or("취합 보관함 경로 오류")?;
+    if jobs::target(root,&j.date,&j.origin)?!=path{return Err("취합 파일 경로 오류".into())}
+    let actual=root.canonicalize().map_err(err)?;
+    if !actual.is_dir(){return Err("취합 보관함 폴더가 없습니다.".into())}
+    if crate::business_state::test_launch()&&actual!=crate::business_state::test_directory("Excel")?{
+        return Err("테스트 취합 폴더 격리 위반".into())
+    }
+    let relative=path.strip_prefix(root).map_err(err)?;
+    let mut current=actual;
+    let parent=relative.parent().ok_or("취합 상대 경로 오류")?;
+    for component in parent.components(){
+        match component{std::path::Component::Normal(c)=>current.push(c),_=>return Err("취합 경로 오류".into())}
+        match fs::create_dir(&current){
+            Ok(())=>{},Err(e) if e.kind()==std::io::ErrorKind::AlreadyExists=>{},Err(e)=>return Err(err(e)),
+        }
+        if current.canonicalize().map_err(err)?!=current||!current.is_dir(){return Err("취합 경로 리디렉션 금지".into())}
+    }
+    current.push(path.file_name().ok_or("취합 파일명 오류")?);
+    match fs::symlink_metadata(&current){
+        Ok(m) if !m.file_type().is_file()=>return Err("취합 경로는 일반 파일이어야 합니다.".into()),
+        Ok(_)=>{},Err(e) if e.kind()==std::io::ErrorKind::NotFound=>{},Err(e)=>return Err(err(e)),
+    }
+    Ok(current)
+}
+struct Temp(PathBuf);
+impl Drop for Temp{fn drop(&mut self){let _=fs::remove_file(&self.0);}}
+fn publish(conn:&mut Connection,requested:&jobs::Job)->Result<(),String>{
+    // Capture generation and projected rows from a consistent SQLite read.
+    let tx=conn.transaction().map_err(err)?;
+    let Some(j)=jobs::current(&tx,requested)? else{return Ok(())};
+    if j.desired<=j.saved{return Ok(())}
+    let rows=jobs::daily_rows(&tx,&j)?;
+    tx.commit().map_err(err)?;
+    let bytes=encode(&rows,j.origin=="REPLY")?;
+    let target=checked_target(&j)?;
+    let dir=target.parent().ok_or("취합 저장 폴더 누락")?;
+    let tmp=Temp(dir.join(format!(".bando-aggregate-{}.tmp",Uuid::new_v4())));
+    let mut file=fs::OpenOptions::new().create_new(true).write(true).open(&tmp.0).map_err(err)?;
+    file.write_all(&bytes).and_then(|_|file.sync_all()).map_err(err)?;
+    drop(file);
+    let hash=format!("{:x}",Sha256::digest(&bytes));
+    if file_hash(&tmp.0)?!=hash{return Err("임시 취합 Excel 해시 불일치".into())}
+    // Hold only the short final publish transaction; concurrent writers cannot
+    // replace a newer generation with this obsolete snapshot.
+    let tx=conn.transaction_with_behavior(TransactionBehavior::Immediate).map_err(err)?;
+    let Some(latest)=jobs::current(&tx,&j)? else{return Ok(())};
+    if latest.desired!=j.desired||latest.saved>=j.desired{return Ok(())}
+    if checked_target(&j)?!=target{return Err("취합 보관함 경로 변경".into())}
+    // Same-directory rename replaces the destination without truncating it
+    // first. On Windows a sharing violation leaves the previous file intact.
+    fs::rename(&tmp.0,&target).map_err(err)?;
+    #[cfg(unix)]
+    fs::File::open(dir).and_then(|f|f.sync_all()).map_err(err)?;
+    jobs::mark_saved(&tx,&j,&hash)?;
+    tx.commit().map_err(err)?;
+    Ok(())
+}
+fn verify_completed(conn:&Connection)->Result<(),String>{
+    for j in jobs::jobs(conn,Utc::now().timestamp(),true)?{
+        if j.saved!=j.desired{continue}
+        let valid=checked_target(&j).and_then(|p|file_hash(&p)).ok().as_ref()==j.hash.as_ref()&&j.hash.is_some();
+        if !valid{jobs::invalidate(conn,&j)?;}
+    }
+    Ok(())
+}
+fn run(reconcile:bool)->Result<(),String>{
+    let (mut conn,_)=crate::factory_reply_inbox::open_db()?;
+    if reconcile{verify_completed(&conn)?;}
+    let now=Utc::now().timestamp();
+    for job in jobs::jobs(&conn,now,false)?.into_iter().take(16){
+        if let Err(e)=publish(&mut conn,&job){
+            jobs::mark_failed(&conn,&job,now,&e)?;
+        }
+    }
+    Ok(())
+}
+pub fn poll(ctx:&eframe::egui::Context){
+    if cfg!(test)||std::env::var("BANDO_EGUI_ENABLE_EXCEL_WRITE").ok().as_deref()!=Some("1"){return}
+    ctx.request_repaint_after(INTERVAL);
+    let Ok(mut last)=LAST.lock()else{return};
+    if last.is_some_and(|t|t.elapsed()<INTERVAL)||BUSY.swap(true,Ordering::AcqRel){return}
+    *last=Some(Instant::now());drop(last);
+    let reconcile=if let Ok(mut t)=LAST_RECONCILE.lock(){
+        let due=t.is_none_or(|v|v.elapsed()>=RECONCILE);
+        if due{*t=Some(Instant::now());}due
+    }else{false};
+    let ctx=ctx.clone();
+    std::thread::spawn(move||{let _busy=Busy;if let Err(e)=run(reconcile){eprintln!("Excel aggregate: {e}");}ctx.request_repaint();});
+}
+
+#[cfg(test)]
+mod tests{
+    use super::*;
+    #[test]
+    fn serialized_reply_keeps_q_waybill_and_g_freight_as_text(){
+        let mut row=vec![String::new();17];row[0]="가상 수하인".into();row[6]="3000".into();row[16]="0000123456".into();
+        let b=encode(&[row],true).unwrap();let mut x=Xlsx::new(Cursor::new(b)).unwrap();
+        let r=x.worksheet_range("로젠택배").unwrap();
+        assert_eq!(r.get_value((1,16)),Some(&Data::String("0000123456".into())));
+        assert_eq!(r.get_value((1,6)),Some(&Data::String("3000".into())));
+    }
+    #[test]
+    fn same_directory_replacement_preserves_complete_bytes(){
+        let d=std::env::temp_dir().join(format!("bando-aggregate-{}",Uuid::new_v4()));
+        fs::create_dir(&d).unwrap();let p=d.join("daily.xlsx");let t=d.join("new.tmp");
+        fs::write(&p,b"old").unwrap();fs::write(&t,b"new").unwrap();
+        fs::rename(&t,&p).unwrap();assert_eq!(fs::read(&p).unwrap(),b"new");
+        fs::remove_dir_all(d).unwrap();
+    }
+    #[cfg(windows)]
+    #[test]
+    fn windows_exclusive_handle_preserves_old_file_on_sharing_violation(){
+        use std::os::windows::fs::OpenOptionsExt;
+        let d=std::env::temp_dir().join(format!("bando-aggregate-lock-{}",Uuid::new_v4()));
+        fs::create_dir(&d).unwrap();let p=d.join("daily.xlsx");let t=d.join("new.tmp");
+        fs::write(&p,b"old").unwrap();fs::write(&t,b"new").unwrap();
+        let lock=fs::OpenOptions::new().read(true).share_mode(0).open(&p).unwrap();
+        assert!(fs::rename(&t,&p).is_err());drop(lock);
+        assert_eq!(fs::read(&p).unwrap(),b"old");fs::rename(&t,&p).unwrap();
+        assert_eq!(fs::read(&p).unwrap(),b"new");fs::remove_dir_all(d).unwrap();
+    }
+}

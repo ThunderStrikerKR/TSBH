@@ -121,6 +121,7 @@ fn aggregate_target(conn:&Connection,date:&str)->Result<Option<String>,String>{
     let raw=text(&state["settings"],"excelDirectory").trim();
     if raw.is_empty(){return Ok(None)}
     let path=PathBuf::from(raw);
+    if !path.is_absolute(){return Ok(None)}
     let root=path.canonicalize().unwrap_or(path);
     let target=bando_data_access::excel_aggregate_jobs::target(&root,date,"REPLY")?;
     Ok(Some(target.to_str().ok_or("취합 경로 인코딩 오류")?.to_owned()))

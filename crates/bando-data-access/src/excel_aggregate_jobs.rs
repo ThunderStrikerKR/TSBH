@@ -1,5 +1,5 @@
 //! Durable, derived Excel archive jobs. Never changes the business revision.
-use rusqlite::{params,Connection};
+use rusqlite::{params,Connection,OptionalExtension};
 use serde_json::Value;
 use std::{collections::{HashMap,HashSet},path::{Path,PathBuf}};
 use chrono::NaiveDate;
@@ -58,6 +58,12 @@ pub fn jobs(conn:&Connection,now:i64,all:bool)->Result<Vec<Job>,String>{
         desired:r.get(3)?,saved:r.get(4)?,retries:r.get(5)?,hash:r.get(6)?})).map_err(err)?;
     iter.collect::<Result<Vec<_>,_>>().map_err(err)
 }
+pub fn current(conn:&Connection,j:&Job)->Result<Option<Job>,String>{
+    conn.query_row("SELECT business_date,origin,target_path,desired_revision,saved_revision,retry_count,file_hash
+        FROM excel_aggregate_jobs WHERE business_date=?1 AND origin=?2 AND target_path=?3",params![j.date,j.origin,j.path],
+        |r|Ok(Job{date:r.get(0)?,origin:r.get(1)?,path:r.get(2)?,desired:r.get(3)?,saved:r.get(4)?,retries:r.get(5)?,hash:r.get(6)?}))
+        .optional().map_err(err)
+}
 pub fn mark_saved(conn:&Connection,j:&Job,hash:&str)->Result<(),String>{
     conn.execute("UPDATE excel_aggregate_jobs SET saved_revision=?4,file_hash=?5,
         retry_count=0,next_retry_at=NULL,last_error=NULL WHERE business_date=?1 AND origin=?2 AND target_path=?3
@@ -102,11 +108,11 @@ fn project(state:&Value,j:&Job)->Result<Vec<Vec<String>>,String>{
     }else{
         let history=rows(state,"factoryReplies");
         let positions:HashMap<&str,usize>=history.iter().enumerate().map(|(i,r)|(s(r,"id"),i)).collect();
-        let mut selected:HashMap<&str,(usize,usize,Vec<String>)>=HashMap::new();
+        let mut selected:HashMap<&str,((usize,usize),usize,Vec<String>)>=HashMap::new();
         for (i,r) in history.iter().enumerate(){
             if s(r,"aggregateTargetPath")!=j.path||s(r,"businessDate")!=j.date{continue}
             let sequence=positions.get(s(&r["resolves"],"id")).copied().unwrap_or(i);
-            for row in rows(r,"rows"){
+            for (row_index,row) in rows(r,"rows").iter().enumerate(){
                 let shipment=s(row,"shipmentId");
                 if row["applied"]!=true||shipment.is_empty(){continue}
                 let mut v=if row.get("aggregateValues").is_some(){values(&row["aggregateValues"],17)?}else{
@@ -118,7 +124,7 @@ fn project(state:&Value,j:&Job)->Result<Vec<Vec<String>>,String>{
                 match selected.get_mut(shipment){
                     Some((_,previous,old)) if sequence>=*previous=>{*previous=sequence;*old=v;}
                     Some(_)=>{},
-                    None=>{selected.insert(shipment,(i,sequence,v));}
+                    None=>{selected.insert(shipment,((i,row_index),sequence,v));}
                 }
             }
         }

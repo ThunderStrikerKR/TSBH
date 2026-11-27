@@ -94,6 +94,7 @@ mod order_history_memo;
 mod daily_settlement_manager;
 mod excel_manager;
 mod excel_service;
+mod excel_aggregate;
 mod management_queries;
 
 use crate::ui_layout::geometry::SharedUiClipExt as _;
@@ -10487,6 +10488,7 @@ impl eframe::App for BandoEgui {
         // Poll export completion even if the user navigated off the Excel page.
         if let Some(excel)=self.excel_manager.as_mut(){excel.poll(ctx);}
         let corrected=self.excel_manager.as_mut().is_some_and(|excel|excel.take_reply_changed());
+        crate::excel_aggregate::poll(ctx);
         let reply=self.factory_reply_inbox.poll(ctx);
         self.notification_center.poll(ctx,corrected||reply.is_some());
         self.refresh_after_factory_reply(ctx,corrected,
