@@ -1571,30 +1571,15 @@ impl BandoEgui {
             .and_then(|id|self.drafts.iter().find(|item|item.id==id))
             .cloned() else{return false};
         if !row.raw.trim().is_empty(){return false;}
-        let Some(saved)=row.manual_model.as_ref().filter(|model|
-            model.get("mode").and_then(serde_json::Value::as_str)==Some("DIRECT")
-        )else{return false};
-        if saved.get("sourceRaw").and_then(serde_json::Value::as_str)!=Some("") ||
-            saved.get("orderType").and_then(serde_json::Value::as_str)!=Some(row.order_type.as_str()) ||
-            saved.get("clientId").and_then(serde_json::Value::as_str)!=row.client_id.as_deref(){
+        if row.manual_model.as_ref().and_then(|model|model["mode"].as_str())!=Some("DIRECT"){
             return false;
         }
-        let Some(rows)=saved.pointer("/model/rows")
-            .filter(|rows|rows.is_array()).cloned() else{return false};
-        let mut recognition=serde_json::json!({"recipients":rows,"candidates":[]});
-        if reception_service::scope_display_recognition(&row.id,&mut recognition).is_err(){
-            return false;
-        }
-        let count=recognition["recipients"].as_array().map(Vec::len).unwrap_or(0);
-        let chosen_name=row.client_id.as_deref()
+        let Some(mut analysis)=reception_service::ReceptionAnalysis::from_working_source(&row)
+            else{return false;};
+        let count=analysis.recognition["recipients"].as_array().map(Vec::len).unwrap_or(0);
+        analysis.chosen_client_name=row.client_id.as_deref()
             .and_then(|id|self.client_names.get(id)).cloned();
-        self.analysis=Some(reception_service::ReceptionAnalysis{
-            recognition,
-            reference:Vec::new(),client_match:serde_json::Value::Null,
-            client_candidates:Vec::new(),matched_client_name:None,
-            chosen_client_name:chosen_name,directory_count:0,
-            linked_spans:Vec::new(),
-        });
+        self.analysis=Some(analysis);
         self.analysis_pending=false;
         self.analysis_error=None;
         self.analysis_due_at=None;
@@ -1957,7 +1942,11 @@ impl BandoEgui {
         let preview=pinned.or_else(||self.workflow_ui.pending_preview())?.clone();
         if self.active_id.as_deref()==Some(preview.order_id.as_str()){return None;}
         let draft=self.drafts.iter().find(|row|row.id==preview.order_id)?;
+        let previous=self.pending_display.as_ref().map(Arc::clone);
         let display=Self::pending_projection(&mut self.pending_display,draft)?;
+        if !previous.as_ref().is_some_and(|old|Arc::ptr_eq(old,&display)){
+            self.pending_review_panel.clear();
+        }
         let recipients=reception_service::recipients(&display.recognition);
         let linked=self.link_hover.scoped_active()
             .map(|(order,key)|(order,key.recipient_id.as_str()));
@@ -10392,7 +10381,7 @@ impl eframe::App for BandoEgui {
             self.client_summaries.clear();
             self.workflow_snapshot=None;
             self.pending_display=None;
-        self.pending_review_panel.clear();
+            self.pending_review_panel.clear();
             self.workflow_source_display=None;
             source_highlight::clear_visual_cache();
             clear_quote_display_cache();
@@ -11395,7 +11384,34 @@ mod reception_workflow_admission_integration_tests {
         assert!(!Arc::ptr_eq(&first,&edited));
         assert_eq!(edited.recognition["recipients"][0]["name"],"수정");
         row.pricing_preview=Some(serde_json::json!({"total":3000}));
-        assert!(!Arc::ptr_eq(&edited,&BandoEgui::pending_projection(&mut cache,&row).unwrap()));
+        let priced=BandoEgui::pending_projection(&mut cache,&row).unwrap();
+        assert!(!Arc::ptr_eq(&edited,&priced));
+        row.client_selection=Some("MANUAL".into());
+        let selected=BandoEgui::pending_projection(&mut cache,&row).unwrap();
+        assert!(!Arc::ptr_eq(&priced,&selected));
+        assert!(selected.review_analysis.is_none()); // No verified cached view.
+    }
+
+    #[test]
+    fn pending_review_uses_the_exact_saved_analysis_and_rejects_stale_raw(){
+        let mut row=draft("synthetic");
+        row.raw="발주 원문".into();
+        row.analysis_raw=Some(row.raw.clone());
+        let recognition=serde_json::json!({"recipients":[{"id":"r","name":"가상","items":[]}]});
+        row.analysis_evidence=Some(recognition.clone());
+        row.client_match=Some(serde_json::json!({"source":"MANUAL"}));
+        row.analysis_view=Some(serde_json::json!({
+            "recognition":recognition,"reference":[{"itemPrices":[]}],
+            "clientCandidates":[],"directoryCount":0
+        }));
+        let mut cache=None;
+        let initial=BandoEgui::pending_projection(&mut cache,&row).unwrap();
+        let actual=reception_service::ReceptionAnalysis::from_working_source(&row).unwrap();
+        assert_eq!(initial.review_analysis.as_ref().unwrap().recognition,actual.recognition);
+        row.analysis_raw=Some("이전 발주 원문".into());
+        let stale=BandoEgui::pending_projection(&mut cache,&row).unwrap();
+        assert!(!Arc::ptr_eq(&initial,&stale));
+        assert!(stale.review_analysis.is_none());
     }
 
     #[test]
