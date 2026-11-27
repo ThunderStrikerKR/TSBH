@@ -1033,6 +1033,22 @@ impl ClientManager {
 mod client_inline_form_tests{
     use super::*;
     #[test]
+    fn actual_client_editor_keeps_rects_during_permission_changes(){
+        use crate::ui_test_support::{test_context,assert_popup_transition_geometry,PopupGeometryGateway};
+        let ctx=test_context();
+        let work=egui::Rect::from_min_size(egui::Pos2::ZERO,egui::vec2(1400.0,1000.0));
+        let gateway:Arc<dyn BandoGateway>=Arc::new(PopupGeometryGateway{writable:true});
+        let mut manager=ClientManager::geometry_fixture(Arc::clone(&gateway),ctx.clone(),0,true);
+        let client=json!({"id":"synthetic-client","name":"검증 거래처","tier":"WHOLESALE","address":"검증 주소","active":true});
+        manager.state=json!({"revision":1,"clients":[client.clone()],"readOnly":false});
+        manager.begin(client);
+        assert_popup_transition_geometry(&ctx,work,3,|ctx,phase|{
+            manager.state["readOnly"]=json!(phase==1);
+            manager.show_editor(ctx,work,Arc::clone(&gateway));
+        });
+    }
+
+    #[test]
     fn client_form_labels_and_input_controls_share_rows(){
         for width in [840.0,420.0]{
             let ctx=crate::ui_test_support::test_context();
