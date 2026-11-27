@@ -32,9 +32,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
-      - name: Compile egui application and run shared cell navigation tests
+      - name: Run shared cell navigation tests (compiles the egui test binary)
         run: |
-          cargo check --manifest-path egui-app/Cargo.toml
           cargo test --manifest-path egui-app/Cargo.toml cell_navigation:: -- --nocapture
           cargo test --manifest-path egui-app/Cargo.toml reception_arrow_navigation_preserves_section_local_geometry -- --nocapture
           cargo test --manifest-path egui-app/Cargo.toml reception_navigation_crosses_recipient_item_boundary_in_both_directions -- --nocapture

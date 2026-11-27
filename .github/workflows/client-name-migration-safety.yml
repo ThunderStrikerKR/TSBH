@@ -37,12 +37,9 @@ jobs:
         run: cargo test --manifest-path crates/bando-data-access/Cargo.toml client_names::tests -- --nocapture
       - name: Verify native client workbook row compatibility, identity and stale revision guards
         run: cargo test --manifest-path src-tauri/Cargo.toml --lib client_name_excel_compat_tests -- --nocapture
-      - name: Compile egui client management and master table
-        run: cargo check --manifest-path egui-app/Cargo.toml
       - name: Verify multi-tag add, dedupe, delete and identifier preservation when present
         shell: pwsh
         run: |
-          if (Test-Path "egui-app/src/client_search_tags.rs") {
-            cargo test --manifest-path egui-app/Cargo.toml client_search_tags::tests -- --nocapture
-            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          }
+          if (-not (Test-Path "egui-app/src/client_search_tags.rs")) { throw "Missing client search tag source" }
+          cargo test --manifest-path egui-app/Cargo.toml client_search_tags::tests -- --nocapture
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
