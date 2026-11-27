@@ -1069,9 +1069,7 @@ impl ProductManager {
             let counts=product_summary_counts(self.catalog.as_ref());
             crate::ui_layout::management_top_content(ui,|top|{
                 top.horizontal_wrapped(|strip|{
-                    strip.spacing_mut().item_spacing=Vec2::new(
-                        theme::SPACE_8,theme::SPACE_8
-                    );
+                    crate::ui_layout::apply_spacing_role(strip,crate::ui_layout::SpacingRole::SummaryStrip);
                     if let Some([products,model_groups,aliases,brands])=counts{
                         crate::card::management_summary_card(strip,"등록 상품",products);
                         crate::card::management_summary_card(strip,"모델군",model_groups);
@@ -1147,7 +1145,7 @@ impl ProductManager {
         let card_min_height=crate::card::management_master_table_card_min_inner_height(ui);
         crate::card::measured_management_master_card(ui,|panel|{
             crate::card::fill_management_primary_card(panel,card_min_height);
-            panel.spacing_mut().item_spacing.y=0.0;
+            crate::ui_layout::apply_spacing_role(panel,crate::ui_layout::SpacingRole::ExplicitVertical);
             // Freight-style dual-slot toolbar at wide widths. Only when
             // product filters genuinely need the space do actions wrap onto
             // a second right-aligned row; never overlay a search selector.
@@ -1158,7 +1156,7 @@ impl ProductManager {
             );
             let dual_slot=toolbar_width>=1320.0;
             panel.horizontal_wrapped(|filter|{
-                    filter.spacing_mut().item_spacing.x=theme::SPACE_8;
+                    crate::ui_layout::apply_spacing_role(filter,crate::ui_layout::SpacingRole::Toolbar);
                     let before=self.query.clone();
                     let search_response=crate::input::management_search_field(
                         filter,&mut self.query,theme::MANAGEMENT_SEARCH_MIN_WIDTH,
@@ -1244,7 +1242,7 @@ impl ProductManager {
                     actions.set_clip_rect(actions_rect);
                     actions.set_width(actions_rect.width());
                     actions.set_height(actions_rect.height());
-                    actions.spacing_mut().item_spacing.x=theme::SPACE_8;
+                    crate::ui_layout::apply_spacing_role(actions,crate::ui_layout::SpacingRole::Toolbar);
                     if crate::button::action(actions,"상품 추가",
                         theme::ButtonRole::Primary,can_edit&&!saving&&!self.has_pending_prices()
                     ).clicked(){
@@ -1703,7 +1701,7 @@ impl ProductManager {
                 self.sort=next;
                 panel.ctx().request_repaint();
             }
-            panel.spacing_mut().item_spacing.y=original_spacing;
+            crate::table::restore_management_table_spacing(panel,original_spacing);
             let empty_state=if self.products.is_empty()
                 && !self.result.pending() && self.error.is_none(){
                 Some(if self.query.is_empty() && self.category.is_empty()

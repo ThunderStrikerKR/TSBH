@@ -439,9 +439,7 @@ impl ClientManager {
         ui.add_space(theme::SPACE_12);
         crate::ui_layout::management_top_content(ui,|top|{
             top.horizontal_wrapped(|strip|{
-                strip.spacing_mut().item_spacing=egui::vec2(
-                    theme::SPACE_8,theme::SPACE_8
-                );
+                crate::ui_layout::apply_spacing_role(strip,crate::ui_layout::SpacingRole::SummaryStrip);
                 let values=client_tier_kpi_values(self.state.is_object(),tier_counts);
                 for (label,value) in [
                     "도매","반도매","소매","특수"
@@ -637,7 +635,7 @@ impl ClientManager {
     }
     fn search_tag_editor(&mut self,ui:&mut Ui,draft:&mut Value){
         ui.vertical(|panel|{
-            panel.spacing_mut().item_spacing.y=theme::SPACE_8;
+            crate::ui_layout::apply_spacing_role(panel,crate::ui_layout::SpacingRole::WorkflowDetail);
             panel.label(typography::field_label("검색 태그"));
             let tags=client_search_tags::labels(draft);
             if !tags.is_empty(){
@@ -658,7 +656,7 @@ impl ClientManager {
                 }
             }
             let (changed,submit)=panel.horizontal(|entry|{
-                entry.spacing_mut().item_spacing.x=theme::SPACE_8;
+                crate::ui_layout::apply_spacing_role(entry,crate::ui_layout::SpacingRole::Toolbar);
                 let button_slot=theme::INPUT_HEIGHT*2.5;
                 let width=(entry.available_width()-button_slot
                     -theme::SPACE_8).max(60.0);

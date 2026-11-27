@@ -588,7 +588,7 @@ impl SettingsView{
             let left_width=theme::SETTINGS_BASIC_LEFT_PANE_WIDTH;
             let right_width=crate::card::remaining_column_width(available_width,left_width,theme::SPACE_12).max(1.0);
             ui.horizontal(|row|{
-                row.spacing_mut().item_spacing.x=theme::SPACE_12;
+                crate::ui_layout::apply_spacing_role(row,crate::ui_layout::SpacingRole::FormColumns);
                 row.vertical(|left|{
                     crate::card::apply_width_policy(left,crate::card::CardWidthPolicy::Fixed,left_width);
                     self.show_work_settings(left,editable,Arc::clone(&gateway));
@@ -621,7 +621,7 @@ impl SettingsView{
             card.add_enabled_ui(editable,|form|{
                 section(form,"작업 환경",|content|{
                     content.horizontal(|row|{
-                        row.spacing_mut().item_spacing.x=theme::SPACE_12;
+                        crate::ui_layout::apply_spacing_role(row,crate::ui_layout::SpacingRole::FormColumns);
                         row.vertical(|size|{
                             size.set_width(theme::MANAGEMENT_FILTER_DROPDOWN_WIDTH);
                             self.scale_selector(size,Arc::clone(&gateway));
@@ -642,7 +642,7 @@ impl SettingsView{
                     let width=content.available_width();
                     if width>=theme::SETTINGS_SENDER_WIDE_MIN_WIDTH{
                         content.horizontal(|row|{
-                            row.spacing_mut().item_spacing.x=theme::SPACE_12;
+                            crate::ui_layout::apply_spacing_role(row,crate::ui_layout::SpacingRole::FormColumns);
                             for (key,label,field_width) in [
                                 ("senderName","상호명",theme::SETTINGS_SENDER_NAME_WIDTH),
                                 ("senderPostcode","우편번호",theme::SETTINGS_SENDER_POSTCODE_WIDTH),
@@ -661,7 +661,7 @@ impl SettingsView{
                         );
                     }else{
                         content.horizontal(|row|{
-                            row.spacing_mut().item_spacing.x=theme::SPACE_12;
+                            crate::ui_layout::apply_spacing_role(row,crate::ui_layout::SpacingRole::FormColumns);
                             setting_field_column(
                                 row,&mut self.draft,"senderName","상호명",
                                 theme::SETTINGS_SENDER_NAME_WIDTH
@@ -681,7 +681,7 @@ impl SettingsView{
                             +theme::SPACE_12
                         {
                             content.horizontal(|row|{
-                                row.spacing_mut().item_spacing.x=theme::SPACE_12;
+                                crate::ui_layout::apply_spacing_role(row,crate::ui_layout::SpacingRole::FormColumns);
                                 setting_field_column(
                                     row,&mut self.draft,"senderPhone","전화번호",
                                     theme::SETTINGS_SENDER_PHONE_WIDTH
@@ -772,7 +772,7 @@ impl SettingsView{
                     ];
                     if wide_recommendations{
                         form.horizontal(|row|{
-                            row.spacing_mut().item_spacing.x=theme::SPACE_12;
+                            crate::ui_layout::apply_spacing_role(row,crate::ui_layout::SpacingRole::FormColumns);
                             for (key,label) in recommendations{
                                 row.vertical(|col|{
                                     col.set_width(theme::SETTINGS_ACCOUNT_PICKER_MAX_WIDTH);
@@ -802,7 +802,7 @@ impl SettingsView{
         for (index,account) in accounts.iter_mut().enumerate(){
             if ui.available_width()>=theme::SETTINGS_ACCOUNT_ROW_MIN_WIDTH{
                 ui.horizontal(|row|{
-                    row.spacing_mut().item_spacing.x=theme::SPACE_8;
+                    crate::ui_layout::apply_spacing_role(row,crate::ui_layout::SpacingRole::AccountFields);
                     let usable=(row.available_width()
                         -theme::SETTINGS_ACCOUNT_DELETE_WIDTH
                         -3.0*theme::SPACE_8).max(1.0);
@@ -838,7 +838,7 @@ impl SettingsView{
                 });
             }else{
                 ui.horizontal_wrapped(|row|{
-                    row.spacing_mut().item_spacing.x=theme::SPACE_8;
+                    crate::ui_layout::apply_spacing_role(row,crate::ui_layout::SpacingRole::AccountFields);
                     setting_field_column(
                         row,account,"bank","은행명",
                         theme::SETTINGS_ACCOUNT_FIELD_WIDTHS[0]

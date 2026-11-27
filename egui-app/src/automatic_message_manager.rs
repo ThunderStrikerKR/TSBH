@@ -448,7 +448,7 @@ impl AutomaticMessageManager {
             .scroll_bar_visibility(egui::containers::scroll_area::ScrollBarVisibility::VisibleWhenNeeded)
             .max_height(Self::list_height(ui))
             .show(ui,|list|{
-                list.spacing_mut().item_spacing.y=theme::SPACE_4;
+                crate::ui_layout::apply_spacing_role(list,crate::ui_layout::SpacingRole::CompactChooser);
                 for category in ["확인 안내","색상 및 수량","모델 및 옵션","입금 안내"]{
                     list.label(typography::subsection_heading(category));
                     for (index,def) in TEMPLATES.iter().enumerate()
@@ -484,7 +484,7 @@ impl AutomaticMessageManager {
             .max_height((Self::list_height(ui)-theme::INPUT_HEIGHT
                 -theme::SPACE_24).max(1.0))
             .show(ui,|list|{
-                list.spacing_mut().item_spacing.y=theme::SPACE_4;
+                crate::ui_layout::apply_spacing_role(list,crate::ui_layout::SpacingRole::CompactChooser);
                 if visible.is_empty(){
                     crate::ui_primitives::management_body_state_inline(list,if self.product_search.trim().is_empty(){
                         "아직 등록된 안내문이 없습니다. 상품을 검색해 추가하세요."
@@ -647,7 +647,7 @@ impl AutomaticMessageManager {
         );
         let mut save=false;
         ui.horizontal(|panes|{
-            panes.spacing_mut().item_spacing.x=gap;
+            crate::ui_layout::apply_spacing_role(panes,crate::ui_layout::SpacingRole::SplitWorkspace);
             panes.allocate_ui_with_layout(
                 Vec2::new(left_width,height),Layout::top_down(Align::Min),
                 |list|{

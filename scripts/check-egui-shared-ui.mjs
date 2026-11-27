@@ -1444,6 +1444,14 @@ export function auditManagedLayout(source,file){
     hits.push({line:1,rule:"client label editor must use shared compact field"});
   if(file==="product_manager.rs"&&/\b(?:group|advanced) \. spacing_mut \( \) \. item_spacing \. y/.test(code))
     hits.push({line:1,rule:"product detail group spacing belongs to popup"});
+  // These migrated profiles must not regress to local spacing literals.
+  const spacingOwners=new Set(["freight_manager.rs","order_history_manager.rs",
+    "daily_settlement_manager.rs","settings_view.rs","automatic_message_manager.rs",
+    "product_manager.rs","excel_manager.rs"]);
+  if(spacingOwners.has(file)&&/\. spacing_mut \( \) \. (?:item_spacing|interact_size)\b/.test(code))
+    hits.push({line:1,rule:"local spacing override in migrated management screen"});
+  if(file==="category_dropdown.rs"&&/menu \. (?:set_min_width|set_max_width|set_width|spacing_mut) \(/.test(code))
+    hits.push({line:1,rule:"category explorer menu geometry belongs to category_tree"});
   // The freight migration is explicit: don't allow a screen to swap the
   // typed wrappers back to the old raw callback APIs.
   if(file==="freight_manager.rs"){

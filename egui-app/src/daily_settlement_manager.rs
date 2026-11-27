@@ -49,7 +49,7 @@ fn settlement_date_toolbar(
 )->bool{
     let mut changed=false;
     ui.horizontal_wrapped(|controls|{
-        controls.spacing_mut().item_spacing.x=theme::SPACE_8;
+        crate::ui_layout::apply_spacing_role(controls,crate::ui_layout::SpacingRole::Toolbar);
         crate::ui_primitives::form_field_label(controls,"결산 날짜");
         if crate::button::action(controls,"‹",theme::ButtonRole::Standard,true).clicked(){
             *date=move_date(date,-1);
@@ -207,7 +207,7 @@ fn kpi(ui:&mut Ui,label:&str,value:&str){
         |slot|{
             crate::card::apply_width_policy(slot,crate::card::CardWidthPolicy::Fixed,width);
             crate::card::freight_summary_frame().show(slot,|cell|{
-                cell.spacing_mut().item_spacing.y=0.0;
+                crate::ui_layout::apply_spacing_role(cell,crate::ui_layout::SpacingRole::ExplicitVertical);
                 let content_width=width-2.0*theme::FREIGHT_SUMMARY_PADDING_X
                     -2.0*theme::FRAME_STROKE_WIDTH;
                 let (number_rect,number_response)=cell.allocate_exact_size(
@@ -246,7 +246,7 @@ fn kpi(ui:&mut Ui,label:&str,value:&str){
 
 fn metric(ui:&mut Ui,label:&str,value:String){
     ui.horizontal(|line|{
-        line.spacing_mut().item_spacing.x=theme::SPACE_4;
+        crate::ui_layout::apply_spacing_role(line,crate::ui_layout::SpacingRole::ReportMetricPair);
         line.label(typography::field_label(label));
         // Preserve the original 22pt body line box while displaying a
         // standalone monetary figure in the shared numeric data face.
@@ -321,7 +321,7 @@ fn report_table<const N:usize>(
         }
     );
     crate::status_notice::management_body_state_overlay(ui,scroll.inner_rect,empty_notice);
-    ui.spacing_mut().item_spacing.y=previous_gap;
+    crate::table::restore_management_table_spacing(ui,previous_gap);
     let left=first_x.unwrap_or(header.left()-scroll.state.offset.x);
     let header_cells=crate::table::management_table_cells(egui::pos2(left,header.top()),&widths,HEADER_HEIGHT,COL_GAP);
     crate::table::header_columns(ui,header,layout.header_content_rect,&header_cells,COL_GAP,|ui,header_text_rect|{
@@ -437,8 +437,7 @@ impl DailySettlementManager{
         ];
         crate::ui_layout::management_top_content(ui,|top|{
             top.horizontal_wrapped(|strip|{
-                strip.spacing_mut().item_spacing=
-                    Vec2::new(theme::SPACE_8,theme::SPACE_8);
+                crate::ui_layout::apply_spacing_role(strip,crate::ui_layout::SpacingRole::SummaryStrip);
                 for (name,value) in [
                     "접수 주문","청구 합계 확인분",
                     "실제 계좌 입금","미확정 청구 주문"
@@ -495,9 +494,7 @@ impl DailySettlementManager{
                     ));
                     section.add_space(theme::SPACE_8);
                     section.horizontal_wrapped(|line|{
-                        line.spacing_mut().item_spacing=Vec2::new(
-                            theme::SPACE_12,theme::SPACE_8
-                        );
+                        crate::ui_layout::apply_spacing_role(line,crate::ui_layout::SpacingRole::ReportMetrics);
                         for (title,key) in [
                             ("상품대금 확인분","productKnown"),
                             ("고객 청구 배송비 확인분","shippingKnown"),
@@ -511,7 +508,7 @@ impl DailySettlementManager{
                     });
                     section.add_space(theme::SPACE_8);
                     section.horizontal(|review|{
-                        review.spacing_mut().item_spacing.x=theme::SPACE_12;
+                        crate::ui_layout::apply_spacing_role(review,crate::ui_layout::SpacingRole::FormColumns);
                         review.label(typography::caption(&format!(
                             "미수 미확정 {}",
                             report["outstandingUnknown"].as_u64().map(|n|format!("{n}건")).unwrap_or_else(||"—".into())
@@ -568,9 +565,7 @@ impl DailySettlementManager{
                     ));
                     crate::ui_primitives::section_divider(section);
                     section.horizontal_wrapped(|line|{
-                        line.spacing_mut().item_spacing=Vec2::new(
-                            theme::SPACE_12,theme::SPACE_8
-                        );
+                        crate::ui_layout::apply_spacing_role(line,crate::ui_layout::SpacingRole::ReportMetrics);
                         for (title,key) in [
                             ("실제 입금 합계","paidCash"),
                             ("배송 건 배분액","allocatedCash"),

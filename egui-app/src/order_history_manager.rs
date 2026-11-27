@@ -596,7 +596,7 @@ fn draw_line(ui:&mut Ui,rect:Rect,line:HistoryLine,snapshot:&HistorySnapshot,
                 .layout(egui::Layout::left_to_right(Align::Center)),|actions|{
                     actions.set_clip_rect(control.intersect(area));
                     actions.set_width(control.width());
-                    actions.spacing_mut().item_spacing.x=action_gap;
+                    crate::ui_layout::apply_spacing_role(actions,crate::ui_layout::SpacingRole::CompactActions);
                     // Copy the FULL order's existing Rust-generated message.
                     if crate::button::action_with_min_width(actions,"운송장 복사",
                         theme::ButtonRole::TableSecondary,!message.is_empty(),
@@ -660,7 +660,7 @@ fn draw_line(ui:&mut Ui,rect:Rect,line:HistoryLine,snapshot:&HistorySnapshot,
                 .max_rect(actions_rect)
                 .layout(egui::Layout::left_to_right(Align::Center)),|actions|{
                     actions.set_clip_rect(actions_rect.intersect(area));
-                    actions.spacing_mut().item_spacing.x=theme::SPACE_8;
+                    crate::ui_layout::apply_spacing_role(actions,crate::ui_layout::SpacingRole::Toolbar);
                     let memo_button=crate::button::action(actions,"관리 메모",
                         theme::ButtonRole::TableSecondary,shipment.is_some());
                     if memo_button.clicked(){
@@ -842,7 +842,7 @@ pub(crate) fn excel_export_date_controls(
     from_month:&mut NaiveDate,to_month:&mut NaiveDate,compact:bool
 )->bool{
     let mut changed=false;
-    ui.spacing_mut().item_spacing.x=theme::MANAGEMENT_DATE_CONTROL_GAP;
+    crate::navigation::apply_management_date_control_spacing(ui);
     let inner_height=theme::INPUT_HEIGHT;
     if compact {
         // Below 536pt use two right-aligned rows with a common 8pt gap.
@@ -865,7 +865,7 @@ pub(crate) fn excel_export_date_controls(
             .layout(egui::Layout::left_to_right(Align::Center)
                 .with_main_align(Align::Max)),|line|{
                 line.set_width(first.width());
-                line.spacing_mut().item_spacing.x=theme::MANAGEMENT_DATE_CONTROL_GAP;
+                crate::navigation::apply_management_date_control_spacing(line);
                 let all_dates=from.is_empty()&&to.is_empty();
                 changed|=range_date_picker_rtl(line,all_dates,from,from_month,
                     "excel-export-from-calendar");
@@ -875,7 +875,7 @@ pub(crate) fn excel_export_date_controls(
             .layout(egui::Layout::left_to_right(Align::Center)
                 .with_main_align(Align::Max)),|line|{
                 line.set_width(second.width());
-                line.spacing_mut().item_spacing.x=theme::MANAGEMENT_DATE_CONTROL_GAP;
+                crate::navigation::apply_management_date_control_spacing(line);
                 changed|=excel_export_date_end(line,from,to,to_month);
             });
     }else{
@@ -927,7 +927,7 @@ fn history_date_controls(
     compact:bool
 )->bool{
     let mut changed=false;
-    ui.spacing_mut().item_spacing.x=theme::MANAGEMENT_DATE_CONTROL_GAP;
+    crate::navigation::apply_management_date_control_spacing(ui);
     if compact{
         let width=ui.available_width().max(1.0);
         let (area,_)=ui.allocate_exact_size(
@@ -955,7 +955,7 @@ fn history_date_controls(
             |line|{
                 line.set_width(first.width());
                 line.set_height(first.height());
-                line.spacing_mut().item_spacing.x=theme::MANAGEMENT_DATE_CONTROL_GAP;
+                crate::navigation::apply_management_date_control_spacing(line);
                 changed|=history_date_range_start(
                     line,basis,from,to,from_month
                 );
@@ -968,7 +968,7 @@ fn history_date_controls(
             |line|{
                 line.set_width(second.width());
                 line.set_height(second.height());
-                line.spacing_mut().item_spacing.x=theme::MANAGEMENT_DATE_CONTROL_GAP;
+                crate::navigation::apply_management_date_control_spacing(line);
                 changed|=history_date_range_end(
                     line,from,to,to_month
                 );
@@ -1505,7 +1505,7 @@ impl OrderHistoryManager {
                 ()
             });
             
-            section.spacing_mut().item_spacing.y=old_gap;
+            crate::table::restore_management_table_spacing(section,old_gap);
             if let Some(order_id)=pending_toggle {
                 toggle_history_expansion(&mut self.expanded,&order_id);
             }

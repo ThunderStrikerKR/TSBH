@@ -860,9 +860,7 @@ impl FreightManager {
             // the native state/projection. Never represent missing data as 0.
             freight_top_content(ui,|top|{
                 top.horizontal_wrapped(|strip|{
-                    strip.spacing_mut().item_spacing=egui::vec2(
-                        theme::SPACE_8,theme::SPACE_8
-                    );
+                    crate::ui_layout::apply_spacing_role(strip,crate::ui_layout::SpacingRole::SummaryStrip);
                     for label in [
                         "등록 상품","그룹 지정 완료","그룹 미지정","배송 그룹"
                     ]{
@@ -898,9 +896,7 @@ impl FreightManager {
         // On narrow panes the four complete cards still wrap, never compress.
         freight_top_content(ui,|top|{
             top.horizontal_wrapped(|strip|{
-                strip.spacing_mut().item_spacing=egui::vec2(
-                    theme::SPACE_8,theme::SPACE_8
-                );
+                crate::ui_layout::apply_spacing_role(strip,crate::ui_layout::SpacingRole::SummaryStrip);
                 summary(strip,"등록 상품",products.len());
                 summary(strip,"그룹 지정 완료",assigned);
                 summary(strip,"그룹 미지정",products.len()-assigned);
@@ -1357,10 +1353,10 @@ impl FreightManager {
                     tools.set_clip_rect(left_rect);
                     tools.set_width(left_rect.width());
                     tools.set_height(left_rect.height());
-                    tools.spacing_mut().item_spacing.x=theme::SPACE_8;
+                    crate::ui_layout::apply_spacing_role(tools,crate::ui_layout::SpacingRole::ToolbarInput);
                     // Search stays at 36pt; the shared 34pt dropdown trigger
                     // is vertically centered within the same 36pt toolbar.
-                    tools.spacing_mut().interact_size.y=theme::INPUT_HEIGHT;
+                    
                 crate::input::management_search_field(
                     tools,search,theme::MANAGEMENT_SEARCH_MIN_WIDTH,
                     "모델명 / 상품명 / 카테고리 검색"
@@ -1456,10 +1452,10 @@ impl FreightManager {
                     bulk.set_clip_rect(right_rect);
                     bulk.set_width(right_controls_rect.width());
                     bulk.set_height(right_controls_rect.height());
-                    bulk.spacing_mut().item_spacing.x=theme::SPACE_8;
+                    crate::ui_layout::apply_spacing_role(bulk,crate::ui_layout::SpacingRole::ToolbarInput);
                     // Bulk selection uses the same 34pt split-chevron
                     // trigger as the filter and every product-row selector.
-                    bulk.spacing_mut().interact_size.y=theme::INPUT_HEIGHT;
+                    
                         settings_help::icon(bulk,"배송 그룹 일괄 지정");
                         if crate::button::action(bulk,"선택 상품에 적용",
                             theme::ButtonRole::Standard,
@@ -1721,7 +1717,7 @@ impl FreightManager {
                                     actions_clip
                                 );
                                 actions.set_width(actions_rect.width());
-                                actions.spacing_mut().item_spacing.x=theme::SPACE_8;
+                                crate::ui_layout::apply_spacing_role(actions,crate::ui_layout::SpacingRole::Toolbar);
                                 let editable=enabled&&!changed&&ready;
                                 // Only an unassigned product can edit its
                                 // own base freight. Once a group is selected,
@@ -1785,7 +1781,7 @@ impl FreightManager {
                     else{"검색 조건에 맞는 상품이 없습니다."}));
             }
             // Limit the zero-gap setting to the header+rows block.
-            section.spacing_mut().item_spacing.y=previous_table_spacing_y;
+            crate::table::restore_management_table_spacing(section,previous_table_spacing_y);
             // Header and body use the shared column geometry AND the body
             // scroll origin, so no egui padding / Grid sizing can drift.
             let header_left=first_row_left.unwrap_or(
@@ -2089,7 +2085,7 @@ impl FreightManager {
                     }
                 }
             );
-            section.spacing_mut().item_spacing.y=old_gap;
+            crate::table::restore_management_table_spacing(section,old_gap);
             let left=first_row_left.unwrap_or(
                 header_rect.left()-scroll_output.state.offset.x
             );
@@ -2282,7 +2278,7 @@ impl FreightManager {
             // A missing toolbar is represented by one shared 69pt master
             // transition, not an inert 36pt widget plus a second divider.
             let prior_gap=section.spacing().item_spacing.y;
-            section.spacing_mut().item_spacing.y=0.0;
+            crate::ui_layout::apply_spacing_role(section,crate::ui_layout::SpacingRole::ExplicitVertical);
             let combinations=rows(&shipping["combinations"]);
             // Keep React's original newest-first order unless the user
             // explicitly sorts a meaningful column.
@@ -2393,7 +2389,7 @@ impl FreightManager {
                     );
                 }
             );
-            section.spacing_mut().item_spacing.y=prior_gap;
+            crate::table::restore_management_table_spacing(section,prior_gap);
         });
         #[cfg(test)]
         crate::ui_test_support::record(if single_list{"master card"}else{"section card"},_history_card.response.rect);
@@ -2561,7 +2557,7 @@ fn freight_history_table<const N:usize>(
             }
         }
     );
-    ui.spacing_mut().item_spacing.y=old_spacing;
+    crate::table::restore_management_table_spacing(ui,old_spacing);
     let left=first_row_left.unwrap_or(
         header_rect.left()-scroll.state.offset.x
     );
@@ -2668,7 +2664,7 @@ mod rate_toolbar_tests{
         let _=ctx.run(input,|ctx|{
             egui::CentralPanel::default().show(ctx,|ui|{
                 crate::card::management_master_table_frame().show(ui,|section|{
-                    section.spacing_mut().item_spacing.y=0.0;
+                    crate::ui_layout::apply_spacing_role(section,crate::ui_layout::SpacingRole::ExplicitVertical);
                     let top=section.cursor().top();
                     let layout=crate::table::management_sticky_table_header_without_toolbar(
                         section,theme::FREIGHT_COMBINATION_HISTORY_COL_WIDTHS

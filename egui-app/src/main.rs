@@ -4083,7 +4083,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                     });
                     ui.add_space(theme::SPACE_12);
                     ui.horizontal_wrapped(|row|{
-                        row.spacing_mut().item_spacing.x=theme::SPACE_12;
+                        crate::ui_layout::apply_spacing_role(row,crate::ui_layout::SpacingRole::FormColumns);
                         // These are mutually exclusive whole-order shortcuts,
                         // not a separate 3-state mode. Their checked state
                         // always follows the visible recipient checkboxes.
@@ -4119,7 +4119,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                     // The row height already includes all vertical
                                     // breathing room; egui's default item gap would
                                     // otherwise clip the 10th entry and show only ~8.
-                                    list.spacing_mut().item_spacing.y=0.0;
+                                    crate::ui_layout::apply_spacing_role(list,crate::ui_layout::SpacingRole::ExplicitVertical);
                                     for (index,recipient) in recipients.iter().enumerate(){
                                         let id=reception_service::text(recipient,"id");
                                         if id.is_empty(){continue;}
@@ -5723,7 +5723,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                     Vec2::new(ui.available_width(), theme::HEADER_HEIGHT),
                     Layout::left_to_right(Align::Center),
                     |bar| {
-                        bar.spacing_mut().item_spacing.x = theme::SPACE_8;
+                        crate::ui_layout::apply_spacing_role(bar,crate::ui_layout::SpacingRole::Toolbar);
                         // The nested horizontal_centered row used the font
                         // line box for layout, leaving the visible capitals
                         // above the icon's optical center. Allocate ONE fixed
@@ -5858,7 +5858,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                             }
                         }
                         bar.with_layout(Layout::right_to_left(Align::Center), |actions| {
-                            actions.spacing_mut().item_spacing.x = theme::SPACE_4;
+                            crate::ui_layout::apply_spacing_role(actions,crate::ui_layout::SpacingRole::CompactActions);
                             if crate::button::window_control(actions, WindowControl::Close).clicked()
                             {
                                 ctx.send_viewport_cmd(egui::ViewportCommand::Close);
@@ -6002,7 +6002,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                         ).clicked(){
                             next_mode=Some(kakao_dock::DockMode::Together);
                         }
-                        toolbar.spacing_mut().item_spacing.x=theme::SPACE_8;
+                        toolcrate::ui_layout::apply_spacing_role(bar,crate::ui_layout::SpacingRole::Toolbar);
                         if crate::button::action(toolbar,"나누어 보기",
                             mode_role(current_mode==kakao_dock::DockMode::Split),true
                         ).clicked(){
@@ -6369,7 +6369,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                     new_clicked=true;
                 }
             },|body|{
-                body.spacing_mut().item_spacing.y=0.0;
+                crate::ui_layout::apply_spacing_role(body,crate::ui_layout::SpacingRole::DocumentBody);
                 let available=crate::card::docked_section_body_height(height)
                     .min(body.available_height().max(0.0));
                 let (body_rect,_)=body.allocate_exact_size(
@@ -6488,7 +6488,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                     new_clicked=true;
                 }
             },|body|{
-                body.spacing_mut().item_spacing.y=0.0;
+                crate::ui_layout::apply_spacing_role(body,crate::ui_layout::SpacingRole::DocumentBody);
                 let available=crate::card::docked_section_body_height(height)
                     .min(body.available_height().max(0.0));
                 let (body_rect,_)=body.allocate_exact_size(
@@ -6602,7 +6602,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
         }, |ui| {
             // Only the source-body layout owns spacing; the section header
             // and neighboring message pane keep their established tokens.
-            ui.spacing_mut().item_spacing.y = 0.0;
+            crate::ui_layout::apply_spacing_role(ui,crate::ui_layout::SpacingRole::DocumentBody);
             if ocr_processing {
                 // Match the React/Electron source-document blocking state:
                 // replace the entire source body instead of overlaying a
@@ -7048,7 +7048,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                     .max_height(intake_height)
                     .auto_shrink([false, false])
                     .show(ui, |intake| {
-                        intake.spacing_mut().item_spacing.y = 0.0;
+                        crate::ui_layout::apply_spacing_role(intake,crate::ui_layout::SpacingRole::DocumentBody);
                         intake.add_space(balanced_gap);
                         intake.label(typography::subsection_heading("클립보드 접수"));
                         intake.add_space(theme::SPACE_8);
@@ -7119,7 +7119,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                             intake,Vec2::new(folder_actions_width,theme::ACTION_STANDARD_HEIGHT),
                             Layout::left_to_right(Align::Center),|buttons|{
                                 if let Some(path)=inbox_path.as_deref(){
-                                    buttons.spacing_mut().item_spacing.x=theme::SPACE_8;
+                                    crate::ui_layout::apply_spacing_role(buttons,crate::ui_layout::SpacingRole::Toolbar);
                                     if crate::button::action(buttons,"경로 복사",
                                         ButtonRole::Standard,true).clicked(){
                                         inbox_copy_request=Some(path.to_owned());
@@ -7218,7 +7218,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
             },|body|{
                 // All message-body spacing is explicit; default item spacing
                 // previously pushed the bottom copy buttons past the pane.
-                body.spacing_mut().item_spacing.y=0.0;
+                crate::ui_layout::apply_spacing_role(body,crate::ui_layout::SpacingRole::DocumentBody);
                 let button_row_height=if body.available_width()<280.0{
                     theme::ACTION_STANDARD_HEIGHT*2.0+theme::SPACING
                 }else{theme::ACTION_STANDARD_HEIGHT};
@@ -7327,7 +7327,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
             }
         }, |ui| {
             if awaiting_order { return; }
-            ui.spacing_mut().item_spacing.y=0.0;
+            crate::ui_layout::apply_spacing_role(ui,crate::ui_layout::SpacingRole::DocumentBody);
             // Empty egui Frames shrink to their contents. Allocate the real
             // message rectangle explicitly so it fills the available width
             // instead of appearing as a narrow vertical stripe.

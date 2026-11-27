@@ -266,7 +266,7 @@ fn workflow_card<R>(
     let response=frame.show(ui,|card|{
         // The 42pt upper/lower bands and 1pt divider own all vertical
         // spacing. No additional automatic gap between the compact rows.
-        card.spacing_mut().item_spacing.y=0.0;
+        crate::ui_layout::apply_spacing_role(card,crate::ui_layout::SpacingRole::ExplicitVertical);
         let width=crate::card::inner_width_for_insets(outer,0.0,0.0,theme::SOFT_DIVIDER_WIDTH,0.0,0.0);
         crate::card::apply_width_policy(card,crate::card::CardWidthPolicy::FillAvailable,width);
         body(card)
@@ -621,7 +621,7 @@ fn workflow_details<R>(
         let width=(row.available_width()-theme::WORKFLOW_CARD_PADDING_X).max(0.0);
         row.vertical(|details|{
             details.set_width(width);
-            details.spacing_mut().item_spacing.y=theme::SPACING;
+            crate::ui_layout::apply_spacing_role(details,crate::ui_layout::SpacingRole::WorkflowDetail);
             body(details)
         }).inner
     }).inner;
@@ -1042,7 +1042,7 @@ pub fn show(
     // Prevent implicit vertical item spacing from doubling the explicit
     // WORKFLOW_CARD_GAP between order bundles. This is scoped to the list
     // inside its own ScrollArea; workflow_card restores internal spacing.
-    ui.spacing_mut().item_spacing.y=0.0;
+    crate::ui_layout::apply_spacing_role(ui,crate::ui_layout::SpacingRole::ExplicitVertical);
     let previews_allowed=allow_pending_hover_switch
         && crate::overlay::background_preview_allowed(ui.ctx());
     if !previews_allowed{state.stop_preview();}
@@ -1936,7 +1936,7 @@ mod compact_virtualization_tests{
         let ctx=egui::Context::default();
         let _=ctx.run(egui::RawInput::default(),|ctx|{
             egui::CentralPanel::default().show(ctx,|ui|{
-                ui.spacing_mut().item_spacing.y=0.0;
+                crate::ui_layout::apply_spacing_role(ui,crate::ui_layout::SpacingRole::ExplicitVertical);
                 let top=ui.cursor().min.y;
                 workflow_card(ui,false,false,|card|{workflow_compact_rows(card);});
                 ui.add_space(theme::WORKFLOW_CARD_GAP);

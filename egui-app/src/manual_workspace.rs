@@ -1962,7 +1962,7 @@ impl ManualWorkspace {
                             &&!self.confirm_discard,
                         |status|{
                             status.set_min_height(theme::MODAL_MASTER_WORKSPACE_TOOLBAR_HEIGHT);
-                            status.spacing_mut().item_spacing.x=theme::SPACE_8;
+                            crate::ui_layout::apply_spacing_role(status,crate::ui_layout::SpacingRole::Toolbar);
                             if self.direct_input{
                                 status.label(typography::caption("직접 입력 · 발주 원문 없음"))
                             }else{
@@ -2061,7 +2061,7 @@ impl ManualWorkspace {
                         let has_pending_quantity=pending_quantity_count>0;
                         // The status/count toolbar is part of the shared modal
                         // header. The body begins directly at the card workspace.
-                        ui.spacing_mut().item_spacing.y=0.0;
+                        crate::ui_layout::apply_spacing_role(ui,crate::ui_layout::SpacingRole::DocumentBody);
                         if self.selected_field=="product" && self.selected_item.is_some(){
                             ui.add(egui::Label::new(typography::caption(
                                 crate::review_panel::MODEL_RESOLUTION_GUIDANCE
@@ -2087,9 +2087,7 @@ impl ManualWorkspace {
                         let mut draw_columns=|outer:&mut egui::Ui|{
                             outer.set_min_width(content_width);
                             outer.horizontal(|ui|{
-                            ui.spacing_mut().item_spacing.x=if self.direct_input{
-                                0.0
-                            }else{theme::MANUAL_COLUMN_GAP};
+                            crate::ui_layout::apply_manual_workspace_spacing(ui,self.direct_input);
                             let width=content_width;
                             let height=content_height;
                             if !self.direct_input{
@@ -2106,7 +2104,7 @@ impl ManualWorkspace {
                                             // Use the same outer Reception card, title row,
                                             // divider, and shared compact header / 12pt body inset
                                             // as the intake source pane.
-                                            body.spacing_mut().item_spacing.y=0.0;
+                                            crate::ui_layout::apply_spacing_role(body,crate::ui_layout::SpacingRole::DocumentBody);
                                             let available=crate::card::docked_section_body_height(height)
                                                 .min(body.available_height().max(0.0));
                                             let (rect,_)=body.allocate_exact_size(
@@ -2159,7 +2157,7 @@ impl ManualWorkspace {
                                     sheet_ui.vertical(|panel|{
                                         panel.set_min_width(panel_width);
                                         panel.set_min_height(height.max(0.0));
-                                        panel.spacing_mut().item_spacing.y=theme::SPACE_8;
+                                        crate::ui_layout::apply_spacing_role(panel,crate::ui_layout::SpacingRole::WorkflowDetail);
                                         if count_resize_requested {panel.disable();}
                                         let can_switch=!busy && !pending_quantity_active
                                             && !count_resize_requested;
@@ -2178,7 +2176,7 @@ impl ManualWorkspace {
                                             .show(panel,|sheet|{
                                                 // The shared stack gap is allocated explicitly below;
                                                 // do not add egui's implicit item spacing too.
-                                                sheet.spacing_mut().item_spacing.y=0.0;
+                                                crate::ui_layout::apply_spacing_role(sheet,crate::ui_layout::SpacingRole::DocumentBody);
                                                 if let Some(index)=visible_shipment {
                                                     let row=&rows[index];
                                                     let rid=text(row,"id");
@@ -4236,10 +4234,10 @@ mod manual_workspace_layout_tests{
                 ..Default::default()
             },|ctx|{
                 egui::CentralPanel::default().show(ctx,|ui|{
-                    ui.spacing_mut().item_spacing.y=0.0;
+                    crate::ui_layout::apply_spacing_role(ui,crate::ui_layout::SpacingRole::DocumentBody);
                     let measured=ui.scope(|sheet|{
                         sheet.set_width(800.0);
-                        sheet.spacing_mut().item_spacing.y=0.0;
+                        crate::ui_layout::apply_spacing_role(sheet,crate::ui_layout::SpacingRole::DocumentBody);
                         crate::card::reception_section_with_header(
                             sheet,"수취인별 주문 정보",0.0,
                             |header|{
@@ -4328,8 +4326,8 @@ mod manual_workspace_layout_tests{
         assert!(!render.contains("crate::card::source_document_frame()"));
         assert!(!render.contains("crate::popup::modal_nested_role_frame(crate::popup::ModalNestedRole::Standard).show(source_ui"));
         assert!(render.contains("crate::card::docked_section_body_height(height)"));
-        assert!(render.contains("sheet.spacing_mut().item_spacing.y=0.0;"));
-        assert!(render.contains("ui.spacing_mut().item_spacing.x=if self.direct_input{"));
+        assert!(render.contains("crate::ui_layout::apply_spacing_role(sheet,crate::ui_layout::SpacingRole::DocumentBody);"));
+        assert!(render.contains("crate::ui_layout::apply_manual_workspace_spacing(ui,self.direct_input);"));
         assert!(render.contains("else{theme::MANUAL_COLUMN_GAP}"));
         assert!(render.contains("if !self.direct_input{"));
         assert!(render.contains("manual_workspace_content_width_for_mode("));

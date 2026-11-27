@@ -7,6 +7,40 @@ use crate::scrollbar::{scroll_area,ScrollAxes};
 use crate::card::docked_section_body_height;
 use crate::table::management_table_data_width;
 
+/// Semantic layout profiles. Screen modules choose a content role, never
+/// a numeric spacing override. Preserve the reviewed spacing for each role.
+#[derive(Clone,Copy)]
+pub(crate) enum SpacingRole{
+    Toolbar,ToolbarInput,CompactActions,SummaryStrip,FormColumns,
+    AccountFields,ReportMetrics,ReportMetricPair,CompactChooser,SplitWorkspace,
+    ExplicitVertical,DocumentBody,WorkflowDetail,
+}
+pub(crate) fn apply_spacing_role(ui:&mut Ui,role:SpacingRole){
+    let spacing=ui.spacing_mut();
+    match role{
+        SpacingRole::Toolbar=>spacing.item_spacing.x=theme::SPACE_8,
+        SpacingRole::ToolbarInput=>{
+            spacing.item_spacing.x=theme::SPACE_8;
+            spacing.interact_size.y=theme::INPUT_HEIGHT;
+        }
+        SpacingRole::CompactActions=>spacing.item_spacing.x=theme::SPACE_4,
+        SpacingRole::SummaryStrip=>spacing.item_spacing=Vec2::splat(theme::SPACE_8),
+        SpacingRole::FormColumns|SpacingRole::SplitWorkspace=>spacing.item_spacing.x=theme::SPACE_12,
+        SpacingRole::AccountFields=>spacing.item_spacing.x=theme::SPACE_8,
+        SpacingRole::ReportMetrics=>spacing.item_spacing=Vec2::new(theme::SPACE_12,theme::SPACE_8),
+        SpacingRole::ReportMetricPair=>spacing.item_spacing.x=theme::SPACE_4,
+        SpacingRole::CompactChooser=>spacing.item_spacing.y=theme::SPACE_4,
+        SpacingRole::ExplicitVertical|SpacingRole::DocumentBody=>spacing.item_spacing.y=0.0,
+        SpacingRole::WorkflowDetail=>spacing.item_spacing.y=theme::SPACING,
+    }
+}
+
+/// A direct-entry worksheet has no left document column; retain the
+/// approved manual split gap only when both columns are visible.
+pub(crate) fn apply_manual_workspace_spacing(ui:&mut Ui,direct_input:bool){
+    ui.spacing_mut().item_spacing.x=if direct_input{0.0}else{theme::MANUAL_COLUMN_GAP};
+}
+
 /// Allocate a row with an immutable parent footprint. The child can
 /// render optional labels, validation messages or actions without changing
 /// the next sibling's Rect when its contents appear or disappear.

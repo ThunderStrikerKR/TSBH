@@ -573,3 +573,8 @@ mod date_navigation_segmented_control_tests{
         );
     }
 }
+
+/// Shared horizontal date-control rhythm used by history and export toolbars.
+pub(crate) fn apply_management_date_control_spacing(ui:&mut eframe::egui::Ui){
+    ui.spacing_mut().item_spacing.x=crate::theme::MANAGEMENT_DATE_CONTROL_GAP;
+}

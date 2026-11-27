@@ -118,6 +118,10 @@ fn finish_inline(ui:&Ui,header:Rect){
 /// Shared management table container policy. The caller owns its layout
 /// scope; return the preceding vertical gap for existing explicit restores.
 /// Column widths, row heights, table IDs and header positions stay unchanged.
+pub(crate) fn restore_management_table_spacing(ui:&mut Ui,previous:f32){
+    ui.spacing_mut().item_spacing.y=previous;
+}
+
 pub(crate) fn management_table_container_style(ui:&mut Ui)->f32{
     let previous_gap=ui.spacing().item_spacing.y;
     ui.spacing_mut().scroll=crate::scrollbar::management_table_scroll_style();

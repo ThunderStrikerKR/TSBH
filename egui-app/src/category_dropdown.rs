@@ -247,7 +247,7 @@ pub(crate) fn crumbs_row(ui:&mut Ui,state:&mut ExplorerState,index:&HashMap<&str
     bar.set_clip_rect(rect.intersect(ui.clip_rect()));
     // Preserve an enclosing manager-mode fade when no path motion is active.
     if alpha<1.0{bar.set_opacity(alpha);}
-    bar.spacing_mut().item_spacing.x=0.0;
+    crate::category_tree::configure_breadcrumb_row(&mut bar);
     let names=(0..=path.len()).map(|i|label_for(index,&path[..i])).collect::<Vec<_>>();
     let widths=names.iter().map(|n|crumb_width(&bar,n)).collect::<Vec<_>>();
     let last=widths.len()-1;
@@ -307,8 +307,7 @@ fn menu_body(
     state:&mut ExplorerState,selected:&mut String,enabled:bool,
     allow_empty:bool,changed:&mut bool,popup_width:f32,
 ){
-    menu.set_min_width(popup_width);menu.set_max_width(popup_width);menu.set_width(popup_width);
-    menu.spacing_mut().item_spacing.y=theme::SPACE_8;
+    crate::category_tree::configure_explorer_popup(menu,popup_width);
     let available=menu.available_width().max(1.0);
     let search_response=menu.add_enabled_ui(enabled&&!state.moving(),|menu|
         crate::input::management_search_field(menu,&mut state.search,available,"카테고리 이름 또는 경로 검색")
@@ -383,7 +382,7 @@ pub(crate) fn explorer_body(menu:&mut Ui,nodes:&[CategoryNode],index:&HashMap<&s
                 scroll=scroll.vertical_scroll_offset(state.scroll_positions.get(current).copied().unwrap_or(0.0));
             }
             let output=scroll.show(tree_ui,|list|{
-                list.spacing_mut().item_spacing.y=0.0;
+                crate::category_tree::configure_tree_rows(list);
                 let top=list.next_widget_position().y;
                 let clip=list.clip_rect();
                 let mut paint_row=|list:&mut Ui,name:&str,path:Vec<String>,depth:usize,last:bool,has_children:bool,open:bool|{

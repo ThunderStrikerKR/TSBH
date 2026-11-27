@@ -576,7 +576,7 @@ impl CategoryManager {
                     .layout(Layout::top_down(Align::Min)).disabled());
                 child.set_clip_rect(slot.intersect(ui.clip_rect()));
                 child.set_opacity(fraction);
-                child.spacing_mut().item_spacing.y=0.0;
+                crate::category_tree::configure_tree_rows(&mut child);
                 draw(self,&mut child,ancestors);
             }else{draw(self,ui,ancestors);}
         }
@@ -640,7 +640,7 @@ impl CategoryManager {
             crate::card::fill_management_primary_card(panel,card_min_height);
             // No vacated heading or help-text rows. Reserve one 36pt
             // search-and-actions toolbar, exactly as the management master.
-            panel.spacing_mut().item_spacing.y=0.0;
+            crate::category_tree::configure_tree_rows(panel);
             let width=panel.available_width().max(1.0);
             // Reserve the checkbox label and shared inter-control gap in both layouts.
             let focus_action_width=theme::INPUT_HEIGHT*3.0+theme::SPACE_12;
@@ -791,7 +791,7 @@ impl CategoryManager {
                 .show(panel,|tree|{
                     // Adjacent rows must touch so parent/child guide lines
                     // form one continuous tree rather than broken dashes.
-                    tree.spacing_mut().item_spacing.y=0.0;
+                    crate::category_tree::configure_tree_rows(tree);
                     let root=category_tree::category_tree_row(tree,category_tree::CategoryTreeRow{
                         name:"전체",summary:"",depth:0,ancestor_guides:&[],is_last:true,
                         root:true,has_children:true,open:true,selected:self.selected.is_empty(),
@@ -886,7 +886,7 @@ impl CategoryManager {
                                     crate::popup::modal_labeled_row(body,"상위 분류",|location|{
                                         // Align category text to the button's vertical
                                         // center; keep them adjacent at a shared 8pt gap.
-                                        location.spacing_mut().item_spacing.x=theme::SPACE_8;
+                                        crate::ui_layout::apply_spacing_role(location,crate::ui_layout::SpacingRole::Toolbar);
                                         let parent_label=if current.parent.is_empty(){
                                             if is_root(&current.id){
                                                 "최상위".to_owned()
@@ -1267,7 +1267,7 @@ mod modal_layout_contract_tests{
         assert!(!page.contains("panel.horizontal_wrapped(|search|"));
         assert!(page.contains("measured_management_section_card(ui"));
         assert!(page.contains("fill_management_primary_card(panel,card_min_height)"));
-        assert!(page.contains("panel.spacing_mut().item_spacing.y=0.0;"));
+        assert!(page.contains("crate::category_tree::configure_tree_rows(panel);"));
         assert!(page.contains("management_toolbar_trailing_rect("));
         assert!(page.contains("theme::CATALOG_MAP_TOOLBAR_STACK_WIDTH"));
         assert!(page.contains("self.map_toolbar_actions("));
@@ -1285,7 +1285,7 @@ mod modal_layout_contract_tests{
         let mut measured=None;
         let _=ctx.run(egui::RawInput::default(),|ctx|{
             egui::CentralPanel::default().show(ctx,|panel|{
-                panel.spacing_mut().item_spacing.y=0.0;
+                crate::category_tree::configure_tree_rows(panel);
                 let strip=crate::ui_primitives::section_divider(panel);
                 measured=Some(strip.height());
             });

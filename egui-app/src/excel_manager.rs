@@ -318,7 +318,7 @@ fn table<const N:usize>(
     mut render:impl FnMut(&mut Ui,[Rect;N],usize)
 )->Option<bool>{
     let old_gap=ui.spacing().item_spacing.y;
-    ui.spacing_mut().item_spacing.y=0.0;
+    crate::ui_layout::apply_spacing_role(ui,crate::ui_layout::SpacingRole::ExplicitVertical);
     let minimum=base.iter().sum::<f32>()+(N-1) as f32*GAP;
     // The toolbar and 36pt header always share the two-master 16+1+4
     // transition. No status or error line may change their coordinates.
@@ -358,7 +358,7 @@ fn table<const N:usize>(
                 });
             }
         });
-    ui.spacing_mut().item_spacing.y=old_gap;
+    crate::table::restore_management_table_spacing(ui,old_gap);
     let left=left.unwrap_or(header.left()-output.state.offset.x);
     let heads=crate::table::management_table_cells(egui::pos2(left,header.top()),&widths,HEADER,GAP);
     let (header_text_rect,_)=crate::table::header_columns(ui,header,header_content,&heads,GAP,|ui,header_text_rect|{
