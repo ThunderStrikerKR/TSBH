@@ -1,6 +1,7 @@
 //! React ProductManager 상품 목록: Rust-owned catalog selection and a
 //! read-only price/detail projection. Product and price writes must not target
 //! the isolated egui preview DB or bypass Tauri's operational save boundary.
+use crate::ui_layout::SharedAllocationExt as _;
 use crate::{
     category_manager::{CategoryManager,ROOTS},
     category_dropdown,
@@ -617,7 +618,7 @@ impl ProductManager {
                     cancelled=workspace.header("상품 선택","취소",!busy);
                     if busy{workspace.disable();}
                     workspace.body_region(|ui|{
-                        ui.allocate_ui_with_layout(
+                        ui.shared_allocate_ui_with_layout(
                             egui::vec2(ui.available_width(),height),Layout::top_down(Align::Min),
                             |body|{
                                 #[cfg(test)]
@@ -1338,7 +1339,7 @@ impl ProductManager {
                 )
             }else{
                 panel.add_space(theme::SPACE_8);
-                let (rect,_)=panel.allocate_exact_size(
+                let (rect,_)=panel.shared_allocate_exact_size(
                     Vec2::new(panel.available_width(),theme::INPUT_HEIGHT),
                     Sense::hover()
                 );
@@ -2658,7 +2659,7 @@ mod tests {
                     crate::dropdown::management_status_dropdown(ui,state,220.0,true,color,|_|{});
                     crate::dropdown::management_status_dropdown_option(
                         ui,&mut selected,state.to_owned(),state,color);
-                    let cell=ui.allocate_exact_size(Vec2::new(220.0,42.0),Sense::hover()).0;
+                    let cell=ui.shared_allocate_exact_size(Vec2::new(220.0,42.0),Sense::hover()).0;
                     crate::table::paint_management_status_cell(ui,cell,state,color,
                         egui::Align2::LEFT_CENTER,("status-test",state));
                 });
