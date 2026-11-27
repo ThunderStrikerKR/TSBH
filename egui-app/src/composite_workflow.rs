@@ -1,4 +1,5 @@
 //! Shared workflow card and shipment detail presentation.
+use crate::ui_layout::SharedAllocationExt as _;
 use eframe::egui::{self,Color32,Rect,Response,Sense,Ui,Vec2};
 use crate::{theme,typography,source_highlight};
 use crate::ui_primitives::text_exceeds_rect;
@@ -76,7 +77,7 @@ pub fn workflow_shipment_row(
     let freight_galley=ui.fonts_mut(|fonts|fonts.layout_job(freight_job));
     let height=shipment_detail_block_height(name_galley.size().y.max(product_galley.size().y)
         .max(freight_galley.size().y));
-    let (block,response)=ui.allocate_exact_size(Vec2::new(outer,height),Sense::hover());
+    let (block,response)=ui.shared_allocate_exact_size(Vec2::new(outer,height),Sense::hover());
     let [name_rect,product_rect,freight_rect]=shipment_detail_cells(block,&widths,gap);
     if previewed && !chosen{
         // Keep the existing preview fill; the linked outline replaces the
