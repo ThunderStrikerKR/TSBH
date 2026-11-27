@@ -482,6 +482,19 @@ pub(super) struct ProductHypotheses<'a>{
     branded:Vec<&'a Value>,
     known_brand:bool,
 }
+// Recognize an isolated literal model boundary without selecting an SKU.
+// Restrict this structural split to bare registered terms. Alias, semantic,
+// brand and color conflicts remain with the unsplit row for classification.
+pub(super) fn isolated_model_prefix(text:&str,quantity_start:usize,pool:&ProductHypotheses<'_>)->bool{
+    if !pool.aliases.is_empty()||!pool.semantic.is_empty()||!pool.branded.is_empty()
+        ||pool.color_hint.is_some(){return false;}
+    let boundary=pool.names.iter().filter(|e|e.priority>=2&&e.span.0==0)
+        .map(|e|e.span.1).filter(|&end|end>0&&end<=quantity_start
+            &&text.get(end..quantity_start).is_some_and(|tail|
+                tail.chars().all(|c|c.is_whitespace()||c=='/')))
+        .max();
+    boundary.is_some_and(|end|pool.names.iter().all(|e|e.span.1<=end))
+}
 pub(super) fn collect<'a>(text:&str,state:&'a Value,client_id:&str)->ProductHypotheses<'a>{
     let ps=products(state);
     let verified=verified_bases(&ps);

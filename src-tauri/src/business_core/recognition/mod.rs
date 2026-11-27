@@ -511,6 +511,64 @@ fn project_name<'a>(line:&'a str,proposals:&[NameProposal],search:&mut ProductSe
     }
     None
 }
+// A physical line can contain several explicit records. These are
+// non-owning slices, never synthetic newlines. Offsets and line geometry
+// remain those of the original document.
+fn record_slice<'a>(line:&Line<'a>,a:usize,b:usize)->Line<'a>{
+    Line{text:&line.text[a..b],start:line.start+a,number:line.number,paragraph:line.paragraph}
+}
+fn recipient_records<'a>(line:&Line<'a>,label:&Regex,phone:&Regex)->Option<Vec<Line<'a>>>{
+    if !line.text.contains([';','；'])||line.text.contains('|'){return None;}
+    let mut ranges=Vec::new();
+    let mut start=0;
+    for (at,c) in line.text.char_indices(){
+        if matches!(c,';'|'；'){
+            ranges.push((start,at));
+            start=at+c.len_utf8();
+            if ranges.len()>=16{return None;}
+        }
+    }
+    ranges.push((start,line.text.len()));
+    if !ranges.iter().all(|&(a,b)|{
+        let text=&line.text[a..b];
+        label.find(text).is_some_and(|m|m.as_str().contains([':', '：']))
+            &&explicit_recipient_span(text,label,phone).is_some_and(|(x,y)|
+                x<y&&(address_begin(&text[y..]).is_some()||phone.is_match(&text[y..])))
+    }){return None;}
+    Some(ranges.into_iter().map(|(a,b)|record_slice(line,a,b)).collect())
+}
+fn product_records<'a>(line:&Line<'a>,quantities:&[quantity::Quantity],
+    label:&Regex,phone:&Regex,search:&mut ProductSearch<'a,'_>)->Option<Vec<(Line<'a>,Vec<quantity::Quantity>)>>{
+    let text=line.text;
+    if quantities.len()<2||quantities.len()>16||label.is_match(text)||phone.is_match(text)
+        ||address_begin(text).is_some()||text.contains('|')||is_money_or_header(text)
+        ||["공통","모두","전부","전원","각각","씩","메모","메시지","메세지","요청","구성","포함","송하인","보내는"]
+            .iter().any(|word|text.contains(*word)){return None;}
+    if !text[quantities.last()?.end..].trim().is_empty(){return None;}
+    let mut records=Vec::with_capacity(quantities.len());
+    let mut start=0;
+    for (i,q) in quantities.iter().enumerate(){
+        let prefix=&text[start..q.start];
+        let leading=prefix.len()-prefix.trim_start_matches(|c:char|
+            c.is_whitespace()||(i>0&&matches!(c,';'|'；'|'/'))).len();
+        let begin=start+leading;
+        if begin>=q.start||(i>0&&leading==0){return None;}
+        let segment=&text[begin..q.end];
+        search.prepare(segment);
+        let Some(ProductProbe::Collected(pool))=search.probes.get(segment)else{return None;};
+        if !model::isolated_model_prefix(segment,q.start-begin,pool){return None;}
+        records.push((record_slice(line,begin,q.end),vec![quantity::Quantity{
+            value:q.value,start:q.start-begin,end:q.end-begin}]));
+        start=q.end;
+    }
+    Some(records)
+}
+#[derive(Clone,Copy,Debug,PartialEq,Eq)]
+enum SourceZone{Unspecified,Recipient,Sender,Common}
+fn common_item_hint(text:&str)->bool{
+    Regex::new(r"공통|모두|전부|전원|각\s*수취인|같은\s*상품")
+        .expect("common item").is_match(text)
+}
 #[derive(Debug)]
 struct ContactCandidate{
     span:(usize,usize),
@@ -525,7 +583,7 @@ struct LineCandidates<'a>{
     label_only:bool,
     near_delivery:bool,
     after_label:bool,
-    sender_section:bool,
+    zone:SourceZone,
     names:Vec<NameProposal>,
     contact_spans:Vec<(usize,usize)>,
     contacts:Vec<ContactCandidate>,
@@ -538,13 +596,44 @@ fn collect_document<'a>(raw:&'a str,phone:&Regex,label:&Regex,
     search:&mut ProductSearch<'a,'_>)->Vec<LineCandidates<'a>>{
     let sender=Regex::new(r"^(?:보내는\s*(?:분|사람|곳)|송하인(?:명)?)\s*[:：]").expect("sender prefix");
     let mut sender_section=false;
-    let mut rows=physical_lines(raw).into_iter().map(|line|{
+    let mut records=Vec::new();
+    // Use one physical-line pass. Reuse each discovered quantity when a
+    // bare product row is split; explicit recipient records are scanned
+    // only within their original slices.
+    for line in physical_lines(raw){
+        let text=line.text;
+        let sender_heading=sender.is_match(text.trim());
+        let recipient_heading=label.find(text).is_some_and(|m|m.as_str().contains([':', '：']));
+        if sender_heading{sender_section=true;}
+        else if recipient_heading{sender_section=false;}
+        if !sender_section{
+            if let Some(parts)=recipient_records(&line,label,phone){
+                records.extend(parts.into_iter().map(|part|{
+                    let quantities=quantity::extract(part.text);
+                    (part,quantities,SourceZone::Recipient)
+                }));
+                continue;
+            }
+        }
+        let quantities=quantity::extract(text);
+        if !sender_section{
+            if let Some(parts)=product_records(&line,&quantities,label,phone,search){
+                records.extend(parts.into_iter().map(|(part,qs)|(part,qs,SourceZone::Unspecified)));
+                continue;
+            }
+        }
+        let zone=if sender_section{SourceZone::Sender}
+            else if recipient_heading{SourceZone::Recipient}
+            else if common_item_hint(text){SourceZone::Common}
+            else{SourceZone::Unspecified};
+        records.push((line,quantities,zone));
+    }
+    let mut rows=records.into_iter().map(|(line,quantities,zone)|{
         let explicit_name=explicit_recipient_span(line.text,label,phone);
         let raw_address=address_begin(line.text);
         let address=if let Some((_,end))=explicit_name{
             address_begin(&line.text[end..]).map(|a|end+a)
         }else{raw_address};
-        sender_section|=sender.is_match(line.text.trim());
         let mut contact_spans=Vec::new();
         let mut contacts=Vec::new();
         for c in phone.captures_iter(line.text){
@@ -557,9 +646,8 @@ fn collect_document<'a>(raw:&'a str,phone:&Regex,label:&Regex,
                 value:format!("{}-{}-{}",&c[1],&c[2],&c[3])});
         }
         let label_only=label.find(line.text).is_some_and(|m|line.text[m.end()..].trim().is_empty());
-        let quantities=quantity::extract(line.text);
         LineCandidates{line,raw_address,address,explicit_name,label_only,near_delivery:false,
-            after_label:false,sender_section,names:vec![],contact_spans,contacts,quantities}
+            after_label:false,zone,names:vec![],contact_spans,contacts,quantities}
     }).collect::<Vec<_>>();
     for i in 0..rows.len(){
         let row=&rows[i];
@@ -579,7 +667,7 @@ fn collect_document<'a>(raw:&'a str,phone:&Regex,label:&Regex,
         };
         // Do not scan the catalog for rows which the existing business
         // projection cannot consume. Their lexical candidates remain.
-        if !row.sender_section&&!is_money_or_header(text.trim())&&postcode::labelled_line(text.trim()).is_none(){
+        if row.zone!=SourceZone::Sender&&!is_money_or_header(text.trim())&&postcode::labelled_line(text.trim()).is_none(){
             for proposal in &names{
                 if let Some(probe)=proposal.probe(text){search.prepare(probe);}
             }
@@ -955,7 +1043,7 @@ fn analyze(raw: &str, state: &Value, client: Option<&Value>) -> Result<Value, St
         let explicit_name=row.explicit_name;
         let near_delivery=row.near_delivery;
         let after_label=row.after_label;
-        if row.sender_section{continue;}
+        if row.zone==SourceZone::Sender{continue;}
         if postcode::labelled_line(text).is_some() {
             note_continuation=None;
             continue;
@@ -1155,8 +1243,7 @@ fn analyze(raw: &str, state: &Value, client: Option<&Value>) -> Result<Value, St
             evidence:product_evidence,source_start:line.start+offset,
             line:line.number,raw:original_product_line.to_owned(),
             decision:matched,quantities:quantity_indexes,
-            common:Regex::new(r"공통|모두|전부|전원|각\s*수취인|같은\s*상품")
-                .expect("common item").is_match(trimmed),
+            common:common_item_hint(trimmed),
             // order-evidence.ts:358-368: a common total is not a
             // per-recipient quantity without explicit 'each' evidence.
             each:Regex::new(r"(?i)(?:각각?|수취인마다|한\s*분당).*(?:\d+|한|두|세)\s*(?:개|대)|씩")
@@ -1179,10 +1266,13 @@ fn analyze(raw: &str, state: &Value, client: Option<&Value>) -> Result<Value, St
     }
     // A generic quantity line is evidence but cannot itself prove which SKU was ordered.
     for row in &rows{
+        if row.zone==SourceZone::Sender{continue;}
         let line=&row.line;
-        if events.iter().any(|e| e.kind == "quantity" && e.line == line.number) { continue; }
+        if events.iter().any(|e| e.kind == "quantity" && e.start>=line.start
+            && e.end<=line.start+line.text.len()) { continue; }
         if is_money_or_header(line.text) { continue; }
-        if product_hits.iter().any(|h| h.line == line.number) { continue; }
+        if product_hits.iter().any(|h| h.source_start>=line.start
+            && h.source_start<line.start+line.text.len()) { continue; }
         for q in &row.quantities{
             // An independently scanned quantity must not reuse characters
             // already owned by a recognized address/name/contact/memo span.
@@ -1201,7 +1291,7 @@ fn analyze(raw: &str, state: &Value, client: Option<&Value>) -> Result<Value, St
     let mut anchors: Vec<usize> = events.iter().enumerate()
         .filter_map(|(i,e)| (e.kind == "name").then_some(i)).collect();
     anchors.sort_by_key(|i| events[*i].start);
-    anchors.dedup_by_key(|i| events[*i].line);
+    anchors.dedup_by_key(|i| (events[*i].start,events[*i].end));
     if anchors.is_empty() {
         anchors = events.iter().enumerate()
             .filter_map(|(i,e)| (e.kind=="address").then_some(i)).collect();
@@ -1227,7 +1317,8 @@ fn analyze(raw: &str, state: &Value, client: Option<&Value>) -> Result<Value, St
         let kind = e.kind;
         if kind=="address" {
             if let Some((line_index,line))=rows.iter().map(|row|&row.line).enumerate()
-                .find(|(_,line)|line.number==e.line){
+                .find(|(_,line)|line.number==e.line&&line.start<=e.start
+                    &&e.start<line.start+line.text.len()){
                 let prefix=&raw[line.start..e.start];
                 if let Some(code)=postcode::before_address(prefix){
                     postcodes[row_index].insert(code.to_owned());
@@ -1703,11 +1794,73 @@ mod tests {
         assert!(search.probes.values().all(|p|matches!(p,ProductProbe::Collected(_))));
         assert_eq!(rows[1].quantities[0].value,2);
         assert!(rows[1].names.iter().any(|p|&rows[1].line.text[p.span.0..p.span.1]=="김가상"));
-        assert!(rows[3].sender_section);
+        assert_eq!(rows[3].zone,SourceZone::Sender);
         assert_eq!(rows[3].contacts[0].value,"010-3456-7890");
         assert!(rows.iter().all(|r|r.line.text==&raw[r.line.start..r.line.start+r.line.text.len()]));
         assert_eq!(project_name(rows[0].line.text,&rows[0].names,&mut search),None);
         assert!(matches!(search.probes.get("GT-1"),Some(ProductProbe::Evaluated(_))));
+    }
+    #[test]
+    fn explicit_same_line_recipient_records_keep_distinct_source_offsets(){
+        let state=state();
+        let raw="수취인: 김가상 010-1234-5678； 수취인: 이가상 010-2345-6789";
+        let mut search=ProductSearch::new(&state,"");
+        let rows=collect_document(raw,&phone_regex(),&recipient_label(),&mut search);
+        assert_eq!(rows.len(),2);
+        assert_eq!(rows[0].line.number,rows[1].line.number);
+        assert!(rows[0].line.start<rows[1].line.start);
+        let output=analyze(raw,&state,None).unwrap();
+        let recipients=output["recipients"].as_array().unwrap();
+        assert_eq!(recipients.len(),2);
+        assert_eq!(recipients[0]["name"],"김가상");
+        assert_eq!(recipients[1]["name"],"이가상");
+        assert_eq!(recipients[0]["mobile"],"010-1234-5678");
+        assert_eq!(recipients[1]["mobile"],"010-2345-6789");
+        let units:Vec<_>=raw.encode_utf16().collect();
+        for recipient in recipients{
+            for source in recipient["sources"].as_array().unwrap(){
+                let a=source["start"].as_u64().unwrap() as usize;
+                let b=source["end"].as_u64().unwrap() as usize;
+                assert_eq!(String::from_utf16(&units[a..b]).unwrap(),source["text"].as_str().unwrap());
+            }
+        }
+    }
+    #[test]
+    fn same_line_bare_product_boundaries_are_not_identity_decisions(){
+        let state=state();
+        let raw="709 2개 / GT-1 3개";
+        let mut search=ProductSearch::new(&state,"");
+        let rows=collect_document(raw,&phone_regex(),&recipient_label(),&mut search);
+        assert_eq!(rows.len(),2);
+        assert_eq!(rows[0].line.number,rows[1].line.number);
+        assert!(search.probes.values().all(|p|matches!(p,ProductProbe::Collected(_))));
+        let result=analyze(raw,&state,None).unwrap();
+        let items=result["recipients"][0]["items"].as_array().unwrap();
+        assert_eq!(items.len(),2);
+        assert_eq!(items[0]["productId"],"p709");
+        assert_eq!(items[0]["quantity"],2);
+        assert_eq!(items[1]["productId"],"pgt");
+        assert_eq!(items[1]["quantity"],3);
+        let ambiguous="709 2개 구성 / GT-1 3개";
+        let mut other=ProductSearch::new(&state,"");
+        assert_eq!(collect_document(ambiguous,&phone_regex(),&recipient_label(),&mut other).len(),1);
+    }
+    #[test]
+    fn sender_candidates_survive_discovery_without_leaking_into_recipient_projection(){
+        let state=state();
+        let raw="송하인: 가상상사\n010-1111-2222\n2개\n수취인: 김가상 010-2345-6789\n709 1개";
+        let mut search=ProductSearch::new(&state,"");
+        let rows=collect_document(raw,&phone_regex(),&recipient_label(),&mut search);
+        assert_eq!(rows[1].zone,SourceZone::Sender);
+        assert_eq!(rows[2].quantities[0].value,2);
+        assert_eq!(rows[3].zone,SourceZone::Recipient);
+        let result=analyze(raw,&state,None).unwrap();
+        let r=&result["recipients"][0];
+        assert_eq!(r["name"],"김가상");
+        assert_eq!(r["mobile"],"010-2345-6789");
+        assert_eq!(r["items"][0]["quantity"],1);
+        assert!(!result["candidates"].as_array().unwrap().iter()
+            .any(|c|c["text"]=="2개"||c["text"]=="010-1111-2222"));
     }
     #[test]
     fn contract_rejects_incomplete_state() {
