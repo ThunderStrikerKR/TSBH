@@ -185,13 +185,20 @@ impl ManualAssignmentGesture{
     fn start_drag(
         &mut self,id:String,anchor_offset:Option<egui::Vec2>,layout_width:f32
     ){
-        self.clear();
+        // A press can still become a plain click. Preserve the selected
+        // source/cell until egui confirms actual pointer movement.
+        self.cancel_pending_drag();
         self.dragging=Some(id);
         self.drag_anchor_offset=anchor_offset;
         self.drag_layout_width=layout_width;
     }
     fn mark_drag_moved(&mut self){
-        if self.dragging.is_some(){self.drag_moved=true;}
+        if self.dragging.is_some() && !self.drag_moved{
+            // Only a confirmed drag supersedes the previous click selection.
+            self.source=None;
+            self.cell=None;
+            self.drag_moved=true;
+        }
     }
     fn cancel_pending_drag(&mut self){
         self.dragging=None;
@@ -3221,6 +3228,63 @@ mod manual_assignment_gesture_tests{
         gesture.cancel_pending_drag();
         assert!(gesture.source_click("block".into()).is_none());
         assert_eq!(gesture.cell_click(target()),Some(("block".into(),target())));
+    }
+
+    #[test]
+    fn cell_first_click_survives_source_press_and_release(){
+        let mut gesture=ManualAssignmentGesture::default();
+        assert!(gesture.cell_click(target()).is_none());
+        // Production source_document emits a drag-start candidate on press,
+        // even when the user only intends to click the source.
+        gesture.start_drag("block".into(),Some(egui::vec2(3.0,4.0)),320.0);
+        assert_eq!(gesture.cell.as_ref(),Some(&target()));
+        assert!(!gesture.drag_moved);
+        gesture.cancel_pending_drag();
+        let (id,cell)=gesture.source_click("block".into()).expect("cell-first assignment");
+        let model=json!({"rows":[{"id":"r","items":[]}],
+            "blocks":[{"id":"block","field":"name","text":"김가상"}],"assignments":{}});
+        let payload=manual_assignment_payload(&model,&id,&cell,None).unwrap();
+        let gateway=crate::gateway::LocalGateway;
+        let result=rule(&gateway,json!({"action":"assign_manual_block",
+            "model":model,"assignmentOrder":[],"id":payload["id"],"cell":payload["cell"]}))
+            .expect("native cell-first assignment");
+        assert_eq!(result["model"]["rows"][0]["name"],"김가상");
+        assert_eq!(result["model"]["assignments"]["block"]["field"],"name");
+        assert_eq!(result["assignmentOrder"],json!(["block"]));
+        assert!(gesture.cell.is_none());
+        assert!(gesture.source.is_none());
+    }
+
+    #[test]
+    fn repeated_source_click_toggles_selection_after_pending_press(){
+        let mut gesture=ManualAssignmentGesture::default();
+        for expected in [Some("block"),None]{
+            gesture.start_drag("block".into(),None,320.0);
+            gesture.cancel_pending_drag();
+            assert!(gesture.source_click("block".into()).is_none());
+            assert_eq!(gesture.source.as_deref(),expected);
+        }
+    }
+
+    #[test]
+    fn confirmed_drag_supersedes_prior_click_selection_and_never_falls_back(){
+        let mut gesture=ManualAssignmentGesture::default();
+        let other=ManualCellTarget{row:1,..target()};
+        assert!(gesture.cell_click(target()).is_none());
+        gesture.start_drag("block".into(),None,320.0);
+        assert_eq!(gesture.cell.as_ref(),Some(&target()));
+        gesture.mark_drag_moved();
+        assert!(gesture.cell.is_none());
+        assert!(gesture.source.is_none());
+        assert_eq!(gesture.finish_drag(Some(other.clone())),Some(("block".into(),other)));
+        assert!(gesture.source_click("old".into()).is_none());
+        gesture.start_drag("new".into(),None,320.0);
+        assert_eq!(gesture.source.as_deref(),Some("old"));
+        gesture.mark_drag_moved();
+        assert!(gesture.source.is_none());
+        assert!(gesture.finish_drag(None).is_none());
+        assert!(gesture.cell.is_none());
+        assert!(gesture.source.is_none());
     }
 
     #[test]
