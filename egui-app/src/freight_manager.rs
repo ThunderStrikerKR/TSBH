@@ -974,111 +974,84 @@ impl FreightManager {
             let mut close_product_reset=false;
             if self.tab==FreightTab::Rates && self.create_group_open {
                 crate::popup::modal_backdrop(ctx,"freight-create-backdrop",false);
-                crate::popup::show_decision_window(ctx,"배송 그룹 추가","freight-create",area,|modal|{
-                    crate::popup::decision_workspace(modal,|decision|{
-                        if decision.header("배송 그룹 추가","취소",enabled
-                        ){close_create=true;}
-                        decision.body(|modal|{
-                            crate::popup::modal_named_text_field(
-                                modal,"배송 그룹명",&mut self.new_name,"그룹 이름 입력",enabled
-                            );
-                        });
-                        decision.actions(|controls|{
-                                if crate::button::action(
-                                    controls,"배송 그룹 추가",theme::ButtonRole::Primary,
-                                    enabled&&!self.new_name.trim().is_empty()
-                                ).clicked(){
-                                    action=Some(("create_group".into(),json!({
-                                        "name":self.new_name.trim()
-                                    })));
-                                }
-                            }
-                        );
-                    });
-                });
+                match crate::popup::show_name_confirmation(
+                    ctx,area,"freight-create","배송 그룹 추가",
+                    "배송 그룹명",&mut self.new_name,"그룹 이름 입력","배송 그룹 추가",enabled
+                ){
+                    crate::popup::ConfirmDecision::Cancel=>close_create=true,
+                    crate::popup::ConfirmDecision::Confirm=>action=Some(("create_group".into(),json!({
+                        "name":self.new_name.trim()
+                    }))),
+                    crate::popup::ConfirmDecision::Pending=>{}
+                }
             }else if let Some((id,name))=self.rename_target.as_mut(){
                 crate::popup::modal_backdrop(ctx,"freight-rename-backdrop",false);
-                crate::popup::show_decision_window(ctx,"배송 그룹명","freight-rename",area,|modal|{
-                        crate::popup::decision_workspace(modal,|decision|{
-                            if decision.header("배송 그룹명","취소",enabled){
-                                close_rename=true;
-                            }
-                            decision.body(|modal|{
-                                crate::popup::modal_named_text_field(
-                                    modal,"배송 그룹명",name,"그룹 이름 입력",enabled
-                                );
-                            });
-                            decision.actions(|controls|{
-                                if crate::button::action(controls,"이름 수정",theme::ButtonRole::Primary,
-                                    enabled&&!name.trim().is_empty()).clicked(){
-                                    action=Some(("rename_group".into(),json!({
-                                        "groupId":id,"name":name.trim()
-                                    })));
-                                }
-                            });
-                        });
-                    });
+                match crate::popup::show_name_confirmation(
+                    ctx,area,"freight-rename","배송 그룹명",
+                    "배송 그룹명",name,"그룹 이름 입력","이름 수정",enabled
+                ){
+                    crate::popup::ConfirmDecision::Cancel=>close_rename=true,
+                    crate::popup::ConfirmDecision::Confirm=>action=Some(("rename_group".into(),json!({
+                        "groupId":id,"name":name.trim()
+                    }))),
+                    crate::popup::ConfirmDecision::Pending=>{}
+                }
             }else if let Some(id)=self.delete_target.as_ref(){
                 let affected=products.iter().copied().filter(|p|
                     text(p,"shippingGroupId")==id.as_str()).collect::<Vec<_>>();
                 let name=group_name(&groups,id);
                 crate::popup::modal_backdrop(ctx,"freight-delete-backdrop",false);
-                crate::popup::show_decision_window(ctx,"배송 그룹 삭제","freight-delete",area,|modal|{
-                        crate::popup::decision_workspace(modal,|decision|{
-                            if decision.header("배송 그룹 삭제","취소",enabled
-                            ){close_delete=true;}
-                            decision.framed_body(|workspace|{
-                                let body_top=workspace.min_rect().top();
-                                crate::popup::modal_master_body_section(
-                                    workspace,"삭제 대상",|details|{
-                                    details.label(typography::section_heading(name));
-                                    if !affected.is_empty(){
-                                        details.add(egui::Label::new(typography::status(
-                                            "그룹을 삭제하면 연결된 상품의 배송 그룹이 미지정으로 변경됩니다.",
-                                            theme::SELECTED_ORDER
-                                        )).wrap());
-                                        let height=crate::popup::modal_compact_table_height(
-                                            details,area.height(),body_top,affected.len(),10
-                                        );
-                                        crate::table::registry_table(
-                                            details,"freight-delete-affected-products",
-                                            ["연결 상품"],[240.0],height,affected.len(),|_|false,
-                                            |row,cells,index,_|{
-                                                let product=affected[index];
-                                                let first=rows(&product["variants"]).first();
-                                                let color=first.map(|v|variant_label(product,v))
-                                                    .unwrap_or_default();
-                                                let label=if color.is_empty(){
-                                                    model_label(text(product,"name")).to_owned()
-                                                }else{
-                                                    format!("{} / {}",model_label(text(product,"name")),color)
-                                                };
-                                                crate::table::registry_cell(
-                                                    row,cells[0],&label,
-                                                    typography::ManagementTableCellRole::ProductName,false,
-                                                    ("freight-delete-product",text(product,"id"))
-                                                );
-                                            }
-                                        );
-                                    }else{
-                                        details.label(typography::body(
-                                            "연결된 현재 상품이 없습니다. 과거 운임과 주문 기록은 보존합니다."
-                                        ));
-                                    }
-                                });
-                            });
-                            decision.actions(|controls|{
-                                if crate::button::action(controls,if !affected.is_empty(){
-                                    "상품 연결을 미지정으로 변경하고 삭제"
-                                }else{"그룹 삭제"},theme::ButtonRole::Danger,enabled)
-                                    .clicked(){
-                                    action=Some(("delete_group".into(),json!({
-                                        "groupId":id,"detach":!affected.is_empty()
-                                    })));
-                                }
-                            });
-                        });
-                    });
+                let decision=crate::popup::show_delete_confirmation(
+                    ctx,area,"freight-delete","배송 그룹 삭제",
+                    if !affected.is_empty(){"상품 연결을 미지정으로 변경하고 삭제"}else{"그룹 삭제"},
+                    enabled,enabled,crate::popup::DeleteBody::Framed,|workspace|{
+                let body_top=workspace.min_rect().top();
+                crate::popup::modal_master_body_section(
+                    workspace,"삭제 대상",|details|{
+                    details.label(typography::section_heading(name));
+                    if !affected.is_empty(){
+                        details.add(egui::Label::new(typography::status(
+                            "그룹을 삭제하면 연결된 상품의 배송 그룹이 미지정으로 변경됩니다.",
+                            theme::SELECTED_ORDER
+                        )).wrap());
+                        let height=crate::popup::modal_compact_table_height(
+                            details,area.height(),body_top,affected.len(),10
+                        );
+                        crate::table::registry_table(
+                            details,"freight-delete-affected-products",
+                            ["연결 상품"],[240.0],height,affected.len(),|_|false,
+                            |row,cells,index,_|{
+                                let product=affected[index];
+                                let first=rows(&product["variants"]).first();
+                                let color=first.map(|v|variant_label(product,v))
+                                    .unwrap_or_default();
+                                let label=if color.is_empty(){
+                                    model_label(text(product,"name")).to_owned()
+                                }else{
+                                    format!("{} / {}",model_label(text(product,"name")),color)
+                                };
+                                crate::table::registry_cell(
+                                    row,cells[0],&label,
+                                    typography::ManagementTableCellRole::ProductName,false,
+                                    ("freight-delete-product",text(product,"id"))
+                                );
+                            }
+                        );
+                    }else{
+                        details.label(typography::body(
+                            "연결된 현재 상품이 없습니다. 과거 운임과 주문 기록은 보존합니다."
+                        ));
+                    }
+                });
+                    }
+                );
+                match decision{
+                    crate::popup::ConfirmDecision::Cancel=>close_delete=true,
+                    crate::popup::ConfirmDecision::Confirm=>action=Some(("delete_group".into(),json!({
+                        "groupId":id,"detach":!affected.is_empty()
+                    }))),
+                    crate::popup::ConfirmDecision::Pending=>{}
+                }
             }else if let Some(pid)=self.product_reset_target.as_ref(){
                 crate::popup::modal_backdrop(ctx,"freight-reset-backdrop",false);
                 crate::popup::show_decision_window(ctx,"운임 기준 변경","freight-product-reset",area,|dialog|{
