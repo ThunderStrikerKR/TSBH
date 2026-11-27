@@ -29,13 +29,25 @@ fn sum(map:&BTreeMap<String,u64>)->Result<u64,String>{
 impl Evidence{
     fn from_facts(facts:&[Fact],family:&str,key:&str)->Result<Self,String>{
         let mut e=Self::default();
+        let mut weak_orders=BTreeMap::new();
+        let mut positive_orders=BTreeMap::new();
+        let mut negative_orders=BTreeMap::new();
         for (f,k,metric,candidate,amount) in facts{
             if f!=family||k!=key{continue;}
             let n=u64::try_from(*amount).ok().filter(|n|*n>0).ok_or("학습 증거량 오류")?;
+            let is_map=matches!(metric.as_str(),"weakCandidates"|"explicitPositiveCandidates"|
+                "explicitNegativeCandidates"|"weakCandidateOrders"|"explicitPositiveCandidateOrders"|
+                "explicitNegativeCandidateOrders");
+            if (is_map && candidate.trim().is_empty()) || (!is_map && !candidate.is_empty()){
+                return Err("학습 후보 및 스칼라 규격 불일치".into());
+            }
             match metric.as_str(){
                 "weakCandidates"=>{e.weak.insert(candidate.clone(),n);},
                 "explicitPositiveCandidates"=>{e.positive.insert(candidate.clone(),n);},
                 "explicitNegativeCandidates"=>{e.negative.insert(candidate.clone(),n);},
+                "weakCandidateOrders"=>{weak_orders.insert(candidate.clone(),n);},
+                "explicitPositiveCandidateOrders"=>{positive_orders.insert(candidate.clone(),n);},
+                "explicitNegativeCandidateOrders"=>{negative_orders.insert(candidate.clone(),n);},
                 "observationCount"=>e.observations=n,
                 "pendingCorrectionCount"=>e.pending=n,
                 "unresolvedCount"=>e.unresolved=n,
@@ -44,8 +56,16 @@ impl Evidence{
                 "explicitCorrectionOrders"=>e.explicit_orders=n,
                 "weakUnchangedCount"=>e.weak_count=n,
                 "explicitCorrectionCount"=>e.correction_count=n,
-                _=>{}
+                _=>return Err("지원하지 않는 학습 지표".into())
             }
+        }
+        // A sealed byte digest proves integrity, not semantic validity.
+        // Each candidate seen in a single order must have exactly one order marker.
+        let order_keys_match=|counts:&BTreeMap<String,u64>,orders:&BTreeMap<String,u64>|
+            counts.len()==orders.len() && counts.keys().all(|k|orders.get(k)==Some(&1));
+        if !order_keys_match(&e.weak,&weak_orders) || !order_keys_match(&e.positive,&positive_orders)
+            || !order_keys_match(&e.negative,&negative_orders){
+            return Err("주문별 후보 표본 카운터 불일치".into());
         }
         let weak=sum(&e.weak)?;let positive=sum(&e.positive)?;let negative=sum(&e.negative)?;
         if e.independent!=1 || weak!=e.weak_count || positive!=e.correction_count || positive!=negative
@@ -207,6 +227,53 @@ mod recognition_support_tests{
         Evidence{weak:map(weak),positive:map(positive),negative:map(negative),..Default::default()}
     }
     fn near(x:f64,y:f64){assert!((x-y).abs()<1e-9,"{x} != {y}");}
+    fn valid_facts()->Vec<Fact>{
+        let rows=[("observationCount","",4),("independentOrders","",1),
+            ("weakIndependentOrders","",1),("weakUnchangedCount","",2),
+            ("explicitCorrectionOrders","",1),("explicitCorrectionCount","",1),
+            ("pendingCorrectionCount","",1),("weakCandidates","a",2),
+            ("weakCandidateOrders","a",1),("explicitPositiveCandidates","b",1),
+            ("explicitPositiveCandidateOrders","b",1),("explicitNegativeCandidates","a",1),
+            ("explicitNegativeCandidateOrders","a",1)];
+        rows.into_iter().map(|(metric,candidate,n)|
+            ("fieldContextStatistics".into(),"ctx".into(),metric.into(),candidate.into(),n)).collect()
+    }
+    #[test]
+    fn sealed_evidence_rejects_inconsistent_per_candidate_order_counts(){
+        let good=valid_facts();
+        let parse=|facts:&[Fact]|Evidence::from_facts(facts,"fieldContextStatistics","ctx");
+        assert!(parse(&good).is_ok());
+        for metric in ["weakCandidateOrders","explicitPositiveCandidateOrders","explicitNegativeCandidateOrders"]{
+            let mut missing=good.clone();
+            missing.retain(|f|f.2!=metric);
+            assert!(parse(&missing).is_err(), "missing {metric}");
+            let mut wrong=good.clone();
+            wrong.iter_mut().find(|f|f.2==metric).unwrap().4=2;
+            assert!(parse(&wrong).is_err(), "non-independent {metric}");
+            let mut extra=good.clone();
+            extra.push(("fieldContextStatistics".into(),"ctx".into(),metric.into(),"outside".into(),1));
+            assert!(parse(&extra).is_err(), "unexpected candidate {metric}");
+        }
+        let mut scalar=good.clone();
+        scalar.iter_mut().find(|f|f.2=="independentOrders").unwrap().3="a".into();
+        assert!(parse(&scalar).is_err());
+        let mut unknown=good.clone();
+        unknown.push(("fieldContextStatistics".into(),"ctx".into(),"unknownMetric".into(),"".into(),1));
+        assert!(parse(&unknown).is_err());
+    }
+    #[test]
+    fn unresolved_and_pending_only_orders_never_supply_positive_mass(){
+        let mut a=Aggregate::default();let allowed=allowed();
+        a.add(Evidence{pending:1,unresolved:2,..Default::default()},&allowed,3.0).unwrap();
+        let wire=a.wire(&allowed,3.0);
+        assert_eq!(wire["contextOrders"],1);
+        assert_eq!(wire["supportedOrders"],0);
+        assert_eq!(wire["noSupportOrders"],1);
+        assert_eq!(wire["pendingCorrectionOrders"],1);
+        assert_eq!(wire["unresolvedOrders"],1);
+        assert!(wire["candidates"][0]["supportShare"].is_null());
+        assert!(wire["weightEffectiveOrders"].is_null());
+    }
     #[test]
     fn large_order_cannot_outvote_many_independent_orders(){
         let mut a=Aggregate::default();let allowed=allowed();
