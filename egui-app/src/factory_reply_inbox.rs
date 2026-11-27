@@ -12,11 +12,11 @@ use std::{collections::{HashMap,HashSet},fs,io::{Read,Write},path::{Path,PathBuf
     sync::mpsc::{self,Receiver},time::{Duration,Instant,SystemTime}};
 use uuid::Uuid;
 
-const MAX_BYTES:u64=10*1024*1024;
-const INTERVAL:Duration=Duration::from_secs(5);
+const MAX_BYTES:u64=native_workbooks::FACTORY_REPLY_MAX_BYTES as u64;
+const INTERVAL:Duration=Duration::from_secs(1);
 fn id(bytes:&[u8])->String{format!("factory-reply-{:x}",Sha256::digest(bytes))}
 fn text<'a>(v:&'a Value,k:&str)->&'a str{v[k].as_str().unwrap_or("")}
-fn valid_name(n:&str)->bool{!n.is_empty()&&n.len()<=240&&!n.starts_with("~$")&&
+fn valid_name(n:&str)->bool{!n.is_empty()&&!n.starts_with("~$")&&
     !n.strip_suffix("(취합).xlsx").is_some_and(|stem|stem.len()==8&&stem.bytes().all(|c|c.is_ascii_digit()))&&
     !n.contains('/')&&!n.contains('\\')&&!n.contains('\0')&&n.to_ascii_lowercase().ends_with(".xlsx")}
 pub(crate) fn open_db()->Result<(Connection,PathBuf),String>{
@@ -51,7 +51,7 @@ fn read_bounded(path:&Path)->Result<Vec<u8>,String>{
     let mut bytes=Vec::new();
     fs::File::open(path).map_err(|e|e.to_string())?.take(MAX_BYTES+1)
         .read_to_end(&mut bytes).map_err(|e|e.to_string())?;
-    if bytes.is_empty()||bytes.len() as u64>MAX_BYTES{return Err("10MB 이하 회신 파일만 허용".into())}
+    if bytes.is_empty()||bytes.len() as u64>MAX_BYTES{return Err("50MB 이하 회신 파일만 허용".into())}
     Ok(bytes)
 }
 fn preserve(base:&Path,bytes:&[u8])->Result<PathBuf,String>{
@@ -153,6 +153,40 @@ fn import(conn:&mut Connection,base:&Path,dir:&Path,path:&Path,bytes:&[u8],rev:u
     let warning=excel_service::archive_reply_workbook(&result["next"],bytes).err();
     Ok(json!({"duplicate":false,"applied":result["applied"],"held":result["held"],"archiveWarning":warning}))
 }
+// The existing storage boundary returns String errors. Recognize only
+// SQLite's exact lock/busy diagnostics, not arbitrary business error text.
+fn database_temporarily_busy(error:&str)->bool{
+    let normalized=error.trim().to_ascii_lowercase();
+    matches!(normalized.as_str(),"database is locked"|"database is busy"|"database table is locked"|"database schema is locked"|"sqlite_busy"|"sqlite_locked")
+        || normalized.starts_with("database table is locked:")
+        || normalized.starts_with("database schema is locked:")
+}
+
+/// A stale revision can be retried against a fresh authoritative snapshot.
+/// A busy writer or repeated conflict defers the file to the next scan.
+/// None is a retryable outcome, never a failed-file notification.
+fn import_with_retry(conn:&mut Connection,base:&Path,dir:&Path,path:&Path,bytes:&[u8],
+    expected_stamp:(u64,SystemTime),mut rev:u64,source:Value)->Result<Option<Value>,String>{
+    let file_id=id(bytes);
+    for attempt in 0..3{
+        if attempt>0{
+            if stamp(path).ok()!=Some(expected_stamp){return Ok(None)}
+            match preflight(conn,dir,path,&file_id){
+                Ok((_,true))=>return Ok(Some(json!({"duplicate":true}))),
+                Ok((latest,false))=>rev=latest,
+                Err(error) if database_temporarily_busy(&error)=>return Ok(None),
+                Err(error)=>return Err(error),
+            }
+        }
+        match import(conn,base,dir,path,bytes,rev,source.clone()){
+            Ok(result)=>return Ok(Some(result)),
+            Err(error) if bando_data_access::is_factory_reply_revision_conflict(&error)=>continue,
+            Err(error) if database_temporarily_busy(&error)=>return Ok(None),
+            Err(error)=>return Err(error),
+        }
+    }
+    Ok(None)
+}
 pub fn approve(review:Value)->Result<Value,String>{
     let (mut conn,base)=open_db()?;
     approve_with_db(&mut conn,&base,review)
@@ -184,7 +218,7 @@ impl Seen{
     fn observe(&mut self,current:(u64,SystemTime))->bool{
         if self.stamp!=current{*self=Self{stamp:current,observations:0,done:false};}
         self.observations=self.observations.saturating_add(1);
-        self.observations>=3&&!self.done
+        self.observations>=2&&!self.done
     }
 }
 #[derive(Default)]
@@ -204,23 +238,29 @@ fn scan_with_db(cache:&mut Scan,conn:&mut Connection,base:&Path)->Result<Outcome
     let dir=configured(conn)?;
     if cache.directory!=dir{cache.seen.clear();cache.directory=dir.clone();}
     let Some(dir)=dir else{return Ok(Outcome::default())};
-    let mut outcome=Outcome::default();let mut active=HashSet::new();let mut attempted=0;
+    let mut outcome=Outcome::default();let mut active=HashSet::new();
     let mut entries=fs::read_dir(&dir).map_err(|e|e.to_string())?.collect::<Result<Vec<_>,_>>().map_err(|e|e.to_string())?;
     entries.sort_by_key(|e|e.file_name());
     for entry in entries{
         let path=entry.path();let name=entry.file_name();
         if !name.to_str().is_some_and(valid_name){continue}
+        // Report over-limit files through the existing transient outcome,
+        // rather than silently ignoring them or creating new inbox alerts.
+        if fs::symlink_metadata(&path).is_ok_and(|m|m.file_type().is_file()&&m.len()>MAX_BYTES){
+            outcome.error=Some(format!("{}: 50MB 이하 회신 파일만 허용",name.to_string_lossy()));
+            continue
+        }
         let Ok(current)=stamp(&path)else{continue};
         active.insert(path.clone());
         let seen=cache.seen.entry(path.clone()).or_insert(Seen{stamp:current,observations:0,done:false});
-        if !seen.observe(current)||attempted>=8{continue}
-        attempted+=1;
+        if !seen.observe(current){continue}
         let bytes=match read_bounded(&path){Ok(b)=>b,Err(e)=>{outcome.error=Some(e);continue}};
         if stamp(&path).ok()!=Some(current)||bytes.len() as u64!=current.0{continue}
         let file_id=id(&bytes);
         let rev=match preflight(conn,&dir,&path,&file_id){
             Ok((_,true))=>{seen.done=true;continue},
             Ok((rev,false))=>rev,
+            Err(e) if database_temporarily_busy(&e)=>continue,
             Err(e)=>{outcome.error=Some(e);continue}
         };
         // Invalid binary files are reported once until the file changes.
@@ -238,8 +278,9 @@ fn scan_with_db(cache:&mut Scan,conn:&mut Connection,base:&Path)->Result<Outcome
         if text(&source,"id")!=file_id{
             outcome.error=Some("회신 원본 ID 불일치".into());continue
         }
-        match import(conn,base,&dir,&path,&bytes,rev,source){
-            Ok(result)=>{
+        match import_with_retry(conn,base,&dir,&path,&bytes,current,rev,source){
+            Ok(None)=>continue,
+            Ok(Some(result))=>{
                 seen.done=true;
                 if result["duplicate"]!=true{
                     outcome.files+=1;outcome.applied+=result["applied"].as_u64().unwrap_or(0) as usize;
@@ -312,15 +353,13 @@ mod tests{
         let third=(11,second.1);
         let mut seen=Seen{stamp:first,observations:0,done:false};
         assert!(!seen.observe(first));
-        assert!(!seen.observe(first));
-        assert!(!seen.observe(second));
+        assert!(seen.observe(first));
         assert!(!seen.observe(second));
         assert!(seen.observe(second));
         // A failed attempt stays eligible; successful imports stop retrying.
         assert!(seen.observe(second));
         seen.done=true;
         assert!(!seen.observe(second));
-        assert!(!seen.observe(third));
         assert!(!seen.observe(third));
         assert!(seen.observe(third));
     }
@@ -347,6 +386,7 @@ mod tests{
     #[test]
     fn inbox_ignores_temporary_names_and_rejects_empty_or_oversized_files(){
         assert!(valid_name("회신.XLSX"));
+        assert!(valid_name(&format!("{}.xlsx","회".repeat(90))));
         for name in ["~$회신.xlsx","../회신.xlsx","a\\b.xlsx","reply.xls","reply.tmp",""]{
             assert!(!valid_name(name));
         }
@@ -449,12 +489,22 @@ mod tests{
         book.save_to_buffer().unwrap()
     }
     fn scan_ready(cache:&mut Scan,conn:&mut Connection,base:&Path)->Outcome{
-        for _ in 0..2{
-            let out=scan_with_db(cache,conn,base).unwrap();
-            assert_eq!(out.files,0);
-            assert!(out.error.is_none(),"{:?}",out.error);
-        }
+        let out=scan_with_db(cache,conn,base).unwrap();
+        assert_eq!(out.files,0);
+        assert!(out.error.is_none(),"{:?}",out.error);
         scan_with_db(cache,conn,base).unwrap()
+    }
+
+    #[test]
+    fn scanner_processes_more_than_eight_ready_files_in_one_pass(){
+        let base=Temp::new();
+        let (mut conn,inbox)=synthetic_db(&base.0);
+        for n in 0..9 {
+            fs::write(inbox.join(format!("reply-{n}.xlsx")),reply_bytes("001234567890",4000+n)).unwrap();
+        }
+        let result=scan_ready(&mut Scan::default(),&mut conn,&base.0);
+        assert!(result.error.is_none(),"{:?}",result.error);
+        assert_eq!((result.files,result.applied,result.held),(9,9,0));
     }
 
     #[test]
@@ -724,6 +774,44 @@ mod tests{
         assert_eq!(import_metadata(&conn,&id(unknown)).unwrap(),(7,false));
         let after:String=conn.query_row("SELECT payload FROM app_state WHERE id=1",[],|r|r.get(0)).unwrap();
         assert_eq!(serde_json::from_str::<Value>(&after).unwrap(),envelope);
+    }
+
+    #[test]
+    fn stale_factory_revision_retries_without_failure_notification(){
+        let base=Temp::new();
+        let (mut conn,inbox)=synthetic_db(&base.0);
+        let bytes=reply_bytes("001234567890",4000);
+        let path=inbox.join("reply.xlsx");
+        fs::write(&path,&bytes).unwrap();
+        let source=native_workbooks::read_factory_reply("reply.xlsx",&bytes).unwrap();
+        let result=import_with_retry(&mut conn,&base.0,&inbox,&path,&bytes,
+            stamp(&path).unwrap(),6,source).unwrap().unwrap();
+        assert_eq!(result["applied"],1);
+        assert_eq!(snapshot(&mut conn).unwrap()["revision"],8);
+        assert!(bando_data_access::notification_store::load(&conn).unwrap().is_empty());
+    }
+
+    #[test]
+    fn busy_writer_defers_factory_reply_without_failure_notification(){
+        let base=Temp::new();
+        let (mut conn,inbox)=synthetic_db(&base.0);
+        let bytes=reply_bytes("001234567890",4000);
+        let path=inbox.join("reply.xlsx");
+        fs::write(&path,&bytes).unwrap();
+        conn.busy_timeout(Duration::ZERO).unwrap();
+        let blocker=Connection::open(base.0.join("synthetic.sqlite")).unwrap();
+        blocker.execute_batch("BEGIN IMMEDIATE;").unwrap();
+        let source=native_workbooks::read_factory_reply("reply.xlsx",&bytes).unwrap();
+        let result=import_with_retry(&mut conn,&base.0,&inbox,&path,&bytes,
+            stamp(&path).unwrap(),7,source).unwrap();
+        assert!(result.is_none());
+        blocker.execute_batch("ROLLBACK;").unwrap();
+        assert_eq!(snapshot(&mut conn).unwrap()["revision"],7);
+        assert!(bando_data_access::notification_store::load(&conn).unwrap().is_empty());
+        let retry=scan_ready(&mut Scan::default(),&mut conn,&base.0);
+        assert_eq!((retry.files,retry.applied,retry.held),(1,1,0));
+        assert!(retry.error.is_none(),"{:?}",retry.error);
+        assert!(bando_data_access::notification_store::load(&conn).unwrap().is_empty());
     }
 
     #[test]

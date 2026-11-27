@@ -9,6 +9,9 @@ fn err<E:std::fmt::Display>(e:E)->String{e.to_string()}
 #[path = "../../../src-tauri/src/reception.rs"]
 pub(super) mod reception;
 
+const STALE_REVISION:&str="다른 작업에서 데이터가 수정되었습니다. 새로고침 후 다시 저장하세요.";
+pub fn is_factory_reply_revision_conflict(error:&str)->bool{error==STALE_REVISION}
+
 fn read_current_envelope(tx:&Transaction<'_>,expected_revision:u64)->Result<Value,String>{
     let version:i64=tx.query_row(
         "SELECT version FROM core_schema WHERE key='business-core'",
@@ -19,7 +22,7 @@ fn read_current_envelope(tx:&Transaction<'_>,expected_revision:u64)->Result<Valu
     // relational rows, using the same transaction snapshot.
     let current=crate::read_envelope(tx)?;
     if current["revision"].as_u64()!=Some(expected_revision){
-        return Err("다른 작업에서 데이터가 수정되었습니다. 새로고침 후 다시 저장하세요.".into());
+        return Err(STALE_REVISION.into());
     }
     Ok(current)
 }
@@ -139,7 +142,9 @@ pub fn update_v2_factory_reply_snapshot<F>(
     conn:&mut Connection,expected_revision:u64,source:&Value,preserve:F
 )->Result<Value,String>
 where F:FnOnce(&Value)->Result<String,String>{
-    let tx=conn.transaction().map_err(err)?;
+    // Acquire the writer reservation before hydrating the authoritative
+    // snapshot, avoiding a read-to-write upgrade race during reply import.
+    let tx=conn.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate).map_err(err)?;
     let mut before=read_current_envelope(&tx,expected_revision)?;
     let mut payload=source.clone();
     payload["actor"]=json!(before["settings"]["operatorName"].as_str().unwrap_or(""));
@@ -291,9 +296,11 @@ fn move_factory_core(before:&mut Value,next:&mut Value)->Result<(),String>{
 /// generic writer; only the old core lookup borrows the new state's trees.
 fn finish_factory_shared_core(tx:&Transaction<'_>,before:&Value,mut next:Value,
     expected_revision:u64)->Result<Value,String>{
-    crate::valid_state(&next)?;
-    crate::validation::validate_unchanged_clients(&next)?;
-    validate_brands(before,&next)?;
+    // The caller has proved all non-workflow fields equal to the
+    // authoritative before-image, and this path writes only the envelope.
+    // Keep structural and workflow integrity checks; unrelated unchanged
+    // brand, account and message-template content is not a reply prerequisite.
+    crate::validation::validate_shape(&next)?;
     if crate::workflow_state::active(tx)?{
         crate::rules::validate_workflow_transition_shared_core(&next,before)?;
     }

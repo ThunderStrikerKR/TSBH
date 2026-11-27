@@ -55,7 +55,7 @@ pub use storage::{write_v2_snapshot,update_v2_snapshot,update_v2_snapshot_if_cha
 pub use client_commands::{mutate_client_v2,mutate_client_checked_v2,preview_client_workbook,commit_client_workbook_v2};
 pub use product_commands::{patch_product_v2,patch_model_groups_v2,apply_product_price,
     preview_unified_product_workbook,management_scope_token};
-pub use storage::{update_v2_entity_if_changed,write_v2_export_with_aggregate};
+pub use storage::{update_v2_entity_if_changed,write_v2_export_with_aggregate,is_factory_reply_revision_conflict};
 pub(crate) use product_commands::validate_native_model_groups;
 pub use settings_commands::{apply_settings_changes,patch_settings_v2};
 pub use reception_commands::commit_reception_v2;

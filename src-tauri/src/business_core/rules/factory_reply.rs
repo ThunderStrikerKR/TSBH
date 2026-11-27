@@ -387,7 +387,7 @@ fn preview(state:&Value,reply:&Value)->Result<Value,String>{
 fn parse_reply(payload:&Value)->Result<Value,String>{
     let count=field(payload,"sourceRowCount").as_i64()
         .ok_or("공장 회신 Excel 행 수가 없습니다.")?;
-    if count>1000{return Err("공장 회신은 한 번에 최대 1,000행을 처리합니다.".into())}
+    if count>10_000{return Err("공장 회신은 한 번에 최대 10,000행을 처리합니다.".into())}
     let mut parsed=Vec::new();
     for source in rows(payload,"sourceRows"){
         let n=field(source,"row").as_i64().ok_or("공장 회신 Excel 행 번호 오류")?;
