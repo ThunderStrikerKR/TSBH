@@ -7501,9 +7501,12 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                     let Some(label)=workflow_board::workflow_issue_label(issue)else{continue};
                                     // Shared review presentation; original issue identity and
                                     // native blocker messages are preserved.
-                                    let recognition=json!({"recipients":group.shipments.iter()
-                                        .filter(|s|issue["orderId"].as_str()==Some(s.order_id.as_str()))
-                                        .map(|s|&s.recipient).collect::<Vec<_>>()});
+                                    let recognition=if issue["kind"]=="ADDRESS"{
+                                        group.shipments.iter().find(|s|
+                                            issue["orderId"].as_str()==Some(s.order_id.as_str()) &&
+                                            issue["recipientId"].as_str()==Some(s.recipient_id.as_str()))
+                                            .map(|s|json!({"recipients":[&s.recipient]})).unwrap_or(Value::Null)
+                                    }else{Value::Null};
                                     let label=review_panel::workflow_review_text(issue,&label,&recognition);
                                     let tone=match issue["severity"].as_str(){
                                         Some("ACTION")=>theme::ReviewTone::Action,
