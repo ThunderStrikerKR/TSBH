@@ -1,7 +1,7 @@
 //! Shared checkbox rendering and fixed list/table placement; callers own selection.
-use crate::ui_layout::SharedUiClipExt as _;
-use crate::ui_layout::SharedAllocationExt as _;
-use crate::ui_layout::AlignedUiBuilderExt as _;
+use crate::ui_layout::geometry::SharedUiClipExt as _;
+use crate::ui_layout::geometry::SharedAllocationExt as _;
+use crate::ui_layout::geometry::AlignedUiBuilderExt as _;
 use eframe::egui::{self,Align,Layout,Rect,Response,Ui,Vec2};
 use crate::theme;
 /**
@@ -36,7 +36,7 @@ pub(crate) fn management_table_checkbox(
     let rect=management_table_checkbox_rect(
         cell,vertical_area,ui.spacing().icon_width,ui.spacing().icon_spacing
     );
-    let rect=crate::ui_layout::aligned_rect(rect);
+    let rect=crate::ui_layout::geometry::aligned_rect(rect);
     let clip=cell.intersect(vertical_area).intersect(ui.clip_rect());
     let mut builder=egui::UiBuilder::new()
         .id_salt(id)
