@@ -1,8 +1,8 @@
 """Reject direct positioned UI builders and explicit allocations outside the shared layout owner.
 
 This is a lexical guard for explicit rectangle placement, not a Rust type
-checker. Native flow layout and paint-only physical-pixel snapping are not
-restricted. Test-only fixtures may deliberately use malformed coordinates.
+checker. Native flow layout remains unrestricted; physical pixel helpers
+are restricted to paint-only use. Test fixtures may use malformed coordinates.
 """
 from pathlib import Path
 import re
@@ -76,9 +76,114 @@ RULES = (
     ("raw Ui.put", re.compile(r"\b(?:ui|root|pane|child|row|body|host|slot|cell|panel|content|parent|control)\s*\.\s*put\s*\(")),
 )
 
+
+# Physical pixel rectangles are a paint implementation detail. This is a
+# deliberately narrow source contract, not general Rust data-flow analysis.
+# Only the popup owner may name these helpers; even there, the three mixed
+# layout/paint functions must consume the snapped value directly in paint.
+PIXEL_OWNER = "popup/mod.rs"
+PIXEL_HELPERS = re.compile(
+    r"\bmodal_master_(?:pixel_aligned_rect|rule_rect|toolbar_rule_rect)\b"
+)
+PIXEL_MIXED = {
+    "modal_master_workspace_background",
+    "modal_master_header_in_rect",
+    "modal_master_header_with_toolbar_in_rect",
+}
+PIXEL_PAINT_ONLY = {
+    "modal_master_workspace_finish",
+    "paint_modal_master_footer_surface",
+}
+PIXEL_RECT_HELPER = "modal_master_pixel_aligned_rect"
+PIXEL_RULE_HELPER = "modal_master_rule_rect"
+PIXEL_TOOLBAR_HELPER = "modal_master_toolbar_rule_rect"
+
+def function_regions(code):
+    # These named popup functions have conventional signatures. Balance
+    # braces after literal masking so nested paint/closure bodies stay intact.
+    names = PIXEL_MIXED | PIXEL_PAINT_ONLY | {
+        PIXEL_RECT_HELPER, PIXEL_RULE_HELPER, PIXEL_TOOLBAR_HELPER,
+    }
+    for match in re.finditer(r"\bfn\s+(\w+)\b[^{};]*\{", code):
+        name = match.group(1)
+        if name not in names:
+            continue
+        depth = 1
+        end = match.end()
+        for brace in re.finditer(r"[{}]", code[end:]):
+            depth += 1 if brace.group() == "{" else -1
+            if depth == 0:
+                end += brace.end()
+                break
+        else:
+            raise ValueError("unterminated pixel paint function")
+        yield name, match.start(), match.end(), end
+
+def mask_matches(code, pattern):
+    return re.sub(pattern, lambda m: mask(m.group()), code)
+
+def pixel_paint_violations(name, code):
+    findings = []
+    def report(offset, rule):
+        findings.append((code.count("\n", 0, offset) + 1, rule))
+    if name != PIXEL_OWNER:
+        for match in PIXEL_HELPERS.finditer(code):
+            report(match.start(), "physical pixel helper outside popup paint owner")
+        return findings
+
+    remaining = code
+    for fn, start, body_start, end in function_regions(code):
+        body = code[body_start:end]
+        if fn in PIXEL_MIXED:
+            # Permit one explicit snapped binding, direct background paint,
+            # and a divider expression directly inside a paint call. No
+            # aliasing, derived layout sizes, return values or clip use.
+            checked = mask_matches(body,
+                r"\blet\s+paint_rect\s*=\s*modal_master_pixel_aligned_rect\s*\(\s*rect\s*,\s*ppp\s*\)\s*;")
+            checked = mask_matches(checked,
+                r"\bui\s*\.\s*painter\s*\(\s*\)\s*\.\s*rect_filled\s*\(\s*paint_rect\s*,")
+            checked = mask_matches(checked,
+                r"\bui\s*\.\s*painter\s*\(\s*\)\s*\.\s*rect_filled\s*\(\s*modal_master_rule_rect\s*\(\s*paint_rect\s*,\s*ppp\s*,\s*true\s*\)\s*,")
+            checked = mask_matches(checked,
+                r"\bui\s*\.\s*painter\s*\(\s*\)\s*\.\s*rect_filled\s*\(\s*modal_master_toolbar_rule_rect\s*\(\s*rect\s*,\s*ppp\s*\)\s*,")
+            for match in re.finditer(r"\bpaint_rect\b", checked):
+                report(body_start + match.start(), "physical paint rect escaped into non-paint expression")
+        elif fn in PIXEL_PAINT_ONLY:
+            # Paint-only helpers return unit and may touch Ui only to get a
+            # painter or pixel scale. No Ui allocation, clipping, interaction,
+            # delegation of Ui, or return of calculated physical geometry.
+            signature = code[start:body_start]
+            if not re.fullmatch(r"fn\s+\w+\s*\(\s*ui\s*:\s*&Ui\s*,\s*rect\s*:\s*Rect(?:\s*,\s*geometry\s*:\s*ModalMasterWorkspace)?\s*\)\s*\{", signature):
+                report(start, "physical paint function must retain read-only Ui and unit return")
+            checked = mask_matches(body,
+                r"\bui\s*\.\s*(?:painter\s*\(\s*\)|ctx\s*\(\s*\)\s*\.\s*pixels_per_point\s*\(\s*\))")
+            for match in re.finditer(r"\bui\b", checked):
+                report(body_start + match.start(), "paint-only function used Ui outside painter or DPI access")
+            checked = mask_matches(checked,
+                r"\blet\s+rect\s*=\s*modal_master_pixel_aligned_rect\s*\(\s*rect\s*,\s*ppp\s*\)\s*;")
+            checked = mask_matches(checked,
+                r"\bmodal_master_rule_rect\s*\(\s*rect\s*,\s*ppp\s*,\s*false\s*\)")
+        elif fn == PIXEL_TOOLBAR_HELPER:
+            checked = mask_matches(body,
+                r"\blet\s+rect\s*=\s*modal_master_pixel_aligned_rect\s*\(\s*rect\s*,\s*ppp\s*\)\s*;")
+            checked = mask_matches(checked,
+                r"\bmodal_master_rule_rect\s*\(\s*slot\s*,\s*ppp\s*,\s*false\s*\)")
+        else:
+            checked = body
+        for match in PIXEL_HELPERS.finditer(checked):
+            report(body_start + match.start(), "unapproved physical pixel helper use")
+        # Rect-returning physical helpers must remain private.
+        if fn in {PIXEL_RECT_HELPER, PIXEL_RULE_HELPER, PIXEL_TOOLBAR_HELPER}:
+            if re.search(r"\bpub(?:\s*\([^)]*\))?\s*$", code[:start]):
+                report(start, "physical pixel geometry helper must remain private")
+        remaining = remaining[:start] + mask(remaining[start:end]) + remaining[end:]
+    for match in PIXEL_HELPERS.finditer(remaining):
+        report(match.start(), "physical pixel helper used outside approved paint function")
+    return findings
+
 def violations(name, source):
     code = production(source)
-    findings = []
+    findings = pixel_paint_violations(name, code)
     owner_calls = 0
     if name == OWNER:
         for match in re.finditer(r"\b(?:crate|super)\s*::", code):
@@ -169,6 +274,38 @@ def self_test():
     assert violations("ui_layout.rs", "pub(crate) use geometry::{aligned_rect};")
     assert violations("ui_primitives.rs", "pub(crate) use crate::ui_layout::geometry::CardWidthPolicy;")
     assert violations(OWNER, "self.max_rect(aligned_rect(rect)); builder.max_rect(rect);")
+
+
+    # Physical rectangles may be painted, but not fed into logical layout.
+    def mixed(body):
+        return "fn modal_master_header_in_rect() {" + body + "}"
+    good = "let paint_rect=modal_master_pixel_aligned_rect(rect,ppp); ui.painter().rect_filled(paint_rect,0.0,color);"
+    assert not violations(PIXEL_OWNER, mixed(good))
+    assert not violations(PIXEL_OWNER, mixed(good + "ui.painter().rect_filled(modal_master_rule_rect(paint_rect,ppp,true),0.0,color);"))
+    for bad in (
+        "builder.aligned_max_rect(paint_rect);",
+        "ui.restrict_shared_clip(paint_rect);",
+        "ui.interact(paint_rect,id,sense);",
+        "let alias=paint_rect; builder.aligned_max_rect(alias);",
+        "ui.shared_allocate_exact_size(paint_rect.size(),sense);",
+        "let width=paint_rect.width();",
+        "return paint_rect;",
+        "let rule=modal_master_rule_rect(rect,ppp,true);",
+        "let rule=modal_master_toolbar_rule_rect(rect,ppp);",
+        "let rect=modal_master_pixel_aligned_rect(rect,ppp);",
+    ):
+        assert violations(PIXEL_OWNER, mixed(good + bad)), bad
+    assert violations("screen.rs", "use crate::popup::modal_master_pixel_aligned_rect as snap;")
+    assert violations(PIXEL_OWNER, "fn layout() { modal_master_pixel_aligned_rect(rect,ppp); }")
+    assert violations(PIXEL_OWNER, "pub(crate) fn modal_master_pixel_aligned_rect(rect:Rect,ppp:f32)->Rect { rect }")
+    assert not violations(PIXEL_OWNER, "fn modal_master_pixel_aligned_rect(rect:Rect,ppp:f32)->Rect { rect }")
+    paint = "fn paint_modal_master_footer_surface(ui:&Ui,rect:Rect) { let ppp=ui.ctx().pixels_per_point(); let rect=modal_master_pixel_aligned_rect(rect,ppp); ui.painter().rect_filled(rect,0.0,color);"
+    assert not violations(PIXEL_OWNER, paint + "}")
+    assert violations(PIXEL_OWNER, paint + "ui.interact(rect,id,sense);}")
+    assert violations(PIXEL_OWNER, paint + "other(ui,rect);}")
+    assert violations(PIXEL_OWNER, "fn paint_modal_master_footer_surface(ui:&Ui,rect:Rect)->Rect { rect }")
+    assert not violations("screen.rs", "// modal_master_pixel_aligned_rect(rect,ppp)\n#[cfg(test)] mod t { fn f() { modal_master_rule_rect(rect,ppp,true); } }")
+    assert not violations("main.rs", "let scale=ui.ctx().pixels_per_point(); dock.connect(region,scale);")
 
 def main():
     self_test()
