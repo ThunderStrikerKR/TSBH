@@ -1439,6 +1439,234 @@ pub(super) fn calibrate_shadow_candidates(payload:&Value)->Result<Value,String>{
         "sourceProvenanceVerified":false,"calibratedProbability":null,"eligibleForAutomaticDecision":false,"decisionChanged":false}))
 }
 
+// P07-03: two independently fitted proxy distributions, one frozen weight.
+// Ownership is the only task with both sides calibrated. Outside is a
+// nonselectable category, including in the mixed distribution.
+const MIN_BLEND_ORDERS:usize=10;
+type BlendGroup=(String,String,String);
+struct BlendSample{
+    legacy:Vec<f64>,shadow:Vec<f64>,actual:usize,label:&'static str,
+}
+fn blend_distribution(a:&[f64],b:&[f64],w:f64)->Vec<f64>{
+    a.iter().zip(b).map(|(x,y)|(1.0-w)*x+w*y).collect()
+}
+#[derive(Default)]
+struct BlendFit{orders:usize,loss:[f64;11]}
+impl BlendFit{
+    fn add_order(&mut self,samples:&[BlendSample]){
+        if samples.is_empty(){return;}
+        self.orders+=1;
+        for (i,loss) in self.loss.iter_mut().enumerate(){
+            *loss+=samples.iter().map(|s|multiclass_brier(
+                &blend_distribution(&s.legacy,&s.shadow,i as f64/10.0),s.actual))
+                .sum::<f64>()/samples.len() as f64;
+        }
+    }
+    fn weight(&self)->Option<f64>{
+        if self.orders<MIN_BLEND_ORDERS{return None;}
+        let mut best=0;
+        for i in 1..11{if self.loss[i]+1e-10<self.loss[best]{best=i;}}
+        Some(best as f64/10.0)
+    }
+}
+#[derive(Default)]
+struct BlendTest{eligible:usize,covered:usize,orders:usize,covered_orders:usize,
+    legacy:f64,shadow:f64,combined:f64,macro_legacy:f64,macro_shadow:f64,macro_combined:f64}
+impl BlendTest{
+    fn observe(&mut self,sample:Option<&BlendSample>,w:Option<f64>){
+        self.eligible+=1;
+        if let (Some(s),Some(w))=(sample,w){
+            self.covered+=1;
+            self.legacy+=multiclass_brier(&s.legacy,s.actual);
+            self.shadow+=multiclass_brier(&s.shadow,s.actual);
+            self.combined+=multiclass_brier(&blend_distribution(&s.legacy,&s.shadow,w),s.actual);
+        }
+    }
+    fn merge(&mut self,o:Self){
+        if o.eligible==0{return;}
+        self.orders+=1;self.eligible+=o.eligible;self.covered+=o.covered;
+        self.legacy+=o.legacy;self.shadow+=o.shadow;self.combined+=o.combined;
+        if o.covered>0{
+            self.covered_orders+=1;let n=o.covered as f64;
+            self.macro_legacy+=o.legacy/n;self.macro_shadow+=o.shadow/n;self.macro_combined+=o.combined/n;
+        }
+    }
+    fn wire(&self)->Value{
+        let div=|x:f64,n:usize|(n>0).then(||x/n as f64);
+        json!({"eligibleObservations":self.eligible,"coveredObservations":self.covered,
+            "independentOrders":self.orders,"coveredOrders":self.covered_orders,
+            "coverage":div(self.covered as f64,self.eligible),
+            "legacyBrierOnCovered":div(self.legacy,self.covered),
+            "shadowBrierOnCovered":div(self.shadow,self.covered),
+            "combinedBrierOnCovered":div(self.combined,self.covered),
+            "orderMacroLegacyBrier":div(self.macro_legacy,self.covered_orders),
+            "orderMacroShadowBrier":div(self.macro_shadow,self.covered_orders),
+            "orderMacroCombinedBrier":div(self.macro_combined,self.covered_orders)})
+    }
+}
+pub(super) fn learn_blend_weights(payload:&Value)->Result<Value,String>{
+    let config=&payload["config"];
+    let date=|v:&Value|v.as_str().and_then(|s|chrono::DateTime::parse_from_rfc3339(s).ok());
+    let fit_start=date(&config["fitStart"]).ok_or("결합 보정 시작 시각 오류")?;
+    let weight_start=date(&config["weightStart"]).ok_or("결합 가중치 시작 시각 오류")?;
+    let test_start=date(&config["testStart"]).ok_or("결합 평가 시작 시각 오류")?;
+    let test_end=date(&config["testEnd"]).ok_or("결합 평가 종료 시각 오류")?;
+    let as_of=date(&config["evaluationAsOf"]).ok_or("결합 평가 기준 시각 오류")?;
+    if !(fit_start<weight_start&&weight_start<test_start&&test_start<test_end&&test_end<=as_of){
+        return Err("결합 보정·가중치·평가 기간 순서 오류".into());
+    }
+    let build=config["clientBuildVersion"].as_str().filter(|s|!s.is_empty()&&s.len()<=128)
+        .ok_or("결합 빌드 버전 필요")?;
+    let orders=payload["orders"].as_array().filter(|a|!a.is_empty()&&a.len()<=250).ok_or("결합 주문 한도 오류")?;
+    let mut seen=BTreeSet::new();
+    for order in orders{
+        let id=order["id"].as_str().filter(|s|!s.is_empty()).ok_or("결합 주문 ID 오류")?;
+        if !seen.insert(id){return Err("결합 주문 ID 중복".into());}
+    }
+    // No weight/test order is even passed to either calibration fit.
+    let fit_orders=orders.iter().filter(|o|date(&o["confirmedAt"]).is_some_and(|t|t<weight_start))
+        .cloned().collect::<Vec<_>>();
+    if fit_orders.is_empty(){return Ok(json!({"status":"no_calibration_orders",
+        "eligibleForAutomaticDecision":false,"decisionChanged":false}));}
+    let fit_config=json!({"fitStart":config["fitStart"],"testStart":config["weightStart"],
+        "testEnd":config["testStart"],"evaluationAsOf":config["testStart"],"clientBuildVersion":build});
+    let fit_payload=json!({"orders":fit_orders,"config":fit_config});
+    let legacy=calibrate_legacy_scores(&fit_payload)?;
+    let shadow_model=calibrate_shadow_candidates(&fit_payload)?;
+    let mut fits=BTreeMap::<BlendGroup,BlendFit>::new();
+    let mut tests=Vec::new();
+    let (mut excluded,mut late,mut unavailable,mut valid_weight_orders,mut valid_test_orders)=(0usize,0usize,0usize,0usize,0usize);
+    let mut eligible_weight=0usize;let mut eligible_test=0usize;
+    for order in orders{
+        let snap=&order["confirmationSnapshot"];
+        let first=&snap["recognitionBaseline"]["initialAnalysis"];
+        let capture=&first["initialPredictionCapture"];let shadow=&capture["learningShadow"];
+        let (Some(start),Some(end),Some(predicted),Some(confirmed))=(date(&capture["analysisStartedAt"]),
+            date(&capture["analysisCompletedAt"]),date(&shadow["capturedAt"]),date(&order["confirmedAt"]))
+            else{excluded+=1;continue;};
+        if start<weight_start{continue;}
+        if order["learningActive"]!=true||order["deletedAt"].as_str().is_some_and(|v|!v.is_empty())||
+            capture["origin"]!="native_reception_worker"||capture["schemaVersion"]!=1||
+            capture["orderId"]!=order["id"]||capture["clientBuildVersion"].as_str()!=Some(build)||
+            first["recipientOwnerTrace"]["schemaVersion"]!=1||
+            first["recipientOwnerTrace"]["scorePolicyVersion"]!=OWNER_SCORE_POLICY||
+            shadow["status"]!="captured_shadow_support"||shadow["captureVersion"]!=4||
+            shadow["explicitToWeakRatio"].as_f64()!=Some(3.0)||shadow["sourceDigestsMatched"]!=true||
+            shadow["decisionChanged"]!=false||shadow["modelId"].as_str().is_none_or(|s|!s.starts_with("shadow-")||s.len()!=71)||
+            snap["at"]!=order["confirmedAt"]||!(start<=end&&end<=predicted&&predicted<confirmed)||
+            predicted>=test_end||start<test_start&&predicted>=test_start{excluded+=1;continue;}
+        let fit=predicted<test_start;
+        if (fit&&confirmed>=test_start)||(!fit&&confirmed>as_of){late+=1;continue;}
+        let Some(events)=order["recognitionAuditEvents"].as_array()else{excluded+=1;continue;};
+        if events.iter().any(|e|date(&e["at"]).is_none_or(|t|t<=predicted||t>confirmed)){excluded+=1;continue;}
+        let compared=compare(order)?;
+        if compared["auditCoverage"]!="verified_manifest"{excluded+=1;continue;}
+        let raw=snap["raw"].as_str().ok_or("결합 원문 누락")?;
+        let units=raw.encode_utf16().collect::<Vec<_>>();
+        let projection=super::learning_context::lookup(&json!({"raw":raw,"initialAnalysis":first}))?;
+        let mut local=BTreeMap::<BlendGroup,Vec<BlendSample>>::new();
+        let mut used=BTreeSet::new();let mut eligible=0usize;
+        for obs in rows(&compared["observations"]).filter(|o|o["task"]=="recipient_ownership"){
+            let label=match obs["outcome"].as_str(){
+                Some("explicit_correction_observed") if obs["eligibleForCandidateLearning"]==true=>"explicit_correction",
+                Some("unchanged_observed") if obs["eligibleForCandidateLearning"]==true=>"unchanged_proxy",_=>continue};
+            let (Some(old),Some(actual),Some(s))=(singleton(&obs["initialCandidates"]),
+                singleton(&obs["finalCandidates"]),position(&units,&obs["source"]))else{continue;};
+            if !matches!(old,"next"|"previous")||!matches!(actual,"next"|"previous")||
+                (label=="explicit_correction"&&(old==actual||singleton(&obs["positiveCandidates"])!=Some(actual)||
+                    singleton(&obs["negativeCandidates"])!=Some(old)))||(label=="unchanged_proxy"&&old!=actual){continue;}
+            if !used.insert(s){return Err("결합 관측 중복".into());}
+            eligible+=1;
+            let candidate=(||->Option<(BlendGroup,BlendSample)>{
+                let mut traces=rows(&first["recipientOwnerTrace"]["decisions"]).filter(|d|position(&units,&d["source"])==Some(s));
+                let d=traces.next()?;if traces.next().is_some(){return None;}
+                let (kind,route,p)=if d["legacyFirstBlockingReason"].is_null(){
+                    let (kind,bin)=owner_score_input(&units,d,obs)?;
+                    let mut found=rows(&legacy["bins"]).filter(|r|r["sourceKind"]==kind&&r["bin"].as_u64()==Some(bin as u64));
+                    let r=found.next()?;if found.next().is_some(){return None;}
+                    (kind,"score",r["estimatedNextProxyFrequency"].as_f64()?)
+                }else{
+                    let (kind,reason)=owner_gate_input(&units,d,obs)?;
+                    let mut found=rows(&legacy["gateCalibration"]["groups"]).filter(|r|r["sourceKind"]==kind&&r["firstBlockingReason"]==reason);
+                    let r=found.next()?;if found.next().is_some(){return None;}
+                    (kind,"gate",r["estimatedNextProxyFrequency"].as_f64()?)
+                };
+                if !p.is_finite()||!(0.0..=1.0).contains(&p){return None;}
+                let mut selections=rows(&shadow["contextSelection"]).filter(|r|r["task"]=="recipient_ownership"&&position(&units,r)==Some(s));
+                let sel=selections.next()?;if selections.next().is_some()||
+                    sel["status"]!="diagnostic_context_selected"||sel["contextConflict"]!=false{return None;}
+                let key=sel["selectedContextKey"].as_str()?;
+                let mut entries=rows(&projection["entries"]).filter(|r|position(&units,&r["source"])==Some(s));
+                let entry=entries.next()?;if entries.next().is_some(){return None;}
+                let mut contexts=rows(&entry["contexts"]).filter(|c|c["key"].as_str()==Some(key));
+                let context=contexts.next()?;if contexts.next().is_some(){return None;}
+                let level=context["level"].as_str()?;
+                let mut locs=rows(&shadow["locations"]).filter(|r|r["task"]=="recipient_ownership"&&position(&units,r)==Some(s));
+                let loc=locs.next()?;if locs.next().is_some()||loc["candidateCoverage"]!="traced_pair"||
+                    !rows(&loc["contextKeys"]).any(|k|k.as_str()==Some(key)){return None;}
+                let allowed=BTreeSet::from(["next","previous"]);
+                if rows(&loc["candidates"]).filter_map(Value::as_str).collect::<BTreeSet<_>>()!=allowed||
+                    rows(&loc["candidates"]).count()!=2{return None;}
+                let mut reports=rows(&shadow["contexts"]).filter(|r|r["task"]=="recipient_ownership"&&
+                    r["contextKey"].as_str()==Some(key)&&r["supportVersion"]==4&&r["featureVersion"]==1&&
+                    r["contributionVersion"]==2&&r["contextQuality"]["status"]=="diagnostic_screen_pass"&&
+                    rows(&r["candidateIds"]).filter_map(Value::as_str).collect::<BTreeSet<_>>()==allowed);
+                let r=reports.next()?;if reports.next().is_some(){return None;}
+                let sample=shadow_distribution(r,&allowed,actual)?;
+                let mut models=rows(&shadow_model["models"]).filter(|r|r["task"]=="recipient_ownership"&&
+                    r["contextLevel"]==level&&r["candidateCoverage"]=="traced_pair");
+                let model=models.next()?;if models.next().is_some(){return None;}
+                let t=model["temperature"].as_f64()?;let smoothing=model["uniformSmoothing"].as_f64()?;
+                if !SHADOW_TEMPERATURES.contains(&t)||!SHADOW_SMOOTHING.contains(&smoothing){return None;}
+                // BTreeSet order: next, previous, outside.
+                Some(((kind.to_owned(),route.to_owned(),level.to_owned()),BlendSample{
+                    legacy:vec![p,1.0-p,0.0],shadow:shadow_transform(&sample.distribution,t,smoothing),
+                    actual:sample.actual,label}))
+            })();
+            if let Some((key,sample))=candidate{local.entry(key).or_default().push(sample);}
+            else{unavailable+=1;}
+        }
+        if fit{
+            eligible_weight+=eligible;
+            if !local.is_empty(){valid_weight_orders+=1;}
+            for (key,samples) in local{fits.entry(key).or_default().add_order(&samples);}
+        }else{
+            eligible_test+=eligible;
+            if !local.is_empty(){valid_test_orders+=1;}
+            tests.push(local);
+        }
+    }
+    let mut totals=BTreeMap::<(BlendGroup,String),BlendTest>::new();
+    for order in tests{
+        for (key,samples) in order{
+            let weight=fits.get(&key).and_then(BlendFit::weight);
+            let mut local=BTreeMap::<&str,BlendTest>::new();
+            for sample in samples{
+                for label in [sample.label,"mixed_proxy"]{local.entry(label).or_default().observe(Some(&sample),weight);}
+            }
+            for (label,metrics) in local{totals.entry((key.clone(),label.to_owned())).or_default().merge(metrics);}
+        }
+    }
+    let covered=totals.iter().filter(|((_,label),_)|label=="mixed_proxy").map(|(_,m)|m.covered).sum::<usize>();
+    let models=fits.into_iter().map(|((kind,route,level),v)|json!({"sourceKind":kind,"legacyRoute":route,
+        "contextLevel":level,"weightFitOrders":v.orders,"learningWeight":v.weight(),
+        "legacyWeight":v.weight().map(|w|1.0-w)})).collect::<Vec<_>>();
+    let groups=totals.into_iter().map(|(((kind,route,level),label),v)|json!({
+        "sourceKind":kind,"legacyRoute":route,"contextLevel":level,"labelKind":label,"metrics":v.wire()})).collect::<Vec<_>>();
+    Ok(json!({"status":"blend_weight_diagnostic_only","method":"order_macro_brier_grid_v1",
+        "task":"recipient_ownership","clientBuildVersion":build,"fitStart":config["fitStart"],
+        "weightStart":config["weightStart"],"testStart":config["testStart"],"testEnd":config["testEnd"],
+        "evaluationAsOf":config["evaluationAsOf"],"minimumWeightFitOrders":MIN_BLEND_ORDERS,
+        "calibrationInputOrders":fit_payload["orders"].as_array().map_or(0,Vec::len),
+        "weightOrdersWithBothModels":valid_weight_orders,"testOrdersWithBothModels":valid_test_orders,
+        "eligibleWeightObservations":eligible_weight,"eligibleTestObservations":eligible_test,
+        "unavailableBothModelsObservations":unavailable,"excludedOrders":excluded,"lateLabelOrders":late,
+        "overallTestCoverage":(eligible_test>0).then(||covered as f64/eligible_test as f64),
+        "models":models,"testGroups":groups,"outsideBucketSelectable":false,
+        "representativeLabelsVerified":false,"historicalModelVerified":false,"sourceProvenanceVerified":false,
+        "calibratedProbability":null,"eligibleForAutomaticDecision":false,"decisionChanged":false}))
+}
+
 #[cfg(test)]
 mod tests{
     use super::*;
@@ -1584,6 +1812,32 @@ mod tests{
         let mut total=ShadowCalTest::default();total.merge(metrics);
         assert_eq!(total.wire()["coverage"],0.5);
         assert!(total.wire()["adjustedBrierOnCovered"].as_f64().unwrap()<total.wire()["rawBrierOnCovered"].as_f64().unwrap());
+    }
+    #[test]
+    fn blend_fit_prefers_legacy_on_ties_and_requires_independent_orders(){
+        let equal=||BlendSample{legacy:vec![0.7,0.3,0.0],shadow:vec![0.7,0.3,0.0],
+            actual:0,label:"unchanged_proxy"};
+        let mut fit=BlendFit::default();fit.add_order(&(0..100).map(|_|equal()).collect::<Vec<_>>());
+        assert!(fit.weight().is_none());
+        for _ in 1..10{fit.add_order(&[equal()]);}
+        assert_eq!(fit.weight(),Some(0.0));
+        let good=||BlendSample{legacy:vec![0.1,0.9,0.0],shadow:vec![0.9,0.05,0.05],
+            actual:0,label:"explicit_correction"};
+        let mut other=BlendFit::default();for _ in 0..10{other.add_order(&[good()]);}
+        assert_eq!(other.weight(),Some(1.0));
+        let s=good();let p=blend_distribution(&s.legacy,&s.shadow,0.5);
+        assert!((p.iter().sum::<f64>()-1.0).abs()<1e-10);
+        assert_eq!(p[2],0.025);
+    }
+    #[test]
+    fn blend_test_compares_same_covered_observations(){
+        let s=BlendSample{legacy:vec![0.0,1.0,0.0],shadow:vec![1.0,0.0,0.0],
+            actual:0,label:"explicit_correction"};
+        let mut local=BlendTest::default();local.observe(Some(&s),Some(0.5));local.observe(Some(&s),None);
+        let mut total=BlendTest::default();total.merge(local);
+        let v=total.wire();assert_eq!(v["coverage"],0.5);
+        assert_eq!(v["legacyBrierOnCovered"],2.0);assert_eq!(v["shadowBrierOnCovered"],0.0);
+        assert_eq!(v["combinedBrierOnCovered"],0.5);
     }
     fn owner_fixture()->Value{
         // Emoji makes the UTF-16 positions differ from byte offsets.

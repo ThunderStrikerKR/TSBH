@@ -1008,10 +1008,11 @@ impl PreviewStore {
         let evaluation=input.get("shadowEvaluation");
         let calibration=input.get("legacyScoreCalibration");
         let shadow_calibration=input.get("shadowCandidateCalibration");
-        if [evaluation,calibration,shadow_calibration,input.get("localChronologicalReplay")].iter().filter(|v|v.is_some()).count()>1{
+        let blend=input.get("blendWeightLearning");
+        if [evaluation,calibration,shadow_calibration,blend,input.get("localChronologicalReplay")].iter().filter(|v|v.is_some()).count()>1{
             return Err("평가와 재현 요청을 분리하세요.".into());
         }
-        let report=if let Some(config)=evaluation.or(calibration).or(shadow_calibration).or_else(||input.get("localChronologicalReplay")){
+        let report=if let Some(config)=evaluation.or(calibration).or(shadow_calibration).or(blend).or_else(||input.get("localChronologicalReplay")){
             if input.get("chronologicalValidation").is_some() || config.get("samples").is_some() ||
                 config.get("frozenModelId").is_some(){
                 return Err("로컬 재현에 외부 예측·정답·모델을 혼합할 수 없습니다.".into());
@@ -1038,7 +1039,7 @@ impl PreviewStore {
                 let id=order["id"].as_str().ok_or("재현 주문 ID 누락")?;
                 if let Some(events)=audit.remove(id){order["recognitionAuditEvents"]=json!(events);}
             }
-            let mut result=if evaluation.is_some()||calibration.is_some()||shadow_calibration.is_some(){
+            let mut result=if evaluation.is_some()||calibration.is_some()||shadow_calibration.is_some()||blend.is_some(){
                 let mut value=evaluate(&orders)?;
                 value["currentSourceDigestsVerified"]=json!(true);
                 value

@@ -96,6 +96,7 @@ pub fn execute(operation: &str, payload: Value) -> Result<Value, String> {
         "evaluate_shadow_predictions" => observations::evaluate_shadow(&payload),
         "calibrate_legacy_scores" => observations::calibrate_legacy_scores(&payload),
         "calibrate_shadow_candidates" => observations::calibrate_shadow_candidates(&payload),
+        "learn_blend_weights" => observations::learn_blend_weights(&payload),
         "project_owner_contexts" => learning_context::lookup(&payload),
         "summarize_owner_statistics" => learning_context::statistics(&payload),
         _ => Err(format!("unknown recognition operation: {operation}")),
