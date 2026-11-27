@@ -1319,6 +1319,41 @@ pub(crate) mod general_screen_geometry_tests {
     #[test] fn unaligned_excel(){audit_unaligned_management("excel",3);}
     #[test] fn unaligned_settings(){audit_unaligned_management("settings",4);}
     #[test] fn unaligned_settlement(){audit_unaligned_management("settlement",1);}
+    #[test]
+    fn unaligned_reception_initial_and_populated_frames(){
+        for (screen,_) in data_geometry_dimensions(){
+            for scale in [1.0_f32,1.25,1.5,1.75,2.0]{
+                for populated in [false,true]{
+                    let ctx=test_context();
+                    ctx.set_pixels_per_point(scale);
+                    crate::ui_test_support::enable_unaligned_diagnostics(&ctx);
+                    let mut app=crate::BandoEgui::with_layout(crate::layout::LayoutState::default());
+                    app.gateway=Arc::new(GeometryGateway);
+                    if populated{
+                        app.raw_source="합성 발주원문\n검증 수취인 및 상품".into();
+                        app.analysis=Some(crate::reception_service::ReceptionAnalysis{
+                            recognition:serde_json::json!({"recipients":[
+                                {"id":"geometry-r1","name":"검증 수취인","address":"합성 주소","mobile":"010-0000-0000","phone":"","note":"","freightCode":"010",
+                                "items":[{"id":"geometry-i1","name":"검증 상품","quantity":1}]}
+                            ]}),
+                            reference:vec![],client_match:Value::Null,client_candidates:vec![],
+                            matched_client_name:None,chosen_client_name:None,directory_count:0,linked_spans:vec![]
+                        });
+                    }
+                    let rect=Rect::from_min_size(egui::Pos2::ZERO,screen);
+                    for frame in 0..12{
+                        let output=ctx.run(egui::RawInput{
+                            screen_rect:Some(rect),time:Some(frame as f64*0.05),
+                            predicted_dt:0.05,..Default::default()
+                        },|ctx|app.reception(ctx));
+                        crate::ui_test_support::assert_no_unaligned(&output,&format!(
+                            "reception {screen:?} scale={scale} populated={populated} frame={frame}"));
+                    }
+                }
+            }
+        }
+    }
+
 
     #[test]
     fn actual_management_pages_allocate_valid_geometry_at_three_work_area_sizes(){
