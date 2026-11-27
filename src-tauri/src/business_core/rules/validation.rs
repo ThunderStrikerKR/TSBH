@@ -435,8 +435,11 @@ pub(super) fn validate_factory_transition(state:&Value,before:&Value)->Result<()
             if let Some(value)=previous.get(key){map.insert(key.into(),value.clone());}else{map.remove(key);}
         }
         if restored!=*previous{return Err("공장 회신이 다른 배송 정보를 변경했습니다.".into());}
-        validate_shipment_row(state,new,ship)?;
-        let (_,recipient)=shipment_for(state,ship)?;
+        // Factory reply requires the original shipping target, not the
+        // current reception stage, client master or customer charge validity.
+        let recipient=find_by_id(field(state,"orders"),str_field(ship,"orderId"))
+            .and_then(|order|find_by_id(field(order,"recipients"),str_field(ship,"recipientId")))
+            .ok_or("공장 회신 배송 연결 오류")?;
         let actual=|s:&Value|field(s,"actualFreight").get("FACTORY").cloned().unwrap_or_else(||field(recipient,"actualFreight").clone());
         let tracking=str_field(field(ship,"tracking"),"FACTORY");
         if field(ship,"orderId")!=field(row,"orderId")||tracking!=str_field(row,"tracking")

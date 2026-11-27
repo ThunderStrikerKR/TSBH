@@ -130,7 +130,9 @@ fn factory_reply_requires_actual_g_and_tracking_q_without_substituting_r(){
     missing_q["businessDate"]=json!("2026-11-13");
     missing_q["at"]=json!("2026-11-13T10:00:00Z");
     missing_q["actor"]=json!("합성");
-    assert!(factory_reply::execute("analyze_factory_reply",&missing_q).unwrap_err().contains("Q열"));
+    let held=factory_reply::execute("analyze_factory_reply",&missing_q).unwrap();
+    assert_eq!(held["held"],1);
+    assert_eq!(held["rows"][0]["issueCode"],"INVALID_TRACKING");
 }
 
 #[test]
