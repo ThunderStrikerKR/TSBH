@@ -372,9 +372,15 @@ fn workflow_signal_palette(stages:Option<[bool;4]>,index:usize)->(egui::Color32,
     }
 }
 
+// An eligible collapsed pending card reserves its title hover for the
+// recipient-list preview. The foreground clone restores the full-title
+// overflow tooltip after expansion; selected/blocked cards retain it.
+fn pending_title_tooltip_allowed(previews_allowed:bool,selected:bool,open:bool,in_preview:bool)->bool{
+    !previews_allowed||selected||open||in_preview
+}
 fn workflow_header(
     ui:&mut Ui,row:Rect,id:&str,title:&str,open:bool,stages:Option<[bool;4]>,
-    in_preview:bool,can_manage:bool,can_delete:bool
+    in_preview:bool,can_manage:bool,can_delete:bool,allow_title_tooltip:bool
 )->HeaderActions{
     let content=workflow_row_content(row);
     let gap=theme::WORKFLOW_CARD_SLOT_GAP;
@@ -407,7 +413,7 @@ fn workflow_header(
     );
     let title_response=crate::button::disclosure_at(ui,arrow.union(title_rect),
         workflow_widget_id("workflow-header",id,in_preview),arrow.center(),None,
-        open,visible!=title,title,theme::CONTROL_RADIUS as f32);
+        open,allow_title_tooltip&&visible!=title,title,theme::CONTROL_RADIUS as f32);
 
     let block=workflow_control_rect(signal);
     theme::paint_bordered_surface(ui.painter(),block,theme::WORKFLOW_SIGNAL_BLOCK_RADIUS,
@@ -671,7 +677,7 @@ fn group_frame(
         let btn=workflow_header(
             ui,top,&group.id,&group.dealer_name,open || in_preview,
             Some(group.stage_validity),in_preview,
-            true,writable && !group.transferred
+            true,writable && !group.transferred,true
         );
         if btn.manage{event=Some(Event::ManageGroup(group.id.clone()));}
         if btn.delete{event=Some(Event::DeleteGroup(group.id.clone()));}
@@ -854,7 +860,8 @@ fn pending_frame(
     ui:&mut Ui,draft:&WorkingReception,selected:bool,open:bool,in_preview:bool,
     writable:bool,dealer_name:&str,committed_recipient:Option<&str>,
     preview:Option<&PendingTarget>,linked_selection:Option<(&str,&str)>,
-    hovered_pending:&mut Option<PendingTarget>,stage_trigger:&mut Option<String>
+    hovered_pending:&mut Option<PendingTarget>,stage_trigger:&mut Option<String>,
+    previews_allowed:bool
 )->Option<Event>{
     let mut event=None;
     workflow_card(ui,selected && !in_preview,in_preview,|ui|{
@@ -862,7 +869,8 @@ fn pending_frame(
         let has_client=draft.client_id.as_deref()
             .is_some_and(|id|!id.trim().is_empty());
         let header=workflow_header(
-            ui,top,&draft.id,dealer_name,open,has_client.then_some([false;4]),in_preview,true,true
+            ui,top,&draft.id,dealer_name,open,has_client.then_some([false;4]),in_preview,true,true,
+            pending_title_tooltip_allowed(previews_allowed,selected,open,in_preview)
         );
         if header.manage{event=Some(Event::ManagePending(draft.id.clone()));}
         if header.delete{event=Some(Event::DeletePending(draft.id.clone()));}
@@ -1106,7 +1114,7 @@ pub fn show(
             if selected{active_recipient_id}else{None},
             state.pending_visible.as_ref(),
             linked_selection,
-            &mut hovered_pending,&mut trigger
+            &mut hovered_pending,&mut trigger,previews_allowed
         ){
             match value{
                 Event::TogglePending=>{
@@ -1131,7 +1139,7 @@ pub fn show(
             overlay_ui.apply_shared_width(crate::card::CardWidthPolicy::Bounded,width);
             overlay_event=pending_frame(
                 overlay_ui,draft,false,true,true,writable,name,None,
-                state.pending_visible.as_ref(),linked_selection,&mut overlay_hover,&mut trigger
+                state.pending_visible.as_ref(),linked_selection,&mut overlay_hover,&mut trigger,previews_allowed
             );
         });
         if overlay_hover.is_some(){
@@ -1398,7 +1406,7 @@ mod pending_matching_tests {
                 let mut hovered=None;
                 tapped=pending_frame(
                     ui,&draft,false,false,false,false,"확인된 거래처",None,None,
-                    None,&mut hovered,&mut None
+                    None,&mut hovered,&mut None,true
                 );
             });
         });
@@ -1511,6 +1519,22 @@ mod pending_matching_tests {
 #[cfg(test)]
 mod pending_hover_navigation_tests{
     use super::*;
+    #[test]
+    fn pending_title_overflow_tooltip_never_preempts_recipient_preview(){
+        assert!(!pending_title_tooltip_allowed(true,false,false,false));
+        assert!(pending_title_tooltip_allowed(true,false,true,true));
+        assert!(pending_title_tooltip_allowed(true,true,false,false));
+        assert!(pending_title_tooltip_allowed(false,false,false,false));
+        let ctx=egui::Context::default();
+        let mut board=BoardUi::default();
+        let target=PendingTarget::order("long-title");
+        let start=Instant::now();
+        board.update_pending_order_hover_at(Some(target.clone()),None,&ctx,start);
+        board.update_pending_order_hover_at(Some(target.clone()),None,&ctx,start+PENDING_ORDER_HOVER_ENTER);
+        assert_eq!(board.pending_preview(),Some(&target));
+        assert!(pending_title_tooltip_allowed(true,false,true,true));
+        assert!(board.selection.is_none());
+    }
     #[test]
     fn common_preview_resolver_prioritizes_scoped_evidence_without_cross_order_leak(){
         let preview=PendingTarget::recipient("order-a","r1");
