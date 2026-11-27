@@ -733,7 +733,7 @@ mod modal_input_routing_tests {
             raw.screen_rect=Some(work_area);
             let mut action_rect=Rect::NOTHING;
             let mut plain_rect=Rect::NOTHING;
-            let _=ctx.run(raw,|ctx|{
+            let output=ctx.run(raw,|ctx|{
                 modal_window(ctx,"수동 분류","manual-parent-workspace",work_area)
                     .show(ctx,|ui|{
                         ui.disable();
@@ -770,6 +770,13 @@ mod modal_input_routing_tests {
                 Some(modal_window_layer("manual-discard-prompt")),
                 "the full-screen dim Area must never remain above the decision window"
             );
+            // The initial sizing pass may not paint the window. Once
+            // mounted, verify the top decision's actual text at every
+            // pointer transition, independently of its hit-test result.
+            if ctx.input(|input|input.time)>=0.1{
+                crate::ui_test_support::assert_painted_caption(&output,"변경 취소",action_rect);
+                crate::ui_test_support::assert_painted_caption(&output,"plain pointer probe",plain_rect);
+            }
             (action_rect,plain_rect)
         }
 
