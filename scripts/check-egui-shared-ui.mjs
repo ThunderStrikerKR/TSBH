@@ -98,6 +98,8 @@ const tableContracts = {
   "model_group_manager.rs:show_editor":{registry_table:1,registry_cell:1,registry_actions:1},
   "product_manager.rs:show_detail":{management_readonly_table:1},
   "product_excel_ui.rs:show_review":{management_readonly_table:1},
+  "freight_manager.rs:group_rate_dialog":{registry_table_min_rows:1,registry_cell:1},
+  "freight_manager.rs:rate_dialog":{registry_table_min_rows:1,registry_cell:1,registry_actions:1},
 };
 // Verify the shared renderer itself, not just the calls in screens.
 // Removing a required delegation fails even if the public API is unchanged.
@@ -110,22 +112,24 @@ const tableOwnerContracts = {
     header_finish:1
   },
   "table/mod.rs:show":{"TableGeometry::new":1,".paint":1},
-  "table/mod.rs:registry_table":{show:1,management_table_cells:1,header_columns:1,heading:1,fixed_rows:1,fixed_row_rect:1,fixed_row:1},
+  "table/mod.rs:registry_table":{registry_table_inner:1},
+  "table/mod.rs:registry_table_min_rows":{registry_table_inner:1,".max":1},
+  "table/mod.rs:registry_table_inner":{show:1,management_table_cells:1,header_columns:1,heading:1,fixed_rows:1,fixed_row_rect:1,fixed_row:1},
   "table/mod.rs:registry_cell":{paint_management_text_cell:1},
   "table/mod.rs:inline":{finish_inline:1},
   "table/mod.rs:finish_inline":{finish:1},
   "table/mod.rs:finish":{outline_bounds:1,paint_frame:1},
   "table/mod.rs:new":{outline_bounds:1},
   "table/mod.rs:paint":{paint_frame:1,".rect_filled":1},
-  "table/mod.rs:paint_frame":{".rect_stroke":1,".with_clip_rect":1},
+  "table/mod.rs:paint_frame":{".rect_stroke":1,".with_shared_clip":1},
   "table/mod.rs:strict_viewport_clip":{".intersect":1},
-  "table/mod.rs:virtual_fixed_rows":{strict_viewport_clip:1,".set_clip_rect":1},
+  "table/mod.rs:virtual_fixed_rows":{strict_viewport_clip:1,".restrict_shared_clip":1},
   "table/mod.rs:header_begin":{".rect_filled":1},
   "table/mod.rs:header_finish":{".rect_filled":1},
   "table/mod.rs:master_header_begin":{header_begin:1},
   "table/mod.rs:fixed_row":{row_scope:1,management_table_cells:1,
     paint_management_table_row_background:1,management_table_column_rules:1,
-    paint_management_table_row_rule:1,".set_clip_rect":1},
+    paint_management_table_row_rule:1,".restrict_shared_clip":1},
   "table/mod.rs:history_row":{row_scope:1,management_table_cells:1,
     paint_management_table_row_background:1,management_table_column_rules:1,
     paint_management_table_row_rule:1,paint_shipment_detail_surface:1},
@@ -136,15 +140,15 @@ const tableOwnerContracts = {
   "table/mod.rs:management_master_column_rules":{"theme::paint_soft_rule":1},
   "table/mod.rs:fixed_rows":{fixed_rows_snapshot:1},
   "table/mod.rs:fixed_rows_snapshot":{viewport_scroll:1,virtual_fixed_rows:1,"ScrollCapture::begin":1,".finish":1},
-  "table/mod.rs:variable_rows_snapshot":{viewport_scroll:1,management_table_row_body:1,strict_viewport_clip:1,".set_clip_rect":1,"ScrollCapture::begin":1,".finish":1},
+  "table/mod.rs:variable_rows_snapshot":{viewport_scroll:1,management_table_row_body:1,strict_viewport_clip:1,".restrict_shared_clip":1,"ScrollCapture::begin":1,".finish":1},
   "table/mod.rs:viewport_scroll":{management_fixed_table_scroll_area:1},
 };
 const tableOnlyCalls = new Set(["show","fixed_rows","fixed_rows_snapshot","fixed_row","fixed_row_rect",
   "variable_rows_snapshot","history_row","header_columns","heading","sort_clicked","row_scope",
-  "registry_table","registry_cell","registry_actions","registry_row_hit","master_header_begin","header_finish"]);
+  "registry_table","registry_table_min_rows","registry_cell","registry_actions","registry_row_hit","master_header_begin","header_finish"]);
 const tableMarkers = new Set(["management_table_cells","management_table_column_rules",
   "management_row","management_readonly_table","shipment_detail_cells",
-  "fixed_rows","fixed_rows_snapshot","variable_rows","variable_rows_snapshot","fixed_row","history_row","header_columns","registry_table"]);
+  "fixed_rows","fixed_rows_snapshot","variable_rows","variable_rows_snapshot","fixed_row","history_row","header_columns","registry_table","registry_table_min_rows"]);
 const componentContractCalls = new Set(Object.entries(tableContracts)
   .filter(([scope])=>scope.startsWith("composite_workflow.rs:"))
   .flatMap(([,entries])=>Object.keys(entries)));
@@ -956,7 +960,7 @@ const compositeContracts = {
   // Check the owners as well, so a hollow wrapper cannot satisfy the gate.
   "card/mod.rs:reception_document_viewport":{
     "paint_source_document_surface":1,"reception_document_inner_rect":1,
-    ".intersect":1,".set_clip_rect":1,"scroll_area":1,".auto_shrink":1
+    ".intersect":1,".restrict_shared_clip":1,"scroll_area":1,".auto_shrink":1
   },
   "button/mod.rs:remove_at":{"remove_at_response":1},
   "button/mod.rs:remove_at_response":{".interact":1,"paint_button_hover":1,".line_segment":1},
@@ -964,7 +968,7 @@ const compositeContracts = {
     "paint_management_chevron":1,".interact":1,"ui_primitives::overflow_tooltip":1,"paint_button_hover":1
   },
   "table/mod.rs:paint_editable_cell_text":{
-    ".layout_no_wrap":1,"reception_item_value_origin":1,".with_clip_rect":1,".galley":1
+    ".layout_no_wrap":1,"reception_item_value_origin":1,".with_shared_clip":1,".galley":1
   },
   "table/mod.rs:editable_cell_hit":{
     ".interact":1,"ui_primitives::overflow_tooltip":1,".on_hover_cursor":1
@@ -978,7 +982,7 @@ const compositeRawBans = {
   "workflow_board_ui.rs:workflow_header":[".interact","button::paint_button_hover","ui_primitives::paint_workflow_icon"],
   "order_history_manager.rs:draw_line":[".interact","button::paint_button_hover","ui_primitives::paint_management_chevron"],
   "composite_workflow.rs:workflow_shipment_row":[".rect_stroke"],
-  "main.rs:message_section":["scroll_area","scrollbar::scroll_area",".set_clip_rect",".scope_builder"]
+  "main.rs:message_section":["scroll_area","scrollbar::scroll_area",".set_clip_rect",".restrict_shared_clip",".scope_builder"]
 };
 
 export function auditComposite(source,file,requireCalls=false){
@@ -1189,8 +1193,19 @@ function selfTest(){
   const commonScope="table/mod.rs:shipment_detail_cells";
   assert.equal(missing("fn shipment_detail_cells(){let c=shipment_detail_content(b);management_table_cells(p,w,h,g);}","table/mod.rs",commonScope).length,0);
   assert.equal(missing("fn shipment_detail_cells(){shipment_detail_content(b);} fn management_table_cells(){}","table/mod.rs",commonScope).length,1);
+  const registryScope="table/mod.rs:registry_table";
+  const minimumScope="table/mod.rs:registry_table_min_rows";
+  const innerScope="table/mod.rs:registry_table_inner";
+  assert.equal(missing("fn registry_table(){registry_table_inner();}","table/mod.rs",registryScope).length,0);
+  assert.equal(missing("fn registry_table(){} fn unrelated(){registry_table_inner();}","table/mod.rs",registryScope).length,1);
+  assert.equal(missing("fn registry_table(){fake::registry_table_inner();}","table/mod.rs",registryScope).length,1);
+  assert.equal(missing("fn registry_table_min_rows(){registry_table_inner(n.max(m));}","table/mod.rs",minimumScope).length,0);
+  assert.equal(missing("fn registry_table_min_rows(){registry_table_inner(n);}","table/mod.rs",minimumScope).length,1);
+  const inner="fn registry_table_inner(){table::show();table::management_table_cells();table::header_columns();table::heading();table::fixed_rows();table::fixed_row_rect();table::fixed_row();}";
+  assert.equal(missing(inner,"table/mod.rs",innerScope).length,0);
+  assert.equal(missing(inner.replace("table::fixed_row();",""),"table/mod.rs",innerScope).length,1);
   const tableScope="table/mod.rs:fixed_row";
-  const fixed="fn fixed_row(){row_scope();row.set_clip_rect(r);management_table_cells();paint_management_table_row_background();management_table_column_rules();paint_management_table_row_rule();}";
+  const fixed="fn fixed_row(){row_scope();row.restrict_shared_clip(r);management_table_cells();paint_management_table_row_background();management_table_column_rules();paint_management_table_row_rule();}";
   assert.equal(missing(fixed,"table/mod.rs",tableScope).length,0);
   assert.equal(missing(fixed.replace("paint_management_table_row_rule();",""),"table/mod.rs",tableScope).length,1);
   assert.equal(missing(fixed.replace("management_table_cells();","fake::management_table_cells();"),"table/mod.rs",tableScope).length,1);
@@ -1202,17 +1217,17 @@ function selfTest(){
   assert.equal(missing("fn new(){outline_bounds(h,b);}","table/mod.rs","table/mod.rs:new").length,0);
   assert.equal(missing("fn paint(){painter.rect_filled(r,x,c);paint_frame(ui,r);}","table/mod.rs","table/mod.rs:paint").length,0);
   assert.equal(missing("fn paint(){paint_frame(ui,r);}","table/mod.rs","table/mod.rs:paint").length,1);
-  assert.equal(missing("fn paint_frame(){painter.with_clip_rect(r).rect_stroke(r,x,s,k);}","table/mod.rs","table/mod.rs:paint_frame").length,0);
-  assert.equal(missing("fn paint_frame(){painter.with_clip_rect(r);}","table/mod.rs","table/mod.rs:paint_frame").length,1);
-  assert.equal(missing("fn virtual_fixed_rows(){strict_viewport_clip(b,v);row.set_clip_rect(r);}","table/mod.rs","table/mod.rs:virtual_fixed_rows").length,0);
-  assert.equal(missing("fn virtual_fixed_rows(){row.set_clip_rect(r);}","table/mod.rs","table/mod.rs:virtual_fixed_rows").length,1);
-  assert.equal(missing(fixed.replace("row.set_clip_rect(r);",""),"table/mod.rs",tableScope).length,1);
+  assert.equal(missing("fn paint_frame(){painter.with_shared_clip(r).rect_stroke(r,x,s,k);}","table/mod.rs","table/mod.rs:paint_frame").length,0);
+  assert.equal(missing("fn paint_frame(){painter.with_shared_clip(r);}","table/mod.rs","table/mod.rs:paint_frame").length,1);
+  assert.equal(missing("fn virtual_fixed_rows(){strict_viewport_clip(b,v);row.restrict_shared_clip(r);}","table/mod.rs","table/mod.rs:virtual_fixed_rows").length,0);
+  assert.equal(missing("fn virtual_fixed_rows(){row.restrict_shared_clip(r);}","table/mod.rs","table/mod.rs:virtual_fixed_rows").length,1);
+  assert.equal(missing(fixed.replace("row.restrict_shared_clip(r);",""),"table/mod.rs",tableScope).length,1);
   assert.equal(missing("fn show_catalog_surface(){components::show();}","product_manager.rs","product_manager.rs:show_catalog_surface").length,8);
   assert.deepEqual([...sharedDependencies("use crate::{theme, typography}; fn a(){crate::overlay::x();}","button")],["theme","typography","overlay"]);
   assert.equal(sharedDependencies("// crate::components::x();\nfn a(){let s=\"components::x()\";}","button").size,0);
   assert.equal(dependencyCycles(new Map([["button",new Set(["theme"])],["theme",new Set()]])).length,0);
   assert.equal(dependencyCycles(new Map([["button",new Set(["components"])],["components",new Set(["button"])]] )).length,1);
-  console.log("EGUI_SHARED_UI_SELFTEST_PASS",cases.length+33);
+  console.log("EGUI_SHARED_UI_SELFTEST_PASS",cases.length+40);
 }
 
 // UI dependency layers: shared primitives never reach upward into screen
