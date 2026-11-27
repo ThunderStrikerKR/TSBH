@@ -1232,6 +1232,13 @@ fn freight_modal_content_uses_shared_layout_and_controls(){
     assert!(!rate.contains("spacing_mut("));
     assert!(rate.contains("crate::table::registry_table_min_rows("));
     assert!(rate.contains("10,count,"));
+    let group=source.split("    fn group_rate_dialog(").nth(1).unwrap()
+        .split("    fn rate_dialog(").next().unwrap();
+    assert!(group.contains("crate::popup::modal_body_pair("));
+    assert!(group.contains("crate::table::registry_table_min_rows("));
+    assert!(group.contains("10,names.len()"));
+    assert!(group.contains("Self::rate_dialog(right,editor,enabled)"));
+    assert!(source.contains("crate::popup::modal_wide_content_width(area.width())"));
     assert!(!rate.contains("count.min(10)"));
     assert!(!rate.contains("ui.add_space("));
     assert_eq!(source.matches("crate::popup::show_name_confirmation(").count(),1);
@@ -1572,5 +1579,40 @@ fn actual_common_popup_families_keep_geometry_during_feedback_and_permissions(){
                 }
             }
         }
+    }
+}
+
+#[test]
+fn modal_body_pair_keeps_two_panes_top_aligned_and_stacks_when_narrow(){
+    let ctx=crate::ui_test_support::test_context();
+    for (width,parallel) in [(820.0,true),(600.0,false),(820.0,true)]{
+        let _=ctx.run(egui::RawInput{
+            screen_rect:Some(Rect::from_min_size(egui::Pos2::ZERO,egui::vec2(1000.0,900.0))),
+            ..Default::default()
+        },|ctx|{
+            egui::CentralPanel::default().show(ctx,|root|{
+                root.allocate_ui_with_layout(egui::vec2(width,500.0),
+                    egui::Layout::top_down(egui::Align::Min),|ui|{
+                    ui.set_width(width);
+                    ui.set_max_width(width);
+                    let mut rects=Vec::new();
+                    crate::popup::modal_body_pair(ui,&mut rects,380.0,
+                        |pane,rects|rects.push(pane.allocate_exact_size(
+                            egui::vec2(pane.available_width(),100.0),egui::Sense::hover()).0),
+                        |pane,rects|rects.push(pane.allocate_exact_size(
+                            egui::vec2(pane.available_width(),160.0),egui::Sense::hover()).0)
+                    );
+                    assert_eq!(rects.len(),2);
+                    if parallel{
+                        assert!((rects[0].top()-rects[1].top()).abs()<=1.0);
+                        assert!((rects[1].left()-rects[0].right()-theme::MODAL_MASTER_WORKSPACE_GAP).abs()<=1.0);
+                    }else{
+                        assert!(rects[1].top()>=rects[0].bottom());
+                        assert!((rects[0].left()-rects[1].left()).abs()<=1.0);
+                    }
+                    assert!(rects[1].right()<=ui.max_rect().right()+1.0);
+                });
+            });
+        });
     }
 }

@@ -124,6 +124,13 @@ pub(crate) fn modal_master_ocr_body_is_usable(body:Vec2)->bool{
         +EXTRA_PANE_HEIGHT;
     body.x>=240.0 && body.y>=required_height
 }
+/// Wide modal inner width; reserve the frame and the safe-area gutter.
+pub(crate) fn modal_wide_content_width(work_width:f32)->f32{
+    let outer=2.0*(theme::MODAL_VIEWPORT_GUTTER+theme::MODAL_PANEL_PADDING_X
+        +theme::FRAME_STROKE_WIDTH);
+    theme::MODAL_DEFAULT_MAX_WIDTH.min((work_width-outer).max(1.0))
+}
+
 /// Native modal geometry belongs here, not to individual screens.
 /// `work_area` excludes the externally foregrounded KakaoTalk dock.
 pub(crate) fn modal_window(
@@ -1344,6 +1351,27 @@ pub(crate) use tag::{removable_tag_chip,TagChip};
 
 #[cfg(test)]
 mod regression_tests;
+
+/// Plain, top-aligned modal panes share the master gap without adding
+/// nested card frames. Fall back to a vertical flow only when neither
+/// pane could keep its minimum working width.
+pub(crate) fn modal_body_pair<S>(
+    ui:&mut Ui,state:&mut S,minimum_pane_width:f32,
+    left:impl FnOnce(&mut Ui,&mut S),right:impl FnOnce(&mut Ui,&mut S),
+){
+    if ui.available_width()>=2.0*minimum_pane_width+theme::MODAL_MASTER_WORKSPACE_GAP{
+        ui.scope(|pair|{
+            pair.spacing_mut().item_spacing.x=theme::MODAL_MASTER_WORKSPACE_GAP;
+            pair.columns(2,|cols|{
+                left(&mut cols[0],state);
+                right(&mut cols[1],state);
+            });
+        });
+    }else{
+        left(ui,state);
+        right(ui,state);
+    }
+}
 
 /// Keep labeled field pairs together when the viewport is too narrow for two columns.
 pub(crate) fn modal_form_pair<S>(ui:&mut Ui,state:&mut S,label_width:f32,

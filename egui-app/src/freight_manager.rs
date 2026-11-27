@@ -1165,8 +1165,17 @@ impl FreightManager {
                 crate::popup::modal_backdrop(ctx,"freight-rate-backdrop",false);
                 let mut request_delete=false;
                 let mut request_basis=false;
-                crate::popup::modal_window(ctx,if editor.product{"기본 운임 설정"}else{"배송 그룹 관리"},"freight-rate-modal",area)
-                    .resizable(false).show(ctx,|modal|{
+                let window=crate::popup::modal_window(ctx,
+                    if editor.product{"기본 운임 설정"}else{"배송 그룹 관리"},
+                    if editor.product{"freight-rate-modal"}else{"freight-group-rate-modal"},area);
+                // The product editor keeps its own compact window memory.
+                // The group editor uses the shared wide modal width, capped
+                // to the Kakao-safe area including the outer frame.
+                let window=if editor.product{window}else{
+                    let width=crate::popup::modal_wide_content_width(area.width());
+                    window.default_width(width).min_width(width).max_width(width)
+                };
+                window.show(ctx,|modal|{
 
                         let title=if editor.product{
                             "기본 운임 설정"
@@ -1178,21 +1187,13 @@ impl FreightManager {
                                 else{close_editor=true;}
                             }
                             workspace.scroll_region("freight-rate-editor-scroll",crate::popup::modal_editor_body_max_height(area.height()),|body|{
-                                if !editor.product{
-                                    crate::popup::modal_named_text_field(body,"배송 그룹명",&mut editor.name,"그룹 이름 입력",enabled);
+                                if editor.product{
+                                    Self::rate_dialog(body,editor,enabled);
+                                }else{
                                     let members=group_product_labels(&products);
                                     let names=members.get(&editor.id).map(Vec::as_slice).unwrap_or(&[]);
-                                    crate::popup::modal_master_body_section(body,"소속 상품",|list|{
-                                        crate::table::registry_table(list,("freight-group-members",&editor.id),
-                                            ["상품명"],[320.0],
-                                            names.len().clamp(1,5) as f32*theme::MANAGEMENT_COMPACT_ROW_HEIGHT,
-                                            names.len(),|_|false,|row,cells,index,_|{
-                                                crate::table::registry_cell(row,cells[0],&names[index],
-                                                    typography::ManagementTableCellRole::ProductName,false,index);
-                                            });
-                                    });
+                                    Self::group_rate_dialog(body,editor,names,enabled);
                                 }
-                                Self::rate_dialog(body,editor,enabled);
                             });
                             crate::floating_notice::sync(ctx,"freight.editor.validation","freight.action",
                                 crate::floating_notice::Tone::Validation,editor.error.as_deref());
@@ -2180,13 +2181,30 @@ impl FreightManager {
         });
     }
 
+    fn group_rate_dialog(ui:&mut Ui,editor:&mut RateEditor,names:&[String],enabled:bool){
+        crate::popup::modal_named_text_field(ui,"배송 그룹명",&mut editor.name,"그룹 이름 입력",enabled);
+        crate::popup::modal_body_pair(ui,editor,380.0,
+            |left,editor|{
+                crate::popup::modal_master_body_section(left,"소속 상품",|list|{
+                    crate::table::registry_table_min_rows(list,("freight-group-members",&editor.id),
+                        ["상품명"],[320.0],10,names.len(),|_|false,|row,cells,index,_|{
+                            crate::table::registry_cell(row,cells[0],&names[index],
+                                typography::ManagementTableCellRole::ProductName,false,index);
+                        });
+                });
+            },
+            |right,editor|Self::rate_dialog(right,editor,enabled)
+        );
+    }
+
     fn rate_dialog(
         ui:&mut Ui,editor:&mut RateEditor,enabled:bool,
     ){
         crate::popup::modal_form_stack(ui,|form|{
         form.compact_group(|ui|{
         ui.horizontal(|title|{
-            title.label(typography::subsection_heading(&format!("{} 운임",editor.name)));
+            let heading=if editor.product{format!("{} 운임",editor.name)}else{"운임 설정".to_owned()};
+            title.label(typography::subsection_heading(&heading));
             settings_help::icon(title,if editor.product {
                 "상품별 운임"
             }else{
