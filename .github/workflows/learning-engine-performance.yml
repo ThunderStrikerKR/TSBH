@@ -54,7 +54,8 @@ jobs:
             'product_owner_comparison_reuses_shared_geometry_without_mutating_order',
             'type_order_support_counts_distinct_other_paragraphs',
             'product_candidate_comparison_preserves_priority_length_and_ties',
-            'item_link_validation_distinguishes_explicit_common_sharing'
+            'item_link_validation_distinguishes_explicit_common_sharing',
+            'owner_weight_evaluation_separates_fit_holdout_and_unseen_patterns'
           )
           foreach ($test in $expected) {
             $pattern = '(^|::)' + [regex]::Escape($test) + ': test$'
@@ -138,7 +139,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           cargo test --manifest-path egui-app/Cargo.toml symmetric_owner_comparison_can_choose_either_candidate_or_abstain -- --nocapture
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          foreach ($test in @('common_quantity_never_selects_first_of_multiple_local_candidates','conflicting_explicit_qualifiers_cannot_qualify_any_product','delivery_link_validation_detects_invalid_and_shared_spans','product_owner_comparison_reuses_shared_geometry_without_mutating_order','product_candidate_comparison_preserves_priority_length_and_ties','item_link_validation_distinguishes_explicit_common_sharing')) {
+          foreach ($test in @('common_quantity_never_selects_first_of_multiple_local_candidates','conflicting_explicit_qualifiers_cannot_qualify_any_product','delivery_link_validation_detects_invalid_and_shared_spans','product_owner_comparison_reuses_shared_geometry_without_mutating_order','product_candidate_comparison_preserves_priority_length_and_ties','item_link_validation_distinguishes_explicit_common_sharing','owner_weight_evaluation_separates_fit_holdout_and_unseen_patterns')) {
             cargo test --manifest-path egui-app/Cargo.toml $test -- --nocapture
             if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           }
