@@ -872,7 +872,14 @@ pub fn install(ctx: &egui::Context) {
     // Native egui controls, selectables, toggles and pop-up options inherit
     // the same clearly visible hover feedback as our authored buttons.
     // Keep hover blue distinct from committed orange order selection.
-    crate::highlight::native_widgets(&mut style.visuals);
+    crate::highlight_native::native_widgets(&mut style.visuals,crate::highlight_native::NativePalette{
+        hover_fill:BUTTON_HOVER_BG,
+        hover_outline:Stroke::new(BUTTON_HOVER_BORDER_WIDTH,SELECTION),
+        hover_ink:TEXT,active_fill:INPUT,
+        focus_outline:Stroke::new(BUTTON_HOVER_BORDER_WIDTH,SELECTION),
+        selection_fill:SELECTION.linear_multiply(0.3),
+        selection_outline:Stroke::new(SELECTION_STROKE_WIDTH,SELECTION),
+    });
     style.visuals.widgets.noninteractive.bg_stroke = Stroke::new(FRAME_STROKE_WIDTH, BORDER);
     style.visuals.widgets.inactive.bg_stroke = Stroke::new(FRAME_STROKE_WIDTH, BORDER);
     style.spacing.item_spacing = Vec2::new(SPACING, SPACING);
