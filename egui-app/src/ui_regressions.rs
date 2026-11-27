@@ -2312,8 +2312,11 @@ mod notice_no_reflow_contract_tests {
         let direct=Regex::new(r"\.\s*label\s*\(\s*(?:(?:crate\s*::\s*)?typography\s*::\s*(?:caption|body|status)\s*\(\s*)?&?\s*(?:self\s*\.\s*)?(?:[A-Za-z_][A-Za-z_0-9]*_)?(?:notice|error)\b").unwrap();
         let constructor=Regex::new(r"Label\s*::\s*new\s*\(\s*(?:typography\s*::\s*(?:caption|body|status)\s*\(\s*)?&?\s*(?:self\s*\.\s*)?(?:[A-Za-z_][A-Za-z_0-9]*_)?(?:notice|error)\b").unwrap();
         let input_hint=Regex::new(r"\bif\s+[^{};\n]*(?:alias_input|tag_input|search_tag_input|draft_input)\b[^{};\n]*\{\s*[A-Za-z_][A-Za-z_0-9]*\s*\.\s*label\s*\(").unwrap();
+        // Recognize literal feedback and named guidance as well as error variables.
+        // Deliberately do not prohibit review_detail: issue cards are business data.
+        let transient_caption=Regex::new(r#"(?:\.\s*label|Label\s*::\s*new)\s*\(\s*typography\s*::\s*(?:caption|body|status)\s*\(\s*(?:crate\s*::\s*review_panel\s*::\s*MODEL_RESOLUTION_GUIDANCE|"(?:현재 주문은 조회만 가능합니다|배송 묶음 변경 내용을 저장하는 중입니다)|&?\s*format!\s*\(\s*"이전 대표색상:)"#).unwrap();
         let mut hits=Vec::new();
-        for rule in [&direct,&constructor,&input_hint]{
+        for rule in [&direct,&constructor,&input_hint,&transient_caption]{
             for m in rule.find_iter(source){
                 let line=source[..m.start()].bytes().filter(|&b|b==b'\n').count()+1;
                 let line_start=source[..m.start()].rfind('\n').map_or(0,|i|i+1);
@@ -2345,6 +2348,9 @@ mod notice_no_reflow_contract_tests {
             "if let Some(error)=self.error.as_deref(){body.label(typography::caption(error));}",
             "ui.add(egui::Label::new(typography::body(save_error)));",
             "if !self.alias_input.trim().is_empty(){\n body.label(typography::caption(\"hint\"));\n}",
+            "if applying { ui.label(typography::caption(\"배송 묶음 변경 내용을 저장하는 중입니다.\")); }",
+            "ui.add(egui::Label::new(typography::caption(crate::review_panel::MODEL_RESOLUTION_GUIDANCE)).wrap());",
+            "body.label(typography::caption(&format!(\"이전 대표색상: {}\", color)));",
         ]{assert!(!violations("synthetic.rs",bad).is_empty(),"missed: {bad}");}
         for good in [
             "crate::floating_notice::sync(ctx,signal,source,tone,error);",
