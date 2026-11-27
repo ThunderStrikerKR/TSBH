@@ -23,6 +23,8 @@ fn main() {
         let mut resource = winres::WindowsResource::new();
         resource.set_icon("../src-tauri/icons/icon.ico");
         resource.set("ProductName", "BANDO HUB");
+        resource.set("ProductVersion", env!("CARGO_PKG_VERSION"));
+        resource.set("FileVersion", env!("CARGO_PKG_VERSION"));
         resource.compile().expect("기존 반도허브 Windows 아이콘 삽입 실패");
     }
 }
