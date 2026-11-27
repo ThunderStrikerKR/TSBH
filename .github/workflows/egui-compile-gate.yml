@@ -6,6 +6,7 @@ on:
       - .github/workflows/egui-compile-gate.yml
       - scripts/check-egui-layout-placement.py
       - scripts/check-egui-drag-drop.py
+      - scripts/check-category-assignment-gate.py
       - scripts/audit-egui-design-api.py
       - 'scripts/egui-design-api-contract*.json'
       - scripts/egui-design-constant-access.json
@@ -27,17 +28,20 @@ on:
       - src-tauri/src/sale_unit_migration.rs
       - src-tauri/src/business_core/rules/reception_merge.rs
       - src-tauri/resources/legacy-state-seed-303.json
-      - src-tauri/src/business_core/**
+      - src-tauri/src/**
   pull_request:
     branches: [main]
     paths:
       - .github/workflows/egui-compile-gate.yml
       - scripts/check-egui-layout-placement.py
       - scripts/check-egui-drag-drop.py
+      - scripts/check-category-assignment-gate.py
       - scripts/audit-egui-design-api.py
       - 'scripts/egui-design-api-contract*.json'
       - scripts/egui-design-constant-access.json
       - egui-app/**
+      - crates/bando-data-access/**
+      - src-tauri/src/**
   workflow_dispatch:
 permissions:
   contents: read
@@ -46,6 +50,13 @@ concurrency:
   group: egui-compile-${{ github.ref }}
   cancel-in-progress: true
 jobs:
+  category-assignment-contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Require category assignment validation on save paths
+        run: python3 scripts/check-category-assignment-gate.py
   compile:
     runs-on: windows-latest
     timeout-minutes: 45
