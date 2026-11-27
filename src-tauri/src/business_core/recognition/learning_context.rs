@@ -117,3 +117,130 @@ pub(super) fn lookup(payload:&Value)->Result<Value,String>{
     ).collect::<Vec<_>>();
     Ok(json!({"featureVersion":FEATURE_VERSION,"entries":entries}))
 }
+
+#[derive(Default)]
+struct Counts{
+    observations:u64,
+    previous:u64,
+    next:u64,
+    pending:u64,
+    unresolved:u64,
+    orders:u64,
+    weak_orders:u64,
+    previous_orders:u64,
+    next_orders:u64,
+}
+impl Counts{
+    fn add_observation(&mut self,o:&Value){
+        self.observations+=1;
+        if o["outcome"]=="unchanged_observed" && o["eligibleForCandidateLearning"]==true{
+            match o["finalCandidates"].as_array().filter(|v|v.len()==1)
+                .and_then(|v|v[0].as_str()){
+                Some("previous")=>self.previous+=1,
+                Some("next")=>self.next+=1,
+                _=>self.unresolved+=1,
+            }
+        }else if o["outcome"]=="changed_requires_review"{self.pending+=1;}
+        else{self.unresolved+=1;}
+    }
+    fn add_order(&mut self,other:Self){
+        self.observations+=other.observations;
+        self.previous+=other.previous;
+        self.next+=other.next;
+        self.pending+=other.pending;
+        self.unresolved+=other.unresolved;
+        self.orders+=1;
+        self.weak_orders+=u64::from(other.previous+other.next>0);
+        self.previous_orders+=u64::from(other.previous>0);
+        self.next_orders+=u64::from(other.next>0);
+    }
+    fn wire(&self)->Value{
+        json!({
+            "observationCount":self.observations,"independentOrders":self.orders,
+            "weakUnchangedCount":self.previous+self.next,
+            "weakIndependentOrders":self.weak_orders,
+            "weakCandidates":{"previous":self.previous,"next":self.next},
+            "weakCandidateOrders":{"previous":self.previous_orders,"next":self.next_orders},
+            "pendingCorrectionCount":self.pending,"unresolvedCount":self.unresolved,
+            "eligibleForAutomaticDecision":false
+        })
+    }
+}
+
+/// Per-order contributions, also usable by the future durable delta writer.
+/// Group before counting independent orders; no sum of per-candidate order
+/// counts can substitute for the distinct context denominator.
+fn contributions(order:&Value,filter:&BTreeSet<&str>)->Result<Option<BTreeMap<String,Counts>>,String>{
+    let confirmed=order["confirmedAt"].as_str().filter(|v|!v.trim().is_empty());
+    let snapshot=&order["confirmationSnapshot"];
+    if confirmed.is_none() || snapshot["at"].as_str()!=confirmed ||
+        order["deletedAt"].as_str().is_some_and(|v|!v.trim().is_empty()){
+        return Ok(None);
+    }
+    let compared=super::observations::compare(order)?;
+    if compared["status"]!="compared"{return Ok(None);}
+    let first_client=compared["initialRecognition"]["clientId"].as_str();
+    let final_client=snapshot["data"]["clientId"].as_str();
+    // A confirmed client context is available only if the exact manually
+    // selected initial client survived confirmation. Do not substitute a
+    // later client into the historical features.
+    let client_valid=first_client.is_some() && first_client==final_client
+        && compared["finalClientId"].as_str()==final_client
+        && compared["finalClientSelection"]=="MANUAL"
+        && compared["initialRecognition"]["clientBasis"]=="MANUAL";
+    let mut groups=BTreeMap::<String,Counts>::new();
+    for o in rows(&compared["observations"]).filter(|o|o["task"]=="recipient_ownership"){
+        for context in rows(&o["contexts"]){
+            if context["level"]=="client_structure"&&!client_valid{continue;}
+            let Some(key)=context["key"].as_str()else{continue;};
+            if !filter.is_empty()&&!filter.contains(key){continue;}
+            groups.entry(key.to_owned()).or_default().add_observation(o);
+        }
+    }
+    Ok(Some(groups))
+}
+
+/// Explicit bounded batch, not an operational history scan. Caller supplies
+/// immutable confirmed order records. Duplicate snapshots count once; a
+/// conflicting duplicate fails instead of silently choosing a revision.
+/// These are descriptive weak observations, not calibrated probabilities.
+pub(super) fn statistics(payload:&Value)->Result<Value,String>{
+    let orders=payload["orders"].as_array().ok_or("확정 주문 목록이 없습니다.")?;
+    if orders.len()>250{return Err("귀속 통계 검증은 한 번에 최대 250개 주문만 허용합니다.".into());}
+    let keys=payload.get("contextKeys");
+    let mut filter=BTreeSet::new();
+    if let Some(keys)=keys{
+        let list=keys.as_array().ok_or("문맥 키 목록 형식 오류")?;
+        if list.len()>750{return Err("문맥 키 조회 범위를 초과했습니다.".into());}
+        for k in list{
+            filter.insert(k.as_str().filter(|s|!s.is_empty()).ok_or("문맥 키 형식 오류")?);
+        }
+    }
+    let mut seen=BTreeMap::<&str,&Value>::new();
+    let mut groups=BTreeMap::<String,Counts>::new();
+    let mut unavailable=0u64;
+    let mut without_context=0u64;
+    for order in orders{
+        let id=order["id"].as_str().filter(|s|!s.trim().is_empty()).ok_or("확정 주문 ID 누락")?;
+        if let Some(old)=seen.get(id){
+            if *old!=order{return Err("동일 주문의 상충된 확정 자료입니다.".into());}
+            continue;
+        }
+        seen.insert(id,order);
+        match contributions(order,&filter)?{
+            Some(local)=>{
+                if local.is_empty(){without_context+=1;}
+                for (key,counts) in local{groups.entry(key).or_default().add_order(counts);}
+            }
+            None=>unavailable+=1,
+        }
+    }
+    let records=groups.into_iter().map(|(key,counts)|json!({
+        "key":key,"counts":counts.wire()
+    })).collect::<Vec<_>>();
+    Ok(json!({
+        "featureVersion":FEATURE_VERSION,"status":"diagnostic_only",
+        "uniqueOrders":seen.len(),"unavailableOrders":unavailable,
+        "ordersWithoutMatchingContext":without_context,"statistics":records
+    }))
+}
