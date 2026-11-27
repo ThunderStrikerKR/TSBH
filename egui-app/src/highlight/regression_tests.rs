@@ -323,7 +323,7 @@ fn highlight_invariance_open_dropdown_options_and_tag_controls(){
         let mut entry=String::new();
         crate::ui_test_support::sweep_highlight_geometry(&ctx,screen,"open option and tag controls",|ctx|{
             egui::CentralPanel::default().show(ctx,|ui|{
-                crate::dropdown::management_dropdown_option_palette(ui);
+                dropdown_options(ui);
                 crate::dropdown::management_dropdown_option(ui,&mut selected,"a","선택 항목");
                 crate::dropdown::management_dropdown_option(ui,&mut selected,"b","다른 항목");
                 crate::ui_layout::tag_block_editor(ui,&tags,&mut entry,"검색 태그 입력");
