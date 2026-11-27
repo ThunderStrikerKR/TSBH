@@ -54,6 +54,8 @@ pub(crate) fn checkbox(
     ui:&mut Ui,checked:&mut bool,label:&str,enabled:bool
 )->Response{
     let response=ui.add_enabled(enabled,egui::Checkbox::new(checked,label));
+    #[cfg(test)]
+    crate::ui_test_support::record_component_geometry("checkbox",response.rect,ui.clip_rect(),None);
     crate::floating_notice::remember_response(ui.ctx(),&response);
     response
 }
