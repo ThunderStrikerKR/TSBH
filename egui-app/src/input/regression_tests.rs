@@ -595,3 +595,48 @@ mod money_live_format_tests{
         }
     }
 }
+
+
+#[cfg(test)]
+mod shared_input_width_rendered_geometry_tests{
+    use crate::{theme,typography,input::FieldKind};
+    use eframe::egui::{self,Rect,Vec2,Sense};
+    use crate::ui_test_support::{test_context,assert_geometry_value,assert_rect_geometry,assert_painted_caption};
+    #[test]
+    fn text_input_respects_available_width_and_does_not_expand_for_content(){
+        let ctx=test_context();
+        for width in [240.0_f32,100.0,240.0]{
+            let mut baseline:Option<(Rect,Rect)>=None;
+            for (value,enabled) in [("상품",true),("상품 정보",true),("상품",false)]{
+                let mut draft=value.to_owned();
+                let mut actual=None;
+                let output=ctx.run(egui::RawInput{
+                    screen_rect:Some(Rect::from_min_size(egui::Pos2::ZERO,Vec2::new(800.0,500.0))),
+                    ..Default::default()
+                },|ctx|{
+                    egui::CentralPanel::default().show(ctx,|ui|{
+                        ui.allocate_ui_with_layout(Vec2::new(width,160.0),egui::Layout::top_down(egui::Align::Min),|slot|{
+                            slot.set_width(width);
+                            slot.set_max_width(width);
+                            let response=crate::input::field(slot,&mut draft,FieldKind::Text,enabled);
+                            let next=slot.allocate_exact_size(Vec2::new(60.0,20.0),Sense::hover()).0;
+                            actual=Some((response.rect,next));
+                            assert_eq!(response.enabled(),enabled);
+                        });
+                    });
+                });
+                let (rect,next)=actual.expect("input response");
+                assert_geometry_value("input","width",rect.width(),width.min(FieldKind::Text.preferred_width()),1.0);
+                assert_geometry_value("input","height",rect.height(),theme::INPUT_HEIGHT,1.0);
+                let ink=assert_painted_caption(&output,value,rect);
+                let margin=typography::form_input_text_margin();
+                assert_geometry_value("input","left inset",ink.left()-rect.left(),f32::from(margin.left),1.0);
+                if let Some((old,following))=baseline{
+                    assert_rect_geometry("input state",rect,old,0.5);
+                    assert_rect_geometry("following widget",next,following,0.5);
+                }else{baseline=Some((rect,next));}
+                assert_eq!(draft,value);
+            }
+        }
+    }
+}
