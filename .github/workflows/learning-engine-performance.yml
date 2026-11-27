@@ -58,7 +58,11 @@ jobs:
             'owner_weight_evaluation_separates_fit_holdout_and_unseen_patterns',
             'field_weight_evaluation_preserves_constraints_and_missing_candidates',
             'exclusive_quantity_predictions_abstain_on_all_same_order_claims',
-            'detached_quantity_projection_exposes_collisions_and_common_reservations'
+            'detached_quantity_projection_exposes_collisions_and_common_reservations',
+            'raw_candidate_inventory_preserves_pre_assignment_and_rejected_source_spans',
+            'explicit_same_line_records_preserve_physical_coordinates',
+            'sender_scope_excludes_detached_quantities_and_can_resume_explicit_recipient',
+            'pattern_identity_rejects_invented_geometry_and_unproven_coverage'
           )
           foreach ($test in $expected) {
             $pattern = '(^|::)' + [regex]::Escape($test) + ': test$'
@@ -142,7 +146,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           cargo test --manifest-path egui-app/Cargo.toml symmetric_owner_comparison_can_choose_either_candidate_or_abstain -- --nocapture
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          foreach ($test in @('common_quantity_never_selects_first_of_multiple_local_candidates','conflicting_explicit_qualifiers_cannot_qualify_any_product','delivery_link_validation_detects_invalid_and_shared_spans','product_owner_comparison_reuses_shared_geometry_without_mutating_order','product_candidate_comparison_preserves_priority_length_and_ties','item_link_validation_distinguishes_explicit_common_sharing','owner_weight_evaluation_separates_fit_holdout_and_unseen_patterns','field_weight_evaluation_preserves_constraints_and_missing_candidates','exclusive_quantity_predictions_abstain_on_all_same_order_claims','detached_quantity_projection_exposes_collisions_and_common_reservations')) {
+          foreach ($test in @('common_quantity_never_selects_first_of_multiple_local_candidates','conflicting_explicit_qualifiers_cannot_qualify_any_product','delivery_link_validation_detects_invalid_and_shared_spans','product_owner_comparison_reuses_shared_geometry_without_mutating_order','product_candidate_comparison_preserves_priority_length_and_ties','item_link_validation_distinguishes_explicit_common_sharing','owner_weight_evaluation_separates_fit_holdout_and_unseen_patterns','field_weight_evaluation_preserves_constraints_and_missing_candidates','exclusive_quantity_predictions_abstain_on_all_same_order_claims','detached_quantity_projection_exposes_collisions_and_common_reservations','raw_candidate_inventory_preserves_pre_assignment_and_rejected_source_spans','explicit_same_line_records_preserve_physical_coordinates','sender_scope_excludes_detached_quantities_and_can_resume_explicit_recipient')) {
             cargo test --manifest-path egui-app/Cargo.toml $test -- --nocapture
             if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           }
