@@ -934,8 +934,10 @@ fn exceeds_margin(challenger:i64,incumbent:i64,margin:i64)->bool{
 // Detached quantities use the common distance features, with an explicit
 // provisional direction bonus for a repeated product-then-quantity layout.
 fn quantity_link_score(events:&[Evidence],features:&DocumentFeatures,p:usize,q:usize)->i64{
+    let (line,rank,_)=features.relation(events,p,q);
     ownership_score(events,features,p,q,false,OWNER_WEIGHTS)
         +if events[p].end<=events[q].start{18}else{0}
+        +if line==1&&rank==1{12}else{0}
 }
 fn ordered_quantity_pairs(events:&[Evidence],features:&DocumentFeatures,candidates:&CommonCandidates,
     mut products:Vec<(usize,usize)>,mut quantities:Vec<usize>)->Vec<(usize,usize)>{
