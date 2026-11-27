@@ -10,7 +10,9 @@ use crate::table::management_table_data_width;
 pub(crate) mod geometry;
 pub(crate) mod pixel_paint;
 use geometry::{aligned_rect,AlignedUiBuilderExt,SharedAllocationExt,SharedUiClipExt,
-    set_fixed_height,reserve_min_height,CardWidthPolicy,UiWidthPolicyExt};
+    set_fixed_height,CardWidthPolicy,UiWidthPolicyExt};
+#[cfg(test)]
+use geometry::reserve_min_height;
 
 #[cfg(test)]
 mod logical_alignment_tests{

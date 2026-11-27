@@ -657,6 +657,18 @@ mod tests{
         assert_eq!(result["held"],1);
         assert_eq!(result["next"]["workflow"]["shipments"][2],initial["workflow"]["shipments"][2]);
         assert_eq!(snapshot(&mut conn).unwrap(),result["next"]);
+        // Only the accepted row of the partially rejected file is eligible.
+        // This fixture has no recorded archive binding because it bypasses
+        // the inbox; recover_history binds its immutable accepted history.
+        let root=base.0.join("excel").canonicalize().unwrap();
+        bando_data_access::excel_aggregate_jobs::recover_history(&conn,Some(&root)).unwrap();
+        let j=bando_data_access::excel_aggregate_jobs::jobs(&conn,0,false).unwrap().remove(0);
+        crate::excel_aggregate::publish(&mut conn,&j,&base.0).unwrap();
+        use calamine::{Data,Reader,Xlsx};
+        let mut book=Xlsx::new(std::io::Cursor::new(fs::read(&j.path).unwrap())).unwrap();
+        let range=book.worksheet_range("로젠택배").unwrap();
+        assert_eq!(range.end().unwrap().0,1);
+        assert_eq!(range.get_value((1,16)),Some(&Data::String("009876543210".into())));
     }
 
     #[test]

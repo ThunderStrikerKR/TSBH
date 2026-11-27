@@ -487,6 +487,74 @@ mod tests{
         assert_eq!(book.worksheet_range("로젠택배").unwrap().end().unwrap().0,3);
     }
     #[test]
+    fn next_day_reply_does_not_modify_previous_daily_file(){
+        let mut f=Fixture::new();
+        f.conn.execute("DELETE FROM excel_aggregate_jobs",[]).unwrap();
+        let dates=["2026-11-27","2026-11-28"];
+        let paths=dates.map(|d|jobs::target(&f.root,d,"REPLY").unwrap());
+        let records:Vec<_>=dates.iter().enumerate().map(|(i,date)|{
+            let mut values=vec!["".to_owned();17];values[0]="가상 수취인".into();
+            serde_json::json!({"id":format!("reply-{i}"),"businessDate":date,"aggregateTargetPath":paths[i],
+                "rows":[{"shipmentId":"s","applied":true,"tracking":format!("{:012}",i+1),"actual":3000,"aggregateValues":values}]})
+        }).collect();
+        for n in 1..=2{
+            let state=serde_json::json!({"revision":n,"factoryReplies":records[..n]});
+            f.conn.execute("INSERT INTO app_state VALUES(1,?1) ON CONFLICT(id) DO UPDATE SET payload=excluded.payload",[state.to_string()]).unwrap();
+            jobs::recover_history(&f.conn,Some(&f.root)).unwrap();
+            let pending=jobs::jobs(&f.conn,0,false).unwrap();assert_eq!(pending.len(),1);
+            assert_eq!(pending[0].date,dates[n-1]);
+            publish(&mut f.conn,&pending[0],&f.root).unwrap();
+            assert!(jobs::jobs(&f.conn,0,false).unwrap().is_empty());
+        }
+        for (i,path) in paths.iter().enumerate(){
+            let mut book=Xlsx::new(Cursor::new(fs::read(path).unwrap())).unwrap();
+            assert_eq!(book.worksheet_range("로젠택배").unwrap().get_value((1,16)),
+                Some(&Data::String(format!("{:012}",i+1))));
+        }
+    }
+    #[test]
+    fn parallel_publisher_child(){
+        let Some(root)=std::env::var_os("BANDO_AGGREGATE_PARALLEL_ROOT").map(PathBuf::from)else{return};
+        let mut c=Connection::open(root.join("parallel.sqlite")).unwrap();
+        c.busy_timeout(Duration::from_secs(10)).unwrap();
+        let job=jobs::jobs(&c,0,false).unwrap().into_iter().next();
+        if let Some(job)=job{publish(&mut c,&job,&root).unwrap();}
+    }
+    #[test]
+    fn parallel_processes_publish_one_complete_generation(){
+        use std::process::{Command,Stdio};
+        let mut f=Fixture::new();f.update(100);
+        let path=f.root.join("parallel.sqlite");
+        let c=Connection::open(&path).unwrap();
+        c.execute_batch("CREATE TABLE core_schema(key TEXT PRIMARY KEY,version INTEGER);
+            INSERT INTO core_schema VALUES('business-core',2);CREATE TABLE app_state(id INTEGER PRIMARY KEY,payload TEXT);").unwrap();
+        let state:String=f.conn.query_row("SELECT payload FROM app_state WHERE id=1",[],|r|r.get(0)).unwrap();
+        c.execute("INSERT INTO app_state VALUES(1,?1)",[state]).unwrap();jobs::initialize(&c).unwrap();
+        c.execute("INSERT INTO excel_aggregate_jobs(business_date,origin,target_path,desired_revision)
+            VALUES (?1,?2,?3,100)",rusqlite::params![f.job.date,f.job.origin,f.job.path]).unwrap();
+        drop(c);
+        let mut children=(0..4).map(|_|Command::new(std::env::current_exe().unwrap())
+            .args(["--exact","excel_aggregate::tests::parallel_publisher_child"])
+            .env("BANDO_AGGREGATE_PARALLEL_ROOT",&f.root)
+            .stdout(Stdio::null()).stderr(Stdio::null()).spawn().unwrap()).collect::<Vec<_>>();
+        let deadline=Instant::now()+Duration::from_secs(45);
+        let mut statuses=Vec::new();
+        for child in &mut children{
+            let status=loop{
+                if let Some(status)=child.try_wait().unwrap(){break status}
+                if Instant::now()>=deadline{let _=child.kill();break child.wait().unwrap()}
+                std::thread::sleep(Duration::from_millis(20));
+            };
+            statuses.push(status);
+        }
+        assert!(statuses.iter().all(|s|s.success()),"{statuses:?}");
+        let c=Connection::open(path).unwrap();let j=jobs::current(&c,&f.job).unwrap().unwrap();
+        assert_eq!((j.saved,j.desired),(100,100));
+        let mut book=Xlsx::new(Cursor::new(fs::read(&j.path).unwrap())).unwrap();
+        assert_eq!(book.worksheet_range("로젠택배").unwrap().end().unwrap().0,100);
+        assert_eq!(fs::read_dir(Path::new(&j.path).parent().unwrap()).unwrap().count(),1);
+    }
+    #[test]
     fn same_revision_legacy_binding_change_prevents_stale_replace(){
         let mut f=Fixture::new();f.update(1);publish(&mut f.conn,&f.job,&f.root).unwrap();
         let old=fs::read(&f.job.path).unwrap();f.update(2);

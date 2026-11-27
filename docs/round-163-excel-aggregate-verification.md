@@ -16,9 +16,9 @@ D01~D07 구현 검증용 PR #68. 아래는 T01~T50의 현재 테스트 연결 �
 | T09 | duplicate_export_id_not_duplicate_identical_rows |
 | T10-T12 | ten_real_replies_publish_only_latest_and_replays_do_not_change_customer_payment; same_filename_with_new_bytes_updates_and_invalid_reply_never_enters_aggregate |
 | T13 | process_kill_recovers_all_publication_boundaries |
-| T14 | independent_connections_cannot_publish_a_stale_generation (두 독립 DB 연결 경합 재현; 동시 프로세스 스트레스 잔여) |
+| T14 | independent_connections_cannot_publish_a_stale_generation (두 독립 DB 연결 경합 재현; parallel_processes_publish_one_complete_generation (4개 프로세스)) |
 | T15-T17 | ten_real_replies_publish_only_latest_and_replays_do_not_change_customer_payment |
-| T18-T20 | 기존 공장 회신 업무 규칙 테스트군, same_filename_with_new_bytes_updates_and_invalid_reply_never_enters_aggregate (수취인 불일치 취합 제외; 빈 송장까지 실제 접수 검증 추가; 타 배송 중복 취합 통합 잔여) |
+| T18-T20 | 기존 공장 회신 업무 규칙 테스트군, same_filename_with_new_bytes_updates_and_invalid_reply_never_enters_aggregate (수취인 불일치 취합 제외; 빈 송장 실제 접수, scoped_factory_reply_matches_full_result_and_checks_unrelated_waybills (다른 배송 송장 중복 제외)) |
 | T21-T22 | ten_real_replies_publish_only_latest_and_replays_do_not_change_customer_payment, explicit_ambiguity_resolution_preserves_other_order_and_rejects_wrong_target (최신 회신 이후 늦은 승인 거부) |
 | T23 | legacy_correction_reads_original_and_missing_original_fails_closed |
 | T24 | serialized_reply_keeps_q_waybill_and_g_freight_as_text |
@@ -31,7 +31,7 @@ D01~D07 구현 검증용 PR #68. 아래는 T01~T50의 현재 테스트 연결 �
 | T38-T39 | actual_publish_rebuilds_from_db_after_damage_and_preserves_generation |
 | T40 | retry_delays_cap_and_new_work_resets_wait, durable_backoff_survives_connection_restart |
 | T41-T42 | aggregate_filename_never_consumes_individual_sequence_and_date_is_frozen (고정 날짜 인자); 실제 시스템 시계 자정 전환 잔여 |
-| T43 | legacy_correction_reads_original_and_missing_original_fails_closed (과거 파일 불변 통합 검증 잔여) |
+| T43 | legacy_correction_reads_original_and_missing_original_fails_closed, next_day_reply_does_not_modify_previous_daily_file |
 | T44 | legacy_date_uses_korea_midnight_and_leap_year |
 | T45 | historical_legacy_reply_waits_for_configuration_then_keeps_original_binding |
 | T46 | isolated_archive_guard_rejects_other_workspace_before_creating_folders (경로 검사; 실제 앱 실행 프로필 통합 검증 잔여) |
@@ -47,3 +47,5 @@ D01~D07 구현 검증용 PR #68. 아래는 T01~T50의 현재 테스트 연결 �
 동일 DB revision에서 과거 회신 경로 연결 집합이 달라지면 이전 작업의 파일 교체를 차단하도록 최종 갱신 검사를 보강했다. same_revision_legacy_binding_change_prevents_stale_replace로 해당 CAS 조건을 직접 시험한다.
 
 운영 환경 실기 잔여: 실제 Excel 열림 상태, OS 권한 및 디스크 고갈, 전체 앱 UI 입력/프레임 시간, 실제 시계 자정 전환. 해시나 신뢰할 수 있는 원본 출력 행이 없는 과거 발송 이력은 임의 복원하지 않는다.
+
+실제 자식 프로세스 4개가 동일 SQLite 취합 버전을 동시에 발행하는 검증 및 다음 날 회신의 전날 파일 분리 검증을 추가했다. 모두 최신 CI 확인 대기.
