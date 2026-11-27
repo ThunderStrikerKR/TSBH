@@ -21,7 +21,7 @@ mod logical_alignment_tests{
 
     #[test]
     fn shared_size_constraints_preserve_native_layout_semantics(){
-        use crate::ui_primitives::{CardWidthPolicy,apply_width_policy};
+        use super::geometry::apply_width_policy;
         let ctx=crate::ui_test_support::test_context();
         let screen=Rect::from_min_size(egui::Pos2::ZERO,Vec2::new(600.0,500.0));
         let _=ctx.run(egui::RawInput{screen_rect:Some(screen),..Default::default()},|ctx|{
