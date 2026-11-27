@@ -104,3 +104,33 @@ impl Center{
         if let Some(action)=action{self.request(ctx,action);}
     }
 }
+
+
+
+#[cfg(test)]
+mod shared_notification_center_screen_geometry_tests{
+    use super::*;
+    use crate::ui_test_support::{test_context,begin_component_geometry,finish_component_geometry,assert_component_roles};
+    #[test]
+    fn actual_center_uses_shared_popup_and_buttons_in_empty_unread_and_read_states(){
+        let ctx=test_context();
+        let mut center=Center{open:true,..Default::default()};
+        let screen=Rect::from_min_size(egui::Pos2::ZERO,egui::vec2(1280.0,800.0));
+        for read in [None,Some(false),Some(true),None]{
+            center.items=read.map(|value|vec![serde_json::json!({
+                "id":"synthetic-notice","title":"검증 알림","detail":"합성 변경 내역",
+                "at":"2026-11-27","read":value
+            })]).unwrap_or_default();
+            for frame in 0..6{
+                begin_component_geometry();
+                let _=ctx.run(egui::RawInput{screen_rect:Some(screen),..Default::default()},
+                    |ctx|center.show(ctx,screen));
+                let components=finish_component_geometry(screen);
+                if frame==5{
+                    assert_component_roles(&components,&["popup","button"]);
+                    assert!(center.open);
+                }
+            }
+        }
+    }
+}
