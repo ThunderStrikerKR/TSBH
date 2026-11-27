@@ -1,6 +1,8 @@
 //! Native CategoryManager: tree presentation is owned by category_tree::category_tree_row.
 //! Category selection, search, expansion and operations remain in this manager.
 //! All add/rename/move/delete decisions are delegated to catalog_clients.
+use crate::ui_layout::SharedUiClipExt as _;
+use crate::ui_layout::SharedPainterClipExt as _;
 use crate::ui_layout::SharedAllocationExt as _;
 use crate::ui_layout::AlignedUiBuilderExt as _;
 use crate::{category_dropdown,category_tree,theme,typography};
@@ -576,7 +578,7 @@ impl CategoryManager {
                 let mut child=ui.new_child(egui::UiBuilder::new().id_salt(("animated-category",item.id.as_str()))
                     .aligned_max_rect(crate::ui_layout::aligned_rect(Rect::from_min_size(slot.min,Vec2::new(slot.width(),full))))
                     .layout(Layout::top_down(Align::Min)).disabled());
-                child.set_clip_rect(slot.intersect(ui.clip_rect()));
+                child.restrict_shared_clip(slot.intersect(ui.clip_rect()));
                 child.set_opacity(fraction);
                 crate::category_tree::configure_tree_rows(&mut child);
                 draw(self,&mut child,ancestors);
@@ -850,7 +852,7 @@ impl CategoryManager {
                                                 theme::ACTION_STANDARD_HEIGHT),
                                             Sense::hover()
                                         );
-                                        location.painter().with_clip_rect(text_rect).galley(
+                                        location.painter().with_shared_clip(text_rect).galley(
                                             egui::pos2(text_rect.left(),
                                                 text_rect.center().y-galley.size().y/2.0),
                                             galley,theme::text_ink(theme::TextRole::Value,theme::TextState::Normal)
