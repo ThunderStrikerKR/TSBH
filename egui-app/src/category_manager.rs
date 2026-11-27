@@ -1,6 +1,7 @@
 //! Native CategoryManager: tree presentation is owned by category_tree::category_tree_row.
 //! Category selection, search, expansion and operations remain in this manager.
 //! All add/rename/move/delete decisions are delegated to catalog_clients.
+use crate::ui_layout::SharedAllocationExt as _;
 use crate::ui_layout::AlignedUiBuilderExt as _;
 use crate::{category_dropdown,category_tree,theme,typography};
 use eframe::egui::{self,Align,Context,Layout,Rect,Sense,Ui,Vec2};
@@ -571,7 +572,7 @@ impl CategoryManager {
             if let Some(m)=motion{
                 let t=m.progress(ui.input(|i|i.time));let fraction=if m.opening{t}else{1.0-t};
                 let full=self.visible_descendants(cats,index,&item.id,&mut HashSet::new()) as f32*theme::CATALOG_TREE_ROW_HEIGHT;
-                let (slot,_)=ui.allocate_exact_size(Vec2::new(ui.available_width(),full*fraction),Sense::hover());
+                let (slot,_)=ui.shared_allocate_exact_size(Vec2::new(ui.available_width(),full*fraction),Sense::hover());
                 let mut child=ui.new_child(egui::UiBuilder::new().id_salt(("animated-category",item.id.as_str()))
                     .aligned_max_rect(crate::ui_layout::aligned_rect(Rect::from_min_size(slot.min,Vec2::new(slot.width(),full))))
                     .layout(Layout::top_down(Align::Min)).disabled());
@@ -844,7 +845,7 @@ impl CategoryManager {
                                         let galley=typography::category_tree_name_galley(
                                             location,&visible,false
                                         );
-                                        let (text_rect,text_response)=location.allocate_exact_size(
+                                        let (text_rect,text_response)=location.shared_allocate_exact_size(
                                             Vec2::new(galley.size().x.min(name_width),
                                                 theme::ACTION_STANDARD_HEIGHT),
                                             Sense::hover()
@@ -952,7 +953,7 @@ impl CategoryManager {
                                                     line,&location_path,path_width,
                                                     typography::CategoryPathFont::Body
                                                 );
-                                                let response=line.add_sized(
+                                                let response=line.shared_add_sized(
                                                     [path_width,theme::INPUT_HEIGHT],
                                                     crate::ui_primitives::truncated_label_for_explicit_tooltip(typography::body(&visible))
                                                 );
