@@ -23,7 +23,22 @@ fn korean_number(text: &str) -> Option<i64> {
     })
 }
 
+#[derive(Default)]
+pub(super) struct QuantityTrace{
+    pub records:Vec<serde_json::Value>,
+    pub truncated:bool,
+}
+impl QuantityTrace{
+    fn record(&mut self,text:&str,start:usize,end:usize,reason:&str,value:Option<i64>){
+        if self.records.len()>=128{self.truncated=true;return;}
+        self.records.push(serde_json::json!({"start":text[..start].encode_utf16().count(),
+            "end":text[..end].encode_utf16().count(),"reasonCode":reason,"value":value}));
+    }
+}
 pub(crate) fn extract(text: &str) -> Vec<Quantity> {
+    extract_with_trace(text,None)
+}
+pub(super) fn extract_with_trace(text:&str,mut trace:Option<&mut QuantityTrace>)->Vec<Quantity>{
     let pattern = Regex::new(
         r"(?i)(\d+|다섯|여섯|일곱|여덟|아홉|하나|둘|셋|넷|한|두|세|네|열|일|이|삼|사|오|육|칠|팔|구|십)\s*(?:개|대|세트|ea|pcs)|[x×*]\s*(\d+)",
     ).expect("quantity expression");
@@ -41,11 +56,13 @@ pub(crate) fn extract(text: &str) -> Vec<Quantity> {
             if Regex::new(r"(?i)^\s*(?:cm|mm)\b").expect("dimension guard")
                     .is_match(following)
                 || following.chars().next().map_or(false,|c|c.is_ascii_digit()) {
+                if let Some(t)=trace.as_deref_mut(){t.record(text,whole.start(),whole.end(),"dimension_or_digit_boundary",None);}
                 continue;
             }
         } else if following.chars().next()
                 .map_or(false,|c|c.is_ascii_alphabetic()) {
             // A fully spelled unit must stop at its boundary: not 1EAS.
+            if let Some(t)=trace.as_deref_mut(){t.record(text,whole.start(),whole.end(),"unit_suffix_boundary",None);}
             continue;
         }
         // Korean number+unit fragments inside an uninterrupted word are not
@@ -57,6 +74,7 @@ pub(crate) fn extract(text: &str) -> Vec<Quantity> {
                 .is_some_and(|c|('가'..='힣').contains(&c))
             && following.chars().next()
                 .is_some_and(|c|('가'..='힣').contains(&c)) {
+            if let Some(t)=trace.as_deref_mut(){t.record(text,whole.start(),whole.end(),"embedded_korean_word",None);}
             continue;
         }
         // A model identifier must not be interpreted as a quantity.
@@ -65,6 +83,7 @@ pub(crate) fn extract(text: &str) -> Vec<Quantity> {
             // A dash immediately after a closed option, e.g. "709(블랙)-1개",
             // separates the quantity. "709-1개" and negative "-1개" do not.
             if !matches!(prefix.chars().next_back(), Some(')') | Some(']')) {
+                if let Some(t)=trace.as_deref_mut(){t.record(text,whole.start(),whole.end(),"model_or_negative_dash",None);}
                 continue;
             }
         }
@@ -72,6 +91,9 @@ pub(crate) fn extract(text: &str) -> Vec<Quantity> {
             .or_else(|| korean_number(number.as_str()));
         if let Some(value) = value.filter(|v| *v > 0) {
             found.push(Quantity { value, start: whole.start(), end: whole.end() });
+            if let Some(t)=trace.as_deref_mut(){t.record(text,whole.start(),whole.end(),"accepted_explicit",Some(value));}
+        }else if let Some(t)=trace.as_deref_mut(){
+            t.record(text,whole.start(),whole.end(),"nonpositive_or_unparseable_number",value);
         }
     }
     found
@@ -79,7 +101,11 @@ pub(crate) fn extract(text: &str) -> Vec<Quantity> {
 
 /// Rows transcribed from an order table may use a bare numeric quantity column.
 pub(crate) fn for_product(text: &str, allow_table: bool, allow_trailing: bool) -> Vec<Quantity> {
-    let explicit = extract(text);
+    for_product_with_trace(text,allow_table,allow_trailing,None)
+}
+pub(super) fn for_product_with_trace(text:&str,allow_table:bool,allow_trailing:bool,
+    mut trace:Option<&mut QuantityTrace>)->Vec<Quantity>{
+    let explicit = extract_with_trace(text,trace.as_deref_mut());
     if !explicit.is_empty() { return explicit; }
     if allow_table {
         let pattern = Regex::new(r"\|\s*([1-9]\d*)\s*(?:\||$)").expect("table quantity");
@@ -87,7 +113,10 @@ pub(crate) fn for_product(text: &str, allow_table: bool, allow_trailing: bool) -
         if let Some(c) = first {
             if let (Some(whole), Some(value)) = (c.get(0), c.get(1)) {
                 if let Ok(number) = value.as_str().parse::<i64>() {
-                    return vec![Quantity { value: number, start: whole.start() + 1, end: whole.end() - usize::from(whole.as_str().ends_with('|')) }];
+                    let start=whole.start()+1;
+                    let end=whole.end()-usize::from(whole.as_str().ends_with('|'));
+                    if let Some(t)=trace.as_deref_mut(){t.record(text,start,end,"accepted_table",Some(number));}
+                    return vec![Quantity { value: number, start,end }];
                 }
             }
         }
@@ -97,6 +126,7 @@ pub(crate) fn for_product(text: &str, allow_table: bool, allow_trailing: bool) -
         if let Some(c) = pattern.captures(text) {
             if let Some(value) = c.get(1) {
                 if let Ok(number) = value.as_str().parse::<i64>() {
+                    if let Some(t)=trace.as_deref_mut(){t.record(text,value.start(),value.end(),"accepted_trailing",Some(number));}
                     return vec![Quantity { value: number, start: value.start(), end: value.end() }];
                 }
             }
@@ -108,6 +138,20 @@ pub(crate) fn for_product(text: &str, allow_table: bool, allow_trailing: bool) -
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn quantity_trace_covers_each_explicit_rejection_without_changing_results(){
+        for (raw,reason) in [("x10cm","dimension_or_digit_boundary"),("1EAS","unit_suffix_boundary"),
+            ("연향3지구대주피오레","embedded_korean_word"),("709-1개","model_or_negative_dash"),
+            ("0개","nonpositive_or_unparseable_number"),("3개","accepted_explicit")]{
+            let mut trace=QuantityTrace::default();
+            assert_eq!(extract_with_trace(raw,Some(&mut trace)),extract(raw));
+            assert!(trace.records.iter().any(|r|r["reasonCode"]==reason),"{raw}: {:?}",trace.records);
+            assert!(!trace.truncated);
+        }
+        let mut trace=QuantityTrace::default();
+        assert_eq!(for_product_with_trace("BC-105 1",false,true,Some(&mut trace)),for_product("BC-105 1",false,true));
+        assert_eq!(trace.records[0]["reasonCode"],"accepted_trailing");
+    }
     #[test]
     fn quantity_with_korean_and_case_insensitive_units() {
         assert_eq!(extract("709 민판 한개 / Cart-10 2EA").iter().map(|q| q.value).collect::<Vec<_>>(), vec![1, 2]);
