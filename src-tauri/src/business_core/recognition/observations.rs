@@ -2097,6 +2097,75 @@ pub(super) fn run_field_blend_shadow(payload:&Value)->Result<Value,String>{
     Ok(json!({"schemaVersion":1,"status":"field_runtime_shadow_only","predictionAt":payload["predictionAt"],
         "decisions":decisions,"automaticChangeAuthorized":false,"eligibleForAutomaticDecision":false,"decisionChanged":false}))
 }
+// Compare immutable model revisions on the same later first-analysis
+// snapshots. No re-fitting, no caller-supplied labels, no operational edits.
+pub(super) fn compare_field_models(payload:&Value)->Result<Value,String>{
+    let baseline=&payload["baseline"];let candidate=&payload["candidate"];
+    let task=baseline["model"]["task"].as_str().filter(|t|matches!(*t,"type"|"product"|"variant"|"quantity")).ok_or("필드 비교 작업 오류")?;
+    if candidate["model"]["task"]!=task||baseline["modelId"]==candidate["modelId"]{return Err("서로 다른 동일 작업 모델 필요".into());}
+    let build=payload["clientBuildVersion"].as_str().ok_or("필드 비교 빌드 누락")?;
+    let date=|v:&Value|v.as_str().and_then(|s|chrono::DateTime::parse_from_rfc3339(s).ok());
+    let as_of=date(&payload["evaluationAsOf"]).ok_or("필드 비교 기준 시각 오류")?;
+    let orders=payload["orders"].as_array().filter(|v|!v.is_empty()&&v.len()<=250).ok_or("필드 비교 주문 한도 오류")?;
+    let mut seen=BTreeSet::new();let mut excluded=0usize;
+    let mut totals=BTreeMap::<&str,ModelPairCounts>::new();
+    for order in orders{
+        let id=order["id"].as_str().filter(|s|!s.is_empty()).ok_or("필드 비교 주문 ID 오류")?;
+        if !seen.insert(id){return Err("필드 비교 주문 중복".into());}
+        if [baseline,candidate].iter().any(|m|m["model"]["sourceDigests"].get(id).is_some()){
+            excluded+=1;continue;
+        }
+        let snap=&order["confirmationSnapshot"];let first=&snap["recognitionBaseline"]["initialAnalysis"];
+        let cap=&first["initialPredictionCapture"];let shadow=&cap["learningShadow"];
+        let (Some(start),Some(end),Some(predicted),Some(confirmed))=(date(&cap["analysisStartedAt"]),date(&cap["analysisCompletedAt"]),
+            date(&shadow["capturedAt"]),date(&order["confirmedAt"]))else{excluded+=1;continue;};
+        if order["learningActive"]!=true||order["deletedAt"].as_str().is_some_and(|v|!v.is_empty())||
+            cap["origin"]!="native_reception_worker"||cap["schemaVersion"]!=1||cap["orderId"]!=id||
+            cap["clientBuildVersion"]!=build||shadow["status"]!="captured_shadow_support"||shadow["captureVersion"]!=4||
+            shadow["sourceDigestsMatched"]!=true||shadow["decisionChanged"]!=false||snap["at"]!=order["confirmedAt"]||
+            !(start<=end&&end<=predicted&&predicted<confirmed&&confirmed<=as_of)||
+            [baseline,candidate].iter().any(|m|date(&m["createdAt"]).is_none_or(|t|t>=start)||
+                date(&m["model"]["evaluationAsOf"]).is_none_or(|t|t>=start)){
+            excluded+=1;continue;
+        }
+        let Some(events)=order["recognitionAuditEvents"].as_array()else{excluded+=1;continue;};
+        if events.iter().any(|e|date(&e["at"]).is_none_or(|t|t<=predicted||t>confirmed)){excluded+=1;continue;}
+        let compared=compare(order)?;
+        if compared["auditCoverage"]!="verified_manifest"{excluded+=1;continue;}
+        let raw=snap["raw"].as_str().ok_or("필드 비교 원문 오류")?;
+        let units=raw.encode_utf16().collect::<Vec<_>>();
+        let run=|m:&Value|run_field_blend_shadow(&json!({"raw":raw,"initialAnalysis":first,"learningShadow":shadow,
+            "models":[m],"predictionAt":shadow["capturedAt"],"clientBuildVersion":build}));
+        let a=run(baseline)?;let b=run(candidate)?;
+        let mut local=BTreeMap::<&str,ModelPairCounts>::new();let mut used=BTreeSet::new();
+        for obs in rows(&compared["observations"]).filter(|o|o["task"]==task){
+            let label=match obs["outcome"].as_str(){
+                Some("explicit_correction_observed") if obs["eligibleForCandidateLearning"]==true=>"explicit_correction",
+                Some("unchanged_observed") if obs["eligibleForCandidateLearning"]==true=>"unchanged_proxy",_=>continue};
+            let (Some(old),Some(actual),Some(s))=(singleton(&obs["initialCandidates"]),singleton(&obs["finalCandidates"]),position(&units,&obs["source"]))else{continue;};
+            if (label=="explicit_correction"&&(old==actual||singleton(&obs["positiveCandidates"])!=Some(actual)||singleton(&obs["negativeCandidates"])!=Some(old)))||
+                (label=="unchanged_proxy"&&old!=actual){continue;}
+            if !used.insert(s){return Err("필드 비교 관측 중복".into());}
+            fn prediction<'a>(v:&'a Value,units:&[u16],s:Span,old:&'a str)->Option<&'a str>{
+                let mut matches=rows(&v["decisions"]).filter(|d|position(units,&d["source"])==Some(s)&&d["legacyCandidate"]==old);
+                let d=matches.next()?;if matches.next().is_some(){return None;}
+                match d["status"].as_str()?{
+                    "diagnostic_proposal_only"=>d["diagnosticCandidate"].as_str(),
+                    "retain_legacy"=>Some(old),_=>None
+                }
+            }
+            for kind in [label,"mixed_proxy"]{
+                local.entry(kind).or_default().observe(old,actual,prediction(&a,&units,s,old),prediction(&b,&units,s,old));
+            }
+        }
+        for (label,value) in local{totals.entry(label).or_default().merge_order(value);}
+    }
+    let groups=totals.into_iter().map(|(label,v)|json!({"task":task,"labelKind":label,"metrics":v.wire()})).collect::<Vec<_>>();
+    Ok(json!({"status":"field_paired_model_diagnostic_only","task":task,"baselineModelId":baseline["modelId"],
+        "candidateModelId":candidate["modelId"],"sameFrozenInputs":true,"evaluationAsOf":payload["evaluationAsOf"],
+        "uniqueOrders":seen.len(),"excludedOrders":excluded,"groups":groups,"winner":null,
+        "representativeLabelsVerified":false,"automaticChangeAuthorized":false,"decisionChanged":false}))
+}
 fn rows_ids(entry:&Value)->Option<Vec<&str>>{
     let ids=entry["shadowCandidates"].as_array()?;
     let set=ids.iter().map(Value::as_str).collect::<Option<BTreeSet<_>>>()?;
