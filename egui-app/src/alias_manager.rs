@@ -313,26 +313,14 @@ impl AliasManager {
             }
         }
         if let Some(exit)=self.pending.clone(){
-            let mut cancel=false;
-            let mut discard=false;
-            let mut save_now=false;
             crate::popup::modal_backdrop(ctx,"alias-unsaved-dim",true);
-            crate::popup::show_decision_window(ctx,"상품 별칭","alias-unsaved-confirm",work_area,|dialog|{
-                crate::popup::decision_workspace(dialog,|decision|{
-                    cancel=decision.header("상품 별칭","취소",!busy
-                    );
-                    decision.body(|dialog|{
-                        dialog.label(typography::body("상품 별칭 변경사항을 저장할까요?"));
-                    });
-                    decision.actions(|actions|{
-                            save_now=crate::button::action(actions,"저장",
-                                theme::ButtonRole::Primary,editable&&!busy).clicked();
-                            discard=crate::button::action(actions,"저장 안 함",
-                                theme::ButtonRole::Danger,!busy).clicked();
-                        }
-                    );
-                });
-            });
+            let decision=crate::popup::show_save_confirmation(
+                ctx,work_area,"alias-unsaved-confirm","상품 별칭",
+                "상품 별칭 변경사항을 저장할까요?","저장",!busy,editable&&!busy
+            );
+            let cancel=decision==crate::popup::ChangeDecision::Cancel;
+            let discard=decision==crate::popup::ChangeDecision::Discard;
+            let save_now=decision==crate::popup::ChangeDecision::Save;
             if cancel{self.pending=None;}
             else if discard{
                 self.form=self.original.clone();
