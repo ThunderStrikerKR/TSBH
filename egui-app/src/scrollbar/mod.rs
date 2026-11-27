@@ -14,30 +14,33 @@ pub(crate) fn scroll_area(axes:ScrollAxes)->egui::ScrollArea{
     }
 }
 
+// Native scrollbars inherit the shared theme widget-state palette. Only rail
+// geometry varies by semantic role; do not recolor descendant widgets.
+pub(crate) use crate::theme::ScrollRailRole as ManagementScrollRole;
+
+fn apply_rail_geometry(style:&mut egui::style::ScrollStyle,role:ManagementScrollRole){
+    let geometry=scroll_rail_geometry(role);
+    style.bar_width=geometry.width;
+    style.handle_min_length=geometry.minimum_handle;
+    style.bar_inner_margin=geometry.inner_margin;
+    style.bar_outer_margin=geometry.outer_margin;
+    style.foreground_color=true;
+}
+
 pub(crate) fn management_scroll_style() -> egui::style::ScrollStyle {
     let mut style=egui::style::ScrollStyle::solid();
-    style.bar_width=10.0;
-    style.handle_min_length=44.0;
-    style.bar_inner_margin=SPACE_4;
-    style.bar_outer_margin=SPACE_4;
-    style.foreground_color=true;
+    apply_rail_geometry(&mut style,ManagementScrollRole::Standard);
     style
 }
 
-/// CONFLICT-003=A: table rails use the same 10pt solid style but WITHOUT
-/// independent 4pt inner/outer margins. Non-table scroll areas keep the
-/// original management_scroll_style until their role is reviewed.
+/// Tables keep the same solid rail and handle dimensions, without independent
+/// inner/outer margins. This preserves the pinned header and body boundary.
 pub(crate) fn management_table_scroll_style()->egui::style::ScrollStyle{
     let mut style=management_scroll_style();
-    style.bar_inner_margin=0.0;
-    style.bar_outer_margin=0.0;
+    apply_rail_geometry(&mut style,ManagementScrollRole::Table);
     style
 }
 
-/// Screens select a scroll role, not its rail properties. The native style
-/// remains owned by this module and the existing table constructors.
-#[derive(Clone,Copy)]
-pub(crate) enum ManagementScrollRole{Standard,Table}
 pub(crate) fn apply_management_scroll_role(ui:&mut Ui,role:ManagementScrollRole){
     ui.spacing_mut().scroll=match role{
         ManagementScrollRole::Standard=>management_scroll_style(),
