@@ -42,10 +42,10 @@ impl KakaoDock {
                 if session.sync(rect,scale).is_err(){self.disconnect();}
                 return Err(reason);
             }
+            Ok(())
         }
         #[cfg(not(windows))] {let _=(mode,rect,scale);
-            return Err("카카오톡 도킹은 Windows 전용입니다.".into());}
-        Ok(())
+            Err("카카오톡 도킹은 Windows 전용입니다.".into())}
     }
     pub fn connect(
         &mut self,rect:egui::Rect,scale:f32

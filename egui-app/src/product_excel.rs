@@ -4,7 +4,9 @@
 #[cfg(any(windows,test))]
 use calamine::{open_workbook,Data,Reader,Xlsx};
 use rust_xlsxwriter::{Color,Format,Workbook};
-use serde_json::{json,Value};
+use serde_json::Value;
+#[cfg(any(windows,test))]
+use serde_json::json;
 #[cfg(any(windows,test))]
 use std::path::Path;
 

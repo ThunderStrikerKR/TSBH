@@ -1,11 +1,9 @@
 #![cfg(test)]
-#![allow(unused_imports)]
 //! Regression tests owned by the dropdown component.
 
 use eframe::egui::{self,Rect,Vec2};
 
 use crate::{theme,typography};
-use crate::ui_primitives::*;
 
 
 use crate::composite_reception::{freight_actions_need_second_row,reception_freight_row_controls};
@@ -14,21 +12,17 @@ use crate::composite_reception::{freight_actions_need_second_row,reception_freig
 
 
 use crate::ui_test_support::{test_context,assert_layout_rects_invariant};
-use crate::checkbox::*;
-use crate::scrollbar::*;
 use crate::popup::*;
-use crate::card::*;
 // Composite widgets import primitive renderers from their owning modules.
 
 
 use crate::dropdown::reception_cod_dropdown;
 
 
-use crate::input::{FieldKind,money_field_with_unit,management_search_field};
+use crate::input::{FieldKind,money_field_with_unit};
 
 
-use crate::dropdown::{ManagementSearchChoice,management_dropdown,management_status_dropdown,management_searchable_dropdown,management_dropdown_option,management_dropdown_compact_option};
-use crate::dropdown::{management_dropdown_trigger};
+use crate::dropdown::{ManagementSearchChoice,management_dropdown,management_dropdown_option,management_dropdown_compact_option};
 use crate::dropdown::{management_dropdown_option_palette,management_search_choice_matches};
 // Shared table primitives used by reception and other composite widgets.
 

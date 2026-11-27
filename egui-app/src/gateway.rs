@@ -26,7 +26,6 @@ mod native_title_clients;
 pub enum ReadOperation {
     AnalyzeOrder,
     ResolveRetailUnitPrice,
-    DetectRemoteDeliveryArea,
     ResolveRemoteDeliveryArea,
     AutoMatchReceptionClient,
     ReceptionClientCandidates,
@@ -34,8 +33,6 @@ pub enum ReadOperation {
     NewReception,
     MergeReceptionAnalysis,
     ChangeOrderClient,
-    RepriceOrder,
-    CalculatePrice,
     CalculateReceptionQuote,
     ManualClassification,
     SearchProductsWithUrls,
@@ -48,10 +45,6 @@ pub enum ReadOperation {
     ListOrderHistoryView,
     ListOrderHistory,
     PrepareSettlement,
-    PrepareFactoryExport,
-    PrepareStoreExport,
-    ReviewExportSender,
-    FactoryReplyReviewStatuses,
     ShippingManagerView,
     ProductFreightView,
     DefaultProductRule,
@@ -66,23 +59,22 @@ impl ReadOperation {
     pub fn domain(self) -> &'static str {
         match self {
             Self::AnalyzeOrder => "recognition",
-            Self::ResolveRetailUnitPrice | Self::DetectRemoteDeliveryArea
+            Self::ResolveRetailUnitPrice
             | Self::ResolveRemoteDeliveryArea
             | Self::ValidateAutomaticTemplates | Self::ValidateProvisionalProductNotices => "rules",
             Self::AutoMatchReceptionClient | Self::ReceptionClientCandidates
             | Self::ClientCandidates | Self::SearchProductsWithUrls
             | Self::ManagementProducts => "catalog_clients",
             Self::NewReception | Self::MergeReceptionAnalysis
-            | Self::ChangeOrderClient | Self::RepriceOrder
-            | Self::CalculatePrice | Self::CalculateReceptionQuote | Self::ManualClassification
+            | Self::ChangeOrderClient
+            | Self::CalculateReceptionQuote | Self::ManualClassification
             | Self::PreviewWorkflow | Self::PreviewOrder
             | Self::OrderIssuesWithActions | Self::ApplyIssueAction
             | Self::ReadShipments | Self::ListOrderHistoryView | Self::ListOrderHistory
-            | Self::FactoryReplyReviewStatuses | Self::ShippingManagerView
+            | Self::ShippingManagerView
             | Self::ProductFreightView | Self::DefaultProductRule => "rules",
             Self::RenderAutomaticMessage | Self::RenderAutomaticRequest | Self::DecorateAutomaticCopy
-            | Self::PrepareSettlement | Self::PrepareFactoryExport | Self::PrepareStoreExport
-            | Self::ReviewExportSender => "output",
+            | Self::PrepareSettlement => "output",
         }
     }
 
@@ -90,7 +82,6 @@ impl ReadOperation {
         match self {
             Self::AnalyzeOrder => "analyze_order",
             Self::ResolveRetailUnitPrice => "resolve_unit_price",
-            Self::DetectRemoteDeliveryArea => "detect_remote_delivery_area",
             Self::ResolveRemoteDeliveryArea => "resolve_remote_delivery_area",
             Self::AutoMatchReceptionClient => "auto_match_reception_client",
             Self::ReceptionClientCandidates => "reception_client_candidates",
@@ -98,8 +89,6 @@ impl ReadOperation {
             Self::NewReception => "apply_reception_action",
             Self::MergeReceptionAnalysis => "merge_reception_analysis",
             Self::ChangeOrderClient => "order_edit_rules",
-            Self::RepriceOrder => "reprice_order",
-            Self::CalculatePrice => "calculate_price",
             Self::CalculateReceptionQuote => "calculate_reception_quote",
             Self::ManualClassification => "apply_manual_classification",
             Self::SearchProductsWithUrls => "search_products_with_urls",
@@ -112,10 +101,6 @@ impl ReadOperation {
             Self::ListOrderHistoryView => "list_order_history_view",
             Self::ListOrderHistory => "list_order_history",
             Self::PrepareSettlement => "prepare_settlement",
-            Self::PrepareFactoryExport => "prepare_factory_export",
-            Self::PrepareStoreExport => "prepare_store_export",
-            Self::ReviewExportSender => "review_export_sender",
-            Self::FactoryReplyReviewStatuses => "factory_reply_review_statuses",
             Self::ShippingManagerView => "shipping_manager_view",
             Self::ProductFreightView => "apply_shipping_action",
             Self::DefaultProductRule => "apply_shipping_action",
@@ -985,13 +970,10 @@ impl BandoGateway for LocalGateway {
                 recognition::execute(operation.operation(), payload)
             }
             ReadOperation::ResolveRetailUnitPrice
-            | ReadOperation::DetectRemoteDeliveryArea
             | ReadOperation::ResolveRemoteDeliveryArea
             | ReadOperation::NewReception
             | ReadOperation::MergeReceptionAnalysis
             | ReadOperation::ChangeOrderClient
-            | ReadOperation::RepriceOrder
-            | ReadOperation::CalculatePrice
             | ReadOperation::CalculateReceptionQuote
             | ReadOperation::ManualClassification
             | ReadOperation::PreviewWorkflow
@@ -1001,7 +983,6 @@ impl BandoGateway for LocalGateway {
             | ReadOperation::ReadShipments
             | ReadOperation::ListOrderHistoryView
             | ReadOperation::ListOrderHistory
-            | ReadOperation::FactoryReplyReviewStatuses
             | ReadOperation::ShippingManagerView
             | ReadOperation::ProductFreightView
             | ReadOperation::DefaultProductRule
@@ -1023,9 +1004,7 @@ impl BandoGateway for LocalGateway {
                 crate::catalog_query_bridge::management_products(&payload)
             }
             ReadOperation::RenderAutomaticMessage | ReadOperation::RenderAutomaticRequest | ReadOperation::DecorateAutomaticCopy
-            | ReadOperation::PrepareSettlement
-            | ReadOperation::PrepareFactoryExport | ReadOperation::PrepareStoreExport
-            | ReadOperation::ReviewExportSender => {
+            | ReadOperation::PrepareSettlement => {
                 output::execute(operation.operation(),payload)
             }
         }

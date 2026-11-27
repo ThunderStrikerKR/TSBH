@@ -793,52 +793,6 @@ impl PreviewStore {
         Ok(())
     }
 
-    /// Future audits can recover both FULL texts, parser outputs and
-    /// the exact proposed model text without any lossy reverse conversion.
-    /// No automatic replay or deletion occurs when this is read.
-    pub fn load_ocr_audit(id:&str)->Result<Option<Value>,String>{
-        let store=Self::initialize()?;
-        let conn=store.open_connection()?;
-        let record=conn.query_row(
-            "SELECT id,order_id,original_text,corrected_text,changes_json,
-             learning_used,model_suggestion,initial_analysis_json,
-             corrected_analysis_json,analysis_comparison_json,
-             analysis_status,analysis_error,analyzer_label,catalog_revision,
-             recorded_at,analyzed_at,client_id,layout_trace_json
-             FROM ocr_feedback WHERE id=?1",
-            [id],
-            |row|Ok(json!({
-                "id":row.get::<_,String>(0)?,
-                "orderId":row.get::<_,String>(1)?,
-                "initialOcr":row.get::<_,String>(2)?,
-                "employeeCorrection":row.get::<_,String>(3)?,
-                "textChanges":row.get::<_,String>(4)?,
-                "learningModelUsed":row.get::<_,i64>(5)?!=0,
-                "modelSuggestion":row.get::<_,Option<String>>(6)?,
-                "initialAnalysis":row.get::<_,Option<String>>(7)?,
-                "correctedAnalysis":row.get::<_,Option<String>>(8)?,
-                "analysisComparison":row.get::<_,Option<String>>(9)?,
-                "analysisStatus":row.get::<_,String>(10)?,
-                "analysisError":row.get::<_,Option<String>>(11)?,
-                "analyzerLabel":row.get::<_,Option<String>>(12)?,
-                "catalogRevision":row.get::<_,Option<String>>(13)?,
-                "recordedAt":row.get::<_,String>(14)?,
-                "analyzedAt":row.get::<_,Option<String>>(15)?,
-                "clientId":row.get::<_,Option<String>>(16)?,
-                "layoutTrace":row.get::<_,Option<String>>(17)?,
-            }))
-        ).optional().map_err(|e|format!("OCR 정정 분석 이력 조회 실패: {e}"))?;
-        let Some(mut record)=record else{return Ok(None)};
-        for field in ["textChanges","initialAnalysis","correctedAnalysis",
-            "analysisComparison","layoutTrace"]{
-            if let Some(json_text)=record[field].as_str(){
-                record[field]=serde_json::from_str(json_text)
-                    .map_err(|e|format!("OCR 정정 이력 {field} 형식 오류: {e}"))?;
-            }
-        }
-        Ok(Some(record))
-    }
-
     pub fn path(&self) -> &std::path::Path { &self.path }
 }
 

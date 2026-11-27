@@ -69,8 +69,12 @@ pub enum TextState {
     Unconfirmed,
     Disabled,
     Placeholder,
+    #[cfg(test)]
+    Info,
     ActionRequired,
     Error,
+    #[cfg(test)]
+    Complete,
 }
 
 impl TextState{
@@ -95,8 +99,12 @@ pub const fn text_ink(role:TextRole,state:TextState)->Color32{
         TextState::Missing|TextState::Pending|TextState::Unconfirmed=>MUTED,
         TextState::Disabled=>DISABLED_ACTION_TEXT,
         TextState::Placeholder=>PLACEHOLDER_TEXT,
+        #[cfg(test)]
+        TextState::Info=>ReviewTone::Info.text_color(),
         TextState::ActionRequired=>ReviewTone::Action.text_color(),
         TextState::Error=>ReviewTone::Error.text_color(),
+        #[cfg(test)]
+        TextState::Complete=>ReviewTone::Complete.text_color(),
     }
 }
 pub const SELECTION: Color32 = Color32::from_rgb(112, 180, 255);

@@ -1,11 +1,8 @@
 #![cfg(test)]
-#![allow(unused_imports)]
 //! Regression tests owned by the button component.
 
-use eframe::egui::{self,Frame};
 
 use crate::{theme};
-use crate::ui_primitives::*;
 
 
 
@@ -14,10 +11,6 @@ use crate::ui_primitives::*;
 
 
 
-use crate::checkbox::*;
-use crate::scrollbar::*;
-use crate::popup::*;
-use crate::card::*;
 // Composite widgets import primitive renderers from their owning modules.
 
 

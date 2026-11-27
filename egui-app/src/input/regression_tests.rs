@@ -1,11 +1,9 @@
 #![cfg(test)]
-#![allow(unused_imports)]
 //! Regression tests owned by the input component.
 
-use eframe::egui::{self,Frame,Rect,Response,Sense,Ui,Vec2};
+use eframe::egui::{self,Rect,Response,Sense,Ui,Vec2};
 
 use crate::{theme,typography};
-use crate::ui_primitives::*;
 
 
 use crate::composite_reception::{reception_recipient_fields,reception_total_footer};
@@ -14,17 +12,13 @@ use crate::composite_reception::{reception_recipient_fields,reception_total_foot
 use crate::display_format::{display_won,display_money_number};
 
 use crate::ui_test_support::{test_context,assert_layout_rects_invariant};
-use crate::checkbox::*;
-use crate::scrollbar::*;
-use crate::popup::*;
-use crate::card::*;
 // Composite widgets import primitive renderers from their owning modules.
 
 
 
 
 
-use crate::input::{FieldKind,field,parse_money_input,money_edit_text,flexible_text_field,management_date_text_field,multiline_text_field,multiline_text_field_sized,management_search_field,reception_recipient_inline_cell_editor,reception_inline_cell_editor};
+use crate::input::{FieldKind,field,parse_money_input,money_edit_text,management_date_text_field,multiline_text_field_sized,management_search_field,reception_recipient_inline_cell_editor,reception_inline_cell_editor};
 use crate::input::{reception_recipient_text_edit,reception_money_inline_cell_editor,RECEPTION_MONEY_UNIT_GAP,RECEPTION_MONEY_PENDING,money_unit_left};
 use crate::input::{formatted_money_input,money_cursor_after_format,money_unit_margin,reception_money_font};
 

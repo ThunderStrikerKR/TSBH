@@ -1,12 +1,10 @@
 #![cfg(test)]
-#![allow(unused_imports)]
 //! Regression tests owned by the card component.
 
 use eframe::egui::{self,Color32,Frame,Rect,Sense,Vec2};
 
 use crate::{theme};
 use crate::ui_primitives::*;
-use crate::status_notice::{body_error_overlay};
 
 
 
@@ -14,9 +12,6 @@ use crate::status_notice::{body_error_overlay};
 
 
 use crate::ui_test_support::{test_context,assert_layout_rects_invariant};
-use crate::checkbox::*;
-use crate::scrollbar::*;
-use crate::popup::*;
 use crate::card::*;
 // Composite widgets import primitive renderers from their owning modules.
 

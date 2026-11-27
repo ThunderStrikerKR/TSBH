@@ -1,5 +1,4 @@
 #![cfg(test)]
-#![allow(unused_imports)]
 //! Regression tests owned by the popup component.
 
 use eframe::egui::{self,Align,Layout,Rect,Response,Sense,Stroke,Ui,Vec2};
@@ -14,10 +13,7 @@ use crate::text_fit::{reception_pending_money_marker};
 
 
 use crate::ui_test_support::{test_context,assert_layout_rects_invariant};
-use crate::checkbox::*;
-use crate::scrollbar::*;
 use crate::popup::*;
-use crate::card::*;
 // Composite widgets import primitive renderers from their owning modules.
 
 
@@ -25,7 +21,6 @@ use crate::card::*;
 
 
 use crate::input::{FieldKind,field};
-use crate::input::{singleline_editor,reception_recipient_text_edit};
 
 
 

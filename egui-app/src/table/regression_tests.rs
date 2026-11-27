@@ -1,11 +1,9 @@
 #![cfg(test)]
-#![allow(unused_imports)]
 //! Regression tests owned by the table component.
 
 use eframe::egui::{self,Align,Layout,Rect,Sense,Vec2};
 
 use crate::{theme,typography};
-use crate::ui_primitives::*;
 
 use crate::table::ManagementTableColumnLabel;
 
@@ -14,9 +12,6 @@ use crate::ui_layout::{management_toolbar_trailing_rect};
 
 
 use crate::ui_test_support::{test_context,production_source_for_contract};
-use crate::checkbox::*;
-use crate::scrollbar::*;
-use crate::popup::*;
 use crate::card::*;
 // Composite widgets import primitive renderers from their owning modules.
 
@@ -31,7 +26,7 @@ use crate::input::{RECEPTION_FREIGHT_MONEY_WIDTH};
 
 
 // Shared table primitives used by reception and other composite widgets.
-use crate::table::{paint_table_galley,management_client_column_widths,management_client_column_edges,reception_item_columns,reception_item_text_clip,reception_item_value_origin,management_table_container_style,management_table_row_body};
+use crate::table::{management_client_column_widths,management_client_column_edges,reception_item_columns,reception_item_text_clip,reception_item_value_origin,management_table_container_style,management_table_row_body};
 use crate::table::{management_readonly_table_content_width,management_readonly_table_row_advance};
 use crate::table::{management_table_data_width};
 use crate::table::{virtual_fixed_rows,management_fixed_table_scroll_area,management_table_scroll_track_geometry,management_remaining_predivider_gap};

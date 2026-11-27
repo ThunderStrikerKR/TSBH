@@ -1,11 +1,6 @@
 #![cfg(test)]
-#![allow(unused_imports)]
 //! Regression tests owned by the scrollbar component.
 
-use eframe::egui::{self};
-
-
-use crate::ui_primitives::*;
 
 
 
@@ -14,10 +9,8 @@ use crate::ui_primitives::*;
 
 
 
-use crate::checkbox::*;
-use crate::scrollbar::*;
-use crate::popup::*;
-use crate::card::*;
+
+
 // Composite widgets import primitive renderers from their owning modules.
 
 
@@ -49,7 +42,7 @@ mod fixed_scroll_panel_contract_tests {
 #[cfg(test)]
 mod shared_scrollbar_rendered_geometry_tests{
     use eframe::egui::{self,Rect,Vec2,Sense};
-    use crate::{scrollbar,theme};
+    use crate::{scrollbar};
     use crate::ui_test_support::{test_context,assert_geometry_value,assert_rect_geometry,assert_rect_inside};
 
     #[test]

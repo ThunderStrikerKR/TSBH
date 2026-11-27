@@ -1,10 +1,9 @@
 #![cfg(test)]
-#![allow(unused_imports)]
 //! Cross-module UI regression contracts.
 
-use eframe::egui::{self,Align,Frame,Layout,Rect,Sense,Ui,UiBuilder,Vec2};
+use eframe::egui::{self,Align,Layout,Rect,Sense,Ui,Vec2};
 
-use crate::{source_highlight,theme,typography};
+use crate::{theme,typography};
 use crate::ui_primitives::*;
 use crate::status_notice::{management_body_state_overlay,body_error_overlay};
 
@@ -15,8 +14,6 @@ use crate::ui_layout::{fixed_row,fixed_result_viewport,fixed_status_slot,managem
 
 use crate::ui_test_support::{test_context,production_source_for_contract,assert_layout_rects_invariant};
 use crate::checkbox::*;
-use crate::scrollbar::*;
-use crate::popup::*;
 use crate::card::*;
 // Composite widgets import primitive renderers from their owning modules.
 use crate::button::{management_tabs,reception_item_header_action};
@@ -24,7 +21,6 @@ use crate::button::{management_tabs,reception_item_header_action};
 
 
 
-use crate::input::{management_date_text_field,multiline_text_field,reception_source_text_edit};
 
 
 use crate::dropdown::{management_dropdown,management_status_dropdown,management_dropdown_compact,management_dropdown_option,management_status_dropdown_option,management_dropdown_compact_option};
