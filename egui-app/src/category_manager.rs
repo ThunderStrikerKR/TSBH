@@ -977,6 +977,20 @@ impl CategoryManager {
                 Operation::Move=>"상위 카테고리 변경",
                 Operation::Delete=>"분류 삭제 확인",
             };
+            if operation==Operation::Delete{
+                let decision=crate::popup::show_delete_confirmation(
+                    ctx,work_area,"category-operation-modal",title,"분류 삭제",
+                    !busy,editable&&!busy,crate::popup::DeleteBody::Plain,|modal|{
+                        if let Some(current)=self.current(&cats){
+                            modal.label(typography::body(&format!(
+                                "{} 분류를 삭제할까요? 상품과 하위 분류가 없어야 삭제할 수 있습니다.",current.name
+                            )));
+                        }
+                    }
+                );
+                cancel=decision==crate::popup::ConfirmDecision::Cancel;
+                submit=decision==crate::popup::ConfirmDecision::Confirm;
+            }else{
             crate::popup::show_decision_window(ctx,title,"category-operation-modal",work_area,|modal|{
                     crate::popup::decision_workspace(modal,|decision|{
                         cancel=decision.header(title,"취소",!busy);
@@ -1060,12 +1074,7 @@ impl CategoryManager {
                                             }
                                         );
                                     }
-                                    Operation::Delete=>{
-                                        modal.label(typography::body(
-                                            &format!("{} 분류를 삭제할까요? 상품과 하위 분류가 없어야 삭제할 수 있습니다.",
-                                                current.name)
-                                        ));
-                                    },
+                                    Operation::Delete=>unreachable!("delete uses shared confirmation"),
                                 };
                             }
                         });
@@ -1074,22 +1083,21 @@ impl CategoryManager {
                                 match operation{
                                     Operation::Add=>"분류 생성",
                                     Operation::Move=>"위치 변경",
-                                    Operation::Delete=>"분류 삭제",
+                                    Operation::Delete=>unreachable!("delete uses shared confirmation"),
                                 },
-                                if operation==Operation::Delete{
-                                    theme::ButtonRole::Danger
-                                }else{theme::ButtonRole::Primary},
+                                theme::ButtonRole::Primary,
                                 editable&&!busy && match operation{
                                     Operation::Add=>!self.new_name.trim().is_empty()
                                         && (self.current(&cats).is_some_and(|cur|
                                             direct_count(catalog,&cur.id)==0)||self.transfer),
                                     Operation::Move=>!self.target.is_empty(),
-                                    Operation::Delete=>true,
+                                    Operation::Delete=>false,
                                 }
                             ).clicked();
                         });
                     });
                 });
+            }
             if cancel{self.request_close_operation(&cats);}
             else if submit{
                 match self.write_request(&cats,catalog){
