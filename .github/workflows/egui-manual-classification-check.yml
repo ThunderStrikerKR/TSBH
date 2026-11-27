@@ -63,6 +63,8 @@ jobs:
         run: cargo test --manifest-path egui-app/Cargo.toml source_delta_tests -- --nocapture
       - name: Verify durable recognition correction evidence and legacy audit migration
         run: cargo test --manifest-path egui-app/Cargo.toml reception_edit_audit_tests -- --nocapture
+      - name: Verify source-grounded correction candidate extraction
+        run: cargo test --manifest-path egui-app/Cargo.toml recognition::corrections::tests -- --nocapture
       - name: Verify content-fitted manual popup and Reception source-pane geometry
         run: cargo test --manifest-path egui-app/Cargo.toml manual_workspace_layout_tests -- --nocapture
       - name: Verify the unified date-selector count control geometry and single-recipient 1/1 header

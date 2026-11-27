@@ -1009,6 +1009,35 @@ impl BandoGateway for LocalGateway {
 
 /// Build exactly the explicitly selected backend. Invalid remote config is an
 /// error, not permission to fall back and silently process locally.
+/// Internal, local-only candidate feed. Do not call during interactive
+/// recognition; L06/L07 will decide which evidence becomes a rule.
+pub(crate) fn read_recognition_correction_page(query:&Value)->Result<Value,String>{
+    let mode=std::env::var("BANDO_HUB_GATEWAY").unwrap_or_else(|_|"local".into());
+    if !mode.trim().eq_ignore_ascii_case("local"){
+        return Err("분류 학습 감사 조회는 로컬 접수 DB에서만 지원합니다.".into());
+    }
+    let page=PreviewStore::read_reception_audit_page(query)?;
+    let events=page["events"].as_array().ok_or("감사 조회 결과 오류")?;
+    let mut candidates=Vec::new();
+    let mut legacy=0usize;
+    for event in events{
+        let extracted=recognition::execute("extract_correction_candidates",event.clone())?;
+        if extracted["legacyContext"]==true{legacy+=1;}
+        let rows=extracted["candidates"].as_array().ok_or("정정 후보 결과 오류")?;
+        for candidate in rows{
+            if query["targetField"].as_str().is_some_and(|field|
+                candidate["target"]["field"].as_str()!=Some(field)){continue;}
+            if query["productId"].as_str().is_some_and(|id|
+                candidate["productId"].as_str()!=Some(id)){continue;}
+            if query["kind"].as_str().is_some_and(|kind|
+                candidate["kind"].as_str()!=Some(kind)){continue;}
+            candidates.push(candidate.clone());
+        }
+    }
+    Ok(serde_json::json!({"eventCount":events.len(),"legacyEventCount":legacy,
+        "candidates":candidates,"nextCursor":page["nextCursor"]}))
+}
+
 pub fn from_environment() -> Result<Arc<dyn BandoGateway>, String> {
     let mode = std::env::var("BANDO_HUB_GATEWAY")
         .unwrap_or_else(|_| "local".to_owned());
