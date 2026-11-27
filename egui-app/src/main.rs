@@ -3836,7 +3836,7 @@ impl BandoEgui {
         let result=match complete {
             Some(Ok(value))=>Some(value),
             Some(Err(mpsc::TryRecvError::Disconnected))=>
-                Some(Err("입력 내용 수정 작업이 중단되었습니다.".into())),
+                Some(Err("입력 수정이 중단되었습니다.".into())),
             _=>None
         };
         let Some(result)=result else{

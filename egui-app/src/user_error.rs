@@ -71,7 +71,7 @@ fn translated(context:&str,raw:&str)->&'static str{
     }else if ["disk full","database or disk is full","no space left","디스크 공간 부족"].iter().any(|term|lower.contains(term)){
         "저장 공간이 부족합니다. 공간을 확보한 뒤 다시 시도해 주세요."
     }else if ["permission denied","access is denied","read-only","readonly","읽기 전용","권한"].iter().any(|term|lower.contains(term)){
-        "현재 작업을 수행할 권한이 없습니다. 저장 위치와 사용 권한을 확인해 주세요."
+        "이 작업에 필요한 권한이 없습니다. 저장 위치와 사용 권한을 확인해 주세요."
     }else if ["database disk image is malformed","file is not a database","데이터베이스 손상","db 손상"].iter().any(|term|lower.contains(term)){
         "저장된 데이터를 읽을 수 없습니다. 기존 데이터는 그대로 두고 백업 및 복구 상태를 확인해 주세요."
     }else{fallback(context)}

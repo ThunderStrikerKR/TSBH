@@ -205,7 +205,7 @@ pub(crate) fn issue_tone(issue:&Value)->ReviewTone {
 /// available for a one-off amount; registered prices/rates are reusable.
 pub(crate) fn pricing_registration_hint(kind:&str)->Option<&'static str>{
     match kind{
-        "PRICE"=>Some("상품 관리에서 해당 상품·옵션의 거래처 등급별 판매가를 등록하세요. 이번 주문만 변경하려면 단가를 직접 입력하세요."),
+        "PRICE"=>Some("상품 관리에서 상품·옵션의 거래처 등급별 판매가를 등록하세요. 이번 주문만 변경하려면 단가를 직접 입력하세요."),
         "FREIGHT"=>Some("운임 관리에서 배송 그룹 및 수량별 운임을 확인·등록하세요. 이번 주문만 변경하려면 운임을 직접 입력하세요."),
         _=>None
     }

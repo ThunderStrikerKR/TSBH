@@ -596,7 +596,7 @@ impl AutomaticMessageManager {
                 });
         }else{
             ui.label(typography::caption(
-                "상품을 검색해서 선택하면 해당 상품의 전용 안내문을 등록할 수 있습니다."
+                "상품을 검색·선택하면 전용 안내문을 등록할 수 있습니다."
             ));
         }
     }
