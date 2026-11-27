@@ -14,6 +14,7 @@ CORE_COMPONENTS = {
     "theme.rs", "ui_primitives.rs", "card/mod.rs", "table/mod.rs",
     "popup/mod.rs", "popup/tag.rs", "input/mod.rs", "button/mod.rs",
     "checkbox/mod.rs", "dropdown/mod.rs", "status_notice/mod.rs",
+    "floating_notice.rs", "navigation.rs", "category_tree/mod.rs", "one_touch.rs",
 }
 
 # Preserve line numbers while removing comments and string/character literals.
