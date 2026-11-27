@@ -57,6 +57,8 @@ struct FolderConfirmation{
     after_path:String,
     folders:usize,
     products:usize,
+    target_products:usize,
+    new_product_category:String,
 }
 fn folder_confirmation(cats:&[Category],catalog:&Value,request:category_tree::FolderMove)->Option<FolderConfirmation>{
     let source=cats.iter().find(|c|c.id==request.id)?;
@@ -72,7 +74,16 @@ fn folder_confirmation(cats:&[Category],catalog:&Value,request:category_tree::Fo
     Some(FolderConfirmation{scope:bando_data_access::management_scope_token(catalog,"categories"),
         name:source.name.clone(),before_path:path_text(cats,&source.id),
         after_path:format!("{} > {}",path_text(cats,&target.id),source.name),
-        folders,products:index.total(&source.id),request})
+        folders,products:index.total(&source.id),target_products:index.products(&target.id).len(),
+        new_product_category:String::new(),request})
+}
+fn direct_placement_count(cats:&[Category],catalog:&Value,id:&str)->usize{
+    CategoryMapIndex::new(cats,catalog,"").products(id).len()
+}
+fn valid_product_category_name(cats:&[Category],target:&str,moving_name:&str,name:&str)->bool{
+    let name=name.trim();
+    !name.is_empty()&&name!=moving_name.trim()&&
+        !cats.iter().any(|c|c.parent==target&&c.name.trim()==name)
 }
 fn category_move_write(id:&str,name:&str,target:&str)->CategoryWrite{
     CategoryWrite{action:"change_category",data:json!({
@@ -80,6 +91,16 @@ fn category_move_write(id:&str,name:&str,target:&str)->CategoryWrite{
         "guardCatalogMove":true,
         "guardError":"이 분류에는 이동할 최상위 구분과 다른 상품이 연결되어 있습니다. 상품 소속을 먼저 확인하세요."
     })}
+}
+/// Shared input section for the drag confirmation and existing move dialog.
+fn product_category_creation_fields(ui:&mut Ui,count:usize,name:&mut String,enabled:bool){
+    ui.label(typography::body(&format!("상품은 최하위 분류에만 배정할 수 있습니다. 이동 대상에 직접 연결된 상품 {count}개를 이전할 새 하위 분류를 생성해야 합니다.")));
+    crate::popup::modal_labeled_row(ui,"새 분류 이름",|line|{
+        let width=line.available_width().max(1.0);
+        line.add_enabled_ui(enabled,|input|{
+            crate::input::flexible_text_field(input,name,width,"기존 상품을 이전할 하위 분류 이름");
+        });
+    });
 }
 pub struct CategoryManager {
     selected:String,
@@ -450,7 +471,7 @@ impl CategoryManager {
         let mut request:CategoryWrite=match self.operation {
             Some(Operation::Add)=>{
                 if self.new_name.trim().is_empty() ||
-                   (direct_count(catalog,&current.id)>0 && !self.transfer){
+                   (direct_placement_count(cats,catalog,&current.id)>0 && !self.transfer){
                     return Err("분류 이름과 상품 이전 확인을 완료해 주세요.".into());
                 }
                 Ok::<CategoryWrite,String>(CategoryWrite{
@@ -458,14 +479,20 @@ impl CategoryManager {
                     data:json!({
                         "categoryId":"","name":self.new_name.trim(),
                         "parentId":current.id,
-                        "transfer":self.transfer &&
-                            children(cats,&current.id).is_empty(),
+                        "transfer":self.transfer,
                     }),
                 })
             }
             Some(Operation::Move)=>{
                 if self.target.is_empty(){return Err("이동할 상위 분류를 선택하세요.".into());}
-                Ok::<CategoryWrite,String>(category_move_write(&current.id,&current.name,&self.target))
+                let mut request=category_move_write(&current.id,&current.name,&self.target);
+                if direct_placement_count(cats,catalog,&self.target)>0{
+                    if !valid_product_category_name(cats,&self.target,&current.name,&self.new_name){
+                        return Err("기존 상품을 이전할 새 하위 분류 이름을 입력하세요.".into());
+                    }
+                    request.data["newProductCategoryName"]=json!(self.new_name.trim());
+                }
+                Ok::<CategoryWrite,String>(request)
             }
             Some(Operation::Delete)=>{
                 Ok::<CategoryWrite,String>(CategoryWrite{
@@ -892,14 +919,17 @@ impl CategoryManager {
         }
     }
     fn show_folder_confirmation(&mut self,ctx:&Context,work_area:Rect,catalog:&Value,editable:bool,busy:bool)->Option<CategoryWrite>{
-        let pending=self.folder_confirmation.as_ref()?;
+        let pending=self.folder_confirmation.as_mut()?;
+        let cats=categories(catalog);
+        let needs_category=pending.target_products>0;
+        let title=if needs_category{"새 하위 분류 생성 및 이동 확인"}else{"분류 이동 확인"};
         let stale=pending.scope!=bando_data_access::management_scope_token(catalog,"categories");
         let mut cancel=false;
         let mut submit=false;
         crate::popup::modal_backdrop(ctx,"category-folder-move-dim",false);
-        crate::popup::show_decision_window(ctx,"분류 이동 확인","category-folder-move-confirm",work_area,|modal|{
+        crate::popup::show_decision_window(ctx,title,"category-folder-move-confirm",work_area,|modal|{
             crate::popup::decision_workspace(modal,|decision|{
-                cancel=decision.header("분류 이동 확인","취소",!busy);
+                cancel=decision.header(title,"취소",!busy);
                 decision.body(|body|{
                     body.label(typography::body("이 분류와 하위 분류를 함께 이동합니다. 연결된 상품은 유지되며 카테고리 경로가 변경됩니다."));
                     crate::ui_primitives::section_divider(body);
@@ -911,12 +941,17 @@ impl CategoryManager {
                     });
                     crate::ui_primitives::section_divider(body);
                     body.label(typography::body(&format!("하위 분류 {}개 · 연결 상품 {}개",pending.folders,pending.products)));
+                    if needs_category{
+                        crate::ui_primitives::section_divider(body);
+                        product_category_creation_fields(body,pending.target_products,&mut pending.new_product_category,editable&&!busy&&!stale);
+                    }
                     if stale{body.label(typography::body("분류 또는 상품 소속이 변경되었습니다. 취소한 뒤 다시 이동해 주세요."));}
                     if let Some(error)=self.error.as_deref(){body.label(typography::body(error));}
                 });
                 decision.actions(|right|{
-                    submit=crate::button::action(right,"위치 변경",theme::ButtonRole::Primary,
-                        editable&&!busy&&!stale).clicked();
+                    let valid=!needs_category||valid_product_category_name(&cats,&pending.request.target,&pending.name,&pending.new_product_category);
+                    submit=crate::button::action(right,if needs_category{"분류 생성 및 이동"}else{"위치 변경"},theme::ButtonRole::Primary,
+                        editable&&!busy&&!stale&&valid).clicked();
                 });
             });
         });
@@ -926,6 +961,9 @@ impl CategoryManager {
         if submit{
             let mut write=category_move_write(&pending.request.id,&pending.name,&pending.request.target);
             write.data["expectedScope"]=json!(pending.scope);
+            if needs_category{
+                write.data["newProductCategoryName"]=json!(pending.new_product_category.trim());
+            }
             return Some(write);
         }
         None
@@ -1139,15 +1177,11 @@ impl CategoryManager {
                                                 );
                                             }
                                         );
-                                        let count=direct_count(catalog,&current.id);
+                                        let count=direct_placement_count(&cats,catalog,&current.id);
                                         if count>0{
                                             modal.add_space(theme::SPACE_12);
                                             crate::popup::modal_nested_role_frame(crate::popup::ModalNestedRole::Standard).show(modal,|notice|{
-                                                let transfer_label=if children(&cats,&current.id).is_empty(){
-                                                    format!("직접 연결된 상품 {count}개를 새 하위 분류로 이전하는 데 동의합니다.")
-                                                }else{
-                                                    format!("기존 직접 연결 상품 {count}개는 현재 분류에 남습니다. 하위 분류 추가를 확인했습니다.")
-                                                };
+                                                let transfer_label=format!("직접 연결된 상품 {count}개를 새 하위 분류로 이전하는 데 동의합니다.");
                                                 crate::checkbox::checkbox(
                                                     notice,&mut self.transfer,&transfer_label,true
                                                 );
@@ -1185,6 +1219,11 @@ impl CategoryManager {
                                                 );
                                             }
                                         );
+                                        let count=direct_placement_count(&cats,catalog,&self.target);
+                                        if count>0{
+                                            crate::ui_primitives::section_divider(modal);
+                                            product_category_creation_fields(modal,count,&mut self.new_name,editable&&!busy);
+                                        }
                                     }
                                     Operation::Delete=>unreachable!("delete uses shared confirmation"),
                                 };
@@ -1201,8 +1240,10 @@ impl CategoryManager {
                                 editable&&!busy && match operation{
                                     Operation::Add=>!self.new_name.trim().is_empty()
                                         && (self.current(&cats).is_some_and(|cur|
-                                            direct_count(catalog,&cur.id)==0)||self.transfer),
-                                    Operation::Move=>!self.target.is_empty(),
+                                            direct_placement_count(&cats,catalog,&cur.id)==0)||self.transfer),
+                                    Operation::Move=>!self.target.is_empty()&&self.current(&cats).is_some_and(|cur|
+                                        direct_placement_count(&cats,catalog,&self.target)==0||
+                                        valid_product_category_name(&cats,&self.target,&cur.name,&self.new_name)),
                                     Operation::Delete=>false,
                                 }
                             ).clicked();

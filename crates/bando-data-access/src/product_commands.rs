@@ -503,9 +503,13 @@ pub fn patch_product_v2(conn:&mut Connection, request:&Value)->Result<Value,Stri
                 let id=if category_id.is_empty(){
                     unique_id("category")?
                 }else{category_id.to_owned()};
+                let new_name=data["newProductCategoryName"].as_str().unwrap_or("").trim();
+                let new_id=if new_name.is_empty(){String::new()}else{unique_id("category")?};
                 json!({
                     "state":state,
                     "categoryId":id,
+                    "newProductCategoryId":new_id,
+                    "newProductCategoryName":new_name,
                     "name":required(data,"name")?,
                     "parentId":data.get("parentId").unwrap_or(&Value::Null),
                     "transfer":data.get("transfer")==Some(&Value::Bool(true)),
