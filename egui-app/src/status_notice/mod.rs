@@ -1,4 +1,5 @@
 //! Layout-neutral status and error notices plus the shared informational review card.
+use crate::ui_layout::SharedPainterClipExt as _;
 use eframe::egui::{self,Rect,Ui};
 use crate::{theme,typography};
 use crate::ui_primitives::{overflow_region_tooltip,text_exceeds_rect};
@@ -17,7 +18,7 @@ pub(crate) fn management_body_state_overlay(
     if visible.width()<=0.0 || visible.height()<=0.0{return;}
     #[cfg(test)]
     crate::ui_test_support::record_component_geometry("notice",visible,ui.clip_rect(),None);
-    ui.painter().with_clip_rect(visible).text(
+    ui.painter().with_shared_clip(visible).text(
         visible.center(),egui::Align2::CENTER_CENTER,caption,
         egui::FontId::proportional(typography::FONT_METADATA),
         theme::text_ink(theme::TextRole::Metadata,theme::TextState::Normal)
@@ -32,7 +33,7 @@ pub(crate) fn body_error_overlay(ui:&Ui,viewport:Rect,context:&str,error:&str){
     #[cfg(test)]
     crate::ui_test_support::record_component_geometry("notice",visible,ui.clip_rect(),None);
     let display=crate::user_error::display(context,error);
-    let painter=ui.painter().with_clip_rect(visible);
+    let painter=ui.painter().with_shared_clip(visible);
     let galley=painter.layout(display.as_ref().to_owned(),
         egui::FontId::proportional(typography::FONT_METADATA),
         theme::DANGER,(visible.width()-2.0*theme::SPACE_8).max(1.0));
