@@ -269,13 +269,70 @@ fn verified_variant_color(units:&[u16],s:Span,rs:&Value,target:&Value)->bool{
     found.len()==1&&target["color"].as_str().is_some_and(|c|found.contains(&super::model::norm_color(c)))
 }
 
-fn reconcile_field_audits(units:&[u16],candidates:&BTreeMap<Span,Vec<(&Value,Value)>>,
+// A source position, rather than generated row IDs, joins the audit chain.
+// Reconstruct the observed value at every recorded transition. Equal-time
+// competing transitions, gaps, and ambiguous links are never guessed.
+fn unique_source_target<'a>(units:&[u16],rs:&'a Value,s:Span)->Option<(&'a Value,&'a str)>{
+    let mut links=rows(rs).flat_map(|r|std::iter::once(r).chain(rows(&r["items"])))
+        .flat_map(|t|rows(&t["sources"]).map(move |source|(t,source)))
+        .filter(|(_,source)|span(units,source)==Some(s));
+    let (target,source)=links.next()?;
+    if links.next().is_some(){return None;}
+    Some((target,source["field"].as_str()?))
+}
+fn field_state(units:&[u16],rs:&Value,s:Span,task:&str)->Option<String>{
+    let (target,field)=unique_source_target(units,rs,s)?;
+    match task{
+        "type"=>Some(field.to_owned()),
+        "product" if field=="product"=>target["productId"].as_str().filter(|v|!v.is_empty()).map(str::to_owned),
+        "variant" if field=="product"=>target["variantId"].as_str().filter(|v|!v.is_empty()).map(str::to_owned),
+        "quantity" if field=="quantity"&&target["quantityConfirmed"]==true=>
+            target["quantity"].as_i64().filter(|q|*q>0).map(|q|q.to_string()),
+        _=>None,
+    }
+}
+
+struct AuditChain<'a>{
+    last_change:&'a Value,
+    changes:usize,
+    same_client:bool,
+}
+// Include all matching audit snapshots, even when an intermediate selection
+// does not match the original text. Only the final transition needs a
+// source-grounded correction candidate; intermediate choices get no votes.
+fn verified_chain<'a,T:Eq>(events:&[&'a Value],initial:T,final_value:T,
+    state:impl Fn(&Value)->Option<T>)->Option<AuditChain<'a>>{
+    let mut current=initial;
+    let mut last_change=None;
+    let mut last_at=None;
+    let mut changes=0usize;
+    let mut same_client=true;
+    let mut client:Option<(&Value,&Value)>=None;
+    for &event in events{
+        let (before,after)=(state(&event["beforeRows"]),state(&event["afterRows"]));
+        // Fail closed when the target is absent or ambiguous in any event.
+        let (Some(before),Some(after))=(before,after)else{return None;};
+        if before!=current{return None;}
+        if before==after{continue;}
+        let at=chrono::DateTime::parse_from_rfc3339(event["at"].as_str()?).ok()?;
+        if last_at.as_ref().is_some_and(|last|last>=&at){return None;}
+        last_at=Some(at);
+        let next_client=(&event["context"]["clientId"],&event["context"]["clientSelection"]);
+        if let Some(old)=client{same_client &= old==next_client;}else{client=Some(next_client);}
+        current=after;
+        last_change=Some(event);
+        changes+=1;
+    }
+    if current!=final_value{return None;}
+    Some(AuditChain{last_change:last_change?,changes,same_client})
+}
+
+fn reconcile_field_audits(units:&[u16],events:&[&Value],candidates:&BTreeMap<Span,Vec<(&Value,Value)>>,
     observations:&mut [Value]){
     for o in observations.iter_mut().filter(|v|v["task"]!="recipient_ownership"){
         let Some(s)=position(units,&o["source"])else{continue;};
-        let Some(entries)=candidates.get(&s)else{continue;};
         let task=o["task"].as_str().unwrap_or("");
-        let relevant=entries.iter().filter(|(_,c)|{
+        let relevant=candidates.get(&s).into_iter().flatten().filter(|(_,c)|{
             let field=c["target"]["field"].as_str().unwrap_or("");
             match task{
                 "type"=>c["method"]=="explicit_binding"&&c["kind"]=="type_change",
@@ -284,44 +341,38 @@ fn reconcile_field_audits(units:&[u16],candidates:&BTreeMap<Span,Vec<(&Value,Val
                 _=>false,
             }
         }).collect::<Vec<_>>();
-        if relevant.is_empty(){continue;}
+        let state=|rs:&Value|field_state(units,rs,s,task);
         if o["outcome"]=="unchanged_observed"{
-            // Product and option are distinct: an unchanged product in an
-            // option-only edit is not evidence of a product correction.
-            if task=="product"&&relevant.iter().all(|(_,c)|
+            let changed=events.iter().any(|e|state(&e["beforeRows"])!=state(&e["afterRows"]));
+            if !changed && (relevant.is_empty() || task=="product"&&relevant.iter().all(|(_,c)|
                 c["beforeValue"]["productId"]==c["afterValue"]["productId"]&&
-                c["method"]!="explicit_binding"){continue;}
+                c["method"]!="explicit_binding")){continue;}
             o["outcome"]=json!("changed_requires_review");
+            o["reason"]=json!("intervention_without_final_change");
             o["eligibleForCandidateLearning"]=json!(false);
             o["requiresReview"]=json!(true);
             continue;
         }
-        if o["outcome"]!="changed_requires_review"||relevant.len()!=1{continue;}
-        let (event,candidate)=relevant[0];
+        if o["outcome"]!="changed_requires_review"{continue;}
         let (Some(initial),Some(final_value))=(singleton(&o["initialCandidates"]),singleton(&o["finalCandidates"]))
             else{continue;};
         if initial==final_value{continue;}
+        let Some(chain)=verified_chain(events,initial.to_owned(),final_value.to_owned(),state)else{continue;};
+        let mut last=relevant.into_iter().filter(|(event,_)|std::ptr::eq(*event,chain.last_change));
+        let Some((event,candidate))=last.next()else{continue;};
+        if last.next().is_some(){continue;}
         let cell=&candidate["target"];
         let Some(target)=audit_target(units,&event["afterRows"],cell,s)else{continue;};
-        let mut before=Candidates::new();
-        let mut after=Candidates::new();
-        linked(units,&event["beforeRows"],&mut before);
-        linked(units,&event["afterRows"],&mut after);
-        let task_key=match task{"type"=>"type","product"=>"product","variant"=>"variant","quantity"=>"quantity",_=>continue};
-        let exact=|index:&Candidates,key:&'static str,value:&str|
-            index.get(&(s,key)).is_some_and(|v|v.len()==1&&v.contains(value));
-        if !exact(&before,task_key,initial)||!exact(&after,task_key,final_value){continue;}
         let verified=match task{
             "type"=>candidate["method"]=="explicit_binding"&&candidate["kind"]=="type_change"
-                &&candidate["originalField"].as_str()==Some(initial)
                 &&cell["field"].as_str()==Some(final_value),
             "product"=>target["productId"].as_str()==Some(final_value)
                 && candidate["afterValue"]["productId"].as_str()==Some(final_value),
             "variant"=>target["variantId"].as_str()==Some(final_value)
                 &&candidate["afterValue"]["variantId"].as_str()==Some(final_value)
-                &&candidate["beforeValue"]["productId"]==candidate["afterValue"]["productId"]
-                &&target["productId"].as_str().is_some_and(|id|
-                    exact(&before,"product",id)&&exact(&after,"product",id))
+                &&target["productId"].as_str().is_some_and(|id|events.iter().all(|e|
+                    field_state(units,&e["beforeRows"],s,"product").as_deref()==Some(id)
+                    &&field_state(units,&e["afterRows"],s,"product").as_deref()==Some(id)))
                 &&verified_variant_color(units,s,&event["afterRows"],target),
             "quantity"=>target["quantityConfirmed"]==true
                 &&target["quantity"].as_i64().is_some_and(|q|q>0&&q.to_string()==final_value)
@@ -338,6 +389,7 @@ fn reconcile_field_audits(units:&[u16],candidates:&BTreeMap<Span,Vec<(&Value,Val
         o["requiresReview"]=json!(false);
         o["negativeCandidates"]=o["initialCandidates"].clone();
         o["positiveCandidates"]=o["finalCandidates"].clone();
+        o["verifiedTransitionCount"]=json!(chain.changes);
     }
 }
 
@@ -353,6 +405,7 @@ fn reconcile_owner_audits(payload:&Value,units:&[u16],first:&Value,observations:
     let raw=snapshot["raw"].as_str().unwrap_or("");
     let mut seen=BTreeMap::<&str,&Value>::new();
     let mut candidates=BTreeMap::<Span,Vec<(&Value,Value)>>::new();
+    let mut ordered=Vec::new();
     for event in events{
         if event["orderId"].as_str()!=Some(id)||event["sourceRaw"].as_str()!=Some(raw)
             || &event["initialAnalysis"]!=first || event["context"]["schemaVersion"]!=1{continue;}
@@ -363,6 +416,7 @@ fn reconcile_owner_audits(payload:&Value,units:&[u16],first:&Value,observations:
             if old!=event{return Err("동일 정정 감사 ID의 내용이 상충합니다.".into());}
             continue;
         }
+        ordered.push((at,event));
         let extracted=super::corrections::extract(event)?;
         for candidate in rows(&extracted["candidates"]){
             if let Some(s)=span(units,&candidate["source"]){
@@ -370,13 +424,20 @@ fn reconcile_owner_audits(payload:&Value,units:&[u16],first:&Value,observations:
             }
         }
     }
-    reconcile_field_audits(units,&candidates,observations);
+    ordered.sort_by(|a,b|a.0.cmp(&b.0));
+    let ordered=ordered.into_iter().map(|(_,event)|event).collect::<Vec<_>>();
+    reconcile_field_audits(units,&ordered,&candidates,observations);
     for observation in observations.iter_mut().filter(|v|v["task"]=="recipient_ownership"){
         let Some(s)=position(units,&observation["source"])else{continue;};
-        let Some(all_entries)=candidates.get(&s)else{continue;};
-        let entries=all_entries.iter().filter(|(_,c)|c["method"]=="explicit_binding").collect::<Vec<_>>();
-        if entries.is_empty(){continue;}
+        let entries=candidates.get(&s).into_iter().flatten()
+            .filter(|(_,c)|c["method"]=="explicit_binding").collect::<Vec<_>>();
+        let kind=observation["sourceKind"].as_str().unwrap_or("");
+        let Some(original)=rows(&first["candidates"]).find(|c|span(units,c)==Some(s)
+            && c["kind"].as_str()==Some(kind)).and_then(|c|c["value"].as_str())else{continue;};
+        let state=|rs:&Value|OwnerIndex::new(units,rs).owner(s,kind,original);
         if observation["outcome"]=="unchanged_observed"{
+            if entries.is_empty()&&!ordered.iter().any(|e|
+                state(&e["beforeRows"])!=state(&e["afterRows"])){continue;}
             // An explicit intervention (including a reverted edit) is not
             // an untouched observation. Do not count it as weak success.
             observation["outcome"]=json!("changed_requires_review");
@@ -386,21 +447,28 @@ fn reconcile_owner_audits(payload:&Value,units:&[u16],first:&Value,observations:
             continue;
         }
         if observation["reason"]!="different_verified_anchor"{continue;}
-        let kind=observation["sourceKind"].as_str().unwrap_or("");
-        let Some(original)=rows(&first["candidates"]).find(|c|span(units,c)==Some(s)
-            && c["kind"].as_str()==Some(kind)).and_then(|c|c["value"].as_str())else{continue;};
         let (Some(initial),Some(final_anchor))=(position(units,&observation["initialAnchor"]),
             position(units,&observation["finalAnchor"]))else{continue;};
-        // Only an unambiguous direct old -> new transition is promoted.
-        // Multiple explicit edits for the same span remain under review.
-        if entries.len()!=1{continue;}
-        let (event,candidate)=entries[0];
+        let Some(chain)=verified_chain(&ordered,initial,final_anchor,state)else{continue;};
+        // Every owner transfer must have an explicit source-binding audit.
+        let mut valid=true;
+        for &event in &ordered{
+            if state(&event["beforeRows"])==state(&event["afterRows"]){continue;}
+            let matching=entries.iter().filter(|(e,c)|
+                std::ptr::eq(*e,event)&&audit_target(units,&event["afterRows"],&c["target"],s).is_some()
+                && c["target"]["itemId"].is_null()
+                && c["target"]["field"].as_str().is_some_and(|field|kind==field||contact(kind)&&contact(field)))
+                .count();
+            if matching!=1{valid=false;break;}
+        }
+        if !valid{continue;}
+        let mut last=entries.into_iter().filter(|(event,_)|std::ptr::eq(*event,chain.last_change));
+        let Some((event,candidate))=last.next()else{continue;};
+        if last.next().is_some(){continue;}
         let cell=&candidate["target"];
         let field=cell["field"].as_str().unwrap_or("");
         if cell["itemId"].is_string() || !(kind==field||contact(kind)&&contact(field)){continue;}
-        let old=OwnerIndex::new(units,&event["beforeRows"]);
         let new=OwnerIndex::new(units,&event["afterRows"]);
-        if old.owner(s,kind,original)!=Some(initial)||new.owner(s,kind,original)!=Some(final_anchor){continue;}
         let Some(target_id)=cell["recipientId"].as_str().filter(|s|!s.is_empty())else{continue;};
         let mut targets=rows(&event["afterRows"]).enumerate()
             .filter(|(_,r)|r["id"].as_str()==Some(target_id));
@@ -413,8 +481,11 @@ fn reconcile_owner_audits(payload:&Value,units:&[u16],first:&Value,observations:
         observation["negativeCandidates"]=observation["initialCandidates"].clone();
         observation["positiveCandidates"]=observation["finalCandidates"].clone();
         // Client-specific evidence must additionally match the audited client.
-        observation["auditClientId"]=event["context"]["clientId"].clone();
-        observation["auditClientSelection"]=event["context"]["clientSelection"].clone();
+        observation["verifiedTransitionCount"]=json!(chain.changes);
+        if chain.same_client{
+            observation["auditClientId"]=event["context"]["clientId"].clone();
+            observation["auditClientSelection"]=event["context"]["clientSelection"].clone();
+        }
     }
     Ok(())
 }
@@ -761,7 +832,8 @@ mod tests{
     }
     fn field_observation(p:&Value,task:&str)->Value{
         let result=compare(p).unwrap();
-        rows(&result["observations"]).find(|o|o["task"].as_str()==Some(task)).unwrap().clone()
+        let found=rows(&result["observations"]).find(|o|o["task"].as_str()==Some(task)).unwrap().clone();
+        found
     }
     #[test]
     fn field_audit_product_and_type_corrections_have_opposite_polarities(){
