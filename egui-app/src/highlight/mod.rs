@@ -27,6 +27,41 @@ impl States{
 }
 /// An existing selection retains its established surface palette. A hover
 /// never adds a second border or hides a persistent state.
+/// Read-only and edit renderers share the same persistent error decision.
+/// The editor owns the surface when a required cell is actively edited.
+#[derive(Clone,Copy)]
+pub(crate) struct FieldHighlights<const N:usize>{
+    linked:[bool;N],required:[bool;N],editing:[bool;N],
+}
+impl<const N:usize> From<[bool;N]> for FieldHighlights<N>{
+    fn from(linked:[bool;N])->Self{Self::new(linked,[false;N],[false;N])}
+}
+impl<const N:usize> FieldHighlights<N>{
+    pub(crate) fn new(linked:[bool;N],required:[bool;N],editing:[bool;N])->Self{
+        Self{linked,required,editing}
+    }
+    pub(crate) fn editor_owns(self,index:usize)->bool{self.required[index]&&self.editing[index]}
+    pub(crate) fn role(self,index:usize,review:bool)->Option<Role>{
+        if self.editor_owns(index){return None;}
+        States{required:self.required[index],linked:self.linked[index],review,..Default::default()}.resolve()
+    }
+}
+pub(crate) fn field_radius(role:Role)->CornerRadius{
+    CornerRadius::same(if role==Role::LinkedPreview{SOURCE_RADIUS as u8}else{CONTROL_RADIUS})
+}
+fn composite_opaque(t:Color32,rest:Color32)->Color32{
+    let [r,g,b,a]=t.to_array();
+    let inv=255-u16::from(a);
+    let mix=|src:u8,dst:u8| (u16::from(src)+(u16::from(dst)*inv+127)/255).min(255) as u8;
+    Color32::from_rgb(mix(r,rest.r()),mix(g,rest.g()),mix(b,rest.b()))
+}
+pub(crate) fn field_background(ui:&Ui,rect:Rect,role:Role,opaque:bool){
+    let fill=palette(role).fill.map(|t|if opaque{composite_opaque(t,theme::INPUT)}else{t});
+    paint_parts(ui.painter(),rect,field_radius(role),fill,None);
+}
+pub(crate) fn field_outline(ui:&Ui,rect:Rect,role:Role){
+    paint_outline(ui.painter(),rect,field_radius(role),role);
+}
 pub(crate) fn prioritized_stroke(rest:Stroke,states:States)->Stroke{
     states.resolve().and_then(|role|palette(role).stroke).unwrap_or(rest)
 }
@@ -153,7 +188,7 @@ pub(crate) fn action_surface(rest:Color32,rest_stroke:Stroke,light:bool,hovered:
     let role=if light{Role::LightHover}else{Role::Hover};
     let p=palette(role);
     let fill=if hovered{
-        if light{p.fill.unwrap_or(rest)}else{p.fill.map(|t|{let [r,g,b,a]=t.to_array(); let inv=255-u16::from(a); let mix=|src:u8,dst:u8| (u16::from(src)+(u16::from(dst)*inv+127)/255).min(255) as u8; Color32::from_rgb(mix(r,rest.r()),mix(g,rest.g()),mix(b,rest.b()))}).unwrap_or(rest)}
+        if light{p.fill.unwrap_or(rest)}else{p.fill.map(|t|composite_opaque(t,rest)).unwrap_or(rest)}
     }else{rest};
     let stroke=if hovered||focused{p.stroke.unwrap_or(rest_stroke)}else{rest_stroke};
     (fill,stroke)
@@ -246,6 +281,11 @@ mod tests{
         assert_eq!(States{focused:true,hovered:true,..States::default()}.resolve(),Some(Role::Focus));
         assert_eq!(States::default().resolve(),None);
         assert_eq!(prioritized_stroke(Stroke::NONE,all).color,theme::ERROR_BORDER);
+        let fields=FieldHighlights::new([true,true,false],[true,true,false],[false,true,false]);
+        assert_eq!(fields.role(0,true),Some(Role::RequiredInput));
+        assert_eq!(fields.role(1,true),None);
+        assert!(fields.editor_owns(1));
+        assert_eq!(fields.role(2,true),Some(Role::RequiredReview));
     }
     #[test]
     fn common_painter_preserves_parent_clip(){

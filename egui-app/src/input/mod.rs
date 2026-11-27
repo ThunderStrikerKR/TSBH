@@ -543,15 +543,25 @@ fn reception_text_editor_at_click(
 /// Ui::place never advances the parent layout cursor (Ui::put does).
 /// The readonly control and focused control share the same builder, so the text
 /// baseline, inset and phone font do not change when focus is acquired.
+pub(crate) struct RecipientEditorState{linked:bool,required:bool}
+impl From<bool> for RecipientEditorState{
+    fn from(linked:bool)->Self{Self{linked,required:false}}
+}
+impl From<(bool,bool)> for RecipientEditorState{
+    fn from((linked,required):(bool,bool))->Self{Self{linked,required}}
+}
 pub(crate) fn reception_recipient_inline_cell_editor(
     ui:&mut Ui,cell:Rect,value:&mut String,request_focus:bool,
-    click_at:Option<egui::Pos2>,phone_number:bool,active:bool
+    click_at:Option<egui::Pos2>,phone_number:bool,active:impl Into<RecipientEditorState>
 )->Response{
-    reception_text_editor_at_click(
-        ui,cell,
-        reception_recipient_text_edit(value,cell.width(),active,phone_number),
-        request_focus,click_at
-    )
+    let RecipientEditorState{linked,required}=active.into();
+    let role=crate::highlight::Role::RequiredInput;
+    if required{crate::highlight::field_background(ui,cell,role,true);}
+    let edit=reception_recipient_text_edit(value,cell.width(),linked&&!required,phone_number);
+    let edit=if required{edit.frame(false)}else{edit};
+    let response=reception_text_editor_at_click(ui,cell,edit,request_focus,click_at);
+    if required{crate::highlight::field_outline(ui,cell,role);}
+    response
 }
 
 /// Actual editor rendered IN the already allocated input cell; no dialog,
@@ -574,11 +584,11 @@ pub(crate) fn reception_inline_cell_editor(
 /// table footprint and shared live separator/suffix behavior.
 fn reception_money_inline_cell_editor(
     ui:&mut Ui,cell:Rect,value:&mut String,request_focus:bool,
-    click_at:Option<egui::Pos2>
+    click_at:Option<egui::Pos2>,required:bool
 )->Response{
     reception_money_editor_at_rect(
         ui,cell.shrink2(egui::vec2(theme::SPACE_4,theme::SPACE_2)),
-        value,request_focus,click_at
+        value,request_focus,click_at,required
     )
 }
 
@@ -590,7 +600,7 @@ fn reception_money_font()->egui::FontId{
 
 fn reception_money_editor_at_rect(
     ui:&mut Ui,rect:Rect,value:&mut String,request_focus:bool,
-    click_at:Option<egui::Pos2>
+    click_at:Option<egui::Pos2>,required:bool
 )->Response{
     // The preformatted draft is also the comparison baseline in both
     // callers. Normalize raw initial values for direct component reuse.
@@ -601,11 +611,13 @@ fn reception_money_editor_at_rect(
         ui,value,reception_money_font(),rect.width(),"원",inset,
         RECEPTION_MONEY_UNIT_GAP,typography::reception_cell_text_margin()
     );
-    let response=reception_text_editor_at_click(
-        ui,rect,edit,request_focus,click_at
-    );
+    let role=crate::highlight::Role::RequiredInput;
+    if required{crate::highlight::field_background(ui,rect,role,true);}
+    let edit=if required{edit.frame(false)}else{edit};
+    let response=reception_text_editor_at_click(ui,rect,edit,request_focus,click_at);
     normalize_money_edit(ui,value,&before,&response);
     paint_money_unit(ui,response.rect,unit_galley,inset);
+    if required{crate::highlight::field_outline(ui,rect,role);}
     response
 }
 
@@ -642,7 +654,7 @@ pub(crate) fn reception_freight_inline_cell_editor(
     ui:&mut Ui,cell:Rect,value:&mut String,request_focus:bool,
     click_at:Option<egui::Pos2>
 )->Response{
-    reception_money_editor_at_rect(ui,cell,value,request_focus,click_at)
+    reception_money_editor_at_rect(ui,cell,value,request_focus,click_at,false)
 }
 
 /// Quantity uses the shared date-selector frame and segment buttons.
@@ -667,7 +679,7 @@ pub(crate) struct ReceptionQuantityEditorResponse{
 
 fn reception_quantity_editor(
     ui:&mut Ui,cell:Rect,value:&mut String,request_focus:bool,
-    click_at:Option<egui::Pos2>,maximum:i64
+    click_at:Option<egui::Pos2>,maximum:i64,required:bool
 )->ReceptionQuantityEditorResponse{
     let rect=cell.shrink2(egui::vec2(theme::SPACE_2,theme::SPACE_2));
     let mut placed=navigation_segment_child(
@@ -681,7 +693,7 @@ fn reception_quantity_editor(
     let increase=reception_quantity_step(value,1)
         .filter(|next|next.parse::<i64>().is_ok_and(|n|n<=maximum));
     let (_, (input,step_interaction))=date_navigation_segmented_surface_with_state(
-        &mut placed,"quantity-stepper",rect.size(),|segments,inner|{
+        &mut placed,"quantity-stepper",rect.size(),required.then_some(crate::highlight::Role::RequiredInput),|segments,inner|{
             // Left arrow pair; right-aligned value and permanent unit.
             let arrow_width=16.0;
             let unit_width=segments.painter().layout_no_wrap(
@@ -754,7 +766,7 @@ fn reception_quantity_editor(
             if clicked || pressing{input.request_focus();}
             (input,clicked||pressing)
         },
-        |(input,step)|crate::highlight::States{focused:input.has_focus()||*step,..Default::default()}
+        |(input,step)|crate::highlight::States{required,focused:input.has_focus()||*step,..Default::default()}
     );
     ReceptionQuantityEditorResponse{input,step_interaction}
 }
@@ -779,7 +791,7 @@ pub(crate) fn bounded_quantity_field(
         let (rect,_)=input.allocate_exact_size(
             Vec2::new(112.0,theme::INPUT_HEIGHT),egui::Sense::hover()
         );
-        reception_quantity_editor(input,rect,value,false,None,maximum);
+        reception_quantity_editor(input,rect,value,false,None,maximum,false);
     });
     if !value.is_empty() && !value.parse::<i64>().is_ok_and(|n|(1..=maximum).contains(&n)){
         *value=previous;
@@ -795,17 +807,25 @@ pub(crate) fn reception_numeric_edit_finished(response:&Response,step_interactio
     crate::cell_navigation::worksheet_blur_finished(response,step_interaction)
 }
 
+pub(crate) struct NumericEditorState{kind:ReceptionNumericCell,required:bool}
+impl From<ReceptionNumericCell> for NumericEditorState{
+    fn from(kind:ReceptionNumericCell)->Self{Self{kind,required:false}}
+}
+impl From<(ReceptionNumericCell,bool)> for NumericEditorState{
+    fn from((kind,required):(ReceptionNumericCell,bool))->Self{Self{kind,required}}
+}
 pub(crate) fn reception_item_numeric_editor(
     ui:&mut Ui,rect:Rect,value:&mut String,focus:bool,
-    click_at:Option<egui::Pos2>,kind:ReceptionNumericCell
+    click_at:Option<egui::Pos2>,kind:impl Into<NumericEditorState>
 )->(Response,bool){
+    let NumericEditorState{kind,required}=kind.into();
     match kind{
         ReceptionNumericCell::Quantity=>{
-            let editor=reception_quantity_editor(ui,rect,value,focus,click_at,RECEPTION_QUANTITY_MAX);
+            let editor=reception_quantity_editor(ui,rect,value,focus,click_at,RECEPTION_QUANTITY_MAX,required);
             (editor.input,editor.step_interaction)
         }
         ReceptionNumericCell::Money=>(
-            reception_money_inline_cell_editor(ui,rect,value,focus,click_at),false
+            reception_money_inline_cell_editor(ui,rect,value,focus,click_at,required),false
         )
     }
 }

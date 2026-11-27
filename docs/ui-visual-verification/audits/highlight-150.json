@@ -14,7 +14,9 @@
     "egui-app/src/input/mod.rs",
     "egui-app/src/card/mod.rs",
     "egui-app/src/composite_client.rs",
-    "egui-app/src/client_chooser.rs"
+    "egui-app/src/client_chooser.rs",
+    "egui-app/src/composite_reception.rs",
+    "egui-app/src/main.rs"
   ],
   "visualStatus": "NOT_VERIFIED",
   "reason": "Windows 실화면 및 상태별 단일 외곽선, 선택/호버 동시 상태, 수량 증감 포커스, 카드 stripe 검증 증거 미확보."

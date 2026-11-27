@@ -125,15 +125,20 @@ pub fn reception_capture_shortcut_hint(ui:&mut Ui){
 /// Draw BEFORE TextEdit renders its glyphs: egui's normal TextEdit background
 /// is disabled only for linked fields, so the same fill/radius used by
 /// source evidence and item cells remains visible without obscuring text.
-fn reception_recipient_linked_background(
-    ui:&Ui,width:f32,active:bool
-){
-    if !active {return;}
-    let rect=Rect::from_min_size(
-        ui.cursor().min,
-        Vec2::new(width,theme::INPUT_HEIGHT)
-    );
-    source_highlight::paint_active_background(ui,rect);
+fn reception_recipient_emphasis<'a>(
+    ui:&Ui,value:&'a mut String,width:f32,phone:bool,
+    role:Option<crate::highlight::Role>,editor_owns:bool
+)->egui::TextEdit<'a>{
+    use crate::highlight::Role;
+    if let Some(role)=role{
+        let rect=Rect::from_min_size(ui.cursor().min,Vec2::new(width,theme::INPUT_HEIGHT));
+        crate::highlight::field_background(ui,rect,role,true);
+    }
+    let edit=reception_recipient_text_edit(value,width,role==Some(Role::LinkedPreview),phone);
+    if let Some(role)=role{
+        let ink=crate::highlight::palette(role).ink.unwrap_or(theme::text_ink(theme::TextRole::Value,theme::TextState::Normal));
+        edit.frame(false).text_color(ink)
+    }else if editor_owns{edit.frame(false)}else{edit}
 }
 
 /// Every recipient field shares one 36pt baseline. The two telephone
@@ -151,8 +156,9 @@ pub fn reception_recipient_fields(
     mobile: &mut String,
     phone: &mut String,
     note: &mut String,
-    active: [bool; 5],
+    active: impl Into<crate::highlight::FieldHighlights<5>>,
 ) -> [Response; 5] {
+    let active=active.into();
 
     fn label_cell(ui: &mut Ui, text: &str, width: f32) -> Response {
         let (rect, response) = ui.allocate_exact_size(
@@ -166,32 +172,26 @@ pub fn reception_recipient_fields(
         response
     }
 
-    fn row(ui: &mut Ui, label: &str, value: &mut String, active: bool,index:usize) -> Response {
+    fn row(ui: &mut Ui, label: &str, value: &mut String, active: crate::highlight::FieldHighlights<5>,index:usize) -> Response {
         ui.horizontal(|line| {
             line.spacing_mut().item_spacing.x = theme::RECIPIENT_LABEL_GAP;
             label_cell(line, label, theme::RECIPIENT_LABEL_WIDTH);
             let width = line.available_width().max(1.0);
-            reception_recipient_linked_background(line,width,active);
-            let orange=!active && crate::one_touch::recipient(line,index);
-            if orange{crate::one_touch::background(line,Rect::from_min_size(line.cursor().min,Vec2::new(width,theme::INPUT_HEIGHT)));}
-            // The response belongs to the input, NOT the combined row.
-            // This is read-only while retaining hover and native text layout.
-            let edit=reception_recipient_text_edit(value,width,active,false);
-            let edit=if orange{edit.frame(false).text_color(crate::one_touch::INK)}else{edit};
+            let role=active.role(index,crate::one_touch::recipient(line,index));
+            let edit=reception_recipient_emphasis(line,value,width,false,role,active.editor_owns(index));
             let display=allocate_singleline_field(
                 line,Vec2::new(width, theme::INPUT_HEIGHT),edit.interactive(false),None,
             );
             let hit=reception_recipient_value_hit(line,&display);
-            source_highlight::paint_active_if(line,&hit,active);
-            if orange{crate::one_touch::outline(line,hit.rect);}
+            if let Some(role)=role{crate::highlight::field_outline(line,hit.rect,role);}
             hit
         }).inner
     }
 
     let responses=ui.scope(|fields| {
         fields.spacing_mut().item_spacing.y = theme::RECIPIENT_ROW_GAP;
-        let name_response = row(fields, "이름", name, active[0],0);
-        let address_response = row(fields, "주소", address, active[1],1);
+        let name_response = row(fields, "이름", name, active,0);
+        let address_response = row(fields, "주소", address, active,1);
 
         let row_width = fields.available_width()
             .max(theme::RECIPIENT_PHONE_ROW_MIN_WIDTH);
@@ -219,42 +219,30 @@ pub fn reception_recipient_fields(
                     line.spacing_mut().item_spacing.x =
                         theme::RECIPIENT_LABEL_GAP;
                     label_cell(line, "휴대폰", theme::RECIPIENT_LABEL_WIDTH);
-                    reception_recipient_linked_background(
-                        line,mobile_width,active[2]
-                    );
-                    let orange=!active[2] && crate::one_touch::recipient(line,2);
-                    if orange{crate::one_touch::background(line,Rect::from_min_size(line.cursor().min,Vec2::new(mobile_width,theme::INPUT_HEIGHT)));}
-                    let edit=reception_recipient_text_edit(mobile,mobile_width,active[2],true);
-                    let edit=if orange{edit.frame(false).text_color(crate::one_touch::INK)}else{edit};
+                    let role=active.role(2,crate::one_touch::recipient(line,2));
+                    let edit=reception_recipient_emphasis(line,mobile,mobile_width,true,role,active.editor_owns(2));
                     let mobile_display=allocate_singleline_field(
                         line,Vec2::new(mobile_width,theme::INPUT_HEIGHT),edit.interactive(false),None,
                     );
                     let mobile_input=reception_recipient_value_hit(line,&mobile_display);
-                    source_highlight::paint_active_if(line,&mobile_input,active[2]);
-                    if orange{crate::one_touch::outline(line,mobile_input.rect);}
+                    if let Some(role)=role{crate::highlight::field_outline(line,mobile_input.rect,role);}
                     // Only the gap between the TWO contact groups is 8pt.
                     line.spacing_mut().item_spacing.x =
                         theme::RECIPIENT_PHONE_COLUMN_GAP;
                     label_cell(line, "전화", theme::RECIPIENT_PHONE_LABEL_WIDTH);
                     line.spacing_mut().item_spacing.x =
                         theme::RECIPIENT_LABEL_GAP;
-                    reception_recipient_linked_background(
-                        line,phone_width,active[3]
-                    );
-                    let orange=!active[3] && crate::one_touch::recipient(line,3);
-                    if orange{crate::one_touch::background(line,Rect::from_min_size(line.cursor().min,Vec2::new(phone_width,theme::INPUT_HEIGHT)));}
-                    let edit=reception_recipient_text_edit(phone,phone_width,active[3],true);
-                    let edit=if orange{edit.frame(false).text_color(crate::one_touch::INK)}else{edit};
+                    let role=active.role(3,crate::one_touch::recipient(line,3));
+                    let edit=reception_recipient_emphasis(line,phone,phone_width,true,role,active.editor_owns(3));
                     let phone_display=allocate_singleline_field(
                         line,Vec2::new(phone_width,theme::INPUT_HEIGHT),edit.interactive(false),None,
                     );
                     let phone_input=reception_recipient_value_hit(line,&phone_display);
-                    source_highlight::paint_active_if(line,&phone_input,active[3]);
-                    if orange{crate::one_touch::outline(line,phone_input.rect);}
+                    if let Some(role)=role{crate::highlight::field_outline(line,phone_input.rect,role);}
                     (mobile_input,phone_input)
                 }).inner
             }).inner;
-        let note_response = row(fields, "메시지", note, active[4],4);
+        let note_response = row(fields, "메시지", note, active,4);
         [
             name_response, address_response,
             mobile_response, phone_response, note_response,
@@ -323,8 +311,9 @@ pub struct ReceptionItemCells {
 /// Render one item row; editability and action-column allocation are independent.
 pub fn reception_item_row(
     ui: &mut Ui, name: &str, quantity: &str, amount: &str,
-    active: [bool; 3],editable:bool,remove_slot:bool,
+    active: impl Into<crate::highlight::FieldHighlights<3>>,editable:bool,remove_slot:bool,
 ) -> ReceptionItemCells {
+    let active=active.into();
     let action_width=if remove_slot{theme::RECEPTION_ITEM_REMOVE_WIDTH}else{0.0};
     let width=management_table_data_width(
         ui.available_width(),0.0,theme::RECEPTION_ITEMS_MIN_TABLE_WIDTH+action_width
@@ -370,9 +359,8 @@ pub fn reception_item_row(
         let row_text=if index==1 {compact_quantity} else {text};
         // Draw the same blue fill as recipient TextEdit, before value glyphs.
         // No header, label, surrounding table row or column divider is filled.
-        let orange=!active[index] && crate::one_touch::stage(ui).item(index);
-        if active[index] {source_highlight::paint_active_background(ui,cell);}
-        else if orange{crate::one_touch::background(ui,cell);}
+        let role=active.role(index,crate::one_touch::stage(ui).item(index));
+        if let Some(role)=role{crate::highlight::field_background(ui,cell,role,false);}
         // Text must stay clear of the 2pt inset outline. Keeping the
         // value clip and its anchor inside the highlighted cell also stops
         // the last digit / descender from touching a blue edge.
@@ -384,7 +372,7 @@ pub fn reception_item_row(
         let visible_product=(index==0).then(||cached_reception_product(
             ui,text,(value_clip.width()-0.5).max(0.0),&font,color
         ));
-        let ink=if active[index] {source_highlight::ACTIVE_TEXT} else if orange{crate::one_touch::INK}else{color};
+        let ink=role.and_then(|role|crate::highlight::palette(role).ink).unwrap_or(color);
         let label=visible_product.as_deref().unwrap_or(row_text);
         // Pending monetary markers are not digits; preserve the approved optical correction.
         let y_adjust=if index==2 && reception_pending_money_marker(label){
@@ -411,10 +399,10 @@ pub fn reception_item_row(
     // The renderer owns both fill and border. Do not let reception page
     // branches independently paint an outline: pending board previews
     // otherwise receive blue fills without the matching blue stroke.
-    for (index,(response,on)) in [(&product,active[0]),(&quantity,active[1]),
-        (&amount,active[2])].into_iter().enumerate(){
-        source_highlight::paint_active_if(ui,response,on);
-        if !on && crate::one_touch::stage(ui).item(index){crate::one_touch::outline(ui,response.rect);}
+    for (index,response) in [&product,&quantity,&amount].into_iter().enumerate(){
+        if let Some(role)=active.role(index,crate::one_touch::stage(ui).item(index)){
+            crate::highlight::field_outline(ui,response.rect,role);
+        }
     }
     let mut remove_clicked=false;
     if remove_slot {

@@ -1459,8 +1459,13 @@ const highlightContracts = {
   "dropdown/mod.rs":{"management_dropdown_option_palette":{"highlight :: dropdown_options (":1},
     "management_dropdown_trigger_inner":{"highlight :: action_widget (":1}},
   "composite_workflow.rs":{"workflow_shipment_row":{"highlight :: paint_parts (":1}},
+  "composite_reception.rs":{
+    "reception_recipient_emphasis":{"highlight :: field_background (":1},
+    "reception_item_row":{"highlight :: field_background (":1,"highlight :: field_outline (":1}},
   "input/mod.rs":{
-    "paint_required_input":{"highlight :: paint (":1}},
+    "paint_required_input":{"highlight :: paint (":1},
+    "reception_recipient_inline_cell_editor":{"highlight :: field_background (":1,"highlight :: field_outline (":1},
+    "reception_money_editor_at_rect":{"highlight :: field_background (":1,"highlight :: field_outline (":1}},
   "source_highlight.rs":{
     "paint_active_background":{"highlight :: paint_fill (":1},
     "paint_active_outline":{"highlight :: paint_outline (":1},

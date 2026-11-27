@@ -177,20 +177,22 @@ pub(crate) fn date_navigation_segmented_surface<R>(
     ui:&mut Ui,id_salt:impl std::hash::Hash,size:Vec2,
     add_segments:impl FnOnce(&mut Ui,Rect)->R
 )->(Rect,R){
-    date_navigation_segmented_surface_with_state(ui,id_salt,size,add_segments,|_|crate::highlight::States::default())
+    date_navigation_segmented_surface_with_state(ui,id_salt,size,None,add_segments,|_|crate::highlight::States::default())
 }
 /// A single outer outline chosen after the segment interaction is known.
 /// The child never draws a second focus outline around the same surface.
 pub(crate) fn date_navigation_segmented_surface_with_state<R>(
-    ui:&mut Ui,id_salt:impl std::hash::Hash,size:Vec2,
+    ui:&mut Ui,id_salt:impl std::hash::Hash,size:Vec2,base_role:Option<crate::highlight::Role>,
     add_segments:impl FnOnce(&mut Ui,Rect)->R,
     state:impl FnOnce(&R)->crate::highlight::States
 )->(Rect,R){
     let (outer,_)=ui.allocate_exact_size(size,Sense::hover());
     let inner=outer.shrink(theme::FRAME_STROKE_WIDTH);
-    ui.painter().rect_filled(
-        outer,theme::CONTROL_RADIUS as f32,theme::INPUT
-    );
+    if let Some(role)=base_role{
+        crate::highlight::field_background(ui,outer,role,true);
+    }else{
+        ui.painter().rect_filled(outer,theme::CONTROL_RADIUS as f32,theme::INPUT);
+    }
     // The parent has already allocated the complete frame. A scoped UI
     // would advance its cursor again using the children's expanded bounds.
     let mut segments=navigation_segment_child(

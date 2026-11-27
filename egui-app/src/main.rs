@@ -7635,11 +7635,14 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                 let highlighted=fields.map(|field|source_highlight::is_active_field(linked_active.as_ref(),id,id,field));
                                 let responses=crate::composite_reception::reception_recipient_fields(
                                     contents,&mut name,&mut address,&mut mobile,
-                                    &mut phone,&mut note,highlighted
+                                    &mut phone,&mut note,crate::highlight::FieldHighlights::new(
+                                        highlighted,fields.map(|field|required.contains(id,field)),
+                                        fields.map(|field|self.confirmed_cell.as_ref().is_some_and(|e|
+                                            e.target.selection.shipment_id==ship.id && e.cell.target.recipient_id==id &&
+                                            e.cell.target.item_id.is_none() && e.cell.target.field==field)))
                                 );
                                 let values=[name,address,mobile,phone,note];
                                 for ((response,field),initial) in responses.iter().zip(fields).zip(values){
-                                    if required.contains(id,field){crate::input::paint_required_input(contents,response.rect);}
                                     let key=source_highlight::key(id,id,field);
                                     if response.hovered(){hovered_detail=Some(key.clone());}
                                     let target=InlineTarget{recipient_id:id.into(),item_id:None,field};
@@ -7652,7 +7655,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                         let result=crate::input::reception_recipient_inline_cell_editor(
                                             contents,response.rect,&mut editor.cell.text,editor.cell.focus_next,
                                             editor.cell.click_at.take(),matches!(field,"mobile"|"phone"),
-                                            source_highlight::is_active(linked_active.as_ref(),&key));
+                                            (source_highlight::is_active(linked_active.as_ref(),&key),required.contains(id,field)));
                                         cell_navigation::remember_worksheet_editor(contents.ctx(),
                                             confirmed_editor_slot(&ship.id,&target),result.id);
                                         editor.cell.focus_next=false;
@@ -7733,7 +7736,13 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                                 );
                                                 let cells=crate::composite_reception::reception_item_row(
                                                     contents,reception_service::item_title_ref(item),
-                                                    &quantity,&amount,highlighted,confirmed_editable,true
+                                                    &quantity,&amount,crate::highlight::FieldHighlights::new(
+                                                        highlighted,fields.map(|field|required.contains(item_id,field)),
+                                                        fields.map(|field|self.confirmed_cell.as_ref().is_some_and(|e|
+                                                            e.target.selection.shipment_id==ship.id && e.cell.target.recipient_id==ship.recipient_id &&
+                                                            e.cell.target.item_id.as_deref()==Some(item_id) &&
+                                                            e.cell.target.field==if field=="price"{"unitPrice"}else{field}))),
+                                                    confirmed_editable,true
                                                 );
                                                 if cells.remove_clicked && confirmed_controls_idle{
                                                     confirmed_item=Some((item.clone(),true));
@@ -7743,7 +7752,6 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                                     (&cells.quantity,"quantity"),
                                                     (&cells.amount,"price")
                                                 ] {
-                                                    if required.contains(item_id,field){crate::input::paint_required_input(contents,response.rect);}
                                                     let key=source_highlight::key(
                                                         &ship.recipient_id,item_id,field
                                                     );
@@ -7766,9 +7774,9 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                                         let navigation=cell_navigation::consume_worksheet_navigation_before_editor(contents.ctx(),confirmed_editor_slot(&ship.id,&target));
                                                         let (result,step)=crate::input::reception_item_numeric_editor(
                                                             contents,response.rect,&mut editor.cell.text,editor.cell.focus_next,
-                                                            editor.cell.click_at.take(),if field=="quantity"{
+                                                            editor.cell.click_at.take(),(if field=="quantity"{
                                                                 crate::input::ReceptionNumericCell::Quantity
-                                                            }else{crate::input::ReceptionNumericCell::Money});
+                                                            }else{crate::input::ReceptionNumericCell::Money},required.contains(item_id,field)));
                                                         cell_navigation::remember_worksheet_editor(contents.ctx(),
                                                             confirmed_editor_slot(&ship.id,&target),result.id);
                                                         editor.cell.focus_next=false;
@@ -8420,7 +8428,10 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                         source_highlight::is_active_field(linked_active.as_ref(),recipient_id,recipient_id,field));
                                     let responses = crate::composite_reception::reception_recipient_fields(
                                         fields, &mut name, &mut address, &mut mobile,
-                                        &mut phone, &mut note, active_fields,
+                                        &mut phone, &mut note, crate::highlight::FieldHighlights::new(
+                                            active_fields,["name","address","mobile","phone","note"].map(|field|required.contains(recipient_id,field)),
+                                            ["name","address","mobile","phone","note"].map(|field|self.inline_editor.as_ref().is_some_and(|e|
+                                                e.target.recipient_id==recipient_id && e.target.item_id.is_none() && e.target.field==field))),
                                     );
                                     let values=[
                                         name.as_str(),address.as_str(),mobile.as_str(),
@@ -8458,9 +8469,9 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                                 editor.focus_next,
                                                 editor.click_at.take(),
                                                 matches!(field,"mobile"|"phone"),
-                                                source_highlight::is_active(
+                                                (source_highlight::is_active(
                                                     linked_active.as_ref(),&key
-                                                )
+                                                ),required.contains(recipient_id,field))
                                             );
                                             cell_navigation::remember_worksheet_editor(
                                                 fields.ctx(),inline_editor_slot(&target),
@@ -8477,9 +8488,6 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                             }else if cell_navigation::worksheet_blur_finished(&edit_response,false){
                                                 inline_commit=true;
                                             }
-                                        }
-                                        if required.contains(recipient_id,field){
-                                            crate::input::paint_required_input(fields,response.rect);
                                         }
                                     }
                                 });
@@ -8566,7 +8574,12 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                                     source_highlight::is_active_field(linked_active.as_ref(),recipient_id,item_id,field));
                                                 let cells=crate::composite_reception::reception_item_row(
                                                     items_ui,reception_service::item_title_ref(item),
-                                                    &quantity,&amount,active_fields,editable,true
+                                                    &quantity,&amount,crate::highlight::FieldHighlights::new(
+                                                        active_fields,["product","quantity","price"].map(|field|required.contains(item_id,field)),
+                                                        ["product","quantity","price"].map(|field|self.inline_editor.as_ref().is_some_and(|e|
+                                                            e.target.recipient_id==recipient_id && e.target.item_id.as_deref()==Some(item_id) &&
+                                                            e.target.field==if field=="price"{"unitPrice"}else{field}))),
+                                                    editable,true
                                                 );
                                                 if cells.remove_clicked{
                                                     item_remove_popup=Some((recipient_id.to_owned(),item_id.to_owned()));
@@ -8626,8 +8639,8 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                                         let (result,step_interaction)=crate::input::reception_item_numeric_editor(
                                                             items_ui,response.rect,&mut editor.text,
                                                             editor.focus_next,editor.click_at.take(),
-                                                            if field=="quantity"{crate::input::ReceptionNumericCell::Quantity}
-                                                            else{crate::input::ReceptionNumericCell::Money}
+                                                            (if field=="quantity"{crate::input::ReceptionNumericCell::Quantity}
+                                                            else{crate::input::ReceptionNumericCell::Money},required.contains(item_id,field))
                                                         );
                                                         cell_navigation::remember_worksheet_editor(
                                                             items_ui.ctx(),inline_editor_slot(&target),
@@ -8644,9 +8657,6 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                                         }else if crate::input::reception_numeric_edit_finished(&result,step_interaction){
                                                             inline_commit=true;
                                                         }
-                                                    }
-                                                    if required.contains(item_id,field){
-                                                        crate::input::paint_required_input(items_ui,response.rect);
                                                     }
                                                 }
                                             }
