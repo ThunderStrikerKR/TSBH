@@ -1226,3 +1226,45 @@ fn freight_modal_content_uses_shared_layout_and_controls(){
     assert!(source.contains("ManagementMenuRole::Details"));
     assert!(!source.contains("menu.set_min_width("));
 }
+
+
+#[test]
+fn change_confirmation_callers_use_shared_decision_and_keep_distinct_ids(){
+    let callers=[
+        (include_str!("../main.rs"),2,1),
+        (include_str!("../settings_view.rs"),1,0),
+        (include_str!("../automatic_message_manager.rs"),1,0),
+        (include_str!("../freight_manager.rs"),2,0),
+        (include_str!("../category_manager.rs"),1,0),
+        (include_str!("../alias_manager.rs"),1,0),
+        (include_str!("../brand_manager.rs"),1,0),
+        (include_str!("../model_group_manager.rs"),1,0),
+        (include_str!("../client_manager.rs"),0,1),
+        (include_str!("../product_manager.rs"),0,1),
+        (include_str!("../item_editor.rs"),0,1),
+        (include_str!("../manual_workspace.rs"),0,1),
+    ];
+    for (source,save,discard) in callers{
+        assert_eq!(source.matches("crate::popup::show_save_confirmation(").count(),save);
+        assert_eq!(source.matches("crate::popup::show_discard_confirmation(").count(),discard);
+    }
+}
+
+#[test]
+fn shared_change_prompts_are_pending_without_user_action(){
+    for with_save in [false,true]{
+        let ctx=test_context();
+        let area=Rect::from_min_size(egui::Pos2::ZERO,Vec2::new(900.0,600.0));
+        let mut result=ChangeDecision::Discard;
+        let _=ctx.run(egui::RawInput{screen_rect:Some(area),..Default::default()},|ctx|{
+            result=if with_save{
+                show_save_confirmation(ctx,area,"change-save-test","변경사항 확인",
+                    "변경사항을 저장할까요?","저장",true,false)
+            }else{
+                show_discard_confirmation(ctx,area,"change-discard-test","변경사항 확인",
+                    "변경사항을 버릴까요?","취소","버리기",true)
+            };
+        });
+        assert_eq!(result,ChangeDecision::Pending);
+    }
+}
