@@ -2,6 +2,7 @@
 //! decisions are all projected by existing native Rust rules::history::list_view.
 //! The native egui view owns only date/search presentation, sort, expansion,
 //! clipboard copy and virtualized fixed-height rows.
+use crate::ui_layout::SharedAllocationExt as _;
 use crate::ui_layout::AlignedUiBuilderExt as _;
 use crate::{
     navigation::calendar_month_start as month_start,
@@ -1085,7 +1086,7 @@ impl OrderHistoryManager {
             }else{theme::INPUT_HEIGHT};
             let toolbar_height=if one_row{theme::INPUT_HEIGHT}
                 else{theme::INPUT_HEIGHT+theme::SPACE_8+date_height};
-            let (toolbar_rect,_)=section.allocate_exact_size(
+            let (toolbar_rect,_)=section.shared_allocate_exact_size(
                 Vec2::new(full_width,toolbar_height),Sense::hover()
             );
             let search_rect=Rect::from_min_size(
