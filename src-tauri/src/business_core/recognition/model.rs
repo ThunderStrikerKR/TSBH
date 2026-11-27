@@ -397,25 +397,31 @@ fn evidence<'a>(text: &str, p: &'a Value, verified: &HashSet<String>) -> Option<
     }
     None
 }
-fn strongest<'a>(text: &str, entries: Vec<Entry<'a>>) -> Vec<Entry<'a>> {
+// Lexicographic baseline evidence, not a calibrated probability. Compute
+// option and length evidence once per eligible candidate, and expose the
+// comparison components before lower-ranked candidates are discarded.
+fn strongest<'a>(text: &str, entries: Vec<Entry<'a>>,trace:&mut Option<&mut Vec<Value>>) -> Vec<Entry<'a>> {
     if entries.is_empty() { return entries; }
-    let priority = entries.iter().map(|e| e.priority).max().unwrap_or(0);
-    let mut xs: Vec<_> = entries.into_iter().filter(|e| e.priority == priority).collect();
-    if xs.len() > 1 && priority == 2 {
-        let max = xs.iter().map(|e| text[e.span.0..e.span.1]
-            .chars().filter(|c| !c.is_whitespace()).count()).max().unwrap_or(0);
-        xs.retain(|e| text[e.span.0..e.span.1].chars()
-            .filter(|c| !c.is_whitespace()).count() == max);
+    let priority=entries.iter().map(|e|e.priority).max().unwrap_or(0);
+    let scored=entries.into_iter().map(|e|{
+        let length=if e.priority==2{text[e.span.0..e.span.1].chars().filter(|c|!c.is_whitespace()).count()}else{0};
+        let options=if e.priority>=2&&(e.priority==priority||trace.is_some()){option_score(text,e.p)}else{0};
+        let rank=(e.priority,length,options);
+        (e,rank)
+    }).collect::<Vec<_>>();
+    let best=scored.iter().map(|(_,r)|*r).max().unwrap_or_default();
+    let ties=scored.iter().filter(|(_,r)|*r==best).count();
+    if let Some(out)=trace.as_deref_mut(){
+        out.push(json!({"stage":"name_candidate_comparison","policyVersion":"legacy-lexicographic-v1",
+            "count":scored.len(),"truncated":scored.len()>128,
+            "candidates":scored.iter().take(128).map(|(e,r)|json!({
+                "productId":str_field(e.p,"id"),"priority":r.0,"matchedLength":r.1,
+                "optionScore":r.2,"byteStart":e.span.0,"byteEnd":e.span.1,
+                "survivesComparison":*r==best&&!(priority==1&&ties>1)
+            })).collect::<Vec<_>>()}));
     }
-    if xs.len() > 1 && priority >= 2 {
-        let scored=xs.into_iter().map(|e|{
-            let score=option_score(text,e.p);(e,score)
-        }).collect::<Vec<_>>();
-        let max=scored.iter().map(|(_,score)|*score).max().unwrap_or(0);
-        xs=scored.into_iter().filter_map(|(e,score)|(score==max).then_some(e)).collect();
-    }
-    if priority == 1 && xs.len() > 1 { return vec![]; }
-    xs
+    if priority==1&&ties>1{return vec![];}
+    scored.into_iter().filter_map(|(e,r)|(r==best).then_some(e)).collect()
 }
 // Observe the real stage survivors without re-running matching. A bounded
 // stage explicitly declares truncation; it cannot certify complete coverage.
@@ -460,14 +466,14 @@ fn name_entries<'a>(text: &str, ps: &[&'a Value],
                         if defaults.is_empty() { family } else { defaults }
                     };
                     trace_entries(trace,"family_color_or_default_filter",&selected);
-                    let selected=strongest(text,selected);
+                    let selected=strongest(text,selected,trace);
                     trace_entries(trace,"strongest_name_evidence",&selected);
                     return selected;
                 }
             }
         }
     }
-    let selected=strongest(text,entries);
+    let selected=strongest(text,entries,trace);
     trace_entries(trace,"strongest_name_evidence",&selected);
     selected
 }
@@ -761,6 +767,19 @@ mod option_boundary_tests {
         assert_eq!(qualifiers("709 무타공").contains("비타공상판"),true);
     }
 
+    #[test]
+    fn product_candidate_comparison_preserves_priority_length_and_ties(){
+        let a=json!({"id":"a","name":"AAA / 블랙"});
+        let b=json!({"id":"b","name":"BBB / 화이트"});
+        let entries=||vec![Entry{p:&a,priority:2,span:(0,3)},Entry{p:&b,priority:2,span:(0,3)}];
+        let mut records=Vec::new();
+        let result=strongest("AAA 화이트",entries(),&mut Some(&mut records));
+        assert_eq!(result.len(),1);
+        assert_eq!(str_field(result[0].p,"id"),"b");
+        assert_eq!(records[0]["candidates"][0]["optionScore"],0);
+        assert_eq!(records[0]["candidates"][1]["survivesComparison"],true);
+        assert_eq!(strongest("AAA",entries(),&mut None).len(),2);
+    }
     #[test]
     fn conflicting_explicit_qualifiers_cannot_qualify_any_product(){
         let proof=qualifiers("가방 포함 / 가방 미포함");
