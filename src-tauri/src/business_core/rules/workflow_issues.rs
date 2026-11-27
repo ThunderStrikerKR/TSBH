@@ -27,6 +27,20 @@ pub(super) fn sale_problem(p:Option<&Value>)->&str{
         ""|"판매중"|"SELLING"|"판매 표시"=>"",other=>other
     }
 }
+// Keep disconnected products distinct from products with a sale-status issue.
+pub(super) fn sale_issue_detail(item_name:&str,problem:&str)->String{
+    if problem=="상품 연결 확인 필요"{
+        format!("{item_name} — {problem}")
+    }else{
+        format!("{item_name} / {problem} — 판매 상태 확인 필요")
+    }
+}
+#[cfg(test)]
+#[test]
+fn sale_issue_detail_distinguishes_connection_from_sale_status(){
+    assert_eq!(sale_issue_detail("709","상품 연결 확인 필요"),"709 — 상품 연결 확인 필요");
+    assert_eq!(sale_issue_detail("709","품절"),"709 / 품절 — 판매 상태 확인 필요");
+}
 // A sale exception is not permission to use a deleted, inactive or
 // disconnected product. Compare the live catalog as well as the actual item.
 fn sale_basis(row:&Value,item:&Value,product:Option<&Value>)->Option<Value>{
@@ -56,7 +70,7 @@ pub(super) fn sale_issues(state:&Value,order:&Value,group_id:&str)->Vec<Value>{
             let problem=sale_problem(product);
             if problem.is_empty(){continue;}
             let mut issue=operational(order,Some(row),group_id,"SALE_STATUS",
-                format!("{} / {} — 판매 상태 확인 필요",str_field(item,"name"),problem),1,"product");
+                sale_issue_detail(str_field(item,"name"),problem),1,"product");
             issue["itemId"]=field(item,"id").clone();
             issue["issueId"]=json!(format!("issue:{}:{}:{}:SALE_STATUS",
                 str_field(order,"id"),str_field(row,"id"),str_field(item,"id")));
@@ -467,8 +481,7 @@ pub(super) fn stage_issues(state:&Value,group_id:&str,next:i64)->Result<Vec<Stri
             if pid.is_empty(){continue;}
             let problem=sale_problem(historical_product(state,pid,str_field(item,"variantId")));
             if !problem.is_empty() && !sale_approved(state,row,item){
-                messages.push(format!("{name}: {} / {problem} — 판매 상태 확인 필요",
-                    str_field(item,"name")));
+                messages.push(format!("{name}: {}",sale_issue_detail(str_field(item,"name"),problem)));
             }
         }
     }

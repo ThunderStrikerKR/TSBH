@@ -378,9 +378,9 @@ pub(super) fn retail_issues(order:&Value,state:&Value)->Vec<String>{
             let problem=if product.is_none(){"상품 연결 확인 필요"}
                 else{super::workflow_issues::sale_problem(product)};
             if !problem.is_empty() && !super::workflow_issues::sale_approved(state,row,item){
-                issues.push(format!("{}: {} / {} — 판매 상태 확인 필요",
+                issues.push(format!("{}: {}",
                     if str_field(row,"name").is_empty(){"수취인"}else{str_field(row,"name")},
-                    str_field(item,"name"),problem));
+                    super::workflow_issues::sale_issue_detail(str_field(item,"name"),problem)));
             }
         }
     }
