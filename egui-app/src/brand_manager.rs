@@ -32,15 +32,20 @@ pub struct BrandManager{
     alias_input:String,
     alias_notice:Option<String>,
     pending:Option<Exit>,
+    confirm_delete:bool,
     after_save:Option<Exit>,
     next_tab:Option<usize>,
     global_approved:bool,
     error:Option<String>,
     notice:Option<String>,
 }
+pub(crate) struct BrandWrite{
+    pub action:&'static str,
+    pub data:Value,
+}
 impl BrandManager {
     fn dirty(&self)->bool{self.form!=self.original||!self.alias_input.trim().is_empty()}
-    pub fn has_overlay(&self)->bool{self.editor_open||self.pending.is_some()}
+    pub fn has_overlay(&self)->bool{self.editor_open||self.pending.is_some()||self.confirm_delete}
     pub fn global_leave_in_progress(&self)->bool{
         self.pending==Some(Exit::Global)||self.after_save==Some(Exit::Global)
     }
@@ -54,17 +59,18 @@ impl BrandManager {
         self.alias_input.clear();self.alias_notice=None;
         self.original=self.form.clone();
         self.pending=None;
+        self.confirm_delete=false;
         self.after_save=None;
         self.error=None;
         self.notice=None;
     }
     pub fn request_tab_leave(&mut self,next:usize)->bool{
-        if self.pending.is_some(){return false;}
+        if self.pending.is_some()||self.confirm_delete{return false;}
         if self.dirty(){self.pending=Some(Exit::Tab(next));false}
         else{true}
     }
     pub fn request_global_leave(&mut self)->bool{
-        if self.pending.is_some(){return false;}
+        if self.pending.is_some()||self.confirm_delete{return false;}
         if self.dirty(){self.pending=Some(Exit::Global);false}
         else{true}
     }
@@ -100,7 +106,7 @@ impl BrandManager {
         else{self.apply_exit(Exit::Select(id),catalog);}
     }
     fn close_editor(&mut self){
-        self.editor_open=false;self.form=BrandForm::default();self.original=self.form.clone();self.error=None;
+        self.editor_open=false;self.confirm_delete=false;self.form=BrandForm::default();self.original=self.form.clone();self.error=None;
         self.alias_input.clear();self.alias_notice=None;
     }
     fn add_alias(&mut self){
@@ -124,6 +130,18 @@ impl BrandManager {
             "aliases":self.form.aliases,
             "evidence":self.form.evidence
         })
+    }
+    fn delete_request(&self)->Option<BrandWrite>{
+        let id=self.form.editing.as_ref()?;
+        if !self.expected_entity.is_object()||field(&self.expected_entity,"id")!=id{return None;}
+        Some(BrandWrite{action:"delete_brand",data:json!({
+            "brandId":id,"expectedEntity":self.expected_entity
+        })})
+    }
+    pub fn on_deleted(&mut self){
+        self.close_editor();
+        self.pending=None;self.after_save=None;
+        self.notice=Some("브랜드를 삭제했습니다.".into());
     }
     pub fn on_saved(&mut self,catalog:&Value){
         self.close_editor();
@@ -197,8 +215,8 @@ impl BrandManager {
     fn show_editor(&mut self,ctx:&Context,work_area:Rect,editable:bool,busy:bool)->Option<Value>{
         if !self.editor_open{return None;}
         let title=if self.form.editing.is_some(){"브랜드 편집"}else{"브랜드 추가"};
-        let mut close=false;let mut save=false;
-        let nested=self.pending.is_some();
+        let mut close=false;let mut save=false;let mut request_delete=false;
+        let nested=self.pending.is_some()||self.confirm_delete;
         crate::popup::modal_backdrop(ctx,"brand-editor-dim",false);
         crate::popup::modal_window(ctx,title,"brand-editor",work_area)
             .default_width(theme::MODAL_DEFAULT_MAX_WIDTH.min(work_area.width()))
@@ -233,10 +251,13 @@ impl BrandManager {
                             crate::popup::modal_compact_text_field(body,"확인 근거 URL",&mut self.form.evidence,"확인 근거 URL");
                         });
                     });
-                    // Brand deletion is not a supported catalog operation.
-                    // Use the same split footer, leaving the leading action slot empty.
                     workspace.footer(
-                        |_|{},
+                        |left|{
+                            if self.form.editing.is_some(){
+                                request_delete=crate::button::action(left,"브랜드 삭제",theme::ButtonRole::Danger,
+                                    editable&&!busy&&!nested).clicked();
+                            }
+                        },
                         |right|{
                             save=crate::button::action(right,"브랜드 저장",theme::ButtonRole::Primary,
                                 editable&&!busy&&!nested&&self.alias_input.trim().is_empty()&&self.dirty()).clicked();
@@ -247,13 +268,45 @@ impl BrandManager {
                         crate::floating_notice::Tone::Error,self.error.as_deref());
                 });
             });
-        if close{if self.dirty(){self.pending=Some(Exit::Close);}else{self.close_editor();}}
+        if request_delete{self.confirm_delete=true;save=false;}
+        if close&&!self.confirm_delete{if self.dirty(){self.pending=Some(Exit::Close);}else{self.close_editor();}}
         save.then(||self.request())
     }
     pub fn show_dialogs(&mut self,ctx:&Context,work_area:Rect,catalog:&Value,
-        editable:bool,busy:bool)->Option<Value>{
+        editable:bool,busy:bool)->Option<BrandWrite>{
         let editor_save=self.show_editor(ctx,work_area,editable,busy);
-        let Some(exit)=self.pending.clone()else{return editor_save;};
+        if self.confirm_delete{
+            let id=self.form.editing.as_deref().unwrap_or("");
+            let linked=catalog["products"].as_array().map(|products|
+                products.iter().filter(|product|field(product,"brandId")==id).count());
+            let available=linked==Some(0);
+            crate::popup::modal_backdrop(ctx,"brand-delete-dim",true);
+            let decision=crate::popup::show_delete_confirmation(
+                ctx,work_area,"brand-delete-confirm","브랜드 삭제","삭제",
+                !busy,editable&&!busy&&available&&self.delete_request().is_some(),
+                crate::popup::DeleteBody::Plain,|body|{
+                    body.label(typography::body(&format!("'{}' 브랜드를 삭제할까요?",self.original.name)));
+                    match linked{
+                        Some(0)=>{body.label(typography::body("상품과 기존 주문 기록은 유지됩니다."));}
+                        Some(count)=>{body.label(typography::body(&format!(
+                            "연결된 상품 {count}개가 있습니다. 브랜드 연결을 변경한 후 삭제하세요.")));}
+                        None=>{body.label(typography::body("상품 연결 정보를 확인할 수 없습니다. 다시 조회하세요."));}
+                    }
+                    if self.dirty(){body.label(typography::caption("저장하지 않은 브랜드 변경사항도 사라집니다."));}
+                }
+            );
+            match decision{
+                crate::popup::ConfirmDecision::Cancel=>self.confirm_delete=false,
+                crate::popup::ConfirmDecision::Confirm=>{
+                    self.confirm_delete=false;
+                    crate::floating_notice::dispatch_pointer(ctx,"brands.save");
+                    return self.delete_request();
+                }
+                _=>{}
+            }
+            return None;
+        }
+        let Some(exit)=self.pending.clone()else{return editor_save.map(|data|BrandWrite{action:"upsert_brand",data});};
         crate::popup::modal_backdrop(ctx,"brand-unsaved-dim",true);
         let decision=crate::popup::show_save_confirmation(
             ctx,work_area,"brand-unsaved-confirm","브랜드",
@@ -273,7 +326,7 @@ impl BrandManager {
         }else if save{
             self.pending=None;
             self.after_save=Some(exit);
-            Some(self.request())
+            Some(BrandWrite{action:"upsert_brand",data:self.request()})
         }else{None}
     }
 }
@@ -281,6 +334,23 @@ impl BrandManager {
 #[cfg(test)]
 mod modal_lifecycle_tests{
     use super::*;
+    #[test]
+    fn brand_delete_request_requires_original_entity_and_preserves_draft_on_failure(){
+        let catalog=json!({"brands":[{"id":"b","name":"BANDO","aliases":[]}],"products":[]});
+        let mut manager=BrandManager::default();
+        assert!(manager.delete_request().is_none());
+        manager.choose("b".into(),&catalog);
+        manager.form.name="unsaved".into();
+        let request=manager.delete_request().unwrap();
+        assert_eq!(request.action,"delete_brand");
+        assert_eq!(request.data["brandId"],"b");
+        assert_eq!(request.data["expectedEntity"],catalog["brands"][0]);
+        manager.on_failed("test rejection".into());
+        assert!(manager.has_overlay());
+        assert_eq!(manager.form.name,"unsaved");
+        manager.on_deleted();
+        assert!(!manager.has_overlay());
+    }
     #[test]
     fn alias_blocks_save_as_array_without_splitting(){
         let catalog=json!({"brands":[{"id":"b","name":"BANDO","aliases":["기존"]}]});
