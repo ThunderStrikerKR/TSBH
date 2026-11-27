@@ -576,6 +576,32 @@ fn source_json(raw: &str, e: &Evidence, recipient_id: &str, target_id: &str) -> 
         "recipientId":recipient_id, "text": &raw[e.start..e.end],
     })
 }
+// Check actual delivery links, not generated row positions. Product and
+// quantity sharing have separate explicit common-item rules.
+fn delivery_link_conflicts(raw:&str,recipients:&Value)->Value{
+    use std::collections::{BTreeMap,BTreeSet};
+    let units=raw.encode_utf16().collect::<Vec<_>>();
+    let mut links=BTreeMap::<(usize,usize),BTreeSet<(usize,String)>>::new();
+    let mut invalid=0usize;
+    for (idx,row) in recipients.as_array().into_iter().flatten().enumerate(){
+        for source in row["sources"].as_array().into_iter().flatten(){
+            let Some(field)=source["field"].as_str().filter(|f|matches!(*f,"name"|"address"|"phone"|"mobile"))else{continue;};
+            if let Some(span)=observations::span(&units,source){
+                links.entry(span).or_default().insert((idx,field.to_owned()));
+            }else{invalid+=1;}
+        }
+    }
+    let mut conflicts=Vec::new();
+    let mut count=0usize;
+    for ((start,end),targets) in links{
+        if targets.len()>1{
+            count+=1;
+            if conflicts.len()<64{conflicts.push(json!({"start":start,"end":end,"targetCount":targets.len()}));}
+        }
+    }
+    json!({"invalidSourceCount":invalid,"multipleTargetSpanCount":count,
+        "conflictingSpans":conflicts,"truncated":count>64,"decisionChanged":false})
+}
 // Syntax completeness is not proof of a deliverable or registered address.
 fn address_info(value: &str) -> (String, String, Value) {
     let road = Regex::new(r"[로길]\s*\d+(?:-\d+)?").expect("road").is_match(value);
@@ -1819,6 +1845,7 @@ fn analyze_with_owner_overrides(raw:&str,state:&Value,client:Option<&Value>,
             "productOwnerDecisions":product_owner_trace,
             "productOwnerTraceTruncated":product_hits.len()>64,
             "addressFormatAssessments":address_formats,
+            "deliveryLinkValidation":delivery_link_conflicts(raw,&result["recipients"]),
             "typeGateRecords":type_trace,"typeGateRecordsTruncated":type_trace_truncated,
             "fullCandidateCoverage":false});
     }
@@ -2015,6 +2042,18 @@ mod tests {
             }
         }
         assert!(recognized_real,"A registered non-DEMO product must still match");
+    }
+    #[test]
+    fn delivery_link_validation_detects_invalid_and_shared_spans(){
+        let source=json!({"start":0,"end":1,"text":"A","field":"name"});
+        let bad=json!({"start":2,"end":3,"text":"Z","field":"address"});
+        let rows=json!([{"sources":[source,bad]},{"sources":[source]}]);
+        let report=delivery_link_conflicts("A B",&rows);
+        assert_eq!(report["invalidSourceCount"],1);
+        assert_eq!(report["multipleTargetSpanCount"],1);
+        assert_eq!(report["decisionChanged"],false);
+        let single=json!([{"sources":[source]}]);
+        assert_eq!(delivery_link_conflicts("A B",&single)["multipleTargetSpanCount"],0);
     }
     #[test]
     fn common_quantity_never_selects_first_of_multiple_local_candidates(){
