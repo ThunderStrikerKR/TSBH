@@ -1,4 +1,5 @@
 //! Paint and one-shot reveal parity with the archived React one-touch hover contract.
+use crate::ui_layout::SharedPainterClipExt as _;
 use eframe::egui::{self,Color32,Context,Rect,Stroke,Ui};
 use crate::{theme,typography};
 pub const INK:Color32=theme::ONE_TOUCH_TEXT;
@@ -182,7 +183,7 @@ pub fn payment_message(ui:&mut Ui,text:&str,signature:&str,emphasis:bool){
     if emphasis{
         // Text ink clipping is narrower than the reserved document surface.
         let clip=ui.clip_rect().intersect(display.response.rect);
-        let painter=ui.painter().with_clip_rect(clip);
+        let painter=ui.painter().with_shared_clip(clip);
         let rects=payment_rects(text,signature,&display.galley,display.galley_pos);
         painter.set(paint_slot,egui::Shape::Vec(rects.iter().copied()
             .filter(|rect|rect.intersects(clip))
