@@ -3,7 +3,7 @@
 use crate::{gateway::BandoGateway,theme,typography};
 #[cfg(windows)]
 use crate::product_excel;
-use crate::ui_primitives::UiWidthPolicyExt;
+use crate::ui_layout::geometry::UiWidthPolicyExt;
 use eframe::egui::{self,Context,Ui};
 use serde_json::Value;
 use std::{path::PathBuf,sync::{Arc,mpsc::{self,Receiver,TryRecvError}}};
@@ -276,7 +276,7 @@ impl ProductExcelUi {
 
                 let inner_width=(work_area.width()-2.0*(theme::MODAL_PANEL_PADDING_X
                     +theme::FRAME_STROKE_WIDTH)).max(1.0);
-                ui.apply_shared_width(crate::ui_primitives::CardWidthPolicy::FillAvailable,inner_width.min(900.0));
+                ui.apply_shared_width(crate::ui_layout::geometry::CardWidthPolicy::FillAvailable,inner_width.min(900.0));
                 crate::popup::modal_flow_workspace(ui,|workspace|{
                     close=workspace.header(title,"취소",!self.busy()&&!self.confirming
                     );
