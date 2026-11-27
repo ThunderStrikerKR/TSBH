@@ -158,7 +158,7 @@ const componentContractCalls = new Set(Object.entries(tableContracts)
 const workflowPaintMethods = new Set(["rect_filled","rect_stroke","rect","line_segment","hline","vline","circle_filled","circle_stroke","galley","text","layout_no_wrap","interact","add_sized","add_enabled"]);
 const workflowThemePaintMethods = new Set(["paint_bordered_surface","paint_button_hover","paint_button_hover_corners","paint_surface_outline","paint_soft_rule","action","action_with_min_width","action_full_width","review_action"]);
 const workflowPaintAllowance = new Map([
-  ["workflow_card:rect_filled ( Rect :: from_min_max ( Pos2 :: new ( r . left ( ) , r . top ( ) + theme :: SOFT_DIVIDER_WIDTH ) , Pos2 :: new ( r . left ( ) + theme :: WORKFLOW_SELECTED_STRIPE , r . bottom ( ) - theme :: SOFT_DIVIDER_WIDTH ) , ) , 0.0 , if preview { source_highlight :: ACTIVE_BORDER } else { theme :: WORKFLOW_SELECTED_BORDER } )",1],
+  ["workflow_card:rect_filled ( Rect :: from_min_max ( Pos2 :: new ( r . left ( ) , r . top ( ) + theme :: SOFT_DIVIDER_WIDTH ) , Pos2 :: new ( r . left ( ) + theme :: WORKFLOW_SELECTED_STRIPE , r . bottom ( ) - theme :: SOFT_DIVIDER_WIDTH ) , ) , 0.0 , if preview { theme :: linked_preview_palette ( ) . border } else { theme :: WORKFLOW_SELECTED_BORDER } )",1],
   ["workflow_compact_rows:rect_filled ( divider , 0.0 , theme :: surface_palette ( theme :: SurfaceRole :: WorkflowCard , theme :: VisualState :: Normal ) . border )",1],
   ["workflow_compact_rows:rect_filled ( lower , 0.0 , theme :: WORKFLOW_CARD_LOWER_BG )",1],
   ["workflow_header:galley ( Pos2 :: new ( text_rect . left ( ) , text_rect . center ( ) . y - galley . size ( ) . y / 2.0 ) , galley , theme :: text_ink ( theme :: TextRole :: Value , theme :: TextState :: Normal ) )",1],
@@ -166,12 +166,12 @@ const workflowPaintAllowance = new Map([
   ["workflow_header:paint_bordered_surface ( ui . painter ( ) , lamp , theme :: WORKFLOW_SIGNAL_RADIUS , fill , border )",1],
   ["workflow_action_line:layout_no_wrap ( shipping_text . clone ( ) , egui :: FontId :: proportional ( typography :: WORKFLOW_VAT_FONT_SIZE ) , theme :: text_ink ( theme :: TextRole :: Label , theme :: TextState :: Normal ) )",1],
   ["workflow_action_line:galley ( Pos2 :: new ( shipping . left ( ) , bottom_y - ship_galley . size ( ) . y ) , ship_galley , theme :: text_ink ( theme :: TextRole :: Label , theme :: TextState :: Normal ) )",1],
-  ["workflow_action_line:layout_no_wrap ( amount . clone ( ) , typography :: data_value_font ( typography :: DataValueKind :: Money , typography :: DataValueContext :: CompactCard ) , theme :: TEXT )",1],
+  ["workflow_action_line:layout_no_wrap ( amount . clone ( ) , typography :: data_value_font ( typography :: DataValueKind :: Money , typography :: DataValueContext :: CompactCard ) , theme :: text_ink ( theme :: TextRole :: Value , theme :: TextState :: Normal ) )",1],
   ["workflow_action_line:galley ( Pos2 :: new ( price_ink . right ( ) - money_galley . size ( ) . x , bottom_y - money_galley . size ( ) . y ) , money_galley , theme :: text_ink ( theme :: TextRole :: Value , theme :: TextState :: Normal ) )",1],
   ["workflow_action_line:layout_no_wrap ( visible , egui :: FontId :: proportional ( typography :: WORKFLOW_VAT_FONT_SIZE ) , theme :: workflow_text_ink ( theme :: WorkflowTextRole :: Vat ) )",1],
   ["workflow_action_line:galley ( Pos2 :: new ( price_ink . right ( ) - vat_galley . size ( ) . x , price . top ( ) + theme :: WORKFLOW_VAT_TOP_INSET ) , vat_galley , theme :: workflow_text_ink ( theme :: WorkflowTextRole :: Vat ) )",1],
   ["shipment_line:rect_filled ( Rect :: from_min_max ( Pos2 :: new ( rect . left ( ) , rect . top ( ) ) , Pos2 :: new ( rect . left ( ) + theme :: WORKFLOW_SELECTED_STRIPE , rect . bottom ( ) ) ) , 0.0 , color )",1],
-  ["shipment_line:rect_stroke ( rect . shrink ( 0.5 ) , theme :: CONTROL_RADIUS as f32 , egui :: Stroke :: new ( source_highlight :: ACTIVE_BORDER_WIDTH , source_highlight :: ACTIVE_BORDER ) , egui :: StrokeKind :: Inside , )",1],
+  ["shipment_line:rect_stroke ( rect . shrink ( 0.5 ) , theme :: CONTROL_RADIUS as f32 , egui :: Stroke :: new ( source_highlight :: ACTIVE_BORDER_WIDTH , theme :: linked_preview_palette ( ) . border ) , egui :: StrokeKind :: Inside , )",1],
   ["group_frame:interact ( label . rect , Id :: new ( ( <literal> , ship . id . as_str ( ) , in_preview ) ) , egui :: Sense :: click ( ) )",1],
   ["group_frame:paint_button_hover ( ui , & response , 0.0 )",1],
   ["pending_frame:interact ( response . rect , Id :: new ( ( <literal> , draft . id . as_str ( ) , 0 usize , in_preview ) ) , egui :: Sense :: click ( ) )",1],
@@ -1577,7 +1577,7 @@ export function auditHighlight(source,file,requireCalls=false){
     }
     if(!highlightPaintMethods.has(v[i])||v[i+1]!=="("||![".","::"].includes(v[i-1]))continue;
     const end=endCall(i+1),args=v.slice(i+2,end);
-    const explicit=args.some(t=>interactionInk.test(t));
+    const explicit=args.some(t=>interactionInk.test(t)||["hover_palette","selected_palette","required_input_palette","drop_target_tint","management_option_fill","one_touch_palette","linked_preview_palette"].includes(t));
     // For a migrated wrapper, disallow raw repainting even when the local
     // color is aliased. Chooser's ordinary idle panel is the only normal
     // background retained in those wrappers.
@@ -1621,6 +1621,8 @@ export function auditHighlight(source,file,requireCalls=false){
 function highlightSelfTest(){
   const audit=(s,f="screen.rs",required=false)=>auditHighlight(s,f,required);
   assert.equal(audit("fn show(){painter.rect_filled(r,0.0,theme::BUTTON_HOVER_TINT);}").length,1);
+  assert.equal(audit("fn show(){painter.rect_filled(r,0.0,theme::hover_palette().overlay);}").length,1);
+  assert.equal(audit("fn show(){painter.rect_filled(r,0.0,theme::selected_palette().fill);}").length,1);
   assert.equal(audit("fn show(){painter.rect_stroke(r,0.0,Stroke::new(2.0,theme::SELECTION),StrokeKind::Inside);}").length,1);
   assert.equal(audit("fn show(){if hovered{painter.rect_filled(r,0.0,local_color);}}").length,1);
   assert.equal(audit("fn show(){ui.visuals_mut().widgets.hovered.bg_fill=local;}").length,1);
@@ -1642,7 +1644,7 @@ function highlightSelfTest(){
   assert.equal(audit("fn show(){crate::one_touch::mark(ui,r);}","main.rs").length,1);
   assert.equal(audit("fn show(){crate::input::paint_required_input(ui,r);}","composite_reception.rs").length,1);
   assert.equal(audit("fn show(){crate::button::action_with_emphasis(ui,label,role,true,emphasis);}","main.rs").length,0);
-  console.log("EGUI_HIGHLIGHT_SELFTEST_PASS",22);
+  console.log("EGUI_HIGHLIGHT_SELFTEST_PASS",24);
 }
 
 

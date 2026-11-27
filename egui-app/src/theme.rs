@@ -10,33 +10,33 @@ use eframe::egui::{
     self, Color32, CornerRadius, Frame, Stroke, Ui, Vec2,
 };
 
-pub const CANVAS: Color32 = Color32::from_rgb(16, 16, 16);
+const CANVAS: Color32 = Color32::from_rgb(16, 16, 16);
 const HEADER_BG: Color32 = Color32::from_rgb(27, 27, 27);
 // Level-2 / primary section surface. Darker than INPUT (#292929) so
 // repeated order cards remain distinguishable inside the workflow pane.
 // This shared token intentionally updates every egui panel using PANEL.
-pub const PANEL: Color32 = Color32::from_rgb(24, 24, 24);
+const PANEL: Color32 = Color32::from_rgb(24, 24, 24);
 // Shared surface level 2.5: subtle alternate rows inside PANEL lists.
 // Never use INPUT/RAISED (fields/buttons) as a table zebra fill.
 const TABLE_ROW_ALT_BG: Color32 = Color32::from_rgb(30, 30, 30);
-pub const INPUT: Color32 = Color32::from_rgb(34, 34, 34);
+const INPUT: Color32 = Color32::from_rgb(34, 34, 34);
 // Strong disabled styling shared by management select and action controls.
 // Avoid changing the approved enabled #292929 field / #303030 button roles.
-pub const DISABLED_ACTION_BG: Color32 = Color32::from_rgb(30, 30, 30);
-pub const DISABLED_ACTION_TEXT: Color32 = Color32::from_rgb(124, 124, 124);
-pub const DISABLED_ACTION_BORDER: Color32 = Color32::from_rgb(55, 55, 55);
-pub const RAISED: Color32 = Color32::from_rgb(41, 41, 41);
+const DISABLED_ACTION_BG: Color32 = Color32::from_rgb(30, 30, 30);
+const DISABLED_ACTION_TEXT: Color32 = Color32::from_rgb(124, 124, 124);
+const DISABLED_ACTION_BORDER: Color32 = Color32::from_rgb(55, 55, 55);
+const RAISED: Color32 = Color32::from_rgb(41, 41, 41);
 // One component-wide floating feedback style; management screens never define
 // independent toast backgrounds, dimensions, type sizes or offsets.
 const FLOATING_NOTICE_BG: Color32 = RAISED;
-pub const BORDER: Color32 = Color32::from_rgb(80, 80, 80);
-pub const DIVIDER: Color32 = Color32::from_rgb(63, 63, 63);
+const BORDER: Color32 = Color32::from_rgb(80, 80, 80);
+const DIVIDER: Color32 = Color32::from_rgb(63, 63, 63);
 // Stronger than the normal 1pt row divider so fixed table headers have a
 // readable bottom boundary, including when their final pixel is clipped.
-pub const TABLE_HEADER_OUTLINE: Color32 = Color32::from_rgb(106, 106, 106);
-pub const TEXT: Color32 = Color32::from_rgb(237, 237, 237);
-pub const SECONDARY: Color32 = Color32::from_rgb(185, 185, 185);
-pub const MUTED: Color32 = Color32::from_rgb(153, 153, 153);
+const TABLE_HEADER_OUTLINE: Color32 = Color32::from_rgb(106, 106, 106);
+const TEXT: Color32 = Color32::from_rgb(237, 237, 237);
+const SECONDARY: Color32 = Color32::from_rgb(185, 185, 185);
+const MUTED: Color32 = Color32::from_rgb(153, 153, 153);
 const PLACEHOLDER_TEXT:Color32=Color32::from_gray(96);
 
 /// Information role is independent of typography, widget and business state.
@@ -95,20 +95,20 @@ pub const fn text_ink(role:TextRole,state:TextState)->Color32{
         TextState::Complete=>ReviewTone::Complete.text_color(),
     }
 }
-pub const SELECTION: Color32 = Color32::from_rgb(112, 180, 255);
+const SELECTION: Color32 = Color32::from_rgb(112, 180, 255);
 const INTERACTION_BLUE_TINT:Color32=Color32::from_rgba_unmultiplied_const(112,180,255,20);
 const SOURCE_BLOCK_FILL:Color32=Color32::from_rgb(66,66,66);
 const SOURCE_CONTEXT_FILL:Color32=Color32::from_rgb(73,73,73);
-pub const MANUAL_ASSIGNMENT_TINT:Color32=INTERACTION_BLUE_TINT;
+const MANUAL_ASSIGNMENT_TINT:Color32=INTERACTION_BLUE_TINT;
 pub const MANUAL_ASSIGNMENT_STROKE_WIDTH:f32=1.25;
 const CARD_BORDER:Color32=DIVIDER;
 // Restore the original shared blue pointer feedback; focus stays independent.
-pub const BUTTON_HOVER_BG:Color32=Color32::from_rgb(47,62,74);
+const BUTTON_HOVER_BG:Color32=Color32::from_rgb(47,62,74);
 const ACTIVE_NAVIGATION_BG:Color32=Color32::from_rgb(41,72,92);
 // Strong pointer feedback belongs to controls, not the subdued table/sort tint.
-pub const BUTTON_HOVER_TINT:Color32=Color32::from_rgba_unmultiplied_const(112,180,255,66);
-pub const BUTTON_HOVER_LIGHT_BG:Color32=Color32::from_rgb(143,197,255);
-pub const BUTTON_HOVER_LIGHT_BORDER:Color32=Color32::from_rgb(35,103,174);
+const BUTTON_HOVER_TINT:Color32=Color32::from_rgba_unmultiplied_const(112,180,255,66);
+const BUTTON_HOVER_LIGHT_BG:Color32=Color32::from_rgb(143,197,255);
+const BUTTON_HOVER_LIGHT_BORDER:Color32=Color32::from_rgb(35,103,174);
 pub const BUTTON_HOVER_BORDER_WIDTH:f32=2.0;
 const LINKED_PREVIEW_BG:Color32=Color32::from_rgb(23,67,109);
 const LINKED_PREVIEW_TEXT:Color32=Color32::from_rgb(234,244,255);
@@ -117,8 +117,8 @@ pub const LINKED_PREVIEW_BORDER_WIDTH:f32=2.0;
 const REQUIRED_REVIEW_TEXT:Color32=ORANGE_EMPHASIS_TEXT;
 const REQUIRED_REVIEW_BORDER:Color32=SELECTED_ORDER;
 const ERROR_BG:Color32=Color32::from_rgb(51,37,37);
-pub const ERROR_TEXT:Color32=Color32::from_rgb(240,160,160);
-pub const ERROR_BORDER:Color32=Color32::from_rgb(199,107,107);
+const ERROR_TEXT:Color32=Color32::from_rgb(240,160,160);
+const ERROR_BORDER:Color32=Color32::from_rgb(199,107,107);
 const DANGER_ACTION_BG:Color32=Color32::from_rgb(53,37,37);
 const DANGER_ACTION_BORDER:Color32=Color32::from_rgb(117,68,68);
 // Persistent single-select state uses the existing shared orange palette;
@@ -146,11 +146,11 @@ const CATEGORY_EXPLORER_SEPARATOR_INK:Color32=Color32::from_gray(110);
 pub const CATEGORY_EXPLORER_OMITTED_WIDTH:f32=36.0;
 pub const CATEGORY_EXPLORER_APPLY_WIDTH:f32=70.0;
 // React workflow.css and receipt-layout.css amber palette; paint only.
-pub const SELECTED_ORDER: Color32 = Color32::from_rgb(245, 158, 11); // #F59E0B
-pub const ORANGE_EMPHASIS_BG: Color32 = Color32::from_rgb(59, 43, 27); // #3B2B1B
+const SELECTED_ORDER: Color32 = Color32::from_rgb(245, 158, 11); // #F59E0B
+const ORANGE_EMPHASIS_BG: Color32 = Color32::from_rgb(59, 43, 27); // #3B2B1B
 // Orange confirmation surfaces share a single palette regardless of
 // whether the trigger is a persistent review card or a one-touch hover.
-pub const ORANGE_EMPHASIS_TEXT:Color32=Color32::from_rgb(255,228,188);
+const ORANGE_EMPHASIS_TEXT:Color32=Color32::from_rgb(255,228,188);
 // Checkbox marks are neutral; row/option selection retains its independent orange palette.
 const CHECKBOX_CHECKED_BG:Color32=RAISED;
 const CHECKBOX_CHECKED_MARK:Color32=BRIGHT;
@@ -240,20 +240,20 @@ pub const WORKFLOW_DETAIL_ROW_PADDING_X: f32 = SPACE_12;
 // History recipient-detail blocks are independent of workflow product chips.
 // Keep their existing 4pt corner radius even when workflow chips are removed.
 pub const ORDER_HISTORY_RECIPIENT_BLOCK_RADIUS: f32 = 4.0;
-pub const SUCCESS: Color32 = Color32::from_rgb(169, 218, 181);
-pub const DANGER: Color32 = Color32::from_rgb(255, 180, 180);
-pub const REQUIRED_INPUT_BORDER:Color32=ERROR_BORDER;
-pub const REQUIRED_INPUT_TINT:Color32=Color32::from_rgba_unmultiplied_const(199,107,107,18);
+const SUCCESS: Color32 = Color32::from_rgb(169, 218, 181);
+const DANGER: Color32 = Color32::from_rgb(255, 180, 180);
+const REQUIRED_INPUT_BORDER:Color32=ERROR_BORDER;
+const REQUIRED_INPUT_TINT:Color32=Color32::from_rgba_unmultiplied_const(199,107,107,18);
 // Product sales status: one palette for dropdown captions, options and table cells.
 const SALE_STATUS_SELLING: Color32 = Color32::from_rgb(123, 207, 148);
 const SALE_STATUS_SOLD_OUT: Color32 = Color32::from_rgb(231, 122, 120);
 const SALE_STATUS_PREPARING: Color32 = Color32::from_rgb(228, 195, 104);
 const SALE_STATUS_STOPPED: Color32 = Color32::from_rgb(145, 145, 145);
-pub const BRIGHT: Color32 = Color32::WHITE;
-pub const BRIGHT_TEXT: Color32 = Color32::from_rgb(23, 23, 23);
+const BRIGHT: Color32 = Color32::WHITE;
+const BRIGHT_TEXT: Color32 = Color32::from_rgb(23, 23, 23);
 /// Resting white primary-action palette. Manual unassigned source tokens use 90% of this gray channel.
 const LEGACY_SOURCE_REFERENCE_GRAY: u8 = 238;
-pub const PRIMARY_ACTION_FILL: Color32 = BRIGHT;
+const PRIMARY_ACTION_FILL: Color32 = BRIGHT;
 // Compact inline-cell edit inset; shared with the 4pt and 8pt layout tokens.
 pub use crate::ui_tokens::{SPACE_2,SPACE_4,SPACE_6,SPACE_8,SPACE_12,SPACE_16,SPACE_24};
 pub const SETTINGS_HELP_ICON_SIZE: f32 = 22.0;

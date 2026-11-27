@@ -3,7 +3,7 @@ use crate::ui_layout::geometry::SharedPainterClipExt as _;
 use crate::ui_layout::geometry::SharedAllocationExt as _;
 use crate::ui_layout::geometry::AlignedUiBuilderExt as _;
 use eframe::egui::{self,Align,Layout,Rect,Response,Stroke,Ui,Vec2};
-use crate::{source_highlight,theme,typography};
+use crate::{theme,typography};
 use crate::button::{date_navigation_segment_button,DateNavigationSegmentGlyph};
 use crate::ui_primitives::{navigation_segment_child,date_navigation_segmented_surface_with_state};
 #[cfg(test)]
