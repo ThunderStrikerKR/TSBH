@@ -191,6 +191,8 @@ fn action_with_palette(
             .min_size(Vec2::new(min_width, height));
         ui.add_enabled(enabled, button)
     }).inner;
+    #[cfg(test)]
+    crate::ui_test_support::record_component_geometry("button",response.rect,ui.clip_rect(),Some(height));
     if effective_enabled {
         paint_button_hover(ui,&response,radius as f32);
     }
