@@ -2,7 +2,9 @@
 //! Alias collision, product matching and persistence decisions remain in
 //! original catalog_clients Rust. This UI owns only explicit operator edits.
 use crate::{catalog_query_bridge,product_manager::ProductManager,gateway::BandoGateway,theme,typography};
-use eframe::egui::{self,Align,Context,Layout,Rect,Ui};
+use eframe::egui::{Align,Context,Layout,Rect,Ui};
+#[cfg(test)]
+use eframe::egui;
 use serde_json::{json,Value};
 use std::collections::HashMap;
 use std::sync::Arc;

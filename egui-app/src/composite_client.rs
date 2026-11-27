@@ -1,5 +1,5 @@
 //! Shared client summaries, tier badges and client rows.
-use eframe::egui::{self,Align,Color32,Layout,Rect,Response,Sense,Stroke,Ui,Vec2};
+use eframe::egui::{self,Align,Color32,Layout,Rect,Response,Sense,Ui,Vec2};
 use crate::{theme,typography};
 use crate::ui_primitives::{text_exceeds_rect,overflow_region_tooltip};
 use crate::table::{paint_table_galley,management_client_column_widths,management_client_column_edges,paint_management_interactive_row_background,paint_management_table_row_rule,management_master_column_rules};

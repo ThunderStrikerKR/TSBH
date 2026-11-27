@@ -1,5 +1,5 @@
 //! Shared card surfaces, measured layout and reusable card content profiles.
-use eframe::egui::{self,Align,Color32,Frame,Layout,Rect,Response,Sense,Stroke,Ui,UiBuilder,Vec2};
+use eframe::egui::{self,Align,Color32,Frame,Layout,Rect,Stroke,Ui,UiBuilder,Vec2};
 use crate::{theme,typography};
 use crate::theme::*;
 use crate::scrollbar::{scroll_area,ScrollAxes};
@@ -136,19 +136,6 @@ pub(crate) fn parallel_frames(
     }
     ui.advance_cursor_after_rect(bounds);
     rects
-}
-
-/// Selected/hovered list-row surface; callers own content and selection.
-pub(crate) fn selectable_list_row(ui:&mut Ui,height:f32,selected:bool,enabled:bool)->(Rect,Response){
-    let (rect,response)=ui.allocate_exact_size(Vec2::new(ui.available_width(),height),Sense::click());
-    if selected||response.hovered(){
-        ui.painter().rect_filled(rect,theme::CONTROL_RADIUS as f32,
-            if selected{theme::RAISED}else{theme::INPUT});
-    }
-    if !selected && enabled{
-        crate::button::paint_button_hover(ui,&response,theme::CONTROL_RADIUS as f32);
-    }
-    (rect,response)
 }
 
 pub(crate) fn workflow_group_card_frame(highlighted:bool)->Frame{

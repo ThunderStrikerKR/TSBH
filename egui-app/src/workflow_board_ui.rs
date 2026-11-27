@@ -649,6 +649,7 @@ fn shipment_row_fill(chosen:bool,previewed:bool)->egui::Color32{
         theme::WORKFLOW_DETAIL_ROW_BG
     }
 }
+#[cfg(test)]
 fn shipment_line(
     ui:&mut Ui,name:&str,products:&[String],chosen:bool,previewed:bool
 )->egui::Response{

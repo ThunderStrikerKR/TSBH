@@ -4,7 +4,7 @@
 use crate::{
     category_manager::{CategoryManager,ROOTS},
     category_dropdown,
-    cell_navigation::{self, CellNavigationCell, CellNavigationKey},
+    cell_navigation::{self, CellNavigationCell},
     alias_manager::AliasManager,
     brand_manager::BrandManager,
     model_group_manager::ModelGroupManager,
@@ -16,6 +16,8 @@ use crate::{
     theme, typography,
 };
 use crate::card::UiWidthPolicyExt;
+#[cfg(test)]
+use crate::cell_navigation::CellNavigationKey;
 use eframe::egui::{self, Align, Context, Layout, Sense, Ui, UiBuilder, Rect, Vec2};
 use serde_json::{json, Value};
 use std::{

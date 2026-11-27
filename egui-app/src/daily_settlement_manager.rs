@@ -6,7 +6,7 @@ use crate::{
     settings_help,theme,typography,
 };
 use chrono::{DateTime,Duration as Days,FixedOffset,NaiveDate,Utc};
-use eframe::egui::{self,Align,Align2,Rect,Sense,Ui,Vec2};
+use eframe::egui::{self,Align2,Rect,Ui,Vec2};
 use serde_json::{json,Value};
 use std::sync::Arc;
 

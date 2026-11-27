@@ -137,17 +137,15 @@ const tableOwnerContracts = {
   "table/mod.rs:management_master_column_rules":{"theme::paint_soft_rule":1},
   "table/mod.rs:fixed_rows":{fixed_rows_snapshot:1},
   "table/mod.rs:fixed_rows_snapshot":{viewport_scroll:1,virtual_fixed_rows:1,"ScrollCapture::begin":1,".finish":1},
-  "table/mod.rs:variable_rows":{variable_rows_snapshot:1},
   "table/mod.rs:variable_rows_snapshot":{viewport_scroll:1,management_table_row_body:1,strict_viewport_clip:1,".set_clip_rect":1,"ScrollCapture::begin":1,".finish":1},
   "table/mod.rs:viewport_scroll":{management_fixed_table_scroll_area:1},
-  "table/mod.rs:register_rows":{management_register_list_scroll_area:1,strict_viewport_clip:1,".set_clip_rect":1},
 };
 const tableOnlyCalls = new Set(["show","fixed_rows","fixed_rows_snapshot","fixed_row","fixed_row_rect",
-  "variable_rows","variable_rows_snapshot","history_row","header_columns","heading","sort_clicked","row_scope",
-  "register_rows","registry_table","registry_cell","registry_actions","master_header_begin","header_finish"]);
+  "variable_rows_snapshot","history_row","header_columns","heading","sort_clicked","row_scope",
+  "registry_table","registry_cell","registry_actions","master_header_begin","header_finish"]);
 const tableMarkers = new Set(["management_table_cells","management_table_column_rules",
   "management_row","management_readonly_table","shipment_detail_cells",
-  "fixed_rows","fixed_rows_snapshot","variable_rows","variable_rows_snapshot","fixed_row","history_row","header_columns","register_rows","registry_table"]);
+  "fixed_rows","fixed_rows_snapshot","variable_rows","variable_rows_snapshot","fixed_row","history_row","header_columns","registry_table"]);
 const componentContractCalls = new Set(Object.entries(tableContracts)
   .filter(([scope])=>scope.startsWith("composite_workflow.rs:"))
   .flatMap(([,entries])=>Object.keys(entries)));
@@ -985,9 +983,6 @@ const compositeContracts = {
   "button/mod.rs:remove_at":{".interact":1,"paint_button_hover":1,".line_segment":1},
   "button/mod.rs:disclosure_at":{
     "paint_management_chevron":1,".interact":1,"ui_primitives::overflow_tooltip":1,"paint_button_hover":1
-  },
-  "card/mod.rs:selectable_list_row":{
-    ".allocate_exact_size":1,".rect_filled":1,"button::paint_button_hover":1
   },
   "table/mod.rs:paint_editable_cell_text":{
     ".layout_no_wrap":1,"reception_item_value_origin":1,".with_clip_rect":1,".galley":1

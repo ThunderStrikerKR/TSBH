@@ -222,16 +222,15 @@ pub(crate) fn management_table_column_rules(ui:&Ui,region:Rect,cells:&[Rect],gap
 
 /// The existing header/viewport policies are mutually exclusive, not separate
 /// table designs. Only this entry point owns perimeter finalization.
-pub(crate) enum Header<'a>{
+pub(crate) enum Header{
     Sticky(f32),
     List(f32),
     WithoutToolbar(f32),
     AvailableWidth(f32),
-    Register{primary:&'a str,action:&'a str,action_width:f32},
 }
 
 pub(crate) fn show<R>(
-    ui:&mut Ui,header:Header<'_>,
+    ui:&mut Ui,header:Header,
     draw:impl FnOnce(&mut Ui,ManagementTableHeader)->(Rect,R),
 )->R{
     let layout=match header{
@@ -242,8 +241,6 @@ pub(crate) fn show<R>(
             let viewport=ui.available_width().max(1.0);
             allocate_management_table_header(ui,viewport,width)
         },
-        Header::Register{primary,action,action_width}=>
-            management_master_register_header(ui,primary,action,action_width),
     };
     // Draw directly on the existing UI; do not allocate a scope or alter
     // persistent widget IDs, the scroll salt, or keyboard focus.
@@ -383,12 +380,6 @@ pub(crate) fn fixed_rows_snapshot<R>(
     capture.finish(ui,&output,rows);
     output
 }
-pub(crate) fn variable_rows<R>(
-    ui:&mut Ui,viewport:Viewport,id:impl std::hash::Hash,rows_id:impl std::hash::Hash,
-    offsets:&[f32],draw:impl FnOnce(&mut Ui,egui::Pos2,std::ops::Range<usize>)->R,
-)->egui::containers::scroll_area::ScrollAreaOutput<R>{
-    variable_rows_snapshot(ui,viewport,id,rows_id,offsets,true,None,draw)
-}
 pub(crate) fn variable_rows_snapshot<R>(
     ui:&mut Ui,viewport:Viewport,id:impl std::hash::Hash,rows_id:impl std::hash::Hash,
     offsets:&[f32],ready:bool,keys:Option<&dyn Fn(usize)->Option<egui::Id>>,
@@ -420,21 +411,6 @@ pub(crate) fn variable_rows_snapshot<R>(
         }).inner
     });
     capture.finish(ui,&output,rows);
-    output
-}
-pub(crate) fn register_rows<R>(
-    ui:&mut Ui,height:f32,width:f32,id:impl std::hash::Hash,
-    draw:impl FnOnce(&mut Ui)->R,
-)->egui::containers::scroll_area::ScrollAreaOutput<R>{
-    let scroll=management_register_list_scroll_area(ui,height).id_salt(&id);
-    let (scroll,capture)=crate::scrollbar::ScrollCapture::begin(ui,&id,scroll,true,None);
-    let output=scroll.show_viewport(ui,|body,viewport|{
-            let clip=strict_viewport_clip(body,viewport);
-            body.set_clip_rect(clip);
-            body.apply_shared_width(crate::card::CardWidthPolicy::FillAvailable,width);
-            draw(body)
-        });
-    capture.finish(ui,&output,None);
     output
 }
 pub(crate) fn fixed_row_rect(origin:egui::Pos2,index:usize,first:usize,width:f32,height:f32)->Rect{
@@ -568,16 +544,6 @@ fn management_master_header_sort_hover(ui:&Ui,hit:Rect){
 }
 
 
-/// Fixed-header register lists retain a vertical-only rail and fixed viewport.
-/// The caller already installs the management table style and owns the height.
-pub(crate) fn management_register_list_scroll_area(ui:&Ui,height:f32)->egui::ScrollArea{
-    let _=management_table_scroll_track_rect(ui,height);
-    crate::scrollbar::scroll_area(crate::scrollbar::ScrollAxes::Vertical)
-        .scroll_bar_visibility(egui::containers::scroll_area::ScrollBarVisibility::VisibleWhenNeeded)
-        .max_height(height)
-        .auto_shrink([false,false])
-}
-
 /// Render only the rows intersecting a scroll viewport, while reserving the
 /// full logical height and width of the list. This works with BOTH-axis
 /// scrolling, unlike a paginated list, and preserves the backing row indices.
@@ -649,6 +615,7 @@ pub(crate) fn management_fixed_table_scroll_area(ui:&Ui,content_width:f32)->egui
 
 /// Requested viewport bounds for management-table layout and test traces.
 /// Native scrollbars use their actual viewport, never an extended rail.
+#[cfg(test)]
 pub(crate) fn management_table_scroll_track_rect(
     ui:&Ui,scroll_height:f32
 )->Rect {
@@ -662,6 +629,7 @@ pub(crate) fn management_table_scroll_track_rect(
 
 /// Requested rail coincides with the body viewport: no independent bottom
 /// extension or inset. The native scroll area handles horizontal reservation.
+#[cfg(test)]
 fn management_table_scroll_track_geometry(
     bounds:Rect,scroll_height:f32
 )->Rect {
@@ -808,43 +776,6 @@ pub(crate) fn master_header_begin(
         .abs()<0.01);
     header_begin(ui,header_rect,header_content_rect)
 }
-
-/// Plain management-register header for two-column editor/list pages.
-/// The same master allocates the 25pt toolbar transition, 36pt fixed header,
-/// native scrollbar gutter and inner 2pt bottom rule. Only the row content
-/// is allowed to be taller than a compact 42pt product row.
-pub(crate) fn management_master_register_header(
-    ui:&mut Ui,primary:&str,action:&str,action_width:f32
-)->ManagementTableHeader{
-    let layout=management_sticky_table_header(ui,0.0);
-    let text_rect=master_header_begin(
-        ui,layout.header_rect,layout.header_content_rect
-    );
-    let x=(text_rect.right()-action_width).max(text_rect.left());
-    let left=typography::management_table_header_galley(ui,primary);
-    let right=typography::management_table_header_galley(ui,action);
-    let painter=ui.painter().with_clip_rect(text_rect);
-    // Long alias/brand titles must not run under the right-hand
-    // management column on a narrow workspace.
-    let primary_rect=Rect::from_min_max(
-        text_rect.min,egui::pos2(x,text_rect.bottom())
-    );
-    painter.with_clip_rect(primary_rect).galley(
-        egui::pos2(text_rect.left()+theme::SPACE_8,
-            text_rect.center().y-left.size().y/2.0),
-        left,theme::SECONDARY
-    );
-    painter.galley(
-        egui::pos2((x+(action_width-right.size().x)/2.0)
-            .max(x).min(text_rect.right()),
-            text_rect.center().y-right.size().y/2.0),
-        right,theme::SECONDARY
-    );
-    management_master_column_rules(ui,text_rect,[x]);
-    header_finish(ui,layout.header_rect);
-    layout
-}
-
 
 /// Read-only embedded management table with the shared fixed-header
 /// geometry, scrollbar gutter and virtual fixed-row viewport. Screens provide

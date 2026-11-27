@@ -3,7 +3,7 @@
 //! Rust catalog_clients::model_groups validates; Tauri settings_patch CAS saves.
 use crate::{catalog_query_bridge,gateway::BandoGateway, theme, typography};
 use crate::screen_refresh::ReadRefresh;
-use eframe::egui::{self, Align, Context, Layout, Rect, Sense, Ui, Vec2};
+use eframe::egui::{self, Align, Context, Layout, Rect, Sense, Ui};
 use serde_json::{json, Value};
 use std::{
     collections::{HashMap,HashSet},
@@ -14,9 +14,6 @@ use std::time::Duration;
 static NEXT_ID:AtomicU64=AtomicU64::new(0);
 fn text<'a>(v:&'a Value,k:&str)->&'a str{v.get(k).and_then(Value::as_str).unwrap_or("")}
 fn items(v:&Value)->&[Value]{v.as_array().map(Vec::as_slice).unwrap_or(&[])}
-fn product<'a>(catalog:&'a Value,id:&str)->Option<&'a Value>{
-    items(&catalog["products"]).iter().find(|p|text(p,"id")==id)
-}
 fn original_groups(catalog:&Value)->Value{
     catalog["settings"].get("colorGuidanceGroups")
         .cloned().unwrap_or(Value::Null)

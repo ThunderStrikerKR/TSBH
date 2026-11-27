@@ -24,7 +24,7 @@ pub(crate) fn remove_at(ui:&Ui,hit:Rect,id:egui::Id,enabled:bool)->bool{
     let ink=if enabled{theme::SECONDARY}else{theme::DISABLED_ACTION_TEXT};
     if enabled{paint_button_hover(ui,&response,theme::CONTROL_RADIUS as f32);}
     let center=hit.center();
-    let stroke=Stroke::new(1.5,ink);
+    let stroke=Stroke::new(1.5_f32,ink);
     for sign in [-1.0_f32,1.0]{
         ui.painter().line_segment([
             center+egui::vec2(-4.0,-4.0*sign),
@@ -277,7 +277,7 @@ pub(crate) fn notification_button(ui:&mut Ui,unread:usize)->Response{
     let (bell,count)=notification_button_slots(response.rect,max_count.size().x);
     let center=bell.center();
     let ink=if response.hovered(){TEXT}else{SECONDARY};
-    let stroke=Stroke::new(1.55,ink);
+    let stroke=Stroke::new(1.55_f32,ink);
     let p=|x:f32,y:f32|center+egui::vec2(x,y);
     let painter=ui.painter();
     // Native vector bell, independent of platform emoji/font availability.

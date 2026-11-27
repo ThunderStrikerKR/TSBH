@@ -62,7 +62,6 @@ pub const MANUAL_ASSIGNMENT_HOVER_TINT:Color32=Color32::from_rgba_unmultiplied_c
 pub const MANUAL_ASSIGNMENT_STROKE_WIDTH:f32=1.25;
 pub const MANUAL_ASSIGNMENT_HOVER_STROKE_WIDTH:f32=2.0;
 pub const CARD_BORDER:Color32=DIVIDER;
-pub const NEUTRAL_HOVER:Color32=RAISED;
 // Restore the original shared blue pointer feedback; focus stays independent.
 pub const BUTTON_HOVER_BG:Color32=Color32::from_rgb(47,62,74);
 pub const ACTIVE_NAVIGATION_BG:Color32=Color32::from_rgb(41,72,92);
@@ -103,8 +102,6 @@ pub const CATEGORY_EXPLORER_ANCESTOR_INK:Color32=MUTED;
 pub const CATEGORY_EXPLORER_SEPARATOR_INK:Color32=Color32::from_gray(110);
 pub const CATEGORY_EXPLORER_OMITTED_WIDTH:f32=36.0;
 pub const CATEGORY_EXPLORER_APPLY_WIDTH:f32=70.0;
-pub const CATEGORY_EXPLORER_APPLIED_BG:Color32=ORANGE_EMPHASIS_BG;
-pub const CATEGORY_EXPLORER_APPLIED_BORDER:Color32=SELECTED_ORDER;
 // React workflow.css and receipt-layout.css amber palette; paint only.
 pub const SELECTED_ORDER: Color32 = Color32::from_rgb(245, 158, 11); // #F59E0B
 pub const ORANGE_EMPHASIS_BG: Color32 = Color32::from_rgb(59, 43, 27); // #3B2B1B
@@ -194,7 +191,6 @@ pub const WORKFLOW_TOGGLE_ICON_WIDTH: f32 = 12.0;
 pub const WORKFLOW_DETAIL_ROW_BG: Color32 = PANEL;
 pub const WORKFLOW_DETAIL_ROW_BORDER: Color32 = DIVIDER;
 pub const WORKFLOW_DETAIL_ROW_PADDING_X: f32 = SPACE_12;
-pub const WORKFLOW_DETAIL_NAME_WIDTH: f32 = 102.0;
 // History recipient-detail blocks are independent of workflow product chips.
 // Keep their existing 4pt corner radius even when workflow chips are removed.
 pub const ORDER_HISTORY_RECIPIENT_BLOCK_RADIUS: f32 = 4.0;
@@ -888,9 +884,12 @@ pub const MANAGEMENT_MASTER_TABLE_BOTTOM_PADDING:f32=SECTION_PADDING;
 /// The native rail begins at the first row's exact top edge: a 3pt top
 /// inset left a visible break beneath the full-width fixed-header border.
 /// Keep this zero for all management tables sharing that header role.
+#[cfg(test)]
 pub const MANAGEMENT_TABLE_SCROLL_TRACK_TOP_INSET:f32=0.0;
 /// Table rails end at the body boundary. Card padding is independent.
+#[cfg(test)]
 pub const MANAGEMENT_TABLE_SCROLL_TRACK_BOTTOM_INSET:f32=0.0;
+#[cfg(test)]
 pub const MANAGEMENT_TABLE_SCROLL_RAIL_EXTENSION:f32=0.0;
 
 /// The same outer gutter for Reception and every management page:

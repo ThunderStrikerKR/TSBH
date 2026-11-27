@@ -2351,6 +2351,7 @@ impl BandoEgui {
     /// A deliberate employee click is the ONLY way to send an unconfirmed
     /// reception into the Tauri working-order store. Editing or selecting
     /// customers continues to save exclusively to egui-preview.sqlite3.
+    #[cfg(test)]
     fn start_working_sync(&mut self, ctx:&egui::Context) {
         match self.reception_job_admission(
             ReceptionJob::WorkingSync,self.working_sync.is_some()
@@ -4392,7 +4393,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
         }
         for event in events {
             match event {
-                source_autosave::SaveStatus::Saved{revision,active_id,raw,order_type,draft_ids:_}=>{
+                source_autosave::SaveStatus::Saved{revision,active_id,raw,order_type}=>{
                     let _=revision;
                     self.source_save_error=None;
                     let saved_import=self.pending_clipboard_clear.as_ref()

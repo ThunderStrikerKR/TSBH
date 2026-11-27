@@ -9,7 +9,7 @@ use crate::{
     manual_workspace,
     preview_store::WorkingReception,
     reception_service::ReceptionAnalysis,
-    theme::{self,ButtonRole,ReviewTone},typography,
+    theme::{ButtonRole,ReviewTone},typography,
 };
 
 fn text<'a>(row:&'a Value,key:&str)->&'a str {

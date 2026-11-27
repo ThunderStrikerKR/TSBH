@@ -1,6 +1,6 @@
 //! Shared UI layout allocations, reserved geometry and dock rendering.
 //! Business state and persisted window/split sizes remain in layout.rs.
-use eframe::egui::{self,Align,Color32,Layout,Rect,Sense,Stroke,Ui,UiBuilder,Vec2};
+use eframe::egui::{self,Align,Color32,Layout,Rect,Sense,Ui,UiBuilder,Vec2};
 use crate::card::UiWidthPolicyExt;
 use crate::{theme,typography};
 use crate::ui_primitives::{text_exceeds_rect,truncated_label_for_explicit_tooltip,truncated_label,overflow_tooltip};

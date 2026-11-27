@@ -8,6 +8,7 @@ use crate::ui_test_support::test_context;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum FieldKind {
+    #[cfg(test)]
     Text,
     #[cfg(test)]
     Telephone,
@@ -21,6 +22,7 @@ pub(crate) enum FieldKind {
 impl FieldKind {
     pub(crate) fn preferred_width(self) -> f32 {
         match self {
+            #[cfg(test)]
             Self::Text => 180.0,
             #[cfg(test)]
             Self::Telephone => 142.0,
@@ -87,6 +89,7 @@ pub(crate) fn field(ui: &mut Ui, value: &mut String, kind: FieldKind, enabled: b
         FieldKind::Quantity=>Some(typography::DataValueKind::Quantity),
         #[cfg(test)]
         FieldKind::Telephone=>Some(typography::DataValueKind::Phone),
+        #[cfg(test)]
         _=>None,
     };
     let editor_font=semantic.map_or(

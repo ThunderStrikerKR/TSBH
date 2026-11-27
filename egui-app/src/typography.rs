@@ -271,7 +271,6 @@ enum Role {
     Body,
     FieldLabel,
     Metadata,
-    TableHeader,
     TableCell,
     #[cfg(test)]
     SummaryValue,
@@ -319,10 +318,6 @@ fn spec(role: Role) -> TypeSpec {
         Role::Metadata => TypeSpec {
             size: FONT_METADATA, line: METADATA_LINE_HEIGHT, tracking: 0.0,
             color: MUTED, weight: Weight::Regular,
-        },
-        Role::TableHeader => TypeSpec {
-            size: FONT_FIELD_LABEL, line: 19.0, tracking: 0.0,
-            color: SECONDARY, weight: Weight::Emphasis,
         },
         Role::TableCell => TypeSpec {
             size: FONT_FIELD_LABEL, line: 20.0, tracking: 0.0,
@@ -418,14 +413,6 @@ pub fn field_label_galley(
 }
 pub fn caption(text: &str) -> RichText { render(text, Role::Metadata) }
 
-/// Measured header glyphs for the fixed three-column receipt table.
-/// Unlike Label::halign in Ui::put, this galley is painted at each column's
-/// literal left/right anchor, using the existing bold field-label font.
-pub fn table_header_galley(
-    ui: &egui::Ui, text: &str
-) -> std::sync::Arc<egui::Galley> {
-    client_table_galley(ui,text,Role::TableHeader,true,spec(Role::TableHeader).color)
-}
 /// Measured role text shares the same tracking and line box for regular,
 /// emphasized, wrapped and numeric galleys. Font family and color remain
 /// explicit semantic choices at each caller.

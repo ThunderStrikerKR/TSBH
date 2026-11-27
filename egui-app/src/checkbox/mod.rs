@@ -1,6 +1,6 @@
 //! Shared checkbox rendering and fixed list/table placement; callers own selection.
-use eframe::egui::{self,Align,Color32,Frame,Layout,Rect,Response,Sense,Stroke,Ui,UiBuilder,Vec2};
-use crate::{theme,typography};
+use eframe::egui::{self,Align,Layout,Rect,Response,Ui,Vec2};
+use crate::theme;
 /**
  * Shared management-table checkbox placement.
  *

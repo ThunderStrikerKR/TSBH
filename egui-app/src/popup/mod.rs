@@ -1,5 +1,5 @@
 //! Modal presentation and geometry. Overlay owns window layers, input priority and lifetime.
-use eframe::egui::{self,Align,Color32,Frame,Layout,Rect,Response,Sense,Stroke,Ui,UiBuilder,Vec2};
+use eframe::egui::{self,Align,Frame,Layout,Rect,Response,Sense,Stroke,Ui,Vec2};
 use crate::card::UiWidthPolicyExt;
 use crate::{theme,typography};
 use crate::theme::*;
