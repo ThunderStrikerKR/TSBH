@@ -2092,7 +2092,7 @@ impl ManualWorkspace {
                             &&!self.confirm_apply
                             &&!self.confirm_discard,
                         |status|{
-                            status.set_min_height(theme::MODAL_MASTER_WORKSPACE_TOOLBAR_HEIGHT);
+                            crate::ui_layout::reserve_min_height(status,theme::MODAL_MASTER_WORKSPACE_TOOLBAR_HEIGHT);
                             crate::ui_layout::apply_spacing_role(status,crate::ui_layout::SpacingRole::Toolbar);
                             if self.direct_input{
                                 status.label(typography::caption("직접 입력 · 발주 원문 없음"))
@@ -2276,7 +2276,7 @@ impl ManualWorkspace {
                                     );
                                     sheet_ui.vertical(|panel|{
                                         panel.apply_shared_width(crate::ui_primitives::CardWidthPolicy::FillAvailable,panel_width);
-                                        panel.set_min_height(height.max(0.0));
+                                        crate::ui_layout::reserve_min_height(panel,height.max(0.0));
                                         crate::ui_layout::apply_spacing_role(panel,crate::ui_layout::SpacingRole::WorkflowDetail);
                                         if count_resize_requested {panel.disable();}
                                         let can_switch=!busy && !pending_quantity_active
@@ -4541,7 +4541,7 @@ mod manual_workspace_layout_tests{
         assert!(!render[body_start..columns_start]
             .contains("crate::ui_primitives::section_divider("));
         assert!(render[toolbar_start..body_start]
-            .contains("status.set_min_height(theme::MODAL_MASTER_WORKSPACE_TOOLBAR_HEIGHT)"));
+            .contains("crate::ui_layout::reserve_min_height(status,theme::MODAL_MASTER_WORKSPACE_TOOLBAR_HEIGHT)"));
         assert!(render.contains("crate::card::reception_document_viewport("));
         assert!(render.contains("body,rect,\"manual-source-document\",\"manual-source-blocks\""));
         assert!(!render.contains("crate::card::source_document_frame()"));
