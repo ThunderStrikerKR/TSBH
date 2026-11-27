@@ -10930,6 +10930,14 @@ fn recognition_correction_audit_summary()->Result<serde_json::Value,String>{
 }
 
 fn main() -> eframe::Result<()> {
+    if std::env::args_os().nth(1).is_some_and(|arg|arg=="--recognition-learning-rebuild"){
+        if std::env::args_os().len()!=2{eprintln!("[BANDO HUB] 학습 통계 재구축은 추가 인수를 받지 않습니다.");std::process::exit(2);}
+        match gateway::rebuild_recognition_learning(){
+            Ok(report)=>println!("{report}"),
+            Err(_)=>{eprintln!("[BANDO HUB] 학습 통계 재구축 실패.");std::process::exit(2);}
+        }
+        return Ok(());
+    }
     if std::env::args_os().nth(1).is_some_and(|arg|arg=="--recognition-learning-sync"){
         let result=(||->Result<serde_json::Value,String>{
             let ids=std::env::args_os().skip(2).map(|arg|

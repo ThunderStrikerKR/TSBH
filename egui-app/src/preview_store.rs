@@ -848,23 +848,28 @@ impl PreviewStore {
         Ok(result)
     }
 
-    /// Explicit selected-order synchronization. Lock the existing audit DB
-    /// before reading either source; the business DB is still read-only.
-    pub(crate) fn sync_recognition_learning(ids:&[String],
-        summarize:impl Fn(&Value)->Result<Value,String>)->Result<Value,String>{
+    fn learning_connection()->Result<(Connection,PathBuf,String),String>{
         use sha2::{Digest,Sha256};
         let business=crate::business_state::authorized_business_write_path()?.canonicalize()
             .map_err(|_|"업무 DB 식별 실패")?;
         // Scope by the canonical bound DB, not a potentially shared order ID.
         let scope=format!("{:x}",Sha256::digest(business.as_os_str().as_encoded_bytes()));
         let path=Self::directory()?.join("egui-preview.sqlite3");
-        let mut conn=Connection::open_with_flags(path,OpenFlags::SQLITE_OPEN_READ_WRITE)
+        let conn=Connection::open_with_flags(path,OpenFlags::SQLITE_OPEN_READ_WRITE)
             .map_err(|_|"기존 정정 이력 DB 연결 실패")?;
         conn.busy_timeout(Duration::from_secs(5)).map_err(|e|e.to_string())?;
         conn.execute_batch("PRAGMA foreign_keys=ON").map_err(|e|e.to_string())?;
         let signature:String=conn.query_row("SELECT value FROM preview_meta WHERE key='signature'",[],|r|r.get(0))
             .map_err(|e|e.to_string())?;
         if signature!=SIGNATURE{return Err("egui 전용 DB 식별자가 다릅니다.".into());}
+        Ok((conn,business,scope))
+    }
+
+    /// Explicit selected-order synchronization. Lock the existing audit DB
+    /// before reading either source; the business DB is still read-only.
+    pub(crate) fn sync_recognition_learning(ids:&[String],
+        summarize:impl Fn(&Value)->Result<Value,String>)->Result<Value,String>{
+        let (mut conn,business,scope)=Self::learning_connection()?;
         let tx=conn.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate).map_err(|e|e.to_string())?;
         recognition_learning_store::prepare(&tx)?;
         let frozen=crate::business_state::read_owner_snapshots(ids)?;
@@ -884,6 +889,19 @@ impl PreviewStore {
         if crate::business_state::read_owner_snapshots(ids)?!=frozen ||
             crate::business_state::authorized_business_write_path()?.canonicalize().map_err(|_|"업무 DB 식별 실패")?!=business{
             return Err("학습 갱신 중 확정 주문 또는 업무 DB가 변경되었습니다.".into());
+        }
+        tx.commit().map_err(|e|e.to_string())?;
+        Ok(report)
+    }
+
+    pub(crate) fn rebuild_recognition_learning()->Result<Value,String>{
+        let (mut conn,business,scope)=Self::learning_connection()?;
+        let tx=conn.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate).map_err(|e|e.to_string())?;
+        recognition_learning_store::prepare(&tx)?;
+        let report=recognition_learning_store::rebuild_totals(&tx,&scope)?;
+        if crate::business_state::authorized_business_write_path()?.canonicalize()
+            .map_err(|_|"업무 DB 식별 실패")?!=business{
+            return Err("학습 재구축 중 업무 DB가 변경되었습니다.".into());
         }
         tx.commit().map_err(|e|e.to_string())?;
         Ok(report)

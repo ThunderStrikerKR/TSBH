@@ -141,6 +141,21 @@ pub(super) fn synchronize(tx:&Transaction<'_>,scope:&str,ids:&[String],orders:&[
         "automaticDecisionEnabled":false,"fullHistoryReconciled":false}))
 }
 
+/// Rebuild only this scope/version from its persisted per-order ledger.
+/// This repairs materialized totals, but cannot discover unsynchronized
+/// business orders. The entire replacement is transactional.
+pub(super) fn rebuild_totals(tx:&Transaction<'_>,scope:&str)->Result<Value,String>{
+    tx.execute("DELETE FROM recognition_learning_totals WHERE scope=?1 AND feature_version=?2",
+        params![scope,FEATURE_VERSION]).map_err(|e|e.to_string())?;
+    let rows=tx.execute("INSERT INTO recognition_learning_totals
+        SELECT scope,feature_version,family,context_key,metric,candidate,SUM(amount)
+        FROM recognition_learning_facts WHERE scope=?1 AND feature_version=?2
+        GROUP BY scope,feature_version,family,context_key,metric,candidate",
+        params![scope,FEATURE_VERSION]).map_err(|e|e.to_string())?;
+    Ok(json!({"status":"rebuilt_diagnostic_only","featureVersion":FEATURE_VERSION,
+        "totalRows":rows,"fullHistoryReconciled":false,"automaticDecisionEnabled":false}))
+}
+
 #[cfg(test)]
 mod recognition_learning_store_tests{
     use super::*;
@@ -189,6 +204,18 @@ mod recognition_learning_store_tests{
         synchronize(&tx,"first",&ids,&orders,|_|{let mut r=report(1);r["auditCoverage"]["verifiedManifestOrders"]=json!(0);Ok(r)}).unwrap();tx.commit().unwrap();
         assert_eq!(total(&c,"first","independentOrders"),0);
         assert_eq!(total(&c,"second","independentOrders"),1);
+    }
+    #[test]
+    fn totals_rebuild_uses_ledger_and_preserves_other_scope(){
+        let mut c=conn();let ids=vec!["a".into()];let orders=vec![json!({"id":"a"})];
+        for scope in ["first","second"]{
+            let tx=c.transaction().unwrap();
+            synchronize(&tx,scope,&ids,&orders,|_|Ok(report(3))).unwrap();tx.commit().unwrap();
+        }
+        c.execute("UPDATE recognition_learning_totals SET amount=99 WHERE scope='first'",[]).unwrap();
+        let tx=c.transaction().unwrap();rebuild_totals(&tx,"first").unwrap();tx.commit().unwrap();
+        assert_eq!(total(&c,"first","weakUnchangedCount"),3);
+        assert_eq!(total(&c,"second","weakUnchangedCount"),3);
     }
     #[test]
     fn failed_batch_rolls_back_all_deltas(){
