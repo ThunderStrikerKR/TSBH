@@ -87,3 +87,45 @@ mod management_date_group_tests{
             theme::ACTION_STANDARD_HEIGHT);
     }
 }
+
+
+#[cfg(test)]
+mod shared_button_rendered_geometry_tests{
+    use crate::{theme,theme::ButtonRole};
+    use eframe::egui::{self,Rect,Vec2,Sense};
+    use crate::ui_test_support::{test_context,assert_geometry_value,assert_rect_geometry,assert_painted_caption};
+    #[test]
+    fn action_roles_keep_caption_and_following_slot_stable_across_states(){
+        for (role,height) in [(ButtonRole::Standard,theme::ACTION_STANDARD_HEIGHT),
+            (ButtonRole::Primary,theme::ACTION_PRIMARY_HEIGHT),
+            (ButtonRole::Danger,theme::ACTION_STANDARD_HEIGHT)]{
+            let ctx=test_context();
+            let mut baseline:Option<(Rect,Rect)>=None;
+            for enabled in [true,true,false,true]{
+                let mut actual=None;
+                let events=baseline.map_or_else(Vec::new,|(r,_)|vec![egui::Event::PointerMoved(r.center())]);
+                let output=ctx.run(egui::RawInput{
+                    screen_rect:Some(Rect::from_min_size(egui::Pos2::ZERO,Vec2::new(800.0,500.0))),
+                    events,..Default::default()
+                },|ctx|{
+                    egui::CentralPanel::default().show(ctx,|ui|{
+                        let response=crate::button::action_with_min_width(ui,"적용",role,enabled,120.0);
+                        let next=ui.allocate_exact_size(Vec2::new(80.0,20.0),Sense::hover()).0;
+                        assert_eq!(response.enabled(),enabled);
+                        actual=Some((response.rect,next));
+                    });
+                });
+                let (rect,next)=actual.expect("button response");
+                assert_geometry_value("button","width",rect.width(),120.0,1.0);
+                assert_geometry_value("button","height",rect.height(),height,1.0);
+                let ink=assert_painted_caption(&output,"적용",rect);
+                assert_geometry_value("button","caption center x",ink.center().x,rect.center().x,1.5);
+                assert_geometry_value("button","caption center y",ink.center().y,rect.center().y,2.0);
+                if let Some((old,following))=baseline{
+                    assert_rect_geometry("button state",rect,old,0.5);
+                    assert_rect_geometry("following widget",next,following,0.5);
+                }else{baseline=Some((rect,next));}
+            }
+        }
+    }
+}
