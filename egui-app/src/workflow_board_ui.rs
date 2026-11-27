@@ -1,5 +1,7 @@
 //! The right-hand workflow board. Layout/hover/selection only; no business rules.
 //! Native Rust provides groups, amounts, freight, stage and shipment identity.
+use crate::ui_layout::SharedUiClipExt as _;
+use crate::ui_layout::SharedPainterClipExt as _;
 use crate::ui_layout::SharedAllocationExt as _;
 use eframe::egui::{self, Id, Pos2, Rect, Ui, Vec2};
 use crate::ui_primitives::UiWidthPolicyExt;
@@ -432,7 +434,7 @@ fn workflow_header(
     let title_ink_width=text_rect.width();
     let visible=workflow_title_fit(ui,title,title_ink_width);
     let galley=typography::workflow_dealer_galley(ui,&visible);
-    ui.painter().with_clip_rect(text_rect).galley(
+    ui.painter().with_shared_clip(text_rect).galley(
         Pos2::new(text_rect.left(),text_rect.center().y-galley.size().y/2.0),
         galley,theme::text_ink(theme::TextRole::Value,theme::TextState::Normal)
     );
@@ -565,7 +567,7 @@ fn workflow_action_line(
         theme::text_ink(theme::TextRole::Label,theme::TextState::Normal)
     );
     let shipping_clipped=crate::ui_primitives::text_exceeds_rect(ship_galley.size(),shipping.intersect(ui.clip_rect()));
-    ui.painter().with_clip_rect(shipping).galley(
+    ui.painter().with_shared_clip(shipping).galley(
         Pos2::new(shipping.left(),bottom_y-ship_galley.size().y),
         ship_galley,theme::text_ink(theme::TextRole::Label,theme::TextState::Normal)
     );
@@ -587,7 +589,7 @@ fn workflow_action_line(
             visible,egui::FontId::proportional(typography::WORKFLOW_VAT_FONT_SIZE),
             theme::WORKFLOW_VAT_TEXT
         );
-        ui.painter().with_clip_rect(price_ink).galley(
+        ui.painter().with_shared_clip(price_ink).galley(
             Pos2::new(price_ink.right()-vat_galley.size().x,price.top()+theme::WORKFLOW_VAT_TOP_INSET),
             vat_galley,theme::WORKFLOW_VAT_TEXT
         );
@@ -1165,7 +1167,7 @@ pub fn show(
             .fixed_pos(Pos2::new(pos.x,pos.y))
             .movable(false);
         let response=area.show(ui.ctx(),|overlay_ui|{
-            overlay_ui.set_clip_rect(pane_clip);
+            overlay_ui.use_owner_pane_clip(pane_clip);
             overlay_ui.apply_shared_width(crate::ui_primitives::CardWidthPolicy::Bounded,width);
             overlay_event=pending_frame(
                 overlay_ui,draft,false,true,true,writable,name,None,
@@ -1207,7 +1209,7 @@ pub fn show(
         let response=area.show(ui.ctx(),|ui|{
             // The temporary card can grow downward, but must not bleed
             // over the source/details panes or the app header.
-            ui.set_clip_rect(pane_clip);
+            ui.use_owner_pane_clip(pane_clip);
             ui.apply_shared_width(crate::ui_primitives::CardWidthPolicy::Bounded,width);
             overlay_event=group_frame(
                 ui,group,current,true,true,state.preview_shipment.as_deref(),
