@@ -994,7 +994,6 @@ mod round87_modal_flow_contract_tests {
             ("freight_manager",include_str!("../freight_manager.rs")),
             ("item_editor",include_str!("../item_editor.rs")),
             ("main",include_str!("../main.rs")),
-            ("manual_product_search",include_str!("../manual_product_search.rs")),
             ("manual_workspace",include_str!("../manual_workspace.rs")),
             ("order_history_detail",include_str!("../order_history_detail.rs")),
             ("order_history_manager",include_str!("../order_history_manager.rs")),
@@ -1082,15 +1081,18 @@ mod round87_modal_internal_layout_tests {
 
     #[test]
     fn migrated_search_lists_use_shared_remaining_height_budget(){
-        for (name,source) in [
-            ("alias",include_str!("../alias_manager.rs")),
-            ("manual",include_str!("../manual_product_search.rs")),
-            ("audit",include_str!("../settings_view.rs")),
-        ] {
-            assert!(source.contains("crate::popup::modal_list_max_height("),"{name}");
+        let audit=include_str!("../settings_view.rs");
+        assert!(audit.contains("crate::popup::modal_list_max_height("));
+        for source in [include_str!("../alias_manager.rs"),include_str!("../model_group_manager.rs"),
+            include_str!("../item_editor.rs"),include_str!("../manual_workspace.rs")]{
+            assert!(source.contains(".show_selection_modal("));
         }
+        let product=include_str!("../product_manager.rs");
+        assert!(product.contains("crate::popup::modal_body_height_budget("));
+        assert!(product.contains("crate::scrollbar::management_single_list_scroll_height("));
         let freight=include_str!("../freight_manager.rs");
-        assert!(freight.contains("decision.framed_body("));
+        assert!(freight.contains("crate::popup::DeleteBody::Framed"));
+        assert!(include_str!("mod.rs").contains("DeleteBody::Framed=>decision.framed_body(body)"));
         assert!(!freight.contains("crate::popup::modal_master_body("));
     }
 }
@@ -1215,7 +1217,7 @@ fn freight_modal_content_uses_shared_layout_and_controls(){
     assert!(!rate.contains("spacing_mut("));
     assert!(rate.contains("crate::table::registry_table("));
     assert!(!rate.contains("ui.add_space("));
-    assert_eq!(source.matches("crate::popup::modal_named_text_field(").count(),2);
+    assert_eq!(source.matches("crate::popup::show_name_confirmation(").count(),2);
     assert_eq!(source.matches("crate::popup::show_management_menu(").count(),2);
     assert!(!source.contains("menu.close("));
     assert!(source.contains("crate::popup::modal_compact_table_height("));
@@ -1318,4 +1320,49 @@ mod shared_popup_rendered_geometry_tests{
             }
         }
     }
+}
+
+
+#[test]
+fn shared_name_and_delete_confirmation_callers(){
+    let freight=include_str!("../freight_manager.rs");
+    assert_eq!(freight.matches("crate::popup::show_name_confirmation(").count(),2);
+    for (source,expected) in [
+        (freight,1),
+        (include_str!("../client_manager.rs"),1),
+        (include_str!("../product_manager.rs"),1),
+        (include_str!("../model_group_manager.rs"),1),
+        (include_str!("../category_manager.rs"),1),
+        (include_str!("../composite_reception.rs"),1),
+        (include_str!("../main.rs"),2),
+    ]{
+        assert_eq!(source.matches("crate::popup::show_delete_confirmation(").count(),expected);
+    }
+}
+
+#[test]
+fn shared_confirmation_requires_explicit_action_and_cancel_wins(){
+    use super::confirmation_result;
+    assert_eq!(confirmation_result(false,false),ConfirmDecision::Pending);
+    assert_eq!(confirmation_result(true,false),ConfirmDecision::Cancel);
+    assert_eq!(confirmation_result(false,true),ConfirmDecision::Confirm);
+    assert_eq!(confirmation_result(true,true),ConfirmDecision::Cancel);
+    for style in [DeleteBody::Plain,DeleteBody::Framed]{
+        let ctx=test_context();
+        let area=Rect::from_min_size(egui::Pos2::ZERO,Vec2::new(900.0,600.0));
+        let mut result=ConfirmDecision::Confirm;
+        let _=ctx.run(egui::RawInput{screen_rect:Some(area),..Default::default()},|ctx|{
+            result=show_delete_confirmation(ctx,area,"shared-delete-test","삭제 확인","삭제",
+                true,false,style,|ui|{ui.label("삭제 대상");});
+        });
+        assert_eq!(result,ConfirmDecision::Pending);
+    }
+    let ctx=test_context();
+    let area=Rect::from_min_size(egui::Pos2::ZERO,Vec2::new(900.0,600.0));
+    let mut value="   ".to_owned();
+    let _=ctx.run(egui::RawInput{screen_rect:Some(area),..Default::default()},|ctx|{
+        assert_eq!(show_name_confirmation(ctx,area,"shared-name-test","이름 입력",
+            "이름",&mut value,"이름 입력","등록",true),ConfirmDecision::Pending);
+    });
+    assert_eq!(value,"   ");
 }
