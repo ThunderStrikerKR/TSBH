@@ -391,6 +391,37 @@ mod freight_issue_tests {
     use super::*;
 
     #[test]
+    fn approved_address_is_not_a_stage_blocker_but_missing_address_still_is(){
+        let mut state=json!({
+            "clients":[{"id":"c","name":"가상 거래처","payment":"POSTPAID"}],
+            "orders":[{"id":"o","clientId":"c","orderType":"AGENCY","receptionVersion":1,
+                "recipients":[{"id":"r","name":"가상 수취인","address":"가평군 문화로 120 #별관",
+                    "phone":"02-1234-5678","items":[{"id":"i","name":"가상 상품",
+                    "origin":"FACTORY","productId":"p","variantId":"v","quantity":1,
+                    "quantityConfirmed":true,"unitPrice":1000}]}]}],
+            "products":[{"id":"p","variants":[{"id":"v"}]}],
+            "settings":{"accounts":[]},
+            "workflow":{"groups":[{"id":"g","notices":[]}],"shipments":[{
+                "id":"s","groupId":"g","orderId":"o","recipientId":"r","step":0,
+                "charges":{"FACTORY":3000}}],"payments":[],"events":[]}
+        });
+        let issue=workflow_issues(&state,"g").unwrap().into_iter()
+            .find(|i|i["kind"]=="ADDRESS").unwrap();
+        assert!(stage_issues(&state,"g",1).unwrap().iter().any(|m|m.contains("상세 배송주소")));
+        let approved=super::super::issues::issue_action(&json!({
+            "action":"approve_current_information","order":state["orders"][0],
+            "issueId":issue["issueId"],"recipientId":"r","approvalBasis":issue["approvalBasis"],
+            "actor":"사용자","now":"2026-11-27T00:00:00Z"
+        })).unwrap();
+        state["orders"][0]=approved["order"].clone();
+        for stage in 1..=4{
+            assert!(!stage_issues(&state,"g",stage).unwrap().iter().any(|m|m.contains("상세 배송주소")));
+        }
+        state["orders"][0]["recipients"][0]["address"]=json!("");
+        assert!(stage_issues(&state,"g",1).unwrap().iter().any(|m|m.contains("상세 배송주소")));
+    }
+
+    #[test]
     fn missing_prepaid_freight_is_a_structured_stage_two_issue(){
         let mut state=json!({
             "clients":[{

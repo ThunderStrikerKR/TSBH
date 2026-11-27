@@ -273,7 +273,8 @@ fn emit(result:&mut Vec<Value>,order:&Value,info:Info<'_>){
     let Info{row,item,kind,title,evidence,field:field_name,stage,customer,resolution}=info;
     let id=issue_id(order,row,item,kind);
     let evidence=js_evidence(evidence);
-    let decision=field(order,"issueResolutions").get(&id);
+    let decision=field(order,"issueResolutions").get(&id)
+        .filter(|d|str_field(d,"resolution")!="USER_APPROVED");
     let basis=row.and_then(|r|approval_basis(r,kind));
     let user_approval=row.filter(|r|approved(r,kind))
         .and_then(|r|field(r,"validationApprovals").get(kind));
@@ -618,6 +619,7 @@ pub(super) fn issue_action(payload:&Value)->Result<Value,String> {
             }else if let Some(records)=row["validationApprovals"].as_object_mut(){
                 records.remove(kind);
             }
+            set(&mut order,"updatedAt",json!(required_str(payload,"now")?))?;
             synchronize(&mut order)?;
             Ok(json!({"order":order}))
         }
@@ -922,6 +924,18 @@ mod current_information_approval_tests {
         assert!(order_issues(&a).iter().any(|i|i["kind"]=="ADDRESS"&&i["severity"]=="ACTION"));
         let a=action(&a,"CONTACT","cancel_current_information").unwrap();
         assert!(order_issues(&a).iter().any(|i|i["kind"]=="CONTACT"&&i["severity"]=="ACTION"));
+    }
+    #[test]
+    fn candidate_approval_cannot_follow_changed_value_or_candidates(){
+        let mut o=sample();
+        o["recipients"][0]["candidates"]=json!([
+            {"field":"name","value":"가상 수취인","label":"가상 수취인"},
+            {"field":"name","value":"다른 수취인","label":"다른 수취인"}]);
+        let mut o=action(&o,"CANDIDATE_name","approve_current_information").unwrap();
+        assert!(order_issues(&o).iter().any(|i|i["kind"]=="CANDIDATE_name" && i["resolution"]=="USER_APPROVED"));
+        o["recipients"][0]["candidates"][1]["value"]=json!("새 후보");
+        prune_validation_approvals(&mut o["recipients"][0]);
+        assert!(order_issues(&o).iter().any(|i|i["kind"]=="CANDIDATE_name" && i["severity"]=="ACTION"));
     }
     #[test]
     fn missing_data_and_stale_basis_cannot_be_approved(){
