@@ -1816,6 +1816,214 @@ pub(super) fn learn_blend_weights(payload:&Value)->Result<Value,String>{
     Ok(report)
 }
 
+// R01-R04: independent multiclass field models. The old engine did not
+// capture comparable numeric scores for these tasks. Fit a categorical
+// reliability proxy (selected / other traced / outside) instead of inventing
+// legacy scores. All fitting and evaluation remains diagnostic.
+type FieldGroup=(String,String,String);
+struct FieldBlendRecord{
+    shadow:ShadowCalibrationSample,
+    old:usize,
+}
+#[derive(Default)]
+struct FieldCalibration{
+    orders:usize,
+    mass:[f64;3],
+    shadow:ShadowFit,
+}
+impl FieldCalibration{
+    fn add_order(&mut self,records:&[FieldBlendRecord]){
+        if records.is_empty(){return;}
+        self.orders+=1;
+        let n=records.len() as f64;
+        let mut samples=Vec::with_capacity(records.len());
+        for r in records{
+            let s=&r.shadow;
+            let bucket=if s.actual==r.old{0}else if s.actual+1==s.distribution.len(){2}else{1};
+            self.mass[bucket]+=1.0/n;
+            samples.push(ShadowCalibrationSample{distribution:s.distribution.clone(),actual:s.actual,label:s.label});
+        }
+        self.shadow.add_order(&samples);
+    }
+    fn parameters(&self)->Option<([f64;3],(f64,f64))>{
+        if self.orders<MIN_CALIBRATION_ORDERS{return None;}
+        Some((self.mass.map(|x|x/self.orders as f64),self.shadow.parameters()?))
+    }
+    fn blend_sample(&self,r:&FieldBlendRecord)->Option<BlendSample>{
+        let (p,(t,s))=self.parameters()?;
+        let n=r.shadow.distribution.len().checked_sub(1)?;
+        if n<2||r.old>=n{return None;}
+        let mut legacy=vec![p[1]/(n-1) as f64;n+1];
+        legacy[r.old]=p[0];legacy[n]=p[2];
+        Some(BlendSample{legacy,shadow:shadow_transform(&r.shadow.distribution,t,s),
+            actual:r.shadow.actual,label:r.shadow.label,legacy_choice:r.old,transfer_block:None})
+    }
+}
+fn field_blend_top(sample:&BlendSample,w:f64)->Option<usize>{
+    if !(0.0..=1.0).contains(&w){return None;}
+    let p=blend_distribution(&sample.legacy,&sample.shadow,w);
+    let outside=*p.last()?;
+    let mut ranked=p[..p.len()-1].iter().copied().enumerate().collect::<Vec<_>>();
+    ranked.sort_by(|a,b|b.1.total_cmp(&a.1));
+    let (i,top)=*ranked.first()?;
+    let second=ranked.get(1)?.1;
+    if top<=outside+1e-10||top<=second+1e-10{return None;}
+    // A changed candidate is only a diagnostic proposal. Preserve the
+    // owner's conservative screen and require independent shadow agreement.
+    if i!=sample.legacy_choice&&(top<MIN_CHANGE_PROXY||outside>MAX_CHANGE_OUTSIDE||
+        top-second.max(outside)<MIN_CHANGE_MARGIN||w<=0.0||
+        sample.shadow.iter().enumerate().any(|(j,p)|j!=i&&*p+1e-10>=sample.shadow[i])){
+        return None;
+    }
+    Some(i)
+}
+fn field_blend_record(units:&[u16],first:&Value,projection:&Value,shadow:&Value,
+    obs:&Value,label:&'static str)->Option<(FieldGroup,FieldBlendRecord)>{
+    let task=obs["task"].as_str().filter(|s|matches!(*s,"type"|"product"|"variant"|"quantity"))?;
+    let s=position(units,&obs["source"])?;
+    let old=singleton(&obs["initialCandidates"])?;
+    let actual=singleton(&obs["finalCandidates"])?;
+    if field_state(units,&first["recipients"],s,task).as_deref()!=Some(old){return None;}
+    let mut entries=rows(&projection["fieldEntries"]).filter(|v|v["task"]==task&&position(units,&v["source"])==Some(s));
+    let entry=entries.next()?;if entries.next().is_some(){return None;}
+    if task=="type"&&entry["legacyTypeCandidate"]!=old{return None;}
+    let mut locations=rows(&shadow["locations"]).filter(|v|v["task"]==task&&position(units,v)==Some(s));
+    let loc=locations.next()?;if locations.next().is_some(){return None;}
+    // No singleton candidates, untraced alternatives, or candidate sets
+    // reconstructed from final labels may enter a fitted field model.
+    if loc["candidateCoverage"]!="traced_partial"||entry["candidateCoverage"]!="traced_partial"{return None;}
+    let ids=loc["candidates"].as_array()?;
+    let allowed=ids.iter().map(Value::as_str).collect::<Option<BTreeSet<_>>>()?;
+    let expected=rows(&entry["shadowCandidates"]).filter_map(Value::as_str).collect::<BTreeSet<_>>();
+    if allowed.len()<2||allowed.len()!=ids.len()||allowed!=expected||!allowed.contains(old){return None;}
+    let mut selections=rows(&shadow["contextSelection"]).filter(|v|v["task"]==task&&position(units,v)==Some(s));
+    let selected=selections.next()?;if selections.next().is_some()||selected["status"]!="diagnostic_context_selected"||
+        selected["contextConflict"]!=false{return None;}
+    let key=selected["selectedContextKey"].as_str()?;
+    let mut contexts=rows(&entry["contexts"]).filter(|v|v["key"]==key);
+    let ctx=contexts.next()?;if contexts.next().is_some()||!rows(&loc["contextKeys"]).any(|k|k==key){return None;}
+    let level=ctx["level"].as_str().filter(|s|matches!(*s,"base"|"structure"|"client_structure"))?;
+    let mut reports=rows(&shadow["contexts"]).filter(|v|v["task"]==task&&v["contextKey"]==key&&
+        v["supportVersion"]==4&&v["featureVersion"]==1&&v["contributionVersion"]==2&&
+        v["contextQuality"]["status"]=="diagnostic_screen_pass"&&v["candidateIds"]==loc["candidates"]);
+    let report=reports.next()?;if reports.next().is_some(){return None;}
+    if shadow_top(report,&allowed)!=selected["diagnosticCandidate"].as_str(){return None;}
+    let mut sample=shadow_distribution(report,&allowed,actual)?;
+    sample.label=label;
+    let old=allowed.iter().position(|id|*id==old)?;
+    Some(((task.to_owned(),level.to_owned(),"traced_partial".into()),FieldBlendRecord{shadow:sample,old}))
+}
+pub(super) fn learn_field_blend_weights(payload:&Value)->Result<Value,String>{
+    let config=&payload["config"];
+    let date=|v:&Value|v.as_str().and_then(|s|chrono::DateTime::parse_from_rfc3339(s).ok());
+    let fit_start=date(&config["fitStart"]).ok_or("필드 보정 시작 시각 오류")?;
+    let weight_start=date(&config["weightStart"]).ok_or("필드 가중치 시작 시각 오류")?;
+    let test_start=date(&config["testStart"]).ok_or("필드 평가 시작 시각 오류")?;
+    let test_end=date(&config["testEnd"]).ok_or("필드 평가 종료 시각 오류")?;
+    let as_of=date(&config["evaluationAsOf"]).ok_or("필드 평가 기준 시각 오류")?;
+    if !(fit_start<weight_start&&weight_start<test_start&&test_start<test_end&&test_end<=as_of){
+        return Err("필드 보정·가중치·평가 기간 순서 오류".into());
+    }
+    let build=config["clientBuildVersion"].as_str().filter(|v|!v.is_empty()&&v.len()<=128).ok_or("필드 빌드 버전 필요")?;
+    let orders=payload["orders"].as_array().filter(|v|!v.is_empty()&&v.len()<=250).ok_or("필드 평가 주문 한도 오류")?;
+    let mut seen=BTreeSet::new();
+    let mut calibration=BTreeMap::<FieldGroup,FieldCalibration>::new();
+    let mut weight_orders=Vec::new();let mut test_orders=Vec::new();
+    let mut eligible=BTreeMap::<(String,usize),u64>::new();
+    let mut joined=BTreeMap::<(String,usize),u64>::new();
+    let mut excluded=0u64;
+    for order in orders{
+        let id=order["id"].as_str().filter(|s|!s.is_empty()).ok_or("필드 평가 주문 ID 오류")?;
+        if !seen.insert(id){return Err("필드 평가 주문 ID 중복".into());}
+        let snap=&order["confirmationSnapshot"];let first=&snap["recognitionBaseline"]["initialAnalysis"];
+        let cap=&first["initialPredictionCapture"];let shadow=&cap["learningShadow"];
+        let (Some(start),Some(end),Some(predicted),Some(confirmed))=(date(&cap["analysisStartedAt"]),date(&cap["analysisCompletedAt"]),
+            date(&shadow["capturedAt"]),date(&order["confirmedAt"]))else{excluded+=1;continue;};
+        let (phase,boundary)=if predicted<weight_start{(0,weight_start)}else if predicted<test_start{(1,test_start)}else{(2,as_of)};
+        let lower=match phase{0=>fit_start,1=>weight_start,_=>test_start};
+        if order["learningActive"]!=true||order["deletedAt"].as_str().is_some_and(|v|!v.is_empty())||
+            cap["origin"]!="native_reception_worker"||cap["schemaVersion"]!=1||cap["orderId"]!=id||
+            cap["clientBuildVersion"]!=build||shadow["status"]!="captured_shadow_support"||shadow["captureVersion"]!=4||
+            shadow["sourceDigestsMatched"]!=true||shadow["explicitToWeakRatio"].as_f64()!=Some(3.0)||shadow["decisionChanged"]!=false||
+            shadow["modelId"].as_str().is_none_or(|s|s.len()!=71||!s.starts_with("shadow-")||!s[7..].bytes().all(|b|b.is_ascii_hexdigit()))||
+            snap["at"]!=order["confirmedAt"]||!(lower<=start&&start<=end&&end<=predicted&&predicted<confirmed)||
+            predicted>=test_end||confirmed>boundary||(phase!=2&&confirmed==boundary){excluded+=1;continue;}
+        let Some(events)=order["recognitionAuditEvents"].as_array()else{excluded+=1;continue;};
+        if events.iter().any(|e|date(&e["at"]).is_none_or(|t|t<=predicted||t>confirmed)){excluded+=1;continue;}
+        let compared=compare(order)?;
+        if compared["auditCoverage"]!="verified_manifest"{excluded+=1;continue;}
+        let raw=snap["raw"].as_str().ok_or("필드 평가 원문 누락")?;
+        let units=raw.encode_utf16().collect::<Vec<_>>();
+        let projection=super::learning_context::lookup(&json!({"raw":raw,"initialAnalysis":first}))?;
+        let mut local=BTreeMap::<FieldGroup,Vec<FieldBlendRecord>>::new();let mut used=BTreeSet::new();
+        for obs in rows(&compared["observations"]){
+            let Some(task)=obs["task"].as_str().filter(|t|matches!(*t,"type"|"product"|"variant"|"quantity"))else{continue;};
+            let label=match obs["outcome"].as_str(){
+                Some("explicit_correction_observed") if obs["eligibleForCandidateLearning"]==true=>"explicit_correction",
+                Some("unchanged_observed") if obs["eligibleForCandidateLearning"]==true=>"unchanged_proxy",_=>continue};
+            let (Some(old),Some(actual),Some(s))=(singleton(&obs["initialCandidates"]),singleton(&obs["finalCandidates"]),position(&units,&obs["source"]))else{continue;};
+            if (label=="explicit_correction"&&(old==actual||singleton(&obs["positiveCandidates"])!=Some(actual)||singleton(&obs["negativeCandidates"])!=Some(old)))||
+                (label=="unchanged_proxy"&&old!=actual){continue;}
+            if !used.insert((s,task)){return Err("필드 평가 관측 중복".into());}
+            *eligible.entry((task.to_owned(),phase)).or_default()+=1;
+            if let Some((key,record))=field_blend_record(&units,first,&projection,shadow,obs,label){
+                *joined.entry((task.to_owned(),phase)).or_default()+=1;
+                local.entry(key).or_default().push(record);
+            }
+        }
+        match phase{0=>for (key,records) in local{calibration.entry(key).or_default().add_order(&records);},
+            1=>weight_orders.push(local),_=>test_orders.push(local)}
+    }
+    let mut fits=BTreeMap::<FieldGroup,BlendFit>::new();
+    for order in weight_orders{
+        for (key,records) in order{
+            let samples=records.iter().filter_map(|r|calibration.get(&key)?.blend_sample(r)).collect::<Vec<_>>();
+            fits.entry(key).or_default().add_order(&samples);
+        }
+    }
+    let mut totals=BTreeMap::<(FieldGroup,String),(BlendTest,PairedEvaluation)>::new();
+    for order in test_orders{
+        for (key,records) in order{
+            let w=fits.get(&key).and_then(BlendFit::weight);
+            let mut local=BTreeMap::<&str,(BlendTest,PairedEvaluation)>::new();
+            for record in records{
+                let sample=calibration.get(&key).and_then(|c|c.blend_sample(&record));
+                for label in [record.shadow.label,"mixed_proxy"]{
+                    let (loss,agreement)=local.entry(label).or_default();
+                    loss.observe(sample.as_ref(),w);
+                    let old=record.old.to_string();let actual=record.shadow.actual.to_string();
+                    let predicted=sample.as_ref().zip(w).and_then(|(s,w)|field_blend_top(s,w)).map(|i|i.to_string());
+                    agreement.observe(&old,&actual,predicted.as_deref(),record.shadow.actual+1==record.shadow.distribution.len());
+                }
+            }
+            for (label,(loss,agreement)) in local{
+                let (a,b)=totals.entry((key.clone(),label.to_owned())).or_default();a.merge(loss);b.merge_order(agreement);
+            }
+        }
+    }
+    let models=calibration.iter().map(|((task,level,coverage),cal)|{
+        let fit=fits.get(&(task.clone(),level.clone(),coverage.clone()));
+        let params=cal.parameters();
+        json!({"task":task,"contextLevel":level,"candidateCoverage":coverage,"calibrationOrders":cal.orders,
+            "legacyReliabilityProxy":params.map(|p|p.0),"shadowTemperature":params.map(|p|p.1.0),
+            "shadowUniformSmoothing":params.map(|p|p.1.1),"weightFitOrders":fit.map_or(0,|f|f.orders),
+            "learningWeight":fit.and_then(BlendFit::weight),"automaticChangeAuthorized":false})
+    }).collect::<Vec<_>>();
+    let groups=totals.into_iter().map(|(((task,level,coverage),label),(loss,agreement))|
+        json!({"task":task,"contextLevel":level,"candidateCoverage":coverage,"labelKind":label,
+            "loss":loss.wire(),"agreement":agreement.wire()})).collect::<Vec<_>>();
+    let coverage=["type","product","variant","quantity"].into_iter().map(|task|{
+        let counts=|m:&BTreeMap<(String,usize),u64>|(0..3).map(|phase|m.get(&(task.to_owned(),phase)).copied().unwrap_or(0)).collect::<Vec<_>>();
+        json!({"task":task,"eligibleByPhase":counts(&eligible),"joinedByPhase":counts(&joined)})
+    }).collect::<Vec<_>>();
+    Ok(json!({"status":"field_blend_diagnostic_only","schemaVersion":1,
+        "method":"categorical_legacy_reliability_order_macro_brier_v1","phaseOrder":["calibration","weight","test"],
+        "legacyProxyBuckets":["selected","other_traced","outside"],"models":models,"testGroups":groups,
+        "coverageByTask":coverage,"excludedOrders":excluded,"clientBuildVersion":build,
+        "representativeLabelsVerified":false,"sourceProvenanceVerified":false,
+        "automaticChangeAuthorized":false,"eligibleForAutomaticDecision":false,"decisionChanged":false}))
+}
+
 // P07-05: read-only runtime inference on initial recognition. The optional
 // developer model is never a production authorization or an audit label.
 pub(super) fn run_blend_shadow(payload:&Value)->Result<Value,String>{
