@@ -1447,7 +1447,8 @@ export function auditManagedLayout(source,file){
   // These migrated profiles must not regress to local spacing literals.
   const spacingOwners=new Set(["freight_manager.rs","order_history_manager.rs",
     "daily_settlement_manager.rs","settings_view.rs","automatic_message_manager.rs",
-    "product_manager.rs","excel_manager.rs"]);
+    "product_manager.rs","excel_manager.rs","main.rs","workflow_board_ui.rs",
+    "client_manager.rs","item_editor.rs","notification_center.rs","manual_workspace.rs","category_manager.rs"]);
   if(spacingOwners.has(file)&&/\. spacing_mut \( \) \. (?:item_spacing|interact_size)\b/.test(code))
     hits.push({line:1,rule:"local spacing override in migrated management screen"});
   if(file==="category_dropdown.rs"&&/menu \. (?:set_min_width|set_max_width|set_width|spacing_mut) \(/.test(code))

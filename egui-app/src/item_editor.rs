@@ -293,7 +293,7 @@ impl ItemEditor{
                                 body.horizontal(|line|{
                                     // No implicit spacing around the explicit 16pt
                                     // image-to-details gutter: fill the card exactly.
-                                    line.spacing_mut().item_spacing.x=0.0;
+                                    crate::ui_layout::apply_spacing_role(line,crate::ui_layout::SpacingRole::ExplicitHorizontal);
                                     let (photo,_)=line.allocate_exact_size(
                                         Vec2::splat(photo_side),egui::Sense::hover()
                                     );

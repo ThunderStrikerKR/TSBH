@@ -13,7 +13,7 @@ use crate::table::management_table_data_width;
 pub(crate) enum SpacingRole{
     Toolbar,ToolbarInput,CompactActions,SummaryStrip,FormColumns,
     AccountFields,ReportMetrics,ReportMetricPair,CompactChooser,SplitWorkspace,
-    ExplicitVertical,DocumentBody,WorkflowDetail,
+    ExplicitVertical,ExplicitHorizontal,DocumentBody,WorkflowDetail,TagChips,KakaoIconMode,
 }
 pub(crate) fn apply_spacing_role(ui:&mut Ui,role:SpacingRole){
     let spacing=ui.spacing_mut();
@@ -24,13 +24,15 @@ pub(crate) fn apply_spacing_role(ui:&mut Ui,role:SpacingRole){
             spacing.interact_size.y=theme::INPUT_HEIGHT;
         }
         SpacingRole::CompactActions=>spacing.item_spacing.x=theme::SPACE_4,
-        SpacingRole::SummaryStrip=>spacing.item_spacing=Vec2::splat(theme::SPACE_8),
+        SpacingRole::SummaryStrip|SpacingRole::TagChips=>spacing.item_spacing=Vec2::splat(theme::SPACE_8),
         SpacingRole::FormColumns|SpacingRole::SplitWorkspace=>spacing.item_spacing.x=theme::SPACE_12,
         SpacingRole::AccountFields=>spacing.item_spacing.x=theme::SPACE_8,
         SpacingRole::ReportMetrics=>spacing.item_spacing=Vec2::new(theme::SPACE_12,theme::SPACE_8),
         SpacingRole::ReportMetricPair=>spacing.item_spacing.x=theme::SPACE_4,
         SpacingRole::CompactChooser=>spacing.item_spacing.y=theme::SPACE_4,
         SpacingRole::ExplicitVertical|SpacingRole::DocumentBody=>spacing.item_spacing.y=0.0,
+        SpacingRole::ExplicitHorizontal=>spacing.item_spacing.x=0.0,
+        SpacingRole::KakaoIconMode=>spacing.item_spacing.x=theme::KAKAO_ICON_MODE_GAP,
         SpacingRole::WorkflowDetail=>spacing.item_spacing.y=theme::SPACING,
     }
 }

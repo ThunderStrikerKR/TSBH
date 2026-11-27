@@ -641,9 +641,7 @@ impl ClientManager {
             if !tags.is_empty(){
                 let mut removed=None;
                 panel.horizontal_wrapped(|chips|{
-                    chips.spacing_mut().item_spacing=egui::vec2(
-                        theme::SPACE_8,theme::SPACE_8
-                    );
+                    crate::ui_layout::apply_spacing_role(chips,crate::ui_layout::SpacingRole::TagChips);
                     for tag in &tags{
                         if crate::popup::removable_tag_chip(chips,tag).clicked(){
                             removed=Some(tag.to_owned());

@@ -74,7 +74,7 @@ impl Center{
                     workspace.scroll_region("notification-center-list",height,|ui|{
                         if self.items.is_empty(){crate::ui_primitives::management_body_state_inline(ui,if busy{"조회 중"}else{"알림이 없습니다."});}
                         ui.vertical(|list|{
-                            list.spacing_mut().item_spacing.y=theme::SPACE_8;
+                            crate::ui_layout::apply_spacing_role(list,crate::ui_layout::SpacingRole::WorkflowDetail);
                             for n in &self.items{
                                 let text=|k:&str|n[k].as_str().unwrap_or("");
                                 crate::card::section_frame().show(list,|card|{

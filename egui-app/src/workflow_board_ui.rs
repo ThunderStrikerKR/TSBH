@@ -616,7 +616,7 @@ fn workflow_details<R>(
 )->R{
     ui.add_space(theme::WORKFLOW_CARD_PADDING_Y);
     let result=ui.horizontal(|row|{
-        row.spacing_mut().item_spacing.x=0.0;
+        crate::ui_layout::apply_spacing_role(row,crate::ui_layout::SpacingRole::ExplicitHorizontal);
         row.add_space(theme::WORKFLOW_CARD_PADDING_X);
         let width=(row.available_width()-theme::WORKFLOW_CARD_PADDING_X).max(0.0);
         row.vertical(|details|{

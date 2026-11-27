@@ -5433,7 +5433,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                                     let left_pad=((image_scroll_rect.width()
                                         -display.x)/2.0).max(0.0);
                                     image_ui.horizontal(|line|{
-                                        line.spacing_mut().item_spacing.x=0.0;
+                                        crate::ui_layout::apply_spacing_role(line,crate::ui_layout::SpacingRole::ExplicitHorizontal);
                                         if left_pad>0.0 {
                                             line.add_space(left_pad);
                                         }
@@ -5986,14 +5986,13 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                         .layout(Layout::left_to_right(Align::Center)),
                     |toolbar|{
                         toolbar.set_clip_rect(toolbar_rect);
-                        toolbar.spacing_mut().item_spacing.x=theme::SPACE_4;
+                        crate::ui_layout::apply_spacing_role(toolbar,crate::ui_layout::SpacingRole::CompactActions);
                         toolbar.add_space(theme::KAKAO_TOOLBAR_PAD_X);
                         // Left: Kakao identity icon + one two-option mode
                         // group. Keep 8pt between the icon and first mode
                         // button AND between the two mode buttons.
                         crate::button::kakao_menu_icon(toolbar);
-                        toolbar.spacing_mut().item_spacing.x=
-                            theme::KAKAO_ICON_MODE_GAP;
+                        crate::ui_layout::apply_spacing_role(toolbar,crate::ui_layout::SpacingRole::KakaoIconMode);
                         let mode_role=|active|if active{
                             ButtonRole::ActiveKakaoControl
                         }else{ButtonRole::KakaoControl};
@@ -6002,7 +6001,7 @@ fn vat_recipient_list_height(count:usize,work_area_height:f32)->f32{
                         ).clicked(){
                             next_mode=Some(kakao_dock::DockMode::Together);
                         }
-                        toolcrate::ui_layout::apply_spacing_role(bar,crate::ui_layout::SpacingRole::Toolbar);
+                        crate::ui_layout::apply_spacing_role(toolbar,crate::ui_layout::SpacingRole::Toolbar);
                         if crate::button::action(toolbar,"나누어 보기",
                             mode_role(current_mode==kakao_dock::DockMode::Split),true
                         ).clicked(){
