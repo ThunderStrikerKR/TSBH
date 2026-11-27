@@ -1082,10 +1082,9 @@ impl PreviewStore {
 
     fn blend_model_registry(input:&Value)->Result<Value,String>{
         let action=input["action"].as_str().ok_or("결합 모델 관리 동작 누락")?;
-        let (mut conn,business,scope)=Self::learning_connection()?;
-        let tx=if action=="list"{conn.transaction()}else{
-            conn.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)
-        }.map_err(|e|e.to_string())?;
+        require_read_only_model_registry(input)?;
+        let (mut conn,_,scope)=Self::learning_connection()?;
+        let tx=conn.transaction().map_err(|e|e.to_string())?;
         if action=="list"{
             if !blend_registry_exists(&tx)?{
                 return Ok(json!({"models":[],"selectedModelId":null,"automaticChangeAuthorized":false}));
@@ -1107,29 +1106,7 @@ impl PreviewStore {
             tx.commit().map_err(|e|e.to_string())?;
             return Ok(json!({"models":models,"selectedModelId":selected,"automaticChangeAuthorized":false}));
         }
-        if !matches!(action,"select"|"clear"){return Err("지원하지 않는 결합 모델 관리 동작".into());}
-        prepare_blend_registry(&tx)?;
-        let selected=selected_blend_model(&tx,&scope)?;
-        let expected=input.get("expectedSelectedModelId").ok_or("기존 선택 모델 확인값 필요")?;
-        if *expected!=json!(selected){return Err("선택 모델이 변경되었습니다. 다시 조회하세요.".into());}
-        let next=if action=="select"{
-            let id=input["modelId"].as_str().ok_or("결합 모델 ID 누락")?;
-            let model=read_registered_blend_model(&tx,&scope,id)?;
-            verify_blend_model_sources(&tx,&scope,&business,&model,None)?;
-            let available=chrono::DateTime::parse_from_rfc3339(model["availableAfter"].as_str().ok_or("모델 시각 오류")?)
-                .map_err(|_|"모델 시각 오류")?;
-            if available>=chrono::Utc::now(){return Err("결합 모델 사용 가능 시각 미도달".into());}
-            Some(id.to_owned())
-        }else{None};
-        set_selected_blend_model(&tx,&scope,next.as_deref())?;
-        prepare_blend_governance(&tx)?;
-        tx.execute("DELETE FROM recognition_blend_monitor WHERE scope=?1",[&scope]).map_err(|e|e.to_string())?;
-        if crate::business_state::authorized_business_write_path()?.canonicalize().map_err(|_|"업무 DB 식별 실패")?!=business{
-            return Err("모델 관리 중 업무 DB 변경".into());
-        }
-        tx.commit().map_err(|e|e.to_string())?;
-        Ok(json!({"previousSelectedModelId":selected,"selectedModelId":next,
-            "status":"shadow_selection_only","automaticChangeAuthorized":false}))
+        Err("결합 모델 목록 조회만 지원합니다.".into())
     }
 
     // Explicit read-only full scan. Both databases remain on fixed read
@@ -1543,29 +1520,9 @@ impl PreviewStore {
             return Self::blend_model_registry(registry);
         }
         if let Some(registry)=input.get("fieldBlendRegistry"){
-            let action=registry["action"].as_str().ok_or("필드 모델 관리 동작 누락")?;
-            let (mut conn,business,scope)=Self::learning_connection()?;
-            if action=="list"{return list_field_blend_candidates(&conn,&scope);}
-            if !matches!(action,"select"|"clear"){return Err("필드 모델 관리 동작 오류".into());}
-            let task=registry["task"].as_str().filter(|t|matches!(*t,"type"|"product"|"variant"|"quantity")).ok_or("필드 모델 작업 오류")?;
-            let tx=conn.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate).map_err(|e|e.to_string())?;
-            prepare_field_selection(&tx)?;
-            let previous=selected_field_model(&tx,&scope,task)?;
-            if registry.get("expectedSelectedModelId")!=Some(&json!(previous)){return Err("필드 모델 선택 상태 변경".into());}
-            let next=if action=="select"{
-                let id=registry["modelId"].as_str().ok_or("필드 모델 ID 누락")?;
-                let m=read_field_candidate(&tx,&scope,id)?;
-                if m["model"]["task"]!=task{return Err("필드 모델 작업 불일치".into());}
-                verify_field_sources(&tx,&scope,&m["model"],None)?;
-                Some(id.to_owned())
-            }else{None};
-            set_field_selection(&tx,&scope,task,next.as_deref())?;
-            if crate::business_state::authorized_business_write_path()?.canonicalize().map_err(|_|"업무 DB 식별 실패")?!=business{
-                return Err("필드 모델 관리 중 업무 DB 변경".into());
-            }
-            tx.commit().map_err(|e|e.to_string())?;
-            return Ok(json!({"status":"field_shadow_selection_only","task":task,"previousSelectedModelId":previous,
-                "selectedModelId":next,"automaticChangeAuthorized":false}));
+            require_read_only_model_registry(registry)?;
+            let (conn,_,scope)=Self::learning_connection()?;
+            return list_field_blend_candidates(&conn,&scope);
         }
         if input.get("fieldBlendWeightLearning").is_some()&&input.as_object().is_none_or(|o|o.len()!=1){
             return Err("필드 결합 학습 요청을 분리하세요.".into());
@@ -2055,6 +2012,14 @@ fn store_field_blend_candidates(conn:&Connection,scope:&str,digests:&LearningDig
     }
     Ok(ids)
 }
+// Registry requests are inspection only. Model choice is owned by the
+// internal automatic governance path, never by a caller-selected ID.
+fn require_read_only_model_registry(input:&Value)->Result<(),String>{
+    if input.as_object().is_none_or(|v|v.len()!=1)||input["action"]!="list"{
+        return Err("모델 목록 조회만 지원합니다.".into());
+    }
+    Ok(())
+}
 fn prepare_field_selection(conn:&Connection)->Result<(),String>{
     conn.execute_batch("CREATE TABLE IF NOT EXISTS recognition_field_blend_selection(
         scope TEXT NOT NULL,task TEXT NOT NULL,model_id TEXT NOT NULL,PRIMARY KEY(scope,task))").map_err(|e|e.to_string())
@@ -2063,13 +2028,6 @@ fn selected_field_model(conn:&Connection,scope:&str,task:&str)->Result<Option<St
     let exists:bool=conn.query_row("SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type='table' AND name='recognition_field_blend_selection')",[],|r|r.get(0)).map_err(|e|e.to_string())?;
     if !exists{return Ok(None);}
     conn.query_row("SELECT model_id FROM recognition_field_blend_selection WHERE scope=?1 AND task=?2",params![scope,task],|r|r.get(0)).optional().map_err(|e|e.to_string())
-}
-fn set_field_selection(conn:&Connection,scope:&str,task:&str,id:Option<&str>)->Result<(),String>{
-    if let Some(id)=id{
-        conn.execute("INSERT INTO recognition_field_blend_selection(scope,task,model_id) VALUES(?1,?2,?3)
-            ON CONFLICT(scope,task) DO UPDATE SET model_id=excluded.model_id",params![scope,task,id]).map_err(|e|e.to_string())?;
-    }else{conn.execute("DELETE FROM recognition_field_blend_selection WHERE scope=?1 AND task=?2",params![scope,task]).map_err(|e|e.to_string())?;}
-    Ok(())
 }
 fn read_field_candidate(conn:&Connection,scope:&str,id:&str)->Result<Value,String>{
     if id.len()!=76||!id.starts_with("field-blend-")||!id[12..].bytes().all(|b|b.is_ascii_hexdigit()){
@@ -2703,6 +2661,15 @@ mod reception_edit_audit_tests {
         assert!(auto_retrain_config(&vec![orders[0].clone();60],now,"test").is_none());
     }
 
+    #[test]
+    fn model_registry_rejects_manual_selection_and_clear(){
+        assert!(require_read_only_model_registry(&json!({"action":"list"})).is_ok());
+        for action in ["select","clear","rollback","promote"]{
+            assert!(require_read_only_model_registry(&json!({"action":action,"modelId":"arbitrary"})).is_err());
+            assert!(require_read_only_model_registry(&json!({"action":action})).is_err());
+        }
+        assert!(require_read_only_model_registry(&json!({"action":"list","modelId":"arbitrary"})).is_err());
+    }
     #[test]
     fn field_blend_registry_keeps_tasks_and_revisions_separate(){
         let conn=Connection::open_in_memory().unwrap();
