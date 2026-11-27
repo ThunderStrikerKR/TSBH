@@ -2,6 +2,7 @@
 //! combination validity come from the existing Tauri Rust business state and
 //! rules::shipping_manager_view. No preview DB or hard-coded rate is treated as
 //! operational freight. Write actions are a separate migration step.
+use crate::ui_layout::AlignedUiBuilderExt as _;
 use crate::{
     category_manager::ProductCategoryPaths,
     cell_navigation,
@@ -1418,7 +1419,7 @@ impl FreightManager {
             section.scope_builder(
                 egui::UiBuilder::new()
                     .id_salt("freight-assignment-search-toolbar")
-                    .max_rect(left_rect)
+                    .aligned_max_rect(left_rect)
                     .layout(egui::Layout::left_to_right(egui::Align::Center)),
                 |tools|{
                     tools.set_clip_rect(left_rect);
@@ -1512,7 +1513,7 @@ impl FreightManager {
             // and checkbox below the search control's center line.
             let mut bulk_builder=egui::UiBuilder::new()
                 .id_salt("freight-assignment-bulk-toolbar")
-                .max_rect(right_controls_rect)
+                .aligned_max_rect(right_controls_rect)
                 .layout(egui::Layout::right_to_left(egui::Align::Center));
             if !enabled {
                 bulk_builder=bulk_builder.disabled();
@@ -1710,7 +1711,7 @@ impl FreightManager {
                         let selector_clip=cells[4].intersect(row.clip_rect());
                         let mut selector_builder=egui::UiBuilder::new()
                             .id_salt(("freight-selector",id))
-                            .max_rect(selector_rect)
+                            .aligned_max_rect(selector_rect)
                             .layout(egui::Layout::left_to_right(egui::Align::Min));
                         if !enabled {
                             selector_builder=selector_builder.disabled();
@@ -1783,7 +1784,7 @@ impl FreightManager {
                         row.scope_builder(
                             egui::UiBuilder::new()
                                 .id_salt(("freight-actions",id))
-                                .max_rect(actions_rect)
+                                .aligned_max_rect(actions_rect)
                                 .layout(action_layout),
                             |actions|{
                                 actions.set_clip_rect(
