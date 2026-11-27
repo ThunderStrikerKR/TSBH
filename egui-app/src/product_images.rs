@@ -5,7 +5,7 @@
 
 use std::{collections::HashMap,fs,path::{Path,PathBuf}};
 use base64::{Engine as _,engine::general_purpose::STANDARD};
-use eframe::egui::{self,Color32,Rect,TextureHandle,TextureOptions,Ui,Vec2};
+use eframe::egui::{self,Rect,TextureHandle,TextureOptions,Ui,Vec2};
 use serde_json::Value;
 use crate::{theme,typography};
 

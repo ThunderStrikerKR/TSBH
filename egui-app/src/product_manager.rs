@@ -18,7 +18,7 @@ use crate::{
 use crate::ui_primitives::UiWidthPolicyExt;
 #[cfg(test)]
 use crate::cell_navigation::CellNavigationKey;
-use eframe::egui::{self, Align, Context, Layout, Sense, Ui, UiBuilder, Rect, Vec2};
+use eframe::egui::{self, Align, Context, Layout, Sense, Ui, Rect, Vec2};
 use serde_json::{json, Value};
 use std::{
     cmp::Ordering,

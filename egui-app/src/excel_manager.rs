@@ -2,9 +2,8 @@
 //! Export, sender validation, workflow state and file history remain owned by
 //! the original Rust business core and Tauri's existing SQLite database.
 use crate::{gateway::{BandoGateway,ReadOperation},order_history_manager,settings_help,theme,typography};
-use crate::ui_primitives::UiWidthPolicyExt;
 use chrono::{DateTime,FixedOffset,NaiveDate,Utc};
-use eframe::egui::{self,Align,Align2,Rect,Sense,Ui,UiBuilder,Vec2};
+use eframe::egui::{self,Align,Align2,Rect,Sense,Ui,Vec2};
 use serde_json::{json,Value};
 use std::{collections::{BTreeSet,HashMap},sync::{mpsc::{self,Receiver,TryRecvError},Arc}};
 

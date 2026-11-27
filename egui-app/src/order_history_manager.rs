@@ -8,8 +8,8 @@ use crate::{
     settings_help, theme, typography,
 };
 use crate::ui_primitives::UiWidthPolicyExt;
-use chrono::{DateTime, Duration as Days, FixedOffset, NaiveDate, Utc};
-use eframe::egui::{self, Align, Align2, Rect, Sense, Stroke, Ui, UiBuilder, Vec2};
+use chrono::{DateTime, FixedOffset, NaiveDate, Utc};
+use eframe::egui::{self, Align, Rect, Sense, Stroke, Ui, UiBuilder, Vec2};
 use serde_json::{json, Value};
 use std::{
     collections::BTreeSet,

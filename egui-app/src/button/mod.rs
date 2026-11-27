@@ -1,5 +1,5 @@
 //! Shared native button rendering and hover/focus policy.
-use eframe::egui::{self,Color32,CornerRadius,Rect,Response,Sense,Stroke,Ui,Vec2};
+use eframe::egui::{self,Color32,Rect,Response,Sense,Stroke,Ui,Vec2};
 use crate::{theme,typography};
 use crate::theme::{
     ButtonRole, ACTION_QUIET_HEIGHT, ACTION_STANDARD_HEIGHT, ERROR_TEXT, SPACE_4, SPACE_8,

@@ -4,7 +4,7 @@
 //! generation, settings CAS and SQLite stay in the existing Rust services.
 use crate::{gateway::{BandoGateway,ReadOperation},
     settings_help,theme::{self,ButtonRole},typography};
-use eframe::egui::{self,Align,Context,Layout,Ui,Vec2};
+use eframe::egui::{self,Align,Context,Layout,Ui};
 use serde_json::{json,Map,Value};
 use std::{sync::{mpsc::{self,Receiver},Arc,OnceLock},thread};
 use regex::Regex;

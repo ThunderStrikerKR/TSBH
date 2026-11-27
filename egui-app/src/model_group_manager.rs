@@ -3,7 +3,7 @@
 //! Rust catalog_clients::model_groups validates; Tauri settings_patch CAS saves.
 use crate::{catalog_query_bridge,gateway::BandoGateway, theme, typography};
 use crate::screen_refresh::ReadRefresh;
-use eframe::egui::{self, Align, Context, Layout, Rect, Sense, Ui};
+use eframe::egui::{Align, Context, Layout, Rect, Ui};
 use serde_json::{json, Value};
 use std::{
     collections::{HashMap,HashSet},
@@ -457,6 +457,7 @@ impl ModelGroupManager {
 #[cfg(test)]
 mod responsiveness_tests{
     use super::*;
+    use eframe::egui;
     #[test]
     fn actual_model_group_editor_keeps_rects_during_permission_and_feedback_changes(){
         use crate::ui_test_support::{test_context,assert_popup_transition_geometry,PopupGeometryGateway};
