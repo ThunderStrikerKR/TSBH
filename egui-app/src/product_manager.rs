@@ -3041,6 +3041,20 @@ mod tests {
         }
     }
     #[test]
+    fn actual_product_detail_keeps_rects_during_dirty_state_changes(){
+        use crate::ui_test_support::assert_popup_transition_geometry;
+        let (mut manager,ctx,_requests)=price_test_manager();
+        manager.price_mode=false;
+        manager.begin_edit(manager.products[0].clone());
+        let work=Rect::from_min_size(egui::Pos2::ZERO,Vec2::new(1760.0,1000.0));
+        let original=manager.detail_prices.clone();
+        assert_popup_transition_geometry(&ctx,work,3,|ctx,phase|{
+            manager.detail_prices=original.clone();
+            if phase==1{manager.detail_prices.insert("wholesale".into(),"15,000".into());}
+            manager.show_detail(ctx,work);
+        });
+    }
+    #[test]
     fn rendered_product_detail_measures_real_card_order_and_master_gaps(){
         let (mut manager,ctx,_requests)=price_test_manager();
         manager.price_mode=false;
