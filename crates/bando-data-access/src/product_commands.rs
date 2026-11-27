@@ -187,6 +187,9 @@ fn check_catalog_write_scope(before:&Value,action:&str,data:&Value,
             return Ok(());
         }
     }
+    if action=="delete_brand" && !data.get("expectedEntity").is_some_and(Value::is_object){
+        return Err("삭제할 브랜드의 원본 정보가 없습니다.".into());
+    }
     if action=="delete_alias" && !data.get("expectedEntity").is_some_and(Value::is_object){
         return Err("삭제할 별칭의 원본 정보가 없습니다.".into());
     }
@@ -195,6 +198,7 @@ fn check_catalog_write_scope(before:&Value,action:&str,data:&Value,
             "upsert_product"=>("products",data["product"]["id"].as_str().unwrap_or("")),
             "archive_product"=>("products",data["productId"].as_str().unwrap_or("")),
             "upsert_brand"=>("brands",data["editing"].as_str().unwrap_or("")),
+            "delete_brand"=>("brands",data["brandId"].as_str().unwrap_or("")),
             "save_alias"=>("aliases",data["record"]["id"].as_str().unwrap_or("")),
             "delete_alias"=>("aliases",data["aliasId"].as_str().unwrap_or("")),
             _=>return Err("지원하지 않는 개별 저장 기준입니다.".into())
@@ -316,6 +320,13 @@ pub fn patch_product_v2(conn:&mut Connection, request:&Value)->Result<Value,Stri
             )?;
             result.get("state").filter(|v|v.is_object()).cloned()
                 .ok_or("Rust 브랜드 저장 결과 형식 오류")?
+        }
+        "delete_brand"=>{
+            let id=required(data,"brandId")?;
+            let result=catalog_clients::execute("delete_brand",
+                json!({"state":before,"brandId":id}))?;
+            result.get("state").filter(|v|v.is_object()).cloned()
+                .ok_or("Rust 브랜드 삭제 결과 형식 오류")?
         }
         "save_alias"=>{
             // The original React AliasManager submits one product id and
@@ -443,6 +454,17 @@ mod management_scope_cas_tests{
         assert!(check_catalog_write_scope(&state,"delete_alias",&json!({"aliasId":"a"}),2,2).is_err());
         let changed=json!({"aliases":[{"id":"a","text":"other","productId":"p"}]});
         assert!(check_catalog_write_scope(&changed,"delete_alias",&request,2,2).is_err());
+    }
+    #[test]
+    fn brand_delete_requires_original_entity_and_rejects_stale_edits(){
+        let brand=json!({"id":"b","name":"BANDO"});
+        let state=json!({"brands":[brand.clone()]});
+        let request=json!({"brandId":"b","expectedEntity":brand});
+        assert!(check_catalog_write_scope(&state,"delete_brand",&request,1,2).is_ok());
+        assert!(check_catalog_write_scope(&state,"delete_brand",&json!({"brandId":"b"}),2,2).is_err());
+        let changed=json!({"brands":[{"id":"b","name":"changed"}]});
+        assert!(check_catalog_write_scope(&changed,"delete_brand",&request,2,2).is_err());
+        assert!(check_catalog_write_scope(&json!({"brands":[]}),"delete_brand",&request,2,2).is_err());
     }
     #[test]
     fn target_entity_cas_and_bulk_review_have_different_scope(){
