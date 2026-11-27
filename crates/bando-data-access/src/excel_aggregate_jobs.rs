@@ -251,6 +251,113 @@ mod tests{
         let j=Job{date:"2026-11-27".into(),origin:"STORE".into(),path:p.to_string_lossy().into_owned(),desired:2,saved:0,retries:0,hash:None};
         assert_eq!(project(&json!({"exports":[e.clone(),e,e2]}),&j).unwrap().len(),2);
     }
+    fn metadata(conn:&Connection,state:&Value){
+        conn.execute_batch("CREATE TABLE IF NOT EXISTS core_schema(key TEXT PRIMARY KEY,version INTEGER);
+            INSERT OR IGNORE INTO core_schema VALUES('business-core',2);
+            CREATE TABLE IF NOT EXISTS app_state(id INTEGER PRIMARY KEY,payload TEXT);").unwrap();
+        conn.execute("INSERT INTO app_state(id,payload) VALUES(1,?1) ON CONFLICT(id) DO UPDATE SET payload=excluded.payload",
+            [state.to_string()]).unwrap();
+    }
+    fn export(root:&Path,date:&str,origin:&str,n:u32)->Value{
+        let target=target(root,date,origin).unwrap();
+        let name=format!("{}({}{n}).xlsx",date.replace('-',""),
+            if origin=="STORE"{"매장"}else{"공장"});
+        json!({"id":format!("{date}-{origin}-{n}"),"savedPath":target.with_file_name(name),
+            "outputRows":[{"values":vec![format!("{n}");16]}]})
+    }
+    #[test]
+    fn ten_exports_accumulate_without_cross_origin_or_date(){
+        let c=Connection::open_in_memory().unwrap();let root=root();
+        let mut records:Vec<_>=(1..=10).map(|n|export(&root,"2026-11-27","STORE",n)).collect();
+        records.push(export(&root,"2026-11-27","FACTORY",1));
+        records.push(export(&root,"2026-11-28","STORE",1));
+        metadata(&c,&json!({"revision":12,"exports":records}));
+        recover_history(&c,Some(&root)).unwrap();
+        let jobs=jobs(&c,0,true).unwrap();assert_eq!(jobs.len(),3);
+        let j=jobs.iter().find(|j|j.date=="2026-11-27"&&j.origin=="STORE").unwrap();
+        let rows=daily_rows(&c,j,|_,_|panic!("no reply")).unwrap();
+        assert_eq!(rows.len(),10);assert_eq!(rows[0][0],"1");assert_eq!(rows[9][0],"10");
+        recover_history(&c,Some(&root)).unwrap();
+        assert_eq!(super::jobs(&c,0,true).unwrap().len(),3);
+    }
+    #[test]
+    fn historical_legacy_reply_waits_for_configuration_then_keeps_original_binding(){
+        let c=Connection::open_in_memory().unwrap();let root=root();let other=root.join("new-root");
+        let reply=json!({"id":"legacy","businessDate":"2026-11-27","rows":[{"row":2,"applied":true,
+            "shipmentId":"s","actual":3000,"tracking":"00000001"}]});
+        metadata(&c,&json!({"revision":4,"factoryReplies":[reply]}));
+        recover_history(&c,None).unwrap();assert!(jobs(&c,0,true).unwrap().is_empty());
+        recover_history(&c,Some(&root)).unwrap();
+        let j=jobs(&c,0,true).unwrap().remove(0);
+        assert_eq!(j.path,target(&root,"2026-11-27","REPLY").unwrap().to_str().unwrap());
+        let v=daily_rows(&c,&j,|record,row|{assert_eq!(record["id"],"legacy");assert_eq!(row["row"],2);
+            Ok(vec!["value".to_owned();17])}).unwrap();
+        assert_eq!(v[0][6],"3000");assert_eq!(v[0][16],"00000001");
+        recover_history(&c,Some(&other)).unwrap();assert_eq!(jobs(&c,0,true).unwrap().len(),1);
+        mark_saved(&c,&j,"hash").unwrap();recover_history(&c,Some(&root)).unwrap();
+        assert!(jobs(&c,0,false).unwrap().is_empty());
+    }
+    #[test]
+    fn legacy_correction_reads_original_and_missing_original_fails_closed(){
+        let root=root();let p=target(&root,"2026-11-28","REPLY").unwrap();
+        let j=Job{date:"2026-11-28".into(),origin:"REPLY".into(),path:p.to_str().unwrap().into(),desired:8,saved:0,retries:0,hash:None};
+        let state=json!({"factoryReplies":[
+            {"id":"original","businessDate":"2026-11-27","rows":[{"row":2,"applied":false}]},
+            {"id":"correction","businessDate":"2026-11-28","resolves":{"id":"original","row":2},"rows":[
+                {"row":2,"applied":true,"shipmentId":"s","actual":0,"tracking":"00000002"}]}]});
+        assert!(project_with(&state,&j,&["correction".into()],|_,_|Err("missing".into())).is_err());
+        let rows=project_with(&state,&j,&["correction".into()],|original,row|{
+            assert_eq!(original["id"],"original");assert_eq!(row["row"],2);Ok(vec!["".into();17])
+        }).unwrap();
+        assert_eq!(rows[0][16],"00000002");assert_eq!(rows[0][6],"0");
+    }
+    #[test]
+    fn legacy_date_uses_korea_midnight_and_leap_year(){
+        assert_eq!(reply_date(&json!({"at":"2026-11-27T15:00:00Z"})).as_deref(),Some("2026-11-28"));
+        assert_eq!(reply_date(&json!({"at":"2026-12-31T15:00:00Z"})).as_deref(),Some("2027-01-01"));
+        assert!(target(&root(),"2028-02-29","STORE").is_ok());
+        assert!(target(&root(),"2026-02-29","STORE").is_err());
+        assert!(target(Path::new("relative"),"2026-11-27","STORE").is_err());
+        assert!(target(&root(),"2026-11-27","PRODUCT").is_err());
+    }
+    #[test]
+    fn restore_reopens_generation_and_preserves_business_revision(){
+        let c=Connection::open_in_memory().unwrap();let root=root();
+        metadata(&c,&json!({"revision":7,"exports":[export(&root,"2026-11-27","STORE",1)]}));
+        recover_history(&c,Some(&root)).unwrap();
+        let old=jobs(&c,0,true).unwrap().remove(0);
+        mark_saved(&c,&old,"old").unwrap();
+        invalidate_after_restore(&c,20).unwrap();
+        let now=current(&c,&old).unwrap().unwrap();
+        assert_eq!((now.desired,now.saved,now.hash),(20,0,None));
+        assert_eq!(read_history(&c).unwrap()["revision"],7);
+    }
+    #[test]
+    fn retry_delays_cap_and_new_work_resets_wait(){
+        let c=Connection::open_in_memory().unwrap();
+        let path=target(&root(),"2026-11-27","STORE").unwrap();let p=path.to_str().unwrap();
+        enqueue(&c,"2026-11-27","STORE",p,1).unwrap();
+        let mut now=100;
+        for delay in [5,15,30,60,60]{
+            let j=jobs(&c,now,false).unwrap().remove(0);
+            mark_failed(&c,&j,now,"locked").unwrap();
+            assert!(jobs(&c,now+delay-1,false).unwrap().is_empty());
+            now+=delay;
+        }
+        let j=jobs(&c,now,false).unwrap().remove(0);
+        mark_failed(&c,&j,now,"locked").unwrap();enqueue(&c,"2026-11-27","STORE",p,2).unwrap();
+        let next=jobs(&c,now,false).unwrap().remove(0);
+        assert_eq!((next.desired,next.retries),(2,0));
+    }
+    #[test]
+    fn missing_export_rows_never_generates_silent_empty_workbook(){
+        let c=Connection::open_in_memory().unwrap();let root=root();
+        let mut e=export(&root,"2026-11-27","STORE",1);e.as_object_mut().unwrap().remove("outputRows");
+        metadata(&c,&json!({"revision":1,"exports":[e]}));
+        recover_history(&c,Some(&root)).unwrap();
+        let j=jobs(&c,0,true).unwrap().remove(0);
+        assert!(daily_rows(&c,&j,|_,_|panic!("no reply")).is_err());
+    }
     #[test]
     fn latest_reply_wins_without_approval_time_reversal(){
         let p=target(&root(),"2026-11-27","REPLY").unwrap();

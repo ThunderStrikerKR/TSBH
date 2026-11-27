@@ -284,6 +284,33 @@ mod tests{
         assert_eq!(jobs::current(&f.conn,&f.job).unwrap().unwrap().saved,2);
     }
     #[test]
+    fn stale_temp_cleanup_ignores_original_and_unknown_files(){
+        let mut f=Fixture::new();f.update(1);publish(&mut f.conn,&f.job,&f.root).unwrap();
+        let dir=Path::new(&f.job.path).parent().unwrap();
+        let stale=dir.join(format!(".bando-aggregate-{}.tmp",Uuid::new_v4()));
+        let unknown=dir.join(".bando-aggregate-not-a-uuid.tmp");
+        let original=dir.join("20261127(매장1).xlsx");
+        for p in [&stale,&unknown,&original]{fs::write(p,b"test").unwrap();}
+        clean_stale_temps(&mut f.conn,Duration::ZERO).unwrap();
+        assert!(!stale.exists());assert!(unknown.exists());assert!(original.exists());
+        assert!(Path::new(&f.job.path).exists());
+    }
+    #[test]
+    fn legacy_original_is_verified_and_read_from_exact_row(){
+        let f=Fixture::new();let dir=f.root.join("factory-replies");fs::create_dir(&dir).unwrap();
+        let mut row=vec![String::new();17];row[0]="가상 수하인".into();row[1]="01234".into();
+        row[6]="3000".into();row[16]="0000123456".into();
+        let bytes=encode(&[row],true).unwrap();let digest=format!("{:x}",Sha256::digest(&bytes));
+        let path=dir.join(format!("{digest}.xlsx"));fs::write(&path,&bytes).unwrap();
+        let record=serde_json::json!({"id":format!("factory-reply-{digest}")});
+        let source=serde_json::json!({"row":2});
+        let mut cache=HashMap::new();
+        let v=read_legacy_reply(&f.root,&record,&source,&mut cache).unwrap();
+        assert_eq!(v[1],"01234");assert_eq!(v[16],"0000123456");
+        fs::write(path,b"bad").unwrap();
+        assert!(read_legacy_reply(&f.root,&record,&source,&mut HashMap::new()).is_err());
+    }
+    #[test]
     fn same_directory_replacement_preserves_complete_bytes(){
         let d=std::env::temp_dir().join(format!("bando-aggregate-{}",Uuid::new_v4()));
         fs::create_dir(&d).unwrap();let p=d.join("daily.xlsx");let t=d.join("new.tmp");
