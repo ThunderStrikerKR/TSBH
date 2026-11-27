@@ -157,6 +157,16 @@ fn management_dropdown_trigger_inner(
     overflow_tooltip(trigger,overflow||label!=full_label,full_label)
 }
 
+/// Common vertical spacing for normal and searchable dropdown menus.
+fn configure_option_menu(ui:&mut Ui){
+    management_dropdown_option_palette(ui);
+    ui.spacing_mut().item_spacing.y=theme::SPACE_4;
+}
+fn configure_option_rows(ui:&mut Ui){
+    ui.spacing_mut().item_spacing.y=theme::SPACE_4;
+    ui.spacing_mut().interact_size.y=theme::MANAGEMENT_DROPDOWN_OPTION_HEIGHT;
+}
+
 fn management_dropdown_inner(
     ui:&mut Ui,label:&str,full_label:&str,width:f32,enabled:bool,
     compact:bool,indicator:Option<Color32>,values:Option<&egui::text::LayoutJob>,
@@ -171,10 +181,9 @@ fn management_dropdown_inner(
             // popup-row pointer, to the shared action-notice origin.
             menu.set_min_width(width);
             if compact {menu.set_max_width(width);}
-            management_dropdown_option_palette(menu);
+            configure_option_menu(menu);
             // The popup frame owns its 4pt inset. Use full-height selectable
             // rows, so Hangul glyph ink has space above AND below its center.
-            menu.spacing_mut().item_spacing.y=theme::SPACE_4;
             // Horizontal auto-shrink is mandatory: forcing a wide ScrollArea
             // caused 90pt 선불/착불 selectors to open ~600pt-wide menus.
             let scroll=scroll_area(ScrollAxes::Vertical)
@@ -182,9 +191,7 @@ fn management_dropdown_inner(
                 .auto_shrink([true,true]);
             let scroll=if compact {scroll.max_width(width)}else{scroll};
             scroll.show(menu,|choices|{
-                choices.spacing_mut().item_spacing.y=theme::SPACE_4;
-                choices.spacing_mut().interact_size.y=
-                    theme::MANAGEMENT_DROPDOWN_OPTION_HEIGHT;
+                configure_option_rows(choices);
                 if compact{choices.set_width(width);}
                 options(choices);
             });
@@ -239,8 +246,7 @@ pub(crate) fn management_searchable_dropdown(
             menu.set_min_width(popup_width);
             menu.set_max_width(popup_width);
             menu.set_width(popup_width);
-            management_dropdown_option_palette(menu);
-            menu.spacing_mut().item_spacing.y=theme::SPACE_4;
+            configure_option_menu(menu);
             let input_width=menu.available_width().max(1.0);
             management_search_field(menu,&mut search,input_width,hint);
             let visible=options.iter()
@@ -251,9 +257,7 @@ pub(crate) fn management_searchable_dropdown(
                 .max_height(theme::MANAGEMENT_DROPDOWN_MENU_MAX_HEIGHT)
                 .auto_shrink([false,true])
                 .show(menu,|list|{
-                    list.spacing_mut().item_spacing.y=theme::SPACE_4;
-                    list.spacing_mut().interact_size.y=
-                        theme::MANAGEMENT_DROPDOWN_OPTION_HEIGHT;
+                    configure_option_rows(list);
                     if visible.is_empty(){
                         management_body_state_inline(list,"검색 결과가 없습니다.");
                     }else{

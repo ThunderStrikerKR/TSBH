@@ -208,30 +208,28 @@ pub const FORM_INPUT_OPTICAL_SHIFT_Y: i8 = INPUT_TEXT_OPTICAL_SHIFT_Y;
 pub fn form_label_text_y(row_height:f32,galley_height:f32)->f32 {
     (row_height-galley_height)*0.5+FORM_LABEL_OPTICAL_CENTER_Y
 }
+/// All text editors share average vertical padding; horizontal inset and
+/// optical adjustment are explicit roles, not independent calculations.
+fn input_text_margin(horizontal:i8,optical_shift:i8)->egui::Margin{
+    egui::Margin{
+        left:horizontal,right:horizontal,
+        top:INPUT_VERTICAL_PADDING+optical_shift,
+        bottom:INPUT_VERTICAL_PADDING-optical_shift,
+    }
+}
 /// Exact-rectangle worksheet cells retain their existing symmetric padding.
 pub fn reception_cell_text_margin()->egui::Margin{
-    egui::Margin::symmetric(8,2)
+    input_text_margin(crate::ui_tokens::SPACE_8 as i8,0)
 }
 pub fn form_input_text_margin()->egui::Margin{
-    const VERTICAL:i8=INPUT_VERTICAL_PADDING;
-    egui::Margin {
-        left:8,right:8,
-        top:VERTICAL+FORM_INPUT_OPTICAL_SHIFT_Y,
-        bottom:VERTICAL-FORM_INPUT_OPTICAL_SHIFT_Y,
-    }
+    input_text_margin(crate::ui_tokens::SPACE_8 as i8,FORM_INPUT_OPTICAL_SHIFT_Y)
 }
 
 /// Preserve 2pt average vertical padding, but shift the editable
 /// text area's center upward 1pt. Unlike painting text over a TextEdit,
 /// this moves the selection cursor and placeholder with the typed text.
 pub fn management_date_text_margin() -> egui::Margin {
-    const BASE: i8 = INPUT_VERTICAL_PADDING;
-    egui::Margin {
-        left: BASE,
-        right: BASE,
-        top: BASE + MANAGEMENT_DATE_TEXT_OPTICAL_SHIFT_Y,
-        bottom: BASE - MANAGEMENT_DATE_TEXT_OPTICAL_SHIFT_Y,
-    }
+    input_text_margin(INPUT_VERTICAL_PADDING,MANAGEMENT_DATE_TEXT_OPTICAL_SHIFT_Y)
 }
 
 // Shared line boxes used for balanced reception guidance geometry.

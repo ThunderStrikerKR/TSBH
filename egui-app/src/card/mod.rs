@@ -291,7 +291,20 @@ pub(crate) fn management_summary_card(ui:&mut Ui,label:&str,count:usize){
 /// The same KPI geometry with an explicit display value, including "—"
 /// while data is pending. Never report a fabricated zero before a fetch.
 pub(crate) fn management_summary_card_value(ui:&mut Ui,label:&str,value:&str){
-    let card_width=theme::FREIGHT_SUMMARY_CARD_WIDTH;
+    management_summary_card_with_role(ui,label,value,SummaryCardRole::Count);
+}
+
+#[derive(Clone,Copy,PartialEq,Eq)]
+pub(crate) enum SummaryCardRole{Count,Settlement}
+/// Count and monetary summaries share geometry, typography and frame.
+/// Settlement preserves its wider card and explicit amount clipping.
+pub(crate) fn management_summary_card_with_role(
+    ui:&mut Ui,label:&str,value:&str,role:SummaryCardRole
+){
+    let card_width=match role{
+        SummaryCardRole::Count=>theme::FREIGHT_SUMMARY_CARD_WIDTH,
+        SummaryCardRole::Settlement=>theme::SETTLEMENT_KPI_CARD_WIDTH,
+    };
     ui.allocate_ui_with_layout(
         egui::vec2(card_width,theme::FREIGHT_SUMMARY_CARD_HEIGHT),
         egui::Layout::top_down(egui::Align::Min),
@@ -301,7 +314,7 @@ pub(crate) fn management_summary_card_value(ui:&mut Ui,label:&str,value:&str){
                 cell.spacing_mut().item_spacing.y=0.0;
                 let content_width=card_width-2.0*theme::FREIGHT_SUMMARY_PADDING_X
                     -2.0*theme::FRAME_STROKE_WIDTH;
-                let (number_row,_)=cell.allocate_exact_size(
+                let (number_row,number_response)=cell.allocate_exact_size(
                     egui::vec2(content_width,theme::FREIGHT_SUMMARY_NUMBER_LINE_HEIGHT),
                     egui::Sense::hover()
                 );
@@ -314,18 +327,22 @@ pub(crate) fn management_summary_card_value(ui:&mut Ui,label:&str,value:&str){
                     cell,value
                 );
                 let caption=typography::freight_summary_small_label_galley(cell,label);
-                cell.painter().galley(
-                    egui::pos2(
-                        number_row.center().x-number.size().x/2.0,
-                        number_row.center().y-number.size().y/2.0
-                    ),number,theme::TEXT
-                );
-                cell.painter().galley(
-                    egui::pos2(
-                        label_row.center().x-caption.size().x/2.0,
-                        label_row.center().y-caption.size().y/2.0
-                    ),caption,theme::SECONDARY
-                );
+                let number_pos=egui::pos2(
+                    number_row.center().x-number.size().x/2.0,
+                    number_row.center().y-number.size().y/2.0);
+                let label_pos=egui::pos2(
+                    label_row.center().x-caption.size().x/2.0,
+                    label_row.center().y-caption.size().y/2.0);
+                if role==SummaryCardRole::Settlement{
+                    let overflow=crate::ui_primitives::text_exceeds_rect(
+                        number.size(),number_row.intersect(cell.clip_rect()));
+                    cell.painter().with_clip_rect(number_row).galley(number_pos,number,theme::TEXT);
+                    cell.painter().with_clip_rect(label_row).galley(label_pos,caption,theme::SECONDARY);
+                    crate::ui_primitives::overflow_tooltip(number_response,overflow,value);
+                }else{
+                    cell.painter().galley(number_pos,number,theme::TEXT);
+                    cell.painter().galley(label_pos,caption,theme::SECONDARY);
+                }
             });
         }
     );

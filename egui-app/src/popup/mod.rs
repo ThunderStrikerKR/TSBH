@@ -818,7 +818,7 @@ impl ModalFormStack<'_>{
     // No Deref, public raw UI field or setter for the stack geometry.
     pub(crate) fn compact_group<R>(&mut self,contents:impl FnOnce(&mut Ui)->R)->R{
         self.ui.scope(|group|{
-            group.spacing_mut().item_spacing.y=theme::SPACING;
+            modal_form_row_spacing(group);
             contents(group)
         }).inner
     }
@@ -861,7 +861,7 @@ pub(crate) fn modal_named_text_field(
     ui:&mut Ui,label:&str,value:&mut String,hint:&str,enabled:bool
 )->Response{
     ui.scope(|field|{
-        field.spacing_mut().item_spacing.y=theme::SPACING;
+        modal_form_row_spacing(field);
         field.label(typography::field_label(label));
         field.add_enabled_ui(enabled,|input|{
             crate::input::flexible_text_field(
@@ -941,7 +941,7 @@ fn modal_plain_body_region<R>(
     Frame::NONE.inner_margin(egui::Margin::symmetric(inset as i8,0))
         .show(ui,|content|{
             content.set_width(width);
-            content.spacing_mut().item_spacing.y=theme::SPACING;
+            modal_form_row_spacing(content);
             contents(content)
         })
 }
@@ -979,10 +979,16 @@ pub(crate) fn modal_master_body_section<R>(
     ui.scope(|section|{
         modal_section_heading_with_rule(section,title);
         section.scope(|body|{
-            body.spacing_mut().item_spacing.y=theme::SPACING;
+            modal_form_row_spacing(body);
             contents(body)
         }).inner
     }).inner
+}
+
+/// One boxed section appearance for single and parallel modal sections.
+fn modal_section_frame()->Frame{
+    theme::bordered_surface(theme::MODAL_SECTION_BG,theme::DIVIDER,theme::MODAL_SECTION_RADIUS)
+        .inner_margin(theme::MODAL_SECTION_PADDING)
 }
 
 /// Exact outer card rectangle from the same canonical section renderer.
@@ -993,13 +999,11 @@ pub(crate) fn modal_section_measured<R>(
     let inner_width=crate::card::inner_width_for_insets(ui.available_width(),
         theme::MODAL_SECTION_PADDING,theme::MODAL_SECTION_PADDING,
         theme::FRAME_STROKE_WIDTH,0.0,1.0);
-    theme::bordered_surface(theme::MODAL_SECTION_BG,theme::DIVIDER,theme::MODAL_SECTION_RADIUS)
-        .inner_margin(theme::MODAL_SECTION_PADDING)
-        .show(ui,|section|{
+    modal_section_frame().show(ui,|section|{
             crate::card::apply_width_policy(section,crate::card::CardWidthPolicy::FillAvailable,inner_width);
             modal_section_heading_with_rule(section,title);
             section.scope(|body|{
-                body.spacing_mut().item_spacing.y=theme::SPACING;
+                modal_form_row_spacing(body);
                 contents(body)
             }).inner
         })
@@ -1014,12 +1018,11 @@ pub(crate) fn modal_parallel_sections(
     let widths:Vec<f32>=sections.iter().map(|(_,width)|*width).collect();
     crate::card::parallel_frames(
         ui,&widths,theme::MODAL_MASTER_WORKSPACE_GAP,
-        theme::bordered_surface(theme::MODAL_SECTION_BG,theme::DIVIDER,theme::MODAL_SECTION_RADIUS)
-            .inner_margin(theme::MODAL_SECTION_PADDING),
+        modal_section_frame(),
         policy,|index,section|{
             modal_section_heading_with_rule(section,sections[index].0);
             section.scope(|body|{
-                body.spacing_mut().item_spacing.y=theme::SPACING;
+                modal_form_row_spacing(body);
                 contents(index,body);
             });
         }

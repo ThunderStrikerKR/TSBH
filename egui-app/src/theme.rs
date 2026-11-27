@@ -641,14 +641,24 @@ pub fn management_single_stretch_columns<const N:usize>(
     management_weighted_columns(base,shares,data_width,column_gap)
 }
 
+/// Minimum width is derived from the column definitions and the shared gap.
+const fn management_columns_min_width<const N:usize>(base:[f32;N],gap:f32)->f32{
+    let mut sum=0.0;
+    let mut i=0;
+    while i<N{sum+=base[i];i+=1;}
+    sum+N.saturating_sub(1) as f32*gap
+}
+const FREIGHT_ASSIGNMENT_BASE_COLUMNS:[f32;6]=[44.0,202.0,104.0,258.0,150.0,144.0];
+const ORDER_HISTORY_BASE_COLUMNS:[f32;7]=[112.0,156.0,300.0,126.0,124.0,112.0,264.0];
+
 // Freight > Shipping Group Assignment: selection, product, color/option,
 // category, shipping group, settings. Fixed 42pt rows; 6 columns + 5 gaps.
 // CONFLICT-002: keep the currently approved 202pt product / 144pt settings.
 pub const FREIGHT_ASSIGNMENT_MASTER_TABLE: ManagementMasterTableSpec<6> =
     ManagementMasterTableSpec {
-        base_columns: [44.0, 202.0, 104.0, 258.0, 150.0, 144.0],
+        base_columns: FREIGHT_ASSIGNMENT_BASE_COLUMNS,
         growth_shares: [0.0, 0.64, 0.0, 0.36, 0.0, 0.0],
-        min_width: 942.0,
+        min_width: management_columns_min_width(FREIGHT_ASSIGNMENT_BASE_COLUMNS,FREIGHT_ASSIGNMENT_COL_GAP),
         #[cfg(test)]
         row_policy: ManagementMasterRowPolicy::Fixed,
         #[cfg(test)]
@@ -660,9 +670,9 @@ pub const FREIGHT_ASSIGNMENT_MASTER_TABLE: ManagementMasterTableSpec<6> =
 // retain their variable heights; only the parent row uses compact 42pt.
 pub const ORDER_HISTORY_MASTER_TABLE: ManagementMasterTableSpec<7> =
     ManagementMasterTableSpec {
-        base_columns: [112.0, 156.0, 300.0, 126.0, 124.0, 112.0, 264.0],
+        base_columns: ORDER_HISTORY_BASE_COLUMNS,
         growth_shares: [0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0],
-        min_width: 1242.0,
+        min_width: management_columns_min_width(ORDER_HISTORY_BASE_COLUMNS,SPACE_8),
         #[cfg(test)]
         row_policy: ManagementMasterRowPolicy::ExpandableDetails,
         #[cfg(test)]
@@ -685,7 +695,8 @@ pub const ORDER_HISTORY_TABLE_MIN_WIDTH: f32 =
 // moving scrollbars or the master header edges.
 pub const FREIGHT_RATE_COL_WIDTHS: [f32;4] =
     [450.0,112.0,551.0,128.0];
-pub const FREIGHT_RATE_TABLE_MIN_WIDTH:f32 = 1265.0;
+pub const FREIGHT_RATE_TABLE_MIN_WIDTH:f32 =
+    management_columns_min_width(FREIGHT_RATE_COL_WIDTHS,FREIGHT_ASSIGNMENT_COL_GAP);
 // Combination and archived group tables have independent information widths.
 // Neither inherits the product-assignment 942pt geometry or the rate-edit
 // action column; unused space goes first to long identifiers and fee strings.
@@ -994,6 +1005,9 @@ mod management_primary_card_geometry_tests {
     fn approved_master_table_specs_preserve_columns_and_spare_space() {
         let freight = FREIGHT_ASSIGNMENT_MASTER_TABLE;
         let history = ORDER_HISTORY_MASTER_TABLE;
+        assert_eq!(freight.min_width,942.0);
+        assert_eq!(history.min_width,1242.0);
+        assert_eq!(FREIGHT_RATE_TABLE_MIN_WIDTH,1265.0);
         // Column minima include N-1 of the standard 8pt gaps.
         let freight_min: f32 = freight.base_columns.iter().sum::<f32>()
             + (freight.base_columns.len() - 1) as f32 * FREIGHT_ASSIGNMENT_COL_GAP;

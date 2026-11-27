@@ -200,47 +200,8 @@ fn fetch(gateway:&dyn BandoGateway,date:&str)->Result<Value,String>{
 /// Preserve the approved numeric-first KPI identity. Monetary cards are
 /// wider than freight counts so actual amounts remain legible.
 fn kpi(ui:&mut Ui,label:&str,value:&str){
-    let width=theme::SETTLEMENT_KPI_CARD_WIDTH;
-    ui.allocate_ui_with_layout(
-        Vec2::new(width,theme::FREIGHT_SUMMARY_CARD_HEIGHT),
-        egui::Layout::top_down(Align::Min),
-        |slot|{
-            crate::card::apply_width_policy(slot,crate::card::CardWidthPolicy::Fixed,width);
-            crate::card::freight_summary_frame().show(slot,|cell|{
-                crate::ui_layout::apply_spacing_role(cell,crate::ui_layout::SpacingRole::ExplicitVertical);
-                let content_width=width-2.0*theme::FREIGHT_SUMMARY_PADDING_X
-                    -2.0*theme::FRAME_STROKE_WIDTH;
-                let (number_rect,number_response)=cell.allocate_exact_size(
-                    Vec2::new(content_width,theme::FREIGHT_SUMMARY_NUMBER_LINE_HEIGHT),
-                    Sense::hover()
-                );
-                cell.add_space(theme::FREIGHT_SUMMARY_TEXT_GAP);
-                let (label_rect,_)=cell.allocate_exact_size(
-                    Vec2::new(content_width,theme::FREIGHT_SUMMARY_LABEL_LINE_HEIGHT),
-                    Sense::hover()
-                );
-                let value_galley=typography::freight_summary_large_number_galley(
-                    cell,value
-                );
-                let label_galley=typography::freight_summary_small_label_galley(
-                    cell,label
-                );
-                let overflow=crate::ui_primitives::text_exceeds_rect(value_galley.size(),number_rect.intersect(cell.clip_rect()));
-                cell.painter().with_clip_rect(number_rect).galley(
-                    egui::pos2(
-                        number_rect.center().x-value_galley.size().x/2.0,
-                        number_rect.center().y-value_galley.size().y/2.0,
-                    ),value_galley,theme::TEXT
-                );
-                cell.painter().with_clip_rect(label_rect).galley(
-                    egui::pos2(
-                        label_rect.center().x-label_galley.size().x/2.0,
-                        label_rect.center().y-label_galley.size().y/2.0,
-                    ),label_galley,theme::SECONDARY
-                );
-                crate::ui_primitives::overflow_tooltip(number_response,overflow,value);
-            });
-        }
+    crate::card::management_summary_card_with_role(
+        ui,label,value,crate::card::SummaryCardRole::Settlement
     );
 }
 

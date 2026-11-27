@@ -602,7 +602,7 @@ const indirectHeightAllowances=new Map([
   ["item_editor.rs:show:line.add_space(ITEM_DETAIL_PANEL_GAP)",1],
   ["manual_workspace.rs:show:sheet.add_space(crate::ui_layout::RECEPTION_STACKED_CARD_GAP)",1],
   ["card/mod.rs:parallel_frames:ui.advance_cursor_after_rect(bounds)",1],
-  ["card/mod.rs:management_summary_card_value:cell.add_space(theme::FREIGHT_SUMMARY_TEXT_GAP)",1],
+  ["card/mod.rs:management_summary_card_with_role:cell.add_space(theme::FREIGHT_SUMMARY_TEXT_GAP)",1],
   ["card/mod.rs:align_management_primary_card:ui.add_space(remaining)",1],
   ["popup/mod.rs:before_body:ui.add_space((target-top).max(0.0))",1],
   ["popup/mod.rs:before_footer:ui.add_space((target-top).max(0.0))",1],
@@ -613,7 +613,6 @@ const indirectHeightAllowances=new Map([
   ["ui_layout.rs:management_page_title_top_gap:ui.add_space((theme::SPACE_12-theme::PANEL_GAP).max(0.0))",1],
   ["ui_layout.rs:reception_items_to_freight_gap:ui.add_space(theme::RECEPTION_ITEMS_TO_FREIGHT_GAP)",1],
   ["navigation.rs:date_calendar:grid.allocate_space(egui::vec2(width,width))",1],
-  ["daily_settlement_manager.rs:kpi:cell.add_space(theme::FREIGHT_SUMMARY_TEXT_GAP)",1],
   ["order_history_detail.rs:show:ui.add_space(PANE_GAP)",1],
   ["workflow_board_ui.rs:workflow_details:ui.add_space(theme::WORKFLOW_CARD_PADDING_Y)",2],
   ["workflow_board_ui.rs:workflow_details:row.add_space(theme::WORKFLOW_CARD_PADDING_X)",1],
@@ -1452,6 +1451,9 @@ export function auditManagedLayout(source,file){
     hits.push({line:1,rule:"local spacing override in migrated management screen"});
   if(file==="category_dropdown.rs"&&/menu \. (?:set_min_width|set_max_width|set_width|spacing_mut) \(/.test(code))
     hits.push({line:1,rule:"category explorer menu geometry belongs to category_tree"});
+  if(file==="daily_settlement_manager.rs"&&(!code.includes("card :: management_summary_card_with_role (")||
+      code.includes("FREIGHT_SUMMARY_NUMBER_LINE_HEIGHT")))
+    hits.push({line:1,rule:"settlement KPI geometry belongs to shared summary card"});
   // The freight migration is explicit: don't allow a screen to swap the
   // typed wrappers back to the old raw callback APIs.
   if(file==="freight_manager.rs"){

@@ -127,11 +127,11 @@ mod management_dropdown_unification_tests {
             .split("/// All menu options").next().unwrap();
         for required in [
             "management_dropdown_trigger(",
-            "management_dropdown_option_palette(menu)",
+            "configure_option_menu(menu)",
             "management_search_field(menu,&mut search,input_width,hint)",
             "management_dropdown_option(",
             "crate::overlay::show_menu(&trigger,None,|menu|{",
-            "MANAGEMENT_DROPDOWN_OPTION_HEIGHT",
+            "configure_option_rows(list)",
             "MANAGEMENT_DROPDOWN_MENU_MAX_HEIGHT",
         ]{
             assert!(block.contains(required),"{required} missing");
