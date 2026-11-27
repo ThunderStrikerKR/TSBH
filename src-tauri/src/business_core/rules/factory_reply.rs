@@ -704,11 +704,14 @@ pub(crate) fn approve_factory_conflict_for_state(state:&Value,payload:&Value)->R
     // A delayed approval must not reverse a later valid original reply.
     let history=rows(state,"factoryReplies");
     let original_pos=history.iter().position(|r|s(r,"id")==s(original,"id")).ok_or("원본 회신 순서 누락")?;
-    for (i,record) in history.iter().enumerate(){
-        let pos=history.iter().position(|r|s(r,"id")==s(field(record,"resolves"),"id")).unwrap_or(i);
-        if pos>original_pos && rows(record,"rows").iter().any(|r|r["applied"]==true && s(r,"shipmentId")==target && s(r,"tracking")!=s(source,"tracking")){
-            return Err("더 최근 공장 회신의 운송장번호가 이미 적용되었습니다.".into());
-        }
+    let positions:HashMap<&str,usize>=history.iter().enumerate().map(|(i,r)|(s(r,"id"),i)).collect();
+    let latest=history.iter().enumerate().filter_map(|(i,record)|{
+        let pos=positions.get(s(field(record,"resolves"),"id")).copied().unwrap_or(i);
+        rows(record,"rows").iter().find(|r|r["applied"]==true && s(r,"shipmentId")==target)
+            .map(|r|(pos,s(r,"tracking")))
+    }).max_by_key(|(pos,_)|*pos);
+    if latest.is_some_and(|(pos,tracking)|pos>original_pos&&tracking!=s(source,"tracking")){
+        return Err("더 최근 공장 회신의 운송장번호가 이미 적용되었습니다.".into());
     }
     let mut clean=reply_row_with_date(original,source);
     for k in ["issue","applied","shipmentId","orderId"]{

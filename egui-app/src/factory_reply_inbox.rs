@@ -17,6 +17,7 @@ const INTERVAL:Duration=Duration::from_secs(5);
 fn id(bytes:&[u8])->String{format!("factory-reply-{:x}",Sha256::digest(bytes))}
 fn text<'a>(v:&'a Value,k:&str)->&'a str{v[k].as_str().unwrap_or("")}
 fn valid_name(n:&str)->bool{!n.is_empty()&&n.len()<=240&&!n.starts_with("~$")&&
+    !n.strip_suffix("(취합).xlsx").is_some_and(|stem|stem.len()==8&&stem.bytes().all(|c|c.is_ascii_digit()))&&
     !n.contains('/')&&!n.contains('\\')&&!n.contains('\0')&&n.to_ascii_lowercase().ends_with(".xlsx")}
 pub(crate) fn open_db()->Result<(Connection,PathBuf),String>{
     if !excel_service::writable(){return Err("공장 회신 저장 권한 없음".into())}

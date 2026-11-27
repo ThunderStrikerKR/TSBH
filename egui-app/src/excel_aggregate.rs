@@ -160,6 +160,74 @@ mod tests{
         assert_eq!(r.get_value((1,16)),Some(&Data::String("0000123456".into())));
         assert_eq!(r.get_value((1,6)),Some(&Data::String("3000".into())));
     }
+    struct Fixture{root:PathBuf,conn:Connection,job:jobs::Job}
+    impl Fixture{
+        fn new()->Self{
+            let root=std::env::temp_dir().join(format!("bando-aggregate-db-{}",Uuid::new_v4()));
+            fs::create_dir(&root).unwrap();
+            let root=root.canonicalize().unwrap();
+            let conn=Connection::open_in_memory().unwrap();
+            conn.execute_batch("CREATE TABLE core_schema(key TEXT PRIMARY KEY,version INTEGER);
+                INSERT INTO core_schema VALUES('business-core',2);
+                CREATE TABLE app_state(id INTEGER PRIMARY KEY,payload TEXT);").unwrap();
+            jobs::initialize(&conn).unwrap();
+            let target=jobs::target(&root,"2026-11-27","STORE").unwrap();
+            let job=jobs::Job{date:"2026-11-27".into(),origin:"STORE".into(),path:target.to_str().unwrap().into(),
+                desired:1,saved:0,retries:0,hash:None};
+            conn.execute("INSERT INTO excel_aggregate_jobs(business_date,origin,target_path,desired_revision)
+                VALUES (?1,?2,?3,1)",rusqlite::params![job.date,job.origin,job.path]).unwrap();
+            Self{root,conn,job}
+        }
+        fn update(&mut self,n:i64){
+            let path=Path::new(&self.job.path);
+            let records=(1..=n).map(|i|{
+                let mut v=vec![String::new();16];v[0]=format!("수하인{i}");v[1]="01234".into();
+                serde_json::json!({"id":format!("id-{i}"),"savedPath":path.with_file_name(format!("20261127(매장{i}).xlsx")),
+                    "outputRows":[{"values":v}]})
+            }).collect::<Vec<_>>();
+            let state=serde_json::json!({"revision":n,"exports":records});
+            self.conn.execute("INSERT INTO app_state(id,payload) VALUES(1,?1) ON CONFLICT(id) DO UPDATE SET payload=excluded.payload",
+                [state.to_string()]).unwrap();
+            self.conn.execute("UPDATE excel_aggregate_jobs SET desired_revision=?1,next_retry_at=NULL",[n]).unwrap();
+            self.job=jobs::current(&self.conn,&self.job).unwrap().unwrap();
+        }
+    }
+    impl Drop for Fixture{fn drop(&mut self){let _=fs::remove_dir_all(&self.root);}}
+    #[test]
+    fn actual_publish_rebuilds_from_db_after_damage_and_preserves_generation(){
+        let mut f=Fixture::new();f.update(1);
+        publish(&mut f.conn,&f.job).unwrap();
+        let one=fs::read(&f.job.path).unwrap();
+        assert_eq!(jobs::current(&f.conn,&f.job).unwrap().unwrap().saved,1);
+        f.update(2);publish(&mut f.conn,&f.job).unwrap();
+        let mut x=Xlsx::new(Cursor::new(fs::read(&f.job.path).unwrap())).unwrap();
+        let r=x.worksheet_range("로젠택배").unwrap();
+        assert_eq!(r.get_value((2,1)),Some(&Data::String("01234".into())));
+        assert_ne!(one,fs::read(&f.job.path).unwrap());
+        fs::write(&f.job.path,b"damaged").unwrap();
+        verify_completed(&f.conn).unwrap();
+        assert_eq!(jobs::current(&f.conn,&f.job).unwrap().unwrap().saved,0);
+        publish(&mut f.conn,&f.job).unwrap();
+        assert_eq!(jobs::current(&f.conn,&f.job).unwrap().unwrap().saved,2);
+        fs::remove_file(&f.job.path).unwrap();verify_completed(&f.conn).unwrap();
+        publish(&mut f.conn,&f.job).unwrap();assert!(Path::new(&f.job.path).is_file());
+    }
+    #[cfg(windows)]
+    #[test]
+    fn actual_publish_retries_locked_file_without_losing_generation(){
+        use std::os::windows::fs::OpenOptionsExt;
+        let mut f=Fixture::new();f.update(1);publish(&mut f.conn,&f.job).unwrap();
+        let old=fs::read(&f.job.path).unwrap();
+        let lock=fs::OpenOptions::new().read(true).share_mode(0).open(&f.job.path).unwrap();
+        f.update(2);let e=publish(&mut f.conn,&f.job).unwrap_err();
+        jobs::mark_failed(&f.conn,&f.job,100,&e).unwrap();
+        assert_eq!(jobs::current(&f.conn,&f.job).unwrap().unwrap().saved,1);
+        drop(lock);assert_eq!(fs::read(&f.job.path).unwrap(),old);
+        assert!(jobs::jobs(&f.conn,104,false).unwrap().is_empty());
+        let pending=jobs::jobs(&f.conn,105,false).unwrap();assert_eq!(pending.len(),1);
+        publish(&mut f.conn,&pending[0]).unwrap();
+        assert_eq!(jobs::current(&f.conn,&f.job).unwrap().unwrap().saved,2);
+    }
     #[test]
     fn same_directory_replacement_preserves_complete_bytes(){
         let d=std::env::temp_dir().join(format!("bando-aggregate-{}",Uuid::new_v4()));
