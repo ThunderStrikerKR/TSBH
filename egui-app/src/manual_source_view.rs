@@ -2,6 +2,7 @@
 //! reception intake. This module owns only the worksheet's click-to-assign
 //! action; linked spans, hover timing, visual blocks and hit testing are shared.
 
+use crate::ui_layout::SharedAllocationExt as _;
 use std::collections::HashSet;
 use eframe::egui::{self, Align, FontId, Sense, Ui};
 use crate::{source_highlight::{self,LinkKey,LinkedSpan},theme,typography};
@@ -49,7 +50,7 @@ pub fn source_document(
     );
     let galley=ui.fonts_mut(|fonts|fonts.layout_job(job));
     let content_height=galley.size().y+2.0*text_inset;
-    let (rect,response)=ui.allocate_exact_size(
+    let (rect,response)=ui.shared_allocate_exact_size(
         egui::vec2(width,content_height.max(theme::INPUT_HEIGHT)),
         if enabled{Sense::click_and_drag()}else{Sense::hover()},
     );
