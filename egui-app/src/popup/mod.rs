@@ -11,6 +11,12 @@ use crate::theme::{
 };
 use crate::ui_primitives::{truncated_label,section_divider,form_field_label_sized};
 use crate::scrollbar::{scroll_area,ScrollAxes};
+
+const MODAL_EDGE_ACTION_SHIFT: f32 = theme::SPACE_8;
+const MODAL_MASTER_TOOLBAR_RULE_GAP: f32 = theme::SPACE_12;
+const MODAL_SECTION_RADIUS: u8 = theme::SECTION_RADIUS;
+const MODAL_BACKDROP_ALPHA: u8 = 144;
+const MODAL_NESTED_BACKDROP_ALPHA: u8 = 94;
 pub(crate) fn modal_frame() -> Frame {
     role_surface_frame(SurfaceRole::Modal,VisualState::Normal,PANEL_RADIUS)
         .inner_margin(egui::Margin {
@@ -514,7 +520,7 @@ fn modal_master_header_content_in_rect(
         rect.top()+theme::SPACE_8
     }else{
         rect.top()+((rect.height()-theme::ACTION_STANDARD_HEIGHT)/2.0
-            -theme::MODAL_EDGE_ACTION_SHIFT).max(0.0)
+            -MODAL_EDGE_ACTION_SHIFT).max(0.0)
     };
     let content=modal_master_content_rect(rect);
     let heading=Rect::from_min_size(
@@ -592,7 +598,7 @@ pub(crate) fn modal_master_header_in_rect(
 pub(crate) fn modal_master_header_with_toolbar_height()->f32{
     theme::MODAL_HEADER_HEIGHT
         +theme::SOFT_DIVIDER_WIDTH
-        +theme::MODAL_MASTER_TOOLBAR_RULE_GAP
+        +MODAL_MASTER_TOOLBAR_RULE_GAP
         +theme::MODAL_MASTER_WORKSPACE_TOOLBAR_HEIGHT
 }
 /// Toolbar uses the same horizontal inset as the body, below the rule.
@@ -600,7 +606,7 @@ fn modal_master_header_toolbar_rect(rect:Rect)->Rect{
     let rect=crate::ui_layout::geometry::aligned_rect(rect);
     let content=modal_master_content_rect(rect);
     let top=(rect.top()+theme::MODAL_HEADER_HEIGHT
-        +theme::SOFT_DIVIDER_WIDTH+theme::MODAL_MASTER_TOOLBAR_RULE_GAP)
+        +theme::SOFT_DIVIDER_WIDTH+MODAL_MASTER_TOOLBAR_RULE_GAP)
         .min(rect.bottom());
     crate::ui_layout::geometry::aligned_rect(Rect::from_min_max(
         egui::pos2(content.left(),top),
@@ -916,7 +922,7 @@ pub(crate) fn modal_master_body_section<R>(
 
 /// One boxed section appearance for single and parallel modal sections.
 fn modal_section_frame()->Frame{
-    theme::role_surface_frame(theme::SurfaceRole::ModalSection,theme::VisualState::Normal,theme::MODAL_SECTION_RADIUS)
+    theme::role_surface_frame(theme::SurfaceRole::ModalSection,theme::VisualState::Normal,MODAL_SECTION_RADIUS)
         .inner_margin(theme::MODAL_SECTION_PADDING)
 }
 
@@ -1205,9 +1211,9 @@ pub(crate) fn modal_backdrop(
 ) {
     let viewport=ctx.content_rect();
     let alpha=if nested {
-        theme::MODAL_NESTED_BACKDROP_ALPHA
+        MODAL_NESTED_BACKDROP_ALPHA
     } else {
-        theme::MODAL_BACKDROP_ALPHA
+        MODAL_BACKDROP_ALPHA
     };
     let area=crate::overlay::area(egui::Id::new(id),crate::overlay::AreaRole::Backdrop{nested})
         .fixed_pos(viewport.min)

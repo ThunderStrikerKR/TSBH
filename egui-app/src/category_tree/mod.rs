@@ -6,6 +6,17 @@ use eframe::egui::{self,Color32,Rect,Response,Sense,Stroke,Ui,Vec2};
 use crate::{theme,typography};
 use crate::ui_primitives::{overflow_tooltip,paint_management_chevron,ManagementChevronDirection};
 
+// Private tree decoration and slot geometry.
+const CATALOG_TREE_INSET:f32 = theme::SPACE_12;
+const CATALOG_TREE_CHEVRON_SIZE:f32 = theme::SPACE_16;
+const CATALOG_TREE_FOLDER_SIZE:f32 = 20.0;
+const CATALOG_TREE_GAP:f32 = theme::SPACE_8;
+const CATALOG_TREE_TERMINAL_GAP:f32 = theme::SPACE_4;
+const CATALOG_TREE_GUIDE_COLOR:Color32 = Color32::from_rgb(74,74,74);
+const CATALOG_TREE_GUIDE_WIDTH:f32 = 1.0;
+const CATALOG_TREE_FOLDER_STROKE:f32 = 1.5;
+const CATALOG_TREE_FOLDER_COLOR:Color32 = theme::SECONDARY;
+
 /// CategoryTree presentation contract. The caller owns data, selection and
 /// expansion; all tree row geometry and painting are centralized here.
 pub(crate) struct CategoryTreeRow<'a>{
@@ -33,21 +44,21 @@ struct CategoryTreeGeometry{
 impl CategoryTreeGeometry{
     fn new(row:Rect,depth:usize)->Self{
         let chevron=Rect::from_min_size(
-            egui::pos2(row.left()+theme::CATALOG_TREE_INSET
+            egui::pos2(row.left()+CATALOG_TREE_INSET
                 +depth as f32*theme::CATALOG_TREE_INDENT,
-                row.center().y-theme::CATALOG_TREE_CHEVRON_SIZE/2.0),
-            Vec2::splat(theme::CATALOG_TREE_CHEVRON_SIZE)
+                row.center().y-CATALOG_TREE_CHEVRON_SIZE/2.0),
+            Vec2::splat(CATALOG_TREE_CHEVRON_SIZE)
         );
         let folder=Rect::from_min_size(
-            egui::pos2(chevron.right()+theme::CATALOG_TREE_GAP,
-                row.center().y-theme::CATALOG_TREE_FOLDER_SIZE/2.0),
-            Vec2::splat(theme::CATALOG_TREE_FOLDER_SIZE)
+            egui::pos2(chevron.right()+CATALOG_TREE_GAP,
+                row.center().y-CATALOG_TREE_FOLDER_SIZE/2.0),
+            Vec2::splat(CATALOG_TREE_FOLDER_SIZE)
         );
-        Self{row,chevron,folder,name_x:folder.right()+theme::CATALOG_TREE_GAP,depth}
+        Self{row,chevron,folder,name_x:folder.right()+CATALOG_TREE_GAP,depth}
     }
     fn axis(&self,level:usize)->f32{
-        self.row.left()+theme::CATALOG_TREE_INSET
-            +theme::CATALOG_TREE_CHEVRON_SIZE/2.0
+        self.row.left()+CATALOG_TREE_INSET
+            +CATALOG_TREE_CHEVRON_SIZE/2.0
             +level as f32*theme::CATALOG_TREE_INDENT
     }
     fn guides(&self,ancestor_guides:&[bool],is_last:bool,has_children:bool,
@@ -69,11 +80,11 @@ impl CategoryTreeGeometry{
             // Leaves reserve the same chevron column, but the elbow extends
             // through that empty slot to the folder instead of stopping short.
             let target=if has_children{self.chevron.left()}else{self.folder.left()};
-            draw([p(x,y),p((target-theme::CATALOG_TREE_TERMINAL_GAP).max(x),y)]);
+            draw([p(x,y),p((target-CATALOG_TREE_TERMINAL_GAP).max(x),y)]);
         }
         if has_children&&open{
             let x=self.axis(self.depth);
-            draw([p(x,(self.chevron.bottom()+theme::CATALOG_TREE_TERMINAL_GAP).min(bottom)),p(x,bottom)]);
+            draw([p(x,(self.chevron.bottom()+CATALOG_TREE_TERMINAL_GAP).min(bottom)),p(x,bottom)]);
         }
     }
 }
@@ -82,7 +93,7 @@ impl CategoryTreeGeometry{
 fn paint_category_tree_folder(painter:&egui::Painter,rect:Rect,open:bool,ink:Color32){
     let p=|x:f32,y:f32|egui::pos2(rect.left()+rect.width()*x/20.0,
         rect.top()+rect.height()*y/20.0);
-    let stroke=Stroke::new(theme::CATALOG_TREE_FOLDER_STROKE,ink);
+    let stroke=Stroke::new(CATALOG_TREE_FOLDER_STROKE,ink);
     if open{
         painter.add(egui::Shape::line(vec![
             p(2.0,16.5),p(2.0,4.0),p(7.0,4.0),p(9.0,6.0),p(16.0,6.0),p(16.0,8.0)
@@ -156,19 +167,19 @@ fn tree_row(ui:&mut Ui,item:CategoryTreeRow<'_>,product:bool,enabled:bool,dragga
         crate::button::paint_button_hover(ui,&response,crate::highlight::Geometry::Control);
     }
     let response=if product&&enabled{response.on_hover_cursor(egui::CursorIcon::PointingHand)}else{response};
-    let guide=Stroke::new(theme::CATALOG_TREE_GUIDE_WIDTH,theme::CATALOG_TREE_GUIDE_COLOR);
+    let guide=Stroke::new(CATALOG_TREE_GUIDE_WIDTH,CATALOG_TREE_GUIDE_COLOR);
     geo.guides(item.ancestor_guides,item.is_last,item.has_children,item.open,
         |segment|{painter.line_segment(segment,guide);});
     if item.has_children{
         paint_management_chevron(&painter,geo.chevron.center(),
             if item.open{ManagementChevronDirection::Down}else{ManagementChevronDirection::Right});
     }
-    let ink=if item.selected{theme::CATALOG_TREE_SELECTED_INK}else{theme::CATALOG_TREE_FOLDER_COLOR};
+    let ink=if item.selected{theme::CATALOG_TREE_SELECTED_INK}else{CATALOG_TREE_FOLDER_COLOR};
     if product{
         // A small parcel glyph occupies the exact shared folder slot.
         let p=|x:f32,y:f32|egui::pos2(geo.folder.left()+geo.folder.width()*x/20.0,
             geo.folder.top()+geo.folder.height()*y/20.0);
-        let stroke=Stroke::new(theme::CATALOG_TREE_FOLDER_STROKE,
+        let stroke=Stroke::new(CATALOG_TREE_FOLDER_STROKE,
             theme::text_ink(theme::TextRole::Label,theme::TextState::Normal));
         painter.add(egui::Shape::closed_line(vec![p(3.0,5.0),p(10.0,2.0),p(17.0,5.0),
             p(17.0,14.0),p(10.0,18.0),p(3.0,14.0)],stroke));
@@ -179,10 +190,10 @@ fn tree_row(ui:&mut Ui,item:CategoryTreeRow<'_>,product:bool,enabled:bool,dragga
     }
     // Reserve metadata first and clip both label regions at the shared inset.
     // No full-width row dividers: hierarchy rails own the grouping.
-    let right=(rect.right()-theme::CATALOG_TREE_INSET).max(rect.left());
+    let right=(rect.right()-CATALOG_TREE_INSET).max(rect.left());
     let name_x=geo.name_x.min(right);
     let summary_galley=typography::client_table_metadata_galley(ui,item.summary,theme::text_ink(theme::TextRole::Label,theme::TextState::Normal));
-    let summary_reserve=if item.summary.is_empty(){0.0}else{theme::CATALOG_TREE_GAP+summary_galley.size().x};
+    let summary_reserve=if item.summary.is_empty(){0.0}else{CATALOG_TREE_GAP+summary_galley.size().x};
     let name_width=(right-name_x-summary_reserve).max(0.0);
     let font=if item.root{typography::CategoryPathFont::Subsection}else{typography::CategoryPathFont::Body};
     let visible=typography::fit_category_path(ui,item.name,name_width,font);
@@ -194,7 +205,7 @@ fn tree_row(ui:&mut Ui,item:CategoryTreeRow<'_>,product:bool,enabled:bool,dragga
             egui::pos2(name_x,rect.center().y-name_galley.size().y/2.0),
             name_galley,theme::text_ink(theme::TextRole::Value,theme::TextState::Normal));
     }
-    let summary_x=(name_end+theme::CATALOG_TREE_GAP).min(right);
+    let summary_x=(name_end+CATALOG_TREE_GAP).min(right);
     if !item.summary.is_empty()&&right>summary_x{
         painter.with_shared_clip(Rect::from_min_max(egui::pos2(summary_x,rect.top()),
             egui::pos2(right,rect.bottom()))).galley(

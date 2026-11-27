@@ -13,9 +13,18 @@ use eframe::egui::{
 use crate::{theme, typography};
 
 const NOTICE_ID: &str = "bando-shared-floating-notice";
-const MAX_WIDTH: f32 = theme::FLOATING_NOTICE_MAX_WIDTH;
-const SCREEN_MARGIN: f32 = theme::FLOATING_NOTICE_SCREEN_MARGIN;
-const ANCHOR_GAP: f32 = theme::FLOATING_NOTICE_ANCHOR_GAP;
+const MAX_WIDTH: f32 = 320.0;
+const SCREEN_MARGIN: f32 = 10.0;
+const ANCHOR_GAP: f32 = theme::SPACE_8;
+const FLOATING_NOTICE_PADDING_X: i8 = theme::SPACE_12 as i8;
+const FLOATING_NOTICE_PADDING_Y: i8 = theme::SPACE_8 as i8;
+const FLOATING_NOTICE_ICON_SIZE: f32 = 16.0;
+const FLOATING_NOTICE_CLOSE_HIT_SIZE: f32 = 20.0;
+const FLOATING_NOTICE_POINTER_HALF_WIDTH: f32 = 6.0;
+const FLOATING_NOTICE_POINTER_HEIGHT: f32 = 7.0;
+const FLOATING_NOTICE_SHADOW_OFFSET: [i8;2] = [0,3];
+const FLOATING_NOTICE_SHADOW_BLUR: u8 = 8;
+const FLOATING_NOTICE_SHADOW_ALPHA: u8 = 80;
 const ANCHOR_VALID_FOR: Duration = Duration::from_secs(45);
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -288,12 +297,12 @@ pub fn sync(
 fn measured_notice(
     ctx: &Context, message: &str, tone: Tone, screen: Rect,
 ) -> (Vec2, std::sync::Arc<egui::Galley>, f32) {
-    let pad_x = f32::from(theme::FLOATING_NOTICE_PADDING_X);
-    let pad_y = f32::from(theme::FLOATING_NOTICE_PADDING_Y);
+    let pad_x = f32::from(FLOATING_NOTICE_PADDING_X);
+    let pad_y = f32::from(FLOATING_NOTICE_PADDING_Y);
     let close_slot = if tone == Tone::Error {
-        theme::SPACE_8 + theme::FLOATING_NOTICE_CLOSE_HIT_SIZE
+        theme::SPACE_8 + FLOATING_NOTICE_CLOSE_HIT_SIZE
     } else { 0.0 };
-    let chrome = pad_x * 2.0 + theme::FLOATING_NOTICE_ICON_SIZE
+    let chrome = pad_x * 2.0 + FLOATING_NOTICE_ICON_SIZE
         + theme::SPACE_8 + close_slot + theme::FRAME_STROKE_WIDTH * 2.0;
     let max_width = MAX_WIDTH.min((screen.width() - SCREEN_MARGIN * 2.0).max(1.0));
     let wrap_width = (max_width - chrome).max(1.0);
@@ -304,14 +313,14 @@ fn measured_notice(
         wrap_width,
     ));
     let width = (galley.size().x + chrome).min(max_width);
-    let content_height = galley.size().y.max(theme::FLOATING_NOTICE_ICON_SIZE)
+    let content_height = galley.size().y.max(FLOATING_NOTICE_ICON_SIZE)
         .max(if tone == Tone::Error {
-            theme::FLOATING_NOTICE_CLOSE_HIT_SIZE
+            FLOATING_NOTICE_CLOSE_HIT_SIZE
         } else { 0.0 });
     let desired_height = content_height + pad_y * 2.0
         + theme::FRAME_STROKE_WIDTH * 2.0;
     let max_height = (screen.height() - SCREEN_MARGIN * 2.0
-        - theme::FLOATING_NOTICE_POINTER_HEIGHT).max(1.0);
+        - FLOATING_NOTICE_POINTER_HEIGHT).max(1.0);
     (Vec2::new(width, desired_height.min(max_height)), galley, content_height)
 }
 
@@ -383,8 +392,8 @@ fn paint_status_icon(painter: &egui::Painter, center: Pos2, tone: Tone) {
 fn paint_tail(
     painter: &egui::Painter, rect: Rect, anchor: Pos2, above: bool,
 ) {
-    let half = theme::FLOATING_NOTICE_POINTER_HALF_WIDTH;
-    let height = theme::FLOATING_NOTICE_POINTER_HEIGHT;
+    let half = FLOATING_NOTICE_POINTER_HALF_WIDTH;
+    let height = FLOATING_NOTICE_POINTER_HEIGHT;
     let radius = f32::from(theme::CONTROL_RADIUS);
     let tail_x = anchor.x.clamp(
         rect.left() + radius + half + 2.0,
@@ -465,8 +474,8 @@ pub fn show(ctx: &Context) {
         ctx, display.as_ref(), active.tone, screen,
     );
     let (at,above)=placement_element(active.at,active.below,size,screen,active.kind);
-    let pad_x = f32::from(theme::FLOATING_NOTICE_PADDING_X);
-    let pad_y = f32::from(theme::FLOATING_NOTICE_PADDING_Y);
+    let pad_x = f32::from(FLOATING_NOTICE_PADDING_X);
+    let pad_y = f32::from(FLOATING_NOTICE_PADDING_Y);
     let mut close = false;
     crate::overlay::area(Id::new(NOTICE_ID).with("bubble"),crate::overlay::AreaRole::Notice)
         .fixed_pos(at)
@@ -480,11 +489,11 @@ pub fn show(ctx: &Context) {
             // Soft 3pt/down shadow separates overlapping fields from their
             // floating result, without changing the approved grey palette.
             painter.add(egui::epaint::Shadow{
-                offset:theme::FLOATING_NOTICE_SHADOW_OFFSET,
-                blur:theme::FLOATING_NOTICE_SHADOW_BLUR,
+                offset:FLOATING_NOTICE_SHADOW_OFFSET,
+                blur:FLOATING_NOTICE_SHADOW_BLUR,
                 spread:0,
                 color:theme::shadow_ink(
-                    theme::FLOATING_NOTICE_SHADOW_ALPHA
+                    FLOATING_NOTICE_SHADOW_ALPHA
                 ),
             }.as_shape(rect,theme::CONTROL_RADIUS));
             let palette=theme::surface_palette(theme::SurfaceRole::Notice,theme::VisualState::Normal);
@@ -495,17 +504,17 @@ pub fn show(ctx: &Context) {
             let first_row_height = galley.size().y /
                 galley.rows.len().max(1) as f32;
             let first_center = rect.top() + pad_y + first_row_height.max(
-                theme::FLOATING_NOTICE_ICON_SIZE
+                FLOATING_NOTICE_ICON_SIZE
             )/2.0;
             paint_status_icon(&painter,Pos2::new(
-                rect.left()+pad_x + theme::FLOATING_NOTICE_ICON_SIZE/2.0,
+                rect.left()+pad_x + FLOATING_NOTICE_ICON_SIZE/2.0,
                 first_center
             ),active.tone);
             let text_left = rect.left() + pad_x
-                + theme::FLOATING_NOTICE_ICON_SIZE + theme::SPACE_8;
+                + FLOATING_NOTICE_ICON_SIZE + theme::SPACE_8;
             let text_top = rect.top() + pad_y;
             let close_slot = if active.tone==Tone::Error {
-                theme::FLOATING_NOTICE_CLOSE_HIT_SIZE + theme::SPACE_8
+                FLOATING_NOTICE_CLOSE_HIT_SIZE + theme::SPACE_8
             } else { 0.0 };
             let text_right = rect.right() - pad_x - close_slot;
             let text_visible_height = (rect.bottom() - pad_y - text_top)
@@ -540,7 +549,7 @@ pub fn show(ctx: &Context) {
                 );
             }
             if active.tone == Tone::Error {
-                let side=theme::FLOATING_NOTICE_CLOSE_HIT_SIZE;
+                let side=FLOATING_NOTICE_CLOSE_HIT_SIZE;
                 let center=Pos2::new(
                     rect.right()-pad_x-side/2.0,
                     rect.top()+pad_y+side/2.0,
@@ -656,7 +665,7 @@ mod tests {
             outcome=Some((size,galley.rows.len()));
         });
         let (size,rows)=outcome.expect("measured inside the font pass");
-        assert!(size.x<=theme::FLOATING_NOTICE_MAX_WIDTH +0.01);
+        assert!(size.x<=MAX_WIDTH +0.01);
         assert!(size.y<=screen.height() - 2.0*SCREEN_MARGIN);
         assert!(rows>1,"long notice must wrap based on actual glyph widths");
     }
@@ -744,7 +753,7 @@ mod shared_floating_notice_rendered_geometry_tests{
                     let mut bubbles=Vec::new();
                     fn collect(shape:&egui::Shape,out:&mut Vec<Rect>){
                         match shape{
-                            egui::Shape::Rect(r) if r.fill==theme::FLOATING_NOTICE_BG=>out.push(r.rect),
+                            egui::Shape::Rect(r) if r.fill==theme::surface_palette(theme::SurfaceRole::Notice,theme::VisualState::Normal).fill=>out.push(r.rect),
                             egui::Shape::Vec(shapes)=>for shape in shapes{collect(shape,out);},
                             _=>{}
                         }

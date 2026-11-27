@@ -7,6 +7,7 @@ on:
       - scripts/check-egui-layout-placement.py
       - scripts/audit-egui-design-api.py
       - 'scripts/egui-design-api-contract*.json'
+      - scripts/egui-design-constant-access.json
       - egui-app/**
       - src-tauri/src/business_core/rules/history.rs
       - src-tauri/src/business_core/rules/manual_draft.rs
@@ -33,6 +34,7 @@ on:
       - scripts/check-egui-layout-placement.py
       - scripts/audit-egui-design-api.py
       - 'scripts/egui-design-api-contract*.json'
+      - scripts/egui-design-constant-access.json
       - egui-app/**
   workflow_dispatch:
 permissions:
@@ -52,8 +54,6 @@ jobs:
         with:
           workspaces: egui-app -> target
           key: egui-compile
-      - name: Require shared egui explicit placement ownership
-        run: python scripts/check-egui-layout-placement.py
       - name: Audit public design API references
         run: python scripts/audit-egui-design-api.py --output design-api-reference-audit.json
       - name: Upload public design API reference inventory
@@ -62,6 +62,8 @@ jobs:
           name: egui-design-api-reference-audit
           path: design-api-reference-audit.json
           retention-days: 7
+      - name: Require shared egui explicit placement ownership
+        run: python scripts/check-egui-layout-placement.py
       - name: Compile current Windows egui source
         id: compile_source
         run: cargo check --manifest-path egui-app/Cargo.toml

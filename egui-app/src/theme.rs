@@ -28,20 +28,7 @@ pub const DISABLED_ACTION_BORDER: Color32 = Color32::from_rgb(55, 55, 55);
 pub const RAISED: Color32 = Color32::from_rgb(41, 41, 41);
 // One component-wide floating feedback style; management screens never define
 // independent toast backgrounds, dimensions, type sizes or offsets.
-pub const FLOATING_NOTICE_BG: Color32 = RAISED;
-pub const FLOATING_NOTICE_MAX_WIDTH: f32 = 320.0;
-pub const FLOATING_NOTICE_SCREEN_MARGIN: f32 = 10.0;
-pub const FLOATING_NOTICE_ANCHOR_GAP: f32 = SPACE_8;
-pub const FLOATING_NOTICE_PADDING_X: i8 = SPACE_12 as i8;
-pub const FLOATING_NOTICE_PADDING_Y: i8 = SPACE_8 as i8;
-pub const FLOATING_NOTICE_ICON_SIZE: f32 = 16.0;
-pub const FLOATING_NOTICE_TEXT_SIZE: f32 = crate::ui_tokens::FONT_FIELD_LABEL;
-pub const FLOATING_NOTICE_CLOSE_HIT_SIZE: f32 = 20.0;
-pub const FLOATING_NOTICE_POINTER_HALF_WIDTH: f32 = 6.0;
-pub const FLOATING_NOTICE_POINTER_HEIGHT: f32 = 7.0;
-pub const FLOATING_NOTICE_SHADOW_OFFSET: [i8;2] = [0,3];
-pub const FLOATING_NOTICE_SHADOW_BLUR: u8 = 8;
-pub const FLOATING_NOTICE_SHADOW_ALPHA: u8 = 80;
+const FLOATING_NOTICE_BG: Color32 = RAISED;
 pub const BORDER: Color32 = Color32::from_rgb(80, 80, 80);
 pub const DIVIDER: Color32 = Color32::from_rgb(63, 63, 63);
 // Stronger than the normal 1pt row divider so fixed table headers have a
@@ -404,12 +391,6 @@ pub const MANAGEMENT_DATE_NAV_BUTTON_WIDTH: f32 = 28.0;
 pub const MANAGEMENT_DATE_CALENDAR_BUTTON_WIDTH: f32 = INPUT_HEIGHT;
 pub const MANAGEMENT_DATE_RANGE_SEPARATOR_WIDTH: f32 = SPACE_16;
 pub const MANAGEMENT_DATE_CONTROL_GAP: f32 = SPACE_8;
-// One geometry source for the shared Order History / Excel calendar popup.
-// Its four arrow controls align with the seven equal-sized date columns.
-pub const CALENDAR_NAV_SIZE: f32 = MANAGEMENT_DATE_NAV_BUTTON_WIDTH;
-pub const CALENDAR_DAY_SIZE: f32 = ACTION_STANDARD_HEIGHT;
-pub const CALENDAR_GRID_GAP: f32 = SPACE_4;
-pub const CALENDAR_GRID_WIDTH: f32 = 7.0*CALENDAR_DAY_SIZE+6.0*CALENDAR_GRID_GAP;
 pub const ACTION_PRIMARY_HEIGHT: f32 = 36.0;
 pub const ACTION_STANDARD_HEIGHT: f32 = 34.0;
 pub const ACTION_EMPHASIZED_HEIGHT: f32 = ACTION_STANDARD_HEIGHT;
@@ -432,7 +413,6 @@ pub const FREIGHT_SUMMARY_CARD_HEIGHT: f32 =
     + 2.0 * (FREIGHT_SUMMARY_PADDING_Y + FRAME_STROKE_WIDTH);
 // Reception items/freight mirrors the React 3-column table. The summary
 // remains a separate fixed-height strip below its own scrolling content.
-pub const RECEPTION_ITEMS_HEADER_HEIGHT: f32 = 32.0;
 pub const RECEPTION_ITEMS_ROW_HEIGHT: f32 = MANAGEMENT_COMPACT_ROW_HEIGHT;
 // Reception item table: only product text ellipsizes; quantity and amount
 // columns never expand or contract with their values or the pane width.
@@ -515,9 +495,7 @@ const MODAL_SECTION_BG: Color32 = TABLE_ROW_ALT_BG;
 // content-specific. Changing one master token updates all adopted dialogs.
 pub const MODAL_MASTER_WORKSPACE_TOOLBAR_HEIGHT: f32 = 40.0;
 // Clearance from the title divider to the status/action row.
-pub const MODAL_MASTER_TOOLBAR_RULE_GAP: f32 = SPACE_12;
 // Rebalance the visible outer-frame-to-control and control-to-rule gaps.
-pub const MODAL_EDGE_ACTION_SHIFT: f32 = SPACE_8;
 pub const MODAL_MASTER_DESCRIPTIVE_HEADER_HEIGHT: f32 = 84.0;
 pub const MODAL_MASTER_WORKSPACE_GAP: f32 = SPACE_12;
 pub const MODAL_MASTER_CONTENT_INSET: f32 = SPACE_12;
@@ -528,7 +506,6 @@ pub const MODAL_SECTION_PADDING: f32 = SPACE_12;
 // Kept separate from frame padding so the layout role is explicit.
 #[cfg(test)]
 pub const MODAL_SECTION_HEADER_RULE_GAP: f32 = SECTION_DIVIDER_GAP;
-pub const MODAL_SECTION_RADIUS: u8 = SECTION_RADIUS;
 // Approved compact modal form row: label and editable value share one 36pt
 // line. No product-management-specific vertical label/input layout.
 pub const MODAL_FORM_LABEL_WIDTH: f32 = 80.0;
@@ -543,23 +520,11 @@ pub const MODAL_DEFAULT_MAX_WIDTH: f32 = 880.0;
 pub const PRODUCT_DETAIL_MODAL_WIDTH: f32 = MODAL_DEFAULT_MAX_WIDTH;
 pub const PRODUCT_DETAIL_IMAGE_SIZE: f32 = 320.0;
 pub const MODAL_VIEWPORT_GUTTER: f32 = 18.0;
-// One shared dim role for the modal stack; a stacked confirmation is lighter.
-pub const MODAL_BACKDROP_ALPHA: u8 = 144;
-pub const MODAL_NESTED_BACKDROP_ALPHA: u8 = 94;
 // Shared management list roles; the client page does not invent row geometry.
 // CategoryTree master: every depth uses the same row, slots and guide geometry.
 pub const CATALOG_TREE_ROW_HEIGHT:f32 = MANAGEMENT_COMPACT_ROW_HEIGHT;
 pub const CATALOG_TREE_INDENT:f32 = 24.0;
-pub const CATALOG_TREE_INSET:f32 = SPACE_12;
 pub const CATEGORY_EXPLORER_CRUMB_TEXT_INSET:f32=SPACE_6;
-pub const CATALOG_TREE_CHEVRON_SIZE:f32 = SPACE_16;
-pub const CATALOG_TREE_FOLDER_SIZE:f32 = 20.0;
-pub const CATALOG_TREE_GAP:f32 = SPACE_8;
-pub const CATALOG_TREE_TERMINAL_GAP:f32 = SPACE_4;
-pub const CATALOG_TREE_GUIDE_COLOR:Color32 = Color32::from_rgb(74,74,74);
-pub const CATALOG_TREE_GUIDE_WIDTH:f32 = 1.0;
-pub const CATALOG_TREE_FOLDER_STROKE:f32 = 1.5;
-pub const CATALOG_TREE_FOLDER_COLOR:Color32 = SECONDARY;
 pub const CATALOG_TREE_SELECTED_INK:Color32 = ORANGE_EMPHASIS_TEXT;
 // Keep category search useful without stretching a single field across
 // the full management panel width.
@@ -761,13 +726,10 @@ pub const MANAGEMENT_SEARCH_MIN_WIDTH: f32 = 240.0;
 /// Keep large category-path and bulk-action selectors in their separate roles.
 pub const MANAGEMENT_FILTER_DROPDOWN_WIDTH: f32 = 148.0;
 // Common single-select menus scroll locally instead of growing beyond the viewport.
-pub const MANAGEMENT_DROPDOWN_MENU_MAX_HEIGHT: f32 = 320.0;
 // A 148pt toolbar trigger remains compact, while its searchable popup
 // provides enough width for a full search field and single-line options.
-pub const MANAGEMENT_SEARCHABLE_POPUP_MIN_WIDTH: f32 = 280.0;
 /// Selectable option hit box: 14pt Korean label needs symmetric vertical ink
 /// clearance rather than egui's small natural-height selectable row.
-pub const MANAGEMENT_DROPDOWN_OPTION_HEIGHT: f32 = 28.0;
 // Width reserved for the two original client-list actions on one toolbar row.
 // Match the actual two button widths plus their shared spacing, rather
 // than leaving a large unused gap after the search field.
@@ -782,7 +744,6 @@ pub const MANAGEMENT_CLIENT_TOOLBAR_STACK_WIDTH: f32 = 700.0;
 pub const MANAGEMENT_EXCEL_TOOLBAR_ACTIONS_WIDTH: f32 = 330.0;
 /// Consistent leading inset for text columns in master headers and rows.
 pub const MANAGEMENT_TABLE_TEXT_LEADING_INSET: f32 = SPACE_6;
-pub const MANAGEMENT_TABLE_ACTION_INSET:f32=SPACE_6;
 // Existing React TierBadge palette; color is display-only, never a pricing rule.
 pub const CLIENT_TIER_WHOLESALE_BG: Color32 = Color32::from_rgb(35,76,55);
 pub const CLIENT_TIER_WHOLESALE_TEXT: Color32 = Color32::from_rgb(166,237,192);
@@ -795,9 +756,6 @@ pub const CLIENT_TIER_SPECIAL_TEXT: Color32 = Color32::from_rgb(218,181,255);
 pub const MANAGEMENT_MODAL_BODY_MAX_HEIGHT: f32 = 670.0;
 // Fixed cells fit a ten-character client name, an 11-digit phone number
 // (plus separators), and a tier badge followed by its transaction terms.
-pub const MANAGEMENT_CLIENT_NAME_COLUMN_WIDTH:f32 = 172.0;
-pub const MANAGEMENT_CLIENT_PHONE_COLUMN_WIDTH:f32 = 154.0;
-pub const MANAGEMENT_CLIENT_TERMS_COLUMN_WIDTH:f32 = 350.0;
 // Recognized source tokens in Reception and classified manual blocks share
 // the same subdued gray 1pt outline. Focused blue evidence keeps its own 2pt stroke.
 pub const SOURCE_RECOGNIZED_BORDER: Color32 = Color32::from_rgb(96, 96, 96);

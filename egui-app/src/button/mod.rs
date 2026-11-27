@@ -540,7 +540,7 @@ pub(crate) fn date_navigation_button_surface(
         if effective_enabled{
             crate::highlight::action_widget(ui,fill,stroke,false);
         }else{button=button.fill(fill).stroke(stroke);}
-        navigation_native_button(ui,Vec2::splat(theme::CALENDAR_NAV_SIZE),button,Some(effective_enabled))
+        navigation_native_button(ui,Vec2::splat(theme::MANAGEMENT_DATE_NAV_BUTTON_WIDTH),button,Some(effective_enabled))
     }).inner;
     #[cfg(test)]
     crate::ui_test_support::record_highlight_target("date navigation",response.rect,ui.clip_rect());

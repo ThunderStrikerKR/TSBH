@@ -517,14 +517,14 @@ mod modal_editor_workspace_geometry_tests {
             theme::MODAL_HEADER_HEIGHT
                 +theme::MODAL_MASTER_WORKSPACE_TOOLBAR_HEIGHT
                 +theme::SOFT_DIVIDER_WIDTH
-                +theme::MODAL_MASTER_TOOLBAR_RULE_GAP
+                +crate::popup::MODAL_MASTER_TOOLBAR_RULE_GAP
         )).abs()<=0.5,"unexpected two-row header height: {header:?}");
         assert!((toolbar.height()-theme::MODAL_MASTER_WORKSPACE_TOOLBAR_HEIGHT)
             .abs()<=0.5,"toolbar does not fill its reserved header row: {toolbar:?}");
         let rule=crate::ui_layout::pixel_paint::snap_paint_rect(header,ctx.pixels_per_point()).toolbar_rule(theme::MODAL_HEADER_HEIGHT,theme::SOFT_DIVIDER_WIDTH,theme::MODAL_MASTER_CONTENT_INSET,ctx.pixels_per_point()).test_rect();
         assert!((rule.top()-header.top()-theme::MODAL_HEADER_HEIGHT).abs()<=0.5,
             "rule must immediately follow title row: {rule:?}");
-        assert!((toolbar.top()-rule.bottom()-theme::MODAL_MASTER_TOOLBAR_RULE_GAP)
+        assert!((toolbar.top()-rule.bottom()-crate::popup::MODAL_MASTER_TOOLBAR_RULE_GAP)
             .abs()<=0.5,"toolbar must sit below rule: {rule:?} {toolbar:?}");
         assert!((header.bottom()-toolbar.bottom()).abs()<=0.5,
             "no divider slot below toolbar: {header:?} {toolbar:?}");
@@ -638,7 +638,7 @@ mod modal_editor_workspace_geometry_tests {
         assert!(theme::PANEL_RADIUS>theme::SECTION_RADIUS);
         assert!(theme::SECTION_RADIUS>theme::CONTROL_RADIUS);
         assert!(theme::CONTROL_RADIUS>theme::SOURCE_BLOCK_RADIUS as u8);
-        assert_eq!(theme::MODAL_SECTION_RADIUS,theme::SECTION_RADIUS);
+        assert_eq!(crate::popup::MODAL_SECTION_RADIUS,theme::SECTION_RADIUS);
     }
 
     #[test]

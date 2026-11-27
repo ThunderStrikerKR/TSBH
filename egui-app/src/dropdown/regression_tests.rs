@@ -235,7 +235,7 @@ mod management_dropdown_unification_tests {
             assert_eq!(rect.width(),width);
             assert_eq!(rect.height(),theme::ACTION_STANDARD_HEIGHT);
         }
-        assert_eq!(theme::MANAGEMENT_DROPDOWN_MENU_MAX_HEIGHT,320.0);
+        assert_eq!(crate::dropdown::MANAGEMENT_DROPDOWN_MENU_MAX_HEIGHT,320.0);
     }
 
     #[test]
@@ -246,7 +246,7 @@ mod management_dropdown_unification_tests {
             egui::CentralPanel::default().show(ctx,|ui|{
                 ui.scope(|choices|{
                     choices.spacing_mut().interact_size.y=
-                        theme::MANAGEMENT_DROPDOWN_OPTION_HEIGHT;
+                        crate::dropdown::MANAGEMENT_DROPDOWN_OPTION_HEIGHT;
                     let mut selected=false;
                     let first=management_dropdown_compact_option(
                         choices,&mut selected,false,"선불",90.0
@@ -261,9 +261,9 @@ mod management_dropdown_unification_tests {
         assert_eq!(rects.len(),2);
         for rect in rects {
             assert_eq!(rect.width(),90.0);
-            assert_eq!(rect.height(),theme::MANAGEMENT_DROPDOWN_OPTION_HEIGHT);
+            assert_eq!(rect.height(),crate::dropdown::MANAGEMENT_DROPDOWN_OPTION_HEIGHT);
         }
-        assert!(theme::MANAGEMENT_DROPDOWN_OPTION_HEIGHT>=28.0);
+        assert!(crate::dropdown::MANAGEMENT_DROPDOWN_OPTION_HEIGHT>=28.0);
     }
 
     #[test]
@@ -275,7 +275,7 @@ mod management_dropdown_unification_tests {
             egui::CentralPanel::default().show(ctx,|ui|{
                 ui.scope(|options|{
                     options.spacing_mut().interact_size.y=
-                        theme::MANAGEMENT_DROPDOWN_OPTION_HEIGHT;
+                        crate::dropdown::MANAGEMENT_DROPDOWN_OPTION_HEIGHT;
                     let mut group=String::new();
                     normal=management_dropdown_option(
                         options,&mut group,"test".to_owned(),
@@ -288,8 +288,8 @@ mod management_dropdown_unification_tests {
                 });
             });
         });
-        assert_eq!(normal.height(),theme::MANAGEMENT_DROPDOWN_OPTION_HEIGHT);
-        assert_eq!(compact.height(),theme::MANAGEMENT_DROPDOWN_OPTION_HEIGHT);
+        assert_eq!(normal.height(),crate::dropdown::MANAGEMENT_DROPDOWN_OPTION_HEIGHT);
+        assert_eq!(compact.height(),crate::dropdown::MANAGEMENT_DROPDOWN_OPTION_HEIGHT);
         assert_eq!(compact.width(),90.0);
         assert!(normal.width()>compact.width());
         assert_eq!(

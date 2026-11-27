@@ -867,7 +867,7 @@ mod shared_selection_interaction_tests {
             same_select_slots(&base,&opened);
             assert_eq!(opened.options.len(),2,"{kind:?}: popup never opened");
             for option in &opened.options{
-                assert_eq!(option.height(),theme::MANAGEMENT_DROPDOWN_OPTION_HEIGHT);
+                assert_eq!(option.height(),28.0);
                 if matches!(kind,Selector::Compact){assert_eq!(option.width(),90.0);}
             }
             assert!(opened.options[1].top()>=opened.options[0].bottom());

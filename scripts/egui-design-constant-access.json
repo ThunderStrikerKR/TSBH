@@ -1,0 +1,797 @@
+{
+  "source_audit": "docs/ui-visual-verification/audits/design-constant-access-155.md",
+  "description": "Component-exclusive tokens and shared-token consumer contracts. Rust-private tokens are enforced by compilation; restricted public tokens have an additional lexical consumer gate. Foundation tokens remain generally accessible.",
+  "tokens": {
+    "ACTION_PRIMARY_HEIGHT": {
+      "decision": "restricted",
+      "owner": "theme.rs",
+      "consumers": [
+        "popup/mod.rs"
+      ]
+    },
+    "ACTION_QUIET_HEIGHT": {
+      "decision": "restricted",
+      "owner": "theme.rs",
+      "consumers": [
+        "button/mod.rs"
+      ]
+    },
+    "BORDER": {
+      "decision": "foundation",
+      "owner": "theme.rs",
+      "note": "General shared composition / role token; not component-exclusive"
+    },
+    "BUTTON_HOVER_BG": {
+      "decision": "restricted",
+      "owner": "theme.rs",
+      "consumers": [
+        "button/mod.rs",
+        "highlight/mod.rs"
+      ]
+    },
+    "BUTTON_HOVER_BORDER_WIDTH": {
+      "decision": "restricted",
+      "owner": "theme.rs",
+      "consumers": [
+        "button/mod.rs",
+        "highlight/mod.rs"
+      ]
+    },
+    "BUTTON_HOVER_LIGHT_BG": {
+      "decision": "restricted",
+      "owner": "theme.rs",
+      "consumers": [
+        "button/mod.rs",
+        "highlight/mod.rs"
+      ]
+    },
+    "BUTTON_HOVER_LIGHT_BORDER": {
+      "decision": "restricted",
+      "owner": "theme.rs",
+      "consumers": [
+        "highlight/mod.rs"
+      ]
+    },
+    "BUTTON_HOVER_TINT": {
+      "decision": "restricted",
+      "owner": "theme.rs",
+      "consumers": [
+        "button/mod.rs",
+        "highlight/mod.rs"
+      ]
+    },
+    "CALENDAR_DAY_SIZE": {
+      "decision": "internalized",
+      "original_owner": "theme.rs",
+      "owner": "navigation.rs",
+      "note": "private component token"
+    },
+    "CALENDAR_GRID_GAP": {
+      "decision": "internalized",
+      "original_owner": "theme.rs",
+      "owner": "navigation.rs",
+      "note": "private component token"
+    },
+    "CALENDAR_GRID_WIDTH": {
+      "decision": "internalized",
+      "original_owner": "theme.rs",
+      "owner": "navigation.rs",
+      "note": "private component token"
+    },
+    "CALENDAR_NAV_SIZE": {
+      "decision": "internalized",
+      "original_owner": "theme.rs",
+      "owner": "button/mod.rs",
+      "note": "canonical MANAGEMENT_DATE_NAV_BUTTON_WIDTH (navigation and button)"
+    },
+    "CATALOG_TREE_CHEVRON_SIZE": {
+      "decision": "internalized",
+      "original_owner": "theme.rs",
+      "owner": "category_tree/mod.rs",
+      "note": "private component token"
+    },
+    "CATALOG_TREE_FOLDER_COLOR": {
+      "decision": "internalized",
+      "original_owner": "theme.rs",
+      "owner": "category_tree/mod.rs",
+      "note": "private component token"
+    },
+    "CATALOG_TREE_FOLDER_SIZE": {
+      "decision": "internalized",
+      "original_owner": "theme.rs",
+      "owner": "category_tree/mod.rs",
+      "note": "private component token"
+    },
+    "CATALOG_TREE_FOLDER_STROKE": {
+      "decision": "internalized",
+      "original_owner": "theme.rs",
+      "owner": "category_tree/mod.rs",
+      "note": "private component token"
+    },
+    "CATALOG_TREE_GAP": {
+      "decision": "internalized",
+      "original_owner": "theme.rs",
+      "owner": "category_tree/mod.rs",
+      "note": "private component token"
+    },
+    "CATALOG_TREE_GUIDE_COLOR": {
+      "decision": "internalized",
+      "original_owner": "theme.rs",
+      "owner": "category_tree/mod.rs",
+      "note": "private component token"
+    },
+    "CATALOG_TREE_GUIDE_WIDTH": {
+      "decision": "internalized",
+      "original_owner": "theme.rs",
+      "owner": "category_tree/mod.rs",
+      "note": "private component token"
+    },
+    "CATALOG_TREE_INSET": {
+      "decision": "internalized",
+      "original_owner": "theme.rs",
+      "owner": "category_tree/mod.rs",
+      "note": "private component token"
+    },
+    "CATALOG_TREE_TERMINAL_GAP": {
+      "decision": "internalized",
+      "original_owner": "theme.rs",
+      "owner": "category_tree/mod.rs",
+      "note": "private component token"
+    },
+    "DISABLED_ACTION_BG": {
+      "decision": "restricted",
+      "owner": "theme.rs",
+      "consumers": [
+        "button/mod.rs",
+        "navigation.rs"
+      ]
+    },
+    "DISABLED_ACTION_BORDER": {
+      "decision": "restricted",
+      "owner": "theme.rs",
+      "consumers": [
+        "button/mod.rs"
+      ]
+    },
+    "DISABLED_ACTION_TEXT": {
+      "decision": "restricted",
+      "owner": "theme.rs",
+      "consumers": [
+        "button/mod.rs",
+        "navigation.rs"
+      ]
+    },
+    "DOCK_SPLITTER_HOVER_LINE": {
+      "decision": "restricted",
+      "owner": "theme.rs",
+      "consumers": [
+        "ui_layout.rs"
+      ]
+    },
+    "DOCK_SPLITTER_LINE": {
+      "decision": "restricted",
+      "owner": "theme.rs",
+      "consumers": [
+        "ui_layout.rs"
+      ]
+    },
+    "ERROR_BORDER": {
+      "decision": "foundation",
+      "owner": "theme.rs",
+      "note": "General shared composition / role token; not component-exclusive"
+    },
+    "ERROR_TEXT": {
+      "decision": "foundation",
+      "owner": "theme.rs",
+      "note": "General shared composition / role token; not component-exclusive"
+    },
+    "FLOATING_NOTICE_ANCHOR_GAP": {
+      "decision": "internalized",
+      "original_owner": "theme.rs",
+      "owner": "floating_notice.rs",
+      "note": "private component token"
+    },
+    "FLOATING_NOTICE_BG": {
+      "decision": "internalized",
+      "original_owner": "theme.rs",
+      "owner": "theme.rs",
+      "note": "existing surface_palette(Notice, Normal)"
+    },
+    "FLOATING_NOTICE_CLOSE_HIT_SIZE": {
+      "decision": "internalized",
+      "original_owner": "theme.rs",
+      "owner": "floating_notice.rs",
+      "note": "private component token"
+    },
+    "FLOATING_NOTICE_ICON_SIZE": {
+      "decision": "internalized",
+      "original_owner": "theme.rs",
+      "owner": "floating_notice.rs",
+      "note": "private component token"
+    },
+    "FLOATING_NOTICE_MAX_WIDTH": {
+      "decision": "internalized",
+      "original_owner": "theme.rs",
+      "owner": "floating_notice.rs",
+      "note": "private component token"
+    },
+    "FLOATING_NOTICE_PADDING_X": {
+      "decision": "internalized",
+      "original_owner": "theme.rs",
+      "owner": "floating_notice.rs",
+      "note": "private component token"
+    },
+    "FLOATING_NOTICE_PADDING_Y": {
+      "decision": "internalized",
+      "original_owner": "theme.rs",
+      "owner": "floating_notice.rs",
+      "note": "private component token"
+    },
+    "FLOATING_NOTICE_POINTER_HALF_WIDTH": {
+      "decision": "internalized",
+      "original_owner": "theme.rs",
+      "owner": "floating_notice.rs",
+      "note": "private component token"
+    },
+    "FLOATING_NOTICE_POINTER_HEIGHT": {
+      "decision": "internalized",
+      "original_owner": "theme.rs",
+      "owner": "floating_notice.rs",
+      "note": "private component token"
+    },
+    "FLOATING_NOTICE_SCREEN_MARGIN": {
+      "decision": "internalized",
+      "original_owner": "theme.rs",
+      "owner": "floating_notice.rs",
+      "note": "private component token"
+    },
+    "FLOATING_NOTICE_SHADOW_ALPHA": {
+      "decision": "internalized",
+      "original_owner": "theme.rs",
+      "owner": "floating_notice.rs",
+      "note": "private component token"
+    },
+    "FLOATING_NOTICE_SHADOW_BLUR": {
+      "decision": "internalized",
+      "original_owner": "theme.rs",
+      "owner": "floating_notice.rs",
+      "note": "private component token"
+    },
+    "FLOATING_NOTICE_SHADOW_OFFSET": {
+      "decision": "internalized",
+      "original_owner": "theme.rs",
+      "owner": "floating_notice.rs",
+      "note": "private component token"
+    },
+    "FLOATING_NOTICE_TEXT_SIZE": {
+      "decision": "internalized",
+      "original_owner": "theme.rs",
+      "owner": "typography.rs",
+      "note": "canonical FONT_FIELD_LABEL (typography)"
+    },
+    "FREIGHT_SUMMARY_CARD_HEIGHT": {
+      "decision": "restricted",
+      "owner": "theme.rs",
+      "consumers": [
+        "card/mod.rs"
+      ]
+    },
+    "FREIGHT_SUMMARY_CARD_WIDTH": {
+      "decision": "restricted",
+      "owner": "theme.rs",
+      "consumers": [
+        "card/mod.rs"
+      ]
+    },
+    "FREIGHT_SUMMARY_PADDING_X": {
+      "decision": "restricted",
+      "owner": "theme.rs",
+      "consumers": [
+        "card/mod.rs"
+      ]
+    },
+    "FREIGHT_SUMMARY_PADDING_Y": {
+      "decision": "restricted",
+      "owner": "theme.rs",
+      "consumers": [
+        "card/mod.rs"
+      ]
+    },
+    "FREIGHT_SUMMARY_TEXT_GAP": {
+      "decision": "restricted",
+      "owner": "theme.rs",
+      "consumers": [
+        "card/mod.rs"
+      ]
+    },
+    "KAKAO_ICON_INK": {
+      "decision": "restricted",
+      "owner": "theme.rs",
+      "consumers": [
+        "button/mod.rs"
+      ]
+    },
+    "KAKAO_ICON_MODE_GAP": {
+      "decision": "restricted",
+      "owner": "theme.rs",
+      "consumers": [
+        "ui_layout.rs"
+      ]
+    },
+    "KAKAO_ICON_YELLOW": {
+      "decision": "restricted",
+      "owner": "theme.rs",
+      "consumers": [
+        "button/mod.rs"
+      ]
+    },
+    "KAKAO_MENU_ICON_SIZE": {
+      "decision": "restricted",
+      "owner": "theme.rs",
+      "consumers": [
+        "button/mod.rs"
+      ]
+    },
+    "MANAGEMENT_CLIENT_NAME_COLUMN_WIDTH": {
+      "decision": "internalized",
+      "original_owner": "theme.rs",
+      "owner": "table/mod.rs",
+      "note": "private component token"
+    },
+    "MANAGEMENT_CLIENT_PHONE_COLUMN_WIDTH": {
+      "decision": "internalized",
+      "original_owner": "theme.rs",
+      "owner": "table/mod.rs",
+      "note": "private component token"
+    },
+    "MANAGEMENT_CLIENT_TERMS_COLUMN_WIDTH": {
+      "decision": "internalized",
+      "original_owner": "theme.rs",
+      "owner": "table/mod.rs",
+      "note": "private component token"
+    },
+    "MANAGEMENT_DATE_CALENDAR_BUTTON_WIDTH": {
+      "decision": "restricted",
+      "owner": "theme.rs",
+      "consumers": [
+        "navigation.rs"
+      ]
+    },
+    "MANAGEMENT_DATE_CONTROL_GAP": {
+      "decision": "restricted",
+      "owner": "theme.rs",
+      "consumers": [
+        "navigation.rs"
+      ]
+    },
+    "MANAGEMENT_DATE_NAV_BUTTON_WIDTH": {
+      "decision": "restricted",
+      "owner": "theme.rs",
+      "consumers": [
+        "button/mod.rs",
+        "navigation.rs",
+        "popup/tag.rs"
+      ]
+    },
+    "MANAGEMENT_DATE_RANGE_SEPARATOR_WIDTH": {
+      "decision": "restricted",
+      "owner": "theme.rs",
+      "consumers": [
+        "navigation.rs"
+      ]
+    },
+    "MANAGEMENT_DROPDOWN_HOVER_BG": {
+      "decision": "restricted",
+      "owner": "theme.rs",
+      "consumers": [
+        "highlight/mod.rs"
+      ]
+    },
+    "MANAGEMENT_DROPDOWN_MENU_MAX_HEIGHT": {
+      "decision": "internalized",
+      "original_owner": "theme.rs",
+      "owner": "dropdown/mod.rs",
+      "note": "private component token"
+    },
+    "MANAGEMENT_DROPDOWN_OPTION_HEIGHT": {
+      "decision": "internalized",
+      "original_owner": "theme.rs",
+      "owner": "dropdown/mod.rs",
+      "note": "private component token"
+    },
+    "MANAGEMENT_DROPDOWN_SELECTED_BG": {
+      "decision": "restricted",
+      "owner": "theme.rs",
+      "consumers": [
+        "highlight/mod.rs"
+      ]
+    },
+    "MANAGEMENT_SEARCHABLE_POPUP_MIN_WIDTH": {
+      "decision": "internalized",
+      "original_owner": "theme.rs",
+      "owner": "dropdown/mod.rs",
+      "note": "private component token"
+    },
+    "MANAGEMENT_TABLE_ACTION_INSET": {
+      "decision": "internalized",
+      "original_owner": "theme.rs",
+      "owner": "table/mod.rs",
+      "note": "private component token"
+    },
+    "MANAGEMENT_TABLE_HEADER_OUTLINE_HEIGHT": {
+      "decision": "restricted",
+      "owner": "theme.rs",
+      "consumers": [
+        "checkbox/mod.rs",
+        "scrollbar/mod.rs",
+        "table/mod.rs"
+      ]
+    },
+    "MANAGEMENT_TABLE_SCROLL_RAIL_EXTENSION": {
+      "decision": "restricted",
+      "owner": "theme.rs",
+      "consumers": [
+        "scrollbar/mod.rs"
+      ]
+    },
+    "MANAGEMENT_TABLE_SCROLL_TRACK_BOTTOM_INSET": {
+      "decision": "restricted",
+      "owner": "theme.rs",
+      "consumers": [
+        "scrollbar/mod.rs"
+      ]
+    },
+    "MANUAL_ASSIGNMENT_STROKE_WIDTH": {
+      "decision": "restricted",
+      "owner": "theme.rs",
+      "consumers": [
+        "highlight/mod.rs"
+      ]
+    },
+    "MANUAL_ASSIGNMENT_TINT": {
+      "decision": "restricted",
+      "owner": "theme.rs",
+      "consumers": [
+        "highlight/mod.rs"
+      ]
+    },
+    "MODAL_BACKDROP_ALPHA": {
+      "decision": "internalized",
+      "original_owner": "theme.rs",
+      "owner": "popup/mod.rs",
+      "note": "private component token"
+    },
+    "MODAL_EDGE_ACTION_SHIFT": {
+      "decision": "internalized",
+      "original_owner": "theme.rs",
+      "owner": "popup/mod.rs",
+      "note": "private component token"
+    },
+    "MODAL_MASTER_TOOLBAR_RULE_GAP": {
+      "decision": "internalized",
+      "original_owner": "theme.rs",
+      "owner": "popup/mod.rs",
+      "note": "private component token"
+    },
+    "MODAL_NESTED_BACKDROP_ALPHA": {
+      "decision": "internalized",
+      "original_owner": "theme.rs",
+      "owner": "popup/mod.rs",
+      "note": "private component token"
+    },
+    "MODAL_SECTION_RADIUS": {
+      "decision": "internalized",
+      "original_owner": "theme.rs",
+      "owner": "popup/mod.rs",
+      "note": "private component token"
+    },
+    "ONE_TOUCH_BG": {
+      "decision": "restricted",
+      "owner": "theme.rs",
+      "consumers": [
+        "highlight/mod.rs",
+        "one_touch.rs"
+      ]
+    },
+    "ONE_TOUCH_TEXT": {
+      "decision": "restricted",
+      "owner": "theme.rs",
+      "consumers": [
+        "highlight/mod.rs",
+        "one_touch.rs"
+      ]
+    },
+    "ONE_TOUCH_TINT": {
+      "decision": "restricted",
+      "owner": "theme.rs",
+      "consumers": [
+        "highlight/mod.rs",
+        "one_touch.rs"
+      ]
+    },
+    "ORANGE_EMPHASIS_TEXT": {
+      "decision": "restricted",
+      "owner": "theme.rs",
+      "consumers": [
+        "dropdown/mod.rs",
+        "highlight/mod.rs"
+      ]
+    },
+    "ORDER_HISTORY_RECIPIENT_BLOCK_RADIUS": {
+      "decision": "restricted",
+      "owner": "theme.rs",
+      "consumers": [
+        "card/mod.rs",
+        "highlight/mod.rs"
+      ]
+    },
+    "PANEL_RADIUS": {
+      "decision": "foundation",
+      "owner": "theme.rs",
+      "note": "General shared composition / role token; not component-exclusive"
+    },
+    "RECEPTION_CLIENT_SUMMARY_BG": {
+      "decision": "restricted",
+      "owner": "theme.rs",
+      "consumers": [
+        "card/mod.rs"
+      ]
+    },
+    "RECEPTION_CLIENT_SUMMARY_BORDER": {
+      "decision": "restricted",
+      "owner": "theme.rs",
+      "consumers": [
+        "card/mod.rs"
+      ]
+    },
+    "RECEPTION_ITEMS_AMOUNT_MAX_WIDTH": {
+      "decision": "restricted",
+      "owner": "theme.rs",
+      "consumers": [
+        "table/mod.rs"
+      ]
+    },
+    "RECEPTION_ITEMS_HEADER_HEIGHT": {
+      "decision": "internalized",
+      "original_owner": "theme.rs",
+      "owner": "table/mod.rs",
+      "note": "private component token"
+    },
+    "RECEPTION_ITEMS_QTY_WIDTH": {
+      "decision": "restricted",
+      "owner": "theme.rs",
+      "consumers": [
+        "table/mod.rs"
+      ]
+    },
+    "RECEPTION_ITEMS_TO_FREIGHT_GAP": {
+      "decision": "restricted",
+      "owner": "theme.rs",
+      "consumers": [
+        "ui_layout.rs"
+      ]
+    },
+    "RECEPTION_RECIPIENT_NAV_ARROW_WIDTH": {
+      "decision": "restricted",
+      "owner": "theme.rs",
+      "consumers": [
+        "navigation.rs"
+      ]
+    },
+    "RECEPTION_RECIPIENT_NAV_COUNT_WIDTH": {
+      "decision": "restricted",
+      "owner": "theme.rs",
+      "consumers": [
+        "navigation.rs"
+      ]
+    },
+    "RECEPTION_RECIPIENT_NAV_DISABLED_BG": {
+      "decision": "restricted",
+      "owner": "theme.rs",
+      "consumers": [
+        "button/mod.rs"
+      ]
+    },
+    "RECEPTION_RECIPIENT_NAV_WIDTH": {
+      "decision": "restricted",
+      "owner": "theme.rs",
+      "consumers": [
+        "navigation.rs"
+      ]
+    },
+    "REQUIRED_INPUT_BORDER": {
+      "decision": "restricted",
+      "owner": "theme.rs",
+      "consumers": [
+        "highlight/mod.rs"
+      ]
+    },
+    "REQUIRED_INPUT_STROKE_WIDTH": {
+      "decision": "restricted",
+      "owner": "theme.rs",
+      "consumers": [
+        "highlight/mod.rs"
+      ]
+    },
+    "REQUIRED_INPUT_TINT": {
+      "decision": "restricted",
+      "owner": "theme.rs",
+      "consumers": [
+        "highlight/mod.rs"
+      ]
+    },
+    "SECONDARY": {
+      "decision": "foundation",
+      "owner": "theme.rs",
+      "note": "General shared composition / role token; not component-exclusive"
+    },
+    "SECTION_HEADER_HEIGHT": {
+      "decision": "foundation",
+      "owner": "theme.rs",
+      "note": "General shared composition / role token; not component-exclusive"
+    },
+    "SECTION_RADIUS": {
+      "decision": "foundation",
+      "owner": "theme.rs",
+      "note": "General shared composition / role token; not component-exclusive"
+    },
+    "SELECTION": {
+      "decision": "foundation",
+      "owner": "theme.rs",
+      "note": "General shared composition / role token; not component-exclusive"
+    },
+    "SELECTION_STROKE_WIDTH": {
+      "decision": "foundation",
+      "owner": "theme.rs",
+      "note": "General shared composition / role token; not component-exclusive"
+    },
+    "SETTLEMENT_KPI_CARD_WIDTH": {
+      "decision": "restricted",
+      "owner": "theme.rs",
+      "consumers": [
+        "card/mod.rs"
+      ]
+    },
+    "SUCCESS": {
+      "decision": "foundation",
+      "owner": "theme.rs",
+      "note": "General shared composition / role token; not component-exclusive"
+    },
+    "TABLE_HEADER_OUTLINE": {
+      "decision": "restricted",
+      "owner": "theme.rs",
+      "consumers": [
+        "table/mod.rs"
+      ]
+    },
+    "WORKFLOW_CARD_BORDER": {
+      "decision": "restricted",
+      "owner": "theme.rs",
+      "consumers": [
+        "card/mod.rs"
+      ]
+    },
+    "WORKFLOW_CARD_RADIUS": {
+      "decision": "restricted",
+      "owner": "theme.rs",
+      "consumers": [
+        "card/mod.rs",
+        "highlight/mod.rs"
+      ]
+    },
+    "WORKFLOW_DETAIL_ROW_BORDER": {
+      "decision": "restricted",
+      "owner": "theme.rs",
+      "consumers": [
+        "card/mod.rs"
+      ]
+    },
+    "WORKFLOW_DETAIL_ROW_PADDING_X": {
+      "decision": "restricted",
+      "owner": "theme.rs",
+      "consumers": [
+        "card/mod.rs"
+      ]
+    },
+    "WORKFLOW_SELECTED_ROW_BORDER": {
+      "decision": "restricted",
+      "owner": "theme.rs",
+      "consumers": [
+        "card/mod.rs"
+      ]
+    },
+    "FONT_BODY": {
+      "decision": "foundation",
+      "owner": "typography.rs",
+      "note": "General shared composition / role token; not component-exclusive"
+    },
+    "FONT_MAIN_NAV": {
+      "decision": "restricted",
+      "owner": "typography.rs",
+      "consumers": [
+        "button/mod.rs"
+      ]
+    },
+    "FONT_MANAGEMENT_TAB": {
+      "decision": "restricted",
+      "owner": "typography.rs",
+      "consumers": [
+        "button/mod.rs"
+      ]
+    },
+    "FONT_PRIMARY_ACTION": {
+      "decision": "restricted",
+      "owner": "typography.rs",
+      "consumers": [
+        "button/mod.rs"
+      ]
+    },
+    "FONT_RECEPTION_RECIPIENT_TEXT": {
+      "decision": "restricted",
+      "owner": "typography.rs",
+      "consumers": [
+        "input/mod.rs"
+      ]
+    },
+    "FONT_STANDARD_ACTION": {
+      "decision": "restricted",
+      "owner": "typography.rs",
+      "consumers": [
+        "button/mod.rs",
+        "dropdown/mod.rs"
+      ]
+    },
+    "MANAGEMENT_DROPDOWN_TEXT_OPTICAL_Y": {
+      "decision": "restricted",
+      "owner": "typography.rs",
+      "consumers": [
+        "dropdown/mod.rs"
+      ]
+    },
+    "FONT_FIELD_LABEL": {
+      "decision": "foundation",
+      "owner": "ui_tokens.rs",
+      "note": "General shared composition / role token; not component-exclusive"
+    },
+    "FONT_FREIGHT_SUMMARY_LABEL": {
+      "decision": "foundation",
+      "owner": "ui_tokens.rs",
+      "note": "General shared composition / role token; not component-exclusive"
+    },
+    "FONT_FREIGHT_SUMMARY_NUMBER": {
+      "decision": "foundation",
+      "owner": "ui_tokens.rs",
+      "note": "General shared composition / role token; not component-exclusive"
+    },
+    "FONT_PAGE_HEADING": {
+      "decision": "foundation",
+      "owner": "ui_tokens.rs",
+      "note": "General shared composition / role token; not component-exclusive"
+    },
+    "FREIGHT_SUMMARY_LABEL_LINE_HEIGHT": {
+      "decision": "foundation",
+      "owner": "ui_tokens.rs",
+      "note": "General shared composition / role token; not component-exclusive"
+    },
+    "FREIGHT_SUMMARY_NUMBER_LINE_HEIGHT": {
+      "decision": "foundation",
+      "owner": "ui_tokens.rs",
+      "note": "General shared composition / role token; not component-exclusive"
+    },
+    "SPACE_16": {
+      "decision": "foundation",
+      "owner": "ui_tokens.rs",
+      "note": "General shared composition / role token; not component-exclusive"
+    },
+    "SPACE_2": {
+      "decision": "foundation",
+      "owner": "ui_tokens.rs",
+      "note": "General shared composition / role token; not component-exclusive"
+    },
+    "SPACE_6": {
+      "decision": "foundation",
+      "owner": "ui_tokens.rs",
+      "note": "General shared composition / role token; not component-exclusive"
+    }
+  }
+}

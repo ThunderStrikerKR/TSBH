@@ -537,6 +537,69 @@ def design_api_self_test():
         assert check(changed), changed
 
 
+
+# Component-owned design tokens have no public declaration. Shared tokens
+# retain their existing owner, with an explicit consumer set checked here.
+# Generic composition tokens remain unrestricted. This is a lexical gate,
+# not Rust name resolution; it deliberately also detects imports and aliases.
+DESIGN_CONSTANT_ACCESS = DESIGN_API_DIR / "egui-design-constant-access.json"
+
+def load_constant_access():
+    data = json.loads(DESIGN_CONSTANT_ACCESS.read_text(encoding="utf-8"))
+    tokens = data["tokens"]
+    if not isinstance(tokens, dict) or len(tokens) != 122:
+        raise ValueError("expected all 122 audited shared design constants")
+    valid_owners = DESIGN_API_OWNERS | set(API_CONTRACT)
+    for name, rule in tokens.items():
+        if not re.fullmatch(r"[A-Z][A-Z0-9_]*", name):
+            raise ValueError(f"invalid design constant: {name}")
+        if rule["owner"] not in valid_owners:
+            raise ValueError(f"unknown design owner: {name}")
+        if rule["decision"] not in ("internalized", "restricted", "foundation"):
+            raise ValueError(f"unknown access decision: {name}")
+        if rule["decision"] == "restricted":
+            consumers = rule["consumers"]
+            if not consumers or len(consumers) != len(set(consumers)) or not set(consumers) <= valid_owners:
+                raise ValueError(f"invalid design constant consumers: {name}")
+    return tokens
+
+def constant_access_violations(name, source, policy):
+    code = production(source)
+    findings = []
+    restricted = {token: rule for token, rule in policy.items() if rule["decision"] == "restricted"}
+    if not restricted:
+        return findings
+    pattern = re.compile(r"\b(?:" + "|".join(map(re.escape, sorted(restricted))) + r")\b")
+    for match in pattern.finditer(code):
+        rule = restricted[match.group()]
+        if name != rule["owner"] and name not in rule["consumers"]:
+            findings.append((code.count("\n", 0, match.start())+1,
+                f"design constant {match.group()} restricted to {rule['owner']} and approved components"))
+    # No forwarding exports of restricted tokens, even from an approved consumer.
+    for export in re.finditer(r"\bpub(?:\s*\([^)]*\))?\s+use\s+[^;]+;", code):
+        for match in pattern.finditer(export.group()):
+            findings.append((code.count("\n", 0, export.start())+1,
+                f"restricted design constant re-export prohibited: {match.group()}"))
+    return findings
+
+def constant_access_self_test():
+    policy = {
+        "PRIVATE_SIZE": {"decision":"internalized","owner":"button/mod.rs"},
+        "BUTTON_ONLY_HEIGHT": {"decision":"restricted","owner":"theme.rs","consumers":["button/mod.rs"]},
+        "SPACE_8": {"decision":"foundation","owner":"ui_tokens.rs"},
+    }
+    def check(owner, source):
+        return constant_access_violations(owner, source, policy)
+    assert not check("theme.rs", "pub const BUTTON_ONLY_HEIGHT:f32=34.0;")
+    assert not check("button/mod.rs", "let h=theme::BUTTON_ONLY_HEIGHT;")
+    assert check("screen.rs", "let h=theme::BUTTON_ONLY_HEIGHT;")
+    assert check("screen.rs", "use crate::theme::BUTTON_ONLY_HEIGHT as H;")
+    assert check("button/mod.rs", "pub(crate) use crate::theme::BUTTON_ONLY_HEIGHT as H;")
+    assert not check("screen.rs", "let s=\"BUTTON_ONLY_HEIGHT\"; // BUTTON_ONLY_HEIGHT")
+    assert not check("screen.rs", "let w=theme::SPACE_8;")
+    assert not check("button/mod.rs", "const PRIVATE_SIZE:f32=10.0;")
+
+
 def violations(name, source):
     code = production(source)
     findings = pixel_paint_violations(name, code) + pixel_math_violations(name, code)
@@ -682,7 +745,9 @@ def main():
     self_test()
     api_contract_self_test()
     design_api_self_test()
+    constant_access_self_test()
     inventory = load_design_api()
+    constant_access = load_constant_access()
     failures = []
     checked = 0
     checked_owners = set()
@@ -698,10 +763,12 @@ def main():
         failures.extend(f"{name}:{line}: {rule}" for line, rule in violations(name, source))
         failures.extend(f"{name}:{line}: {rule}" for line, rule in api_contract_violations(name, source))
         failures.extend(f"{name}:{line}: {rule}" for line, rule in design_api_violations(name, source, inventory))
+        failures.extend(f"{name}:{line}: {rule}" for line, rule in constant_access_violations(name, source, constant_access))
     for required in sorted(required_owners - checked_owners):
         failures.append(f"{required}:1: required API contract owner missing or excluded from production")
     for finding in failures:
         print(finding, file=sys.stderr)
+    print(f"egui design constant access: {dict(Counter(rule['decision'] for rule in constant_access.values()))}")
     print(f"egui design API contract: {len(inventory)+len(API_CONTRACT)} modules, {sum(map(len,inventory.values()))+sum(map(len,API_CONTRACT.values()))} declaration(s)")
     print(f"egui explicit placement ownership: {checked} Rust files, {len(failures)} violation(s)")
     return int(bool(failures))

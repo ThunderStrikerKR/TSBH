@@ -10,6 +10,12 @@ use crate::{theme,typography};
 use eframe::egui::{Sense,Align};
 use crate::ui_primitives::{overflow_region_tooltip,text_exceeds_rect,positioned_text_overflow};
 
+const MANAGEMENT_TABLE_ACTION_INSET:f32=theme::SPACE_6;
+const MANAGEMENT_CLIENT_NAME_COLUMN_WIDTH:f32 = 172.0;
+const MANAGEMENT_CLIENT_PHONE_COLUMN_WIDTH:f32 = 154.0;
+const MANAGEMENT_CLIENT_TERMS_COLUMN_WIDTH:f32 = 350.0;
+const RECEPTION_ITEMS_HEADER_HEIGHT: f32 = 32.0;
+
 /// Shared editable-cell text placement, clipping and overflow measurement.
 pub(crate) fn paint_editable_cell_text(
     ui:&Ui,clip:Rect,label:&str,full:&str,font:egui::FontId,ink:Color32,
@@ -440,7 +446,7 @@ pub(crate) fn registry_tag_cell(ui:&Ui,rect:Rect,tags:&[String],id:impl std::has
     paint_tag_blocks(ui,rect.shrink2(Vec2::new(theme::SPACE_8,0.0)),tags,id);
 }
 pub(crate) fn registry_actions<R>(ui:&mut Ui,cell:Rect,draw:impl FnOnce(&mut Ui)->R)->R{
-    ui.scope_builder(egui::UiBuilder::new().aligned_max_rect(crate::ui_layout::geometry::aligned_rect(cell.shrink2(Vec2::new(theme::MANAGEMENT_TABLE_ACTION_INSET,0.0))))
+    ui.scope_builder(egui::UiBuilder::new().aligned_max_rect(crate::ui_layout::geometry::aligned_rect(cell.shrink2(Vec2::new(MANAGEMENT_TABLE_ACTION_INSET,0.0))))
         .layout(egui::Layout::right_to_left(Align::Center)),|actions|{
             actions.restrict_shared_clip(actions.clip_rect().intersect(cell));
             draw(actions)
@@ -1118,9 +1124,9 @@ pub(crate) fn workflow_shipment_header(ui:&mut Ui)->Rect{
 /// The three compact columns keep fixed widths; the address gets all spare
 /// width. The header, rows and rules share this one layout computation.
 pub(crate) fn management_client_column_widths(table_width:f32)->[f32;4]{
-    let name=theme::MANAGEMENT_CLIENT_NAME_COLUMN_WIDTH;
-    let phone=theme::MANAGEMENT_CLIENT_PHONE_COLUMN_WIDTH;
-    let terms=theme::MANAGEMENT_CLIENT_TERMS_COLUMN_WIDTH;
+    let name=MANAGEMENT_CLIENT_NAME_COLUMN_WIDTH;
+    let phone=MANAGEMENT_CLIENT_PHONE_COLUMN_WIDTH;
+    let terms=MANAGEMENT_CLIENT_TERMS_COLUMN_WIDTH;
     [name,(table_width-name-phone-terms).max(0.0),phone,terms]
 }
 
@@ -1223,7 +1229,7 @@ pub(crate) fn reception_items_header(ui:&mut Ui,remove_slot:bool)->Rect{
         ui.available_width(),0.0,theme::RECEPTION_ITEMS_MIN_TABLE_WIDTH+action_width
     );
     let (rect, _) = ui.shared_allocate_exact_size(
-        Vec2::new(width, theme::RECEPTION_ITEMS_HEADER_HEIGHT), Sense::hover()
+        Vec2::new(width, RECEPTION_ITEMS_HEADER_HEIGHT), Sense::hover()
     );
     // The reception list has its own approved 32pt compact header, but
     // follows the master's raised header surface and INSIDE bottom band.

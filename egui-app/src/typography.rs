@@ -743,11 +743,11 @@ pub fn ocr_progress_title(text:&str)->RichText{
 
 /// Measurement and rendering share the same notice size and font family.
 pub fn floating_notice_font()->FontId{
-    FontId::proportional(crate::theme::FLOATING_NOTICE_TEXT_SIZE)
+    FontId::proportional(FONT_FIELD_LABEL)
 }
 
 pub fn floating_notice_text(text:&str)->RichText{
-    RichText::new(text).size(crate::theme::FLOATING_NOTICE_TEXT_SIZE).color(TEXT)
+    RichText::new(text).size(FONT_FIELD_LABEL).color(TEXT)
 }
 
 pub fn review_title(text:&str,tone:crate::theme::ReviewTone)->RichText{
@@ -764,7 +764,7 @@ mod extracted_text_role_tests{
     #[test]
     fn extracted_painter_fonts_keep_existing_metrics(){
         assert_eq!(product_image_placeholder_font(),FontId::proportional(14.0));
-        assert_eq!(floating_notice_font(),FontId::proportional(crate::theme::FLOATING_NOTICE_TEXT_SIZE));
+        assert_eq!(floating_notice_font(),FontId::proportional(FONT_FIELD_LABEL));
         assert_eq!(FONT_OCR_PROGRESS_TITLE,28.0);
         assert_eq!(FONT_RECEPTION_SOURCE_TEXT,16.0);
         assert_eq!(DATA_NUMERIC_GLYPH_OFFSET_Y,2.5);

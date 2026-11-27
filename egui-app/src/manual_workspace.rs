@@ -3698,7 +3698,7 @@ mod manual_workspace_modal_routing_tests {
             "date_navigation_segment_button(",
             "management_date_text_field_impl(",
             "FRAME_STROKE_WIDTH",
-            "CALENDAR_NAV_SIZE",
+            "MANAGEMENT_DATE_NAV_BUTTON_WIDTH",
             "theme::INPUT_HEIGHT"
         ]{
             assert!(control.contains(token),"missing segmented control detail: {token}");

@@ -11,6 +11,11 @@ use crate::{theme,typography};
 use crate::ui_primitives::{date_navigation_segmented_surface,navigation_segment_child,ManagementChevronDirection,paint_management_chevron_with_color,truncated_label_for_explicit_tooltip,overflow_tooltip};
 use crate::button::{date_navigation_segment_button,date_navigation_button_surface,DateNavigationSegmentGlyph};
 use crate::input::management_date_text_field_impl;
+
+// Private calendar geometry; shared date arrow width remains canonical.
+const CALENDAR_DAY_SIZE: f32 = theme::ACTION_STANDARD_HEIGHT;
+const CALENDAR_GRID_GAP: f32 = theme::SPACE_4;
+const CALENDAR_GRID_WIDTH: f32 = 7.0*CALENDAR_DAY_SIZE+6.0*CALENDAR_GRID_GAP;
 #[cfg(test)]
 use crate::{ui_test_support::test_context,ui_primitives::form_field_label};
 
@@ -242,7 +247,7 @@ pub fn date_navigation_count_control(
     let (decrement_enabled,increment_enabled)=date_navigation_count_step_state(
         value,current,enabled,minimum,maximum
     );
-    let arrow_width=theme::CALENDAR_NAV_SIZE;
+    let arrow_width=theme::MANAGEMENT_DATE_NAV_BUTTON_WIDTH;
     let input_width=64.0;
     // The inline date group (not the small popup calendar buttons) is the
     // master: 36pt outer height and 34pt interior.
@@ -328,11 +333,11 @@ pub fn date_calendar(
     let today=(chrono::Utc::now()+Days::hours(9)).date_naive();
     crate::overlay::show_menu(trigger,None,|calendar|{
             calendar.spacing_mut().item_spacing=egui::vec2(
-                theme::CALENDAR_GRID_GAP,theme::CALENDAR_GRID_GAP
+                CALENDAR_GRID_GAP,CALENDAR_GRID_GAP
             );
-            calendar.apply_shared_width(crate::ui_layout::geometry::CardWidthPolicy::FillAvailable,theme::CALENDAR_GRID_WIDTH);
+            calendar.apply_shared_width(crate::ui_layout::geometry::CardWidthPolicy::FillAvailable,CALENDAR_GRID_WIDTH);
             calendar.horizontal(|nav|{
-                nav.spacing_mut().item_spacing.x=theme::CALENDAR_GRID_GAP;
+                nav.spacing_mut().item_spacing.x=CALENDAR_GRID_GAP;
                 if calendar_nav_button(
                     nav,ManagementChevronDirection::Left,true){
                     *month=shift_calendar_month(*month,-12);
@@ -341,11 +346,11 @@ pub fn date_calendar(
                     nav,ManagementChevronDirection::Left,false){
                     *month=shift_calendar_month(*month,-1);
                 }
-                let title_width=theme::CALENDAR_GRID_WIDTH
-                    -4.0*theme::CALENDAR_NAV_SIZE
-                    -4.0*theme::CALENDAR_GRID_GAP;
+                let title_width=CALENDAR_GRID_WIDTH
+                    -4.0*theme::MANAGEMENT_DATE_NAV_BUTTON_WIDTH
+                    -4.0*CALENDAR_GRID_GAP;
                 nav.shared_add_sized(
-                    egui::vec2(title_width,theme::CALENDAR_NAV_SIZE),
+                    egui::vec2(title_width,theme::MANAGEMENT_DATE_NAV_BUTTON_WIDTH),
                     egui::Label::new(typography::field_label(&format!(
                         "{}년 {}월",month.year(),month.month()
                     ))).halign(Align::Center)
@@ -362,12 +367,12 @@ pub fn date_calendar(
             calendar.add_space(theme::SPACE_8);
             crate::ui_primitives::soft_divider(calendar);
             calendar.add_space(theme::SPACE_4);
-            let width=theme::CALENDAR_DAY_SIZE;
+            let width=CALENDAR_DAY_SIZE;
             let dates=calendar_dates(*month);
             egui::Grid::new(grid_id)
                 .num_columns(7)
                 .spacing(egui::vec2(
-                    theme::CALENDAR_GRID_GAP,theme::CALENDAR_GRID_GAP
+                    CALENDAR_GRID_GAP,CALENDAR_GRID_GAP
                 ))
                 .show(calendar,|grid|{
                     for day in ["월","화","수","목","금","토","일"]{
@@ -444,13 +449,13 @@ mod date_navigation_segmented_control_tests{
         assert_eq!(control.input.rect.height(),theme::ACTION_STANDARD_HEIGHT);
         assert_eq!(control.input.rect.width(),64.0);
         let expected_input_left=control.rect.left()
-            +theme::FRAME_STROKE_WIDTH+theme::CALENDAR_NAV_SIZE;
+            +theme::FRAME_STROKE_WIDTH+theme::MANAGEMENT_DATE_NAV_BUTTON_WIDTH;
         assert!(
             (control.input.rect.left()-expected_input_left).abs()<0.5,
             "numeric editor must sit directly between the two 28pt arrow segments"
         );
         let expected_input_right=control.rect.right()
-            -theme::FRAME_STROKE_WIDTH-theme::CALENDAR_NAV_SIZE;
+            -theme::FRAME_STROKE_WIDTH-theme::MANAGEMENT_DATE_NAV_BUTTON_WIDTH;
         assert!(
             (control.input.rect.right()-expected_input_right).abs()<0.5,
             "the plus segment must directly follow the numeric editor"

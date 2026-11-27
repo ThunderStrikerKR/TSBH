@@ -7,6 +7,10 @@ use crate::{theme,typography};
 use crate::input::management_search_field;
 use crate::theme::{text_ink,TextRole,TextState};
 
+const MANAGEMENT_DROPDOWN_MENU_MAX_HEIGHT: f32 = 320.0;
+const MANAGEMENT_SEARCHABLE_POPUP_MIN_WIDTH: f32 = 280.0;
+const MANAGEMENT_DROPDOWN_OPTION_HEIGHT: f32 = 28.0;
+
 /// Caption state is supplied by the selection owner, not inferred from text.
 #[derive(Clone,Copy)]
 pub(crate) struct DropdownCaption<'a>{
@@ -175,7 +179,7 @@ fn configure_option_menu(ui:&mut Ui){
 }
 fn configure_option_rows(ui:&mut Ui){
     ui.spacing_mut().item_spacing.y=theme::SPACE_4;
-    ui.spacing_mut().interact_size.y=theme::MANAGEMENT_DROPDOWN_OPTION_HEIGHT;
+    ui.spacing_mut().interact_size.y=MANAGEMENT_DROPDOWN_OPTION_HEIGHT;
 }
 
 fn management_dropdown_inner(
@@ -198,7 +202,7 @@ fn management_dropdown_inner(
             // Horizontal auto-shrink is mandatory: forcing a wide ScrollArea
             // caused 90pt 선불/착불 selectors to open ~600pt-wide menus.
             let scroll=scroll_area(ScrollAxes::Vertical)
-                .max_height(theme::MANAGEMENT_DROPDOWN_MENU_MAX_HEIGHT)
+                .max_height(MANAGEMENT_DROPDOWN_MENU_MAX_HEIGHT)
                 .auto_shrink([true,true]);
             let scroll=if compact {scroll.max_width(width)}else{scroll};
             scroll.show(menu,|choices|{
@@ -251,7 +255,7 @@ pub(crate) fn management_searchable_dropdown<'a>(
     if trigger.clicked(){search.clear();}
     // The search field needs room even on a 148pt toolbar trigger, but
     // long brand names must never stretch the popup or surrounding toolbar.
-    let popup_width=width.max(theme::MANAGEMENT_SEARCHABLE_POPUP_MIN_WIDTH)
+    let popup_width=width.max(MANAGEMENT_SEARCHABLE_POPUP_MIN_WIDTH)
         .min((ctx.content_rect().width()-theme::SPACE_24).max(1.0));
     crate::overlay::show_menu(&trigger,None,|menu|{
             menu.apply_shared_width(crate::ui_layout::geometry::CardWidthPolicy::Bounded,popup_width);
@@ -263,7 +267,7 @@ pub(crate) fn management_searchable_dropdown<'a>(
                 .collect::<Vec<_>>();
             scroll_area(ScrollAxes::Vertical)
                 .id_salt("management-searchable-options")
-                .max_height(theme::MANAGEMENT_DROPDOWN_MENU_MAX_HEIGHT)
+                .max_height(MANAGEMENT_DROPDOWN_MENU_MAX_HEIGHT)
                 .auto_shrink([false,true])
                 .show(menu,|list|{
                     configure_option_rows(list);
@@ -307,7 +311,7 @@ fn management_dropdown_option_inner<T:PartialEq>(
     let response=match style{
         ManagementDropdownOptionStyle::Compact(width)=>{
             let mut response=ui.shared_add_sized(
-                Vec2::new(width,theme::MANAGEMENT_DROPDOWN_OPTION_HEIGHT),
+                Vec2::new(width,MANAGEMENT_DROPDOWN_OPTION_HEIGHT),
                 egui::Button::selectable(selected,invisible)
             );
             if response.clicked() && *current!=value{
