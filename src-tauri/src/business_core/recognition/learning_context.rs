@@ -270,10 +270,83 @@ impl Counts{
     }
 }
 
+// Field candidate IDs are categorical, unlike previous/next ownership.
+// Keep task and evidence channels separate; never turn aggregate frequency
+// into a source-specific probability.
+#[derive(Default)]
+struct FieldCounts{
+    observations:u64,
+    orders:u64,
+    weak_orders:u64,
+    explicit_orders:u64,
+    pending:u64,
+    unresolved:u64,
+    weak:BTreeMap<String,u64>,
+    positive:BTreeMap<String,u64>,
+    negative:BTreeMap<String,u64>,
+    weak_candidate_orders:BTreeMap<String,u64>,
+    positive_candidate_orders:BTreeMap<String,u64>,
+    negative_candidate_orders:BTreeMap<String,u64>,
+}
+impl FieldCounts{
+    fn add_observation(&mut self,o:&Value){
+        self.observations+=1;
+        let one=|key:&str|o[key].as_array().filter(|v|v.len()==1)
+            .and_then(|v|v[0].as_str()).filter(|v|!v.trim().is_empty());
+        match o["outcome"].as_str(){
+            Some("unchanged_observed") if o["eligibleForCandidateLearning"]==true=>{
+                if let Some(v)=one("finalCandidates"){*self.weak.entry(v.to_owned()).or_default()+=1;}
+                else{self.unresolved+=1;}
+            }
+            Some("explicit_correction_observed") if o["eligibleForCandidateLearning"]==true=>{
+                if let (Some(old),Some(new))=(one("negativeCandidates"),one("positiveCandidates")){
+                    if old!=new{
+                        *self.negative.entry(old.to_owned()).or_default()+=1;
+                        *self.positive.entry(new.to_owned()).or_default()+=1;
+                    }else{self.unresolved+=1;}
+                }else{self.unresolved+=1;}
+            }
+            Some("changed_requires_review")=>self.pending+=1,
+            _=>self.unresolved+=1,
+        }
+    }
+    fn add_order(&mut self,other:Self){
+        self.observations+=other.observations;
+        self.orders+=1;
+        self.weak_orders+=u64::from(!other.weak.is_empty());
+        self.explicit_orders+=u64::from(!other.positive.is_empty());
+        self.pending+=other.pending;
+        self.unresolved+=other.unresolved;
+        fn merge(total:&mut BTreeMap<String,u64>,orders:&mut BTreeMap<String,u64>,
+            local:BTreeMap<String,u64>){
+            for (candidate,n) in local{
+                *orders.entry(candidate.clone()).or_default()+=1;
+                *total.entry(candidate).or_default()+=n;
+            }
+        }
+        merge(&mut self.weak,&mut self.weak_candidate_orders,other.weak);
+        merge(&mut self.positive,&mut self.positive_candidate_orders,other.positive);
+        merge(&mut self.negative,&mut self.negative_candidate_orders,other.negative);
+    }
+    fn wire(&self)->Value{
+        json!({"observationCount":self.observations,"independentOrders":self.orders,
+            "weakIndependentOrders":self.weak_orders,"explicitCorrectionOrders":self.explicit_orders,
+            "weakUnchangedCount":self.weak.values().sum::<u64>(),
+            "explicitCorrectionCount":self.positive.values().sum::<u64>(),
+            "weakCandidates":self.weak,"explicitPositiveCandidates":self.positive,
+            "explicitNegativeCandidates":self.negative,
+            "weakCandidateOrders":self.weak_candidate_orders,
+            "explicitPositiveCandidateOrders":self.positive_candidate_orders,
+            "explicitNegativeCandidateOrders":self.negative_candidate_orders,
+            "pendingCorrectionCount":self.pending,"unresolvedCount":self.unresolved,
+            "eligibleForAutomaticDecision":false})
+    }
+}
+
 /// Per-order contributions, also usable by the future durable delta writer.
 /// Group before counting independent orders; no sum of per-candidate order
 /// counts can substitute for the distinct context denominator.
-fn contributions(order:&Value,filter:&BTreeSet<&str>)->Result<Option<BTreeMap<String,Counts>>,String>{
+fn contributions(order:&Value,filter:&BTreeSet<&str>)->Result<Option<(BTreeMap<String,Counts>,BTreeMap<String,FieldCounts>)>,String>{
     let confirmed=order["confirmedAt"].as_str().filter(|v|!v.trim().is_empty());
     let snapshot=&order["confirmationSnapshot"];
     if confirmed.is_none() || snapshot["at"].as_str()!=confirmed ||
@@ -304,7 +377,16 @@ fn contributions(order:&Value,filter:&BTreeSet<&str>)->Result<Option<BTreeMap<St
             groups.entry(key.to_owned()).or_default().add_observation(o);
         }
     }
-    Ok(Some(groups))
+    let mut fields=BTreeMap::<String,FieldCounts>::new();
+    // Context-key lookup is ownership-specific, not a global field scan.
+    if filter.is_empty(){
+        for o in rows(&compared["observations"]){
+            if let Some(task)=o["task"].as_str().filter(|t|matches!(*t,"type"|"product"|"variant"|"quantity")){
+                fields.entry(task.to_owned()).or_default().add_observation(o);
+            }
+        }
+    }
+    Ok(Some((groups,fields)))
 }
 
 /// Explicit bounded batch, not an operational history scan. Caller supplies
@@ -325,6 +407,7 @@ pub(super) fn statistics(payload:&Value)->Result<Value,String>{
     }
     let mut seen=BTreeMap::<&str,&Value>::new();
     let mut groups=BTreeMap::<String,Counts>::new();
+    let mut fields=BTreeMap::<String,FieldCounts>::new();
     let mut unavailable=0u64;
     let mut without_context=0u64;
     for order in orders{
@@ -335,9 +418,10 @@ pub(super) fn statistics(payload:&Value)->Result<Value,String>{
         }
         seen.insert(id,order);
         match contributions(order,&filter)?{
-            Some(local)=>{
+            Some((local,field_counts))=>{
                 if local.is_empty(){without_context+=1;}
                 for (key,counts) in local{groups.entry(key).or_default().add_order(counts);}
+                for (task,counts) in field_counts{fields.entry(task).or_default().add_order(counts);}
             }
             None=>unavailable+=1,
         }
@@ -348,13 +432,35 @@ pub(super) fn statistics(payload:&Value)->Result<Value,String>{
     Ok(json!({
         "featureVersion":FEATURE_VERSION,"status":"diagnostic_only",
         "uniqueOrders":seen.len(),"unavailableOrders":unavailable,
-        "ordersWithoutMatchingContext":without_context,"statistics":records
+        "ordersWithoutMatchingContext":without_context,"statistics":records,
+        "fieldStatistics":fields.into_iter().map(|(task,counts)|
+            json!({"task":task,"counts":counts.wire()})).collect::<Vec<_>>()
     }))
 }
 
 #[cfg(test)]
 mod tests{
     use super::*;
+    #[test]
+    fn field_evidence_keeps_candidate_polarity_and_distinct_order_counts(){
+        let mut local=FieldCounts::default();
+        let changed=json!({"outcome":"explicit_correction_observed","eligibleForCandidateLearning":true,
+            "negativeCandidates":["old"],"positiveCandidates":["new"]});
+        local.add_observation(&changed);
+        local.add_observation(&changed);
+        local.add_observation(&json!({"outcome":"unchanged_observed","eligibleForCandidateLearning":true,
+            "finalCandidates":["new"]}));
+        local.add_observation(&json!({"outcome":"changed_requires_review"}));
+        let mut aggregate=FieldCounts::default();
+        aggregate.add_order(local);
+        let c=aggregate.wire();
+        assert_eq!(c["explicitPositiveCandidates"]["new"],2);
+        assert_eq!(c["explicitNegativeCandidates"]["old"],2);
+        assert_eq!(c["explicitPositiveCandidateOrders"]["new"],1);
+        assert_eq!(c["weakCandidates"]["new"],1);
+        assert_eq!(c["pendingCorrectionCount"],1);
+        assert_eq!(c["eligibleForAutomaticDecision"],false);
+    }
     #[test]
     fn independent_context_orders_are_not_the_sum_of_candidate_counts(){
         let weak=|candidate:&str|json!({
