@@ -84,6 +84,20 @@ def violations(name, source):
         for match in re.finditer(r"\b(?:crate|super)\s*::", code):
             findings.append((code.count("\n", 0, match.start()) + 1,
                              "geometry must not depend on application modules"))
+    retired = (
+        r"\bui_layout\s*::\s*(?:aligned_rect|AlignedUiBuilderExt|SharedAllocationExt|SharedUiClipExt|SharedPainterClipExt|set_fixed_height|reserve_min_height|reserve_min_size)\b",
+        r"\bui_primitives\s*::\s*(?:CardWidthPolicy|UiWidthPolicyExt|apply_width_policy)\b",
+        r"\bui_layout\s*::\s*\{[^}]*\b(?:aligned_rect|AlignedUiBuilderExt|SharedAllocationExt|SharedUiClipExt|SharedPainterClipExt|set_fixed_height|reserve_min_height|reserve_min_size)\b",
+        r"\bui_primitives\s*::\s*\{[^}]*\b(?:CardWidthPolicy|UiWidthPolicyExt|apply_width_policy)\b",
+    )
+    for pattern in retired:
+        for match in re.finditer(pattern, code):
+            findings.append((code.count("\n", 0, match.start()) + 1,
+                             "retired geometry forwarding path; use geometry directly"))
+    if name in {"ui_layout.rs", "ui_primitives.rs"}:
+        for match in re.finditer(r"\bpub(?:\s*\([^)]*\))?\s+use\s+(?:crate\s*::\s*ui_layout\s*::\s*)?geometry\s*::", code):
+            findings.append((code.count("\n", 0, match.start()) + 1,
+                             "geometry forwarding exports are prohibited"))
     if name in CORE_COMPONENTS:
         for match in re.finditer(r"\bcrate\s*::\s*ui_layout\s*::\s*(?!geometry\b)\w+", code):
             findings.append((code.count("\n", 0, match.start()) + 1,
@@ -147,7 +161,13 @@ def self_test():
     assert violations(OWNER, "self.max_rect(aligned_rect(rect)); use crate::card::CardHeightPolicy;")
     assert violations("card/mod.rs", "use crate::ui_layout::SharedAllocationExt;")
     assert not violations("card/mod.rs", "use crate::ui_layout::geometry::SharedAllocationExt;")
-    assert not violations("screen.rs", "use crate::ui_layout::SharedAllocationExt;")
+    assert violations("screen.rs", "use crate::ui_layout::SharedAllocationExt;")
+    assert violations("screen.rs", "use crate::ui_primitives::UiWidthPolicyExt;")
+    assert violations("screen.rs", "use crate::ui_layout::{fixed_row, SharedAllocationExt};")
+    assert violations("screen.rs", "use crate::ui_primitives::{truncated_label, CardWidthPolicy};")
+    assert not violations("screen.rs", "use crate::ui_layout::geometry::SharedAllocationExt;")
+    assert violations("ui_layout.rs", "pub(crate) use geometry::{aligned_rect};")
+    assert violations("ui_primitives.rs", "pub(crate) use crate::ui_layout::geometry::CardWidthPolicy;")
     assert violations(OWNER, "self.max_rect(aligned_rect(rect)); builder.max_rect(rect);")
 
 def main():
