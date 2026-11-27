@@ -266,12 +266,17 @@ fn verified_combined_payload(tx:&Transaction<'_>,scope:&str,id:&str,digest:&str)
     let Some((source,payload,proof,version))=row else{return Ok(None);};
     if version!=1||source!=digest{return Ok(None);}
     if format!("{:x}",Sha256::digest(payload.as_bytes()))!=proof{return Err("결합 평가 지문 불일치".into());}
+    // Older reports were scored before the original-parser replay gate.
+    // Recompute only derived evaluation data from the same frozen source.
+    let v:Value=serde_json::from_str(&payload).map_err(|_|"결합 평가 JSON 오류")?;
+    if v["status"]=="compared_diagnostic_only"&&v["parserReplayRequired"]!=true{return Ok(None);}
     Ok(Some(payload))
 }
 fn save_combined_evaluation(tx:&Transaction<'_>,scope:&str,id:&str,digest:&str,report:&Value)->Result<(),String>{
     let fallback=json!({"schemaVersion":1,"status":"no_combined_prediction","groups":[],
         "eligibleForAutomaticDecision":false,"decisionChanged":false});
     let v=report.get("combinedEvaluation").unwrap_or(&fallback);
+    if v["status"]=="compared_diagnostic_only"&&v["parserReplayRequired"]!=true{return Err("귀속 재계산 검증 누락".into());}
     if v["schemaVersion"]!=1||v["eligibleForAutomaticDecision"]!=false||v["decisionChanged"]!=false||
         v["groups"].as_array().is_none_or(|a|a.len()>64){return Err("결합 평가 규격 오류".into());}
     let payload=serde_json::to_string(v).map_err(|_|"결합 평가 직렬화 오류")?;
@@ -712,7 +717,7 @@ mod recognition_learning_store_tests{
         let missing=integrity(&tx,"scope").unwrap();
         assert_eq!(missing["missingCombinedEvaluationOrders"],1);
         assert_eq!(missing["internallyConsistent"],false);
-        let mut report=json!({"combinedEvaluation":{"schemaVersion":1,"status":"compared_diagnostic_only",
+        let mut report=json!({"combinedEvaluation":{"schemaVersion":1,"status":"compared_diagnostic_only","parserReplayRequired":true,
             "groups":[],"eligibleForAutomaticDecision":false,"decisionChanged":false,"eligibleObservations":1}});
         save_combined_evaluation(&tx,"scope",id,&digest,&report).unwrap();
         assert!(combined_evaluation_cached(&tx,"scope",id,&digest).unwrap());
