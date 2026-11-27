@@ -441,26 +441,14 @@ impl ModelGroupManager {
             }
         }
         if let Some(pending)=self.confirm.clone(){
-            let mut cancel=false;let mut discard=false;let mut save=false;
             crate::popup::modal_backdrop(ctx,"family-unsaved-dim",true);
-            crate::popup::show_decision_window(ctx,"모델군 관리","family-unsaved-confirm",rect,|dialog|{
-                    crate::popup::decision_workspace(dialog,|decision|{
-                        cancel=decision.header("모델군 관리","취소",!self.busy()
-                        );
-                        decision.body(|dialog|{
-                            dialog.label(typography::body("모델군 관리의 변경사항을 저장할까요?"));
-                        });
-                        decision.actions(|actions|{
-                                save=crate::button::action(actions,"저장",
-                                    theme::ButtonRole::Primary,
-                                    gateway.model_group_write_enabled()&&!self.busy()&&self.dirty()
-                                    &&self.new_name.trim().is_empty()).clicked();
-                                discard=crate::button::action(actions,"저장 안 함",
-                                    theme::ButtonRole::Danger,!self.busy()).clicked();
-                            }
-                        );
-                    });
-                });
+            let decision=crate::popup::show_save_confirmation(
+                ctx,rect,"family-unsaved-confirm","모델군 관리",
+                "모델군 관리의 변경사항을 저장할까요?","저장",!self.busy(),gateway.model_group_write_enabled()&&!self.busy()&&self.dirty()&&self.new_name.trim().is_empty()
+            );
+            let cancel=decision==crate::popup::ChangeDecision::Cancel;
+            let discard=decision==crate::popup::ChangeDecision::Discard;
+            let save=decision==crate::popup::ChangeDecision::Save;
             if cancel{self.confirm=None;self.status.clear();}
             else if discard{
                 self.confirm=None;self.discard();self.finish_exit(pending);
